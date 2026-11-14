@@ -146,6 +146,7 @@ own measurement conditions.
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 | [A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction) | runs it as golang-migrate does, outside the migrator's transaction, and exits `0` | nests it in a transaction of its own and exits `1` with `pq: unexpected transaction status idle` |
 | [A `txmode none` file that controls its own transaction](#a-txmode-none-file-that-controls-its-own-transaction) | lint reports `TX201` for each such block, and apply refuses the file before running a statement, exit `1` | lint reports nothing, and apply runs the file as written, exit `0` |
+| [A file its transaction would refuse](#a-file-its-transaction-would-refuse) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies the files before it and exits `1` with PostgreSQL's error; its dry run exits `0` |
 | [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
 
 ## A `--config` selection naming more than one file
@@ -1271,6 +1272,56 @@ describes.
 
 **Evidence.** `integration/migrate_lint_transaction_control_e2e_test.go`,
 [`stokaro/ptah#6004`](https://github.com/stokaro/ptah/issues/6004)
+
+## A file its transaction would refuse
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat migrate apply` reads every file of the run
+before it applies the first. When a file holds a statement PostgreSQL refuses
+inside the transaction the file runs in, such as a lone
+`CREATE INDEX CONCURRENTLY` under the default `--tx-mode file`, the run is
+refused: no file is applied and no revision row is written. A dry run is
+refused the same way. The pinned community binary v1.3.0 applies the files
+before it, then sends the statement and exits `1` with PostgreSQL's error. Its
+dry run sends nothing and reports every file `ok`.
+
+Measured on 2026-11-14 on PostgreSQL 18, with `1_base.sql` holding
+`CREATE TABLE base (id int);` and `2_idx.sql` holding
+`CREATE INDEX CONCURRENTLY base_id_idx ON base (id);`, each run on a fresh
+database, each exit status read from an unpiped invocation:
+
+| Run | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply` | applies and records version `1`, then fails version `2`, exit `1` | refuses the run, creates nothing and records no revision, exit `1` |
+| `migrate apply --dry-run` | lists both versions as `ok`, exit `0` | refuses the run, exit `1` |
+
+The binary's failure at version `2` is PostgreSQL's answer to the statement:
+
+```text
+pq: CREATE INDEX CONCURRENTLY cannot run inside a transaction block (25001)
+```
+
+`ptah-compat` names the file, the line and the way out, before anything runs:
+
+```text
+Error: error applying migrations: 2_idx.sql cannot run inside a transaction: line 1 CREATE or DROP INDEX CONCURRENTLY is refused inside a transaction block; mark the file `-- +ptah no_transaction`, or move the concurrent index into a migration of its own
+SQL: CREATE INDEX CONCURRENTLY base_id_idx ON base (id)
+```
+
+The refusal is stricter than the binary on purpose. The binary's run cannot
+reach its target, and that is known before it starts. It stops with the schema
+changed and the run half done. Refusing the run first leaves the database as it
+was, and the change to the directory is the same either way: mark the file
+`-- atlas:txmode none`, or move the statement into a file that runs without a
+transaction. The refusal names Ptah's own `-- +ptah no_transaction`; in a
+directory both binaries apply, `-- atlas:txmode none` is the directive to use.
+A file that runs without a transaction is not refused, such as a file of one
+statement in a
+[golang-migrate directory](#a-golang-migrate-file-that-runs-its-own-transaction),
+which that runner sends alone.
+
+**Evidence.** `integration/migrations_up_transaction_preflight_e2e_test.go`
 
 ## A statement the bundled SQLite refuses
 

@@ -2798,7 +2798,7 @@ func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*
 				return err
 			}
 		}
-		return nil
+		return m.refuseUpWhatTransactionsRefuse(migrations)
 	}
 	if err := m.validateTxModeAllDialect(); err != nil {
 		return err
@@ -2816,6 +2816,24 @@ func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*
 					"%s", migration.Version, txModeAllExclusionAdvice)
 		}
 		if err := m.rejectChecksUnderTxModeAll(migration, MigrationDirectionUp); err != nil {
+			return err
+		}
+	}
+	return m.refuseUpWhatTransactionsRefuse(migrations)
+}
+
+// refuseUpWhatTransactionsRefuse applies [Migrator.refuseWhatATransactionRefuses]
+// to every migration of an up run, in the mode each resolves to. It comes after
+// every other refusal of [Migrator.validateUpTransactionMode], so those keep
+// their precedence. A migration whose mode does not resolve is left to the step
+// that runs it, which reports why.
+func (m *Migrator) refuseUpWhatTransactionsRefuse(migrations []*Migration) error {
+	for _, migration := range migrations {
+		mode, err := m.resolveUpMigrationTxMode(migration)
+		if err != nil {
+			continue
+		}
+		if err := m.refuseWhatATransactionRefuses(migration, MigrationDirectionUp, mode); err != nil {
 			return err
 		}
 	}
@@ -3974,34 +3992,43 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 		if err := m.refusePlacement(migration, MigrationDirectionDown, mode); err != nil {
 			return err
 		}
-		if err := m.refuseWhatATransactionRefuses(migration, mode); err != nil {
+		if err := m.refuseWhatATransactionRefuses(migration, MigrationDirectionDown, mode); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// refuseWhatATransactionRefuses refuses a down file that holds a statement the
-// engine refuses inside the transaction the rollback opens around the file,
-// such as a lone DROP INDEX CONCURRENTLY under the per-file transaction. It is
-// the refusal [executeMigrationFileSQL] makes before the file's first
-// statement, asked before any migration of the run is rolled back.
+// refuseWhatATransactionRefuses refuses a file of direction that holds a
+// statement the engine refuses inside the transaction the run opens around
+// the file, such as a lone CREATE or DROP INDEX CONCURRENTLY under the
+// per-file transaction, or anywhere under tx-mode all. It is the refusal
+// [executeMigrationFileSQL] makes before the file's first statement, asked of
+// every file of the run before the first of them runs: by
+// [Migrator.validateUpTransactionMode] for an up run and by
+// [Migrator.validateDownMigrations] for a rollback.
 //
-// Without it the refusal comes once the rollback has marked the revision
-// pending, so it leaves the migration dirty with nothing applied, and the
-// rollbacks of the migrations above it in the run have already run. A file
-// that runs without a transaction around it, by its directive or because the
-// runner sends it as it is (see [Migrator.ownTransactionMode]), is not asked.
-func (m *Migrator) refuseWhatATransactionRefuses(migration *Migration, mode MigrationTxMode) error {
-	if migration.downRefuseInsideTransaction == nil {
+// Without it the refusal comes once the run has marked the file's revision
+// pending, so it leaves the migration failed with nothing applied, and the
+// files before it in the run have already run. A file that runs without a
+// transaction around it, by its directive, by the run's transaction mode, or
+// because the runner sends it as it is (see [Migrator.ownTransactionMode]), is
+// not asked.
+func (m *Migrator) refuseWhatATransactionRefuses(
+	migration *Migration,
+	direction MigrationDirection,
+	mode MigrationTxMode,
+) error {
+	refuse := migration.refuseInsideTransaction(direction)
+	if refuse == nil {
 		return nil
 	}
-	own, err := m.ownTransactionMode(migration, mode, MigrationDirectionDown)
+	own, err := m.ownTransactionMode(migration, mode, direction)
 	if err != nil {
 		return err
 	}
 	if !own.blocks.Empty() || own.mode == MigrationTxModeNone {
 		return nil
 	}
-	return migration.downRefuseInsideTransaction(m.conn)
+	return refuse(m.conn)
 }

@@ -125,8 +125,8 @@ transaction restriction whichever direction asked for it:
   an enum type it creates itself is not a mix, because PostgreSQL allows the new
   value immediately when the type is new in the same transaction, while a file
   adding a value to a pre-existing type and then using it is one. The migrator
-  refuses that second shape before its first statement runs, using the same
-  classification, so lint and apply cannot disagree about one file.
+  refuses that second shape before the run applies its first file, using the
+  same classification, so lint and apply cannot disagree about one file.
 
 Useful controls:
 

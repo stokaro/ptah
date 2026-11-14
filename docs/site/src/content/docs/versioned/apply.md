@@ -1083,6 +1083,23 @@ The integrity gate is covered in depth on
 [Integrity and safety](../integrity-and-safety/), the destructive gate on
 [Lint and gate unsafe SQL](../lint/).
 
+**A file its transaction would refuse stops the run before it starts** (exit
+`2`). A statement the engine refuses inside a transaction block, such as a
+`CREATE INDEX CONCURRENTLY` in a file that runs in the per-file transaction or
+under `--tx-mode all`, is found in every file of the run before the first
+migration is applied, in a dry run too. No migration of the run is applied and
+no revision row is written:
+
+```text illustration
+error: error running migrations: 0000000002_add_index.up.sql cannot run inside a transaction: line 1 CREATE or DROP INDEX CONCURRENTLY is refused inside a transaction block; mark the file `-- +ptah no_transaction`, or move the concurrent index into a migration of its own
+SQL: CREATE INDEX CONCURRENTLY idx_posts_author ON posts (author_id)
+```
+
+A file that runs without a transaction around it is not refused: one marked
+`-- +ptah no_transaction` or `-- atlas:txmode none`, every file under
+`--tx-mode none`, and, under `--runner golang-migrate`, a file of one
+statement, which that runner sends alone.
+
 **A migration failed partway.** The revision table records a dirty state and
 every later run refuses to continue until it is repaired — see
 [Maintain migration history](../maintain-history/). A failed *rollback* records

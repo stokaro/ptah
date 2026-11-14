@@ -394,7 +394,8 @@ func TestMigrateUpOwnTransactions_LoneConcurrentIndexLive(t *testing.T) {
 // The migrator keeps its transaction around a concurrent build that does not
 // run alone: without the policy, beside a second statement, and in a file that
 // names its transaction mode. PostgreSQL refuses the build there, and the
-// migrator says so before anything runs.
+// migrator says so before anything runs: the first migration of the run is
+// not applied either, and no revision row is written.
 func TestMigrateUpOwnTransactions_ConcurrentIndexKeepsTheTransactionLive(t *testing.T) {
 	const build = "CREATE INDEX CONCURRENTLY owntx_base_%[1]s_id_idx ON owntx_base_%[1]s (id);\n"
 	tests := []struct {
@@ -424,6 +425,8 @@ func TestMigrateUpOwnTransactions_ConcurrentIndexKeepsTheTransactionLive(t *test
 			c.Assert(err, qt.ErrorMatches,
 				`(?s).*cannot run inside a transaction: line \d+ CREATE or DROP INDEX CONCURRENTLY is refused inside a transaction block.*`)
 			c.Assert(run.tableExists(c, "owntx_a_"), qt.IsFalse)
+			c.Assert(run.tableExists(c, "owntx_base_"), qt.IsFalse)
+			c.Assert(run.texts(c, "SELECT version::text FROM "+run.table), qt.IsNil)
 		})
 	}
 }
