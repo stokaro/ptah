@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -45,9 +44,6 @@ type runLogEngine struct {
 	// create one: the test works in the account's schema, under names of its
 	// own, and reads only the rows carrying its own run reference.
 	create, drop string
-	// databaseParameter is the query parameter the engine's address names its
-	// database in. Empty is an address whose path names it.
-	databaseParameter string
 	// ident is a table name as Ptah spells it, as a format with one %s.
 	ident string
 	// table creates a table, {t} standing for its name.
@@ -121,8 +117,7 @@ var (
 		create: "CREATE DATABASE [{name}]",
 		drop: "IF DB_ID('{name}') IS NOT NULL BEGIN ALTER DATABASE [{name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; " +
 			"DROP DATABASE [{name}] END",
-		databaseParameter: "database",
-		ident:             "[%s]", table: plainTable,
+		ident: "[%s]", table: plainTable,
 		releasedLog: `CREATE TABLE {log} (
     run_id NVARCHAR(64) NOT NULL,
     seq BIGINT NOT NULL,
@@ -204,14 +199,6 @@ func ownDatabase(c *qt.C, engine runLogEngine, address, name string) string {
 		c.Check(dropErr, qt.IsNil)
 		dbschema.CloseAndWarn(admin)
 	})
-	if engine.databaseParameter != "" {
-		parsed, err := url.Parse(address)
-		c.Assert(err, qt.IsNil)
-		query := parsed.Query()
-		query.Set(engine.databaseParameter, name)
-		parsed.RawQuery = query.Encode()
-		return parsed.String()
-	}
 	renamed, err := atlasurl.WithDatabaseName(address, name)
 	c.Assert(err, qt.IsNil)
 	return renamed

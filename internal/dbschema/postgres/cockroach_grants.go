@@ -7,7 +7,6 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/pgreservedrole"
-	"ptah.run/internal/revisiontable"
 )
 
 // cockroachBuiltinRoles are the roles CockroachDB grants ALL on every object
@@ -81,8 +80,9 @@ func (r *Reader) readCockroachGrants(ctx context.Context) ([]catalog.Grant, erro
 // readCockroachRelationGrants reads the grants on the tables, views and
 // sequences of one schema. role_table_grants lists a sequence as a table, so
 // the relation kind decides which it is. A sequence a column owns is kept, as
-// [Reader.readSequenceGrantsForSchema] keeps it. A grant on one of Ptah's own
-// tables is left out, as [Reader.readTableGrantsForSchema] leaves it out.
+// [Reader.readSequenceGrantsForSchema] keeps it. A grant on the schema apply
+// log is left out, as [Reader.readTableGrantsForSchema] leaves it out: a
+// default privilege grants on the log as a run creates it.
 func (r *Reader) readCockroachRelationGrants(ctx context.Context, schemaName string) ([]catalog.Grant, error) {
 	query := `
 		SELECT
@@ -95,7 +95,7 @@ func (r *Reader) readCockroachRelationGrants(ctx context.Context, schemaName str
 		JOIN pg_namespace n ON n.nspname = g.table_schema
 		JOIN pg_class c ON ` + relationByName("c", "n.oid", "g.table_name") + `
 		WHERE g.table_schema = $1
-		AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
+		AND c.relname <> ` + applyLogSQLName + `
 		AND ` + notCockroachBuiltin("g.grantee") + `
 		AND g.grantee <> pg_get_userbyid(c.relowner)
 		AND ` + pgreservedrole.ExcludeSQL("g.grantee") + `
