@@ -752,6 +752,10 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   at most one sentence.
 - Site-internal links are docs-relative with a trailing slash (enforced by
   `check-links.mjs`); never root-relative.
+- A relative link in repository Markdown (`README.md`, `docs/*.md`, an example
+  or package README) is read on GitHub, so it names a file or a directory of
+  the checkout, such as `site/src/content/docs/reference/configuration.mdx`
+  from `docs/` (enforced by `check-links.mjs`).
 - Site pages never link to root docs on GitHub and never mention the protected
   `docs/*.md` paths (enforced by `check-core-doc-links.mjs`).
 - External links go only to stable external pages: Atlas documentation for
@@ -966,6 +970,7 @@ in this guide is a review responsibility.
 | Canonical search pages rank in the top three | 13 | `check:search-ranking` |
 | No `TODO`/`TBD`/`FIXME`/"coming soon" | 14 | `check:page-health` |
 | Site-internal links resolve | 12 | `check:links` |
+| Relative links in repository Markdown name a file git lists | 12 | `check:links` |
 | A declared redirect is well formed | 12 | `check:redirects` |
 | A retired URL keeps a redirect | 12 | `check:route-retirement` |
 | A published route stays recorded | 12 | `check:route-retirement` |

@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemasource"
 	"ptah.run/core/selectext"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -61,6 +62,10 @@ type CompareOptions struct {
 	// how Schemas joins them.
 	Include []string
 	Exclude []string
+	// ExcludeSources names where the run read each Exclude selector, for the
+	// warning about one that matched nothing; see
+	// [atlasfilter.ExcludeSources]. Nil names every selector as --exclude's.
+	ExcludeSources atlasfilter.ExcludeSources
 	// Diagnostics receives the warning for an Exclude selector that matched
 	// nothing. Nil writes no warning.
 	Diagnostics io.Writer
@@ -162,10 +167,11 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 		return nil, fmt.Errorf("database URL is required")
 	}
 	selection := atlasschema.LiveSelection{
-		Schemas:     opts.Schemas,
-		Include:     opts.Include,
-		Exclude:     opts.Exclude,
-		Diagnostics: opts.Diagnostics,
+		Schemas:        opts.Schemas,
+		Include:        opts.Include,
+		Exclude:        opts.Exclude,
+		ExcludeSources: opts.ExcludeSources,
+		Diagnostics:    opts.Diagnostics,
 	}
 	if err := selection.Validate(opts.Runtime.Selections()); err != nil {
 		return nil, err

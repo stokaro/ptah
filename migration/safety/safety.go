@@ -59,6 +59,15 @@ type Finding struct {
 // 1-based in the slices [Assess], [AssessSQL], [AssessRendered], and
 // [AssessRenderedWithCapabilities] return.
 //
+// Subject names the object the statement acts on, as the statement names it:
+// the table, index, view, policy, role, sequence or owner object, or the
+// object a grant is on. A statement that names several objects, such as a
+// DROP TABLE of two tables, lists them joined with ", ". It is empty when the
+// statement names no object, such as an anonymous block, and where the
+// statement's words do not say which object it is. NodeType is the Go type of
+// the node that produced the statement; it identifies the node for a program,
+// not the object for a reader.
+//
 // Access and AccessReason carry the owner's access assessment for a statement
 // whose owned operation declares one ([schemaext.AccessEffectSource]), and are
 // empty for every other statement. They are reported apart from Severity,
@@ -284,9 +293,7 @@ func AssessRenderedWithCapabilities(
 			judged := judgments[len(assessments)]
 			assessment := assessStatement(statement, keepsNull, judged)
 			assessment.NodeType = nodeAssessment.NodeType
-			if assessment.Subject == "" {
-				assessment.Subject = nodeAssessment.Subject
-			}
+			assessment.Subject = renderedSubject(node, nodeAssessment.Subject, statement, target)
 			ownedText := raw && judged != nil
 			if !ownedText && (placement != ast.NoExtension || len(rendered[i]) == 1 || isTypeChangeSQL(statement)) {
 				raiseAssessment(&assessment, nodeAssessment)
@@ -304,6 +311,17 @@ func AssessRenderedWithCapabilities(
 		return nil, err
 	}
 	return assessments, nil
+}
+
+// renderedSubject names one rendered statement of a node. Raw SQL is named by
+// each statement it renders, read the way the target reads it; every other
+// node by what it acts on, and by the statement's words where the node names
+// nothing.
+func renderedSubject(node ast.Node, nodeSubject, statement, target string) string {
+	if _, raw := node.(*ast.RawSQLNode); !raw && nodeSubject != "" {
+		return nodeSubject
+	}
+	return statementSubject(statement, target)
 }
 
 // assessmentUnits is nodes, with each ALTER TABLE that carries several
@@ -532,7 +550,8 @@ func RenderJSON(w io.Writer, assessments []StatementAssessment) error {
 	return encoder.Encode(NewReport(assessments))
 }
 
-// RenderText writes a compact text table for statement assessments.
+// RenderText writes a compact text table for statement assessments. The
+// subject column prints `-` for an assessment with no Subject.
 func RenderText(w io.Writer, assessments []StatementAssessment) error {
 	if len(assessments) == 0 {
 		_, err := fmt.Fprintln(w, "Safety: no executable migration statements")
@@ -547,11 +566,7 @@ func RenderText(w io.Writer, assessments []StatementAssessment) error {
 		return err
 	}
 	for _, assessment := range assessments {
-		subject := assessment.Subject
-		if subject == "" {
-			subject = assessment.NodeType
-		}
-		if _, err := fmt.Fprintf(w, "  %-2d %-12s %-24s %s\n", assessment.Index, assessment.Severity, subject, assessment.Reason); err != nil {
+		if _, err := fmt.Fprintf(w, "  %-2d %-12s %-24s %s\n", assessment.Index, assessment.Severity, reportSubject(assessment), assessment.Reason); err != nil {
 			return err
 		}
 		if assessment.Access == "" {
@@ -564,7 +579,8 @@ func RenderText(w io.Writer, assessments []StatementAssessment) error {
 	return nil
 }
 
-// RenderHTML writes a standalone HTML safety report.
+// RenderHTML writes a standalone HTML safety report. Its subject column
+// prints `-` for an assessment with no Subject, as [RenderText] does.
 //
 // The document fetches nothing: its appearance is inlined from
 // internal/htmlstyle, the same declaration the exported schema document and
@@ -577,7 +593,7 @@ func RenderHTML(w io.Writer, assessments []StatementAssessment) error {
 	if _, err := io.WriteString(w, htmlstyle.Head("Ptah migration safety report", reportCSS)); err != nil {
 		return err
 	}
-	tmpl, err := template.New("safety-report").Parse(reportBodyHTML)
+	tmpl, err := template.New("safety-report").Funcs(template.FuncMap{"subject": reportSubject}).Parse(reportBodyHTML)
 	if err != nil {
 		return err
 	}
@@ -651,7 +667,7 @@ const reportBodyHTML = `<body><div class="page">
 <tr>
 <td class="num">{{.Index}}</td>
 <td><span class="tag {{.Severity}}">{{.Severity}}</span></td>
-<td class="name">{{if .Subject}}{{.Subject}}{{else}}{{.NodeType}}{{end}}</td>
+<td class="name">{{subject .}}</td>
 <td class="comment">{{.Reason}}{{if .Access}}<div class="access">access {{.Access}}: {{.AccessReason}}</div>{{end}}</td>
 <td class="stmt"><pre>{{.Statement}}</pre></td>
 </tr>
@@ -663,11 +679,12 @@ const reportBodyHTML = `<body><div class="page">
 func assessNode(node ast.Node) StatementAssessment {
 	assessment := StatementAssessment{
 		NodeType: fmt.Sprintf("%T", node),
+		Subject:  nodeSubject(node),
 		Severity: Safe,
 		Reason:   "does not remove data or tighten constraints",
 	}
-	if subject, reason, dropped := destructiveDrop(node); dropped {
-		assessment.Subject, assessment.Severity, assessment.Reason = subject, Destructive, reason
+	if reason, dropped := destructiveDrop(node); dropped {
+		assessment.Severity, assessment.Reason = Destructive, reason
 		return assessment
 	}
 
@@ -678,7 +695,6 @@ func assessNode(node ast.Node) StatementAssessment {
 		verdict := classifyExtensionNode(node)
 		assessment.Severity, assessment.Reason = verdict.severity, verdict.reason
 		combineAccess(&assessment, verdict.access.Access, verdict.access.Reason)
-		assessment.Subject = extensionSubject(node)
 	case *ast.AlterTableNode:
 		// A typed nil ALTER TABLE carries no operation. A statement list that
 		// holds one beside an owner operation is assessed as a whole when it
@@ -686,38 +702,30 @@ func assessNode(node ast.Node) StatementAssessment {
 		if n == nil {
 			return assessment
 		}
-		assessment.Subject = n.Name
 		return assessAlterTable(n, assessment)
 	case *ast.DropTypeNode:
-		assessment.Subject = n.Name
 		assessment.Severity = Destructive
 		assessment.Reason = "DROP TYPE removes an existing database type"
 	case *ast.AlterTableDisableRLSNode:
-		assessment.Subject = n.Table
 		assessment.Severity = Destructive
 		assessment.Reason = "DISABLE ROW LEVEL SECURITY removes an access-control protection"
 	case *ast.AlterTableForceRLSNode:
-		assessment.Subject = n.Table
 		if n.NoForce {
 			assessment.Severity = Destructive
 			assessment.Reason = noForceReason
 		}
 	case *ast.RevokePrivilegeNode:
-		assessment.Subject = n.ObjectName
 		assessment.Severity = Warning
 		assessment.Reason = revokeReason
 	case *ast.RevokeRoleMembershipNode:
-		assessment.Subject = n.Role
 		assessment.Severity = Warning
 		assessment.Reason = revokeMembershipReason
 	case *ast.IndexNode:
-		assessment.Subject = n.Name
 		if n.Unique {
 			assessment.Severity = Warning
 			assessment.Reason = "CREATE UNIQUE INDEX can fail on existing duplicate values"
 		}
 	case *ast.DropIndexNode:
-		assessment.Subject = n.Name
 		if n.EnforcesUniqueConstraint {
 			assessment.Severity = Destructive
 			assessment.Reason = "DROP INDEX removes the uniqueness a UNIQUE constraint enforces"
@@ -726,7 +734,6 @@ func assessNode(node ast.Node) StatementAssessment {
 		assessment.Severity = Warning
 		assessment.Reason = "DROP INDEX can affect query plans and constraints"
 	case *ast.AlterTypeNode:
-		assessment.Subject = n.Name
 		return assessAlterType(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
@@ -735,32 +742,31 @@ func assessNode(node ast.Node) StatementAssessment {
 	return assessment
 }
 
-// destructiveDrop is the subject and the reason of a statement that drops an
-// object and always removes data or behavior with it, and false for any other
-// node.
-func destructiveDrop(node ast.Node) (subject, reason string, dropped bool) {
+// destructiveDrop is the reason of a statement that drops an object and always
+// removes data or behavior with it, and false for any other node.
+func destructiveDrop(node ast.Node) (reason string, dropped bool) {
 	switch n := node.(type) {
 	case *ast.DropTableNode:
-		return n.Name, "DROP TABLE removes the table and all rows", true
+		return "DROP TABLE removes the table and all rows", true
 	case *ast.DropFunctionNode:
 		if n.IsProcedure() {
-			return n.Name, dropProcedureReason, true
+			return dropProcedureReason, true
 		}
-		return n.Name, dropFunctionReason, true
+		return dropFunctionReason, true
 	case *ast.DropRoleNode:
-		return n.Name, "DROP ROLE removes an existing database principal", true
+		return "DROP ROLE removes an existing database principal", true
 	case *ast.DropPolicyNode:
-		return n.Name, "DROP POLICY removes an access-control protection", true
+		return "DROP POLICY removes an access-control protection", true
 	case *ast.DropSequenceNode:
-		return n.Name, dropSequenceReason, true
+		return dropSequenceReason, true
 	case *ast.DropViewNode:
-		return n.Name, dropViewReason, true
+		return dropViewReason, true
 	case *ast.DropMaterializedViewNode:
-		return n.Name, dropMaterializedViewReason, true
+		return dropMaterializedViewReason, true
 	case *ast.DropTriggerNode:
-		return n.Name, dropTriggerReason, true
+		return dropTriggerReason, true
 	default:
-		return "", "", false
+		return "", false
 	}
 }
 

@@ -234,7 +234,7 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	// project excludes alone, as `schema apply` does; one that runs the down
 	// files runs what they say, and has no exclusion to apply.
 	if opts.plan {
-		opts.planExclude, err = dbcli.EffectiveExclude(projectCfg, nil, opts.featureRuntime.Selections())
+		opts.planExclude, _, err = dbcli.EffectiveExclude(cmd, "", nil, projectCfg, opts.featureRuntime.Selections())
 		if err != nil {
 			return opts, err
 		}

@@ -33,6 +33,10 @@ type LiveSelection struct {
 	Include []string
 	// Exclude subtracts from what both sides keep.
 	Exclude []string
+	// ExcludeSources names where the run read each Exclude selector, for the
+	// diagnostic about one that matched nothing; see
+	// [atlasfilter.ExcludeSources]. Nil names every selector as --exclude's.
+	ExcludeSources atlasfilter.ExcludeSources
 	// Diagnostics receives the warning for an Exclude selector that matched
 	// nothing on either side. Nil writes no warning.
 	Diagnostics io.Writer
@@ -87,7 +91,7 @@ func (s LiveSelection) Apply(
 	if err != nil {
 		return nil, nil, err
 	}
-	reportUnmatchedExclude(s.Diagnostics, atlasfilter.UnmatchedAcrossStates(scoped.currentReports.Exclude, scoped.desiredReports.Exclude))
+	reportUnmatchedExclude(s.Diagnostics, atlasfilter.UnmatchedAcrossStates(scoped.currentReports.Exclude, scoped.desiredReports.Exclude), s.ExcludeSources)
 	if emptySelection(scoped.currentErr) && emptySelection(scoped.desiredErr) {
 		return nil, nil, scoped.currentErr
 	}
@@ -228,14 +232,15 @@ func reportEmptySelection(diagnostics io.Writer, err error) {
 }
 
 // reportUnmatchedExclude writes the exclude-matched-nothing notice for verbs
-// that keep their exit status. Silence is the one answer this must never give:
-// an --exclude that named nothing left the object in the output, and the
-// output alone cannot say whether that was the schema or the selector.
-func reportUnmatchedExclude(diagnostics io.Writer, selectors []string) {
+// that keep their exit status, naming where sources says each selector came
+// from. Silence is the one answer this must never give: an exclude selector
+// that named nothing left the object in the output, and the output alone
+// cannot say whether that was the schema or the selector.
+func reportUnmatchedExclude(diagnostics io.Writer, selectors []string, sources atlasfilter.ExcludeSources) {
 	if diagnostics == nil || len(selectors) == 0 {
 		return
 	}
-	fmt.Fprintf(diagnostics, "Warning: %s.\n", (&atlasfilter.UnmatchedExcludeError{Selectors: selectors}).Error())
+	fmt.Fprintf(diagnostics, "Warning: %s.\n", (&atlasfilter.UnmatchedExcludeError{Selectors: selectors, Sources: sources}).Error())
 }
 
 // refuseUnmatchedExclude turns unmatched --exclude selectors into the error
@@ -250,13 +255,13 @@ func reportUnmatchedExclude(diagnostics io.Writer, selectors []string) {
 // writes --exclude to keep an object out of the plan, and a selector that
 // named nothing means the plan is free to change it. Diff and inspect warn
 // instead, which is the split #1113 recorded for the --include side.
-func refuseUnmatchedExclude(selectors []string) error {
+func refuseUnmatchedExclude(selectors []string, sources atlasfilter.ExcludeSources) error {
 	if len(selectors) == 0 {
 		return nil
 	}
 	return fmt.Errorf(
 		"%w; schema apply refuses a selection that protects nothing, set %s=1 to keep the permissive behavior",
-		&atlasfilter.UnmatchedExcludeError{Selectors: selectors},
+		&atlasfilter.UnmatchedExcludeError{Selectors: selectors, Sources: sources},
 		atlasfilter.AllowUnmatchedExcludeEnvVar)
 }
 

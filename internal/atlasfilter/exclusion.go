@@ -107,11 +107,12 @@ func (e Exclusion) Observed(db *catalog.Database, defaultSchema string) (*catalo
 // filtered -- and writes nothing when every selector matched somewhere or w
 // is nil. A selector that names an object on one side only matched, because
 // that is what an excluded CREATE or DROP looks like; see
-// [UnmatchedAcrossStates].
-func ReportUnmatched(w io.Writer, reports ...ExcludeReport) {
+// [UnmatchedAcrossStates]. The warning names the source sources records for
+// each selector.
+func ReportUnmatched(w io.Writer, sources ExcludeSources, reports ...ExcludeReport) {
 	selectors := UnmatchedAcrossStates(reports...)
 	if w == nil || len(selectors) == 0 {
 		return
 	}
-	fmt.Fprintf(w, "Warning: %s.\n", (&UnmatchedExcludeError{Selectors: selectors}).Error())
+	fmt.Fprintf(w, "Warning: %s.\n", (&UnmatchedExcludeError{Selectors: selectors, Sources: sources}).Error())
 }
