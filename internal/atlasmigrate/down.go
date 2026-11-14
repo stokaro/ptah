@@ -38,6 +38,10 @@ type DownOptions struct {
 	// --skip-checks came to be accepted and ignored on this path
 	// (stokaro/ptah#1621).
 	SkipChecks bool
+	// OwnTransactions rolls the directory back the way a runner that opens no
+	// transaction around a file runs it, as golang-migrate does; see
+	// [migrator.WithOwnTransactions] and [ApplyOptions.OwnTransactions].
+	OwnTransactions bool
 }
 
 // DownPlan is the selected Atlas migrate down work prepared from the migration
@@ -84,12 +88,14 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	}
 	startedAt := time.Now()
 
-	mig, err := migrator.NewFSMigrator(
-		conn,
-		opts.FS,
+	providerOptions := []migrator.FSProviderOption{
 		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.AtlasEnv}),
-	)
+	}
+	if opts.OwnTransactions {
+		providerOptions = append(providerOptions, migrator.WithOwnTransactions())
+	}
+	mig, err := migrator.NewFSMigrator(conn, opts.FS, providerOptions...)
 	if err != nil {
 		return DownPlan{}, fmt.Errorf("error registering migrations: %w", err)
 	}

@@ -334,7 +334,9 @@ inside one; see
 a protected namespace is refused.
 
 A rollback that `ptah migrations down --runner golang-migrate --shadow-db`
-verifies runs each down file on the shadow database the same way.
+verifies runs each down file on the shadow database the same way, and
+`--plan` builds the target version there by running each up file the same
+way.
 
 Three parameters stay refused even for one transaction. `search_path` (and its
 alias `SET SCHEMA`) decides where an unqualified name lands, which would let a

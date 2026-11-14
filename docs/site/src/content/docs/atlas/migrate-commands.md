@@ -858,9 +858,13 @@ refuses `?format=golang-migrate` and `format = golang-migrate`. Native
 `ptah migrations down --runner golang-migrate` rolls a down file back the way
 this section applies an up file; see
 [Roll back migrations](../../versioned/rollback/#a-directory-written-for-golang-migrate).
-`PTAH_RUNNER=golang-migrate` reaches the native rollback `migrate down`
-forwards to, so a directory in Atlas's layout whose down files open their own
-transactions rolls back the same way.
+With `PTAH_RUNNER=golang-migrate`, a directory in Atlas's layout whose down
+files open their own transactions rolls back the same way. The variable
+reaches the native rollback `migrate down` forwards to, and `migrate down
+--format`, which rolls back without forwarding, reads it too. On both, the
+`--dev-url` replay runs each down file the same way. `ptah-compat` takes no
+`--runner` flag of its own, and a value that names no runner is refused before
+the directory is read.
 
 The pinned community binary v1.3.0 wraps these files in a transaction of its
 own, and a file with its own block nests in it. Measured on PostgreSQL 18: over
