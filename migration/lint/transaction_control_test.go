@@ -95,6 +95,8 @@ func TestLintFS_TransactionControl_LeavesOtherStatementsAlone(t *testing.T) {
 		{"SQL Server procedure body", "sqlserver", "CREATE PROCEDURE p AS BEGIN SELECT 1; END;\n"},
 		{"SQL Server TRY block", "sqlserver", "BEGIN TRY\nSELECT 1;\nEND TRY\nBEGIN CATCH\nSELECT 2;\nEND CATCH\n"},
 		{"PostgreSQL DO block", "postgres", "DO $$ BEGIN PERFORM 1; END $$;\n"},
+		{"PostgreSQL escape string naming COMMIT", "postgres", "INSERT INTO users VALUES (E'a\\';COMMIT;');\n"},
+		{"CockroachDB escape string naming BEGIN", "cockroachdb", "INSERT INTO users VALUES (e'\\'; BEGIN;');\n"},
 		{"PostgreSQL file without control", "postgres", "CREATE TABLE users (id int);\n"},
 	}
 	for _, test := range tests {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"ptah.run/internal/lintkit"
 )
 
 // A routine that builds a statement at run time and executes it is the one
@@ -178,11 +180,11 @@ func unsafePart(part []string) (operand, how string, unsafe bool) {
 	if len(words) == 0 {
 		return "", "", false
 	}
-	if len(words) == 1 && isStringLiteral(words[0]) {
+	if len(words) == 1 && lintkit.StringLiteral(words[0]) {
 		return "", "", false
 	}
 	// T-SQL's N'...' is a literal with a prefix word.
-	if len(words) == 2 && words[0] == "N" && isStringLiteral(words[1]) {
+	if len(words) == 2 && words[0] == "N" && lintkit.StringLiteral(words[1]) {
 		return "", "", false
 	}
 	if len(words) > 1 && words[1] == "(" {
@@ -207,7 +209,7 @@ func unsafePart(part []string) (operand, how string, unsafe bool) {
 // a literal, and %% is a percent sign.
 func unquotedFormatSpecifier(words []string) (string, bool) {
 	for _, word := range words {
-		if !isStringLiteral(word) {
+		if !lintkit.StringLiteral(word) {
 			continue
 		}
 		text := word
@@ -233,10 +235,6 @@ func trimOuterParens(words []string) []string {
 		words = words[1 : len(words)-1]
 	}
 	return words
-}
-
-func isStringLiteral(word string) bool {
-	return len(word) >= 2 && word[0] == '\'' && word[len(word)-1] == '\''
 }
 
 // spelled joins words back into readable text for the message.

@@ -43,8 +43,10 @@ func TestSplit_Comments(t *testing.T) {
 }
 
 // The dialect decides what is a comment and where a statement ends: '#'
-// starts a comment on MySQL and is an operator elsewhere, and a
-// dollar-quoted body keeps its semicolons on PostgreSQL.
+// starts a comment on MySQL and is an operator elsewhere, a dollar-quoted
+// body keeps its semicolons on PostgreSQL, and an E'...' string keeps an
+// escaped quote on the engines whose descriptor states escape strings, while
+// elsewhere, and in a standard string, a backslash is an ordinary character.
 func TestSplit_FollowsTheDialect(t *testing.T) {
 	for _, test := range []struct {
 		name, dialect, sql string
@@ -54,6 +56,21 @@ func TestSplit_FollowsTheDialect(t *testing.T) {
 		{"a hash elsewhere", "", "SELECT a #> b; DROP TABLE t;", []string{"SELECT a #> b", "DROP TABLE t"}},
 		{"a PostgreSQL dollar-quoted body", "postgres", "CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql; DROP TABLE t;",
 			[]string{"CREATE FUNCTION f() RETURNS int AS $$ SELECT 1; $$ LANGUAGE sql", "DROP TABLE t"}},
+		{"a PostgreSQL escape string", "postgres", `INSERT INTO t VALUES (E'a\';COMMIT;'); DROP TABLE t;`,
+			[]string{`INSERT INTO t VALUES (E'a\';COMMIT;')`, "DROP TABLE t"}},
+		{"a lowercase CockroachDB escape string", "cockroachdb", `SELECT e'\'';DROP TABLE t;`,
+			[]string{`SELECT e'\''`, "DROP TABLE t"}},
+		{"a YugabyteDB escape string", "yugabytedb", `SELECT E'it\'s';DROP TABLE t;`,
+			[]string{`SELECT E'it\'s'`, "DROP TABLE t"}},
+		{"a PostgreSQL standard string", "postgres", `SELECT 'C:\'; DROP TABLE t;`,
+			[]string{`SELECT 'C:\'`, "DROP TABLE t"}},
+		{"a word ending in E before a string", "postgres", `SELECT typE'a\'; DROP TABLE t;`,
+			[]string{`SELECT typE'a\'`, "DROP TABLE t"}},
+		{"a number before an escape string", "postgres", `SELECT 1E'a\'; COMMIT;'; DROP TABLE t;`,
+			[]string{`SELECT 1E'a\'; COMMIT;'`, "DROP TABLE t"}},
+		{"a number before E on SQLite", "sqlite", `SELECT 1E'a\'; DROP TABLE t;`, []string{`SELECT 1E'a\'`, "DROP TABLE t"}},
+		{"E on SQLite", "sqlite", `SELECT E'a\'; DROP TABLE t;`, []string{`SELECT E'a\'`, "DROP TABLE t"}},
+		{"E with no dialect", "", `SELECT E'a\'; DROP TABLE t;`, []string{`SELECT E'a\'`, "DROP TABLE t"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
