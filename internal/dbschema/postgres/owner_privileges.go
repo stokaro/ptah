@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"ptah.run/catalog"
+	"ptah.run/internal/revisiontable"
 )
 
 // ownerPrivilegeRelationKinds are the relation kinds whose owner has a default
@@ -87,6 +88,8 @@ func (r *Reader) readOwnerPrivilegesForSchema(ctx context.Context, schemaName st
 			JOIN pg_namespace n ON n.oid = c.relnamespace
 			WHERE n.nspname = $1
 			AND c.relkind IN ` + ownerPrivilegeRelationKinds + `
+			-- Not Ptah's own tables: see readObjectOwners for why.
+			AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
 			UNION ALL
 			SELECT 'SCHEMA', n.nspname, n.nspowner, n.nspacl, ` + schemaDefaultACL("n") + `
 			FROM pg_namespace n

@@ -4330,6 +4330,11 @@ var ownerKinds = map[string]string{
 // and the note above readRoles records what happened the last time ownership
 // leaked into the description: every inspect described the connecting
 // superuser, and a diff then planned CREATE ROLE for it (stokaro/ptah#1950).
+//
+// Ptah's own tables are left out, as the table read leaves them out. Their
+// owner is part of a saved plan's source fingerprint otherwise, and the first
+// run that creates one, a schema apply that failed included, makes every plan
+// saved before it stale.
 func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, error) {
 	schemas := r.schemasToRead()
 	placeholders := make([]string, 0, len(schemas))
@@ -4348,6 +4353,7 @@ func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, e
 		JOIN pg_roles owner ON owner.oid = c.relowner
 		WHERE n.nspname IN (` + list + `)
 		  AND c.relkind IN ('r', 'p', 'v', 'm', 'S')
+		  AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
 		UNION ALL
 		SELECT 'schema' AS kind, '' AS schema_name, n.nspname AS object_name,
 		       owner.rolname AS owner_name, owner.rolcanlogin AS owner_can_login
@@ -4709,6 +4715,10 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		FROM (` + pgcatalogview.TableGrants + `) g
 		WHERE table_schema = $1
 		AND grantee != 'postgres'
+		-- Not a grant on Ptah's own tables, which the table read leaves out. A
+		-- default privilege grants on each of them as it is created, and a
+		-- plan saved before one existed would read stale after.
+		AND table_name NOT IN (` + revisiontable.NativeSQLNames + `)
 		-- Not the owner's own entry. The source reports it whether or not
 		-- pg_class.relacl is null, and the first GRANT on a relation writes it
 		-- out. Describing it as a GRANT describes something no one wrote, and
@@ -4743,6 +4753,7 @@ func (r *Reader) readTableGrantsForSchema(ctx context.Context, schemaName string
 		JOIN pg_roles grantor ON grantor.oid = acl.grantor
 		WHERE n.nspname = $1
 		AND c.relkind IN ('r', 'v', 'f', 'p')
+		AND c.relname NOT IN (` + revisiontable.NativeSQLNames + `)
 		AND acl.privilege_type = 'MAINTAIN'
 		AND acl.grantee <> c.relowner
 		AND COALESCE(grantee.rolname, 'PUBLIC') != 'postgres'

@@ -29,7 +29,8 @@ const (
 )
 
 // keyMoveDefinitions reads every constraint of the public schema but NOT NULL and
-// those of the revision tables, as the server prints it, by table and name.
+// those of the revision tables and the schema apply log, as the server prints
+// it, by table and name.
 func keyMoveDefinitions(c *qt.C, target string) []string {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
@@ -37,7 +38,8 @@ func keyMoveDefinitions(c *qt.C, target string) []string {
 	defer dbschema.CloseAndWarn(conn)
 	var definitions string
 	c.Assert(conn.QueryRowContext(c.Context(), `SELECT string_agg(conname || ': ' || pg_get_constraintdef(oid), '|' ORDER BY conrelid::regclass::text, conname)
-FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND contype <> 'n' AND conrelid::regclass::text NOT LIKE 'schema_migrations%'`).Scan(&definitions), qt.IsNil)
+FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND contype <> 'n' AND conrelid::regclass::text NOT LIKE 'schema_migrations%'
+	AND conrelid::regclass::text <> 'ptah_schema_apply_log'`).Scan(&definitions), qt.IsNil)
 	return strings.Split(definitions, "|")
 }
 

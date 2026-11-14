@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,6 +45,9 @@ type runLogEngine struct {
 	// create one: the test works in the account's schema, under names of its
 	// own, and reads only the rows carrying its own run reference.
 	create, drop string
+	// databaseParameter is the query parameter the engine's address names its
+	// database in. Empty is an address whose path names it.
+	databaseParameter string
 	// ident is a table name as Ptah spells it, as a format with one %s.
 	ident string
 	// table creates a table, {t} standing for its name.
@@ -117,7 +121,8 @@ var (
 		create: "CREATE DATABASE [{name}]",
 		drop: "IF DB_ID('{name}') IS NOT NULL BEGIN ALTER DATABASE [{name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; " +
 			"DROP DATABASE [{name}] END",
-		ident: "[%s]", table: plainTable,
+		databaseParameter: "database",
+		ident:             "[%s]", table: plainTable,
 		releasedLog: `CREATE TABLE {log} (
     run_id NVARCHAR(64) NOT NULL,
     seq BIGINT NOT NULL,
@@ -199,6 +204,14 @@ func ownDatabase(c *qt.C, engine runLogEngine, address, name string) string {
 		c.Check(dropErr, qt.IsNil)
 		dbschema.CloseAndWarn(admin)
 	})
+	if engine.databaseParameter != "" {
+		parsed, err := url.Parse(address)
+		c.Assert(err, qt.IsNil)
+		query := parsed.Query()
+		query.Set(engine.databaseParameter, name)
+		parsed.RawQuery = query.Encode()
+		return parsed.String()
+	}
 	renamed, err := atlasurl.WithDatabaseName(address, name)
 	c.Assert(err, qt.IsNil)
 	return renamed
@@ -433,6 +446,68 @@ func (r *runLogTarget) readLogDocument(c *qt.C, revisions string) map[string]log
 // fileDigest is the digest of a plan file's bytes, as the run reads them.
 func fileDigest(contents []byte) string {
 	return digest.FromBytes(contents).String()
+}
+
+// retryAfterAFailedApply saves a plan, lets a failed run create the log, and
+// applies the saved plan: the retry is the same plan against the same schema,
+// so it applies.
+func (r *runLogTarget) retryAfterAFailedApply(c *qt.C) {
+	c.Helper()
+	notes, missing := r.name("notes"), r.name("missing")
+	r.dropAfterwards(c, notes)
+	log := r.quoted("ptah_schema_apply_log")
+	planPath, _, _ := r.savedPlan(c, r.createTable(notes))
+	failingPath, _, _ := r.savedPlan(c, "INSERT INTO "+missing+" (id) VALUES (1)")
+	c.Assert(r.tableExists(c, log), qt.IsFalse)
+	failed, _ := r.apply(c, "--plan", failingPath)
+	c.Assert(failed.ExitCode, qt.Equals, 2, qt.Commentf("%s", failed.Stderr))
+	c.Assert(r.tableExists(c, log), qt.IsTrue)
+
+	result, document := r.apply(c, "--plan", planPath)
+
+	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+	c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeApplied)
+	c.Assert(r.tableExists(c, notes), qt.IsTrue)
+}
+
+// newRole creates a role of the test's own on the engine's server and drops it
+// when the test ends. Call it before newRunLogTarget: the role is dropped after
+// the test's database, and every privilege it holds there goes with the
+// database, so nothing is left that depends on it.
+func newRole(c *qt.C, engine runLogEngine) string {
+	c.Helper()
+	admin, err := dbschema.ConnectToDatabase(c.Context(), dbtarget.URL(c, engine.engine))
+	c.Assert(err, qt.IsNil)
+	name := "ptah_rt_reader_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	_, err = admin.ExecContext(c.Context(), "CREATE ROLE "+name)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, dropErr := admin.ExecContext(context.Background(), "DROP ROLE "+name)
+		c.Check(dropErr, qt.IsNil)
+		dbschema.CloseAndWarn(admin)
+	})
+	return name
+}
+
+// drift runs `ptah schema drift` against the target with the schema given as
+// the desired one.
+func (r *runLogTarget) drift(c *qt.C, schema string) clirun.Result {
+	c.Helper()
+	dir := c.TempDir()
+	path := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(path, []byte(schema+";\n"), 0o600), qt.IsNil)
+	return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
+		"schema", "drift", "--db-url", r.url, "--schema-file", path, "--format", "json")
+}
+
+// security runs `ptah schema security --format json` against the target and
+// returns the report.
+func (r *runLogTarget) security(c *qt.C) string {
+	c.Helper()
+	result := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
+		"schema", "security", "--db-url", r.url, "--format", "json", "--fail-on", "none")
+	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
+	return result.Stdout
 }
 
 // inspect runs `ptah schema inspect --format sql` against the target.
