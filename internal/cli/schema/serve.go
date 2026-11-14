@@ -124,7 +124,7 @@ func runSchemaServe(cmd *cobra.Command, opts schemaServeOptions) error {
 	// The verb has no --exclude of its own, so the project's list is the whole
 	// selection: without it the page reports every object the project leaves
 	// to another tool as drift.
-	exclude, err := dbcli.EffectiveExclude(projectCfg, nil, runtime.Selections())
+	exclude, _, err := dbcli.EffectiveExclude(cmd, "", nil, projectCfg, runtime.Selections())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

@@ -287,7 +287,7 @@ Error: invalid boolean value "notabool" for PTAH_SKIP_CHECKS
 
 A typo in a CI environment file therefore cannot read as a bypass that silently
 was not one. See
-[Boolean environment variables](site/src/content/docs/reference/configuration.mdxx).
+[Boolean environment variables](site/src/content/docs/reference/configuration.mdx).
 
 It is an environment variable rather than a flag because Atlas registers no
 `--skip-checks` on `migrate apply` and `ptah-compat` does not add flags Atlas

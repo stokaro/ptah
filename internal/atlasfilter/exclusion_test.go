@@ -203,7 +203,7 @@ func TestReportUnmatched(t *testing.T) {
 			c := qt.New(t)
 			var out bytes.Buffer
 
-			atlasfilter.ReportUnmatched(&out, test.reports...)
+			atlasfilter.ReportUnmatched(&out, nil, test.reports...)
 
 			c.Assert(out.String(), qt.Equals, test.want)
 		})

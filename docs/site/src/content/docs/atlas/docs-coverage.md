@@ -281,9 +281,9 @@ executed.
 
 Cloud and registry data sources beyond the recognized lazy subset, variable
 `validation` blocks, other variable type constraints such as `object(...)`,
-Atlas check-level lint policy, custom lint rules, unsupported lint analyzer
-options, unsupported format blocks, unsupported diff policy fields, and remote
-directory behavior are not implemented.
+Atlas check-level lint policy, custom rules in Atlas `rule "hcl"` files,
+unsupported lint analyzer options, unsupported format blocks, unsupported diff
+policy fields, and remote directory behavior are not implemented.
 
 **Conformance status.** The committed companion reports do not yet measure
 dynamic env expansion. Main-repository parser, adapter, command, and live SQLite
@@ -380,13 +380,22 @@ writes Atlas-style migration files. It:
 
 **Atlas availability.** Mixed in current Atlas docs: feature page lists migration linting CLI as Pro while also listing a basic Open lint-rule set
 
-**Ptah documentation.** [CI](../../testing/ci/), [Integrity and safety](../../versioned/integrity-and-safety/), [Feature matrix](../feature-matrix/)
+**Ptah documentation.** [Lint migrations](../../versioned/lint/), [CI](../../testing/ci/), [Integrity and safety](../../versioned/integrity-and-safety/), [Feature matrix](../feature-matrix/)
 
-**Implementation status.** Partial. Both lint verbs run the whole rule registry, gated by dialect, and `ptah-compat migrate lint` reports in Atlas's format under the `atlas.hcl` `lint` policy. The `lint.naming` policy block drives the diagnostics and the exit code, and the run reports it as honored. What still keeps this section short of complete is the gap list below, which has not been re-measured since the capabilities in it moved.
+**Implementation status.** Partial. Both lint verbs run the whole rule registry, gated by dialect, and `ptah-compat migrate lint` reports in Atlas's format under the `atlas.hcl` `lint` policy. The `lint.naming` policy block drives the diagnostics and the exit code, and the run reports it as honored. The gaps listed below keep this section short of complete.
 
-Ptah ships native linting, SARIF, inline suppression, severity config, and `ptah-compat migrate lint`; `--dir-format` defaults to `atlas`, `--latest`, `--git-base`, `--git-dir`, and matching `atlas.hcl` defaults select the linted changeset, including Atlas repeatable keys `R` and `<number>R`; `--dev-url` infers lint dialect and treats directly connectable dev databases as scratch databases by cleaning and replaying migrations; `--format`, `format.migrate.lint`, and Atlas `lint { log = "…" }` render Atlas-style Go templates over `.Env`, `.Steps`, and `.Files`, and the no-template default reproduces measured Atlas wording, analyzer links, wrapping, and suggested-fix layout for mapped diagnostics while visibly labeling Ptah-only findings without fabricated Atlas links; native `ptah migrations lint` retains Ptah's fuller diagnostic prose; supported `atlas.hcl` analyzer policy maps severity for matching Ptah lint rule families.
+Ptah ships native linting, SARIF, inline suppression, severity config, and `ptah-compat migrate lint`. The compatibility verb:
 
-Atlas check-level policy, custom rules, force/allow-list analyzer options, Docker dev databases, web reports, and external migration-tool `--dir-format` execution remain gaps.
+- lints `atlas` directories by default, and `golang-migrate`, `goose`, `flyway`, `liquibase` and `dbmate` directories through `--dir-format`;
+- selects the linted changeset from `--latest`, `--git-base`, `--git-dir` and matching `atlas.hcl` defaults, including Atlas repeatable keys `R` and `<number>R`;
+- infers the lint dialect from `--dev-url` and treats a directly connectable dev database as a scratch database, cleaning it and replaying the migrations; a `docker://` dev URL replays them in a container the run starts and removes;
+- renders Atlas-style Go templates over `.Env`, `.Steps` and `.Files` from `--format`, `format.migrate.lint` and Atlas `lint { log = "…" }`. With no template, it reproduces measured Atlas wording, analyzer links, wrapping and suggested-fix layout for mapped diagnostics, and labels Ptah-only findings without fabricated Atlas links;
+- maps supported `atlas.hcl` analyzer policy onto the severity of matching Ptah lint rule families;
+- runs a one-label `rule` block with a `match` expression as a rule of the project's own.
+
+Native `ptah migrations lint` keeps Ptah's fuller diagnostic prose.
+
+Atlas check-level policy (`check` blocks), custom rules in Atlas `rule "hcl"` files, the `force` and `allow_table` analyzer options, and web reports remain gaps. `ptah-compat migrate lint` reports a `check` block, a `rule "hcl"` block, `force` and `allow_table` in `atlas.hcl` as ignored settings, and lints without them.
 
 **Conformance status.** Partially measured with static lint, explicit Atlas dir-format latest selection, Git changeset selection, config-driven latest selection, policy-driven severity, compatibility-wrapper env policy, live SQLite dev-database replay, and Atlas Go-template output coverage.
 

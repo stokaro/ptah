@@ -111,6 +111,13 @@ type GenerateMigrationOptions struct {
 	// selector that matched nothing on either side is reported as one warning
 	// line to Diagnostics.
 	Exclude []string
+	// ExcludeSources names, for a selector of Exclude, the source the caller
+	// read it from, so the warning about a selector that matched nothing
+	// points there: a flag written with its dashes, such as "--exclude", an
+	// environment variable, or a file. The warning names a selector it does
+	// not map as the --exclude flag's. A key is one selector, split on commas
+	// and trimmed as Exclude is read. Nil maps nothing; it changes no plan.
+	ExcludeSources map[string]string
 	// EnvironmentExtensions names extensions the database held before the
 	// current state was built and that the desired schema does not own: a dev
 	// database's own, which the replay that built the current state kept. The
@@ -458,7 +465,7 @@ func readExcludedPlanStates(
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}
-	atlasfilter.ReportUnmatched(opts.Diagnostics, desiredReport, observedReport)
+	atlasfilter.ReportUnmatched(opts.Diagnostics, opts.ExcludeSources, desiredReport, observedReport)
 	return desired, dbSchema, nil
 }
 

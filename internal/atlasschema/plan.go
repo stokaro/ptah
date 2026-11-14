@@ -189,6 +189,10 @@ type PlanFileOptions struct {
 	// variable scopes; see [ApplyOptions.ToSources].
 	ToSources []schemafile.Source
 	Exclude   []string
+	// ExcludeSources names where the run read each Exclude selector, for the
+	// diagnostic about one that matched nothing; see
+	// [atlasfilter.ExcludeSources]. Nil names every selector as --exclude's.
+	ExcludeSources atlasfilter.ExcludeSources
 	// Schemas restricts both comparison sides to the named schemas, as
 	// [ApplyOptions.Schemas] does, and outranks the connection URL's scope.
 	// The plan records the selection in [PlanFile.Schemas].
@@ -319,6 +323,7 @@ func PreparePlanFileReportingUndecided(
 		ToURLs:          opts.ToURLs,
 		ToSources:       opts.ToSources,
 		Exclude:         opts.Exclude,
+		ExcludeSources:  opts.ExcludeSources,
 		Schemas:         opts.Schemas,
 		Policy:          opts.Policy,
 		ProtectedTables: opts.ProtectedTables,

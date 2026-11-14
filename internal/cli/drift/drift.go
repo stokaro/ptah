@@ -254,7 +254,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return fail(cmd, opts.format, err)
 	}
-	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, runtime.Selections())
+	exclude, excludeSources, err := dbcli.EffectiveExclude(cmd, "exclude", opts.exclude, projectCfg, runtime.Selections())
 	if err != nil {
 		return fail(cmd, opts.format, err)
 	}
@@ -271,6 +271,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		Schemas:         schemas,
 		Include:         opts.include,
 		Exclude:         exclude,
+		ExcludeSources:  excludeSources,
 		Diagnostics:     cmd.ErrOrStderr(),
 		PlainHTTP:       opts.plainHTTP,
 		Vars:            declaredVars,
