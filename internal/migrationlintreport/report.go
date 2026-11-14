@@ -147,6 +147,10 @@ type Options struct {
 	Changed          ChangedOptions
 	// Compatibility selects native or command-surface-specific lint semantics.
 	Compatibility lint.CompatibilityProfile
+	// ChangeCount selects how the analysis counts each file's schema
+	// changes; see [lint.Options.ChangeCount]. The zero value counts the
+	// changes each statement makes.
+	ChangeCount lint.ChangeCount
 	// TransactionOwner says who opens the transaction each migration runs in
 	// when the tool that applies the directory runs it; see
 	// [lint.Options.TransactionOwner]. A caller that reads a directory in a
@@ -317,6 +321,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		// The directory reaches this layer in Ptah's or Atlas's layout, so
 		// only the caller knows which tool the files were written for.
 		TransactionOwner: opts.TransactionOwner,
+		ChangeCount:      opts.ChangeCount,
 	})
 	analysis, schemas := outcome.analysis, outcome.schemas
 	findings := analysis.Findings()
@@ -518,8 +523,8 @@ func effectiveDialect(opts Options, configDialect, devDialect string) (string, e
 // The replay does double duty. It has always validated that the SQL runs, and it
 // now also reads the schema state the versions the analysis asked about start
 // from, because some diagnostics cannot be reached from SQL text alone -- see
-// [lintext.BaselineColumn]. When it read anything, the analysis runs a second time
-// with those facts in hand.
+// [lintext.BaselineColumn]. When it read any version's state, one that held
+// nothing included, the analysis runs a second time with those facts in hand.
 //
 // The analysis stays first so error precedence does not move: a directory that
 // fails to analyze reports that, not a replay error it would also have hit. The
@@ -578,7 +583,7 @@ func lintDirectory(
 	schemas := capture.result()
 	learned, learnedServer := server.learned()
 	learnedDialect := deferred.dialectFrom(server)
-	if len(baseline.columns) == 0 && !learnedServer && learnedDialect == "" {
+	if len(baseline.read) == 0 && !learnedServer && learnedDialect == "" {
 		return lintOutcome{analysis, schemas, dialect}, nil
 	}
 	if learnedDialect != "" {
@@ -599,6 +604,7 @@ func lintDirectory(
 	lintOptions.BaselineIndexes = baseline.indexes
 	lintOptions.BaselineDependents = baseline.dependents
 	lintOptions.BaselineHypertables = baseline.hypertables
+	lintOptions.BaselineRead = baseline.read
 	// The second pass re-reads the same files with the baseline facts in hand;
 	// it does not replay, so the schema pair the replay captured is still the
 	// one that belongs to this analysis.
@@ -842,6 +848,10 @@ type baselineCollector struct {
 	dependents []lintext.BaselineDependent
 	// hypertables are the TimescaleDB hypertables of the same read.
 	hypertables []lintext.BaselineHypertable
+	// read lists every version whose state was read, a version whose state
+	// held nothing among them: the first version of a directory starts from
+	// the empty dev database, and that is an answer, not a missing read.
+	read []int64
 }
 
 func newBaselineCollector(versions []int64, devURL string, runtime baselineRuntime) *baselineCollector {
@@ -880,6 +890,7 @@ func (c *baselineCollector) observe(
 	c.indexes = append(c.indexes, state.indexes...)
 	c.dependents = append(c.dependents, state.dependents...)
 	c.hypertables = append(c.hypertables, state.hypertables...)
+	c.read = append(c.read, version)
 	return nil
 }
 

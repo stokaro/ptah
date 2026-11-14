@@ -1,6 +1,7 @@
 package lintkit_test
 
 import (
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -9,9 +10,10 @@ import (
 	"ptah.run/internal/lintkit"
 )
 
-// states is one baseline over two versions: version 1 has public.users and
+// states is one baseline over three versions: version 1 has public.users and
 // a users table in another schema; version 2 has users with no schema named,
-// beside rows no lookup can use.
+// beside rows no lookup can use; version 4 was read and holds nothing.
+// Version 3 was never read.
 func states() map[int64]lintkit.State {
 	return lintkit.NewStates(lintext.Baseline{
 		Columns: []lintext.BaselineColumn{
@@ -32,7 +34,7 @@ func states() map[int64]lintkit.State {
 			{Version: 1, Schema: "public", Table: "users", Name: ""},
 		},
 		Hypertables: []lintext.BaselineHypertable{{Version: 1, Schema: "public", Table: "users"}},
-	})
+	}, []int64{1, 4})
 }
 
 // A qualified reference resolves; a bare name two schemas carry resolves to
@@ -69,8 +71,10 @@ func TestState_TableLookups(t *testing.T) {
 	c := qt.New(t)
 	state := states()[1]
 
-	c.Assert(state.Empty(), qt.IsFalse)
-	c.Assert(states()[3].Empty(), qt.IsTrue)
+	c.Assert(state.Unread(), qt.IsFalse)
+	c.Assert(states()[2].Unread(), qt.IsFalse)
+	c.Assert(states()[3].Unread(), qt.IsTrue)
+	c.Assert(states()[4].Unread(), qt.IsFalse)
 	c.Assert(state.TableColumns("PUBLIC.USERS"), qt.HasLen, 2)
 	c.Assert(state.TableColumns("USERS"), qt.IsNil)
 	c.Assert(state.Hypertable("PUBLIC.USERS"), qt.IsTrue)
@@ -98,7 +102,7 @@ func TestState_LacksTable(t *testing.T) {
 	// it holds.
 	dotted := lintkit.NewStates(lintext.Baseline{
 		Columns: []lintext.BaselineColumn{{Version: 1, Table: "other.x", Name: "id"}},
-	})[1]
+	}, nil)[1]
 	for _, test := range []struct {
 		name  string
 		state lintkit.State
@@ -115,10 +119,84 @@ func TestState_LacksTable(t *testing.T) {
 		{"qualified, against no schema", states()[2], "PUBLIC.MISSING", false},
 		{"qualified, against no schema and a dotted table name", dotted, "OTHER.MISSING", false},
 		{"a version never read", states()[3], "MISSING", false},
+		{"absent, bare, from a state read empty", states()[4], "MISSING", true},
+		{"qualified, from a state read empty", states()[4], "PUBLIC.MISSING", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(test.state.LacksTable(test.table), qt.Equals, test.want)
+		})
+	}
+}
+
+// An index is placed by its own name, in any table, the way LacksTable places
+// a table: present under that name anywhere is not absent, and a state that
+// cannot say answers false.
+func TestState_LacksIndex(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		state lintkit.State
+		index string
+		want  bool
+	}{
+		{"absent, bare", states()[1], "USERS_NAME_IDX", true},
+		{"absent, qualified by a held schema", states()[1], "PUBLIC.USERS_NAME_IDX", true},
+		{"present, bare", states()[1], "USERS_PKEY", false},
+		{"present, qualified", states()[1], "PUBLIC.USERS_PKEY", false},
+		{"present in a schema the reference does not name", states()[1], "AUDIT.USERS_PKEY", true},
+		{"a schema the state does not hold", states()[1], "OTHER.USERS_NAME_IDX", false},
+		{"no reference", states()[1], "", false},
+		{"absent, bare, against no schema", states()[2], "USERS_NAME_IDX", true},
+		{"qualified, against no schema", states()[2], "PUBLIC.USERS_NAME_IDX", false},
+		{"a version never read", states()[3], "USERS_NAME_IDX", false},
+		{"absent, bare, from a state read empty", states()[4], "USERS_NAME_IDX", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.state.LacksIndex(test.index), qt.Equals, test.want)
+		})
+	}
+}
+
+// A state is read when the caller says so or when it has rows, and only then;
+// a version neither names has the zero state.
+func TestNewStates_Read(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		baseline lintext.Baseline
+		read     []int64
+		version  int64
+		unread   bool
+	}{
+		{"named as read, no rows", lintext.Baseline{}, []int64{2}, 2, false},
+		{"rows, not named", lintext.Baseline{Columns: []lintext.BaselineColumn{{Version: 2, Table: "t", Name: "id"}}}, nil, 2, false},
+		{"only an index row", lintext.Baseline{Indexes: []lintext.BaselineIndex{{Version: 2, Table: "t", Name: "i"}}}, nil, 2, false},
+		{"another version named", lintext.Baseline{}, []int64{1}, 2, true},
+		{"nothing at all", lintext.Baseline{}, nil, 2, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(lintkit.NewStates(test.baseline, test.read)[test.version].Unread(), qt.Equals, test.unread)
+		})
+	}
+}
+
+// A state names schemas when it was read and a row names one. Version 1 does;
+// version 2 was read from one schema; version 4 was read and holds nothing;
+// version 3 was never read.
+func TestState_NamesSchemas(t *testing.T) {
+	for _, test := range []struct {
+		version int64
+		want    bool
+	}{
+		{version: 1, want: true},
+		{version: 2, want: false},
+		{version: 3, want: false},
+		{version: 4, want: false},
+	} {
+		t.Run(fmt.Sprintf("version %d", test.version), func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(states()[test.version].NamesSchemas(), qt.Equals, test.want)
 		})
 	}
 }

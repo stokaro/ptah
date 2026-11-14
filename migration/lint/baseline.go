@@ -20,13 +20,17 @@ import (
 // [Rule.BaselineSubject], and both this list and the rule's own check go
 // through that one predicate.
 //
-// A file no enabled rule asks about is not listed, so a directory with nothing
-// to resolve costs no round trip.
+// The change count is the one asker that is not a rule: a [ChangeCount] that
+// reads the starting state asks for the version of each statement whose change
+// that state decides ([countReadsStartingState]).
+//
+// A file nothing asks about is not listed, so a directory with nothing to
+// resolve costs no round trip.
 func baselineVersions(files []File, opts Options, rules []Rule) []int64 {
 	var versions []int64
 	for i := range files {
 		file := &files[i]
-		if !baselineRequested(file, opts, rules) {
+		if !baselineRequested(file, opts, rules) && !countReadsStartingState(file, opts) {
 			continue
 		}
 		versions = append(versions, file.Version)
@@ -106,7 +110,7 @@ func unmetInputs(files []File, opts Options, rules []Rule) []UnmetInput {
 func ruleInputUnmet(rule Rule, file *File, opts Options) bool {
 	switch rule.Input {
 	case InputBaselineSchema, InputBaselineRefinement:
-		return file.IsUp && file.baseline.Empty() && ruleWantsBaseline(rule, file, opts)
+		return file.IsUp && file.baseline.Unread() && ruleWantsBaseline(rule, file, opts)
 	case InputRoutineBody:
 		return ruleWantsRoutineBody(rule, file, opts)
 	case InputStatementText:

@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/ptahdirective"
+	migrationlint "ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -86,6 +87,20 @@ func (p Policy) IgnoreUnknownHCLNames() bool {
 // statement fails on a NULL row there as it does on the pinned binary.
 func (p Policy) FillsNullRowsWithDefault() bool {
 	return !p.strictCE
+}
+
+// LintChangeCount is how `migrate lint` counts the schema changes its summary
+// and its `.TotalChanges` report.
+//
+// Both policies count the way the community binary does, a large first file
+// included. Full compatibility counts every kind of object Ptah models, a view
+// or a trigger among them, where strict CE mode counts only the kinds Atlas CE
+// v1.3.0 reads off the dev database, so the number is the pinned binary's.
+func (p Policy) LintChangeCount() migrationlint.ChangeCount {
+	if p.strictCE {
+		return migrationlint.ChangeCountAtlasCommunity
+	}
+	return migrationlint.ChangeCountAtlas
 }
 
 // ValidateDesiredSchema refuses desired-schema object kinds that Atlas CE

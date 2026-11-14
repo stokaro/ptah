@@ -250,7 +250,7 @@ func runAtlasMigrateLint(
 	// dir is the directory as the report names it in `.Env.Dir`. The analysis
 	// reads source.Display, the path the directory was captured at.
 	dir := atlasMigrateLintEnvDir(opts.dir, source.Display)
-	lintOptions := atlasMigrateLintReportOptions(cmd, opts, format, devServerDisposable, formatOutput)
+	lintOptions := atlasMigrateLintReportOptions(cmd, opts, format, policy, devServerDisposable, formatOutput)
 	// The changeset selection is required, and requireAtlasMigrateLintScope
 	// above is the one place that asks. Asking again here, through
 	// migrationlintreport.SelectorConfigured, duplicates the requirement
@@ -414,6 +414,7 @@ func atlasMigrateLintReportOptions(
 	cmd *cobra.Command,
 	opts atlasMigrateLintOptions,
 	format atlasmigrateimport.Format,
+	policy atlascompatpolicy.Policy,
 	devServerDisposable, captureSchema bool,
 ) migrationlintreport.Options {
 	return migrationlintreport.Options{
@@ -425,6 +426,7 @@ func atlasMigrateLintReportOptions(
 		FailOn:        migrationlintreport.FailOnError,
 		Latest:        opts.latest,
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		ChangeCount:   policy.LintChangeCount(),
 		// The transaction rules judge a file by the tool its layout is for.
 		TransactionOwner: format.TransactionOwner(),
 		// What the operator declared about the server DevURL names; see

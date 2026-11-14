@@ -107,6 +107,16 @@ fill out of both halves. Strict mode also leaves out the `setval` that moves a n
 identity's or `SERIAL` column's sequence past the rows the table holds, so the next
 insert can collide with one, as it does there.
 
+## Lint summaries strict mode counts as Atlas CE does
+
+The `migrate lint` summary and its `.TotalChanges` count schema changes. The
+default surface counts a change to a view, a trigger, a routine, a sequence, a
+policy, a privilege or row-level security as one, because Ptah models each of
+them. Atlas CE reads none of them off the dev database and counts none, so
+strict mode counts only tables with their columns, constraints, indexes and
+comments, schemas, and enum types. See
+[The schema-change count](../migrate-commands/#the-schema-change-count).
+
 ## Capabilities retained deliberately
 
 Strict mode preserves safety and correctness changes where copying CE would

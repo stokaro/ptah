@@ -273,6 +273,11 @@ type Options struct {
 	// Compatibility selects command-surface-specific semantics. The zero value
 	// is native Ptah behavior.
 	Compatibility CompatibilityProfile
+	// ChangeCount selects how [File.Changes] counts the schema changes of
+	// each up file. The zero value counts the changes each statement makes;
+	// see [ChangeCount] for the counts that match the community Atlas
+	// binary's summary.
+	ChangeCount ChangeCount
 	// Dialect gates dialect-specific rules — "postgres" enables PG rules,
 	// "mysql"/"mariadb" enable MY rules, "ydb" enables YD rules — and selects
 	// the dialect's lexing behavior (comment forms, string escape rules,
@@ -370,6 +375,15 @@ type Options struct {
 	// for the rule whose remedy the engine refuses on a hypertable. See
 	// [lintext.BaselineHypertable].
 	BaselineHypertables []lintext.BaselineHypertable
+
+	// BaselineRead lists the versions whose starting state the caller read,
+	// normally every version [Analysis.BaselineVersions] asked for. A listed
+	// version with no row in the Baseline fields starts from an empty schema,
+	// which is what a directory's first version meets on a clean dev
+	// database. A version with no row that is not listed is a state nobody
+	// read, about which the rules assume nothing. A version with rows was read
+	// whether or not it is listed.
+	BaselineRead []int64
 
 	// Naming is the naming convention the NM rules enforce, normally the
 	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block
