@@ -114,6 +114,19 @@ function main() {
     }
   }
 
+  const compat = join(output, 'ptah-compat');
+  mkdirSync(compat);
+  mkdirSync(join(compat, 'bin'));
+  const compatPackage = JSON.parse(readFileSync(join(source, 'compat', 'package.json'), 'utf8'));
+  compatPackage.version = version;
+  delete compatPackage.private;
+  compatPackage.dependencies = { '@stokaro/ptah': version };
+  writeJSON(join(compat, 'package.json'), compatPackage);
+  copyFileSync(join(source, 'compat', 'README.md'), join(compat, 'README.md'));
+  copyFileSync(join(repository, 'LICENSE'), join(compat, 'LICENSE'));
+  copyFileSync(join(source, 'compat', 'bin', 'ptah-compat.mjs'), join(compat, 'bin', 'ptah-compat.mjs'));
+  chmodSync(join(compat, 'bin', 'ptah-compat.mjs'), 0o755);
+
   for (const platform of archives) {
     const name = `ptah-${platform.os}-${platform.cpu}`;
     const directory = join(output, name);
@@ -136,7 +149,7 @@ function main() {
       extractBinary(platform.path, platform.format, command, join(binDirectory, `${command}${platform.format === 'zip' ? '.exe' : ''}`));
     }
   }
-  console.log(`Staged @stokaro/ptah@${version} and ${platforms.length} platform packages in ${output}`);
+  console.log(`Staged @stokaro/ptah@${version}, @stokaro/ptah-compat@${version}, and ${platforms.length} platform packages in ${output}`);
 }
 
 main();
