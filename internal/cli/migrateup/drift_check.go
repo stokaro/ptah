@@ -80,7 +80,9 @@ func prepareDriftCheck(
 	if err != nil {
 		return nil, func() {}, err
 	}
-	opts.driftExclude, err = dbcli.EffectiveExclude(projectCfg, opts.driftExclude, runtime.Selections())
+	// The drift check writes no warning for a selector that matched nothing,
+	// so where each one came from is not needed.
+	opts.driftExclude, _, err = dbcli.EffectiveExclude(nil, driftExcludeFlag, opts.driftExclude, projectCfg, runtime.Selections())
 	if err != nil {
 		return nil, func() {}, err
 	}

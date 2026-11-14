@@ -58,10 +58,14 @@ type InspectOptions struct {
 	// with the same Atlas-style selectors [atlasfilter.Scope] applies to
 	// schema apply and diff. Empty keeps every inspected resource, and the
 	// exclusion-only path is then byte-for-byte unchanged.
-	Include     []string
-	Exclude     []string
-	Format      string
-	Diagnostics io.Writer
+	Include []string
+	Exclude []string
+	// ExcludeSources names where the run read each Exclude selector, for the
+	// diagnostic about one that matched nothing; see
+	// [atlasfilter.ExcludeSources]. Nil names every selector as --exclude's.
+	ExcludeSources atlasfilter.ExcludeSources
+	Format         string
+	Diagnostics    io.Writer
 	// NativeJSON preserves the scoped desired model for the named json format.
 	// It uses the selected runtime codecs for objects, facets, and coverage.
 	NativeJSON bool
@@ -245,7 +249,7 @@ func renderInspectSchema(
 	}
 	// Inspection looks at exactly one state, so its own report is already the
 	// across-states answer.
-	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(excludeReport))
+	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(excludeReport), opts.ExcludeSources)
 	// Reported from the SCOPED schema, which is the document the operator
 	// receives. Emitting it before the projection let the note describe a
 	// rendering that selection had already changed -- `--include users` can

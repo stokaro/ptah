@@ -11,6 +11,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -45,6 +46,7 @@ type schemaPlanOptions struct {
 	devURL          string
 	schemas         string
 	exclude         []string
+	excludeSources  atlasfilter.ExcludeSources
 	protectedTables []string
 	name            string
 	output          string
@@ -246,7 +248,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 	}
 	// The plan file records the result, so `schema apply --plan` runs under
 	// the selection the plan was computed with.
-	opts.exclude, err = dbcli.EffectiveExclude(projectCfg, opts.exclude, owners.Selections())
+	opts.exclude, opts.excludeSources, err = dbcli.EffectiveExclude(cmd, planExcludeFlag, opts.exclude, projectCfg, owners.Selections())
 	if err != nil {
 		return atlasschema.PlanEvidence{}, err
 	}
@@ -297,6 +299,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		DevURL:          opts.devURL,
 		Desired:         desired,
 		Exclude:         opts.exclude,
+		ExcludeSources:  opts.excludeSources,
 		Schemas:         dbcli.ParseSchemas(opts.schemas),
 		Policy:          policy,
 		ProtectedTables: opts.protectedTables,

@@ -65,6 +65,10 @@ type DiffOptions struct {
 	ToURLs   []string
 	DevURL   string
 	Exclude  []string
+	// ExcludeSources names where the run read each Exclude selector, for the
+	// diagnostic about one that matched nothing; see
+	// [atlasfilter.ExcludeSources]. Nil names every selector as --exclude's.
+	ExcludeSources atlasfilter.ExcludeSources
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -508,7 +512,7 @@ func diffResolvedStates(
 	// Same split as the empty --include selection above: diff previews rather
 	// than executes, so it keeps its exit status and says on stderr that a
 	// selector protected nothing.
-	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(fromReport, toReport))
+	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(fromReport, toReport), opts.ExcludeSources)
 
 	// Offline comparisons have no live target metadata, so this adapter applies
 	// the target validation that the connected comparison performs.

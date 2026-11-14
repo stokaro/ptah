@@ -293,6 +293,17 @@ run_node_selftest_case check-page-health.mjs \
 	"the sidebar-to-page rule short-circuited inside analyze()" \
 	"perl -0pi -e 's/if \\(!liveRoutes\\.has\\(entry\\.route\\)\\) \\{/if (false) {/' docs/site/scripts/check-page-health.mjs"
 
+# A repository document is read on GitHub, where a relative link names a file
+# of the checkout. The route half of the gate never reads one, so the fixture
+# breaks a link in docs/*.md rather than on a page.
+run_node_gate_case check-links.mjs \
+	"a repository document linking a file that does not exist" \
+	"printf '\n[Gone](site/src/content/docs/no-such-page.md)\n' >>docs/testing.md"
+
+run_node_selftest_case check-links.mjs \
+	"the repository half accepting a link whose target git does not list" \
+	"perl -0pi -e 's/if \\(targets\\.has\\(target\\)\\) continue;/continue;/' docs/site/scripts/check-links.mjs"
+
 # Theme checks must reject the wrong SVG even when every action links to it.
 run_node_selftest_case check-journey-themes.mjs \
 	"accepting a diagram from the wrong theme" \

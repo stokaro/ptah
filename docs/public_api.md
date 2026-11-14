@@ -4052,7 +4052,9 @@ without that callback, incomplete evidence returns `ErrIncompleteComparison`.
 plan, one line each. With `Schemas` empty and a URL that pins no `search_path`
 on an engine that selects schemas with one, such as PostgreSQL, one line names
 each schema the desired schema declares nothing in and whose tables the plan
-drops. A nil writer discards them.
+drops. A selector of `Exclude` that matched nothing on either side is one line
+too, and it names the source `ExcludeSources` records for the selector, or the
+`--exclude` flag where none is recorded. A nil writer discards them.
 
 Checkpoint generation compares the captured schema with an explicitly empty
 baseline. That baseline records known absence for the selected runtime's observed

@@ -38,6 +38,9 @@ const (
 	yamlExcludeWithoutKey = "migration:\n  connect_timeout: 10s\n"
 	// yamlExcludeBoth leaves both tables alone.
 	yamlExcludeBoth = "exclude: [external_audit, reporting_cache]\n"
+	// yamlExcludeUnmatched leaves both tables alone and lists a selector that
+	// names nothing on either side.
+	yamlExcludeUnmatched = "exclude: [external_audit, reporting_cache, nosuch_table]\n"
 	// yamlExcludeAudit leaves only the table another tool owns alone.
 	yamlExcludeAudit = "exclude: [external_audit]\n"
 	// yamlExcludeEnvs carries a top-level list and an env whose own list
@@ -236,6 +239,24 @@ func TestPtahYAMLExcludeMigrationsGenerate_HappyPathE2E(t *testing.T) {
 	}
 }
 
+// TestPtahYAMLExcludeMigrationsGenerateNamesTheFile_HappyPathE2E lists a
+// selector that names nothing in the project file and generates a migration:
+// the warning names the file, and the migration is written all the same.
+func TestPtahYAMLExcludeMigrationsGenerateNamesTheFile_HappyPathE2E(t *testing.T) {
+	c := qt.New(t)
+	fixture := writeYAMLExcludeFixture(c, yamlExcludeUnmatched)
+
+	result := fixture.run(c, nil,
+		"migrations", "generate", "--db-url", fixture.targetURL, "--schema-file", "schema.sql",
+		"--migrations-dir", fixture.migrationsDir, "--name", "second",
+	)
+
+	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
+	c.Assert(result.Stderr, qt.Contains, `Warning: the exclude selection from ptah.yaml matched no objects: "nosuch_table".`)
+	up, _ := generatedMigration(c, fixture.migrationsDir)
+	c.Assert(up, qt.Contains, `ADD COLUMN "name" TEXT`)
+}
+
 // TestPtahYAMLExcludeComparisonVerbs_HappyPathE2E runs each native verb that
 // compares the fixture, once without the key and once with it. Each run
 // without the key is the control for the run after it: it shows the verb
@@ -250,24 +271,29 @@ func TestPtahYAMLExcludeComparisonVerbs_HappyPathE2E(t *testing.T) {
 		kept     string
 		reported []string
 		withheld []string
+		// unmatched is what the warning lists for yamlExcludeUnmatched: the
+		// selectors that name nothing on either side the verb reads.
+		unmatched string
 	}{
 		{
 			name: "schema diff",
 			args: func(f yamlExcludeFixture) []string {
 				return []string{"schema", "diff", "--from", f.targetURL, "--to", "file://schema.sql", "--dev-url", "sqlite://dev?mode=memory"}
 			},
-			kept:     `ADD COLUMN "name" TEXT`,
-			reported: []string{`CREATE TABLE "reporting_cache"`, `DROP TABLE "external_audit"`},
-			withheld: []string{"CREATE TABLE", "DROP TABLE"},
+			kept:      `ADD COLUMN "name" TEXT`,
+			reported:  []string{`CREATE TABLE "reporting_cache"`, `DROP TABLE "external_audit"`},
+			withheld:  []string{"CREATE TABLE", "DROP TABLE"},
+			unmatched: `"nosuch_table"`,
 		},
 		{
 			name: "schema plan",
 			args: func(f yamlExcludeFixture) []string {
 				return []string{"schema", "plan", "--db-url", f.targetURL, "--schema-file", "schema.sql", "--dry-run"}
 			},
-			kept:     `ADD COLUMN \"name\" TEXT`,
-			reported: []string{`CREATE TABLE \"reporting_cache\"`, `DROP TABLE \"external_audit\"`},
-			withheld: []string{"CREATE TABLE", "DROP TABLE"},
+			kept:      `ADD COLUMN \"name\" TEXT`,
+			reported:  []string{`CREATE TABLE \"reporting_cache\"`, `DROP TABLE \"external_audit\"`},
+			withheld:  []string{"CREATE TABLE", "DROP TABLE"},
+			unmatched: `"nosuch_table"`,
 		},
 		{
 			name: "schema inspect",
@@ -277,15 +303,19 @@ func TestPtahYAMLExcludeComparisonVerbs_HappyPathE2E(t *testing.T) {
 			kept:     `table "widgets"`,
 			reported: []string{`table "external_audit"`},
 			withheld: []string{"external_audit"},
+			// Inspect reads the database alone, where reporting_cache does not
+			// exist either.
+			unmatched: `"reporting_cache", "nosuch_table"`,
 		},
 		{
 			name: "schema compare",
 			args: func(f yamlExcludeFixture) []string {
 				return []string{"schema", "compare", "--db-url", f.targetURL, "--schema-file", "schema.sql"}
 			},
-			kept:     `ADD COLUMN "name" TEXT`,
-			reported: []string{`CREATE TABLE "reporting_cache"`, `DROP TABLE "external_audit"`},
-			withheld: []string{"reporting_cache", "external_audit"},
+			kept:      `ADD COLUMN "name" TEXT`,
+			reported:  []string{`CREATE TABLE "reporting_cache"`, `DROP TABLE "external_audit"`},
+			withheld:  []string{"reporting_cache", "external_audit"},
+			unmatched: `"nosuch_table"`,
 		},
 		{
 			name: "schema drift",
@@ -293,19 +323,21 @@ func TestPtahYAMLExcludeComparisonVerbs_HappyPathE2E(t *testing.T) {
 				return []string{"schema", "drift", "--db-url", f.targetURL, "--schema-file", "schema.sql", "--format", "json"}
 			},
 			// The column the target lacks is drift either way.
-			exitCode: 1,
-			kept:     `"columns_added"`,
-			reported: []string{`"reporting_cache"`, `"external_audit"`},
-			withheld: []string{"reporting_cache", "external_audit"},
+			exitCode:  1,
+			kept:      `"columns_added"`,
+			reported:  []string{`"reporting_cache"`, `"external_audit"`},
+			withheld:  []string{"reporting_cache", "external_audit"},
+			unmatched: `"nosuch_table"`,
 		},
 		{
 			name: "migrations plan",
 			args: func(f yamlExcludeFixture) []string {
 				return []string{"migrations", "plan", "--db-url", f.targetURL, "--schema-file", "schema.sql"}
 			},
-			kept:     `ADD COLUMN "name" TEXT`,
-			reported: []string{`CREATE TABLE "reporting_cache"`, `DROP TABLE "external_audit"`},
-			withheld: []string{"reporting_cache", "external_audit"},
+			kept:      `ADD COLUMN "name" TEXT`,
+			reported:  []string{`CREATE TABLE "reporting_cache"`, `DROP TABLE "external_audit"`},
+			withheld:  []string{"reporting_cache", "external_audit"},
+			unmatched: `"nosuch_table"`,
 		},
 	}
 
@@ -334,6 +366,19 @@ func TestPtahYAMLExcludeComparisonVerbs_HappyPathE2E(t *testing.T) {
 				for _, fragment := range verb.withheld {
 					c.Assert(result.Stdout, qt.Not(qt.Contains), fragment)
 				}
+			})
+			// Each verb hands the list's sources to its own comparison, so a
+			// call site that dropped them would name the file's selector as
+			// the flag's on that verb alone.
+			t.Run("a selector the key lists that matches nothing", func(t *testing.T) {
+				c := qt.New(t)
+				fixture := writeYAMLExcludeFixture(c, yamlExcludeUnmatched)
+
+				result := fixture.run(c, nil, verb.args(fixture)...)
+
+				c.Assert(result.ExitCode, qt.Equals, verb.exitCode, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
+				c.Assert(result.Stderr, qt.Contains, "Warning: the exclude selection from ptah.yaml matched no objects: "+verb.unmatched+".\n")
+				c.Assert(result.Stderr, qt.Not(qt.Contains), "--exclude selection")
 			})
 		})
 	}
@@ -492,7 +537,7 @@ func TestPtahYAMLExcludeSchemaApply_FailurePathE2E(t *testing.T) {
 		result := fixture.run(c, nil, "schema", "apply", "--db-url", fixture.targetURL, "--schema-file", "schema.sql", "--auto-approve")
 
 		c.Assert(result.ExitCode, qt.Equals, 2)
-		c.Assert(result.Stderr, qt.Contains, `the --exclude selection matched no objects: "nosuch_table"`)
+		c.Assert(result.Stderr, qt.Contains, `the exclude selection from ptah.yaml matched no objects: "nosuch_table"`)
 		c.Assert(sqliteTableNames(c, fixture.targetURL), qt.DeepEquals, []string{"external_audit", "widgets"})
 	})
 }
@@ -508,10 +553,54 @@ func TestPtahYAMLExcludeSchemaApplyAllowsAnUnmatchedSelector_HappyPathE2E(t *tes
 		"schema", "apply", "--db-url", fixture.targetURL, "--schema-file", "schema.sql", "--auto-approve")
 
 	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
-	c.Assert(result.Stderr, qt.Contains, `the --exclude selection matched no objects: "nosuch_table"`)
+	c.Assert(result.Stderr, qt.Contains, `the exclude selection from ptah.yaml matched no objects: "nosuch_table"`)
 	tables := sqliteTableNames(c, fixture.targetURL)
 	c.Assert(tables, qt.Contains, "external_audit")
 	c.Assert(tables, qt.Contains, "reporting_cache")
+}
+
+// TestPtahYAMLExcludeUnmatchedNamesItsSource_HappyPathE2E plans with a
+// project list, a flag and a PTAH_* variable that each name an object that
+// does not exist, and reads the warning: each selector is named by the place
+// the operator wrote it, never by an --exclude the command line did not carry.
+func TestPtahYAMLExcludeUnmatchedNamesItsSource_HappyPathE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		env  []string
+		args []string
+		want string
+	}{
+		{
+			name: "the project file",
+			want: `Warning: the exclude selection from ptah.yaml matched no objects: "nosuch_table".` + "\n",
+		},
+		{
+			name: "the project file as --config spells it, and the flag",
+			args: []string{"--config", "./ptah.yaml", "--exclude", "nosuch_flag"},
+			want: `Warning: the exclude selection from ./ptah.yaml matched no objects: "nosuch_table"; ` +
+				`the --exclude selection matched no objects: "nosuch_flag".` + "\n",
+		},
+		{
+			name: "the project file and the variable that set the flag",
+			env:  []string{"PTAH_EXCLUDE=nosuch_env"},
+			want: `Warning: the exclude selection from ptah.yaml matched no objects: "nosuch_table"; ` +
+				`the exclude selection from PTAH_EXCLUDE matched no objects: "nosuch_env".` + "\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := writeYAMLExcludeFixture(c, "exclude: [nosuch_table, external_audit]\n")
+
+			result := fixture.run(c, test.env, slices.Concat(
+				[]string{"migrations", "plan", "--db-url", fixture.targetURL, "--schema-file", "schema.sql"}, test.args,
+			)...)
+
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
+			c.Assert(result.Stderr, qt.Equals, test.want)
+		})
+	}
 }
 
 // writeYAMLExcludeHistory writes a directory whose first migration creates

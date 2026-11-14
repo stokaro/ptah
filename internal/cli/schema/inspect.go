@@ -187,7 +187,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, runtime.Selections())
+	exclude, excludeSources, err := dbcli.EffectiveExclude(cmd, inspectExcludeFlag, opts.exclude, projectCfg, runtime.Selections())
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -199,6 +199,7 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		Schemas:             dbcli.ParseSchemas(opts.schemas),
 		Include:             opts.include,
 		Exclude:             exclude,
+		ExcludeSources:      excludeSources,
 		Format:              locals.format,
 		NativeJSON:          true,
 		Diagnostics:         cmd.ErrOrStderr(),
@@ -331,7 +332,7 @@ func materializeOCISchemaFiles(
 	if _, err := resolveInspectLocals(cmd, opts, projectCfg); err != nil {
 		return nil, nil, err
 	}
-	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, owners.Selections())
+	exclude, _, err := dbcli.EffectiveExclude(cmd, inspectExcludeFlag, opts.exclude, projectCfg, owners.Selections())
 	if err != nil {
 		return nil, nil, err
 	}

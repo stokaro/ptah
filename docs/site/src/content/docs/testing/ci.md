@@ -117,7 +117,7 @@ Generating migration from ./models to database sqlite://app.db
 
 Safety classification:
   #  severity      subject                  reason
-  1  safe         *ast.CreateTableNode     does not remove data or tighten constraints
+  1  safe         users                    does not remove data or tighten constraints
 === MIGRATION SQL ===
 
 -- Migration generated from schema differences
@@ -147,6 +147,7 @@ Generated 1 migration statements.
     {
       "index": 1,
       "node_type": "*ast.CreateTableNode",
+      "subject": "users",
       "statement": "CREATE TABLE \"users\" (\n  \"id\" INTEGER PRIMARY KEY,\n  \"email\" TEXT NOT NULL\n)",
       "severity": "safe",
       "reason": "does not remove data or tighten constraints"

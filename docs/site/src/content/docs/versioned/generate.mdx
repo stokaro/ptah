@@ -104,7 +104,7 @@ Expected output on standard output:
 ```text
 Safety classification:
   #  severity      subject                  reason
-  1  safe         *ast.CreateTableNode     does not remove data or tighten constraints
+  1  safe         users                    does not remove data or tighten constraints
 === MIGRATION SQL ===
 
 CREATE TABLE "users" (
@@ -183,8 +183,10 @@ such as `admin_read[type=policy]`, keeps the switch in the comparison.
 
 A selector that matches nothing on either side prints one warning on standard
 error, such as `Warning: the --exclude selection matched no objects:
-"audit_log".`, and the run goes on. A selector with a syntax error, such as an
-unclosed `[`, is a usage error, exit `2`, before Ptah connects to a database. A
+"audit_log".`, and the run goes on. The warning names where the selector came
+from: `--exclude`, the `PTAH_EXCLUDE` variable, or the project file that lists
+it. A selector with a syntax error, such as an unclosed `[`, is a usage error,
+exit `2`, before Ptah connects to a database. A
 selector with more parts than the connection's scope allows, such as
 `main.widgets.name` on SQLite, exits `2` once the connection says which scope
 it reads; with `--replay` that is after the dev database was reset. Neither
@@ -470,9 +472,9 @@ data risk:
 ```text
 Safety classification:
   #  severity      subject                  reason
-  2  safe         *ast.CreateTableNode     does not remove data or tighten constraints
+  2  safe         new_users                does not remove data or tighten constraints
   4  destructive  users                    DROP TABLE removes the table and all rows
-  5  warning      *ast.RawSQLNode          rename can break deployed readers and writers
+  5  warning      new_users                rename can break deployed readers and writers
 ```
 
 A change that narrows a column is classified the same way, because a value that
