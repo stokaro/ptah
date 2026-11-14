@@ -2662,9 +2662,9 @@ Ptah-native migrations instead; see
 
 - Top level: `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.URL`, `.Schema`,
   `.Steps`, `.Files`, `.TotalFiles`, `.TotalChanges`, and `.DiagnosticsCount`.
-- `.Env.Dir` is the directory as given, cleaned. `file://migrations` and
-  `file://./migrations` both give `migrations`; an absolute path stays
-  absolute.
+- `.Env.Dir` is the directory as `--dir` or `atlas.hcl` gives it, cleaned.
+  `file://migrations` and `file://./migrations` both give `migrations`; an
+  absolute path stays absolute.
 - `.URL` is the address of a published report. Ptah publishes none, so it is
   empty.
 - `.Schema.Current` and `.Schema.Desired` are the dev database's schema in HCL

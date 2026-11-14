@@ -3,6 +3,7 @@ package atlas
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -483,6 +484,13 @@ func writeAtlasMigrateLintReplayError(
 // --dir. Printing the captured absolute path instead hands a pull-request
 // comment the runner's working directory.
 //
+// The cleaning covers both spellings. A --dir URL arrives cleaned, but the
+// atlas.hcl value reaches this function as a plain path, which
+// [atlasargs.ParseLocalDir] keeps verbatim: without the cleaning here,
+// `dir = "file://./db/mig"` prints `./db/mig` where that binary prints
+// `db/mig`, and on Windows the two spellings of one directory print different
+// separators.
+//
 // A directory that is not a file:// URL -- a registry reference, a rendered
 // template directory -- has no local path to give, and keeps display, which is
 // the reference as given.
@@ -491,7 +499,7 @@ func atlasMigrateLintEnvDir(raw, display string) string {
 	if err != nil || given.Path == "" {
 		return display
 	}
-	return given.Path
+	return filepath.Clean(filepath.FromSlash(given.Path))
 }
 
 func validateAtlasMigrateLintOptions(opts atlasMigrateLintOptions) error {
