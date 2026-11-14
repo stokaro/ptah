@@ -893,9 +893,10 @@ a later check directive is SQL code or literal/comment content.
 ## Migration statement validation
 
 `migration/migrator.WithStatementValidator` attaches a pre-execution SQL
-safety gate to a filesystem provider. Ptah splits and validates every
-statement in one migration before executing its first statement. Rejecting a
-later statement cannot leave an earlier statement applied.
+safety gate to a filesystem provider. A run splits and validates every
+statement of every migration it selected before executing its first statement,
+and each migration again before its own first. Rejecting a statement cannot
+leave an earlier statement or migration of the run applied.
 
 Implement `migrator.StatementValidator` when an embedder must confine replay to
 a disposable database or reject unsupported statement forms. Validators

@@ -33,6 +33,14 @@ such as `atlas:txmode` and `atlas:checkpoint` have stricter header positions.
 
 Directives work without any configuration file.
 
+An `online_ddl_tool` or `online_ddl_fallback` value Ptah does not know refuses
+the run before it applies any migration, in a dry run too, and names the file.
+No migration of the run is applied and no revision is left failed:
+
+```text
+error: error running migrations: invalid migration directives in 0000000002_add_bio.up.sql: unknown online_ddl_tool directive value "gh-ost": expected ghost, pt-osc or none
+```
+
 ## Automatic routing via ptah.yaml
 
 Create a `ptah.yaml` next to where you run the CLI (or pass `--config`):

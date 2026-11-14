@@ -4318,11 +4318,12 @@ partial progress, rollback failure, commit failure, and unknown statement
 outcomes remain dirty and block automatic retry.
 
 `migration/migrator.WithStatementValidator` installs a pre-execution safety
-gate on a filesystem provider. Ptah splits and validates every statement in one
-migration before executing its first statement, so a rejected later statement
-cannot leave an earlier statement applied. Validators inspect SQL but do not
-replace the migrator's execution path; use `WithStatementInterceptor` only when
-an external executor must take over accepted statements.
+gate on a filesystem provider. A run splits and validates every statement of
+every migration it selected before executing its first statement, and each
+migration again before its own first, so a rejected statement cannot leave an
+earlier statement or migration of the run applied. Validators inspect SQL but do
+not replace the migrator's execution path; use `WithStatementInterceptor` only
+when an external executor must take over accepted statements.
 
 `dbschema.ReadRehearsalSchemaContext` uses a private reader and selects its
 optional `catalog.RehearsalSchemaReader` service. This service can include

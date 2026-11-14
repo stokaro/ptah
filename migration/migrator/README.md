@@ -438,7 +438,7 @@ reconciliation that needs two or more row updates before changing either row.
 - **`WithAtlasRevisionTypes(types)`**: Preserves source-format Atlas revision metadata, such as the surviving Flyway baseline marker, across filename conversion
 - **`WithAtlasRepeatableVersions(versions)`**: Preserves the repeatable role for converted numeric Atlas filenames without inferring it from an empty revision identity
 - **`WithStatementInterceptor(interceptor)`**: Lets an external executor take over selected statements
-- **`WithStatementValidator(validator)`**: Validates every statement before the migration executes its first statement
+- **`WithStatementValidator(validator)`**: Validates every statement of every migration a run selected before the run executes its first statement
 - **`WithStatementObserver(observer)`**: Reports each statement after successful execution without replacing the execution path
 - **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout or the Atlas-compatible `atlas_schema_revisions` layout; both retain Ptah's recoverable dirty-state protection
 - **`MigrateUpWithOptions(ctx, opts)`**: Applies the selected up plan; `AllowDirty` authorizes a verified retry only while the current provider still owns the dirty exact identity and body, so a dirty source-retired history row remains blocking
@@ -568,10 +568,11 @@ if err != nil {
 ### Validating statements before execution
 
 Use a statement validator when an embedder must reject SQL that can escape a
-disposable database or is unsupported by its execution policy. The provider
-splits and validates every statement in a migration before executing the first
-statement. A rejected later statement therefore leaves the migration
-untouched.
+disposable database or is unsupported by its execution policy. A run splits and
+validates every statement of every migration it selected before it executes the
+first, and each migration again before its own first statement. A rejected
+statement in a later migration therefore leaves the whole run untouched. The
+validator is asked twice, so it must answer from the statement alone.
 
 ```go
 provider, err := migrator.NewFSMigrationProvider(
@@ -1014,18 +1015,47 @@ transaction.
 The same classification backs `migrate lint`'s `TX101`, so the two surfaces
 cannot disagree about one file.
 
-Migration timeouts are rejected for `no_transaction` migrations because Ptah
-cannot safely apply writer/session timeouts to raw autocommit statements. Ptah
-rejects that combination before running the migration body or changing its
-revision row, so fixing the directives and retrying does not require dirty-state
-repair.
+### Every file is read before the run starts
+
+A run asks every file it selected, before the first of them runs, each refusal
+the migrator makes from a file's text and the run's options. They are asked in
+run order and, for one file, in the order the step that runs it asks them, so
+the run reports the first file it cannot run:
+
+- transaction control, such as `BEGIN` or `COMMIT`, in a file Ptah runs in a
+  transaction, or in a file it runs without one and checkpoints statement by
+  statement;
+- on MySQL and MariaDB in tx-mode `file`, a statement the transaction witness
+  cannot follow, such as a table on a non-transactional storage engine, and a
+  migration function or interceptor whose statements it cannot see;
+- a directive the installed `StatementInterceptor` rejects, such as an unknown
+  `online_ddl_tool` value;
+- a statement the installed `StatementValidator` rejects;
+- a statement the transaction around the file would refuse, described above.
+
+An up run asks them before it applies the first file and a rollback before it
+rolls back the first, in a dry run too. A refused file leaves the schema and
+every revision of the run as they were. Without the early question, the files
+before it in the run are applied, and a refused directive or statement leaves
+its own revision failed with nothing applied.
+
+What needs the database's answer is still asked when the run reaches the file,
+of the database the files before it left: pre-migration checks, the storage
+engines and catalog the MySQL-family witness verifies, an index on the file's
+table that the server reports unusable, and the retry plan of a dirty revision.
+Outside tx-mode `all`, a file whose transaction mode directive does not resolve
+is reported when the run reaches it too, which matches the pinned community
+binary.
+
+A `no_transaction` migration's timeouts are set on the pinned session that runs
+it, before its first statement, and restored after its last. A target with no
+statement for a declared timeout refuses the run before its first migration.
 
 Top-level transaction-control statements are also rejected when Ptah owns the
-file or batch transaction. Each up body is checked before it runs, and `all`
-checks the whole batch before any body runs. A down body is checked before its
-applied revision changes. A
-directory configured with `WithOwnTransactions` may run a file's own balanced
-transactions instead.
+file or batch transaction. Every body of the run is checked before the first
+body runs, as described above, and again before it runs; a down body is checked
+before its applied revision changes. A directory configured with
+`WithOwnTransactions` may run a file's own balanced transactions instead.
 
 Statements such as `BEGIN`, `START TRANSACTION`,
 `COMMIT`, `ROLLBACK`, savepoint commands, MySQL or MariaDB `SET autocommit`, and

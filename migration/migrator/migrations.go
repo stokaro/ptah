@@ -104,9 +104,11 @@ func splitSQLStatementsPreservingCommentsForDialect(sql, dialect string) []strin
 // an online-DDL tool (gh-ost, pt-online-schema-change) instead of executing
 // them on the migration connection.
 //
-// ValidateDirectives is called once per migration, before any statement runs,
-// so a bad directive fails the migration cleanly with nothing applied instead
-// of surfacing only when the first affected statement is reached.
+// ValidateDirectives is called for every migration a run selected before the
+// run's first statement, so a bad directive fails the run with nothing applied
+// instead of surfacing only when the first affected statement is reached. It
+// is called again before the migration's own first statement, so it must
+// answer from the directives alone.
 //
 // ExecuteStatement receives one statement (comments stripped) together with
 // the file-level directives of the migration it came from (see
@@ -135,13 +137,20 @@ type StatementInterceptor interface {
 //
 // An interceptor that does not implement it is treated as claiming every
 // statement, because a caller cannot know what it would do.
+//
+// On a MySQL-family database in tx-mode file a run asks ClaimsStatement of
+// every migration it selected before the run's first statement, and again
+// before the migration's own first statement, so it must answer from its
+// arguments alone.
 type StatementClaimer interface {
 	ClaimsStatement(conn *dbschema.DatabaseConnection, statement string, directives map[string]string) bool
 }
 
 // StatementValidator rejects unsafe or unsupported migration statements
-// without taking over their execution. Every statement in a migration file is
-// validated before the first statement runs.
+// without taking over their execution. A run validates every statement of
+// every file it selected before the run's first statement, and each file again
+// before its own first statement, so ValidateStatement must answer from the
+// statement alone.
 type StatementValidator interface {
 	ValidateStatement(stmt string) error
 }
@@ -420,6 +429,11 @@ type sqlMigrationFile struct {
 	// transaction, so a run can ask it before it marks anything; see
 	// [Migrator.refuseWhatATransactionRefuses].
 	refuseInsideTransaction func(conn *dbschema.DatabaseConnection) error
+	// refuseByHooks is what [executeMigrationFileSQL] refuses, in every mode,
+	// before the file's first statement on behalf of the hooks installed for
+	// the file; see [refuseWhatTheHooksRefuse]. A run asks it before it marks
+	// anything; see [Migrator.refuseWhatAFileRefuses].
+	refuseByHooks func(conn *dbschema.DatabaseConnection) error
 	// checkFiles are the raw Atlas txtar checks.sql and checks/*.sql sections.
 	// They remain unsplit until execution, when the target dialect is known.
 	checkFiles []migrationfile.AtlasTxtarCheckFile
@@ -619,6 +633,9 @@ func migrationFuncFromSQLStringWithMetadata(filename, sql string, hooks statemen
 				conn, filename, sql, statements, migrationExecutionTransactional, hooks.refusalRemedy(),
 			)
 		},
+		refuseByHooks: func(conn *dbschema.DatabaseConnection) error {
+			return refuseWhatTheHooksRefuse(conn, filename, sql, hooks)
+		},
 	}, nil
 }
 
@@ -721,6 +738,12 @@ type Migration struct {
 	// code, whose body is not checked before it runs either.
 	upRefuseInsideTransaction   func(conn *dbschema.DatabaseConnection) error
 	downRefuseInsideTransaction func(conn *dbschema.DatabaseConnection) error
+	// upRefuseByHooks and downRefuseByHooks refuse the file of their direction
+	// for what the hooks installed for it reject in its text; see
+	// [Migration.refuseByHooks]. Each is nil for a migration built in code,
+	// which no hook reads.
+	upRefuseByHooks   func(conn *dbschema.DatabaseConnection) error
+	downRefuseByHooks func(conn *dbschema.DatabaseConnection) error
 	// ownTransactions marks a migration of a directory written for a runner
 	// that opens no transaction around a file; see [WithOwnTransactions].
 	ownTransactions bool
@@ -1068,6 +1091,16 @@ func (m *Migration) refuseInsideTransaction(direction MigrationDirection) func(c
 	return m.upRefuseInsideTransaction
 }
 
+// refuseByHooks is the check that refuses the file of direction for what the
+// hooks installed for it reject in its text, or nil when the migration
+// carries none.
+func (m *Migration) refuseByHooks(direction MigrationDirection) func(conn *dbschema.DatabaseConnection) error {
+	if direction == MigrationDirectionDown {
+		return m.downRefuseByHooks
+	}
+	return m.upRefuseByHooks
+}
+
 // CreateMigrationFromSQL creates a programmatic migration from up and down SQL
 // strings. Transaction-mode directives in the SQL are honored exactly as they
 // are in a file: a `-- +ptah no_transaction` or `-- atlas:txmode` header is
@@ -1207,10 +1240,8 @@ func executeMigrationFileSQL(
 		return err
 	}
 	interceptorDirectives := maps.Clone(fileDirectives)
-	if hooks.interceptor != nil {
-		if err := hooks.interceptor.ValidateDirectives(interceptorDirectives); err != nil {
-			return fmt.Errorf("invalid migration directives in %s: %w", filename, err)
-		}
+	if err := validateInterceptorDirectives(filename, interceptorDirectives, hooks.interceptor); err != nil {
+		return err
 	}
 
 	if err := grammarFor(conn).refuse(sql); err != nil {
@@ -1244,6 +1275,42 @@ func executeMigrationFileSQL(
 		}
 	}
 	return nil
+}
+
+// validateInterceptorDirectives refuses a file whose directives interceptor
+// does not accept. A file loaded without an interceptor is not refused.
+func validateInterceptorDirectives(filename string, directives map[string]string, interceptor StatementInterceptor) error {
+	if interceptor == nil {
+		return nil
+	}
+	if err := interceptor.ValidateDirectives(directives); err != nil {
+		return fmt.Errorf("invalid migration directives in %s: %w", filename, err)
+	}
+	return nil
+}
+
+// refuseWhatTheHooksRefuse refuses a file for what the hooks installed for it
+// reject in its text, in the order [executeMigrationFileSQL] asks them before
+// the file's first statement: a directive the interceptor does not accept, and
+// a statement the validator refuses. Neither question executes anything or
+// depends on the mode the file runs in, so a run asks it of every file before
+// the first of them runs.
+func refuseWhatTheHooksRefuse(
+	conn *dbschema.DatabaseConnection,
+	filename, sql string,
+	hooks statementExecutionHooks,
+) error {
+	directives, err := observedFileDirectives(conn, sql, hooks)
+	if err != nil {
+		return err
+	}
+	if err := validateInterceptorDirectives(filename, directives, hooks.interceptor); err != nil {
+		return err
+	}
+	if hooks.validator == nil {
+		return nil
+	}
+	return validateMigrationStatements(filename, splitSQLStatementsForConnection(conn, sql), hooks.validator)
 }
 
 // runMigrationFileStatement runs one statement of a migration file, records
