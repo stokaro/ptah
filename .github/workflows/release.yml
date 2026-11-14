@@ -106,6 +106,27 @@ jobs:
             docker run --rm --platform "linux/$arch" --entrypoint ptah-ls "$image" --version
           done
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Check npm packages from the snapshot archives
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version dist/metadata.json)"
+          node npm/scripts/stage.mjs --version "$version" --assets dist --output dist/npm
+          root_tarball="$(npm pack dist/npm/ptah --pack-destination dist/npm --silent)"
+          platform_tarball="$(npm pack dist/npm/ptah-linux-x64 --pack-destination dist/npm --silent)"
+          mkdir dist/npm-smoke
+          cd dist/npm-smoke
+          npm install --offline --ignore-scripts --no-save \
+            "../npm/${root_tarball}" \
+            "../npm/${platform_tarball}"
+          npx --no @stokaro/ptah version | grep -F "Version: ${version}"
+          npx --no --package=@stokaro/ptah ptah-compat version | grep -F "Version: ${version}"
+          npx --no --package=@stokaro/ptah ptah-ls --version | grep -F "Version: ${version}"
+
   release-check-gate:
     name: Release check gate
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
@@ -279,3 +300,45 @@ jobs:
       # reach -- the exact fault this issue opened with.
       - name: Both registries carry this release
         run: scripts/check-release-image-mirror.sh "${GITHUB_REF_NAME#v}"
+
+  npm-publish:
+    name: Publish npm CLI packages
+    needs: release
+    if: github.event_name == 'push' && vars.PTAH_NPM_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Download and verify release archives
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p "$RUNNER_TEMP/ptah-assets"
+          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" \
+            -p checksums.txt -p checksums.txt.sigstore.json \
+            -p "ptah_${version}_*.tar.gz" -p "ptah_${version}_*.zip" \
+            --dir "$RUNNER_TEMP/ptah-assets"
+          cosign verify-blob \
+            --bundle "$RUNNER_TEMP/ptah-assets/checksums.txt.sigstore.json" \
+            --certificate-identity-regexp 'github.com/stokaro/ptah' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$RUNNER_TEMP/ptah-assets/checksums.txt"
+          node npm/scripts/stage.mjs --version "$version" \
+            --assets "$RUNNER_TEMP/ptah-assets" --output "$RUNNER_TEMP/ptah-npm"
+
+      - name: Publish platform packages before the CLI package
+        run: node npm/scripts/publish.mjs --staged "$RUNNER_TEMP/ptah-npm"
