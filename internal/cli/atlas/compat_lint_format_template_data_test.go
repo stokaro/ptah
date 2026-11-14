@@ -64,13 +64,18 @@ func TestCompatMigrateLintFormatEnvDir_HappyPath(t *testing.T) {
 // `migrations`. Measured on the pinned community binary v1.3.0, each spelling
 // below prints `db/mig`.
 func TestCompatMigrateLintFormatEnvDirFromProject(t *testing.T) {
-	for _, dir := range []string{"file://db/mig", "file://./db/mig", "file://db/mig/", "file://db//mig"} {
-		t.Run(dir, func(t *testing.T) {
+	for _, test := range []struct{ name, dir string }{
+		{name: "as written", dir: "file://db/mig"},
+		{name: "from the current directory", dir: "file://./db/mig"},
+		{name: "a trailing slash", dir: "file://db/mig/"},
+		{name: "a doubled separator", dir: "file://db//mig"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			root := t.TempDir()
 			t.Chdir(root)
 			writeEnvDirFixture(c, filepath.Join(root, "db", "mig"))
-			project := "env \"dev\" {\n  dev = \"sqlite://file?mode=memory\"\n  migration {\n    dir = \"" + dir + "\"\n  }\n}\n"
+			project := "env \"dev\" {\n  dev = \"sqlite://file?mode=memory\"\n  migration {\n    dir = \"" + test.dir + "\"\n  }\n}\n"
 			c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
 
 			stdout, stderr, err := atlastest.RunCompatStreams(c,
