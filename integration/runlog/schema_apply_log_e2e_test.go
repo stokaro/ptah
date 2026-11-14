@@ -51,7 +51,9 @@ func TestSchemaApplyLogRecordsAPlanThatRanE2E(t *testing.T) {
 			c.Assert(inspected, qt.Not(qt.Contains), "ptah_schema_apply_log")
 			// An Oracle target shares its schema with other tests' tables,
 			// which drift reports as removed, so the row holds the report to
-			// its claim: it names neither the log nor the plan's table.
+			// its claim: no change in it names the log or the plan's table.
+			// identifier_semantics is not a change: on SQL Server it lists
+			// every name the catalog resolved, the plan's table included.
 			drift := target.drift(c, target.createTable(notes))
 			c.Assert(drift.ExitCode == 0 || drift.ExitCode == 1, qt.IsTrue,
 				qt.Commentf("exit code %d\n%s\n%s", drift.ExitCode, drift.Stdout, drift.Stderr))
@@ -61,7 +63,18 @@ func TestSchemaApplyLogRecordsAPlanThatRanE2E(t *testing.T) {
 			}
 			c.Assert(json.Unmarshal([]byte(drift.Stdout), &report), qt.IsNil, qt.Commentf("%s", drift.Stdout))
 			c.Assert(report.Command, qt.Equals, "schema drift")
-			diff := strings.ToLower(string(report.Diff))
+			var fields map[string]json.RawMessage
+			c.Assert(json.Unmarshal(report.Diff, &fields), qt.IsNil, qt.Commentf("%s", report.Diff))
+			// A report always writes these two, so a missing one is not a
+			// report the row read.
+			for _, key := range []string{"tables_added", "tables_removed"} {
+				_, written := fields[key]
+				c.Assert(written, qt.IsTrue, qt.Commentf("no %s in %s", key, report.Diff))
+			}
+			delete(fields, "identifier_semantics")
+			changes, err := json.Marshal(fields)
+			c.Assert(err, qt.IsNil)
+			diff := strings.ToLower(string(changes))
 			c.Assert(diff, qt.Not(qt.Contains), "ptah_schema_apply_log")
 			c.Assert(diff, qt.Not(qt.Contains), strings.ToLower(notes))
 		})
