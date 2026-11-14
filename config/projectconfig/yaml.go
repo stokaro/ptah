@@ -183,6 +183,9 @@ func parsePtah(data []byte, filename, envName string, source ptahConfigSource) (
 	if err != nil {
 		return Config{}, err
 	}
+	if cfg.presence.has(fieldExclude) {
+		cfg.ExcludeOrigin = filename
+	}
 	if err := cfg.OnlineDDL.Validate(); err != nil {
 		if cfg.EnvName != "" {
 			return Config{}, fmt.Errorf(

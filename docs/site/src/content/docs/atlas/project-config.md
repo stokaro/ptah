@@ -266,7 +266,10 @@ Atlas project values to explicit native command arguments.
 `schema apply`/`schema diff` positive selection flags in a fixed order:
 `--schema` names define the universe for schema-owned resources, `--include`
 selectors pick resources, and the configured exclusions subtract last, exactly
-like CLI `--exclude`. Database-wide extensions skip the schema ownership
+like CLI `--exclude`. A `--exclude` flag replaces `env.exclude` rather than
+adding to it, as on the community binary; the native `ptah` verbs add it, as
+[Objects another tool owns](../../reference/configuration/#objects-another-tool-owns)
+describes. Database-wide extensions skip the schema ownership
 restriction. An extension-only include filters their identities; a matching
 non-extension resource carries all extensions as support even beside extension
 selectors without treating an omitted desired extension as a removal.

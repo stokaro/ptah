@@ -416,6 +416,14 @@ from the database or replayed from the migration directory, and the shadow
 check; [Generate migrations](../../versioned/generate/#leave-objects-out-with---exclude)
 describes it.
 
+The `exclude` list of the project file subtracts the same way on each of these
+verbs, and on `schema serve`, `migrations up --check-drift` and
+`migrations down --plan`, which take no `--exclude`. `--exclude` and
+`PTAH_EXCLUDE` add to that list and never replace it, so a one-off selector
+cannot bring back an object the file protects. The Atlas community binary
+replaces the list instead; [Objects another tool owns](../configuration/#objects-another-tool-owns)
+gives the rule and the measurement.
+
 ## What a machine reads, and from where
 
 Every verb that has a machine-readable format writes that document to

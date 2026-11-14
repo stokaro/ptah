@@ -625,7 +625,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 	document.Migrator = mig
 
-	drift, releaseShadow, err := prepareDriftCheck(cmd.Context(), resolvedOpts, dbURL, settings, conn, mig)
+	drift, releaseShadow, err := prepareDriftCheck(cmd.Context(), resolvedOpts, projectCfg, dbURL, settings, conn, mig)
 	if err != nil {
 		return err
 	}

@@ -81,7 +81,10 @@ the next reload with no restart.
 is refused: reading again on every request is the whole contract here, and
 pulling from a registry that often is a schedule nobody asked for, while pulling
 once would show a copy that has stopped matching the reference. ` + "`schema drift`" + `
-takes it and answers once, which is the bargain that fits it.`,
+takes it and answers once, which is the bargain that fits it.
+
+The top-level exclude list of ./ptah.yaml leaves the objects it names out of
+the comparison and out of the page, as it leaves them out of ` + "`schema diff`" + `.`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -118,12 +121,20 @@ func runSchemaServe(cmd *cobra.Command, opts schemaServeOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// The verb has no --exclude of its own, so the project's list is the whole
+	// selection: without it the page reports every object the project leaves
+	// to another tool as drift.
+	exclude, err := dbcli.EffectiveExclude(projectCfg, nil, runtime.Selections())
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	handler, err := schemaserve.Handler(cmd.Context(), schemaserve.Options{
 		Runtime:     runtime,
 		DatabaseURL: dbURL,
 		RootDirs:    opts.rootDirs,
 		SchemaFiles: opts.schemaFiles,
 		Schemas:     dbcli.ParseSchemas(schemasValue),
+		Exclude:     exclude,
 		Title:       opts.title,
 		Refresh:     opts.refresh,
 	})

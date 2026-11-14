@@ -75,8 +75,10 @@ refused. This makes
 CI checks like "do these two schema files differ?" or "does this migration
 directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison
-sides see; --exclude subtracts from the result. A selected object that
-depends on an unselected object refuses the diff with an explicit diagnostic.
+sides see; --exclude subtracts from the result, together with exclude in
+ptah.yaml or atlas.hcl, which the flag adds to and never replaces. A selected
+object that depends on an unselected object refuses the diff with an explicit
+diagnostic.
 An --include selection that matches nothing on either side is refused instead
 of reporting a synced schema to a CI check.
 
@@ -148,6 +150,10 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	if err := validateSchemaDiffSources(opts, runtime.Selections(), dbschema.NativeSources(cmd.Context())); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, runtime.Selections())
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(
 		dbcli.EffectiveString(
 			cmd,
@@ -165,7 +171,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		ToURLs:              opts.toURLs,
 		DevURL:              opts.devURL,
 		ServerVersion:       opts.serverVersion,
-		Exclude:             opts.exclude,
+		Exclude:             exclude,
 		Schemas:             dbcli.ParseSchemas(opts.schemas),
 		Include:             opts.include,
 		Policy:              policy,

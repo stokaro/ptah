@@ -274,9 +274,10 @@ ptah schema inspect \
 `--include`, and `--exclude` select what is inspected, in that order:
 `--schemas` names the database schemas, `--include` picks top-level resources
 inside them with Atlas-style glob patterns, and `--exclude` subtracts from the
-result. On PostgreSQL and CockroachDB, a foreign key into a schema the run does
-not read, from a `--schemas` list or a URL's `search_path`, keeps that schema's
-name in every format.
+result, together with the `exclude` list of `ptah.yaml`. On PostgreSQL and
+CockroachDB, a foreign key into a schema the run does not read, from a
+`--schemas` list or a URL's `search_path`, keeps that schema's name in every
+format.
 
 ```bash
 ptah schema inspect --db-url "sqlite://$PWD/app.db" --include users

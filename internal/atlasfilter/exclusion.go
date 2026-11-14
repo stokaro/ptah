@@ -44,7 +44,7 @@ type Exclusion struct {
 // state is read; a selector whose depth only the connection can judge is
 // refused when a state is filtered.
 func NewExclusion(runtime any, patterns []string) (Exclusion, error) {
-	if !slices.ContainsFunc(patterns, namesSelector) {
+	if !slices.ContainsFunc(patterns, NamesSelector) {
 		return Exclusion{}, nil
 	}
 	selector, ok := runtime.(selectext.Runtime)
@@ -58,8 +58,11 @@ func NewExclusion(runtime any, patterns []string) (Exclusion, error) {
 	return Exclusion{selections: selections, patterns: slices.Clone(patterns)}, nil
 }
 
-// namesSelector reports whether a pattern value holds at least one selector.
-func namesSelector(value string) bool {
+// NamesSelector reports whether one value of a selector flag or list holds at
+// least one selector: a value of blanks and commas names none. Every reader
+// that decides whether a selection is present asks it, so a value one of them
+// reads as empty cannot carry a selector for another.
+func NamesSelector(value string) bool {
 	return strings.Trim(value, ", \t") != ""
 }
 

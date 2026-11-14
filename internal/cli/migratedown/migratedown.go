@@ -108,6 +108,8 @@ type options struct {
 	metricsAddr          string
 	// resolvedRunner is what runner names once ptah.yaml is merged under it.
 	resolvedRunner migrateflags.Runner
+	// planExclude is the project's exclude list a --plan rollback applies.
+	planExclude []string
 }
 
 func NewMigrateDownCommand() *cobra.Command {
@@ -228,6 +230,15 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		return opts, err
 	}
 	opts.resolvedRunner = runner
+	// A rollback derived from the schema difference leaves the objects the
+	// project excludes alone, as `schema apply` does; one that runs the down
+	// files runs what they say, and has no exclusion to apply.
+	if opts.plan {
+		opts.planExclude, err = dbcli.EffectiveExclude(projectCfg, nil, opts.featureRuntime.Selections())
+		if err != nil {
+			return opts, err
+		}
+	}
 	opts.migrationLockTimeout = effectiveString(
 		migrationLockTimeoutFlag,
 		opts.migrationLockTimeout,
@@ -1093,6 +1104,9 @@ type dynamicRollback struct {
 	connectTimeout time.Duration
 	dryRun         bool
 	revisionsOpts  atlasmigrate.SetOptions
+	// exclude is the project's exclude list: the objects the derived plan
+	// leaves alone, as `schema apply` leaves them.
+	exclude []string
 	// providerOptions are the rollback's own. The target schema is built on
 	// the dev database by running the up files, and a runner that leaves a
 	// file its own transactions runs them that way there too.
@@ -1132,6 +1146,7 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emi
 		}, r.providerOptions...),
 		ConnectTimeout: r.connectTimeout,
 		RevisionsTable: r.revisionsOpts.RevisionsTable,
+		Exclude:        r.exclude,
 	})
 	if err != nil {
 		return err
@@ -1237,6 +1252,7 @@ func buildRollbackExecution(
 			atlasEnv:        in.atlasEnv,
 			connectTimeout:  in.connectTimeout,
 			dryRun:          opts.dryRun,
+			exclude:         resolved.planExclude,
 			providerOptions: in.providerOptions,
 			revisionsOpts: atlasmigrate.SetOptions{
 				Dir:             in.migrationsDir,

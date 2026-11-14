@@ -170,10 +170,14 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	requested := dbcli.ParseSchemas(schemasValue)
+	exclude, err := dbcli.EffectiveExclude(projectCfg, opts.exclude, runtime.Selections())
+	if err != nil {
+		return err
+	}
 	selection := atlasschema.LiveSelection{
 		Schemas:     requested,
 		Include:     opts.include,
-		Exclude:     opts.exclude,
+		Exclude:     exclude,
 		Diagnostics: cmd.ErrOrStderr(),
 	}
 	if err := selection.Validate(runtime.Selections()); err != nil {

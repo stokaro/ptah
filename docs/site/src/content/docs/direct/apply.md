@@ -104,7 +104,9 @@ target, by its URL or by what the two servers answer about the database each
 session selected, is refused before it is reset. The rehearsal runs entirely
 inside the dev database, which is handed back empty afterwards — see
 [Atlas schema commands](../../atlas/schema-commands/). `--schemas` (or `schemas`
-in `ptah.yaml`), `--include`, and `--exclude` scope both comparison sides.
+in `ptah.yaml`), `--include`, and `--exclude` (added to
+[`exclude` in `ptah.yaml`](../../reference/configuration/#objects-another-tool-owns))
+scope both comparison sides.
 
 A plan statement whose effect reaches past the dev database, such as a role or
 a routine body, is refused before anything runs unless the dev server is the
