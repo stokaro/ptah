@@ -92,8 +92,10 @@ type Entry struct {
 	Data []byte
 	// Source is the path of the file the entry was converted from, relative
 	// to the source directory, such as "1_init.up.sql" for a golang-migrate
-	// file, and SourceData is that file as read. Both are empty for a
-	// Liquibase entry, which is one changeset rather than one file.
+	// file, and SourceData is that file as read. Both are empty for an entry
+	// imported from a serialized Liquibase changelog, which is one changeset
+	// rather than one file; a Liquibase formatted SQL file is one entry and
+	// sets both.
 	Source     string
 	SourceData []byte
 }

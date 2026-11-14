@@ -2292,6 +2292,7 @@ before the drop, or where that state cannot be matched against the drop, and
 the community binary counts the table in each of these cases:
 
 - an earlier statement of the file names the table;
+- an earlier statement of the file names the sequence;
 - an earlier statement hides its effect, such as a `DO` block or a `CASCADE`
   other than a sequence's;
 - the drop qualifies the sequence by its schema and the dev URL sets no
