@@ -114,7 +114,10 @@ default surface counts a change to a view, a trigger, a routine, a sequence, a
 policy, a privilege or row-level security as one, because Ptah models each of
 them. Atlas CE reads none of them off the dev database and counts none, so
 strict mode counts only tables with their columns, constraints, indexes and
-comments, schemas, and enum types. See
+comments, schemas, and enum types. A PostgreSQL `DROP SEQUENCE ... CASCADE`
+counts there through the tables it changes: the cascade removes each column
+default that calls `nextval` on the sequence, and each table that loses one
+counts as a change. See
 [The schema-change count](../migrate-commands/#the-schema-change-count).
 
 ## Capabilities retained deliberately

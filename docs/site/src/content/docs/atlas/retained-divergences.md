@@ -152,6 +152,7 @@ own measurement conditions.
 | [A file that controls the transaction it runs in](#a-file-that-controls-the-transaction-it-runs-in) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies the files before it and exits `1` with the engine's error; its dry run exits `0` |
 | [A MySQL file the transaction witness refuses](#a-mysql-file-the-transaction-witness-refuses) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies every file, exit `0` |
 | [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
+| [A finding in a goose or dbmate file](#a-finding-in-a-goose-or-dbmate-file) | places it on the statement's line of the source file, at the statement's offset | places it on line 1, the section directive, at an offset that falls there |
 
 ## A `--config` selection naming more than one file
 
@@ -1523,6 +1524,35 @@ own, and the apply refuses the same statement on the same engine, so a lint that
 accepted it would pass a directory Ptah cannot apply.
 
 **Evidence.** `integration/atlas_migrate_lint_replay_failure_e2e_test.go`
+
+## A finding in a goose or dbmate file
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** `ptah-compat migrate lint` reports a finding in a
+directory of another layout against the source file the directory holds. A
+file's `.Name` is that file's name, its `.Text` is the file as written, and a
+diagnostic's `.Pos` is the offset of the statement in that text, so the text
+report's `-- L<n>:` and `{{ $file.Line .Pos }}` give the statement's line. The
+pinned community binary v1.3.0 does the same in golang-migrate, Flyway and
+Liquibase directories. In a goose or dbmate file it reports the same `.Text`
+with an offset counted from the start of the up section, so the line it prints
+is line 1, the section directive, however far below it the statement is.
+
+Measured with `migrate lint --dev-url sqlite://dev?mode=memory --latest 1` on
+two files, where the second drops a table on line 4:
+
+| Second file | Binary | `ptah-compat` |
+| --- | --- | --- |
+| goose: `-- +goose Up`, a blank line, `-- note`, `DROP TABLE t;`, then a down section | `-- L1:`, `.Pos` 10 | `-- L4:`, `.Pos` 22 |
+| dbmate: `-- migrate:up`, a blank line, `-- note`, `DROP TABLE t;`, then `-- migrate:down` | `-- L1:`, `.Pos` 9 | `-- L4:`, `.Pos` 23 |
+| golang-migrate `2_b.up.sql`: `-- note`, a blank line, `DROP TABLE t;` | `-- L3:`, `.Pos` 9 | `-- L3:`, `.Pos` 9 |
+
+A line that points at the directive sends the reader to the wrong place in the
+file, and the binary's own answer in the other three layouts shows it means the
+source line. Ptah places the finding where the statement is.
+
+**Evidence.** `integration/migrate_lint_converted_source_lines_e2e_test.go`
 
 ## Not on this page
 

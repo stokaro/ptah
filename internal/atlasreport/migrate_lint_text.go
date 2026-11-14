@@ -43,7 +43,7 @@ func writeMigrateLintText(w io.Writer, opts MigrateLintOptions, now func() time.
 	if opts.ReplayFailure != nil {
 		return writeMigrateLintTextReplayFailure(w, *opts.Analysis, opts.RevisionVersions, *opts.ReplayFailure, now)
 	}
-	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions)
+	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions, opts.Sources)
 	if model.analyzedCount == 0 {
 		// No analyzed versions means there is no report to render.
 		return nil
@@ -255,9 +255,10 @@ type migrateLintTextFix struct {
 func buildMigrateLintText(
 	analysis migrationlint.Analysis,
 	revisionVersions map[int64]string,
+	sources map[int64]MigrateLintSource,
 ) migrateLintText {
 	upFiles := sortedUpFiles(analysis.Files())
-	diagsByFile := diagnosticsByFile(analysis.Findings())
+	diagsByFile := diagnosticsByFile(sourcedFindings(analysis, sources))
 
 	firstSelected := -1
 	var model migrateLintText

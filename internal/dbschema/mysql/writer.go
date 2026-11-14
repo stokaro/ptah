@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
+
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -863,11 +865,17 @@ func (w *Writer) dropProtectedViews(
 		resultErr = errors.Join(resultErr, closeCleanupConnection(monitorConn, "metadata-lock monitor"))
 	}()
 
-	lockTargets := make([]string, 0, len(views)+len(tables))
-	lockTargets = append(lockTargets, views...)
-	lockTargets = append(lockTargets, tables...)
-	if _, err := lockConn.ExecContext(ctx, buildLockTablesSQL(schema, lockTargets)); err != nil {
-		return fmt.Errorf("mysql: lock cleanup views and tables: %w", err)
+	if _, err := lockConn.ExecContext(ctx, buildLockTablesSQL(schema, slices.Concat(views, tables))); err != nil {
+		if !isInvalidViewError(err) {
+			return fmt.Errorf("mysql: lock cleanup views and tables: %w", err)
+		}
+		views, err = w.dropUnopenableViews(ctx, lockConn, schema, views)
+		if err != nil || len(views) == 0 {
+			return err
+		}
+		if _, err := lockConn.ExecContext(ctx, buildLockTablesSQL(schema, slices.Concat(views, tables))); err != nil {
+			return fmt.Errorf("mysql: lock cleanup views and tables: %w", err)
+		}
 	}
 	locked := true
 	defer func() {
@@ -921,6 +929,74 @@ func (w *Writer) dropProtectedViews(
 		return errors.Join(unlockErr, waitForCanceledViewDrop(dropDone))
 	}
 	return <-dropDone
+}
+
+// erViewInvalid is the error number MySQL and MariaDB answer with when a
+// statement opens a view whose definition names a table or a column that is
+// gone.
+const erViewInvalid = 1356
+
+func isInvalidViewError(err error) bool {
+	serverErr, ok := errors.AsType[*mysqldriver.MySQLError](err)
+	return ok && serverErr.Number == erViewInvalid
+}
+
+// dropUnopenableViews drops the views of schema that the server cannot open,
+// and returns the others in their order.
+//
+// LOCK TABLES opens every view it names, so one view whose table a migration
+// dropped refuses the lock that protects all of them with error 1356, and the
+// cleanup cannot start. Measured on MySQL 8.4 and MariaDB 12.3, after `CREATE
+// VIEW v AS SELECT id FROM t; DROP TABLE t`. The same error answers `CREATE
+// VIEW other.x AS SELECT * FROM v`, so no view can come to read such a view
+// while it is dropped here, outside the handoff. A stored program can, since
+// the server resolves its body when it runs, so the external-view and
+// stored-program checks run again right before the drop. A view that only
+// names a function that is gone opens, and the handoff drops it with the
+// others.
+//
+// Each view is asked with the lock the handoff takes, one at a time: that lock
+// is the question, and no catalog column answers it. TABLE_COMMENT carries the
+// error text for the function case too, which locks.
+func (w *Writer) dropUnopenableViews(
+	ctx context.Context,
+	conn *sql.Conn,
+	schema string,
+	views []string,
+) ([]string, error) {
+	var lockable, unopenable []string
+	for _, view := range views {
+		_, err := conn.ExecContext(ctx, buildLockTablesSQL(schema, []string{view}))
+		switch {
+		case err == nil:
+			lockable = append(lockable, view)
+		case isInvalidViewError(err):
+			unopenable = append(unopenable, view)
+		default:
+			return nil, errors.Join(
+				fmt.Errorf("mysql: lock cleanup view %s: %w", view, err),
+				releaseTableLocks(ctx, conn),
+			)
+		}
+	}
+	if err := releaseTableLocks(ctx, conn); err != nil {
+		return nil, err
+	}
+	if len(unopenable) == 0 {
+		return lockable, nil
+	}
+	if err := rejectExternalViews(ctx, conn, schema, w.dialect); err != nil {
+		return nil, err
+	}
+	if err := rejectExternalStoredPrograms(ctx, conn, schema); err != nil {
+		return nil, err
+	}
+	dropSQL := buildDropObjectsSQL(schema, "VIEW", unopenable)
+	_, err := conn.ExecContext(ctx, dropSQL)
+	if err := formatDropObjectsError("VIEW", unopenable, dropSQL, err); err != nil {
+		return nil, err
+	}
+	return lockable, nil
 }
 
 func waitForOwnedMetadataLock(

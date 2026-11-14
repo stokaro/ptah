@@ -82,14 +82,17 @@ func changesNothing(file *File, change countedChange) bool {
 }
 
 // stateDecidedStatements are the statements of an up file holding a change
-// only the starting state decides ([stateMayDecide]), and for the community
-// count also a type drop the state may show the binary does not see
-// ([typeDropStateDecides]). A count that skips what such a statement skips
-// asks for that state.
+// only the starting state decides ([stateMayDecide]), a DROP SEQUENCE ...
+// CASCADE whose table changes that state names ([cascadeStateDecides]), and
+// for the community count also a type drop the state may show the binary does
+// not see ([typeDropStateDecides]). A count that skips what such a statement
+// skips, or counts what it cascades to, asks for that state.
 func stateDecidedStatements(file *File, changes []countedChange, count ChangeCount) []int {
 	var decided []int
 	for _, change := range changes {
-		if stateMayDecide(file, change) || count == ChangeCountAtlasCommunity && typeDropStateDecides(file, change) {
+		if !change.outside && stateMayDecide(file, change) ||
+			count.readsStartingState() && cascadeStateDecides(file, change) ||
+			count == ChangeCountAtlasCommunity && typeDropStateDecides(file, change) {
 			decided = append(decided, change.StatementIndex)
 		}
 	}
@@ -104,6 +107,14 @@ func typeDropStateDecides(file *File, change countedChange) bool {
 	return change.on == kindType && change.Kind == SchemaChangeDrop &&
 		listsObjects(file.dialect, lintext.BaselineType) &&
 		unseenBefore(file, change.StatementIndex, lintkit.NormalizeReference(change.Object))
+}
+
+// cascadeStateDecides reports a DROP SEQUENCE ... CASCADE of a sequence
+// nothing before it in the file names ([unseenBefore]): the starting state
+// names the tables whose column defaults call it, which
+// [withCascadedDefaults] counts.
+func cascadeStateDecides(file *File, change countedChange) bool {
+	return change.cascades != "" && unseenBefore(file, change.StatementIndex, change.cascades)
 }
 
 // dropsNonEnumType reports a type drop [typeDropStateDecides] lets the
@@ -354,7 +365,13 @@ func mayBeAbsent(file *File, index int, ref string) bool {
 // not show, such as a DO block, a CALL, a prepared statement or a SET that
 // moves the search path, may have done either out of sight.
 func unseenBefore(file *File, index int, ref string) bool {
-	return !opaqueBefore(file, index) && !namedBefore(file, index, lastComponent(ref))
+	return unseenBeforeExcept(file, index, ref, nil)
+}
+
+// unseenBeforeExcept is [unseenBefore] with the statements transparent names
+// read as plain, for a caller that knows what they change.
+func unseenBeforeExcept(file *File, index int, ref string, transparent map[int]bool) bool {
+	return !opaqueBeforeExcept(file, index, transparent) && !namedBefore(file, index, lastComponent(ref))
 }
 
 // newTable returns the folded reference of the table the statement at index
@@ -422,11 +439,14 @@ func unionSubjects(file *File, sources ...func(*File) []int) []int {
 // tables exist their own words show.
 var plainStatements = []string{"CREATE", "ALTER", "DROP", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "COMMENT", "GRANT", "REVOKE"}
 
-// opaqueBefore reports whether a statement before index starts with a word
-// outside [plainStatements], or is one of them that may change tables it does
-// not name ([hidesItsEffect]).
-func opaqueBefore(file *File, index int) bool {
+// opaqueBeforeExcept reports whether a statement before index, other than
+// those transparent names, starts with a word outside [plainStatements], or is
+// one of them that may change tables it does not name ([hidesItsEffect]).
+func opaqueBeforeExcept(file *File, index int, transparent map[int]bool) bool {
 	for i := range index {
+		if transparent[i] {
+			continue
+		}
 		words := file.Statements[i].Words
 		if len(words) == 0 || !slices.Contains(plainStatements, words[0]) || hidesItsEffect(words) {
 			return true

@@ -92,9 +92,10 @@ type Entry struct {
 	Data []byte
 	// Source is the path of the file the entry was converted from, relative
 	// to the source directory, such as "1_init.up.sql" for a golang-migrate
-	// file. It is empty for a Liquibase entry, which is one changeset rather
-	// than one file.
-	Source string
+	// file, and SourceData is that file as read. Both are empty for a
+	// Liquibase entry, which is one changeset rather than one file.
+	Source     string
+	SourceData []byte
 }
 
 // DroppedRollback is one rollback an import into the Atlas single-file layout
@@ -1099,11 +1100,11 @@ func loadAtlasEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
 		if file.IsDir() || filepath.Ext(file.Name()) != ".sql" {
 			continue
 		}
-		data, err := readImportSQLFile(fsys, file.Name())
+		raw, err := readRawImportSQLFile(fsys, file.Name())
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{Name: file.Name(), Data: data, Source: file.Name()})
+		entries = append(entries, Entry{Name: file.Name(), Data: normalizeSQL(raw), Source: file.Name(), SourceData: raw})
 	}
 	sortEntries(entries)
 	return entries, nil
@@ -1125,11 +1126,16 @@ func loadGolangMigrateEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) 
 		if match[3] != "up" {
 			continue
 		}
-		data, err := readImportSQLFile(fsys, file.Name())
+		raw, err := readRawImportSQLFile(fsys, file.Name())
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{Name: match[1] + "_" + match[2] + ".sql", Data: data, Source: file.Name()})
+		entries = append(entries, Entry{
+			Name:       match[1] + "_" + match[2] + ".sql",
+			Data:       normalizeSQL(raw),
+			Source:     file.Name(),
+			SourceData: raw,
+		})
 	}
 	sortEntries(entries)
 	return entries, nil
@@ -1172,7 +1178,7 @@ func loadDirectiveSectionEntries(
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{Name: file.Name(), Data: up, Source: file.Name()})
+		entries = append(entries, Entry{Name: file.Name(), Data: up, Source: file.Name(), SourceData: data})
 	}
 	sortEntries(entries)
 	return entries, nil
@@ -1211,11 +1217,16 @@ func loadFlywayEntries(fsys fs.FS) ([]Entry, error) {
 
 	entries := make([]Entry, 0, len(covered))
 	for i, file := range covered {
-		data, err := readImportSQLFile(fsys, file.name)
+		raw, err := readRawImportSQLFile(fsys, file.name)
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, Entry{Name: flywayEntryName(versions[i], file.description), Data: data, Source: file.name})
+		entries = append(entries, Entry{
+			Name:       flywayEntryName(versions[i], file.description),
+			Data:       normalizeSQL(raw),
+			Source:     file.name,
+			SourceData: raw,
+		})
 	}
 	return entries, nil
 }
@@ -1912,17 +1923,9 @@ func flywayOrderingKey(file flywaySumFile) (int64, error) {
 	return key, nil
 }
 
-func readImportSQLFile(fsys fs.FS, name string) ([]byte, error) {
-	data, err := readRawImportSQLFile(fsys, name)
-	if err != nil {
-		return nil, err
-	}
-	return normalizeSQL(data), nil
-}
-
-// readRawImportSQLFile reads a source migration without normalizing it, for the
-// callers that must decide normalization for themselves. See
-// [loadDirectiveSectionEntries].
+// readRawImportSQLFile reads a source migration without normalizing it: the
+// caller normalizes what it converts and keeps the bytes as read for the
+// entry's source. See [loadDirectiveSectionEntries].
 func readRawImportSQLFile(fsys fs.FS, name string) ([]byte, error) {
 	data, err := fs.ReadFile(fsys, name)
 	if err != nil {

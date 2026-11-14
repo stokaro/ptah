@@ -246,11 +246,21 @@ func baselineColumnsOf(schema *catalog.Database, version int64) []lintext.Baseli
 				TableCollation:   table.Collate,
 				TablePartitioned: table.Partitioned,
 				NotNull:          strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
-				HasDefault:       column.ColumnDefault != nil && strings.TrimSpace(*column.ColumnDefault) != "",
+				HasDefault:       strings.TrimSpace(columnDefault(column)) != "",
+				Default:          columnDefault(column),
 			})
 		}
 	}
 	return columns
+}
+
+// columnDefault is the column's DEFAULT expression as the reader read it,
+// empty for a column without one.
+func columnDefault(column catalog.Column) string {
+	if column.ColumnDefault == nil {
+		return ""
+	}
+	return *column.ColumnDefault
 }
 
 // baselineIndexesOf lists every index of the read schema as the state

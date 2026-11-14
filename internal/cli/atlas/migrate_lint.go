@@ -297,7 +297,7 @@ func runAtlasMigrateLint(
 	// A foreign layout is rebuilt here as up-only Atlas migrations, so what the
 	// analyzers replay is the Atlas layout on either branch and the native
 	// directory format below stays atlas for both.
-	snapshot, err := captured.migrationFS(source.Display)
+	snapshot, sources, err := captured.lintMigrationFS(source.Display)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
 	}
@@ -325,6 +325,7 @@ func runAtlasMigrateLint(
 	if notClean, ok := errors.AsType[*migrateclean.NotCleanError](err); ok {
 		err = devsnapshot.Lint.Wrap(notClean)
 	}
+	text := atlasreport.MigrateLintOptions{Analysis: &report.Analysis, RevisionVersions: revisionVersions, Sources: sources}
 	if err != nil {
 		// Before the error goes out, whichever way it goes: a run that
 		// analyzed against a release line nobody named still analyzed against
@@ -351,17 +352,14 @@ func runAtlasMigrateLint(
 		switch {
 		case replayFailure != nil && formatOutput:
 			if writeErr := writeAtlasMigrateLintReplayError(
-				cmd, opts, dir, report, integrity, revisionVersions, fileNames, replayFailure, err,
+				cmd, opts, dir, report, integrity, revisionVersions, fileNames, sources, replayFailure, err,
 			); writeErr != nil {
 				return cmdutil.Fail(cmd, writeErr)
 			}
 			return exitcode.New(1, err)
 		case replayFailure != nil:
-			if writeErr := atlasreport.WriteMigrateLintText(cmd.OutOrStdout(), atlasreport.MigrateLintOptions{
-				Analysis:         &report.Analysis,
-				RevisionVersions: revisionVersions,
-				ReplayFailure:    replayFailure,
-			}); writeErr != nil {
+			text.ReplayFailure = replayFailure
+			if writeErr := atlasreport.WriteMigrateLintText(cmd.OutOrStdout(), text); writeErr != nil {
 				return cmdutil.Fail(cmd, writeErr)
 			}
 			return exitcode.New(1, err)
@@ -378,6 +376,7 @@ func runAtlasMigrateLint(
 			Error:            report.Error,
 			RevisionVersions: revisionVersions,
 			FileNames:        fileNames,
+			Sources:          sources,
 			Schema: atlasreport.MigrateLintSchema{
 				Current: report.SchemaCurrent,
 				Desired: report.SchemaDesired,
@@ -385,10 +384,7 @@ func runAtlasMigrateLint(
 		}); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-	} else if err := atlasreport.WriteMigrateLintText(cmd.OutOrStdout(), atlasreport.MigrateLintOptions{
-		Analysis:         &report.Analysis,
-		RevisionVersions: revisionVersions,
-	}); err != nil {
+	} else if err := atlasreport.WriteMigrateLintText(cmd.OutOrStdout(), text); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	// Stderr, after the report and whatever format produced it: stdout and the
@@ -454,6 +450,7 @@ func writeAtlasMigrateLintReplayError(
 	report migrationlintreport.Report,
 	integrity atlasreport.MigrateLintIntegrity,
 	revisionVersions, fileNames map[int64]string,
+	sources map[int64]atlasreport.MigrateLintSource,
 	replayFailure *atlasreport.MigrateLintReplayFailure,
 	replayErr error,
 ) error {
@@ -471,6 +468,7 @@ func writeAtlasMigrateLintReplayError(
 		ReplayFailure:    replayFailure,
 		RevisionVersions: revisionVersions,
 		FileNames:        fileNames,
+		Sources:          sources,
 		Schema: atlasreport.MigrateLintSchema{
 			Current: report.SchemaCurrent,
 			Desired: report.SchemaDesired,

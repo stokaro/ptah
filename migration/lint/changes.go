@@ -144,10 +144,11 @@ func foldAtlasReplacements(file *File, changes []SchemaChange) []SchemaChange {
 // keeps (stokaro/ptah#1249).
 //
 // A statement is excluded only when the scope rejected something it named and
-// nothing it named survived. A statement the parser cannot model, one whose
-// nodes name no object at all, and one the scope rejected nothing of are all
-// left alone -- silence there is absence of evidence, and it must not be able to
-// drop a finding.
+// nothing it named survived; a change kept only for what it cascades to
+// ([countedChange.outside]) does not survive. A statement the parser cannot
+// model, one whose nodes name no object at all, and one the scope rejected
+// nothing of are all left alone -- silence there is absence of evidence, and it
+// must not be able to drop a finding.
 func statementSchemaChanges(file *File, stmt Statement, dialect string, scope schemaScope) ([]countedChange, bool) {
 	list, err := parseStatement(file, stmt.SQL, dialect)
 	if err != nil || list == nil {
@@ -168,7 +169,7 @@ func statementSchemaChanges(file *File, stmt Statement, dialect string, scope sc
 		changes = append(changes, nodeChanges...)
 		scopedOut = scopedOut || out
 	}
-	return changes, scopedOut && len(changes) == 0
+	return changes, scopedOut && !slices.ContainsFunc(changes, func(change countedChange) bool { return !change.outside })
 }
 
 // parseStatement reads one statement in the grammar of the run's dialect. It is
@@ -271,7 +272,15 @@ func nodeSchemaChanges(file *File, stmt Statement, node ast.Node, scope schemaSc
 	if object, on, ok := dropNodeObject(node); ok {
 		counted := change(SchemaChangeDrop, object, on)
 		counted.guarded, counted.parent = dropNodeGuard(node)
-		return scope.keepChange(counted, nodeScopeReference(node, object))
+		counted.cascades = dropNodeCascades(node)
+		kept, out := scope.keepChange(counted, nodeScopeReference(node, object))
+		if out && counted.cascades != "" {
+			// The sequence is outside the scope, and a table whose default
+			// calls it may be inside: the cascade changes that table.
+			counted.outside = true
+			return []countedChange{counted}, true
+		}
+		return kept, out
 	}
 	if object, on, ok := modifyNodeObject(node); ok {
 		return scope.keepChange(change(SchemaChangeModify, object, on), nodeScopeReference(node, object))
@@ -452,6 +461,16 @@ func dropNodeGuard(node ast.Node) (guarded bool, parent string) {
 	default:
 		return false, ""
 	}
+}
+
+// dropNodeCascades returns the folded reference of the sequence a DROP
+// SEQUENCE ... CASCADE drops, which takes with it every column default that
+// calls the sequence, and "" for any other drop.
+func dropNodeCascades(node ast.Node) string {
+	if n, ok := node.(*ast.DropSequenceNode); ok && n.Cascade {
+		return lintkit.NormalizeReference(qualifiedName(n.Schema, n.Name))
+	}
+	return ""
 }
 
 // qualifiedName joins the schema a node keeps apart from its name back onto

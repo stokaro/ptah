@@ -840,6 +840,12 @@ not block apply. Remove or replace the view, or keep the table, before applying
 the plan. A view the plan removes is dropped before the table. The warning
 cannot identify a view absent from the declaration and hidden from the read.
 
+A dev database can hold such a view after a replay, for example when
+`migrate lint` replays a migration that drops a table a view reads. Both
+servers refuse to lock that view with error 1356, so cleanup drops the views
+the server cannot open first, then locks and drops the others. The checks for
+views and stored programs in other databases run again before that first drop.
+
 ## Replacing a trigger
 
 A plan runs every trigger change in one block, after the columns a new trigger

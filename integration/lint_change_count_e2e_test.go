@@ -322,6 +322,63 @@ var postgresChangeCountRows = []struct {
 		files:     map[string]string{"1_init.sql": countTables(1, 10) + "CREATE SEQUENCE s;\n"},
 		community: "-- 10 schema changes", communityTotal: "10", full: "-- 11 schema changes",
 	},
+	{
+		name: "a cascade of a sequence one table's default names",
+		files: map[string]string{
+			"1_base.sql": "CREATE SEQUENCE s;\nCREATE TABLE t (id int DEFAULT nextval('s'));\n",
+			"2_head.sql": "DROP SEQUENCE s CASCADE;\n",
+		},
+		community: "-- 1 schema change", communityTotal: "1", full: "-- 2 schema changes",
+	},
+	{
+		name: "a cascade of a sequence two tables' defaults name",
+		files: map[string]string{
+			"1_base.sql": "CREATE SEQUENCE s;\nCREATE TABLE t1 (id int DEFAULT nextval('s'));\nCREATE TABLE t2 (id int DEFAULT nextval('s'));\n",
+			"2_head.sql": "DROP SEQUENCE s CASCADE;\n",
+		},
+		community: "-- 2 schema changes", communityTotal: "2", full: "-- 3 schema changes",
+	},
+	{
+		name: "control: a cascade of a sequence no default names",
+		files: map[string]string{
+			"1_base.sql": "CREATE SEQUENCE s;\nCREATE TABLE t (id int);\n",
+			"2_head.sql": "DROP SEQUENCE s CASCADE;\n",
+		},
+		community: "", communityTotal: "0", full: "-- 1 schema change",
+	},
+	{
+		name: "a cascade of a serial column's sequence",
+		files: map[string]string{
+			"1_base.sql": "CREATE TABLE t (id serial);\n",
+			"2_head.sql": "DROP SEQUENCE t_id_seq CASCADE;\n",
+		},
+		community: "-- 1 schema change", communityTotal: "1", full: "-- 2 schema changes",
+	},
+	{
+		name: "a qualified cascade of a sequence one table's default names",
+		files: map[string]string{
+			"1_base.sql": "CREATE SEQUENCE s;\nCREATE TABLE t (id int DEFAULT nextval('s'));\n",
+			"2_head.sql": "DROP SEQUENCE public.s CASCADE;\n",
+		},
+		community: "-- 1 schema change", communityTotal: "1", full: "-- 2 schema changes",
+	},
+	{
+		name: "a cascade of a sequence outside the reviewed schema",
+		files: map[string]string{
+			"1_base.sql": "CREATE SCHEMA app;\nCREATE SEQUENCE app.s;\nCREATE TABLE t (id int DEFAULT nextval('app.s'));\n",
+			"2_head.sql": "DROP SEQUENCE app.s CASCADE;\n",
+		},
+		community: "-- 1 schema change", communityTotal: "1", full: "-- 1 schema change",
+	},
+	{
+		name: "two cascades of the sequences of one table",
+		files: map[string]string{
+			"1_base.sql": "CREATE SEQUENCE s1;\nCREATE SEQUENCE s2;\n" +
+				"CREATE TABLE t (a int DEFAULT nextval('s1'), b int DEFAULT nextval('s2'));\n",
+			"2_head.sql": "DROP SEQUENCE s1 CASCADE;\nDROP SEQUENCE s2 CASCADE;\n",
+		},
+		community: "-- 2 schema changes", communityTotal: "2", full: "-- 4 schema changes",
+	},
 }
 
 // postgresDevURL creates a database nothing has written to on the server

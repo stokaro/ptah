@@ -17,8 +17,12 @@ import (
 type State struct {
 	// read reports that the run read this state, so an object it does not
 	// hold is absent rather than unknown.
-	read  bool
-	byRef map[string][]lintext.BaselineColumn
+	read bool
+	// columns holds every column of the state in baseline order, for the
+	// questions no table reference narrows: which tables a sequence's defaults
+	// span.
+	columns []lintext.BaselineColumn
+	byRef   map[string][]lintext.BaselineColumn
 	// byTable holds every column of a table under the same reference
 	// spellings byRef uses, in catalog order, for the rules whose subject is
 	// the whole table.
@@ -115,6 +119,7 @@ func NewStates(baseline lintext.Baseline) map[int64]State {
 	for _, column := range columns {
 		state := stateOf(column.Version)
 		nameSchema(&state, column.Schema)
+		state.columns = append(state.columns, column)
 		for _, key := range baselineKeys(column) {
 			state.byRef[key] = append(state.byRef[key], column)
 		}
@@ -199,6 +204,14 @@ func baselineTableKeys(schema, tableName string) []string {
 		return []string{table}
 	}
 	return []string{table, NormalizeIdent(schema) + "." + table}
+}
+
+// Columns returns every column of the state, of every table, in the order the
+// baseline lists them. It is nil for a state nobody read and for one that holds
+// no column. The slice is the state's own: a caller reads it and does not
+// change it.
+func (b State) Columns() []lintext.BaselineColumn {
+	return b.columns
 }
 
 // TableColumns returns every baseline column of one table, in catalog order,

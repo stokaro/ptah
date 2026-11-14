@@ -47,6 +47,18 @@ func TestNodeSchemaChanges_ScopedOutMeansRejectedNotSilent(t *testing.T) {
 			wantScopedOut: true,
 		},
 		{
+			name:          "an out-of-scope sequence is scoped out and kept for its cascade",
+			node:          &ast.DropSequenceNode{Schema: "app", Name: "s", Cascade: true},
+			wantChanges:   1,
+			wantScopedOut: true,
+		},
+		{
+			name:          "an out-of-scope sequence without a cascade is scoped out",
+			node:          &ast.DropSequenceNode{Schema: "app", Name: "s"},
+			wantChanges:   0,
+			wantScopedOut: true,
+		},
+		{
 			name:          "a node naming nothing under review is not scoped out",
 			node:          &ast.CommentNode{},
 			wantChanges:   1,

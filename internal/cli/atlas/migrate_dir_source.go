@@ -4,10 +4,13 @@ import (
 	"io"
 	"io/fs"
 	"net/url"
+	"path"
 
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/fsnapshot"
+	"ptah.run/migration/migrationfile"
 )
 
 // This file holds the shared way a read-only compat verb turns a `--dir`
@@ -197,4 +200,33 @@ func (c atlasDirCapture) migrationFS(display string) (fs.FS, error) {
 		return nil, err
 	}
 	return converted.FS, nil
+}
+
+// lintMigrationFS is [atlasDirCapture.migrationFS] together with the source
+// file of each converted migration, keyed by its execution-order key, which is
+// what a lint report names a converted file by and places its findings in. A
+// native Atlas directory is analyzed as read and has none.
+//
+// Call it only after the gate has passed.
+func (c atlasDirCapture) lintMigrationFS(display string) (fs.FS, map[int64]atlasreport.MigrateLintSource, error) {
+	if atlasmigrate.ReadsNativeAtlasDir(c.format) {
+		return c.source, nil, nil
+	}
+	converted, err := atlasmigrate.ConvertApplySource(c.captured, display, c.format)
+	if err != nil {
+		return nil, nil, err
+	}
+	sources := make(map[int64]atlasreport.MigrateLintSource, len(converted.Entries))
+	for _, entry := range converted.Entries {
+		file, err := migrationfile.ParseAtlasFileName(entry.Name)
+		if err != nil || entry.Source == "" {
+			continue
+		}
+		sources[file.Version] = atlasreport.MigrateLintSource{
+			Name:  path.Base(entry.Source),
+			Text:  string(entry.SourceData),
+			Lines: entry.SourceLines(),
+		}
+	}
+	return converted.FS, sources, nil
 }
