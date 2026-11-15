@@ -215,13 +215,16 @@ func TestMigrateGenerateDoesNotValidateSQLiteToggleForPostgresPathFailure(t *tes
 // wrote, for the native spelling of a workflow ptah-compat migrate diff
 // provisions for.
 //
-// The assertion is the absence of that sentence rather than a success, because
-// what happens next depends on whether a container runtime is reachable: with
-// one the run provisions and proceeds, without one it fails naming the daemon.
-// Both prove the value reached the provisioner, and only the unprovisioned
-// route can produce the dialect error.
+// The container runtime is pointed at a socket that does not exist, so the run
+// stops at the provisioner's own refusal, naming the runtime, and starts no
+// container. That refusal is what proves the value reached the provisioner;
+// only the unprovisioned route can produce the dialect error. With a reachable
+// runtime the run would start a database server, which is the integration
+// suite's job (integration/devdocker_provision_e2e_test.go), and takes most of
+// a minute on a remote daemon.
 func TestMigrateGenerateResolvesADockerDevURL(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv("DOCKER_HOST", "unix:///tmp/ptah-migrate-no-such-socket.sock")
 	dir := t.TempDir()
 	c.Assert(os.MkdirAll(filepath.Join(dir, "models"), 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "models", "models.go"), []byte(`package models
@@ -247,21 +250,11 @@ type T struct {
 
 	err := cmd.Execute()
 
-	// A run that reached the provisioner may still fail for reasons this test
-	// does not control. What it may never do again is report the scheme as a
-	// dialect.
-	c.Assert(errorText(err), qt.Not(qt.Contains), "unsupported database dialect: docker")
+	// The runtime's half of the sentence is the docker client's, so only the
+	// provisioner's half is matched. A machine with no docker client gets the
+	// provisioner's other refusal, which proves the same route.
+	c.Assert(err, qt.ErrorMatches, `(?s)a docker:// dev database URL needs a (running )?container runtime, .*`)
 	c.Assert(out.String(), qt.Not(qt.Contains), "unsupported database dialect: docker")
-}
-
-// errorText renders an error for an assertion that must hold whether or not the
-// run failed, so the caller states one expectation instead of branching on the
-// outcome it does not control.
-func errorText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
 }
 
 // A nil file set is the no-change case, and saying nothing at all about it --

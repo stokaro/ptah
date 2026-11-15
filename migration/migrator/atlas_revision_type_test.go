@@ -2,12 +2,15 @@ package migrator_test
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"path/filepath"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	qt "github.com/frankban/quicktest"
+	"modernc.org/sqlite"
 
 	"ptah.run/dbschema"
 	"ptah.run/migration/migrationfile"
@@ -238,14 +241,27 @@ WHERE revisions.version = '1'`,
 
 // slowStatement runs long enough for the timeline tests below to tell a
 // recorded duration that covers the migration from one that does not: they
-// require at least 10ms. The size is a trade. A smaller blob risks finishing
-// under 10ms on a fast machine, and the race detector makes every MiB cost
-// about forty times as much. Measured on a 3.8 GHz Xeon E-2276G: 8 MiB takes
-// about 120ms without -race and about 5s with it, where 64 MiB took about 50s.
-const slowStatement = "SELECT length(randomblob(8388608));\n"
+// require at least 10ms. It waits rather than computes, so its duration is the
+// same on every machine and under the race detector, which multiplies the cost
+// of CPU work in the pure-Go SQLite engine about forty times.
+const slowStatement = "SELECT " + pauseFunction + "(20);\n"
+
+// pauseFunction names a SQL function, registered with the SQLite driver of
+// this test binary only, that sleeps for the milliseconds it is given.
+const pauseFunction = "ptah_test_pause"
+
+// registerPause registers [pauseFunction] for the connections opened after it.
+var registerPause = sync.OnceValue(func() error {
+	return sqlite.RegisterScalarFunction(pauseFunction, 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		milliseconds, _ := args[0].(int64)
+		time.Sleep(time.Duration(milliseconds) * time.Millisecond)
+		return milliseconds, nil
+	})
+})
 
 func TestAtlasMigrationExecutionTimeline_TxModeAllSuccess(t *testing.T) {
 	c := qt.New(t)
+	c.Assert(registerPause(), qt.IsNil)
 	conn, err := dbschema.ConnectToDatabase(
 		t.Context(),
 		"sqlite://"+filepath.Join(t.TempDir(), "atlas-tx-all-success.sqlite"),
@@ -292,6 +308,7 @@ WHERE version = '1'`,
 
 func TestAtlasMigrationExecutionTimeline_TxModeAllFailure(t *testing.T) {
 	c := qt.New(t)
+	c.Assert(registerPause(), qt.IsNil)
 	conn, err := dbschema.ConnectToDatabase(
 		t.Context(),
 		"sqlite://"+filepath.Join(t.TempDir(), "atlas-tx-all-failure.sqlite"),

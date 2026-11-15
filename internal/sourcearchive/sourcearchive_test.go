@@ -228,7 +228,7 @@ func TestRead_FailurePath(t *testing.T) {
 			options: tarMigrations, is: sourcecontent.ErrPathConflict, says: `.*"0001_a.sql"`},
 		{name: "too many entries", object: tarGzip(c, append([]entry{good}, numbered("vendor/%05d.txt", sourcearchive.MaxEntries)...)...),
 			options: tarMigrations, is: sourcearchive.ErrTooLarge, says: `.*more than 10000 entries`},
-		{name: "too many zip entries", object: zipOf(c, append([]entry{good}, numbered("vendor/%05d.txt", sourcearchive.MaxEntries)...)...),
+		{name: "too many zip entries", object: zipOf(c, append([]entry{good}, stored(numbered("vendor/%05d.txt", sourcearchive.MaxEntries))...)...),
 			options: zipMigrations, is: sourcearchive.ErrTooLarge, says: `.*more than 10000 entries`},
 		{name: "expansion past its bound", object: expandsPast(c), options: tarMigrations,
 			is: sourcearchive.ErrTooLarge, says: `.*expands past 1073741824 bytes`},
@@ -417,16 +417,27 @@ func numbered(format string, count int) []entry {
 	return entries
 }
 
+// stored marks entries to be written to a zip archive as they are, under the
+// store method. A zip writer deflating ten thousand entries starts a
+// compressor for each, which is most of what building the archive costs under
+// -race, and the count of entries is what the archive is for.
+func stored(entries []entry) []entry {
+	for i := range entries {
+		entries[i].zipRaw = true
+	}
+	return entries
+}
+
 // expandsPast is a tar.gz whose one entry, outside any selection, holds a
-// GiB of zeros. Its gzip stream is one member of the tar header and 64 MiB,
-// then the same compressed 64 MiB again until the whole passes the bound, so
-// the test compresses 128 MiB to build it.
+// GiB of zeros. Its gzip stream is one member of the tar header and 1 MiB,
+// then the same compressed MiB again until the whole passes the bound, so the
+// test compresses 2 MiB to build it.
 func expandsPast(c *qt.C) []byte {
 	var header bytes.Buffer
 	c.Assert(tar.NewWriter(&header).WriteHeader(&tar.Header{
 		Name: "padding.bin", Typeflag: tar.TypeReg, Mode: 0o644, Size: sourcearchive.MaxExpandedBytes,
 	}), qt.IsNil)
-	zeros := make([]byte, 64<<20)
+	zeros := make([]byte, 1<<20)
 	var first, repeated bytes.Buffer
 	for _, member := range []struct {
 		out   *bytes.Buffer
