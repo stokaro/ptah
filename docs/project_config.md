@@ -201,8 +201,10 @@ Warning: the exclude selection from ptah.yaml matched no objects: "nosuch_table"
 ```
 
 A selector the command line adds is named as `--exclude`'s, and one that
-`PTAH_EXCLUDE` adds is named by the variable. `schema serve`,
-`migrations up --check-drift` and `migrations down --plan` do not report it.
+`PTAH_EXCLUDE` adds is named by the variable. `migrations up --check-drift`
+warns and goes on, and names a selector it adds as `--drift-exclude`'s or by
+`PTAH_DRIFT_EXCLUDE`. `schema serve` and `migrations down --plan` do not
+report it.
 
 Verbs that compare nothing do not apply the list, among them `schema render`,
 `schema validate`, `migrations lint`, `migrations status`, and `migrations up`

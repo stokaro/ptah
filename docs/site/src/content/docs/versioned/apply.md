@@ -361,6 +361,15 @@ not manage, such as a table another tool owns, with the selectors
 `schema diff --exclude` takes. The `exclude` list of `ptah.yaml` leaves its
 objects out of the check too, and `--drift-exclude` adds to it.
 
+A selector that matches no object in the database or in the replayed history
+protects nothing, so a mistyped name leaves its table in the check. The check
+warns on standard error, naming where the selector was written, and goes on;
+the `--json` document on standard output is unchanged:
+
+```text
+Warning: the --drift-exclude selection matched no objects: "audit_log".
+```
+
 The lock keeps a cooperating runner from moving the history between the check
 and the apply; DDL from a session that does not take it can still land after
 the check. The check never repairs

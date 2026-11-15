@@ -44,8 +44,11 @@ const (
 // the migration lock can still land after the check; the lock coordinates
 // runners, not every session that can alter the schema.
 type driftCheck struct {
-	shadowURL      string
-	exclude        []string
+	shadowURL string
+	// selection is what the comparison leaves out: the project's exclude list
+	// and --drift-exclude, with where each selector came from and the stream
+	// that is told about one that matched nothing.
+	selection      atlasschema.LiveSelection
 	connectTimeout time.Duration
 	runtime        *engine.Runtime
 	conn           *dbschema.DatabaseConnection
@@ -63,9 +66,11 @@ type driftCheck struct {
 //
 // The check leaves out the project's exclude list together with
 // --drift-exclude, as `schema drift` leaves out the list with its --exclude:
-// an object the project leaves to another tool is not drift.
+// an object the project leaves to another tool is not drift. A selector that
+// matched nothing on either side is a warning on standard error naming where
+// it was written, as `schema drift` gives one, and the check goes on.
 func prepareDriftCheck(
-	ctx context.Context,
+	cmd *cobra.Command,
 	opts options,
 	projectCfg projectconfig.Config,
 	dbURL string,
@@ -76,32 +81,33 @@ func prepareDriftCheck(
 	if !opts.checkDrift {
 		return nil, func() {}, nil
 	}
+	ctx := cmd.Context()
 	runtime, err := engineruntime.Resolve(ctx, engineruntime.DatabaseURL(dbURL))
 	if err != nil {
 		return nil, func() {}, err
 	}
-	// The drift check writes no warning for a selector that matched nothing,
-	// so where each one came from is not needed.
-	opts.driftExclude, _, err = dbcli.EffectiveExclude(nil, driftExcludeFlag, opts.driftExclude, projectCfg, runtime.Selections())
+	exclude, sources, err := dbcli.EffectiveExclude(cmd, driftExcludeFlag, opts.driftExclude, projectCfg, runtime.Selections())
 	if err != nil {
 		return nil, func() {}, err
 	}
+	selection := atlasschema.LiveSelection{Exclude: exclude, ExcludeSources: sources, Diagnostics: cmd.ErrOrStderr()}
 	// Before the migration lock, so the lock is not held while a container
 	// starts.
 	shadowURL, release, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
 	if err != nil {
 		return nil, func() {}, err
 	}
-	return newDriftCheck(opts, shadowURL, settings.connectTimeout, runtime, conn, mig, settings.revisionFormat, opts.migrationsTable),
+	return newDriftCheck(opts, shadowURL, selection, settings.connectTimeout, runtime, conn, mig, settings.revisionFormat, opts.migrationsTable),
 		release, nil
 }
 
 // newDriftCheck is the check --check-drift asks for, or nil when it was not
-// asked for. revisionFormat and migrationsTable are the run's resolved
-// revision-table settings.
+// asked for. selection is what the comparison leaves out. revisionFormat and
+// migrationsTable are the run's resolved revision-table settings.
 func newDriftCheck(
 	opts options,
 	shadowURL string,
+	selection atlasschema.LiveSelection,
 	connectTimeout time.Duration,
 	runtime *engine.Runtime,
 	conn *dbschema.DatabaseConnection,
@@ -114,7 +120,7 @@ func newDriftCheck(
 	}
 	return &driftCheck{
 		shadowURL:      shadowURL,
-		exclude:        opts.driftExclude,
+		selection:      selection,
 		connectTimeout: connectTimeout,
 		runtime:        runtime,
 		conn:           conn,
@@ -252,9 +258,8 @@ func (d *driftCheck) run(ctx context.Context) (migrator.DriftCheck, error) {
 		check.Replayed, check.ReplayedKeys = nil, nil
 	}
 
-	selection := atlasschema.LiveSelection{Exclude: d.exclude}
 	info := d.conn.Info()
-	result, err := shadow.VerifyApplied(selection.ReadContext(ctx, d.runtime.Selections()), shadow.AppliedVerifyOptions{
+	result, err := shadow.VerifyApplied(d.selection.ReadContext(ctx, d.runtime.Selections()), shadow.AppliedVerifyOptions{
 		Runtime:           d.runtime,
 		ShadowDatabaseURL: d.shadowURL,
 		TargetConn:        d.conn,
@@ -262,7 +267,7 @@ func (d *driftCheck) run(ctx context.Context) (migrator.DriftCheck, error) {
 		Dialect:           info.Dialect,
 		Capabilities:      info.Capabilities,
 		MetadataTables:    d.metadata,
-		Scope:             d.scope(selection),
+		Scope:             d.scope(),
 		ConnectTimeout:    d.connectTimeout,
 	})
 	if err != nil {
@@ -293,17 +298,18 @@ func (d *driftCheck) run(ctx context.Context) (migrator.DriftCheck, error) {
 	}
 }
 
-// scope applies --drift-exclude to both sides of the comparison, the way
-// `schema diff --exclude` does.
-func (d *driftCheck) scope(selection atlasschema.LiveSelection) func(
+// scope applies the selection to both sides of the comparison, the way
+// `schema diff --exclude` does, and warns about a selector that matched
+// nothing on either side.
+func (d *driftCheck) scope() func(
 	context.Context, *catalog.Database, *schemamodel.Database,
 ) (*catalog.Database, *schemamodel.Database, error) {
-	if len(selection.Exclude) == 0 {
+	if len(d.selection.Exclude) == 0 {
 		return nil
 	}
 	info := d.conn.Info()
 	return func(ctx context.Context, target *catalog.Database, replayed *schemamodel.Database) (*catalog.Database, *schemamodel.Database, error) {
-		return selection.Apply(ctx, d.runtime, info, target, replayed)
+		return d.selection.Apply(ctx, d.runtime, info, target, replayed)
 	}
 }
 
