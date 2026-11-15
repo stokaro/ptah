@@ -183,6 +183,83 @@ func TestExcludeNamesAPolicyOfASchemaBoundRun(t *testing.T) {
 	c.Assert(declaredReport.Unmatched, qt.IsNil)
 }
 
+// tablePolicies names each policy as table.policy, the part of its path a
+// source writes whatever schema it leaves out.
+func tablePolicies(refs []objectidentity.ID) []string {
+	var names []string
+	for _, ref := range refs {
+		names = append(names, ref.Parent.Source+"."+ref.Name.Source)
+	}
+	return names
+}
+
+// TestExcludeNamesAPolicyOutsideTheDefaultSchema puts the tables and their
+// policies in reporting. A pattern names the schema the policy is in, and a
+// source that leaves the table unqualified writes it in the scope's schema.
+func TestExcludeNamesAPolicyOutsideTheDefaultSchema(t *testing.T) {
+	tests := []struct {
+		name, exclude string
+		// schema is the schema both sources write; empty leaves them
+		// unqualified.
+		schema        string
+		defaultSchema string
+		realm         bool
+	}{
+		{name: "schema, table and policy", exclude: "reporting.notes.p[type=policy]", schema: "reporting", defaultSchema: "public", realm: true},
+		{name: "table and policy", exclude: "notes.p[type=policy]", schema: "reporting", defaultSchema: "public", realm: true},
+		{name: "schema, table and policy, on unqualified sources", exclude: "reporting.notes.p[type=policy]", defaultSchema: "reporting", realm: true},
+		{name: "a run bound to the schema, on unqualified sources", exclude: "notes.p[type=policy]", defaultSchema: "reporting"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scope := atlasfilter.Scope{
+				Selections: ownerSelections(), Exclude: []string{test.exclude}, DefaultSchema: test.defaultSchema, RealmRelativePatterns: test.realm,
+			}
+
+			current, currentReport, currentErr := atlasfilter.ExcludeDatabaseScopeReport(observedSelectorPolicies(c, test.schema), scope)
+			declared, declaredReport, declaredErr := atlasfilter.ExcludeGeneratedScopeReport(desiredSelectorPolicies(c, test.schema), scope)
+
+			c.Assert(currentErr, qt.IsNil)
+			c.Assert(declaredErr, qt.IsNil)
+			c.Assert(tablePolicies(current.FeatureObjects.Refs()), qt.DeepEquals, []string{"notes.notes_owner", "other.p"})
+			c.Assert(tablePolicies(declared.FeatureObjects.Refs()), qt.DeepEquals, []string{"notes.notes_owner", "other.p"})
+			c.Assert(currentReport.Unmatched, qt.IsNil)
+			c.Assert(declaredReport.Unmatched, qt.IsNil)
+		})
+	}
+}
+
+// TestExcludeReportsTheDefaultSchemaForAPolicyElsewhere is the control for
+// the test above: the default schema names no policy of a table in reporting,
+// whether the source writes the schema or the scope supplies it.
+func TestExcludeReportsTheDefaultSchemaForAPolicyElsewhere(t *testing.T) {
+	tests := []struct {
+		name, schema, defaultSchema string
+	}{
+		{name: "a qualified source", schema: "reporting", defaultSchema: "public"},
+		{name: "an unqualified source", defaultSchema: "reporting"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scope := atlasfilter.Scope{
+				Selections: ownerSelections(), Exclude: []string{"public.notes.p[type=policy]"}, DefaultSchema: test.defaultSchema, RealmRelativePatterns: true,
+			}
+
+			current, currentReport, currentErr := atlasfilter.ExcludeDatabaseScopeReport(observedSelectorPolicies(c, test.schema), scope)
+			declared, declaredReport, declaredErr := atlasfilter.ExcludeGeneratedScopeReport(desiredSelectorPolicies(c, test.schema), scope)
+
+			c.Assert(currentErr, qt.IsNil)
+			c.Assert(declaredErr, qt.IsNil)
+			c.Assert(currentReport.Unmatched, qt.DeepEquals, []string{"public.notes.p[type=policy]"})
+			c.Assert(declaredReport.Unmatched, qt.DeepEquals, []string{"public.notes.p[type=policy]"})
+			c.Assert(current.FeatureObjects.Len(), qt.Equals, len(selectorPolicies))
+			c.Assert(declared.FeatureObjects.Len(), qt.Equals, len(selectorPolicies))
+		})
+	}
+}
+
 // TestExcludeReportsAPolicySelectorThatNamesNothing keeps every policy and
 // reports the selector, which `schema apply` refuses and the comparison verbs
 // print as a warning. A policy named with its schema and no table is one of
@@ -235,6 +312,43 @@ func TestExcludeOfATableStillAsksItsPolicySelector(t *testing.T) {
 	c.Assert(policyPaths(declared.FeatureObjects.Refs()), qt.DeepEquals, []string{"public.other.p"})
 	c.Assert(currentReport.Unmatched, qt.IsNil)
 	c.Assert(declaredReport.Unmatched, qt.IsNil)
+}
+
+// TestExcludeOfASchemaStillAsksItsPolicySelector excludes the public schema
+// and a policy in it. Every table leaves with its schema before the policy
+// selectors are asked; a selector that named a policy there is not reported,
+// and one that named none is.
+func TestExcludeOfASchemaStillAsksItsPolicySelector(t *testing.T) {
+	tests := []struct {
+		name, exclude string
+		wantUnmatched []string
+	}{
+		{name: "a policy the schema holds", exclude: "public.notes.p[type=policy]"},
+		{
+			name:          "a policy the schema does not hold",
+			exclude:       "public.notes.missing[type=policy]",
+			wantUnmatched: []string{"public.notes.missing[type=policy]"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			observed := observedSelectorPolicies(c, "public")
+			observed.Schemas = []catalog.Schema{{Name: "public"}}
+			desired := desiredSelectorPolicies(c, "public")
+			desired.Schemas = []schemamodel.Schema{{Name: "public"}}
+
+			current, currentReport, currentErr := atlasfilter.ExcludeDatabaseScopeReport(observed, realmScope("public", test.exclude))
+			declared, declaredReport, declaredErr := atlasfilter.ExcludeGeneratedScopeReport(desired, realmScope("public", test.exclude))
+
+			c.Assert(currentErr, qt.IsNil)
+			c.Assert(declaredErr, qt.IsNil)
+			c.Assert(current.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(declared.FeatureObjects.Len(), qt.Equals, 0)
+			c.Assert(currentReport.Unmatched, qt.DeepEquals, test.wantUnmatched)
+			c.Assert(declaredReport.Unmatched, qt.DeepEquals, test.wantUnmatched)
+		})
+	}
 }
 
 // TestExcludeOfATableReportsAPolicySelectorItDoesNotHold is the control for
