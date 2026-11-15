@@ -93,6 +93,7 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	clearColumnUniqueForNamedConstraints(database, dbSchema, tableStructNames)
 	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
 	convertFunctions(database, dbSchema.Functions)
+	database.FunctionDependencies = functionCalls(database.Functions)
 	convertSequences(database, dbSchema.Sequences)
 	convertViews(database, dbSchema.Views)
 	convertMaterializedViews(database, dbSchema.MatViews)
@@ -216,6 +217,24 @@ func newDatabase() *schemamodel.Database {
 		RevokedGrants:     make([]schemamodel.Grant, 0),
 		Dependencies:      make(map[string][]string),
 	}
+}
+
+// functionCalls is the call graph of the functions read back: each function's
+// name to the names of the read functions its body calls. A plan that creates
+// them orders them by it ([schemamodel.Database.FunctionDependencies]), since
+// PostgreSQL resolves a LANGUAGE sql body when the function is created, so a
+// callee has to exist first. A document gets the graph from
+// [schemamodel.Finalize]; a read state is never finalized, and without the
+// graph a rehearsal recreates the functions in the order the reader lists them
+// and fails with `function auth.verified_claims() does not exist` where
+// auth.uid() calls it.
+//
+// The graph is built by the rule a document's is, over the functions alone, so
+// the table graph a read state carries is left as the conversion built it.
+func functionCalls(functions []schemamodel.Function) map[string][]string {
+	graph := &schemamodel.Database{Functions: functions}
+	schemamodel.BuildDependencyGraph(graph)
+	return graph.FunctionDependencies
 }
 
 // convertEnums carries the schema the reader recorded, exactly as the domain,

@@ -447,6 +447,30 @@ holds one is rehearsed only on a server the run owns: one Ptah provisions from
 a docker URL, or one declared with `PTAH_DEV_SERVER_DISPOSABLE=1`. The refusal
 names the baseline statement and these two remedies.
 
+A selection narrows the comparison, not what the target holds. With
+`--include`, `--exclude` or `--schemas`, or a URL bound to one schema with
+`search_path`, the compared state can leave out an object that a statement of
+the baseline or of the plan names: a policy of an included table that calls
+`auth.uid()` with `auth` left out, or a planned foreign key to a table in an
+excluded schema. The target applies such a statement, so the baseline also
+recreates each object the statements name, read whole from the target, and
+then what those objects name in turn: tables with their keys and indexes,
+views, routines, sequences, types, domains and extensions, and their schemas.
+An object nothing names stays out, because a selection often leaves out what
+the dev server cannot build, such as an extension it does not have.
+
+The comparison itself is not widened, and roles are not recreated, as above.
+The objects recreated this way are checked against the same rules as the rest
+of the baseline, so a routine such as `auth.uid()` is recreated only on a
+server the run owns, and refused by name on any other.
+
+A name counts as named where it appears in the code of a statement, or of an
+SQL or PL/pgSQL routine body, qualified by its schema or reached along the dev
+session's `search_path`. A name inside a string literal does not count, so
+`nextval('app.ids')` with `app` excluded fails the rehearsal with `relation
+"app.ids" does not exist`. When a statement of the baseline fails after objects
+were recreated this way, the error lists them.
+
 Comments follow a narrower rule. A comment on a table or a column is written.
 The comment an extension's control file gives is not written, because `CREATE
 EXTENSION` sets it; Ptah reads that comment from the dev server. A comment the
@@ -461,7 +485,9 @@ again has neither. On PostgreSQL, CockroachDB and YugabyteDB, the claim records
 the owner, access list and comment of the schemas a reset keeps, and every reset
 returns those schemas to them and drops the others. A dev URL that pins one schema
 with `search_path` is the exception: its cleanup leaves that schema as it finds
-it, so they are refused there, with the remedies above. A privilege for a role the
+it, so they are refused there, with the remedies above. Its cleanup does drop a
+schema beside the pinned one that the claim did not find, with everything in
+it, so a schema the baseline recreated does not reach the next run. A privilege for a role the
 dev server does not hold fails on that server, as it does on a table.
 
 The plan is held to the same rules, before the first statement of the

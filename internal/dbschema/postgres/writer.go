@@ -1846,7 +1846,9 @@ func (w *PostgreSQLWriter) DropAllTables(ctx context.Context) error {
 //
 // kept.DefaultPrivileges are returned to what they were, the global ones
 // included; see [PostgreSQLWriter.collectDefaultPrivilegeStatements].
-// kept.Schemas and kept.SchemaStates are a realm cleanup's and are not read.
+// kept.Schemas and kept.SchemaStates are not read: the schemas beside this
+// one are left to [PostgreSQLWriter.DropSchemasAddedSince], and the schema
+// states to a realm cleanup.
 //
 // A dev database is the caller, as for [PostgreSQLWriter.DropDatabaseRealmKeeping]:
 // an extension it held before the run is its environment, and the pinned
@@ -1856,6 +1858,83 @@ func (w *PostgreSQLWriter) DropAllTablesKeeping(ctx context.Context, kept dbrese
 		return w.returnToStartingPoint(ctx, kept)
 	}
 	return w.dropSchemaObjects(ctx, kept)
+}
+
+// DropSchemasAddedSince drops, with everything in them, the user schemas the
+// database holds beside the configured one that kept.Schemas does not name.
+// It is the second half of the cleanup of a dev database whose URL pins one
+// schema, after [PostgreSQLWriter.DropAllTablesKeeping] empties that schema:
+// kept.Schemas are the other schemas the claim found, so a schema missing
+// from them is one the run created. A rehearsal creates one when the state it
+// recreates names an object in another schema, as a policy that calls
+// auth.uid() does, and without this drop the next run through the same dev
+// database refuses with `schema "auth" already exists`.
+//
+// An extension installed in such a schema is dropped with it unless
+// kept.Extensions names it; the schema did not exist at the claim, so the
+// extension is the run's. Every object is dropped with RESTRICT, so one that
+// something in a kept schema still depends on refuses the cleanup by name.
+func (w *PostgreSQLWriter) DropSchemasAddedSince(ctx context.Context, kept dbreset.Kept) (resultErr error) {
+	if w.dryRun {
+		return nil
+	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
+	}
+	if !w.caps.Has(capability.DDLInsideTransaction) {
+		return w.dropSchemasAddedSince(ctx, w.db, kept, func(capabilities postgresCleanupCapabilities) postgresCleanupCapabilities {
+			return capabilities.withoutTransaction()
+		})
+	}
+	sqlTx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		finishPostgresCleanupTransaction(sqlTx, &resultErr)
+	}()
+	if err := w.dropSchemasAddedSince(ctx, sqlTx, kept, nil); err != nil {
+		return err
+	}
+	if err := sqlTx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return nil
+}
+
+// dropSchemasAddedSince is [PostgreSQLWriter.DropSchemasAddedSince] over tx.
+// adjust, when set, changes the capabilities the server reports, as a server
+// that refuses DDL inside a transaction needs.
+func (w *PostgreSQLWriter) dropSchemasAddedSince(
+	ctx context.Context,
+	tx cleanupConn,
+	kept dbreset.Kept,
+	adjust func(postgresCleanupCapabilities) postgresCleanupCapabilities,
+) error {
+	schemas, err := collectCleanupSchemas(ctx, tx, w.systemSchemaDialect(), w.caps)
+	if err != nil {
+		return err
+	}
+	added := excludeStrings(excludeString(schemas, w.schema), kept.Schemas)
+	if len(added) == 0 {
+		return nil
+	}
+	capabilities, err := inspectCleanupCapabilities(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if adjust != nil {
+		capabilities = adjust(capabilities)
+	}
+	scope := postgresSchemaCleanupScope(added, keptCleanupExtensions(capabilities.systemExtensions, kept.Extensions))
+	objects, err := w.collectAllObjects(ctx, tx, scope, capabilities)
+	if err != nil {
+		return err
+	}
+	if err := capabilities.dropObjects(ctx, tx, objects); err != nil {
+		return fmt.Errorf("refusing to drop the schemas the run created beside %q: %w", w.schema, err)
+	}
+	return dropPostgresUserSchemas(ctx, tx, added)
 }
 
 // DropDatabaseRealm removes every user schema and recreates the configured
@@ -2870,7 +2949,7 @@ func capturePostgresSchemaMetadata(
 	return postgresSchemaMetadata{exists: true, state: state}, nil
 }
 
-func dropPostgresUserSchemas(ctx context.Context, tx *sql.Tx, schemas []string) error {
+func dropPostgresUserSchemas(ctx context.Context, tx cleanupConn, schemas []string) error {
 	for _, schema := range schemas {
 		// Schema names come from pg_namespace and are quoted as identifiers;
 		// PostgreSQL-family DDL does not support identifier bind parameters.

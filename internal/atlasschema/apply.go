@@ -292,6 +292,9 @@ type ApplyRuntimePlan struct {
 	current *catalog.Database
 	// undecided is what [ApplyRuntimePlan.Undecided] returns.
 	undecided schemadiff.Diagnostics
+	// seed reads what the target holds outside current, which the dev
+	// database simulation adds where the rehearsed statements need it.
+	seed rehearsalSeed
 	// rehearsal is what a rehearsal of a plan that holds a native operation
 	// plans again on its dev database; see [ApplyRuntimePlan.SimulateOnDev].
 	rehearsal nativeRehearsal
@@ -1158,6 +1161,7 @@ func PrepareApply(
 		conn:      conn,
 		txMode:    opts.TxMode,
 		current:   computation.current,
+		seed:      newRehearsalSeed(conn.Info(), opts.Runtime.Selections(), planning.Schemas, planning.Include, planning.Exclude),
 		undecided: computation.undecided,
 		rehearsal: nativeRehearsal{
 			planning:   planning,

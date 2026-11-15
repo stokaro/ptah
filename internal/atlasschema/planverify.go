@@ -166,7 +166,10 @@ func RehearsePlanStatements(
 	// end-state comparison below, which reads the rehearsed state it drops.
 	defer discardDevRehearsalArtifacts(ctx, devConn, dev.baseline)
 
-	if err := rehearseStatementsOnDev(ctx, conn, devConn, dev.baseline, current, opts.TxMode, statements, opts.Runtime); err != nil {
+	seed := newRehearsalSeed(conn.Info(), opts.Runtime.Selections(), nil, nil, opts.Exclude)
+	if err := rehearseStatementsOnDev(
+		ctx, conn, devConn, dev.baseline, current, seed.target(ctx, conn), opts.TxMode, statements, opts.Runtime,
+	); err != nil {
 		return err
 	}
 

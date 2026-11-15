@@ -112,7 +112,7 @@ func TestRehearsalCoreGuardsThePlanOnADevDatabase(t *testing.T) {
 	devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
 	targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 
-	err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, migrator.MigrationTxModeNone,
+	err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, nil, migrator.MigrationTxModeNone,
 		[]string{fmt.Sprintf("ATTACH DATABASE '%s' AS victim", filepath.Join(dir, "victim.db"))}, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorMatches, `statement 1 cannot be rehearsed on the dev database: sqlite migration replay rejects ATTACH .*`)
