@@ -485,6 +485,20 @@ $ ptah-compat schema inspect --url "$PG_URL" --exclude public.users.name
 # table "users" is rendered without its "name" column
 ```
 
+A row-level security policy is a child of its table, as an index is, because
+PostgreSQL makes a policy name unique only on its table.
+`notes.notes_owner[type=policy]` names the policy `notes_owner` on `notes` in
+either scope, and `public.notes.notes_owner[type=policy]` names it on a URL
+that names no schema. The Atlas documentation lists policies beside functions,
+as `public.*[type=policy|function]`, `*.*[type=policy|function]` and
+`*[type=policy|function]`. Each of these still names every policy in its scope,
+since the glob's `*` reaches the table and the policy. A selector that names a
+policy by its schema and its own name, such as
+`public.notes_owner[type=policy]`, would name that policy on every table of the
+schema, so it names none and is reported as matching nothing. The pinned
+community binary reads no policies: it accepts each of these selectors and
+removes nothing.
+
 The same pattern is therefore honored on one URL and refused on the other,
 which is what the community binary does with it. Every surface that filters a
 live connection asks the URL the same question, so `schema inspect`,

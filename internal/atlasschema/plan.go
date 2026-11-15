@@ -556,13 +556,19 @@ func planTargetState(ctx context.Context,
 }
 
 // excludeCurrentWithBindings subtracts a saved plan's exclude patterns from a
-// fresh read the way the plan was computed: patterns counted from the
-// connection's default schema, and each standalone feature object kept or
-// left out whole by the tables it binds.
+// fresh read the way the plan was computed: unqualified objects owned by the
+// connection's default schema, patterns counted against the scope
+// [ConnectionIsRealmScoped] answers, as computeApplyPlan counts them, and each
+// standalone feature object kept or left out whole by the tables it binds.
+// Counted against the default schema on a realm-scoped URL, a
+// `schema.table.child` pattern the plan was computed with is refused here as
+// too deep, and `ptah schema plan` refuses the plan it has just computed.
 func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, exclude []string, info catalog.ServerInfo,
 	runtime selectext.Runtime,
 ) (*catalog.Database, error) {
-	scope := atlasfilter.Scope{Exclude: exclude, DefaultSchema: info.Schema, Selections: runtime.Selections()}
+	scope := atlasfilter.Scope{
+		Exclude: exclude, DefaultSchema: info.Schema, RealmRelativePatterns: ConnectionIsRealmScoped(info), Selections: runtime.Selections(),
+	}
 	var err error
 	scope.Bindings, err = scopeBindings(ctx, runtime, info.Dialect, scope, databaseSide(current))
 	if err != nil {

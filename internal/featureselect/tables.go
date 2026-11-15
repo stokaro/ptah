@@ -50,7 +50,11 @@ func keepOwned(ref objectidentity.ID, keepTable func(schema, table string) bool)
 // has decided it. A positive selection must not ask its selectors to name
 // the object again: an include names a table's children only through the
 // table, and offering a child's own name to the selectors drops it from a
-// table the selection keeps.
+// table the selection keeps. An exclusion names the object through its table,
+// as `table.object` or `schema.table.object`.
+//
+// The predicate treats any non-empty Parent as a table, so a kind an owner
+// selects whose identity has a parent that is not a table is unsupported.
 func OfTable(ref objectidentity.ID) bool {
 	return !ref.Parent.Empty()
 }

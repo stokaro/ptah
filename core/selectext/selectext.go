@@ -29,6 +29,10 @@ const (
 	// InSchema names an object by its schema and its name. A selector matches
 	// the bare name and the name qualified by its schema, or by the scope's
 	// default schema when it has none, and an object leaves with its schema.
+	// An object of a table, one whose identity has a parent, such as a
+	// row-security policy, is named through that table instead, as an index
+	// is: an exclusion matches "table.object" and "schema.table.object", and
+	// an include keeps the object with its table.
 	InSchema Naming = "in-schema"
 	// DatabaseWide names an object by its name alone, which is unique in the
 	// database: a dot is part of the name, and no schema scopes the object.

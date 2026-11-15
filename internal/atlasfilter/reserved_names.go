@@ -18,11 +18,7 @@ func (s *exclusionState) noteReservedNames(names []catalog.ReservedName) {
 			if objectidentity.Kind(selection.Kind) != ref.Kind {
 				continue
 			}
-			if selection.ByNameAlone(ref.Schema.Authored()) {
-				s.matches(selection.Type, ref.Name.Source)
-			} else {
-				s.matches(selection.Type, s.nameCandidates(ref.Schema.Authored(), ref.Name.Source)...)
-			}
+			s.matches(selection.Type, s.ownerNameCandidates(selection, ref)...)
 		}
 	}
 }
