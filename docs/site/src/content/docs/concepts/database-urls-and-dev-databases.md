@@ -197,7 +197,10 @@ provider runs the cases in a dev realm in that database.
   database held when the command started are its environment, as under Atlas:
   the realm cleanup leaves them and checks they are still there. PostgreSQL
   and YugabyteDB reject one the run created before DDL, since the cleanup
-  cannot remove it. An object the server created when it built the
+  cannot remove it. Ptah lists them from catalogs and views any role may
+  read, user mappings from `pg_user_mappings`, so the check runs the same
+  for an ordinary role that owns the dev database as for a superuser. An
+  object the server created when it built the
   database template is not counted: YugabyteDB 2026.1.2 puts the foreign
   server `yb_global_views_server` into every database, and the cleanup leaves
   it, and the extensions it depends on, in place. PostgreSQL also removes and
