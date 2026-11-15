@@ -646,6 +646,12 @@ lists what that lifts and what stays refused. `PTAH_DEV_SERVER_DISPOSABLE=1`
 declares a server started some other way, such as a CI service container, the
 run's own in the same sense.
 
+`--trust-replay-sql`, or `PTAH_TRUST_REPLAY_SQL=1`, runs those statements on a
+server the run does not own when you trust the SQL. Trust confines nothing: the
+cleanup still empties only the dev database, and a role the SQL creates stays
+on the server. See
+[SQL you trust](../../concepts/database-urls-and-dev-databases/#sql-you-trust).
+
 ## The bytes a command runs are captured once
 
 Local migration commands capture the migration directory before database

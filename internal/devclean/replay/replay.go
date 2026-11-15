@@ -49,9 +49,28 @@ type Scope struct {
 	// then ends with the run, whoever wrote it. A privilege on a schema stays
 	// refused in a replay, because it depends on the server's roles.
 	SchemaCommentReturned bool
+	// TrustedSQL reports that the operator trusts the SQL the run executes,
+	// with the privileges of the dev connection. A guard then accepts a
+	// statement it refuses only because it cannot confine the statement's
+	// effects to the scope above: an opaque body such as a routine, a DO block
+	// or a CALL, a role, a database or a server-level privilege, a write to
+	// another database, and data sent to or read from outside the server.
+	//
+	// A body is opaque to the guard however it is written, and a DO block can
+	// create a role as well as a bare CREATE ROLE can, so the guard lifts every
+	// refusal of that kind rather than a list of spellings, which would protect
+	// nothing and only refuse one spelling of what it accepts in another.
+	//
+	// It keeps every refusal that protects the run rather than the server:
+	// session and transaction state, the identity the session runs as, the
+	// system catalogs, server configuration, an object the realm cleanup
+	// cannot remove, and a TEMP object outside a session scope. It never widens
+	// the scope itself: what the run cleans is the realm's, above.
+	TrustedSQL bool
 }
 
-// Guard refuses a statement whose effects cannot be confined to a scope. It
+// Guard refuses a statement whose effects cannot be confined to a scope, or,
+// under [Scope.TrustedSQL], one that would mislead the run or its cleanup. It
 // returns nil for a statement it accepts and, for one it refuses, an error
 // that [Refuse] built, so devclean can word the refusal for the caller.
 type Guard interface {

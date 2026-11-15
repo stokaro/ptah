@@ -202,7 +202,8 @@ var serverRehearsalOwnedStatements = []struct {
 }
 
 // TestGuardServerRehearsal_FailurePath refuses what the reset leaves behind,
-// naming the statement, and the two ways to a server the run owns.
+// naming the statement, the two ways to a server the run owns, and the trust
+// declaration.
 func TestGuardServerRehearsal_FailurePath(t *testing.T) {
 	for _, test := range serverRehearsalOwnedStatements {
 		t.Run(test.name, func(t *testing.T) {
@@ -213,7 +214,8 @@ func TestGuardServerRehearsal_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, `(?s)statement 2 cannot be rehearsed on a whole dev server: `+
 				`mysql migration replay rejects .* because its effects cannot be confined to the disposable database realm; `+
 				`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, `+
-				`or use a docker:// or docker\+<driver>:// dev URL`)
+				`or use a docker:// or docker\+<driver>:// dev URL; `+
+				`if you trust this SQL to run with the dev connection's privileges, set PTAH_TRUST_REPLAY_SQL=1`)
 		})
 	}
 }

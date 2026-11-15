@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/replaytrust"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -222,6 +223,7 @@ func TestSchemaApplyRehearsesARoutineReadingATableLive(t *testing.T) {
 func TestSchemaApplyRefusesARoutineInTheBaselineOnASharedDevServerLive(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
+	envbooltest.Unset(replaytrust.EnvVar)(c)
 	target, _ := scratchReplayDatabase(c)
 	dev, _ := scratchReplayDatabase(c)
 	runPtahNative(c, "schema", "apply", "--db-url", target,
@@ -233,10 +235,125 @@ func TestSchemaApplyRefusesARoutineInTheBaselineOnASharedDevServerLive(t *testin
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(out, qt.Matches, `(?s).*baseline statement \d+ \(CREATE [^)]*order_count.*\) cannot be rehearsed: `+
 		`postgres rehearsal baseline refuses CREATE routine definition because its effects cannot be confined to the dev database realm; `+
-		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1.*`)
+		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, `+
+		`or use a docker:// or docker\+<driver>:// dev URL; `+
+		`if you trust this SQL to run with the dev connection's privileges, set PTAH_TRUST_REPLAY_SQL=1; `+
+		`the plan was not applied to the target database.*`)
 	out = runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", grown, "--dry-run")
 	c.Assert(out, qt.Not(qt.Contains), "Schema is synced")
 	c.Assert(out, qt.Contains, "notes")
+}
+
+// TestSchemaApplyRehearsesARoutineBaselineOnATrustedDevServerLive is the test
+// above with the SQL trusted, by the variable on ptah-compat and by the flag
+// and the variable on the native apply: the rehearsal rebuilds the routine on
+// the shared dev server, the plan reaches the target, and a second plan is
+// empty.
+func TestSchemaApplyRehearsesARoutineBaselineOnATrustedDevServerLive(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(testing.TB)
+		run   func(args ...string) (string, error)
+		args  func(target, schema, dev string) []string
+	}{
+		{
+			name:  "ptah-compat with the variable",
+			setup: envbooltest.Set(replaytrust.EnvVar, "1"),
+			run:   runCompatVerb,
+			args: func(target, schema, dev string) []string {
+				return []string{"schema", "apply", "--url", target, "--to", "file://" + schema, "--dev-url", dev, "--auto-approve"}
+			},
+		},
+		{
+			name:  "ptah with the flag",
+			setup: envbooltest.Unset(replaytrust.EnvVar),
+			run:   runPtahNativeWithError,
+			args: func(target, schema, dev string) []string {
+				return []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--dev-url", dev, "--auto-approve", "--trust-replay-sql"}
+			},
+		},
+		{
+			name:  "ptah with the variable",
+			setup: envbooltest.Set(replaytrust.EnvVar, "1"),
+			run:   runPtahNativeWithError,
+			args: func(target, schema, dev string) []string {
+				return []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--dev-url", dev, "--auto-approve"}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
+			target, _ := scratchReplayDatabase(c)
+			dev, _ := scratchReplayDatabase(c)
+			runPtahNative(c, "schema", "apply", "--db-url", target,
+				"--schema-file", writeRoutineOrderSchema(c, routineReadingATable), "--auto-approve")
+			grown := writeRoutineOrderSchema(c, routineReadingATable+"\nCREATE TABLE notes (id bigint PRIMARY KEY);")
+			test.setup(c)
+
+			out, err := test.run(test.args(target, grown, dev)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			out = runPtahNative(c, "schema", "apply", "--db-url", target, "--schema-file", grown, "--dry-run")
+			c.Assert(out, qt.Contains, "Schema is synced")
+		})
+	}
+}
+
+// TestTargetApplyCreatesRoutinesWithoutTheTrustDeclarationLive pins that an
+// apply to the target never asks for the declaration: the guard holds what a
+// run executes on a dev database, and the target is the database the operator
+// asked to change. With PTAH_TRUST_REPLAY_SQL and PTAH_DEV_SERVER_DISPOSABLE
+// both absent, a schema apply and a migration apply each create the routine,
+// read back from the target's catalog.
+func TestTargetApplyCreatesRoutinesWithoutTheTrustDeclarationLive(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(args ...string) (string, error)
+		args func(target, schema, dir string) []string
+	}{
+		{
+			name: "ptah schema apply",
+			run:  runPtahNativeWithError,
+			args: func(target, schema, _ string) []string {
+				return []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve"}
+			},
+		},
+		{
+			name: "ptah-compat migrate apply",
+			run:  runCompatVerb,
+			args: func(target, _, dir string) []string {
+				return []string{"migrate", "apply", "--dir", "file://" + dir, "--url", target}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
+			envbooltest.Unset(replaytrust.EnvVar)(c)
+			target, _ := scratchReplayDatabase(c)
+			schema := writeRoutineOrderSchema(c, routineReadingATable)
+			dir := filepath.Join(c.TempDir(), "migrations")
+			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(dir, "20240101000000_orders.sql"), []byte(routineReadingATable+"\n"), 0o600), qt.IsNil)
+			hashed, err := runCompatVerb("migrate", "hash", "--dir", "file://"+dir)
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", hashed))
+
+			out, err := test.run(test.args(target, schema, dir)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			conn, err := dbschema.ConnectToDatabase(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			defer dbschema.CloseAndWarn(conn)
+			var routines int
+			c.Assert(conn.QueryRowContext(c.Context(),
+				"SELECT count(*) FROM pg_proc WHERE proname = 'order_count'",
+			).Scan(&routines), qt.IsNil)
+			c.Assert(routines, qt.Equals, 1)
+		})
+	}
 }
 
 // TestSchemaApplyReplacesARoutineAfterTheColumnItReadsLive pins the replaced

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"ptah.run/internal/replaytrust"
 )
 
 // ContainerLabel marks every container this package starts. It exists so an
@@ -497,7 +499,25 @@ func ResolvedPerRun(ctx context.Context, rawURL string) bool {
 // creates in the database the URL names and removes on release. A server the
 // operator declared disposable is the run's whole and gets no realm: its
 // database is the dev database.
+//
+// When ctx trusts the SQL the run executes ([replaytrust.With]), the URL
+// handed back, in every form above, is recorded for [replaytrust.Trusted]
+// until the release runs. Trust changes nothing about which server the run
+// owns, so [RunOwned] answers as it would without it.
 func Resolve(ctx context.Context, rawURL string, opts Options) (string, func(), error) {
+	resolved, release, err := resolve(ctx, rawURL, opts)
+	if err != nil || !replaytrust.From(ctx) {
+		return resolved, release, err
+	}
+	forget := replaytrust.Record(resolved)
+	return resolved, func() {
+		forget()
+		release()
+	}, nil
+}
+
+// resolve is [Resolve] without the trust record.
+func resolve(ctx context.Context, rawURL string, opts Options) (string, func(), error) {
 	if owner, _ := externalFor(ctx, rawURL); owner != nil {
 		return resolveExternal(ctx, owner, rawURL)
 	}

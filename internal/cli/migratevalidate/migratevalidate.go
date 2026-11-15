@@ -48,13 +48,21 @@ var (
 // bytes match the sum they carry" — with no spelling that does not also execute
 // or roll back migrations.
 func NewMigrateValidateCommand() *cobra.Command {
-	src := &source{registryBacked: true}
+	var trusted bool
+	src := &source{
+		registryBacked: true,
+		trustReplaySQL: func(cmd *cobra.Command) error {
+			dbcli.TrustReplaySQL(cmd, trusted)
+			return nil
+		},
+	}
 	cmd := newMigrateValidateCommand(
 		src,
 		runNativeValidate,
 		"Local directory or oci:// reference containing migration files",
 	)
 	dbcli.RegisterPlainHTTPFlag(cmd.Flags(), &src.plainHTTP)
+	dbcli.RegisterTrustReplaySQLFlag(cmd.Flags(), &trusted)
 	return cmd
 }
 
@@ -68,8 +76,12 @@ func NewMigrateValidateCommand() *cobra.Command {
 // be a flag the conformance cli-surface tier finds on one side only. The
 // capability is reachable on the native verb, which is where this repository
 // puts behavior the compatibility surface may not carry.
+//
+// It takes no --trust-replay-sql for the same reason, and reads
+// PTAH_TRUST_REPLAY_SQL instead.
 func NewAtlasMigrateValidateCommand() *cobra.Command {
-	return newMigrateValidateCommand(&source{}, runAtlasValidate, "Directory containing migration files")
+	src := &source{trustReplaySQL: dbcli.TrustReplaySQLDeclared}
+	return newMigrateValidateCommand(src, runAtlasValidate, "Directory containing migration files")
 }
 
 // source is one --dir together with the flags that decide how it is read.
@@ -86,6 +98,10 @@ type source struct {
 	// devServerDisposable is what [devdocker.DisposableServerDeclared]
 	// resolved for this run.
 	devServerDisposable bool
+	// trustReplaySQL resolves whether the run trusts the SQL it replays on
+	// --dev-url: the native verb reads --trust-replay-sql, and the
+	// compatibility verb, which takes no flag for it, PTAH_TRUST_REPLAY_SQL.
+	trustReplaySQL func(*cobra.Command) error
 }
 
 // FailAtlasChecksumMismatch writes the Atlas CE checksum-mismatch guidance for
@@ -149,6 +165,9 @@ Run it in CI to guarantee already-committed migrations are never changed.`,
 				return cmdutil.Fail(cmd, err)
 			}
 			src.devServerDisposable = disposable
+			if err := src.trustReplaySQL(cmd); err != nil {
+				return cmdutil.Fail(cmd, err)
+			}
 			return run(cmd, src)
 		},
 	}

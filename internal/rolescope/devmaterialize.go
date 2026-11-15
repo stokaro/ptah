@@ -44,7 +44,10 @@ import (
 // A role the server does NOT have is still created, which is what keeps the
 // same document materializing on a server that has never seen it -- a second
 // cluster, or a CI runner with an empty catalog. That case never reached the
-// error above, and it still does not.
+// error above, and it still does not. It is created only where something
+// accounts for it: on a server the run owns, whose cleanup drops it, or on one
+// whose SQL the operator trusts, where it stays. On any other server the
+// materialization refuses it; see internal/devclean's RefuseUnconfinedRoles.
 //
 // Matching is by exact name. PostgreSQL role names are case-sensitive as
 // stored, and both sides here are stored spellings: the label of a role block

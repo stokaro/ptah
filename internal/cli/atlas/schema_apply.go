@@ -314,6 +314,9 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 				return cmdutil.Fail(cmd, err)
 			}
 			opts.devServerDisposable = disposable
+			if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
+				return cmdutil.Fail(cmd, err)
+			}
 			if opts.policy.IsStrictCE() && cmd.Flags().Changed("plan") {
 				return failAtlasStrictCompatGate(cmd, "ptah-compat schema apply --plan")
 			}

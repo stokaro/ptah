@@ -15,7 +15,11 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 	if len(tokens) == 0 {
 		return nil
 	}
-	policy := protection{dialect: dialect, sessionTables: scope.Session && dialect == platform.Postgres}
+	policy := protection{
+		dialect:       dialect,
+		sessionTables: scope.Session && dialect == platform.Postgres,
+		trustedSQL:    scope.TrustedSQL,
+	}
 
 	first := replay.NormalizedIdentifier(tokens[0])
 	if first == "DO" {
@@ -33,7 +37,9 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 			fmt.Sprintf("protected namespace %q mutation", namespace),
 		)
 	}
-	if first == "IMPORT" && replay.ContainsTokenSequence(tokens, "FOREIGN", "SCHEMA") {
+	// It reads a remote server's catalog into foreign tables of the dev
+	// database, which the cleanup drops; only the read reaches past the server.
+	if first == "IMPORT" && replay.ContainsTokenSequence(tokens, "FOREIGN", "SCHEMA") && !scope.TrustedSQL {
 		return replay.Refuse(dialect, "IMPORT FOREIGN SCHEMA")
 	}
 	if operation := postgresGlobalDCLOrMetadata(tokens); operation != "" && !postgresSchemaStateReturned(tokens, scope) {
@@ -55,7 +61,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 	if selectsIntoPostgresTemporaryObject(tokens) {
 		return replay.Refuse(dialect, "TEMP object")
 	}
-	if operation := dangerousPostgresFunctionCall(tokens); operation != "" {
+	if operation := dangerousPostgresFunctionCall(tokens, scope); operation != "" {
 		return replay.Refuse(dialect, operation)
 	}
 
@@ -67,6 +73,9 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 type protection struct {
 	dialect       string
 	sessionTables bool
+	// trustedSQL is [replay.Scope.TrustedSQL]: it lifts an external COPY, whose
+	// only reason to be refused is that it reaches past the server.
+	trustedSQL bool
 }
 
 func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) string {
@@ -874,7 +883,12 @@ func selectsIntoPostgresTemporaryObject(tokens []lexer.Token) bool {
 	return false
 }
 
-func dangerousPostgresFunctionCall(tokens []lexer.Token) string {
+// dangerousPostgresFunctionCall names the first call the replay refuses. Under
+// [replay.Scope.TrustedSQL], a dblink call is not one: it reaches another server and changes
+// nothing in this one. The control, replication, large object and advisory
+// lock calls are refused either way, because they act on the server the run
+// uses, on state the realm cleanup cannot remove, or on the replay's session.
+func dangerousPostgresFunctionCall(tokens []lexer.Token, scope replay.Scope) string {
 	if definesPostgresRoutine(tokens) || replay.NormalizedIdentifier(tokens[0]) == "CALL" {
 		return ""
 	}
@@ -905,7 +919,9 @@ func dangerousPostgresFunctionCall(tokens []lexer.Token) string {
 		case "DBLINK", "DBLINK_CANCEL_QUERY", "DBLINK_CLOSE", "DBLINK_CONNECT",
 			"DBLINK_CONNECT_U", "DBLINK_DISCONNECT", "DBLINK_EXEC", "DBLINK_FETCH",
 			"DBLINK_GET_RESULT", "DBLINK_OPEN", "DBLINK_SEND_QUERY":
-			return "external dblink operation"
+			if !scope.TrustedSQL {
+				return "external dblink operation"
+			}
 		case "LO_CLOSE", "LO_CREATE", "LO_EXPORT", "LO_FROM_BYTEA", "LO_IMPORT",
 			"LO_LSEEK", "LO_LSEEK64", "LO_OPEN", "LO_PUT", "LO_TRUNCATE",
 			"LO_TRUNCATE64", "LO_UNLINK", "LOWRITE":

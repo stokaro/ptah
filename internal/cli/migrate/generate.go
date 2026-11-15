@@ -116,6 +116,7 @@ replaces it.`,
 		"Database extension the comparison must leave alone, neither created nor dropped (repeatable; adds to the defaults)")
 	flags.StringArray(generateExcludeFlag, nil, "Schema objects to exclude from the generated migration (Atlas-style selectors)")
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
+	dbcli.RegisterTrustReplaySQLFlag(flags, new(bool))
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 	tablerebuild.Register(cmd)
@@ -440,7 +441,10 @@ type generateVariables struct {
 	devServerDisposable bool
 }
 
-func resolveGenerateVariables() (generateVariables, error) {
+// resolveGenerateVariables resolves them, and attaches to cmd's context the
+// answer --trust-replay-sql parsed, which its PTAH_TRUST_REPLAY_SQL binding has
+// already validated.
+func resolveGenerateVariables(cmd *cobra.Command) (generateVariables, error) {
 	integrity, err := migrationintegrity.Resolve()
 	if err != nil {
 		return generateVariables{}, err
@@ -449,6 +453,11 @@ func resolveGenerateVariables() (generateVariables, error) {
 	if err != nil {
 		return generateVariables{}, err
 	}
+	trustReplaySQL, err := cmd.Flags().GetBool(dbcli.TrustReplaySQLFlagName)
+	if err != nil {
+		return generateVariables{}, err
+	}
+	dbcli.TrustReplaySQL(cmd, trustReplaySQL)
 	return generateVariables{integrity: integrity, devServerDisposable: disposable}, nil
 }
 
@@ -490,7 +499,7 @@ func resolveGenerateDatabases(
 }
 
 func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
-	variables, err := resolveGenerateVariables()
+	variables, err := resolveGenerateVariables(cmd)
 	if err != nil {
 		return err
 	}

@@ -1444,6 +1444,10 @@ role and a privilege on a schema or database, which a server URL refuses; see
 `PTAH_DEV_SERVER_DISPOSABLE=1` gives a server started some other way, such as
 a CI service container, the same treatment; see
 [a server declared disposable](../../concepts/database-urls-and-dev-databases/#a-server-declared-disposable).
+`PTAH_TRUST_REPLAY_SQL=1` runs the same statements on a dev server the run
+does not own, for SQL you trust, and leaves on the server a role that SQL
+creates; see
+[SQL you trust](../../concepts/database-urls-and-dev-databases/#sql-you-trust).
 
 Desired SQL uses a separate, non-executing reader. It supports
 [bounded conditional role-bootstrap blocks](../../schema/postgres-role-bootstrap/)
@@ -1816,10 +1820,13 @@ starts, such as `docker+mysql://_/mysql:8.4`, or one declared with
 `PTAH_DEV_SERVER_DISPOSABLE=1`. There the rehearsal runs what a replay on such
 a server runs; see
 [a server Ptah provisions](../../concepts/database-urls-and-dev-databases/#a-server-ptah-provisions).
-The refusal names both ways. Beside a URL
-naming one database the plan runs in a database of that name, created on the
-dev server and dropped after the rehearsal, and it is held to that database's
-realm the same way; see
+The refusal names both ways, and `PTAH_TRUST_REPLAY_SQL=1`, which runs those
+statements without making the server the run's; see
+[SQL you trust](../../concepts/database-urls-and-dev-databases/#sql-you-trust).
+
+Beside a URL naming one database the plan runs in a database of that name,
+created on the dev server and dropped after the rehearsal, and it is held to
+that database's realm the same way; see
 [the baseline a rehearsal writes](../../concepts/database-urls-and-dev-databases/#the-baseline-a-rehearsal-writes). The pairs Atlas refuses are
 refused in its words:
 

@@ -18,6 +18,9 @@ import (
 
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/replaytrust"
 )
 
 // TestAtlasCompatInspectRoleReplayE2E is the property stokaro/ptah#1267 names
@@ -105,9 +108,16 @@ func TestAtlasCompatInspectRoleReplayE2E(t *testing.T) {
 // same document materializes on a second cluster or on an empty CI catalog.
 // Skipping it would break the replay in a way #1267 never asked for: the GRANT
 // that follows would then name a role nothing on that server declares.
+//
+// The role is the server's and outlives the dev database, so the load creates
+// it only on a server the run owns, where the cleanup drops it, or on one whose
+// SQL the run trusts, where it stays. This run trusts the SQL on a sibling dev
+// database of a shared server; the next test is the same run without trust.
 func TestAtlasCompatInspectCreatesARoleTheServerLacksE2E(t *testing.T) {
 	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	c := qt.New(t)
+	envbooltest.Unset(devdocker.DisposableServerEnvVar)(t)
+	envbooltest.Set(replaytrust.EnvVar, "1")(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -127,7 +137,56 @@ func TestAtlasCompatInspectCreatesARoleTheServerLacksE2E(t *testing.T) {
 
 	assertRoleAbsent(c, ctx, adminDB, roleName)
 
-	document := fmt.Sprintf(`schema "public" {
+	documentPath := filepath.Join(t.TempDir(), "declared.hcl")
+	c.Assert(os.WriteFile(documentPath, []byte(declaredRoleDocument(roleName)), 0o600), qt.IsNil)
+
+	rendered, diagnostics := runRoleAwareCompatInspect(c, "file://"+documentPath, devURL)
+
+	c.Assert(rendered, qt.Contains, fmt.Sprintf("role %q", roleName))
+	c.Assert(diagnostics, qt.Not(qt.Contains), "on the server hosting the dev database")
+	assertRolePresent(c, ctx, adminDB, roleName)
+}
+
+// TestAtlasCompatInspectRefusesARoleTheServerLacksOnASharedServerE2E is the
+// test above without the trust declaration: nothing would drop the role, so
+// the load refuses before it writes the dev database, names the role, and the
+// server does not hold it afterwards.
+func TestAtlasCompatInspectRefusesARoleTheServerLacksOnASharedServerE2E(t *testing.T) {
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	c := qt.New(t)
+	envbooltest.Unset(devdocker.DisposableServerEnvVar)(t)
+	envbooltest.Unset(replaytrust.EnvVar)(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	adminDB, err := sql.Open("pgx", adminURL)
+	c.Assert(err, qt.IsNil)
+	defer adminDB.Close()
+
+	stamp := time.Now().UnixNano()
+	devName := fmt.Sprintf("ptah_role_refused_dev_%d", stamp)
+	roleName := fmt.Sprintf("ptah_role_refused_reader_%d", stamp)
+
+	createE2EDatabase(c, ctx, adminDB, devName)
+	defer dropE2EDatabase(c, context.Background(), adminDB, devName)
+	defer dropReplayRole(c, context.Background(), adminDB, roleName)
+
+	documentPath := filepath.Join(t.TempDir(), "declared.hcl")
+	c.Assert(os.WriteFile(documentPath, []byte(declaredRoleDocument(roleName)), 0o600), qt.IsNil)
+
+	out, err := runCompatVerb("schema", "inspect", "--url", "file://"+documentPath,
+		"--format", "{{ hcl . }}", "--dev-url", replaceDatabaseName(c, adminURL, devName))
+
+	c.Assert(err, qt.ErrorMatches, fmt.Sprintf(`(?s).*materialize schema on dev database: the desired schema declares role %q, `+
+		`which the dev server does not hold, and creating it there cannot be confined to the dev database realm: .*`, roleName),
+		qt.Commentf("%s", out))
+	assertRoleAbsent(c, ctx, adminDB, roleName)
+}
+
+// declaredRoleDocument is an HCL desired state that declares roleName and
+// grants it a privilege on a table.
+func declaredRoleDocument(roleName string) string {
+	return fmt.Sprintf(`schema "public" {
 }
 
 role %q {
@@ -150,15 +209,6 @@ permission {
   privileges = ["SELECT"]
 }
 `, roleName, roleName)
-
-	documentPath := filepath.Join(t.TempDir(), "declared.hcl")
-	c.Assert(os.WriteFile(documentPath, []byte(document), 0o600), qt.IsNil)
-
-	rendered, diagnostics := runRoleAwareCompatInspect(c, "file://"+documentPath, devURL)
-
-	c.Assert(rendered, qt.Contains, fmt.Sprintf("role %q", roleName))
-	c.Assert(diagnostics, qt.Not(qt.Contains), "on the server hosting the dev database")
-	assertRolePresent(c, ctx, adminDB, roleName)
 }
 
 // createReplayRole creates the cluster-scoped role the fixture grants to.

@@ -18,6 +18,10 @@ const provisionedServerRemedy = `; use a docker:// or docker\+<driver>:// dev UR
 const ownedServerRemedy = `; if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, ` +
 	`or use a docker:// or docker\+<driver>:// dev URL`
 
+// trustRemedy is the end of a refusal that trusting the SQL also lifts. It
+// follows the remedy that owning the server offers, because both lift it.
+const trustRemedy = `; if you trust this SQL to run with the dev connection's privileges, set PTAH_TRUST_REPLAY_SQL=1`
+
 // TestBaselineGuard_RefusesOnASharedDevServer pins one refusal per class of
 // statement a baseline holds when the target holds the object: on a dev
 // server the run does not own, each is refused as a migration replay refuses
@@ -42,19 +46,19 @@ func TestBaselineGuard_RefusesOnASharedDevServer(t *testing.T) {
 			name:      "a PostgreSQL routine",
 			info:      postgres,
 			statement: "CREATE FUNCTION item_count() RETURNS bigint LANGUAGE sql AS $$ SELECT count(*) FROM items $$",
-			wantErr:   `postgres rehearsal baseline refuses CREATE routine definition because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+			wantErr:   `postgres rehearsal baseline refuses CREATE routine definition because its effects cannot be confined to the dev database realm` + ownedServerRemedy + trustRemedy,
 		},
 		{
 			name:      "a PostgreSQL routine change",
 			info:      postgres,
 			statement: "ALTER FUNCTION item_count() SECURITY DEFINER",
-			wantErr:   `postgres rehearsal baseline refuses ALTER routine definition because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+			wantErr:   `postgres rehearsal baseline refuses ALTER routine definition because its effects cannot be confined to the dev database realm` + ownedServerRemedy + trustRemedy,
 		},
 		{
 			name:      "a MySQL trigger",
 			info:      mysql,
 			statement: "CREATE TRIGGER items_audit AFTER INSERT ON items FOR EACH ROW INSERT INTO app.audit VALUES (NEW.id)",
-			wantErr:   `mysql rehearsal baseline refuses CREATE executable stored body because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+			wantErr:   `mysql rehearsal baseline refuses CREATE executable stored body because its effects cannot be confined to the dev database realm` + ownedServerRemedy + trustRemedy,
 		},
 		{
 			name:      "a comment on an extension",
@@ -72,7 +76,7 @@ func TestBaselineGuard_RefusesOnASharedDevServer(t *testing.T) {
 			name:      "a PostgreSQL role",
 			info:      postgres,
 			statement: `CREATE ROLE "reader" WITH NOLOGIN`,
-			wantErr:   `postgres rehearsal baseline refuses CREATE ROLE because its effects cannot be confined to the dev database realm` + ownedServerRemedy,
+			wantErr:   `postgres rehearsal baseline refuses CREATE ROLE because its effects cannot be confined to the dev database realm` + ownedServerRemedy + trustRemedy,
 		},
 	}
 	for _, test := range tests {
@@ -215,9 +219,9 @@ func TestBaselineGuard_SchemaStateReturned_FailurePath(t *testing.T) {
 		{"a schema comment, not returned", false, `COMMENT ON SCHEMA "public" IS 'our app'`,
 			`postgres rehearsal baseline refuses COMMENT ON global metadata` + refused + provisionedServerRemedy},
 		{"a schema privilege, not returned", false, `GRANT USAGE ON SCHEMA "public" TO PUBLIC`,
-			`postgres rehearsal baseline refuses GRANT database or global privilege` + refused + ownedServerRemedy},
+			`postgres rehearsal baseline refuses GRANT database or global privilege` + refused + ownedServerRemedy + trustRemedy},
 		{"a revoked schema privilege, not returned", false, `REVOKE USAGE ON SCHEMA "public" FROM PUBLIC`,
-			`postgres rehearsal baseline refuses REVOKE database or global privilege` + refused + ownedServerRemedy},
+			`postgres rehearsal baseline refuses REVOKE database or global privilege` + refused + ownedServerRemedy + trustRemedy},
 		{"a comment on an extension", true, `COMMENT ON EXTENSION pgcrypto IS 'hashing'`,
 			`postgres rehearsal baseline refuses COMMENT ON global metadata` + refused + provisionedServerRemedy},
 		{"a comment on a database", true, `COMMENT ON DATABASE ptah_dev IS 'dev'`,
@@ -225,11 +229,11 @@ func TestBaselineGuard_SchemaStateReturned_FailurePath(t *testing.T) {
 		{"a security label on a schema", true, `SECURITY LABEL ON SCHEMA "app" IS 'secret'`,
 			`postgres rehearsal baseline refuses SECURITY ON global metadata` + refused + `.*`},
 		{"a privilege on the database", true, `GRANT CONNECT ON DATABASE ptah_dev TO "app_rw"`,
-			`postgres rehearsal baseline refuses GRANT database or global privilege` + refused + ownedServerRemedy},
+			`postgres rehearsal baseline refuses GRANT database or global privilege` + refused + ownedServerRemedy + trustRemedy},
 		{"a privilege on a language", true, `GRANT USAGE ON LANGUAGE plpgsql TO "app_rw"`,
-			`postgres rehearsal baseline refuses GRANT database or global privilege` + refused + ownedServerRemedy},
+			`postgres rehearsal baseline refuses GRANT database or global privilege` + refused + ownedServerRemedy + trustRemedy},
 		{"role membership", true, `GRANT "admin" TO "app_rw"`,
-			`postgres rehearsal baseline refuses GRANT role membership` + refused + ownedServerRemedy},
+			`postgres rehearsal baseline refuses GRANT role membership` + refused + ownedServerRemedy + trustRemedy},
 		{"a comment on a protected namespace", true, `COMMENT ON SCHEMA pg_catalog IS 'x'`,
 			`postgres rehearsal baseline refuses protected namespace "pg_catalog" mutation` + refused},
 		{"a privilege on a protected namespace", true, `GRANT USAGE ON SCHEMA pg_catalog TO PUBLIC`,

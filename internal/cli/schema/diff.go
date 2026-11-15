@@ -49,6 +49,9 @@ type schemaDiffOptions struct {
 	connectTimeout string
 	configPath     string
 	envName        string
+	// trustReplaySQL is --trust-replay-sql: the run trusts the SQL it loads
+	// or replays on the dev database.
+	trustReplaySQL bool
 }
 
 func newSchemaDiffCommand() *cobra.Command {
@@ -107,6 +110,7 @@ refused.`,
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	dbcli.RegisterTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	tablerebuild.Register(cmd)
 	secretrotation.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
@@ -114,6 +118,7 @@ refused.`,
 }
 
 func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
+	dbcli.TrustReplaySQL(cmd, opts.trustReplaySQL)
 	// Resolved before the project file is read, so a malformed declaration
 	// fails every diff and not only one that replays a migration directory.
 	devServerDisposable, err := devdocker.DisposableServerDeclared()

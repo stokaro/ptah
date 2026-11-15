@@ -1,8 +1,9 @@
 // Package clickhousereplay is the ClickHouse migration replay guard: it
 // refuses a statement whose effects cannot be confined to the dev database,
 // such as ON CLUSTER, a table engine or a dictionary source that reaches
-// outside it, or a write to another database. internal/devclean asks it
-// through the internal/devclean/replay contract.
+// outside it, or a write to another database, and on a run that trusts its SQL
+// lifts the refusals whose only reason is confinement. internal/devclean asks
+// it through the internal/devclean/replay contract.
 package clickhousereplay
 
 import (
@@ -19,9 +20,11 @@ func Services() []replay.Service {
 type guard struct{}
 
 // Validate refuses a statement whose effects cannot be confined to the dev
-// database scope names. No scope widens what it accepts.
+// database scope names. No realm widens what it accepts; a run that trusts its
+// SQL lifts the refusals whose only reason is confinement, see
+// [validateClickHouseReplayStatement].
 func (guard) Validate(stmt string, scope replay.Scope) error {
-	return validateClickHouseReplayStatement(scope.Database, replay.Tokens(stmt, lexerOptions()))
+	return validateClickHouseReplayStatement(replay.Tokens(stmt, lexerOptions()), scope)
 }
 
 // lexerOptions reads backslash escapes in string literals.

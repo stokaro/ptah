@@ -9,29 +9,52 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-func validateClickHouseReplayStatement(database string, tokens []lexer.Token) error {
+// validateClickHouseReplayStatement refuses a statement whose effects cannot be
+// confined to the dev database scope names.
+//
+// Under [replay.Scope.TrustedSQL] it lifts the refusals whose only
+// reason is that the effect reaches past the dev database: a SQL function,
+// which ClickHouse keeps for the whole server; a database, user or role
+// created or dropped, a row policy and a named collection; GRANT and REVOKE; ON
+// CLUSTER, which runs the statement on other nodes too; a write to another
+// database or through a table function; and a table engine, a dictionary
+// source, BACKUP, FREEZE, UNFREEZE and INTO OUTFILE, which move data across the
+// server's edge.
+//
+// It keeps every refusal that protects the run: USE, SET ROLE and SET DEFAULT
+// ROLE, which change the replay's session; SYSTEM and a global SET, which act
+// on the server; ALTER of a database, user or role, a quota and a settings
+// profile, which can change the database or the limits and settings the run's
+// own user runs with; a workload and a resource, which schedule the server;
+// ATTACH, DETACH, UNDROP and RESTORE, which move tables in and out of what the
+// realm cleanup sees; a TEMP object; and PARALLEL WITH, whose statements run at
+// once and are read here as one.
+func validateClickHouseReplayStatement(tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
 	if containsClickHouseKeywordSequence(tokens, "PARALLEL", "WITH") {
 		return replay.Refuse(platform.ClickHouse, "PARALLEL WITH")
 	}
-	if err := rejectClickHouseGlobalMutation(tokens); err != nil {
+	if err := rejectClickHouseGlobalMutation(tokens, scope); err != nil {
 		return err
 	}
-	if source := unsafeClickHouseDictionarySource(tokens); source != "" {
+	if source := unsafeClickHouseDictionarySource(tokens); source != "" && !scope.TrustedSQL {
 		return replay.Refuse(platform.ClickHouse, source+" dictionary source")
 	}
-	if engine := unconfinedClickHouseEngine(tokens); engine != "" {
+	if engine := unconfinedClickHouseEngine(tokens); engine != "" && !scope.TrustedSQL {
 		return replay.Refuse(platform.ClickHouse, engine+" table engine")
 	}
-	if err := validateClickHouseReplayStatementBase(database, tokens); err != nil {
+	if err := validateClickHouseReplayStatementBase(tokens, scope); err != nil {
 		return err
 	}
-	if err := validateClickHouseInsertTarget(database, tokens); err != nil {
+	if scope.TrustedSQL {
+		return nil
+	}
+	if err := validateClickHouseInsertTarget(scope.Database, tokens); err != nil {
 		return err
 	}
-	return validateClickHouseSecondaryTargets(database, tokens)
+	return validateClickHouseSecondaryTargets(scope.Database, tokens)
 }
 
 func unconfinedClickHouseEngine(tokens []lexer.Token) string {
@@ -125,15 +148,24 @@ func isConfinedClickHouseEngine(engine string) bool {
 	}
 }
 
-func rejectClickHouseGlobalMutation(tokens []lexer.Token) error {
+// rejectClickHouseGlobalMutation refuses a statement by its first words. Under
+// [replay.Scope.TrustedSQL], GRANT, REVOKE, BACKUP, a table snapshot and a database-wide
+// TRUNCATE are not refused; see [validateClickHouseReplayStatement].
+func rejectClickHouseGlobalMutation(tokens []lexer.Token, scope replay.Scope) error {
 	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "GRANT", "REVOKE":
-		return replay.Refuse(platform.ClickHouse, first+" RBAC change")
-	case "ATTACH", "DETACH", "UNDROP", "BACKUP", "RESTORE":
+		if !scope.TrustedSQL {
+			return replay.Refuse(platform.ClickHouse, first+" RBAC change")
+		}
+	case "BACKUP":
+		if !scope.TrustedSQL {
+			return replay.Refuse(platform.ClickHouse, first)
+		}
+	case "ATTACH", "DETACH", "UNDROP", "RESTORE":
 		return replay.Refuse(platform.ClickHouse, first)
 	case "ALTER":
-		if clickHouseHasPersistentSnapshotAction(tokens) {
+		if clickHouseHasPersistentSnapshotAction(tokens) && !scope.TrustedSQL {
 			return replay.Refuse(platform.ClickHouse, "persistent table snapshot")
 		}
 	case "SET":
@@ -142,9 +174,9 @@ func rejectClickHouseGlobalMutation(tokens []lexer.Token) error {
 			return replay.Refuse(platform.ClickHouse, "role change")
 		}
 	case "TRUNCATE":
-		if clickHouseKeywordSequenceAt(tokens, 1, "DATABASE") ||
+		if !scope.TrustedSQL && (clickHouseKeywordSequenceAt(tokens, 1, "DATABASE") ||
 			clickHouseKeywordSequenceAt(tokens, 1, "ALL") ||
-			clickHouseKeywordSequenceAt(tokens, 1, "TABLES") {
+			clickHouseKeywordSequenceAt(tokens, 1, "TABLES")) {
 			return replay.Refuse(platform.ClickHouse, "database-wide TRUNCATE")
 		}
 	}

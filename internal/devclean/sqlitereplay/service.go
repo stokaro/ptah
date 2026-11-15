@@ -22,6 +22,14 @@ type guard struct{}
 // session's temp schema, and the connection layer drops it when the session
 // ends, on every outcome. A TEMP view or trigger, and any statement that
 // names the temp schema as its target, stays refused.
+//
+// A run that trusts its SQL ([replay.Scope.TrustedSQL]) lifts VACUUM INTO,
+// whose only reason to be refused is that it writes outside the dev database.
+// Every other refusal stays: ATTACH and DETACH, a PRAGMA that changes state,
+// and a TEMP object or target, change the connection the run goes on using,
+// which a database that keeps its only connection hands to the next caller;
+// load_extension loads code into the process that runs the SQL, which for an
+// embedded SQLite is Ptah's own.
 func (guard) Validate(stmt string, scope replay.Scope) error {
 	return validateSQLiteReplayStatement(replay.Tokens(stmt, dialectlexer.Options(platform.SQLite)), scope)
 }

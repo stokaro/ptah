@@ -18,6 +18,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/replaytrust"
 	"ptah.run/migration/migrator"
 )
 
@@ -37,7 +38,7 @@ var devDatabaseEscapes = []struct {
 
 // TestGuardRehearsedPlan_DevDatabase_FailurePath refuses a plan statement
 // whose effect outlives the cleanup of a dev database the operator named, and
-// names the two ways to a server the run owns.
+// names the two ways to a server the run owns and the trust declaration.
 //
 // The rehearsal held the baseline to this guard and not the plan, which comes
 // from the less trusted desired schema: a CREATE ROLE ran for real on the
@@ -53,7 +54,8 @@ func TestGuardRehearsedPlan_DevDatabase_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, `(?s)statement 2 cannot be rehearsed on the dev database: `+
 				`postgres migration replay rejects .* because its effects cannot be confined to the disposable database realm; `+
 				`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, `+
-				`or use a docker:// or docker\+<driver>:// dev URL`)
+				`or use a docker:// or docker\+<driver>:// dev URL; `+
+				`if you trust this SQL to run with the dev connection's privileges, set PTAH_TRUST_REPLAY_SQL=1`)
 		})
 	}
 }
@@ -116,4 +118,25 @@ func TestRehearsalCoreGuardsThePlanOnADevDatabase(t *testing.T) {
 		[]string{fmt.Sprintf("ATTACH DATABASE '%s' AS victim", filepath.Join(dir, "victim.db"))}, must.Must(builtin.New()))
 
 	c.Assert(err, qt.ErrorMatches, `statement 1 cannot be rehearsed on the dev database: sqlite migration replay rejects ATTACH .*`)
+}
+
+// TestGuardRehearsedPlan_DevDatabase_TrustedSQL rehearses the same statements
+// on a named dev server whose run trusts its SQL. The dev database stays the
+// realm, and the role or the body the plan creates there is the operator's to
+// accept.
+func TestGuardRehearsedPlan_DevDatabase_TrustedSQL(t *testing.T) {
+	for _, test := range devDatabaseEscapes {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			trusted := namedPostgresDev
+			trusted.URL = "postgres://ptah@guard-trusted-dev-database:5432/r3_dev"
+			_, release, err := devdocker.Resolve(replaytrust.With(c.Context(), true), trusted.URL, devdocker.Options{})
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(release)
+
+			err = guardRehearsedPlan([]string{"CREATE TABLE items (id bigint PRIMARY KEY)", test.statement}, devclean.NewDevReplayGuard(trusted), trusted)
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
 }

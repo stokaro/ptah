@@ -63,6 +63,7 @@ func NewLintCommand() *cobra.Command {
 	var latest uint
 	var attach bool
 	var plainHTTP bool
+	var trustReplaySQL bool
 
 	cmd := &cobra.Command{
 		Use:   "lint",
@@ -81,6 +82,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dbcli.TrustReplaySQL(cmd, trustReplaySQL)
 			return runLint(cmd, runOptions{
 				dir:           dir,
 				dirFormat:     dirFormat,
@@ -121,6 +123,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().UintVar(&latest, latestFlag, 0, "Lint only the latest N migration versions")
 	cmd.Flags().BoolVar(&attach, attachFlag, false, "Attach the canonical JSON lint report to an OCI migration artifact")
 	dbcli.RegisterPlainHTTPFlag(cmd.Flags(), &plainHTTP)
+	dbcli.RegisterTrustReplaySQLFlag(cmd.Flags(), &trustReplaySQL)
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
