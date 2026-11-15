@@ -298,6 +298,7 @@ func TestRealmSchemas_FailurePath(t *testing.T) {
 
 	got, err := schemaselection.RealmSchemas(t.Context(), "sqlserver", capability.ForDialect("sqlserver"), writerlessConnection(db.SQL))
 
+	c.Assert(err, qt.ErrorIs, schemaselection.ErrNoRealmProbe)
 	c.Assert(err, qt.ErrorMatches, `no realm-scope schema probe for dialect "sqlserver"`)
 	c.Assert(got, qt.IsNil)
 	c.Assert(db.QueryCount(), qt.Equals, 0)

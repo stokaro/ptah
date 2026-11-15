@@ -2,6 +2,7 @@ package atlasschema
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 
@@ -56,7 +57,10 @@ func newRehearsalSeed(info catalog.ServerInfo, selections selectext.Set, schemas
 // schemas of the target's realm that a statement names, which includes the
 // search path: a schema nothing names is not read, so a schema a selection
 // left out because the reader cannot describe it stays unread unless a
-// statement needs it. Any other engine reads what its URL reaches, once.
+// statement needs it. Any other engine reads what its URL reaches, once, and so
+// does a connection whose writer offers no realm probe, such as a provider
+// session serving a search-path engine's name: what lies outside its URL is
+// then not recreated, and a statement that needs it fails in the rehearsal.
 //
 // A word a statement uses as a qualifier is often not a schema, such as a
 // table alias, so a read asked for a new word that selects the same schemas
@@ -69,18 +73,24 @@ func (s rehearsalSeed) target(ctx context.Context, conn *dbschema.DatabaseConnec
 	info := conn.Info()
 	var read *catalog.Database
 	var readSchemas []string
+	urlOnly := described(info.Dialect).Schemas.Selection != descriptor.SchemaSelectionSearchPath
 	return func(named []string) (*catalog.Database, error) {
-		if described(info.Dialect).Schemas.Selection != descriptor.SchemaSelectionSearchPath {
+		var realm []string
+		if !urlOnly {
+			var err error
+			realm, err = schemaselection.RealmSchemas(ctx, info.Dialect, info.Capabilities, conn)
+			urlOnly = errors.Is(err, schemaselection.ErrNoRealmProbe)
+			if err != nil && !urlOnly {
+				return nil, err
+			}
+		}
+		if urlOnly {
 			if read != nil {
 				return read, nil
 			}
 			var err error
 			read, err = dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 			return read, err
-		}
-		realm, err := schemaselection.RealmSchemas(ctx, info.Dialect, info.Capabilities, conn)
-		if err != nil {
-			return nil, err
 		}
 		urlScope, err := schemascope.ReadNames(ctx, info, nil, conn)
 		if err != nil {

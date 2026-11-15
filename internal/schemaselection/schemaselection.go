@@ -230,6 +230,12 @@ type scopeCatalogWriter interface {
 	ScopeCatalog() dbreset.ScopeCatalog
 }
 
+// ErrNoRealmProbe reports that a connection's writer offers no catalog to list
+// the schemas of its realm. A provider session serving the name of an engine
+// that resolves names along a search path can lack one, where the built-in
+// writer of that engine has it.
+var ErrNoRealmProbe = errors.New("no realm-scope schema probe")
+
 // RealmSchemas returns every schema a realm-scoped run describes, sorted in
 // byte order. The schemas are the ones the scope catalog of q's writer lists
 // (dbreset.ScopeCatalog.RealmSchemas), and caps are the capabilities q's
@@ -246,6 +252,8 @@ type scopeCatalogWriter interface {
 // is about. PostgreSQL reaches realm scope through [Realm] with a URL that
 // pins no search_path, and MySQL and MariaDB with one that names no database;
 // the writer of each offers a catalog.
+//
+// The refusal wraps [ErrNoRealmProbe].
 func RealmSchemas(
 	ctx context.Context,
 	dialect string,
@@ -258,7 +266,7 @@ func RealmSchemas(
 		scoped = offering.ScopeCatalog()
 	}
 	if scoped == nil {
-		return nil, fmt.Errorf("no realm-scope schema probe for dialect %q", dialect)
+		return nil, fmt.Errorf("%w for dialect %q", ErrNoRealmProbe, dialect)
 	}
 	names, err := scoped.RealmSchemas(ctx, q, caps)
 	if err != nil {
