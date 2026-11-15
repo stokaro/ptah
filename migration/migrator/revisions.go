@@ -2687,32 +2687,9 @@ func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisio
 }
 
 func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasRevisionSetResult, error) {
-	if version < 0 {
-		return AtlasRevisionSetResult{}, fmt.Errorf("migration version must not be negative")
-	}
-	// Zero names no migration on purpose: it is the state where none is
-	// applied, and it is the only way to express that a rollback finished by
-	// hand left nothing behind. So it is not looked up, and every other
-	// version still must exist before its rows are written.
-	if version > 0 && m.migrationByVersion(version) == nil {
-		return AtlasRevisionSetResult{}, fmt.Errorf("migration with version %q not found", strconv.FormatInt(version, 10))
-	}
-	store, err := m.conn.HistoryStore()
+	store, err := m.revisionSetStore(ctx, version)
 	if err != nil {
 		return AtlasRevisionSetResult{}, err
-	}
-	if store == nil && m.revisionsMutate() {
-		if m.revisionTableFormat.isAtlas() {
-			return AtlasRevisionSetResult{}, fmt.Errorf(
-				"setting an Atlas revision is not supported for ClickHouse because revision history cannot be updated atomically",
-			)
-		}
-		return AtlasRevisionSetResult{}, fmt.Errorf(
-			"setting the migration revision is not supported for ClickHouse because revision history cannot be updated atomically",
-		)
-	}
-	if err := m.Initialize(ctx); err != nil {
-		return AtlasRevisionSetResult{}, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 	if m.conn.Writer().IsDryRun() {
 		return AtlasRevisionSetResult{CurrentVersion: version}, nil
@@ -2723,6 +2700,57 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 		return m.setProviderRevisionRows(ctx, store, migrations, version)
 	}
 	return m.setAtlasRevisionRows(ctx, migrations, version)
+}
+
+// revisionSetStore gives the refusals of a revision set to version that the
+// version and the connection decide, and initializes the revision table. It
+// returns the provider history store the set writes through, or nil for a
+// revision table.
+func (m *Migrator) revisionSetStore(ctx context.Context, version int64) (dbschema.HistoryStore, error) {
+	if version < 0 {
+		return nil, fmt.Errorf("migration version must not be negative")
+	}
+	// Zero names no migration on purpose: it is the state where none is
+	// applied, and it is the only way to express that a rollback finished by
+	// hand left nothing behind. So it is not looked up, and every other
+	// version still must exist before its rows are written.
+	if version > 0 && m.migrationByVersion(version) == nil {
+		return nil, fmt.Errorf("migration with version %q not found", strconv.FormatInt(version, 10))
+	}
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return nil, err
+	}
+	if store == nil && m.revisionsMutate() {
+		if m.revisionTableFormat.isAtlas() {
+			return nil, fmt.Errorf(
+				"setting an Atlas revision is not supported for ClickHouse because revision history cannot be updated atomically",
+			)
+		}
+		return nil, fmt.Errorf(
+			"setting the migration revision is not supported for ClickHouse because revision history cannot be updated atomically",
+		)
+	}
+	if err := m.Initialize(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialize migrations table: %w", err)
+	}
+	return store, nil
+}
+
+// checkRevisionSet gives every refusal a revision set to version would give
+// over the revisions recorded now, and writes nothing. A caller that changes
+// the schema before it sets the revision runs it first, so a set that would
+// refuse refuses before the schema changes.
+func (m *Migrator) checkRevisionSet(ctx context.Context, version int64) error {
+	if _, err := m.revisionSetStore(ctx, version); err != nil {
+		return err
+	}
+	existing, err := m.GetRevisions(ctx)
+	if err != nil {
+		return err
+	}
+	_, _, err = m.planRevisionSet(existing, m.migrationsAtOrBelow(version), version)
+	return err
 }
 
 func (m *Migrator) setAtlasRevisionRows(

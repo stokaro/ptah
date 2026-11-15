@@ -60,12 +60,13 @@ func (r downPlanTargetRun) up(c *qt.C) {
 	c.Assert(got.ExitCode, qt.Equals, 0, historyComment(got))
 }
 
-// addCommentsMigration writes version 3 into the directory.
-func (r downPlanTargetRun) addCommentsMigration(c *qt.C) {
+// addCommentsMigration writes a migration creating the comments table into
+// the directory, numbered version.
+func (r downPlanTargetRun) addCommentsMigration(c *qt.C, version string) {
 	c.Helper()
 	for name, body := range map[string]string{
-		"0000000000003_create_comments.up.sql":   "CREATE TABLE comments (id SERIAL PRIMARY KEY);\n",
-		"0000000000003_create_comments.down.sql": "DROP TABLE comments;\n",
+		version + "_create_comments.up.sql":   "CREATE TABLE comments (id SERIAL PRIMARY KEY);\n",
+		version + "_create_comments.down.sql": "DROP TABLE comments;\n",
 	} {
 		c.Assert(os.WriteFile(filepath.Join(r.migrationsDir, name), []byte(body), 0o600), qt.IsNil)
 	}
@@ -74,9 +75,15 @@ func (r downPlanTargetRun) addCommentsMigration(c *qt.C) {
 // down runs `ptah migrations down --plan --confirm` back to version 1.
 func (r downPlanTargetRun) down(c *qt.C, args ...string) clirun.Result {
 	c.Helper()
+	return r.downTo(c, "1", args...)
+}
+
+// downTo runs `ptah migrations down --plan --confirm` back to target.
+func (r downPlanTargetRun) downTo(c *qt.C, target string, args ...string) clirun.Result {
+	c.Helper()
 	return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Env: environmentWithoutPtahVariables(), Timeout: 2 * time.Minute},
 		append([]string{"migrations", "down", "--db-url", r.target, "--migrations-dir", r.migrationsDir,
-			"--target", "1", "--plan", "--shadow-db", r.dev, "--confirm"}, args...)...)
+			"--target", target, "--plan", "--shadow-db", r.dev, "--confirm"}, args...)...)
 }
 
 // userTables is the target's public tables, without the revision bookkeeping.
@@ -210,7 +217,7 @@ func TestMigrationsDownPlanRefusesAChangedTargetE2E_FailurePath(t *testing.T) {
 	run := newDownPlanTargetRun(c)
 	prompted := run.startPromptedDown(c)
 
-	run.addCommentsMigration(c)
+	run.addCommentsMigration(c, "0000000000003")
 	run.up(c)
 	code := prompted.answer(c)
 
@@ -257,6 +264,24 @@ func TestMigrationsDownPlanRunsThePreDownHookE2E_FailurePath(t *testing.T) {
 		`error: error running down migrations: down pre-flight custom command hook failed: exit status 9`,
 	}, historyComment(got))
 	c.Assert(got.Stderr, qt.Contains, "hook-refused")
+	c.Assert(run.userTables(c), qt.DeepEquals, []string{"posts", "users"})
+	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1, 2})
+}
+
+// TestMigrationsDownPlanToATargetNoFileNamesE2E_HappyPath applies version 5
+// and rolls back to version 3, which no file names. The derived rollback drops
+// the comments table and leaves version 2 applied, the migration a rollback
+// through the down files leaves too.
+func TestMigrationsDownPlanToATargetNoFileNamesE2E_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	run := newDownPlanTargetRun(c)
+	run.addCommentsMigration(c, "0000000000005")
+	run.up(c)
+
+	got := run.downTo(c, "3")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, historyComment(got))
+	c.Assert(got.Stdout, qt.Contains, "Database is now at version: 2", historyComment(got))
 	c.Assert(run.userTables(c), qt.DeepEquals, []string{"posts", "users"})
 	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1, 2})
 }
