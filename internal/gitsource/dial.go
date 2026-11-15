@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
+
+	"ptah.run/internal/asciihost"
 )
 
 // The variables a pull reads its credential from. An environment value
@@ -119,16 +120,23 @@ func dialHTTPS(reference Reference, credentials Credentials, trust Trust) (trans
 
 // redirects follows a redirect within the repository's origin, and refuses
 // one that leaves it while a credential is present: the credential would
-// either reach another server or be dropped without a word.
+// either reach another server or be dropped without a word. It never follows
+// one to a host ParseReference would refuse, and compares origins with
+// [asciihost.Origin], so a host Unicode case folding reads as the
+// repository's own is another origin. go-git refuses a change of scheme
+// before this check runs.
 func redirects(reference Reference, credentials Credentials) func(*http.Request, []*http.Request) error {
-	origin := reference.Origin()
+	from, fromErr := asciihost.Origin(reference.URL)
 	credentialed := credentials.present()
 	return func(request *http.Request, via []*http.Request) error {
-		if len(via) >= 10 {
-			return fmt.Errorf("%w: %s redirected more than 10 times", ErrRedirect, reference.Raw)
-		}
 		target := request.URL.Scheme + "://" + request.URL.Host
-		if credentialed && !strings.EqualFold(target, origin) {
+		to, err := asciihost.Origin(request.URL)
+		switch {
+		case len(via) >= 10:
+			return fmt.Errorf("%w: %s redirected more than 10 times", ErrRedirect, reference.Raw)
+		case err != nil:
+			return fmt.Errorf("%w: %s redirected to %q, whose host has a byte outside printable ASCII", ErrRedirect, reference.Raw, target)
+		case credentialed && (fromErr != nil || to != from):
 			return fmt.Errorf("%w: %s redirected to %s, another origin, with a credential set", ErrRedirect, reference.Raw, target)
 		}
 		return nil

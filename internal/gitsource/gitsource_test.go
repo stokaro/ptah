@@ -12,11 +12,12 @@ import (
 
 func TestParseReference_HappyPath(t *testing.T) {
 	tests := []struct {
-		name, raw, dial, origin string
+		name, raw, dial string
 	}{
-		{name: "https", raw: "git+https://git.example.com/acme/app.git", dial: "https://git.example.com/acme/app.git", origin: "https://git.example.com"},
-		{name: "https with a port", raw: "git+https://git.example.com:8443/app.git", dial: "https://git.example.com:8443/app.git", origin: "https://git.example.com:8443"},
-		{name: "ssh with a user", raw: "git+ssh://git@git.example.com/acme/app.git", dial: "ssh://git@git.example.com/acme/app.git", origin: "ssh://git.example.com"},
+		{name: "https", raw: "git+https://git.example.com/acme/app.git", dial: "https://git.example.com/acme/app.git"},
+		{name: "https with a port", raw: "git+https://git.example.com:8443/app.git", dial: "https://git.example.com:8443/app.git"},
+		{name: "ssh with a user", raw: "git+ssh://git@git.example.com/acme/app.git", dial: "ssh://git@git.example.com/acme/app.git"},
+		{name: "an IDNA form", raw: "git+https://xn--github-qyd.com/acme/app.git", dial: "https://xn--github-qyd.com/acme/app.git"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -25,7 +26,6 @@ func TestParseReference_HappyPath(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(reference.Raw, qt.Equals, test.raw)
 			c.Assert(reference.URL.String(), qt.Equals, test.dial)
-			c.Assert(reference.Origin(), qt.Equals, test.origin)
 			c.Assert(gitsource.IsReference(test.raw), qt.IsTrue)
 		})
 	}
@@ -41,6 +41,10 @@ func TestParseReference_FailurePath(t *testing.T) {
 		{name: "a password in an ssh URL", raw: "git+ssh://git:secret@git.example.com/app.git", // #nosec G101 -- the URL the test requires refused
 			says: `.*SSH authenticates with a key.*`},
 		{name: "no host", raw: "git+https:///app.git", says: `.*no host`},
+		{name: "U+0130 in the host", raw: "git+https://gİthub.com/acme/app.git",
+			says: `invalid Git reference "git\+https://g%C4%B0thub.com/acme/app.git": the host has a byte outside printable ASCII; write it in its xn-- form`},
+		{name: "U+0130 percent-escaped in the host", raw: "git+https://g%C4%B0thub.com/acme/app.git", says: `.*the host has a byte outside printable ASCII.*`},
+		{name: "U+0130 in an ssh host", raw: "git+ssh://git@gİthub.com/acme/app.git", says: `.*the host has a byte outside printable ASCII.*`},
 		{name: "no repository", raw: "git+https://git.example.com/", says: `.*no repository path`},
 		{name: "a query", raw: "git+https://git.example.com/app.git?ref=main", says: `.*no query or fragment.*`},
 		{name: "a fragment", raw: "git+https://git.example.com/app.git#db/schema.hcl", says: `.*no query or fragment.*`},

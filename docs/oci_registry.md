@@ -425,7 +425,7 @@ A CI runner should not need a login step, a keychain, or a config file:
 | `PTAH_OCI_USERNAME` | Registry username. |
 | `PTAH_OCI_PASSWORD` | Registry password, used with `PTAH_OCI_USERNAME`. |
 | `PTAH_OCI_TOKEN` | Registry identity token, used on its own. |
-| `PTAH_OCI_REGISTRY` | Restricts the above to one registry host. Unset, they answer for every registry. |
+| `PTAH_OCI_REGISTRY` | Restricts the above to one registry host, compared ignoring ASCII case only; a host with a byte outside printable ASCII never matches. Unset, they answer for every registry. |
 | `PTAH_OCI_CONFIG` | Moves Ptah's credential file. |
 | `PTAH_OCI_CREDENTIAL_STORE` | `file` keeps the credential out of the platform keychain. |
 
