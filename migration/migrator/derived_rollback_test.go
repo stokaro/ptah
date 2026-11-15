@@ -24,41 +24,64 @@ var (
 	errDerivedApply = errors.New("the derived statement failed")
 )
 
-// derivedRollbackFixture is a SQLite database migrated up through the
-// migrations of a three-version directory that versions names, and the
-// migrator over the whole directory.
+// derivedRollbackFixture is a SQLite database migrated up through some of the
+// migrations of a directory, and the migrator over the whole directory.
 type derivedRollbackFixture struct {
 	conn     *dbschema.DatabaseConnection
 	migrator *migrator.Migrator
 }
 
+// newDerivedRollbackFixture is the directory of versions 1, 2 and 3 with the
+// migrations versions names applied.
 func newDerivedRollbackFixture(c *qt.C, versions ...int64) derivedRollbackFixture {
+	c.Helper()
+	return newDerivedRollbackDirectory(c, []int64{1, 2, 3}, versions...)
+}
+
+// newDerivedRollbackDirectory is the directory of the migrations files names,
+// each creating one table, with the migrations applied names applied.
+func newDerivedRollbackDirectory(c *qt.C, files []int64, applied ...int64) derivedRollbackFixture {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TempDir(), "derived.db"))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = conn.Close() })
-	all := map[int64]*migrator.Migration{
-		1: migrator.CreateMigrationFromSQL(1, "one", "CREATE TABLE one (id INTEGER PRIMARY KEY);\n", "DROP TABLE one;\n"),
-		2: migrator.CreateMigrationFromSQL(2, "two", "CREATE TABLE two (id INTEGER PRIMARY KEY);\n", "DROP TABLE two;\n"),
-		3: migrator.CreateMigrationFromSQL(3, "three", "CREATE TABLE three (id INTEGER PRIMARY KEY);\n", "DROP TABLE three;\n"),
-	}
-	applied := make([]*migrator.Migration, 0, len(versions))
-	for _, version := range versions {
-		applied = append(applied, all[version])
-	}
-	c.Assert(migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(applied...)).MigrateUp(c.Context()), qt.IsNil)
+	up := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(derivedMigrations(applied)...))
+	c.Assert(up.MigrateUp(c.Context()), qt.IsNil)
 	return derivedRollbackFixture{
 		conn:     conn,
-		migrator: migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(all[1], all[2], all[3])),
+		migrator: migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(derivedMigrations(files)...)),
 	}
+}
+
+// derivedMigrations builds the migrations of versions. Each creates the table
+// its version is spelled as.
+func derivedMigrations(versions []int64) []*migrator.Migration {
+	names := map[int64]string{1: "one", 2: "two", 3: "three", 10: "ten", 20: "twenty"}
+	migrations := make([]*migrator.Migration, 0, len(versions))
+	for _, version := range versions {
+		name := names[version]
+		migrations = append(migrations, migrator.CreateMigrationFromSQL(version, name,
+			"CREATE TABLE "+name+" (id INTEGER PRIMARY KEY);\n", "DROP TABLE "+name+";\n"))
+	}
+	return migrations
 }
 
 // drop is the Apply of a derived rollback that drops tables.
 func (f derivedRollbackFixture) drop(calls *int, tables ...string) func(context.Context) error {
+	statements := make([]string, 0, len(tables))
+	for _, table := range tables {
+		statements = append(statements, "DROP TABLE "+table)
+	}
+	return f.run(calls, statements...)
+}
+
+// run is the Apply of a derived rollback that runs statements and counts its
+// calls.
+func (f derivedRollbackFixture) run(calls *int, statements ...string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		*calls++
-		for _, table := range tables {
-			if err := f.conn.Writer().ExecuteSQL(ctx, "DROP TABLE "+table); err != nil {
+		for _, statement := range statements {
+			if err := f.conn.Writer().ExecuteSQL(ctx, statement); err != nil {
 				return err
 			}
 		}
@@ -101,58 +124,122 @@ func recordPlan(into *[]migrator.MigrationPlan) migrator.PreMigrationHook {
 
 // TestMigrateDownDerived_HappyPath runs the statements once, hands the hook
 // the versions newest first whatever order the caller gave, and leaves the
-// revision table at the target with a log attempt settled for each version.
+// revision table at the newest migration at or below the target, with a log
+// attempt settled for each version. That migration is the target when a file
+// names it. When none does, it is the one below, as for a rollback through the
+// down bodies. A migration below the target that was never applied is recorded
+// as applied, because the statements were derived against the directory up to
+// the target and create what it holds. A dry run hands the hook the same plan
+// and runs nothing.
 func TestMigrateDownDerived_HappyPath(t *testing.T) {
 	tests := []struct {
 		name         string
+		files        []int64
+		applied      []int64
+		dryRun       bool
 		target       int64
 		versions     []int64
-		drop         []string
+		statements   []string
 		wantPlan     migrator.MigrationPlan
+		wantCalls    int
 		wantApplied  []int64
 		wantTables   []string
 		wantOutcomes []string
 	}{
 		{
-			name:     "one version",
-			target:   1,
-			versions: []int64{2},
-			drop:     []string{"two"},
+			name:       "one version",
+			files:      []int64{1, 2, 3},
+			applied:    []int64{1, 2},
+			target:     1,
+			versions:   []int64{2},
+			statements: []string{"DROP TABLE two"},
 			wantPlan: migrator.MigrationPlan{
 				Direction: migrator.MigrationDirectionDown, CurrentVersion: 2, TargetVersion: 1, Versions: []int64{2},
 			},
+			wantCalls:    1,
 			wantApplied:  []int64{1},
 			wantTables:   []string{"one"},
 			wantOutcomes: []string{"v1:applied", "v2:applied", "v2:rolled_back"},
 		},
 		{
-			name:     "two versions given oldest first",
-			target:   0,
-			versions: []int64{1, 2},
-			drop:     []string{"two", "one"},
+			name:       "two versions given oldest first",
+			files:      []int64{1, 2, 3},
+			applied:    []int64{1, 2},
+			target:     0,
+			versions:   []int64{1, 2},
+			statements: []string{"DROP TABLE two", "DROP TABLE one"},
 			wantPlan: migrator.MigrationPlan{
 				Direction: migrator.MigrationDirectionDown, CurrentVersion: 2, TargetVersion: 0, Versions: []int64{2, 1},
 			},
+			wantCalls:    1,
 			wantApplied:  make([]int64, 0),
 			wantOutcomes: []string{"v1:applied", "v2:applied", "v2:rolled_back", "v1:rolled_back"},
+		},
+		{
+			name:       "a target no migration names",
+			files:      []int64{10, 20},
+			applied:    []int64{10, 20},
+			target:     15,
+			versions:   []int64{20},
+			statements: []string{"DROP TABLE twenty"},
+			wantPlan: migrator.MigrationPlan{
+				Direction: migrator.MigrationDirectionDown, CurrentVersion: 20, TargetVersion: 10, Versions: []int64{20},
+			},
+			wantCalls:    1,
+			wantApplied:  []int64{10},
+			wantTables:   []string{"ten"},
+			wantOutcomes: []string{"v10:applied", "v20:applied", "v20:rolled_back"},
+		},
+		{
+			name:       "a migration below the target never applied",
+			files:      []int64{1, 2, 3},
+			applied:    []int64{1, 3},
+			target:     2,
+			versions:   []int64{3},
+			statements: []string{"DROP TABLE three", "CREATE TABLE two (id INTEGER PRIMARY KEY)"},
+			wantPlan: migrator.MigrationPlan{
+				Direction: migrator.MigrationDirectionDown, CurrentVersion: 3, TargetVersion: 2, Versions: []int64{3},
+			},
+			wantCalls:    1,
+			wantApplied:  []int64{1, 2},
+			wantTables:   []string{"one", "two"},
+			wantOutcomes: []string{"v1:applied", "v3:applied", "v3:rolled_back"},
+		},
+		{
+			name:       "a dry run",
+			files:      []int64{1, 2, 3},
+			applied:    []int64{1, 2},
+			dryRun:     true,
+			target:     1,
+			versions:   []int64{2},
+			statements: []string{"DROP TABLE two"},
+			wantPlan: migrator.MigrationPlan{
+				Direction: migrator.MigrationDirectionDown, CurrentVersion: 2, TargetVersion: 1, Versions: []int64{2},
+			},
+			wantCalls:    0,
+			wantApplied:  []int64{1, 2},
+			wantTables:   []string{"one", "two"},
+			wantOutcomes: []string{"v1:applied", "v2:applied"},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			f := newDerivedRollbackFixture(c, 1, 2)
+			f := newDerivedRollbackDirectory(c, test.files, test.applied...)
+			f.conn.SchemaWriter().SetDryRun(test.dryRun)
 			var calls int
 			var plans []migrator.MigrationPlan
 
 			err := f.migrator.MigrateDownDerived(c.Context(), migrator.DerivedRollback{
 				TargetVersion: test.target,
 				Versions:      test.versions,
-				Apply:         f.drop(&calls, test.drop...),
+				Apply:         f.run(&calls, test.statements...),
 			}, recordPlan(&plans))
 
+			f.conn.SchemaWriter().SetDryRun(false)
 			c.Assert(err, qt.IsNil)
-			c.Assert(calls, qt.Equals, 1)
+			c.Assert(calls, qt.Equals, test.wantCalls)
 			c.Assert(plans, qt.DeepEquals, []migrator.MigrationPlan{test.wantPlan})
 			c.Assert(f.applied(c), qt.DeepEquals, test.wantApplied)
 			c.Assert(f.tables(c), qt.DeepEquals, test.wantTables)
@@ -169,6 +256,7 @@ func TestMigrateDownDerivedStale_FailurePath(t *testing.T) {
 	tests := []struct {
 		name        string
 		applied     []int64
+		dryRun      bool
 		derivedFor  []int64
 		wantErr     string
 		wantApplied []int64
@@ -176,6 +264,15 @@ func TestMigrateDownDerivedStale_FailurePath(t *testing.T) {
 		{
 			name:       "a migration applied since",
 			applied:    []int64{1, 2, 3},
+			derivedFor: []int64{2},
+			wantErr: `the rollback to version 1 was derived for the applied migrations \[2\], ` +
+				`and the migrations applied above version 1 are now \[3 2\]; nothing was rolled back`,
+			wantApplied: []int64{1, 2, 3},
+		},
+		{
+			name:       "a migration applied since, on a dry run",
+			applied:    []int64{1, 2, 3},
+			dryRun:     true,
 			derivedFor: []int64{2},
 			wantErr: `the rollback to version 1 was derived for the applied migrations \[2\], ` +
 				`and the migrations applied above version 1 are now \[3 2\]; nothing was rolled back`,
@@ -196,6 +293,7 @@ func TestMigrateDownDerivedStale_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			f := newDerivedRollbackFixture(c, test.applied...)
 			before := f.tables(c)
+			f.conn.SchemaWriter().SetDryRun(test.dryRun)
 			var calls int
 			var plans []migrator.MigrationPlan
 
@@ -205,6 +303,7 @@ func TestMigrateDownDerivedStale_FailurePath(t *testing.T) {
 				Apply:         f.drop(&calls, "two"),
 			}, recordPlan(&plans))
 
+			f.conn.SchemaWriter().SetDryRun(false)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			stale, ok := errors.AsType[*migrator.StaleDerivedRollbackError](err)
 			c.Assert(ok, qt.IsTrue)
@@ -235,6 +334,26 @@ func TestMigrateDownDerivedHook_FailurePath(t *testing.T) {
 	c.Assert(f.applied(c), qt.DeepEquals, []int64{1, 2})
 	c.Assert(f.tables(c), qt.DeepEquals, []string{"one", "two"})
 	c.Assert(attemptOutcomes(c, c.Context(), f.migrator), qt.DeepEquals, []string{"v1:applied", "v2:applied"})
+}
+
+// TestMigrateDownDerivedNegativeTarget_FailurePath asks for a target below
+// zero, which names no state of the database. The rollback refuses before it
+// reads anything, so the statements never run.
+func TestMigrateDownDerivedNegativeTarget_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	f := newDerivedRollbackFixture(c, 1, 2)
+	var calls int
+
+	err := f.migrator.MigrateDownDerived(c.Context(), migrator.DerivedRollback{
+		TargetVersion: -1,
+		Versions:      []int64{1, 2},
+		Apply:         f.drop(&calls, "two", "one"),
+	}, nil)
+
+	c.Assert(err, qt.ErrorMatches, `migration version must not be negative`)
+	c.Assert(calls, qt.Equals, 0)
+	c.Assert(f.applied(c), qt.DeepEquals, []int64{1, 2})
+	c.Assert(f.tables(c), qt.DeepEquals, []string{"one", "two"})
 }
 
 // TestMigrateDownDerivedApply_FailurePath fails a statement. The revision

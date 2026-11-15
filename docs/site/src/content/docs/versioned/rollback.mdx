@@ -278,7 +278,13 @@ rollback verification failed: shadow database must be distinct from target datab
 
 - `--target <version>` rolls back every applied migration above that version.
   Only versions recorded as applied are rolled back; a pending migration
-  between applied ones is left alone.
+  between applied ones is left alone. With `--plan`, the derived statements
+  bring the database to the directory as it stands up to the target, so a
+  pending migration at or below the target is created and recorded as
+  applied.
+- A version no migration file names is accepted. The run rolls back every
+  applied migration above it and records the newest migration below it as the
+  current version, with `--plan` or without.
 - `--target 0` rolls back everything, returning the database to an empty
   application schema.
 - Rolling back "one step" means targeting the version below the current one —

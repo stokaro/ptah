@@ -45,25 +45,34 @@ func (e *StaleDerivedRollbackError) Error() string {
 }
 
 // MigrateDownDerived runs a rollback the caller derived and moves the revision
-// boundary to its target, holding the migration lock
-// [Migrator.MigrateDownToWithPreflight] takes for a rollback through the down
-// bodies. Runners that take the same lock wait for it, and it waits for them.
+// boundary, holding the migration lock [Migrator.MigrateDownToWithPreflight]
+// takes for a rollback through the down bodies. Runners that take the same
+// lock wait for it, and it waits for them.
 //
-// Holding the lock, it refuses a dirty revision with a [*DirtyMigrationError]
-// and reads the applied migrations again. When the ones above the target are
-// not [DerivedRollback.Versions], it returns a [*StaleDerivedRollbackError].
-// Otherwise it runs hook with the selected plan, opens a log attempt for each
-// migration the rollback undoes as [Migrator.LogDerivedRollback] does, runs
-// Apply, and moves the revision boundary as [Migrator.SetRevision] does. Every
-// log attempt is settled with the outcome.
+// The boundary is the newest migration at or below the target, or zero when
+// there is none: the statements were derived against the directory up to the
+// target, so that is what they leave in place. It is the target when a
+// migration file names it, and the migration below it when none does. With
+// every migration at or below the target applied, it is also where a rollback
+// through the down bodies to the same target lands.
 //
-// A refusal, a hook error and every check come before Apply, so they change
-// nothing. When Apply or the boundary move fails, the revision rows above the
+// Holding the lock, it refuses a negative target, refuses a dirty revision
+// with a [*DirtyMigrationError] and reads the applied migrations again. When
+// the ones above the target are not [DerivedRollback.Versions], it returns a
+// [*StaleDerivedRollbackError]. It then gives every refusal that moving the
+// boundary as [Migrator.SetRevision] does would give over the revisions as
+// they are. After these checks it runs hook with the selected plan, whose
+// TargetVersion is the boundary, opens a log attempt for each migration the
+// rollback undoes as [Migrator.LogDerivedRollback] does, runs Apply, and moves
+// the boundary. Every log attempt is settled with the outcome.
+//
+// The checks and the hook come before Apply, so a refusal changes nothing.
+// When Apply fails, or writing the boundary fails, the revision rows above the
 // target stay as they were, describing a database the rollback may have
-// changed in part. On a dialect that has no migration lock the applied
-// migrations are still read again just before Apply, and nothing stops another
-// runner from changing them while Apply runs. On a dry-run connection the
-// checks and hook run, and Apply does not.
+// changed in part. On a dialect that has no migration lock the checks still
+// read the database right before Apply, and nothing stops another runner from
+// changing it while Apply runs. On a dry-run connection the checks and the
+// hook run, and Apply and the boundary move do not.
 func (m *Migrator) MigrateDownDerived(ctx context.Context, rollback DerivedRollback, hook PreMigrationHook) (err error) {
 	observer := m.migrationObserver()
 	ctx, span := observer.StartSpan(ctx, "ptah.migrate.down", append(m.operationAttributes(MigrationDirectionDown),
@@ -76,6 +85,9 @@ func (m *Migrator) MigrateDownDerived(ctx context.Context, rollback DerivedRollb
 }
 
 func (m *Migrator) migrateDownDerivedLocked(ctx context.Context, rollback DerivedRollback, hook PreMigrationHook) error {
+	if rollback.TargetVersion < 0 {
+		return fmt.Errorf("migration version must not be negative")
+	}
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
@@ -93,10 +105,14 @@ func (m *Migrator) migrateDownDerivedLocked(ctx context.Context, rollback Derive
 	if !slices.Equal(above, derived) {
 		return &StaleDerivedRollbackError{TargetVersion: rollback.TargetVersion, Derived: derived, Applied: above}
 	}
+	boundary := m.derivedRollbackBoundary(rollback.TargetVersion)
+	if err := m.checkRevisionSet(ctx, boundary); err != nil {
+		return fmt.Errorf("move the revision boundary to version %d: %w", boundary, err)
+	}
 	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
 		Direction:      MigrationDirectionDown,
 		CurrentVersion: maxAppliedVersion(applied),
-		TargetVersion:  downTargetVersion(applied, rollback.TargetVersion),
+		TargetVersion:  boundary,
 		Versions:       above,
 	}); err != nil {
 		return err
@@ -107,12 +123,24 @@ func (m *Migrator) migrateDownDerivedLocked(ctx context.Context, rollback Derive
 	settle := m.LogDerivedRollback(ctx, rollback.TargetVersion)
 	err = applyDerivedRollback(ctx, rollback)
 	if err == nil {
-		if _, setErr := m.setRevisionLocked(ctx, rollback.TargetVersion); setErr != nil {
-			err = fmt.Errorf("move the revision boundary to version %d: %w", rollback.TargetVersion, setErr)
+		if _, setErr := m.setRevisionLocked(ctx, boundary); setErr != nil {
+			err = fmt.Errorf("move the revision boundary to version %d: %w", boundary, setErr)
 		}
 	}
 	settle(err)
 	return err
+}
+
+// derivedRollbackBoundary returns the newest migration at or below target,
+// or zero when there is none.
+func (m *Migrator) derivedRollbackBoundary(target int64) int64 {
+	var boundary int64
+	for _, migration := range m.migrationProvider.Migrations() {
+		if migration.Version <= target && migration.Version > boundary {
+			boundary = migration.Version
+		}
+	}
+	return boundary
 }
 
 // applyDerivedRollback runs the statements of rollback, if it has any.

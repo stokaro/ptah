@@ -3,6 +3,7 @@ package migrator_test
 import (
 	"context"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -75,7 +76,7 @@ func attemptOutcomes(c *qt.C, ctx context.Context, m *migrator.Migrator) []strin
 }
 
 func attemptLabel(version int64) string {
-	return map[int64]string{1: "v1", 2: "v2"}[version]
+	return "v" + strconv.FormatInt(version, 10)
 }
 
 // TestMigrationLogReport_CountsWhatReachedTheTable is the control the losses are
