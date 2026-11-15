@@ -5,8 +5,17 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 )
+
+// versionLiterals holds each descriptor's RevisionTable.VersionLiteral. The
+// migrator renders a literal for every revision it records or reads, and
+// copying the whole descriptor through platform.Lookup for each costs more than
+// the literal.
+var versionLiterals = descriptortable.New(func(described descriptor.Dialect) string {
+	return described.RevisionTable.VersionLiteral
+})
 
 // VersionLiteral renders an exact Atlas revision identity as a SQL literal
 // whose bytes do not depend on a connection's string-escape mode, in the
@@ -14,8 +23,7 @@ import (
 // VersionLiteral. A dialect that states no style, or one this package does
 // not declare, takes the standard literal.
 func VersionLiteral(dialect, value string) string {
-	described, _ := platform.Lookup(dialect)
-	switch described.RevisionTable.VersionLiteral {
+	switch versionLiterals.Get(dialect) {
 	case "hex":
 		return "X'" + hex.EncodeToString([]byte(value)) + "'"
 	case "backslash":

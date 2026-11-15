@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/objectlookup"
@@ -2623,6 +2624,13 @@ func (p *Planner) addNonForeignKeyConstraintsWithTables(
 	return result
 }
 
+// foreignKeyNamings holds each descriptor's ForeignKeyNaming, which the planner
+// reads once per plan step that asks, where copying the whole descriptor
+// through platform.Lookup costs more than the step.
+var foreignKeyNamings = descriptortable.New(func(described descriptor.Dialect) descriptor.ForeignKeyNaming {
+	return described.ForeignKeyNaming
+})
+
 // indexesNamedByForeignKeys answers the removed indexes under the name of a foreign key
 // the plan adds on their table. The server builds a key an index of its name, so ADD
 // CONSTRAINT answers `Error 1061: Duplicate key name` while the old index is there,
@@ -2635,7 +2643,7 @@ func (p *Planner) addNonForeignKeyConstraintsWithTables(
 // see [Planner.releaseForeignKeysOverMovedKeys].
 func indexesNamedByForeignKeys(diff *difftypes.SchemaDiff, dialect string) map[difftypes.IndexRef]struct{} {
 	// SQL Server, which this planner serves too, builds a key no index.
-	if described, _ := platform.Lookup(dialect); described.ForeignKeyNaming != descriptor.ForeignKeyNamingTableNumbered {
+	if foreignKeyNamings.Get(dialect) != descriptor.ForeignKeyNamingTableNumbered {
 		return nil
 	}
 	removed := make(map[difftypes.IndexRef]struct{}, len(diff.IndexesRemoved))

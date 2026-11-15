@@ -22,7 +22,8 @@ package ddltx
 import (
 	"slices"
 
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 )
 
 // Class is a DDL transaction contract: what a database guarantees about a
@@ -77,16 +78,20 @@ func Classes() []Class {
 // revision-completion test in migration/migrator, or the code path the
 // migrator implements where no test drives one yet.
 func ClassOf(dialect string) Class {
-	described, found := platform.Lookup(dialect)
-	if !found {
-		return Unclassified
-	}
+	return classes.Get(dialect)
+}
+
+// classes holds the class of each descriptor of the process registry, and
+// Unclassified for a dialect it does not describe. The migrator asks once per
+// statement it runs, and copying the whole descriptor through platform.Lookup
+// costs more than the question.
+var classes = descriptortable.New(func(described descriptor.Dialect) Class {
 	class := Class(described.DDLTransactions)
-	if !slices.Contains(Classes(), class) {
+	if described.Name == "" || !slices.Contains(Classes(), class) {
 		return Unclassified
 	}
 	return class
-}
+})
 
 // BodySurvivesRevisionCompletionFailure reports whether a migration body that
 // executed successfully is still present in the catalog after the write that

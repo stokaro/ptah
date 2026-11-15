@@ -10,10 +10,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/sqlident"
@@ -1135,6 +1135,20 @@ func spanIsCode(code []bool, start, end int) bool {
 	return true
 }
 
+// maskFacts holds what each descriptor states for [sqlMasksForDialect]. The
+// ordering masks every body it reads, and copying the whole descriptor through
+// platform.Lookup for each costs more than masking a short one. The lexical
+// facts are shared, so a caller must not modify them.
+var maskFacts = descriptortable.New(func(described descriptor.Dialect) describedMasks {
+	return describedMasks{lexical: described.Lexical, brackets: described.Quoting.Style == descriptor.QuoteBracket}
+})
+
+// describedMasks is what [maskFacts] holds for one dialect.
+type describedMasks struct {
+	lexical  descriptor.Lexical
+	brackets bool
+}
+
 // sqlMasksForDialect marks the byte offsets of body that are SQL code:
 // everything outside string literals, dollar-quoted strings, line comments and
 // block comments. Quoted identifiers are code, but their contents are copied
@@ -1151,9 +1165,9 @@ func spanIsCode(code []bool, start, end int) bool {
 // its own, or whose provider supplies one, is read by that lexer instead;
 // see [lexerMasks].
 func sqlMasksForDialect(body, dialect string) sqlMasks {
-	described, _ := platform.Lookup(dialect)
-	lexical := described.Lexical
-	brackets := described.Quoting.Style == descriptor.QuoteBracket
+	facts := maskFacts.Get(dialect)
+	lexical := facts.lexical
+	brackets := facts.brackets
 	if options := dialectlexer.Options(dialect); options.Scanner != nil {
 		masks := lexerMasks(body, options)
 		masks.bracketNames = brackets

@@ -974,7 +974,7 @@ func providerAnswersPayload(dialect string, caps capability.Capabilities) bool {
 	if dialect == "" {
 		return false
 	}
-	if _, described := platform.Lookup(dialect); described {
+	if isDescribed(dialect) {
 		return false
 	}
 	return !caps.Established(capability.IndexCoveringColumns)

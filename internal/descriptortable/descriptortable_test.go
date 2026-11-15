@@ -89,3 +89,22 @@ func TestIndex_DerivesOncePerRegistry(t *testing.T) {
 	group.Wait()
 	c.Assert(calls.Load(), qt.Equals, int64(1))
 }
+
+// TestTable_GetCopiesNothing holds the reason the package exists: once a table
+// has derived its answers, asking for one copies no descriptor and allocates
+// nothing, for every canonical name and alias the process registry accepts.
+// platform.Lookup makes a deep copy of the whole descriptor on every call, so
+// a Get that reached it, or rebuilt its answers per call, would allocate.
+func TestTable_GetCopiesNothing(t *testing.T) {
+	comparisons := descriptortable.New(func(described descriptor.Dialect) descriptor.Comparison {
+		return described.Comparison
+	})
+	for _, spelling := range append(platform.DialectSpellings(), "", "nonesuch") {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
+			comparisons.Get(spelling)
+
+			c.Assert(testing.AllocsPerRun(100, func() { comparisons.Get(spelling) }), qt.Equals, float64(0))
+		})
+	}
+}

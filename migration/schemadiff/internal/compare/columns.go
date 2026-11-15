@@ -13,7 +13,6 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
@@ -1782,8 +1781,7 @@ func tablePrimaryKeyColumns(table schemamodel.Table) []string {
 // not, so the attribute is left uncompared rather than reported as a change
 // that a MODIFY would not make (stokaro/ptah#1915).
 func generatedExpressionIsRewritten(dialect string) bool {
-	described, _ := platform.Lookup(dialect)
-	return described.Comparison.RewritesGeneratedExpressions
+	return comparisonOf(dialect).RewritesGeneratedExpressions
 }
 
 // generatedColumnDiff compares a generated column, using the server's own

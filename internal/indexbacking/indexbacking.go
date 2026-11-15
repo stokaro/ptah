@@ -25,8 +25,17 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 )
+
+// comparisons holds each descriptor's Comparison. The comparator asks about
+// every index and key it pairs, and copying the whole descriptor through
+// platform.Lookup for each costs more than the question. The answers are
+// shared, so a caller must not modify one.
+var comparisons = descriptortable.New(func(described descriptor.Dialect) descriptor.Comparison {
+	return described.Comparison
+})
 
 // Kind is the constraint kind an index can be the backing of.
 //
@@ -82,8 +91,7 @@ func KindOf(constraintType string) Kind {
 // that path has always produced. It is stated here rather than implied by a
 // switch nobody wrote an arm in.
 func ServerBacks(dialect string, kind Kind) bool {
-	described, _ := platform.Lookup(dialect)
-	comparison := described.Comparison
+	comparison := comparisons.Get(dialect)
 	switch kind {
 	case PrimaryKey:
 		// Every server enforces a primary key with an index. The reader marks
@@ -154,7 +162,6 @@ func Unaddressable(index catalog.Index, dialect string) bool {
 }
 
 func isSQLiteInternalAutoindex(indexName, dialect string) bool {
-	described, _ := platform.Lookup(dialect)
-	prefix := described.Comparison.InternalIndexPrefix
+	prefix := comparisons.Get(dialect).InternalIndexPrefix
 	return prefix != "" && strings.HasPrefix(indexName, prefix)
 }
