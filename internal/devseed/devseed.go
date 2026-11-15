@@ -22,11 +22,13 @@
 // along the dev session's search path. An unqualified name counts for a
 // function only where a call names it, and for a table, a view or a sequence
 // only where SQL names a relation (see [deporder.NameUse]), so a column that
-// shares an excluded table's name does not bring the table. The body of a
-// routine written in SQL or PL/pgSQL is read as code too, though its statement
-// quotes it: a routine of the state, a CREATE FUNCTION or CREATE PROCEDURE a
-// statement runs, and a DO block. Any other name inside a string literal or a
-// comment names nothing, so a reference spelled as text, such as
+// shares an excluded table's name does not bring the table. A routine body is
+// read as code too, though its statement quotes it, for what PostgreSQL
+// resolves before the plan runs: all of an SQL body, the declarations of a
+// PL/pgSQL routine's body, and all of a DO block, which runs at once. That
+// holds for a routine of the state, a CREATE FUNCTION or CREATE PROCEDURE a
+// statement runs, and a DO block; see [bodyCode]. Any other name inside a
+// string literal or a comment names nothing, so a reference spelled as text, such as
 // nextval('app.ids'), is not found here, and the dev database reports the
 // object it lacks.
 //
@@ -111,7 +113,7 @@ type Result struct {
 // What the state's own objects reference is followed before the state is
 // rendered, since a render can refuse a state that holds a reference to an
 // object it lacks: the table a foreign key references, the type of a column,
-// and the names in the body of an SQL or PL/pgSQL routine.
+// and the names a routine's body resolves when it is created.
 //
 // A nil target adds nothing: the comparison was not narrowed, so seed is
 // everything the target holds. seed is not changed.
@@ -178,8 +180,8 @@ func (c *closure) growPast(statements []string) (bool, error) {
 func (c *closure) growWhile(statements []string, worth func(names) bool) (bool, error) {
 	grew := false
 	for {
-		code := slices.Concat(statements, routineBodies(c.state), statementBodies(statements, c.opts.Dialect))
-		names := readNames(code, c.opts)
+		texts := slices.Concat(codeOf(statements), routineBodies(c.state), statementBodies(statements, c.opts.Dialect))
+		names := readNames(texts, c.opts)
 		names.addReferences(c.state, c.opts)
 		if !worth(names) {
 			return grew, nil
@@ -243,49 +245,95 @@ func WithAdded(err error, added []Object) error {
 	return &AddedError{Added: slices.Clone(added), Err: err}
 }
 
-// routineBodies are the bodies of state's routines written in SQL or
-// PL/pgSQL, read as code. A rendered CREATE FUNCTION quotes its body as a
-// string, which names nothing, yet PostgreSQL resolves the names in an SQL
-// body when the function is created and in a PL/pgSQL body when it runs. A
-// body in another language is not SQL, and its words name nothing.
-func routineBodies(state *catalog.Database) []string {
-	var bodies []string
+// code is a text [Closure] reads names from.
+type code struct {
+	text string
+	// declarations reports that only the declarations of a PL/pgSQL block
+	// name anything, without the calls a default makes; see [bodyCode].
+	declarations bool
+}
+
+// codeOf is each text as code read whole.
+func codeOf(texts []string) []code {
+	out := make([]code, 0, len(texts))
+	for _, text := range texts {
+		out = append(out, code{text: text})
+	}
+	return out
+}
+
+// routineBodies are the bodies of state's routines as [bodyCode] reads them.
+// A rendered CREATE FUNCTION quotes its body as a string, which names
+// nothing, yet PostgreSQL resolves names in it when the function is created.
+func routineBodies(state *catalog.Database) []code {
+	var bodies []code
 	for _, routine := range state.Functions {
-		if readsAsCode(routine.Language) {
-			bodies = append(bodies, routine.Body)
+		if body, ok := bodyCode(routine.Body, routine.Language, false); ok {
+			bodies = append(bodies, body)
 		}
 	}
 	return bodies
 }
 
-// readsAsCode reports whether a routine body in language is SQL, whose names
-// [Closure] reads: SQL and PL/pgSQL, and a body that names no language, as a
-// read leaves an SQL-standard body. It is the one rule for the bodies of the
-// state's routines and for the bodies statements quote, which must agree: a
-// planned routine names what a routine of the state would.
-func readsAsCode(language string) bool {
+// bodyCode returns a routine body in language as [Closure] reads it: what
+// PostgreSQL resolves in it before the plan that creates it, or runs it, goes
+// on. runs reports a DO block, which runs as it is created. It is the one rule
+// for the bodies of the state's routines and for the bodies statements quote,
+// which must agree: a planned routine names what a routine of the state would.
+//
+// An SQL body is resolved when the routine is created, so every name in it
+// counts; so does a body that names no language, as a read leaves an
+// SQL-standard one. A PL/pgSQL routine is compiled when it is created, which
+// resolves the types its declarations name, a %ROWTYPE or a %TYPE included,
+// and nothing its statements name until it runs. So only the declarations
+// count, and a call in a default does not: recreated for a call PostgreSQL
+// does not resolve, a routine fails the routine guard on a server the run does
+// not own, and in a schema the dev database held it is refused, where the plan
+// alone passes. A DO block runs at once, so every name in it counts. A body in
+// another language is not SQL, and false is returned for it.
+func bodyCode(body, language string, runs bool) (code, bool) {
 	switch fold(language) {
-	case "", "sql", "plpgsql":
-		return true
+	case "", "sql":
+		return code{text: body}, true
+	case "plpgsql":
+		return code{text: body, declarations: !runs}, true
 	default:
-		return false
+		return code{}, false
 	}
 }
 
+// declared returns the uses that stand in the declarations of a PL/pgSQL
+// block, from each DECLARE to the BEGIN after it, without the calls a
+// default makes.
+func declared(uses []deporder.NameUse) []deporder.NameUse {
+	var out []deporder.NameUse
+	in := false
+	for _, use := range uses {
+		switch {
+		case slices.Equal(use.Parts, []string{"declare"}):
+			in = true
+		case slices.Equal(use.Parts, []string{"begin"}):
+			in = false
+		case in && !use.Call:
+			out = append(out, use)
+		}
+	}
+	return out
+}
+
 // statementBodies are the routine bodies statements quote as strings, on an
-// engine whose grammar writes a body that way: the body of each CREATE
-// FUNCTION and CREATE PROCEDURE, OR REPLACE included, and of each DO block,
-// whose language is the one the dialect's descriptor states for a block that
-// names none. A body in a language [readsAsCode] does not read is left out. A
-// body written as SQL, such as BEGIN ATOMIC ... END, is code already, and its
-// names are read with the statement's.
-func statementBodies(statements []string, dialect string) []string {
+// engine whose grammar writes a body that way, as [bodyCode] reads them: the
+// body of each CREATE FUNCTION and CREATE PROCEDURE, OR REPLACE included, and
+// of each DO block, whose language is the one the dialect's descriptor states
+// for a block that names none. A body written as SQL, such as BEGIN ATOMIC
+// ... END, is code already, and its names are read with the statement's.
+func statementBodies(statements []string, dialect string) []code {
 	described, _ := platform.Lookup(dialect)
 	if described.Grammar.Routines.Body != descriptor.RoutineQuotedBody {
 		return nil
 	}
 	options := dialectlexer.Options(dialect)
-	var bodies []string
+	var bodies []code
 	for _, statement := range statements {
 		for _, tokens := range codeStatements(statement, options) {
 			if body, ok := quotedBody(tokens, options, described.Grammar.Routines.DefaultDoBlockLanguage); ok {
@@ -322,15 +370,15 @@ func codeStatements(text string, options lexer.Options) [][]lexer.Token {
 	}
 }
 
-// quotedBody returns the body a statement's tokens quote, when the statement
-// creates a routine or runs a DO block and the body is in a language
-// [readsAsCode] reads. A DO block that names no language is in doLanguage. A
-// CREATE FUNCTION body is the string after AS, as PostgreSQL reads one, and a
-// DO block's the first string that is not its language.
-func quotedBody(tokens []lexer.Token, options lexer.Options, doLanguage string) (string, bool) {
+// quotedBody returns the body a statement's tokens quote, as [bodyCode]
+// reads it, when the statement creates a routine or runs a DO block and the
+// body is in a language bodyCode reads. A DO block that names no language is
+// in doLanguage. A CREATE FUNCTION body is the string after AS, as PostgreSQL
+// reads one, and a DO block's the first string that is not its language.
+func quotedBody(tokens []lexer.Token, options lexer.Options, doLanguage string) (code, bool) {
 	block := tokens[0].MatchIdentifierValue("DO")
 	if !block && !createsRoutine(tokens) {
-		return "", false
+		return code{}, false
 	}
 	var body, language string
 	named := false
@@ -347,10 +395,14 @@ func quotedBody(tokens []lexer.Token, options lexer.Options, doLanguage string) 
 	if block && !named {
 		language = doLanguage
 	}
-	if body == "" || !readsAsCode(language) {
-		return "", false
+	if body == "" {
+		return code{}, false
 	}
-	return lexer.StringValue(body, options)
+	text, ok := lexer.StringValue(body, options)
+	if !ok {
+		return code{}, false
+	}
+	return bodyCode(text, language, block)
 }
 
 // createsRoutine reports whether tokens begin CREATE [OR REPLACE] FUNCTION or
@@ -404,13 +456,17 @@ type names struct {
 	searchPath               []string
 }
 
-func readNames(statements []string, opts Options) names {
+func readNames(texts []code, opts Options) names {
 	found := names{
 		qualified: make(map[key]bool), words: make(map[string]bool), called: make(map[string]bool),
 		relations: make(map[string]bool), schemas: make(map[string]bool),
 	}
-	for _, statement := range statements {
-		for _, use := range deporder.CodeNameUses(statement, opts.Dialect) {
+	for _, text := range texts {
+		uses := deporder.CodeNameUses(text.text, opts.Dialect)
+		if text.declarations {
+			uses = declared(uses)
+		}
+		for _, use := range uses {
 			parts := use.Parts
 			if len(parts) == 1 {
 				found.words[parts[0]] = true

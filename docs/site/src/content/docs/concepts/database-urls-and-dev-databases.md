@@ -582,11 +582,16 @@ server Ptah provisions from a docker URL or one declared with
 `PTAH_DEV_SERVER_DISPOSABLE=1`, or when the run
 [trusts the SQL](#sql-you-trust), and refused by name otherwise.
 
-A name counts as named where it appears in the code of a statement, of an SQL
-or PL/pgSQL routine body the target holds, or of the body that a planned
-`CREATE FUNCTION`, `CREATE PROCEDURE` or `DO` block quotes in SQL or PL/pgSQL.
-A `DO` block that names no language is PL/pgSQL. A name qualified by its schema
-counts wherever it stands. A bare name reached along the dev session's
+A name counts as named where it appears in the code of a statement, or in what
+PostgreSQL resolves in a routine body before the plan goes on. That is the
+whole of an SQL body, and the declarations of a PL/pgSQL body, such as
+`r auth.accounts%ROWTYPE`, without the calls a default makes: PostgreSQL
+resolves a call in a PL/pgSQL body only when it runs. A `DO` block runs at
+once, so the whole of it counts, and one that names no language is PL/pgSQL.
+The rule is the same for a routine the target holds and for a planned `CREATE
+FUNCTION`, `CREATE PROCEDURE` or `DO` block.
+
+A name qualified by its schema counts wherever it stands. A bare name reached along the dev session's
 `search_path` counts only where it can name the object: a function where a call
 names it, a table, view or sequence where SQL names a relation, such as after
 `FROM`, `JOIN` or `REFERENCES`, and a type anywhere. So a planned column
@@ -600,11 +605,13 @@ recreated this way, the error lists them.
 A dev URL that pins one schema with `search_path` leaves the other schemas the
 dev database held at the claim as it finds them, with what they hold, so an
 object written into one of them would outlive the run and fail the next one.
-The rehearsal refuses a baseline
-that would write an object into such a schema before it writes anything, names
-the schema and the objects, and leaves the dev database as it was, on every
-server. Point `--dev-url` at a database that does not hold the schema: a schema
-the baseline creates is the run's, and its cleanup drops it.
+On PostgreSQL, CockroachDB and YugabyteDB, and on an engine whose provider
+session lists its schemas, the claim records those schemas. There the
+rehearsal refuses a baseline that would write an object into one of them
+before it writes anything, names the schema and the objects, and writes
+nothing beyond the reset, whether or not the server is disposable. Point
+`--dev-url` at a database that does not hold the schema: a schema the
+baseline creates is the run's, and its cleanup drops it.
 
 Comments follow a narrower rule. A comment on a table or a column is written.
 The comment an extension's control file gives is not written, because `CREATE
@@ -622,8 +629,9 @@ returns those schemas to them and drops the others. A dev URL that pins one sche
 with `search_path` is the exception: its cleanup leaves that schema as it finds
 it, so they are refused there, with the remedies above. Its cleanup does drop a
 schema beside the pinned one that the claim did not find, with everything in
-it, so a schema the baseline recreated does not reach the next run. A privilege for a role the
-dev server does not hold fails on that server, as it does on a table.
+it, so a schema the baseline recreated does not reach the next run. A
+privilege for a role the dev server does not hold fails on that server, as it
+does on a table.
 
 The plan is held to the same rules, before the first statement of the
 baseline or the plan runs. The plan comes from the desired schema, so a role,
