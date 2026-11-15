@@ -872,11 +872,12 @@ type Function struct {
 //   - Cache: the CACHE size
 //   - Cycle: whether the sequence wraps around (CYCLE vs NO CYCLE)
 //   - OwnedBy: an optional "table.column" association (OWNED BY), a column
-//     of a table in the sequence's own schema. The two names are written as
-//     [QualifyTableName] writes a schema and a table, so a name holding a dot
-//     is quoted: `"a.b".id` is the column id of the table "a.b", and
-//     `a."x.y"` the column "x.y" of the table a. An owner in another schema
-//     is written with the schema first.
+//     of a table in the sequence's own schema. A name is written as it is
+//     unless a bare one would split differently: a name that holds a dot or
+//     a double quote, begins with a backtick or a bracket, or begins or ends
+//     with white space is double-quoted, so `"a.b".id` is the column id of
+//     the table "a.b", and `a."x.y"` the column "x.y" of the table a. An
+//     owner in another schema is written with the schema first.
 //
 // Example generated SQL:
 //

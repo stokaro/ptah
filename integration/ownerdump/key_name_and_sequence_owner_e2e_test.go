@@ -3,6 +3,7 @@
 package ownerdump_test
 
 import (
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -78,7 +79,8 @@ WHERE c.contype = 'p' AND n.nspname = 'public' AND r.relname <> 'ptah_schema_app
 
 // ownedSequencesBuilt gives a sequence an owner in each spelling CREATE
 // SEQUENCE ... OWNED BY takes: table.column, the default schema written on
-// the owner and on both names, quoted parts, names holding a dot, and NONE.
+// the owner and on both names, quoted parts, names holding a dot, a double
+// quote or a bracket, a column name with white space at either end, and NONE.
 // The rest changes an owner the way the server follows it: a dropped table
 // takes the sequences its columns own, two tables in one statement included,
 // whichever spelling of the default schema names it; a dropped column takes
@@ -96,6 +98,12 @@ CREATE TABLE "a.b" (id bigint NOT NULL);
 CREATE SEQUENCE s_dotted_table OWNED BY "a.b".id;
 CREATE TABLE dotted (id bigint NOT NULL, "x.y" bigint);
 CREATE SEQUENCE s_dotted_column OWNED BY dotted."x.y";
+CREATE TABLE "q""t" (id bigint NOT NULL);
+CREATE SEQUENCE s_quote OWNED BY "q""t".id;
+CREATE TABLE "t[1]" (id bigint NOT NULL);
+CREATE SEQUENCE s_bracket OWNED BY "t[1]".id;
+CREATE TABLE pc (id bigint NOT NULL, " i " bigint);
+CREATE SEQUENCE s_padded OWNED BY pc." i ";
 CREATE TABLE public.d (id bigint NOT NULL);
 CREATE SEQUENCE public.s_dropped OWNED BY public.d.id;
 DROP TABLE public.d;
@@ -105,6 +113,9 @@ DROP TABLE public.w;
 CREATE TABLE "c.d" (id bigint NOT NULL, "x.y" bigint);
 CREATE SEQUENCE s_dotted_dropped OWNED BY "c.d"."x.y";
 DROP TABLE "c.d";
+CREATE TABLE pd (id bigint NOT NULL, " i " bigint);
+CREATE SEQUENCE s_padded_dropped OWNED BY pd." i ";
+ALTER TABLE pd DROP COLUMN " i ";
 CREATE TABLE d1 (id bigint NOT NULL);
 CREATE TABLE d2 (id bigint NOT NULL);
 GRANT SELECT ON d2 TO PUBLIC;
@@ -243,4 +254,36 @@ func TestCreateSequenceOwnedByBuildsItsOwnersE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(dev.held(c, catalogSequenceOwners), qt.Equals, source.held(c, catalogSequenceOwners))
 	c.Assert(dev.plan(c, ownedSequencesBuilt, "public"), qt.Contains, "Schema is synced")
+}
+
+// TestIdentityForASerialOfADottedNameE2E declares an identity generated ALWAYS
+// for a serial column whose table or column name holds a dot. The serial's
+// sequence is dropped ahead of the identity, which takes its name, so the
+// identity's sequence is the one the plan sets past the rows: the next value
+// is 42. Dropped after the identity, the old sequence takes that setval and
+// the identity starts at 1.
+func TestIdentityForASerialOfADottedNameE2E(t *testing.T) {
+	for _, test := range []struct {
+		name, table, column, tableName, columnName string
+	}{
+		{name: "the table", table: `"pa.rent"`, column: "n", tableName: "pa.rent", columnName: "n"},
+		{name: "the column", table: "parent", column: `"n.m"`, tableName: "parent", columnName: "n.m"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dev := newScratch(c)
+			dev.exec(c, fmt.Sprintf("CREATE TABLE %[1]s (id bigint PRIMARY KEY, %[2]s bigserial);\n"+
+				"INSERT INTO %[1]s (id, %[2]s) VALUES (1, 41);\n", test.table, test.column))
+			desired := fmt.Sprintf("CREATE TABLE %s (id bigint PRIMARY KEY, %s bigint GENERATED ALWAYS AS IDENTITY);\n", test.table, test.column)
+
+			out, err := ptah("schema", "apply", "--db-url", dev.url, "--schema-file", writeSchema(c, desired),
+				"--schemas", "public", "--auto-approve")
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(dev.held(c, fmt.Sprintf("SELECT coalesce(identity_generation, '') FROM information_schema.columns "+
+				"WHERE table_schema = 'public' AND table_name = '%s' AND column_name = '%s'", test.tableName, test.columnName)), qt.Equals, "ALWAYS")
+			c.Assert(dev.held(c, fmt.Sprintf("INSERT INTO %s (id) VALUES (1000) RETURNING %s::text", test.table, test.column)), qt.Equals, "42")
+			c.Assert(dev.plan(c, desired, "public"), qt.Contains, "Schema is synced")
+		})
+	}
 }

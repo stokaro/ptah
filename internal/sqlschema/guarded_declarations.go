@@ -201,22 +201,35 @@ func sequenceKey(sequence schemamodel.Sequence, sourcePlatform string) [2]string
 // [resolveDeclaredName] compares names, so `DBO.t` and `t` name one table on
 // SQL Server, and a name whose own text holds a dot, `"public.v"`, keeps it.
 func unqualified(name, sourcePlatform string) string {
-	facts := factsOf(sourcePlatform)
-	if facts.defaultSchema == "" {
-		return name
-	}
 	ref, parsed := tableref.Parse(name)
-	if !parsed || !ref.Qualified {
-		return name
-	}
-	inDefault := ref.Schema == facts.defaultSchema
-	if fold := identifier.Comparison(facts.names.Lookup); fold != "" {
-		inDefault = fold.IdentityKey(ref.Schema) == fold.IdentityKey(facts.defaultSchema)
-	}
-	if !inDefault {
+	if !parsed || !ref.Qualified || !inDefaultSchema(ref.Schema, sourcePlatform) {
 		return name
 	}
 	return schemamodel.QualifyTableName("", ref.Name)
+}
+
+// unqualifiedTableName is [unqualified] of table's qualified name, taken from
+// the table's schema and name rather than parsed back out of the qualified
+// name: a lookup computes it for every table the schema declares.
+func unqualifiedTableName(table *schemamodel.Table, sourcePlatform string) string {
+	if table.Schema != "" && inDefaultSchema(table.Schema, sourcePlatform) {
+		return schemamodel.QualifyTableName("", table.Name)
+	}
+	return table.QualifiedName()
+}
+
+// inDefaultSchema reports whether schema is the dialect's default schema,
+// compared as [resolveDeclaredName] compares names. A dialect without a
+// default schema has none to be in.
+func inDefaultSchema(schema, sourcePlatform string) bool {
+	facts := factsOf(sourcePlatform)
+	if facts.defaultSchema == "" {
+		return false
+	}
+	if fold := identifier.Comparison(facts.names.Lookup); fold != "" {
+		return fold.IdentityKey(schema) == fold.IdentityKey(facts.defaultSchema)
+	}
+	return schema == facts.defaultSchema
 }
 
 // replaceView puts view in the place of the view of its name an earlier

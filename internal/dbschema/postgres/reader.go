@@ -3214,17 +3214,18 @@ func (r *Reader) readSequencesFromPgCatalog(ctx context.Context, schemaName stri
 		if ownedTable.Valid && ownedColumn.Valid {
 			// Qualify the owner with its schema only when it differs from the
 			// sequence's own schema, so same-schema owners round-trip against
-			// the common unqualified `owned_by="table.column"` annotation. Each
-			// name is written as a qualified table name writes it, quoted when
-			// it holds a dot, which is the form the SQL schema reader records:
-			// joined with a bare dot, the column id of the table "a.b" and the
-			// column "b.id" of the table a are one string, and the renderer
-			// writes either as `OWNED BY "a"."b"."id"`.
-			owner := tableref.Canonical(ownedTable.String, ownedColumn.String)
+			// the common unqualified `owned_by="table.column"` annotation. The
+			// owner is written as tableref.Column writes a column reference,
+			// a name quoted when it holds a dot, which is the form the SQL
+			// schema reader records: joined with a bare dot, the column id of
+			// the table "a.b" and the column "b.id" of the table a are one
+			// string, and the renderer writes either as
+			// `OWNED BY "a"."b"."id"`.
+			var ownerSchema string
 			if ownedSchema.Valid && ownedSchema.String != rawSchema {
-				owner = tableref.Canonical(ownedSchema.String, ownedTable.String) + "." + tableref.Canonical("", ownedColumn.String)
+				ownerSchema = ownedSchema.String
 			}
-			seq.OwnedBy = owner
+			seq.OwnedBy = tableref.Column(ownerSchema, ownedTable.String, ownedColumn.String)
 		}
 		if comment.Valid {
 			seq.Comment = comment.String

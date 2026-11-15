@@ -1,12 +1,14 @@
 package atlasfilter
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/tableref"
 )
 
 // projectDatabase applies the schema universe and include selectors to the
@@ -226,18 +228,15 @@ func (s *scopeSelection) tableKept(kept map[tableIdentity]struct{}, schema, tabl
 }
 
 // sequenceOwnerTable resolves the owning table of an OWNED BY association.
-// The association is "table.column" or "schema.table.column"; unqualified
-// owners default to the sequence's own schema.
+// The association is "table.column" or "schema.table.column", as
+// [tableref.Column] writes it, so a name may hold a dot; unqualified owners
+// default to the sequence's own schema.
 func sequenceOwnerTable(sequenceSchema, ownedBy string) (schema, table string) {
-	parts := strings.Split(strings.TrimSpace(ownedBy), ".")
-	switch len(parts) {
-	case 2:
-		return sequenceSchema, strings.TrimSpace(parts[0])
-	case 3:
-		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
-	default:
+	owner, ok := tableref.ParseColumn(ownedBy)
+	if !ok {
 		return "", ""
 	}
+	return cmp.Or(owner.Schema, sequenceSchema), owner.Table
 }
 
 func databaseSequenceNameKept(sequences []catalog.Sequence, schema, name string) bool {

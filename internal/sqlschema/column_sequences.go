@@ -122,15 +122,15 @@ func readOwner(database *schemamodel.Database, document *Document, statement, se
 	return ownerReference(target.table.Name, field.Name), nil
 }
 
-// ownerReference is how a sequence records column of table as its owner: the
-// two names as [schemamodel.QualifyTableName] writes a schema and a table, so
-// a name holding a dot is quoted, `"a.b".id` and `a."x.y"`. The table is in
-// the sequence's own schema. A read of the database writes the owner the same
-// way, and the renderer reads the quotes back. Joined with a bare dot, the two
-// owners are the one string `a.b.id`, which [ownerOf] cannot split and the
-// renderer writes as `OWNED BY "a"."b"."id"`.
+// ownerReference is how a sequence records column of table as its owner, as
+// [tableref.Column] writes a column reference, so a name holding a dot is
+// quoted, `"a.b".id` and `a."x.y"`, and so is one with white space at either
+// end. The table is in the sequence's own schema. A read of the database writes
+// the owner the same way, and the renderer reads the quotes back. Joined with a
+// bare dot, the two owners are the one string `a.b.id`, which [ownerOf] cannot
+// split and the renderer writes as `OWNED BY "a"."b"."id"`.
 func ownerReference(table, column string) string {
-	return schemamodel.QualifyTableName(table, column)
+	return tableref.Column("", table, column)
 }
 
 // schemaOf is the schema a name written in schema is in: schema itself, or
@@ -299,11 +299,11 @@ func serialColumnOf(databases []*schemamodel.Database, sequence schemamodel.Sequ
 // than read again as SQL: read again, the unquoted `Order` of `Order.Id` would
 // fold to `order`.
 func ownerOf(databases []*schemamodel.Database, sequence schemamodel.Sequence, sourcePlatform string) (*schemamodel.Table, *schemamodel.Field) {
-	owner, owned := tableref.Parse(sequence.OwnedBy)
-	if !owned || !owner.Qualified {
+	owner, owned := tableref.ParseColumn(sequence.OwnedBy)
+	if !owned || owner.Schema != "" {
 		return nil, nil
 	}
-	tableName, columnName := owner.Schema, owner.Name
+	tableName, columnName := owner.Table, owner.Column
 	for _, database := range databases {
 		for i := range database.Tables {
 			table := &database.Tables[i]

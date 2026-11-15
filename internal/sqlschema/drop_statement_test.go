@@ -179,6 +179,15 @@ func TestRead_DropTable_TakesTheSequencesItsColumnsOwn(t *testing.T) {
 			want: []string{"app.s"},
 		},
 		{
+			name: "a table of the same name in the default schema",
+			sql: "CREATE SCHEMA app;\n" +
+				"CREATE TABLE u (id bigint);\n" +
+				"CREATE TABLE app.u (id bigint);\n" +
+				"CREATE SEQUENCE s OWNED BY u.id;\n" +
+				"DROP TABLE app.u;",
+			want: []string{"s"},
+		},
+		{
 			name: "a table declared unqualified, dropped qualified",
 			sql: "CREATE TABLE t (id bigint);\n" +
 				"CREATE SEQUENCE s OWNED BY t.id;\n" +
@@ -208,6 +217,14 @@ func TestRead_DropTable_TakesTheSequencesItsColumnsOwn(t *testing.T) {
 				"CREATE SEQUENCE s OWNED BY a.\"x.y\";\n" +
 				"CREATE SEQUENCE kept;\n" +
 				"DROP TABLE a;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a table whose name begins and ends with a space",
+			sql: "CREATE TABLE \" t \" (id bigint);\n" +
+				"CREATE SEQUENCE s OWNED BY \" t \".id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE \" t \";",
 			want: []string{"kept"},
 		},
 		{
@@ -252,7 +269,7 @@ func TestRead_DropTable_TakesTheSequencesItsColumnsOwn(t *testing.T) {
 // A DROP TABLE of several tables takes what belongs to each of them, the last
 // one's grants, row security, policies and owned sequences included. Measured
 // on PostgreSQL 16.16, 17.11 and 18.6.
-func TestRead_DropTables_TakesWhatBelongsToEachTable(t *testing.T) {
+func TestRead_DropTables_TakesWhatBelongsToEachTable_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
 	database, _, err := readWithPolicyOwners([]byte(

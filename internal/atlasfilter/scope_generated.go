@@ -298,13 +298,15 @@ func generatedViewNameKept(out *schemamodel.Database, name string) bool {
 }
 
 // sequenceOwnerReference resolves an OWNED BY association ("table.column" or
-// "schema.table.column") to its table reference ("table" or "schema.table").
+// "schema.table.column", as [tableref.Column] writes it) to its table
+// reference ("table" or "schema.table"), written as a table's qualified name
+// is.
 func sequenceOwnerReference(ownedBy string) string {
-	parts := strings.Split(strings.TrimSpace(ownedBy), ".")
-	if len(parts) < 2 {
+	owner, ok := tableref.ParseColumn(ownedBy)
+	if !ok {
 		return ""
 	}
-	return strings.Join(parts[:len(parts)-1], ".")
+	return schemamodel.QualifyTableName(owner.Schema, owner.Table)
 }
 
 func generatedSequenceNameKept(sequences []schemamodel.Sequence, name string) bool {

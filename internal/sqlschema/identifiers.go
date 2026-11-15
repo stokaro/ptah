@@ -231,7 +231,7 @@ func resolveTable(databases []*schemamodel.Database, qualified, sourcePlatform s
 	for _, database := range databases {
 		for i := range database.Tables {
 			tables = append(tables, &database.Tables[i])
-			names = append(names, unqualified(database.Tables[i].QualifiedName(), sourcePlatform))
+			names = append(names, unqualifiedTableName(&database.Tables[i], sourcePlatform))
 		}
 	}
 	if index := resolveDeclaredName(sourcePlatform, unqualified(qualified, sourcePlatform), names); index >= 0 {

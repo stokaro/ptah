@@ -98,6 +98,84 @@ func TestParse_FailurePath(t *testing.T) {
 	}
 }
 
+// A column reference writes a name bare where the bare name reads back as
+// itself, and quotes it where it would not: a dot or a double quote inside it,
+// a leading backtick or bracket, which [tableref.ParseColumn] reads as a quote,
+// and white space at either end, which it trims.
+func TestColumn_ReadsBackTheSameNames(t *testing.T) {
+	tests := []struct {
+		name                  string
+		schema, table, column string
+		want                  string
+	}{
+		{name: "plain", table: "t", column: "id", want: "t.id"},
+		{name: "a schema", schema: "app", table: "t", column: "id", want: "app.t.id"},
+		{name: "mixed case stays bare", table: "Order", column: "Id", want: "Order.Id"},
+		{name: "a dot in the table", table: "a.b", column: "id", want: `"a.b".id`},
+		{name: "a dot in the column", table: "a", column: "x.y", want: `a."x.y"`},
+		{name: "a dot in the schema", schema: "s.t", table: "a", column: "id", want: `"s.t".a.id`},
+		{name: "a double quote", table: `a"b`, column: "id", want: `"a""b".id`},
+		{name: "space at both ends", table: " t ", column: " i ", want: `" t "." i "`},
+		{name: "a tab at the end", table: "t\t", column: "id", want: "\"t\t\".id"},
+		{name: "a leading backtick", table: "`t", column: "id", want: "\"`t\".id"},
+		{name: "a leading bracket", table: "[t]", column: "id", want: `"[t]".id`},
+		{name: "a bracket inside stays bare", table: "t[1]", column: "id", want: "t[1].id"},
+		{name: "space inside stays bare", table: "a b", column: "id", want: "a b.id"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := tableref.Column(test.schema, test.table, test.column)
+			ref, ok := tableref.ParseColumn(got)
+
+			c.Assert(got, qt.Equals, test.want)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(ref, qt.Equals, tableref.ColumnRef{Schema: test.schema, Table: test.table, Column: test.column})
+		})
+	}
+}
+
+// A reference written by hand reads with the quotes [tableref.Parse] accepts.
+func TestParseColumn_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  tableref.ColumnRef
+	}{
+		{name: "double quotes", value: `"T"."Id"`, want: tableref.ColumnRef{Table: "T", Column: "Id"}},
+		{name: "backticks", value: "`a.b`.id", want: tableref.ColumnRef{Table: "a.b", Column: "id"}},
+		{name: "brackets", value: "[dbo].[t].[id]", want: tableref.ColumnRef{Schema: "dbo", Table: "t", Column: "id"}},
+		{name: "space around the parts", value: " t . id ", want: tableref.ColumnRef{Table: "t", Column: "id"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, ok := tableref.ParseColumn(test.value)
+
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// A column reference names a table and a column, and at most a schema
+// before them.
+func TestParseColumn_FailurePath(t *testing.T) {
+	tests := []string{"", "id", `"a.b"`, "d.s.t.id", "t.", ".id", `"t.id`, `"t"x.id`}
+	for _, value := range tests {
+		t.Run(value, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, ok := tableref.ParseColumn(value)
+
+			c.Assert(ok, qt.IsFalse)
+			c.Assert(got, qt.Equals, tableref.ColumnRef{})
+		})
+	}
+}
+
 // TestPhrase pins both spellings. The quoted one is what every refusal naming
 // a table wrote before Phrase existed, so a change to it changes those
 // messages too.

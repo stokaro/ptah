@@ -65,6 +65,16 @@ func TestRead_CreateSequenceOwnedBy_HappyPath(t *testing.T) {
 			want: `a."x.y"`,
 		},
 		{
+			name: "a column whose name begins and ends with a space",
+			sql:  "CREATE TABLE a (id bigint NOT NULL, \" i \" int);\nCREATE SEQUENCE s OWNED BY a.\" i \";",
+			want: `a." i "`,
+		},
+		{
+			name: "a table whose name holds a double quote, and one holding a bracket",
+			sql:  "CREATE TABLE \"q\"\"t\" (\"t[1]\" bigint NOT NULL);\nCREATE SEQUENCE s OWNED BY \"q\"\"t\".\"t[1]\";",
+			want: `"q""t".t[1]`,
+		},
+		{
 			name: "no owner",
 			sql:  table + "CREATE SEQUENCE s OWNED BY NONE;",
 			want: "",

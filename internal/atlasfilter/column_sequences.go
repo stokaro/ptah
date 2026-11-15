@@ -1,12 +1,13 @@
 package atlasfilter
 
 import (
-	"strings"
+	"cmp"
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/columnsequence"
+	"ptah.run/internal/tableref"
 )
 
 // A sequence that is part of a column -- the one a serial or identity column
@@ -141,11 +142,10 @@ func generatedSequenceKeyExcluded(s *exclusionState, sequence string) bool {
 // that, `--exclude items` planned a DROP SEQUENCE for a sequence OWNED BY
 // items, which `--include other` leaves alone.
 func (s *exclusionState) ownerExcluded(sequenceSchema, ownedBy string) bool {
-	schema, table := sequenceOwnerTable(sequenceSchema, ownedBy)
-	if table == "" {
+	owner, ok := tableref.ParseColumn(ownedBy)
+	if !ok {
 		return false
 	}
-	parts := strings.Split(strings.TrimSpace(ownedBy), ".")
-	column := strings.TrimSpace(parts[len(parts)-1])
-	return s.tableExcluded(schema, table) || s.anyColumnExcluded(schema, table, []string{column})
+	schema := cmp.Or(owner.Schema, sequenceSchema)
+	return s.tableExcluded(schema, owner.Table) || s.anyColumnExcluded(schema, owner.Table, []string{owner.Column})
 }
