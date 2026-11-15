@@ -107,8 +107,10 @@ func migrateDiffRealmFile(c *qt.C, root string) string {
 // the desired side. On a dev URL that names no schema the realm-relative
 // selectors leave the column and the index out of the file, whether they come
 // from the variable or from the env's list; the unset row is the control and
-// writes both. On a URL bound to `public` the two-part spelling reaches the
-// same column, so the bound count still works where it applies.
+// writes both. The two-part spelling reaches the same column on both URLs: on
+// the realm URL because an object in the connection's schema also matches by
+// its bare name, so counting from the realm adds the three-part spelling and
+// takes none away.
 func TestAtlasCompatMigrateDiffCountsExcludesFromARealmDevURL_HappyPathE2E(t *testing.T) {
 	for _, test := range []struct {
 		name  string
@@ -131,6 +133,11 @@ func TestAtlasCompatMigrateDiffCountsExcludesFromARealmDevURL_HappyPathE2E(t *te
 		{
 			name: "realm URL, the env list",
 			args: []string{"--env", "local"},
+			want: migrateDiffRealmNotes(""),
+		},
+		{
+			name: "realm URL, the bound spelling",
+			env:  []string{migrateDiffExcludeEnvVar + "=notes.search_vector,notes.notes_body_idx"},
 			want: migrateDiffRealmNotes(""),
 		},
 		{
