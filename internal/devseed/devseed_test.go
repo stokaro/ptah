@@ -335,14 +335,21 @@ func TestClosure_HappyPath(t *testing.T) {
 	})
 }
 
-// authUID is the read of a target whose auth schema holds uid(), which the
-// statements below name from public.
+// authUID is the read of a target whose auth schema holds uid() and the
+// accounts table, which the statements below name from public.
 func authUID() *catalog.Database {
-	return &catalog.Database{Schemas: schemas("public", "auth"), Functions: []catalog.Function{function("auth", "uid", "SELECT NULL::uuid")}}
+	return &catalog.Database{
+		Schemas:   schemas("public", "auth"),
+		Tables:    []catalog.Table{table("auth", "accounts", column("id", "uuid"))},
+		Functions: []catalog.Function{function("auth", "uid", "SELECT NULL::uuid")},
+	}
 }
 
 // addsAuthUID is what a statement that needs auth.uid() adds.
 var addsAuthUID = []devseed.Object{{Kind: "function", Schema: "auth", Name: "uid"}, {Kind: "schema", Name: "auth"}}
+
+// addsAuthAccounts is what a statement that needs auth.accounts adds.
+var addsAuthAccounts = []devseed.Object{{Kind: "table", Schema: "auth", Name: "accounts"}, {Kind: "schema", Name: "auth"}}
 
 // TestClosure_ReadsTheBodiesStatementsQuote runs, after the compared state,
 // statements that quote a routine body as the planner writes them: the body
@@ -376,9 +383,22 @@ func TestClosure_ReadsTheBodiesStatementsQuote(t *testing.T) {
 			want:      addsAuthUID,
 		},
 		{
-			name:      "a PL/pgSQL body, its language spelled as a string",
-			statement: `CREATE FUNCTION whoami() RETURNS uuid AS $$ BEGIN RETURN auth.uid(); END $$ LANGUAGE 'plpgsql'`,
-			want:      addsAuthUID,
+			name:      "a row type a PL/pgSQL body declares, its language spelled as a string",
+			statement: `CREATE FUNCTION whoami() RETURNS uuid AS $$ DECLARE r auth.accounts%ROWTYPE; BEGIN RETURN auth.uid(); END $$ LANGUAGE 'plpgsql'`,
+			want:      addsAuthAccounts,
+		},
+		{
+			name:      "a column type a PL/pgSQL procedure declares",
+			statement: `CREATE PROCEDURE touch() LANGUAGE plpgsql AS $$ DECLARE v auth.accounts.id%TYPE; BEGIN NULL; END $$`,
+			want:      addsAuthAccounts,
+		},
+		{
+			name:      "a call in a PL/pgSQL body, which PostgreSQL resolves when it runs",
+			statement: `CREATE OR REPLACE FUNCTION whoami() RETURNS uuid LANGUAGE plpgsql AS $$ BEGIN PERFORM auth.uid(); RETURN NULL; END $$`,
+		},
+		{
+			name:      "a call in a PL/pgSQL declaration's default",
+			statement: `CREATE FUNCTION whoami() RETURNS uuid LANGUAGE plpgsql AS $$ DECLARE v uuid := auth.uid(); BEGIN RETURN v; END $$`,
 		},
 		{
 			name:      "an SQL-standard body, which is code",
@@ -418,6 +438,32 @@ func TestClosure_ReadsTheBodiesStatementsQuote(t *testing.T) {
 			c := qt.New(t)
 			var calls [][]string
 			got, err := devseed.Closure(&catalog.Database{}, []string{test.statement}, render, readOf(authUID(), &calls), options)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Added, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestClosure_ReadsWhatAPLpgSQLRoutineOfTheStateDeclares recreates a PL/pgSQL
+// routine of the compared state with the row type its body declares, which
+// PostgreSQL resolves when the routine is created, and without the routine its
+// body calls, which PostgreSQL resolves only when it runs.
+func TestClosure_ReadsWhatAPLpgSQLRoutineOfTheStateDeclares(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []devseed.Object
+	}{
+		{name: "a declared row type", body: "DECLARE r auth.accounts%ROWTYPE; BEGIN RETURN NULL; END", want: addsAuthAccounts},
+		{name: "a call", body: "BEGIN RETURN auth.uid(); END"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			routine := function("", "whoami", test.body)
+			routine.Language = "plpgsql"
+			var calls [][]string
+			got, err := devseed.Closure(&catalog.Database{Functions: []catalog.Function{routine}}, nil, render, readOf(authUID(), &calls), options)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Added, qt.DeepEquals, test.want)
 		})

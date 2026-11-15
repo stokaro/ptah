@@ -117,6 +117,28 @@ func TestCodeNameUses_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name: "a table after IF EXISTS",
+			body: `DROP TABLE IF EXISTS a, b`,
+			want: []deporder.NameUse{name("drop"), name("table"), relation("if"), name("exists"), relation("a"), relation("b")},
+		},
+		{
+			name: "a partition and its parent",
+			body: `CREATE TABLE c PARTITION OF p FOR VALUES IN (1); ALTER TABLE p ATTACH PARTITION d DEFAULT`,
+			want: []deporder.NameUse{
+				name("create"), name("table"), relation("c"), name("partition"), relation("of"), relation("p"), name("for"),
+				name("values"), call("in"), name("alter"), name("table"), relation("p"), name("attach"), name("partition"),
+				relation("d"), name("default"),
+			},
+		},
+		{
+			name: "a routine named without its argument list",
+			body: `COMMENT ON FUNCTION uid IS 'x'; GRANT EXECUTE ON PROCEDURE touch TO app`,
+			want: []deporder.NameUse{
+				name("comment"), name("on"), relation("function"), call("uid"), name("is"), name("grant"), name("execute"),
+				name("on"), relation("procedure"), call("touch"), name("to"), name("app"),
+			},
+		},
+		{
 			name: "a trigger and the function it executes",
 			body: `CREATE TRIGGER touch BEFORE INSERT ON tasks FOR EACH ROW EXECUTE FUNCTION touch()`,
 			want: []deporder.NameUse{
