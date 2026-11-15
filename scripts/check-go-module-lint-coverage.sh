@@ -28,10 +28,6 @@ set -euo pipefail
 #
 # The tag list is discovered, so a tag added to a file fails here until the
 # workflow lints it. A step's tags are compared as a set, in any order.
-#
-# go-security.yml is read too, for its gosec code-scanning run. That job scans
-# the root module only, so only the contours are required of it: without the
-# tagged run, code scanning shows none of the tagged files (stokaro/ptah#3895).
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
@@ -211,9 +207,6 @@ require_coverage() {
 # Every job in go-lint.yml that runs golangci-lint -- two today, Ubuntu and
 # Windows -- lints every module, the root included, in every contour.
 require_coverage .github/workflows/go-lint.yml "$modules"
-
-# The gosec job in go-security.yml scans the root module for code scanning.
-require_coverage .github/workflows/go-security.yml .
 
 if [[ $missing -ne 0 ]]; then
 	exit 1

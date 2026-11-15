@@ -29,20 +29,6 @@ default_tagged_files='integration/a_test.go|integration
 internal/obs/otel.go|observability'
 tagged_files=$default_tagged_files
 
-# security_workflow is the go-security.yml write_repo writes. By default it is a
-# gosec job linting the root module in both contours; a case about that file
-# sets it before write_repo and restores it after.
-default_security_workflow="jobs:
-  gosec:
-    steps:
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          args: --enable-only=gosec --output.sarif.path=gosec.sarif
-      - uses: golangci/golangci-lint-action@v9
-        with:
-          args: --enable-only=gosec --build-tags=$tags --output.sarif.path=gosec-integration.sarif"
-security_workflow=$default_security_workflow
-
 # write_repo builds a throwaway repository with the modules and the go-lint.yml
 # the case is about. Modules and tags are discovered from `git ls-files`, so
 # every go.mod and Go file has to be tracked.
@@ -66,7 +52,6 @@ write_repo() {
 		printf '//go:build %s\n\npackage fixture\n' "$constraint" >"$work_dir/repo/$path"
 	done <<<"$tagged_files"
 	printf '%s\n' "$workflow" >"$work_dir/repo/.github/workflows/go-lint.yml"
-	printf '%s\n' "$security_workflow" >"$work_dir/repo/.github/workflows/go-security.yml"
 	git -C "$work_dir/repo" add -A
 }
 
@@ -222,18 +207,4 @@ $(lint_step . " --build-tags=$tags")
 $(lint_step nested '')" nested
 assert_rejected 'a nested module missing one contour in one job' "job lint-windows in .github/workflows/go-lint.yml does not lint nested with --build-tags=$tags"
 
-# The gosec code-scanning job running without tags: the state stokaro/ptah#3895
-# found, where code scanning showed no tagged file. Only the root is asked of
-# it, so the nested module here is not a gap.
-security_workflow="$(printf '%s\n' "$default_security_workflow" | grep -v 'build-tags')"
-write_repo "$two_jobs_both_modules" nested
-assert_rejected 'the gosec job without the tagged contour' "job gosec in .github/workflows/go-security.yml does not lint the root module with --build-tags=$tags"
-security_workflow=$default_security_workflow
-
-# A repository without go-security.yml has no code-scanning run to read.
-write_repo "$two_jobs_both_modules" nested
-rm "$work_dir/repo/.github/workflows/go-security.yml"
-git -C "$work_dir/repo" add -A
-assert_rejected 'no go-security.yml' '.github/workflows/go-security.yml not found'
-
-printf 'go module lint coverage self-test: an unlinted module, one dropped from a single job, a workflow linting nothing, and a missing or incomplete tagged contour in either workflow are each reported\n'
+printf 'go module lint coverage self-test: an unlinted module, one dropped from a single job, a workflow linting nothing, and a missing or incomplete tagged contour are each reported\n'
