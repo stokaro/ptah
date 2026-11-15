@@ -544,13 +544,15 @@ detect_signature_tool() {
 
 # verify_signature is opt-in and requires cosign. It is never attempted
 # opportunistically: a signature check that quietly does not run when its tool
-# is absent is indistinguishable from one that passed.
+# is absent is indistinguishable from one that passed. The identity names the
+# release workflow at the tag being installed, so a bundle that another
+# workflow, repository or tag signed is refused.
 verify_signature() {
 	local bundle="$tmpdir/checksums.txt.sigstore.json"
 	download_or_fail "$base_url/download/$version_tag/checksums.txt.sigstore.json" "$bundle" \
 		"$version_tag publishes no checksums.txt.sigstore.json"
 	cosign verify-blob --bundle "$bundle" \
-		--certificate-identity-regexp 'github.com/stokaro/ptah' \
+		--certificate-identity "https://github.com/stokaro/ptah/.github/workflows/release.yml@refs/tags/$version_tag" \
 		--certificate-oidc-issuer https://token.actions.githubusercontent.com \
 		"$tmpdir/checksums.txt" >/dev/null 2>&1 ||
 		fail 6 "the Sigstore signature on checksums.txt did not verify"

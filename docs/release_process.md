@@ -129,7 +129,7 @@ that job stays skipped and npm is not a release channel.
 
    ```bash
    cosign verify-blob --bundle checksums.txt.sigstore.json checksums.txt \
-     --certificate-identity-regexp 'github.com/stokaro/ptah' \
+     --certificate-identity "https://github.com/stokaro/ptah/.github/workflows/release.yml@refs/tags/v0.1.2" \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
