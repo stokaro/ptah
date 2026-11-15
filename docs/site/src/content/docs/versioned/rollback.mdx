@@ -138,10 +138,23 @@ Are you sure you want to continue? Type 'YES' to confirm:
 ```
 
 With `--plan`, the run derives the rollback before it asks and prints it above
-the prompt, so the statements you approve are the ones that run. Deriving it
-resets the dev database, replays the directory into it up to the target version
-and empties it again, so a declined prompt still costs that replay. A plan the
-run refuses is refused before the prompt.
+the prompt. Deriving it resets the dev database, replays the directory into it
+up to the target version and empties it again, so a declined prompt still costs
+that replay, and a `docker://` dev URL starts its container before the prompt
+too. A plan the run refuses is refused before the prompt.
+
+The run holds no lock while it waits for your answer, so another runner can
+apply or roll back a migration in that time. Once you answer, the run takes the
+migration lock and reads the applied migrations again. When the ones above the
+target are still the ones the plan was derived for, it runs the pre-flight
+hooks and then the statements it printed; the plan is not derived again. When
+they changed, it refuses before any statement runs and asks you to run the
+command again; see [Failure modes](#failure-modes). A change made outside the
+migrations, such as a table another tool creates, leaves the applied migrations
+as they were, so the printed statements run. On a dialect that takes no
+migration lock, such as SQLite, the applied migrations are still read again
+before the statements run, and nothing stops another runner from changing them
+while they run.
 
 Type `YES` to proceed. Pass `--confirm` where there is no terminal to answer,
 which is what the run below does:
@@ -449,11 +462,15 @@ selected migrations the history no longer records as applied, and `applied`
 stays absent. A migration whose rollback stopped keeps its dirty row, so it is
 not in `rolled_back`. The outcomes mean what they mean for `up`, read for a
 rollback: `up-to-date` says nothing above the target was applied, and `applied`
-says every selected migration was rolled back. A rollback derived with `--plan`
-does not go through the migrator, so its `planned` is the versions above the
-target the run read before it started. A plan the run refuses or cannot derive
-stops it before it starts, as a failed shadow verification does: the document
-carries the error, and no `planned` or `status`.
+says every selected migration was rolled back.
+
+A rollback derived with `--plan` names in `planned` the versions above the
+target it was derived for, newest first. The run reads them again under the
+migration lock before any statement runs. A plan the run refuses or cannot
+derive stops it before it starts, as a failed shadow verification does: the
+document carries the error, and no `planned` or `status`. A run that finds the
+applied migrations changed once it holds the lock has started, so its document
+carries `planned`, the error and the `status` it found.
 
 ### Finishing an interrupted rollback
 
@@ -590,7 +607,9 @@ bookkeeping.
   of the target version would let the rollback drop the object it was written
   to keep. The command exits `2` before it asks for confirmation, on a dry run
   too, and names the file the selector came from. Nothing has run on the
-  target; the dev database was replayed to derive the plan and is empty again:
+  target. The dev database was replayed to derive the plan, and the run empties
+  it again; when that fails, the error says so on a line of its own, and the
+  next run refuses the dev database until it is empty:
 
   ```text illustration
   error: the exclude selection from ptah.yaml matched no objects: "audit_event"; migrations down --plan refuses a selection that protects nothing, set PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 to keep the permissive behavior
@@ -598,6 +617,19 @@ bookkeeping.
 
   Correct the selector. `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1` turns the
   refusal into a warning and runs the rollback as derived.
+- **The target changed while the prompt waited.** With `--plan`, another
+  runner applied or rolled back a migration after the plan was derived. The
+  statements describe a database that is no longer there, so the command exits
+  `2` once it holds the migration lock, before any statement runs, and names
+  both sets of versions. Every table and every revision row are as the other
+  runner left them:
+
+  ```text illustration
+  error: error running down migrations: the rollback to version 1 was derived for the applied migrations [2], and the migrations applied above version 1 are now [3 2]; nothing was rolled back. Run migrations down --plan again to derive the rollback from the database as it is now
+  ```
+
+  Run the command again: it derives the rollback from the database as it now
+  stands and shows it before it asks.
 - **Data does not come back.** Rolling back a `DROP`-ing down file deletes
   rows by design. `--pg-dump-to` / `--mysqldump-to` on the down command write
   a backup first, and the confirmation prompt exists precisely because

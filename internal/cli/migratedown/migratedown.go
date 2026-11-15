@@ -3,11 +3,13 @@
 package migratedown
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +21,6 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
-	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/cliobs"
 	"ptah.run/internal/cli/internal/cmdadapter"
@@ -624,11 +625,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	}
 
 	inputs := rollbackInputs{
-		migrationsFS: migrationsFS, migrationsDir: migrationsDir,
-		targetVersion: targetVersion, dirFormat: dirFormat, atlasEnv: resolvedOpts.atlasEnv,
-		connectTimeout: settings.connectTimeout, migrationsSchema: migrationsSchema,
-		migrationsTable: migrationsTable, revisionFormat: revisionFormat,
-		providerOptions: settings.providerOptions,
+		migrationsFS: migrationsFS, targetVersion: targetVersion, dirFormat: dirFormat,
+		atlasEnv: resolvedOpts.atlasEnv, connectTimeout: settings.connectTimeout,
+		migrationsTable: migrationsTable, providerOptions: settings.providerOptions,
 	}
 	derived, err := planRollback(cmd, resolvedOpts, newDynamicRollback(resolvedOpts, opts, conn, inputs), emit)
 	if err != nil {
@@ -661,7 +660,8 @@ type rollbackRun struct {
 	emit     cliobs.Emitter
 	document *migraterun.Document
 	dbURL    string
-	// selected is the versions above the target the run read before the lock.
+	// selected is the versions above the target the run read before the lock,
+	// and the versions a --plan rollback was derived for.
 	selected []int64
 	// derived is the plan of a --plan rollback, derived before the prompt.
 	derived []string
@@ -674,11 +674,12 @@ func runRollback(cmd *cobra.Command, r rollbackRun) error {
 	opts, mig, emit := r.opts, r.migrator, r.emit
 	// The plan the migrator selects under its lock is what the document
 	// reports, and none when it selected nothing there. A derived rollback
-	// does not go through the migrator, so it reports the versions above the
-	// target this run read.
+	// reports the versions it was derived for until the migrator selects them
+	// under its lock: a dry run takes no lock, and a run whose target changed
+	// is refused before the selection.
 	var plan *migrator.MigrationPlan
 	if r.resolved.plan {
-		plan = &migrator.MigrationPlan{Direction: migrator.MigrationDirectionDown, Versions: r.selected}
+		plan = &migrator.MigrationPlan{Direction: migrator.MigrationDirectionDown, Versions: newestFirst(r.selected)}
 	}
 	preflightHook := capturePlan(&plan, downPreflightHook(cmd, opts, r.runtime, r.conn, r.dbURL, r.resolved, emit))
 
@@ -818,6 +819,14 @@ func connectTarget(
 		return nil, fmt.Errorf("error connecting to database: %w", err)
 	}
 	return conn, nil
+}
+
+// newestFirst returns versions highest first, the order the migrator selects
+// a rollback in, as a slice of its own.
+func newestFirst(versions []int64) []int64 {
+	sorted := slices.Clone(versions)
+	slices.SortFunc(sorted, func(a, b int64) int { return cmp.Compare(b, a) })
+	return sorted
 }
 
 func versionsAboveTarget(appliedMigrations []int64, targetVersion int64) []int64 {
@@ -1128,13 +1137,14 @@ type dynamicRollback struct {
 	conn           *dbschema.DatabaseConnection
 	devURL         string
 	migrationsFS   fs.FS
-	migrationsDir  string
 	targetVersion  int64
 	dirFormat      migrationfile.DirFormat
 	atlasEnv       string
 	connectTimeout time.Duration
 	dryRun         bool
-	revisionsOpts  atlasmigrate.SetOptions
+	// revisionsTable names the revision table this run was configured with,
+	// which the comparison leaves out.
+	revisionsTable string
 	// exclude is the project's exclude list: the objects the derived plan
 	// leaves alone, as `schema apply` leaves them. excludeSources names where
 	// each selector was written.
@@ -1146,6 +1156,9 @@ type dynamicRollback struct {
 	// statements is the plan deriveRollback derived before the prompt, and
 	// the statements the rollback runs.
 	statements []string
+	// derivedFor is the versions above the target the plan was derived for.
+	// The rollback runs only while they are still the applied ones.
+	derivedFor []int64
 	// providerOptions are the rollback's own. The target schema is built on
 	// the dev database by running the up files, and a runner that leaves a
 	// file its own transactions runs them that way there too.
@@ -1192,7 +1205,7 @@ func deriveRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) 
 			migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: r.atlasEnv}),
 		}, r.providerOptions...),
 		ConnectTimeout: r.connectTimeout,
-		RevisionsTable: r.revisionsOpts.RevisionsTable,
+		RevisionsTable: r.revisionsTable,
 		Exclude:        r.exclude,
 		ExcludeSources: r.excludeSources,
 		// The derived plan executes, as the plan of `schema apply` does, so a
@@ -1218,7 +1231,16 @@ func deriveRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) 
 // runDynamicRollback applies the plan [deriveRollback] derived, instead of
 // running the down bodies the directory carries.
 //
-// The revision boundary moves through the same path `migrations set` uses, so a
+// The plan was derived before the prompt, with no lock held, so another runner
+// may have applied or rolled back a migration while the operator read it. The
+// migrator takes the migration lock, reads the applied migrations again, and
+// refuses before any statement runs when they are not the ones the plan was
+// derived for: the statements the operator approved describe a database that
+// is no longer there. The lock is held from that reading until the revision
+// boundary has moved, and never across the prompt, where it would keep every
+// other runner waiting on a person.
+//
+// The revision boundary moves through the path `migrations set` uses, so a
 // derived rollback leaves the bookkeeping in the state a file-based one would:
 // the rows above the target are removed, and nothing below is disturbed. Doing
 // it after the statements, not before, means a plan that fails partway leaves
@@ -1228,31 +1250,32 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution) error {
 	if r.dryRun {
 		return nil
 	}
-	// The statements run on the connection rather than through the migrator, so
-	// nothing below would record them. They delete the same revision rows an
-	// authored rollback deletes, which is the history the log exists to keep.
-	settle := r.migrator.LogDerivedRollback(cmd.Context(), r.targetVersion)
-	err := applyDerivedRollback(cmd, r, r.statements)
-	settle(err)
+	err := r.migrator.MigrateDownDerived(cmd.Context(), migrator.DerivedRollback{
+		TargetVersion: r.targetVersion,
+		Versions:      r.derivedFor,
+		Apply: func(ctx context.Context) error {
+			return applyDerivedStatements(ctx, r.conn, r.statements)
+		},
+	}, r.preflightHook)
+	if _, stale := errors.AsType[*migrator.StaleDerivedRollbackError](err); stale {
+		return fmt.Errorf("%w. Run %s --%s again to derive the rollback from the database as it is now",
+			err, typedCommand(cmd), planFlag)
+	}
 	return err
 }
 
-// applyDerivedRollback runs the derived statements and moves the revision
-// boundary, so the caller has one error to record the attempt against.
+// applyDerivedStatements runs the derived statements, stopping at the first
+// that fails.
 //
 // The statements go through the connection's schema writer, as every other
 // schema statement of a migration does. A connection an executable provider
 // serves exposes no database/sql operations, so a statement sent through
 // ExecContext is refused there before it reaches the provider.
-func applyDerivedRollback(cmd *cobra.Command, r rollbackExecution, statements []string) error {
+func applyDerivedStatements(ctx context.Context, conn *dbschema.DatabaseConnection, statements []string) error {
 	for _, statement := range statements {
-		if err := r.conn.Writer().ExecuteSQL(cmd.Context(), statement); err != nil {
+		if err := conn.Writer().ExecuteSQL(ctx, statement); err != nil {
 			return fmt.Errorf("apply derived rollback statement %q: %w", statement, err)
 		}
-	}
-	if _, err := atlasmigrate.Set(
-		cmd.Context(), r.conn, r.targetVersion, r.revisionsOpts); err != nil {
-		return fmt.Errorf("move the revision boundary to version %d: %w", r.targetVersion, err)
 	}
 	return nil
 }
@@ -1285,21 +1308,19 @@ func executeRollback(cmd *cobra.Command, r rollbackExecution) error {
 // rollbackInputs are the resolved values a rollback strategy reads, gathered so
 // the command body does not have to spell one struct inside another.
 type rollbackInputs struct {
-	migrationsFS     fs.FS
-	migrationsDir    string
-	targetVersion    int64
-	dirFormat        migrationfile.DirFormat
-	atlasEnv         string
-	connectTimeout   time.Duration
-	migrationsSchema string
-	migrationsTable  string
-	revisionFormat   migrator.RevisionTableFormat
-	providerOptions  []migrator.FSProviderOption
+	migrationsFS    fs.FS
+	targetVersion   int64
+	dirFormat       migrationfile.DirFormat
+	atlasEnv        string
+	connectTimeout  time.Duration
+	migrationsTable string
+	providerOptions []migrator.FSProviderOption
 }
 
 func buildRollbackExecution(r rollbackRun, hook migrator.PreMigrationHook) rollbackExecution {
 	rollback := newDynamicRollback(r.resolved, r.opts, r.conn, r.inputs)
 	rollback.statements = r.derived
+	rollback.derivedFor = r.selected
 	return rollbackExecution{
 		plan:            r.resolved.plan,
 		migrator:        r.migrator,
@@ -1316,7 +1337,6 @@ func newDynamicRollback(resolved options, opts *options, conn *dbschema.Database
 		conn:                  conn,
 		devURL:                resolved.shadowDB,
 		migrationsFS:          in.migrationsFS,
-		migrationsDir:         in.migrationsDir,
 		targetVersion:         in.targetVersion,
 		dirFormat:             in.dirFormat,
 		atlasEnv:              in.atlasEnv,
@@ -1326,15 +1346,7 @@ func newDynamicRollback(resolved options, opts *options, conn *dbschema.Database
 		excludeSources:        resolved.planExcludeSources,
 		allowUnmatchedExclude: resolved.allowUnmatchedExclude,
 		providerOptions:       in.providerOptions,
-		revisionsOpts: atlasmigrate.SetOptions{
-			Dir:             in.migrationsDir,
-			FS:              in.migrationsFS,
-			AtlasEnv:        in.atlasEnv,
-			RevisionsSchema: in.migrationsSchema,
-			RevisionsTable:  in.migrationsTable,
-			DirFormat:       in.dirFormat,
-			RevisionFormat:  in.revisionFormat,
-		},
+		revisionsTable:        in.migrationsTable,
 	}
 }
 

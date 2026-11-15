@@ -361,11 +361,14 @@ func TestMigrateDownPlanRequiresADevDatabase(t *testing.T) {
 	dir, dbPath := noDownBodyDir(c)
 	before := tableCensus(c, dbPath)
 
-	out, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
+	_, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
 		"--target", "1", "--plan", "--confirm")
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(out+err.Error(), qt.Contains, "--plan requires --shadow-db")
+	// The refusal comes before the prompt, where the run has not started, so
+	// it carries no "error running down migrations" prefix, as a failed shadow
+	// verification carries none.
+	c.Assert(err, qt.ErrorMatches, `--plan requires --shadow-db: the schema at version 1 has to be built somewhere `+
+		`before it can be compared against the live database`)
 	c.Assert(tableCensus(c, dbPath), qt.DeepEquals, before)
 }
 

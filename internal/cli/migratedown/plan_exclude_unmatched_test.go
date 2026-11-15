@@ -14,6 +14,8 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/cli/migratedown"
 	"ptah.run/internal/cli/migrateup"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/migration/shadow"
 )
 
@@ -336,4 +338,55 @@ func TestMigrateDownAllowUnmatchedExcludeWithoutPlan_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(tableCensus(c, dbPath), qt.Not(qt.Contains), "child")
 	c.Assert(recordedVersion(c, dbPath), qt.Equals, int64(1))
+}
+
+// createVirtualTable adds a SQLite virtual table to the target, out of band.
+// No migration creates it, so a derived rollback would drop it, and the
+// comparison refuses to plan that drop.
+func createVirtualTable(c *qt.C, dbPath string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(context.Background(), "CREATE VIRTUAL TABLE docs USING fts5(title, body);")
+	c.Assert(err, qt.IsNil)
+}
+
+// TestMigrateDownPlanUnmatchedExcludeComesFirst_FailurePath gives the
+// comparison two reasons to refuse: a mistyped selector, and a virtual table
+// it will not plan a drop for. The selector is settled first, so the refusal
+// names it. The control row keeps the selector that matches, and the
+// comparison refuses at the virtual table, so the fixture does reach that
+// refusal.
+func TestMigrateDownPlanUnmatchedExcludeComesFirst_FailurePath(t *testing.T) {
+	envbooltest.Unset(sqlitevirtual.AllowDropEnvVar)(t)
+	tests := []struct {
+		name    string
+		project string
+		wantErr string
+	}{
+		{
+			name:    "a mistyped selector",
+			project: "exclude: [external_audt]\n",
+			wantErr: regexp.QuoteMeta(refusedUnmatchedAudit),
+		},
+		{
+			name:    "a selector that matches",
+			project: "exclude: [external_audit]\n",
+			wantErr: `dynamic rollback planning failed: compare the schemas: unsupported feature: the database has virtual table "docs" .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir, dbPath := planExcludeDir(c, test.project)
+			createVirtualTable(c, dbPath)
+
+			_, err := runPlanDown(c, dir, dbPath)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(recordedVersion(c, dbPath), qt.Equals, int64(2))
+		})
+	}
 }

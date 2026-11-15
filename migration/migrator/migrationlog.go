@@ -865,7 +865,9 @@ func (m *Migrator) scanMigrationLogEntry(rows *sql.Rows, added []string) (Migrat
 // down bodies. That path never reaches [Migrator.MigrateDownTo], so nothing
 // would record it, while it deletes the same revision rows: the database ends
 // up looking like one that was never at those versions, which is the history
-// this log exists to keep.
+// this log exists to keep. [Migrator.MigrateDownDerived] opens and settles
+// these attempts itself; this is for a caller that runs the statements some
+// other way.
 //
 // The returned function takes the rollback's own error, records
 // [MigrationLogRolledBack] for a nil one and [MigrationLogFailed] otherwise,
