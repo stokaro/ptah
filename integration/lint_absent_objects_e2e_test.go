@@ -161,12 +161,13 @@ var postgresAbsentObjectRows = []absentObjectRow{
 	},
 	{
 		// The sequence is described on the column that owns it. The community
-		// binary counts the table, whose default the CASCADE removes; strict
-		// mode counts no change to a sequence and does not see the default go.
+		// binary counts the table, whose default the CASCADE removes, and so
+		// does strict mode, which counts no change to the sequence itself.
+		// The default profile counts the sequence and the table.
 		name: "control: IF EXISTS drop of a serial column's sequence",
 		files: absentObjectFiles("CREATE TABLE users (id serial PRIMARY KEY, name text);\n",
 			"DROP SEQUENCE IF EXISTS users_id_seq CASCADE;\n"),
-		communityExit: 0, communityTotal: "1", strictExit: 0, strictTotal: "0", fullExit: 0, fullTotal: "1",
+		communityExit: 0, communityTotal: "1", strictExit: 0, strictTotal: "1", fullExit: 0, fullTotal: "2",
 		nativeExit: 0,
 	},
 	{
