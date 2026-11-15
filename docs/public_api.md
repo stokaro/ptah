@@ -4478,12 +4478,13 @@ separately would silently protect nothing.
 
 `dbschema.DatabaseConnection.ResolveNamesAs` returns a pinned session whose
 unqualified names resolve as they do on another connection: it sets the
-server's search path to that connection's and describes the database relative
-to its default schema. Call it only on a session from `WithSession` or
-`WithUntrustedSQLSession`, since the setting belongs to the physical session
-and ends with the callback. It returns an error on any other connection, on an
-engine that does not resolve names along a search path, and for a connection
-description that names no schema. The receiver is not replaced, but it shares
+server's search path to that connection's, with its current schema first, and
+describes the database relative to that schema. Call it only on a session from
+`WithSession` or `WithUntrustedSQLSession`, since the setting belongs to the
+physical session and ends with the callback. It returns an error on any other
+connection, on a connection that cannot rebind its session, on an engine that
+does not resolve names along a search path, and for a connection description
+that names no schema. The receiver is not replaced, but it shares
 the session, so it resolves names the same way afterwards.
 
 `dbschema.DatabaseConnection.WithRolledBackTransaction` runs a callback inside
