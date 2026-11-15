@@ -56,6 +56,10 @@ func reverseViewDiffs(
 			// The options the up migration leaves, which are the ones the
 			// view holds when the rollback runs, as PreviousBody is its body.
 			PreviousOptions: slices.Clone(viewDiff.Desired.Options),
+			// The SQL SECURITY mode the up migration declares, on the same
+			// terms. A rollback is not refused for the mode it leaves out, so
+			// no planner decides with it.
+			PreviousSecurity: viewDiff.Desired.Security,
 		}
 	}
 	return reversed

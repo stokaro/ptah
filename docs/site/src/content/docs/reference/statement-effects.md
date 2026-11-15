@@ -120,7 +120,7 @@ server applies, so a view that holds no value for an option reads `false`.
 On MySQL and MariaDB, Ptah describes views by their `SQL SECURITY` mode, as
 the property `sql_security`. The value is a string, `DEFINER` or `INVOKER`, the
 mode the server applies, so a statement that names no mode reads `DEFINER`.
-A body change to a view held as `INVOKER`, declared without a mode, is recorded
+A body change to a view held as `INVOKER` and declared as `INVOKER` is recorded
 like this:
 
 ```json

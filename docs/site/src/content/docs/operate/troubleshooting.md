@@ -286,6 +286,10 @@ Under `--json`, `schema plan` and `schema apply` report `outcome: refused` with
 the refusal code `view-security-option`, and `view_options` names each view and
 option. See [Refusal codes](../../direct/apply/#refusal-codes).
 
+A MySQL or MariaDB view held as `SQL SECURITY INVOKER` is refused the same way
+when the schema names no mode, with the option `sql_security`. The
+[MySQL page](../../databases/mysql/#view-security) gives the remedies.
+
 **Likely cause**
 
 The view holds `security_invoker` or `security_barrier` as true, and the schema

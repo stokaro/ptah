@@ -86,8 +86,9 @@ const (
 )
 
 // SQLSecurity names the property of a MySQL or MariaDB view that says whose
-// privileges the view runs with: its SQL SECURITY mode.
-const SQLSecurity = "sql_security"
+// privileges the view runs with: its SQL SECURITY mode. A refused plan names
+// the mode by the same name.
+const SQLSecurity = mysqlviewsecurity.Name
 
 // Property is one property of an object, with the value it holds before the
 // statement runs and after.

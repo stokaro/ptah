@@ -735,13 +735,32 @@ file can declare `CREATE [OR REPLACE] SQL SECURITY DEFINER VIEW` or `CREATE [OR
 REPLACE] SQL SECURITY INVOKER VIEW`; reading the file preserves that mode.
 
 The read keeps `information_schema.VIEWS.SECURITY_TYPE`. A declaration that
-omits `security` keeps the mode the view holds: it reports no change for the
-mode, and a `CREATE OR REPLACE VIEW` planned for another change states the held
-mode, such as `CREATE OR REPLACE SQL SECURITY INVOKER VIEW`. Without the clause
-the server would select `DEFINER`, and a view held as `INVOKER` would run with
-the privileges of the account that applies the plan. Declare the other mode to
-change it. A new view declared without `security` takes the server's default,
-`DEFINER`.
+omits `security` states the server default, `DEFINER`, because a `CREATE OR
+REPLACE VIEW` without the clause selects it. A new view declared without
+`security` takes `DEFINER`, and so does a view held as `DEFINER`: its plan writes
+no clause.
+
+When a view holds `SQL SECURITY INVOKER` and the declaration names no mode, the
+plan refuses before the server changes, whatever else changes on the view.
+Without the clause the view would run with its definer's privileges, not its
+caller's, and no statement would fail. A view altered by hand, or a declaration
+written before the mode was set, is the usual case:
+
+```text
+unsupported feature: view my_docs holds SQL SECURITY INVOKER and the schema does not state it. Without it the view runs with its definer's privileges, not its caller's. Declare SQL SECURITY INVOKER to keep it, or SQL SECURITY DEFINER to change it. A Go annotation states the mode as security="INVOKER", a YAML view as security: INVOKER, and an HCL view as security = INVOKER
+```
+
+Declare `INVOKER` to keep the mode: `security="INVOKER"` on the annotation,
+`security: INVOKER` in YAML, `CREATE SQL SECURITY INVOKER VIEW` in a SQL file, or
+`security = INVOKER` in HCL. The plan then writes the clause with any other
+change. Declare `DEFINER` to change it, and the plan runs as usual. Keeping the
+mode in silence would ignore an author who removed it on purpose. `schema drift`
+plans nothing, so it reports the difference under `views_modified` and does not
+refuse, and a rollback migration that restores the earlier mode is not refused
+either. Under `--json`, `schema plan` and `schema apply` report the refusal as
+`outcome: refused` with the code `view-security-option`, and `view_options`
+names the view with the option `sql_security`. The rule matches the one for
+[PostgreSQL view options](../postgresql/#a-security-option-the-declaration-leaves-out).
 
 A replacement records the connected account as the view's definer, whatever
 the mode. The plan records the mode before and after each statement on a view,

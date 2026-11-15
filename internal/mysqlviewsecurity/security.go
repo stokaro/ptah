@@ -28,16 +28,19 @@ func Effective(value string) string {
 	return mode
 }
 
-// Kept is the mode a view takes from a declaration that may name none: the
-// declared mode, or held, the mode the view holds, when the declaration names
-// none. A statement that writes the view again without the clause selects
-// DEFINER and makes the account that runs it the definer, so a view held as
-// INVOKER would start to run with that account's privileges.
-func Kept(declared, held string) string {
-	if mode := strings.ToUpper(strings.TrimSpace(declared)); mode != "" {
-		return mode
-	}
-	return strings.ToUpper(strings.TrimSpace(held))
+// Name is the name a plan's records give a view's SQL SECURITY mode: the
+// statement effect property, and the option a refused plan names. The effect
+// and the refusal report the same mode, so a consumer that reads one matches
+// it against the other by this one name.
+const Name = "sql_security"
+
+// Lost reports whether a declaration that may name no mode would take INVOKER
+// from a view that holds it. A statement that writes the view without the
+// clause selects DEFINER, so the view would run with its definer's privileges
+// and not its caller's. A declared mode, and a view held as DEFINER, lose
+// nothing the declaration did not ask for.
+func Lost(held, declared string) bool {
+	return strings.TrimSpace(declared) == "" && Effective(held) == "INVOKER"
 }
 
 // Clause returns the view header clause, or empty for the server default.

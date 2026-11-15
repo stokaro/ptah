@@ -126,9 +126,10 @@ const (
 	// RefusalSimulationFailed means the plan failed its rehearsal on the
 	// --dev-url database, and the command did not send it to the target.
 	RefusalSimulationFailed RefusalCode = "simulation-failed"
-	// RefusalViewSecurityOption means the plan would take a security option from
-	// a view because the declaration does not state it. State the option to keep
-	// it, or state it as off to remove it.
+	// RefusalViewSecurityOption means the plan would take a security option, or
+	// SQL SECURITY INVOKER, from a view because the declaration does not state
+	// it. State the option or the mode to keep it, or state the option as off or
+	// the mode as DEFINER to change it.
 	RefusalViewSecurityOption RefusalCode = "view-security-option"
 	// RefusalDependentObject means the plan drops an object something else
 	// depends on, where the drop would stop on the dependent or take it with
