@@ -869,7 +869,12 @@ func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect stri
 		viewDiff.Changes["with_check"] = held + " -> " + declared
 	}
 	if comparisonOf(dialect).ViewSQLSecurity {
-		declared := mysqlviewsecurity.Effective(genView.Security)
+		// A declaration that names no mode keeps the one the view holds, and
+		// the view this change leaves behind states it, so a replacement for
+		// another change does not hand the view to the server's DEFINER default
+		// and to the account that applies the plan.
+		viewDiff.Desired.Security = mysqlviewsecurity.Kept(genView.Security, dbView.Security)
+		declared := mysqlviewsecurity.Effective(viewDiff.Desired.Security)
 		held := mysqlviewsecurity.Effective(dbView.Security)
 		if declared != held {
 			viewDiff.Changes["security"] = held + " -> " + declared

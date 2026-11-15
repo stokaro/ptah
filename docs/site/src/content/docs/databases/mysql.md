@@ -727,15 +727,25 @@ whose body is the same reports no change; a changed body still produces a plan.
 
 ### View security
 
-MySQL and MariaDB run a view with `SQL SECURITY DEFINER` when the declaration
-omits `security`. Set `security="INVOKER"` on a `//ptah:schema:view` annotation,
-or `security: INVOKER` on a YAML view, to run it with its caller's privileges.
-The read keeps `information_schema.VIEWS.SECURITY_TYPE`. A view held as
-`INVOKER` and declared without `security` reports a change and plans
-`CREATE OR REPLACE VIEW`, which selects the server's `DEFINER` default.
-The replacement records the connected account as its definer. A SQL schema file
-can declare `CREATE [OR REPLACE] SQL SECURITY DEFINER VIEW` or `CREATE [OR
+A MySQL or MariaDB view runs with its definer's privileges under `SQL SECURITY
+DEFINER`, and with its caller's under `SQL SECURITY INVOKER`. Set
+`security="INVOKER"` on a `//ptah:schema:view` annotation, or `security:
+INVOKER` on a YAML view, to run it with its caller's privileges. A SQL schema
+file can declare `CREATE [OR REPLACE] SQL SECURITY DEFINER VIEW` or `CREATE [OR
 REPLACE] SQL SECURITY INVOKER VIEW`; reading the file preserves that mode.
+
+The read keeps `information_schema.VIEWS.SECURITY_TYPE`. A declaration that
+omits `security` keeps the mode the view holds: it reports no change for the
+mode, and a `CREATE OR REPLACE VIEW` planned for another change states the held
+mode, such as `CREATE OR REPLACE SQL SECURITY INVOKER VIEW`. Without the clause
+the server would select `DEFINER`, and a view held as `INVOKER` would run with
+the privileges of the account that applies the plan. Declare the other mode to
+change it. A new view declared without `security` takes the server's default,
+`DEFINER`.
+
+A replacement records the connected account as the view's definer, whatever
+the mode. The plan records the mode before and after each statement on a view,
+as the [`sql_security` effect](../../reference/statement-effects/).
 
 ### Roles and grants
 

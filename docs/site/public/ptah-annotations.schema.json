@@ -2410,7 +2410,7 @@
               "type": "string"
             },
             "security": {
-              "description": "MySQL and MariaDB view SQL SECURITY mode: `DEFINER` or `INVOKER`. Empty uses `DEFINER`.",
+              "description": "MySQL and MariaDB view SQL SECURITY mode: `DEFINER` or `INVOKER`. Empty keeps the mode the view holds, and a new view takes `DEFINER`.",
               "type": "string"
             },
             "with_check": {

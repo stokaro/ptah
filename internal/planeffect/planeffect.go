@@ -10,17 +10,21 @@
 // reads like one that turns it on.
 //
 // It describes the views of a target that keeps view options, and their
-// security options. A statement it does not cover carries no effect, which says
-// nothing about what the statement changes.
+// security options, and the views of a target whose views run with their
+// definer's or their invoker's privileges, and that mode. A statement it does
+// not cover carries no effect, which says nothing about what the statement
+// changes.
 package planeffect
 
 import (
 	"reflect"
 	"slices"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/mysqlviewsecurity"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/viewoptions"
 )
@@ -81,21 +85,28 @@ const (
 	ActionDrop Action = "drop"
 )
 
+// SQLSecurity names the property of a MySQL or MariaDB view that says whose
+// privileges the view runs with: its SQL SECURITY mode.
+const SQLSecurity = "sql_security"
+
 // Property is one property of an object, with the value it holds before the
 // statement runs and after.
 //
-// The value of a view's security option is a boolean: the value PostgreSQL
-// applies, which is false for a view that holds no value for the option.
+// The value of a view's security option, security_barrier or security_invoker,
+// is a bool: the value PostgreSQL applies, which is false for a view that holds
+// no value for the option. The value of [SQLSecurity] is a string, DEFINER or
+// INVOKER: the mode MySQL or MariaDB applies, which is DEFINER for a view
+// written without the clause.
 type Property struct {
-	// Name names the property. For a view, it is the option's name:
-	// security_barrier or security_invoker.
+	// Name names the property. For a view, it is the option's name,
+	// security_barrier or security_invoker, or [SQLSecurity].
 	Name string `json:"name"`
-	// Before is the value before the statement runs. It is absent when the
-	// object does not exist then.
-	Before *bool `json:"before,omitempty"`
-	// After is the value after the statement runs. It is absent when the
-	// object does not exist then.
-	After *bool `json:"after,omitempty"`
+	// Before is the value before the statement runs, of the type the
+	// property's name gives it. It is nil when the object does not exist then.
+	Before any `json:"before,omitempty"`
+	// After is the value after the statement runs, of the type the property's
+	// name gives it. It is nil when the object does not exist then.
+	After any `json:"after,omitempty"`
 	// Changed reports that Before and After differ. An absent value differs
 	// from every value, so a property of an object the statement creates or
 	// drops is changed.
@@ -113,8 +124,13 @@ type Target struct {
 	// Current holds, the way the comparison resolved it.
 	Semantics identifier.Semantics
 	// ViewOptions reports that the target keeps view options and reports them
-	// back. A target without it has no view described.
+	// back.
 	ViewOptions bool
+	// ViewSQLSecurity reports that a view of the target runs with its
+	// definer's privileges or its invoker's, as the catalog records, the way
+	// MySQL and MariaDB record SQL SECURITY. A target with neither it nor
+	// ViewOptions has no view described.
+	ViewSQLSecurity bool
 }
 
 // Describe returns the effects of each statement of a plan.
@@ -131,7 +147,7 @@ type Target struct {
 // uncertain, has no effect, and neither does a node that rendered a number of
 // statements the description does not expect.
 func Describe(target Target, nodes []ast.Node, units []int) [][]Effect {
-	if !target.ViewOptions || len(units) == 0 {
+	if !target.ViewOptions && !target.ViewSQLSecurity || len(units) == 0 {
 		return nil
 	}
 	rendered := make(map[int]int, len(units))
@@ -174,13 +190,13 @@ type statementOf struct {
 type presence int
 
 const (
-	// unknown says nothing is known, the options included.
+	// unknown says nothing is known, what the view holds included.
 	unknown presence = iota
-	// present says the view exists and holds the tracked options.
+	// present says the view exists and holds what its state records.
 	present
 	// absent says the view does not exist.
 	absent
-	// uncertain says the view holds the tracked options if it exists, and a
+	// uncertain says the view holds what its state records if it exists, and a
 	// statement that may have dropped it ran since.
 	uncertain
 )
@@ -192,7 +208,23 @@ type viewState struct {
 	name     string
 	object   Object
 	presence presence
-	options  []string
+	held     viewHeld
+}
+
+// viewHeld is what a view holds of the properties an effect describes.
+type viewHeld struct {
+	// options are the view's options, as the catalog or a statement spells
+	// them.
+	options []string
+	// security is the view's SQL SECURITY mode, as the catalog or a statement
+	// spells it. Empty from the catalog is a mode it did not report; empty in
+	// a statement is the server's default.
+	security string
+}
+
+// clone is a copy of held that shares nothing with it.
+func (h viewHeld) clone() viewHeld {
+	return viewHeld{options: slices.Clone(h.options), security: h.security}
 }
 
 // viewStates is every view the plan reaches, as the statements followed so
@@ -225,7 +257,7 @@ func newViewStates(target Target) *viewStates {
 			name:     view.QualifiedName(),
 			object:   Object{Kind: KindView, Schema: schema, Name: view.Name},
 			presence: present,
-			options:  slices.Clone(view.Options),
+			held:     viewHeld{options: slices.Clone(view.Options), security: view.Security},
 		})
 	}
 	return states
@@ -264,9 +296,10 @@ func (s *viewStates) create(node *ast.CreateViewNode, statement statementOf) (Ef
 	if view == nil {
 		return Effect{}, false
 	}
-	before, known := view.held()
-	after := slices.Clone(node.Options)
-	view.presence, view.options = present, after
+	before, known := view.before()
+	// A statement that names no mode gets the server's default.
+	after := viewHeld{options: slices.Clone(node.Options), security: mysqlviewsecurity.Effective(node.Security)}
+	view.presence, view.held = present, after
 	if !node.Replace {
 		// CREATE VIEW succeeds only where no view of the name exists, so the
 		// view did not exist before it, whatever the earlier statements left.
@@ -299,15 +332,12 @@ func (s *viewStates) alter(node *ast.AlterViewOptionsNode, statement statementOf
 		// about one in an unknown state.
 		return Effect{}, false
 	}
-	before := slices.Clone(view.options)
-	var (
-		after []string
-		err   error
-	)
+	before, after := view.held.clone(), view.held.clone()
+	var err error
 	if len(node.Set) > 0 && statement.at == 0 {
-		after, err = viewoptions.Apply(before, node.Set, nil)
+		after.options, err = viewoptions.Apply(before.options, node.Set, nil)
 	} else {
-		after, err = viewoptions.Apply(before, nil, node.Reset)
+		after.options, err = viewoptions.Apply(before.options, nil, node.Reset)
 	}
 	if err != nil {
 		view.presence = unknown
@@ -315,7 +345,7 @@ func (s *viewStates) alter(node *ast.AlterViewOptionsNode, statement statementOf
 	}
 	// The ALTER succeeds only on a view that exists, and a statement that may
 	// have dropped the view changes no option of one it left.
-	view.presence, view.options = present, after
+	view.presence, view.held = present, after
 	return s.effect(view.object, ActionAlter, &before, &after), true
 }
 
@@ -333,8 +363,8 @@ func (s *viewStates) drop(node *ast.DropViewNode, statement statementOf) (Effect
 		}
 		return Effect{}, false
 	}
-	was, before := view.presence, slices.Clone(view.options)
-	view.presence, view.options = absent, nil
+	was, before := view.presence, view.held.clone()
+	view.presence, view.held = absent, viewHeld{}
 	if node.Cascade {
 		s.mayHaveDropped()
 	}
@@ -347,13 +377,13 @@ func (s *viewStates) drop(node *ast.DropViewNode, statement statementOf) (Effect
 	return s.effect(view.object, ActionDrop, &before, nil), true
 }
 
-// held is the options the view holds before a statement, nil when it does not
-// exist then. known is false when the description cannot say.
-func (v *viewState) held() (*[]string, bool) {
+// before is what the view holds before a statement, nil when it does not exist
+// then. known is false when the description cannot say.
+func (v *viewState) before() (*viewHeld, bool) {
 	switch v.presence {
 	case present:
-		options := slices.Clone(v.options)
-		return &options, true
+		held := v.held.clone()
+		return &held, true
 	case absent:
 		return nil, true
 	default:
@@ -396,7 +426,7 @@ func (s *viewStates) resolve(name string) *viewState {
 // forget puts the view a statement names in an unknown state.
 func (s *viewStates) forget(name string) {
 	if view := s.resolve(name); view != nil {
-		view.presence, view.options = unknown, nil
+		view.presence, view.held = unknown, viewHeld{}
 	}
 }
 
@@ -446,46 +476,69 @@ func cascadeFlag(value any) bool {
 
 // effect is the effect of a statement that leaves object holding after, nil
 // when it does not exist then, where it held before.
-func (s *viewStates) effect(object Object, action Action, before, after *[]string) Effect {
+func (s *viewStates) effect(object Object, action Action, before, after *viewHeld) Effect {
 	effect := Effect{Version: Version, Object: object, Action: action}
-	for _, name := range viewoptions.SecurityOptions() {
-		property, ok := securityProperty(name, before, after)
+	if s.target.ViewOptions {
+		for _, name := range viewoptions.SecurityOptions() {
+			property, ok := viewProperty(name, before, after, securityOption(name))
+			if ok {
+				effect.Properties = append(effect.Properties, property)
+			}
+		}
+	}
+	if s.target.ViewSQLSecurity {
+		property, ok := viewProperty(SQLSecurity, before, after, sqlSecurity)
 		if ok {
 			effect.Properties = append(effect.Properties, property)
 		}
 	}
+	slices.SortFunc(effect.Properties, func(a, b Property) int { return strings.Compare(a.Name, b.Name) })
 	return effect
 }
 
-// securityProperty is the security option name before and after a statement.
-// ok is false when either value cannot be read as a boolean.
-func securityProperty(name string, before, after *[]string) (Property, bool) {
+// viewProperty is the property name of a view before and after a statement,
+// as value reads it from what the view holds. ok is false when value cannot
+// read either.
+func viewProperty(name string, before, after *viewHeld, value func(viewHeld) (any, bool)) (Property, bool) {
 	property := Property{Name: name}
 	if before != nil {
-		on, ok := viewoptions.SecurityOn(*before, name)
+		read, ok := value(*before)
 		if !ok {
 			return Property{}, false
 		}
-		property.Before = &on
+		property.Before = read
 	}
 	if after != nil {
-		on, ok := viewoptions.SecurityOn(*after, name)
+		read, ok := value(*after)
 		if !ok {
 			return Property{}, false
 		}
-		property.After = &on
+		property.After = read
 	}
-	property.Changed = !sameValue(property.Before, property.After)
+	// An absent value is nil, which equals only another absent one. Every
+	// value is a bool or a string, so the comparison cannot panic.
+	property.Changed = property.Before != property.After
 	return property, true
 }
 
-// sameValue reports whether two values are equal, an absent value equal only
-// to another absent one.
-func sameValue(a, b *bool) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
+// securityOption reads the security option name from a view's options, as a
+// bool. ok is false when the value cannot be read as one.
+func securityOption(name string) func(viewHeld) (any, bool) {
+	return func(held viewHeld) (any, bool) {
+		on, ok := viewoptions.SecurityOn(held.options, name)
+		return on, ok
 	}
-	return *a == *b
+}
+
+// sqlSecurity reads a view's SQL SECURITY mode, as the string the catalog
+// spells it. ok is false for anything but DEFINER or INVOKER, which includes a
+// mode the catalog did not report.
+func sqlSecurity(held viewHeld) (any, bool) {
+	mode, err := mysqlviewsecurity.Parse(held.security)
+	if err != nil || mode == "" {
+		return nil, false
+	}
+	return mode, true
 }
 
 // alterStatements is how many statements an option change renders: one ALTER

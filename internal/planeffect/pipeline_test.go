@@ -155,3 +155,115 @@ func TestDescribe_PostgreSQLPlans(t *testing.T) {
 		})
 	}
 }
+
+const mysqlPipelineTable = "CREATE TABLE orders (id int PRIMARY KEY, total int NOT NULL);\n"
+
+// describeMySQLPlan plans held into declared, two MySQL SQL schemas, as
+// `schema plan` does against MySQL, and describes each statement of the plan.
+func describeMySQLPlan(c *qt.C, held, declared string) []statementEffect {
+	c.Helper()
+	runtime := must.Must(builtin.New())
+	current, _, err := sqlschema.Read([]byte(mysqlPipelineTable+held), platform.MySQL)
+	c.Assert(err, qt.IsNil)
+	desired, _, err := sqlschema.Read([]byte(mysqlPipelineTable+declared), platform.MySQL)
+	c.Assert(err, qt.IsNil)
+	database, err := goschematodb.ToDBSchema(c.Context(), &current, platform.MySQL, runtime)
+	c.Assert(err, qt.IsNil)
+	diff, err := schemadiff.CompareWithDialect(c.Context(), &desired, database, platform.MySQL, runtime)
+	c.Assert(err, qt.IsNil)
+	plan, err := planner.GenerateSchemaDiffRenderedPlan(c.Context(), runtime, diff, platform.MySQL,
+		planext.Options{Capabilities: capability.MySQL84()})
+	c.Assert(err, qt.IsNil)
+	units, err := plan.Units()
+	c.Assert(err, qt.IsNil)
+	nodes := make([]int, len(units))
+	for i, unit := range units {
+		nodes[i] = unit.Node
+	}
+
+	described := planeffect.Describe(planeffect.Target{
+		Current:         database,
+		Semantics:       diff.EffectiveIdentifierSemantics(platform.MySQL),
+		ViewSQLSecurity: true,
+	}, plan.Request.Nodes, nodes)
+
+	c.Assert(described, qt.HasLen, len(units))
+	got := make([]statementEffect, len(units))
+	for i, unit := range units {
+		c.Assert(described[i], qt.HasLen, 1, qt.Commentf("statement %d: %s", i, unit.Fragment.SQL))
+		c.Assert(described[i][0].Object, qt.Equals, planeffect.Object{Kind: planeffect.KindView, Name: "order_totals"})
+		got[i] = statementEffect{SQL: unit.Fragment.SQL, Action: described[i][0].Action, Properties: described[i][0].Properties}
+	}
+	return got
+}
+
+// mysqlOrderTotalsView is the MySQL view order_totals with the SQL SECURITY
+// clause and body given; an empty clause states no mode.
+func mysqlOrderTotalsView(security, body string) string {
+	create := "CREATE "
+	if security != "" {
+		create += security + " "
+	}
+	return create + "VIEW order_totals AS " + body + ";\n"
+}
+
+// TestDescribe_MySQLPlans runs the MySQL planner and renderer over a view
+// change, and pins the statement it writes and the description of it. A
+// declaration that names no mode keeps the one the view holds, so the
+// replacement states it and the description says it is unchanged.
+func TestDescribe_MySQLPlans(t *testing.T) {
+	const (
+		held     = "SELECT id, total FROM orders"
+		positive = "SELECT id, total FROM orders WHERE total > 0"
+	)
+	tests := []struct {
+		name     string
+		held     string
+		declared string
+		want     []statementEffect
+	}{
+		{
+			name:     "a body change keeps INVOKER the declaration does not name",
+			held:     mysqlOrderTotalsView("SQL SECURITY INVOKER", held),
+			declared: mysqlOrderTotalsView("", positive),
+			want: []statementEffect{{
+				SQL:    "CREATE OR REPLACE SQL SECURITY INVOKER VIEW `order_totals` AS\n" + positive,
+				Action: planeffect.ActionReplace,
+				Properties: []planeffect.Property{
+					{Name: planeffect.SQLSecurity, Before: "INVOKER", After: "INVOKER"},
+				},
+			}},
+		},
+		{
+			name:     "a declared DEFINER replaces INVOKER",
+			held:     mysqlOrderTotalsView("SQL SECURITY INVOKER", held),
+			declared: mysqlOrderTotalsView("SQL SECURITY DEFINER", held),
+			want: []statementEffect{{
+				SQL:    "CREATE OR REPLACE SQL SECURITY DEFINER VIEW `order_totals` AS\n" + held,
+				Action: planeffect.ActionReplace,
+				Properties: []planeffect.Property{
+					{Name: planeffect.SQLSecurity, Before: "INVOKER", After: "DEFINER", Changed: true},
+				},
+			}},
+		},
+		{
+			name:     "a new view takes the server's DEFINER",
+			held:     "",
+			declared: mysqlOrderTotalsView("", held),
+			want: []statementEffect{{
+				SQL:        "CREATE VIEW `order_totals` AS\n" + held,
+				Action:     planeffect.ActionCreate,
+				Properties: []planeffect.Property{{Name: planeffect.SQLSecurity, After: "DEFINER", Changed: true}},
+			}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := describeMySQLPlan(c, test.held, test.declared)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}

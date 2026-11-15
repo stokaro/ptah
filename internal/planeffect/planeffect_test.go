@@ -34,19 +34,19 @@ func security(barrier, invoker planeffect.Property) []planeffect.Property {
 }
 
 func kept(value bool) planeffect.Property {
-	return planeffect.Property{Before: new(value), After: new(value)}
+	return planeffect.Property{Before: value, After: value}
 }
 
 func moved(before, after bool) planeffect.Property {
-	return planeffect.Property{Before: new(before), After: new(after), Changed: true}
+	return planeffect.Property{Before: before, After: after, Changed: true}
 }
 
 func created(value bool) planeffect.Property {
-	return planeffect.Property{After: new(value), Changed: true}
+	return planeffect.Property{After: value, Changed: true}
 }
 
 func dropped(value bool) planeffect.Property {
-	return planeffect.Property{Before: new(value), Changed: true}
+	return planeffect.Property{Before: value, Changed: true}
 }
 
 var orderTotals = planeffect.Object{Kind: planeffect.KindView, Schema: "public", Name: "order_totals"}
@@ -174,7 +174,7 @@ func TestDescribe_ViewSecurity(t *testing.T) {
 			nodes:  []ast.Node{replace("security_invoker=true")},
 			units:  []int{0},
 			want: [][]planeffect.Effect{effect(planeffect.ActionReplace, []planeffect.Property{
-				{Name: "security_barrier", Before: new(false), After: new(false)},
+				{Name: "security_barrier", Before: false, After: false},
 			})},
 		},
 		{
@@ -412,14 +412,14 @@ func TestEffect_JSON(t *testing.T) {
 		{
 			name: "an option restated",
 			effect: planeffect.Effect{Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionReplace,
-				Properties: []planeffect.Property{{Name: "security_invoker", Before: new(true), After: new(true)}}},
+				Properties: []planeffect.Property{{Name: "security_invoker", Before: true, After: true}}},
 			want: `{"version":1,"object":{"kind":"view","schema":"public","name":"order_totals"},"action":"replace",` +
 				`"properties":[{"name":"security_invoker","before":true,"after":true,"changed":false}]}`,
 		},
 		{
 			name: "a view created",
 			effect: planeffect.Effect{Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionCreate,
-				Properties: []planeffect.Property{{Name: "security_invoker", After: new(false), Changed: true}}},
+				Properties: []planeffect.Property{{Name: "security_invoker", After: false, Changed: true}}},
 			want: `{"version":1,"object":{"kind":"view","schema":"public","name":"order_totals"},"action":"create",` +
 				`"properties":[{"name":"security_invoker","after":false,"changed":true}]}`,
 		},
@@ -434,4 +434,168 @@ func TestEffect_JSON(t *testing.T) {
 			c.Assert(string(got), qt.Equals, test.want)
 		})
 	}
+}
+
+// mysqlTarget is a MySQL database that reports the views given in the
+// database app.
+func mysqlTarget(views ...catalog.View) planeffect.Target {
+	return planeffect.Target{
+		Current:         &catalog.Database{Views: views},
+		DefaultSchema:   "app",
+		Semantics:       identifier.ForDialect("mysql"),
+		ViewSQLSecurity: true,
+	}
+}
+
+// mysqlView is a view the database app reports, with the SQL SECURITY mode
+// given.
+func mysqlView(name, security string) catalog.View {
+	return catalog.View{Schema: "app", Name: name, Body: "SELECT 1", Security: security}
+}
+
+var appOrderTotals = planeffect.Object{Kind: planeffect.KindView, Schema: "app", Name: "order_totals"}
+
+// sqlSecurity is the effect of one statement on app.order_totals that reports
+// its SQL SECURITY mode alone.
+func sqlSecurity(action planeffect.Action, property planeffect.Property) []planeffect.Effect {
+	property.Name = planeffect.SQLSecurity
+	return []planeffect.Effect{{Version: planeffect.Version, Object: appOrderTotals, Action: action, Properties: []planeffect.Property{property}}}
+}
+
+// TestDescribe_ViewSQLSecurity pins the SQL SECURITY mode a MySQL or MariaDB
+// view holds before and after each statement Ptah plans for it. A statement
+// that names no mode gives the view the server's DEFINER, which is a change for
+// a view held as INVOKER.
+func TestDescribe_ViewSQLSecurity(t *testing.T) {
+	replace := func(security string) *ast.CreateViewNode {
+		return &ast.CreateViewNode{Name: "order_totals", Body: "SELECT 2", Replace: true, Security: security}
+	}
+	tests := []struct {
+		name   string
+		target planeffect.Target
+		nodes  []ast.Node
+		units  []int
+		want   [][]planeffect.Effect
+	}{
+		{
+			name:   "a replace that restates INVOKER",
+			target: mysqlTarget(mysqlView("order_totals", "INVOKER")),
+			nodes:  []ast.Node{replace("INVOKER")},
+			units:  []int{0},
+			want: [][]planeffect.Effect{sqlSecurity(planeffect.ActionReplace,
+				planeffect.Property{Before: "INVOKER", After: "INVOKER"})},
+		},
+		{
+			name:   "a replace that names no mode gives an INVOKER view the server's DEFINER",
+			target: mysqlTarget(mysqlView("order_totals", "INVOKER")),
+			nodes:  []ast.Node{replace("")},
+			units:  []int{0},
+			want: [][]planeffect.Effect{sqlSecurity(planeffect.ActionReplace,
+				planeffect.Property{Before: "INVOKER", After: "DEFINER", Changed: true})},
+		},
+		{
+			name:   "a replace that names no mode keeps a DEFINER view's mode",
+			target: mysqlTarget(mysqlView("order_totals", "DEFINER")),
+			nodes:  []ast.Node{replace("")},
+			units:  []int{0},
+			want: [][]planeffect.Effect{sqlSecurity(planeffect.ActionReplace,
+				planeffect.Property{Before: "DEFINER", After: "DEFINER"})},
+		},
+		{
+			name:   "a replace that turns INVOKER on, spelled in lower case",
+			target: mysqlTarget(mysqlView("order_totals", "DEFINER")),
+			nodes:  []ast.Node{replace("invoker")},
+			units:  []int{0},
+			want: [][]planeffect.Effect{sqlSecurity(planeffect.ActionReplace,
+				planeffect.Property{Before: "DEFINER", After: "INVOKER", Changed: true})},
+		},
+		{
+			name:   "a new view",
+			target: mysqlTarget(),
+			nodes:  []ast.Node{&ast.CreateViewNode{Name: "order_totals", Body: "SELECT 1", Comment: "totals"}},
+			units:  []int{0},
+			want: [][]planeffect.Effect{sqlSecurity(planeffect.ActionCreate,
+				planeffect.Property{After: "DEFINER", Changed: true})},
+		},
+		{
+			name:   "a drop",
+			target: mysqlTarget(mysqlView("order_totals", "INVOKER")),
+			nodes:  []ast.Node{ast.NewDropView("order_totals").SetIfExists()},
+			units:  []int{0},
+			want: [][]planeffect.Effect{sqlSecurity(planeffect.ActionDrop,
+				planeffect.Property{Before: "INVOKER", Changed: true})},
+		},
+		{
+			name:   "a mode the catalog did not report leaves the property out",
+			target: mysqlTarget(mysqlView("order_totals", "")),
+			nodes:  []ast.Node{replace("INVOKER")},
+			units:  []int{0},
+			want: [][]planeffect.Effect{{{
+				Version: planeffect.Version, Object: appOrderTotals, Action: planeffect.ActionReplace,
+			}}},
+		},
+		{
+			name: "a target with both properties reports them by name",
+			target: planeffect.Target{
+				Current:         &catalog.Database{Views: []catalog.View{{Schema: "app", Name: "order_totals", Security: "INVOKER"}}},
+				DefaultSchema:   "app",
+				Semantics:       identifier.ForDialect("mysql"),
+				ViewOptions:     true,
+				ViewSQLSecurity: true,
+			},
+			nodes: []ast.Node{replace("INVOKER")},
+			units: []int{0},
+			want: [][]planeffect.Effect{{{
+				Version: planeffect.Version, Object: appOrderTotals, Action: planeffect.ActionReplace,
+				Properties: []planeffect.Property{
+					{Name: "security_barrier", Before: false, After: false},
+					{Name: "security_invoker", Before: false, After: false},
+					{Name: planeffect.SQLSecurity, Before: "INVOKER", After: "INVOKER"},
+				},
+			}}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := planeffect.Describe(test.target, test.nodes, test.units)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestEffect_JSONSQLSecurity pins the shape of a MySQL view's SQL SECURITY in a
+// plan and the documents: the mode is a string, as the catalog spells it.
+func TestEffect_JSONSQLSecurity(t *testing.T) {
+	c := qt.New(t)
+	effect := planeffect.Effect{Version: planeffect.Version, Object: appOrderTotals, Action: planeffect.ActionReplace,
+		Properties: []planeffect.Property{{Name: planeffect.SQLSecurity, Before: "INVOKER", After: "INVOKER"}}}
+
+	got, err := json.Marshal(effect)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(got), qt.Equals, `{"version":1,"object":{"kind":"view","schema":"app","name":"order_totals"},"action":"replace",`+
+		`"properties":[{"name":"sql_security","before":"INVOKER","after":"INVOKER","changed":false}]}`)
+}
+
+// TestEffect_JSONRoundTrip pins that a plan file read back carries each
+// property's value with its own type, so a document that lists a saved plan's
+// effects writes the ones the plan recorded.
+func TestEffect_JSONRoundTrip(t *testing.T) {
+	c := qt.New(t)
+	saved := []planeffect.Effect{{Version: planeffect.Version, Object: appOrderTotals, Action: planeffect.ActionReplace,
+		Properties: []planeffect.Property{
+			{Name: "security_invoker", Before: true, After: false, Changed: true},
+			{Name: planeffect.SQLSecurity, Before: "INVOKER", After: "DEFINER", Changed: true},
+		}}}
+	encoded, err := json.Marshal(saved)
+	c.Assert(err, qt.IsNil)
+
+	var got []planeffect.Effect
+	err = json.Unmarshal(encoded, &got)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, saved)
 }
