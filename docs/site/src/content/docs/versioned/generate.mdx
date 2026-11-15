@@ -178,8 +178,10 @@ the replay created in the shadow database.
 
 `*[type=policy]` leaves every policy out, and with them the row-security
 switch of each table: a migration that kept the policies and disabled row
-security would show every row they hide. A selector that names one policy,
-such as `admin_read[type=policy]`, keeps the switch in the comparison.
+security would show every row they hide. A selector that names one policy
+keeps the switch in the comparison. It names the policy through its table, as
+in `tasks.admin_read[type=policy]`, since a policy name is unique only on its
+table.
 
 A selector that matches nothing on either side prints one warning on standard
 error, such as `Warning: the --exclude selection matched no objects:

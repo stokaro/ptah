@@ -418,6 +418,17 @@ applied the same way as without `--include`. A child cannot be selected on its
 own: `--include 'notes_owner[type=policy]'` is refused with exit `2`, and
 `--include notes_owner` names no object, so it is refused with exit `2` too.
 
+`--exclude` names a row-level security policy through its table, as it names
+an index, because PostgreSQL makes a policy name unique only on its table:
+`--exclude 'notes.notes_owner[type=policy]'` leaves out the policy
+`notes_owner` on `notes` and keeps a policy of the same name on another table.
+Where the run covers every schema, `public.notes.notes_owner[type=policy]`
+names the same policy. A selector that names a policy by its schema and its own
+name, such as `public.notes_owner[type=policy]`, names no policy and is reported
+as matching nothing. `*[type=policy]`, `public.*[type=policy]` and
+`notes.*[type=policy]` leave out every policy, every policy in `public`, and
+every policy on `notes`.
+
 `ptah migrations plan` and `ptah migrations generate` take `--exclude` with the
 same meaning. The selection reaches the desired schema, the current state read
 from the database or replayed from the migration directory, and the shadow

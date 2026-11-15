@@ -380,7 +380,7 @@ func TestExcludeKeepsThePolicyChangesItDoesNotNameE2E(t *testing.T) {
 		},
 		{
 			name:     "one policy",
-			exclude:  "public.notes_owner[type=policy]",
+			exclude:  "public.notes.notes_owner[type=policy]",
 			reported: []string{excludeWriterPolicy},
 			absent:   []string{excludeOwnerPolicy},
 			finding:  "- feature_changes:ptah.run/pgpolicy/policy-change: 1 (warning)\n",

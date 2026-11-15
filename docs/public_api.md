@@ -1434,6 +1434,11 @@ the requested fields cleared, and the objects the kept ones require, such as
 the resource pool a kept classifier routes to, which a scope keeps and an
 exclusion ignores.
 
+An owner's object whose identity has a parent, such as a row-security policy,
+belongs to that table and is named through it, as an index is: an exclusion
+matches `table.object` and `schema.table.object`, and an include keeps the
+object with its table.
+
 `engine.Provider.Selections` registers an `Extension`, and
 `engine.Runtime.Selections` returns the frozen `Set`, ordered by selector type
 then model kind. `Set.ForType` returns every model named by a selector type.

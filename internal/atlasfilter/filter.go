@@ -113,6 +113,7 @@ func excludeDatabase(
 	filtered.Schemas = state.filterSchemas(filtered.Schemas)
 	filtered.Tables = state.filterTables(filtered.Tables)
 	state.excludeObservedRowSecurity(filtered.Tables)
+	state.noteOwnedObjectSelectors(filtered.FeatureObjects)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
 	}, state.vocabulary.independentKinds()...)
@@ -237,6 +238,7 @@ func excludeGenerated(
 	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields)
 	state.excludeGeneratedColumnSequences(schema.Tables, schema.Fields)
 	filtered.Tables = state.stripGeneratedTableColumnReferences(filtered.Tables)
+	state.noteOwnedObjectSelectors(filtered.FeatureObjects)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = bindings.Select(filtered.FeatureObjects, filtered.FeatureCoverage, func(schema, table string) bool {
 		return !state.tableExcluded(schema, table)
 	}, state.vocabulary.independentKinds()...)

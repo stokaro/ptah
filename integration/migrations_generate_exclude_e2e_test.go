@@ -256,7 +256,7 @@ func TestMigrationsGenerateExcludePolicies_HappyPathE2E(t *testing.T) {
 		},
 		{
 			name:     "one named policy",
-			exclude:  []string{"--exclude", "admin_read[type=policy]"},
+			exclude:  []string{"--exclude", "tasks.admin_read[type=policy]"},
 			upHas:    []string{`ADD COLUMN "title" text`, "DISABLE ROW LEVEL SECURITY"},
 			upLacks:  []string{"POLICY"},
 			downHas:  []string{"ENABLE ROW LEVEL SECURITY"},

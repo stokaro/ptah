@@ -63,26 +63,79 @@ func ownerContext() context.Context {
 // names under their type, and those whose schema is excluded, on both sides
 // of a comparison. An object whose name is a relation's excludes a table of
 // its name with it. A database-wide name is matched alone, and no schema
-// exclusion reaches it.
+// exclusion reaches it. An object of a table is named through its table; see
+// [exclusionState.ownerNameCandidates].
 func (s *exclusionState) filterOwnerFeatures(objects schemaext.Objects, coverage schemaext.Coverage) (schemaext.Objects, schemaext.Coverage, error) {
 	for _, selection := range s.vocabulary.selections.Selections() {
 		if selection.Naming == selectext.SchemaWide {
 			continue
 		}
-		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(_ objectidentity.ID, schema, name string) bool {
-			if selection.ByNameAlone(schema) {
-				return !s.matches(selection.Type, name)
-			}
-			if s.matches(selection.Type, s.nameCandidates(schema, name)...) || s.schemaExcluded(schema) {
+		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(ref objectidentity.ID, schema, name string) bool {
+			named := s.matches(selection.Type, s.ownerNameCandidates(selection, ref)...)
+			switch {
+			case featureselect.OfTable(ref):
+				return !named && !s.schemaExcluded(schema)
+			case selection.ByNameAlone(schema):
+				return !named
+			case named || s.schemaExcluded(schema):
 				if selection.Relation {
 					s.excludeTable(schema, name)
 				}
 				return false
+			default:
+				return true
 			}
-			return true
 		})
 	}
 	return s.excludeSchemaWideFeatures(objects, coverage)
+}
+
+// ownerNameCandidates returns the names an exclusion selector may match for
+// ref, an object of selection's kind.
+//
+// An object of a table, such as a row-security policy, is named through its
+// table, as an index is: "table.object", and "schema.table.object" in the
+// table's schema or the default one. PostgreSQL scopes a policy's name to its
+// table, so `notes.p` and `other.p` are two policies. Offered the policy's
+// name with only its schema, `public.p[type=policy]` would take both, and no
+// selector could name one of them. A whole-kind selector still reaches every
+// such object, since a glob's `*` spans the dots: `*[type=policy]`,
+// `*.*[type=policy]` and `public.*[type=policy]` keep the meaning the Atlas
+// documentation gives them.
+//
+// Any other object is named in its schema, or by its name alone where the
+// selection reads it so.
+func (s *exclusionState) ownerNameCandidates(selection selectext.Selection, ref objectidentity.ID) []string {
+	schema, name := ref.Schema.Authored(), ref.Name.Source
+	switch {
+	case featureselect.OfTable(ref):
+		return s.childNameCandidates(schema, ref.Parent.Source, name)
+	case selection.ByNameAlone(schema):
+		return []string{name}
+	default:
+		return s.nameCandidates(schema, name)
+	}
+}
+
+// noteOwnedObjectSelectors asks the patterns whether they name an owner's
+// object of a table another selector already removed. It records matches and
+// nothing else: [featureselect.Bindings.Select] takes such an object out with
+// its table before [exclusionState.filterOwnerFeatures] could ask, so without
+// this `--exclude notes --exclude 'notes.p[type=policy]'` reports the second
+// selector as naming nothing, which `schema apply` refuses. It is
+// [exclusionState.noteColumnSelectors] for the owners' objects.
+func (s *exclusionState) noteOwnedObjectSelectors(objects schemaext.Objects) {
+	for _, selection := range s.vocabulary.selections.Selections() {
+		if selection.Naming == selectext.SchemaWide {
+			continue
+		}
+		for _, ref := range objects.Refs() {
+			if ref.Kind == objectidentity.Kind(selection.Kind) && featureselect.OfTable(ref) &&
+				s.tableExcluded(ref.Schema.Authored(), ref.Parent.Source) {
+				s.matches(selection.Type, s.ownerNameCandidates(selection, ref)...)
+			}
+		}
+	}
 }
 
 // clearOwnerFields subtracts the fields an exclusion's field selectors name
@@ -97,10 +150,7 @@ func (s *exclusionState) clearOwnerFields(objects schemaext.Objects) (schemaext.
 			if ref.Kind != objectidentity.Kind(selection.Kind) {
 				continue
 			}
-			names := []string{ref.Name.Source}
-			if !selection.ByNameAlone(ref.Schema.Authored()) {
-				names = s.nameCandidates(ref.Schema.Authored(), ref.Name.Source)
-			}
+			names := s.ownerNameCandidates(selection, ref)
 			for _, field := range selection.Fields {
 				if s.matchesField(selection.Type, field, names...) {
 					clears = append(clears, selectext.Clear{Object: ref, Field: field})
