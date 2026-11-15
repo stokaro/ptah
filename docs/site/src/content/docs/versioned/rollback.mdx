@@ -284,7 +284,8 @@ rollback verification failed: shadow database must be distinct from target datab
   applied.
 - A version no migration file names is accepted. The run rolls back every
   applied migration above it and records the newest migration below it as the
-  current version, with `--plan` or without.
+  current version, with `--plan` or without, when no pending migration sits
+  below it. A pending one is handled as the item above says.
 - `--target 0` rolls back everything, returning the database to an empty
   application schema.
 - Rolling back "one step" means targeting the version below the current one —

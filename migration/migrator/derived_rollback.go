@@ -12,6 +12,8 @@ import (
 // target version, rather than from the down bodies of the migrations.
 type DerivedRollback struct {
 	// TargetVersion is the version the rollback takes the database back to.
+	// The revision boundary moves to the newest migration file at or below
+	// it, or to 0 when there is none, so a version no file names is accepted.
 	TargetVersion int64
 	// Versions are the applied migrations above TargetVersion the statements
 	// were derived for, in any order. The statements describe the database at
