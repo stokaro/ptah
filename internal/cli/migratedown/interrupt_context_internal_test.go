@@ -19,7 +19,6 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
-	"ptah.run/internal/cli/cliobs"
 	"ptah.run/migration/migrator"
 )
 
@@ -27,7 +26,7 @@ func TestExecuteRollbackRollsBackUnderALiveCommandContext(t *testing.T) {
 	c := qt.New(t)
 	mig := newAppliedInterruptContextMigrator(c)
 
-	err := executeRollback(interruptContextCommand(context.Background()), rollbackExecution{migrator: mig}, cliobs.NewEmitter(io.Discard, nil))
+	err := executeRollback(interruptContextCommand(context.Background()), rollbackExecution{migrator: mig})
 
 	c.Assert(err, qt.IsNil)
 	status, err := mig.GetMigrationStatus(context.Background())
@@ -44,7 +43,7 @@ func TestExecuteRollbackStopsWhenTheCommandIsCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := executeRollback(interruptContextCommand(ctx), rollbackExecution{migrator: mig}, cliobs.NewEmitter(io.Discard, nil))
+	err := executeRollback(interruptContextCommand(ctx), rollbackExecution{migrator: mig})
 
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	status, err := mig.GetMigrationStatus(context.Background())

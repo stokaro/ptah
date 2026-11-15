@@ -194,7 +194,9 @@ A selector that matches nothing in any state the run reads is handled as one
 from `--exclude`. `schema apply` and `migrations down --plan` execute the plan
 they derive, so they refuse it, a dry run included, unless
 `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1`; the other verbs that take `--exclude`
-warn. The diagnostic names the file that lists the selector, as the
+warn and do not read the variable. `migrations down` reads it on every run,
+with `--plan` or without, so a value that is not a boolean is refused before
+anything is read. The diagnostic names the file that lists the selector, as the
 run spelled the path:
 
 ```text

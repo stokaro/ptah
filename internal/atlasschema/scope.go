@@ -262,15 +262,50 @@ func refuseUnmatchedExclude(selectors []string, sources atlasfilter.ExcludeSourc
 	return UnmatchedExcludeRefusal("schema apply", &atlasfilter.UnmatchedExcludeError{Selectors: selectors, Sources: sources})
 }
 
-// UnmatchedExcludeRefusal is the error a verb that executes a derived plan
-// refuses unmatched with, naming the verb: `schema apply` and
-// `migrations down --plan` give it in the same words. The error wraps
-// unmatched, and it names [atlasfilter.AllowUnmatchedExcludeEnvVar], which the
-// caller resolves before it reads any state.
-func UnmatchedExcludeRefusal(verb string, unmatched *atlasfilter.UnmatchedExcludeError) error {
-	return fmt.Errorf(
+// UnmatchedExcludeRefusal words the [atlasfilter.UnmatchedExcludeError] err
+// carries as the refusal of verb, a verb that executes a derived plan:
+// `schema apply` and `migrations down --plan` give it in the same words. The
+// refusal names [atlasfilter.AllowUnmatchedExcludeEnvVar], which the caller
+// resolves before it reads any state.
+//
+// err may carry other failures beside the refusal, such as a cleanup that
+// failed once the comparison had refused. The result states the refusal
+// first and then each of them, and every one still matches errors.Is and
+// errors.As. An err that carries no such error is returned unchanged.
+func UnmatchedExcludeRefusal(verb string, err error) error {
+	unmatched, ok := errors.AsType[*atlasfilter.UnmatchedExcludeError](err)
+	if !ok {
+		return err
+	}
+	refusal := fmt.Errorf(
 		"%w; %s refuses a selection that protects nothing, set %s=1 to keep the permissive behavior",
 		unmatched, verb, atlasfilter.AllowUnmatchedExcludeEnvVar)
+	beside := besideUnmatched(err)
+	if len(beside) == 0 {
+		return refusal
+	}
+	return errors.Join(append([]error{refusal}, beside...)...)
+}
+
+// besideUnmatched returns the errors of err that do not lead to an
+// [atlasfilter.UnmatchedExcludeError]. A wrapper whose chain ends at that
+// error contributes nothing: its message only frames the refusal, which
+// [UnmatchedExcludeRefusal] words itself.
+func besideUnmatched(err error) []error {
+	if _, ok := errors.AsType[*atlasfilter.UnmatchedExcludeError](err); !ok {
+		return []error{err}
+	}
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() []error }:
+		var beside []error
+		for _, part := range wrapped.Unwrap() {
+			beside = append(beside, besideUnmatched(part)...)
+		}
+		return beside
+	case interface{ Unwrap() error }:
+		return besideUnmatched(wrapped.Unwrap())
+	}
+	return nil
 }
 
 // implicitOnly returns the selectors of implicit that exclude does not write,

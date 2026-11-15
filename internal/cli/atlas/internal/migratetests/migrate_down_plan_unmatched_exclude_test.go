@@ -38,8 +38,7 @@ func TestCompatCommand_MigrateDownPlanUnmatchedExclude_FailurePath(t *testing.T)
 		"--dir", "file://"+migrationsDir, "--to-version", "20260801000001", "--plan",
 		"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"))
 
-	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`error running down migrations: `+
-		`the exclude selection from atlas.hcl matched no objects: "audit_event"; `+
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`the exclude selection from atlas.hcl matched no objects: "audit_event"; `+
 		`migrate down --plan refuses a selection that protects nothing, `+
 		`set PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 to keep the permissive behavior`), qt.Commentf("%s", out))
 	c.Assert(err, qt.ErrorIs, shadow.ErrUnmatchedExclude)

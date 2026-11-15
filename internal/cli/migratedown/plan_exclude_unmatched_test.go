@@ -1,15 +1,19 @@
 package migratedown_test
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/migratedown"
+	"ptah.run/internal/cli/migrateup"
 	"ptah.run/migration/shadow"
 )
 
@@ -19,7 +23,7 @@ import (
 // to drop the table it was written to keep.
 
 // refusedUnmatchedAudit is the refusal for the mistyped selector below.
-const refusedUnmatchedAudit = `error running down migrations: the exclude selection from ptah.yaml ` +
+const refusedUnmatchedAudit = `the exclude selection from ptah.yaml ` +
 	`matched no objects: "external_audt"; migrations down --plan refuses a selection that protects nothing, ` +
 	`set PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 to keep the permissive behavior`
 
@@ -47,15 +51,66 @@ func runPlanDown(c *qt.C, dir, dbPath string, args ...string) (string, error) {
 		"--target", "1", "--plan", "--shadow-db", devURL(c), "--confirm"}, args...)...)
 }
 
+// runPlanDownAnswering is runPlanDown without --confirm: the run asks, and
+// answer is what the operator types.
+func runPlanDownAnswering(c *qt.C, dir, dbPath, answer string) (string, error) {
+	c.Helper()
+	cmd := migratedown.NewMigrateDownCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetIn(strings.NewReader(answer + "\n"))
+	cmd.SetArgs([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", dir,
+		"--target", "1", "--plan", "--shadow-db", devURL(c)})
+	err := cmd.Execute()
+	return out.String(), err
+}
+
+// leavingReplayDir is planExcludeDir whose first migration also creates a
+// TEMP view. The view lives on the connection the replay ran on, and the
+// cleanup of the dev database refuses a connection that holds one, so the
+// planner fails to empty the dev database after it compared the schemas.
+func leavingReplayDir(c *qt.C, project string) (dir, dbPath string) {
+	c.Helper()
+	root := c.TempDir()
+	dir = filepath.Join(root, "migrations")
+	c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
+	for name, body := range map[string]string{
+		"1_parent.sql":      parentUpSQL + "CREATE TEMP VIEW replay_scratch AS SELECT 1;\n",
+		"1_parent.down.sql": parentDownSQL,
+		"2_orphan.sql":      orphanUpSQL,
+	} {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
+	}
+	dbPath = filepath.Join(root, "app.db")
+	up := migrateup.NewMigrateUpCommand()
+	var out bytes.Buffer
+	up.SetOut(&out)
+	up.SetErr(&out)
+	up.SetArgs([]string{"--db-url", "sqlite://" + dbPath, "--migrations-dir", dir})
+	c.Assert(up.Execute(), qt.IsNil, qt.Commentf("%s", out.String()))
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(context.Background(), "CREATE TABLE external_audit (id INTEGER PRIMARY KEY);")
+	c.Assert(err, qt.IsNil)
+	projectDir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "ptah.yaml"), []byte(project), 0o600), qt.IsNil)
+	c.Chdir(projectDir)
+	return dir, dbPath
+}
+
 // TestMigrateDownPlanUnmatchedExclude_HappyPath is the control for the
 // refusal: a selector that names external_audit keeps it, and a project with
 // no selector at all rolls back. The planner leaves the revision tables out
 // with selectors of its own that name nothing here, so the second row also
-// shows they are not refused.
+// shows they are not refused. The list of the selected env replaces the
+// top-level one, so a mistyped top-level selector is not read under it.
 func TestMigrateDownPlanUnmatchedExclude_HappyPath(t *testing.T) {
 	tests := []struct {
 		name       string
 		project    string
+		args       []string
 		wantTables []string
 	}{
 		{
@@ -68,6 +123,12 @@ func TestMigrateDownPlanUnmatchedExclude_HappyPath(t *testing.T) {
 			project:    "migration:\n  connect_timeout: 10s\n",
 			wantTables: []string{"parent", "schema_migrations", "schema_migrations_log"},
 		},
+		{
+			name:       "the env list in place of a mistyped top-level one",
+			project:    "exclude: [external_audt]\nenv:\n  local:\n    exclude: [external_audit]\n",
+			args:       []string{"--env", "local"},
+			wantTables: []string{"external_audit", "parent", "schema_migrations", "schema_migrations_log"},
+		},
 	}
 
 	for _, test := range tests {
@@ -75,7 +136,7 @@ func TestMigrateDownPlanUnmatchedExclude_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			dir, dbPath := planExcludeDir(c, test.project)
 
-			out, err := runPlanDown(c, dir, dbPath)
+			out, err := runPlanDown(c, dir, dbPath, test.args...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 			c.Assert(out, qt.Not(qt.Contains), "matched no objects")
@@ -172,4 +233,107 @@ func TestMigrateDownPlanAllowUnmatchedExclude_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `invalid boolean value "yesplease" for PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`)
 	c.Assert(tableCensus(c, dbPath), qt.DeepEquals, before)
 	c.Assert(recordedVersion(c, dbPath), qt.Equals, int64(2))
+}
+
+// TestMigrateDownPlanUnmatchedExcludeKeepsAFailedCleanup_FailurePath fails
+// the cleanup of the dev database after the comparison refused. The run
+// reports both: the refusal in the words `schema apply` uses, and the
+// database it could not empty.
+func TestMigrateDownPlanUnmatchedExcludeKeepsAFailedCleanup_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir, dbPath := leavingReplayDir(c, "exclude: [external_audt]\n")
+
+	out, err := runPlanDown(c, dir, dbPath)
+
+	c.Assert(err, qt.ErrorIs, shadow.ErrUnmatchedExclude, qt.Commentf("%s", out))
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(refusedUnmatchedAudit+"\n"+
+		`dynamic rollback planning failed: empty the database after the replay: `)+`.*TEMP views exist.*`)
+	c.Assert(recordedVersion(c, dbPath), qt.Equals, int64(2))
+}
+
+// TestMigrateDownPlanUnmatchedExcludeAsksNothing_FailurePath runs without
+// --confirm, and the operator would answer YES. The run refuses before it
+// asks, so nobody is asked to approve a rollback that does not run.
+func TestMigrateDownPlanUnmatchedExcludeAsksNothing_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir, dbPath := planExcludeDir(c, "exclude: [external_audt]\n")
+	before := tableCensus(c, dbPath)
+
+	out, err := runPlanDownAnswering(c, dir, dbPath, "YES")
+
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(refusedUnmatchedAudit))
+	c.Assert(out, qt.Not(qt.Contains), "Type 'YES' to confirm")
+	c.Assert(tableCensus(c, dbPath), qt.DeepEquals, before)
+	c.Assert(recordedVersion(c, dbPath), qt.Equals, int64(2))
+}
+
+// TestMigrateDownPlanAsksAfterTheDerivedPlan_HappyPath runs without
+// --confirm. The derived plan is printed before the prompt, so the operator
+// approves the statements that run, and a declined prompt leaves the target
+// as it was.
+func TestMigrateDownPlanAsksAfterTheDerivedPlan_HappyPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		answer      string
+		wantTables  []string
+		wantVersion int64
+	}{
+		{
+			name:        "approved",
+			answer:      "YES",
+			wantTables:  []string{"external_audit", "parent", "schema_migrations", "schema_migrations_log"},
+			wantVersion: 1,
+		},
+		{
+			name:        "declined",
+			answer:      "no",
+			wantTables:  []string{"external_audit", "orphan", "parent", "schema_migrations", "schema_migrations_log"},
+			wantVersion: 2,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir, dbPath := planExcludeDir(c, "exclude: [external_audit]\n")
+
+			out, err := runPlanDownAnswering(c, dir, dbPath, test.answer)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(out, qt.Matches, `(?s).*Derived rollback plan: 1 statements\n  DROP TABLE "orphan"[^\n]*\n.*Type 'YES' to confirm: .*`)
+			c.Assert(tableCensus(c, dbPath), qt.DeepEquals, test.wantTables)
+			c.Assert(recordedVersion(c, dbPath), qt.Equals, test.wantVersion)
+		})
+	}
+}
+
+// TestMigrateDownAllowUnmatchedExcludeWithoutPlan_FailurePath refuses a
+// malformed opt-in on a rollback that runs the down files and reads no
+// exclude list: the command owns the variable, so every invocation resolves
+// it.
+func TestMigrateDownAllowUnmatchedExcludeWithoutPlan_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir, dbPath := twoMigrationDir(c, childDownSQL)
+	c.Setenv("PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE", "yesplease")
+	before := tableCensus(c, dbPath)
+
+	_, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--target", "1", "--confirm")
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "yesplease" for PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`)
+	c.Assert(tableCensus(c, dbPath), qt.DeepEquals, before)
+	c.Assert(recordedVersion(c, dbPath), qt.Equals, int64(2))
+}
+
+// TestMigrateDownAllowUnmatchedExcludeWithoutPlan_HappyPath is the control:
+// a value that parses leaves the rollback by the down files to run.
+func TestMigrateDownAllowUnmatchedExcludeWithoutPlan_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir, dbPath := twoMigrationDir(c, childDownSQL)
+	c.Setenv("PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE", "1")
+
+	out, err := runDown("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--target", "1", "--confirm")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(tableCensus(c, dbPath), qt.Not(qt.Contains), "child")
+	c.Assert(recordedVersion(c, dbPath), qt.Equals, int64(1))
 }
