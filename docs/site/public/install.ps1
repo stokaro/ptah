@@ -325,7 +325,7 @@ function Assert-PtahSignature {
     # native program's exit status, so the status is read here rather than
     # assumed.
     & cosign verify-blob --bundle $bundle (Join-Path $WorkDir 'checksums.txt') `
-        --certificate-identity-regexp 'github.com/stokaro/ptah' `
+        --certificate-identity "https://github.com/stokaro/ptah/.github/workflows/release.yml@refs/tags/$Tag" `
         --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
     if ($LASTEXITCODE -ne 0) {
         Stop-Ptah 6 'cosign refused the signature on checksums.txt'

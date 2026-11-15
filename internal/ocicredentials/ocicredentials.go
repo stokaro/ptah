@@ -24,6 +24,8 @@ import (
 
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
+
+	"ptah.run/internal/asciihost"
 )
 
 const (
@@ -209,14 +211,17 @@ func (s environmentStore) Get(_ context.Context, serverAddress string) (auth.Cre
 }
 
 // answersFor reports whether the environment credential is offered to this
-// registry, which is every registry unless RegistryEnv narrows it.
+// registry, which is every registry unless RegistryEnv narrows it. A scoped
+// credential is offered only to a registry spelled in printable ASCII, and the
+// names are compared ignoring ASCII case only ([asciihost.Equal]):
+// strings.EqualFold would read a Kelvin sign as "k".
 func (s environmentStore) answersFor(serverAddress string) bool {
 	scope := strings.TrimSpace(s.opts.getenv(RegistryEnv))
 	if scope == "" {
 		return true
 	}
-	return strings.EqualFold(credentials.ServerAddressFromHostname(scope), serverAddress) ||
-		strings.EqualFold(scope, serverAddress)
+	return asciihost.Equal(credentials.ServerAddressFromHostname(scope), serverAddress) ||
+		asciihost.Equal(scope, serverAddress)
 }
 
 func (s environmentStore) Put(_ context.Context, _ string, _ auth.Credential) error {

@@ -17,13 +17,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
 
+	"ptah.run/internal/asciihost"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/sourcearchive"
 	"ptah.run/internal/sourcecontent"
@@ -81,7 +81,9 @@ func IsReference(s string) bool {
 // ParseReference reads an https://host[:port]/path reference. It names the
 // object and nothing else: no credential, query or fragment, since a password
 // in a URL lands in shell history and process lists, and a query is where a
-// signed URL keeps one.
+// signed URL keeps one. The host is printable ASCII, so an internationalized
+// name is written in its xn-- form: a host with another byte has no origin a
+// redirect can be compared with ([asciihost]).
 func ParseReference(raw string) (Reference, error) {
 	parsed, err := dburldisplay.ParseURL(raw)
 	if err != nil {
@@ -99,6 +101,8 @@ func ParseReference(raw string) (Reference, error) {
 			ErrReference, shown.String(), UsernameEnv, PasswordEnv, TokenEnv)
 	case parsed.Host == "" || parsed.Hostname() == "":
 		return Reference{}, fmt.Errorf("%w %q: no host", ErrReference, shown.String())
+	case asciihost.Check(parsed.Hostname()) != nil:
+		return Reference{}, fmt.Errorf("%w %q: the host has a byte outside printable ASCII; write it in its xn-- form", ErrReference, shown.String())
 	case parsed.Path == "" || parsed.Path == "/":
 		return Reference{}, fmt.Errorf("%w %q: no path", ErrReference, shown.String())
 	case parsed.RawQuery != "" || parsed.Fragment != "" || parsed.ForceQuery:
@@ -108,22 +112,14 @@ func ParseReference(raw string) (Reference, error) {
 }
 
 // Origin is the scheme, host and port the reference requests, with the port
-// written out.
+// written out, as [asciihost.Origin] spells it. It is empty for a host
+// ParseReference refuses, which no redirect's origin equals.
 func (r Reference) Origin() string {
-	return origin(r.URL)
-}
-
-func origin(u *url.URL) string {
-	port := u.Port()
-	if port == "" {
-		switch u.Scheme {
-		case "https":
-			port = "443"
-		case "http":
-			port = "80"
-		}
+	origin, err := asciihost.Origin(r.URL)
+	if err != nil {
+		return ""
 	}
-	return strings.ToLower(u.Scheme) + "://" + net.JoinHostPort(strings.ToLower(u.Hostname()), port)
+	return origin
 }
 
 // Credentials authenticate a pull: a username and a password for Basic, or a
@@ -253,20 +249,26 @@ func newClient(o Options) (*http.Client, error) {
 	return &http.Client{Transport: transport, CheckRedirect: redirects(o.Reference, o.Credentials)}, nil
 }
 
-// redirects follows at most maxRedirects redirects, never to http://, and
-// refuses one that leaves the reference's origin while a credential is set:
-// Go would keep the Authorization header on a redirect to a subdomain.
+// redirects follows at most maxRedirects redirects, never to http:// or to a
+// host ParseReference would refuse, and refuses one that leaves the
+// reference's origin while a credential is set: Go would keep the
+// Authorization header on a redirect to a subdomain. The origins are compared
+// by [asciihost.Origin], so the decision is Ptah's own and does not rest on
+// how the client compares hosts before it copies the header.
 func redirects(reference Reference, credentials Credentials) func(*http.Request, []*http.Request) error {
 	from := reference.Origin()
 	credentialed := credentials.present()
 	return func(request *http.Request, via []*http.Request) error {
 		target := request.URL.Scheme + "://" + request.URL.Host
+		to, err := asciihost.Origin(request.URL)
 		switch {
 		case len(via) > maxRedirects:
 			return fmt.Errorf("%w: %s redirected more than %d times", ErrRedirect, reference.Raw, maxRedirects)
 		case request.URL.Scheme != "https":
 			return fmt.Errorf("%w: %s redirected to %s, which is not https://", ErrRedirect, reference.Raw, target)
-		case credentialed && origin(request.URL) != from:
+		case err != nil:
+			return fmt.Errorf("%w: %s redirected to %q, whose host has a byte outside printable ASCII", ErrRedirect, reference.Raw, target)
+		case credentialed && to != from:
 			return fmt.Errorf("%w: %s redirected to %s, another origin, with a credential set", ErrRedirect, reference.Raw, target)
 		}
 		return nil

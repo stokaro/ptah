@@ -193,6 +193,10 @@ shasum -a 256 --ignore-missing -c checksums.txt
 while you downloaded only one archive. Stop if the matching line does not say
 `OK`.
 
+This comparison trusts `checksums.txt` as you downloaded it. To check that the
+release workflow signed that file, verify its signature first, as
+[Verify the release signature](#verify-the-release-signature) shows.
+
 The archive has no top-level directory. Extract it into a temporary directory,
 then install the three binaries by name so `LICENSE` and `README.md` do not land
 in the binary directory.
@@ -240,22 +244,48 @@ held as a repository secret, which is why this is documented rather than solved;
 
 ## Verify the release signature
 
-The release workflow signs `checksums.txt` with Sigstore. After downloading
-`checksums.txt`, `checksums.txt.sig`, and `checksums.txt.pem`, verify the checksum
-file before using it to trust an archive:
+The release workflow signs `checksums.txt` with Sigstore keyless signing. Each
+release publishes the signature, the signing certificate and the transparency
+log entry together as one bundle, `checksums.txt.sigstore.json`. Verifying it
+with [cosign](https://github.com/sigstore/cosign) checks two facts: the file is
+unchanged since it was signed, and the signer was the `release.yml` workflow of
+`stokaro/ptah` running for the tag you name.
+
+Set `TAG` to the release you downloaded, fetch the checksum file and its bundle
+from that release, and verify the checksum file:
 
 ```bash
+TAG=vX.Y.Z
+curl -fsSLO "https://github.com/stokaro/ptah/releases/download/$TAG/checksums.txt"
+curl -fsSLO "https://github.com/stokaro/ptah/releases/download/$TAG/checksums.txt.sigstore.json"
 cosign verify-blob \
-  --certificate checksums.txt.pem \
-  --signature checksums.txt.sig \
-  --certificate-identity-regexp '^https://github.com/stokaro/ptah/' \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/stokaro/ptah/.github/workflows/release.yml@refs/tags/$TAG" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   checksums.txt
 ```
 
-Then run the SHA-256 comparison for the archive. Signature verification and
-archive checksum verification answer different questions; use both when the
-release provenance is part of your trust decision.
+cosign prints `Verified OK` and exits 0. It refuses a checksum file changed
+after signing, a certificate issued to another workflow, repository or tag, and
+a certificate from another OIDC issuer. Stop if it refuses.
+
+Then compare the archive with its line in the verified checksum file. On Linux:
+
+```bash
+sha256sum --ignore-missing -c checksums.txt
+```
+
+On macOS:
+
+```bash
+shasum -a 256 --ignore-missing -c checksums.txt
+```
+
+The signature covers `checksums.txt` only, and the archive is trusted through
+its line in that file, so a release needs both checks. Neither one says what
+the binaries contain or how they were built. The SBOM files describe the
+contents, and each one carries its own `.sigstore.json` bundle, which verifies
+with the same command given the SBOM's file names.
 
 ## Container image
 

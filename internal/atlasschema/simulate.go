@@ -12,6 +12,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -27,6 +28,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolepassword"
+	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/valuecontext"
 	"ptah.run/migration/migrator"
@@ -471,7 +473,7 @@ func rehearseStatementsOnDev(
 	// impossible to write; the lint above is only a lint.
 	return devConn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
 		seed := rehearsalOutside{target: outside, executed: statements}
-		return rehearseOnPreparedDev(ctx, session, baseline, current, seed, targetConn.Info().URL, txMode, statements, runtime)
+		return rehearseOnPreparedDev(ctx, session, baseline, current, seed, targetConn.Info(), txMode, statements, runtime)
 	})
 }
 
@@ -492,7 +494,7 @@ func rehearseOnPreparedDev(
 	baseline devclean.Baseline,
 	current *catalog.Database,
 	outside rehearsalOutside,
-	targetURL string,
+	target catalog.ServerInfo,
 	txMode migrator.MigrationTxMode,
 	statements []string,
 	runtime engine.SchemaRuntime,
@@ -501,7 +503,14 @@ func rehearseOnPreparedDev(
 	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
-	added, err := recreateCurrentSchema(ctx, devConn, current, targetURL, baseline, runtime, outside)
+	// After the reset, which empties the schema the dev session resolves names
+	// in: once moved, that is the target's, which the dev database may not
+	// even hold yet.
+	devConn, reads, err := resolveNamesAsTarget(ctx, devConn, target)
+	if err != nil {
+		return &SimulationError{Stage: "baseline", Err: err}
+	}
+	added, err := recreateCurrentSchema(ctx, devConn, current, target.URL, baseline, runtime, outside, reads)
 	if err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
@@ -516,17 +525,104 @@ func rehearseOnPreparedDev(
 // a namespace inside the database participate: where it names the database
 // itself the two legitimately differ, which is exactly why the plan has to be
 // re-scoped before it is rehearsed.
+//
+// Two realm-scoped connections whose current schemas differ are not refused:
+// each URL claims every schema of its database, so the rehearsal can resolve
+// names on the dev session as the target does; see [resolveNamesAsTarget]. A
+// URL that pins a schema claims that schema alone, and the plan's unqualified
+// names would land in another one, so that pair is refused.
 func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 	if schemaScopeNamesDatabase(targetInfo.Dialect) {
 		return nil
 	}
-	if devInfo.Schema == targetInfo.Schema {
+	if devInfo.Schema == targetInfo.Schema || realmPairResolvesApart(devInfo, targetInfo) {
 		return nil
 	}
 	return fmt.Errorf(
 		"--dev-url schema scope %q does not match --url schema scope %q; point --dev-url at a dev database using the same schema",
 		devInfo.Schema, targetInfo.Schema,
 	)
+}
+
+// resolveNamesAsTarget returns devConn, a pinned dev session, resolving
+// unqualified names as the target does, and the reads the rehearsal makes of
+// it.
+//
+// A plan names an object of the target's current schema without a schema, and
+// so does the baseline rendered from the target's read. On a realm-scoped pair
+// whose current schemas differ, the dev session would create each one in its
+// own current schema: measured on PostgreSQL 18, a role `rebase` resolves to
+// `rebase` in a target that holds that schema and to `public` in a dev
+// database that does not. The session's search path is set to the target's, so
+// the dev database builds the target's state under the target's names, and
+// the plan runs against it as it will run on the target. A pair that resolves
+// alike comes back as it is.
+//
+// The target holds the schema its session resolves to, since current_schema()
+// names only a schema that exists, and the dev database is given it as well.
+// A comparison need not read that schema -- one the desired state declares
+// nothing in is left out -- and without it a search path naming it resolves
+// on the dev database to the next schema: the plan's unqualified CREATE TABLE
+// would be rehearsed in `public` and run on the target in `rebase`. The dev
+// database claimed every schema, so the cleanup drops it with the rest.
+func resolveNamesAsTarget(
+	ctx context.Context,
+	devConn *dbschema.DatabaseConnection,
+	target catalog.ServerInfo,
+) (*dbschema.DatabaseConnection, rehearsalReads, error) {
+	if !realmPairResolvesApart(devConn.Info(), target) {
+		return devConn, urlScopedReads, nil
+	}
+	create := "CREATE SCHEMA IF NOT EXISTS " + sqlident.Ident(target.Dialect, target.Schema)
+	if _, err := devConn.ExecContext(ctx, create); err != nil {
+		return nil, rehearsalReads{}, fmt.Errorf("create the target's current schema %q on the dev database: %w", target.Schema, err)
+	}
+	moved, err := devConn.ResolveNamesAs(ctx, target)
+	if err != nil {
+		return nil, rehearsalReads{}, fmt.Errorf("resolve names on the dev database as the target does: %w", err)
+	}
+	return moved, wholeDevReads, nil
+}
+
+// realmPairResolvesApart reports whether a dev database and a target, both at
+// realm scope on an engine that resolves names along a search path, resolve
+// an unqualified name to different schemas.
+func realmPairResolvesApart(devInfo, targetInfo catalog.ServerInfo) bool {
+	return described(targetInfo.Dialect).Schemas.Selection == descriptor.SchemaSelectionSearchPath &&
+		ConnectionIsRealmScoped(devInfo) && ConnectionIsRealmScoped(targetInfo) &&
+		devInfo.Schema != targetInfo.Schema
+}
+
+// rehearsalReads are the reads a rehearsal makes of its dev session: initial
+// is the state the baseline is planned against, and settled the state read
+// back once the baseline ran.
+type rehearsalReads struct {
+	initial func(context.Context, *dbschema.DatabaseConnection) (*catalog.Database, error)
+	settled func(context.Context, *dbschema.DatabaseConnection) (*catalog.Database, error)
+}
+
+// urlScopedReads read the schemas the dev session's URL scope names.
+var urlScopedReads = rehearsalReads{
+	initial: dbschema.ReadRehearsalSchemaContext,
+	settled: func(ctx context.Context, devConn *dbschema.DatabaseConnection) (*catalog.Database, error) {
+		return dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
+	},
+}
+
+// wholeDevReads read every schema of the dev database. A session that
+// resolves names as the target does is read this way: its current schema is
+// the target's, and a read of that schema alone would leave out the other
+// schemas the target's state is built in.
+var wholeDevReads = rehearsalReads{initial: readWholeDev, settled: readWholeDev}
+
+// readWholeDev reads every schema of the dev session's database.
+func readWholeDev(ctx context.Context, devConn *dbschema.DatabaseConnection) (*catalog.Database, error) {
+	info := devConn.Info()
+	names, err := schemaselection.RealmSchemas(ctx, info.Dialect, info.Capabilities, devConn)
+	if err != nil {
+		return nil, err
+	}
+	return dbschema.ReadSchemaWithSchemasContext(ctx, devConn, names)
 }
 
 // recreateCurrentSchema converges the freshly reset dev database to the
@@ -561,6 +657,8 @@ func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 // a comparison that holds values bound to two databases. What the realm does
 // not read is left out of what it recreates (see
 // [devclean.WithoutUnreadObjects]).
+//
+// reads are how devConn is read; see [resolveNamesAsTarget].
 func recreateCurrentSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
@@ -569,11 +667,12 @@ func recreateCurrentSchema(
 	baseline devclean.Baseline,
 	runtime engine.SchemaRuntime,
 	outside rehearsalOutside,
+	reads rehearsalReads,
 ) ([]devseed.Object, error) {
 	if current == nil {
 		return nil, nil
 	}
-	devCurrent, err := dbschema.ReadRehearsalSchemaContext(readscope.Authored(ctx), devConn)
+	devCurrent, err := reads.initial(readscope.Authored(ctx), devConn)
 	if err != nil {
 		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}
@@ -585,7 +684,7 @@ func recreateCurrentSchema(
 		guard:    devclean.NewBaselineGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState()),
 		executor: devConn.Writer(),
 		read: func(ctx context.Context) (*catalog.Database, error) {
-			return dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), devConn, nil)
+			return reads.settled(readscope.Authored(ctx), devConn)
 		},
 		leftAsFound: baseline.SchemasLeftAsFound(),
 	}

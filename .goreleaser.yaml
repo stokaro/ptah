@@ -112,11 +112,10 @@ sboms:
   - id: source
     artifacts: source
 
-# cosign v3 writes a single Sigstore bundle per artifact (the v2-era
-# --output-signature/--output-certificate pair is no longer the default
-# contract). Verify with:
+# cosign v3 writes one Sigstore bundle per artifact, so a release carries no
+# separate signature and certificate files. Verify with:
 #   cosign verify-blob --bundle <artifact>.sigstore.json <artifact> \
-#     --certificate-identity-regexp 'github.com/stokaro/ptah' \
+#     --certificate-identity https://github.com/stokaro/ptah/.github/workflows/release.yml@refs/tags/<tag> \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 signs:
   - id: checksums

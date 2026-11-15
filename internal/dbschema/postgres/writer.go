@@ -393,6 +393,12 @@ type postgresCleanupCapabilities struct {
 	inspectDatabaseArtifacts         bool
 	cleanupLargeObjects              bool
 	preservePublicSchema             bool
+	// readsSchemaOwnership reports that the catalog answers whether the
+	// connecting role owns a schema, through pg_has_role, so a realm cleanup
+	// can empty in place a kept schema it may not drop; see
+	// [schemasNotDroppable]. CockroachDB keeps its public schema in place
+	// whoever owns it, and is not asked.
+	readsSchemaOwnership bool
 	// showDefaultPrivileges reads the default privileges to revoke through
 	// SHOW DEFAULT PRIVILEGES rather than pg_default_acl, which is what
 	// CockroachDB needs; see [pgdefaultacl.ReadRevokesFromShow].
@@ -457,6 +463,7 @@ func inspectCleanupCapabilities(
 			retryFailedDDL:           true,
 			inspectPartitionEdges:    true,
 			inspectDatabaseArtifacts: true,
+			readsSchemaOwnership:     true,
 			protectedDatabases:       protectedYugabyteDatabases,
 			systemExtensions:         cleanupSystemExtensions(platform.YugabyteDB),
 		}, nil
@@ -468,6 +475,7 @@ func inspectCleanupCapabilities(
 			inspectPartitionEdges:    true,
 			inspectDatabaseArtifacts: isPostgreSQL,
 			cleanupLargeObjects:      isPostgreSQL,
+			readsSchemaOwnership:     true,
 			protectedDatabases:       protectedPostgresDatabases,
 			systemExtensions:         cleanupSystemExtensions(platform.Postgres),
 		}, nil
@@ -606,11 +614,17 @@ type postgresDatabaseCleanupPlan struct {
 	// finished leaves the schemas they are set in to
 	// [PostgreSQLWriter.verifyKeptDefaultPrivileges].
 	keptDefaultPrivileges dbreset.DefaultPrivileges
-	// inPlaceSchemas are the schemas a kept extension is installed in. The
-	// cleanup empties them where they stand instead of dropping and
-	// recreating them: DROP SCHEMA is refused while the extension depends on
-	// the schema.
+	// inPlaceSchemas are the schemas the cleanup empties where they stand
+	// instead of dropping and recreating them: one a kept extension is
+	// installed in, since DROP SCHEMA is refused while the extension depends
+	// on it; a root schema holding a kept default privilege, which recreating
+	// it would drop; and a kept schema the connecting role does not own,
+	// which DROP SCHEMA refuses to that role (see [schemasNotDroppable]).
 	inPlaceSchemas []string
+	// notOwned are the in-place schemas the connecting role does not own.
+	// The cleanup checks that each still has its claimed state rather than
+	// setting it, which only the owner may do.
+	notOwned []undroppableSchema
 	// untouched are the schemas the cleanup leaves as they are, contents and
 	// all. They are not in schemas, and the check that the cleanup finished
 	// does not look at them.
@@ -1976,7 +1990,10 @@ func (w *PostgreSQLWriter) DropDatabaseRealm(ctx context.Context) error {
 // empties in place is returned to it, so what a run changed on the schema
 // itself -- its owner, a privilege, its comment -- does not reach the next
 // run. A schema the claim recorded nothing for is created again as it was
-// when the cleanup started.
+// when the cleanup started. A kept schema the connecting role does not own,
+// which it may not drop, is emptied in place and checked against its state
+// rather than set to it; see [schemasNotDroppable] for that case and the one
+// the cleanup refuses.
 //
 // kept.Server says whose server the database is on. A cleanup on a
 // [dbreset.NamedServer], the zero value, refuses the server's default user
@@ -2225,6 +2242,15 @@ func rejectProtectedPostgresDatabase(
 // foreign server yb_global_views_server that way, with OID 13543, in every
 // database, and counted, it refuses every cleanup on that line
 // (stokaro/ptah#3693).
+//
+// User mappings are read through the view pg_user_mappings rather than the
+// catalog pg_user_mapping: only a superuser may read the catalog, so a dev
+// database claimed by an ordinary role fails the whole query with SQLSTATE
+// 42501, while the view shows every mapping to every role and hides only the
+// options. For the same reason a subscription is not filtered by OID:
+// PostgreSQL 13 grants an ordinary role a fixed list of pg_subscription
+// columns that leaves out oid, and initdb creates no subscription for the
+// filter to leave out.
 const databaseScopedArtifactsQuery = `
 		WITH database_scoped_artifacts AS (
 			SELECT
@@ -2238,8 +2264,7 @@ const databaseScopedArtifactsQuery = `
 				'subscription',
 				subscription.subname
 			FROM pg_subscription subscription
-			WHERE subscription.oid >= 16384
-			  AND subscription.subdbid = (
+			WHERE subscription.subdbid = (
 				SELECT database.oid
 				FROM pg_database database
 				WHERE database.datname = current_database()
@@ -2305,17 +2330,16 @@ const databaseScopedArtifactsQuery = `
 				format(
 					'%s@%s',
 					COALESCE(role.rolname, 'PUBLIC'),
-					server.srvname
+					mapping.srvname
 				)
-			FROM pg_user_mapping mapping
+			FROM pg_user_mappings mapping
 			LEFT JOIN pg_roles role ON role.oid = mapping.umuser
-			JOIN pg_foreign_server server ON server.oid = mapping.umserver
-			WHERE mapping.oid >= 16384
+			WHERE mapping.umid >= 16384
 			  AND NOT EXISTS (
 				SELECT 1
 				FROM pg_depend dependency
 				WHERE dependency.classid = 'pg_user_mapping'::regclass
-				  AND dependency.objid = mapping.oid
+				  AND dependency.objid = mapping.umid
 				  AND dependency.deptype = 'e'
 			)
 		)
@@ -2670,6 +2694,13 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 	if slices.ContainsFunc(keptDefaults.Rows, func(row pgdefaultacl.Row) bool { return row.Schema == w.schema }) {
 		inPlaceSchemas = appendUniqueString(inPlaceSchemas, w.schema)
 	}
+	notOwned, err := w.notOwnedRealmSchemas(ctx, tx, capabilities, schemas)
+	if err != nil {
+		return postgresDatabaseCleanupPlan{}, err
+	}
+	for _, schema := range notOwned {
+		inPlaceSchemas = appendUniqueString(inPlaceSchemas, schema.name)
+	}
 	objects, err := w.collectAllObjects(ctx, tx, scope, capabilities)
 	if err != nil {
 		return postgresDatabaseCleanupPlan{}, err
@@ -2689,6 +2720,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 		keptExtensions:        keptExtensions,
 		keptDefaultPrivileges: keptDefaults,
 		inPlaceSchemas:        inPlaceSchemas,
+		notOwned:              notOwned,
 		untouched:             untouched,
 	}, nil
 }
@@ -2744,7 +2776,19 @@ func (w *PostgreSQLWriter) executeDatabaseRealmCleanup(
 	}
 	// A schema emptied in place keeps what the run changed on it unless it is
 	// returned to its claimed state, as one dropped is created again with it.
+	// One the connecting role does not own is checked instead: GRANT and
+	// REVOKE by a role that holds no grant option warn rather than fail, so
+	// returned by that role the schema would read as returned and keep the
+	// change.
 	for _, schema := range inPlace {
+		if position := slices.IndexFunc(plan.notOwned, func(unowned undroppableSchema) bool {
+			return unowned.name == schema
+		}); position >= 0 {
+			if err := verifyUnownedPostgresSchema(ctx, tx, plan.claimed, schema, plan.notOwned[position].owner); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if err := returnPostgresSchema(ctx, tx, plan.claimed, schema); err != nil {
 			return nil, err
 		}
@@ -2833,6 +2877,103 @@ func collectCleanupSchemas(
 		FROM pg_namespace n
 		WHERE `+pgsystemschema.PostgresDescribedSchemasPredicate(dialect, caps)+`
 		ORDER BY n.nspname`)
+}
+
+// notOwnedRealmSchemas returns the schemas a realm cleanup keeps, of the ones
+// it would drop and create again, that the connecting role may not drop; see
+// [schemasNotDroppable]. It refuses one the role holds a grant option on. A
+// server whose catalog cannot answer is not asked, and answers none.
+func (w *PostgreSQLWriter) notOwnedRealmSchemas(
+	ctx context.Context,
+	tx cleanupConn,
+	capabilities postgresCleanupCapabilities,
+	schemas []string,
+) ([]undroppableSchema, error) {
+	if !capabilities.readsSchemaOwnership || !w.caps.Has(capability.PostgresCatalogFunctions) {
+		return nil, nil
+	}
+	recreated := slices.DeleteFunc(slices.Compact([]string{w.schema, "public"}), func(schema string) bool {
+		return !slices.Contains(schemas, schema)
+	})
+	notDroppable, err := schemasNotDroppable(ctx, tx, recreated)
+	if err != nil {
+		return nil, err
+	}
+	for _, schema := range notDroppable {
+		if schema.grantable {
+			return nil, fmt.Errorf(
+				"refusing to clean PostgreSQL database realm: schema %q is owned by %q, not by the connecting "+
+					"role, and the role holds a grant option on it; the cleanup cannot drop the schema or take back "+
+					"what a run grants on it, so connect as %q or revoke the grant option",
+				schema.name, schema.owner, schema.owner,
+			)
+		}
+	}
+	return notDroppable, nil
+}
+
+// schemasNotDroppable returns which of schemas the connecting role may not
+// drop, sorted: those it does not own, directly or through a role whose
+// privileges it has. A superuser owns every schema in this sense.
+//
+// A realm cleanup keeps the root schema and "public", and empties one of them
+// in place when this lists it, then checks that it still has the owner,
+// privileges and comment the claim recorded. Dropped and created again, it failed every
+// cleanup: on PostgreSQL 13 and 14 the bootstrap superuser owns "public" in
+// every new database, also one created with OWNER, so an ordinary role that
+// owns a dev database is refused `must be owner of schema public` (SQLSTATE
+// 42501). PostgreSQL 15 gives "public" to pg_database_owner, which the
+// database owner holds, and lists nothing here.
+//
+// Emptying in place needs no right the drop did not. The objects in the
+// schema are the run's, since the claim judged the realm clean, so the role
+// owns them. A role that does not own the schema cannot change its owner or
+// comment, and can change its privileges only through a grant option, which
+// each listed schema reports: the cleanup refuses a schema the role holds one
+// on before it drops anything, since the first cleanup of a run comes before
+// the run's first statement, and it could not take back what a run grants
+// there.
+func schemasNotDroppable(ctx context.Context, tx cleanupConn, schemas []string) ([]undroppableSchema, error) {
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			n.nspname,
+			pg_get_userbyid(n.nspowner),
+			has_schema_privilege(n.oid, 'USAGE WITH GRANT OPTION')
+				OR has_schema_privilege(n.oid, 'CREATE WITH GRANT OPTION')
+		FROM pg_namespace n
+		WHERE n.nspname IN (`+postgresPlaceholders(len(schemas))+`)
+		  AND NOT pg_has_role(n.nspowner, 'USAGE')
+		ORDER BY n.nspname`, stringsToAny(schemas)...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the owners of PostgreSQL schemas %q: %w", schemas, err)
+	}
+	defer rows.Close()
+
+	var listed []undroppableSchema
+	for rows.Next() {
+		var schema undroppableSchema
+		if err := rows.Scan(&schema.name, &schema.owner, &schema.grantable); err != nil {
+			return nil, fmt.Errorf("failed to scan the owner of a PostgreSQL schema: %w", err)
+		}
+		listed = append(listed, schema)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate the owners of PostgreSQL schemas %q: %w", schemas, err)
+	}
+	return listed, nil
+}
+
+// undroppableSchema is a schema the connecting role may not drop; see
+// [schemasNotDroppable].
+type undroppableSchema struct {
+	name  string
+	owner string
+	// grantable reports that the connecting role holds a grant option on the
+	// schema, directly or through a role whose privileges it has.
+	grantable bool
 }
 
 func queryUserSchemas(ctx context.Context, tx cleanupConn, query string) ([]string, error) {
@@ -3020,6 +3161,34 @@ func returnPostgresSchema(ctx context.Context, tx *sql.Tx, claimed []dbreset.Sch
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("failed to return schema %q to its claimed state: %w", schema, err)
 		}
+	}
+	return nil
+}
+
+// verifyUnownedPostgresSchema checks that schema, which a cleanup emptied in
+// place and the connecting role does not own, has the owner, access list and
+// comment claimed records for it. A schema the claim recorded nothing for is
+// not checked.
+func verifyUnownedPostgresSchema(
+	ctx context.Context,
+	tx *sql.Tx,
+	claimed []dbreset.SchemaState,
+	schema, owner string,
+) error {
+	position := slices.IndexFunc(claimed, func(state dbreset.SchemaState) bool { return state.Name == schema })
+	if position < 0 {
+		return nil
+	}
+	current, err := capturePostgresSchemaMetadata(ctx, tx, schema)
+	if err != nil {
+		return err
+	}
+	if restore := pgschemastate.Return(claimed[position], current.state); len(restore) > 0 {
+		return fmt.Errorf(
+			"PostgreSQL database realm cleanup cannot return schema %q to its claimed state: "+
+				"%q owns it, not the connecting role; as %q or a superuser, run: %s",
+			schema, owner, owner, strings.Join(restore, "; "),
+		)
 	}
 	return nil
 }

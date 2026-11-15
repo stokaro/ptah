@@ -125,10 +125,13 @@ it, the system's roots are used. TLS 1.2 or later is required, and no flag
 turns verification off. The transport reads `HTTPS_PROXY` and `NO_PROXY` from
 the environment.
 
-A pull follows up to 10 redirects, never to `http://`. While a credential is
-set, a redirect to another origin (scheme, host and port) is refused, so the
-credential is never sent to a server it was not meant for. Without a
-credential, such a redirect is followed, and the digest still pins the bytes.
+A pull follows up to 10 redirects, never to `http://` and never to a host
+with a byte outside printable ASCII. While a credential is set, a redirect to
+another origin (scheme, host and port) is refused, so the credential is never
+sent to a server it was not meant for. Hosts are compared ignoring ASCII case
+only: Unicode case folding reads `gİthub.com` as `github.com`, while the
+connection goes to `xn--github-qyd.com`. Without a credential, a redirect to
+another origin is followed, and the digest still pins the bytes.
 
 ## What a pull refuses
 
@@ -136,6 +139,8 @@ The URL and the request:
 
 - an `http://` URL, a URL with a user, a query or a fragment, and one with no
   path;
+- a host with a byte outside printable ASCII; write an internationalized name
+  in its `xn--` form;
 - a status other than `200`, named in the message; the response body is never
   printed;
 - a `Content-Encoding` other than identity: the digest names the bytes as

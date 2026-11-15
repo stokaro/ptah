@@ -133,11 +133,14 @@ func bearer(next http.Handler) http.Handler {
 	})
 }
 
-// redirects sends /old to target and serves next everywhere else.
+// redirects sends /old to target and serves next everywhere else. Location
+// carries target byte for byte: http.Redirect would percent-escape a
+// non-ASCII host, and a row needs the raw bytes as well as the escape.
 func redirects(target string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/old" {
-			http.Redirect(w, r, target, http.StatusFound)
+			w.Header().Set("Location", target)
+			w.WriteHeader(http.StatusFound)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -291,6 +294,16 @@ func TestFetch_FailurePath(t *testing.T) {
 			is:          httpsource.ErrRedirect, says: `redirect refused: .* redirected to https://127.0.0.1:\d+, another origin, with a credential set`},
 		{name: "a redirect to http://", handler: redirects(plain.URL+"/schema", serves(schema)), path: "/old", body: schema,
 			is: httpsource.ErrRedirect, says: `redirect refused: .* redirected to http://127.0.0.1:\d+, which is not https://`},
+		// No credential is set, so only the host decides: strings.ToLower
+		// reads it as github.com, and the transport would dial
+		// xn--github-qyd.com.
+		{name: "a redirect to a host with U+0130", handler: redirects("https://gİthub.com/schema", serves(schema)), path: "/old", body: schema,
+			is: httpsource.ErrRedirect, says: `redirect refused: .* redirected to "https://gİthub.com", whose host has a byte outside printable ASCII`},
+		{name: "a redirect to a host with U+0130 percent-escaped", handler: redirects("https://g%C4%B0thub.com/schema", serves(schema)), path: "/old", body: schema,
+			is: httpsource.ErrRedirect, says: `redirect refused: .* redirected to "https://gİthub.com", whose host has a byte outside printable ASCII`},
+		{name: "a redirect to a host with U+0130, with a credential", handler: redirects("https://gİthub.com/schema", serves(schema)), path: "/old", body: schema,
+			credentials: httpsource.Credentials{Token: token},
+			is:          httpsource.ErrRedirect, says: `redirect refused: .* redirected to "https://gİthub.com", whose host has a byte outside printable ASCII`},
 		{name: "more than ten redirects", handler: redirectsForever(), path: "/0", body: schema,
 			is: httpsource.ErrRedirect, says: `redirect refused: .* redirected more than 10 times`},
 		// The archive would be refused for its entry names, and is refused
@@ -470,6 +483,7 @@ func TestParseReference_HappyPath(t *testing.T) {
 		{raw: "https://artifacts.example.com/inventory/1.4.0/schema", origin: "https://artifacts.example.com:443"},
 		{raw: "https://Artifacts.Example.com:8443/orders.tar.gz", origin: "https://artifacts.example.com:8443"},
 		{raw: "https://[2001:db8::1]/orders.zip", origin: "https://[2001:db8::1]:443"},
+		{raw: "https://xn--github-qyd.com/orders.zip", origin: "https://xn--github-qyd.com:443"},
 	}
 	for _, test := range tests {
 		t.Run(test.raw, func(t *testing.T) {
@@ -495,6 +509,11 @@ func TestParseReference_FailurePath(t *testing.T) {
 		{name: "a user alone", raw: "https://deploy@artifacts.example.com/schema.hcl", says: `.*put the credential in .*`},
 		{name: "no host", raw: "https:///schema.hcl", says: `.*no host`},
 		{name: "a port and no host", raw: "https://:443/schema.hcl", says: `.*no host`},
+		// strings.ToLower reads gİthub.com as github.com, and the transport
+		// dials xn--github-qyd.com.
+		{name: "U+0130 in the host", raw: "https://gİthub.com/schema.hcl",
+			says: `invalid HTTPS reference "https://g%C4%B0thub.com/schema.hcl": the host has a byte outside printable ASCII; write it in its xn-- form`},
+		{name: "U+0130 percent-escaped in the host", raw: "https://g%C4%B0thub.com/schema.hcl", says: `.*the host has a byte outside printable ASCII.*`},
 		{name: "no path", raw: "https://artifacts.example.com", says: `.*no path`},
 		{name: "the root", raw: "https://artifacts.example.com/", says: `.*no path`},
 		{name: "a query", raw: "https://artifacts.example.com/schema.hcl?X-Amz-Signature=abc", says: `.*no query or fragment`},
