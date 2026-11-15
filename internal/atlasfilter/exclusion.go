@@ -10,7 +10,9 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
+	"ptah.run/internal/featureselect"
 	"ptah.run/internal/readscope"
+	"ptah.run/internal/schemaselection"
 )
 
 // Exclusion is the exclude selectors of one migration comparison, applied the
@@ -82,24 +84,61 @@ func (e Exclusion) ReadContext(ctx context.Context) context.Context {
 	return readscope.Without(ctx, KindsLeftOut(e.selections, e.patterns, nil)...)
 }
 
+// Naming is how one filtered state names its objects to an exclude pattern.
+//
+// Both fields have to be stated, because they answer different questions:
+// DefaultSchema says where an unqualified object lives, and RealmRelative says
+// what a pattern's leading segment names. Every side of one comparison takes
+// the same RealmRelative, or one list of selectors names different objects on
+// each side.
+type Naming struct {
+	// DefaultSchema owns the objects the state leaves unqualified: the
+	// connection's schema, or the one the desired state declares.
+	DefaultSchema string
+	// RealmRelative counts a pattern from the realm, so `public.notes.body`
+	// names a column, rather than from DefaultSchema, where the schema slot is
+	// filled and the same pattern has one part too many. It is
+	// [Scope.RealmRelativePatterns] for a caller that holds no Scope.
+	RealmRelative bool
+}
+
+// ConnectionNaming is the Naming of a state read over the connection info
+// describes: info.Schema owns what the read leaves unqualified, and a URL that
+// names no schema describes the realm, so its patterns are realm-relative.
+// It is the count `schema apply`, `schema inspect` and `migrate diff` take
+// from the same URL, so one selector list serves all of them.
+func ConnectionNaming(info catalog.ServerInfo) Naming {
+	return Naming{
+		DefaultSchema: info.Schema,
+		RealmRelative: schemaselection.Realm(info.Dialect, info.URL, info.Schema),
+	}
+}
+
+// patternScope is the schema a pattern's parts are counted against: nothing
+// when the patterns are realm-relative.
+func (n Naming) patternScope() string {
+	if n.RealmRelative {
+		return ""
+	}
+	return n.DefaultSchema
+}
+
 // Desired returns a copy of db without the objects the selectors name, as
-// [ExcludeGeneratedReport] filters it. defaultSchema owns the objects db
-// leaves unqualified, and is the connection's default schema.
-func (e Exclusion) Desired(db *schemamodel.Database, defaultSchema string) (*schemamodel.Database, ExcludeReport, error) {
+// [ExcludeGeneratedReport] filters it, counting each pattern as naming says.
+func (e Exclusion) Desired(db *schemamodel.Database, naming Naming) (*schemamodel.Database, ExcludeReport, error) {
 	if !e.Excludes() {
 		return db, ExcludeReport{}, nil
 	}
-	return ExcludeGeneratedReport(e.selections, db, e.patterns, defaultSchema)
+	return excludeGenerated(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, featureselect.Bindings{})
 }
 
 // Observed returns a copy of db without the objects the selectors name, as
-// [ExcludeDatabaseReport] filters it. defaultSchema owns the objects the read
-// left unqualified, and is the connection's default schema.
-func (e Exclusion) Observed(db *catalog.Database, defaultSchema string) (*catalog.Database, ExcludeReport, error) {
+// [ExcludeDatabaseReport] filters it, counting each pattern as naming says.
+func (e Exclusion) Observed(db *catalog.Database, naming Naming) (*catalog.Database, ExcludeReport, error) {
 	if !e.Excludes() {
 		return db, ExcludeReport{}, nil
 	}
-	return ExcludeDatabaseReport(e.selections, db, e.patterns, defaultSchema)
+	return excludeDatabase(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, featureselect.Bindings{})
 }
 
 // ReportUnmatched writes one warning to w naming the selectors that matched

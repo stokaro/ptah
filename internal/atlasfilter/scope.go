@@ -101,10 +101,7 @@ type Scope struct {
 // patternScopeSchema is the schema an exclude pattern's parts are counted
 // against: nothing on a realm-scoped run, the connection's schema otherwise.
 func (s Scope) patternScopeSchema() string {
-	if s.RealmRelativePatterns {
-		return ""
-	}
-	return s.DefaultSchema
+	return Naming{DefaultSchema: s.DefaultSchema, RealmRelative: s.RealmRelativePatterns}.patternScope()
 }
 
 // Positive reports whether the scope carries a positive selection. A scope

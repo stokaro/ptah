@@ -28,7 +28,6 @@ import (
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/schemascope"
-	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/timescale"
 	"ptah.run/internal/unmodelednote"
@@ -479,9 +478,9 @@ func describesSchemas(info catalog.ServerInfo, opts InspectOptions) bool {
 //
 // It is the question [ptah.run/internal/atlasfilter.Scope]'s
 // RealmRelativePatterns answers, asked from the connection every surface
-// already holds. Spelled once so that `schema inspect`, `schema apply` and
-// `schema clean` cannot end up counting the same exclude pattern three
-// different ways.
+// already holds. Spelled once, by [atlasfilter.ConnectionNaming], so that
+// `schema inspect`, `schema apply`, `schema clean` and `migrate diff` cannot
+// end up counting the same exclude pattern different ways.
 func ConnectionIsRealmScoped(info catalog.ServerInfo) bool {
-	return schemaselection.Realm(info.Dialect, info.URL, info.Schema)
+	return atlasfilter.ConnectionNaming(info).RealmRelative
 }

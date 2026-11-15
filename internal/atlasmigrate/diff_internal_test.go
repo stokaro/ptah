@@ -110,7 +110,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 			}
 
 			_, _, err := compareReplayedState(
-				c.Context(), conn, runtime, nil, conn.Info().Schema,
+				c.Context(), conn, runtime, nil, atlasfilter.Naming{DefaultSchema: conn.Info().Schema},
 				&schemamodel.Database{FeatureCoverage: must.Must(sqlitetable.VirtualCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))},
 				devclean.Baseline{}, must.Must(atlasfilter.NewExclusion(selectedRuntime(c), tt.exclude)), nil, nil, tt.policy, selectedRuntime(c),
 			)
@@ -155,7 +155,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 	}
 
 	replayed, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, schemas, "public", desired, devclean.Baseline{}, atlasfilter.Exclusion{}, nil, nil,
+		c.Context(), conn, runtime, schemas, atlasfilter.Naming{DefaultSchema: "public"}, desired, devclean.Baseline{}, atlasfilter.Exclusion{}, nil, nil,
 		atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
@@ -183,7 +183,7 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	diagnostics := &bytes.Buffer{}
 
 	_, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, nil, conn.Info().Schema,
+		c.Context(), conn, runtime, nil, atlasfilter.Naming{DefaultSchema: conn.Info().Schema},
 		&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "order_seq"}}},
 		devclean.Baseline{}, atlasfilter.Exclusion{}, diagnostics, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)

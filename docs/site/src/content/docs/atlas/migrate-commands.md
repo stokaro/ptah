@@ -1312,6 +1312,14 @@ PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE='*[type=policy]' ptah-compat migrate diff add_or
 
 Strict mode refuses the variable; the `exclude` list works in both profiles.
 
+The dev URL decides how a selector is counted, as the URL does on `schema
+apply`. A PostgreSQL dev URL without `search_path` describes the whole realm,
+so `public.notes.search_vector` names the `search_vector` column of
+`public.notes`. A dev URL with `search_path=public` fills the schema slot, so
+the same column is `notes.search_vector` and the three-part spelling is
+refused. One selector list therefore serves `migrate diff` and `schema apply`
+when both commands get URLs of the same kind.
+
 Use an Atlas migration directory as the desired state:
 
 ```bash
