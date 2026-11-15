@@ -35,11 +35,22 @@ func Tables(objects schemaext.Objects, coverage schemaext.Coverage, keepTable fu
 // names a `public` table, and a scope that keeps the table leaves the policy
 // out.
 func keepOwned(ref objectidentity.ID, keepTable func(schema, table string) bool) bool {
-	if !ref.Parent.Empty() {
+	if OfTable(ref) {
 		return keepTable(ref.Schema.Authored(), ref.Parent.Source)
 	}
 	if ref.Kind == objectidentity.KindTable {
 		return keepTable(ref.Schema.Authored(), ref.Name.Source)
 	}
 	return true
+}
+
+// OfTable reports whether ref is an object of a table, such as a policy on
+// one: an identity with a parent. [Tables] and [Bindings.Select] keep it or
+// leave it out with that table, so a scope that has selected through them
+// has decided it. A positive selection must not ask its selectors to name
+// the object again: an include names a table's children only through the
+// table, and offering a child's own name to the selectors drops it from a
+// table the selection keeps.
+func OfTable(ref objectidentity.ID) bool {
+	return !ref.Parent.Empty()
 }

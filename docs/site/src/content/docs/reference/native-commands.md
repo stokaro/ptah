@@ -410,6 +410,14 @@ selection leaves out is refused with exit `2`, and the diagnostic names both. An
 account that cannot see a whole kind on MySQL or MariaDB
 [can leave the kind out](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind).
 
+`--include` names tables, views and the other top-level objects. A table it
+selects keeps its columns, indexes, constraints, triggers, comments and grants
+on both sides, and on PostgreSQL its row-level security policies and its
+`ENABLE` and `FORCE` switches too. A change to any of them is reported and
+applied the same way as without `--include`. A child cannot be selected on its
+own: `--include 'notes_owner[type=policy]'` is refused with exit `2`, and
+`--include notes_owner` names no object, so it is refused with exit `2` too.
+
 `ptah migrations plan` and `ptah migrations generate` take `--exclude` with the
 same meaning. The selection reaches the desired schema, the current state read
 from the database or replayed from the migration directory, and the shadow
