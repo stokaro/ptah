@@ -3183,10 +3183,11 @@ func verifyUnownedPostgresSchema(
 	if err != nil {
 		return err
 	}
-	if len(pgschemastate.Return(claimed[position], current.state)) > 0 {
+	if restore := pgschemastate.Return(claimed[position], current.state); len(restore) > 0 {
 		return fmt.Errorf(
-			"PostgreSQL database realm cleanup cannot return schema %q to its claimed state: %q owns it, not the connecting role",
-			schema, owner,
+			"PostgreSQL database realm cleanup cannot return schema %q to its claimed state: "+
+				"%q owns it, not the connecting role; as %q or a superuser, run: %s",
+			schema, owner, owner, strings.Join(restore, "; "),
 		)
 	}
 	return nil

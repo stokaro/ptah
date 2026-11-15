@@ -158,8 +158,9 @@ func TestWriterDropDatabaseRealmKeeping_LiveRefusesAPublicTheRoleCannotReturn(t 
 		err = writer.DropDatabaseRealmKeeping(ctx, dbreset.Kept{SchemaStates: states})
 
 		c.Assert(err, qt.ErrorMatches, fmt.Sprintf(
-			`PostgreSQL database realm cleanup cannot return schema "public" to its claimed state: %q owns it, not the connecting role`,
-			database.adminName,
+			`PostgreSQL database realm cleanup cannot return schema "public" to its claimed state: `+
+				`%q owns it, not the connecting role; as %q or a superuser, run: COMMENT ON SCHEMA "public" IS .*`,
+			database.adminName, database.adminName,
 		))
 		c.Assert(postgresWriterLiveRelationCount(c, ctx, database.admin, "public"), qt.Equals, 2)
 	})
