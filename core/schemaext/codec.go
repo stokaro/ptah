@@ -208,16 +208,24 @@ func registerCodec(owned OwnedCodec) (codecKey, registeredCodec, error) {
 	}, nil
 }
 
-// definitionDigests memoizes [definitionRef.digest] by definition text. A codec
-// definition is a constant of its owner, and a runtime is assembled from the
-// same definitions many times in one process.
-var definitionDigests sync.Map
+// definitions interns every codec definition text this process accepted. A
+// definition is a constant of its owner, and a process assembles a runtime from
+// the same definitions many times, so each text is checked, copied and digested
+// once per process rather than once per registry. Acceptance and the digest are
+// functions of the text alone, so a shared entry carries nothing from one
+// registry into another; a refused text is never interned and is checked again
+// each time it is registered.
+var definitions struct {
+	mu     sync.RWMutex
+	byText map[string]*definitionRef
+}
 
 // definitionRef is a codec definition that was checked when the codec was
-// registered and is digested when a digest is first asked for. Registering a
-// codec happens for every codec of every provider in every process, while only
-// an encode, a decode or a listing needs the digest, so canonicalizing each
-// definition at registration allocated megabytes no command used.
+// first registered and is digested when a digest is first asked for. Registering
+// a codec happens for every codec of every provider in every process, while only
+// an encode, a decode or a listing needs the digest; canonicalizing each
+// definition at registration would allocate megabytes no command uses. One
+// definitionRef serves every registry of the process that registers its text.
 type definitionRef struct {
 	text   string
 	once   sync.Once
@@ -225,8 +233,11 @@ type definitionRef struct {
 }
 
 // newDefinitionRef refuses a definition that [CanonicalJSON] refuses or that is
-// not a nonempty object, and keeps its text for [definitionRef.digest].
+// not a nonempty object, and returns the process's entry for its text.
 func newDefinitionRef(definition json.RawMessage) (*definitionRef, error) {
+	if known := internedDefinition(definition); known != nil {
+		return known, nil
+	}
 	if !canonicalizable(definition) {
 		// CanonicalJSON repeats the check to produce the refusal text.
 		if _, err := CanonicalJSON(definition); err != nil {
@@ -236,7 +247,31 @@ func newDefinitionRef(definition json.RawMessage) (*definitionRef, error) {
 	if !isNonemptyObject(definition) {
 		return nil, fmt.Errorf("%w: definition must be a nonempty object", ErrInvalidCodec)
 	}
-	return &definitionRef{text: string(definition)}, nil
+	return internDefinition(string(definition)), nil
+}
+
+// internedDefinition returns the entry for a text the process already
+// accepted, and nil for any other. The lookup copies nothing.
+func internedDefinition(definition []byte) *definitionRef {
+	definitions.mu.RLock()
+	defer definitions.mu.RUnlock()
+	return definitions.byText[string(definition)]
+}
+
+// internDefinition returns the entry for an accepted text, adding it when no
+// registration has added it yet.
+func internDefinition(text string) *definitionRef {
+	definitions.mu.Lock()
+	defer definitions.mu.Unlock()
+	if known, found := definitions.byText[text]; found {
+		return known
+	}
+	if definitions.byText == nil {
+		definitions.byText = make(map[string]*definitionRef)
+	}
+	entry := &definitionRef{text: text}
+	definitions.byText[text] = entry
+	return entry
 }
 
 // isNonemptyObject reports whether valid JSON text is an object with at least
@@ -250,22 +285,15 @@ func isNonemptyObject(definition []byte) bool {
 	return len(members) > 0 && members[0] != '}'
 }
 
-// digest returns the definition's digest, computing it once.
+// digest returns the definition's digest, computing it once per process.
 func (d *definitionRef) digest() string {
 	d.once.Do(func() {
-		if known, found := definitionDigests.Load(d.text); found {
-			if memoized, isText := known.(string); isText {
-				d.result = memoized
-				return
-			}
-		}
 		canonical, err := CanonicalJSON([]byte(d.text))
 		if err != nil {
 			// newDefinitionRef refused every text CanonicalJSON refuses.
 			panic("schemaext: registered definition is not canonicalizable: " + err.Error())
 		}
 		d.result = digest(canonical)
-		definitionDigests.Store(d.text, d.result)
 	})
 	return d.result
 }
