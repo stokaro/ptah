@@ -1382,7 +1382,11 @@ introspected current schema on it, and executes the ordered plan statements —
 including SQL edited through `--edit` — under the same transaction mode as the
 target apply. A failed rehearsal refuses the apply and leaves the target
 unchanged. The rehearsal runs under `--dry-run` too, so a dry run cannot report
-a plan the real apply would refuse.
+a plan the real apply would refuse. With `--include`, `--exclude` or a `--url`
+bound to one schema, the dev database also gets each object outside the
+selection that the recreated schema or the plan names, such as a function in
+an excluded schema that a kept policy calls; see
+[the baseline a rehearsal writes](../../concepts/database-urls-and-dev-databases/#the-baseline-a-rehearsal-writes).
 
 On MySQL, MariaDB, and ClickHouse a schema *is* a database, so a plan
 qualified with the target's schema name would modify the target whichever
@@ -1397,8 +1401,8 @@ planned.
 The dev database is handed back with nothing the rehearsal put in it, on both
 the success and the failure path, so the same `--dev-url` stays usable by the
 next command. The rehearsal empties the whole database when `--dev-url` pins no
-schema, and only the pinned schema otherwise; either way the extensions the dev
-database held stay installed.
+schema, and otherwise the pinned schema and the schemas it created beside it;
+either way the extensions the dev database held stay installed.
 A dev database that already holds a table is refused before
 anything is dropped, as the pinned binary refuses it, whether or not there is a
 change to rehearse. `schema inspect` and `schema diff` refuse it too whenever a

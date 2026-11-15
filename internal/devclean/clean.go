@@ -130,6 +130,10 @@ type Baseline struct {
 	extensions []string
 	// schemas are the schemas outside the one the URL pinned; see above.
 	schemas []string
+	// schemasRecorded reports that the claim listed the schemas outside the
+	// pinned one, so a reset can tell a schema the run created from one the
+	// database held; see [Reset].
+	schemasRecorded bool
 	// defaultPrivileges are what the default privileges were at the claim;
 	// see above.
 	defaultPrivileges dbreset.DefaultPrivileges
@@ -204,6 +208,12 @@ type databaseRealmKeeper interface {
 
 type schemaKeeper interface {
 	DropAllTablesKeeping(context.Context, dbreset.Kept) error
+}
+
+// addedSchemaDropper is a writer that drops the schemas beside the pinned one
+// that a claim did not find; see [Reset].
+type addedSchemaDropper interface {
+	DropSchemasAddedSince(context.Context, dbreset.Kept) error
 }
 
 // roleKeeper is a writer that lists the server's roles and drops the ones a
@@ -308,6 +318,7 @@ func (b *Baseline) recordSchemas(ctx context.Context, conn *dbschema.DatabaseCon
 		if err != nil {
 			return err
 		}
+		b.schemasRecorded = true
 		pinned := conn.Info().Schema
 		for _, schema := range schemas {
 			if schema != pinned {
@@ -352,7 +363,11 @@ func EnsureClean(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 // judges every schema, and the connected schema when it pinned one. A rehearsal
 // resets its dev database this way before and after it runs, so it removes what
 // it created -- a schema or an extension schema included -- and leaves a schema
-// outside the pinned one alone, since the claim did not look there. The baseline's extensions
+// outside the pinned one alone, since the claim did not look there. A schema
+// beside the pinned one that the claim did not find is the run's, and a writer
+// that can drop it does, with everything in it: a rehearsal creates one when
+// the state it recreates names an object in another schema, and left behind
+// it fails the next run's CREATE SCHEMA. The baseline's extensions
 // and default privileges stay in either scope, and on a server the run owns
 // either scope drops the roles the run created; see [Baseline].
 //
@@ -368,6 +383,9 @@ func Reset(ctx context.Context, conn *dbschema.DatabaseConnection, baseline Base
 	writer := conn.SchemaWriter()
 	if keeper, ok := writer.(schemaKeeper); ok {
 		if err := keeper.DropAllTablesKeeping(ctx, baseline.kept()); err != nil {
+			return err
+		}
+		if err := baseline.dropAddedSchemas(ctx, writer); err != nil {
 			return err
 		}
 		return baseline.dropAddedRoles(ctx, conn)
@@ -429,6 +447,18 @@ func claimedServer(
 	}
 	roles, err := keeper.ServerRoles(ctx)
 	return dbreset.OwnedServer, roles, err
+}
+
+// dropAddedSchemas drops the schemas beside the pinned one that the claim did
+// not find, on a writer that can; see [Reset]. A database that returns to a
+// starting point has been returned whole already, and a claim that did not
+// list the schemas cannot tell which are the run's, so neither drops any.
+func (b Baseline) dropAddedSchemas(ctx context.Context, writer catalog.SchemaWriter) error {
+	dropper, ok := writer.(addedSchemaDropper)
+	if !ok || !b.schemasRecorded || b.startingPoint != nil {
+		return nil
+	}
+	return dropper.DropSchemasAddedSince(ctx, b.kept())
 }
 
 // dropAddedRoles drops the roles the server holds that it did not hold at the

@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/devseed"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/providerurl"
@@ -149,7 +150,7 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	// succeeded or failed.
 	defer discardDevRehearsalArtifacts(ctx, dev.conn, dev.baseline)
 
-	return rehearseStatementsOnDev(ctx, p.conn, dev.conn, dev.baseline, p.current, p.txMode, statements, p.runtime)
+	return rehearseStatementsOnDev(ctx, p.conn, dev.conn, dev.baseline, p.current, p.seed.target(ctx, p.conn), p.txMode, statements, p.runtime)
 }
 
 // discardDevRehearsalArtifacts drops what the rehearsal created in the dev
@@ -429,6 +430,7 @@ func rehearseStatementsOnDev(
 	devConn *dbschema.DatabaseConnection,
 	baseline devclean.Baseline,
 	current *catalog.Database,
+	outside devseed.Target,
 	txMode migrator.MigrationTxMode,
 	statements []string,
 	runtime engine.SchemaRuntime,
@@ -467,7 +469,8 @@ func rehearseStatementsOnDev(
 	// WithUntrustedSQLSession is what makes an unrestricted rehearsal
 	// impossible to write; the lint above is only a lint.
 	return devConn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
-		return rehearseOnPreparedDev(ctx, session, baseline, current, targetConn.Info().URL, txMode, statements, runtime)
+		seed := rehearsalOutside{target: outside, executed: statements}
+		return rehearseOnPreparedDev(ctx, session, baseline, current, seed, targetConn.Info().URL, txMode, statements, runtime)
 	})
 }
 
@@ -487,6 +490,7 @@ func rehearseOnPreparedDev(
 	devConn *dbschema.DatabaseConnection,
 	baseline devclean.Baseline,
 	current *catalog.Database,
+	outside rehearsalOutside,
 	targetURL string,
 	txMode migrator.MigrationTxMode,
 	statements []string,
@@ -496,7 +500,7 @@ func rehearseOnPreparedDev(
 	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
-	if err := recreateCurrentSchema(ctx, devConn, current, targetURL, baseline, runtime); err != nil {
+	if err := recreateCurrentSchema(ctx, devConn, current, targetURL, baseline, runtime, outside); err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
 	if err := applyStatements(ctx, devConn, txMode, statements); err != nil {
@@ -527,6 +531,16 @@ func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 // target's introspected (and scope/exclude-filtered) current schema, so the plan is
 // rehearsed against the same starting state it was computed for.
 //
+// A comparison narrowed by a selection or by a URL bound to one schema leaves
+// out objects the target still holds, and the statements the dev database
+// runs can name them: a kept policy that calls a function in an excluded
+// schema, a planned foreign key to a table the selection does not hold. So
+// the state recreated is current together with what outside.target reads of
+// those objects, each whole, and what they need in turn; see
+// [devseed.Closure]. The comparison the plan came from is not widened. A
+// failure after an object was added names what was added, since the dev
+// database may be unable to build it.
+//
 // baseline is what the dev database held before the run: its extensions, and
 // for a dev database an atlas.hcl docker block provisioned its whole starting
 // point. The reset left them in place, and the comparison below does not plan
@@ -548,63 +562,92 @@ func recreateCurrentSchema(
 	targetURL string,
 	baseline devclean.Baseline,
 	runtime engine.SchemaRuntime,
+	outside rehearsalOutside,
 ) error {
 	if current == nil {
 		return nil
-	}
-	target, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, current, devConn.Info().Dialect, runtime)
-	if err != nil {
-		return err
-	}
-	normalizeBaselineSerialColumns(target, devConn.Info().Dialect)
-	moved, err := valuecontext.Move(ctx, runtime, devConn.Info().Dialect, targetURL, devConn.Info().URL, target)
-	if err != nil {
-		return fmt.Errorf("bind the target's current schema to the dev database: %w", err)
 	}
 	devCurrent, err := dbschema.ReadRehearsalSchemaContext(readscope.Authored(ctx), devConn)
 	if err != nil {
 		return fmt.Errorf("read dev database schema: %w", err)
 	}
+	info := devConn.Info()
+	render := func(state *catalog.Database) ([]string, error) {
+		return baselineStatements(ctx, devConn, state, devCurrent, targetURL, baseline, runtime)
+	}
+	seeded, err := devseed.Closure(current, outside.executed, render, outside.target, devseed.Options{
+		Dialect:       info.Dialect,
+		DefaultSchema: defaultSchemaOf(info),
+		SearchPath:    info.IdentifierSemantics.SearchPath,
+	})
+	if err != nil {
+		return err
+	}
+	if len(seeded.Statements) > 0 {
+		guard := devclean.NewBaselineGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState())
+		if err := guardRehearsalBaseline(seeded.Statements, guard, info.Dialect); err != nil {
+			return devseed.WithAdded(err, seeded.Added)
+		}
+		if err := executeApplyStatements(ctx, devConn.Writer(), seeded.Statements); err != nil {
+			return devseed.WithAdded(err, seeded.Added)
+		}
+	}
+	return devseed.WithAdded(nameColumnSequencesAsTarget(ctx, devConn, seeded.State), seeded.Added)
+}
+
+// baselineStatements returns the statements that converge the dev database,
+// read as devCurrent after its reset, to state; see [recreateCurrentSchema].
+func baselineStatements(
+	ctx context.Context,
+	devConn *dbschema.DatabaseConnection,
+	state, devCurrent *catalog.Database,
+	targetURL string,
+	baseline devclean.Baseline,
+	runtime engine.SchemaRuntime,
+) ([]string, error) {
+	info := devConn.Info()
+	target, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, state, info.Dialect, runtime)
+	if err != nil {
+		return nil, err
+	}
+	normalizeBaselineSerialColumns(target, info.Dialect)
+	moved, err := valuecontext.Move(ctx, runtime, info.Dialect, targetURL, info.URL, target)
+	if err != nil {
+		return nil, fmt.Errorf("bind the target's current schema to the dev database: %w", err)
+	}
 	if moved {
 		target = devclean.WithoutUnreadObjects(target, devCurrent)
 	}
-	devCurrent = baseline.WithoutEnvironment(devCurrent, devclean.ReadExtensions(current))
-	devCurrent, err = baseline.WithoutStartingPoint(ctx, devCurrent, current, defaultSchemaOf(devConn.Info()), runtime.Selections())
+	devCurrent = baseline.WithoutEnvironment(devCurrent, devclean.ReadExtensions(state))
+	devCurrent, err = baseline.WithoutStartingPoint(ctx, devCurrent, state, defaultSchemaOf(info), runtime.Selections())
 	if err != nil {
-		return err
+		return nil, err
 	}
-	controlComments, err := extensionControlComments(ctx, devConn, current)
+	controlComments, err := extensionControlComments(ctx, devConn, state)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := omitControlComments(target, devclean.ReadExtensions(devCurrent), controlComments); err != nil {
-		return err
+		return nil, err
 	}
-	omitRealmRootGrants(devConn.Info(), target, devCurrent)
-	info := devConn.Info()
+	omitRealmRootGrants(info, target, devCurrent)
 	diff, err := schemadiff.CompareWithDatabase(ctx, devConn, target, devCurrent, nil, runtime)
 	if err != nil {
-		return fmt.Errorf("compare current schema with dev database: %w", err)
+		return nil, fmt.Errorf("compare current schema with dev database: %w", err)
 	}
-	if diff.HasChanges() {
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-			ctx, runtime,
-			diff, info.Dialect, planext.Options{
-				Capabilities: info.Capabilities,
-			},
-		)
-		if err != nil {
-			return fmt.Errorf("generate current schema DDL for dev database: %w", err)
-		}
-		guard := devclean.NewBaselineGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState())
-		if err := guardRehearsalBaseline(statements, guard, info.Dialect); err != nil {
-			return err
-		}
-		if err := executeApplyStatements(ctx, devConn.Writer(), statements); err != nil {
-			return err
-		}
+	if !diff.HasChanges() {
+		return nil, nil
 	}
-	return nameColumnSequencesAsTarget(ctx, devConn, current)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
+		ctx, runtime,
+		diff, info.Dialect, planext.Options{
+			Capabilities: info.Capabilities,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("generate current schema DDL for dev database: %w", err)
+	}
+	return statements, nil
 }
 
 // guardRehearsalBaseline holds the whole baseline to the dev database's realm

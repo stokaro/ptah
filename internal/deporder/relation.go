@@ -158,6 +158,21 @@ func foldName(name string) string {
 // the star of `t.*`, is empty and matches nothing.
 type dottedName []string
 
+// CodeNames returns the names in the code of body, read with dialect's
+// lexical rules, each as its parts in order. Parts come back folded to lower
+// case, as [ReferencesRelation] compares them, and a quoted part without its
+// quotes. A name inside a string literal, a dollar-quoted string or a comment
+// names nothing and is not returned. A part that is not a name, such as the
+// star of `t.*`, is empty.
+func CodeNames(body, dialect string) [][]string {
+	names := codeNames(body, dialect)
+	out := make([][]string, 0, len(names))
+	for _, name := range names {
+		out = append(out, slices.Clone([]string(name)))
+	}
+	return out
+}
+
 // codeNames returns the names in the code of body, read with dialect's
 // lexical rules; see [sqlMasksForDialect].
 //

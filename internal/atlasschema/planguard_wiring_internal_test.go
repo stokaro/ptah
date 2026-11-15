@@ -87,7 +87,7 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLint(t *testing.T) {
 		"CREATE TABLE victim.pwned (id integer)",
 	}
 
-	err = rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, migrator.MigrationTxModeNone, statements, must.Must(builtin.New()))
+	err = rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, nil, migrator.MigrationTxModeNone, statements, must.Must(builtin.New()))
 
 	// The refusal comes from SQLite, not from Ptah's scanner.
 	c.Assert(err, qt.IsNotNil)
@@ -119,7 +119,7 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLintUnderEveryTxMode(t *testing.T) 
 			devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
 			targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 
-			err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, tt.txMode,
+			err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, nil, tt.txMode,
 				[]string{fmt.Sprintf("ATTACH DATABASE '%s' AS victim", victimPath)}, must.Must(builtin.New()))
 
 			c.Assert(err, qt.IsNotNil)
@@ -141,7 +141,7 @@ func TestRehearsalCoreLintsStatementsTheEngineWouldAccept(t *testing.T) {
 	devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
 	targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
 
-	err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, migrator.MigrationTxModeNone,
+	err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, devclean.Baseline{}, nil, nil, migrator.MigrationTxModeNone,
 		[]string{fmt.Sprintf("PRAGMA temp_store_directory = '%s'", dir)}, must.Must(builtin.New()))
 
 	c.Assert(IsPlanEscape(err), qt.IsTrue, qt.Commentf("err=%v", err))

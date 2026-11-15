@@ -268,3 +268,46 @@ func TestReferencesIdentifier_KnowsNoSchema(t *testing.T) {
 		})
 	}
 }
+
+// TestCodeNames_HappyPath pins what a reader of the names of a body gets: the
+// dotted names of the code, folded, with quotes taken off, and nothing from a
+// literal or a comment.
+func TestCodeNames_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		dialect string
+		want    [][]string
+	}{
+		{
+			name:    "qualified call and bare column",
+			body:    `USING ((owner = auth.uid()))`,
+			dialect: "postgres",
+			want:    [][]string{{"using"}, {"owner"}, {"auth", "uid"}},
+		},
+		{
+			name:    "quoted parts lose their quotes and fold",
+			body:    `REFERENCES "Rebase"."Users" ("id")`,
+			dialect: "postgres",
+			want:    [][]string{{"references"}, {"rebase", "users"}, {"id"}},
+		},
+		{
+			name:    "literals and comments name nothing",
+			body:    "SELECT 'auth.uid' -- rebase.roles\n/* app.f */ FROM $$ x.y $$",
+			dialect: "postgres",
+			want:    [][]string{{"select"}, {"from"}},
+		},
+		{
+			name:    "a star is an empty part",
+			body:    `SELECT t.* FROM t`,
+			dialect: "postgres",
+			want:    [][]string{{"select"}, {"t", ""}, {"from"}, {"t"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(deporder.CodeNames(test.body, test.dialect), qt.DeepEquals, test.want)
+		})
+	}
+}
