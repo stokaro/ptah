@@ -2230,7 +2230,10 @@ func rejectProtectedPostgresDatabase(
 // catalog pg_user_mapping: only a superuser may read the catalog, so a dev
 // database claimed by an ordinary role fails the whole query with SQLSTATE
 // 42501, while the view shows every mapping to every role and hides only the
-// options.
+// options. For the same reason a subscription is not filtered by OID:
+// PostgreSQL 13 grants an ordinary role a fixed list of pg_subscription
+// columns that leaves out oid, and initdb creates no subscription for the
+// filter to leave out.
 const databaseScopedArtifactsQuery = `
 		WITH database_scoped_artifacts AS (
 			SELECT
@@ -2244,8 +2247,7 @@ const databaseScopedArtifactsQuery = `
 				'subscription',
 				subscription.subname
 			FROM pg_subscription subscription
-			WHERE subscription.oid >= 16384
-			  AND subscription.subdbid = (
+			WHERE subscription.subdbid = (
 				SELECT database.oid
 				FROM pg_database database
 				WHERE database.datname = current_database()
