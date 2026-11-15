@@ -2225,6 +2225,15 @@ func rejectProtectedPostgresDatabase(
 // foreign server yb_global_views_server that way, with OID 13543, in every
 // database, and counted, it refuses every cleanup on that line
 // (stokaro/ptah#3693).
+//
+// User mappings are read through the view pg_user_mappings rather than the
+// catalog pg_user_mapping: only a superuser may read the catalog, so a dev
+// database claimed by an ordinary role fails the whole query with SQLSTATE
+// 42501, while the view shows every mapping to every role and hides only the
+// options. For the same reason a subscription is not filtered by OID:
+// PostgreSQL 13 grants an ordinary role a fixed list of pg_subscription
+// columns that leaves out oid, and initdb creates no subscription for the
+// filter to leave out.
 const databaseScopedArtifactsQuery = `
 		WITH database_scoped_artifacts AS (
 			SELECT
@@ -2238,8 +2247,7 @@ const databaseScopedArtifactsQuery = `
 				'subscription',
 				subscription.subname
 			FROM pg_subscription subscription
-			WHERE subscription.oid >= 16384
-			  AND subscription.subdbid = (
+			WHERE subscription.subdbid = (
 				SELECT database.oid
 				FROM pg_database database
 				WHERE database.datname = current_database()
@@ -2305,17 +2313,16 @@ const databaseScopedArtifactsQuery = `
 				format(
 					'%s@%s',
 					COALESCE(role.rolname, 'PUBLIC'),
-					server.srvname
+					mapping.srvname
 				)
-			FROM pg_user_mapping mapping
+			FROM pg_user_mappings mapping
 			LEFT JOIN pg_roles role ON role.oid = mapping.umuser
-			JOIN pg_foreign_server server ON server.oid = mapping.umserver
-			WHERE mapping.oid >= 16384
+			WHERE mapping.umid >= 16384
 			  AND NOT EXISTS (
 				SELECT 1
 				FROM pg_depend dependency
 				WHERE dependency.classid = 'pg_user_mapping'::regclass
-				  AND dependency.objid = mapping.oid
+				  AND dependency.objid = mapping.umid
 				  AND dependency.deptype = 'e'
 			)
 		)
