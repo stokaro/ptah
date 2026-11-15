@@ -2,13 +2,13 @@ package sqlschema
 
 import (
 	"cmp"
-	"fmt"
-	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/tableref"
 )
 
 // A CREATE statement with a guard may name an object that already exists, and
@@ -43,7 +43,8 @@ func appendGuardedCreateTable(database *schemamodel.Database, document *Document
 }
 
 // appendSequence records the sequence node declares, with its owner, unless
-// the server skips the statement.
+// the server skips the statement. The parser leaves OWNED BY NONE out of the
+// node.
 //
 // The owner is read only where the statement runs. Measured on PostgreSQL
 // 16.16, 17.11 and 18.6, a CREATE SEQUENCE IF NOT EXISTS of a sequence that
@@ -54,11 +55,14 @@ func appendSequence(database *schemamodel.Database, document *Document, node *as
 	if skipsCreateSequence(database, document, node, sequence, sourcePlatform) {
 		return nil
 	}
-	owner, err := createdSequenceOwner(sequence.Schema, node.OwnedBy, sourcePlatform)
-	if err != nil {
-		return fmt.Errorf("CREATE SEQUENCE %s OWNED BY %s: %w", schemaQualified(node.Schema, node.Name), node.OwnedBy, err)
+	if node.OwnedBy != "" {
+		owner, err := readOwner(database, document, "CREATE SEQUENCE "+schemaQualified(node.Schema, node.Name),
+			sequence.Schema, node.OwnedBy, sourcePlatform)
+		if err != nil {
+			return err
+		}
+		sequence.OwnedBy = owner
 	}
-	sequence.OwnedBy = owner
 	database.Sequences = append(database.Sequences, sequence)
 	return nil
 }
@@ -193,12 +197,26 @@ func sequenceKey(sequence schemamodel.Sequence, sourcePlatform string) [2]string
 }
 
 // unqualified drops the dialect's default schema from a qualified name, so
-// `public.v` and `v` name one object on PostgreSQL.
+// `public.v` and `v` name one object on PostgreSQL. The schema is compared as
+// [resolveDeclaredName] compares names, so `DBO.t` and `t` name one table on
+// SQL Server, and a name whose own text holds a dot, `"public.v"`, keeps it.
 func unqualified(name, sourcePlatform string) string {
-	if schema := factsOf(sourcePlatform).defaultSchema; schema != "" {
-		return strings.TrimPrefix(name, schema+".")
+	facts := factsOf(sourcePlatform)
+	if facts.defaultSchema == "" {
+		return name
 	}
-	return name
+	ref, parsed := tableref.Parse(name)
+	if !parsed || !ref.Qualified {
+		return name
+	}
+	inDefault := ref.Schema == facts.defaultSchema
+	if fold := identifier.Comparison(facts.names.Lookup); fold != "" {
+		inDefault = fold.IdentityKey(ref.Schema) == fold.IdentityKey(facts.defaultSchema)
+	}
+	if !inDefault {
+		return name
+	}
+	return schemamodel.QualifyTableName("", ref.Name)
 }
 
 // replaceView puts view in the place of the view of its name an earlier

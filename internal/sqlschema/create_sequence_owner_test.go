@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlext"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -47,6 +48,21 @@ func TestRead_CreateSequenceOwnedBy_HappyPath(t *testing.T) {
 			name: "unquoted parts, folded",
 			sql:  table + "CREATE SEQUENCE s OWNED BY PUBLIC.T.Id;",
 			want: "t.id",
+		},
+		{
+			name: "a table qualified with the default schema, the owner without",
+			sql:  "CREATE TABLE public.t (id bigint NOT NULL);\nCREATE SEQUENCE s OWNED BY t.id;",
+			want: "t.id",
+		},
+		{
+			name: "a table whose name holds a dot",
+			sql:  "CREATE TABLE \"a.b\" (id bigint NOT NULL);\nCREATE SEQUENCE s OWNED BY \"a.b\".id;",
+			want: `"a.b".id`,
+		},
+		{
+			name: "a column whose name holds a dot",
+			sql:  "CREATE TABLE a (id bigint NOT NULL, \"x.y\" int);\nCREATE SEQUENCE s OWNED BY a.\"x.y\";",
+			want: `a."x.y"`,
 		},
 		{
 			name: "no owner",
@@ -125,6 +141,21 @@ func TestRead_CreateSequenceOwnedBy_FailurePath(t *testing.T) {
 			sql:     tables + "CREATE SEQUENCE s OWNED BY db.public.t.id;",
 			wantErr: `.*CREATE SEQUENCE s OWNED BY db.public.t.id: OWNED BY names a column as table.column or schema.table.column`,
 		},
+		{
+			name:    "a table the schema does not declare",
+			sql:     tables + "CREATE SEQUENCE s OWNED BY nosuch.id;",
+			wantErr: `.*CREATE SEQUENCE s OWNED BY nosuch.id names a table this schema does not declare`,
+		},
+		{
+			name:    "a column the table does not declare",
+			sql:     tables + "CREATE SEQUENCE s OWNED BY t.nope;",
+			wantErr: `.*CREATE SEQUENCE s OWNED BY t.nope names a column the table does not declare`,
+		},
+		{
+			name:    "a table the file creates after the sequence",
+			sql:     tables + "CREATE SEQUENCE s OWNED BY later.id;\nCREATE TABLE later (id bigint NOT NULL);",
+			wantErr: `.*CREATE SEQUENCE s OWNED BY later.id names a table this schema does not declare`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -135,4 +166,18 @@ func TestRead_CreateSequenceOwnedBy_FailurePath(t *testing.T) {
 			c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 		})
 	}
+}
+
+// An owner in a table the load does not declare is refused as a statement that
+// changes an undeclared object, as ALTER SEQUENCE ... OWNED BY refuses it, so a
+// load that reads other sources beside the file can say the table may be
+// theirs.
+func TestRead_CreateSequenceOwnedByAnUndeclaredTable_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	database, _, err := sqlschema.Read([]byte("CREATE SEQUENCE s OWNED BY nosuch.id;"), platform.Postgres)
+
+	c.Assert(err, qt.ErrorIs, sqlext.ErrUndeclared)
+	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
+	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 }

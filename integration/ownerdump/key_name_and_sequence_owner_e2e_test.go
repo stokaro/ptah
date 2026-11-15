@@ -78,8 +78,12 @@ WHERE c.contype = 'p' AND n.nspname = 'public' AND r.relname <> 'ptah_schema_app
 
 // ownedSequencesBuilt gives a sequence an owner in each spelling CREATE
 // SEQUENCE ... OWNED BY takes: table.column, the default schema written on
-// the owner and on both names, quoted parts, and NONE. A qualified table that
-// is dropped takes the sequence its column owns.
+// the owner and on both names, quoted parts, names holding a dot, and NONE.
+// The rest changes an owner the way the server follows it: a dropped table
+// takes the sequences its columns own, two tables in one statement included,
+// whichever spelling of the default schema names it; a dropped column takes
+// its sequence, and a renamed one keeps it; a sequence whose owner was taken
+// away or given to another table stays.
 const ownedSequencesBuilt = `
 CREATE TABLE t (id bigint NOT NULL, note text);
 CREATE TABLE "T" ("Id" bigint NOT NULL);
@@ -88,9 +92,40 @@ CREATE SEQUENCE s_three OWNED BY public.t.id;
 CREATE SEQUENCE public.s_both OWNED BY public.t.note;
 CREATE SEQUENCE "S_quoted" OWNED BY "public"."T"."Id";
 CREATE SEQUENCE s_none OWNED BY NONE;
+CREATE TABLE "a.b" (id bigint NOT NULL);
+CREATE SEQUENCE s_dotted_table OWNED BY "a.b".id;
+CREATE TABLE dotted (id bigint NOT NULL, "x.y" bigint);
+CREATE SEQUENCE s_dotted_column OWNED BY dotted."x.y";
 CREATE TABLE public.d (id bigint NOT NULL);
 CREATE SEQUENCE public.s_dropped OWNED BY public.d.id;
 DROP TABLE public.d;
+CREATE TABLE w (id bigint NOT NULL);
+CREATE SEQUENCE s_w OWNED BY w.id;
+DROP TABLE public.w;
+CREATE TABLE "c.d" (id bigint NOT NULL, "x.y" bigint);
+CREATE SEQUENCE s_dotted_dropped OWNED BY "c.d"."x.y";
+DROP TABLE "c.d";
+CREATE TABLE d1 (id bigint NOT NULL);
+CREATE TABLE d2 (id bigint NOT NULL);
+GRANT SELECT ON d2 TO PUBLIC;
+CREATE SEQUENCE s_d1 OWNED BY d1.id;
+CREATE SEQUENCE s_d2 OWNED BY d2.id;
+DROP TABLE d1, d2;
+CREATE TABLE c (id bigint NOT NULL, v bigint);
+CREATE SEQUENCE s_dropped_column OWNED BY c.v;
+ALTER TABLE c DROP COLUMN v;
+CREATE TABLE k (id bigint NOT NULL, v bigint);
+CREATE SEQUENCE s_renamed_column OWNED BY k.v;
+ALTER TABLE k RENAME COLUMN v TO w;
+CREATE TABLE n (id bigint NOT NULL);
+CREATE SEQUENCE s_owner_taken OWNED BY n.id;
+ALTER SEQUENCE s_owner_taken OWNED BY NONE;
+DROP TABLE n;
+CREATE TABLE r1 (id bigint NOT NULL);
+CREATE TABLE r2 (id bigint NOT NULL);
+CREATE SEQUENCE s_reowned OWNED BY r1.id;
+ALTER SEQUENCE s_reowned OWNED BY r2.id;
+DROP TABLE r1;
 `
 
 // ownedSequenceOfAnotherSchema is a sequence of a schema other than the

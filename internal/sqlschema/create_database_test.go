@@ -240,14 +240,17 @@ func TestRead_TableCommentCall_FailurePath(t *testing.T) {
 	}
 }
 
-// TestRead_CommentQualifiedWithTheDefaultSchema_FailurePath is the control for an
-// engine whose URL selects a schema. There the connection decides where an
-// unqualified table is, so a comment naming public.t does not find a table declared
-// as t.
-func TestRead_CommentQualifiedWithTheDefaultSchema_FailurePath(t *testing.T) {
+// TestRead_CommentQualifiedWithTheDefaultSchema_HappyPath reads a comment naming
+// public.t onto the table declared as t on PostgreSQL. Every statement that names
+// a table reads an unqualified name as one in the default schema, as a sequence, a
+// view and a DROP INDEX are read, so the file describes one table whichever
+// spelling a statement uses.
+func TestRead_CommentQualifiedWithTheDefaultSchema_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	_, _, err := sqlschema.Read([]byte("CREATE TABLE t (id int);\nCOMMENT ON TABLE public.t IS 'x';\n"), platform.Postgres)
+	database, _, err := sqlschema.Read([]byte("CREATE TABLE t (id int);\nCOMMENT ON TABLE public.t IS 'x';\n"), platform.Postgres)
 
-	c.Assert(err, qt.ErrorMatches, `.*COMMENT ON TABLE public\.t names an object this schema.*`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(database.Tables, qt.HasLen, 1)
+	c.Assert(database.Tables[0].Comment, qt.Equals, "x")
 }

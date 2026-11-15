@@ -304,6 +304,13 @@ ALTER TABLE items ALTER COLUMN note TYPE varchar(200);
 ALTER TABLE items DROP COLUMN legacy;
 ```
 
+A statement finds a table with or without the engine's default schema: on
+PostgreSQL, `ALTER TABLE public.items` changes the table `CREATE TABLE items`
+created, and `DROP TABLE items` drops one created as `public.items`. A
+database URL that selects another schema by `search_path` creates a table
+written without a schema in that schema, so a file read for such a run spells
+each table one way.
+
 `DROP TABLE`, `DROP INDEX`, `DROP VIEW` and `DROP MATERIALIZED VIEW` remove the
 object and what the server drops with it. A drop the server refuses is refused:
 an undeclared object without `IF EXISTS`, a table a foreign key or a PostgreSQL
@@ -565,11 +572,19 @@ again.
 does: `table.column`, or `schema.table.column` where the schema is the
 sequence's own. Either form reads as the column a read of the database
 reports, so `OWNED BY public.orders.id` is the column `id` of `orders`. The
-reader refuses a column written without its table and a column of a table in
-another schema, as PostgreSQL does. CockroachDB accepts a table in another
-schema, and the reader refuses it there too. A column a database name
-qualifies, `db.public.orders.id`, is refused: PostgreSQL takes it only for the
-database it is connected to, and a schema file does not name one.
+table and the column are found as an `ALTER TABLE` finds them, and the reader
+refuses what PostgreSQL refuses: a table or a column the file has not declared
+by then, a column written without its table, and a column of a table in
+another schema. CockroachDB accepts a table in another schema, and the reader
+refuses it there too. A column a database name qualifies,
+`db.public.orders.id`, is refused: PostgreSQL takes it only for the database it
+is connected to, and a schema file does not name one.
+
+The owner follows its column as the server's does. A `DROP TABLE` or a `DROP
+COLUMN` drops the sequences the column owns, and a `RENAME COLUMN` keeps them
+owned by the column under its new name. A sequence that `OWNED BY NONE`
+released, or that a later `ALTER SEQUENCE ... OWNED BY` gave to another table,
+stays.
 
 An identity column is the column, `NOT NULL`, and an `ALTER TABLE ... ALTER
 COLUMN ... ADD GENERATED ... AS IDENTITY` after it. The reader reads the
