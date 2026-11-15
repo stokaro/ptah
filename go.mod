@@ -192,7 +192,7 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	modernc.org/libc v1.81.2 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.12.1 // indirect
+	modernc.org/memory v1.13.0 // indirect
 )
 
 tool (
