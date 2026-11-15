@@ -43,6 +43,9 @@ type scopedRehearsalCase struct {
 	args    []string
 	// want is a statement the plan prints on both binaries.
 	want string
+	// dev is what the dev database holds before the run, written through a
+	// URL that pins nothing.
+	dev string
 }
 
 // scopedRehearsalNotes is the --include case: the policy of the one included
@@ -422,6 +425,9 @@ func newScopedRehearsalEnv(c *qt.C, tc scopedRehearsalCase, form scopedRehearsal
 	// The target is seeded through a URL that pins nothing, whatever form the
 	// command is given.
 	execPostgresFamilySQL(c, c.Context(), urls[0], strings.ReplaceAll(tc.target, "{role}", role))
+	if tc.dev != "" {
+		execPostgresFamilySQL(c, c.Context(), urls[1], tc.dev)
+	}
 	desired := filepath.Join(c.TempDir(), "desired.sql")
 	c.Assert(os.WriteFile(desired, []byte(strings.ReplaceAll(tc.desired, "{role}", role)), 0o600), qt.IsNil)
 	env := scopedRehearsalEnv{target: urls[0], dev: urls[1], desired: desired}

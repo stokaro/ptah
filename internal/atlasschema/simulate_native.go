@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/devclean"
+	"ptah.run/internal/devseed"
 	"ptah.run/migration/safety"
 )
 
@@ -92,15 +93,16 @@ func (p ApplyRuntimePlan) rehearseNativeOnPreparedDev(
 		return &SimulationError{Stage: "reset", Err: err}
 	}
 	outside := rehearsalOutside{target: p.seed.target(ctx, p.conn), executed: p.plan.executedSQL()}
-	if err := recreateCurrentSchema(ctx, devConn, p.current, p.conn.Info().URL, baseline, p.runtime, outside); err != nil {
+	added, err := recreateCurrentSchema(ctx, devConn, p.current, p.conn.Info().URL, baseline, p.runtime, outside)
+	if err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
 	plan, err := p.planOnDev(ctx, devConn, baseline, assessments)
 	if err != nil {
-		return &SimulationError{Stage: "plan", Err: err}
+		return &SimulationError{Stage: "plan", Err: devseed.WithAdded(err, added)}
 	}
 	if err := plan.Execute(ctx, devConn, p.txMode); err != nil {
-		return &SimulationError{Stage: "plan", Err: err}
+		return &SimulationError{Stage: "plan", Err: devseed.WithAdded(err, added)}
 	}
 	return nil
 }

@@ -19,11 +19,16 @@
 //
 // Whether a statement needs an object is read off its text: a name in its
 // code, qualified by the object's schema, or left unqualified and resolved
-// along the dev session's search path. The body of a routine written in SQL or
-// PL/pgSQL is read as code too, though its statement quotes it. Any other name
-// inside a string literal or a comment names nothing, so a reference spelled
-// as text, such as nextval('app.ids'), is not found here, and the dev database
-// reports the object it lacks.
+// along the dev session's search path. An unqualified name counts for a
+// function only where a call names it, and for a table, a view or a sequence
+// only where SQL names a relation (see [deporder.NameUse]), so a column that
+// shares an excluded table's name does not bring the table. The body of a
+// routine written in SQL or PL/pgSQL is read as code too, though its statement
+// quotes it: a routine of the state, a CREATE FUNCTION or CREATE PROCEDURE a
+// statement runs, and a DO block. Any other name inside a string literal or a
+// comment names nothing, so a reference spelled as text, such as
+// nextval('app.ids'), is not found here, and the dev database reports the
+// object it lacks.
 //
 // Roles are not added. A role belongs to the server, not to one database, and
 // the rehearsal relies on the dev server holding the roles the target's do,
@@ -37,8 +42,12 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 )
 
 // Object is one object of the target that [Closure] added to the recreated
@@ -169,7 +178,8 @@ func (c *closure) growPast(statements []string) (bool, error) {
 func (c *closure) growWhile(statements []string, worth func(names) bool) (bool, error) {
 	grew := false
 	for {
-		names := readNames(slices.Concat(statements, routineBodies(c.state)), c.opts)
+		code := slices.Concat(statements, routineBodies(c.state), statementBodies(statements, c.opts.Dialect))
+		names := readNames(code, c.opts)
 		names.addReferences(c.state, c.opts)
 		if !worth(names) {
 			return grew, nil
@@ -241,12 +251,129 @@ func WithAdded(err error, added []Object) error {
 func routineBodies(state *catalog.Database) []string {
 	var bodies []string
 	for _, routine := range state.Functions {
-		switch fold(routine.Language) {
-		case "", "sql", "plpgsql":
+		if readsAsCode(routine.Language) {
 			bodies = append(bodies, routine.Body)
 		}
 	}
 	return bodies
+}
+
+// readsAsCode reports whether a routine body in language is SQL, whose names
+// [Closure] reads: SQL and PL/pgSQL, and a body that names no language, as a
+// read leaves an SQL-standard body. It is the one rule for the bodies of the
+// state's routines and for the bodies statements quote, which must agree: a
+// planned routine names what a routine of the state would.
+func readsAsCode(language string) bool {
+	switch fold(language) {
+	case "", "sql", "plpgsql":
+		return true
+	default:
+		return false
+	}
+}
+
+// statementBodies are the routine bodies statements quote as strings, on an
+// engine whose grammar writes a body that way: the body of each CREATE
+// FUNCTION and CREATE PROCEDURE, OR REPLACE included, and of each DO block,
+// whose language is the one the dialect's descriptor states for a block that
+// names none. A body in a language [readsAsCode] does not read is left out. A
+// body written as SQL, such as BEGIN ATOMIC ... END, is code already, and its
+// names are read with the statement's.
+func statementBodies(statements []string, dialect string) []string {
+	described, _ := platform.Lookup(dialect)
+	if described.Grammar.Routines.Body != descriptor.RoutineQuotedBody {
+		return nil
+	}
+	options := dialectlexer.Options(dialect)
+	var bodies []string
+	for _, statement := range statements {
+		for _, tokens := range codeStatements(statement, options) {
+			if body, ok := quotedBody(tokens, options, described.Grammar.Routines.DefaultDoBlockLanguage); ok {
+				bodies = append(bodies, body)
+			}
+		}
+	}
+	return bodies
+}
+
+// codeStatements returns the code tokens of each statement text holds, without
+// white space and comments, split at each semicolon outside a string.
+func codeStatements(text string, options lexer.Options) [][]lexer.Token {
+	var statements [][]lexer.Token
+	var current []lexer.Token
+	l := lexer.NewLexerWithOptions(text, options)
+	for {
+		token := l.NextToken()
+		switch token.Type {
+		case lexer.TokenEOF:
+			if len(current) > 0 {
+				statements = append(statements, current)
+			}
+			return statements
+		case lexer.TokenWhitespace, lexer.TokenComment:
+		case lexer.TokenSemicolon:
+			if len(current) > 0 {
+				statements = append(statements, current)
+			}
+			current = nil
+		default:
+			current = append(current, token)
+		}
+	}
+}
+
+// quotedBody returns the body a statement's tokens quote, when the statement
+// creates a routine or runs a DO block and the body is in a language
+// [readsAsCode] reads. A DO block that names no language is in doLanguage. A
+// CREATE FUNCTION body is the string after AS, as PostgreSQL reads one, and a
+// DO block's the first string that is not its language.
+func quotedBody(tokens []lexer.Token, options lexer.Options, doLanguage string) (string, bool) {
+	block := tokens[0].MatchIdentifierValue("DO")
+	if !block && !createsRoutine(tokens) {
+		return "", false
+	}
+	var body, language string
+	named := false
+	for i := 0; i < len(tokens); i++ {
+		switch {
+		case tokens[i].MatchIdentifierValue("LANGUAGE") && i+1 < len(tokens):
+			i++
+			language, named = languageName(tokens[i], options), true
+		case body != "" || tokens[i].Type != lexer.TokenString:
+		case block || (i > 0 && tokens[i-1].MatchIdentifierValue("AS")):
+			body = tokens[i].Value
+		}
+	}
+	if block && !named {
+		language = doLanguage
+	}
+	if body == "" || !readsAsCode(language) {
+		return "", false
+	}
+	return lexer.StringValue(body, options)
+}
+
+// createsRoutine reports whether tokens begin CREATE [OR REPLACE] FUNCTION or
+// PROCEDURE.
+func createsRoutine(tokens []lexer.Token) bool {
+	if !tokens[0].MatchIdentifierValue("CREATE") {
+		return false
+	}
+	rest := tokens[1:]
+	if len(rest) >= 2 && rest[0].MatchIdentifierValue("OR") && rest[1].MatchIdentifierValue("REPLACE") {
+		rest = rest[2:]
+	}
+	return len(rest) > 0 && (rest[0].MatchIdentifierValue("FUNCTION") || rest[0].MatchIdentifierValue("PROCEDURE"))
+}
+
+// languageName is the language a LANGUAGE clause names, written as a word or,
+// as PostgreSQL also accepts, as a string.
+func languageName(token lexer.Token, options lexer.Options) string {
+	if token.Type == lexer.TokenString {
+		name, _ := lexer.StringValue(token.Value, options)
+		return name
+	}
+	return strings.Trim(token.Value, `"`)
 }
 
 // key identifies an object by its schema and name, both folded.
@@ -266,21 +393,29 @@ func effective(schema string, opts Options) string {
 }
 
 // names is what the statements name: each qualified pair of parts as a
-// schema and a name, each unqualified name, and each part that qualifies
-// another.
+// schema and a name, each unqualified name with where it stands, and each part
+// that qualifies another.
 type names struct {
-	qualified   map[key]bool
-	unqualified map[string]bool
-	schemas     map[string]bool
-	searchPath  []string
+	qualified map[key]bool
+	// words are the unqualified names; called are the ones a call names, and
+	// relations the ones that stand where SQL names a relation.
+	words, called, relations map[string]bool
+	schemas                  map[string]bool
+	searchPath               []string
 }
 
 func readNames(statements []string, opts Options) names {
-	found := names{qualified: make(map[key]bool), unqualified: make(map[string]bool), schemas: make(map[string]bool)}
+	found := names{
+		qualified: make(map[key]bool), words: make(map[string]bool), called: make(map[string]bool),
+		relations: make(map[string]bool), schemas: make(map[string]bool),
+	}
 	for _, statement := range statements {
-		for _, parts := range deporder.CodeNames(statement, opts.Dialect) {
+		for _, use := range deporder.CodeNameUses(statement, opts.Dialect) {
+			parts := use.Parts
 			if len(parts) == 1 {
-				found.unqualified[parts[0]] = true
+				found.words[parts[0]] = true
+				found.called[parts[0]] = found.called[parts[0]] || use.Call
+				found.relations[parts[0]] = found.relations[parts[0]] || use.Relation
 				continue
 			}
 			// A name of three parts may be schema.table.column or
@@ -363,12 +498,27 @@ func (n names) schemaNames() []string {
 	return union(out, n.searchPath)
 }
 
-// names reports whether an object of schema s named name is named.
-func (n names) named(schema, name string) bool {
+// named reports whether an object of family f in schema named name is named:
+// by its schema and name, or by its name alone along the search path. A name
+// alone names a function only where a call names it, and a table, a view or a
+// sequence only where SQL names a relation; it names a type, such as an enum
+// or a domain, wherever it stands, since a type is spelled bare after a column
+// or a cast as well as anywhere else.
+func (n names) named(f family, schema, name string) bool {
 	if n.qualified[key{schema: schema, name: name}] {
 		return true
 	}
-	return n.unqualified[name] && slices.Contains(n.searchPath, schema)
+	if !slices.Contains(n.searchPath, schema) {
+		return false
+	}
+	switch f {
+	case familyFunction:
+		return n.called[name]
+	case familyTable, familyView, familyMatView, familySequence:
+		return n.relations[name]
+	default:
+		return n.words[name]
+	}
 }
 
 func union(a, b []string) []string {
@@ -385,6 +535,9 @@ type candidate struct {
 	family family
 	// feature is the feature object, for familyFeature.
 	feature schemaext.Object
+	// installed reports a feature object the database installed into the
+	// schema key names, such as an extension.
+	installed bool
 }
 
 type family int
@@ -401,60 +554,114 @@ const (
 
 // needed returns the objects of read that state lacks and names reach, in
 // family and name order so a run is deterministic.
+//
+// A feature object the database installed into a schema, such as an
+// extension, is reached when a name is qualified by that schema, since its
+// members are named that way. An object a table owns, such as a policy, is
+// never needed on its own.
 func needed(state, read *catalog.Database, n names, opts Options) ([]candidate, error) {
 	if read == nil {
 		return nil, nil
 	}
 	has := present(state, opts)
 	var out []candidate
-	consider := func(f family, kind, schema, name string) {
-		k := key{schema: effective(schema, opts), name: fold(name)}
-		if has[f][k] || !n.named(k.schema, k.name) {
-			return
+	for _, c := range objectsOf(read, opts) {
+		if has[c.family][c.key] || !n.named(c.family, c.key.schema, c.key.name) {
+			continue
 		}
-		has[f][k] = true
+		has[c.family][c.key] = true
+		out = append(out, c)
+	}
+	features, err := featureObjectsOf(read, opts)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range features {
+		if _, found, err := state.FeatureObjects.Get(c.feature.Ref); err != nil || found {
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if (c.installed && n.schemas[c.key.schema]) || (!c.installed && n.named(familyFeature, c.key.schema, c.key.name)) {
+			out = append(out, c)
+		}
+	}
+	sortCandidates(out)
+	return out, nil
+}
+
+// ObjectsIn returns the objects state holds in the schemas named, which compare
+// as [Closure] folds them, in the order [Closure] adds objects: by family, then
+// schema and name. An object a read left without a schema is in
+// opts.DefaultSchema, and an object the database installed into a schema, such
+// as an extension, is in that schema. A schema itself is not listed, nor an
+// object a table owns, such as a policy: each is in a schema only through the
+// objects the list names.
+//
+// A feature object that cannot be read returns the error.
+func ObjectsIn(state *catalog.Database, schemas []string, opts Options) ([]Object, error) {
+	if state == nil || len(schemas) == 0 {
+		return nil, nil
+	}
+	in := make(map[string]bool, len(schemas))
+	for _, schema := range schemas {
+		in[fold(schema)] = true
+	}
+	features, err := featureObjectsOf(state, opts)
+	if err != nil {
+		return nil, err
+	}
+	all := slices.Concat(objectsOf(state, opts), features)
+	sortCandidates(all)
+	var out []Object
+	for _, c := range all {
+		if in[c.key.schema] {
+			out = append(out, c.object)
+		}
+	}
+	return out, nil
+}
+
+// objectsOf returns the objects of state that are not feature objects, each as
+// a candidate keyed by its effective schema and its name.
+func objectsOf(state *catalog.Database, opts Options) []candidate {
+	var out []candidate
+	add := func(f family, kind, schema, name string) {
+		k := key{schema: effective(schema, opts), name: fold(name)}
 		out = append(out, candidate{object: Object{Kind: kind, Schema: schema, Name: name}, key: k, family: f})
 	}
-	for _, table := range read.Tables {
-		consider(familyTable, "table", table.Schema, table.Name)
+	for _, table := range state.Tables {
+		add(familyTable, "table", table.Schema, table.Name)
 	}
-	for _, view := range read.Views {
-		consider(familyView, "view", view.Schema, view.Name)
+	for _, view := range state.Views {
+		add(familyView, "view", view.Schema, view.Name)
 	}
-	for _, view := range read.MatViews {
-		consider(familyMatView, "materialized view", view.Schema, view.Name)
+	for _, view := range state.MatViews {
+		add(familyMatView, "materialized view", view.Schema, view.Name)
 	}
-	for _, function := range read.Functions {
+	for _, function := range state.Functions {
 		kind := "function"
 		if strings.EqualFold(function.Kind, "procedure") {
 			kind = "procedure"
 		}
-		consider(familyFunction, kind, function.Schema, function.Name)
+		add(familyFunction, kind, function.Schema, function.Name)
 	}
-	for _, sequence := range read.Sequences {
-		consider(familySequence, "sequence", sequence.Schema, sequence.Name)
+	for _, sequence := range state.Sequences {
+		add(familySequence, "sequence", sequence.Schema, sequence.Name)
 	}
-	for _, enum := range read.Enums {
-		consider(familyEnum, "enum", enum.Schema, enum.Name)
+	for _, enum := range state.Enums {
+		add(familyEnum, "enum", enum.Schema, enum.Name)
 	}
-	features, err := neededFeatures(state, read, n, opts)
-	if err != nil {
-		return nil, err
-	}
-	out = append(out, features...)
-	slices.SortStableFunc(out, func(a, b candidate) int {
-		return cmp.Or(cmp.Compare(a.family, b.family), cmp.Compare(a.key.schema, b.key.schema), cmp.Compare(a.key.name, b.key.name))
-	})
-	return out, nil
+	return out
 }
 
-// neededFeatures returns the feature objects of read that state lacks and the
-// names reach: a schema-level object by its schema and name, and an object
-// the database installed into a schema, such as an extension, when a name is
-// qualified by that schema, since its members are named that way. An object a
-// table owns, such as a policy, is never needed on its own.
-func neededFeatures(state, read *catalog.Database, n names, opts Options) ([]candidate, error) {
-	objects, err := read.FeatureObjects.All()
+// featureObjectsOf returns the feature objects of state that stand on their
+// own, each as a candidate: one the database installed into a schema keyed by
+// that schema, and any other by its schema and name. An object a table owns,
+// such as a policy, and one with no schema or no name are left out.
+func featureObjectsOf(state *catalog.Database, opts Options) ([]candidate, error) {
+	objects, err := state.FeatureObjects.All()
 	if err != nil {
 		return nil, err
 	}
@@ -464,24 +671,18 @@ func neededFeatures(state, read *catalog.Database, n names, opts Options) ([]can
 		if ref.Parent.Normalized != "" {
 			continue
 		}
-		if _, found, err := state.FeatureObjects.Get(ref); err != nil || found {
-			if err != nil {
-				return nil, err
-			}
-			continue
-		}
 		kind := string(ref.Kind)
 		if slash := strings.LastIndex(kind, "/"); slash >= 0 {
 			kind = kind[slash+1:]
 		}
 		if installation, ok := object.Value.(schemaext.SchemaInstallation); ok {
-			schema := fold(installation.InstalledSchema())
-			if schema != "" && n.schemas[schema] {
+			if schema := fold(installation.InstalledSchema()); schema != "" {
 				out = append(out, candidate{
-					object:  Object{Kind: kind, Name: ref.Name.Source},
-					key:     key{schema: schema, name: fold(ref.Name.Source)},
-					family:  familyFeature,
-					feature: object,
+					object:    Object{Kind: kind, Name: ref.Name.Source},
+					key:       key{schema: schema, name: fold(ref.Name.Source)},
+					family:    familyFeature,
+					feature:   object,
+					installed: true,
 				})
 			}
 			continue
@@ -489,17 +690,22 @@ func neededFeatures(state, read *catalog.Database, n names, opts Options) ([]can
 		if ref.Schema.Source == "" || ref.Name.Source == "" {
 			continue
 		}
-		k := key{schema: effective(ref.Schema.Source, opts), name: fold(ref.Name.Source)}
-		if n.named(k.schema, k.name) {
-			out = append(out, candidate{
-				object:  Object{Kind: kind, Schema: ref.Schema.Source, Name: ref.Name.Source},
-				key:     k,
-				family:  familyFeature,
-				feature: object,
-			})
-		}
+		out = append(out, candidate{
+			object:  Object{Kind: kind, Schema: ref.Schema.Source, Name: ref.Name.Source},
+			key:     key{schema: effective(ref.Schema.Source, opts), name: fold(ref.Name.Source)},
+			family:  familyFeature,
+			feature: object,
+		})
 	}
 	return out, nil
+}
+
+// sortCandidates orders candidates by family, then schema and name, so a run
+// is deterministic.
+func sortCandidates(candidates []candidate) {
+	slices.SortStableFunc(candidates, func(a, b candidate) int {
+		return cmp.Or(cmp.Compare(a.family, b.family), cmp.Compare(a.key.schema, b.key.schema), cmp.Compare(a.key.name, b.key.name))
+	})
 }
 
 // present is what state holds, by family and key.

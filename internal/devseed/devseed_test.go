@@ -43,8 +43,8 @@ func render(state *catalog.Database) ([]string, error) {
 		statements = append(statements, fmt.Sprintf("CREATE POLICY %s ON %s USING (%s)", policy.Name, policy.Table, policy.UsingExpression))
 	}
 	for _, function := range state.Functions {
-		statements = append(statements, fmt.Sprintf("CREATE FUNCTION %s() RETURNS %s AS $$%s$$",
-			qualified(function.Schema, function.Name), function.Returns, function.Body))
+		statements = append(statements, fmt.Sprintf("CREATE FUNCTION %s() RETURNS %s LANGUAGE %s AS $$%s$$",
+			qualified(function.Schema, function.Name), function.Returns, function.Language, function.Body))
 	}
 	return statements, nil
 }
@@ -133,7 +133,7 @@ func TestClosure_HappyPath(t *testing.T) {
 		})
 		c.Assert(got.State.Functions, qt.DeepEquals, []catalog.Function{function("auth", "uid", "SELECT NULL::uuid")})
 		c.Assert(got.State.Schemas, qt.DeepEquals, schemas("auth"))
-		c.Assert(got.Statements, qt.Contains, "CREATE FUNCTION auth.uid() RETURNS uuid AS $$SELECT NULL::uuid$$")
+		c.Assert(got.Statements, qt.Contains, "CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT NULL::uuid$$")
 		c.Assert(calls, qt.DeepEquals, [][]string{{"auth", "public"}})
 	})
 
@@ -333,6 +333,215 @@ func TestClosure_HappyPath(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(seed, qt.DeepEquals, notes())
 	})
+}
+
+// authUID is the read of a target whose auth schema holds uid(), which the
+// statements below name from public.
+func authUID() *catalog.Database {
+	return &catalog.Database{Schemas: schemas("public", "auth"), Functions: []catalog.Function{function("auth", "uid", "SELECT NULL::uuid")}}
+}
+
+// addsAuthUID is what a statement that needs auth.uid() adds.
+var addsAuthUID = []devseed.Object{{Kind: "function", Schema: "auth", Name: "uid"}, {Kind: "schema", Name: "auth"}}
+
+// TestClosure_ReadsTheBodiesStatementsQuote runs, after the compared state,
+// statements that quote a routine body as the planner writes them: the body
+// as a string, the language before or after it. A body in SQL or PL/pgSQL
+// names what its code names, as a routine of the state does; one in another
+// language names nothing, and neither does a string that is not a body.
+func TestClosure_ReadsTheBodiesStatementsQuote(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		want      []devseed.Object
+	}{
+		{
+			name:      "CREATE FUNCTION with an SQL body",
+			statement: "CREATE FUNCTION \"public\".\"whoami\"() RETURNS uuid AS $$\nSELECT auth.uid()\n$$\nLANGUAGE sql STABLE",
+			want:      addsAuthUID,
+		},
+		{
+			name:      "CREATE OR REPLACE FUNCTION with a tagged dollar quote",
+			statement: `CREATE OR REPLACE FUNCTION whoami() RETURNS uuid LANGUAGE sql AS $body$ SELECT auth.uid() $body$`,
+			want:      addsAuthUID,
+		},
+		{
+			name:      "CREATE PROCEDURE",
+			statement: `CREATE PROCEDURE touch() LANGUAGE sql AS $$ SELECT auth.uid() $$`,
+			want:      addsAuthUID,
+		},
+		{
+			name:      "a body quoted as a string, with a doubled quote",
+			statement: `CREATE FUNCTION whoami() RETURNS uuid AS 'SELECT auth.uid() WHERE ''x'' = ''x''' LANGUAGE sql`,
+			want:      addsAuthUID,
+		},
+		{
+			name:      "a PL/pgSQL body, its language spelled as a string",
+			statement: `CREATE FUNCTION whoami() RETURNS uuid AS $$ BEGIN RETURN auth.uid(); END $$ LANGUAGE 'plpgsql'`,
+			want:      addsAuthUID,
+		},
+		{
+			name:      "an SQL-standard body, which is code",
+			statement: `CREATE FUNCTION whoami() RETURNS uuid LANGUAGE sql BEGIN ATOMIC SELECT auth.uid(); END`,
+			want:      addsAuthUID,
+		},
+		{
+			name:      "a DO block, in the language a block that names none is in",
+			statement: `DO $$ BEGIN PERFORM auth.uid(); END $$`,
+			want:      addsAuthUID,
+		},
+		{
+			name:      "a DO block that names its language first",
+			statement: `DO LANGUAGE plpgsql $$ BEGIN PERFORM auth.uid(); END $$`,
+			want:      addsAuthUID,
+		},
+		{
+			name:      "a body after another statement in one text",
+			statement: `SELECT 1; CREATE FUNCTION whoami() RETURNS uuid AS $$ SELECT auth.uid() $$ LANGUAGE sql`,
+			want:      addsAuthUID,
+		},
+		{
+			name:      "a body in another language",
+			statement: `CREATE FUNCTION whoami() RETURNS uuid AS $$ return auth.uid() $$ LANGUAGE plpython3u`,
+		},
+		{
+			name:      "a DO block in another language",
+			statement: `DO LANGUAGE plpython3u $$ auth.uid() $$`,
+		},
+		{
+			name:      "a string that is not a body",
+			statement: `COMMENT ON TABLE notes IS $$ calls auth.uid() $$`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var calls [][]string
+			got, err := devseed.Closure(&catalog.Database{}, []string{test.statement}, render, readOf(authUID(), &calls), options)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Added, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestClosure_UnqualifiedNamesStandWhereTheyName runs, after the compared
+// state, statements that spell the name of an object of public the selection
+// left out without its schema. A column named like a table or a function needs
+// neither; a call needs the function, and a FROM the table.
+func TestClosure_UnqualifiedNamesStandWhereTheyName(t *testing.T) {
+	read := &catalog.Database{
+		Schemas:   schemas("public"),
+		Tables:    []catalog.Table{table("public", "items", column("id", "integer"))},
+		Functions: []catalog.Function{function("public", "title", "SELECT NULL::uuid")},
+	}
+	tests := []struct {
+		name      string
+		statement string
+		want      []devseed.Object
+	}{
+		{
+			name:      "columns named like a table and a function",
+			statement: `ALTER TABLE "public"."notes" ADD COLUMN "title" text NULL, ADD COLUMN "items" jsonb NULL`,
+		},
+		{
+			name:      "a call and a FROM",
+			statement: `CREATE VIEW "public"."v" AS SELECT title() AS t FROM items`,
+			want:      []devseed.Object{{Kind: "table", Schema: "public", Name: "items"}, {Kind: "function", Schema: "public", Name: "title"}},
+		},
+		{
+			name:      "a FROM list and a join as PostgreSQL prints them",
+			statement: `CREATE VIEW v AS SELECT n.id FROM notes n, (notes m JOIN items i ON true)`,
+			want:      []devseed.Object{{Kind: "table", Schema: "public", Name: "items"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var calls [][]string
+			got, err := devseed.Closure(notes(), []string{test.statement}, render, readOf(read, &calls), options)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Added, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestClosure_FoldsAQuotedMixedCaseName names a function in a schema whose
+// quoted names hold upper case and a dot. The statement's names and the
+// read's are folded alike, so the function is found, and the read is asked
+// for the schema folded, as [devseed.Target] says.
+func TestClosure_FoldsAQuotedMixedCaseName(t *testing.T) {
+	c := qt.New(t)
+	seed := &catalog.Database{
+		Tables:      notes().Tables,
+		RLSPolicies: []catalog.RLSPolicy{{Name: "notes_owner", Table: "notes", UsingExpression: `owner = "Au.th"."Uid"()`}},
+	}
+	read := &catalog.Database{Schemas: schemas("public", "Au.th"), Functions: []catalog.Function{function("Au.th", "Uid", "SELECT NULL::uuid")}}
+	var calls [][]string
+
+	got, err := devseed.Closure(seed, nil, render, readOf(read, &calls), options)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Added, qt.DeepEquals, []devseed.Object{{Kind: "function", Schema: "Au.th", Name: "Uid"}, {Kind: "schema", Name: "Au.th"}})
+	c.Assert(calls, qt.Any(qt.DeepEquals), []string{"au.th", "public"})
+}
+
+// TestObjectsIn_HappyPath lists what a state holds in the schemas asked for,
+// whatever their case, in the order a closure adds objects: an extension by
+// the schema it is installed in, and an object a read left unqualified by the
+// default schema.
+func TestObjectsIn_HappyPath(t *testing.T) {
+	state := &catalog.Database{
+		Schemas:   schemas("auth", "util"),
+		Tables:    []catalog.Table{table("auth", "accounts"), table("", "notes"), table("util", "logs")},
+		Functions: []catalog.Function{function("auth", "uid", "SELECT NULL::uuid")},
+		FeatureObjects: features(
+			must.Must(pgextension.ObservedObject(pgextension.Ref("pgcrypto"), pgextension.ObservedExtension{Schema: "auth", Version: "1.3"})),
+			must.Must(pgtype.ObservedObject(pgtype.Ref(pgtype.DomainKind, "util", "email"), &pgtype.ObservedDomain{BaseType: "text"})),
+		),
+	}
+	tests := []struct {
+		name    string
+		schemas []string
+		want    []devseed.Object
+	}{
+		{
+			name:    "a schema the state holds objects in, spelled in another case",
+			schemas: []string{"AUTH"},
+			want: []devseed.Object{
+				{Kind: "table", Schema: "auth", Name: "accounts"},
+				{Kind: "function", Schema: "auth", Name: "uid"},
+				{Kind: "extension", Name: "pgcrypto"},
+			},
+		},
+		{
+			name:    "the default schema",
+			schemas: []string{"public"},
+			want:    []devseed.Object{{Kind: "table", Name: "notes"}},
+		},
+		{
+			name:    "a domain",
+			schemas: []string{"util"},
+			want:    []devseed.Object{{Kind: "table", Schema: "util", Name: "logs"}, {Kind: "domain", Schema: "util", Name: "email"}},
+		},
+		{name: "a schema it holds nothing in", schemas: []string{"other"}},
+		{name: "no schema at all"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := devseed.ObjectsIn(state, test.schemas, options)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestObjectsIn_FailurePath is a state that is not there.
+func TestObjectsIn_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	got, err := devseed.ObjectsIn(nil, []string{"auth"}, options)
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.IsNil)
 }
 
 var errRender = errors.New("render refused")
