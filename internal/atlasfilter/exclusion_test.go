@@ -110,9 +110,9 @@ func TestExclusion_FiltersBothSides(t *testing.T) {
 	desired := exclusionDesired()
 	observed := exclusionObserved()
 
-	filteredDesired, desiredReport, err := exclusion.Desired(desired, "main")
+	filteredDesired, desiredReport, err := exclusion.Desired(desired, atlasfilter.Naming{DefaultSchema: "main"})
 	c.Assert(err, qt.IsNil)
-	filteredObserved, observedReport, err := exclusion.Observed(observed, "main")
+	filteredObserved, observedReport, err := exclusion.Observed(observed, atlasfilter.Naming{DefaultSchema: "main"})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(desiredTableNames(filteredDesired), qt.DeepEquals, []string{"widgets"})
@@ -121,6 +121,129 @@ func TestExclusion_FiltersBothSides(t *testing.T) {
 	c.Assert(observedReport.Unmatched, qt.DeepEquals, []string{"reporting_cache"})
 	c.Assert(desiredTableNames(desired), qt.DeepEquals, []string{"widgets", "reporting_cache"})
 	c.Assert(observedTableNames(observed), qt.DeepEquals, []string{"widgets", "external_audit"})
+}
+
+// notesObserved reads a table with two columns in the connection's schema, which
+// the read leaves unqualified.
+func notesObserved() *catalog.Database {
+	return &catalog.Database{Tables: []catalog.Table{{
+		Name:    "notes",
+		Columns: []catalog.Column{{Name: "id"}, {Name: "search_vector"}},
+	}}}
+}
+
+// notesDesired declares the same table and columns as notesObserved.
+func notesDesired() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "notes", StructName: "Notes"}},
+		Fields: []schemamodel.Field{
+			{StructName: "Notes", FieldName: "ID", Name: "id"},
+			{StructName: "Notes", FieldName: "SearchVector", Name: "search_vector"},
+		},
+	}
+}
+
+func desiredColumnNames(db *schemamodel.Database) []string {
+	var names []string
+	for _, field := range db.Fields {
+		names = append(names, field.Name)
+	}
+	return names
+}
+
+func observedColumnNames(db *catalog.Database) []string {
+	var names []string
+	for _, column := range db.Tables[0].Columns {
+		names = append(names, column.Name)
+	}
+	return names
+}
+
+// TestExclusion_CountsARealmRelativePattern_HappyPath reads a schema-qualified
+// column pattern against the realm, where its three parts name the schema, the
+// table and the column, on both sides of a comparison. The bound row is the control: the two-part spelling
+// reaches the same column when the connection fills the schema slot.
+func TestExclusion_CountsARealmRelativePattern_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		naming  atlasfilter.Naming
+	}{
+		{name: "realm", pattern: "public.notes.search_vector", naming: atlasfilter.Naming{DefaultSchema: "public", RealmRelative: true}},
+		{name: "bound", pattern: "notes.search_vector", naming: atlasfilter.Naming{DefaultSchema: "public"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			exclusion := must.Must(atlasfilter.NewExclusion(builtintest.Runtime(), []string{test.pattern}))
+
+			observed, observedReport, observedErr := exclusion.Observed(notesObserved(), test.naming)
+			desired, desiredReport, desiredErr := exclusion.Desired(notesDesired(), test.naming)
+
+			c.Assert(observedErr, qt.IsNil)
+			c.Assert(desiredErr, qt.IsNil)
+			c.Assert(observedColumnNames(observed), qt.DeepEquals, []string{"id"})
+			c.Assert(desiredColumnNames(desired), qt.DeepEquals, []string{"id"})
+			c.Assert(observedReport.Unmatched, qt.HasLen, 0)
+			c.Assert(desiredReport.Unmatched, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestExclusion_CountsARealmRelativePattern_FailurePath refuses the realm
+// spelling where the connection fills the schema slot, on both sides, so a
+// comparison cannot filter one side and refuse the other.
+func TestExclusion_CountsARealmRelativePattern_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	exclusion := must.Must(atlasfilter.NewExclusion(builtintest.Runtime(), []string{"public.notes.search_vector"}))
+	bound := atlasfilter.Naming{DefaultSchema: "public"}
+
+	observed, _, observedErr := exclusion.Observed(notesObserved(), bound)
+	desired, _, desiredErr := exclusion.Desired(exclusionDesired(), bound)
+
+	const refusal = `too many parts in pattern "public.notes.search_vector": this connection is bound to schema "public", ` +
+		`so a pattern names object or object.child; write "notes.search_vector"`
+	c.Assert(observedErr, qt.ErrorMatches, refusal)
+	c.Assert(desiredErr, qt.ErrorMatches, refusal)
+	c.Assert(observed, qt.IsNil)
+	c.Assert(desired, qt.IsNil)
+}
+
+// TestConnectionNaming answers the realm question from the URL, the way
+// `schema apply` does: a PostgreSQL URL without search_path describes the
+// realm, one with it is bound, and SQLite has one namespace and is bound on
+// every URL. The connection's schema owns unqualified objects in every row.
+func TestConnectionNaming(t *testing.T) {
+	tests := []struct {
+		name string
+		info catalog.ServerInfo
+		want atlasfilter.Naming
+	}{
+		{
+			name: "PostgreSQL without search_path",
+			info: catalog.ServerInfo{Dialect: "postgres", URL: "postgres://localhost/app?sslmode=disable", Schema: "public"},
+			want: atlasfilter.Naming{DefaultSchema: "public", RealmRelative: true},
+		},
+		{
+			name: "PostgreSQL with search_path",
+			info: catalog.ServerInfo{Dialect: "postgres", URL: "postgres://localhost/app?search_path=public", Schema: "public"},
+			want: atlasfilter.Naming{DefaultSchema: "public"},
+		},
+		{
+			name: "SQLite",
+			info: catalog.ServerInfo{Dialect: "sqlite", URL: "sqlite://file?mode=memory", Schema: "main"},
+			want: atlasfilter.Naming{DefaultSchema: "main"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(atlasfilter.ConnectionNaming(test.info), qt.Equals, test.want)
+		})
+	}
 }
 
 // TestExclusion_ZeroValueReturnsItsInput is the control for the test above:
@@ -132,8 +255,8 @@ func TestExclusion_ZeroValueReturnsItsInput(t *testing.T) {
 	desired := exclusionDesired()
 	observed := exclusionObserved()
 
-	filteredDesired, desiredReport, desiredErr := exclusion.Desired(desired, "main")
-	filteredObserved, observedReport, observedErr := exclusion.Observed(observed, "main")
+	filteredDesired, desiredReport, desiredErr := exclusion.Desired(desired, atlasfilter.Naming{DefaultSchema: "main"})
+	filteredObserved, observedReport, observedErr := exclusion.Observed(observed, atlasfilter.Naming{DefaultSchema: "main"})
 
 	c.Assert(desiredErr, qt.IsNil)
 	c.Assert(observedErr, qt.IsNil)

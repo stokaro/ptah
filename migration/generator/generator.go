@@ -452,8 +452,11 @@ func readExcludedPlanStates(
 	exclusion atlasfilter.Exclusion,
 	opts GenerateMigrationOptions,
 ) (*schemamodel.Database, *catalog.Database, error) {
-	defaultSchema := conn.Info().Schema
-	desired, desiredReport, err := exclusion.Desired(desired, defaultSchema)
+	// Native patterns count from the connection's schema on every URL; the
+	// realm-relative count is the Atlas contract `ptah-compat` takes from a URL
+	// that names no schema.
+	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema}
+	desired, desiredReport, err := exclusion.Desired(desired, naming)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
 	}
@@ -461,7 +464,7 @@ func readExcludedPlanStates(
 	if err != nil {
 		return nil, nil, err
 	}
-	dbSchema, observedReport, err := exclusion.Observed(dbSchema, defaultSchema)
+	dbSchema, observedReport, err := exclusion.Observed(dbSchema, naming)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}

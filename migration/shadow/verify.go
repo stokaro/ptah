@@ -475,8 +475,10 @@ func assertSchemaMatches(
 	opts MigrationVerifyOptions,
 	exclusion atlasfilter.Exclusion,
 ) error {
-	planSchema := opts.TargetConnection.Info().Schema
-	generated, _, err := exclusion.Desired(opts.Generated, planSchema)
+	// The count is the one the plan was made with: native patterns count from
+	// the target connection's schema on every URL.
+	planNaming := atlasfilter.Naming{DefaultSchema: opts.TargetConnection.Info().Schema}
+	generated, _, err := exclusion.Desired(opts.Generated, planNaming)
 	if err != nil {
 		return newVerificationError("schema-match", "exclude_error", "apply exclude selectors to the desired schema", err)
 	}
@@ -488,7 +490,7 @@ func assertSchemaMatches(
 	if err != nil {
 		return newVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}
-	dbSchema, _, err = exclusion.Observed(dbSchema, planSchema)
+	dbSchema, _, err = exclusion.Observed(dbSchema, planNaming)
 	if err != nil {
 		return newVerificationError("re-introspect", "exclude_error", "apply exclude selectors to the shadow database", err)
 	}

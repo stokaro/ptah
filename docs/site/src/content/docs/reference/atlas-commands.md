@@ -849,9 +849,13 @@ in place. `PTAH_EXCLUDE` does not apply here: it is the twin of `--exclude` on
 the commands that register the flag. Strict Community Edition mode refuses
 `PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE`, even when it is empty.
 
-Strict mode applies the env's `exclude` list deliberately. Measured on SQLite,
-Atlas CE v1.3.0 accepts the list on this command and still writes the objects
-it names; applying it keeps what the project author wrote.
+Strict mode applies the env's `exclude` list deliberately. Measured on SQLite
+and on PostgreSQL 18, Atlas CE v1.3.0 accepts the list on this command and
+still writes the objects it names; applying it keeps what the project author
+wrote. A selector is counted from the dev URL, as on `schema apply`: on a
+PostgreSQL URL without `search_path` it is realm-relative, so
+`public.notes.body` names a column; with `search_path` set, the same column is
+`notes.body`.
 
 For a project `migration.dir` backed by `data.template_dir`, replay uses the
 immutable rendered snapshot while publication writes the new root SQL files and

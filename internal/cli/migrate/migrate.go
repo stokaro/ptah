@@ -392,8 +392,11 @@ func readPlanStates(
 	exclusion atlasfilter.Exclusion,
 	excludeSources atlasfilter.ExcludeSources,
 ) (planStates, error) {
-	defaultSchema := conn.Info().Schema
-	desired, desiredReport, err := exclusion.Desired(desired, defaultSchema)
+	// Native patterns count from the connection's schema on every URL; the
+	// realm-relative count is the Atlas contract `ptah-compat` takes from a URL
+	// that names no schema.
+	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema}
+	desired, desiredReport, err := exclusion.Desired(desired, naming)
 	if err != nil {
 		// The selectors may come from the project file or PTAH_EXCLUDE as well
 		// as the flag, so the wrap names none of them, as `migrations
@@ -409,7 +412,7 @@ func readPlanStates(
 		return planStates{}, fmt.Errorf("error reading database schema: %w", err)
 	}
 	current = revisiontable.Without(current, bookkeeping)
-	current, currentReport, err := exclusion.Observed(current, defaultSchema)
+	current, currentReport, err := exclusion.Observed(current, naming)
 	if err != nil {
 		return planStates{}, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}

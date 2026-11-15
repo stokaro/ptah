@@ -345,12 +345,15 @@ func generateDiff(
 	}()
 
 	info := conn.Info()
-	devDefaultSchema := info.Schema
-	desiredDefaultSchema := desiredState.DefaultSchema
-	if desiredDefaultSchema == "" {
-		desiredDefaultSchema = devDefaultSchema
-	}
-	desired, err := filterDiffDesired(ctx, desiredState.Schema, opts.Runtime.Selections(), schemas, exclusion, desiredDefaultSchema)
+	// The dev URL decides how an exclude pattern is counted, on both sides:
+	// one naming schema.object.child where the URL names no schema, the same
+	// count `schema apply` takes from it. The replay connection is not asked,
+	// because a confined replay runs in a database or schema of its own, and
+	// the desired side keeps the count and changes only its default schema.
+	devNaming := atlasfilter.ConnectionNaming(info)
+	desiredNaming := devNaming
+	desiredNaming.DefaultSchema = cmp.Or(desiredState.DefaultSchema, devNaming.DefaultSchema)
+	desired, err := filterDiffDesired(ctx, desiredState.Schema, opts.Runtime.Selections(), schemas, exclusion, desiredNaming)
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -377,7 +380,7 @@ func generateDiff(
 		migrationfile.DirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 			current, diff, err := compareReplayedState(
-				ctx, replayConn, runtime, schemas, devDefaultSchema, desired, baseline,
+				ctx, replayConn, runtime, schemas, devNaming, desired, baseline,
 				exclusion, opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,
 			)
 			if err != nil {
@@ -780,7 +783,7 @@ func compareReplayedState(
 	replayConn *dbschema.DatabaseConnection,
 	runtime diffRuntime,
 	schemas []string,
-	defaultSchema string,
+	naming atlasfilter.Naming,
 	desired *schemamodel.Database,
 	baseline devclean.Baseline,
 	exclusion atlasfilter.Exclusion,
@@ -793,6 +796,7 @@ func compareReplayedState(
 		selectext.Runtime
 	},
 ) (*catalog.Database, *difftypes.SchemaDiff, error) {
+	defaultSchema := naming.DefaultSchema
 	readNames, err := schemascope.ComparisonReadNames(ctx, replayConn.Info(), schemas, replayConn, desired)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read dev database schema: %w", err)
@@ -805,7 +809,7 @@ func compareReplayedState(
 	if err != nil {
 		return nil, nil, err
 	}
-	replayed, _, err = exclusion.Observed(replayed, defaultSchema)
+	replayed, _, err = exclusion.Observed(replayed, naming)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -851,20 +855,21 @@ func compareReplayedState(
 }
 
 // filterDiffDesired scopes the desired state to schemas and leaves out what
-// exclusion names. defaultSchema owns the objects it leaves unqualified.
+// exclusion names, counting its patterns as naming says. naming.DefaultSchema
+// owns the objects the state leaves unqualified.
 func filterDiffDesired(
 	ctx context.Context,
 	desired *schemamodel.Database,
 	selections selectext.Set,
 	schemas []string,
 	exclusion atlasfilter.Exclusion,
-	defaultSchema string,
+	naming atlasfilter.Naming,
 ) (*schemamodel.Database, error) {
-	filtered, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, selections, desired, schemas, defaultSchema)
+	filtered, err := schemascope.FilterGeneratedWithDefaultSchema(ctx, selections, desired, schemas, naming.DefaultSchema)
 	if err != nil {
 		return nil, err
 	}
-	filtered, _, err = exclusion.Desired(filtered, defaultSchema)
+	filtered, _, err = exclusion.Desired(filtered, naming)
 	return filtered, err
 }
 
