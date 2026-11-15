@@ -585,8 +585,9 @@ server Ptah provisions from a docker URL or one declared with
 A name counts as named where it appears in the code of a statement, or in what
 PostgreSQL resolves in a routine body before the plan goes on. That is the
 whole of an SQL body, and the declarations of a PL/pgSQL body, such as
-`r auth.accounts%ROWTYPE`, without the calls a default makes: PostgreSQL
-resolves a call in a PL/pgSQL body only when it runs. A `DO` block runs at
+`r auth.accounts%ROWTYPE` or `v extensions.vector(3)`, without their defaults:
+PostgreSQL resolves a call in a PL/pgSQL body, and a default, only when the
+block runs. A `DO` block runs at
 once, so the whole of it counts, and one that names no language is PL/pgSQL.
 The rule is the same for a routine the target holds and for a planned `CREATE
 FUNCTION`, `CREATE PROCEDURE` or `DO` block.

@@ -139,6 +139,13 @@ func TestCodeNameUses_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name: "a routine named after IF EXISTS",
+			body: `DROP FUNCTION IF EXISTS uid`,
+			want: []deporder.NameUse{
+				name("drop"), name("function"), call("if"), name("exists"), {Parts: []string{"uid"}, Call: true, Relation: true},
+			},
+		},
+		{
 			name: "a trigger and the function it executes",
 			body: `CREATE TRIGGER touch BEFORE INSERT ON tasks FOR EACH ROW EXECUTE FUNCTION touch()`,
 			want: []deporder.NameUse{
