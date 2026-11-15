@@ -48,6 +48,35 @@ type Effect struct {
 	// name. A property it does not list is not described, which is not the
 	// same as unchanged.
 	Properties []Property `json:"properties,omitempty"`
+	// BeforePlan is Object as the database held it when the plan started, as
+	// the plan read it. A statement's Before is what the statements ahead of
+	// it leave, so a create, which finds no view, records no Before; this says
+	// whether a view of the name existed before the plan, and what it held. A
+	// consumer reads from it that a create makes a view again, after a
+	// statement that took the view and records no effect for it, such as a
+	// drop that cascades. It is nil when the plan read no catalog, since
+	// nothing then says whether the view existed.
+	BeforePlan *Held `json:"before_plan,omitempty"`
+}
+
+// Held is an object as it stood at one point of a plan.
+type Held struct {
+	// Exists reports that the object was in the catalog the plan read. That
+	// catalog is the one the plan compares with, after the read scope and the
+	// exclusions, so a view outside them reads as absent.
+	Exists bool `json:"exists"`
+	// Properties are the values the object held then of the properties the
+	// effect reports, sorted by name. It is empty when the object did not
+	// exist then. A property it does not list is not described.
+	Properties []HeldProperty `json:"properties,omitempty"`
+}
+
+// HeldProperty is the value one property of an object held.
+type HeldProperty struct {
+	// Name names the property, as [Property.Name] does.
+	Name string `json:"name"`
+	// Value is the value, of the type the property's name gives it.
+	Value any `json:"value"`
 }
 
 // Object names a database object.
@@ -209,6 +238,10 @@ type viewState struct {
 	object   Object
 	presence presence
 	held     viewHeld
+	// start is what the view held when the plan started, nil when it did not
+	// exist then. It is what Current reports, and stays what it is whatever
+	// the statements do.
+	start *viewHeld
 }
 
 // viewHeld is what a view holds of the properties an effect describes.
@@ -236,7 +269,33 @@ type viewStates struct {
 	// through the connection, so `v` under a connection to schema app is app.v
 	// whatever the dialect's default.
 	semantics identifier.Semantics
-	views     []viewState
+	// properties are the properties a view of the target is described by,
+	// sorted by name.
+	properties []viewPropertyReader
+	views      []viewState
+}
+
+// viewPropertyReader reads one property of a view from what it holds. ok is
+// false when it cannot read the value.
+type viewPropertyReader struct {
+	name  string
+	value func(viewHeld) (any, bool)
+}
+
+// viewProperties are the properties a view of target is described by, sorted
+// by name.
+func viewProperties(target Target) []viewPropertyReader {
+	var readers []viewPropertyReader
+	if target.ViewOptions {
+		for _, name := range viewoptions.SecurityOptions() {
+			readers = append(readers, viewPropertyReader{name: name, value: securityOption(name)})
+		}
+	}
+	if target.ViewSQLSecurity {
+		readers = append(readers, viewPropertyReader{name: SQLSecurity, value: sqlSecurity})
+	}
+	slices.SortFunc(readers, func(a, b viewPropertyReader) int { return strings.Compare(a.name, b.name) })
+	return readers
 }
 
 func newViewStates(target Target) *viewStates {
@@ -244,7 +303,7 @@ func newViewStates(target Target) *viewStates {
 	if target.DefaultSchema != "" {
 		semantics.DefaultSchema = target.DefaultSchema
 	}
-	states := &viewStates{target: target, semantics: semantics}
+	states := &viewStates{target: target, semantics: semantics, properties: viewProperties(target)}
 	if target.Current == nil {
 		return states
 	}
@@ -253,11 +312,14 @@ func newViewStates(target Target) *viewStates {
 		if schema == "" {
 			schema = target.DefaultSchema
 		}
+		held := viewHeld{options: slices.Clone(view.Options), security: view.Security}
+		start := held.clone()
 		states.views = append(states.views, viewState{
 			name:     view.QualifiedName(),
 			object:   Object{Kind: KindView, Schema: schema, Name: view.Name},
 			presence: present,
-			held:     viewHeld{options: slices.Clone(view.Options), security: view.Security},
+			held:     held,
+			start:    &start,
 		})
 	}
 	return states
@@ -303,12 +365,12 @@ func (s *viewStates) create(node *ast.CreateViewNode, statement statementOf) (Ef
 	if !node.Replace {
 		// CREATE VIEW succeeds only where no view of the name exists, so the
 		// view did not exist before it, whatever the earlier statements left.
-		return s.effect(view.object, ActionCreate, nil, &after), true
+		return s.effect(view, ActionCreate, nil, &after), true
 	}
 	if !known {
 		return Effect{}, false
 	}
-	return s.effect(view.object, ActionReplace, before, &after), true
+	return s.effect(view, ActionReplace, before, &after), true
 }
 
 // alter follows ALTER VIEW ... SET, which the node renders first when it sets
@@ -346,7 +408,7 @@ func (s *viewStates) alter(node *ast.AlterViewOptionsNode, statement statementOf
 	// The ALTER succeeds only on a view that exists, and a statement that may
 	// have dropped the view changes no option of one it left.
 	view.presence, view.held = present, after
-	return s.effect(view.object, ActionAlter, &before, &after), true
+	return s.effect(view, ActionAlter, &before, &after), true
 }
 
 // drop follows DROP VIEW. A DROP VIEW ... IF EXISTS of a view a statement may
@@ -374,7 +436,7 @@ func (s *viewStates) drop(node *ast.DropViewNode, statement statementOf) (Effect
 	if was != present && (was != uncertain || node.IfExists) {
 		return Effect{}, false
 	}
-	return s.effect(view.object, ActionDrop, &before, nil), true
+	return s.effect(view, ActionDrop, &before, nil), true
 }
 
 // before is what the view holds before a statement, nil when it does not exist
@@ -474,25 +536,25 @@ func cascadeFlag(value any) bool {
 	return flag.IsValid() && flag.Kind() == reflect.Bool && flag.Bool()
 }
 
-// effect is the effect of a statement that leaves object holding after, nil
+// effect is the effect of a statement that leaves view holding after, nil
 // when it does not exist then, where it held before.
-func (s *viewStates) effect(object Object, action Action, before, after *viewHeld) Effect {
-	effect := Effect{Version: Version, Object: object, Action: action}
-	if s.target.ViewOptions {
-		for _, name := range viewoptions.SecurityOptions() {
-			property, ok := viewProperty(name, before, after, securityOption(name))
-			if ok {
-				effect.Properties = append(effect.Properties, property)
-			}
-		}
+func (s *viewStates) effect(view *viewState, action Action, before, after *viewHeld) Effect {
+	effect := Effect{Version: Version, Object: view.object, Action: action}
+	if s.target.Current != nil {
+		effect.BeforePlan = &Held{Exists: view.start != nil}
 	}
-	if s.target.ViewSQLSecurity {
-		property, ok := viewProperty(SQLSecurity, before, after, sqlSecurity)
+	for _, reader := range s.properties {
+		property, ok := viewProperty(reader.name, before, after, reader.value)
 		if ok {
 			effect.Properties = append(effect.Properties, property)
 		}
+		if view.start == nil {
+			continue
+		}
+		if value, ok := reader.value(*view.start); ok {
+			effect.BeforePlan.Properties = append(effect.BeforePlan.Properties, HeldProperty{Name: reader.name, Value: value})
+		}
 	}
-	slices.SortFunc(effect.Properties, func(a, b Property) int { return strings.Compare(a.Name, b.Name) })
 	return effect
 }
 
