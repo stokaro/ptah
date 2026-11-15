@@ -28,6 +28,18 @@ func Effective(value string) string {
 	return mode
 }
 
+// Kept is the mode a view takes from a declaration that may name none: the
+// declared mode, or held, the mode the view holds, when the declaration names
+// none. A statement that writes the view again without the clause selects
+// DEFINER and makes the account that runs it the definer, so a view held as
+// INVOKER would start to run with that account's privileges.
+func Kept(declared, held string) string {
+	if mode := strings.ToUpper(strings.TrimSpace(declared)); mode != "" {
+		return mode
+	}
+	return strings.ToUpper(strings.TrimSpace(held))
+}
+
 // Clause returns the view header clause, or empty for the server default.
 func Clause(value string) (string, error) {
 	mode, err := Parse(value)

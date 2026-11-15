@@ -111,7 +111,8 @@ export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).
 ## Declare view options
 
 A MySQL or MariaDB view can state `security = DEFINER` or
-`security = INVOKER`. Omitting it uses the server default, `DEFINER`.
+`security = INVOKER`. Omitting it keeps the mode the view holds, and a new
+view takes the server default, `DEFINER`.
 `schema inspect` writes the mode read from the database.
 
 A `view` block states PostgreSQL's `security_invoker` and `security_barrier` in

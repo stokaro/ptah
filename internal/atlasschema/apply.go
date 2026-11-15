@@ -610,6 +610,9 @@ func computeApplyPlan(
 			DefaultSchema: defaultSchemaOf(info),
 			Semantics:     compared.EffectiveIdentifierSemantics(info.Dialect),
 			ViewOptions:   info.Capabilities.Has(capability.ViewOptions),
+			// The descriptor says whether a view runs with its definer's or
+			// its invoker's privileges, which the comparison reads too.
+			ViewSQLSecurity: described(info.Dialect).Comparison.ViewSQLSecurity,
 		}
 		if err := computation.captureRenderedUnits(ctx, opts.Runtime, info, plan, effects); err != nil {
 			return applyComputation{}, err

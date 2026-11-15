@@ -14,6 +14,7 @@ generated: false
 searchAliases:
   - "plan effects"
   - "security_invoker in a plan"
+  - "sql_security in a plan"
 overlaps: []
 disposition: keep
 ---
@@ -86,7 +87,7 @@ The body change from the first paragraph, on a view that holds
 | `object` | The object the statement changes: its `kind`, and its `schema` and `name` as the database spells them |
 | `action` | The kind of statement; see the next table |
 | `properties` | Each property the effect reports, sorted by `name` |
-| `before`, `after` | The value before the statement runs and after it. Each is absent where the object does not exist at that point |
+| `before`, `after` | The value before the statement runs and after it, of the type the property's `name` gives it. Each is absent where the object does not exist at that point |
 | `changed` | Whether the two values differ. An absent value differs from every value, so `create` and `drop` change every property |
 
 | Action | Statement |
@@ -116,9 +117,43 @@ YugabyteDB and CockroachDB lines that have them, as
 `security_barrier` and `security_invoker`. Each value is a boolean, the one the
 server applies, so a view that holds no value for an option reads `false`.
 
+On MySQL and MariaDB, Ptah describes views by their `SQL SECURITY` mode, as
+the property `sql_security`. The value is a string, `DEFINER` or `INVOKER`, the
+mode the server applies, so a statement that names no mode reads `DEFINER`.
+A body change to a view held as `INVOKER`, declared without a mode, is recorded
+like this:
+
+```json
+"effects": [
+  {
+    "version": 1,
+    "object": {
+      "kind": "view",
+      "schema": "shop",
+      "name": "order_totals"
+    },
+    "action": "replace",
+    "properties": [
+      {
+        "name": "sql_security",
+        "before": "INVOKER",
+        "after": "INVOKER",
+        "changed": false
+      }
+    ]
+  }
+]
+```
+
+`sql_security` does not describe the view's definer. A `CREATE OR REPLACE
+VIEW` that states no `DEFINER` makes the account that runs it the definer, so a
+`DEFINER` view replaced by another account runs with that account's
+privileges, though `sql_security` reads unchanged.
+
 The `before` values come from the database the plan read. The plan's source
-fingerprint covers the options, so a view whose options change after the plan
-was computed makes the plan stale, and `ptah schema apply --plan` refuses it.
+fingerprint covers the options and the mode, so a view whose options or mode
+change after the plan was computed makes the plan stale, and `ptah schema apply
+--plan` refuses it.
 Ptah does not check the effects again when it reads a plan file. The plan's
 digest and an approval signature cover them with the rest of the file.
 

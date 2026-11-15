@@ -22,8 +22,8 @@ var restatedInvoker = []planeffect.Effect{{
 	Object:  planeffect.Object{Kind: planeffect.KindView, Schema: "public", Name: "order_totals"},
 	Action:  planeffect.ActionReplace,
 	Properties: []planeffect.Property{
-		{Name: "security_barrier", Before: new(false), After: new(false)},
-		{Name: "security_invoker", Before: new(true), After: new(true)},
+		{Name: "security_barrier", Before: false, After: false},
+		{Name: "security_invoker", Before: true, After: true},
 	},
 }}
 
