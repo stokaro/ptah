@@ -18,8 +18,11 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
+	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/cliobs"
+	"ptah.run/internal/cli/internal/cmdadapter"
 	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
@@ -108,8 +111,13 @@ type options struct {
 	metricsAddr          string
 	// resolvedRunner is what runner names once ptah.yaml is merged under it.
 	resolvedRunner migrateflags.Runner
-	// planExclude is the project's exclude list a --plan rollback applies.
-	planExclude []string
+	// planExclude is the project's exclude list a --plan rollback applies,
+	// and planExcludeSources names the file each selector came from.
+	planExclude        []string
+	planExcludeSources atlasfilter.ExcludeSources
+	// planAllowUnmatchedExclude is the opt-in that turns the refusal of a
+	// --plan selector that matched nothing into a warning.
+	planAllowUnmatchedExclude bool
 }
 
 func NewMigrateDownCommand() *cobra.Command {
@@ -232,9 +240,15 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	opts.resolvedRunner = runner
 	// A rollback derived from the schema difference leaves the objects the
 	// project excludes alone, as `schema apply` does; one that runs the down
-	// files runs what they say, and has no exclusion to apply.
+	// files runs what they say, and has no exclusion to apply. The opt-in is
+	// resolved here, before anything is read, as `schema apply` resolves it,
+	// so a malformed value is refused whatever the selectors match.
 	if opts.plan {
-		opts.planExclude, _, err = dbcli.EffectiveExclude(cmd, "", nil, projectCfg, opts.featureRuntime.Selections())
+		opts.planExclude, opts.planExcludeSources, err = dbcli.EffectiveExclude(cmd, "", nil, projectCfg, opts.featureRuntime.Selections())
+		if err != nil {
+			return opts, err
+		}
+		opts.planAllowUnmatchedExclude, err = atlasfilter.AllowUnmatchedExclude()
 		if err != nil {
 			return opts, err
 		}
@@ -342,6 +356,15 @@ func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings
 
 // Command is the command a run document names.
 const Command = "migrations down"
+
+// typedCommand is the command a refusal names: [Command], or the spelling the
+// operator typed on the surface that forwarded to it, such as `migrate down`.
+func typedCommand(cmd *cobra.Command) string {
+	if typed, forwarded := cmdadapter.ForwardedAs(cmd); forwarded {
+		return typed
+	}
+	return Command
+}
 
 // errJSONNeedsConfirmation refuses a document run that would stop to ask a
 // person: the caller reading the document cannot answer the prompt, and a run
@@ -1105,8 +1128,13 @@ type dynamicRollback struct {
 	dryRun         bool
 	revisionsOpts  atlasmigrate.SetOptions
 	// exclude is the project's exclude list: the objects the derived plan
-	// leaves alone, as `schema apply` leaves them.
-	exclude []string
+	// leaves alone, as `schema apply` leaves them. excludeSources names where
+	// each selector was written.
+	exclude        []string
+	excludeSources atlasfilter.ExcludeSources
+	// allowUnmatchedExclude turns the refusal of a selector that matched
+	// nothing into a warning.
+	allowUnmatchedExclude bool
 	// providerOptions are the rollback's own. The target schema is built on
 	// the dev database by running the up files, and a runner that leaves a
 	// file its own transactions runs them that way there too.
@@ -1147,7 +1175,15 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emi
 		ConnectTimeout: r.connectTimeout,
 		RevisionsTable: r.revisionsOpts.RevisionsTable,
 		Exclude:        r.exclude,
+		ExcludeSources: r.excludeSources,
+		// The derived plan executes, as the plan of `schema apply` does, so a
+		// selector that protects nothing is refused before any statement runs.
+		RefuseUnmatchedExclude: !r.allowUnmatchedExclude,
+		Diagnostics:            cmd.ErrOrStderr(),
 	})
+	if unmatched, ok := errors.AsType[*atlasfilter.UnmatchedExcludeError](err); ok {
+		return atlasschema.UnmatchedExcludeRefusal(typedCommand(cmd)+" --"+planFlag, unmatched)
+	}
 	if err != nil {
 		return err
 	}
@@ -1242,18 +1278,20 @@ func buildRollbackExecution(
 		migrator:      mig,
 		preflightHook: hook,
 		dynamicRollback: dynamicRollback{
-			runtime:         resolved.featureRuntime,
-			conn:            conn,
-			devURL:          resolved.shadowDB,
-			migrationsFS:    in.migrationsFS,
-			migrationsDir:   in.migrationsDir,
-			targetVersion:   in.targetVersion,
-			dirFormat:       in.dirFormat,
-			atlasEnv:        in.atlasEnv,
-			connectTimeout:  in.connectTimeout,
-			dryRun:          opts.dryRun,
-			exclude:         resolved.planExclude,
-			providerOptions: in.providerOptions,
+			runtime:               resolved.featureRuntime,
+			conn:                  conn,
+			devURL:                resolved.shadowDB,
+			migrationsFS:          in.migrationsFS,
+			migrationsDir:         in.migrationsDir,
+			targetVersion:         in.targetVersion,
+			dirFormat:             in.dirFormat,
+			atlasEnv:              in.atlasEnv,
+			connectTimeout:        in.connectTimeout,
+			dryRun:                opts.dryRun,
+			exclude:               resolved.planExclude,
+			excludeSources:        resolved.planExcludeSources,
+			allowUnmatchedExclude: resolved.planAllowUnmatchedExclude,
+			providerOptions:       in.providerOptions,
 			revisionsOpts: atlasmigrate.SetOptions{
 				Dir:             in.migrationsDir,
 				FS:              in.migrationsFS,

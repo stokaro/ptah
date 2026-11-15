@@ -1018,6 +1018,8 @@ defines rather than from a down body. `migration/generator` calls the first of
 these when `ShadowDatabaseURL` is set, comparing with `ShadowGenerated` where a
 provider binds declared values to another database context on the shadow than
 on the target.
+`PlanDynamicRollback` refuses an exclude selector that names no object, when
+`RefuseUnmatchedExclude` asks it to, with an error matching `ErrUnmatchedExclude`.
 
 When candidate or baseline shadow verification fails,
 `generator.PlanMigration`, `generator.GenerateMigration`, and

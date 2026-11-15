@@ -397,6 +397,9 @@ whether that was the schema or the selector. Ptah always says which:
 - `schema apply` refuses with exit 1. It is the verb that carries the plan out,
   and a selector written to keep an object out of the plan that named nothing
   leaves the plan free to change it.
+- `migrate down --plan` takes no `--exclude`, but it executes the rollback it
+  derives, so it refuses a selector of the env's `exclude` list that names
+  nothing with exit 1 for the same reason.
 
 A selector from an `atlas.hcl` env's `exclude` list is named by that file
 rather than by the flag, as in

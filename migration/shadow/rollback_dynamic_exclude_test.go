@@ -3,6 +3,8 @@ package shadow_test
 import (
 	"cmp"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -87,5 +89,126 @@ func TestPlanDynamicRollbackExclude_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches,
 		`dynamic rollback planning failed: invalid exclude: invalid Atlas exclude glob "us\[ers": syntax error in pattern`)
+	c.Assert(err, qt.Not(qt.ErrorIs), shadow.ErrUnmatchedExclude)
 	c.Assert(statements, qt.IsNil)
+}
+
+// TestPlanDynamicRollbackUnmatchedExclude_HappyPath plans with selectors that
+// name no object. Refusing is the caller's choice: without it each such
+// selector is a warning on Diagnostics, named by the source the caller
+// recorded, and the plan drops what the selector was meant to keep. The
+// planner's own selectors for the revision tables match nothing in this
+// database, so the refusing rows show it reports only the selectors the caller
+// wrote.
+func TestPlanDynamicRollbackUnmatchedExclude_HappyPath(t *testing.T) {
+	tests := []struct {
+		name            string
+		exclude         []string
+		sources         map[string]string
+		refuse          bool
+		want            []string
+		wantDiagnostics string
+	}{
+		{
+			name:            "an unmatched selector is a warning",
+			exclude:         []string{"external_audt"},
+			want:            []string{`DROP TABLE "external_audit"`, `DROP TABLE "posts"`},
+			wantDiagnostics: `Warning: the --exclude selection matched no objects: "external_audt".` + "\n",
+		},
+		{
+			name:    "the warning names the source of the selector",
+			exclude: []string{"external_audit", "external_audt"},
+			sources: map[string]string{"external_audit": "ptah.yaml", "external_audt": "ptah.yaml"},
+			want:    []string{`DROP TABLE "posts"`},
+			wantDiagnostics: `Warning: the exclude selection from ptah.yaml matched no objects: "external_audt".` +
+				"\n",
+		},
+		{
+			name:    "a refusing plan with a matching selector",
+			exclude: []string{"external_audit"},
+			refuse:  true,
+			want:    []string{`DROP TABLE "posts"`},
+		},
+		{
+			name:   "a refusing plan with no selector",
+			refuse: true,
+			want:   []string{`DROP TABLE "external_audit"`, `DROP TABLE "posts"`},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var diagnostics strings.Builder
+			opts := dynamicRollbackOptions(c, "", test.exclude)
+			opts.ExcludeSources = test.sources
+			opts.RefuseUnmatchedExclude = test.refuse
+			opts.Diagnostics = &diagnostics
+
+			statements, err := shadow.PlanDynamicRollback(c.Context(), opts)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.ContentEquals, test.want)
+			c.Assert(diagnostics.String(), qt.Equals, test.wantDiagnostics)
+		})
+	}
+}
+
+// TestPlanDynamicRollbackUnmatchedExclude_FailurePath refuses a selector that
+// names no object in the live database or the replayed target state. It
+// protects nothing, so the plan would drop the table it was written for: no
+// statement is returned and nothing is written to Diagnostics. A selector
+// the caller wrote is refused even when it spells a revision table the
+// planner leaves out on its own.
+func TestPlanDynamicRollbackUnmatchedExclude_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		exclude []string
+		sources map[string]string
+		wantErr string
+	}{
+		{
+			name:    "a mistyped selector",
+			exclude: []string{"external_audt"},
+			wantErr: `dynamic rollback planning failed: compare the schemas: ` +
+				`the --exclude selection matched no objects: "external_audt"`,
+		},
+		{
+			name:    "a mistyped selector beside a matching one, named by its source",
+			exclude: []string{"external_audit", "external_audt"},
+			sources: map[string]string{"external_audit": "atlas.hcl", "external_audt": "atlas.hcl"},
+			wantErr: `dynamic rollback planning failed: compare the schemas: ` +
+				`the exclude selection from atlas.hcl matched no objects: "external_audt"`,
+		},
+		{
+			name:    "a revision table the database does not hold",
+			exclude: []string{"schema_migrations"},
+			wantErr: `dynamic rollback planning failed: compare the schemas: ` +
+				`the --exclude selection matched no objects: "schema_migrations"`,
+		},
+		{
+			name:    "a revision table in a comma-separated value",
+			exclude: []string{"external_audit, schema_migrations"},
+			wantErr: `dynamic rollback planning failed: compare the schemas: ` +
+				`the --exclude selection matched no objects: "schema_migrations"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var diagnostics strings.Builder
+			opts := dynamicRollbackOptions(c, "", test.exclude)
+			opts.ExcludeSources = test.sources
+			opts.RefuseUnmatchedExclude = true
+			opts.Diagnostics = &diagnostics
+
+			statements, err := shadow.PlanDynamicRollback(c.Context(), opts)
+
+			c.Assert(err, qt.ErrorIs, shadow.ErrUnmatchedExclude)
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
+			c.Assert(statements, qt.IsNil)
+			c.Assert(diagnostics.String(), qt.Equals, "")
+		})
+	}
 }

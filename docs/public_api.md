@@ -4581,7 +4581,11 @@ the variable.
 rollback statements from the schema a version defines rather than from a down
 body. Every entry point refuses a shadow database that holds anything the reset
 would drop or resolves to the target's live realm, drops it clean before the replay, and
-empties it again before returning.
+empties it again before returning. With `RefuseUnmatchedExclude` set,
+`PlanDynamicRollback` refuses an exclude selector that names no object with an
+error matching `shadow.ErrUnmatchedExclude` and returns no statement; the
+`ptah schema apply` and `ptah migrations down --plan` refusals match the same
+sentinel.
 
 `migration/generator.GenerateCheckpointFromShadow` and
 `migration/shadow.VerifyBaseline` apply the same SQLite-only validation before

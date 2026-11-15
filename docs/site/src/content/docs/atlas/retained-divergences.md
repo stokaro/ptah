@@ -811,8 +811,9 @@ reads exactly like one that worked. The pinned community binary v1.3.0 exits
 env's `exclude` list carries it. `ptah-compat` reports it. `schema inspect` and
 `schema diff` keep their exit status and write a warning on stderr. `schema
 apply` refuses the run, because a selector that named nothing leaves the plan
-free to change the object it was written to keep out;
-`PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1` turns the refusal back into a warning.
+free to change the object it was written to keep out. `migrate down --plan`,
+which the community binary does not have, refuses for the same reason;
+`PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1` turns either refusal back into a warning.
 
 Each line names where the selector came from, since the command line may not
 carry it. Measured on SQLite with an `atlas.hcl` env holding

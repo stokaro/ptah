@@ -225,3 +225,56 @@ func ExamplePlanDynamicRollback() {
 	// Output:
 	// DROP TABLE "posts"
 }
+
+// ExamplePlanDynamicRollback_unmatchedExclude shows the refusal of an exclude
+// selector that names nothing. The selector is meant to keep audit_log, a
+// table another tool owns, but it is mistyped, so it protects nothing and the
+// derived plan would drop the table. With RefuseUnmatchedExclude set, the
+// planning returns no statement and an error that errors.Is matches against
+// ErrUnmatchedExclude; the message names the selector and the file it came
+// from.
+func ExamplePlanDynamicRollback_unmatchedExclude() {
+	ctx := context.Background()
+	dir := must.Must(os.MkdirTemp("", "shadow-example"))
+	defer os.RemoveAll(dir)
+
+	live := must.Must(dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(dir, "live.db")))
+	defer dbschema.CloseAndWarn(live)
+	must.Must(live.ExecContext(ctx, "CREATE TABLE users (id INTEGER PRIMARY KEY)"))
+	must.Must(live.ExecContext(ctx, "CREATE TABLE posts (id INTEGER PRIMARY KEY)"))
+	must.Must(live.ExecContext(ctx, "CREATE TABLE audit_log (id INTEGER PRIMARY KEY)"))
+
+	history := fstest.MapFS{
+		"1_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);")},
+		"2_posts.sql": {Data: []byte("CREATE TABLE posts (id INTEGER PRIMARY KEY);")},
+	}
+
+	statements, err := shadow.PlanDynamicRollback(ctx, shadow.DynamicRollbackOptions{
+		TargetConnection: live,
+		DevDatabaseURL:   "sqlite://" + filepath.Join(dir, "dev.db"),
+		FS:               history,
+		TargetVersion:    1,
+		ProviderOptions: []migrator.FSProviderOption{
+			migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
+		},
+		Exclude:                []string{"audit_logs"},
+		ExcludeSources:         map[string]string{"audit_logs": "ptah.yaml"},
+		RefuseUnmatchedExclude: true,
+		Runtime:                must.Must(builtin.New())})
+	if errors.Is(err, shadow.ErrUnmatchedExclude) {
+		fmt.Println(err)
+		fmt.Println("statements:", len(statements))
+		return
+	}
+	if err != nil {
+		fmt.Println("planning failed:", err)
+		return
+	}
+	for _, statement := range statements {
+		fmt.Println(statement)
+	}
+
+	// Output:
+	// dynamic rollback planning failed: compare the schemas: the exclude selection from ptah.yaml matched no objects: "audit_logs"
+	// statements: 0
+}

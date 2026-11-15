@@ -1,6 +1,7 @@
 package atlasfilter
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -341,6 +342,18 @@ func (e *UnmatchedExcludeError) Error() string {
 		parts = append(parts, selection+" matched no objects: "+quoteSelectors(grouped[selection]))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// ErrUnmatchedExclude is the sentinel every [UnmatchedExcludeError] matches
+// with errors.Is. A caller that only needs to know a selection protected
+// nothing tests for it; one that names the selectors reads the error itself.
+// ptah.run/migration/shadow exports it as its own ErrUnmatchedExclude, so the
+// refusal an embedder receives and the one a command prints are one error.
+var ErrUnmatchedExclude = errors.New("exclude selection matched no objects")
+
+// Is reports whether target is [ErrUnmatchedExclude].
+func (e *UnmatchedExcludeError) Is(target error) bool {
+	return target == ErrUnmatchedExclude
 }
 
 // ExcludeSources names where a run read each of its exclude selectors, so a
