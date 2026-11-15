@@ -91,6 +91,40 @@ func TestCheckSimulationSchemaScope_FailurePath(t *testing.T) {
 	}
 }
 
+func TestCheckNativeSimulationSchemaScope_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		dev    catalog.ServerInfo
+		target catalog.ServerInfo
+	}{
+		{
+			name:   "realm URLs whose current schemas agree",
+			dev:    realmInfo("", "public"),
+			target: realmInfo("", "public"),
+		},
+		{
+			name:   "bound URLs naming one schema",
+			dev:    realmInfo("?search_path=app", "app"),
+			target: realmInfo("?search_path=app", "app"),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(checkNativeSimulationSchemaScope(test.dev, test.target), qt.IsNil)
+		})
+	}
+}
+
+func TestCheckNativeSimulationSchemaScope_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	err := checkNativeSimulationSchemaScope(realmInfo("", "public"), realmInfo("", "rebase"))
+
+	c.Assert(err, qt.ErrorMatches, `--dev-url schema scope "public" does not match --url schema scope "rebase"; `+
+		`a plan that holds native operations or approved inputs is rehearsed only where both resolve names alike, `+
+		`so point --dev-url at a dev database using the same schema or set search_path on both URLs`)
+}
+
 func TestRefuseUnqualifiedTableMoves_HappyPath(t *testing.T) {
 	for _, test := range []struct {
 		name string

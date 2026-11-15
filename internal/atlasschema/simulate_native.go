@@ -76,6 +76,9 @@ func (p ApplyRuntimePlan) simulateNativeOnDev(ctx context.Context, opts Simulate
 	defer dev.release()
 	defer dbschema.CloseAndWarn(dev.conn)
 	defer discardDevRehearsalArtifacts(ctx, dev.conn, dev.baseline)
+	if err := checkNativeSimulationSchemaScope(dev.conn.Info(), p.conn.Info()); err != nil {
+		return err
+	}
 
 	return dev.conn.WithUntrustedSQLSession(ctx, func(session *dbschema.DatabaseConnection) error {
 		return p.rehearseNativeOnPreparedDev(ctx, session, dev.baseline, assessments)

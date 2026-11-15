@@ -544,6 +544,25 @@ func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 	)
 }
 
+// checkNativeSimulationSchemaScope refuses a realm-scoped pair whose current
+// schemas differ for a plan that holds native operations or approved inputs.
+// [checkSimulationSchemaScope] lets that pair through because a rehearsal of
+// SQL text moves the dev session's name resolution to the target's; see
+// [resolveNamesAsTarget]. The native rehearsal makes the plan again on the dev
+// database and does not move it, so the dev session would build the target's
+// state under its own current schema and run the plan against that.
+func checkNativeSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
+	if !realmPairResolvesApart(devInfo, targetInfo) {
+		return nil
+	}
+	return fmt.Errorf(
+		"--dev-url schema scope %q does not match --url schema scope %q; "+
+			"a plan that holds native operations or approved inputs is rehearsed only where both resolve names alike, "+
+			"so point --dev-url at a dev database using the same schema or set search_path on both URLs",
+		devInfo.Schema, targetInfo.Schema,
+	)
+}
+
 // resolveNamesAsTarget returns devConn, a pinned dev session, resolving
 // unqualified names as the target does, and the reads the rehearsal makes of
 // it.
