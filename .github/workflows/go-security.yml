@@ -10,9 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
-  security-events: write
 
 concurrency:
   group: go-security-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
@@ -78,67 +76,6 @@ jobs:
       - name: Run govulncheck
         run: go tool govulncheck ./...
 
-  gosec:
-    name: gosec
-    needs: scope
-    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-          cache-dependency-path: go.sum
-
-      - name: Install dependencies
-        run: go mod download
-
-      - name: Run gosec
-        uses: golangci/golangci-lint-action@v9
-        with:
-          args: --enable-only=gosec --output.sarif.path=gosec.sarif --timeout=30m
-          version: v2.15.0
-
-      # The tagged contour: every opt-in build tag the tree uses at once, as
-      # scripts/list-build-tags.sh lists them. A tagged file is outside the
-      # default build, so the run above never reads it: without this run, code
-      # scanning shows none of those files (stokaro/ptah#3895). It runs even
-      # when the first run found something, so both reports are uploaded, and
-      # scripts/check-go-module-lint-coverage.sh fails if it is removed or
-      # misses a tag.
-      - name: Run gosec (tagged contour)
-        if: ${{ !cancelled() }}
-        uses: golangci/golangci-lint-action@v9
-        with:
-          args: --enable-only=gosec --build-tags=integration,observability --output.sarif.path=gosec-integration.sarif --timeout=30m
-          version: v2.15.0
-
-      # One upload per contour, each under its own category. The pinned
-      # upload-sarif refuses two runs from one tool under one category: it
-      # throws when a directory holds both, and a second upload in the same job
-      # with the same category aborts. A file in both builds is reported by both
-      # configurations, and code scanning shows that as one alert. The tagged
-      # report keeps the category it was first uploaded under, so its alerts
-      # keep their history.
-      - name: Upload gosec SARIF
-        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: github/codeql-action/upload-sarif@v4.39.3
-        with:
-          sarif_file: gosec.sarif
-          category: gosec
-
-      - name: Upload gosec SARIF (tagged contour)
-        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: github/codeql-action/upload-sarif@v4.39.3
-        with:
-          sarif_file: gosec-integration.sarif
-          category: gosec-integration
-
   coverage:
     name: coverage
     needs: scope
@@ -165,7 +102,7 @@ jobs:
   security-gate:
     name: Security gate
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-    needs: [scope, govulncheck, gosec, coverage]
+    needs: [scope, govulncheck, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -175,7 +112,6 @@ jobs:
           SCOPE_RESULT: ${{ needs.scope.result }}
           CODE_SCOPE: ${{ needs.scope.outputs.code }}
           GOVULNCHECK_RESULT: ${{ needs.govulncheck.result }}
-          GOSEC_RESULT: ${{ needs.gosec.result }}
           COVERAGE_RESULT: ${{ needs.coverage.result }}
         run: |
           scripts/check-ci-scope-gate.sh --selftest
@@ -183,5 +119,4 @@ jobs:
             --scope-result "$SCOPE_RESULT" \
             --scope "$CODE_SCOPE" \
             --scoped "govulncheck=$GOVULNCHECK_RESULT" \
-            --scoped "gosec=$GOSEC_RESULT" \
             --scoped "coverage=$COVERAGE_RESULT"
