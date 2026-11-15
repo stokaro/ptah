@@ -693,6 +693,20 @@ func TestDescribe_BeforePlan(t *testing.T) {
 			},
 		},
 		{
+			name: "a plan that read no catalog",
+			target: planeffect.Target{
+				DefaultSchema: "public",
+				Semantics:     identifier.ForDialect("postgres"),
+				ViewOptions:   true,
+			},
+			nodes: []ast.Node{create},
+			units: []int{0},
+			want: [][]planeffect.Effect{{{
+				Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionCreate,
+				Properties: security(created(false), created(false)),
+			}}},
+		},
+		{
 			name:   "a MySQL view's mode",
 			target: mysqlTarget(mysqlView("order_totals", "INVOKER")),
 			nodes:  []ast.Node{ast.NewDropView("order_totals").SetIfExists(), create},

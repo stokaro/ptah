@@ -54,13 +54,16 @@ type Effect struct {
 	// whether a view of the name existed before the plan, and what it held. A
 	// consumer reads from it that a create makes a view again, after a
 	// statement that took the view and records no effect for it, such as a
-	// drop that cascades.
+	// drop that cascades. It is nil when the plan read no catalog, since
+	// nothing then says whether the view existed.
 	BeforePlan *Held `json:"before_plan,omitempty"`
 }
 
 // Held is an object as it stood at one point of a plan.
 type Held struct {
-	// Exists reports that the object existed then.
+	// Exists reports that the object was in the catalog the plan read. That
+	// catalog is the one the plan compares with, after the read scope and the
+	// exclusions, so a view outside them reads as absent.
 	Exists bool `json:"exists"`
 	// Properties are the values the object held then of the properties the
 	// effect reports, sorted by name. It is empty when the object did not
@@ -536,7 +539,10 @@ func cascadeFlag(value any) bool {
 // effect is the effect of a statement that leaves view holding after, nil
 // when it does not exist then, where it held before.
 func (s *viewStates) effect(view *viewState, action Action, before, after *viewHeld) Effect {
-	effect := Effect{Version: Version, Object: view.object, Action: action, BeforePlan: &Held{Exists: view.start != nil}}
+	effect := Effect{Version: Version, Object: view.object, Action: action}
+	if s.target.Current != nil {
+		effect.BeforePlan = &Held{Exists: view.start != nil}
+	}
 	for _, reader := range s.properties {
 		property, ok := viewProperty(reader.name, before, after, reader.value)
 		if ok {

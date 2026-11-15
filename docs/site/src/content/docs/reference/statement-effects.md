@@ -127,11 +127,12 @@ being `true` where `before` is absent or `false`.
 
 `before_plan` is the object as the database held it when the plan started, as
 the plan read it. Every effect records it, whatever the statements ahead of the
-effect did to the object.
+effect did to the object. It is left out when the plan read no catalog, since
+nothing then says whether the object existed.
 
 | Field | Meaning |
 | --- | --- |
-| `exists` | Whether the object existed when the plan started. It is always written |
+| `exists` | Whether the object was in the catalog the plan read when it started. That catalog is the one the plan compares with, after the read scope and the exclusions, so a view outside them reads as absent. It is always written when `before_plan` is |
 | `properties` | The value each property held then, as `name` and `value`, sorted by `name`. It is absent when the object did not exist |
 
 A `create` has no `before`, because no view of its name exists when it runs.
