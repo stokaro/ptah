@@ -149,12 +149,16 @@ func open(ctx context.Context, dbURL string, scope ConnectionScope) (*DatabaseCo
 	}
 	reportCapabilityResolution(info, resolution)
 
-	newReader := func(runner sqlrunner.Runner) catalog.SchemaReader {
-		return service.NewReader(pool, info, runner)
+	factoriesFor := func(info catalog.ServerInfo) (schemaReaderFactory, schemaWriterFactory) {
+		newReader := func(runner sqlrunner.Runner) catalog.SchemaReader {
+			return service.NewReader(pool, info, runner)
+		}
+		newWriter := func(runner sqlrunner.Runner, session *sql.Conn) catalog.SchemaWriter {
+			return service.NewWriter(pool, info, runner, session)
+		}
+		return newReader, newWriter
 	}
-	newWriter := func(runner sqlrunner.Runner, session *sql.Conn) catalog.SchemaWriter {
-		return service.NewWriter(pool, info, runner, session)
-	}
+	newReader, newWriter := factoriesFor(info)
 	runner := sqlrunner.Runner(pool.DB)
 	return &DatabaseConnection{
 		db:            pool.DB,
@@ -164,6 +168,7 @@ func open(ctx context.Context, dbURL string, scope ConnectionScope) (*DatabaseCo
 		writer:        newWriter(runner, nil),
 		newReader:     newReader,
 		newWriter:     newWriter,
+		factoriesFor:  factoriesFor,
 		service:       service,
 		singleSession: pool.SingleSession,
 		benignClose:   pool.BenignClose,
@@ -287,7 +292,12 @@ type DatabaseConnection struct {
 	executor  catalog.SchemaExecutor
 	newReader schemaReaderFactory
 	newWriter schemaWriterFactory
-	pinned    bool
+	// factoriesFor builds the reader and writer factories for a session
+	// described by another info, which [DatabaseConnection.ResolveNamesAs]
+	// needs once it has moved the session's name resolution. Nil on a
+	// connection assembled without one, which then cannot move it.
+	factoriesFor func(catalog.ServerInfo) (schemaReaderFactory, schemaWriterFactory)
+	pinned       bool
 	// service is the connector of the connection's dialect, which answers
 	// every question whose answer differs between engines. A connection
 	// assembled without one asks the service registered for its dialect;

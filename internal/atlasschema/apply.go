@@ -50,6 +50,7 @@ import (
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
 	"ptah.run/internal/valuecontext"
+	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/safety"
@@ -573,26 +574,9 @@ func computeApplyPlan(
 	unmodelednote.Report(ctx, opts.Diagnostics, "the database", current)
 	computation.undecided = undecided
 	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, info.Dialect)
-	// After the policy, which deletes the table drops a configuration skips:
-	// a drop the plan will not run is not one to warn about.
-	if opts.WarnUndescribedSchemas {
-		undescribed, err := schemascope.UndescribedRemovals(info, opts.Schemas, desired, diff)
-		if err != nil {
-			return applyComputation{}, fmt.Errorf("compare database schema: %w", err)
-		}
-		schemascope.WarnUndescribed(opts.Diagnostics, undescribed)
+	if err := reviewApplyDiff(info, desired, diff, omitted, opts); err != nil {
+		return applyComputation{}, err
 	}
-	// A skipped object is not a change, so a plan with nothing else to run
-	// has no statement to carry its comment; the line goes beside the
-	// result instead, so "synced" never stands alone over it. A change the
-	// diff policy left out is reported the same way.
-	if !diff.HasChanges() {
-		ReportOmitted(opts.Diagnostics, omitted)
-		reportSkipped(opts.Diagnostics, diff.SkippedFeatures)
-	}
-	// An owner privilege the desired state does not manage is never a change,
-	// with or without one, so its line is written either way.
-	ReportUnmanagedOwnerPrivileges(opts.Diagnostics, diff.UnmanagedOwnerPrivileges)
 	if diff.HasChanges() {
 		// The planner is handed the comparison as it came back, with the
 		// kinds the policy skips: it removes the same changes the filter
@@ -639,6 +623,43 @@ func computeApplyPlan(
 		return applyComputation{}, err
 	}
 	return computation, nil
+}
+
+// reviewApplyDiff refuses or reports what diff, the comparison after the diff
+// policy, holds before anything is planned from it.
+func reviewApplyDiff(
+	info catalog.ServerInfo,
+	desired *schemamodel.Database,
+	diff *difftypes.SchemaDiff,
+	omitted []diffpolicy.SkippedChange,
+	opts ApplyOptions,
+) error {
+	// After the policy, as the warning below: a drop the plan will not run
+	// loses no rows.
+	if err := refuseUnqualifiedTableMoves(info, diff); err != nil {
+		return err
+	}
+	// After the policy, which deletes the table drops a configuration skips:
+	// a drop the plan will not run is not one to warn about.
+	if opts.WarnUndescribedSchemas {
+		undescribed, err := schemascope.UndescribedRemovals(info, opts.Schemas, desired, diff)
+		if err != nil {
+			return fmt.Errorf("compare database schema: %w", err)
+		}
+		schemascope.WarnUndescribed(opts.Diagnostics, undescribed)
+	}
+	// A skipped object is not a change, so a plan with nothing else to run
+	// has no statement to carry its comment; the line goes beside the
+	// result instead, so "synced" never stands alone over it. A change the
+	// diff policy left out is reported the same way.
+	if !diff.HasChanges() {
+		ReportOmitted(opts.Diagnostics, omitted)
+		reportSkipped(opts.Diagnostics, diff.SkippedFeatures)
+	}
+	// An owner privilege the desired state does not manage is never a change,
+	// with or without one, so its line is written either way.
+	ReportUnmanagedOwnerPrivileges(opts.Diagnostics, diff.UnmanagedOwnerPrivileges)
+	return nil
 }
 
 // plannedData is the data stage of a plan: the statements that reconcile the
