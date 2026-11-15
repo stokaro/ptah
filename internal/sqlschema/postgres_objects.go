@@ -17,6 +17,8 @@ import (
 // the end of ToDatabase's switch, so a CREATE VIEW in a --schema-file parsed
 // cleanly and then vanished from the rendered schema.
 
+// toSequence converts a CREATE SEQUENCE without its owner, which
+// [appendSequence] reads.
 func toSequence(node *ast.CreateSequenceNode, sourcePlatform string) schemamodel.Sequence {
 	return schemamodel.Sequence{
 		Name:        normalizeSQLIdentifier(sourcePlatform, node.Name),
@@ -28,7 +30,6 @@ func toSequence(node *ast.CreateSequenceNode, sourcePlatform string) schemamodel
 		MaxValue:    node.MaxValue,
 		Cache:       node.Cache,
 		Cycle:       node.Cycle,
-		OwnedBy:     normalizeSQLTableReference(sourcePlatform, node.OwnedBy),
 		IfNotExists: node.IfNotExists,
 		Comment:     node.Comment,
 	}

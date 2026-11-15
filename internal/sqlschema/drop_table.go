@@ -176,6 +176,12 @@ func tableReference(target alterTarget, dropped func(structName string) bool) st
 // removeTable takes the table and everything that belongs to it out of every
 // database of the target. The table goes last: the others are matched by
 // resolving the table name they carry, which needs the table.
+//
+// What belongs to the table is matched against the target's qualified name,
+// never against target.table. A DROP TABLE of several tables removes them one
+// at a time, and each removal moves the tables after it in the slice that the
+// next target's table points into: compared through that pointer, `DROP TABLE
+// d1, d2` keeps the grants and the owned sequences of d2.
 func removeTable(target alterTarget) {
 	owns := func(structName, table string) bool {
 		return structName == target.structName || target.reachesTable(table)
@@ -205,7 +211,7 @@ func removeTable(target alterTarget) {
 		})
 		notChild := func(ref objectidentity.ID) bool {
 			table := childTable(target.databases, ref, target.sourcePlatform)
-			return table == nil || table.QualifiedName() != target.table.QualifiedName()
+			return table == nil || table.QualifiedName() != target.qualified
 		}
 		database.FeatureObjects = database.FeatureObjects.Select(notChild)
 		database.FeatureCoverage = database.FeatureCoverage.SelectSubjects(func(ref objectidentity.ID) bool {
@@ -213,15 +219,18 @@ func removeTable(target alterTarget) {
 				return notChild(ref)
 			}
 			table := declaredOwnerTable(target.databases, ref, target.sourcePlatform)
-			return table == nil || table.QualifiedName() != target.table.QualifiedName()
+			return table == nil || table.QualifiedName() != target.qualified
 		})
 		database.ManagedData = slices.DeleteFunc(database.ManagedData, func(data schemamodel.ManagedData) bool {
 			return target.reachesTable(schemamodel.QualifyTableName(data.Schema, data.Table))
 		})
+		// An owner names a table of the sequence's own schema, so it is
+		// matched there and not resolved as a table name: resolved, the owner
+		// `u.id` of app.s reaches the table public.u, and a sequence of a
+		// table declared as public.t is not reached at all.
 		database.Sequences = slices.DeleteFunc(database.Sequences, func(sequence schemamodel.Sequence) bool {
-			owner := strings.TrimSpace(sequence.OwnedBy)
-			dot := strings.LastIndex(owner, ".")
-			return dot > 0 && target.reachesTable(owner[:dot])
+			table, _ := ownerOf(target.databases, sequence, target.sourcePlatform)
+			return table != nil && table.QualifiedName() == target.qualified
 		})
 	}
 	target.keys.forgetTable(target.qualified)

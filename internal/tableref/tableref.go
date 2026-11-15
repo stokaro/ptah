@@ -1,5 +1,5 @@
-// Package tableref parses and formats structural table references, and names
-// a table in a message.
+// Package tableref parses and formats structural table and column references,
+// and names a table in a message.
 package tableref
 
 import (
@@ -64,6 +64,55 @@ func Parse(value string) (Ref, bool) {
 		Name:      parts[1],
 		Qualified: true,
 	}, parts[0] != "" && parts[1] != ""
+}
+
+// ColumnRef is a structural column reference, as [ParseColumn] reads one.
+type ColumnRef struct {
+	Schema string // empty when the reference names no schema
+	Table  string
+	Column string
+}
+
+// Column formats a column reference, table.column, or schema.table.column when
+// schema is not empty, so that [ParseColumn] reads back the same names. A name
+// is written as it is unless a bare one would read back as something else: a
+// name that holds a dot or a double quote, begins with a backtick or a bracket,
+// or begins or ends with white space is double-quoted, each double quote inside
+// doubled. So `"a.b".id` is the column id of a table a.b, and `a."x.y"` the
+// column x.y of a table a.
+func Column(schema, table, column string) string {
+	reference := columnPart(table) + "." + columnPart(column)
+	if schema == "" {
+		return reference
+	}
+	return columnPart(schema) + "." + reference
+}
+
+// ParseColumn parses a column reference as [Column] writes it, table.column or
+// schema.table.column, accepting the quotes [Parse] accepts. It reports false
+// for a reference of one name or of more than three, and for an empty name.
+func ParseColumn(value string) (ColumnRef, bool) {
+	parts, ok := split(strings.TrimSpace(value))
+	switch {
+	case !ok:
+		return ColumnRef{}, false
+	case len(parts) == 2:
+		return ColumnRef{Table: parts[0], Column: parts[1]}, true
+	case len(parts) == 3:
+		return ColumnRef{Schema: parts[0], Table: parts[1], Column: parts[2]}, true
+	default:
+		return ColumnRef{}, false
+	}
+}
+
+// columnPart is one name of a [Column] reference: as it is, unless [split]
+// would read the bare name back as another one.
+func columnPart(value string) string {
+	if value == strings.TrimSpace(value) && !strings.ContainsAny(value, `."`) &&
+		!strings.HasPrefix(value, "`") && !strings.HasPrefix(value, "[") {
+		return value
+	}
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
 }
 
 func canonicalPart(value string) string {

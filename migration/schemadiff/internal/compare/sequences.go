@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"cmp"
 	"fmt"
 	"regexp"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/objectlookup"
+	"ptah.run/internal/tableref"
 )
 
 // Sequences compares standalone sequence definitions between the target schema
@@ -179,17 +181,17 @@ func ownedDefaultSequence(
 }
 
 // sequenceOwnedBy reports whether column of table owns sequence. A reader qualifies
-// the owner with its schema only when it differs from the sequence's own.
+// the owner with its schema only when it differs from the sequence's own, and
+// writes it as [tableref.Column] does, so it is split by its quotes: a name may
+// hold a dot.
 func sequenceOwnedBy(sequence catalog.Sequence, table catalog.Table, column string, semantics identifier.Semantics) bool {
-	cut := strings.LastIndex(sequence.OwnedBy, ".")
-	if cut < 0 || semantics.ColumnIdentityKey(sequence.OwnedBy[cut+1:]) != semantics.ColumnIdentityKey(column) {
+	owner, ok := tableref.ParseColumn(sequence.OwnedBy)
+	if !ok || semantics.ColumnIdentityKey(owner.Column) != semantics.ColumnIdentityKey(column) {
 		return false
 	}
-	owner := sequence.OwnedBy[:cut]
-	if !strings.Contains(owner, ".") {
-		owner = catalog.QualifyTableName(sequence.Schema, owner)
-	}
-	return semantics.QualifiedTableIdentityKey(owner) == semantics.QualifiedTableIdentityKey(table.QualifiedName())
+	schema := cmp.Or(owner.Schema, sequence.Schema)
+	return semantics.QualifiedTableIdentityKey(catalog.QualifyTableName(schema, owner.Table)) ==
+		semantics.QualifiedTableIdentityKey(table.QualifiedName())
 }
 
 // ColumnSequencesLeaving settles the sequences a column owns as part of itself, which
@@ -204,7 +206,9 @@ func sequenceOwnedBy(sequence catalog.Sequence, table catalog.Table, column stri
 //
 // A sequence is matched as the sequence comparison matches one, with a schema left
 // out read as the default schema: a dump writes `public.t_id_seq`, and the reader
-// reports a table of the default schema with no schema.
+// reports a table of the default schema with no schema. The removed sequence names
+// its column as [tableref.Column] writes an owner, so the identity that takes the
+// column over finds it when a name holds a dot.
 func ColumnSequencesLeaving(database *catalog.Database, diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 	if database == nil {
 		return
@@ -225,7 +229,7 @@ func ColumnSequencesLeaving(database *catalog.Database, diff *difftypes.SchemaDi
 				if semantics.ColumnIdentityKey(column.Name) == semantics.ColumnIdentityKey(columnDiff.ColumnName) &&
 					column.OwnedSequence != "" && column.IsAutoIncrement && defaultLeaves(columnDiff) && !declared(table.Schema, column.OwnedSequence) {
 					diff.SequencesRemoved = append(diff.SequencesRemoved, schemamodel.Sequence{
-						Name: column.OwnedSequence, Schema: table.Schema, OwnedBy: table.Name + "." + column.Name,
+						Name: column.OwnedSequence, Schema: table.Schema, OwnedBy: tableref.Column("", table.Name, column.Name),
 					})
 				}
 			}
@@ -246,7 +250,9 @@ func ColumnSequencesLeaving(database *catalog.Database, diff *difftypes.SchemaDi
 // column takes where the comparison makes it serial; see
 // [difftypes.ColumnDiff.SerialSequence]. A sequence of that name the declaration leaves
 // out stays and becomes the column's, as dropping it and building it again would
-// answer that the name exists. It runs after the sequences are compared.
+// answer that the name exists. It runs after the sequences are compared. The owner is
+// written as [tableref.Column] writes one, so a column name holding a dot renders as
+// one name in OWNED BY.
 func ColumnSequencesArriving(database *catalog.Database, diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 	if database == nil {
 		return
@@ -260,7 +266,7 @@ func ColumnSequencesArriving(database *catalog.Database, diff *difftypes.SchemaD
 			if columnDiff.SerialSequence == "" {
 				continue
 			}
-			owner := table.QualifiedName() + "." + columnDiff.ColumnName
+			owner := tableref.Column(table.Schema, table.Name, columnDiff.ColumnName)
 			sequence := schemamodel.Sequence{Name: columnDiff.SerialSequence, Schema: table.Schema, OwnedBy: owner, AsType: serialSequenceType(columnDiff.Desired.Type)}
 			position := slices.IndexFunc(diff.SequencesRemoved, func(removed schemamodel.Sequence) bool {
 				return semantics.IndexIdentityKey(removed.Name) == semantics.IndexIdentityKey(sequence.Name) &&

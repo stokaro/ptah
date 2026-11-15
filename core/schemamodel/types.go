@@ -871,7 +871,13 @@ type Function struct {
 //   - MinValue / MaxValue: the MINVALUE / MAXVALUE bounds
 //   - Cache: the CACHE size
 //   - Cycle: whether the sequence wraps around (CYCLE vs NO CYCLE)
-//   - OwnedBy: an optional "table.column" association (OWNED BY)
+//   - OwnedBy: an optional "table.column" association (OWNED BY), a column
+//     of a table in the sequence's own schema. A name is written bare
+//     unless it would read back as another name: a name that holds a dot or
+//     a double quote, begins with a backtick or a bracket, or begins or ends
+//     with white space is double-quoted, so `"a.b".id` is the column id of
+//     the table "a.b", and `a."x.y"` the column "x.y" of the table a. An
+//     owner in another schema is written with the schema first.
 //
 // Example generated SQL:
 //

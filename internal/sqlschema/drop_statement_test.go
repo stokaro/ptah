@@ -135,6 +135,174 @@ func TestRead_DropTable_TakesWhatBelongsToTheTable(t *testing.T) {
 	c.Assert(database.Sequences, qt.HasLen, 0)
 }
 
+// A dropped table takes the sequences its columns own, and only those: an
+// owner names a table of the sequence's own schema, whichever statement gave
+// the sequence its owner. Measured on PostgreSQL 16.16, 17.11 and 18.6.
+func TestRead_DropTable_TakesTheSequencesItsColumnsOwn(t *testing.T) {
+	for _, test := range []struct {
+		name, sql string
+		want      []string
+	}{
+		{
+			name: "a qualified table owning by CREATE SEQUENCE",
+			sql: "CREATE TABLE public.t (id bigint);\n" +
+				"CREATE SEQUENCE public.s OWNED BY public.t.id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE public.t;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a qualified table owning by ALTER SEQUENCE",
+			sql: "CREATE TABLE public.t (id bigint);\n" +
+				"CREATE SEQUENCE public.s;\n" +
+				"ALTER SEQUENCE public.s OWNED BY public.t.id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE public.t;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a table of another schema",
+			sql: "CREATE SCHEMA app;\n" +
+				"CREATE TABLE app.d (id bigint);\n" +
+				"CREATE SEQUENCE app.s OWNED BY app.d.id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE app.d;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a table of the same name in another schema",
+			sql: "CREATE SCHEMA app;\n" +
+				"CREATE TABLE u (id bigint);\n" +
+				"CREATE TABLE app.u (id bigint);\n" +
+				"CREATE SEQUENCE app.s OWNED BY app.u.id;\n" +
+				"DROP TABLE u;",
+			want: []string{"app.s"},
+		},
+		{
+			name: "a table of the same name in the default schema",
+			sql: "CREATE SCHEMA app;\n" +
+				"CREATE TABLE u (id bigint);\n" +
+				"CREATE TABLE app.u (id bigint);\n" +
+				"CREATE SEQUENCE s OWNED BY u.id;\n" +
+				"DROP TABLE app.u;",
+			want: []string{"s"},
+		},
+		{
+			name: "a table declared unqualified, dropped qualified",
+			sql: "CREATE TABLE t (id bigint);\n" +
+				"CREATE SEQUENCE s OWNED BY t.id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE public.t;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a table declared qualified, dropped unqualified",
+			sql: "CREATE TABLE public.t (id bigint);\n" +
+				"CREATE SEQUENCE s OWNED BY t.id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE t;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a table whose name holds a dot",
+			sql: "CREATE TABLE \"a.b\" (id bigint);\n" +
+				"CREATE SEQUENCE s OWNED BY \"a.b\".id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE \"a.b\";",
+			want: []string{"kept"},
+		},
+		{
+			name: "a column whose name holds a dot",
+			sql: "CREATE TABLE a (id bigint, \"x.y\" int);\n" +
+				"CREATE SEQUENCE s OWNED BY a.\"x.y\";\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE a;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a table whose name begins and ends with a space",
+			sql: "CREATE TABLE \" t \" (id bigint);\n" +
+				"CREATE SEQUENCE s OWNED BY \" t \".id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE \" t \";",
+			want: []string{"kept"},
+		},
+		{
+			name: "two tables in one statement",
+			sql: "CREATE TABLE d1 (id bigint);\n" +
+				"CREATE TABLE d2 (id bigint);\n" +
+				"CREATE SEQUENCE s1 OWNED BY d1.id;\n" +
+				"CREATE SEQUENCE s2 OWNED BY d2.id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE d1, d2;",
+			want: []string{"kept"},
+		},
+		{
+			name: "an owner OWNED BY NONE took away",
+			sql: "CREATE TABLE n (id bigint);\n" +
+				"CREATE SEQUENCE s OWNED BY n.id;\n" +
+				"ALTER SEQUENCE s OWNED BY NONE;\n" +
+				"DROP TABLE n;",
+			want: []string{"s"},
+		},
+		{
+			name: "a sequence given to another table",
+			sql: "CREATE TABLE r1 (id bigint);\n" +
+				"CREATE TABLE r2 (id bigint);\n" +
+				"CREATE SEQUENCE s OWNED BY r1.id;\n" +
+				"ALTER SEQUENCE s OWNED BY r2.id;\n" +
+				"DROP TABLE r1;",
+			want: []string{"s"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sequenceNamesOf(database), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A DROP TABLE of several tables takes what belongs to each of them, the last
+// one's grants, row security, policies and owned sequences included. Measured
+// on PostgreSQL 16.16, 17.11 and 18.6.
+func TestRead_DropTables_TakesWhatBelongsToEachTable_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	database, _, err := readWithPolicyOwners([]byte(
+		"CREATE TABLE d1 (id bigint);\n"+
+			"CREATE TABLE d2 (id bigint);\n"+
+			"GRANT SELECT ON d1 TO PUBLIC;\n"+
+			"GRANT SELECT ON d2 TO PUBLIC;\n"+
+			"ALTER TABLE d2 ENABLE ROW LEVEL SECURITY;\n"+
+			"CREATE POLICY pol ON d2 USING (id > 0);\n"+
+			"CREATE SEQUENCE s1 OWNED BY d1.id;\n"+
+			"CREATE SEQUENCE s2 OWNED BY d2.id;\n"+
+			"CREATE TABLE kept (id bigint);\n"+
+			"DROP TABLE d1, d2;"), "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(tableNamesOf(database), qt.DeepEquals, []string{"kept"})
+	c.Assert(database.Grants, qt.HasLen, 0)
+	c.Assert(database.RLSPolicies, qt.HasLen, 0)
+	c.Assert(database.RLSEnabledTables, qt.HasLen, 0)
+	c.Assert(database.FeatureObjects.Refs(), qt.HasLen, 0)
+	c.Assert(database.Sequences, qt.HasLen, 0)
+}
+
+// sequenceNamesOf lists the sequences of the database, each qualified by the
+// schema it declares, in order.
+func sequenceNamesOf(database schemamodel.Database) []string {
+	var names []string
+	for _, sequence := range database.Sequences {
+		names = append(names, schemamodel.QualifyTableName(sequence.Schema, sequence.Name))
+	}
+	return names
+}
+
 // A later file of a schema directory drops a table an earlier file declared.
 func TestReadOnto_DropsAnEarlierTable(t *testing.T) {
 	c := qt.New(t)

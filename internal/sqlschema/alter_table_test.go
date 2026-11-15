@@ -99,6 +99,80 @@ func TestRead_DropAndRenameColumn(t *testing.T) {
 	}
 }
 
+// A sequence a column owns goes with the column, and follows it when it is
+// renamed, as the server's does. Measured on PostgreSQL 16.16, 17.11 and 18.6.
+func TestRead_DropAndRenameColumn_OwnedSequences_HappyPath(t *testing.T) {
+	const tables = "CREATE TABLE a (id bigint, v int);\nCREATE TABLE b (id bigint, v int);\n"
+	tests := []struct {
+		name, sql  string
+		wantOwners []string
+	}{
+		{
+			name: "DROP COLUMN takes the sequence the column owns",
+			sql: tables + "CREATE SEQUENCE s_v OWNED BY a.v;\nCREATE SEQUENCE s_id OWNED BY a.id;\n" +
+				"ALTER TABLE a DROP COLUMN v;",
+			wantOwners: []string{"s_id a.id"},
+		},
+		{
+			name:       "DROP COLUMN of another table's column of the same name",
+			sql:        tables + "CREATE SEQUENCE s_v OWNED BY a.v;\nALTER TABLE b DROP COLUMN v;",
+			wantOwners: []string{"s_v a.v"},
+		},
+		{
+			name:       "RENAME COLUMN carries the owner",
+			sql:        tables + "CREATE SEQUENCE s_v OWNED BY a.v;\nALTER TABLE a RENAME COLUMN v TO w;",
+			wantOwners: []string{"s_v a.w"},
+		},
+		{
+			name:       "RENAME COLUMN to a name holding a dot",
+			sql:        tables + "CREATE SEQUENCE s_v OWNED BY a.v;\nALTER TABLE a RENAME COLUMN v TO \"w.x\";",
+			wantOwners: []string{`s_v a."w.x"`},
+		},
+		{
+			name:       "RENAME COLUMN of another table's column of the same name",
+			sql:        tables + "CREATE SEQUENCE s_v OWNED BY a.v;\nALTER TABLE b RENAME COLUMN v TO w;",
+			wantOwners: []string{"s_v a.v"},
+		},
+		{
+			name: "DROP COLUMN of a table of the same name in another schema",
+			sql: "CREATE SCHEMA app;\n" + tables + "CREATE TABLE app.a (id bigint, v int);\n" +
+				"CREATE SEQUENCE s_v OWNED BY a.v;\nALTER TABLE app.a DROP COLUMN v;",
+			wantOwners: []string{"s_v a.v"},
+		},
+		{
+			name: "RENAME COLUMN of a table of the same name in another schema",
+			sql: "CREATE SCHEMA app;\n" + tables + "CREATE TABLE app.a (id bigint, v int);\n" +
+				"CREATE SEQUENCE s_v OWNED BY a.v;\nALTER TABLE app.a RENAME COLUMN v TO w;",
+			wantOwners: []string{"s_v a.v"},
+		},
+		{
+			name: "DROP COLUMN of a column whose name begins and ends with a space",
+			sql: "CREATE TABLE a (id bigint, \" v \" int);\n" +
+				"CREATE SEQUENCE s_v OWNED BY a.\" v \";\nCREATE SEQUENCE s_id OWNED BY a.id;\nALTER TABLE a DROP COLUMN \" v \";",
+			wantOwners: []string{"s_id a.id"},
+		},
+		{
+			name:       "RENAME COLUMN to a name that begins and ends with a space",
+			sql:        tables + "CREATE SEQUENCE s_v OWNED BY a.v;\nALTER TABLE a RENAME COLUMN v TO \" w \";",
+			wantOwners: []string{`s_v a." w "`},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+
+			c.Assert(err, qt.IsNil)
+			var owners []string
+			for _, sequence := range database.Sequences {
+				owners = append(owners, sequence.Name+" "+sequence.OwnedBy)
+			}
+			c.Assert(owners, qt.DeepEquals, test.wantOwners)
+		})
+	}
+}
+
 // Constraints are dropped and renamed by the name the declaration gave them,
 // wherever the model keeps that name.
 func TestRead_DropAndRenameConstraint(t *testing.T) {

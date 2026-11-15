@@ -973,8 +973,8 @@ func sequenceGivingWayToIdentity(table string, colDiff difftypes.ColumnDiff, rem
 		bare = ref.Name
 	}
 	for _, sequence := range removed {
-		parts := strings.Split(sequence.OwnedBy, ".")
-		if len(parts) >= 2 && parts[len(parts)-2] == bare && parts[len(parts)-1] == colDiff.ColumnName {
+		owner, ok := tableref.ParseColumn(sequence.OwnedBy)
+		if ok && owner.Table == bare && owner.Column == colDiff.ColumnName {
 			return sequence.QualifiedName()
 		}
 	}
@@ -2774,10 +2774,15 @@ func (p *Planner) releaseKeptSequenceOwners(result []ast.Node, diff *difftypes.S
 
 // restoreKeptSequenceOwners gives each sequence
 // [Planner.releaseKeptSequenceOwners] detached its owner back, ahead of the option
-// changes that may move the sequence to another owner.
+// changes that may move the sequence to another owner. The owner is written as
+// [tableref.Column] writes a column reference, so the renderer reads a column name
+// holding a dot as one name: joined with a bare dot, `owners.co.de` renders as
+// `OWNED BY "owners"."co"."de"`.
 func (p *Planner) restoreKeptSequenceOwners(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	return p.alterKeptSequenceOwners(result, diff, func(table difftypes.TableDiff, column difftypes.ColumnDiff) string {
-		return table.TableName + "." + column.ColumnName
+		// The table name is a qualified name the diff carries, which parses.
+		ref, _ := tableref.Parse(table.TableName)
+		return tableref.Column(ref.Schema, ref.Name, column.ColumnName)
 	})
 }
 

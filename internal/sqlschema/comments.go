@@ -166,31 +166,15 @@ func typeCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatf
 // tableCommentTarget finds the table a comment names by the rule an ALTER TABLE
 // uses, [resolveTable]: by the name the server resolves, never by the struct
 // name, which gives a table created as "Docs" and a comment on docs one key.
+// SQL Server's comment statement has to spell the schema out, and a
+// description of `dbo` writes its tables without one, so the rule's default
+// schema is what lets the comment find its table there.
 func tableCommentTarget(databases []*schemamodel.Database, qualified, sourcePlatform string) (*string, bool) {
-	table := resolveCommentedTable(databases, qualified, sourcePlatform)
+	table := resolveTable(databases, qualified, sourcePlatform)
 	if table == nil {
 		return new(string), false
 	}
 	return &table.Comment, true
-}
-
-// resolveCommentedTable finds the table a comment names. On an engine whose URL
-// selects no schema, an unqualified table is in the default schema, so a name
-// qualified with that schema finds it too. SQL Server's comment statement has to
-// spell the schema out, and a description of `dbo` writes its tables without one.
-func resolveCommentedTable(databases []*schemamodel.Database, qualified, sourcePlatform string) *schemamodel.Table {
-	if table := resolveTable(databases, qualified, sourcePlatform); table != nil {
-		return table
-	}
-	facts := factsOf(sourcePlatform)
-	if facts.selection != "" || facts.defaultSchema == "" {
-		return nil
-	}
-	bare, inDefault := strings.CutPrefix(qualified, facts.defaultSchema+".")
-	if !inDefault {
-		return nil
-	}
-	return resolveTable(databases, bare, sourcePlatform)
 }
 
 func indexCommentTarget(databases []*schemamodel.Database, name string) (*string, bool) {
@@ -233,7 +217,7 @@ func columnCommentTarget(databases []*schemamodel.Database, name, sourcePlatform
 	if dot < 0 {
 		return new(string), false
 	}
-	table := resolveCommentedTable(databases, normalizeSQLTableReference(sourcePlatform, name[:dot]), sourcePlatform)
+	table := resolveTable(databases, normalizeSQLTableReference(sourcePlatform, name[:dot]), sourcePlatform)
 	if table == nil {
 		return new(string), false
 	}

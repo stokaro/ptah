@@ -2,12 +2,13 @@ package sqlschema
 
 import (
 	"cmp"
-	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/routineargs"
+	"ptah.run/internal/tableref"
 )
 
 // A CREATE statement with a guard may name an object that already exists, and
@@ -41,13 +42,29 @@ func appendGuardedCreateTable(database *schemamodel.Database, document *Document
 	return appendCreateTable(database, document, node, sourcePlatform)
 }
 
-// appendSequence records the sequence node declares unless the server skips
-// the statement.
-func appendSequence(database *schemamodel.Database, document *Document, node *ast.CreateSequenceNode, sourcePlatform string) {
+// appendSequence records the sequence node declares, with its owner, unless
+// the server skips the statement. The parser leaves OWNED BY NONE out of the
+// node.
+//
+// The owner is read only where the statement runs. Measured on PostgreSQL
+// 16.16, 17.11 and 18.6, a CREATE SEQUENCE IF NOT EXISTS of a sequence that
+// exists is skipped with a notice whatever its OWNED BY names, a column without
+// its table and one of a table in another schema included.
+func appendSequence(database *schemamodel.Database, document *Document, node *ast.CreateSequenceNode, sourcePlatform string) error {
 	sequence := toSequence(node, sourcePlatform)
-	if !skipsCreateSequence(database, document, node, sequence, sourcePlatform) {
-		database.Sequences = append(database.Sequences, sequence)
+	if skipsCreateSequence(database, document, node, sequence, sourcePlatform) {
+		return nil
 	}
+	if node.OwnedBy != "" {
+		owner, err := readOwner(database, document, "CREATE SEQUENCE "+schemaQualified(node.Schema, node.Name),
+			sequence.Schema, node.OwnedBy, sourcePlatform)
+		if err != nil {
+			return err
+		}
+		sequence.OwnedBy = owner
+	}
+	database.Sequences = append(database.Sequences, sequence)
+	return nil
 }
 
 // appendFunction records the routine node declares, in the place of the one
@@ -180,12 +197,39 @@ func sequenceKey(sequence schemamodel.Sequence, sourcePlatform string) [2]string
 }
 
 // unqualified drops the dialect's default schema from a qualified name, so
-// `public.v` and `v` name one object on PostgreSQL.
+// `public.v` and `v` name one object on PostgreSQL. The schema is compared as
+// [resolveDeclaredName] compares names, so `DBO.t` and `t` name one table on
+// SQL Server, and a name whose own text holds a dot, `"public.v"`, keeps it.
 func unqualified(name, sourcePlatform string) string {
-	if schema := factsOf(sourcePlatform).defaultSchema; schema != "" {
-		return strings.TrimPrefix(name, schema+".")
+	ref, parsed := tableref.Parse(name)
+	if !parsed || !ref.Qualified || !inDefaultSchema(ref.Schema, sourcePlatform) {
+		return name
 	}
-	return name
+	return schemamodel.QualifyTableName("", ref.Name)
+}
+
+// unqualifiedTableName is [unqualified] of table's qualified name, taken from
+// the table's schema and name rather than parsed back out of the qualified
+// name: a lookup computes it for every table the schema declares.
+func unqualifiedTableName(table *schemamodel.Table, sourcePlatform string) string {
+	if table.Schema != "" && inDefaultSchema(table.Schema, sourcePlatform) {
+		return schemamodel.QualifyTableName("", table.Name)
+	}
+	return table.QualifiedName()
+}
+
+// inDefaultSchema reports whether schema is the dialect's default schema,
+// compared as [resolveDeclaredName] compares names. A dialect without a
+// default schema has none to be in.
+func inDefaultSchema(schema, sourcePlatform string) bool {
+	facts := factsOf(sourcePlatform)
+	if facts.defaultSchema == "" {
+		return false
+	}
+	if fold := identifier.Comparison(facts.names.Lookup); fold != "" {
+		return fold.IdentityKey(schema) == fold.IdentityKey(facts.defaultSchema)
+	}
+	return schema == facts.defaultSchema
 }
 
 // replaceView puts view in the place of the view of its name an earlier

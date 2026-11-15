@@ -2,6 +2,7 @@ package sqlschema
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/autoincrement"
 	"ptah.run/internal/pgname"
+	"ptah.run/internal/tableref"
 )
 
 // applyAlterSequence applies `ALTER SEQUENCE ... OWNED BY` to the sequence an
@@ -43,26 +45,92 @@ func applyAlterSequence(database *schemamodel.Database, document *Document, node
 		sequence.OwnedBy = ""
 		return nil
 	}
-	parts := splitSQLIdentifier(node.OwnedBy)
-	if len(parts) < 2 {
-		return fmt.Errorf("ALTER SEQUENCE %s OWNED BY %s: OWNED BY names a column of a table, or NONE", written, node.OwnedBy)
+	owner, err := readOwner(database, document, "ALTER SEQUENCE "+written, sequence.Schema, node.OwnedBy, sourcePlatform)
+	if err != nil {
+		return err
 	}
-	tableName := strings.Join(parts[:len(parts)-1], ".")
+	sequence.OwnedBy = owner
+	return nil
+}
+
+// errOwnerWithoutTable and errOwnerInAnotherSchema refuse an OWNED BY clause
+// the server refuses, measured on PostgreSQL 16.16, 17.11 and 18.6: a column
+// named without its table (`invalid OWNED BY option`), and a column of a table
+// in a schema other than the sequence's (`sequence must be in same schema as
+// table it is linked to`). CockroachDB v25.4.20 accepts a table in another
+// schema, and the read refuses it there too, which is stricter than that
+// server.
+//
+// errOwnerInADatabase refuses a column a database name qualifies. PostgreSQL
+// 18.6 takes `db.public.t.id` where db is the database it is connected to and
+// refuses any other (`cross-database references are not implemented`), and a
+// schema file does not say which database it is read for.
+var (
+	errOwnerWithoutTable    = errors.New("OWNED BY names a column of a table, or NONE")
+	errOwnerInAnotherSchema = errors.New("a sequence is owned by a column of a table in its own schema")
+	errOwnerInADatabase     = errors.New("OWNED BY names a column as table.column or schema.table.column")
+)
+
+// ownedByColumn splits the column an OWNED BY clause names, `table.column` or
+// `schema.table.column`, into the table, qualified as written, and the column.
+// Each part keeps its quotes.
+func ownedByColumn(ownedBy string) (table, column string, err error) {
+	parts := splitSQLIdentifier(ownedBy)
+	switch {
+	case len(parts) < 2:
+		return "", "", errOwnerWithoutTable
+	case len(parts) > 3:
+		return "", "", errOwnerInADatabase
+	}
+	return strings.Join(parts[:len(parts)-1], "."), parts[len(parts)-1], nil
+}
+
+// readOwner reads the column an OWNED BY clause names as the owner of a
+// sequence in sequenceSchema. statement is how a refusal names the statement,
+// `CREATE SEQUENCE s`.
+//
+// CREATE SEQUENCE and ALTER SEQUENCE take the clause in one grammar, so both
+// read it here. Read two ways, one owner is recorded two ways, and only one of
+// them matches the column a read of the database reports: read as a table
+// name, `public.t.id` is the column `id` of a table `public.t`, and a plan
+// against the database that holds the sequence plans `ALTER SEQUENCE ...
+// OWNED BY "public.t"."id"`, which the server refuses.
+//
+// The table and the column are found as an ALTER TABLE finds them, so a table
+// or a column the schema does not declare is refused, as PostgreSQL 16.16,
+// 17.11 and 18.6 refuse a relation or a column that does not exist, a table the
+// file creates after the sequence included. A schema written or left out on
+// either side is the dialect's default schema, as [schemaOf] reads it, and a
+// table in another schema is refused, as the server refuses it.
+func readOwner(database *schemamodel.Database, document *Document, statement, sequenceSchema, ownedBy, sourcePlatform string) (string, error) {
+	tableName, columnName, err := ownedByColumn(ownedBy)
+	if err != nil {
+		return "", fmt.Errorf("%s OWNED BY %s: %w", statement, ownedBy, err)
+	}
 	target, found := findAlterTarget(database, document.base, tableName, sourcePlatform)
 	if !found {
-		return undeclared(fmt.Errorf("%w: ALTER SEQUENCE %s OWNED BY %s names a table this schema does not declare",
-			ErrUnmodeledStatement, written, node.OwnedBy))
+		return "", undeclared(fmt.Errorf("%w: %s OWNED BY %s names a table this schema does not declare",
+			ErrUnmodeledStatement, statement, ownedBy))
 	}
-	field := target.field(parts[len(parts)-1])
+	field := target.field(columnName)
 	if field == nil {
-		return fmt.Errorf("ALTER SEQUENCE %s OWNED BY %s names a column the table does not declare", written, node.OwnedBy)
+		return "", fmt.Errorf("%s OWNED BY %s names a column the table does not declare", statement, ownedBy)
 	}
-	if schemaOf(target.table.Schema, sourcePlatform) != schemaOf(sequence.Schema, sourcePlatform) {
-		return fmt.Errorf("ALTER SEQUENCE %s OWNED BY %s: a sequence is owned by a column of a table in its own schema",
-			written, node.OwnedBy)
+	if schemaOf(target.table.Schema, sourcePlatform) != schemaOf(sequenceSchema, sourcePlatform) {
+		return "", fmt.Errorf("%s OWNED BY %s: %w", statement, ownedBy, errOwnerInAnotherSchema)
 	}
-	sequence.OwnedBy = target.table.Name + "." + field.Name
-	return nil
+	return ownerReference(target.table.Name, field.Name), nil
+}
+
+// ownerReference is how a sequence records column of table as its owner, as
+// [tableref.Column] writes a column reference, so a name holding a dot is
+// quoted, `"a.b".id` and `a."x.y"`, and so is one with white space at either
+// end. The table is in the sequence's own schema. A read of the database writes
+// the owner the same way, and the renderer reads the quotes back. Joined with a
+// bare dot, the two owners are the one string `a.b.id`, which [ownerOf] cannot
+// split and the renderer writes as `OWNED BY "a"."b"."id"`.
+func ownerReference(table, column string) string {
+	return tableref.Column("", table, column)
 }
 
 // schemaOf is the schema a name written in schema is in: schema itself, or
@@ -225,15 +293,17 @@ func serialColumnOf(databases []*schemamodel.Database, sequence schemamodel.Sequ
 // ownerOf returns the table and the column that own sequence, or nil for
 // each where the sequence has no owner the schema declares.
 //
-// The owner is held as a read of the database reports it, `table.column` in
-// the sequence's own schema, with each name as the model holds it, so it is
-// matched against the model's names as they are rather than read again as SQL:
-// read again, the unquoted `Order` of `Order.Id` would fold to `order`.
+// The owner is held as [ownerReference] writes it, a table of the sequence's
+// own schema and its column, with each name as the model holds it, so it is
+// split by its quotes and matched against the model's names as they are rather
+// than read again as SQL: read again, the unquoted `Order` of `Order.Id` would
+// fold to `order`.
 func ownerOf(databases []*schemamodel.Database, sequence schemamodel.Sequence, sourcePlatform string) (*schemamodel.Table, *schemamodel.Field) {
-	tableName, columnName, owned := strings.Cut(sequence.OwnedBy, ".")
-	if !owned || strings.Contains(columnName, ".") {
+	owner, owned := tableref.ParseColumn(sequence.OwnedBy)
+	if !owned || owner.Schema != "" {
 		return nil, nil
 	}
+	tableName, columnName := owner.Table, owner.Column
 	for _, database := range databases {
 		for i := range database.Tables {
 			table := &database.Tables[i]

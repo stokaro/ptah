@@ -219,16 +219,22 @@ func declaredTable(databases []*schemamodel.Database, qualified string) *schemam
 
 // resolveTable returns the table a statement naming qualified reaches, looking
 // in each database in order, or nil. See [resolveDeclaredName].
+//
+// A name written without a schema is in the dialect's default schema, so the
+// two spellings are compared without it, [unqualified]: on PostgreSQL 16.16,
+// 17.11 and 18.6 `DROP TABLE public.t` drops the table `CREATE TABLE t`
+// created, and the reverse. Compared as written, either drop names a table the
+// schema does not declare, and so does `ALTER SEQUENCE s OWNED BY public.t.id`.
 func resolveTable(databases []*schemamodel.Database, qualified, sourcePlatform string) *schemamodel.Table {
 	var tables []*schemamodel.Table
 	var names []string
 	for _, database := range databases {
 		for i := range database.Tables {
 			tables = append(tables, &database.Tables[i])
-			names = append(names, database.Tables[i].QualifiedName())
+			names = append(names, unqualifiedTableName(&database.Tables[i], sourcePlatform))
 		}
 	}
-	if index := resolveDeclaredName(sourcePlatform, qualified, names); index >= 0 {
+	if index := resolveDeclaredName(sourcePlatform, unqualified(qualified, sourcePlatform), names); index >= 0 {
 		return tables[index]
 	}
 	return nil

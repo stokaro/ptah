@@ -182,7 +182,7 @@ func (t alterTarget) reachesTable(name string) bool {
 		return false
 	}
 	table := resolveTable(t.databases, normalizeSQLTableReference("", name), t.sourcePlatform)
-	return table != nil && table.QualifiedName() == t.table.QualifiedName()
+	return table != nil && table.QualifiedName() == t.qualified
 }
 
 // ownsIndex reports whether index belongs to the table. Every index the reader
@@ -357,13 +357,16 @@ func refuseMySQLColumnCheckReference(field schemamodel.Field, columns []string, 
 	return nil
 }
 
-// applyDropColumn removes a column nothing else in the schema refers to.
+// applyDropColumn removes a column nothing else in the schema refers to, and
+// the sequences it owns.
 //
 // PostgreSQL drops an index or a table constraint on the column with it, and
 // refuses a column another table's foreign key references. A schema file that
 // keeps those objects declared would render them over a column it no longer
 // has, so a column something still refers to is refused, and the message names
-// the object to drop first.
+// the object to drop first. A sequence the column owns goes with it, measured
+// on PostgreSQL 16.16, 17.11 and 18.6; kept, it is planned back with an owner
+// the table no longer has.
 func applyDropColumn(target alterTarget, operation *ast.DropColumnOperation) error {
 	if operation.Cascade {
 		return fmt.Errorf(
@@ -389,6 +392,11 @@ func applyDropColumn(target alterTarget, operation *ast.DropColumnOperation) err
 	}
 	name := field.Name
 	for _, database := range target.databases {
+		database.Sequences = slices.DeleteFunc(database.Sequences, func(sequence schemamodel.Sequence) bool {
+			return target.ownsSequence(sequence, field)
+		})
+	}
+	for _, database := range target.databases {
 		database.Fields = slices.DeleteFunc(database.Fields, func(candidate schemamodel.Field) bool {
 			return candidate.StructName == target.structName && candidate.Name == name
 		})
@@ -396,12 +404,23 @@ func applyDropColumn(target alterTarget, operation *ast.DropColumnOperation) err
 	return nil
 }
 
-// applyRenameColumn renames a column, and the primary key's list with it.
+// ownsSequence reports whether column, a column of the table, owns sequence,
+// by the lookup [ownerOf] states.
+func (t alterTarget) ownsSequence(sequence schemamodel.Sequence, column *schemamodel.Field) bool {
+	table, owner := ownerOf(t.databases, sequence, t.sourcePlatform)
+	return table != nil && table.QualifiedName() == t.qualified && owner == column
+}
+
+// applyRenameColumn renames a column, and the primary key's list and the
+// owner of each sequence the column owns with it.
 //
 // Anything else that names the column -- an index, a constraint, an expression,
 // another table's foreign key -- refuses the rename. PostgreSQL follows the
 // rename in each of them; a schema file keeps their text, which would then name
-// a column that no longer exists.
+// a column that no longer exists. A sequence's owner is a name the model holds,
+// not text, so it follows the rename as the server's does, measured on
+// PostgreSQL 16.16, 17.11 and 18.6; left as it is, the plan gives the sequence
+// back to the column's old name, which the server refuses.
 func applyRenameColumn(target alterTarget, operation *ast.RenameColumnOperation) error {
 	field := target.field(operation.OldName)
 	if field == nil {
@@ -419,7 +438,18 @@ func applyRenameColumn(target alterTarget, operation *ast.RenameColumnOperation)
 			target.written, operation.OldName, reference)
 	}
 	oldName, newName := field.Name, normalizeSQLIdentifier(target.sourcePlatform, operation.NewName)
+	var owned []*schemamodel.Sequence
+	for _, database := range target.databases {
+		for i := range database.Sequences {
+			if target.ownsSequence(database.Sequences[i], field) {
+				owned = append(owned, &database.Sequences[i])
+			}
+		}
+	}
 	field.Name = newName
+	for _, sequence := range owned {
+		sequence.OwnedBy = ownerReference(target.table.Name, newName)
+	}
 	for i, column := range target.table.PrimaryKey {
 		if column == oldName {
 			target.table.PrimaryKey[i] = newName

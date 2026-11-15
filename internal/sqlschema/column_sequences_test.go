@@ -318,6 +318,11 @@ func TestRead_AlterSequenceOwnedBy_FailurePath(t *testing.T) {
 			sql:     table + "CREATE SEQUENCE app.s;\nALTER SEQUENCE app.s OWNED BY t.id;",
 			wantErr: `.*ALTER SEQUENCE app.s OWNED BY t.id: a sequence is owned by a column of a table in its own schema`,
 		},
+		{
+			name:    "a column a database qualifies",
+			sql:     table + "CREATE SEQUENCE s;\nALTER SEQUENCE s OWNED BY db.public.t.id;",
+			wantErr: `.*ALTER SEQUENCE s OWNED BY db.public.t.id: OWNED BY names a column as table.column or schema.table.column`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
