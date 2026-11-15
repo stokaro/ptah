@@ -309,6 +309,66 @@ func TestEveryPtahVariableIsClassified(t *testing.T) {
 			" nonBooleanPtahVars: %v", unclassified))
 }
 
+// TestPtahVarNamesIn_HappyPath holds the enumeration to every spelling a
+// string literal can give a name: outright, and through each escape that can
+// spell one of its letters.
+func TestPtahVarNamesIn_HappyPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		want   []string
+	}{
+		{name: "spelled outright", source: `const name = "PTAH_PLAIN"`, want: []string{"PTAH_PLAIN"}},
+		{name: "in a raw string", source: "const name = `PTAH_RAW=1`", want: []string{"PTAH_RAW"}},
+		{name: "a hex escape", source: `const name = "\x50TAH_HEX"`, want: []string{"PTAH_HEX"}},
+		{name: "an octal escape", source: `const name = "\120TAH_OCTAL"`, want: []string{"PTAH_OCTAL"}},
+		{name: "a short Unicode escape", source: `const name = "P\u0054AH_SHORT"`, want: []string{"PTAH_SHORT"}},
+		{name: "a long Unicode escape", source: `const name = "PTA\U00000048_LONG"`, want: []string{"PTAH_LONG"}},
+		{name: "an escaped underscore", source: `const name = "PTAH\x5fUNDERSCORE"`, want: []string{"PTAH_UNDERSCORE"}},
+		{name: "only in a comment", source: "// PTAH_PROSE\nconst name = \"x\"", want: nil},
+		{name: "no name and no escape", source: `const name = "x"`, want: nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			path := filepath.Join(t.TempDir(), "probe.go")
+			writeFile(c, path, "package p\n\n"+test.source+"\n")
+
+			got, err := ptahVarNamesIn(path)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestPtahVarNamesIn_FailurePath holds the shortcut to its claim: a file whose
+// text can hold no such literal is not parsed, so it cannot fail to parse,
+// and a file that can is parsed and can.
+func TestPtahVarNamesIn_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "probe.go")
+	writeFile(c, path, "package p\n\nconst name = \"PTAH_BROKEN\"\nfunc {\n")
+
+	got, err := ptahVarNamesIn(path)
+
+	c.Assert(err, qt.ErrorMatches, `.*probe\.go:4:6: expected .*`)
+	c.Assert(got, qt.IsNil)
+}
+
+// TestPtahVarNamesIn_ReadsNoFileThatCannotNameOne is the control for the test
+// above: the same broken file with no name and no escape is left unparsed.
+func TestPtahVarNamesIn_ReadsNoFileThatCannotNameOne(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "probe.go")
+	writeFile(c, path, "package p\n\nconst name = \"x\"\nfunc {\n")
+
+	got, err := ptahVarNamesIn(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.IsNil)
+}
+
 // TestNoVariableIsClassifiedTwice keeps the two classifications from disagreeing.
 // A name in both lists would make the enumeration guard pass whichever way the
 // variable is actually read.
@@ -661,24 +721,67 @@ func ptahVarNames(c *qt.C, root string) []string {
 	c.Helper()
 	var names []string
 	for _, path := range goSourceFiles(c, root) {
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
+		found, err := ptahVarNamesIn(path)
 		c.Assert(err, qt.IsNil)
-		ast.Inspect(file, func(node ast.Node) bool {
-			literal, ok := node.(*ast.BasicLit)
-			if !ok || literal.Kind != token.STRING {
-				return true
-			}
-			value, err := strconv.Unquote(literal.Value)
-			if err != nil {
-				return true
-			}
-			names = append(names, ptahVarPattern.FindAllString(value, -1)...)
-			return true
-		})
+		names = append(names, found...)
 	}
 	slices.Sort(names)
 	return slices.Compact(names)
+}
+
+// ptahVarNamesIn returns the PTAH_* names the string literals in one Go file
+// mention, in source order.
+//
+// It parses the file only when its text can hold such a literal, see
+// [mayNameAVariable]: parsing is nearly all of what the scan costs, and most
+// files name no variable.
+func ptahVarNamesIn(path string) ([]string, error) {
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if !mayNameAVariable(source) {
+		return nil, nil
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), path, source, parser.SkipObjectResolution)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	ast.Inspect(file, func(node ast.Node) bool {
+		literal, ok := node.(*ast.BasicLit)
+		if !ok || literal.Kind != token.STRING {
+			return true
+		}
+		value, err := strconv.Unquote(literal.Value)
+		if err != nil {
+			return true
+		}
+		names = append(names, ptahVarPattern.FindAllString(value, -1)...)
+		return true
+	})
+	return names, nil
+}
+
+// mayNameAVariable reports whether a file's text can hold a string literal
+// whose value names a PTAH_* variable.
+//
+// Such a literal spells PTAH_ in the file, or holds an escape: \x, \u, \U or
+// an octal escape can spell any of its letters, and no other escape can.
+func mayNameAVariable(source []byte) bool {
+	if bytes.Contains(source, []byte(envbool.Prefix)) {
+		return true
+	}
+	for rest := source; ; {
+		at := bytes.IndexByte(rest, '\\')
+		if at < 0 || at+1 == len(rest) {
+			return false
+		}
+		if strings.IndexByte(`xuU01234567`, rest[at+1]) >= 0 {
+			return true
+		}
+		rest = rest[at+1:]
+	}
 }
 
 // goSourceFiles lists the repository's non-test Go files, excluding the shared
