@@ -314,7 +314,9 @@ There are two ways out. Each edits a file, so run `ptah migrations hash` afterwa
 The refusal is about the file. `--plan` derives a rollback from the dev database
 instead of running the down files, so it does not read this one. The derived
 rollback leaves out the objects the `exclude` list of `ptah.yaml` names, so a
-table another tool created is not dropped as one the target version lacks. A migration
+table another tool created is not dropped as one the target version lacks. A
+selector in that list that names no object protects nothing, so the rollback
+refuses it as `schema apply` does; see [Failure modes](#failure-modes). A migration
 registered with a Go function decides for itself. A generated migration whose
 reverse runs nothing carries the directive: one with nothing to undo, and one
 whose rollback leaves what the up file changed, such as a secret value the server
@@ -575,6 +577,18 @@ bookkeeping.
   ```
 - **Shadow verification fails.** The target is untouched; the error names the
   migration whose down could not be replayed.
+- **An exclude selector names no object.** With `--plan`, a selector of the
+  project's `exclude` list that matches nothing in the target or in the schema
+  of the target version would let the rollback drop the object it was written
+  to keep. The command exits `2` before any statement runs, on a dry run too,
+  and names the file the selector came from:
+
+  ```text illustration
+  error: error running down migrations: the exclude selection from ptah.yaml matched no objects: "audit_event"; migrations down --plan refuses a selection that protects nothing, set PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 to keep the permissive behavior
+  ```
+
+  Correct the selector. `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1` turns the
+  refusal into a warning and runs the rollback as derived.
 - **Data does not come back.** Rolling back a `DROP`-ing down file deletes
   rows by design. `--pg-dump-to` / `--mysqldump-to` on the down command write
   a backup first, and the confirmation prompt exists precisely because

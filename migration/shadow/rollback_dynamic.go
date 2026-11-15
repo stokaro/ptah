@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"slices"
 	"strings"
@@ -18,6 +19,18 @@ import (
 	"ptah.run/migration/internal/shadowdb"
 	"ptah.run/migration/migrator"
 )
+
+// ErrUnmatchedExclude is the refusal of an exclude selector that names no
+// object in any state the comparison read. Such a selector protects nothing,
+// so a plan that executes would change the object it was written to keep.
+// Match it with errors.Is; the message names each selector and where
+// [DynamicRollbackOptions.ExcludeSources] says it was written.
+//
+// [PlanDynamicRollback] returns it when
+// [DynamicRollbackOptions.RefuseUnmatchedExclude] is set. The commands that
+// execute a derived plan, `ptah schema apply` and `ptah migrations down
+// --plan`, refuse with an error that matches it too.
+var ErrUnmatchedExclude = atlasfilter.ErrUnmatchedExclude
 
 // DynamicRollbackOptions configures PlanDynamicRollback.
 type DynamicRollbackOptions struct {
@@ -50,6 +63,24 @@ type DynamicRollbackOptions struct {
 	// A malformed selector fails the planning before the dev database is
 	// opened.
 	Exclude []string
+	// ExcludeSources names where each Exclude selector was written, so the
+	// error or the warning about one that matched nothing points there. The
+	// key is the selector as written, and the value a file or variable name,
+	// such as "ptah.yaml", or a flag spelled with its dashes. A selector it
+	// does not name is named as --exclude's.
+	ExcludeSources map[string]string
+	// RefuseUnmatchedExclude fails the planning when an Exclude selector names
+	// no object in the live database or in the replayed target state. Such a
+	// selector protects nothing, so the plan would drop the object it was
+	// written to keep. PlanDynamicRollback then returns no statement and an
+	// error that matches [ErrUnmatchedExclude] and names each such selector.
+	// Without it, each such selector is a warning on Diagnostics. The
+	// selectors the planner adds for the revision tables are never reported;
+	// one Exclude also lists is the caller's, and is reported like any other.
+	RefuseUnmatchedExclude bool
+	// Diagnostics receives the warning about an Exclude selector that matched
+	// nothing, when RefuseUnmatchedExclude is off. Nil writes no warning.
+	Diagnostics io.Writer
 }
 
 // PlanDynamicRollback computes the statements that take the live database back
@@ -84,6 +115,13 @@ type DynamicRollbackOptions struct {
 // database whose contents can be destroyed. A dev database that holds anything
 // the reset would drop is refused before anything resets it, and it is emptied again before
 // planning returns; a failure to empty it fails the planning.
+//
+// # Errors
+//
+// When [DynamicRollbackOptions.RefuseUnmatchedExclude] asks for it, an
+// exclude selector that names nothing in either state fails the planning with
+// no statement and an error matching [ErrUnmatchedExclude]. Other failures are
+// ordinary wrapped errors.
 func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (statements []string, resultErr error) {
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
 		return nil, err
@@ -155,8 +193,12 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 		ToURLs:   []string{opts.DevDatabaseURL},
 		// Both sides are databases, so no third database is needed to
 		// materialize either one.
-		Exclude:        append(migrationMetadataExclusions(opts.RevisionsTable), opts.Exclude...),
-		ConnectTimeout: opts.ConnectTimeout,
+		Exclude:                opts.Exclude,
+		ImplicitExclude:        migrationMetadataExclusions(opts.RevisionsTable),
+		ExcludeSources:         opts.ExcludeSources,
+		RefuseUnmatchedExclude: opts.RefuseUnmatchedExclude,
+		Diagnostics:            opts.Diagnostics,
+		ConnectTimeout:         opts.ConnectTimeout,
 		// The dev database holds what the directory makes at TargetVersion,
 		// not the target's environment: a grant the target holds and the
 		// replay does not make is left alone unless the replay manages its

@@ -661,3 +661,50 @@ func newStringSliceTargetCommand(defaults []string, onRun func([]string)) *cobra
 	cmd.Flags().StringSlice("value", defaults, "Values to collect")
 	return cmd
 }
+
+// TestForwardedAs_HappyPath reads the marker a forwarded native command sees:
+// the command the operator typed on the calling surface, without the program
+// name, while the forwarded run lasts.
+func TestForwardedAs_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	var typed string
+	var forwarded bool
+	target := &cobra.Command{
+		Use: "down",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			typed, forwarded = cmdadapter.ForwardedAs(cmd)
+			return nil
+		},
+	}
+	root := &cobra.Command{Use: "compat"}
+	migrate := &cobra.Command{Use: "migrate"}
+	migrate.AddCommand(cmdadapter.NewForwardCommand("down", "Roll back", "migrations down", func() *cobra.Command { return target }))
+	root.AddCommand(migrate)
+	root.SetArgs([]string{"migrate", "down"})
+
+	c.Assert(root.Execute(), qt.IsNil)
+	c.Assert(typed, qt.Equals, "migrate down")
+	c.Assert(forwarded, qt.IsTrue)
+	c.Assert(cmdadapter.Forwarded(target), qt.IsFalse)
+}
+
+// TestForwardedAs_FailurePath is the control: a native command run from its
+// own command line carries no marker.
+func TestForwardedAs_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	var typed string
+	var forwarded bool
+	root := &cobra.Command{Use: "ptah"}
+	root.AddCommand(&cobra.Command{
+		Use: "down",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			typed, forwarded = cmdadapter.ForwardedAs(cmd)
+			return nil
+		},
+	})
+	root.SetArgs([]string{"down"})
+
+	c.Assert(root.Execute(), qt.IsNil)
+	c.Assert(typed, qt.Equals, "")
+	c.Assert(forwarded, qt.IsFalse)
+}

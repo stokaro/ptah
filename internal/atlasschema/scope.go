@@ -259,10 +259,40 @@ func refuseUnmatchedExclude(selectors []string, sources atlasfilter.ExcludeSourc
 	if len(selectors) == 0 {
 		return nil
 	}
+	return UnmatchedExcludeRefusal("schema apply", &atlasfilter.UnmatchedExcludeError{Selectors: selectors, Sources: sources})
+}
+
+// UnmatchedExcludeRefusal is the error a verb that executes a derived plan
+// refuses unmatched with, naming the verb: `schema apply` and
+// `migrations down --plan` give it in the same words. The error wraps
+// unmatched, and it names [atlasfilter.AllowUnmatchedExcludeEnvVar], which the
+// caller resolves before it reads any state.
+func UnmatchedExcludeRefusal(verb string, unmatched *atlasfilter.UnmatchedExcludeError) error {
 	return fmt.Errorf(
-		"%w; schema apply refuses a selection that protects nothing, set %s=1 to keep the permissive behavior",
-		&atlasfilter.UnmatchedExcludeError{Selectors: selectors, Sources: sources},
-		atlasfilter.AllowUnmatchedExcludeEnvVar)
+		"%w; %s refuses a selection that protects nothing, set %s=1 to keep the permissive behavior",
+		unmatched, verb, atlasfilter.AllowUnmatchedExcludeEnvVar)
+}
+
+// implicitOnly returns the selectors of implicit that exclude does not write,
+// split the way the parser splits them. A selector both carry is the user's:
+// the scope holds it once, and it is reported or refused like any other.
+func implicitOnly(exclude, implicit []string) []string {
+	written := make(atlasfilter.ExcludeSources)
+	written.Add("", exclude...)
+	return slices.DeleteFunc(slices.Clone(implicit), func(selector string) bool {
+		_, ok := written[selector]
+		return ok
+	})
+}
+
+// writtenSelectors leaves out of unmatched each selector of implicit, which
+// [implicitOnly] has already cleared of the ones the user wrote. A caller adds
+// those for its own bookkeeping, such as the names of the revision tables, and
+// one that names nothing says nothing about a selector the user wrote.
+func writtenSelectors(unmatched, implicit []string) []string {
+	return slices.DeleteFunc(unmatched, func(selector string) bool {
+		return slices.Contains(implicit, selector)
+	})
 }
 
 // described returns the descriptor of the dialect a spelling selects, and the

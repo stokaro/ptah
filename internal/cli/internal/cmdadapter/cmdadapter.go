@@ -38,25 +38,36 @@ const forwardedAnnotation = "ptah.cmdadapter.forwarded"
 // before it runs and removed afterwards, and a native command reached directly
 // never carries it.
 func Forwarded(cmd *cobra.Command) bool {
-	for current := cmd; current != nil; current = current.Parent() {
-		if _, marked := current.Annotations[forwardedAnnotation]; marked {
-			return true
-		}
-	}
-	return false
+	_, forwarded := ForwardedAs(cmd)
+	return forwarded
 }
 
-// markForwarded marks target as running under an adapter and returns a function
-// that restores target's previous annotations exactly, including dropping a map
-// this call allocated. A target is free to outlive one forwarded execution, so
-// a marker left behind would make a later direct run read as forwarded.
-func markForwarded(target *cobra.Command) func() {
+// ForwardedAs returns the command the operator typed on the calling surface,
+// without the program name, such as "migrate down", and reports whether cmd
+// runs under a forwarding adapter at all. A native message that names its
+// own command names this one instead when it is forwarded, so the operator
+// reads the spelling they wrote.
+func ForwardedAs(cmd *cobra.Command) (string, bool) {
+	for current := cmd; current != nil; current = current.Parent() {
+		if typed, marked := current.Annotations[forwardedAnnotation]; marked {
+			return typed, true
+		}
+	}
+	return "", false
+}
+
+// markForwarded marks target as running under the adapter forwarder, recording
+// the command the operator typed, and returns a function that restores
+// target's previous annotations exactly, including dropping a map this call
+// allocated. A target is free to outlive one forwarded execution, so a marker
+// left behind would make a later direct run read as forwarded.
+func markForwarded(target, forwarder *cobra.Command) func() {
 	allocated := target.Annotations == nil
 	previous, configured := target.Annotations[forwardedAnnotation]
 	if allocated {
 		target.Annotations = make(map[string]string)
 	}
-	target.Annotations[forwardedAnnotation] = "true"
+	target.Annotations[forwardedAnnotation] = strings.TrimPrefix(forwarder.CommandPath(), forwarder.Root().CommandPath()+" ")
 	return func() {
 		if configured {
 			target.Annotations[forwardedAnnotation] = previous
@@ -236,7 +247,7 @@ func newForwardCommandWithArgsMapper(
 			// another surface.
 			restorePrefix := cmdutil.AdoptErrorPrefixPolicy(target, cmd)
 			defer restorePrefix()
-			restoreForwarded := markForwarded(target)
+			restoreForwarded := markForwarded(target, cmd)
 			defer restoreForwarded()
 			return target.Execute()
 		},

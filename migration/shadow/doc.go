@@ -47,4 +47,7 @@
 // instead: their failures are operational, so there is no mismatch list to
 // carry and errors.As for a [VerificationError] does not match. For the
 // planner, a schema difference is the successful output rather than a failure.
+// The planner's one refusal with a sentinel is [ErrUnmatchedExclude], given
+// when its caller asks it to refuse an exclude selector that names nothing;
+// match it with errors.Is.
 package shadow

@@ -65,10 +65,22 @@ type DiffOptions struct {
 	ToURLs   []string
 	DevURL   string
 	Exclude  []string
+	// ImplicitExclude leaves objects out of both sides as Exclude does, for
+	// selectors the caller adds and the user did not write, such as the names
+	// of the revision tables. One that matches nothing is neither reported
+	// nor refused; one Exclude also carries is the user's, and is.
+	ImplicitExclude []string
 	// ExcludeSources names where the run read each Exclude selector, for the
 	// diagnostic about one that matched nothing; see
 	// [atlasfilter.ExcludeSources]. Nil names every selector as --exclude's.
 	ExcludeSources atlasfilter.ExcludeSources
+	// RefuseUnmatchedExclude returns an [atlasfilter.UnmatchedExcludeError]
+	// for the Exclude selectors that matched nothing in either state, instead
+	// of the warning on Diagnostics. A caller that executes the plan sets it,
+	// as `schema apply` refuses such a selector: it protects nothing, so the
+	// plan is free to change the object it was written for. The caller words
+	// the refusal; see [UnmatchedExcludeRefusal].
+	RefuseUnmatchedExclude bool
 	// Schemas restricts both comparison sides to the named schema scopes.
 	Schemas []string
 	// Include restricts both comparison sides to resources matched by
@@ -164,7 +176,8 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
+	opts.ImplicitExclude = implicitOnly(opts.Exclude, opts.ImplicitExclude)
+	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), slices.Concat(opts.Exclude, opts.ImplicitExclude), opts.Include)...)
 	prepared, err := prepareDiffSources(ctx, opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
@@ -432,6 +445,31 @@ func devServerCapabilities(ctx context.Context, dialect, devURL string, timeout 
 // learn the dev server's version, which nothing else in that diff waits for.
 const devVersionTimeout = 5 * time.Second
 
+// checkDiffSelections settles what the selectors of a comparison matched,
+// once both sides are scoped and before the dev database root is set or
+// anything is compared.
+//
+// One empty side is how a create or a drop looks. An --include selection that
+// matched neither side cannot answer the requested comparison, so it fails
+// instead of reporting a false synced result to CI.
+//
+// An exclude selector that matched nothing on either side gets the same
+// split: diff previews rather than executes, so it keeps its exit status and
+// says on Diagnostics that the selector protected nothing, while a caller that
+// executes the plan sets [DiffOptions.RefuseUnmatchedExclude] and receives the
+// [atlasfilter.UnmatchedExcludeError] instead.
+func checkDiffSelections(fromErr, toErr error, fromReport, toReport atlasfilter.ExcludeReport, opts DiffOptions) error {
+	if emptySelection(fromErr) && emptySelection(toErr) {
+		return fromErr
+	}
+	unmatched := writtenSelectors(atlasfilter.UnmatchedAcrossStates(fromReport, toReport), opts.ImplicitExclude)
+	if opts.RefuseUnmatchedExclude && len(unmatched) > 0 {
+		return &atlasfilter.UnmatchedExcludeError{Selectors: unmatched, Sources: opts.ExcludeSources}
+	}
+	reportUnmatchedExclude(opts.Diagnostics, unmatched, opts.ExcludeSources)
+	return nil
+}
+
 // diffResolvedStates is the part of a schema diff that runs once both sides
 // are resolved: scoping, the refusals, the comparison and the plan.
 //
@@ -466,7 +504,7 @@ func diffResolvedStates(
 	scope := atlasfilter.Scope{
 		Schemas:       opts.Schemas,
 		Include:       opts.Include,
-		Exclude:       opts.Exclude,
+		Exclude:       slices.Concat(opts.Exclude, opts.ImplicitExclude),
 		DefaultSchema: defaultSchema,
 		Selections:    opts.Runtime.Selections(),
 	}
@@ -487,11 +525,8 @@ func diffResolvedStates(
 	to, toReport, toErr := toSide.schema, toSide.report, toSide.selectionErr
 	applyExtensionSupportCoverage(to, fromSide.selection, toSide.selection)
 	fromSide = withDocumentBaseline(fromState, fromSide, dialect)
-	// One empty side is how a create or a drop looks. A selection that matched
-	// neither side cannot answer the requested comparison, so fail instead of
-	// reporting a false synced result to CI.
-	if emptySelection(fromErr) && emptySelection(toErr) {
-		return atlasreport.SchemaDiff{}, nil, fromErr
+	if err := checkDiffSelections(fromErr, toErr, fromReport, toReport, opts); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 
 	if err := setDiffRoot(ctx, dialect, opts.DevURL, fromSide.database, opts.Runtime); err != nil {
@@ -509,10 +544,6 @@ func diffResolvedStates(
 	compareOpts.ServerSchemas = comparesTwoServers(fromState, toState)
 	compareOpts.DesiredGrantsComplete = desiredGrantsComplete(toState, opts)
 	compareOpts.DesiredReadGrants = desiredReadGrants(toState, opts)
-	// Same split as the empty --include selection above: diff previews rather
-	// than executes, so it keeps its exit status and says on stderr that a
-	// selector protected nothing.
-	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(fromReport, toReport), opts.ExcludeSources)
 
 	// Offline comparisons have no live target metadata, so this adapter applies
 	// the target validation that the connected comparison performs.
