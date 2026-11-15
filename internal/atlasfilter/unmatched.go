@@ -7,8 +7,14 @@ import (
 )
 
 // AllowUnmatchedExcludeEnvVar restores the permissive treatment of an
-// --exclude selector that named no object: a warning instead of a refusal, on
-// every verb.
+// exclude selector that named no object: a warning instead of a refusal.
+//
+// The commands that execute a derived plan own it, on both binaries: `schema
+// apply`, which reads it when it plans, and `migrations down`, which reads it
+// on every invocation, with --plan or without, so a malformed value is refused
+// whichever rollback the run takes (`migrate down` under ptah-compat forwards
+// to it). Every other verb warns about such a selector and does not read the
+// variable.
 //
 // It is an environment variable and not a flag on purpose. The conformance
 // cli-surface tier asserts that `ptah-compat` registers exactly the flags the

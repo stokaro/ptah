@@ -125,7 +125,7 @@ Pending Migrations: 0
 ```
 
 An interactive run states the consequences and asks for confirmation before it
-does anything:
+changes the target:
 
 ```text illustration
 Current version: 1785255953
@@ -136,6 +136,12 @@ This will roll back the database from version 1785255953 to version 1785255952.
 The following 1 migration(s) will be rolled back: [1785255953]
 Are you sure you want to continue? Type 'YES' to confirm:
 ```
+
+With `--plan`, the run derives the rollback before it asks and prints it above
+the prompt, so the statements you approve are the ones that run. Deriving it
+resets the dev database, replays the directory into it up to the target version
+and empties it again, so a declined prompt still costs that replay. A plan the
+run refuses is refused before the prompt.
 
 Type `YES` to proceed. Pass `--confirm` where there is no terminal to answer,
 which is what the run below does:
@@ -445,7 +451,9 @@ not in `rolled_back`. The outcomes mean what they mean for `up`, read for a
 rollback: `up-to-date` says nothing above the target was applied, and `applied`
 says every selected migration was rolled back. A rollback derived with `--plan`
 does not go through the migrator, so its `planned` is the versions above the
-target the run read before it started.
+target the run read before it started. A plan the run refuses or cannot derive
+stops it before it starts, as a failed shadow verification does: the document
+carries the error, and no `planned` or `status`.
 
 ### Finishing an interrupted rollback
 
@@ -580,11 +588,12 @@ bookkeeping.
 - **An exclude selector names no object.** With `--plan`, a selector of the
   project's `exclude` list that matches nothing in the target or in the schema
   of the target version would let the rollback drop the object it was written
-  to keep. The command exits `2` before any statement runs, on a dry run too,
-  and names the file the selector came from:
+  to keep. The command exits `2` before it asks for confirmation, on a dry run
+  too, and names the file the selector came from. Nothing has run on the
+  target; the dev database was replayed to derive the plan and is empty again:
 
   ```text illustration
-  error: error running down migrations: the exclude selection from ptah.yaml matched no objects: "audit_event"; migrations down --plan refuses a selection that protects nothing, set PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 to keep the permissive behavior
+  error: the exclude selection from ptah.yaml matched no objects: "audit_event"; migrations down --plan refuses a selection that protects nothing, set PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 to keep the permissive behavior
   ```
 
   Correct the selector. `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1` turns the

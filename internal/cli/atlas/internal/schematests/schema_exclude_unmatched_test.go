@@ -11,6 +11,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/atlas/internal/atlastest"
+	"ptah.run/migration/shadow"
 )
 
 // writeUnmatchedExcludeSchema writes the one-table desired schema every case
@@ -117,6 +118,7 @@ func TestSchemaApplyRefusesAnExcludeSelectorThatMatchedNothing(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches,
 		`the --exclude selection matched no objects: "nosuch_object"; schema apply refuses a selection that protects nothing.*`)
 	c.Assert(err, qt.ErrorMatches, `.*PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1.*`)
+	c.Assert(err, qt.ErrorIs, shadow.ErrUnmatchedExclude)
 	c.Assert(out.String(), qt.Not(qt.Contains), "exclude_keep")
 }
 

@@ -115,9 +115,9 @@ type options struct {
 	// and planExcludeSources names the file each selector came from.
 	planExclude        []string
 	planExcludeSources atlasfilter.ExcludeSources
-	// planAllowUnmatchedExclude is the opt-in that turns the refusal of a
-	// --plan selector that matched nothing into a warning.
-	planAllowUnmatchedExclude bool
+	// allowUnmatchedExclude is the opt-in that turns the refusal of a --plan
+	// selector that matched nothing into a warning.
+	allowUnmatchedExclude bool
 }
 
 func NewMigrateDownCommand() *cobra.Command {
@@ -238,17 +238,18 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		return opts, err
 	}
 	opts.resolvedRunner = runner
+	// The command owns the opt-in, so it is resolved on every invocation and
+	// before anything is read: a malformed value is refused whichever rollback
+	// the run takes and whatever the selectors match.
+	opts.allowUnmatchedExclude, err = atlasfilter.AllowUnmatchedExclude()
+	if err != nil {
+		return opts, err
+	}
 	// A rollback derived from the schema difference leaves the objects the
 	// project excludes alone, as `schema apply` does; one that runs the down
-	// files runs what they say, and has no exclusion to apply. The opt-in is
-	// resolved here, before anything is read, as `schema apply` resolves it,
-	// so a malformed value is refused whatever the selectors match.
+	// files runs what they say, and has no exclusion to apply.
 	if opts.plan {
 		opts.planExclude, opts.planExcludeSources, err = dbcli.EffectiveExclude(cmd, "", nil, projectCfg, opts.featureRuntime.Selections())
-		if err != nil {
-			return opts, err
-		}
-		opts.planAllowUnmatchedExclude, err = atlasfilter.AllowUnmatchedExclude()
 		if err != nil {
 			return opts, err
 		}
@@ -622,6 +623,18 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		return err
 	}
 
+	inputs := rollbackInputs{
+		migrationsFS: migrationsFS, migrationsDir: migrationsDir,
+		targetVersion: targetVersion, dirFormat: dirFormat, atlasEnv: resolvedOpts.atlasEnv,
+		connectTimeout: settings.connectTimeout, migrationsSchema: migrationsSchema,
+		migrationsTable: migrationsTable, revisionFormat: revisionFormat,
+		providerOptions: settings.providerOptions,
+	}
+	derived, err := planRollback(cmd, resolvedOpts, newDynamicRollback(resolvedOpts, opts, conn, inputs), emit)
+	if err != nil {
+		return err
+	}
+
 	// Safety confirmation (unless skipped or dry run)
 	confirmed, err := confirmRollbackPrompt(cmd, opts, status.CurrentVersion, targetVersion, migrationsToRollback)
 	if err != nil {
@@ -633,14 +646,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 
 	return runRollback(cmd, rollbackRun{
 		opts: opts, resolved: resolvedOpts, migrator: mig, conn: conn, runtime: runtime, emit: emit,
-		document: document, dbURL: dbURL, selected: migrationsToRollback,
-		inputs: rollbackInputs{
-			migrationsFS: migrationsFS, migrationsDir: migrationsDir,
-			targetVersion: targetVersion, dirFormat: dirFormat, atlasEnv: resolvedOpts.atlasEnv,
-			connectTimeout: settings.connectTimeout, migrationsSchema: migrationsSchema,
-			migrationsTable: migrationsTable, revisionFormat: revisionFormat,
-			providerOptions: settings.providerOptions,
-		},
+		document: document, dbURL: dbURL, selected: migrationsToRollback, derived: derived, inputs: inputs,
 	})
 }
 
@@ -657,7 +663,9 @@ type rollbackRun struct {
 	dbURL    string
 	// selected is the versions above the target the run read before the lock.
 	selected []int64
-	inputs   rollbackInputs
+	// derived is the plan of a --plan rollback, derived before the prompt.
+	derived []string
+	inputs  rollbackInputs
 }
 
 // runRollback rolls back, reads the history it left, and reports both: in the
@@ -681,7 +689,7 @@ func runRollback(cmd *cobra.Command, r rollbackRun) error {
 	}
 
 	// Run down migrations
-	runErr := executeRollback(cmd, buildRollbackExecution(r.resolved, opts, mig, preflightHook, r.conn, r.inputs), emit)
+	runErr := executeRollback(cmd, buildRollbackExecution(r, preflightHook))
 	if runErr != nil {
 		runErr = fmt.Errorf("error running down migrations: %w", runErr)
 	}
@@ -1135,30 +1143,41 @@ type dynamicRollback struct {
 	// allowUnmatchedExclude turns the refusal of a selector that matched
 	// nothing into a warning.
 	allowUnmatchedExclude bool
+	// statements is the plan deriveRollback derived before the prompt, and
+	// the statements the rollback runs.
+	statements []string
 	// providerOptions are the rollback's own. The target schema is built on
 	// the dev database by running the up files, and a runner that leaves a
 	// file its own transactions runs them that way there too.
 	providerOptions []migrator.FSProviderOption
 }
 
-// runDynamicRollback derives the rollback from the schema difference and
-// applies it, instead of running the down bodies the directory carries.
+// planRollback derives the rollback a --plan run applies, and nothing for a
+// run that applies the down files. It runs before the prompt, as `schema
+// apply` plans before it asks: the operator approves the statements that run,
+// and a plan the run refuses is refused before anyone is asked to approve it.
+func planRollback(cmd *cobra.Command, resolved options, r dynamicRollback, emit cliobs.Emitter) ([]string, error) {
+	if !resolved.plan {
+		return nil, nil
+	}
+	return deriveRollback(cmd, r, emit)
+}
+
+// deriveRollback plans the rollback --plan applies, from the schema
+// difference instead of the down bodies the directory carries, and prints it.
 //
-// The revision boundary moves through the same path `migrations set` uses, so a
-// derived rollback leaves the bookkeeping in the state a file-based one would:
-// the rows above the target are removed, and nothing below is disturbed. Doing
-// it after the statements, not before, means a plan that fails partway leaves
-// revisions that still describe a database ahead of the target -- which is the
-// honest reading of what happened, and what `migrations repair` expects.
-func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emitter) error {
+// It runs before the confirmation prompt. The dev database is released once
+// the plan is read, since nothing after the prompt needs it, so a declined
+// prompt still costs the replay that built the target schema there.
+func deriveRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) ([]string, error) {
 	if strings.TrimSpace(r.devURL) == "" {
-		return fmt.Errorf("--%s requires --%s: the schema at version %d has to be built somewhere "+
+		return nil, fmt.Errorf("--%s requires --%s: the schema at version %d has to be built somewhere "+
 			"before it can be compared against the live database",
 			planFlag, shadowDBFlag, r.targetVersion)
 	}
 	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), r.devURL, devdocker.Options{})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer releaseDev()
 
@@ -1181,11 +1200,11 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emi
 		RefuseUnmatchedExclude: !r.allowUnmatchedExclude,
 		Diagnostics:            cmd.ErrOrStderr(),
 	})
-	if unmatched, ok := errors.AsType[*atlasfilter.UnmatchedExcludeError](err); ok {
-		return atlasschema.UnmatchedExcludeRefusal(typedCommand(cmd)+" --"+planFlag, unmatched)
-	}
 	if err != nil {
-		return err
+		// The refusal is worded as `schema apply` words it, naming the
+		// command the operator typed. A failure the planning reported beside
+		// it, such as a dev database it could not empty, stays in the error.
+		return nil, atlasschema.UnmatchedExcludeRefusal(typedCommand(cmd)+" --"+planFlag, err)
 	}
 
 	emit.Printf("Derived rollback plan: %d statements\n", len(statements))
@@ -1193,6 +1212,19 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emi
 		emit.Printf("  %s\n", statement)
 	}
 	emit.Println()
+	return statements, nil
+}
+
+// runDynamicRollback applies the plan [deriveRollback] derived, instead of
+// running the down bodies the directory carries.
+//
+// The revision boundary moves through the same path `migrations set` uses, so a
+// derived rollback leaves the bookkeeping in the state a file-based one would:
+// the rows above the target are removed, and nothing below is disturbed. Doing
+// it after the statements, not before, means a plan that fails partway leaves
+// revisions that still describe a database ahead of the target -- which is the
+// honest reading of what happened, and what `migrations repair` expects.
+func runDynamicRollback(cmd *cobra.Command, r rollbackExecution) error {
 	if r.dryRun {
 		return nil
 	}
@@ -1200,7 +1232,7 @@ func runDynamicRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emi
 	// nothing below would record them. They delete the same revision rows an
 	// authored rollback deletes, which is the history the log exists to keep.
 	settle := r.migrator.LogDerivedRollback(cmd.Context(), r.targetVersion)
-	err = applyDerivedRollback(cmd, r, statements)
+	err := applyDerivedRollback(cmd, r, r.statements)
 	settle(err)
 	return err
 }
@@ -1239,9 +1271,9 @@ type rollbackExecution struct {
 // The choice lives here rather than inline so the two strategies read as
 // alternatives. They are not variations on one path: one runs SQL a person
 // wrote and reviewed, the other runs SQL inferred from structure minutes ago.
-func executeRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emitter) error {
+func executeRollback(cmd *cobra.Command, r rollbackExecution) error {
 	if r.plan {
-		return runDynamicRollback(cmd, r, emit)
+		return runDynamicRollback(cmd, r)
 	}
 	// The rollback watches the command's context, which an interrupt cancels.
 	// A down body that kept executing after the signal would commit a
@@ -1265,42 +1297,43 @@ type rollbackInputs struct {
 	providerOptions  []migrator.FSProviderOption
 }
 
-func buildRollbackExecution(
-	resolved options,
-	opts *options,
-	mig *migrator.Migrator,
-	hook migrator.PreMigrationHook,
-	conn *dbschema.DatabaseConnection,
-	in rollbackInputs,
-) rollbackExecution {
+func buildRollbackExecution(r rollbackRun, hook migrator.PreMigrationHook) rollbackExecution {
+	rollback := newDynamicRollback(r.resolved, r.opts, r.conn, r.inputs)
+	rollback.statements = r.derived
 	return rollbackExecution{
-		plan:          resolved.plan,
-		migrator:      mig,
-		preflightHook: hook,
-		dynamicRollback: dynamicRollback{
-			runtime:               resolved.featureRuntime,
-			conn:                  conn,
-			devURL:                resolved.shadowDB,
-			migrationsFS:          in.migrationsFS,
-			migrationsDir:         in.migrationsDir,
-			targetVersion:         in.targetVersion,
-			dirFormat:             in.dirFormat,
-			atlasEnv:              in.atlasEnv,
-			connectTimeout:        in.connectTimeout,
-			dryRun:                opts.dryRun,
-			exclude:               resolved.planExclude,
-			excludeSources:        resolved.planExcludeSources,
-			allowUnmatchedExclude: resolved.planAllowUnmatchedExclude,
-			providerOptions:       in.providerOptions,
-			revisionsOpts: atlasmigrate.SetOptions{
-				Dir:             in.migrationsDir,
-				FS:              in.migrationsFS,
-				AtlasEnv:        in.atlasEnv,
-				RevisionsSchema: in.migrationsSchema,
-				RevisionsTable:  in.migrationsTable,
-				DirFormat:       in.dirFormat,
-				RevisionFormat:  in.revisionFormat,
-			},
+		plan:            r.resolved.plan,
+		migrator:        r.migrator,
+		preflightHook:   hook,
+		dynamicRollback: rollback,
+	}
+}
+
+// newDynamicRollback gathers what deriving a --plan rollback and applying it
+// read.
+func newDynamicRollback(resolved options, opts *options, conn *dbschema.DatabaseConnection, in rollbackInputs) dynamicRollback {
+	return dynamicRollback{
+		runtime:               resolved.featureRuntime,
+		conn:                  conn,
+		devURL:                resolved.shadowDB,
+		migrationsFS:          in.migrationsFS,
+		migrationsDir:         in.migrationsDir,
+		targetVersion:         in.targetVersion,
+		dirFormat:             in.dirFormat,
+		atlasEnv:              in.atlasEnv,
+		connectTimeout:        in.connectTimeout,
+		dryRun:                opts.dryRun,
+		exclude:               resolved.planExclude,
+		excludeSources:        resolved.planExcludeSources,
+		allowUnmatchedExclude: resolved.allowUnmatchedExclude,
+		providerOptions:       in.providerOptions,
+		revisionsOpts: atlasmigrate.SetOptions{
+			Dir:             in.migrationsDir,
+			FS:              in.migrationsFS,
+			AtlasEnv:        in.atlasEnv,
+			RevisionsSchema: in.migrationsSchema,
+			RevisionsTable:  in.migrationsTable,
+			DirFormat:       in.dirFormat,
+			RevisionFormat:  in.revisionFormat,
 		},
 	}
 }

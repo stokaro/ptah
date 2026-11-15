@@ -60,6 +60,15 @@ func (r downPlanExcludeRun) down(c *qt.C, env []string, args ...string) clirun.R
 			"--target", "1", "--plan", "--shadow-db", r.dev, "--confirm"}, args...)...)
 }
 
+// downAnswering is down without --confirm and with no PTAH_* variable: the
+// run asks, and answer is what the operator types.
+func (r downPlanExcludeRun) downAnswering(c *qt.C, answer string) clirun.Result {
+	c.Helper()
+	return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: r.projectDir, Env: environmentWithoutPtahVariables(), Stdin: answer + "\n"},
+		"migrations", "down", "--db-url", r.target, "--migrations-dir", r.migrationsDir,
+		"--target", "1", "--plan", "--shadow-db", r.dev)
+}
+
 // appliedVersion reads the target's highest applied version back from its
 // revision table.
 func (r downPlanExcludeRun) appliedVersion(c *qt.C) int {
@@ -94,13 +103,15 @@ func stderrErrors(stderr string) []string {
 // refusal below. A selector that names audit_events keeps it and draws no
 // warning; a project with no selector drops it, so the planner's own
 // selectors for the revision tables, which name nothing on this target, are
-// not refused; and the opt-in `schema apply` reads restores the warning and
-// the permissive rollback.
+// not refused; the list of the selected env replaces a mistyped top-level
+// one; and the opt-in `schema apply` reads restores the warning and the
+// permissive rollback.
 func TestMigrationsDownPlanExcludeUnmatchedE2E_HappyPath(t *testing.T) {
 	tests := []struct {
 		name         string
 		project      string
 		env          []string
+		args         []string
 		wantWarnings []string
 		wantTables   []string
 	}{
@@ -113,6 +124,12 @@ func TestMigrationsDownPlanExcludeUnmatchedE2E_HappyPath(t *testing.T) {
 			name:       "no selector",
 			project:    "migration:\n  connect_timeout: 10s\n",
 			wantTables: []string{"users"},
+		},
+		{
+			name:       "the ptah.yaml env list in place of a mistyped top-level one",
+			project:    "exclude: [audit_event]\nenv:\n  local:\n    exclude: [audit_events]\n",
+			args:       []string{"--env", "local"},
+			wantTables: []string{"audit_events", "users"},
 		},
 		{
 			name:         "the opt-in",
@@ -128,7 +145,7 @@ func TestMigrationsDownPlanExcludeUnmatchedE2E_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			run := newDownPlanExcludeRun(c, "ptah.yaml", test.project)
 
-			got := run.down(c, test.env)
+			got := run.down(c, test.env, test.args...)
 
 			c.Assert(got.ExitCode, qt.Equals, 0, historyComment(got))
 			c.Assert(stderrWarnings(got.Stderr), qt.DeepEquals, test.wantWarnings, historyComment(got))
@@ -159,7 +176,7 @@ func TestMigrationsDownPlanExcludeUnmatchedE2E_FailurePath(t *testing.T) {
 			name:    "the ptah.yaml list",
 			file:    "ptah.yaml",
 			project: "exclude: [audit_event]\n",
-			wantErrors: []string{`error: error running down migrations: ` +
+			wantErrors: []string{`error: ` +
 				`the exclude selection from ptah.yaml matched no objects: "audit_event"; ` + refusal},
 		},
 		{
@@ -167,7 +184,7 @@ func TestMigrationsDownPlanExcludeUnmatchedE2E_FailurePath(t *testing.T) {
 			file:    "ptah.yaml",
 			project: "exclude: [audit_events]\nenv:\n  local:\n    exclude: [audit_event]\n",
 			args:    []string{"--env", "local"},
-			wantErrors: []string{`error: error running down migrations: ` +
+			wantErrors: []string{`error: ` +
 				`the exclude selection from ptah.yaml matched no objects: "audit_event"; ` + refusal},
 		},
 		{
@@ -175,7 +192,7 @@ func TestMigrationsDownPlanExcludeUnmatchedE2E_FailurePath(t *testing.T) {
 			file:    "atlas.hcl",
 			project: "env \"local\" {\n  exclude = [\"audit_event\"]\n}\n",
 			args:    []string{"--config", "atlas.hcl", "--env", "local"},
-			wantErrors: []string{`error: error running down migrations: ` +
+			wantErrors: []string{`error: ` +
 				`the exclude selection from atlas.hcl matched no objects: "audit_event"; ` + refusal},
 		},
 		{
@@ -183,7 +200,7 @@ func TestMigrationsDownPlanExcludeUnmatchedE2E_FailurePath(t *testing.T) {
 			file:    "ptah.yaml",
 			project: "exclude: [audit_events, audit_event]\n",
 			args:    []string{"--dry-run"},
-			wantErrors: []string{`error: error running down migrations: ` +
+			wantErrors: []string{`error: ` +
 				`the exclude selection from ptah.yaml matched no objects: "audit_event"; ` + refusal},
 		},
 		{
@@ -209,6 +226,39 @@ func TestMigrationsDownPlanExcludeUnmatchedE2E_FailurePath(t *testing.T) {
 			c.Assert(run.appliedVersion(c), qt.Equals, 2)
 		})
 	}
+}
+
+// TestMigrationsDownPlanExcludeAsksAfterThePlanE2E_HappyPath runs without
+// --confirm, and the operator approves. The derived plan is printed before the
+// prompt, so the statements the operator approves are the ones that run.
+func TestMigrationsDownPlanExcludeAsksAfterThePlanE2E_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	run := newDownPlanExcludeRun(c, "ptah.yaml", "exclude: [audit_events]\n")
+
+	got := run.downAnswering(c, "YES")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, historyComment(got))
+	c.Assert(got.Stdout, qt.Matches, `(?s).*Derived rollback plan: 1 statements\n  DROP TABLE "posts"[^\n]*\n.*Type 'YES' to confirm: .*`)
+	c.Assert(run.userTables(c), qt.DeepEquals, []string{"audit_events", "users"})
+	c.Assert(run.appliedVersion(c), qt.Equals, 1)
+}
+
+// TestMigrationsDownPlanExcludeUnmatchedAsksNothingE2E_FailurePath runs the
+// mistyped selector without --confirm, and the operator would approve. The
+// run refuses before it asks.
+func TestMigrationsDownPlanExcludeUnmatchedAsksNothingE2E_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	run := newDownPlanExcludeRun(c, "ptah.yaml", "exclude: [audit_event]\n")
+
+	got := run.downAnswering(c, "YES")
+
+	c.Assert(got.ExitCode, qt.Equals, 2, historyComment(got))
+	c.Assert(got.Stdout, qt.Not(qt.Contains), "Type 'YES' to confirm")
+	c.Assert(stderrErrors(got.Stderr), qt.DeepEquals, []string{`error: the exclude selection from ptah.yaml matched no objects: "audit_event"; ` +
+		`migrations down --plan refuses a selection that protects nothing, ` +
+		`set PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 to keep the permissive behavior`}, historyComment(got))
+	c.Assert(run.userTables(c), qt.DeepEquals, []string{"audit_events", "posts", "users"})
+	c.Assert(run.appliedVersion(c), qt.Equals, 2)
 }
 
 // TestAtlasCompatMigrateDownPlanExcludeUnmatchedE2E_FailurePath runs the
@@ -245,7 +295,7 @@ func TestAtlasCompatMigrateDownPlanExcludeUnmatchedE2E_FailurePath(t *testing.T)
 		"--dir", "file://migrations", "--to-version", "1", "--plan", "--dev-url", run.dev)
 
 	c.Assert(got.ExitCode, qt.Equals, 1, historyComment(got))
-	c.Assert(got.Stderr, qt.Equals, `Error: error running down migrations: `+
+	c.Assert(got.Stderr, qt.Equals, `Error: `+
 		`the exclude selection from atlas.hcl matched no objects: "audit_event"; `+
 		`migrate down --plan refuses a selection that protects nothing, `+
 		`set PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE=1 to keep the permissive behavior`+"\n")
