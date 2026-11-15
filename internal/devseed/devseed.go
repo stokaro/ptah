@@ -249,7 +249,7 @@ func WithAdded(err error, added []Object) error {
 type code struct {
 	text string
 	// declarations reports that only the declarations of a PL/pgSQL block
-	// name anything, without the calls a default makes; see [bodyCode].
+	// name anything, without their defaults; see [bodyCode].
 	declarations bool
 }
 
@@ -286,11 +286,13 @@ func routineBodies(state *catalog.Database) []code {
 // SQL-standard one. A PL/pgSQL routine is compiled when it is created, which
 // resolves the types its declarations name, a %ROWTYPE or a %TYPE included,
 // and nothing its statements name until it runs. So only the declarations
-// count, and a call in a default does not: recreated for a call PostgreSQL
-// does not resolve, a routine fails the routine guard on a server the run does
-// not own, and in a schema the dev database held it is refused, where the plan
-// alone passes. A DO block runs at once, so every name in it counts. A body in
-// another language is not SQL, and false is returned for it.
+// count, and not their defaults, which a block evaluates each time it runs:
+// recreated for a call PostgreSQL does not resolve, a routine fails the
+// routine guard on a server the run does not own, and in a schema the dev
+// database held it is refused, where the plan alone passes. A declared type
+// with a modifier, such as extensions.vector(3), still counts. A DO block runs
+// at once, so every name in it counts. A body in another language is not SQL,
+// and false is returned for it.
 func bodyCode(body, language string, runs bool) (code, bool) {
 	switch fold(language) {
 	case "", "sql":
@@ -302,23 +304,52 @@ func bodyCode(body, language string, runs bool) (code, bool) {
 	}
 }
 
-// declared returns the uses that stand in the declarations of a PL/pgSQL
-// block, from each DECLARE to the BEGIN after it, without the calls a
-// default makes.
-func declared(uses []deporder.NameUse) []deporder.NameUse {
-	var out []deporder.NameUse
-	in := false
-	for _, use := range uses {
-		switch {
-		case slices.Equal(use.Parts, []string{"declare"}):
-			in = true
-		case slices.Equal(use.Parts, []string{"begin"}):
-			in = false
-		case in && !use.Call:
-			out = append(out, use)
+// declarations returns the declarations of each block of PL/pgSQL body,
+// from each DECLARE to the BEGIN after it, read with options, as code
+// [deporder.CodeNameUses] reads: each declaration up to its default, the
+// := , = or DEFAULT outside parentheses that introduces it, and one
+// declaration to a line.
+func declarations(body string, options lexer.Options) string {
+	var out strings.Builder
+	l := lexer.NewLexerWithOptions(body, options)
+	in, cut := false, false
+	depth, start := 0, 0
+	var previous lexer.Token
+	end := func(at int) {
+		if !cut {
+			out.WriteString(body[start:at])
+			out.WriteString(";\n")
 		}
+		cut = true
 	}
-	return out
+	for token := l.NextToken(); token.Type != lexer.TokenEOF; token = l.NextToken() {
+		switch {
+		case token.Type == lexer.TokenWhitespace || token.Type == lexer.TokenComment:
+			continue
+		case !in && token.MatchIdentifierValue("DECLARE"):
+			in, cut, depth, start = true, false, 0, token.End
+		case !in:
+		case token.MatchOperatorValue("("):
+			depth++
+		case token.MatchOperatorValue(")"):
+			depth--
+		case depth > 0:
+		case token.Type == lexer.TokenSemicolon:
+			end(token.Start)
+			cut, start = false, token.End
+		case token.MatchIdentifierValue("BEGIN"):
+			end(token.Start)
+			in = false
+		case token.MatchIdentifierValue("DEFAULT"):
+			end(token.Start)
+		case token.MatchOperatorValue("=") && previous.MatchOperatorValue(":") && previous.End == token.Start:
+			end(previous.Start)
+		case token.MatchOperatorValue("="):
+			end(token.Start)
+		}
+		previous = token
+	}
+	return out.String()
 }
 
 // statementBodies are the routine bodies statements quote as strings, on an
@@ -462,11 +493,11 @@ func readNames(texts []code, opts Options) names {
 		relations: make(map[string]bool), schemas: make(map[string]bool),
 	}
 	for _, text := range texts {
-		uses := deporder.CodeNameUses(text.text, opts.Dialect)
+		body := text.text
 		if text.declarations {
-			uses = declared(uses)
+			body = declarations(body, dialectlexer.Options(opts.Dialect))
 		}
-		for _, use := range uses {
+		for _, use := range deporder.CodeNameUses(body, opts.Dialect) {
 			parts := use.Parts
 			if len(parts) == 1 {
 				found.words[parts[0]] = true

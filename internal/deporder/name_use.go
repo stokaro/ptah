@@ -16,7 +16,8 @@ type NameUse struct {
 	// Call reports that the name stands where SQL names a function: an
 	// opening parenthesis follows it, as in `uid()` and `EXECUTE FUNCTION
 	// touch()`, or FUNCTION, PROCEDURE or ROUTINE precedes it, as in `COMMENT
-	// ON FUNCTION uid IS ...` and `GRANT EXECUTE ON FUNCTION uid TO ...`.
+	// ON FUNCTION uid IS ...`, `GRANT EXECUTE ON FUNCTION uid TO ...` and,
+	// past IF EXISTS, `DROP FUNCTION IF EXISTS uid`.
 	Call bool
 	// Relation reports that the name stands where SQL names a table, a view or
 	// a sequence: after FROM, JOIN, INTO, UPDATE, TABLE, ONLY, ON, USING,
@@ -49,7 +50,7 @@ func CodeNameUses(body, dialect string) []NameUse {
 		next := skipCodeSpace(body, masks, span.end)
 		uses = append(uses, NameUse{
 			Parts:    slices.Clone([]string(span.name)),
-			Call:     codeByteAt(body, masks, next, '(') || routineKeyword(previousCode(body, masks, span.start).word),
+			Call:     codeByteAt(body, masks, next, '(') || namesRoutine(body, masks, span.start),
 			Relation: codeByteAt(body, masks, next, '%') || standsForRelation(body, masks, span.start),
 		})
 	}
@@ -103,6 +104,24 @@ func relationKeyword(word string) bool {
 	default:
 		return false
 	}
+}
+
+// namesRoutine reports whether the name that starts at offset start of body
+// follows FUNCTION, PROCEDURE or ROUTINE, past the IF [NOT] EXISTS of a
+// statement on a routine, as in `DROP FUNCTION IF EXISTS uid`.
+func namesRoutine(body string, masks sqlMasks, start int) bool {
+	before := previousCode(body, masks, start)
+	if before.word == "exists" {
+		before = previousCode(body, masks, before.at)
+		if before.word == "not" {
+			before = previousCode(body, masks, before.at)
+		}
+		if before.word != "if" {
+			return false
+		}
+		before = previousCode(body, masks, before.at)
+	}
+	return routineKeyword(before.word)
 }
 
 // routineKeyword reports whether a name that follows word stands where SQL

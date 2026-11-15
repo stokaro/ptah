@@ -401,6 +401,20 @@ func TestClosure_ReadsTheBodiesStatementsQuote(t *testing.T) {
 			statement: `CREATE FUNCTION whoami() RETURNS uuid LANGUAGE plpgsql AS $$ DECLARE v uuid := auth.uid(); BEGIN RETURN v; END $$`,
 		},
 		{
+			name:      "a call in a default spelled with DEFAULT or =",
+			statement: `CREATE FUNCTION whoami() RETURNS uuid LANGUAGE plpgsql AS $$ DECLARE v uuid DEFAULT auth.uid(); w uuid = auth.uid(); BEGIN RETURN v; END $$`,
+		},
+		{
+			name:      "a row type declared after a default that calls",
+			statement: `CREATE FUNCTION whoami() RETURNS uuid LANGUAGE plpgsql AS $$ DECLARE v uuid := auth.uid(); r auth.accounts%ROWTYPE; BEGIN RETURN v; END $$`,
+			want:      addsAuthAccounts,
+		},
+		{
+			name:      "a row type a nested block declares",
+			statement: `CREATE FUNCTION whoami() RETURNS uuid LANGUAGE plpgsql AS $$ <<outer>> DECLARE v uuid := auth.uid(); BEGIN DECLARE r auth.accounts%ROWTYPE; BEGIN NULL; END; RETURN v; END $$`,
+			want:      addsAuthAccounts,
+		},
+		{
 			name:      "an SQL-standard body, which is code",
 			statement: `CREATE FUNCTION whoami() RETURNS uuid LANGUAGE sql BEGIN ATOMIC SELECT auth.uid(); END`,
 			want:      addsAuthUID,
@@ -456,6 +470,7 @@ func TestClosure_ReadsWhatAPLpgSQLRoutineOfTheStateDeclares(t *testing.T) {
 	}{
 		{name: "a declared row type", body: "DECLARE r auth.accounts%ROWTYPE; BEGIN RETURN NULL; END", want: addsAuthAccounts},
 		{name: "a call", body: "BEGIN RETURN auth.uid(); END"},
+		{name: "a call in a default", body: "DECLARE v uuid := auth.uid(); BEGIN RETURN v; END"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -464,6 +479,43 @@ func TestClosure_ReadsWhatAPLpgSQLRoutineOfTheStateDeclares(t *testing.T) {
 			routine.Language = "plpgsql"
 			var calls [][]string
 			got, err := devseed.Closure(&catalog.Database{Functions: []catalog.Function{routine}}, nil, render, readOf(authUID(), &calls), options)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Added, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestClosure_ReadsATypeAPLpgSQLDeclarationModifies recreates the extension
+// that provides a type a PL/pgSQL body declares with a modifier, which reads
+// like a call and PostgreSQL resolves when the routine is created, and leaves
+// out the one a default calls, which it resolves only when the block runs.
+func TestClosure_ReadsATypeAPLpgSQLDeclarationModifies(t *testing.T) {
+	read := &catalog.Database{
+		Schemas: schemas("public", "extensions"),
+		FeatureObjects: features(
+			must.Must(pgextension.ObservedObject(pgextension.Ref("vector"), pgextension.ObservedExtension{Schema: "extensions", Version: "0.8.0"})),
+		),
+	}
+	tests := []struct {
+		name      string
+		statement string
+		want      []devseed.Object
+	}{
+		{
+			name:      "a declared type with a modifier",
+			statement: `CREATE FUNCTION embed() RETURNS void LANGUAGE plpgsql AS $$ DECLARE v extensions.vector(3); BEGIN NULL; END $$`,
+			want:      []devseed.Object{{Kind: "extension", Name: "vector"}, {Kind: "schema", Name: "extensions"}},
+		},
+		{
+			name:      "a call in a default",
+			statement: `CREATE FUNCTION embed() RETURNS void LANGUAGE plpgsql AS $$ DECLARE v text := extensions.vector_dims(NULL); BEGIN NULL; END $$`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var calls [][]string
+			got, err := devseed.Closure(&catalog.Database{}, []string{test.statement}, render, readOf(read, &calls), options)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Added, qt.DeepEquals, test.want)
 		})
