@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/selectext"
+	"ptah.run/internal/featureselect"
 )
 
 // vocabulary is what a selector may name in one run: the common types and
@@ -130,6 +131,10 @@ func (s *exclusionState) clearOwnerFields(objects schemaext.Objects) (schemaext.
 // type names. A required or referenced object comes back only when the side
 // holds it, with its knowledge. It records in s.required each object it kept
 // for a requirement alone, which [SelectionReport.Required] reports.
+//
+// The caller runs [featureselect.Bindings.Select] on objects first. That call
+// decides an object of a table and an object attached to tables, and this
+// function keeps every such object it is given.
 func (s *scopeSelection) selectOwnerFeatures(
 	objects schemaext.Objects, coverage schemaext.Coverage, referenced map[string]struct{},
 ) (featureSelection, error) {
@@ -146,9 +151,13 @@ func (s *scopeSelection) selectOwnerFeatures(
 		}
 		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(ref objectidentity.ID, schema, name string) bool {
 			switch {
-			case s.bindings.Attached(ref):
-				// A scope keeps an attached object with its table, which
-				// the bindings have decided already.
+			case s.bindings.Attached(ref), featureselect.OfTable(ref):
+				// A scope keeps an object attached to a table, or one of a
+				// table such as a policy, with that table, which the
+				// bindings have decided already. An include names a table's
+				// child only through the table: the parser refuses the
+				// child's type, and the child's own name matching nothing
+				// would leave it out of a table the selection keeps.
 				return true
 			case selection.ByNameAlone(schema):
 				return s.selectedNames(typeList(selection.Type), name)
