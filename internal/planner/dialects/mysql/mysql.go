@@ -1858,6 +1858,9 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := p.rejectUniqueIncludeConstraints(diff); err != nil {
 		return nil, err
 	}
+	if err := refuseLostSQLSecurity(diff); err != nil {
+		return nil, err
+	}
 
 	// Note: MySQL doesn't use separate enum types like PostgreSQL
 	// Enums are handled inline in column definitions, so we skip enum creation steps

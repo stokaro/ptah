@@ -222,8 +222,9 @@ func mysqlOrderTotalsView(security, body string) string {
 
 // TestDescribe_MySQLPlans runs the MySQL planner and renderer over a view
 // change, and pins the statement it writes and the description of it. A
-// declaration that names no mode keeps the one the view holds, so the
-// replacement states it and the description says it is unchanged.
+// declared mode is written and described as declared, and a declaration that
+// names no mode over a view held as DEFINER writes no clause and describes the
+// server default.
 func TestDescribe_MySQLPlans(t *testing.T) {
 	const (
 		held     = "SELECT id, total FROM orders"
@@ -236,14 +237,26 @@ func TestDescribe_MySQLPlans(t *testing.T) {
 		want     []statementEffect
 	}{
 		{
-			name:     "a body change keeps INVOKER the declaration does not name",
+			name:     "a body change keeps a declared INVOKER",
 			held:     mysqlOrderTotalsView("SQL SECURITY INVOKER", held),
-			declared: mysqlOrderTotalsView("", positive),
+			declared: mysqlOrderTotalsView("SQL SECURITY INVOKER", positive),
 			want: []statementEffect{{
 				SQL:    "CREATE OR REPLACE SQL SECURITY INVOKER VIEW `order_totals` AS\n" + positive,
 				Action: planeffect.ActionReplace,
 				Properties: []planeffect.Property{
 					{Name: planeffect.SQLSecurity, Before: "INVOKER", After: "INVOKER"},
+				},
+			}},
+		},
+		{
+			name:     "a body change to a DEFINER view that names no mode",
+			held:     mysqlOrderTotalsView("SQL SECURITY DEFINER", held),
+			declared: mysqlOrderTotalsView("", positive),
+			want: []statementEffect{{
+				SQL:    "CREATE OR REPLACE VIEW `order_totals` AS\n" + positive,
+				Action: planeffect.ActionReplace,
+				Properties: []planeffect.Property{
+					{Name: planeffect.SQLSecurity, Before: "DEFINER", After: "DEFINER"},
 				},
 			}},
 		},

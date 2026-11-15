@@ -2286,6 +2286,17 @@ type ViewDiff struct {
 	//
 	// It stays off the wire, as Desired does.
 	PreviousOptions []string `json:"-"`
+
+	// PreviousSecurity is the SQL SECURITY mode the view holds before this
+	// change runs, on a target whose views have one (MySQL and MariaDB): the
+	// database side of a forward comparison, and the mode the forward change
+	// declares in a reversed one. Where it is INVOKER, Desired names no mode
+	// and the entry is not a [ViewDiff.Rollback], a planner that reads it
+	// refuses, because the statement it would write selects DEFINER. Empty
+	// means the target has no such mode, or a declaration that names none.
+	//
+	// It stays off the wire, as Desired does.
+	PreviousSecurity string `json:"-"`
 }
 
 // OptionsChange is the key a view's or a materialized view's Changes carries

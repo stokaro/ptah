@@ -13,16 +13,18 @@
 // any statement is sent.
 package planrefusal
 
-// ViewOption is one security option a plan would take from a view.
+// ViewOption is one security option, or a MySQL or MariaDB view's SQL SECURITY
+// mode, that a plan would take from a view.
 type ViewOption struct {
 	// View is the view, as the schema spells it.
 	View string `json:"view"`
-	// Option is the option's name.
+	// Option is the option's name, or sql_security for the mode.
 	Option string `json:"option"`
 }
 
 // LostViewSecurityError is the refusal of a plan that would take a security
-// option from a view because the declaration does not state it.
+// option, or SQL SECURITY INVOKER, from a view because the declaration does not
+// state it.
 type LostViewSecurityError struct {
 	// Options are the options the plan would take, in the order the comparison
 	// lists the views, and each view's options in name order.
