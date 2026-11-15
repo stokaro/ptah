@@ -1,7 +1,8 @@
 // Package sqlserverreplay is the SQL Server migration replay guard: it
 // refuses a T-SQL statement whose effects cannot be confined to the dev
 // database, such as USE, a remote EXECUTE, a server-scoped object or a
-// temporary one. internal/devclean asks it through the
+// temporary one, and on a run that trusts its SQL lifts the refusals whose only
+// reason is confinement. internal/devclean asks it through the
 // internal/devclean/replay contract.
 package sqlserverreplay
 
@@ -19,9 +20,11 @@ func Services() []replay.Service {
 type guard struct{}
 
 // Validate refuses a statement whose effects cannot be confined to the dev
-// database. No scope widens what it accepts.
-func (guard) Validate(stmt string, _ replay.Scope) error {
-	return validateSQLServerReplayStatement(replay.Tokens(stmt, lexerOptions()))
+// database. No realm widens what it accepts; a run that trusts its SQL lifts
+// the refusals whose only reason is confinement, see
+// [validateSQLServerReplayStatement].
+func (guard) Validate(stmt string, scope replay.Scope) error {
+	return validateSQLServerReplayStatement(replay.Tokens(stmt, lexerOptions()), scope)
 }
 
 // lexerOptions reads bracketed identifiers, and a # as the start of a

@@ -174,6 +174,9 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatConfigured := cmd.Flags().Changed("format")
 	projectCfg, loaded, err := loadAtlasProjectConfigForCommand(cmd)
 	if err != nil {

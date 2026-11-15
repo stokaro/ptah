@@ -78,7 +78,8 @@ const devGuardStoredBody = "CREATE PROCEDURE `app`.`refresh`() BEGIN SELECT 1; E
 
 // TestNewDevReplayGuard_NamedServerNamesTheRemedy refuses a stored body on a
 // whole server the operator named, and ends the refusal with the two ways to
-// make the server the run's own.
+// make the server the run's own and then with trusting the SQL, which lifts the
+// refusal without making the server the run's own.
 func TestNewDevReplayGuard_NamedServerNamesTheRemedy(t *testing.T) {
 	c := qt.New(t)
 	guard := devclean.NewDevReplayGuard(wholeMySQLDevServer)
@@ -87,7 +88,7 @@ func TestNewDevReplayGuard_NamedServerNamesTheRemedy(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `mysql migration replay rejects CREATE executable stored body because its effects `+
 		`cannot be confined to the disposable database realm; if nothing else uses this server, declare it disposable `+
-		`with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// or docker\+<driver>:// dev URL`)
+		`with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// or docker\+<driver>:// dev URL`+trustRemedy)
 }
 
 // TestNewDevReplayGuard_DeclaredServerRunsWhatTheServerRealmRuns is the

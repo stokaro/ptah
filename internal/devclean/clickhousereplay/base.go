@@ -9,7 +9,7 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-func validateClickHouseReplayStatementBase(database string, tokens []lexer.Token) error {
+func validateClickHouseReplayStatementBase(tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -22,20 +22,51 @@ func validateClickHouseReplayStatementBase(database string, tokens []lexer.Token
 			return replay.Refuse(platform.ClickHouse, "global SET")
 		}
 	}
-	if replay.ContainsTokenSequence(tokens, "ON", "CLUSTER") {
+	if replay.ContainsTokenSequence(tokens, "ON", "CLUSTER") && !scope.TrustedSQL {
 		return replay.Refuse(platform.ClickHouse, "ON CLUSTER")
 	}
-	if isGlobalClickHouseDDL(tokens) {
+	if isGlobalClickHouseDDL(tokens) && (!scope.TrustedSQL || !clickHouseUnconfinedServerObject(tokens)) {
 		return replay.Refuse(platform.ClickHouse, replay.DescribeStatementObject(tokens))
 	}
 	if replay.UsesTemporaryObject(tokens) {
 		return replay.Refuse(platform.ClickHouse, "TEMP object")
 	}
+	if scope.TrustedSQL {
+		return nil
+	}
 	if replay.ContainsIdentifier(tokens, "INTO") &&
 		(replay.ContainsIdentifier(tokens, "OUTFILE") || replay.ContainsIdentifier(tokens, "DUMPFILE")) {
 		return replay.Refuse(platform.ClickHouse, "external file operation")
 	}
-	return rejectCrossDatabaseTargets(platform.ClickHouse, database, tokens)
+	return rejectCrossDatabaseTargets(platform.ClickHouse, scope.Database, tokens)
+}
+
+// clickHouseUnconfinedServerObject reports a statement [isGlobalClickHouseDDL]
+// names whose only reason to be refused is that its object is the server's
+// rather than the dev database's: a SQL function, a row policy or a named
+// collection in any form, and CREATE or DROP of a database, a user or a role.
+// ALTER of a database, a user or a role is not, since it can change the dev
+// database or the identity the run connects as, and neither is a quota, a
+// settings profile, a workload or a resource, which limit or schedule the run's
+// own work.
+func clickHouseUnconfinedServerObject(tokens []lexer.Token) bool {
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	if kindIndex == replay.MutationTargetNotFound {
+		return false
+	}
+	first := replay.NormalizedIdentifier(tokens[0])
+	switch replay.NormalizedIdentifier(tokens[kindIndex]) {
+	case "FUNCTION":
+		return true
+	case "ROW":
+		return replay.TokenSequenceAt(tokens, kindIndex, "ROW", "POLICY")
+	case "NAMED":
+		return replay.TokenSequenceAt(tokens, kindIndex, "NAMED", "COLLECTION")
+	case "DATABASE", "USER", "ROLE":
+		return first == "CREATE" || first == "DROP"
+	default:
+		return false
+	}
 }
 
 func isGlobalClickHouseDDL(tokens []lexer.Token) bool {

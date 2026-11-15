@@ -11,13 +11,26 @@ import (
 	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/devclean/replayguards"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/replaytrust"
 )
 
 // ReplayGuard rejects migration statements whose effects cannot be confined to
 // the disposable database realm cleaned after migration replay.
+//
+// It answers two questions apart. The realm is ownership: how much of the dev
+// server the run may change and later cleans. Trust in the SQL is the
+// operator's statement that they accept effects the guard cannot confine, with
+// the privileges of the dev connection; see [replay.Scope.TrustedSQL]. Trust
+// lifts refusals within the realm and never changes the realm, so a trusted
+// replay on a server the run does not own still cleans only its dev database.
 type ReplayGuard struct {
 	info  catalog.ServerInfo
 	realm ReplayRealm
+	// trustSQL answers [replay.Scope.TrustedSQL]; see [NewDevReplayGuard].
+	trustSQL bool
+	// trustRemedy ends a refusal that trust would lift, when trustSQL is not
+	// set; see [NewDevReplayGuard].
+	trustRemedy string
 	// guard is the replay guard of the connection's dialect, and nil for a
 	// dialect no engine guards.
 	guard replay.Guard
@@ -92,12 +105,22 @@ func NewReplayGuard(info catalog.ServerInfo, realm ReplayRealm) *ReplayGuard {
 }
 
 // NewDevReplayGuard is the guard for statements a run executes on the dev
-// server reached through info: a migration replay, and a plan rehearsal on a
-// whole MySQL or MariaDB server. The realm is [DevReplayRealm]'s, and a
-// refusal the server realm would lift ends with [devdocker.OwnedServerRemedy],
-// the two ways to that realm.
+// server reached through info: a migration replay, a desired-state SQL file
+// loaded there, and a plan rehearsal with the baseline it restores. The realm
+// is [DevReplayRealm]'s, and a refusal the server realm would lift ends with
+// [devdocker.OwnedServerRemedy], the two ways to that realm.
+//
+// The guard trusts the SQL when the run that resolved info.URL trusts it, as
+// [replaytrust.Trusted] answers, and a refusal that trust would lift ends with
+// [replaytrust.Remedy] otherwise. The answer is read by URL for the reason
+// [DevReplayRealm] gives for ownership: every consumer resolves its dev URL
+// through internal/devdocker with the command's context, and no guard
+// constructor takes one.
 func NewDevReplayGuard(info catalog.ServerInfo) *ReplayGuard {
-	return NewReplayGuard(info, DevReplayRealm(info)).WithServerRealmRemedy(devdocker.OwnedServerRemedy)
+	guard := NewReplayGuard(info, DevReplayRealm(info)).WithServerRealmRemedy(devdocker.OwnedServerRemedy)
+	guard.trustSQL = replaytrust.Trusted(info.URL)
+	guard.trustRemedy = replaytrust.Remedy
+	return guard
 }
 
 // replayGuardOwner is a schema writer whose owner judges the statements a run
@@ -235,7 +258,7 @@ func (g *ReplayGuard) WithServerRealmRemedy(remedy string) *ReplayGuard {
 // ValidateStatement rejects statements whose effects cannot be confined to
 // the replay database realm.
 func (g *ReplayGuard) ValidateStatement(stmt string) error {
-	err := g.validate(stmt, g.realm)
+	err := g.validate(stmt, g.realm, g.trustSQL)
 	if err == nil {
 		return nil
 	}
@@ -274,24 +297,45 @@ func (g *ReplayGuard) WithSchemaCommentReturned(returned func() bool) *ReplayGua
 	return &guard
 }
 
-// withRemedy ends err, the refusal of stmt, with the guard's remedy when the
-// server realm would have accepted stmt, and with
-// [devdocker.ProvisionedServerRemedy] when only a provisioned server would.
+// withRemedy ends err, the refusal of stmt, with every way the operator can
+// lift it: the guard's remedy when the server realm would have accepted stmt,
+// [devdocker.ProvisionedServerRemedy] when only a provisioned server would, and
+// the trust remedy when trusting the SQL would. Ownership comes first, since it
+// is the remedy that keeps the run confined.
 func (g *ReplayGuard) withRemedy(stmt string, err error) error {
-	switch {
-	case g.remedy == "" || g.realm == ReplayRealmProvisionedServer:
-		return err
-	case g.realm != ReplayRealmServer && g.validate(stmt, ReplayRealmServer) == nil:
-		return fmt.Errorf("%w; %s", err, g.remedy)
-	case g.validate(stmt, ReplayRealmProvisionedServer) == nil:
-		return fmt.Errorf("%w; %s", err, devdocker.ProvisionedServerRemedy)
+	remedies := make([]string, 0, 2)
+	if remedy := g.serverRemedy(stmt); remedy != "" {
+		remedies = append(remedies, remedy)
 	}
-	return err
+	if g.trustRemedy != "" && !g.trustSQL && g.validate(stmt, g.realm, true) == nil {
+		remedies = append(remedies, g.trustRemedy)
+	}
+	if len(remedies) == 0 {
+		return err
+	}
+	return fmt.Errorf("%w; %s", err, strings.Join(remedies, "; "))
 }
 
-// validate is [ReplayGuard.ValidateStatement] for one realm. It asks the
-// guard of the connection's dialect, and refuses a dialect no engine guards.
-func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
+// serverRemedy is the ownership remedy of stmt's refusal, or "" when owning the
+// server would not lift it; see [ReplayGuard.WithServerRealmRemedy]. It is
+// asked with the guard's own trust, so a trusted run is not told to own a
+// server for a refusal trust has already decided.
+func (g *ReplayGuard) serverRemedy(stmt string) string {
+	switch {
+	case g.remedy == "" || g.realm == ReplayRealmProvisionedServer:
+		return ""
+	case g.realm != ReplayRealmServer && g.validate(stmt, ReplayRealmServer, g.trustSQL) == nil:
+		return g.remedy
+	case g.validate(stmt, ReplayRealmProvisionedServer, g.trustSQL) == nil:
+		return devdocker.ProvisionedServerRemedy
+	}
+	return ""
+}
+
+// validate is [ReplayGuard.ValidateStatement] for one realm and one answer to
+// trust. It asks the guard of the connection's dialect, and refuses a dialect
+// no engine guards.
+func (g *ReplayGuard) validate(stmt string, realm ReplayRealm, trusted bool) error {
 	if g.guard == nil {
 		unsupportedDialect := strings.TrimSpace(g.info.Dialect)
 		if unsupportedDialect == "" {
@@ -303,6 +347,7 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm) error {
 	scope.Session = g.session
 	scope.SchemaStateReturned = g.schemaStateReturned
 	scope.SchemaCommentReturned = g.schemaCommentReturned != nil && g.schemaCommentReturned()
+	scope.TrustedSQL = trusted
 	return g.guard.Validate(stmt, scope)
 }
 

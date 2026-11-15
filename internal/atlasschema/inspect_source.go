@@ -674,6 +674,11 @@ func renderMaterializedSchema(
 // scope: what the selection moves is which of them are described, not which of
 // them exist. See [catalog.Database.RolesOutOfScope].
 //
+// A role the server does not hold is created there only on a server the run
+// owns or whose SQL it trusts; on any other server the materialization is
+// refused before the dev database is reset, by the rule
+// [devclean.RefuseUnconfinedRoles] holds, since nothing would drop the role.
+//
 // The desired state is copied rather than edited. Which roles one dev database
 // happened to have is a fact about that database, not about the document, and
 // the value belongs to a caller that may still use it -- retry against another
@@ -694,6 +699,9 @@ func devMaterializableSchema(ctx context.Context,
 		desired.Roles,
 		slices.Concat(devSchema.Roles, devSchema.RolesOutOfScope),
 	)
+	if err := devclean.RefuseUnconfinedRoles(devConn.Info(), roleNames(create)); err != nil {
+		return nil, fmt.Errorf("materialize schema on dev database: %w", err)
+	}
 	if len(alreadyOnServer) == 0 {
 		return desired, nil
 	}
@@ -701,6 +709,15 @@ func devMaterializableSchema(ctx context.Context,
 	materializable := *desired
 	materializable.Roles = create
 	return &materializable, nil
+}
+
+// roleNames returns the names of roles, in order.
+func roleNames(roles []schemamodel.Role) []string {
+	names := make([]string, 0, len(roles))
+	for _, role := range roles {
+		names = append(names, role.Name)
+	}
+	return names
 }
 
 // readInspectDevSchema reads back a source that was materialized on the dev

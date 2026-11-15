@@ -61,6 +61,9 @@ type schemaInspectOptions struct {
 	connectTimeout string
 	configPath     string
 	envName        string
+	// trustReplaySQL is --trust-replay-sql: the run trusts the SQL it loads
+	// on the dev database.
+	trustReplaySQL bool
 }
 
 func newSchemaInspectCommand() *cobra.Command {
@@ -118,12 +121,14 @@ inspected output never references an object it omitted.`,
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	dbcli.RegisterTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	cmd.MarkFlagsMutuallyExclusive(inspectDBURLFlag, inspectSchemaFileFlag, inspectMigrationsDirFlag)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
 
 func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
+	dbcli.TrustReplaySQL(cmd, opts.trustReplaySQL)
 	// Resolved before the project file is read, so a malformed declaration
 	// fails every inspect and not only one that replays a migration directory.
 	devServerDisposable, err := devdocker.DisposableServerDeclared()

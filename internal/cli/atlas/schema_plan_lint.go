@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
@@ -158,6 +159,9 @@ func runAtlasSchemaPlanLint(cmd *cobra.Command, opts atlasSchemaPlanLintOptions)
 	}
 	devServerDisposable, err := devdocker.DisposableServerDeclared()
 	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	transition, _, err := resolveAtlasSchemaPlanTransitionConfig(

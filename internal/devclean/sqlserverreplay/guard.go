@@ -8,8 +8,29 @@ import (
 
 // validateSQLServerReplayStatement rejects SQL Server mutations whose
 // effects cannot be removed by the database-realm cleanup.
-func validateSQLServerReplayStatement(tokens []lexer.Token) error {
-	if err := validateSQLServerReplayStatementBase(tokens); err != nil {
+//
+// Under [replay.Scope.TrustedSQL] it lifts the refusals whose only
+// reason is that the effect reaches past the dev database: EXEC and EXECUTE,
+// which run SQL the guard cannot read, as a DO block does on PostgreSQL; a
+// function, procedure or DML trigger, whose body is opaque and which the realm
+// cleanup removes; a database, a login or a server credential created or
+// dropped, and a synonym (see [sqlServerUnconfinedServerObject]); a target in
+// another database, including SELECT INTO; and BACKUP, RESTORE, BULK INSERT, a
+// remote EXECUTE and an OPENQUERY or OPENROWSET destination, which move data
+// across the server's edge.
+//
+// It keeps every refusal that protects the run: USE and a temporary object,
+// which change or live in the replay's session; GRANT, DENY and REVOKE, and a
+// database principal, whose state stays in the dev database after the cleanup;
+// a DDL trigger on the database and anything ON SERVER, which fire on the run's
+// own statements; DBCC beyond its local checks, KILL, RECONFIGURE and SHUTDOWN,
+// which act on the server the run uses; an assembly, which loads code into the
+// server; and the objects the realm cleanup does not remove: an external table
+// or data source, a ledger table, a partition function or scheme, full-text,
+// key and certificate objects, and Service Broker and resource governor
+// objects.
+func validateSQLServerReplayStatement(tokens []lexer.Token, scope replay.Scope) error {
+	if err := validateSQLServerReplayStatementBase(tokens, scope); err != nil {
 		return err
 	}
 	if len(tokens) == 0 {
@@ -20,11 +41,27 @@ func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 
 	first := replay.NormalizedIdentifier(tokens[0])
 	if first == "EXEC" || first == "EXECUTE" {
+		if scope.TrustedSQL {
+			return nil
+		}
 		return validateSQLServerExecute(tokens)
 	}
-	if operation := sqlServerExternalOrServerOperation(tokens); operation != "" {
+	if operation := sqlServerExternalOrServerOperation(tokens, scope); operation != "" {
 		return replay.Refuse(platform.SQLServer, operation)
 	}
+	if err := validateSQLServerStatementScope(tokens, first); err != nil {
+		return err
+	}
+	if err := validateSQLServerStatementTargets(replayTokens, tokens, first, scope); err != nil {
+		return err
+	}
+	return validateSQLServerStoredObjects(tokens, first)
+}
+
+// validateSQLServerStatementScope refuses a permission change and a statement
+// whose scope is the server or a DDL trigger on the database. Trust lifts none
+// of them; see [validateSQLServerReplayStatement].
+func validateSQLServerStatementScope(tokens []lexer.Token, first string) error {
 	if first == "GRANT" || first == "DENY" || first == "REVOKE" {
 		return replay.Refuse(platform.SQLServer, "permission mutation")
 	}
@@ -37,10 +74,18 @@ func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 			first+" DATABASE DDL TRIGGER",
 		)
 	}
-	if sqlServerDefinesExecutableBody(tokens) {
+	return nil
+}
+
+// validateSQLServerStatementTargets refuses an executable stored body and a
+// write whose target is outside the dev database. Under
+// [replay.Scope.TrustedSQL] only a temporary SELECT INTO target stays refused,
+// since it lives in the replay's session.
+func validateSQLServerStatementTargets(replayTokens, tokens []lexer.Token, first string, scope replay.Scope) error {
+	if sqlServerDefinesExecutableBody(tokens) && !scope.TrustedSQL {
 		return replay.Refuse(platform.SQLServer, first+" executable stored body")
 	}
-	if sqlServerSelectIntoEscapesRealm(tokens) {
+	if sqlServerSelectIntoEscapesRealm(tokens) && !scope.TrustedSQL {
 		return replay.Refuse(platform.SQLServer, "cross-database SELECT INTO")
 	}
 	if sqlServerSelectIntoTemporaryObject(tokens) {
@@ -50,12 +95,18 @@ func validateSQLServerReplayStatement(tokens []lexer.Token) error {
 	if destination == "" {
 		destination = sqlServerMutationRowsetCTEDestination(replayTokens, tokens)
 	}
-	if destination != "" {
+	if destination != "" && !scope.TrustedSQL {
 		return replay.Refuse(
 			platform.SQLServer,
 			destination+" mutation destination",
 		)
 	}
+	return nil
+}
+
+// validateSQLServerStoredObjects refuses the objects the realm cleanup does not
+// remove. Trust lifts none of them.
+func validateSQLServerStoredObjects(tokens []lexer.Token, first string) error {
 	if sqlServerExternalTableWritesData(tokens) {
 		return replay.Refuse(
 			platform.SQLServer,
@@ -79,13 +130,20 @@ func sqlServerRejectsExternalTableDDL(tokens []lexer.Token) bool {
 		sqlServerDDLStartsWith(tokens, "EXTERNAL", "TABLE")
 }
 
-func sqlServerExternalOrServerOperation(tokens []lexer.Token) string {
+// sqlServerExternalOrServerOperation names a statement that reaches external
+// storage or acts on the server. Under [replay.Scope.TrustedSQL] the storage
+// operations are not named: they move data across the server's edge and change
+// nothing in it the cleanup does not remove. The server operations are named
+// either way.
+func sqlServerExternalOrServerOperation(tokens []lexer.Token, scope replay.Scope) string {
 	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "BACKUP", "RESTORE":
-		return first + " external storage operation"
+		if !scope.TrustedSQL {
+			return first + " external storage operation"
+		}
 	case "BULK":
-		if sqlServerKeywordSequenceAt(tokens, 1, "INSERT") {
+		if sqlServerKeywordSequenceAt(tokens, 1, "INSERT") && !scope.TrustedSQL {
 			return "BULK INSERT external data operation"
 		}
 	case "DBCC":

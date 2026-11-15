@@ -95,6 +95,9 @@ type schemaApplyOptions struct {
 	// devServerDisposable is what [devdocker.DisposableServerDeclared]
 	// resolved for this run.
 	devServerDisposable bool
+	// trustReplaySQL is --trust-replay-sql: the run trusts the SQL it loads,
+	// replays and rehearses on the dev database.
+	trustReplaySQL bool
 	// desiredFor loads the desired schema from --root-dir and --schema-file
 	// again, bound to another database; see
 	// [atlasschema.ApplyRuntimeOptions.DesiredFor].
@@ -261,6 +264,7 @@ cannot be combined with --edit.`,
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	dbcli.RegisterTrustReplaySQLFlag(flags, &opts.trustReplaySQL)
 	dbcli.RegisterActorFlag(flags, &opts.actor, applyLogName)
 	dbcli.RegisterActorOriginFlag(flags, &opts.actorOrigin, applyLogName)
 	dbcli.RegisterRunReferenceFlag(flags, &opts.runReference, applyLogName)
@@ -466,6 +470,7 @@ func applySchema(
 		return "", err
 	}
 	opts.devServerDisposable = devServerDisposable
+	dbcli.TrustReplaySQL(cmd, opts.trustReplaySQL)
 	opts.runtime, err = engineruntime.Resolve(cmd.Context())
 	if err != nil {
 		return "", err

@@ -11,7 +11,7 @@ func (p protection) validateBase(tokens []lexer.Token) error {
 	}
 	dialect := p.dialect
 	first := replay.NormalizedIdentifier(tokens[0])
-	if first == "COPY" && isExternalPostgresCopy(tokens) {
+	if first == "COPY" && !p.trustedSQL && isExternalPostgresCopy(tokens) {
 		return replay.Refuse(dialect, "external COPY")
 	}
 	if first == "ALTER" && replay.TokenSequenceAt(tokens, 1, "SYSTEM") {

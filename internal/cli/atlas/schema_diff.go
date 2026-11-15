@@ -140,6 +140,9 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	// Resolved on every diff, before the dev database is settled, so a
 	// malformed value is refused on the runs that supply one too.
 	withoutDevURL, err := atlasDiffWithoutDevURL.Resolve()

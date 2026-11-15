@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/devsnapshot"
 	"ptah.run/internal/cli/migratevalidate"
 	"ptah.run/internal/devdocker"
@@ -76,6 +77,9 @@ func runAtlasMigrateValidate(
 	// which resolves the same variable itself.
 	devServerDisposable, err := devdocker.DisposableServerDeclared()
 	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	var fsys fs.FS

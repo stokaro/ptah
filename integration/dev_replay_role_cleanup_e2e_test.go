@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/replaytrust"
 )
 
 // A replay on a server the operator declared disposable runs CREATE ROLE, and
@@ -58,6 +59,7 @@ func newRoleReplayFixture(c *qt.C, role, create string) roleReplayFixture {
 	c.Assert(os.WriteFile(schema, []byte("CREATE TABLE t1 (id int);\n"), 0o600), qt.IsNil)
 	devURL, _ := scratchReplayDatabase(c)
 	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
+	envbooltest.Unset(replaytrust.EnvVar)(c)
 	return roleReplayFixture{dir: dir, schema: schema, devURL: devURL, admin: admin}
 }
 
@@ -116,4 +118,48 @@ func TestDevReplayRoleCleanupE2E_KeepsARoleTheServerHeld(t *testing.T) {
 	fx.diff(c, "t2")
 
 	c.Assert(fx.roles(c, role), qt.Equals, 1)
+}
+
+// TestDevReplayRoleCleanupE2E_TrustedServerKeepsTheRole is the cleanup on a
+// server the run only trusts the SQL on: PTAH_TRUST_REPLAY_SQL set and
+// PTAH_DEV_SERVER_DISPOSABLE absent. The run does not own that server, so its
+// cleanup drops no role, and the role the first replay created is on the
+// server after every diff. The directory creates the role in a DO block that
+// skips an existing one, which is what lets the second replay pass.
+func TestDevReplayRoleCleanupE2E_TrustedServerKeepsTheRole(t *testing.T) {
+	c := qt.New(t)
+	role := fmt.Sprintf("ptah_replay_trusted_role_%d", time.Now().UnixNano())
+	fx := newRoleReplayFixture(c, role, fmt.Sprintf(`DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '%[1]s') THEN
+    CREATE ROLE %[1]s NOLOGIN;
+  END IF;
+END
+$$;
+`, role))
+	envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
+	envbooltest.Set(replaytrust.EnvVar, "1")(c)
+
+	for _, table := range []string{"t2", "t3"} {
+		fx.diff(c, table)
+
+		c.Assert(fx.roles(c, role), qt.Equals, 1, qt.Commentf("after the diff that adds %s", table))
+	}
+}
+
+// TestDevReplayRoleCleanupE2E_TrustOnADeclaredServerDropsTheRole pins that
+// trust does not narrow the cleanup either: on a server declared disposable
+// the run owns the server, and the role a trusted replay created is dropped
+// with the run, so a bare CREATE ROLE replays again on the next diff.
+func TestDevReplayRoleCleanupE2E_TrustOnADeclaredServerDropsTheRole(t *testing.T) {
+	c := qt.New(t)
+	role := fmt.Sprintf("ptah_replay_owned_role_%d", time.Now().UnixNano())
+	fx := newRoleReplayFixture(c, role, "CREATE ROLE "+role+";\n")
+	envbooltest.Set(replaytrust.EnvVar, "1")(c)
+
+	for _, table := range []string{"t2", "t3"} {
+		fx.diff(c, table)
+
+		c.Assert(fx.roles(c, role), qt.Equals, 0, qt.Commentf("after the diff that adds %s", table))
+	}
 }

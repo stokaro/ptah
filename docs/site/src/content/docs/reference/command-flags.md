@@ -902,6 +902,7 @@ Read the columns as follows.
 | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
@@ -965,6 +966,7 @@ Read the columns as follows.
 | `--provider-exchanges` | `string` | — | — | — |
 | `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
@@ -1380,6 +1382,7 @@ Read the columns as follows.
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
 | `--provider-exchanges` | `string` | — | — | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 
 </div>
 
@@ -1624,6 +1627,7 @@ Read the columns as follows.
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--signer` | `string` | — | `PTAH_SIGNER` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--tx-mode` | `string` | — | `PTAH_TX_MODE` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
@@ -1693,6 +1697,7 @@ Read the columns as follows.
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>
@@ -1798,6 +1803,7 @@ Read the columns as follows.
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--split` | `string` | — | `PTAH_SPLIT` | — |
+| `--trust-replay-sql` | `bool` | `false` | `PTAH_TRUST_REPLAY_SQL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 </div>

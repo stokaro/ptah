@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/replaytrust"
 )
 
 // A migration directory that creates its application role in a DO block,
@@ -121,11 +122,12 @@ func TestDevDockerReplayRunsServerWideStatements(t *testing.T) {
 // TestDevReplayOnANamedServerRefusesServerWideStatements is the control: the
 // same directory on a server the operator named is refused at its first
 // migration, and the role it would have created is not on the server. The
-// refusal names the two ways to the server realm, which lifts it, on both
-// binaries.
+// refusal names the two ways to the server realm, which lifts it, and the
+// trust declaration, which lifts it without the realm, on both binaries.
 func TestDevReplayOnANamedServerRefusesServerWideStatements(t *testing.T) {
 	c := qt.New(t)
 	envbooltest.Unset(devdocker.DisposableServerEnvVar)(t)
+	envbooltest.Unset(replaytrust.EnvVar)(t)
 	role := fmt.Sprintf("ptah_replay_named_%d", time.Now().UnixNano())
 	dir, _ := writeServerWideReplayDir(c, role)
 	devURL, admin := scratchReplayDatabase(c)
@@ -136,7 +138,8 @@ func TestDevReplayOnANamedServerRefusesServerWideStatements(t *testing.T) {
 	)
 
 	refusal := `postgres migration replay rejects DO sublanguage because its effects cannot be confined to the disposable database realm; ` +
-		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// or docker\+<driver>:// dev URL\nSQL: DO .*`
+		`if nothing else uses this server, declare it disposable with PTAH_DEV_SERVER_DISPOSABLE=1, or use a docker:// or docker\+<driver>:// dev URL; ` +
+		`if you trust this SQL to run with the dev connection's privileges, set PTAH_TRUST_REPLAY_SQL=1\nSQL: DO .*`
 	c.Assert(err, qt.ErrorMatches, `(?s).*replay migration 20240101000000 on dev database: .*`+refusal)
 	c.Assert(nativeErr, qt.ErrorMatches, `(?s).*`+refusal, qt.Commentf("%s", native))
 	var roles int
@@ -170,19 +173,22 @@ func scratchReplayDatabase(c *qt.C) (string, *dbschema.DatabaseConnection) {
 	return parsed.String(), admin
 }
 
-// declaredReplayFixture is the directory above, a schema file it builds, a
+// serverWideReplayFixture is the directory above, a schema file it builds, a
 // scratch dev database on the PostgreSQL test server and a scratch target the
-// apply rows plan against.
-type declaredReplayFixture struct {
-	dir, schema, devURL, targetURL string
+// apply rows plan against, with the role the directory creates and an admin
+// connection to the server that reads its roles back.
+type serverWideReplayFixture struct {
+	dir, schema, devURL, targetURL, role string
+	admin                                *dbschema.DatabaseConnection
 }
 
-// newDeclaredReplayFixture prepares a run with PTAH_DEV_SERVER_DISPOSABLE set.
-// The role the directory creates is a server object and outlives the scratch
-// databases, so it is dropped after them.
-func newDeclaredReplayFixture(c *qt.C) declaredReplayFixture {
+// newServerWideReplayFixture prepares a run on a server the run neither owns
+// nor trusts the SQL on: both declarations are unset, and a test sets the one
+// it is about. The role the directory creates is a server object and outlives
+// the scratch databases, so it is dropped after them.
+func newServerWideReplayFixture(c *qt.C, prefix string) serverWideReplayFixture {
 	c.Helper()
-	role := fmt.Sprintf("ptah_replay_declared_%d", time.Now().UnixNano())
+	role := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 	adminURL := dbtarget.URL(c, dbtarget.PostgreSQL)
 	admin, err := dbschema.ConnectToDatabase(c.Context(), adminURL)
 	c.Assert(err, qt.IsNil)
@@ -194,8 +200,110 @@ func newDeclaredReplayFixture(c *qt.C) declaredReplayFixture {
 	dir, schema := writeServerWideReplayDir(c, role)
 	devURL, _ := scratchReplayDatabase(c)
 	targetURL, _ := scratchReplayDatabase(c)
+	envbooltest.Unset(devdocker.DisposableServerEnvVar)(c)
+	envbooltest.Unset(replaytrust.EnvVar)(c)
+	return serverWideReplayFixture{dir: dir, schema: schema, devURL: devURL, targetURL: targetURL, role: role, admin: admin}
+}
+
+// newDeclaredReplayFixture prepares a run with PTAH_DEV_SERVER_DISPOSABLE set.
+func newDeclaredReplayFixture(c *qt.C) serverWideReplayFixture {
+	c.Helper()
+	fx := newServerWideReplayFixture(c, "ptah_replay_declared")
 	envbooltest.Set(devdocker.DisposableServerEnvVar, "1")(c)
-	return declaredReplayFixture{dir: dir, schema: schema, devURL: devURL, targetURL: targetURL}
+	return fx
+}
+
+// roles counts the roles on the server named fx.role.
+func (fx serverWideReplayFixture) roles(c *qt.C) int {
+	c.Helper()
+	var count int
+	c.Assert(fx.admin.QueryRowContext(c.Context(),
+		"SELECT count(*) FROM pg_roles WHERE rolname = $1", fx.role,
+	).Scan(&count), qt.IsNil)
+	return count
+}
+
+// devObjects counts the relations and routines in the dev database outside
+// the system schemas: what a replay wrote there and its cleanup left.
+func (fx serverWideReplayFixture) devObjects(c *qt.C) int {
+	c.Helper()
+	dev, err := dbschema.ConnectToDatabase(c.Context(), fx.devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(dev)
+	var count int
+	c.Assert(dev.QueryRowContext(c.Context(), `SELECT
+	(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+	  WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_toast%')
+	+ (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+	  WHERE n.nspname NOT IN ('pg_catalog', 'information_schema'))`,
+	).Scan(&count), qt.IsNil)
+	return count
+}
+
+// serverWideReplayCompatCommands are the ptah-compat commands that replay the
+// directory [writeServerWideReplayDir] writes on the dev database, invoked
+// against a fixture. Each replays both migrations, so on a server the run
+// neither owns nor trusts the SQL on, each is refused at the DO block.
+var serverWideReplayCompatCommands = []struct {
+	name   string
+	policy atlascompatpolicy.Policy
+	args   func(fx serverWideReplayFixture) []string
+}{
+	{
+		name: "migrate validate",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{"migrate", "validate", "--dir", "file://" + fx.dir, "--dev-url", fx.devURL}
+		},
+	},
+	{
+		// Strict compatibility keeps the replay on this surface instead of
+		// forwarding it to the native command, and keeps the declaration:
+		// the pinned community binary replays these statements anywhere.
+		name:   "migrate validate under strict compatibility",
+		policy: atlascompatpolicy.StrictCE(),
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{"migrate", "validate", "--dir", "file://" + fx.dir, "--dev-url", fx.devURL}
+		},
+	},
+	{
+		name: "migrate diff",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{
+				"migrate", "diff", "--dir", "file://" + fx.dir,
+				"--to", "file://" + fx.schema, "--dev-url", fx.devURL,
+			}
+		},
+	},
+	{
+		name: "migrate lint",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{"migrate", "lint", "--dir", "file://" + fx.dir, "--dev-url", fx.devURL, "--latest", "2"}
+		},
+	},
+	{
+		name: "schema inspect",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{"schema", "inspect", "--url", "file://" + fx.dir, "--dev-url", fx.devURL}
+		},
+	},
+	{
+		name: "schema diff",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{
+				"schema", "diff", "--from", "file://" + fx.dir,
+				"--to", "file://" + fx.schema, "--dev-url", fx.devURL,
+			}
+		},
+	},
+	{
+		name: "schema apply",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{
+				"schema", "apply", "--url", fx.targetURL, "--to", "file://" + fx.dir,
+				"--dev-url", fx.devURL, "--dry-run",
+			}
+		},
+	},
 }
 
 // TestDevReplayOnADeclaredServerRunsServerWideStatementsCompat drives every
@@ -204,69 +312,7 @@ func newDeclaredReplayFixture(c *qt.C) declaredReplayFixture {
 // refused at its first migration (the test above); with it, each command
 // replays both migrations.
 func TestDevReplayOnADeclaredServerRunsServerWideStatementsCompat(t *testing.T) {
-	tests := []struct {
-		name   string
-		policy atlascompatpolicy.Policy
-		args   func(fx declaredReplayFixture) []string
-	}{
-		{
-			name: "migrate validate",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{"migrate", "validate", "--dir", "file://" + fx.dir, "--dev-url", fx.devURL}
-			},
-		},
-		{
-			// Strict compatibility keeps the replay on this surface instead of
-			// forwarding it to the native command, and keeps the declaration:
-			// the pinned community binary replays these statements anywhere.
-			name:   "migrate validate under strict compatibility",
-			policy: atlascompatpolicy.StrictCE(),
-			args: func(fx declaredReplayFixture) []string {
-				return []string{"migrate", "validate", "--dir", "file://" + fx.dir, "--dev-url", fx.devURL}
-			},
-		},
-		{
-			name: "migrate diff",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{
-					"migrate", "diff", "--dir", "file://" + fx.dir,
-					"--to", "file://" + fx.schema, "--dev-url", fx.devURL,
-				}
-			},
-		},
-		{
-			name: "migrate lint",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{"migrate", "lint", "--dir", "file://" + fx.dir, "--dev-url", fx.devURL, "--latest", "2"}
-			},
-		},
-		{
-			name: "schema inspect",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{"schema", "inspect", "--url", "file://" + fx.dir, "--dev-url", fx.devURL}
-			},
-		},
-		{
-			name: "schema diff",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{
-					"schema", "diff", "--from", "file://" + fx.dir,
-					"--to", "file://" + fx.schema, "--dev-url", fx.devURL,
-				}
-			},
-		},
-		{
-			name: "schema apply",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{
-					"schema", "apply", "--url", fx.targetURL, "--to", "file://" + fx.dir,
-					"--dev-url", fx.devURL, "--dry-run",
-				}
-			},
-		},
-	}
-
-	for _, test := range tests {
+	for _, test := range serverWideReplayCompatCommands {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			fx := newDeclaredReplayFixture(c)
@@ -283,62 +329,64 @@ func TestDevReplayOnADeclaredServerRunsServerWideStatementsCompat(t *testing.T) 
 	}
 }
 
+// serverWideReplayNativeCommands are the native commands that replay the same
+// directory, as [serverWideReplayCompatCommands] are for ptah-compat.
+var serverWideReplayNativeCommands = []struct {
+	name string
+	args func(fx serverWideReplayFixture) []string
+}{
+	{
+		name: "migrations validate",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{"migrations", "validate", "--dir", fx.dir, "--dir-format", "atlas", "--dev-url", fx.devURL}
+		},
+	},
+	{
+		name: "migrations lint",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{"migrations", "lint", "--dir", fx.dir, "--dir-format", "atlas", "--dev-url", fx.devURL}
+		},
+	},
+	{
+		name: "migrations generate",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{
+				"migrations", "generate", "--replay",
+				"--migrations-dir", fx.dir, "--dir-format", "atlas",
+				"--schema-file", fx.schema, "--dev-url", fx.devURL,
+			}
+		},
+	},
+	{
+		name: "schema inspect",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{"schema", "inspect", "--migrations-dir", fx.dir, "--dev-url", fx.devURL}
+		},
+	},
+	{
+		name: "schema diff",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{
+				"schema", "diff", "--from", "file://" + fx.dir,
+				"--to", "file://" + fx.schema, "--dev-url", fx.devURL,
+			}
+		},
+	},
+	{
+		name: "schema apply",
+		args: func(fx serverWideReplayFixture) []string {
+			return []string{
+				"schema", "apply", "--db-url", fx.targetURL, "--to", "file://" + fx.dir,
+				"--dev-url", fx.devURL, "--dry-run",
+			}
+		},
+	},
+}
+
 // TestDevReplayOnADeclaredServerRunsServerWideStatementsNative is the same for
 // the native commands.
 func TestDevReplayOnADeclaredServerRunsServerWideStatementsNative(t *testing.T) {
-	tests := []struct {
-		name string
-		args func(fx declaredReplayFixture) []string
-	}{
-		{
-			name: "migrations validate",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{"migrations", "validate", "--dir", fx.dir, "--dir-format", "atlas", "--dev-url", fx.devURL}
-			},
-		},
-		{
-			name: "migrations lint",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{"migrations", "lint", "--dir", fx.dir, "--dir-format", "atlas", "--dev-url", fx.devURL}
-			},
-		},
-		{
-			name: "migrations generate",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{
-					"migrations", "generate", "--replay",
-					"--migrations-dir", fx.dir, "--dir-format", "atlas",
-					"--schema-file", fx.schema, "--dev-url", fx.devURL,
-				}
-			},
-		},
-		{
-			name: "schema inspect",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{"schema", "inspect", "--migrations-dir", fx.dir, "--dev-url", fx.devURL}
-			},
-		},
-		{
-			name: "schema diff",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{
-					"schema", "diff", "--from", "file://" + fx.dir,
-					"--to", "file://" + fx.schema, "--dev-url", fx.devURL,
-				}
-			},
-		},
-		{
-			name: "schema apply",
-			args: func(fx declaredReplayFixture) []string {
-				return []string{
-					"schema", "apply", "--db-url", fx.targetURL, "--to", "file://" + fx.dir,
-					"--dev-url", fx.devURL, "--dry-run",
-				}
-			},
-		},
-	}
-
-	for _, test := range tests {
+	for _, test := range serverWideReplayNativeCommands {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			fx := newDeclaredReplayFixture(c)

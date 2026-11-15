@@ -9,7 +9,7 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-func validateSQLServerReplayStatementBase(tokens []lexer.Token) error {
+func validateSQLServerReplayStatementBase(tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -18,15 +18,18 @@ func validateSQLServerReplayStatementBase(tokens []lexer.Token) error {
 		return replay.Refuse(platform.SQLServer, first)
 	}
 	if first == "EXEC" || first == "EXECUTE" {
-		if replay.ContainsIdentifier(tokens, "AT") {
+		if replay.ContainsIdentifier(tokens, "AT") && !scope.TrustedSQL {
 			return replay.Refuse(platform.SQLServer, "remote EXECUTE")
 		}
 	}
-	if isGlobalSQLServerDDL(tokens) {
+	if isGlobalSQLServerDDL(tokens) && (!scope.TrustedSQL || !sqlServerUnconfinedServerObject(tokens)) {
 		return replay.Refuse(platform.SQLServer, replay.DescribeStatementObject(tokens))
 	}
 	if replay.UsesTemporaryObject(tokens) || containsTemporaryTarget(tokens) {
 		return replay.Refuse(platform.SQLServer, "temporary object")
+	}
+	if scope.TrustedSQL {
+		return nil
 	}
 	for _, target := range sqlServerMutationTargets(tokens) {
 		if len(target) >= 3 {
@@ -56,6 +59,41 @@ func isGlobalSQLServerDDL(tokens []lexer.Token) bool {
 		return replay.NormalizedIdentifier(tokens[0]) != "DROP"
 	case "EXTERNAL":
 		return !replay.TokenSequenceAt(tokens, kindIndex, "EXTERNAL", "TABLE")
+	default:
+		return false
+	}
+}
+
+// sqlServerUnconfinedServerObject reports a statement [isGlobalSQLServerDDL]
+// names whose only reason to be refused is that its object is not the dev
+// database's: CREATE or DROP of a database or a login, a server credential in
+// any form, and CREATE or ALTER of a synonym, which the realm cleanup removes
+// and which can name an object outside the dev database.
+//
+// ALTER DATABASE and a database's own scoped objects -- DATABASE SCOPED
+// CREDENTIAL or CONFIGURATION, DATABASE AUDIT SPECIFICATION, DATABASE
+// ENCRYPTION KEY -- are not: they configure the dev database itself, or leave
+// in it what the cleanup does not remove. Nor is ALTER LOGIN, which can change
+// the credentials the run connects with, nor an ENDPOINT, an AVAILABILITY
+// GROUP, a SERVER object or an EXTERNAL object other than a table, which
+// configure the server or stay in the dev database after the cleanup.
+func sqlServerUnconfinedServerObject(tokens []lexer.Token) bool {
+	kindIndex := replay.StatementObjectKindIndex(tokens)
+	if kindIndex == replay.MutationTargetNotFound {
+		return false
+	}
+	first := replay.NormalizedIdentifier(tokens[0])
+	switch replay.NormalizedIdentifier(tokens[kindIndex]) {
+	case "DATABASE":
+		switch replay.NormalizedIdentifier(replay.TokenAt(tokens, kindIndex+1)) {
+		case "SCOPED", "AUDIT", "ENCRYPTION":
+			return false
+		}
+		return first == "CREATE" || first == "DROP"
+	case "LOGIN":
+		return first == "CREATE" || first == "DROP"
+	case "CREDENTIAL", "SYNONYM":
+		return true
 	default:
 		return false
 	}

@@ -26,7 +26,9 @@ func validateSQLiteReplayStatement(tokens []lexer.Token, scope replay.Scope) err
 			return replay.Refuse(platform.SQLite, "state-changing or unsupported PRAGMA")
 		}
 	case "VACUUM":
-		if replay.ContainsIdentifier(tokens[1:], "INTO") {
+		// It writes a copy of the dev database to a path outside it and
+		// changes nothing in it, so a run that trusts its SQL lifts it.
+		if replay.ContainsIdentifier(tokens[1:], "INTO") && !scope.TrustedSQL {
 			return replay.Refuse(platform.SQLite, "VACUUM INTO")
 		}
 	}

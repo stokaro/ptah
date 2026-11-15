@@ -181,7 +181,8 @@ Atlas capability: `PTAH_ALLOW_EXTERNAL_TEST_COMMAND`,
 `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`, `PTAH_DEV_SERVER_DISPOSABLE`,
 `PTAH_HCL_STRICT_REDECLARATIONS`,
 `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`,
-`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` and `PTAH_STRICT_DIR_QUERY`.
+`PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`, `PTAH_STRICT_DIR_QUERY` and
+`PTAH_TRUST_REPLAY_SQL`.
 
 `PTAH_ALLOW_EXTERNAL_TEST_COMMAND` is the older spelling of the permission to
 run an `external` step in a `.test.hcl` case. `ptah-compat` runs the step as
@@ -205,6 +206,15 @@ replay, and the rehearsal of `schema apply` and of a plan file, run a `DO`
 block, a routine or a role on it; the pinned community binary runs those on any
 dev database. See
 [a server declared disposable](../../concepts/database-urls-and-dev-databases/#a-server-declared-disposable).
+
+`PTAH_TRUST_REPLAY_SQL` trusts the SQL a run executes on its dev database, so
+replay, the load of a desired schema file and the rehearsal run a `DO` block, a
+routine or a role on a server the run does not own; the pinned community binary
+runs those on any dev database. It claims nothing about the server: a role the
+SQL creates stays there. Native commands take it as `--trust-replay-sql`.
+`ptah.yaml` has no key for it, because a repository must not be able to trust
+its own SQL. See
+[SQL you trust](../../concepts/database-urls-and-dev-databases/#sql-you-trust).
 
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` restores the `DROP TABLE` the pinned
 community binary plans for a SQLite virtual table anyway, and

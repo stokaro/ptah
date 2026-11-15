@@ -25,16 +25,41 @@ func rejectMySQLExecutableComments(dialect, stmt string) error {
 	}
 }
 
+// validateMySQLReplayStatement refuses a statement whose effects cannot be
+// confined to scope.
+//
+// Under [replay.Scope.TrustedSQL] the caller has already accepted the
+// statements a server the run owns lifts ([mysqlServerWideOperation]): a stored
+// body, a CALL, a privilege, a user, a role and another database. A loadable
+// function is one of them, since CREATE FUNCTION ... SONAME is a definition of
+// a stored function to that reading: its library runs in the server process,
+// as COPY TO PROGRAM runs a command on PostgreSQL's host, and trust lifts both.
+// Here it lifts, beyond them: a prepared statement, which is the dynamic SQL a
+// MySQL history writes where PostgreSQL writes a DO block; a FEDERATED or
+// CONNECT table, LOAD DATA or LOAD XML, and SELECT ... INTO OUTFILE or
+// DUMPFILE, which move data across the server's edge and leave nothing in it
+// that the cleanup does not remove; and a write to another database. Each
+// one's only reason to be refused is that its effect reaches past the dev
+// database.
+//
+// It keeps every refusal that protects the run: an executable comment, which
+// hides SQL from every check here; an EVENT, which the scheduler runs on its own
+// timetable during the rest of the run; ALTER USER and ALTER ROLE, which can
+// change the credentials the run connects with; USE, a global or persistent
+// SET, INSTALL, UNINSTALL, FLUSH, RESET and ALTER INSTANCE, which change the
+// session or the server the run uses; a TABLESPACE, LOGFILE GROUP, SERVER,
+// RESOURCE GROUP or SPATIAL REFERENCE SYSTEM, which configure the server, as a
+// server the run owns keeps them refused; ALTER DATABASE; and a TEMP object.
 func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token, scope replay.Scope) error {
 	if len(tokens) == 0 {
 		return nil
 	}
 	tokens = replay.LeadingCTEExecutableTokens(tokens)
 	first := replay.NormalizedIdentifier(tokens[0])
-	if err := rejectMySQLExecutableObjects(dialect, first, tokens); err != nil {
+	if err := rejectMySQLExecutableObjects(dialect, first, tokens, scope); err != nil {
 		return err
 	}
-	if operation := unsafeMySQLReplayOperation(tokens); operation != "" {
+	if operation := unsafeMySQLReplayOperation(tokens, scope); operation != "" {
 		return replay.Refuse(dialect, operation)
 	}
 	if isGlobalMySQLDDL(tokens) {
@@ -43,15 +68,16 @@ func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token
 	if replay.UsesTemporaryObject(tokens) {
 		return replay.Refuse(dialect, "TEMP object")
 	}
-	if replay.ContainsIdentifier(tokens, "OUTFILE") ||
-		replay.ContainsIdentifier(tokens, "DUMPFILE") ||
-		replay.ContainsIdentifier(tokens, "SONAME") {
+	if replay.ContainsIdentifier(tokens, "SONAME") ||
+		!scope.TrustedSQL && (replay.ContainsIdentifier(tokens, "OUTFILE") || replay.ContainsIdentifier(tokens, "DUMPFILE")) {
 		return replay.Refuse(dialect, "external file operation")
 	}
 	// Another database is the realm's own concern: on a server the run owns,
 	// a table written in another database is removed with the server, and on
-	// a server named as a whole every user database is the run's.
-	if scope.Server || scope.Databases {
+	// a server named as a whole every user database is the run's. A run that
+	// trusts its SQL accepts the write without owning that database, and its
+	// cleanup does not reach it.
+	if scope.Server || scope.Databases || scope.TrustedSQL {
 		return nil
 	}
 	if err := rejectMySQLRenameDestinations(dialect, database, tokens); err != nil {
@@ -60,7 +86,10 @@ func validateMySQLReplayStatement(dialect, database string, tokens []lexer.Token
 	return rejectMySQLCrossDatabaseTargets(dialect, database, tokens)
 }
 
-func unsafeMySQLReplayOperation(tokens []lexer.Token) string {
+// unsafeMySQLReplayOperation names a statement the replay refuses by its first
+// words. Under [replay.Scope.TrustedSQL], a prepared statement and LOAD DATA or LOAD XML are
+// not refused; see [validateMySQLReplayStatement].
+func unsafeMySQLReplayOperation(tokens []lexer.Token, scope replay.Scope) string {
 	first := replay.NormalizedIdentifier(tokens[0])
 	switch first {
 	case "USE", "INSTALL", "UNINSTALL", "FLUSH", "RESET":
@@ -68,7 +97,7 @@ func unsafeMySQLReplayOperation(tokens []lexer.Token) string {
 	case "CALL":
 		return "CALL sublanguage"
 	case "LOAD":
-		if replay.TokenSequenceAt(tokens, 1, "DATA") || replay.TokenSequenceAt(tokens, 1, "XML") {
+		if !scope.TrustedSQL && (replay.TokenSequenceAt(tokens, 1, "DATA") || replay.TokenSequenceAt(tokens, 1, "XML")) {
 			return first + " external data operation"
 		}
 	case "SET":
@@ -80,7 +109,9 @@ func unsafeMySQLReplayOperation(tokens []lexer.Token) string {
 	case "GRANT", "REVOKE":
 		return "privilege or role mutation"
 	case "PREPARE", "EXECUTE", "DEALLOCATE":
-		return "prepared statement"
+		if !scope.TrustedSQL {
+			return "prepared statement"
+		}
 	case "ALTER":
 		if replay.TokenSequenceAt(tokens, 1, "INSTANCE") {
 			return "ALTER INSTANCE"
@@ -89,11 +120,11 @@ func unsafeMySQLReplayOperation(tokens []lexer.Token) string {
 	return ""
 }
 
-func rejectMySQLExecutableObjects(dialect, first string, tokens []lexer.Token) error {
+func rejectMySQLExecutableObjects(dialect, first string, tokens []lexer.Token, scope replay.Scope) error {
 	if definesMySQLExecutableBody(tokens) {
 		return replay.Refuse(dialect, first+" executable stored body")
 	}
-	if engine := unconfinedMySQLStorageEngine(tokens); engine != "" {
+	if engine := unconfinedMySQLStorageEngine(tokens); engine != "" && !scope.TrustedSQL {
 		return replay.Refuse(dialect, engine+" storage engine")
 	}
 	return nil

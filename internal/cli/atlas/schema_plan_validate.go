@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/devdocker"
 )
 
@@ -124,6 +125,9 @@ func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidate
 	// one that reaches the rehearsal.
 	devServerDisposable, err := devdocker.DisposableServerDeclared()
 	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	transition, _, err := resolveAtlasSchemaPlanTransitionConfig(

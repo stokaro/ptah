@@ -1,7 +1,9 @@
 // Package postgresreplay is the PostgreSQL family's migration replay guard:
 // it refuses a statement on PostgreSQL, CockroachDB or YugabyteDB whose
-// effects cannot be confined to the dev database, and on a server the run owns
-// it lifts the refusals whose only reason is the rest of the server.
+// effects cannot be confined to the dev database, on a server the run owns
+// it lifts the refusals whose only reason is the rest of the server, and on a
+// run that trusts its SQL it lifts every refusal whose only reason is
+// confinement.
 // internal/devclean asks it through the internal/devclean/replay contract.
 package postgresreplay
 
@@ -27,10 +29,15 @@ type guard struct {
 	dialect string
 }
 
-// Validate refuses a statement whose effects cannot be confined to scope.
+// Validate refuses a statement whose effects cannot be confined to scope, and
+// under [replay.Scope.TrustedSQL] one that would mislead the run or its
+// cleanup; see [postgresUnconfinedOperation].
 func (g guard) Validate(stmt string, scope replay.Scope) error {
 	tokens := replay.Tokens(stmt, lexerOptions())
 	if scope.Server && postgresServerWideOperation(tokens, scope) != "" {
+		return validatePostgresServerWideStatement(g.dialect, tokens, scope)
+	}
+	if scope.TrustedSQL && postgresUnconfinedOperation(tokens) != "" {
 		return validatePostgresServerWideStatement(g.dialect, tokens, scope)
 	}
 	return validatePostgresReplayStatement(g.dialect, tokens, scope)

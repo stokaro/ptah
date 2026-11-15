@@ -403,7 +403,9 @@ unavailable, and the command stops with that reason.
 The decision reads what Ptah recorded when it started the server, not the
 URL's spelling. A named server keeps the whole list, since it may hold
 databases and roles that are not the run's. Its refusal names the two ways to
-this realm: a docker URL and the declaration below.
+this realm, a docker URL and the declaration below, and
+[trust in the SQL](#sql-you-trust), which lifts the refusal without making the
+server the run's.
 
 ### A server declared disposable
 
@@ -436,6 +438,119 @@ before any work, whether or not it replays. Strict Atlas
 compatibility keeps the variable, because the pinned community binary runs
 these statements on any dev database.
 
+### SQL you trust
+
+The refusals above protect a shared server from SQL the run cannot confine to
+its dev database. When you wrote that SQL or reviewed it, you can tell Ptah to
+run it on a dev server that other work shares: pass `--trust-replay-sql` to a
+native command, or set `PTAH_TRUST_REPLAY_SQL=1` for either binary. The flag
+takes precedence over the variable. With neither, the guard refuses as
+described above, and each refusal that trust would lift says so.
+
+```bash
+ptah migrations validate --dir migrations --dev-url "$DEV_URL" --trust-replay-sql
+PTAH_TRUST_REPLAY_SQL=1 ptah-compat migrate validate --dir file://migrations --dev-url "$DEV_URL"
+```
+
+**Trust does not confine anything.** The SQL runs with the privileges of the
+dev connection, and what it does to the rest of the server is yours to accept.
+Ptah still cleans only the dev database it claimed, and never drops a role, a
+database or another server-level object the SQL created. A role a `DO` block
+creates stays on the server after the run. The next run that replays the same
+directory meets it: a `DO` block that checks for the role first passes, and a
+bare `CREATE ROLE` fails with the server's own error, such as
+`role "app_admin" already exists (SQLSTATE 42710)`. Give the dev connection
+only the privileges you are willing to hand to that SQL, and write role
+creation so that it can run twice.
+
+A `schema apply` whose target is on the dev server meets the same thing in one
+run. The rehearsal creates the roles the plan declares, so the apply that
+follows fails on `CREATE ROLE` with that error. The next run finds the role on the server and plans no `CREATE ROLE`.
+Keep the dev database on a server of its own, or create the role first.
+
+Trust is not ownership. It does not declare the server disposable and does not
+imply `PTAH_DEV_SERVER_DISPOSABLE`. On a server Ptah provisions or one declared
+disposable, the cleanup drops the roles the run created, with trust or without
+it.
+
+Trust lifts every refusal whose only reason is that the statement's effect
+reaches past the dev database, and not a list of spellings. A `DO` block can
+`EXECUTE` a `CREATE ROLE`, so refusing a bare `CREATE ROLE` while running the
+`DO` block would protect nothing. On a server the run does not own, trust
+accepts:
+
+- on PostgreSQL, CockroachDB and YugabyteDB, the statements a
+  [server Ptah provisions](#a-server-ptah-provisions) accepts except a comment
+  on an extension or a schema of the dev database, and also an external `COPY`,
+  `dblink` and `IMPORT FOREIGN SCHEMA`;
+- on MySQL and MariaDB, routines, triggers, `CALL`, prepared statements, users,
+  roles, `GRANT`, `REVOKE`, loadable functions, other databases and writes to
+  them, `FEDERATED` and `CONNECT` tables, `LOAD DATA`, `LOAD XML`, and
+  `SELECT ... INTO OUTFILE` or `DUMPFILE`;
+- on SQL Server, `EXEC`, functions, procedures and DML triggers, databases,
+  logins, credentials, synonyms, a target in another database, `BACKUP`,
+  `RESTORE`, `BULK INSERT`, `OPENQUERY` and `OPENROWSET`;
+- on ClickHouse, SQL functions, databases, users, roles, row policies, named
+  collections, `GRANT`, `REVOKE`, `ON CLUSTER`, writes to another database or
+  through a table function, any table engine, dictionary sources, `BACKUP`,
+  `FREEZE`, `UNFREEZE` and `INTO OUTFILE`;
+- on SQLite, `VACUUM INTO`.
+
+A refusal that protects the run itself stays under trust. That covers a
+statement that changes the replay session, the identity it runs as or its
+transaction; a write to a system catalog such as `pg_catalog`; server
+configuration such as `ALTER SYSTEM`, `SET GLOBAL` or `RECONFIGURE`; an object
+the dev database cleanup cannot remove, such as an event trigger, a publication
+or a SQL Server ledger table; a MySQL event or a SQL Server DDL trigger, which
+would run on their own during the rest of the command; and a MySQL executable
+comment, which hides SQL from the guard. SQLite keeps `ATTACH`,
+`load_extension` and a pragma that changes state refused. The YDB provider
+guards its own dev databases and does not read the declaration.
+
+Trust covers the SQL a run executes on its dev database: a migration directory
+it replays, a desired schema file it loads there, and the baseline and plan a
+rehearsal writes. An apply to the target never needs it, and a command that
+parses or compares its input without executing it runs no input SQL. The
+native commands that take `--trust-replay-sql` are `migrations validate`,
+`migrations lint`, `migrations generate`, `schema inspect`, `schema diff` and
+`schema apply`. On `ptah-compat`, `migrate validate`, `migrate diff`,
+`migrate lint`, `schema inspect`, `schema diff`, `schema apply`,
+`schema plan lint` and `schema plan validate` read the variable. Each of them
+refuses a value that is not a boolean before any work. Strict Atlas
+compatibility keeps the variable, because the pinned community binary runs
+these statements on any dev database.
+
+There is no `ptah.yaml` key for trust, and a `ptah.yaml` that sets
+`trust_replay_sql` is refused as an unknown key. A command discovers
+`ptah.yaml` in its working directory, so the file belongs to the repository
+whose SQL the run replays. If that file could trust its own SQL, a pull request
+from a fork that runs `migrations lint` or `schema diff` against a dev URL from
+the CI secrets could lift the guard for itself. Trust comes from whoever runs
+the command, on the command line or in the job's environment. The permission to
+run a program a project file names follows the same rule; see
+[Programs a project file names](../../reference/configuration/#programs-a-project-file-names).
+
+### A role a desired schema file declares
+
+`schema inspect` of a schema file and `schema diff` with a file on either side
+load that file on the dev database, from the schema Ptah reads out of it.
+Tables, routines, policies and views land in the dev database and need no
+declaration on any server. A role the file declares, as `CREATE ROLE` or as a
+[role-bootstrap block](../../schema/postgres-role-bootstrap/), belongs to the
+server. When the dev server does not hold that role, the load creates it only
+where something accounts for it:
+
+- on a server Ptah provisions or one declared disposable, the role is created
+  and the cleanup drops it with the run;
+- under trust, the role is created and stays on the server;
+- on any other server, the load refuses before it writes the dev database. The
+  refusal names each role and the three remedies.
+
+A role the server already holds is not created again, and the result
+describes it as the server has it. `migrate diff`, `migrations generate` and
+`schema plan` do not load the desired file on the dev database: they plan the
+role into their output and create nothing.
+
 ### The baseline a rehearsal writes
 
 Before `schema apply` rehearses its plan, it recreates the target's current
@@ -443,9 +558,10 @@ schema in the dev database. Every statement of that baseline is checked
 against the same rules as a replay before the first one runs. A routine or
 trigger body can write outside the dev database when it runs, and a role, a
 user or a privilege the cleanup does not remove outlives it, so a target that
-holds one is rehearsed only on a server the run owns: one Ptah provisions from
-a docker URL, or one declared with `PTAH_DEV_SERVER_DISPOSABLE=1`. The refusal
-names the baseline statement and these two remedies.
+holds one is rehearsed only on a server the run owns, one Ptah provisions from
+a docker URL or one declared with `PTAH_DEV_SERVER_DISPOSABLE=1`, or when the
+run [trusts the SQL](#sql-you-trust). The refusal names the baseline statement
+and these remedies.
 
 A selection narrows the comparison, not what the target holds. With
 `--include`, `--exclude` or `--schemas`, or a URL bound to one schema with
@@ -462,7 +578,8 @@ the dev server cannot build, such as an extension it does not have.
 The comparison itself is not widened, and roles are not recreated, as above.
 The objects recreated this way are checked against the same rules as the rest
 of the baseline, so a routine such as `auth.uid()` is recreated only on a
-server the run owns, and refused by name on any other.
+server the run owns or when the run [trusts the SQL](#sql-you-trust), and
+refused by name otherwise.
 
 A name counts as named where it appears in the code of a statement, or of an
 SQL or PL/pgSQL routine body, qualified by its schema or reached along the dev
@@ -493,11 +610,13 @@ dev server does not hold fails on that server, as it does on a table.
 The plan is held to the same rules, before the first statement of the
 baseline or the plan runs. The plan comes from the desired schema, so a role,
 a routine or trigger body, or a comment the cleanup keeps is rehearsed only
-on a server the run owns. On a server the operator named, the rehearsal
-refuses, names the plan statement and the remedies, and leaves the target and
-the dev server as they were. Before this check, a role the rehearsal created
-outlived the cleanup on the dev server, and the real apply then failed on it
-when the target was on the same server.
+on a server the run owns, and a role or a body also under trust. On a server
+the operator named, without trust, the rehearsal refuses, names the plan
+statement and the remedies, and leaves the target and the dev server as they
+were. Without this check, a role the rehearsal created would outlive the
+cleanup on the dev server, and the real apply would fail on it when the
+target is on the same server. Under trust that is what happens; see
+[SQL you trust](#sql-you-trust).
 
 In a YDB dev realm, the baseline leaves out the permissions the target holds
 on its database root. The realm's root would stand in for the target's, but a

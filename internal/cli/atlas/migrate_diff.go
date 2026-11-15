@@ -153,6 +153,9 @@ func runAtlasMigrateDiff(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	opts.exclude, err = atlasMigrateDiffExcludeFromEnv(opts.policy)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

@@ -130,8 +130,8 @@ func TestValidateClickHouseReplayStatement_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
-				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
+				replay.Scope{Database: "ptah_dev"},
 			)
 			c.Assert(err, qt.IsNil)
 		})
@@ -211,8 +211,8 @@ func TestValidateClickHouseReplayStatement_GlobalFailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
-				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
+				replay.Scope{Database: "ptah_dev"},
 			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -286,8 +286,8 @@ func TestValidateClickHouseReplayStatement_EngineFailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
-				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
+				replay.Scope{Database: "ptah_dev"},
 			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -346,8 +346,8 @@ func TestValidateClickHouseReplayStatement_LifecycleFailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
-				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
+				replay.Scope{Database: "ptah_dev"},
 			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -416,8 +416,8 @@ func TestValidateClickHouseReplayStatement_CrossDatabaseFailurePath(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
-				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
+				replay.Scope{Database: "ptah_dev"},
 			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -462,8 +462,8 @@ func TestValidateClickHouseReplayStatement_InsertFailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			err := validateClickHouseReplayStatement(
-				"ptah_dev",
 				clickHouseReplayTokens(test.statement),
+				replay.Scope{Database: "ptah_dev"},
 			)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
