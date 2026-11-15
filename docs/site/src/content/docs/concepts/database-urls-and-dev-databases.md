@@ -174,7 +174,13 @@ provider runs the cases in a dev realm in that database.
   created on the server afterwards can use `public` as it could before. A run
   that revokes `USAGE` on `public` or comments it does not hand the change to
   the next run, and neither does one whose dev database keeps an extension in
-  `public`, where the schema is emptied in place.
+  `public`, where the schema is emptied in place. A schema the connecting
+  role does not own is emptied in place too, since only its owner may drop
+  it. On PostgreSQL 13 and 14 the bootstrap superuser owns `public` in every
+  new database, so a dev database an ordinary role owns is this case. Ptah
+  refuses such a schema before it drops anything when the role holds a grant
+  option on it, because the cleanup could not take back what a run grants
+  there.
 - **MySQL-family cleanup needs global catalog visibility.** MySQL cleanup
   credentials require global `SELECT`, `DROP`, `ALTER`, `ALTER ROUTINE`,
   `EVENT`, `LOCK TABLES`, and `PROCESS`. MySQL also requires global `TRIGGER`
