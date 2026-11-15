@@ -561,6 +561,16 @@ CockroachDB and YugabyteDB, the reader keeps the sequence as a sequence the
 column owns, and a plan against a database that holds it does not create it
 again.
 
+`CREATE SEQUENCE ... OWNED BY` names the owner as `ALTER SEQUENCE ... OWNED BY`
+does: `table.column`, or `schema.table.column` where the schema is the
+sequence's own. Either form reads as the column a read of the database
+reports, so `OWNED BY public.orders.id` is the column `id` of `orders`. The
+reader refuses a column written without its table and a column of a table in
+another schema, as PostgreSQL does. CockroachDB accepts a table in another
+schema, and the reader refuses it there too. A column a database name
+qualifies, `db.public.orders.id`, is refused: PostgreSQL takes it only for the
+database it is connected to, and a schema file does not name one.
+
 An identity column is the column, `NOT NULL`, and an `ALTER TABLE ... ALTER
 COLUMN ... ADD GENERATED ... AS IDENTITY` after it. The reader reads the
 statement as the same clause written on the column, with the generation and

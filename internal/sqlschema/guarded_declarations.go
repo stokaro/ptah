@@ -2,6 +2,7 @@ package sqlschema
 
 import (
 	"cmp"
+	"fmt"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -41,13 +42,25 @@ func appendGuardedCreateTable(database *schemamodel.Database, document *Document
 	return appendCreateTable(database, document, node, sourcePlatform)
 }
 
-// appendSequence records the sequence node declares unless the server skips
-// the statement.
-func appendSequence(database *schemamodel.Database, document *Document, node *ast.CreateSequenceNode, sourcePlatform string) {
+// appendSequence records the sequence node declares, with its owner, unless
+// the server skips the statement.
+//
+// The owner is read only where the statement runs. Measured on PostgreSQL
+// 16.16, 17.11 and 18.6, a CREATE SEQUENCE IF NOT EXISTS of a sequence that
+// exists is skipped with a notice whatever its OWNED BY names, a column without
+// its table and one of a table in another schema included.
+func appendSequence(database *schemamodel.Database, document *Document, node *ast.CreateSequenceNode, sourcePlatform string) error {
 	sequence := toSequence(node, sourcePlatform)
-	if !skipsCreateSequence(database, document, node, sequence, sourcePlatform) {
-		database.Sequences = append(database.Sequences, sequence)
+	if skipsCreateSequence(database, document, node, sequence, sourcePlatform) {
+		return nil
 	}
+	owner, err := createdSequenceOwner(sequence.Schema, node.OwnedBy, sourcePlatform)
+	if err != nil {
+		return fmt.Errorf("CREATE SEQUENCE %s OWNED BY %s: %w", schemaQualified(node.Schema, node.Name), node.OwnedBy, err)
+	}
+	sequence.OwnedBy = owner
+	database.Sequences = append(database.Sequences, sequence)
+	return nil
 }
 
 // appendFunction records the routine node declares, in the place of the one

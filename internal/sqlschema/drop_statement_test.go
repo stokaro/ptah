@@ -135,6 +135,71 @@ func TestRead_DropTable_TakesWhatBelongsToTheTable(t *testing.T) {
 	c.Assert(database.Sequences, qt.HasLen, 0)
 }
 
+// A dropped table takes the sequences its columns own, and only those: an
+// owner names a table of the sequence's own schema, whichever statement gave
+// the sequence its owner. Measured on PostgreSQL 16.16, 17.11 and 18.6.
+func TestRead_DropTable_TakesTheSequencesItsColumnsOwn(t *testing.T) {
+	for _, test := range []struct {
+		name, sql string
+		want      []string
+	}{
+		{
+			name: "a qualified table owning by CREATE SEQUENCE",
+			sql: "CREATE TABLE public.t (id bigint);\n" +
+				"CREATE SEQUENCE public.s OWNED BY public.t.id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE public.t;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a qualified table owning by ALTER SEQUENCE",
+			sql: "CREATE TABLE public.t (id bigint);\n" +
+				"CREATE SEQUENCE public.s;\n" +
+				"ALTER SEQUENCE public.s OWNED BY public.t.id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE public.t;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a table of another schema",
+			sql: "CREATE SCHEMA app;\n" +
+				"CREATE TABLE app.d (id bigint);\n" +
+				"CREATE SEQUENCE app.s OWNED BY app.d.id;\n" +
+				"CREATE SEQUENCE kept;\n" +
+				"DROP TABLE app.d;",
+			want: []string{"kept"},
+		},
+		{
+			name: "a table of the same name in another schema",
+			sql: "CREATE SCHEMA app;\n" +
+				"CREATE TABLE u (id bigint);\n" +
+				"CREATE TABLE app.u (id bigint);\n" +
+				"CREATE SEQUENCE app.s OWNED BY app.u.id;\n" +
+				"DROP TABLE u;",
+			want: []string{"app.s"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), "postgres")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sequenceNamesOf(database), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// sequenceNamesOf lists the sequences of the database, each qualified by the
+// schema it declares, in order.
+func sequenceNamesOf(database schemamodel.Database) []string {
+	var names []string
+	for _, sequence := range database.Sequences {
+		names = append(names, schemamodel.QualifyTableName(sequence.Schema, sequence.Name))
+	}
+	return names
+}
+
 // A later file of a schema directory drops a table an earlier file declared.
 func TestReadOnto_DropsAnEarlierTable(t *testing.T) {
 	c := qt.New(t)

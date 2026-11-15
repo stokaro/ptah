@@ -218,10 +218,13 @@ func removeTable(target alterTarget) {
 		database.ManagedData = slices.DeleteFunc(database.ManagedData, func(data schemamodel.ManagedData) bool {
 			return target.reachesTable(schemamodel.QualifyTableName(data.Schema, data.Table))
 		})
+		// An owner names a table of the sequence's own schema, so it is
+		// matched there and not resolved as a table name: resolved, the owner
+		// `u.id` of app.s reaches the table public.u, and a sequence of a
+		// table declared as public.t is not reached at all.
 		database.Sequences = slices.DeleteFunc(database.Sequences, func(sequence schemamodel.Sequence) bool {
-			owner := strings.TrimSpace(sequence.OwnedBy)
-			dot := strings.LastIndex(owner, ".")
-			return dot > 0 && target.reachesTable(owner[:dot])
+			table, _ := ownerOf(target.databases, sequence, target.sourcePlatform)
+			return table != nil && table.QualifiedName() == target.table.QualifiedName()
 		})
 	}
 	target.keys.forgetTable(target.qualified)

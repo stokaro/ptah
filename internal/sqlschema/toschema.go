@@ -288,8 +288,9 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 			// The name comes across with the columns. This is where it is
 			// easiest to drop: everything else about the constraint is carried
 			// and the one field that identifies it is not
-			// (stokaro/ptah#2180).
-			tableSchema.PrimaryKeyName = constraint.Name
+			// (stokaro/ptah#2180). It is read as every other constraint name
+			// is, through [identifierPart]; see [primaryKeyName].
+			tableSchema.PrimaryKeyName = primaryKeyName(constraint, sourcePlatform)
 			tableSchema.PrimaryKey = normalizeSQLIdentifiers(sourcePlatform, constraint.Columns)
 			tableSchema.PrimaryKeyParts = toPrimaryKeyParts(constraint, sourcePlatform)
 			tableSchema.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
@@ -680,7 +681,7 @@ func appendStatement(
 	case *ast.CreateTriggerNode:
 		appendTrigger(database, document, node, sourcePlatform)
 	case *ast.CreateSequenceNode:
-		appendSequence(database, document, node, sourcePlatform)
+		return appendSequence(database, document, node, sourcePlatform)
 	case *ast.CreateRoleNode:
 		return appendCreateRole(database, document, node, sourcePlatform)
 	case *ast.DoBlockNode:
@@ -1417,7 +1418,7 @@ func applyAlterTablePrimaryKey(target alterTarget, constraint *ast.ConstraintNod
 	if err := target.refuseSecondPrimaryKey(); err != nil {
 		return err
 	}
-	target.table.PrimaryKeyName = constraint.Name
+	target.table.PrimaryKeyName = primaryKeyName(constraint, sourcePlatform)
 	target.table.PrimaryKey = normalizeSQLIdentifiers(sourcePlatform, constraint.Columns)
 	target.table.PrimaryKeyParts = toPrimaryKeyParts(constraint, sourcePlatform)
 	target.table.PrimaryKeyInclude = normalizeSQLIdentifiers(sourcePlatform, constraint.IncludeColumns)
@@ -1440,6 +1441,22 @@ func (t alterTarget) refuseSecondPrimaryKey() error {
 		return fmt.Errorf("ALTER TABLE %s ADD PRIMARY KEY: the table already declares a primary key", t.written)
 	}
 	return nil
+}
+
+// primaryKeyName is the name a PRIMARY KEY constraint declares, as the
+// server stores it, or empty for a key that declares none.
+//
+// It is read through [identifierPart], like the name of a UNIQUE, a CHECK or a
+// foreign key. Kept as written, a quoted name keeps its quotes: pg_dump writes
+// `ADD CONSTRAINT "Order_pkey" PRIMARY KEY ("Id")`, the model holds
+// `"Order_pkey"`, and a plan against the database the file was dumped from
+// renames the key `Order_pkey` to itself. An unquoted `CONSTRAINT Order_PK`
+// keeps `Order_PK` where PostgreSQL stores `order_pk`, and the plan renames the
+// key to a name the file does not create. A DROP CONSTRAINT or a RENAME
+// CONSTRAINT of the key, whose name is read through [identifierPart], does not
+// find it.
+func primaryKeyName(constraint *ast.ConstraintNode, sourcePlatform string) string {
+	return normalizeSQLIdentifier(sourcePlatform, constraint.Name)
 }
 
 func ToConstraint(constraint *ast.ConstraintNode, structName, tableName, sourcePlatform string) (schemamodel.Constraint, bool) {
