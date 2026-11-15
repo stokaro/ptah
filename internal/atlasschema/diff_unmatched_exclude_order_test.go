@@ -21,6 +21,12 @@ import (
 // ahead of a later failure, and the operator learns about it on a run that
 // fails for another reason too. The fixture's later failure is the SQLite
 // virtual table on the --from side, which the comparison refuses to drop.
+//
+// These tests call [atlasschema.Diff], the comparison itself, and say nothing
+// about a command. The warning is the order `ptah schema diff` reports in, and
+// the refusal the order `ptah migrations down --plan` refuses in; each command
+// is measured in its own package, in internal/cli/schema and
+// internal/cli/migratedown.
 
 // unmatchedExcludeOrderSides writes the two sides: --from holds a virtual
 // table that --to does not declare.

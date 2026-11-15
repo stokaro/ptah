@@ -74,20 +74,55 @@ func TestUnmatchedExcludeRefusal_FailurePath(t *testing.T) {
 	}
 }
 
+// errReplay stands for a second failure the planning reports beside the
+// refusal.
+var errReplay = errors.New("the replay left a scratch table")
+
 // TestUnmatchedExcludeRefusalKeepsAFailedCleanup_FailurePath words a refusal
-// the planner joined to the failure of its cleanup. The refusal comes first,
-// and the cleanup failure stays beside it: both match errors.Is.
+// the planner returned beside other failures, however the errors were put
+// together: a join, a wrapper with two %w verbs, and a join inside a join.
+// The refusal comes first, each other failure follows on its own line, and
+// every one matches errors.Is. A wrapper whose chain leads to the refusal
+// only frames it, so its text is not repeated.
 func TestUnmatchedExcludeRefusalKeepsAFailedCleanup_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	planned := errors.Join(
-		fmt.Errorf("dynamic rollback planning failed: compare the schemas: %w", unmatchedAuditLogs()),
-		fmt.Errorf("dynamic rollback planning failed: %w", errCleanup),
-	)
+	tests := []struct {
+		name    string
+		planned error
+		wantErr string
+	}{
+		{
+			name: "a join",
+			planned: errors.Join(
+				fmt.Errorf("dynamic rollback planning failed: compare the schemas: %w", unmatchedAuditLogs()),
+				fmt.Errorf("dynamic rollback planning failed: %w", errCleanup),
+			),
+			wantErr: refusedAuditLogs + "\n" + "dynamic rollback planning failed: the dev database could not be emptied",
+		},
+		{
+			name: "a wrapper with two %w verbs",
+			planned: fmt.Errorf("%w: %w", unmatchedAuditLogs(),
+				fmt.Errorf("dynamic rollback planning failed: %w", errCleanup)),
+			wantErr: refusedAuditLogs + "\n" + "dynamic rollback planning failed: the dev database could not be emptied",
+		},
+		{
+			name: "a join inside a join",
+			planned: errors.Join(
+				errors.Join(fmt.Errorf("compare the schemas: %w", unmatchedAuditLogs()), errReplay),
+				errCleanup,
+			),
+			wantErr: refusedAuditLogs + "\n" + "the replay left a scratch table" + "\n" + "the dev database could not be emptied",
+		},
+	}
 
-	got := atlasschema.UnmatchedExcludeRefusal("migrations down --plan", planned)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	c.Assert(got, qt.ErrorIs, atlasfilter.ErrUnmatchedExclude)
-	c.Assert(got, qt.ErrorIs, errCleanup)
-	c.Assert(got, qt.ErrorMatches, regexp.QuoteMeta(refusedAuditLogs+"\n"+
-		"dynamic rollback planning failed: the dev database could not be emptied"))
+			got := atlasschema.UnmatchedExcludeRefusal("migrations down --plan", test.planned)
+
+			c.Assert(got, qt.ErrorIs, atlasfilter.ErrUnmatchedExclude)
+			c.Assert(got, qt.ErrorIs, errCleanup)
+			c.Assert(got, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
+		})
+	}
 }
