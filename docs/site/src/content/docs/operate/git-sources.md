@@ -139,7 +139,9 @@ reach neither shell history nor the process list:
 Over HTTPS, `--ca-file` names the only roots the server's certificate may
 chain to; without it, the system's roots are used. A redirect to another
 origin is refused while a credential is set, so the credential is never sent
-to a server it was not meant for.
+to a server it was not meant for. A redirect to a host with a byte outside
+printable ASCII is refused with or without one, and hosts are compared ignoring
+ASCII case only.
 
 Over SSH, `--known-hosts-file` is required: Ptah never trusts a host key on
 first use, and a key the file does not hold is refused.
@@ -153,6 +155,8 @@ ptah schema pull git+ssh://git@git.example.com/acme/app.git \
 
 ## What a pull refuses
 
+- a reference whose host has a byte outside printable ASCII; write an
+  internationalized name in its `xn--` form;
 - a selected path that is a submodule, a symbolic link, or a Git LFS pointer,
   each named in the message: Ptah reads the bytes in the repository and
   fetches nothing beyond it;

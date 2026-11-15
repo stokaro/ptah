@@ -324,6 +324,25 @@ func TestGitFetch_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, gitsource.ErrRedirect)
 		c.Assert(result, qt.DeepEquals, gitsource.Result{})
 	})
+	// An anonymous redirect, so only the target decides. The test server
+	// percent-escapes the host as http.Redirect does; Unicode case folding
+	// reads it as github.com while the transport dials xn--github-qyd.com.
+	t.Run("an anonymous redirect to a host with U+0130", func(t *testing.T) {
+		c := qt.New(t)
+		repository := gitsourcetest.NewRepository(c)
+		repository.Commit(c, map[string]string{"db/schema.hcl": schemaV1}, "v1")
+		server := gitsourcetest.ServeHTTPS(c, repository.Root, gitsourcetest.HTTPSOptions{RedirectTo: "https://gİthub.com"})
+		reference, err := gitsource.ParseReference(server.Reference("app.git"))
+		c.Assert(err, qt.IsNil)
+		transport, auth, err := gitsource.Dial(reference, gitsource.Credentials{}, gitsource.Trust{CAFile: server.CAFile})
+		c.Assert(err, qt.IsNil)
+		result, err := gitsource.Fetch(context.Background(), gitsource.Options{
+			Reference: reference, Transport: transport, Auth: auth, Ref: gitsource.Ref{Branch: "main"}, Path: "db/schema.hcl", Kind: gitsource.File,
+		})
+		c.Assert(err, qt.ErrorIs, gitsource.ErrRedirect)
+		c.Assert(err, qt.ErrorMatches, `.*redirected to "https://gİthub.com", whose host has a byte outside printable ASCII`)
+		c.Assert(result, qt.DeepEquals, gitsource.Result{})
+	})
 	t.Run("an SSH host key the known hosts do not hold", func(t *testing.T) {
 		c := qt.New(t)
 		repository := gitsourcetest.NewRepository(c)

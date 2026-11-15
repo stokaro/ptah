@@ -31,6 +31,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/memory"
 
+	"ptah.run/internal/asciihost"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/sourcecontent"
 )
@@ -105,7 +106,9 @@ func IsReference(s string) bool {
 
 // ParseReference reads a git+https:// or git+ssh:// reference. It names a
 // repository and nothing else: no credential, query or fragment, since a
-// password in a URL lands in shell history and process lists.
+// password in a URL lands in shell history and process lists. The host is
+// printable ASCII ([asciihost]), so an internationalized name is written in
+// its xn-- form.
 func ParseReference(raw string) (Reference, error) {
 	parsed, err := dburldisplay.ParseURL(raw)
 	if err != nil {
@@ -130,6 +133,10 @@ func ParseReference(raw string) (Reference, error) {
 	switch {
 	case parsed.Host == "":
 		return Reference{}, fmt.Errorf("%w %q: no host", ErrReference, shown)
+	case asciihost.Check(parsed.Hostname()) != nil:
+		// Unicode case folding reads gİthub.com as github.com, while the
+		// transport dials xn--github-qyd.com.
+		return Reference{}, fmt.Errorf("%w %q: the host has a byte outside printable ASCII; write it in its xn-- form", ErrReference, shown)
 	case parsed.Path == "" || parsed.Path == "/":
 		return Reference{}, fmt.Errorf("%w %q: no repository path", ErrReference, shown)
 	case parsed.RawQuery != "" || parsed.Fragment != "" || parsed.ForceQuery:
@@ -151,11 +158,6 @@ func withoutCredential(parsed *url.URL) string {
 		shown.User = nil
 	}
 	return shown.String()
-}
-
-// Origin is the scheme, host and port the reference dials.
-func (r Reference) Origin() string {
-	return r.URL.Scheme + "://" + r.URL.Host
 }
 
 // Ref says which commit to read: a branch or a tag, a commit, or a commit

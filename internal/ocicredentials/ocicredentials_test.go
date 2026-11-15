@@ -111,6 +111,35 @@ func TestStore_EnvironmentAnswersFirstAndTheScopeNarrowsIt(t *testing.T) {
 			address: "other.example.com",
 			want:    auth.EmptyCredential,
 		},
+		{
+			name: "scoped answers for the named host in other ASCII case",
+			env: map[string]string{
+				"PTAH_OCI_USERNAME": "u", "PTAH_OCI_PASSWORD": "p",
+				"PTAH_OCI_REGISTRY": "Registry.Example.com",
+			},
+			address: "registry.example.com",
+			want:    auth.Credential{Username: "u", Password: "p"},
+		},
+		// strings.EqualFold folds the Kelvin sign into "k" and a long s into
+		// "s", so each of these read as the scoped host.
+		{
+			name: "scoped stays silent for a host with the Kelvin sign",
+			env: map[string]string{
+				"PTAH_OCI_USERNAME": "u", "PTAH_OCI_PASSWORD": "p",
+				"PTAH_OCI_REGISTRY": "kube.example.com",
+			},
+			address: "\u212Aube.example.com",
+			want:    auth.EmptyCredential,
+		},
+		{
+			name: "scoped stays silent for a host with a long s",
+			env: map[string]string{
+				"PTAH_OCI_USERNAME": "u", "PTAH_OCI_PASSWORD": "p",
+				"PTAH_OCI_REGISTRY": "registry.example.com",
+			},
+			address: "regi\u017Ftry.example.com",
+			want:    auth.EmptyCredential,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
