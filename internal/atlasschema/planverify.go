@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
@@ -140,12 +141,19 @@ func RehearsePlanStatements(
 		return err
 	}
 
-	current, err := dbschema.ReadSchemaWithSchemasContext(
-		readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, nil)...), conn, nil,
+	// The scope computeApplyPlan read the plan's target at, which on a realm URL
+	// takes in the schemas the desired state names. Read at the URL's scope
+	// alone, the target's current schema, the baseline leaves out every other
+	// schema the plan alters: measured on PostgreSQL 18, a saved plan altering
+	// "app"."t" on a target whose current schema is public failed on the dev
+	// database with 3F000, schema "app" does not exist.
+	read, err := applyCurrentState(
+		readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, nil)...), conn, nil, desired,
 	)
 	if err != nil {
-		return fmt.Errorf("read database schema: %w", err)
+		return err
 	}
+	current := read.current
 	// Same default schema computeApplyPlan uses, so the rehearsal subtracts
 	// exactly the objects the plan was computed without.
 	current, err = excludeCurrentWithBindings(ctx, current, opts.Exclude, conn.Info(), opts.Runtime)
@@ -173,7 +181,7 @@ func RehearsePlanStatements(
 		return err
 	}
 
-	computation, err := computeApplyPlan(ctx, devConn, ApplyOptions{
+	computation, err := compareRehearsedState(ctx, devConn, conn.Info(), ApplyOptions{
 		Runtime:  opts.Runtime,
 		Desired:  desired,
 		Exclude:  opts.Exclude,
@@ -192,6 +200,36 @@ func RehearsePlanStatements(
 		return &PlanDesiredStateError{Phase: "rehearsal", Drift: drift}
 	}
 	return nil
+}
+
+// compareRehearsedState computes the plan from the rehearsed dev database to
+// the desired state, reading the dev database as the target names its objects.
+//
+// The rehearsal built the target's state on a dev session that resolves names
+// as the target does; see [resolveNamesAsTarget]. Read through a session of
+// the dev database's own, the objects of the target's current schema carry
+// that schema's name, and the desired state names them without one: the
+// comparison would plan their creation in public and their removal from the
+// target's schema, and refuse a rehearsal that reached the desired state.
+func compareRehearsedState(
+	ctx context.Context,
+	devConn *dbschema.DatabaseConnection,
+	target catalog.ServerInfo,
+	opts ApplyOptions,
+) (applyComputation, error) {
+	if !realmPairResolvesApart(devConn.Info(), target) {
+		return computeApplyPlan(ctx, devConn, opts)
+	}
+	var computation applyComputation
+	err := devConn.WithSession(ctx, func(session *dbschema.DatabaseConnection) error {
+		moved, err := session.ResolveNamesAs(ctx, target)
+		if err != nil {
+			return err
+		}
+		computation, err = computeApplyPlan(ctx, moved, opts)
+		return err
+	})
+	return computation, err
 }
 
 // VerifyAppliedPlanState performs the post-apply end-state verification:

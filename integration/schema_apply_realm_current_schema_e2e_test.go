@@ -109,37 +109,17 @@ func realmCurrentSchemaURL(c *qt.C, adminURL, role, database string, query url.V
 // schema.column, in order.
 func (f realmCurrentSchemaFixture) columns(c *qt.C) []string {
 	c.Helper()
-	rows, err := f.target.QueryContext(context.Background(), `
+	return realmCurrentSchemaNames(c, f.target, `
 		SELECT table_schema || '.' || column_name
 		FROM information_schema.columns
 		WHERE table_name = 'notes'
 		ORDER BY table_schema, ordinal_position`)
-	c.Assert(err, qt.IsNil)
-	defer rows.Close()
-	var columns []string
-	for rows.Next() {
-		var column string
-		c.Assert(rows.Scan(&column), qt.IsNil)
-		columns = append(columns, column)
-	}
-	c.Assert(rows.Err(), qt.IsNil)
-	return columns
 }
 
 // rows lists the bodies of public.notes, in id order.
 func (f realmCurrentSchemaFixture) rows(c *qt.C) []string {
 	c.Helper()
-	rows, err := f.target.QueryContext(context.Background(), "SELECT body FROM public.notes ORDER BY id")
-	c.Assert(err, qt.IsNil)
-	defer rows.Close()
-	var bodies []string
-	for rows.Next() {
-		var body string
-		c.Assert(rows.Scan(&body), qt.IsNil)
-		bodies = append(bodies, body)
-	}
-	c.Assert(rows.Err(), qt.IsNil)
-	return bodies
+	return realmCurrentSchemaNames(c, f.target, "SELECT body FROM public.notes ORDER BY id")
 }
 
 // realmCurrentSchemaRoot writes schema as schema.sql into a new directory and
@@ -311,4 +291,75 @@ func TestSchemaApplyRefusesADevURLBoundToAnotherSchema_FailurePathE2E(t *testing
 	c.Assert(result.Stderr, qt.Contains, `Error: --dev-url schema scope "public" does not match --url schema scope "`+
 		fixture.role+`"; point --dev-url at a dev database using the same schema`)
 	c.Assert(fixture.columns(c), qt.DeepEquals, []string{"public.id", "public.body"})
+}
+
+// tables lists every table of the target outside the system schemas, as
+// schema.table, in order.
+func (f realmCurrentSchemaFixture) tables(c *qt.C) []string {
+	c.Helper()
+	return realmCurrentSchemaNames(c, f.target, `
+		SELECT table_schema || '.' || table_name
+		FROM information_schema.tables
+		WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+		ORDER BY 1`)
+}
+
+// devSchemas lists the schemas of the dev database outside the system ones,
+// in order.
+func (f realmCurrentSchemaFixture) devSchemas(c *qt.C) []string {
+	c.Helper()
+	dev, err := sql.Open("pgx", f.devURL)
+	c.Assert(err, qt.IsNil)
+	defer func() { _ = dev.Close() }()
+	return realmCurrentSchemaNames(c, dev, `
+		SELECT nspname FROM pg_namespace
+		WHERE nspname NOT LIKE 'pg\_%' AND nspname <> 'information_schema'
+		ORDER BY 1`)
+}
+
+// realmCurrentSchemaNames runs query on db and returns its one text column, in
+// the order the query gives.
+func realmCurrentSchemaNames(c *qt.C, db *sql.DB, query string) []string {
+	c.Helper()
+	rows, err := db.QueryContext(context.Background(), query)
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		names = append(names, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return names
+}
+
+// TestSchemaApplyRehearsesASavedPlanOnADevDatabaseOfAnotherCurrentSchema_HappyPathE2E
+// saves a plan with `schema plan` and applies it with `schema apply --plan`,
+// which replays the plan on the dev database and compares the state it reaches
+// with the desired one before the target is touched. The plan alters
+// public.notes, outside the target's current schema, so the replay needs
+// public.notes in its baseline; the target also holds items in its current
+// schema, which the desired state names without a schema, so the comparison
+// has to read the dev database as the target names it. The target is read
+// back, and the dev database is read back to show the rehearsal handed it
+// back as it was.
+func TestSchemaApplyRehearsesASavedPlanOnADevDatabaseOfAnotherCurrentSchema_HappyPathE2E(t *testing.T) {
+	c := qt.New(t)
+	fixture := newRealmCurrentSchemaFixture(c, realmNotes, "CREATE TABLE items (id bigint PRIMARY KEY)")
+	root := realmCurrentSchemaRoot(c, "CREATE TABLE items (id bigint PRIMARY KEY);\n"+
+		`CREATE TABLE "public"."notes" (id bigint PRIMARY KEY, body text NOT NULL, title text);`+"\n")
+	options := clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()}
+
+	planned := clirun.Run(c, clirun.Compat, options, "schema", "plan", "--from", fixture.targetURL,
+		"--to", "file://schema.sql", "--dev-url", fixture.devURL, "--output", "realm.plan.hcl")
+	c.Assert(planned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned.Stdout, planned.Stderr))
+	applied := clirun.Run(c, clirun.Compat, options, "schema", "apply", "--url", fixture.targetURL,
+		"--to", "file://schema.sql", "--dev-url", fixture.devURL, "--plan", "file://realm.plan.hcl", "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+	c.Assert(fixture.columns(c), qt.DeepEquals, []string{"public.id", "public.body", "public.title"})
+	c.Assert(fixture.rows(c), qt.DeepEquals, []string{"kept"})
+	c.Assert(fixture.tables(c), qt.DeepEquals, []string{fixture.role + ".items", "public.notes"})
+	c.Assert(fixture.devSchemas(c), qt.DeepEquals, []string{"public"})
 }
