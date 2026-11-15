@@ -38,13 +38,13 @@ from their declarations, not from counts here:
   `core/platform.Dialects` and `NormalizeDialect`. Shared code reads a
   descriptor field, never a dialect name (stokaro/ptah#4204). `migrations
   lint` and `sql lint` skip Oracle on purpose (`internal/lintdialect/dialect.go`).
-  YDB is supported end to end, including YQL lint, data writes and embedding
-  generations.
+  DuckDB, Spanner and YDB are served by providers installed separately (ADR
+  0031), and their engine knowledge lives in the provider (ADR 0023).
 - Drivers: the descriptor's `Driver`, read by
   `internal/connector/<engine>connect`; a `sqlite` URL may take `libsql`
   (`internal/connector/sqliteconnect`).
 - Rendering: `docs/capabilities.md`. Accepted is not promised: `SERIAL` is
-  refused by name on ClickHouse and CockroachDB, never downgraded.
+  refused by name on ClickHouse, never downgraded.
 
 ## Repository Layout
 
@@ -65,14 +65,11 @@ from their declarations, not from counts here:
 - Additive API changes get normal review; never commit a generated snapshot of
   exported declarations.
 - Core packages: `core/ast`, `core/astbuilder`, `core/goschema` (annotation
-  parser in `parser.go`), `engine/builtin` (dialects in `internal/dialects/`),
-  `core/platform`, `core/yamlschema`, `dbschema`, `migration/generator`,
-  `migration/migrationfile`, `migration/shadow`, `migration/migrator`,
-  `migration/planner`, `migration/schemadiff`. Internal: `internal/lexer`,
-  `internal/parser`, `internal/dialectlexer`, `internal/convert`,
-  `internal/schemaprep`, `internal/modelast`, `internal/tablelookup`,
-  `internal/dbschema`, `internal/envbool`, `internal/capabilityprobe`,
-  `internal/serverprofile`, `internal/capmatrix`.
+  parser in `parser.go`), `engine/builtin` (dialects in
+  `engine/builtin/internal/dialects/`), `core/platform`, `core/yamlschema`,
+  `dbschema`, `migration/generator`, `migration/migrationfile`,
+  `migration/shadow`, `migration/migrator`, `migration/planner`,
+  `migration/schemadiff`.
 - `cmd/` holds only shipped programs. `internal/cli/root/root.go` assembles
   `ptah` from the namespaces under `internal/cli/`, one package per leaf verb
   (`internal/cli/generate` backs `ptah schema render`); `internal/cli/atlas`
@@ -157,7 +154,6 @@ make integration-test            # Docker Compose suite; binds fixed host ports
   repeat its counts (`check-support-matrix.mjs`).
 - A provider-served engine declares its lines and levels in the plugin
   (`release-lines.json`); Ptah's matrix links there with no level (ADR 0023).
-  The YDB lines in `cells.go` describe the embedded engine and go with it.
 
 ### Lint rules
 
@@ -564,10 +560,17 @@ in the same change.
 CI proves the provider contract only on `provider-sdk/testdata/fixture`
 (`testutils.BuildFixtureProvider`, `provider-sdk/integration`,
 `integration/providercli`), and a change to what a provider receives is
-tested there. Once `stokaro/ptah-ydb-plugin` serves `ydb://`, YDB end-to-end,
-live and parity tests run in that repository against current Ptah and never
-join `go-integration-tests.yml`; until then embedded YDB follows the rules
-above (ADR 0031).
+tested there. The end-to-end, live and parity tests of DuckDB, Spanner and YDB
+run in their plugin repositories against current Ptah and never join
+`go-integration-tests.yml` (ADR 0031).
+
+### Every fix carries a regression test
+
+A fix lands with a test that fails on the code before it and passes after it.
+The test drives the path the defect took: the same verb, selector, input shape
+and, where the defect needed one, engine. Prove it: disable the fix, watch the
+test fail, restore it. When the existing tests missed the defect, the pull
+request names the shape they lacked, and that shape becomes a row.
 
 ### Declarative tests only
 
@@ -579,10 +582,8 @@ it); `importas` requires `quicktest` as `qt`.
 
 ### Checkers belong to the test they report against
 
-`QTLINT_RULES` in the Makefile enforces these in both contours and on Windows
-(`ptah-go-lint-windows` runs `make lint-qtlint` and golangci-lint for
-`_windows_test.go`, apart from `windows-unit-tests` so neither hides the
-other). `make lint-qtlint-fix` rewrites, one rule per pass.
+`QTLINT_RULES` in the Makefile enforces these in both contours and on Windows;
+`make lint-qtlint-fix` rewrites, one rule per pass.
 
 - Assert through a receiver: `c := qt.New(t)`, then `c.Assert(...)`.
 - Subtests use `t.Run(name, func(t *testing.T) { c := qt.New(t) ... })`,
@@ -616,8 +617,8 @@ a type, `qt.ErrorMatches` when there is no sentinel.
 func TestDialectFromURL_FailurePath(t *testing.T) {
 	t.Run("unsupported", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
-		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
+		got, err := atlasurl.DialectFromURL("db2://localhost/dev")
+		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "db2://localhost/dev"`)
 		c.Assert(got, qt.Equals, "")
 	})
 }
