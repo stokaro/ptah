@@ -13,13 +13,15 @@ type NameUse struct {
 	// without its quotes. A part that is not a name, such as the star of
 	// `t.*`, is empty.
 	Parts []string
-	// Call reports that an opening parenthesis follows the name, as one
-	// follows a function wherever SQL names one: `uid()`, `EXECUTE FUNCTION
-	// touch()`.
+	// Call reports that the name stands where SQL names a function: an
+	// opening parenthesis follows it, as in `uid()` and `EXECUTE FUNCTION
+	// touch()`, or FUNCTION, PROCEDURE or ROUTINE precedes it, as in `COMMENT
+	// ON FUNCTION uid IS ...` and `GRANT EXECUTE ON FUNCTION uid TO ...`.
 	Call bool
 	// Relation reports that the name stands where SQL names a table, a view or
 	// a sequence: after FROM, JOIN, INTO, UPDATE, TABLE, ONLY, ON, USING,
-	// REFERENCES, SEQUENCE, VIEW, SETOF or RETURNS, after the parentheses a
+	// REFERENCES, SEQUENCE, VIEW, SETOF, RETURNS, the EXISTS of IF [NOT]
+	// EXISTS, PARTITION OF or ATTACH and DETACH PARTITION, after the parentheses a
 	// FROM, a JOIN or INHERITS opens, further along the list a FROM, USING,
 	// TRUNCATE or LOCK opens, or in front of `%ROWTYPE`.
 	Relation bool
@@ -47,7 +49,7 @@ func CodeNameUses(body, dialect string) []NameUse {
 		next := skipCodeSpace(body, masks, span.end)
 		uses = append(uses, NameUse{
 			Parts:    slices.Clone([]string(span.name)),
-			Call:     codeByteAt(body, masks, next, '('),
+			Call:     codeByteAt(body, masks, next, '(') || routineKeyword(previousCode(body, masks, span.start).word),
 			Relation: codeByteAt(body, masks, next, '%') || standsForRelation(body, masks, span.start),
 		})
 	}
@@ -89,11 +91,25 @@ func standsForRelation(body string, masks sqlMasks, start int) bool {
 // relationKeyword reports whether a name that follows word stands where SQL
 // names a relation. ON names the table of a policy, a trigger, an index or a
 // grant, and the first operand of a join condition; RETURNS and SETOF name a
-// table's row type.
+// table's row type; EXISTS ends the IF [NOT] EXISTS of a statement on a table;
+// OF names the parent of PARTITION OF, and PARTITION the child ATTACH and
+// DETACH name.
 func relationKeyword(word string) bool {
 	switch word {
 	case "from", "join", "into", "update", "table", "only", "on", "using", "references",
-		"inherits", "like", "lock", "truncate", "sequence", "view", "setof", "returns":
+		"inherits", "like", "lock", "truncate", "sequence", "view", "setof", "returns",
+		"exists", "of", "partition":
+		return true
+	default:
+		return false
+	}
+}
+
+// routineKeyword reports whether a name that follows word stands where SQL
+// names a routine without its argument list.
+func routineKeyword(word string) bool {
+	switch word {
+	case "function", "procedure", "routine":
 		return true
 	default:
 		return false

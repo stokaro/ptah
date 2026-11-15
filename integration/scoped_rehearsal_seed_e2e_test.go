@@ -94,18 +94,20 @@ func TestScopedRehearsalClaimRefusesARealmTheDevDatabaseHoldsE2E(t *testing.T) {
 	}
 }
 
-// scopedRehearsalAuthUID is a target whose auth schema holds uid(), beside a
-// table in public.
+// scopedRehearsalAuthUID is a target whose auth schema holds uid() and the
+// accounts table, beside a table in public.
 const scopedRehearsalAuthUID = `CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+CREATE TABLE auth.accounts (id uuid PRIMARY KEY);
 CREATE TABLE public.t (id int PRIMARY KEY);
 `
 
 // TestScopedRehearsalReadsTheBodiesThePlanCreatesE2E rehearses a plan that
-// creates a routine in public whose body calls auth.uid(), with auth left out.
-// PostgreSQL resolves an SQL body when the routine is created, so the dev
-// database refuses the plan unless the rehearsal recreated auth.uid() first;
-// it reads the body however the routine spells it.
+// creates a routine in public whose body names an object of auth, with auth
+// left out. PostgreSQL resolves an SQL body when the routine is created, and
+// the declarations of a PL/pgSQL body, such as a %ROWTYPE, so the dev database
+// refuses the plan unless the rehearsal recreated the object first; it reads
+// the body however the routine spells it.
 func TestScopedRehearsalReadsTheBodiesThePlanCreatesE2E(t *testing.T) {
 	routines := []struct{ name, routine string }{
 		{name: "an SQL body", routine: `CREATE FUNCTION public.whoami() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT auth.uid() $$;`},
@@ -113,7 +115,7 @@ func TestScopedRehearsalReadsTheBodiesThePlanCreatesE2E(t *testing.T) {
 		{name: "a procedure", routine: `CREATE PROCEDURE public.touch() LANGUAGE sql AS $$ SELECT auth.uid() $$;`},
 		{name: "a body quoted as a string", routine: `CREATE FUNCTION public.whoami() RETURNS uuid LANGUAGE sql STABLE AS 'SELECT auth.uid()';`},
 		{name: "BEGIN ATOMIC", routine: `CREATE FUNCTION public.whoami() RETURNS uuid LANGUAGE sql STABLE BEGIN ATOMIC SELECT auth.uid(); END;`},
-		{name: "a PL/pgSQL body", routine: `CREATE FUNCTION public.whoami() RETURNS uuid LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN auth.uid(); END $$;`},
+		{name: "a row type a PL/pgSQL body declares", routine: `CREATE FUNCTION public.whoami() RETURNS uuid LANGUAGE plpgsql STABLE AS $$ DECLARE r auth.accounts%ROWTYPE; BEGIN RETURN NULL; END $$;`},
 	}
 	for _, routine := range routines {
 		tc := scopedRehearsalCase{
@@ -131,6 +133,50 @@ func TestScopedRehearsalReadsTheBodiesThePlanCreatesE2E(t *testing.T) {
 
 					c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 					c.Assert(scopedRehearsalSchemas(c, env.dev), qt.Equals, "public")
+				})
+			}
+		}
+	}
+}
+
+// TestScopedRehearsalLeavesOutWhatAPLpgSQLBodyCallsE2E rehearses, through a URL
+// bound to public on a dev database that holds an auth schema of its own, a
+// plan that creates a PL/pgSQL routine calling auth.uid(), with auth left out.
+// PostgreSQL resolves the call only when the routine runs, so the plan passes
+// on its own, and the rehearsal recreates nothing: recreated, auth.uid() would
+// go into the auth schema the dev database held, which is refused. On a server
+// nothing declares disposable, the plan guard refuses a routine definition
+// without trust, so the shared server here runs with PTAH_TRUST_REPLAY_SQL=1.
+func TestScopedRehearsalLeavesOutWhatAPLpgSQLBodyCallsE2E(t *testing.T) {
+	routines := []struct{ name, routine string }{
+		{name: "a function", routine: `CREATE FUNCTION public.whoami() RETURNS uuid LANGUAGE plpgsql STABLE AS $$ BEGIN RETURN auth.uid(); END $$;`},
+		{name: "a procedure and a default", routine: `CREATE PROCEDURE public.touch() LANGUAGE plpgsql AS $$ DECLARE v uuid := auth.uid(); BEGIN PERFORM auth.uid(); END $$;`},
+	}
+	environments := []struct {
+		name      string
+		variables []string
+	}{
+		{name: "trusted shared server", variables: append([]string{"PTAH_TRUST_REPLAY_SQL=1"}, scopedRehearsalShared...)},
+		{name: "disposable server", variables: scopedRehearsalDisposable},
+	}
+	for _, routine := range routines {
+		tc := scopedRehearsalCase{
+			target:  scopedRehearsalAuthUID,
+			desired: "CREATE TABLE public.t (id int PRIMARY KEY);\n" + routine.routine + "\n",
+			args:    []string{"--include", "public.*"},
+			dev:     "CREATE SCHEMA auth;\nCREATE TABLE auth.bystander (id int);\n",
+		}
+		for _, surface := range scopedRehearsalSurfaces {
+			for _, environment := range environments {
+				t.Run(routine.name+"/"+surface.name+"/"+environment.name, func(t *testing.T) {
+					c := qt.New(t)
+					env := newScopedRehearsalEnv(c, tc, scopedRehearsalBound)
+
+					got := env.applyIn(c, surface, tc.args, environment.variables)
+
+					c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+					c.Assert(scopedRehearsalAuthObjects(c, env.dev), qt.Equals, "bystander")
+					c.Assert(scopedRehearsalSchemas(c, env.dev), qt.Equals, "auth,public")
 				})
 			}
 		}

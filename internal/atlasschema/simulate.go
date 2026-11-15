@@ -616,12 +616,14 @@ type baselineDev struct {
 // schemas it held before the run. An object the baseline writes there outlives
 // the run, and Ptah cannot remove it later without dropping or changing
 // something it did not create, so a baseline that would write one is refused
-// before any statement runs: in a schema of dev.leftAsFound, an object the state
-// holds and devCurrent does not. A seeded auth.uid() in an auth schema the dev
-// database already held is the case: it stays after the run, and the next
-// run's CREATE FUNCTION fails on it, as it fails on a function of that name
-// the dev database held. Written into a schema the claim did not find, the
-// same object is the run's, and the reset drops the schema with it.
+// before any statement runs: an object the state holds in a schema of
+// dev.leftAsFound. The objects devCurrent holds there are not counted; on
+// PostgreSQL devCurrent reads the schema the URL pins and none of the others,
+// so it holds none. A seeded auth.uid() in an auth schema the dev database
+// already held is the case: it stays after the run, and the next run's CREATE
+// FUNCTION fails on it, as it fails on a function of that name the dev
+// database held. Written into a schema the claim did not find, the same object
+// is the run's, and the reset drops the schema with it.
 func seedBaseline(
 	ctx context.Context,
 	dev baselineDev,
