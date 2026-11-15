@@ -51,6 +51,24 @@ warns on standard error once for each one, as
 [Generate migrations](../../versioned/generate/#which-schemas-plan-and-generate-read)
 shows.
 
+A URL that pins no `search_path` can still resolve to a schema other than
+`public`. With the default search path `"$user", public`, a role named `app`
+resolves to `app` in a database that holds a schema `app`, and to `public` in
+one that does not. Two rules apply to such a connection:
+
+- A desired table written without a schema is in the connection's current
+  schema, `app` here. When the database holds a table of that name in another
+  schema, such as `public.notes`, the plan would create the table in `app` and
+  drop `public.notes` with its rows. `schema plan` and `schema apply` refuse
+  that plan and name the qualified spelling, `"public"."notes"`, that keeps the
+  table where it is.
+- The `--dev-url` database may resolve to another schema than the target, as a
+  sibling database without the schema `app` does. When both URLs pin no
+  `search_path`, the rehearsal gives the dev database the target's current
+  schema and sets the session's search path to the target's, so each statement
+  resolves its names as it will on the target. When either URL pins a
+  `search_path`, the two must name the same schema.
+
 On connection, Ptah reads the server version and selects the matching
 capability preset, so planning adapts to the concrete server — see
 [Dialects and capabilities](../../concepts/dialects-and-capabilities/).
