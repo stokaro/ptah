@@ -79,7 +79,7 @@ func TestSchemaApplyCockroachDBOwnedSequenceDefaultE2E_HappyPath(t *testing.T) {
 			again := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--auto-approve")
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced")
 
-			ownedSequenceDropColumn(c, target, test.column)
+			ownedSequenceDropColumn(c, target, "t", test.column)
 			c.Assert(readInt(c, target, ownedSequenceCount), qt.Equals, test.sequencesLeft)
 		})
 	}
@@ -87,19 +87,49 @@ func TestSchemaApplyCockroachDBOwnedSequenceDefaultE2E_HappyPath(t *testing.T) {
 
 // TestSchemaApplyCockroachDBOwnedSequenceDefaultE2E_AnotherOwner is the control: a
 // default on a sequence another column owns changes without a release, and the
-// owner stays where it was.
+// owner stays where it was. CockroachDB takes an owner in another schema, and the
+// reader reports it with its schema, so the column a of app.t is not taken for the
+// column a of public.t. Dropping the owning column then takes the sequence, which
+// it does only while that column still owns it.
 func TestSchemaApplyCockroachDBOwnedSequenceDefaultE2E_AnotherOwner(t *testing.T) {
-	c := qt.New(t)
-	target, _ := cockroachVisibilityDatabase(c, c.Context(),
-		"CREATE TABLE t (id INT8 PRIMARY KEY, a INT8, b INT8);\nCREATE SEQUENCE s OWNED BY t.b;\nALTER TABLE t ALTER COLUMN a SET DEFAULT nextval('s');\n")
-	schema := filepath.Join(c.TempDir(), "schema.sql")
-	c.Assert(os.WriteFile(schema, []byte("CREATE TABLE t (id INT8 PRIMARY KEY, a INT8, b INT8);\nCREATE SEQUENCE s OWNED BY t.b;\n"), 0o600), qt.IsNil)
+	tests := []struct {
+		name, built, desired, ownerTable, ownerColumn string
+	}{
+		{
+			name:        "another column of the table",
+			built:       "CREATE TABLE t (id INT8 PRIMARY KEY, a INT8, b INT8);\nCREATE SEQUENCE s OWNED BY t.b;\nALTER TABLE t ALTER COLUMN a SET DEFAULT nextval('s');\n",
+			desired:     "CREATE TABLE t (id INT8 PRIMARY KEY, a INT8, b INT8);\nCREATE SEQUENCE s OWNED BY t.b;\n",
+			ownerTable:  "t",
+			ownerColumn: "b",
+		},
+		{
+			name: "the column of the same name in a table of another schema",
+			built: "CREATE SCHEMA app;\nCREATE TABLE app.t (id INT8 PRIMARY KEY, a INT8);\nCREATE TABLE t (id INT8 PRIMARY KEY, a INT8);\n" +
+				"CREATE SEQUENCE s OWNED BY app.t.a;\nALTER TABLE t ALTER COLUMN a SET DEFAULT nextval('s');\n",
+			desired:     "CREATE TABLE t (id INT8 PRIMARY KEY, a INT8);\nCREATE SEQUENCE s;\n",
+			ownerTable:  "app.t",
+			ownerColumn: "a",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, _ := cockroachVisibilityDatabase(c, c.Context(), test.built)
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(test.desired), 0o600), qt.IsNil)
 
-	run := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--auto-approve")
+			run := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--auto-approve")
 
-	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Not(qt.Contains), "ALTER SEQUENCE")
-	c.Assert(ownedSequenceDefault(c, target, "a"), qt.Equals, "")
+			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
+			c.Assert(run.Stdout, qt.Not(qt.Contains), "ALTER SEQUENCE")
+			c.Assert(ownedSequenceDefault(c, target, "a"), qt.Equals, "")
+			again := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--auto-approve")
+			c.Assert(again.Stdout, qt.Contains, "Schema is synced")
+
+			ownedSequenceDropColumn(c, target, test.ownerTable, test.ownerColumn)
+			c.Assert(readInt(c, target, ownedSequenceCount), qt.Equals, 0)
+		})
+	}
 }
 
 // ownedSequenceDefault reads the default of column of t back, and "" where it has
@@ -110,14 +140,15 @@ func ownedSequenceDefault(c *qt.C, target, column string) string {
 		"WHERE table_schema = 'public' AND table_name = 't' AND column_name = "+sqlident.StringLiteral(column))
 }
 
-// ownedSequenceDropColumn drops column of t, which takes the sequences it owns.
-func ownedSequenceDropColumn(c *qt.C, target, column string) {
+// ownedSequenceDropColumn drops column of table, a reference the test writes, which
+// takes the sequences the column owns.
+func ownedSequenceDropColumn(c *qt.C, target, table, column string) {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), target)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	_, err = conn.ExecContext(c.Context(), `ALTER TABLE t SET (schema_locked = false)`)
+	_, err = conn.ExecContext(c.Context(), "ALTER TABLE "+table+" SET (schema_locked = false)")
 	c.Assert(err, qt.IsNil)
-	_, err = conn.ExecContext(c.Context(), "ALTER TABLE t DROP COLUMN "+sqlident.Quote(platform.CockroachDB, column))
+	_, err = conn.ExecContext(c.Context(), "ALTER TABLE "+table+" DROP COLUMN "+sqlident.Quote(platform.CockroachDB, column))
 	c.Assert(err, qt.IsNil)
 }

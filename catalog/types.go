@@ -994,7 +994,7 @@ type Sequence struct {
 	MaxValue  *int64           `json:"max_value,omitempty"` // MAXVALUE bound
 	Cache     *int64           `json:"cache,omitempty"`     // CACHE size
 	Cycle     bool             `json:"cycle"`               // Whether the sequence uses CYCLE
-	OwnedBy   string           `json:"owned_by,omitempty"`  // Owning table.column, if any, a name quoted when a bare one would split differently, as one holding a dot
+	OwnedBy   string           `json:"owned_by,omitempty"`  // Owning column, if any, as table.column or schema.table.column; a part that would read back as another name, such as one holding a dot, is double-quoted
 	Comment   string           `json:"comment,omitempty"`   // Sequence comment/description
 }
 

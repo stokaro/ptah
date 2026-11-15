@@ -156,3 +156,18 @@ func TestSerialForAnIdentity_ANameHoldingADot(t *testing.T) {
 		})
 	}
 }
+
+// TestOwnedSequenceDefault_AnOwnerInAnotherSchema plans, on CockroachDB, a default
+// that leaves the sequence public.s, which the column code of app.owners owns,
+// from the column code of public.owners. CockroachDB accepts an owner in another
+// schema, and a reader writes it with its schema. The column does not own the
+// sequence, so the plan does not detach it and gives it no new owner.
+func TestOwnedSequenceDefault_AnOwnerInAnotherSchema(t *testing.T) {
+	c := qt.New(t)
+	declared := schemamodel.Field{StructName: "Owner", Name: "code", Type: "bigint"}
+
+	got := namedOwnerPlan(c, platform.CockroachDB, "owners", "app.owners.code", declared,
+		[]schemamodel.Sequence{{Name: "s", Schema: "public"}})
+
+	c.Assert(got, qt.DeepEquals, []string{`ALTER TABLE "owners" ALTER COLUMN "code" DROP DEFAULT`})
+}
