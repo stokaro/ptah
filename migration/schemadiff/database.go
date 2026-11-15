@@ -10,7 +10,6 @@ import (
 	"ptah.run/config"
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
@@ -487,8 +486,7 @@ func routineArgumentsProbe(
 // [dbexprprobe.RoutineArgumentsProbe.Drop], and a copy whose body reads the
 // target's tables would then hold them, so its probe stays on the signature.
 func probesSQLStandardBody(dialect string, function schemamodel.Function) bool {
-	described, _ := platform.Lookup(dialect)
-	return described.Comparison.ProbesSQLStandardBodies &&
+	return comparisons.Get(dialect).ProbesSQLStandardBodies &&
 		routinebody.SQLStandard(function.Language, function.Body)
 }
 
@@ -533,8 +531,7 @@ func columnListsChange(
 // and qualified the same way. PostgreSQL stores prosrc as written
 // (stokaro/ptah#4058).
 func rewritesStoredBodies(dialect string) bool {
-	described, _ := platform.Lookup(dialect)
-	return described.Comparison.RewritesRoutineBodies
+	return comparisons.Get(dialect).RewritesRoutineBodies
 }
 
 // resolveColumnSpellings asks the server to spell the type and default of

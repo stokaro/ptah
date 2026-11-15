@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/clientdelimiter"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/lexerext"
@@ -227,8 +229,8 @@ func normalizeClientDelimitersFor(sql, dialect string) string {
 // of the rewrite stands in sql. The origins are the identity where nothing was
 // rewritten.
 func clientDelimitersFor(sql, dialect string) (string, clientdelimiter.Origins) {
-	described, ok := platform.Lookup(dialect)
-	if ok && !described.Scripts.ClientDelimiters || !ok && lexerext.Provided(dialect) != nil {
+	facts := scriptFacts.Get(dialect)
+	if facts.described && !facts.scripts.ClientDelimiters || !facts.described && lexerext.Provided(dialect) != nil {
 		return sql, nil
 	}
 	return clientdelimiter.Normalize(sql)
@@ -238,11 +240,21 @@ func clientDelimitersFor(sql, dialect string) (string, clientdelimiter.Origins) 
 // (descriptor.Scripts.BatchSeparator), such as SQL Server's GO, or "" for a
 // dialect without one, a blank one and an unknown one.
 func batchSeparator(dialect string) string {
-	described, ok := platform.Lookup(dialect)
-	if !ok {
-		return ""
-	}
-	return described.Scripts.BatchSeparator
+	return scriptFacts.Get(dialect).scripts.BatchSeparator
+}
+
+// scriptFacts holds what each descriptor states about its dialect's scripts.
+// A split asks once per script, and copying the whole descriptor through
+// platform.Lookup costs as much as splitting a short one.
+var scriptFacts = descriptortable.New(func(described descriptor.Dialect) describedScripts {
+	return describedScripts{described: described.Name != "", scripts: described.Scripts}
+})
+
+// describedScripts is what [scriptFacts] holds for one dialect: whether the
+// process registry describes it, and what its descriptor states about scripts.
+type describedScripts struct {
+	described bool
+	scripts   descriptor.Scripts
 }
 
 // handleBatchSeparator ends the batch at a separator token that stands alone

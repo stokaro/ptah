@@ -29,6 +29,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 )
 
 // ErrInvalidDescriptor identifies a descriptor whose content is malformed:
@@ -557,33 +558,89 @@ func validSpelling(value string) bool {
 // deepCopy copies src into dst, allocating every slice and map anew. A
 // descriptor holds data only, which is what lets one function copy every
 // field a later change adds.
+//
+// The value is copied whole, and then each slice and map in it is replaced by
+// a copy of its own. Most of a descriptor is scalars, and setting each one
+// through reflection is most of what a field-by-field copy costs.
 func deepCopy(dst, src reflect.Value) {
+	dst.Set(src)
+	ownReferences(dst, src)
+}
+
+// ownReferences replaces every slice and map reachable from dst, a copy of
+// src, with a copy of its own.
+func ownReferences(dst, src reflect.Value) {
 	switch src.Kind() {
 	case reflect.Struct:
-		for i := range src.NumField() {
-			deepCopy(dst.Field(i), src.Field(i))
+		for _, index := range referenceFields(src.Type()) {
+			ownReferences(dst.Field(index), src.Field(index))
 		}
 	case reflect.Slice:
 		if src.IsNil() {
 			return
 		}
-		dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Len()))
-		for i := range src.Len() {
-			deepCopy(dst.Index(i), src.Index(i))
+		copied := reflect.MakeSlice(src.Type(), src.Len(), src.Len())
+		reflect.Copy(copied, src)
+		if holdsReferences(src.Type().Elem()) {
+			for i := range src.Len() {
+				ownReferences(copied.Index(i), src.Index(i))
+			}
 		}
+		dst.Set(copied)
 	case reflect.Map:
 		if src.IsNil() {
 			return
 		}
-		dst.Set(reflect.MakeMapWithSize(src.Type(), src.Len()))
+		copied := reflect.MakeMapWithSize(src.Type(), src.Len())
+		deep := holdsReferences(src.Type().Elem())
 		iter := src.MapRange()
 		for iter.Next() {
-			value := reflect.New(src.Type().Elem()).Elem()
-			deepCopy(value, iter.Value())
-			dst.SetMapIndex(iter.Key(), value)
+			value := iter.Value()
+			if deep {
+				owned := reflect.New(value.Type()).Elem()
+				owned.Set(value)
+				ownReferences(owned, value)
+				value = owned
+			}
+			copied.SetMapIndex(iter.Key(), value)
 		}
+		dst.Set(copied)
 	default:
-		dst.Set(src)
+	}
+}
+
+// referenceFieldIndexes holds, for each struct type [referenceFields] was
+// asked about, the answer. It depends on the type alone.
+var referenceFieldIndexes sync.Map
+
+// referenceFields returns the indexes of the fields of the struct type t that
+// hold a slice or a map, directly or through a struct.
+func referenceFields(t reflect.Type) []int {
+	if known, found := referenceFieldIndexes.Load(t); found {
+		if indexes, isIndexes := known.([]int); isIndexes {
+			return indexes
+		}
+	}
+	var indexes []int
+	for index := range t.NumField() {
+		if holdsReferences(t.Field(index).Type) {
+			indexes = append(indexes, index)
+		}
+	}
+	referenceFieldIndexes.Store(t, indexes)
+	return indexes
+}
+
+// holdsReferences reports whether a value of type t holds a slice or a map,
+// which a copy of it would share.
+func holdsReferences(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Slice, reflect.Map:
+		return true
+	case reflect.Struct:
+		return len(referenceFields(t)) > 0
+	default:
+		return false
 	}
 }
 

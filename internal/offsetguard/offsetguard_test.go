@@ -24,6 +24,9 @@ var listPositions = []string{
 	"internal/indexscope/indexscope.go",
 }
 
+// sentence is what a string writing an offset spells.
+const sentence = "at position %d"
+
 // minimumFiles is far below the tree's size, and far above what a listing that
 // stopped working finds: a scan of no files reports no sentence.
 const minimumFiles = 1000
@@ -51,6 +54,7 @@ func TestGuardSeesASentence(t *testing.T) {
 		{name: "a raw sentence", src: "package p\n\nvar s = `expected a name at position %d`\n", want: true},
 		{name: "a comment", src: "package p\n\n// at position %d\nvar s = 1\n", want: false},
 		{name: "another word", src: "package p\n\nvar s = \"at position\"\n", want: false},
+		{name: "a file that cannot hold it is not parsed", src: "package p\n\nfunc {\n", want: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -76,14 +80,20 @@ func filesWritingAnOffset(c *qt.C, root string, files []string) []string {
 
 // writesAnOffset reports whether a string in source spells the sentence. It reads
 // strings rather than text, so a comment describing the form is not a finding.
+//
+// A literal is matched on its source text, so a file whose text does not spell
+// the sentence is not parsed: parsing is nearly all of what the scan costs.
 func writesAnOffset(c *qt.C, name string, source []byte) bool {
 	c.Helper()
+	if !bytes.Contains(source, []byte(sentence)) {
+		return false
+	}
 	file, err := parser.ParseFile(token.NewFileSet(), name, source, parser.SkipObjectResolution)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", name))
 	found := false
 	ast.Inspect(file, func(node ast.Node) bool {
 		literal, ok := node.(*ast.BasicLit)
-		if ok && literal.Kind == token.STRING && strings.Contains(literal.Value, "at position %d") {
+		if ok && literal.Kind == token.STRING && strings.Contains(literal.Value, sentence) {
 			found = true
 		}
 		return true

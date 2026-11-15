@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacomparison"
@@ -24,6 +25,7 @@ import (
 	"ptah.run/core/schemavalidation"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/clickhouserbac"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/pgreservedrole"
 	"ptah.run/internal/pgsystemschema"
@@ -344,11 +346,18 @@ func normalizeGeneratedColumnsForCompare(
 	return &normalizedGenerated
 }
 
+// comparisons holds what each descriptor of the process registry states about
+// comparing. A comparison asks it several questions per run, and copying the
+// whole descriptor through platform.Lookup for each costs more than the
+// questions do. The answers are shared, so a caller must not modify one.
+var comparisons = descriptortable.New(func(described descriptor.Dialect) descriptor.Comparison {
+	return described.Comparison
+})
+
 // defaultGeneratedColumnKind is the storage a generated column declared
 // without one gets on dialect, as its descriptor states it.
 func defaultGeneratedColumnKind(dialect string) string {
-	described, _ := platform.Lookup(dialect)
-	return described.Comparison.DefaultGeneratedKind
+	return comparisons.Get(dialect).DefaultGeneratedKind
 }
 
 // validateDeclaredBeforeComparison applies every refusal a declaration must
@@ -518,8 +527,7 @@ func ValidateDesiredSchema(ctx context.Context, service schemavalidation.Runtime
 // comparesServerDatabases reports whether a comparison of a whole server of
 // dialect compares the server's databases, as the dialect's descriptor states.
 func comparesServerDatabases(dialect string) bool {
-	described, _ := platform.Lookup(dialect)
-	return described.Comparison.ServerDatabases
+	return comparisons.Get(dialect).ServerDatabases
 }
 
 // addDeclaredSchemas runs [compare.DeclaredSchemas] on a dialect that plans a
@@ -535,7 +543,7 @@ func addDeclaredSchemas(
 	semantics identifier.Semantics,
 	rules schemacomparison.Rules,
 ) {
-	if described, _ := platform.Lookup(dialect); described.Comparison.DeclaredSchemas {
+	if comparisons.Get(dialect).DeclaredSchemas {
 		compare.DeclaredSchemas(diff, desired, database.Schemas, cov, semantics)
 		return
 	}

@@ -23,25 +23,34 @@ import (
 	"slices"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/constraintowner"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/pgname"
 )
 
-// describe is the dialect's descriptor, or the zero descriptor where the
-// dialect is not described: a zero ColumnKeys names no key.
-func describe(dialect string) descriptor.Dialect {
-	described, _ := platform.Lookup(dialect)
-	return described
+// keyNamings holds what each descriptor states about naming a column's own
+// key, and the zero answer, which names no key, for a dialect the process
+// registry does not describe. The comparison and the planners ask once per
+// column and key, and copying the whole descriptor through platform.Lookup
+// costs more than naming one.
+var keyNamings = descriptortable.New(func(described descriptor.Dialect) keyNaming {
+	return keyNaming{columnKeys: described.ColumnKeys, baseBytes: described.IndexNaming.BaseBytes}
+})
+
+// keyNaming is what [keyNamings] holds for one dialect: its ColumnKeys and its
+// IndexNaming.BaseBytes.
+type keyNaming struct {
+	columnKeys descriptor.ColumnKeyNaming
+	baseBytes  int
 }
 
 // naming is the dialect descriptor's naming of a column's own key, or empty
 // where none is measured or the dialect is not described.
 func naming(dialect string) descriptor.ColumnKeyNaming {
-	return describe(dialect).ColumnKeys
+	return keyNamings.Get(dialect).columnKeys
 }
 
 // Named reports whether the package names a column's own UNIQUE on dialect:
@@ -72,10 +81,10 @@ func Name(dialect, table, column string, taken func(string) bool) (string, bool)
 	if taken == nil {
 		taken = func(string) bool { return false }
 	}
-	described := describe(dialect)
-	switch described.ColumnKeys {
+	described := keyNamings.Get(dialect)
+	switch described.columnKeys {
 	case descriptor.ColumnKeyAfterColumn:
-		return mysqlname.IndexName(described.IndexNaming.BaseBytes, column, taken), true
+		return mysqlname.IndexName(described.baseBytes, column, taken), true
 	case descriptor.ColumnKeyTableColumnKey:
 		return pgname.Constraint(table, []string{column}, "key", taken), true
 	default:

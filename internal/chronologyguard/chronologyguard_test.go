@@ -14,7 +14,10 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"unicode"
+	"unicode/utf8"
 
 	qt "github.com/frankban/quicktest"
 )
@@ -54,20 +57,16 @@ var narratedPast = regexp.MustCompile(`(?i)\b(?:it|this|that|ptah)[ \t\n]+used[ 
 // neither half.
 func TestNoCommentNarratesPtahsOwnPast(t *testing.T) {
 	c := qt.New(t)
-	root := repositoryRoot(c)
+	found, err := treeFindings()
+	c.Assert(err, qt.IsNil)
 
-	var found []string
-	for _, path := range goFiles(c, root) {
-		found = append(found, narratedPastIn(c, root, path)...)
-	}
-
-	c.Assert(found, qt.HasLen, 0, qt.Commentf(
+	c.Assert(found.narrated, qt.HasLen, 0, qt.Commentf(
 		"a comment says what the code does, not what it did."+
 			" The usual rewrite is the ablation -- \"without this the write path"+
 			" renders an unconditional UPDATE\" says what \"it used to render one\""+
 			" was reaching for, and stays true after the next change."+
 			" See section 6.7 of docs/STYLE_GUIDE.md:\n%s",
-		strings.Join(found, "\n")))
+		strings.Join(found.narrated, "\n")))
 }
 
 // TestNoCommentDatesAStatementToAPtahIssue is the rule this package exists for.
@@ -77,19 +76,15 @@ func TestNoCommentNarratesPtahsOwnPast(t *testing.T) {
 // this tree is written down.
 func TestNoCommentDatesAStatementToAPtahIssue(t *testing.T) {
 	c := qt.New(t)
-	root := repositoryRoot(c)
+	found, err := treeFindings()
+	c.Assert(err, qt.IsNil)
 
-	var found []string
-	for _, path := range goFiles(c, root) {
-		found = append(found, datingClausesIn(c, root, path)...)
-	}
-
-	c.Assert(found, qt.HasLen, 0, qt.Commentf(
+	c.Assert(found.dated, qt.HasLen, 0, qt.Commentf(
 		"a comment says what holds now, and when it changed is in git."+
 			" Keep the rule, the ablation or the measurement and drop the date;"+
 			" cite an issue that still owns something as \"(stokaro/ptah#N)\"."+
 			" See section 6.7 of docs/STYLE_GUIDE.md:\n%s",
-		strings.Join(found, "\n")))
+		strings.Join(found.dated, "\n")))
 }
 
 // TestGuardSeesPtahsOwnPastNarrated is the self-test for the second rule.
@@ -138,6 +133,25 @@ func TestGuardSeesPtahsOwnPastNarrated(t *testing.T) {
 			want: 1,
 		},
 		{
+			// Blanking keeps a quoted span's width as spaces, so the words on
+			// either side still meet. These three rows hold the shortcut that
+			// skips a file to what the joined text reads: past `used` it looks
+			// across white space, comment markers and quotes.
+			name: "a quoted span between the halves",
+			src:  "package p\n\n// It used \"x\" to render a comment.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "an empty comment line between the halves",
+			src:  "package p\n\n// The value is kept. It used\n//\n// to be discarded here.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "a block comment that wraps",
+			src:  "package p\n\n/* It used\n   to render a comment. */\nconst x = 1\n",
+			want: 1,
+		},
+		{
 			// The purpose sense, which shares the two words. Nothing but the
 			// noun separates it, which is why the subject list is the rule.
 			name: "an instrument, not a subject",
@@ -174,7 +188,9 @@ func TestGuardSeesPtahsOwnPastNarrated(t *testing.T) {
 			dir := t.TempDir()
 			c.Assert(writeFile(filepath.Join(dir, "p.go"), test.src), qt.IsNil)
 
-			c.Assert(narratedPastIn(c, dir, "p.go"), qt.HasLen, test.want)
+			found, err := findingsIn(dir, "p.go")
+			c.Assert(err, qt.IsNil)
+			c.Assert(found.narrated, qt.HasLen, test.want)
 		})
 	}
 }
@@ -221,6 +237,56 @@ func TestGuardSeesAStatementDatedToAPtahIssue(t *testing.T) {
 		{
 			name: "inside a function",
 			src:  "package p\n\nfunc f() {\n\t// Read only since stokaro/ptah#2180.\n\t_ = 1\n}\n",
+			want: 1,
+		},
+		{
+			// The regexp folds case, and it folds an s to the long s and a k to
+			// the Kelvin sign, neither of which is ASCII. These rows, and the
+			// three after them, hold the shortcut that skips a file which cannot
+			// match to what the regexp reads rather than to English.
+			name: "in capitals",
+			src:  "package p\n\n// THE READER HAS HONORED THIS KEY SINCE STOKARO/PTAH#942.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			// \b is ASCII, and the long s is not a word character, so a long s
+			// opening the preposition matches only behind a word character.
+			name: "since with a long s",
+			src:  "package p\n\n// The reader has honored this key\u017fince stokaro/ptah#942.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "as of with a long s",
+			src:  "package p\n\n// The quarantine is EMPTY a\u017f of stokaro/ptah#941.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "the owner with a long s",
+			src:  "package p\n\n// The reader has honored this key since \u017ftokaro/ptah#942.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "the owner with a Kelvin sign",
+			src:  "package p\n\n// The reader has honored this key since sto\u212aaro/ptah#942.\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			name: "a link to the issue",
+			src:  "package p\n\n// The exception until [#982](https://github.com/stokaro/ptah/issues/982).\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			// A block comment carries its line breaks inside one comment, and
+			// the white space in front of the reference may hold one.
+			name: "a block comment with the reference on the next line",
+			src:  "package p\n\n/* The reader has honored this key since\n   stokaro/ptah#942. */\nconst x = 1\n",
+			want: 1,
+		},
+		{
+			// Blanking keeps a quoted span's width as spaces, so the words on
+			// either side still meet.
+			name: "a quoted span in front of the reference",
+			src:  "package p\n\n// The value moved until \"then\" stokaro/ptah#1048.\nconst x = 1\n",
 			want: 1,
 		},
 		{
@@ -292,7 +358,51 @@ func TestGuardSeesAStatementDatedToAPtahIssue(t *testing.T) {
 			dir := t.TempDir()
 			c.Assert(writeFile(filepath.Join(dir, "p.go"), test.src), qt.IsNil)
 
-			c.Assert(datingClausesIn(c, dir, "p.go"), qt.HasLen, test.want)
+			found, err := findingsIn(dir, "p.go")
+			c.Assert(err, qt.IsNil)
+			c.Assert(found.dated, qt.HasLen, test.want)
+		})
+	}
+}
+
+// TestFindingsIn_ParsesNoFileThatCannotHoldAMatch pins the shortcut in
+// [findingsIn]. Each source holds a spelling one rule searches for but cannot
+// hold that rule's match, and none of them parses, so a run that parsed it
+// would fail. The shortcut is the reason the tree tests are cheap, and a
+// shortcut that stops skipping still passes every other test here.
+func TestFindingsIn_ParsesNoFileThatCannotHoldAMatch(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "neither spelling",
+			src:  "package p\n\nfunc {\n",
+		},
+		{
+			name: "an issue reference with no preposition in front",
+			src:  "package p\n\n// See stokaro/ptah#1048 for the rule.\nfunc {\n",
+		},
+		{
+			name: "a preposition in front of a short number",
+			src:  "package p\n\n// It holds until #12.\nfunc {\n",
+		},
+		{
+			name: "used that does not reach to",
+			src:  "package p\n\n// It is used here, and it reads well.\nfunc {\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			c.Assert(writeFile(filepath.Join(dir, "p.go"), test.src), qt.IsNil)
+
+			found, err := findingsIn(dir, "p.go")
+			c.Assert(err, qt.IsNil)
+			c.Assert(found.dated, qt.HasLen, 0)
+			c.Assert(found.narrated, qt.HasLen, 0)
 		})
 	}
 }
@@ -311,28 +421,175 @@ var narratedSpellings = []string{"used", "u\u017fed"}
 // reference.
 var datingSpellings = []string{"#"}
 
-// commentsIfAny parses one file for a rule, or answers nil without parsing
-// when the file's text cannot hold a match.
+// prepositions are what the front of every datedToAnIssue match spells once
+// lowercased. Of their letters only the s folds outside ASCII, to the long s.
+var prepositions = []string{"until", "before", "since", "\u017fince", "as of", "a\u017f of"}
+
+// issueOwners are the lowercased spellings of the owner a reference may name
+// in front of its #. The k folds to the Kelvin sign too, which lowercasing
+// turns back into a k.
+var issueOwners = []string{"stokaro/ptah", "\u017ftokaro/ptah"}
+
+// findings is what the two rules report, each entry as "path:line: phrase".
+type findings struct {
+	dated    []string
+	narrated []string
+}
+
+// treeFindings is what both rules report over every Go file the repository
+// tracks. Reading the tree is a large part of what a rule costs under -race,
+// so the two tests share one pass over it, made once per test binary.
+var treeFindings = sync.OnceValues(func() (findings, error) {
+	root, err := repositoryRoot()
+	if err != nil {
+		return findings{}, err
+	}
+	paths, err := goFiles(root)
+	if err != nil {
+		return findings{}, err
+	}
+	var all findings
+	for _, path := range paths {
+		found, err := findingsIn(root, path)
+		if err != nil {
+			return findings{}, err
+		}
+		all.dated = append(all.dated, found.dated...)
+		all.narrated = append(all.narrated, found.narrated...)
+	}
+	return all, nil
+})
+
+// findingsIn reads one file and reports what each rule finds in it.
 //
-// Each rule names the spellings every one of its matches contains, and skips a
-// file, and then a comment group, that holds none of them. Turning quotes and
-// comment markers into spaces cannot add a letter, so the skip never hides a
-// match, and parsing and matching what cannot match is most of what a rule
-// costs under -race.
-func commentsIfAny(c *qt.C, root, rel string, spellings []string) (*token.FileSet, *ast.File) {
-	c.Helper()
+// It parses the file only for a rule whose match the file's text can hold;
+// see [mayDate] and [mayNarrate]. Parsing is most of what a rule costs under
+// -race, and most files cannot hold either match. Each test reads a file
+// through here, the self-tests included, so a row the shortcut wrongly skipped
+// would report nothing and fail.
+func findingsIn(root, rel string) (findings, error) {
 	source, err := os.ReadFile(filepath.Join(root, rel))
-	c.Assert(err, qt.IsNil)
+	if err != nil {
+		return findings{}, err
+	}
 	lowered := bytes.ToLower(source)
-	if !slices.ContainsFunc(spellings, func(spelling string) bool {
-		return bytes.Contains(lowered, []byte(spelling))
-	}) {
-		return nil, nil
+	dates, narrates := mayDate(lowered), mayNarrate(lowered)
+	if !dates && !narrates {
+		return findings{}, nil
 	}
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filepath.Join(root, rel), source, commentsOnly)
-	c.Assert(err, qt.IsNil, qt.Commentf("parse %s", rel))
-	return fset, file
+	if err != nil {
+		return findings{}, fmt.Errorf("parse %s: %w", rel, err)
+	}
+	var found findings
+	if dates {
+		found.dated = datingClausesIn(fset, file, rel)
+	}
+	if narrates {
+		found.narrated = narratedPastIn(fset, file, rel)
+	}
+	return found, nil
+}
+
+// mayDate reports whether lowered, a file's text in lower case, can hold a
+// datedToAnIssue match.
+//
+// A match ends in a # and three digits, which turning quotes and comment
+// markers into spaces cannot produce. In front of them, past an optional [ and
+// owner, it has white space, which is white space in the file too or a quoted
+// span the blanking turned into spaces, and in front of that a preposition. A
+// file with no # and three digits standing behind that cannot hold a match.
+func mayDate(lowered []byte) bool {
+	for offset := 0; ; {
+		at := bytes.IndexByte(lowered[offset:], '#')
+		if at < 0 {
+			return false
+		}
+		at += offset
+		offset = at + 1
+		if threeDigits(lowered[offset:]) && prepositionBefore(lowered[:at]) {
+			return true
+		}
+	}
+}
+
+// threeDigits reports whether text begins with three ASCII digits.
+func threeDigits(text []byte) bool {
+	return len(text) >= 3 && isDigit(text[0]) && isDigit(text[1]) && isDigit(text[2])
+}
+
+func isDigit(char byte) bool {
+	return '0' <= char && char <= '9'
+}
+
+// prepositionBefore reports whether the lowered text in front of a # can be
+// the front of a datedToAnIssue match: an optional owner and [, then white
+// space, then a preposition. A quote in the white space answers true, since the
+// span it opens could hide anything.
+func prepositionBefore(text []byte) bool {
+	for _, owner := range issueOwners {
+		if trimmed, found := bytes.CutSuffix(text, []byte(owner)); found {
+			text = trimmed
+			break
+		}
+	}
+	text = bytes.TrimSuffix(text, []byte("["))
+	gap := len(text)
+	for gap > 0 {
+		r, size := utf8.DecodeLastRune(text[:gap])
+		if r == '"' || r == '`' {
+			return true
+		}
+		if !unicode.IsSpace(r) {
+			break
+		}
+		gap -= size
+	}
+	return gap < len(text) && slices.ContainsFunc(prepositions, func(preposition string) bool {
+		return bytes.HasSuffix(text[:gap], []byte(preposition))
+	})
+}
+
+// mayNarrate reports whether lowered, a file's text in lower case, can hold a
+// narratedPast match.
+//
+// A match holds `used` and then `to` with only white space between them in the
+// joined text of a comment group. In the file, that white space is white space
+// too, the // that opens the next comment line, or a quoted span the blanking
+// turned into spaces. A file in which no `used` reaches `to` or a quote across
+// white space and comment markers cannot hold a match.
+func mayNarrate(lowered []byte) bool {
+	for _, spelling := range narratedSpellings {
+		for rest := lowered; ; {
+			at := bytes.Index(rest, []byte(spelling))
+			if at < 0 {
+				break
+			}
+			rest = rest[at+len(spelling):]
+			next := skipJoining(rest)
+			if bytes.HasPrefix(next, []byte("to")) || bytes.HasPrefix(next, []byte(`"`)) || bytes.HasPrefix(next, []byte("`")) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// skipJoining returns text past the white space and comment markers that the
+// joined text of a comment group turns into white space between two words.
+func skipJoining(text []byte) []byte {
+	for {
+		r, size := utf8.DecodeRune(text)
+		switch {
+		case size > 0 && unicode.IsSpace(r):
+			text = text[size:]
+		case bytes.HasPrefix(text, []byte("//")):
+			text = text[2:]
+		default:
+			return text
+		}
+	}
 }
 
 // groupHolds reports whether any comment of group spells one of spellings once
@@ -347,15 +604,9 @@ func groupHolds(group *ast.CommentGroup, spellings []string) bool {
 	})
 }
 
-// narratedPastIn names every comment group in one file that says what Ptah did
-// before, as "path:line: phrase".
-func narratedPastIn(c *qt.C, root, rel string) []string {
-	c.Helper()
-	fset, file := commentsIfAny(c, root, rel, narratedSpellings)
-	if file == nil {
-		return nil
-	}
-
+// narratedPastIn names every comment group in one parsed file that says what
+// Ptah did before, as "path:line: phrase".
+func narratedPastIn(fset *token.FileSet, file *ast.File, rel string) []string {
 	var found []string
 	for _, group := range file.Comments {
 		if !groupHolds(group, narratedSpellings) {
@@ -378,15 +629,9 @@ func narratedPastIn(c *qt.C, root, rel string) []string {
 	return found
 }
 
-// datingClausesIn names every comment line in one file that dates a statement
-// to a Ptah issue, as "path:line: phrase".
-func datingClausesIn(c *qt.C, root, rel string) []string {
-	c.Helper()
-	fset, file := commentsIfAny(c, root, rel, datingSpellings)
-	if file == nil {
-		return nil
-	}
-
+// datingClausesIn names every comment line in one parsed file that dates a
+// statement to a Ptah issue, as "path:line: phrase".
+func datingClausesIn(fset *token.FileSet, file *ast.File, rel string) []string {
 	var found []string
 	for _, group := range file.Comments {
 		if !groupHolds(group, datingSpellings) {
@@ -438,14 +683,15 @@ func outsideQuotes(line, open string) (blanked, stillOpen string) {
 // git is the path source for the reason scripts/check-test-style.sh gives: a
 // filesystem walk descends into every linked worktree parked under the
 // repository, and judges code that is not in this working tree at all.
-func goFiles(c *qt.C, root string) []string {
-	c.Helper()
+func goFiles(root string) ([]string, error) {
 	cmd := exec.Command("git", "-c", "core.quotePath=false",
 		"ls-files", "--cached", "--others", "--exclude-standard", "--", "*.go")
 	cmd.Dir = root
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	c.Assert(cmd.Run(), qt.IsNil)
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("list the tracked Go files: %w", err)
+	}
 
 	var paths []string
 	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
@@ -459,21 +705,25 @@ func goFiles(c *qt.C, root string) []string {
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		c.Assert(err, qt.IsNil, qt.Commentf("stat %s", line))
+		if err != nil {
+			return nil, fmt.Errorf("stat %s: %w", line, err)
+		}
 		paths = append(paths, line)
 	}
-	c.Assert(len(paths) > 100, qt.IsTrue, qt.Commentf(
-		"selected %d files; a guard that scans nothing is also green", len(paths)))
-	return paths
+	if len(paths) <= 100 {
+		return nil, fmt.Errorf("selected %d files; a guard that scans nothing is also green", len(paths))
+	}
+	return paths, nil
 }
 
 // repositoryRoot answers where the corpus starts, from git rather than from a
 // relative path this file would have to keep in step with its own location.
-func repositoryRoot(c *qt.C) string {
-	c.Helper()
+func repositoryRoot() (string, error) {
 	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	c.Assert(cmd.Run(), qt.IsNil)
-	return strings.TrimSpace(out.String())
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("find the repository root: %w", err)
+	}
+	return strings.TrimSpace(out.String()), nil
 }

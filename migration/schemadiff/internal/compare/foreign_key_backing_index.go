@@ -36,7 +36,7 @@ func ForeignKeyBackingIndexesLeaving(
 	semantics identifier.Semantics,
 ) {
 	// Spanner reports a backing index too, and drops it with the key.
-	if described, _ := platform.Lookup(dialect); described.ForeignKeyNaming != descriptor.ForeignKeyNamingTableNumbered {
+	if foreignKeyNamingOf(dialect) != descriptor.ForeignKeyNamingTableNumbered {
 		return
 	}
 	if foreignKeys == nil || database == nil || len(diff.ForeignKeysRemovedWithTables) == 0 {
@@ -94,10 +94,10 @@ func ForeignKeyBackingIndexesTakenOver(
 	dialect string,
 	semantics identifier.Semantics,
 ) {
-	described, _ := platform.Lookup(dialect)
-	if described.ForeignKeyNaming != descriptor.ForeignKeyNamingTableNumbered || foreignKeys == nil || database == nil {
+	if foreignKeyNamingOf(dialect) != descriptor.ForeignKeyNamingTableNumbered || foreignKeys == nil || database == nil {
 		return
 	}
+	described, _ := platform.Lookup(dialect)
 	declared := generatedIndexIdentities(desired, semantics)
 	removedIndexes := make(map[difftypes.IndexRef]bool, len(diff.IndexesRemoved))
 	for _, ref := range diff.IndexesRemoved {
@@ -248,10 +248,10 @@ func addedForeignKeyShares(diff *difftypes.SchemaDiff, index catalog.Index, sema
 // that stays holds keeps the addition out, and the server's refusal names the reason.
 // It runs after the constraints and the indexes are compared.
 func ForeignKeyIndexesStaying(database *catalog.Database, diff *difftypes.SchemaDiff, dialect string, semantics identifier.Semantics) {
-	described, _ := platform.Lookup(dialect)
-	if described.ForeignKeyNaming != descriptor.ForeignKeyNamingTableNumbered || database == nil {
+	if foreignKeyNamingOf(dialect) != descriptor.ForeignKeyNamingTableNumbered || database == nil {
 		return
 	}
+	described, _ := platform.Lookup(dialect)
 	removedConstraints := make(map[difftypes.ConstraintIdentity]bool, len(diff.ConstraintsRemoved))
 	removedUniques := make(map[difftypes.ConstraintIdentity]bool)
 	for _, info := range diff.ConstraintsRemoved {

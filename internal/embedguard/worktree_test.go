@@ -1,9 +1,11 @@
 package embedguard_test
 
 import (
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -73,6 +75,50 @@ func TestScan_ReadsAMoveBeforeItIsStaged(t *testing.T) {
 	c.Assert(findings, qt.HasLen, 1)
 	c.Assert(findings[0].File, qt.Equals, "internal/embedfixture/moved.go")
 }
+
+// TestScan_LeavesOutWhatExemptNames holds Scan to Exempt: a declaration
+// nothing calls is not reported when Exempt names it.
+func TestScan_LeavesOutWhatExemptNames(t *testing.T) {
+	c := qt.New(t)
+	repository, _ := moduleWithLinkedWorktree(c)
+	exempt := slices.Sorted(maps.Keys(embedguard.Exempt))[0]
+	writeSource(c, repository, "internal/embedfixture/exempt.go",
+		"package embedfixture\n\n// "+exempt+" is exempt.\nfunc "+exempt+"() {}\n")
+
+	findings, err := embedguard.Scan(repository)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findingNames(findings), qt.DeepEquals, []string{"Uncalled"})
+}
+
+// TestDeclarations_ParsesOnlyTheVertical holds Declarations to the files it
+// answers about: a file elsewhere in the module that does not parse leaves it
+// unaffected. TestScan_FailurePath is the control, since Scan reads every file
+// and has to refuse the same tree.
+func TestDeclarations_ParsesOnlyTheVertical(t *testing.T) {
+	c := qt.New(t)
+	repository, _ := moduleWithLinkedWorktree(c)
+	writeSource(c, repository, "internal/broken/broken.go", brokenSource)
+
+	declared, err := embedguard.Declarations(repository)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findingNames(declared), qt.DeepEquals, []string{"Uncalled"})
+}
+
+func TestScan_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	repository, _ := moduleWithLinkedWorktree(c)
+	writeSource(c, repository, "internal/broken/broken.go", brokenSource)
+
+	findings, err := embedguard.Scan(repository)
+
+	c.Assert(err, qt.ErrorMatches, `parse internal/broken/broken\.go: .*`)
+	c.Assert(findings, qt.IsNil)
+}
+
+// brokenSource is a Go file outside the inference vertical that does not parse.
+const brokenSource = "// Package broken does not parse.\npackage broken\n\nfunc {\n"
 
 // moduleWithLinkedWorktree commits a module declaring one exported function in
 // an inference package, and adds a linked worktree of it under the

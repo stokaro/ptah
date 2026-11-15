@@ -3,6 +3,7 @@ package embedguard_test
 import (
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -12,6 +13,13 @@ import (
 
 // moduleRoot is where the scan starts, from this package's directory.
 const moduleRoot = "../.."
+
+// moduleReading is one reading of the module, shared by the tests that ask it
+// about the whole tree. Reading the module is nearly all of what each answer
+// costs under -race.
+var moduleReading = sync.OnceValues(func() (*embedguard.Reading, error) {
+	return embedguard.Read(moduleRoot)
+})
 
 // TestScan_TheInferenceVerticalMakesEveryDecisionItDeclares is the gate.
 //
@@ -27,10 +35,11 @@ const moduleRoot = "../.."
 // saying which.
 func TestScan_TheInferenceVerticalMakesEveryDecisionItDeclares(t *testing.T) {
 	c := qt.New(t)
-
-	findings, err := embedguard.Scan(moduleRoot)
-
+	reading, err := moduleReading()
 	c.Assert(err, qt.IsNil)
+
+	findings := reading.Uncalled(embedguard.Exempt)
+
 	for _, finding := range findings {
 		c.Assert(finding.Name, qt.Equals, "",
 			qt.Commentf("%s:%d declares %s and no non-test file calls it. Either wire it "+
@@ -103,25 +112,23 @@ func TestExempt_EveryReasonSaysSomething(t *testing.T) {
 // TestScan_FindsSomethingToScan; this is its opposite number.
 //
 // Exempt is exactly the set of declarations known to have no caller, so
-// emptying it must produce exactly those findings. That pins both directions at
-// once: the scan can still find an uncalled declaration, and Exempt suppresses
-// those and no others.
+// asking with no exemptions must produce exactly those findings. That pins both
+// directions at once: the scan can still find an uncalled declaration, and
+// Exempt suppresses those and no others.
 func TestScan_StillReportsWhatNothingCalls(t *testing.T) {
 	c := qt.New(t)
-	exempt := embedguard.Exempt
-	embedguard.Exempt = make(map[string]string)
-	defer func() { embedguard.Exempt = exempt }()
-
-	findings, err := embedguard.Scan(moduleRoot)
-
+	reading, err := moduleReading()
 	c.Assert(err, qt.IsNil)
+
+	findings := reading.Uncalled(make(map[string]string))
+
 	reported := make([]string, 0, len(findings))
 	for _, finding := range findings {
 		reported = append(reported, finding.Name)
 	}
 	slices.Sort(reported)
-	suppressed := make([]string, 0, len(exempt))
-	for name := range exempt {
+	suppressed := make([]string, 0, len(embedguard.Exempt))
+	for name := range embedguard.Exempt {
 		suppressed = append(suppressed, name)
 	}
 	slices.Sort(suppressed)

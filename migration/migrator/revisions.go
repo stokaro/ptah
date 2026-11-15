@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
@@ -2370,8 +2369,7 @@ func knownAtomicFailureStatement(statement, dialect string, failure error) bool 
 	}
 	// File mode checks the target table engine. When its descriptor promises
 	// atomic index creation, a server refusal leaves no new index to resume past.
-	described, found := platform.Lookup(dialect)
-	if !found || !described.AtomicIndexCreation || !matchesAnyKeyword(tokens[0], "CREATE") || len(tokens) < 3 {
+	if !atomicIndexCreations.Get(dialect) || !matchesAnyKeyword(tokens[0], "CREATE") || len(tokens) < 3 {
 		return false
 	}
 	// Only the server's error proves refusal. An unclassified adapter error

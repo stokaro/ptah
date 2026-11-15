@@ -17,13 +17,13 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/routinebody"
@@ -61,11 +61,19 @@ func defaultGeneratedKind(field schemamodel.Field, targetPlatform string) string
 }
 
 // describe is the target's descriptor, and the zero descriptor for a target no
-// descriptor answers, which states none of the facts this package reads.
+// descriptor answers, which states none of the facts this package reads. The
+// lowering asks once per table and column, so it reads a copy kept per
+// registry rather than the deep copy platform.Lookup makes on every call; its
+// slices and maps are shared, and a caller reads them only.
 func describe(targetPlatform string) descriptor.Dialect {
-	described, _ := platform.Lookup(targetPlatform)
-	return described
+	return descriptors.Get(targetPlatform)
 }
+
+// descriptors holds a copy of each descriptor of the process registry for
+// [describe].
+var descriptors = descriptortable.New(func(described descriptor.Dialect) descriptor.Dialect {
+	return described
+})
 
 // typeRawSQLSurvives reports whether the column type is still the one the
 // schema author wrote with Atlas HCL's sql() escape hatch.

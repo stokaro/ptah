@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -159,4 +160,81 @@ func TestNewRegistry_DefinitionDigestIsLazy(t *testing.T) {
 
 	listed := mallocsOf(func() { _ = registry.Definitions() })
 	c.Assert(listed > 10000, qt.IsTrue, qt.Commentf("the first listing allocated %d times", listed))
+}
+
+// escapedKeyDefinition is an object of 120 members whose every key holds an
+// escape. The registration check decodes both keys of each pair it compares
+// when either holds an escape, so checking this text once takes well over
+// 10000 allocations.
+func escapedKeyDefinition() string {
+	var text strings.Builder
+	fmt.Fprintf(&text, `{"salt":%d`, definitionSalt.Add(1))
+	for i := range 120 {
+		fmt.Fprintf(&text, `,"\u006d%d":%d`, i, i)
+	}
+	text.WriteString(`}`)
+	return text.String()
+}
+
+// A process assembles a runtime from the same constant definitions many times,
+// so registering a definition the process already accepted neither checks nor
+// copies it again. The first registration checks escapedKeyDefinition, which
+// takes over 10000 allocations; registering the same text again, from other
+// bytes, takes a registration's own few hundred.
+func TestNewRegistry_ADefinitionIsCheckedOncePerProcess(t *testing.T) {
+	c := qt.New(t)
+	definition := escapedKeyDefinition()
+	var firstErr, againErr error
+	first := mallocsOf(func() { _, firstErr = definitionOf(definition) })
+	again := mallocsOf(func() { _, againErr = definitionOf(strings.Clone(definition)) })
+
+	c.Assert(firstErr, qt.IsNil)
+	c.Assert(againErr, qt.IsNil)
+	c.Assert(first > 10000, qt.IsTrue, qt.Commentf("the first registration allocated %d times", first))
+	c.Assert(again < 1000, qt.IsTrue, qt.Commentf("registering the text again allocated %d times", again))
+}
+
+// Only an accepted text is kept, so a refused one is checked, and refused, on
+// every registration.
+func TestNewRegistry_ARefusedDefinitionIsRefusedEachTime(t *testing.T) {
+	c := qt.New(t)
+	text := malformedDefinitions["duplicate escaped key"]
+	_, canonicalErr := schemaext.CanonicalJSON([]byte(text))
+	c.Assert(canonicalErr, qt.IsNotNil)
+
+	for range 2 {
+		registry, err := definitionOf(text)
+
+		c.Assert(err, qt.ErrorIs, schemaext.ErrInvalidCodec)
+		c.Assert(err.Error(), qt.Contains, "definition: "+canonicalErr.Error())
+		c.Assert(registry.Definitions(), qt.HasLen, 0)
+	}
+}
+
+// Registries built at once from one new definition share its entry, and each
+// reports the digest of its canonical form.
+func TestNewRegistry_ConcurrentRegistrationsOfOneDefinition(t *testing.T) {
+	c := qt.New(t)
+	definition := escapedKeyDefinition()
+	canonical, err := schemaext.CanonicalJSON([]byte(definition))
+	c.Assert(err, qt.IsNil)
+	sum := sha256.Sum256(canonical)
+
+	digests := make([]string, 8)
+	errs := make([]error, len(digests))
+	var wg sync.WaitGroup
+	for i := range digests {
+		wg.Go(func() {
+			registry, registerErr := definitionOf(definition)
+			errs[i] = registerErr
+			identity, _ := registry.Identity(widgetKind, schemaext.Desired)
+			digests[i] = identity.Definition
+		})
+	}
+	wg.Wait()
+
+	for i := range digests {
+		c.Assert(errs[i], qt.IsNil)
+		c.Assert(digests[i], qt.Equals, "sha256:"+hex.EncodeToString(sum[:]))
+	}
 }

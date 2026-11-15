@@ -79,7 +79,7 @@ func hatchedByInterface(
 // declaration entering it is a decision, the same shape the emission census
 // uses for the statement shapes it cannot classify.
 func HatchedByInterface(root string) ([]string, error) {
-	tree, err := read(root)
+	tree, err := Read(root)
 	if err != nil {
 		return nil, err
 	}
@@ -124,13 +124,18 @@ var Exempt = map[string]string{
 }
 
 // Scan reports every exported declaration under root's internal/embed... that
-// no non-test file in root calls.
+// no non-test file in root calls, leaving out the names [Exempt] holds.
 func Scan(root string) ([]Finding, error) {
-	tree, err := read(root)
+	tree, err := Read(root)
 	if err != nil {
 		return nil, err
 	}
+	return tree.Uncalled(Exempt), nil
+}
 
+// Uncalled reports every declaration the reading holds that no non-test file
+// calls, leaving out the names exempt holds. [Scan] asks it with [Exempt].
+func (tree *Reading) Uncalled(exempt map[string]string) []Finding {
 	findings := make([]Finding, 0)
 	for _, declaration := range tree.declared {
 		if tree.called[declaration.Name][declaration.Package] {
@@ -149,12 +154,12 @@ func Scan(root string) ([]Finding, error) {
 		if hatchedByInterface(declaration, tree.called, tree.viaInterface) {
 			continue
 		}
-		if _, exempt := Exempt[declaration.Name]; exempt {
+		if _, exempted := exempt[declaration.Name]; exempted {
 			continue
 		}
 		findings = append(findings, declaration)
 	}
-	return findings, nil
+	return findings
 }
 
 // Declarations lists the exported functions and methods the inference packages
@@ -162,66 +167,113 @@ func Scan(root string) ([]Finding, error) {
 //
 // Exported so the gate can assert it reached a corpus. A scan that walked the
 // wrong directory reports zero findings and reads exactly like a clean tree.
+//
+// It parses the vertical's files and no others, so a file elsewhere in the
+// module that does not parse fails [Scan] and not this.
 func Declarations(root string) ([]Finding, error) {
 	module, err := modulePath(root)
 	if err != nil {
 		return nil, err
 	}
+	files, err := goFiles(root)
+	if err != nil {
+		return nil, err
+	}
+	fset := token.NewFileSet()
 	var declared []Finding
-	err = walkGoFiles(root, inferenceTree, func(rel string, file *ast.File, fset *token.FileSet) {
+	for _, rel := range slices.DeleteFunc(files, func(rel string) bool { return !inVertical(rel) }) {
+		file, err := parseFile(fset, root, rel)
+		if err != nil {
+			return nil, err
+		}
 		declared = append(declared, declarationsIn(module, rel, file, fset)...)
-	})
-	return declared, err
+	}
+	return declared, nil
 }
 
 // inferenceTree is where the inference packages live, as a prefix of a
 // slash-separated path relative to the module root.
 const inferenceTree = "internal/"
 
-// reading is what one walk of the module answers: the inference packages'
-// declarations, and for the whole module the names each file uses and the
-// method names interfaces declare.
-type reading struct {
-	declared     []Finding
-	called       map[string]map[string]bool
-	viaInterface map[string]bool
-}
-
-// read walks the module once. [Scan] and [HatchedByInterface] ask three
-// questions of the same files, and parsing them is nearly all of what an
-// answer costs, so the three are answered from one parse of each file.
-func read(root string) (reading, error) {
-	module, err := modulePath(root)
-	if err != nil {
-		return reading{}, err
-	}
-	result := reading{called: make(map[string]map[string]bool), viaInterface: make(map[string]bool)}
-	err = walkGoFiles(root, "", func(rel string, file *ast.File, fset *token.FileSet) {
-		if strings.HasPrefix(rel, inferenceTree) {
-			result.declared = append(result.declared, declarationsIn(module, rel, file, fset)...)
-		}
-		noteCalls(result.called, module, rel, file)
-		noteInterfaceMethods(result.viaInterface, file)
-	})
-	return result, err
-}
-
-// declarationsIn is the exported functions and methods one file declares, when
-// the file belongs to the inference vertical. rel is the file's slash-separated
-// path relative to the module root.
-func declarationsIn(module, rel string, file *ast.File, fset *token.FileSet) []Finding {
+// inVertical reports whether the file at rel, a slash-separated path relative
+// to the module root, belongs to the inference vertical: whether its exported
+// functions are what the guard looks for.
+func inVertical(rel string) bool {
 	slashed := "/" + rel
-	if !strings.Contains(slashed, "/embed") {
-		return nil
-	}
 	// This package is not the vertical it guards. Its exported surface is
 	// the gate's own entry points, whose only caller a gate can have is the
 	// test that runs it, so scanning itself reports every one of them --
 	// which the name-only check hid behind some other `.Scan(` in the
 	// module until it learned to ask about reach (stokaro/ptah#2682).
-	if strings.Contains(slashed, "/internal/embedguard/") {
-		return nil
+	return strings.HasPrefix(rel, inferenceTree) && strings.Contains(slashed, "/embed") &&
+		!strings.Contains(slashed, "/internal/embedguard/")
+}
+
+// Reading is what one walk of the module answers: the inference packages'
+// declarations, and for the whole module the names each file uses and the
+// method names interfaces declare.
+//
+// called and viaInterface hold the declared names and no others. Both are
+// asked only about a declaration, and noting every name the module uses is
+// most of what a reading costs under -race.
+type Reading struct {
+	declared     []Finding
+	called       map[string]map[string]bool
+	viaInterface map[string]bool
+}
+
+// Read walks the module at root once. [Scan] and [HatchedByInterface] ask
+// three questions of the same files, and parsing them is nearly all of what an
+// answer costs, so the three are answered from one parse of each file. A
+// caller asking [Reading.Uncalled] more than once reads the module once.
+//
+// The vertical's files are parsed first, so the names it declares are known
+// before any file's uses are noted.
+func Read(root string) (*Reading, error) {
+	module, err := modulePath(root)
+	if err != nil {
+		return nil, err
 	}
+	files, err := goFiles(root)
+	if err != nil {
+		return nil, err
+	}
+	fset := token.NewFileSet()
+	parsed := make(map[string]*ast.File)
+	result := &Reading{called: make(map[string]map[string]bool), viaInterface: make(map[string]bool)}
+	for _, rel := range files {
+		if !inVertical(rel) {
+			continue
+		}
+		file, err := parseFile(fset, root, rel)
+		if err != nil {
+			return nil, err
+		}
+		parsed[rel] = file
+		result.declared = append(result.declared, declarationsIn(module, rel, file, fset)...)
+	}
+	declaredNames := make(map[string]bool, len(result.declared))
+	for _, declaration := range result.declared {
+		declaredNames[declaration.Name] = true
+	}
+	for _, rel := range files {
+		file := parsed[rel]
+		if file == nil {
+			file, err = parseFile(fset, root, rel)
+			if err != nil {
+				return nil, err
+			}
+		}
+		noteCalls(result.called, declaredNames, module, rel, file)
+		noteInterfaceMethods(result.viaInterface, declaredNames, file)
+	}
+	return result, nil
+}
+
+// declarationsIn is the exported functions and methods one file of the
+// inference vertical declares. rel is the file's slash-separated path relative
+// to the module root.
+func declarationsIn(module, rel string, file *ast.File, fset *token.FileSet) []Finding {
 	var declared []Finding
 	for _, decl := range file.Decls {
 		function, isFunction := decl.(*ast.FuncDecl)
@@ -238,8 +290,8 @@ func declarationsIn(module, rel string, file *ast.File, fset *token.FileSet) []F
 	return declared
 }
 
-// noteCalls records, for every name one non-test file uses, the packages that
-// file could have been naming.
+// noteCalls records, for every name in declared that one non-test file uses,
+// the packages that file could have been naming.
 //
 // By name AND by reach, rather than by resolved symbol. The name alone was too
 // coarse in one direction: any same-named identifier anywhere in the module
@@ -256,9 +308,12 @@ func declarationsIn(module, rel string, file *ast.File, fset *token.FileSet) []F
 // still masks the declaration. The direction is unchanged -- a false negative
 // stays possible and a false positive stays impossible -- and the set of
 // coincidences that produce one is much smaller.
-func noteCalls(called map[string]map[string]bool, module, rel string, file *ast.File) {
+func noteCalls(called map[string]map[string]bool, declared map[string]bool, module, rel string, file *ast.File) {
 	reachable := reachableFrom(module, rel, file)
 	note := func(name string) {
+		if !declared[name] {
+			return
+		}
 		if called[name] == nil {
 			called[name] = make(map[string]bool, len(reachable))
 		}
@@ -328,8 +383,17 @@ func modulePath(root string) (string, error) {
 	return "", fmt.Errorf("no module directive in %s/go.mod", root)
 }
 
-// walkGoFiles parses every non-test Go file of the module whose path starts
-// with prefix, and hands visit its slash-separated path relative to root.
+// parseFile parses the Go file at rel, a slash-separated path relative to root.
+func parseFile(fset *token.FileSet, root, rel string) (*ast.File, error) {
+	file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(rel)), nil, parser.SkipObjectResolution)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", rel, err)
+	}
+	return file, nil
+}
+
+// goFiles is the module's non-test Go files, as git lists them, by
+// slash-separated path relative to root.
 //
 // git names the files, not a walk of the filesystem. AGENTS.md requires it of
 // every gate that enumerates files: a linked worktree parked under the
@@ -340,24 +404,7 @@ func modulePath(root string) (string, error) {
 // Vendored and generated trees are skipped by directory name rather than by
 // content, because a caller in one of them is not a caller this repository
 // maintains.
-func walkGoFiles(root, prefix string, visit func(string, *ast.File, *token.FileSet)) error {
-	files, err := goFiles(root, prefix)
-	if err != nil {
-		return err
-	}
-	fset := token.NewFileSet()
-	for _, rel := range files {
-		file, parseErr := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(rel)), nil, parser.SkipObjectResolution)
-		if parseErr != nil {
-			return fmt.Errorf("parse %s: %w", rel, parseErr)
-		}
-		visit(rel, file, fset)
-	}
-	return nil
-}
-
-// goFiles is the module's non-test Go files under prefix, as git lists them.
-func goFiles(root, prefix string) ([]string, error) {
+func goFiles(root string) ([]string, error) {
 	command := exec.Command("git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.go")
 	command.Dir = root
 	output, err := command.Output()
@@ -366,7 +413,7 @@ func goFiles(root, prefix string) ([]string, error) {
 	}
 	var files []string
 	for listed := range strings.SplitSeq(string(output), "\x00") {
-		if !strings.HasPrefix(listed, prefix) || !strings.HasSuffix(listed, ".go") ||
+		if !strings.HasSuffix(listed, ".go") ||
 			strings.HasSuffix(listed, "_test.go") || inSkippedTree(listed) {
 			continue
 		}
@@ -396,23 +443,25 @@ func inSkippedTree(rel string) bool {
 	})
 }
 
-// noteInterfaceMethods records every method name an interface in one file
-// declares.
+// noteInterfaceMethods records every method name in declared that an interface
+// in one file declares.
 //
 // The module's own interfaces only. A dependency's interface is not scanned,
 // and an interface here that embeds one is not followed, so a method
 // implementing a third-party interface and named nowhere in this module is
 // still reported. That is the loud direction, and the reason has to be written
 // into Exempt rather than inferred.
-func noteInterfaceMethods(names map[string]bool, file *ast.File) {
+func noteInterfaceMethods(names, declared map[string]bool, file *ast.File) {
 	ast.Inspect(file, func(node ast.Node) bool {
-		declared, isInterface := node.(*ast.InterfaceType)
+		typed, isInterface := node.(*ast.InterfaceType)
 		if !isInterface {
 			return true
 		}
-		for _, method := range declared.Methods.List {
+		for _, method := range typed.Methods.List {
 			for _, name := range method.Names {
-				names[name.Name] = true
+				if declared[name.Name] {
+					names[name.Name] = true
+				}
 			}
 		}
 		return true

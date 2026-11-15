@@ -76,17 +76,23 @@ func TestConfiguredPackagesMatchTheDeclarationsHappyPath(t *testing.T) {
 // rowserrcheck follows the declaration and not the caller.
 func declaringPackages(c *qt.C) []string {
 	root := repositoryRoot(c)
-	modules := moduleDirectories(c, root)
+	return declaringPackagesIn(c, root, trackedGoFiles(c, root), moduleDirectories(c, root))
+}
 
+// declaringPackagesIn is [declaringPackages] over the files under root that
+// files names, with modules mapping a directory to its module path.
+func declaringPackagesIn(c *qt.C, root string, files []string, modules map[string]string) []string {
+	c.Helper()
 	found := make(map[string]struct{})
 	fileSet := token.NewFileSet()
-	for _, relative := range trackedGoFiles(c, root) {
+	for _, relative := range files {
 		source, err := os.ReadFile(filepath.Join(root, relative))
 		c.Assert(err, qt.IsNil)
-		// The result type is spelled Rows, and a file that never spells it
-		// declares no such Query. That is most of the tree, and only the rest
-		// is parsed.
-		if !bytes.Contains(source, []byte("Rows")) {
+		// A qualifying declaration spells Query, sql and Rows as identifiers,
+		// and a file that does not spell all three declares none. That is
+		// most of the tree, and only the rest is parsed.
+		if !bytes.Contains(source, []byte("Query")) || !bytes.Contains(source, []byte("sql")) ||
+			!bytes.Contains(source, []byte("Rows")) {
 			continue
 		}
 		file, err := parser.ParseFile(fileSet, filepath.Join(root, relative), source, parser.SkipObjectResolution)
@@ -102,6 +108,26 @@ func declaringPackages(c *qt.C) []string {
 	}
 	slices.Sort(paths)
 	return paths
+}
+
+// TestDeclaringPackagesIn_HappyPath holds the shortcut in front of the parse
+// to what a declaration has to spell. The broken file spells sql and Rows and
+// no Query, so it is not parsed, and the parse error a parse would raise
+// fails the test.
+func TestDeclaringPackagesIn_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	c.Assert(os.MkdirAll(filepath.Join(root, "p"), 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "p", "query.go"),
+		[]byte("package p\n\nimport \"database/sql\"\n\nfunc Query() (*sql.Rows, error) { return nil, nil }\n"), 0o600), qt.IsNil)
+	c.Assert(os.MkdirAll(filepath.Join(root, "q"), 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "q", "broken.go"),
+		[]byte("package q\n\nvar sql, Rows = 1, 2\n\nfunc {\n"), 0o600), qt.IsNil)
+
+	declaring := declaringPackagesIn(c, root, []string{"p/query.go", "q/broken.go"},
+		map[string]string{".": "example.invalid/m"})
+
+	c.Assert(declaring, qt.DeepEquals, []string{"example.invalid/m/p"})
 }
 
 // declarationsIn yields one entry per qualifying declaration in file.

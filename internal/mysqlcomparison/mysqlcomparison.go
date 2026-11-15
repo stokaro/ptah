@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
@@ -28,17 +27,23 @@ import (
 // a foreign key, and the rules ask dialect's descriptor and the helpers they
 // share with the reader about both.
 func Rules(dialect string) schemacomparison.Rules {
-	described, _ := platform.Lookup(dialect)
 	return schemacomparison.Rules{
 		Indexes:              Indexes{dialect: dialect},
 		GeneratedExpressions: GeneratedExpressions{},
-		ForeignKeyIndexes: ForeignKeyIndexes{
-			numbersKeys:      described.ForeignKeyNaming == descriptor.ForeignKeyNamingTableNumbered,
-			nameRules:        described.ForeignKeyNameRules,
-			descendingCovers: described.IndexNaming.DescendingCovers,
-		},
+		ForeignKeyIndexes:    foreignKeyIndexes.Get(dialect),
 	}
 }
+
+// foreignKeyIndexes holds the foreign key index rules each descriptor states.
+// A comparison asks for the rules, and copying the whole descriptor through
+// platform.Lookup each time costs more than building them.
+var foreignKeyIndexes = descriptortable.New(func(described descriptor.Dialect) ForeignKeyIndexes {
+	return ForeignKeyIndexes{
+		numbersKeys:      described.ForeignKeyNaming == descriptor.ForeignKeyNamingTableNumbered,
+		nameRules:        described.ForeignKeyNameRules,
+		descendingCovers: described.IndexNaming.DescendingCovers,
+	}
+})
 
 // Indexes compares MySQL and MariaDB index definitions.
 //

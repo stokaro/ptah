@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
@@ -33,11 +33,8 @@ import (
 // single-quoted literals and double-quoted identifiers. Apply Rebind to
 // known templates — never to user-supplied SQL.
 func Rebind(dialect, query string) string {
-	described, ok := platform.Lookup(dialect)
-	if !ok {
-		return query
-	}
-	switch described.Placeholder {
+	described := placeholderStyles.Get(dialect)
+	switch described.style {
 	case descriptor.PlaceholderDollar:
 		return rebindToOrdinal(query, "$")
 	case descriptor.PlaceholderAtP:
@@ -45,10 +42,24 @@ func Rebind(dialect, query string) string {
 	case descriptor.PlaceholderColon:
 		return rebindToOrdinal(query, ":")
 	case descriptor.PlaceholderDollarNamed:
-		return rebindNamed(query, described.Name)
+		return rebindNamed(query, described.dialect)
 	default:
 		return query
 	}
+}
+
+// placeholderStyles holds each descriptor's name and placeholder style, so a
+// statement is rebound without copying the whole descriptor, which costs more
+// than rebinding a short statement. An unknown dialect gets the zero
+// descriptor's empty style, which no case of [Rebind] matches.
+var placeholderStyles = descriptortable.New(func(described descriptor.Dialect) placeholderStyle {
+	return placeholderStyle{dialect: described.Name, style: described.Placeholder}
+})
+
+// placeholderStyle is what [placeholderStyles] holds for one dialect.
+type placeholderStyle struct {
+	dialect string
+	style   descriptor.Placeholder
 }
 
 func rebindToOrdinal(query, prefix string) string {
