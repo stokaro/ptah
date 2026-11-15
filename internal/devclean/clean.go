@@ -178,6 +178,20 @@ func (b Baseline) Schemas() []string {
 	return slices.Clone(b.schemas)
 }
 
+// SchemasLeftAsFound returns the schemas every reset leaves as the claim found
+// them, with everything they hold, sorted: the ones beside the schema a URL
+// pinned. An object a run writes into one of them outlives the run, and the
+// reset cannot remove it, since it does not know the object from what the
+// schema held at the claim; so a run must not write there. It is empty for a
+// realm cleanup, which drops what a run added in every schema, and for a
+// database that returns to a starting point, which every reset restores whole.
+func (b Baseline) SchemasLeftAsFound() []string {
+	if b.realm || b.startingPoint != nil {
+		return nil
+	}
+	return slices.Clone(b.schemas)
+}
+
 type extensionLister interface {
 	InstalledExtensions(context.Context) ([]string, error)
 }
@@ -380,23 +394,27 @@ func Reset(ctx context.Context, conn *dbschema.DatabaseConnection, baseline Base
 	if baseline.realm {
 		return DatabaseRealmKeeping(ctx, conn, baseline)
 	}
-	writer := conn.SchemaWriter()
+	return baseline.resetSchema(ctx, conn.SchemaWriter())
+}
+
+// resetSchema is [Reset] of the schema a URL pinned, through writer.
+func (b Baseline) resetSchema(ctx context.Context, writer catalog.SchemaWriter) error {
 	if keeper, ok := writer.(schemaKeeper); ok {
-		if err := keeper.DropAllTablesKeeping(ctx, baseline.kept()); err != nil {
+		if err := keeper.DropAllTablesKeeping(ctx, b.kept()); err != nil {
 			return err
 		}
-		if err := baseline.dropAddedSchemas(ctx, writer); err != nil {
+		if err := b.dropAddedSchemas(ctx, writer); err != nil {
 			return err
 		}
-		return baseline.dropAddedRoles(ctx, conn)
+		return b.dropAddedRoles(ctx, writer)
 	}
-	if len(baseline.extensions) > 0 || len(baseline.defaultPrivileges.Rows) > 0 {
+	if len(b.extensions) > 0 || len(b.defaultPrivileges.Rows) > 0 {
 		return fmt.Errorf("reset dev database: this writer cannot keep the extensions or default privileges the database held before the run")
 	}
 	if err := writer.DropAllTables(ctx); err != nil {
 		return err
 	}
-	return baseline.dropAddedRoles(ctx, conn)
+	return b.dropAddedRoles(ctx, writer)
 }
 
 // DatabaseRealmKeeping is [DatabaseRealm] that leaves the baseline in place.
@@ -419,7 +437,7 @@ func DatabaseRealmKeeping(ctx context.Context, conn *dbschema.DatabaseConnection
 		if err != nil {
 			return err
 		}
-		return baseline.dropAddedRoles(ctx, conn)
+		return baseline.dropAddedRoles(ctx, conn.SchemaWriter())
 	}
 	if len(baseline.extensions) > 0 || len(baseline.schemas) > 0 || len(baseline.defaultPrivileges.Rows) > 0 ||
 		len(baseline.artifacts) > 0 {
@@ -428,7 +446,7 @@ func DatabaseRealmKeeping(ctx context.Context, conn *dbschema.DatabaseConnection
 	if err := DatabaseRealm(ctx, conn); err != nil {
 		return err
 	}
-	return baseline.dropAddedRoles(ctx, conn)
+	return baseline.dropAddedRoles(ctx, conn.SchemaWriter())
 }
 
 // claimedServer is whose server conn is on, from the record
@@ -464,11 +482,11 @@ func (b Baseline) dropAddedSchemas(ctx context.Context, writer catalog.SchemaWri
 // dropAddedRoles drops the roles the server holds that it did not hold at the
 // claim, once the reset has dropped the objects whose privileges name them;
 // see [Baseline]. A baseline that holds no roles drops none.
-func (b Baseline) dropAddedRoles(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+func (b Baseline) dropAddedRoles(ctx context.Context, writer catalog.SchemaWriter) error {
 	if b.roles == nil {
 		return nil
 	}
-	keeper, ok := conn.SchemaWriter().(roleKeeper)
+	keeper, ok := writer.(roleKeeper)
 	if !ok {
 		return fmt.Errorf("clean dev database: this writer cannot drop the roles the run created")
 	}

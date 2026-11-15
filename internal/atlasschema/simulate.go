@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -500,11 +501,12 @@ func rehearseOnPreparedDev(
 	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
 		return &SimulationError{Stage: "reset", Err: err}
 	}
-	if err := recreateCurrentSchema(ctx, devConn, current, targetURL, baseline, runtime, outside); err != nil {
+	added, err := recreateCurrentSchema(ctx, devConn, current, targetURL, baseline, runtime, outside)
+	if err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
 	if err := applyStatements(ctx, devConn, txMode, statements); err != nil {
-		return &SimulationError{Stage: "plan", Err: err}
+		return &SimulationError{Stage: "plan", Err: devseed.WithAdded(err, added)}
 	}
 	return nil
 }
@@ -537,9 +539,13 @@ func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 // schema, a planned foreign key to a table the selection does not hold. So
 // the state recreated is current together with what outside.target reads of
 // those objects, each whole, and what they need in turn; see
-// [devseed.Closure]. The comparison the plan came from is not widened. A
-// failure after an object was added names what was added, since the dev
-// database may be unable to build it.
+// [devseed.Closure]. The comparison the plan came from is not widened. It
+// returns the objects added, and a failure after an object was added names
+// them, since the dev database may be unable to build it; so does a failure of
+// the plan the caller rehearses next, which runs against them.
+//
+// An object the recreated state holds in a schema every reset leaves as the
+// claim found it is refused before anything is written; see [seedBaseline].
 //
 // baseline is what the dev database held before the run: its extensions, and
 // for a dev database an atlas.hcl docker block provisioned its whole starting
@@ -563,36 +569,122 @@ func recreateCurrentSchema(
 	baseline devclean.Baseline,
 	runtime engine.SchemaRuntime,
 	outside rehearsalOutside,
-) error {
+) ([]devseed.Object, error) {
 	if current == nil {
-		return nil
+		return nil, nil
 	}
 	devCurrent, err := dbschema.ReadRehearsalSchemaContext(readscope.Authored(ctx), devConn)
 	if err != nil {
-		return fmt.Errorf("read dev database schema: %w", err)
+		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}
-	info := devConn.Info()
 	render := func(state *catalog.Database) ([]string, error) {
 		return baselineStatements(ctx, devConn, state, devCurrent, targetURL, baseline, runtime)
 	}
-	seeded, err := devseed.Closure(current, outside.executed, render, outside.target, devseed.Options{
-		Dialect:       info.Dialect,
-		DefaultSchema: defaultSchemaOf(info),
-		SearchPath:    info.IdentifierSemantics.SearchPath,
-	})
+	dev := baselineDev{
+		info:     devConn.Info(),
+		guard:    devclean.NewBaselineGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState()),
+		executor: devConn.Writer(),
+		read: func(ctx context.Context) (*catalog.Database, error) {
+			return dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), devConn, nil)
+		},
+		leftAsFound: baseline.SchemasLeftAsFound(),
+	}
+	return seedBaseline(ctx, dev, current, devCurrent, outside, render)
+}
+
+// baselineDev is the dev database as [seedBaseline] writes the baseline onto
+// it.
+type baselineDev struct {
+	info catalog.ServerInfo
+	// guard is what every baseline statement passes before it is executed.
+	guard    *devclean.BaselineGuard
+	executor catalog.SchemaExecutor
+	// read reads the dev database within the scope its URL names.
+	read func(ctx context.Context) (*catalog.Database, error)
+	// leftAsFound are the schemas every reset leaves as the claim found them;
+	// see [devclean.Baseline.SchemasLeftAsFound].
+	leftAsFound []string
+}
+
+// seedBaseline writes current onto dev, with what [devseed.Closure] adds to it
+// from outside the compared scope, and returns the objects added; see
+// [recreateCurrentSchema]. render plans the state against devCurrent, the dev
+// database as its URL reads it after the reset.
+//
+// Every reset leaves a schema in dev.leftAsFound as the claim found it, with
+// what it holds: on a dev database whose URL pins one schema, the other
+// schemas it held before the run. An object the baseline writes there outlives
+// the run, and Ptah cannot remove it later without dropping or changing
+// something it did not create, so a baseline that would write one is refused
+// before any statement runs: in a schema of dev.leftAsFound, an object the state
+// holds and devCurrent does not. A seeded auth.uid() in an auth schema the dev
+// database already held is the case: it stays after the run, and the next
+// run's CREATE FUNCTION fails on it, as it fails on a function of that name
+// the dev database held. Written into a schema the claim did not find, the
+// same object is the run's, and the reset drops the schema with it.
+func seedBaseline(
+	ctx context.Context,
+	dev baselineDev,
+	current, devCurrent *catalog.Database,
+	outside rehearsalOutside,
+	render devseed.Render,
+) ([]devseed.Object, error) {
+	options := devseed.Options{
+		Dialect:       dev.info.Dialect,
+		DefaultSchema: defaultSchemaOf(dev.info),
+		SearchPath:    dev.info.IdentifierSemantics.SearchPath,
+	}
+	seeded, err := devseed.Closure(current, outside.executed, render, outside.target, options)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(seeded.Statements) > 0 {
-		guard := devclean.NewBaselineGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState())
-		if err := guardRehearsalBaseline(seeded.Statements, guard, info.Dialect); err != nil {
-			return devseed.WithAdded(err, seeded.Added)
+		if err := refuseWritesLeftAsFound(seeded.State, devCurrent, dev.leftAsFound, options); err != nil {
+			return seeded.Added, devseed.WithAdded(err, seeded.Added)
 		}
-		if err := executeApplyStatements(ctx, devConn.Writer(), seeded.Statements); err != nil {
-			return devseed.WithAdded(err, seeded.Added)
+		if err := guardRehearsalBaseline(seeded.Statements, dev.guard, dev.info.Dialect); err != nil {
+			return seeded.Added, devseed.WithAdded(err, seeded.Added)
+		}
+		if err := executeApplyStatements(ctx, dev.executor, seeded.Statements); err != nil {
+			return seeded.Added, devseed.WithAdded(err, seeded.Added)
 		}
 	}
-	return devseed.WithAdded(nameColumnSequencesAsTarget(ctx, devConn, seeded.State), seeded.Added)
+	return seeded.Added, devseed.WithAdded(nameColumnSequencesAsTarget(ctx, dev, seeded.State), seeded.Added)
+}
+
+// refuseWritesLeftAsFound refuses state, the baseline a rehearsal writes onto
+// a dev database read as devCurrent, when it holds an object devCurrent does
+// not in one of the schemas leftAsFound names; see [seedBaseline].
+func refuseWritesLeftAsFound(state, devCurrent *catalog.Database, leftAsFound []string, options devseed.Options) error {
+	var schemas []string
+	var written []devseed.Object
+	for _, schema := range leftAsFound {
+		wanted, err := devseed.ObjectsIn(state, []string{schema}, options)
+		if err != nil {
+			return err
+		}
+		held, err := devseed.ObjectsIn(devCurrent, []string{schema}, options)
+		if err != nil {
+			return err
+		}
+		wanted = slices.DeleteFunc(wanted, func(object devseed.Object) bool { return slices.Contains(held, object) })
+		if len(wanted) > 0 {
+			schemas = append(schemas, strconv.Quote(schema))
+			written = append(written, wanted...)
+		}
+	}
+	if len(written) == 0 {
+		return nil
+	}
+	noun, pronoun := "schema", "it"
+	if len(schemas) > 1 {
+		noun, pronoun = "schemas", "them"
+	}
+	return fmt.Errorf(
+		"the dev database held %s %s before the run, and every reset leaves %s as the claim found %s, "+
+			"so what the rehearsal writes there would outlive the run: %s; point --dev-url at a database that does not hold %s",
+		noun, strings.Join(schemas, ", "), pronoun, pronoun, devseed.Names(written), pronoun,
+	)
 }
 
 // baselineStatements returns the statements that converge the dev database,
@@ -714,12 +806,8 @@ func readsAsSetting(line string, options lexer.Options) bool {
 // `relation "items_id_seq" does not exist` before the target is reached
 // (stokaro/ptah#4064). The renames go through temporary names, so one cannot
 // collide with a sequence another column holds under the name it takes.
-func nameColumnSequencesAsTarget(
-	ctx context.Context,
-	devConn *dbschema.DatabaseConnection,
-	current *catalog.Database,
-) error {
-	dialect := devConn.Info().Dialect
+func nameColumnSequencesAsTarget(ctx context.Context, dev baselineDev, current *catalog.Database) error {
+	dialect := dev.info.Dialect
 	if current == nil || !described(dialect).Conversion.OwnedSequences {
 		return nil
 	}
@@ -734,12 +822,12 @@ func nameColumnSequencesAsTarget(
 	if len(want) == 0 {
 		return nil
 	}
-	dev, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), devConn, nil)
+	read, err := dev.read(ctx)
 	if err != nil {
 		return fmt.Errorf("read dev database sequences: %w", err)
 	}
 	var moves, settles []string
-	for _, table := range dev.Tables {
+	for _, table := range read.Tables {
 		for _, column := range table.Columns {
 			target, ok := want[columnSequenceKey(table.Schema, table.Name, column.Name)]
 			if !ok || column.OwnedSequence == "" || column.OwnedSequence == target {
@@ -752,7 +840,7 @@ func nameColumnSequencesAsTarget(
 				" RENAME TO "+sqlident.Ident(dialect, target))
 		}
 	}
-	if err := executeApplyStatements(ctx, devConn.Writer(), slices.Concat(moves, settles)); err != nil {
+	if err := executeApplyStatements(ctx, dev.executor, slices.Concat(moves, settles)); err != nil {
 		return fmt.Errorf("name dev database sequences as the target names them: %w", err)
 	}
 	return nil

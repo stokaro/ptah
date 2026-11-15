@@ -158,21 +158,6 @@ func foldName(name string) string {
 // the star of `t.*`, is empty and matches nothing.
 type dottedName []string
 
-// CodeNames returns the names in the code of body, read with dialect's
-// lexical rules, each as its parts in order. Parts come back folded to lower
-// case, as [ReferencesRelation] compares them, and a quoted part without its
-// quotes. A name inside a string literal, a dollar-quoted string or a comment
-// names nothing and is not returned. A part that is not a name, such as the
-// star of `t.*`, is empty.
-func CodeNames(body, dialect string) [][]string {
-	names := codeNames(body, dialect)
-	out := make([][]string, 0, len(names))
-	for _, name := range names {
-		out = append(out, slices.Clone([]string(name)))
-	}
-	return out
-}
-
 // codeNames returns the names in the code of body, read with dialect's
 // lexical rules; see [sqlMasksForDialect].
 //
@@ -189,8 +174,26 @@ func codeNames(body, dialect string) []dottedName {
 
 // dottedNames reads every dotted name in the code of body.
 func dottedNames(body string, masks sqlMasks) []dottedName {
-	var names []dottedName
+	spans := dottedNameSpans(body, masks)
+	names := make([]dottedName, 0, len(spans))
+	for _, span := range spans {
+		names = append(names, span.name)
+	}
+	return names
+}
+
+// nameSpan is one dotted name in the code of a body and the bytes it covers.
+type nameSpan struct {
+	name       dottedName
+	start, end int
+}
+
+// dottedNameSpans reads every dotted name in the code of body, with where
+// each starts and ends.
+func dottedNameSpans(body string, masks sqlMasks) []nameSpan {
+	var names []nameSpan
 	for i := 0; i < len(body); {
+		start := i
 		part, end, ok := namePart(body, masks, i)
 		if !ok {
 			i = skipNonName(body, masks, i)
@@ -211,7 +214,7 @@ func dottedNames(body string, masks sqlMasks) []dottedName {
 			name = append(name, next)
 			end = nextEnd
 		}
-		names = append(names, name)
+		names = append(names, nameSpan{name: name, start: start, end: end})
 		i = end
 	}
 	return names
