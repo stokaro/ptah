@@ -28,8 +28,25 @@ type statementEffect struct {
 }
 
 // describePlan plans held into declared, two SQL schemas, as `schema plan`
-// does against PostgreSQL, and describes each statement of the plan.
+// does against PostgreSQL, and describes each statement of the plan. Each
+// statement has to carry one effect, on order_totals.
 func describePlan(c *qt.C, held, declared string) []statementEffect {
+	c.Helper()
+	statements, described := planPostgres(c, held, declared)
+	c.Assert(described, qt.HasLen, len(statements))
+	got := make([]statementEffect, len(statements))
+	for i, statement := range statements {
+		c.Assert(described[i], qt.HasLen, 1, qt.Commentf("statement %d: %s", i, statement))
+		c.Assert(described[i][0].Object, qt.Equals, orderTotals)
+		got[i] = statementEffect{SQL: statement, Action: described[i][0].Action, Properties: described[i][0].Properties}
+	}
+	return got
+}
+
+// planPostgres plans held into declared, two SQL schemas, as `schema plan`
+// does against PostgreSQL, and returns each statement of the plan and its
+// description.
+func planPostgres(c *qt.C, held, declared string) ([]string, [][]planeffect.Effect) {
 	c.Helper()
 	runtime := must.Must(builtin.New())
 	current, _, err := sqlschema.Read([]byte(pipelineTable+held), platform.Postgres)
@@ -56,15 +73,11 @@ func describePlan(c *qt.C, held, declared string) []statementEffect {
 		Semantics:     diff.EffectiveIdentifierSemantics(platform.Postgres),
 		ViewOptions:   true,
 	}, plan.Request.Nodes, nodes)
-
-	c.Assert(described, qt.HasLen, len(units))
-	got := make([]statementEffect, len(units))
+	statements := make([]string, len(units))
 	for i, unit := range units {
-		c.Assert(described[i], qt.HasLen, 1, qt.Commentf("statement %d: %s", i, unit.Fragment.SQL))
-		c.Assert(described[i][0].Object, qt.Equals, orderTotals)
-		got[i] = statementEffect{SQL: unit.Fragment.SQL, Action: described[i][0].Action, Properties: described[i][0].Properties}
+		statements[i] = unit.Fragment.SQL
 	}
-	return got
+	return statements, described
 }
 
 // orderTotalsView is the view order_totals with the options and body given.
@@ -266,4 +279,47 @@ func TestDescribe_MySQLPlans(t *testing.T) {
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestDescribe_PostgreSQLPlanRecordsTheViewsItTakes plans a column lost from
+// two views, one reading the other, on PostgreSQL, in the planner's default
+// statement style. The plan drops the reader with CASCADE first, so the
+// description cannot say the second drop, IF EXISTS, finds its view, and that
+// drop records no effect. The CREATE VIEW after it records what the view held
+// before the plan, which is what tells it from a new view. The exact style the
+// CLI plans in drops both views without CASCADE, and describes both drops.
+func TestDescribe_PostgreSQLPlanRecordsTheViewsItTakes(t *testing.T) {
+	c := qt.New(t)
+	held := "CREATE VIEW order_totals WITH (security_invoker = true) AS SELECT id, total FROM orders;\n" +
+		"CREATE VIEW order_ids WITH (security_invoker = true) AS SELECT id, total FROM order_totals;\n"
+	declared := "CREATE VIEW order_totals WITH (security_invoker = true) AS SELECT id FROM orders;\n" +
+		"CREATE VIEW order_ids WITH (security_invoker = true) AS SELECT id FROM order_totals;\n"
+	orderIDs := planeffect.Object{Kind: planeffect.KindView, Schema: "public", Name: "order_ids"}
+	invoker := &planeffect.Held{Exists: true, Properties: []planeffect.HeldProperty{
+		{Name: "security_barrier", Value: false}, {Name: "security_invoker", Value: true},
+	}}
+
+	statements, got := planPostgres(c, held, declared)
+
+	c.Assert(statements, qt.DeepEquals, []string{
+		`DROP VIEW IF EXISTS "order_ids" CASCADE`,
+		`DROP VIEW IF EXISTS "order_totals" CASCADE`,
+		"CREATE VIEW \"order_totals\" WITH (security_invoker=true) AS\nSELECT id FROM orders",
+		"CREATE VIEW \"order_ids\" WITH (security_invoker=true) AS\nSELECT id FROM order_totals",
+	})
+	c.Assert(got, qt.DeepEquals, [][]planeffect.Effect{
+		{{
+			Version: planeffect.Version, Object: orderIDs, Action: planeffect.ActionDrop,
+			Properties: security(dropped(false), dropped(true)), BeforePlan: invoker,
+		}},
+		nil,
+		{{
+			Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionCreate,
+			Properties: security(created(false), created(true)), BeforePlan: invoker,
+		}},
+		{{
+			Version: planeffect.Version, Object: orderIDs, Action: planeffect.ActionCreate,
+			Properties: security(created(false), created(true)), BeforePlan: invoker,
+		}},
+	})
 }

@@ -76,7 +76,20 @@ The body change from the first paragraph, on a view that holds
         "after": true,
         "changed": false
       }
-    ]
+    ],
+    "before_plan": {
+      "exists": true,
+      "properties": [
+        {
+          "name": "security_barrier",
+          "value": false
+        },
+        {
+          "name": "security_invoker",
+          "value": true
+        }
+      ]
+    }
   }
 ]
 ```
@@ -89,6 +102,7 @@ The body change from the first paragraph, on a view that holds
 | `properties` | Each property the effect reports, sorted by `name` |
 | `before`, `after` | The value before the statement runs and after it, of the type the property's `name` gives it. Each is absent where the object does not exist at that point |
 | `changed` | Whether the two values differ. An absent value differs from every value, so `create` and `drop` change every property |
+| `before_plan` | The object as the database held it when the plan started; see [Before the plan](#before-the-plan) |
 
 | Action | Statement |
 | --- | --- |
@@ -108,6 +122,30 @@ that sets no option records `security_invoker` with `after: false` and
 `changed: true`, because the view did not exist before. A reviewer that holds
 a plan when a view starts reading with its readers' rights tests for `after`
 being `true` where `before` is absent or `false`.
+
+## Before the plan
+
+`before_plan` is the object as the database held it when the plan started, as
+the plan read it. Every effect records it, whatever the statements ahead of the
+effect did to the object.
+
+| Field | Meaning |
+| --- | --- |
+| `exists` | Whether the object existed when the plan started. It is always written |
+| `properties` | The value each property held then, as `name` and `value`, sorted by `name`. It is absent when the object did not exist |
+
+A `create` has no `before`, because no view of its name exists when it runs.
+`before_plan` says whether the plan makes the view again or makes a new one.
+This matters where the statement that took the view records no effect for it:
+a `DROP ... CASCADE` takes what depends on what it drops, and a `DROP VIEW IF
+EXISTS` after it may find nothing, so Ptah does not describe that drop. A
+`create` with `before_plan.exists` set to `true` makes again a view the plan
+took. Compare its `after` with the `before_plan` value to see whether the view's
+rights change. A `create` with `exists` set to `false` makes a new view.
+
+A property that `before_plan` does not list is not described, as in
+`properties`. `before_plan` is absent from an effect that a Ptah without the
+field wrote, which is not the same as `exists: false`.
 
 ## What Ptah describes
 

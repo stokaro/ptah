@@ -51,6 +51,18 @@ func dropped(value bool) planeffect.Property {
 
 var orderTotals = planeffect.Object{Kind: planeffect.KindView, Schema: "public", Name: "order_totals"}
 
+// withoutBeforePlan is effects with no BeforePlan. The tests of what each
+// statement changes leave it to the tests of BeforePlan, which pin it for each
+// path a view takes through a plan.
+func withoutBeforePlan(effects [][]planeffect.Effect) [][]planeffect.Effect {
+	for _, statement := range effects {
+		for i := range statement {
+			statement[i].BeforePlan = nil
+		}
+	}
+	return effects
+}
+
 func effect(action planeffect.Action, properties []planeffect.Property) []planeffect.Effect {
 	return []planeffect.Effect{{Version: planeffect.Version, Object: orderTotals, Action: action, Properties: properties}}
 }
@@ -201,7 +213,7 @@ func TestDescribe_ViewSecurity(t *testing.T) {
 
 			got := planeffect.Describe(test.target, test.nodes, test.units)
 
-			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(withoutBeforePlan(got), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -229,6 +241,7 @@ func TestDescribe_NewView(t *testing.T) {
 			c.Assert(got, qt.DeepEquals, [][]planeffect.Effect{{{
 				Version: planeffect.Version, Object: test.want, Action: planeffect.ActionCreate,
 				Properties: security(created(true), created(false)),
+				BeforePlan: &planeffect.Held{},
 			}}})
 		})
 	}
@@ -286,7 +299,7 @@ func TestDescribe_UnqualifiedNameIsTheConnectionSchemas(t *testing.T) {
 
 			got := planeffect.Describe(test.target, []ast.Node{test.node}, []int{0})
 
-			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(withoutBeforePlan(got), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -395,7 +408,7 @@ func TestDescribe_Undescribed(t *testing.T) {
 
 			got := planeffect.Describe(test.target, test.nodes, test.units)
 
-			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(withoutBeforePlan(got), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -561,7 +574,7 @@ func TestDescribe_ViewSQLSecurity(t *testing.T) {
 
 			got := planeffect.Describe(test.target, test.nodes, test.units)
 
-			c.Assert(got, qt.DeepEquals, test.want)
+			c.Assert(withoutBeforePlan(got), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -589,7 +602,11 @@ func TestEffect_JSONRoundTrip(t *testing.T) {
 		Properties: []planeffect.Property{
 			{Name: "security_invoker", Before: true, After: false, Changed: true},
 			{Name: planeffect.SQLSecurity, Before: "INVOKER", After: "DEFINER", Changed: true},
-		}}}
+		},
+		BeforePlan: &planeffect.Held{Exists: true, Properties: []planeffect.HeldProperty{
+			{Name: "security_invoker", Value: true}, {Name: planeffect.SQLSecurity, Value: "INVOKER"},
+		}},
+	}}
 	encoded, err := json.Marshal(saved)
 	c.Assert(err, qt.IsNil)
 
@@ -598,4 +615,152 @@ func TestEffect_JSONRoundTrip(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, saved)
+}
+
+// TestDescribe_BeforePlan pins what each effect records about its view before
+// the plan: whether the database held it when the plan started, and what it
+// held, whatever the statements ahead of the effect did to it. A create after
+// a drop that recorded no effect, such as one a cascade left uncertain, is a
+// view the plan makes again when the view existed before the plan, and a new
+// view when it did not.
+func TestDescribe_BeforePlan(t *testing.T) {
+	invoker := view("order_totals", "security_invoker=true")
+	invokerBeforePlan := &planeffect.Held{Exists: true, Properties: []planeffect.HeldProperty{
+		{Name: "security_barrier", Value: false}, {Name: "security_invoker", Value: true},
+	}}
+	create := &ast.CreateViewNode{Name: "order_totals", Body: "SELECT 2"}
+	tests := []struct {
+		name   string
+		target planeffect.Target
+		nodes  []ast.Node
+		units  []int
+		want   [][]planeffect.Effect
+	}{
+		{
+			name:   "a replace of a view the database holds",
+			target: target(invoker),
+			nodes:  []ast.Node{&ast.CreateViewNode{Name: "order_totals", Body: "SELECT 2", Replace: true}},
+			units:  []int{0},
+			want: [][]planeffect.Effect{{{
+				Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionReplace,
+				Properties: security(kept(false), moved(true, false)), BeforePlan: invokerBeforePlan,
+			}}},
+		},
+		{
+			name:   "a create after a drop that cascades and a drop that records no effect",
+			target: target(invoker),
+			nodes: []ast.Node{
+				&ast.DropTableNode{Name: "orders", Cascade: true},
+				ast.NewDropView("order_totals").SetIfExists(),
+				create,
+			},
+			units: []int{0, 1, 2},
+			want: [][]planeffect.Effect{nil, nil, {{
+				Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionCreate,
+				Properties: security(created(false), created(false)), BeforePlan: invokerBeforePlan,
+			}}},
+		},
+		{
+			name:   "a create after a drop that records the view",
+			target: target(invoker),
+			nodes:  []ast.Node{ast.NewDropView("order_totals"), create},
+			units:  []int{0, 1},
+			want: [][]planeffect.Effect{
+				{{
+					Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionDrop,
+					Properties: security(dropped(false), dropped(true)), BeforePlan: invokerBeforePlan,
+				}},
+				{{
+					Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionCreate,
+					Properties: security(created(false), created(false)), BeforePlan: invokerBeforePlan,
+				}},
+			},
+		},
+		{
+			name:   "a new view, and a replace of it",
+			target: target(),
+			nodes:  []ast.Node{create, &ast.CreateViewNode{Name: "order_totals", Body: "SELECT 3", Replace: true}},
+			units:  []int{0, 1},
+			want: [][]planeffect.Effect{
+				{{
+					Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionCreate,
+					Properties: security(created(false), created(false)), BeforePlan: &planeffect.Held{},
+				}},
+				{{
+					Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionReplace,
+					Properties: security(kept(false), kept(false)), BeforePlan: &planeffect.Held{},
+				}},
+			},
+		},
+		{
+			name:   "a MySQL view's mode",
+			target: mysqlTarget(mysqlView("order_totals", "INVOKER")),
+			nodes:  []ast.Node{ast.NewDropView("order_totals").SetIfExists(), create},
+			units:  []int{0, 1},
+			want: [][]planeffect.Effect{
+				{{
+					Version: planeffect.Version, Object: appOrderTotals, Action: planeffect.ActionDrop,
+					Properties: []planeffect.Property{{Name: planeffect.SQLSecurity, Before: "INVOKER", Changed: true}},
+					BeforePlan: &planeffect.Held{Exists: true, Properties: []planeffect.HeldProperty{{Name: planeffect.SQLSecurity, Value: "INVOKER"}}},
+				}},
+				{{
+					Version: planeffect.Version, Object: appOrderTotals, Action: planeffect.ActionCreate,
+					Properties: []planeffect.Property{{Name: planeffect.SQLSecurity, After: "DEFINER", Changed: true}},
+					BeforePlan: &planeffect.Held{Exists: true, Properties: []planeffect.HeldProperty{{Name: planeffect.SQLSecurity, Value: "INVOKER"}}},
+				}},
+			},
+		},
+		{
+			name:   "a value the server could not read leaves the property out",
+			target: mysqlTarget(mysqlView("order_totals", "")),
+			nodes:  []ast.Node{ast.NewDropView("order_totals")},
+			units:  []int{0},
+			want: [][]planeffect.Effect{{{
+				Version: planeffect.Version, Object: appOrderTotals, Action: planeffect.ActionDrop,
+				BeforePlan: &planeffect.Held{Exists: true},
+			}}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := planeffect.Describe(test.target, test.nodes, test.units)
+
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestEffect_JSONBeforePlan pins the shape of before_plan: exists is always
+// written, because false is what says a view is new, and a view that did not
+// exist lists no properties.
+func TestEffect_JSONBeforePlan(t *testing.T) {
+	tests := []struct {
+		name       string
+		beforePlan *planeffect.Held
+		want       string
+	}{
+		{
+			name: "a view the plan makes again",
+			beforePlan: &planeffect.Held{Exists: true, Properties: []planeffect.HeldProperty{
+				{Name: "security_invoker", Value: true},
+			}},
+			want: `"before_plan":{"exists":true,"properties":[{"name":"security_invoker","value":true}]}}`,
+		},
+		{name: "a new view", beforePlan: &planeffect.Held{}, want: `"before_plan":{"exists":false}}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			effect := planeffect.Effect{Version: planeffect.Version, Object: orderTotals, Action: planeffect.ActionCreate,
+				Properties: []planeffect.Property{{Name: "security_invoker", After: false, Changed: true}}, BeforePlan: test.beforePlan}
+
+			got, err := json.Marshal(effect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(got), qt.Equals, `{"version":1,"object":{"kind":"view","schema":"public","name":"order_totals"},"action":"create",`+
+				`"properties":[{"name":"security_invoker","after":false,"changed":true}],`+test.want)
+		})
+	}
 }
