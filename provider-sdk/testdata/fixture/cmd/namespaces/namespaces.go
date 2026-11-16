@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 
 	"example.com/ptah-fixture-provider/backend"
 	"example.com/ptah-fixture-provider/devdb"
@@ -28,8 +29,17 @@ const statementPrefix = "FIXTURE "
 
 type namespaces struct {
 	*devdb.Provider
+	// engine is the name the engine is served under.
+	engine string
 	// carried reports that the engine declares namespaces.
 	carried bool
+	// uninspectable are the schemas whose objects a read cannot inspect.
+	uninspectable []string
+	// views reports that the engine carries views.
+	views bool
+	mu    sync.Mutex
+	// leases are the database files of the dev databases provisioned.
+	leases map[string]string
 	// uninspected reads every schema as uninspected.
 	uninspected bool
 }
@@ -98,6 +108,11 @@ func (p *namespaces) Inspect(ctx context.Context, request *protocol.InspectReque
 	}
 	scope := request.GetSchemas()
 	inScope := func(schema string) bool { return len(scope) == 0 || slices.Contains(scope, schema) }
+	for _, schema := range p.uninspectable {
+		if slices.Contains(held, schema) && inScope(schema) {
+			return nil, fmt.Errorf("the fixture cannot inspect the objects of schema %s", schema)
+		}
+	}
 	tables := snapshot.Tables[:0]
 	for _, table := range snapshot.GetTables() {
 		schema, name := splitTable(table.GetIdentity().GetName())
@@ -132,12 +147,19 @@ func (p *namespaces) Inspect(ctx context.Context, request *protocol.InspectReque
 	}
 	observed := &protocol.ObservedCommonObjects{Coverage: []*protocol.CommonObjectCoverage{{Kind: protocol.CommonObjectSupport_SCHEMA,
 		Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}}}}
+	if p.views {
+		observed.Coverage = append(observed.Coverage, &protocol.CommonObjectCoverage{Kind: protocol.CommonObjectSupport_VIEW,
+			Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}})
+		if observed.Views, err = p.observedViews(path, inScope); err != nil {
+			return nil, err
+		}
+	}
 	if p.uninspected {
 		observed.Coverage[0].Knowledge = &protocol.ModelKnowledge{State: protocol.ModelKnowledge_UNINSPECTED, Reason: "the fixture reads no schema"}
 	} else {
 		for _, schema := range slices.Concat([]string{defaultSchema}, held) {
 			if inScope(schema) {
-				observed.Namespaces = append(observed.Namespaces, &protocol.ObservedNamespace{Identity: &protocol.Reference{Engine: "fixture", Database: path,
+				observed.Namespaces = append(observed.Namespaces, &protocol.ObservedNamespace{Identity: &protocol.Reference{Engine: p.engine, Database: path,
 					Kind: provider.NamespaceKind, Name: schema}})
 			}
 		}
@@ -158,6 +180,10 @@ func (p *namespaces) PrepareCommonObjects(_ context.Context, request *protocol.P
 func (p *namespaces) Render(ctx context.Context, request *protocol.RenderRequest) (*protocol.RenderResult, error) {
 	result := &protocol.RenderResult{Complete: true}
 	for _, change := range request.GetChanges() {
+		if written, view := viewStatement(change.GetCommonObject()); view {
+			result.Units = append(result.Units, &protocol.Unit{ChangeId: change.GetId(), Body: &protocol.Unit_Sql{Sql: written}})
+			continue
+		}
 		if common := change.GetCommonObject(); common != nil {
 			written, err := schemaStatement(common)
 			if err != nil {
@@ -193,6 +219,28 @@ func schemaStatement(change *protocol.CommonObjectChange) (string, error) {
 }
 
 func quote(name string) string { return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` }
+
+// ownStatement reports whether sql is a statement the program writes for
+// itself rather than one of the base fixture.
+func ownStatement(sql string) bool {
+	_, _, schema := readStatement(sql)
+	_, _, view := readView(sql)
+	return schema || view
+}
+
+// Open adds the capability a comparison of views reads, where the engine
+// carries them.
+func (p *namespaces) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
+	session, err := p.Provider.Open(ctx, request)
+	if err != nil || !p.views {
+		return session, err
+	}
+	if session.Capabilities == nil {
+		session.Capabilities = make(map[string]bool)
+	}
+	session.Capabilities["views"] = true
+	return session, nil
+}
 
 // readStatement reads a schema statement the program wrote: whether it
 // creates, and the schema.
@@ -232,7 +280,8 @@ func (p *namespaces) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQ
 	result := &protocol.SQLAnalysis{Complete: true}
 	for _, source := range request.GetSources() {
 		create, _, own := readStatement(source)
-		if !own {
+		createsView, _, view := readView(source)
+		if !own && !view {
 			analyzed, err := p.Provider.AnalyzeSQL(ctx, &protocol.AnalyzeSQLRequest{Engine: request.GetEngine(), Sources: []string{source}})
 			if err != nil {
 				return nil, err
@@ -241,7 +290,12 @@ func (p *namespaces) AnalyzeSQL(ctx context.Context, request *protocol.AnalyzeSQ
 			continue
 		}
 		words, safety := []string{"FIXTURE", "CREATE", "SCHEMA"}, protocol.SQLStatement_BEHAVIORAL
-		if !create {
+		switch {
+		case view && createsView:
+			words = []string{"FIXTURE", "CREATE", "VIEW"}
+		case view:
+			words, safety = []string{"FIXTURE", "DROP", "VIEW"}, protocol.SQLStatement_DESTRUCTIVE
+		case !create:
 			words, safety = []string{"FIXTURE", "DROP", "SCHEMA"}, protocol.SQLStatement_DESTRUCTIVE
 		}
 		start := strings.Index(source, statementPrefix)
@@ -268,6 +322,10 @@ func (p *namespaces) Execute(ctx context.Context, request *protocol.ExecuteReque
 				refusal, err = applySchema(ctx, access, held, create, schema)
 				return err
 			}
+			if create, view, own := readView(unit.GetSql()); own {
+				refusal, err = applyView(ctx, access, held, create, view)
+				return err
+			}
 			if table, created := createdTable(unit.GetSql()); created {
 				if schema, _ := splitTable(table); schema != defaultSchema && !slices.Contains(held, schema) {
 					refusal = "Schema not found: " + schema
@@ -282,7 +340,7 @@ func (p *namespaces) Execute(ctx context.Context, request *protocol.ExecuteReque
 			return &protocol.Execution{Outcome: outcomeAfter(applied), AppliedCount: applied, DiagnosticCode: "fixture.schema",
 				Diagnostic: &protocol.ProviderDiagnostic{Reason: refusal}}, nil
 		}
-		if _, _, own := readStatement(unit.GetSql()); !own {
+		if !ownStatement(unit.GetSql()) {
 			single := &protocol.ExecuteRequest{SessionId: request.GetSessionId(), RequestId: request.GetRequestId(), TransactionId: request.GetTransactionId(),
 				Units: []*protocol.Unit{unit}, StatementTimeoutNanoseconds: request.GetStatementTimeoutNanoseconds()}
 			execution, err := p.Provider.Execute(ctx, single)
@@ -315,7 +373,11 @@ func applySchema(ctx context.Context, access backend.Access, held []string, crea
 		strings.ReplaceAll(strings.ReplaceAll(schema, `\`, `\\`), "_", `\_`)+".%").Scan(&dependents); err != nil {
 		return "", err
 	}
-	if dependents != 0 {
+	views, err := viewsIn(access.Path, []string{schema})
+	if err != nil {
+		return "", err
+	}
+	if dependents != 0 || len(views) != 0 {
 		return "Cannot drop schema " + schema + " while it has dependencies", nil
 	}
 	return "", saveSchemas(access.Path, slices.DeleteFunc(held, func(name string) bool { return name == schema }))
@@ -340,6 +402,13 @@ func (p *namespaces) ListDevObjects(ctx context.Context, request *protocol.ListD
 		for _, schema := range schemas {
 			result.Objects = append(result.Objects, &protocol.DevObject{Object: &protocol.Reference{Kind: provider.NamespaceKind, Name: schema}})
 		}
+		if err != nil {
+			return err
+		}
+		views, err := viewsIn(access.Path, request.GetSchemas())
+		for _, view := range views {
+			result.Objects = append(result.Objects, &protocol.DevObject{Object: &protocol.Reference{Kind: "view", Schema: viewSchema(view.Schema), Name: view.Name}})
+		}
 		return err
 	})
 	if err != nil {
@@ -355,6 +424,9 @@ func (p *namespaces) CleanDevDatabase(ctx context.Context, request *protocol.Cle
 	err := p.WithSession(ctx, request.GetSessionId(), "", func(access backend.Access) error {
 		tables, schemas, err := devObjects(ctx, access, request.GetSchemas())
 		if err != nil {
+			return err
+		}
+		if err := dropViewsIn(access.Path, request.GetSchemas()); err != nil {
 			return err
 		}
 		for _, table := range tables {

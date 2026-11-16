@@ -93,6 +93,33 @@ type Render func(state *catalog.Database) ([]string, error)
 // connection reaches one schema whatever is named reads that schema.
 type Target func(schemas []string) (*catalog.Database, error)
 
+// Selected returns the Target that reads through read, an inspection of the
+// schemas its selectors name. Each read asks for the schemas named together
+// with scope, the schemas the caller's own scope covers. A schema nothing
+// names is not read: one whose objects read cannot describe stays unread
+// unless a statement, or an object added for one, names it.
+//
+// read interprets each selector as its engine reads a schema's name, and a
+// selector that names no schema, such as a table alias, selects nothing. The
+// selectors are sorted and de-duplicated, so two reads of the same names ask
+// for them the same way. Each is a name as the statements spell it, folded to
+// lower case, so a schema whose name keeps upper-case letters, such as a
+// quoted "App", is not selected on an engine that compares schema names
+// exactly. An error from read is returned as it is.
+//
+// With no selector left, nothing names a schema, and the Target returns an
+// empty state without calling read: read with no selectors would inspect the
+// whole database.
+func Selected(read func(selectors []string) (*catalog.Database, error), scope []string) Target {
+	return func(named []string) (*catalog.Database, error) {
+		selectors := slices.DeleteFunc(union(named, scope), func(name string) bool { return name == "" })
+		if len(selectors) == 0 {
+			return &catalog.Database{}, nil
+		}
+		return read(selectors)
+	}
+}
+
 // Options says how the statements are read and where their names resolve.
 type Options struct {
 	// Dialect selects the lexical rules the statements are read with.

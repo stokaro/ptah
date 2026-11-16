@@ -352,3 +352,41 @@ func TestRefuseUncarriedSchemas_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// providerListsNamespaces is target with schema.common-namespaces listed by
+// its provider.
+func providerListsNamespaces(target *target) *target {
+	target.host.description.Features = append(target.host.description.Features, provider.CommonNamespacesFeature)
+	return target
+}
+
+// engineListsNamespaces is target with schema.common-namespaces listed by its
+// engine.
+func engineListsNamespaces(target *target) *target {
+	target.engine.Features = append(target.engine.Features, provider.CommonNamespacesFeature)
+	return target
+}
+
+// A session carries namespaces only when its provider and its engine list
+// schema.common-namespaces and the engine declares the SCHEMA kind; without
+// any one of the three a rehearsal reads the whole database.
+func TestSessionCarriesNamespaces_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		target  *target
+		carries bool
+	}{
+		{name: "the feature and the kind", target: namespaceTarget(), carries: true},
+		{name: "the kind without the feature", target: commonObjectTarget(protocol.CommonObjectSupport_COMMENT, protocol.CommonObjectSupport_SCHEMA)},
+		{name: "the feature without the kind", target: engineListsNamespaces(providerListsNamespaces(commonObjectTarget(protocol.CommonObjectSupport_COMMENT)))},
+		{name: "the feature from the engine alone",
+			target: engineListsNamespaces(commonObjectTarget(protocol.CommonObjectSupport_COMMENT, protocol.CommonObjectSupport_SCHEMA))},
+		{name: "the feature from the provider alone",
+			target: providerListsNamespaces(commonObjectTarget(protocol.CommonObjectSupport_COMMENT, protocol.CommonObjectSupport_SCHEMA))},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert((&session{target: test.target}).CarriesNamespaces(), qt.Equals, test.carries)
+		})
+	}
+}

@@ -584,6 +584,27 @@ views, routines, sequences, types, domains and extensions, and their schemas.
 An object nothing names stays out, because a selection often leaves out what
 the dev server cannot build, such as an extension it does not have.
 
+To find those objects the rehearsal reads the target again, and only the
+schemas the statements name, beside the schema the URL pins. A word a statement
+uses as a qualifier, folded to lower case, is a candidate, and a schema nothing
+names is not read, so a schema whose objects the reader cannot inspect does not
+stop the rehearsal. How a word becomes a schema depends on the engine:
+
+- An engine whose connection selects schemas along a search path, as
+  PostgreSQL, CockroachDB and YugabyteDB do, matches it against the schemas the
+  target holds.
+- An [executable provider](../../extend/executable-providers/) whose engine
+  carries namespaces (`schema.common-namespaces`) receives the words as the
+  schema selectors of its filtered inspection. The provider decides which
+  schema a word selects, and a word that selects none, such as a table alias,
+  reads nothing. A quoted schema name that keeps upper-case letters, such as
+  `"App"`, is sent as `app`, so a provider that compares schema names exactly
+  does not find it.
+- Every other engine, and a provider whose engine carries no namespaces, reads
+  what its URL reaches once. For such a provider that is its whole database:
+  when the read fails, the rehearsal fails with a message that names the
+  missing feature.
+
 The comparison itself is not widened. A role belongs to the server rather than
 to one database, so a plan has no `CREATE ROLE` for a role the target already
 holds, and a dev server of its own may still lack one a statement names, such
