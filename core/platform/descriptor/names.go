@@ -29,6 +29,14 @@ type Names struct {
 	// role name; a grantee spelled otherwise is a role. Without it, PUBLIC is
 	// the keyword unquoted in any case and quoted in lower case.
 	PublicKeyword bool `json:"public_keyword,omitempty"`
+	// RegclassConstants reports that a string constant the server converts to
+	// regclass names a relation, which the server looks up as it reads the
+	// statement: a constant cast to regclass, as in 'app.ids'::regclass, and
+	// the first argument of nextval, currval and setval written as a constant,
+	// as in nextval('app.ids'). A bare name is found along the session's
+	// search path, and a statement that names a relation the database lacks is
+	// refused. internal/pgregclass reads such constants.
+	RegclassConstants bool `json:"regclass_constants,omitempty"`
 }
 
 // NameComparisons returns the comparisons a [Names] field may spell.

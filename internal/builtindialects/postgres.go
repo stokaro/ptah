@@ -129,7 +129,13 @@ func postgres() descriptor.Dialect {
 		},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
-		Names:            descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
+		//
+		// Measured on 18.6: a column default, a view and an SQL function body
+		// that name app.ids in nextval('app.ids'), currval, setval, a ::regclass
+		// cast or CAST(... AS regclass) are refused with `relation "app.ids"
+		// does not exist` while the database lacks it; nextval('app.ids'::text)
+		// is accepted.
+		Names:            descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true, RegclassConstants: true},
 		IndexNaming:      descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		ConstraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
 		Columns:          descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true, SerialNotNull: true},

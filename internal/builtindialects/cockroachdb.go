@@ -113,7 +113,12 @@ func cockroachDB() descriptor.Dialect {
 		Lint: descriptor.Lint{Analyzed: true},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
-		Names:       descriptor.Names{Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true},
+		//
+		// Measured on 26.3.2: the regclass constants PostgreSQL resolves as it
+		// reads a statement are resolved too, and so is nextval('app.ids'::text).
+		Names: descriptor.Names{
+			Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true, RegclassConstants: true,
+		},
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		// OwnerCreateOnce stays off: a second CREATE EXTENSION of one
 		// extension succeeds, measured on 26.3.2.
