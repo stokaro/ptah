@@ -82,19 +82,22 @@ type fixture struct {
 
 // What both databases hold, what only the left one holds, and a procedure of the
 // administrator's, which an account holding ALL PRIVILEGES on the database lists
-// and on MySQL may not read.
+// and on MySQL may not read. The administrator defines v_child and a planning
+// verb replaces it as the test's account, so it runs with its caller's
+// privileges: a plan refuses to replace a SQL SECURITY DEFINER view another
+// account defined.
 var (
 	sharedObjects = []string{
 		"CREATE TABLE parent (id INT PRIMARY KEY)",
 		"CREATE TABLE child (id INT PRIMARY KEY, parent_id INT, amount INT)",
-		"CREATE VIEW v_child AS SELECT id FROM child",
+		"CREATE SQL SECURITY INVOKER VIEW v_child AS SELECT id FROM child",
 	}
 	leftObjects = []string{
 		"CREATE TABLE only_left (id INT PRIMARY KEY)",
 		"CREATE INDEX child_amount_idx ON child (amount)",
 		"ALTER TABLE child ADD CONSTRAINT child_parent_fk FOREIGN KEY (parent_id) REFERENCES parent (id)",
 		"ALTER TABLE child ADD CONSTRAINT child_amount_ck CHECK (amount >= 0)",
-		"CREATE OR REPLACE VIEW v_child AS SELECT id, amount FROM child",
+		"CREATE OR REPLACE SQL SECURITY INVOKER VIEW v_child AS SELECT id, amount FROM child",
 		"CREATE TRIGGER child_trg BEFORE INSERT ON child FOR EACH ROW SET NEW.amount = 1",
 	}
 	leftProcedure = []string{"CREATE PROCEDURE p_noop() SELECT 1"}
