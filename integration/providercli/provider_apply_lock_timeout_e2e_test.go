@@ -3,6 +3,7 @@
 package providercli_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
@@ -48,7 +49,10 @@ func holdApplyLock(c *qt.C, databasePath string) {
 	c.Assert(err, qt.IsNil)
 	db.SetMaxOpenConns(1)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	tx, err := db.BeginTx(c.Context(), nil)
+	// The test's context is canceled before its cleanups run, and database/sql
+	// rolls back a transaction whose context is canceled, so begun on it the
+	// cleanup's Rollback races that rollback and may answer sql.ErrTxDone.
+	tx, err := db.BeginTx(context.WithoutCancel(c.Context()), nil)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(tx.Rollback(), qt.IsNil) })
 	_, err = tx.ExecContext(c.Context(), "CREATE TABLE ownership (held INTEGER NOT NULL)")
