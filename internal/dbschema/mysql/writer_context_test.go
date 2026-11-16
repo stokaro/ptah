@@ -642,6 +642,80 @@ func TestWriterDropAllTables_DropsUnopenableViewsBeforeTheHandoff(t *testing.T) 
 	})
 }
 
+// A SQL SECURITY DEFINER view whose definer account the server lacks cannot be
+// opened either, and the server answers the lock with a number of its own. The
+// view is dropped on its own, as one whose table is gone, and the views that
+// lock still go through the protected handoff with the tables.
+func TestWriterDropAllTables_DropsAViewWhoseDefinerIsMissingBeforeTheHandoff(t *testing.T) {
+	tests := []struct {
+		name          string
+		dialect       string
+		serverVersion string
+		lockErr       *mysqldriver.MySQLError
+	}{
+		{
+			name:          "mysql",
+			dialect:       platform.MySQL,
+			serverVersion: "8.0.13",
+			lockErr: &mysqldriver.MySQLError{
+				Number:  1449,
+				Message: "The user specified as a definer ('ptah_gone'@'%') does not exist",
+			},
+		},
+		{
+			name:          "mariadb",
+			dialect:       platform.MariaDB,
+			serverVersion: "10.11.15-MariaDB",
+			lockErr: &mysqldriver.MySQLError{
+				Number:  1446,
+				Message: "The user specified as a definer ('ptah_gone'@'%') does not exist",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			recorder := &mysqlCleanupRecorder{
+				foreignKeyChecks:  1,
+				viewDropStarted:   make(chan struct{}),
+				unopenableViews:   []string{"stale_users"},
+				unopenableViewErr: test.lockErr,
+				objects: [][]driver.Value{
+					{"active_users", "VIEW"},
+					{"stale_users", "VIEW"},
+					{"users", "TABLE"},
+				},
+			}
+			db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
+			writer := mysql.NewMySQLWriterWithServerVersion(db.SQL, "test", test.dialect, test.serverVersion)
+
+			err := writer.DropAllTables(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			statements := recorder.statements()
+			c.Assert(statements, qt.HasLen, 11)
+			c.Assert(statements[:6], qt.DeepEquals, []string{
+				"LOCK TABLES `test`.`active_users` WRITE, `test`.`stale_users` WRITE, `test`.`users` WRITE",
+				"LOCK TABLES `test`.`active_users` WRITE",
+				"LOCK TABLES `test`.`stale_users` WRITE",
+				"UNLOCK TABLES",
+				"DROP VIEW IF EXISTS `test`.`stale_users`",
+				"LOCK TABLES `test`.`active_users` WRITE, `test`.`users` WRITE",
+			})
+			// The handoff runs the DROP VIEW on a connection of its own, so it
+			// and the UNLOCK that releases it arrive in either order.
+			c.Assert(statements[6:], qt.ContentEquals, []string{
+				"DROP VIEW IF EXISTS `test`.`active_users`",
+				"UNLOCK TABLES",
+				"LOCK TABLES `test`.`users` WRITE",
+				"DROP TABLE IF EXISTS `test`.`users`",
+				"UNLOCK TABLES",
+			})
+		})
+	}
+}
+
 // The migration that dropped the table leaves only the view behind, which is
 // what a lint replay of `DROP TABLE t` under `CREATE VIEW v AS SELECT ... FROM
 // t` hands the cleanup. Nothing is left to lock.
@@ -695,8 +769,9 @@ func TestWriterDropAllTables_RejectsViewCreatedBeforeUnopenableViewDrop(t *testi
 	})
 }
 
-// Only error 1356 says a view cannot be opened. Any other refusal of the lock
-// stops the cleanup before anything is dropped.
+// Only the errors that say a view cannot be opened let the cleanup drop the
+// view on its own. Any other refusal of the lock stops the cleanup before
+// anything is dropped.
 func TestWriterDropAllTables_StopsWhenTheLockFailsForAnotherReason(t *testing.T) {
 	c := qt.New(t)
 	lockErr := &mysqldriver.MySQLError{Number: 1044, Message: "Access denied for user 'ptah'@'%' to database 'test'"}
@@ -917,6 +992,7 @@ type mysqlCleanupRecorder struct {
 	viewDropReleaseOnce        sync.Once
 	viewDropErr                error
 	unopenableViews            []string
+	unopenableViewErr          *mysqldriver.MySQLError
 	lockErr                    error
 	otherMetadataLockWaiters   int
 	enableErr                  error
@@ -1116,17 +1192,21 @@ func (rec *mysqlCleanupRecorder) exec(
 	}
 }
 
-// lockError is how the server answers a LOCK TABLES: error 1356 when it names
-// a view the server cannot open, as MySQL and MariaDB answer it, otherwise
-// lockErr.
+// lockError is how the server answers a LOCK TABLES: unopenableViewErr, or
+// error 1356 as MySQL and MariaDB answer it when that is nil, when it names a
+// view the server cannot open, otherwise lockErr.
 func (rec *mysqlCleanupRecorder) lockError(statement string) error {
 	for _, view := range rec.unopenableViews {
-		if strings.Contains(statement, "`"+view+"` WRITE") {
-			return &mysqldriver.MySQLError{
-				Number: 1356,
-				Message: "View 'test." + view + "' references invalid table(s) or column(s) or function(s) " +
-					"or definer/invoker of view lack rights to use them",
-			}
+		if !strings.Contains(statement, "`"+view+"` WRITE") {
+			continue
+		}
+		if rec.unopenableViewErr != nil {
+			return rec.unopenableViewErr
+		}
+		return &mysqldriver.MySQLError{
+			Number: 1356,
+			Message: "View 'test." + view + "' references invalid table(s) or column(s) or function(s) " +
+				"or definer/invoker of view lack rights to use them",
 		}
 	}
 	return rec.lockErr

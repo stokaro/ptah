@@ -79,3 +79,71 @@ func TestWriterDropAllTables_LiveDropsAViewWhoseTableIsGone(t *testing.T) {
 		})
 	}
 }
+
+// A SQL SECURITY DEFINER view whose definer account the server lacks cannot be
+// opened either: the server answers the lock with its own error number, 1449 on
+// MySQL and 1446 on MariaDB. An INVOKER view naming the same account opens. The
+// cleanup empties the database with both views in it.
+func TestWriterDropAllTables_LiveDropsAViewWhoseDefinerIsMissing(t *testing.T) {
+	tests := []struct {
+		name    string
+		engine  dbtarget.Engine
+		dialect string
+		lockErr string
+	}{
+		{
+			name:    "mysql",
+			engine:  dbtarget.MySQLAdmin,
+			dialect: platform.MySQL,
+			lockErr: `Error 1449 \(HY000\): The user specified as a definer \('ptah_missing_writer_definer'@'%'\) does not exist`,
+		},
+		{
+			name:    "mariadb",
+			engine:  dbtarget.MariaDBAdmin,
+			dialect: platform.MariaDB,
+			lockErr: `Error 1446 \(HY000\): The user specified as a definer \('ptah_missing_writer_definer'@'%'\) does not exist`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := openMySQLWriterLiveDatabase(c, test.engine)
+			c.Cleanup(func() {
+				c.Check(db.Close(), qt.IsNil)
+			})
+			target := fmt.Sprintf("ptah_missing_definer_%d", time.Now().UnixNano())
+			createMySQLWriterLiveDatabase(c, db, target)
+			c.Cleanup(func() {
+				dropMySQLWriterLiveDatabase(c, db, target)
+			})
+			qualified := func(name string) string { return sqlident.Qualified(test.dialect, target, name) }
+			definer := "DEFINER=`ptah_missing_writer_definer`@`%`"
+			for _, statement := range []string{
+				"CREATE TABLE " + qualified("docs") + " (id BIGINT PRIMARY KEY)",
+				"CREATE " + definer + " SQL SECURITY DEFINER VIEW " + qualified("as_definer") +
+					" AS SELECT id FROM " + qualified("docs"),
+				"CREATE " + definer + " SQL SECURITY INVOKER VIEW " + qualified("as_invoker") +
+					" AS SELECT id FROM " + qualified("docs"),
+			} {
+				_, err := db.ExecContext(c.Context(), statement)
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+			}
+			_, err := db.ExecContext(c.Context(), "LOCK TABLES "+qualified("as_definer")+" WRITE")
+			c.Assert(err, qt.ErrorMatches, test.lockErr)
+			writer := mysql.NewMySQLWriter(db, target, test.dialect)
+
+			err = writer.DropAllTables(c.Context())
+
+			c.Assert(err, qt.IsNil)
+			var objects int
+			err = db.QueryRowContext(
+				c.Context(),
+				"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ?",
+				target,
+			).Scan(&objects)
+			c.Assert(err, qt.IsNil)
+			c.Assert(objects, qt.Equals, 0)
+		})
+	}
+}
