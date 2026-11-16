@@ -114,6 +114,16 @@ func resolveDesiredNaming(ctx context.Context, target catalog.ServerInfo, devURL
 	return namingFor(target, &info), nil
 }
 
+// recordedNaming is the naming a saved plan recorded, placed, and false when
+// the plan recorded none or a run over target places no name.
+func recordedNaming(target catalog.ServerInfo, placedSchema string) (desiredNaming, bool) {
+	placedSchema = strings.TrimSpace(placedSchema)
+	if placedSchema == "" || !placesUnqualifiedNames(target) {
+		return desiredNaming{}, false
+	}
+	return desiredNaming{resolved: true, schema: placedSchema}, true
+}
+
 // PlaceUnqualifiedNames returns desired with every name it writes without a
 // schema placed in the current schema of the connection info describes, when
 // that connection describes every schema of its database and the engine
@@ -149,30 +159,44 @@ func checkDevNaming(planned desiredNaming, target, dev catalog.ServerInfo) error
 	return nil
 }
 
-// unqualifiedTableNames is the set of tables desired names without a schema,
-// read before [desiredNaming.place] gives each one.
-func unqualifiedTableNames(desired *schemamodel.Database) map[string]bool {
+// unqualifiedNames are the tables and sequences desired names without a
+// schema, read before [desiredNaming.place] gives each one. Those are the
+// objects that hold something a drop loses: a table its rows, a sequence its
+// current value.
+type unqualifiedNames struct {
+	tables    map[string]bool
+	sequences map[string]bool
+}
+
+// unqualifiedNamesOf collects the [unqualifiedNames] of desired.
+func unqualifiedNamesOf(desired *schemamodel.Database) unqualifiedNames {
+	names := unqualifiedNames{tables: make(map[string]bool), sequences: make(map[string]bool)}
 	if desired == nil {
-		return nil
+		return names
 	}
-	names := make(map[string]bool)
 	for _, table := range desired.Tables {
 		if strings.TrimSpace(table.Schema) == "" {
-			names[table.Name] = true
+			names.tables[table.Name] = true
+		}
+	}
+	for _, sequence := range desired.Sequences {
+		if strings.TrimSpace(sequence.Schema) == "" {
+			names.sequences[sequence.Name] = true
 		}
 	}
 	return names
 }
 
-// refuseUnqualifiedTableMoves refuses a plan that creates a table the desired
-// state names without a schema and drops the table of that name the other
-// reading of the name would have kept.
+// refuseUnqualifiedMoves refuses a plan that creates a table or a sequence the
+// desired state names without a schema and drops the object of that name the
+// other reading of the name would have kept.
 //
 // An unqualified desired name has two readings on a realm-scoped connection
 // whose current schema differs from where the name is placed; see [namingFor].
-// The plan follows one of them. Where the other reading names a table the
-// target holds, the plan creates the table in the placed schema and drops the
-// one the other reading kept, with its rows. Two cases remain:
+// The plan follows one of them. Where the other reading names an object the
+// target holds, the plan creates the object in the placed schema and drops the
+// one the other reading kept, with its rows or its current value. Two cases
+// remain:
 //
 //   - With a dev database, the name is placed where the dev database resolves
 //     it, `public`, and the target holds `rebase.notes` in its current schema.
@@ -182,53 +206,94 @@ func unqualifiedTableNames(desired *schemamodel.Database) map[string]bool {
 //     `rebase`, and the target holds `public.notes`, where the community
 //     binary, with a dev database created for the run, reads the name.
 //
-// Either plan loses rows the other reading keeps, so it is refused, and the
-// message names the qualified spellings that settle it. A desired table
-// written with a schema, a URL that pins its schema, and a run whose two
-// readings agree are not affected.
-func refuseUnqualifiedTableMoves(
+// Either plan loses what the other reading keeps, so it is refused, and the
+// message names the qualified spellings that settle it. An object written with
+// a schema, a URL that pins its schema, and a run whose two readings agree are
+// not affected. A view, a function or a type holds nothing a drop loses, and
+// its move is planned as the placement reads it.
+func refuseUnqualifiedMoves(
 	info catalog.ServerInfo,
 	naming desiredNaming,
-	unqualified map[string]bool,
+	unqualified unqualifiedNames,
 	diff *difftypes.SchemaDiff,
 ) error {
-	if diff == nil || naming.other == "" || len(diff.TablesAdded) == 0 || len(diff.TablesRemoved) == 0 {
+	if diff == nil || naming.other == "" {
 		return nil
 	}
 	current := defaultSchemaOf(info)
-	removed := make(map[string]bool, len(diff.TablesRemoved))
+	tablesCreated := make([]schemaName, 0, len(diff.TablesAdded))
+	for _, creation := range diff.TablesAdded {
+		tablesCreated = append(tablesCreated, schemaName{schema: creation.Table.Schema, name: creation.Table.Name})
+	}
+	tablesDropped := make([]schemaName, 0, len(diff.TablesRemoved))
 	for _, removal := range diff.TablesRemoved {
-		if !removal.Current.HasTable() {
-			continue
-		}
-		table := removal.Current.Table
-		if effectiveSchemaOf(table.Schema, current) == naming.other {
-			removed[table.Name] = true
+		if removal.Current.HasTable() {
+			tablesDropped = append(tablesDropped, schemaName{schema: removal.Current.Table.Schema, name: removal.Current.Table.Name})
 		}
 	}
-	for _, creation := range diff.TablesAdded {
-		name := creation.Table.Name
-		if !unqualified[name] || !removed[name] || effectiveSchemaOf(creation.Table.Schema, current) != naming.schema {
-			continue
-		}
-		kept := sqlident.QualifiedIdent(info.Dialect, naming.other, name)
-		if !naming.fromDev {
-			return &planrefusal.DeclarationError{Err: fmt.Errorf(
-				"the desired schema names table %q without a schema, which this connection resolves to its current schema %q, "+
-					"and the plan would create it there and drop %s with its rows; write the table as %s, "+
-					"or pin search_path in the URL",
-				name, naming.schema, kept, kept,
-			)}
-		}
-		return &planrefusal.DeclarationError{Err: fmt.Errorf(
-			"the desired schema names table %q without a schema, which the dev database resolves to %q and this connection "+
-				"to its current schema %q, and the plan would create it in %q and drop %s with its rows; "+
-				"write the table as %s to keep it, or as %s to move it",
-			name, naming.schema, naming.other, naming.schema, kept, kept,
-			sqlident.QualifiedIdent(info.Dialect, naming.schema, name),
-		)}
+	if name, ok := movedName(naming, current, unqualified.tables, tablesCreated, tablesDropped); ok {
+		return unqualifiedMoveError(info, naming, "table", "its rows", name)
+	}
+	sequencesCreated := make([]schemaName, 0, len(diff.SequencesAdded))
+	for _, sequence := range diff.SequencesAdded {
+		sequencesCreated = append(sequencesCreated, schemaName{schema: sequence.Schema, name: sequence.Name})
+	}
+	sequencesDropped := make([]schemaName, 0, len(diff.SequencesRemoved))
+	for _, sequence := range diff.SequencesRemoved {
+		sequencesDropped = append(sequencesDropped, schemaName{schema: sequence.Schema, name: sequence.Name})
+	}
+	if name, ok := movedName(naming, current, unqualified.sequences, sequencesCreated, sequencesDropped); ok {
+		return unqualifiedMoveError(info, naming, "sequence", "its current value", name)
 	}
 	return nil
+}
+
+// schemaName is an object of a diff by its schema, empty for one a read
+// relative to the current schema left unqualified, and its name.
+type schemaName struct {
+	schema, name string
+}
+
+// movedName is the first object of created that unqualified holds, that the
+// plan creates in the placed schema, and whose name the plan drops in the
+// other reading's schema.
+func movedName(naming desiredNaming, current string, unqualified map[string]bool, created, dropped []schemaName) (string, bool) {
+	if len(created) == 0 || len(dropped) == 0 {
+		return "", false
+	}
+	removed := make(map[string]bool, len(dropped))
+	for _, object := range dropped {
+		if effectiveSchemaOf(object.schema, current) == naming.other {
+			removed[object.name] = true
+		}
+	}
+	for _, object := range created {
+		if unqualified[object.name] && removed[object.name] && effectiveSchemaOf(object.schema, current) == naming.schema {
+			return object.name, true
+		}
+	}
+	return "", false
+}
+
+// unqualifiedMoveError is the refusal of [refuseUnqualifiedMoves] for an
+// object of kind, which loses what lost says when it is dropped.
+func unqualifiedMoveError(info catalog.ServerInfo, naming desiredNaming, kind, lost, name string) error {
+	kept := sqlident.QualifiedIdent(info.Dialect, naming.other, name)
+	if !naming.fromDev {
+		return &planrefusal.DeclarationError{Err: fmt.Errorf(
+			"the desired schema names %s %q without a schema, which this connection resolves to its current schema %q, "+
+				"and the plan would create it there and drop %s with %s; write the %s as %s, "+
+				"or pin search_path in the URL",
+			kind, name, naming.schema, kept, lost, kind, kept,
+		)}
+	}
+	return &planrefusal.DeclarationError{Err: fmt.Errorf(
+		"the desired schema names %s %q without a schema, which the dev database resolves to %q and this connection "+
+			"to its current schema %q, and the plan would create it in %q and drop %s with %s; "+
+			"write the %s as %s to keep it, or as %s to move it",
+		kind, name, naming.schema, naming.other, naming.schema, kept, lost, kind, kept,
+		sqlident.QualifiedIdent(info.Dialect, naming.schema, name),
+	)}
 }
 
 // effectiveSchemaOf is schema, or current for an object a read relative to

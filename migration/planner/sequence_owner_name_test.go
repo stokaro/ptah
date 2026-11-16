@@ -67,7 +67,7 @@ func TestOwnedSequenceDefault_ANameHoldingADot(t *testing.T) {
 			want: []string{
 				`ALTER SEQUENCE "public"."s" OWNED BY NONE`,
 				`ALTER TABLE "own.ers" ALTER COLUMN "code" DROP DEFAULT`,
-				`ALTER SEQUENCE "public"."s" OWNED BY "own.ers"."code"`,
+				`ALTER SEQUENCE "public"."s" OWNED BY "public"."own.ers"."code"`,
 			},
 		},
 		{
@@ -75,7 +75,7 @@ func TestOwnedSequenceDefault_ANameHoldingADot(t *testing.T) {
 			want: []string{
 				`ALTER SEQUENCE "public"."s" OWNED BY NONE`,
 				`ALTER TABLE "owners" ALTER COLUMN "co.de" DROP DEFAULT`,
-				`ALTER SEQUENCE "public"."s" OWNED BY "owners"."co.de"`,
+				`ALTER SEQUENCE "public"."s" OWNED BY "public"."owners"."co.de"`,
 			},
 		},
 	}

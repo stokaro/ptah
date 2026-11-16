@@ -65,6 +65,12 @@ grants and the objects a feature owner keeps, such as domains and policies, in
 `migrations generate --replay`. View and routine bodies, defaults and other
 expressions are SQL text and keep the names they were written with.
 
+A reference written without a schema, such as the table of an index or the
+function a trigger runs, is placed when it names an object the desired state
+declares without a schema. A reference to anything else keeps its name and
+resolves where the session finds it: a trigger that runs the built-in
+`suppress_redundant_updates_trigger()` runs the one in `pg_catalog`.
+
 - With a `--dev-url` that pins no `search_path`, the name is placed where the
   dev database resolves it, as the community binary reads the desired state on
   its dev database. A sibling database without the schema `app` resolves it to
@@ -81,8 +87,20 @@ table of that name in the other with its rows. `schema plan` and `schema apply`
 refuse that plan and name the qualified spellings that settle it: with a dev
 database resolving to `public` and `app.notes` on the target, `"app"."notes"`
 keeps the table and `"public"."notes"` moves it; with no dev database and
-`public.notes` on the target, `"public"."notes"` keeps it. A desired table
+`public.notes` on the target, `"public"."notes"` keeps it. A sequence is refused
+the same way, since a drop loses its current value. A desired table or sequence
 written with a schema, and a URL that pins `search_path`, are not refused.
+
+A plan saved with `schema plan` records the schema it placed names in. Applied
+with `schema apply --plan`, its rehearsal and the check of the state it reached
+place the desired state's names there too, whatever dev database the apply
+names. An Atlas `.plan.hcl` has no place for it, so its names are placed where
+the apply's dev database resolves them.
+
+A sequence's `OWNED BY table.column` names a table in the sequence's own
+schema, which is where PostgreSQL requires the owner to be and how a read
+writes it. Ptah renders the owner with that schema, so the statement does not
+depend on the session's search path.
 
 The rehearsal on a dev database of another current schema gives the dev
 database the target's current schema and sets the session's search path to the

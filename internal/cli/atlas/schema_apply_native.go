@@ -85,7 +85,7 @@ func applyAtlasNativePlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions, 
 		return "", fmt.Errorf("apply schema changes: %w", err)
 	}
 	if desired != nil {
-		if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan.Exclude, opts.devURL, opts.runtime); err != nil {
+		if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan, opts.devURL, opts.runtime); err != nil {
 			return "", err
 		}
 	}

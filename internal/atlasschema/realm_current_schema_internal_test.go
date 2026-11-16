@@ -40,8 +40,18 @@ func movedNotes(created, dropped string) *difftypes.SchemaDiff {
 	}
 }
 
-// unqualifiedNotes is a desired state that wrote notes without a schema.
-var unqualifiedNotes = map[string]bool{"notes": true}
+// unqualifiedNotes is a desired state that wrote the table notes and the
+// sequence s1 without a schema.
+var unqualifiedNotes = unqualifiedNames{tables: map[string]bool{"notes": true}, sequences: map[string]bool{"s1": true}}
+
+// movedSequence is a diff that creates sequence s1 in created and drops the
+// one in dropped.
+func movedSequence(created, dropped string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{
+		SequencesAdded:   difftypes.SequenceChanges{{Name: "s1", Schema: created}},
+		SequencesRemoved: difftypes.SequenceChanges{{Name: "s1", Schema: dropped}},
+	}
+}
 
 func TestCheckSimulationSchemaScope_HappyPath(t *testing.T) {
 	for _, test := range []struct {
@@ -216,18 +226,30 @@ func TestCheckDevNaming_FailurePath(t *testing.T) {
 		`where the dev database resolved it, and the dev database now resolves it to "app"; plan again`)
 }
 
-func TestRefuseUnqualifiedTableMoves_HappyPath(t *testing.T) {
+func TestRefuseUnqualifiedMoves_HappyPath(t *testing.T) {
 	for _, test := range []struct {
 		name        string
 		target      catalog.ServerInfo
 		dev         *catalog.ServerInfo
-		unqualified map[string]bool
+		unqualified unqualifiedNames
 		diff        *difftypes.SchemaDiff
 	}{
 		{
 			name:   "the declaration names the schema",
 			target: realmInfo("", "rebase"),
 			diff:   movedNotes("rebase", "public"),
+		},
+		{
+			name:   "the declaration names the sequence's schema",
+			target: realmInfo("", "rebase"),
+			diff:   movedSequence("rebase", "public"),
+		},
+		{
+			name:        "a sequence of the name is dropped in neither reading",
+			target:      realmInfo("", "rebase"),
+			dev:         new(realmInfo("", "public")),
+			unqualified: unqualifiedNotes,
+			diff:        movedSequence("public", "app"),
 		},
 		{
 			name:        "the current schema is the default",
@@ -267,12 +289,12 @@ func TestRefuseUnqualifiedTableMoves_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			naming := namingFor(test.target, test.dev)
-			c.Assert(refuseUnqualifiedTableMoves(test.target, naming, test.unqualified, test.diff), qt.IsNil)
+			c.Assert(refuseUnqualifiedMoves(test.target, naming, test.unqualified, test.diff), qt.IsNil)
 		})
 	}
 }
 
-func TestRefuseUnqualifiedTableMoves_FailurePath(t *testing.T) {
+func TestRefuseUnqualifiedMoves_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		dev  *catalog.ServerInfo
@@ -294,11 +316,26 @@ func TestRefuseUnqualifiedTableMoves_FailurePath(t *testing.T) {
 				`and this connection to its current schema "rebase", and the plan would create it in "public" and drop ` +
 				`"rebase"."notes" with its rows; write the table as "rebase"."notes" to keep it, or as "public"."notes" to move it`,
 		},
+		{
+			name: "no dev database, the default schema holds the sequence",
+			diff: movedSequence("rebase", "public"),
+			want: `the desired schema names sequence "s1" without a schema, which this connection ` +
+				`resolves to its current schema "rebase", and the plan would create it there and drop "public"."s1" ` +
+				`with its current value; write the sequence as "public"."s1", or pin search_path in the URL`,
+		},
+		{
+			name: "a dev database that resolves apart, the current schema holds the sequence",
+			dev:  new(realmInfo("", "public")),
+			diff: movedSequence("public", ""),
+			want: `the desired schema names sequence "s1" without a schema, which the dev database resolves to "public" ` +
+				`and this connection to its current schema "rebase", and the plan would create it in "public" and drop ` +
+				`"rebase"."s1" with its current value; write the sequence as "rebase"."s1" to keep it, or as "public"."s1" to move it`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			target := realmInfo("", "rebase")
-			err := refuseUnqualifiedTableMoves(target, namingFor(target, test.dev), unqualifiedNotes, test.diff)
+			err := refuseUnqualifiedMoves(target, namingFor(target, test.dev), unqualifiedNotes, test.diff)
 			c.Assert(err, qt.ErrorAs, new(*planrefusal.DeclarationError))
 			c.Assert(err, qt.ErrorMatches, test.want)
 		})

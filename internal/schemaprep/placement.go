@@ -27,13 +27,21 @@ import (
 // session that runs the plan resolves an unqualified name to.
 //
 // What is placed: tables, sequences, enums, functions, views, materialized
-// views, the tables of columns, indexes, constraints, triggers, row-level
-// security records, grants and declared rows, the tables a foreign key or a
-// relation embedding references, the function a trigger executes, the dependency
-// maps, a column type that names a user type the database declares, and the
+// views, a column type that names a user type the database declares, and the
 // identity of a feature object, such as a domain or a policy, whose schema the
-// source left to the target's default. Bodies, expressions and defaults are SQL
-// text and keep the names they were written with.
+// source left to the target's default. A reference written without a schema is
+// placed when it names one of those objects the database declares without a
+// schema: the tables of columns, indexes, constraints, triggers, row-level
+// security records, grants and declared rows, the tables a foreign key or a
+// relation embedding references, the function a trigger executes, the
+// sequence or routine a grant names, the dependency maps and the
+// self-referencing foreign keys. A table's DependsOn is matched by its bare
+// name, so it needs no schema. A reference to
+// an object the database does not declare, such as a built-in trigger function
+// or a table another tool manages, keeps the name it was written with and is
+// resolved where the session finds it. Bodies, expressions and defaults are
+// SQL text and keep the names they were written with, and so does the table of
+// a sequence's OWNED BY, which the comparison reads as the server prints it.
 func PlaceUnqualified(database *schemamodel.Database, schema, targetPlatform string) (*schemamodel.Database, error) {
 	schema = strings.TrimSpace(schema)
 	if database == nil || schema == "" {
@@ -46,6 +54,11 @@ func PlaceUnqualified(database *schemamodel.Database, schema, targetPlatform str
 	placed := *database
 	placed.FeatureObjects = objects
 	place := func(name string) string { return placedName(name, schema) }
+	declared := declaredUnqualified(database, identifier.ForDialect(targetPlatform))
+	relation := func(name string) string { return declared.place(name, schema, declared.relations) }
+	routine := func(name string) string { return declared.placeRoutine(name, schema) }
+	sequence := func(name string) string { return declared.place(name, schema, declared.sequences) }
+	anyDeclared := func(name string) string { return declared.place(name, schema, declared.relations, declared.functions) }
 
 	placed.Tables = mapSlice(database.Tables, func(table schemamodel.Table) schemamodel.Table {
 		if strings.TrimSpace(table.Schema) == "" {
@@ -79,53 +92,77 @@ func PlaceUnqualified(database *schemamodel.Database, schema, targetPlatform str
 	})
 	enums := placedEnumTypes(database.Enums, schema, targetPlatform)
 	placed.Fields = mapSlice(database.Fields, func(field schemamodel.Field) schemamodel.Field {
-		field.Foreign = placedReference(field.Foreign, schema)
+		field.Foreign = placedReference(field.Foreign, relation)
 		field.Type = qualifyUserTypeReference(field.Type, enums, enums)
 		return field
 	})
 	placed.EmbeddedFields = mapSlice(database.EmbeddedFields, func(field schemamodel.EmbeddedField) schemamodel.EmbeddedField {
-		field.Ref = placedReference(field.Ref, schema)
+		field.Ref = placedReference(field.Ref, relation)
 		return field
 	})
 	placed.Indexes = mapSlice(database.Indexes, func(index schemamodel.Index) schemamodel.Index {
-		index.TableName = place(index.TableName)
+		index.TableName = relation(index.TableName)
 		return index
 	})
 	placed.Constraints = mapSlice(database.Constraints, func(constraint schemamodel.Constraint) schemamodel.Constraint {
-		constraint.Table = place(constraint.Table)
-		constraint.ForeignTable = place(constraint.ForeignTable)
+		constraint.Table = relation(constraint.Table)
+		constraint.ForeignTable = relation(constraint.ForeignTable)
 		return constraint
 	})
 	placed.Triggers = mapSlice(database.Triggers, func(trigger schemamodel.Trigger) schemamodel.Trigger {
-		trigger.Table = place(trigger.Table)
-		trigger.ExecuteFunction = place(trigger.ExecuteFunction)
+		trigger.Table = relation(trigger.Table)
+		trigger.ExecuteFunction = routine(trigger.ExecuteFunction)
 		return trigger
 	})
 	placed.RLSPolicies = mapSlice(database.RLSPolicies, func(policy schemamodel.RLSPolicy) schemamodel.RLSPolicy {
-		policy.Table = place(policy.Table)
+		policy.Table = relation(policy.Table)
 		return policy
 	})
 	placed.RLSEnabledTables = mapSlice(database.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) schemamodel.RLSEnabledTable {
-		table.Table = place(table.Table)
+		table.Table = relation(table.Table)
 		return table
 	})
 	placeGrant := func(grant schemamodel.Grant) schemamodel.Grant {
-		grant.OnTable = place(grant.OnTable)
-		grant.OnSequence = place(grant.OnSequence)
-		grant.OnRoutine = place(grant.OnRoutine)
+		grant.OnTable = relation(grant.OnTable)
+		grant.OnSequence = sequence(grant.OnSequence)
+		grant.OnRoutine = routine(grant.OnRoutine)
 		return grant
 	}
 	placed.Grants = mapSlice(database.Grants, placeGrant)
 	placed.RevokedGrants = mapSlice(database.RevokedGrants, placeGrant)
 	placed.ManagedData = mapSlice(database.ManagedData, func(data schemamodel.ManagedData) schemamodel.ManagedData {
-		if strings.TrimSpace(data.Schema) == "" && unqualified(data.Table) {
+		if strings.TrimSpace(data.Schema) == "" && unqualified(data.Table) && declared.has(data.Table, declared.relations) {
 			data.Schema = schema
 		}
 		return data
 	})
-	placed.Dependencies = placedDependencies(database.Dependencies, place)
-	placed.FunctionDependencies = placedDependencies(database.FunctionDependencies, place)
+	placed.Dependencies = placedDependencies(database.Dependencies, relation)
+	placed.FunctionDependencies = placedDependencies(database.FunctionDependencies, anyDeclared)
+	placed.SelfReferencingForeignKeys = placedSelfReferences(database.SelfReferencingForeignKeys, relation)
 	return QualifyDeclaredUserTypes(&placed, targetPlatform), nil
+}
+
+// placedSelfReferences is the self-referencing foreign keys of a database,
+// keyed by table, with each table and each reference placed by place. The map
+// is keyed by the table's qualified name, so a key left as written stops
+// naming the table once the table is placed.
+func placedSelfReferences(
+	references map[string][]schemamodel.SelfReferencingFK,
+	place func(string) string,
+) map[string][]schemamodel.SelfReferencingFK {
+	if references == nil {
+		return nil
+	}
+	placed := make(map[string][]schemamodel.SelfReferencingFK, len(references))
+	for table, keys := range maps.All(references) {
+		placedKeys := make([]schemamodel.SelfReferencingFK, len(keys))
+		for i, key := range keys {
+			key.Foreign = placedReference(key.Foreign, place)
+			placedKeys[i] = key
+		}
+		placed[place(table)] = placedKeys
+	}
+	return placed
 }
 
 // placedFeatureObjects is objects with every identity whose schema the source
@@ -199,22 +236,108 @@ func unqualified(name string) bool {
 	return ok && !ref.Qualified
 }
 
+// declaredNames are the objects a database declares without a schema, by
+// identity key, which [PlaceUnqualified] places. A reference is placed only
+// when it names one of them.
+type declaredNames struct {
+	semantics identifier.Semantics
+	// relations are the tables, views and materialized views.
+	relations map[string]bool
+	sequences map[string]bool
+	functions map[string]bool
+}
+
+// declaredUnqualified collects the objects database declares without a
+// schema.
+func declaredUnqualified(database *schemamodel.Database, semantics identifier.Semantics) declaredNames {
+	names := declaredNames{
+		semantics: semantics,
+		relations: make(map[string]bool),
+		sequences: make(map[string]bool),
+		functions: make(map[string]bool),
+	}
+	add := func(set map[string]bool, name string) {
+		if unqualified(name) {
+			set[semantics.TableIdentityKey(strings.TrimSpace(name))] = true
+		}
+	}
+	for _, table := range database.Tables {
+		if strings.TrimSpace(table.Schema) == "" {
+			add(names.relations, table.Name)
+		}
+	}
+	for _, view := range database.Views {
+		add(names.relations, view.Name)
+	}
+	for _, view := range database.MaterializedViews {
+		add(names.relations, view.Name)
+	}
+	for _, sequence := range database.Sequences {
+		if strings.TrimSpace(sequence.Schema) == "" {
+			add(names.sequences, sequence.Name)
+		}
+	}
+	for _, function := range database.Functions {
+		add(names.functions, function.Name)
+	}
+	return names
+}
+
+// has reports whether name, written without a schema, names an object of one
+// of sets.
+func (d declaredNames) has(name string, sets ...map[string]bool) bool {
+	if !unqualified(name) {
+		return false
+	}
+	key := d.semantics.TableIdentityKey(strings.TrimSpace(name))
+	for _, set := range sets {
+		if set[key] {
+			return true
+		}
+	}
+	return false
+}
+
+// place is name in schema when it names, without a schema, an object of one
+// of sets, and name otherwise.
+func (d declaredNames) place(name, schema string, sets ...map[string]bool) string {
+	if !d.has(name, sets...) {
+		return name
+	}
+	return placedName(name, schema)
+}
+
+// placeRoutine is a routine reference, `name` or `name(arguments)`, placed in
+// schema when it names a function the database declares without a schema.
+func (d declaredNames) placeRoutine(reference, schema string) string {
+	trimmed := strings.TrimSpace(reference)
+	name, arguments, _ := strings.Cut(trimmed, "(")
+	name = strings.TrimSpace(name)
+	if name == "" || !d.has(name, d.functions) {
+		return reference
+	}
+	if trimmed == name {
+		return placedName(name, schema)
+	}
+	return placedName(name, schema) + "(" + arguments
+}
+
 // placedReference is a foreign key reference, `table(column)` or `table`, with
-// its table placed in schema.
-func placedReference(reference, schema string) string {
+// its table placed by place.
+func placedReference(reference string, place func(string) string) string {
 	trimmed := strings.TrimSpace(reference)
 	if trimmed == "" {
 		return reference
 	}
 	open := strings.IndexByte(trimmed, '(')
 	if open < 0 {
-		return placedName(trimmed, schema)
+		return place(trimmed)
 	}
 	table := strings.TrimSpace(trimmed[:open])
 	if table == "" {
 		return reference
 	}
-	return placedName(table, schema) + trimmed[open:]
+	return place(table) + trimmed[open:]
 }
 
 // placedDependencies is a dependency map with every key and every value placed.

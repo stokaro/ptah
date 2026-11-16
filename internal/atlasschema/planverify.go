@@ -99,6 +99,11 @@ type PlanRehearsalOptions struct {
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own; see [SimulateOptions.DevServerDisposable].
 	DevServerDisposable bool
+	// PlacedSchema is the plan's [PlanFile.PlacedSchema]. The comparison of the
+	// rehearsed state places the desired state's unqualified names there. Empty
+	// asks the dev database the rehearsal runs on, which is what a plan that
+	// records no schema, such as an Atlas .plan.hcl document, leaves to decide.
+	PlacedSchema string
 }
 
 // RehearsePlanStatements verifies a pre-planned migration semantically, the
@@ -181,15 +186,20 @@ func RehearsePlanStatements(
 		return err
 	}
 
-	// The rehearsal has its dev database, so it asks it where an unqualified
-	// desired name goes rather than asking its URL again.
+	// A plan that records where it placed an unqualified desired name is
+	// compared with the names placed there. Otherwise the rehearsal has its dev
+	// database, so it asks it rather than asking its URL again.
 	devInfo := devConn.Info()
+	naming := namingFor(conn.Info(), &devInfo)
+	if recorded, ok := recordedNaming(conn.Info(), opts.PlacedSchema); ok {
+		naming = recorded
+	}
 	computation, err := compareRehearsedState(ctx, devConn, conn.Info(), ApplyOptions{
 		Runtime:  opts.Runtime,
 		Desired:  desired,
 		Exclude:  opts.Exclude,
 		baseline: dev.baseline,
-		naming:   namingFor(conn.Info(), &devInfo),
+		naming:   naming,
 	})
 	if err != nil {
 		return fmt.Errorf("compare rehearsed plan state with the desired state: %w", err)
@@ -246,14 +256,17 @@ func compareRehearsedState(
 // performs the equivalent verification on every `schema apply --plan`; the
 // check is always on and has no opt-out flag.
 //
-// devURL is the dev database the plan was rehearsed on, empty for none. Its
-// current schema is where the plan placed a name the desired state writes
-// without a schema, so the verification places it there too; see [namingFor].
+// The verification compares with the plan's exclude patterns, and places a
+// name the desired state writes without a schema where the plan placed it
+// ([PlanFile.PlacedSchema]). A plan that records no schema, such as an Atlas
+// .plan.hcl document, places it where devURL, the dev database the apply
+// names, resolves it, or where the target does when devURL is empty; see
+// [namingFor].
 func VerifyAppliedPlanState(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
-	exclude []string,
+	plan PlanFile,
 	devURL string,
 	runtime engine.SchemaRuntime,
 ) error {
@@ -266,15 +279,18 @@ func VerifyAppliedPlanState(
 	if desired == nil {
 		return errors.New("plan end-state verification requires the desired schema state")
 	}
-	naming, err := resolveDesiredNaming(ctx, conn.Info(), devURL)
-	if err != nil {
-		return fmt.Errorf(
-			"the plan was applied successfully, but the end-state verification could not be completed: %w", err)
+	naming, recorded := recordedNaming(conn.Info(), plan.PlacedSchema)
+	if !recorded {
+		var err error
+		if naming, err = resolveDesiredNaming(ctx, conn.Info(), devURL); err != nil {
+			return fmt.Errorf(
+				"the plan was applied successfully, but the end-state verification could not be completed: %w", err)
+		}
 	}
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
 		Runtime: runtime,
 		Desired: desired,
-		Exclude: exclude,
+		Exclude: plan.Exclude,
 		naming:  naming,
 	})
 	if err != nil {

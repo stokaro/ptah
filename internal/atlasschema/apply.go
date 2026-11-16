@@ -436,6 +436,9 @@ type applyComputation struct {
 	// reads them again, so a row that moved after planning makes the plan stale
 	// the way a moved column does.
 	rowSets []PlanRowSet
+	// naming is where the comparison placed a desired name written without a
+	// schema. A saved plan records its schema.
+	naming desiredNaming
 }
 
 // PreflightApplyTarget validates the target state before an apply lock is
@@ -503,9 +506,9 @@ type placedDesired struct {
 	database *schemamodel.Database
 	// naming is what the names were placed by.
 	naming desiredNaming
-	// unqualified holds the tables the source named without a schema, which
-	// [refuseUnqualifiedTableMoves] reads.
-	unqualified map[string]bool
+	// unqualified holds the tables and sequences the source named without a
+	// schema, which [refuseUnqualifiedMoves] reads.
+	unqualified unqualifiedNames
 }
 
 // loadPlacedDesiredApplySchema loads the desired schema of an apply and places
@@ -527,7 +530,7 @@ func loadPlacedDesiredApplySchema(
 	if err != nil {
 		return placedDesired{}, err
 	}
-	unqualified := unqualifiedTableNames(desired)
+	unqualified := unqualifiedNamesOf(desired)
 	desired, err = naming.place(desired, conn.Info().Dialect)
 	if err != nil {
 		return placedDesired{}, err
@@ -598,6 +601,7 @@ func computeApplyPlan(
 		desired:          desired,
 		readScope:        read.readScope,
 		schemasBeyondURL: read.schemasBeyondURL,
+		naming:           placed.naming,
 	}
 	info := conn.Info()
 	// The comparison is told what the diff policy will do to its answer; see
@@ -684,7 +688,7 @@ func reviewApplyDiff(
 ) error {
 	// After the policy, as the warning below: a drop the plan will not run
 	// loses no rows.
-	if err := refuseUnqualifiedTableMoves(info, placed.naming, placed.unqualified, diff); err != nil {
+	if err := refuseUnqualifiedMoves(info, placed.naming, placed.unqualified, diff); err != nil {
 		return err
 	}
 	// After the policy, which deletes the table drops a configuration skips:

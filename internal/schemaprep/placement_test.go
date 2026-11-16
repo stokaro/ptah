@@ -49,6 +49,10 @@ func unplacedDatabase() *schemamodel.Database {
 		FunctionDependencies: map[string][]string{
 			"f": {"notes"},
 		},
+		SelfReferencingForeignKeys: map[string][]schemamodel.SelfReferencingFK{
+			"notes":      {{FieldName: "parent", Foreign: "notes(id)"}},
+			"other.kept": {{FieldName: "up", Foreign: "other.kept(id)"}},
+		},
 		FeatureObjects: must.Must(schemaext.NewObjects(
 			definedtypetest.Object(objectidentity.KindDomain, "", "amount", "numeric"),
 			definedtypetest.Object(objectidentity.KindDomain, "other", "code", "text"),
@@ -89,6 +93,10 @@ func placedDatabase() *schemamodel.Database {
 		Dependencies:     map[string][]string{"app.notes": {"app.notes", "other.kept"}},
 		FunctionDependencies: map[string][]string{
 			"app.f": {"app.notes"},
+		},
+		SelfReferencingForeignKeys: map[string][]schemamodel.SelfReferencingFK{
+			"app.notes":  {{FieldName: "parent", Foreign: "app.notes(id)"}},
+			"other.kept": {{FieldName: "up", Foreign: "other.kept(id)"}},
 		},
 	}
 }
@@ -192,4 +200,66 @@ func TestPlaceUnqualified_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `place feature objects written without a schema in "app": .*`)
 	c.Assert(placed, qt.IsNil)
+}
+
+// A reference to an object the database does not declare is resolved where
+// the session finds it, so placement leaves it as written: a built-in trigger
+// function lives in pg_catalog, and a table another tool manages lives where
+// that tool put it. Placed, the trigger would name a function the placed
+// schema does not hold and the rehearsal would fail with SQLSTATE 42883.
+func TestPlaceUnqualified_LeavesAnUndeclaredReferenceAsWritten(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Name: "docs"}},
+		Fields: []schemamodel.Field{
+			{StructName: "docs", Name: "owner", Type: "bigint", Foreign: "accounts(id)"},
+		},
+		Indexes:     []schemamodel.Index{{Name: "accounts_x", StructName: "accounts", TableName: "accounts"}},
+		Constraints: []schemamodel.Constraint{{Name: "fk", Table: "docs", ForeignTable: "accounts"}},
+		Triggers: []schemamodel.Trigger{
+			{Name: "nored", Table: "docs", ExecuteFunction: "suppress_redundant_updates_trigger"},
+		},
+		RLSPolicies: []schemamodel.RLSPolicy{{Name: "p", Table: "accounts"}},
+		Grants: []schemamodel.Grant{
+			{OnTable: "accounts"}, {OnSequence: "accounts_id_seq"}, {OnRoutine: "lower(text)"},
+		},
+		ManagedData:          []schemamodel.ManagedData{{Table: "accounts"}},
+		Dependencies:         map[string][]string{"docs": {"accounts"}},
+		FunctionDependencies: map[string][]string{"f": {"lower"}},
+	}
+
+	placed, err := schemaprep.PlaceUnqualified(database, "app", platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(placed.Tables[0].Schema, qt.Equals, "app")
+	c.Assert(placed.Fields[0].Foreign, qt.Equals, "accounts(id)")
+	c.Assert(placed.Indexes[0].TableName, qt.Equals, "accounts")
+	c.Assert(placed.Constraints[0].Table, qt.Equals, "app.docs")
+	c.Assert(placed.Constraints[0].ForeignTable, qt.Equals, "accounts")
+	c.Assert(placed.Triggers[0].Table, qt.Equals, "app.docs")
+	c.Assert(placed.Triggers[0].ExecuteFunction, qt.Equals, "suppress_redundant_updates_trigger")
+	c.Assert(placed.RLSPolicies[0].Table, qt.Equals, "accounts")
+	c.Assert(placed.Grants, qt.DeepEquals, database.Grants)
+	c.Assert(placed.ManagedData[0].Schema, qt.Equals, "")
+	c.Assert(placed.Dependencies, qt.DeepEquals, map[string][]string{"app.docs": {"accounts"}})
+	c.Assert(placed.FunctionDependencies, qt.DeepEquals, map[string][]string{"f": {"lower"}})
+}
+
+// A declared routine a grant names with its argument types is placed with
+// them, and the trigger running it names it in the placed schema.
+func TestPlaceUnqualified_PlacesADeclaredRoutineWithItsArguments(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{
+		Functions: []schemamodel.Function{{Name: "touch"}},
+		Tables:    []schemamodel.Table{{Name: "docs"}},
+		Triggers:  []schemamodel.Trigger{{Name: "t", Table: "docs", ExecuteFunction: "touch"}},
+		Grants:    []schemamodel.Grant{{OnRoutine: "touch(integer)"}},
+	}
+
+	placed, err := schemaprep.PlaceUnqualified(database, "app", platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(placed.Triggers[0].Table, qt.Equals, "app.docs")
+	c.Assert(placed.Triggers[0].ExecuteFunction, qt.Equals, "app.touch")
+	c.Assert(placed.Grants[0].OnRoutine, qt.Equals, "app.touch(integer)")
 }

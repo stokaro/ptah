@@ -259,3 +259,157 @@ func TestMigrateDiffQualifiesAnUnqualifiedName_HappyPathE2E(t *testing.T) {
 		})
 	}
 }
+
+// TestSchemaApplyLeavesAnUndeclaredTriggerFunctionWhereTheSessionFindsIt_HappyPathE2E
+// applies a table and a trigger that runs suppress_redundant_updates_trigger,
+// a built-in function the desired state does not declare. The table is placed
+// where the dev database resolves its name, and the function is not: it lives
+// in pg_catalog, so a trigger naming it in public would not be created. The
+// trigger is read back running the pg_catalog function, and a second apply
+// plans nothing.
+func TestSchemaApplyLeavesAnUndeclaredTriggerFunctionWhereTheSessionFindsIt_HappyPathE2E(t *testing.T) {
+	const schema = "CREATE TABLE docs (id bigint PRIMARY KEY, body text);\n" +
+		"CREATE TRIGGER nored BEFORE UPDATE ON docs FOR EACH ROW EXECUTE FUNCTION suppress_redundant_updates_trigger();\n"
+	for _, test := range []struct {
+		name   string
+		target clirun.Target
+	}{
+		{name: "ptah-compat", target: clirun.Compat},
+		{name: "ptah", target: clirun.Ptah},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newRealmCurrentSchemaFixture(c)
+			options := clirun.Options{Dir: realmCurrentSchemaRoot(c, schema), Env: environmentWithoutPtahVariables()}
+
+			applied := clirun.Run(c, test.target, options, fixture.applyArgs(test.target)...)
+			again := clirun.Run(c, test.target, options, fixture.applyArgs(test.target)...)
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(realmCurrentSchemaNames(c, fixture.target, `
+				SELECT c.relnamespace::regnamespace::text || '.' || c.relname || ' ' || p.pronamespace::regnamespace::text || '.' || p.proname
+				FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_proc p ON p.oid = t.tgfoid
+				WHERE t.tgname = 'nored'`), qt.DeepEquals, []string{"public.docs pg_catalog.suppress_redundant_updates_trigger"})
+			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made")
+		})
+	}
+}
+
+// TestSchemaApplyPlacesASavedPlansNamesWhereThePlanPlacedThem_HappyPathE2E
+// saves a native JSON plan of an unqualified table and applies it with a dev
+// database other than the plan's, or with none. The plan records the schema it
+// placed the name in, and the rehearsal and the end-state verification place
+// it there too, so neither reports the plan's own result as drift. The target
+// is read back.
+func TestSchemaApplyPlacesASavedPlansNamesWhereThePlanPlacedThem_HappyPathE2E(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		planDev  bool
+		applyDev bool
+		// wantTable is schema.table, with {role} standing for the role's
+		// schema.
+		wantTable string
+	}{
+		{name: "planned on the dev database, applied without one", planDev: true, applyDev: false,
+			wantTable: "public.fresh"},
+		{name: "planned without a dev database, applied with one", planDev: false, applyDev: true,
+			wantTable: "{role}.fresh"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newRealmCurrentSchemaFixture(c)
+			options := clirun.Options{Dir: realmCurrentSchemaRoot(c, "CREATE TABLE fresh (id bigint PRIMARY KEY);\n"), Env: environmentWithoutPtahVariables()}
+			dev := map[bool][]string{true: {"--dev-url", fixture.devURL}, false: nil}
+
+			planned := clirun.Run(c, clirun.Compat, options, append([]string{"schema", "plan", "--from", fixture.targetURL,
+				"--to", "file://schema.sql", "--output", "realm.plan.json"}, dev[test.planDev]...)...)
+			c.Assert(planned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned.Stdout, planned.Stderr))
+			applied := clirun.Run(c, clirun.Compat, options, append([]string{"schema", "apply", "--url", fixture.targetURL,
+				"--to", "file://schema.sql", "--plan", "file://realm.plan.json", "--auto-approve"}, dev[test.applyDev]...)...)
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(realmCurrentSchemaNames(c, fixture.target,
+				"SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_name = 'fresh'"),
+				qt.DeepEquals, []string{strings.ReplaceAll(test.wantTable, "{role}", fixture.role)})
+		})
+	}
+}
+
+// TestSchemaApplyRefusesAnUnqualifiedSequenceItsTwoReadingsPlaceApart_FailurePathE2E
+// applies `CREATE SEQUENCE s1` where the target holds s1 in its current
+// schema, at 42, and the dev database resolves the name to public. The plan
+// would create public.s1 and drop the role's s1 with its value, so the apply
+// is refused, and the value is read back where it was.
+func TestSchemaApplyRefusesAnUnqualifiedSequenceItsTwoReadingsPlaceApart_FailurePathE2E(t *testing.T) {
+	const want = `the desired schema names sequence "s1" without a schema, which the dev database resolves to "public" ` +
+		`and this connection to its current schema "{role}", and the plan would create it in "public" and drop ` +
+		`"{role}"."s1" with its current value; write the sequence as "{role}"."s1" to keep it, or as "public"."s1" to move it`
+	for _, test := range []struct {
+		name     string
+		target   clirun.Target
+		wantExit int
+		prefix   string
+	}{
+		{name: "ptah-compat", target: clirun.Compat, wantExit: 1, prefix: "Error: "},
+		{name: "ptah", target: clirun.Ptah, wantExit: 2, prefix: "error: "},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newRealmCurrentSchemaFixture(c, "CREATE SEQUENCE s1", "SELECT setval('s1', 42)")
+			root := realmCurrentSchemaRoot(c, "CREATE SEQUENCE s1;\n")
+			role := strings.NewReplacer("{role}", fixture.role)
+
+			result := clirun.Run(c, test.target, clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()},
+				fixture.applyArgs(test.target)...)
+
+			c.Assert(result.ExitCode, qt.Equals, test.wantExit, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
+			c.Assert(result.Stderr, qt.Contains, role.Replace(test.prefix+want))
+			c.Assert(realmCurrentSchemaNames(c, fixture.target,
+				"SELECT schemaname || '.' || sequencename || ' ' || last_value FROM pg_sequences WHERE sequencename = 's1'"),
+				qt.DeepEquals, []string{fixture.role + ".s1 42"})
+		})
+	}
+}
+
+// TestSchemaApplyRendersASequenceOwnerInTheSequencesSchema_HappyPathE2E
+// adds a column beside a sequence in schema app that a column of app.t owns.
+// The read writes the owner as t.id, without the schema it has to share with
+// the sequence, and the rehearsal recreates the sequence from the read with
+// the owner in app: rendered bare, the server resolves t along the session's
+// search path, which does not reach app, and the rehearsal fails with
+// SQLSTATE 42P01. The owner is read back from the catalog, and a second apply
+// plans nothing.
+func TestSchemaApplyRendersASequenceOwnerInTheSequencesSchema_HappyPathE2E(t *testing.T) {
+	const schema = "CREATE SCHEMA app;\n" +
+		"CREATE TABLE app.t (id bigint PRIMARY KEY, note text);\n" +
+		"CREATE SEQUENCE app.s OWNED BY app.t.id;\n"
+	for _, test := range []struct {
+		name   string
+		target clirun.Target
+	}{
+		{name: "ptah-compat", target: clirun.Compat},
+		{name: "ptah", target: clirun.Ptah},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newRealmCurrentSchemaFixture(c, "CREATE SCHEMA app", "CREATE TABLE app.t (id bigint PRIMARY KEY)",
+				"CREATE SEQUENCE app.s OWNED BY app.t.id")
+			options := clirun.Options{Dir: realmCurrentSchemaRoot(c, schema), Env: environmentWithoutPtahVariables()}
+
+			applied := clirun.Run(c, test.target, options, fixture.applyArgs(test.target)...)
+			again := clirun.Run(c, test.target, options, fixture.applyArgs(test.target)...)
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(realmCurrentSchemaNames(c, fixture.target, `
+				SELECT s.relnamespace::regnamespace::text || '.' || s.relname || ' ' || t.relnamespace::regnamespace::text || '.' || t.relname
+				FROM pg_depend d JOIN pg_class s ON s.oid = d.objid JOIN pg_class t ON t.oid = d.refobjid
+				WHERE s.relkind = 'S' AND d.deptype = 'a' AND s.relname = 's'`), qt.DeepEquals, []string{"app.s app.t"})
+			c.Assert(realmCurrentSchemaNames(c, fixture.target,
+				"SELECT table_schema || '.' || column_name FROM information_schema.columns WHERE table_name = 't' ORDER BY ordinal_position"),
+				qt.DeepEquals, []string{"app.id", "app.note"})
+			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made")
+		})
+	}
+}
