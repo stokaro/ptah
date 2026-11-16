@@ -3,14 +3,19 @@
 package integration_test
 
 import (
+	"context"
+	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/dbtarget"
 )
 
 // The tests in this file run on the realm pair of
@@ -294,6 +299,61 @@ func TestSchemaApplyLeavesAnUndeclaredTriggerFunctionWhereTheSessionFindsIt_Happ
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made")
 		})
 	}
+}
+
+// TestSchemaApplyGrantsOnTheSequenceOfAPlacedSerialColumn_HappyPathE2E grants
+// on the sequence a serial column creates, named without a schema. The table
+// is placed in public, and its sequence is created beside it, so the grant is
+// placed there too; left bare, it resolved along the role's search path to a
+// sequence that does not exist. The grant is read back, and a second run is
+// synced.
+func TestSchemaApplyGrantsOnTheSequenceOfAPlacedSerialColumn_HappyPathE2E(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		target clirun.Target
+	}{
+		{name: "ptah-compat", target: clirun.Compat},
+		{name: "ptah", target: clirun.Ptah},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			grantee := newRealmGrantee(c)
+			fixture := newRealmCurrentSchemaFixture(c)
+			schema := "CREATE TABLE notes (id serial PRIMARY KEY);\n" +
+				"GRANT USAGE ON SEQUENCE notes_id_seq TO " + grantee + ";\n"
+			options := clirun.Options{Dir: realmCurrentSchemaRoot(c, schema), Env: environmentWithoutPtahVariables()}
+
+			applied := clirun.Run(c, test.target, options, fixture.applyArgs(test.target)...)
+			again := clirun.Run(c, test.target, options, fixture.applyArgs(test.target)...)
+
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
+			c.Assert(realmCurrentSchemaNames(c, fixture.target, `
+				SELECT c.relnamespace::regnamespace::text || '.' || c.relname
+				FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) a
+				WHERE c.relkind = 'S' AND a.grantee = '`+grantee+`'::regrole AND a.privilege_type = 'USAGE'`),
+				qt.DeepEquals, []string{"public.notes_id_seq"})
+			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
+			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made")
+		})
+	}
+}
+
+// newRealmGrantee creates a role a desired schema grants to, and drops it when
+// the test ends. Called before the databases are created, its drop runs after
+// theirs, once no database holds a grant to it.
+func newRealmGrantee(c *qt.C) string {
+	c.Helper()
+	admin, err := sql.Open("pgx", dbtarget.URL(c, dbtarget.PostgreSQL))
+	c.Assert(err, qt.IsNil)
+	role := fmt.Sprintf("ptah_realm_grantee_%d", time.Now().UnixNano())
+	_, err = admin.ExecContext(c.Context(), "CREATE ROLE "+role)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, dropErr := admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+role)
+		c.Check(dropErr, qt.IsNil)
+		c.Check(admin.Close(), qt.IsNil)
+	})
+	return role
 }
 
 // TestSchemaApplyPlacesASavedPlansNamesWhereThePlanPlacedThem_HappyPathE2E

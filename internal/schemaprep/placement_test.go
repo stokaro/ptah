@@ -245,6 +245,33 @@ func TestPlaceUnqualified_LeavesAnUndeclaredReferenceAsWritten(t *testing.T) {
 	c.Assert(placed.FunctionDependencies, qt.DeepEquals, map[string][]string{"f": {"lower"}})
 }
 
+// A serial or identity column creates its sequence beside its table, so a
+// grant on that sequence is placed with the table. A grant on a sequence no
+// declared column creates keeps its name.
+func TestPlaceUnqualified_PlacesTheSequenceOfADeclaredColumn(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Account", Name: "accounts"}, {StructName: "Item", Name: "items"}},
+		Fields: []schemamodel.Field{
+			{StructName: "Account", Name: "id", Type: "SERIAL"},
+			{StructName: "Account", Name: "code", Type: "bigint"},
+			{StructName: "Item", Name: "id", Type: "bigint", IdentityGeneration: "ALWAYS"},
+		},
+		Grants: []schemamodel.Grant{
+			{OnSequence: "accounts_id_seq"}, {OnSequence: "items_id_seq"},
+			{OnSequence: "accounts_code_seq"}, {OnSequence: "other_id_seq"},
+		},
+	}
+
+	placed, err := schemaprep.PlaceUnqualified(database, "app", platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(placed.Grants, qt.DeepEquals, []schemamodel.Grant{
+		{OnSequence: "app.accounts_id_seq"}, {OnSequence: "app.items_id_seq"},
+		{OnSequence: "accounts_code_seq"}, {OnSequence: "other_id_seq"},
+	})
+}
+
 // A declared routine a grant names with its argument types is placed with
 // them, and the trigger running it names it in the placed schema.
 func TestPlaceUnqualified_PlacesADeclaredRoutineWithItsArguments(t *testing.T) {

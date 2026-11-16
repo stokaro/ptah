@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/tableref"
 )
 
@@ -262,8 +263,19 @@ func declaredUnqualified(database *schemamodel.Database, semantics identifier.Se
 		}
 	}
 	for _, table := range database.Tables {
-		if strings.TrimSpace(table.Schema) == "" {
-			add(names.relations, table.Name)
+		if strings.TrimSpace(table.Schema) != "" {
+			continue
+		}
+		add(names.relations, table.Name)
+		// A serial or identity column creates its sequence beside the table,
+		// so a grant on that sequence names a declared object too.
+		for _, field := range database.Fields {
+			if field.StructName != table.StructName {
+				continue
+			}
+			if sequence, ok := columnsequence.Declared(table.Name, field); ok {
+				add(names.sequences, sequence)
+			}
 		}
 	}
 	for _, view := range database.Views {

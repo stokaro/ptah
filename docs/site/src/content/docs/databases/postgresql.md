@@ -67,8 +67,10 @@ expressions are SQL text and keep the names they were written with.
 
 A reference written without a schema, such as the table of an index or the
 function a trigger runs, is placed when it names an object the desired state
-declares without a schema. A reference to anything else keeps its name and
-resolves where the session finds it: a trigger that runs the built-in
+declares without a schema. The sequence a serial or identity column creates
+counts as declared with its table, so a grant on `notes_id_seq` goes where
+`notes` goes. A reference to anything else keeps its name and resolves where
+the session finds it: a trigger that runs the built-in
 `suppress_redundant_updates_trigger()` runs the one in `pg_catalog`.
 
 - With a `--dev-url` that pins no `search_path`, the name is placed where the
