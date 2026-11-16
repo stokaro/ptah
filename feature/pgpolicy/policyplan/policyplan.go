@@ -117,7 +117,7 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 			if refused != nil {
 				return featureplan.Result{Complete: true, Diagnostics: []featureplan.Diagnostic{*refused}}, nil
 			}
-			steps, err := planEarlyPolicyDrops(roles, index, table, request.Policy.Statements, parents)
+			steps, err := planEarlyPolicyDrops(roles, index, table, parents)
 			if err != nil {
 				return featureplan.Result{}, err
 			}
@@ -134,8 +134,13 @@ func (Service) PlanFeatures(ctx context.Context, request featureplan.Request) (f
 	return result, nil
 }
 
-func planEarlyPolicyDrops(roles objectidentity.Builder, index int, table featureplan.Table, style featureplan.StatementStyle, parents []featureplan.ParentPlan) ([]plangraph.Step[featureplan.Operation], error) {
-	if table.Action != featureplan.DropTable || style != featureplan.StatementStyleExact ||
+// planEarlyPolicyDrops drops the captured policies of a table the plan
+// removes ahead of the table, in both statement styles. A drop with CASCADE
+// of a view the policy reads would take it too, but a routine is dropped
+// without CASCADE, so a policy that calls one the plan drops ahead of the
+// table stops that drop; dropped first, it stops nothing.
+func planEarlyPolicyDrops(roles objectidentity.Builder, index int, table featureplan.Table, parents []featureplan.ParentPlan) ([]plangraph.Step[featureplan.Operation], error) {
+	if table.Action != featureplan.DropTable ||
 		!slices.ContainsFunc(parents, func(parent featureplan.ParentPlan) bool { return parent.Kind == pgpolicy.PolicyKind }) {
 		return nil, nil
 	}

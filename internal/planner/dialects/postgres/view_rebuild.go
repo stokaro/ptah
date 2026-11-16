@@ -888,7 +888,7 @@ func viewLikeKind(object deporder.ViewLike) string {
 //
 // Each object is dropped after every object of the rebuild that depends on
 // it, so no drop relies on CASCADE to take a dependent the plan knows of: that
-// dependent went first. CASCADE is then written only in Ptah's own statement
+// dependent went first. CASCADE is then written only in the annotated statement
 // style, where it also takes the dependents the plan does not know of, such
 // as a view in a schema the run leaves out; the exact style leaves the server
 // to refuse those. A policy of a removed table that reads a relation the
