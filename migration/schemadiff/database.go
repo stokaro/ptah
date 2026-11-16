@@ -1,6 +1,7 @@
 package schemadiff
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -713,6 +714,7 @@ func resolveCheckExpressions(
 		probes = append(probes, dbexprprobe.CheckExpressionProbe{
 			Key:        key,
 			Table:      live.name,
+			Schema:     cmp.Or(live.schema, conn.Info().Schema),
 			Columns:    live.columns,
 			Expression: constraint.CheckExpression,
 		})
@@ -834,6 +836,7 @@ func resolveIndexExpressions(
 		probes = append(probes, dbexprprobe.IndexExpressionProbe{
 			Key:        key,
 			Table:      live.name,
+			Schema:     cmp.Or(live.schema, conn.Info().Schema),
 			Columns:    live.columns,
 			Expression: expression,
 			Parts:      parts,
@@ -875,7 +878,10 @@ func declaredIndexExpression(index schemamodel.Index) (expression string, parts 
 // liveProbeTable is one live table in the shape a probe needs: its name as
 // the server stores it, which the probe table takes, and its columns.
 type liveProbeTable struct {
-	name    string
+	name string
+	// schema is the schema the read recorded, empty for the connection's own;
+	// see [catalog.ServerInfo.Schema].
+	schema  string
 	columns []dbexprprobe.CheckProbeColumn
 }
 
@@ -896,6 +902,7 @@ func liveTableColumns(
 		}
 		tables[exprkey.TableParts(semantics, table.Schema, table.Name)] = liveProbeTable{
 			name:    table.Name,
+			schema:  table.Schema,
 			columns: probeColumns,
 		}
 	}

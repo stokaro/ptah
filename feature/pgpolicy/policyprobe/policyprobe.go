@@ -43,7 +43,7 @@ import (
 // resolves as it does for the real policy. A column the clause qualifies with
 // the table's schema as well, `public.notes.owner`, names the real table, which
 // the server refuses on the copy; the probe sends `notes.owner`, which the
-// server stores the same way (see [ownSchemaQualifier]).
+// server stores the same way (see [ownSchemaQualifiers]).
 //
 // A probe the server refuses is not an error: a read-only transaction refuses
 // the temporary table, a role without SELECT on the table refuses the column

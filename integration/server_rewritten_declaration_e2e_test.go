@@ -76,6 +76,18 @@ CREATE POLICY clients_parent_read ON clients
   USING (EXISTS (SELECT 1 FROM public.clients c2 WHERE c2.parent_id = clients.id));`,
 	},
 	{
+		// Each expression names its column through its schema and its table.
+		// The server stores `owner`; on the probe's copy of the table, which
+		// sits in pg_temp, it refuses `public.notes.owner`, so the probe sends
+		// `notes.owner`.
+		name: "a CHECK, an index and a policy naming their own table through the schema",
+		sql: `CREATE TABLE notes (id bigint PRIMARY KEY, owner text, n integer NOT NULL,
+  CONSTRAINT notes_n_check CHECK (public.notes.n > 0));
+CREATE INDEX notes_owner_idx ON notes (lower(public.notes.owner)) WHERE public.notes.n > 1;
+ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY notes_owner_read ON notes USING ("public"."notes".owner = current_user);`,
+	},
+	{
 		name: "a partial index predicate",
 		sql: `CREATE TABLE sites (id bigint PRIMARY KEY, owner text NOT NULL, is_default boolean NOT NULL DEFAULT false, site_id bigint);
 CREATE UNIQUE INDEX sites_default_idx ON sites (owner) WHERE is_default = true AND site_id IS NOT NULL;`,
@@ -217,6 +229,22 @@ var serverRewrittenControls = []struct {
 		migration:  `CREATE TABLE notes (id bigint PRIMARY KEY, n integer NOT NULL, CONSTRAINT notes_n_check CHECK (n > 0));`,
 		schema:     `CREATE TABLE notes (id bigint PRIMARY KEY, n integer NOT NULL, CONSTRAINT notes_n_check CHECK (n > 1));`,
 		wantInPlan: "n > 1",
+	},
+	{
+		name:       "a CHECK naming its table through the schema moves its bound",
+		migration:  `CREATE TABLE notes (id bigint PRIMARY KEY, n integer NOT NULL, CONSTRAINT notes_n_check CHECK (public.notes.n > 0));`,
+		schema:     `CREATE TABLE notes (id bigint PRIMARY KEY, n integer NOT NULL, CONSTRAINT notes_n_check CHECK (public.notes.n > 1));`,
+		wantInPlan: "public.notes.n > 1",
+	},
+	{
+		name: "a policy naming its table through the schema compares another column",
+		migration: `CREATE TABLE notes (id bigint PRIMARY KEY, owner text, editor text);
+ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY notes_owner_read ON notes USING (public.notes.owner = current_user);`,
+		schema: `CREATE TABLE notes (id bigint PRIMARY KEY, owner text, editor text);
+ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY notes_owner_read ON notes USING (public.notes.editor = current_user);`,
+		wantInPlan: "public.notes.editor = current_user",
 	},
 	{
 		name:       "an unnamed CHECK bound moves",

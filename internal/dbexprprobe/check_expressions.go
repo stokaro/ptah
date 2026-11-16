@@ -30,6 +30,10 @@ type CheckExpressionProbe struct {
 	// it. The probe table takes that name, so a declaration naming its own
 	// table resolves; see [newProbeRelation]. Empty keeps a numbered name.
 	Table string
+	// Schema is the schema that holds Table, as the server stores it. The
+	// PostgreSQL probe takes it out where the expression writes it in front of
+	// Table and a column; see [ownSchemaStripped]. Empty strips nothing.
+	Schema string
 	// Columns are the columns of the table the constraint belongs to, taken
 	// from the LIVE read rather than from the declaration: the expression has
 	// to parse against the table it will be added to.
@@ -137,7 +141,7 @@ func resolveOnePostgresCheckExpression(
 	relation := newProbeRelation(probe.Table, "ptah_check_probe", index)
 	statements := relation.statements(fmt.Sprintf(
 		"CREATE TEMPORARY TABLE %s (%s, CONSTRAINT ptah_check_probe_ck CHECK (%s))",
-		relation.name, checkProbeColumnList(probe.Columns), expression))
+		relation.name, checkProbeColumnList(probe.Columns), ownSchemaStripped(expression, probe.Schema, probe.Table)))
 
 	const savepoint = "ptah_check_probe"
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {

@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/ownqualifier"
 )
 
 // observedSpelling answers for a declaration no probe put through the server: a
@@ -82,7 +83,8 @@ var sqlValueKeywords = map[string]string{
 // literal to text, and no prefix naming the policy's own table, with or without
 // the schema that holds it.
 func clauseTokens(clause string, ref objectidentity.ID) []string {
-	raw := significantTokens(clause)
+	raw := ownqualifier.Tokens(clause)
+	own := ownSchemaQualifiers(raw, ref)
 	tokens := make([]string, 0, len(raw))
 	for i := 0; i < len(raw); i++ {
 		switch {
@@ -94,7 +96,7 @@ func clauseTokens(clause string, ref objectidentity.ID) []string {
 		case startsOperator(raw, i, "<>"), startsOperator(raw, i, "!="):
 			tokens = append(tokens, "!=")
 			i++
-		case ownSchemaQualifier(raw, i, ref):
+		case own[i]:
 			i++
 		case startsOperator(raw, i+1, ".") && namesPart(raw[i], ref.Parent):
 			i++

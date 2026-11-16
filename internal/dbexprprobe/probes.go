@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/ownqualifier"
 )
 
 // resolveProbes runs every probe through one rolled-back transaction and
@@ -93,6 +94,20 @@ func newProbeRelation(table, prefix string, index int) probeRelation {
 	}
 	name := "pg_temp." + quoteCheckProbeIdentifier(table)
 	return probeRelation{name: name, regclass: name, setup: []string{searchPathWithTempLast}}
+}
+
+// ownSchemaStripped is expression as the probe table can read it. The probe
+// table sits in pg_temp, so a column written as `public.clients.n` names the
+// real table, and PostgreSQL refuses it there as an invalid reference to a
+// FROM-clause entry; the probe would answer nothing, and the comparison would
+// plan the object again on every run. The server stores that reference as `n`,
+// as it stores `clients.n`, so the probe sends `clients.n`. A probe whose table
+// or schema is unknown sends the expression as written.
+func ownSchemaStripped(expression, schema, table string) string {
+	if schema == "" || table == "" {
+		return expression
+	}
+	return ownqualifier.Strip(expression, ownqualifier.StoredName(schema), ownqualifier.StoredName(table))
 }
 
 // runProbe creates one probe's objects inside a savepoint, reads the answer
