@@ -124,15 +124,16 @@ func TriggersWithSemanticsAndConditions(
 			continue
 		}
 		removal := difftypes.TriggerRef{TriggerName: trigger.Name, TableName: trigger.QualifiedTable()}
-		// The catalog reports every function a trigger runs, the generated
-		// one included; the removal carries it only when it is declared on its
-		// own, which is what a DROP must leave in place.
+		// The catalog reports every function a trigger runs. A declared one
+		// is what the DROP must leave in place; a generated one is dropped by
+		// the reference the read gave it, which names its schema and the name
+		// it was created under whatever the table's spelling then was.
 		owner := schemamodel.Trigger{Name: trigger.Name, Table: removal.TableName}
 		switch {
 		case owner.RunsDeclaredFunction(trigger.ExecuteFunction):
 			removal.ExecuteFunction = trigger.ExecuteFunction
-		case owner.GeneratedFunctionSchema(trigger.ExecuteFunction) != "":
-			removal.GeneratedFunction = trigger.ExecuteFunction
+		default:
+			removal.GeneratedFunction = owner.GeneratedFunctionReference(trigger.ExecuteFunction)
 		}
 		diff.TriggersRemoved = append(diff.TriggersRemoved, removal)
 	}
@@ -420,13 +421,14 @@ func sameExecuteFunction(declared, observed string) bool {
 }
 
 // inPlace is the declaration a replacement of current renders: declared, with
-// the schema the database holds the generated function in when the
-// declaration does not say one. A replacement then rewrites that function
-// rather than creating one of the same name where a bare name resolves and
-// leaving the one the database held behind.
+// the generated function the database holds when the declaration does not name
+// one. A replacement then rewrites that function rather than creating another
+// where a bare FunctionName resolves and leaving the one the database held
+// behind: the database's may sit in another schema, or carry the name the
+// table's spelling gave it when it was created.
 func inPlace(declared schemamodel.Trigger, current catalog.Trigger) schemamodel.Trigger {
-	if declared.ExecuteFunction == "" && declared.FunctionSchema == "" {
-		declared.FunctionSchema = declared.GeneratedFunctionSchema(current.ExecuteFunction)
+	if declared.ExecuteFunction == "" && declared.FunctionReference == "" {
+		declared.FunctionReference = declared.GeneratedFunctionReference(current.ExecuteFunction)
 	}
 	return declared
 }

@@ -33,5 +33,5 @@ CREATE TRIGGER t2 BEFORE UPDATE ON app.items FOR EACH ROW EXECUTE FUNCTION "app"
 	c.Assert(database.Triggers, qt.HasLen, 1)
 	c.Assert(database.Triggers[0].Body, qt.Equals, "RETURN NEW;")
 	c.Assert(database.Triggers[0].ExecuteFunction, qt.Equals, "")
-	c.Assert(database.Triggers[0].FunctionSchema, qt.Equals, "app")
+	c.Assert(database.Triggers[0].FunctionReference, qt.Equals, "app.ptah_trigger_app__items_t2")
 }

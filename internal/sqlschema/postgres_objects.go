@@ -261,11 +261,13 @@ func adoptTriggerFunctions(database *schemamodel.Database) {
 			continue
 		}
 		// A description names the generated function with its schema when the
-		// read found it outside the schema it resolves names in; the schema
-		// stays with the trigger, so the function is recreated there.
+		// read found it outside the schema it resolves names in, and by the
+		// name it has when the read spelled the table another way; the
+		// reference stays with the trigger, so the function is recreated as it
+		// was.
 		owned[trigger.ExecuteFunction] = true
 		trigger.Body = trimTriggerFunctionWrapper(body)
-		trigger.FunctionSchema = trigger.GeneratedFunctionSchema(trigger.ExecuteFunction)
+		trigger.FunctionReference = trigger.GeneratedFunctionReference(trigger.ExecuteFunction)
 		trigger.ExecuteFunction = ""
 	}
 	if len(owned) == 0 {

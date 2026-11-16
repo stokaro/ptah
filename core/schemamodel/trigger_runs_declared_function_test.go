@@ -1,6 +1,7 @@
 package schemamodel_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -8,11 +9,12 @@ import (
 	"ptah.run/core/schemamodel"
 )
 
-// RunsDeclaredFunction tells the function Ptah generates for a trigger from
-// one declared on its own. A read qualifies a function outside the schema it
-// resolves names in, and the generated function lands wherever the session
-// that created it resolved a bare name, so the generated name is the trigger's
-// own in any schema and however it is quoted.
+// RunsDeclaredFunction tells a function Ptah generates for a trigger from one
+// declared on its own. A read qualifies a function outside the schema it
+// resolves names in, the generated function lands wherever the session that
+// created it resolved a bare name, and its name follows the table's spelling
+// at the time, so any ptah_trigger_ function is a generated one, in any schema
+// and however it is quoted.
 func TestTriggerRunsDeclaredFunction(t *testing.T) {
 	trigger := schemamodel.Trigger{Name: "t", Table: "app.items"}
 	generated := trigger.FunctionName()
@@ -25,9 +27,13 @@ func TestTriggerRunsDeclaredFunction(t *testing.T) {
 		{name: "the generated name", executed: generated, want: false},
 		{name: "the generated name in another schema", executed: "app." + generated, want: false},
 		{name: "the generated name quoted", executed: `"app"."` + generated + `"`, want: false},
+		{name: "the name a bare table spelling gives", executed: "ptah_trigger_items_t", want: false},
+		{name: "a hashed generated name", executed: "ptah_trigger_" + strings.Repeat("x", 40) + "_0badf00d", want: false},
 		{name: "a declared function", executed: "set_updated_at", want: true},
 		{name: "a declared function in another schema", executed: "audit.set_updated_at", want: true},
 		{name: "a schema named like the generated function", executed: generated + ".touch", want: true},
+		{name: "the prefix in another case", executed: `"PTAH_TRIGGER_items_t"`, want: true},
+		{name: "the prefix with its underscores replaced", executed: "ptahxtriggery", want: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -38,11 +44,12 @@ func TestTriggerRunsDeclaredFunction(t *testing.T) {
 	}
 }
 
-// GeneratedFunctionSchema reads the schema a reference names the trigger's
-// generated function in, and GeneratedFunction names that function where it is
-// held, so a statement creating or dropping it reaches the function the
-// database holds rather than whichever one a bare name resolves to.
-func TestTriggerGeneratedFunctionSchema(t *testing.T) {
+// GeneratedFunctionReference keeps the reference a read or a schema file gave
+// the trigger's generated function, so a statement creating or dropping it
+// reaches the function the database holds rather than whichever one a bare
+// FunctionName resolves to. FunctionName itself, named bare, is what an empty
+// reference already means.
+func TestTriggerGeneratedFunctionReference(t *testing.T) {
 	trigger := schemamodel.Trigger{Name: "t", Table: "app.items"}
 	generated := trigger.FunctionName()
 	tests := []struct {
@@ -52,34 +59,39 @@ func TestTriggerGeneratedFunctionSchema(t *testing.T) {
 	}{
 		{name: "nothing reported", executed: "", want: ""},
 		{name: "the generated name, bare", executed: generated, want: ""},
-		{name: "the generated name in a schema", executed: "app." + generated, want: "app"},
-		{name: "the generated name in a quoted schema", executed: `"App"."` + generated + `"`, want: "App"},
+		{name: "the generated name in a schema", executed: "app." + generated, want: "app." + generated},
+		{name: "the generated name in a quoted schema", executed: `"App"."` + generated + `"`, want: "App." + generated},
+		{name: "a schema holding a dot", executed: `"a.b".` + generated, want: `"a.b".` + generated},
+		{name: "the name another table spelling gave, bare", executed: "ptah_trigger_items_t", want: "ptah_trigger_items_t"},
+		{name: "the name another table spelling gave, in a schema", executed: "fns.ptah_trigger_items_t", want: "fns.ptah_trigger_items_t"},
 		{name: "a declared function in a schema", executed: "audit.set_updated_at", want: ""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(trigger.GeneratedFunctionSchema(test.executed), qt.Equals, test.want)
+			c.Assert(trigger.GeneratedFunctionReference(test.executed), qt.Equals, test.want)
 		})
 	}
 }
 
+// GeneratedFunction names the function a statement creates, runs and drops:
+// the reference when there is one, and FunctionName otherwise.
 func TestTriggerGeneratedFunction(t *testing.T) {
 	tests := []struct {
-		name   string
-		schema string
-		want   string
+		name      string
+		reference string
+		want      string
 	}{
-		{name: "no schema", schema: "", want: "ptah_trigger_app__items_t"},
-		{name: "a schema", schema: "app", want: "app.ptah_trigger_app__items_t"},
-		{name: "a schema holding a dot", schema: "a.b", want: `"a.b".ptah_trigger_app__items_t`},
+		{name: "no reference", reference: "", want: "ptah_trigger_app__items_t"},
+		{name: "a reference in a schema", reference: "app.ptah_trigger_app__items_t", want: "app.ptah_trigger_app__items_t"},
+		{name: "a reference of another name", reference: "fns.ptah_trigger_items_t", want: "fns.ptah_trigger_items_t"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			trigger := schemamodel.Trigger{Name: "t", Table: "app.items", FunctionSchema: test.schema}
+			trigger := schemamodel.Trigger{Name: "t", Table: "app.items", FunctionReference: test.reference}
 
 			c.Assert(trigger.GeneratedFunction(), qt.Equals, test.want)
 		})

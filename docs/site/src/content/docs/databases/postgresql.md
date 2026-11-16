@@ -1075,10 +1075,12 @@ trigger name are each folded to lower case, every run of characters outside
 `[a-z0-9_]` collapsed to one `_`, and every `_` that remains doubled before the
 two parts join on a single `_`. The doubling keeps the join unambiguous -- a
 table `a_b` with trigger `c` and a table `a` with trigger `b_c` render as
-`ptah_trigger_a__b_c` and `ptah_trigger_a_b__c` rather than the same name. A
-table or trigger name that contains an underscore therefore renders under a
-different generated name; a database already holding that trigger's function
-under the old name keeps it, unreferenced, until someone drops it by hand.
+`ptah_trigger_a__b_c` and `ptah_trigger_a_b__c` rather than the same name.
+The name follows the table as the declaration spells it: `ON public.items`
+gives `ptah_trigger_public__items_t`, and a read reports that trigger on
+`items`. The trigger keeps the function the database holds under whichever
+`ptah_trigger_` name it has, so a changed trigger replaces that function and a
+removed trigger drops it.
 
 A trigger that runs a function declared on its own is read with the function's
 name, and with its schema when that is not the schema the read resolves names
@@ -1087,13 +1089,19 @@ that recreates the trigger on a dev database, and a description written as
 SQL, then name the function the trigger runs, whatever the search path of the
 session that runs them.
 
-A function with the generated name is the trigger's own in whichever schema it
-is held. Ptah creates it without a schema, so it lands in the first schema of
+Every function whose name starts with `ptah_trigger_` is Ptah's, in whichever
+schema it is held. The reader leaves it out of the routines it describes and
+reads a trigger that runs it as a trigger with a body. Do not give a function of
+your own that prefix: each trigger that runs it is read as its owner, so
+removing one of two such triggers plans a `DROP FUNCTION` the server refuses
+while the other still runs it (SQLSTATE 2BP01).
+
+Ptah creates the function without a schema, so it lands in the first schema of
 the creating session's search path, which need not be the trigger table's.
-When a read finds it in a schema it names, that schema stays with the trigger:
-a rehearsal and a description written as SQL create the function there, a
-changed trigger replaces it there, and a removed trigger drops it there. A plan
-does not move it to another schema.
+When a read finds it in a schema it names, or under another name, that
+reference stays with the trigger: a rehearsal and a description written as SQL
+create the function there, a changed trigger replaces it there, and a removed
+trigger drops it there. A plan does not move or rename it.
 
 A changed function is planned as `CREATE OR REPLACE FUNCTION` where the server
 accepts that: a new body, language, security context, volatility, planner

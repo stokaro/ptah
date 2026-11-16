@@ -106,6 +106,7 @@ func TestTriggers_ARemovedTriggerDropsItsGeneratedFunctionInAnySchema(t *testing
 	}{
 		{name: "generated, in another schema", executed: "app." + generated, wantGenerated: "app." + generated},
 		{name: "generated, in the read's schema", executed: generated},
+		{name: "generated under the name another table spelling gave", executed: "ptah_trigger_public__items_t2", wantGenerated: "ptah_trigger_public__items_t2"},
 		{name: "declared, in another schema", executed: "audit.set_updated_at", wantDeclared: "audit.set_updated_at"},
 	}
 	for _, test := range tests {
@@ -140,9 +141,10 @@ func TestTriggers_AReplacementRewritesTheGeneratedFunctionWhereItIs(t *testing.T
 		declared string
 		want     string
 	}{
-		{name: "held in a schema the read names", executed: "app." + generated, want: "app"},
+		{name: "held in a schema the read names", executed: "app." + generated, want: "app." + generated},
 		{name: "held where a bare name resolves", executed: generated, want: ""},
-		{name: "the declaration says where", executed: "app." + generated, declared: "other", want: "other"},
+		{name: "held under the name another table spelling gave", executed: "fns.ptah_trigger_items_t2", want: "fns.ptah_trigger_items_t2"},
+		{name: "the declaration says where", executed: "app." + generated, declared: "other." + generated, want: "other." + generated},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -152,7 +154,7 @@ func TestTriggers_AReplacementRewritesTheGeneratedFunctionWhereItIs(t *testing.T
 			compare.Triggers(&schemamodel.Database{
 				Triggers: []schemamodel.Trigger{{
 					Name: "t2", Table: "app.items", Timing: "AFTER", Event: "UPDATE", ForEach: "ROW",
-					Body: "RETURN NEW;", FunctionSchema: test.declared,
+					Body: "RETURN NEW;", FunctionReference: test.declared,
 				}},
 			}, &catalog.Database{
 				Triggers: []catalog.Trigger{{
@@ -162,7 +164,7 @@ func TestTriggers_AReplacementRewritesTheGeneratedFunctionWhereItIs(t *testing.T
 			}, diff)
 
 			c.Assert(diff.TriggersModified, qt.HasLen, 1)
-			c.Assert(diff.TriggersModified[0].Desired.FunctionSchema, qt.Equals, test.want)
+			c.Assert(diff.TriggersModified[0].Desired.FunctionReference, qt.Equals, test.want)
 		})
 	}
 }

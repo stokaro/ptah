@@ -72,7 +72,7 @@ func TestConvert_LeavesATriggerPtahOwnsInline(t *testing.T) {
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
-	c.Assert(trigger.FunctionSchema, qt.Equals, "")
+	c.Assert(trigger.FunctionReference, qt.Equals, "")
 	c.Assert(trigger.Body, qt.Contains, "INSERT INTO audit_log")
 }
 
@@ -98,6 +98,22 @@ func TestConvert_LeavesATriggerPtahOwnsInlineInAnotherSchema(t *testing.T) {
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
-	c.Assert(trigger.FunctionSchema, qt.Equals, "app")
+	c.Assert(trigger.FunctionReference, qt.Equals, "app.ptah_trigger_a_trg__a")
+	c.Assert(trigger.Body, qt.Contains, "INSERT INTO audit_log")
+}
+
+// TestConvert_LeavesATriggerPtahOwnsInlineUnderAnotherName is the same control
+// for a generated function created when the table was spelled another way:
+// `ON public.a` names it ptah_trigger_public__a_trg__a, and the read reports
+// the trigger on a. It is still the trigger's own, and the description keeps
+// the name, so a statement made from it reaches that function.
+func TestConvert_LeavesATriggerPtahOwnsInlineUnderAnotherName(t *testing.T) {
+	c := qt.New(t)
+
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), triggerSchema("ptah_trigger_public__a_trg__a"), "postgres", must.Must(builtin.New())))
+
+	trigger := onlyTrigger(c, database)
+	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
+	c.Assert(trigger.FunctionReference, qt.Equals, "ptah_trigger_public__a_trg__a")
 	c.Assert(trigger.Body, qt.Contains, "INSERT INTO audit_log")
 }

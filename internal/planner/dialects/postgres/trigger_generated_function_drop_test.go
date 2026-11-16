@@ -45,7 +45,7 @@ func TestAddTriggers_TheGeneratedFunctionIsCreatedInItsSchema(t *testing.T) {
 	c := qt.New(t)
 	trigger := schemamodel.Trigger{
 		Name: "t2", Table: "app.items", Timing: "BEFORE", Event: "UPDATE", ForEach: "ROW",
-		Body: "RETURN NEW;", FunctionSchema: "app",
+		Body: "RETURN NEW;", FunctionReference: "app.ptah_trigger_app__items_t2",
 	}
 
 	sql := droppedRoutineSQL(c, &difftypes.SchemaDiff{

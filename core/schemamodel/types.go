@@ -1088,18 +1088,20 @@ type Trigger struct {
 
 	// ExecuteFunction names an already-existing function the trigger executes
 	// instead of a body Ptah owns. It is set when a SQL schema file spells
-	// EXECUTE FUNCTION with a name that is not this trigger's own
-	// FunctionName(), so reading such SQL back does not silently rebind the
-	// trigger to a Ptah-generated function. Body and ExecuteFunction are
-	// alternatives: when ExecuteFunction is set, Ptah does not render a
-	// function definition for the trigger.
+	// EXECUTE FUNCTION with a function Ptah does not generate (see
+	// [Trigger.RunsDeclaredFunction]), so reading such SQL back does not
+	// silently rebind the trigger to a Ptah-generated function. Body and
+	// ExecuteFunction are alternatives: when ExecuteFunction is set, Ptah does
+	// not render a function definition for the trigger.
 	ExecuteFunction string
-	// FunctionSchema is the schema of the function Ptah generates for the
-	// trigger, when a read found that function in a schema it names. Empty
-	// creates the function where the session resolves a bare name. It says
-	// where the function is, not where it should be: a comparison does not
-	// plan a move when it differs.
-	FunctionSchema string `json:",omitempty"`
+	// FunctionReference names the function Ptah generates for the trigger
+	// where a read or a schema file found it, schema-qualified when it named a
+	// schema, when that is not FunctionName resolved as a bare name. Empty
+	// creates the function as FunctionName where the session resolves a bare
+	// name. It says where the function is and what it is called, not what it
+	// should be: a comparison plans no move or rename when it differs, and a
+	// replacement rewrites the function it names.
+	FunctionReference string `json:",omitempty"`
 	// FunctionArguments are the text values passed to the trigger function.
 	FunctionArguments []string `json:",omitempty"`
 
@@ -1138,9 +1140,19 @@ func CanonicalTriggerEvent(event string) string {
 	return triggerdef.Canonical(event, nil)
 }
 
+// generatedFunctionPrefix starts the name of every function Ptah generates
+// for a trigger ([Trigger.FunctionName]). The prefix is Ptah's: the
+// PostgreSQL reader leaves every routine whose name starts with it out of the
+// routines it describes (describedRoutinePredicate in
+// internal/dbschema/postgres), and [Trigger.RunsDeclaredFunction] reads a
+// trigger running one as a trigger with a body. The two have to name one set:
+// a function the reader hides and the comparison reads as declared is planned
+// as a CREATE of a function the database already holds.
+const generatedFunctionPrefix = "ptah_trigger_"
+
 // RunsDeclaredFunction reports whether executed, the function a database says
-// this trigger runs, is a function declared on its own rather than the one Ptah
-// generates for the trigger. An empty executed says nothing and reports false.
+// this trigger runs, is a function declared on its own rather than one Ptah
+// generates. An empty executed says nothing and reports false.
 //
 // It is the one answer to "is this function the trigger's own". Reading a
 // database into a declaration keeps a declared function by name and folds a
@@ -1148,32 +1160,50 @@ func CanonicalTriggerEvent(event string) string {
 // in place and drops a generated one with it. The two must agree, or a
 // function described as shared is dropped with the first trigger that goes.
 //
-// The generated function is recognized by its name in any schema. A read names
-// a function outside the schema it resolves names in with that schema, and the
-// generated one is created wherever the session that created it resolved a
-// bare name, so `app.ptah_trigger_app__items_t` is still the trigger's own.
+// A generated function is recognized by its prefix, ptah_trigger_, in any
+// schema, not by this trigger's FunctionName. A read names a function outside
+// the schema it resolves names in with that schema, and the generated one is
+// created wherever the session that created it resolved a bare name, so
+// `app.ptah_trigger_app__items_t` is still the trigger's own. FunctionName is
+// built from the table as the declaration spells it, so the same trigger reads
+// back under another name when a read spells the table differently:
+// `ptah_trigger_public__items_t` runs the trigger a read reports on `items`.
 func (t Trigger) RunsDeclaredFunction(executed string) bool {
-	return executed != "" && functionNamePart(executed) != t.FunctionName()
+	return executed != "" && !strings.HasPrefix(functionNamePart(executed), generatedFunctionPrefix)
 }
 
 // GeneratedFunction is the function Ptah generates for the trigger, as a
-// statement names it: FunctionName, in FunctionSchema when that is set.
+// statement names it: FunctionReference when that is set, and FunctionName
+// otherwise.
 func (t Trigger) GeneratedFunction() string {
-	if t.FunctionSchema == "" {
+	if t.FunctionReference == "" {
 		return t.FunctionName()
 	}
-	return tableref.Canonical(t.FunctionSchema, t.FunctionName())
+	return t.FunctionReference
 }
 
-// GeneratedFunctionSchema is the schema executed names when it names the
-// function Ptah generates for this trigger with a schema, and empty when it
-// names that function bare or names another function.
-func (t Trigger) GeneratedFunctionSchema(executed string) string {
-	ref, ok := tableref.Parse(strings.TrimSpace(executed))
-	if !ok || !ref.Qualified || ref.Name != t.FunctionName() {
+// GeneratedFunctionReference is executed, the function a database or a schema
+// file says this trigger runs, when it is a function Ptah generates and is not
+// FunctionName named bare. It is empty for a declared function, for nothing
+// reported, and for FunctionName itself, which is where an empty
+// FunctionReference creates it. A schema part is kept and quoted only where it
+// has to be.
+func (t Trigger) GeneratedFunctionReference(executed string) string {
+	trimmed := strings.TrimSpace(executed)
+	if trimmed == "" || t.RunsDeclaredFunction(trimmed) {
 		return ""
 	}
-	return ref.Schema
+	ref, ok := tableref.Parse(trimmed)
+	if !ok {
+		return ""
+	}
+	if !ref.Qualified {
+		if ref.Name == t.FunctionName() {
+			return ""
+		}
+		return tableref.Canonical("", ref.Name)
+	}
+	return tableref.Canonical(ref.Schema, ref.Name)
 }
 
 // functionNamePart is the name a function reference names, without the schema
@@ -1198,7 +1228,7 @@ func functionNamePart(reference string) string {
 // names, where joining the two segments directly would give both the same
 // "ptah_trigger_a_b_c".
 func (t Trigger) FunctionName() string {
-	name := "ptah_trigger_" + sanitizeTriggerFunctionPart(t.Table) + "_" + sanitizeTriggerFunctionPart(t.Name)
+	name := generatedFunctionPrefix + sanitizeTriggerFunctionPart(t.Table) + "_" + sanitizeTriggerFunctionPart(t.Name)
 	if len(name) <= maxPostgreSQLIdentifierLength {
 		return name
 	}

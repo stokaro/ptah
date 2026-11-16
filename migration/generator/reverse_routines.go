@@ -373,7 +373,7 @@ func triggerRemovalsFromAdditions(additions []difftypes.TriggerRef) []difftypes.
 			TableName:       ref.TableName,
 			ExecuteFunction: ref.Desired.ExecuteFunction,
 		}
-		if ref.Desired.ExecuteFunction == "" && ref.Desired.FunctionSchema != "" {
+		if ref.Desired.ExecuteFunction == "" && ref.Desired.FunctionReference != "" {
 			removals[i].GeneratedFunction = ref.Desired.GeneratedFunction()
 		}
 	}

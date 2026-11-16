@@ -3663,9 +3663,12 @@ const describedRoutinePredicate = `
 		-- declaration to compare against (stokaro/ptah#1722).
 		AND p.prokind IN ('f', 'p')
 		AND l.lanname != 'internal'  -- Exclude internal functions
-		-- Escaped for the same reason as the role filters above: a bare _
-		-- is a LIKE wildcard, so the unescaped form also excluded ordinary
-		-- functions such as ptahxtriggery (stokaro/ptah#1291).
+		-- A function Ptah generates for a trigger is described with its
+		-- trigger, as a body. schemamodel.Trigger.RunsDeclaredFunction reads
+		-- the same prefix, and the two must name one set. Escaped for the
+		-- same reason as the role filters above: a bare _ is a LIKE
+		-- wildcard, so the unescaped form also excluded ordinary functions
+		-- such as ptahxtriggery (stokaro/ptah#1291).
 		AND p.proname NOT LIKE 'ptah\_trigger\_%' ESCAPE '\'
 		-- Exclude extension-owned functions to prevent migration issues
 		-- Extension functions cannot be dropped independently and should be managed by the extension

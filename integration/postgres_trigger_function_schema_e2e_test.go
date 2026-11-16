@@ -219,3 +219,86 @@ func TestSchemaApplyReplacesAGeneratedTriggerFunctionWhereItIsE2E_HappyPath(t *t
 		})
 	}
 }
+
+// TestSchemaApplyDropsAGeneratedTriggerFunctionOfAnotherTableSpellingE2E_HappyPath
+// removes a trigger whose function Ptah generated when the table was written
+// `public.items`, which names it ptah_trigger_public__items_t. The read
+// reports the trigger on items, whose generated name would be
+// ptah_trigger_items_t, and the function is still the trigger's own: the plan
+// drops it with the trigger by the name it has, and both are gone from the
+// target. Read as a function of its own, it is left behind, and the rehearsal
+// fails with SQLSTATE 42883 because the dev database never had it.
+func TestSchemaApplyDropsAGeneratedTriggerFunctionOfAnotherTableSpellingE2E_HappyPath(t *testing.T) {
+	generated := schemamodel.Trigger{Name: "t", Table: "public.items"}.FunctionName()
+	target := "CREATE TABLE public.items (id bigint PRIMARY KEY);\n" +
+		"CREATE FUNCTION public." + generated + "() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;\n" +
+		"CREATE TRIGGER t BEFORE UPDATE ON public.items FOR EACH ROW EXECUTE FUNCTION public." + generated + "();\n"
+	for _, run := range generatedFunctionApplies {
+		t.Run(run.name, func(t *testing.T) {
+			c := qt.New(t)
+			server := dbtarget.URL(c, dbtarget.PostgreSQL)
+			targetURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			conn := connectDevDialect(c, targetURL)
+			_, err := conn.ExecContext(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			devURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte("CREATE TABLE items (id bigint PRIMARY KEY);\n"), 0o600), qt.IsNil)
+			options := clirun.Options{Dir: c.TempDir(), Env: append(os.Environ(), "PTAH_DEV_SERVER_DISPOSABLE=1")}
+
+			got := clirun.Run(c, run.program, options, run.args(targetURL, schema, devURL)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			var functions, triggers int
+			c.Assert(conn.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_proc WHERE proname = $1", generated).Scan(&functions), qt.IsNil)
+			c.Assert(conn.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_trigger WHERE tgname = 't'").Scan(&triggers), qt.IsNil)
+			c.Assert(functions, qt.Equals, 0)
+			c.Assert(triggers, qt.Equals, 0)
+		})
+	}
+}
+
+// TestSchemaApplyReplacesAGeneratedTriggerFunctionOfAnotherTableSpellingE2E_HappyPath
+// changes a trigger whose generated function the target holds in schema fns
+// as ptah_trigger_items_t, the name of the table written bare, while the
+// desired state's spelling of the table gives another name. The replacement
+// rewrites the function the trigger runs, and no second ptah_trigger_
+// function appears beside it.
+func TestSchemaApplyReplacesAGeneratedTriggerFunctionOfAnotherTableSpellingE2E_HappyPath(t *testing.T) {
+	const target = "CREATE SCHEMA fns;\n" +
+		"CREATE TABLE public.items (id bigint PRIMARY KEY);\n" +
+		"CREATE FUNCTION fns.ptah_trigger_items_t() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;\n" +
+		"CREATE TRIGGER t BEFORE UPDATE ON public.items FOR EACH ROW EXECUTE FUNCTION fns.ptah_trigger_items_t();\n"
+	const desired = "CREATE SCHEMA IF NOT EXISTS fns;\n" +
+		"CREATE TABLE public.items (id bigint PRIMARY KEY);\n" +
+		"CREATE FUNCTION ptah_trigger_public__items_t() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;\n" +
+		"CREATE TRIGGER t AFTER UPDATE ON public.items FOR EACH ROW EXECUTE FUNCTION ptah_trigger_public__items_t();\n"
+	for _, run := range generatedFunctionApplies {
+		t.Run(run.name, func(t *testing.T) {
+			c := qt.New(t)
+			server := dbtarget.URL(c, dbtarget.PostgreSQL)
+			targetURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			conn := connectDevDialect(c, targetURL)
+			_, err := conn.ExecContext(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			devURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(desired), 0o600), qt.IsNil)
+			options := clirun.Options{Dir: c.TempDir(), Env: append(os.Environ(), "PTAH_DEV_SERVER_DISPOSABLE=1")}
+
+			got := clirun.Run(c, run.program, options, run.args(targetURL, schema, devURL)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			var held string
+			c.Assert(conn.QueryRowContext(c.Context(),
+				`SELECT string_agg(n.nspname || '.' || p.proname, ',' ORDER BY 1) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE p.proname LIKE 'ptah\_trigger\_%'`,
+			).Scan(&held), qt.IsNil)
+			var runs string
+			c.Assert(conn.QueryRowContext(c.Context(),
+				"SELECT n.nspname || '.' || p.proname || CASE WHEN t.tgtype & 2 = 0 THEN ' after' ELSE ' before' END FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_namespace n ON n.oid = p.pronamespace WHERE t.tgname = 't'",
+			).Scan(&runs), qt.IsNil)
+			c.Assert(held, qt.Equals, "fns.ptah_trigger_items_t")
+			c.Assert(runs, qt.Equals, "fns.ptah_trigger_items_t after")
+		})
+	}
+}
