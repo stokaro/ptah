@@ -8,10 +8,10 @@ import (
 	"ptah.run/catalog"
 )
 
-// A table counts as populated when its statistics count a row, and when the
-// database reports no usable statistics, since guessing empty is the guess
-// that takes a lock.
-func TestTablePopulated(t *testing.T) {
+// TestTablePopulated_HappyPath counts a table as populated when its
+// statistics count a row, and when the database reports no usable statistics,
+// and as empty for the zero value.
+func TestTablePopulated_HappyPath(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		table catalog.Table

@@ -425,11 +425,13 @@ func withTypeSize(rawType string, column Column) string {
 	return rawType
 }
 
-// Populated reports whether the table holds rows: its statistics count at
-// least one, or the database reports no usable statistics, which counts as
-// populated because a guess of empty is the guess that takes a lock. Unlike
-// EstimatedRows, the answer stays the same while writes and analyzes move the
-// estimate of a table that holds rows.
+// Populated reports whether the table holds rows: true when EstimatedRows
+// counts at least one, and when RowStatsUnknown says the database reports no
+// usable statistics, so a caller choosing how to build an index on the table
+// assumes rows rather than none. It is false for the zero value, which is also
+// what a reader that collects no row statistics reports. The answer changes
+// when an empty table gains rows or a table loses all of them, and not while
+// writes and analyzes move the estimate of a table that holds rows.
 func (t Table) Populated() bool {
 	return t.RowStatsUnknown || t.EstimatedRows > 0
 }

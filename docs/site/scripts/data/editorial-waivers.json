@@ -132,6 +132,12 @@
     "reason": "The page keeps checksum, replay, and assertion gates together because they establish one pre-apply trust boundary."
   },
   {
+    "route": "/direct/plan-and-approve/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The page is the one account of what a saved plan records and what makes it stale: the structure fingerprint, the row facts, the managed rows and the role memberships are compared together at apply time, and a split would separate each staleness rule from the others it is checked beside."
+  },
+  {
     "route": "/extend/executable-providers/",
     "check": "page-length",
     "target": "page",

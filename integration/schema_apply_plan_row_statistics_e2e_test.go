@@ -127,6 +127,7 @@ func TestSchemaApplyPlanOutlivesRowsWrittenToAPopulatedTable_HappyPathE2E(t *tes
 // column is not added.
 func TestSchemaApplyPlanIsStaleOnceAnEmptyTableHoldsRows_FailurePathE2E(t *testing.T) {
 	test := planRowStatisticsCase{
+		// No rows: ANALYZE then records an empty table.
 		seed:    "SELECT 1",
 		written: "INSERT INTO public.notes VALUES (1, 'a')",
 		want:    "id,body",
