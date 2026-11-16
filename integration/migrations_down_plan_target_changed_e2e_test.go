@@ -287,6 +287,30 @@ func TestMigrationsDownRefusesAChangedTargetE2E_FailurePath(t *testing.T) {
 	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1, 2, 3})
 }
 
+// TestMigrationsDownRefusesARollbackAnotherRunnerFinishedE2E_FailurePath rolls
+// back through the down files while another runner rolls version 2 back during
+// the prompt. The confirmed rollback has nothing left to do, so the run refuses
+// rather than reporting a rollback it did not run.
+func TestMigrationsDownRefusesARollbackAnotherRunnerFinishedE2E_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	run := newDownPlanTargetRun(c)
+	prompted := run.startPromptedFileDown(c)
+
+	other := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Env: environmentWithoutPtahVariables()},
+		"migrations", "down", "--db-url", run.target, "--migrations-dir", run.migrationsDir, "--target", "1", "--confirm")
+	code := prompted.answer(c)
+
+	c.Assert(other.ExitCode, qt.Equals, 0, historyComment(other))
+	c.Assert(code, qt.Equals, 2, prompted.comment())
+	c.Assert(stderrErrors(prompted.stderr.String()), qt.DeepEquals, []string{`error: error running down migrations: ` +
+		`the rollback to version 1 was confirmed for the applied migrations [2], ` +
+		`and the migrations applied above version 1 are now []; nothing was rolled back. ` +
+		`Run migrations down again to confirm the rollback of the database as it is now`}, prompted.comment())
+	c.Assert(prompted.stdout.String(), qt.Not(qt.Contains), "completed successfully", prompted.comment())
+	c.Assert(run.userTables(c), qt.DeepEquals, []string{"users"})
+	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1})
+}
+
 // TestMigrationsDownPlanWaitsForTheMigrationLockE2E_FailurePath holds the
 // migration lock on a session of the test's own. The rollback waits for it
 // before it reads the history, as long as --migration-lock-timeout allows, and

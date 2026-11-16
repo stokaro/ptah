@@ -666,35 +666,41 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	if err != nil || confirmed == nil {
 		return err
 	}
-
-	ok, err := confirmRollbackPrompt(cmd, opts, confirmed.currentVersion, targetVersion, confirmed.selected)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil
-	}
-	confirmed.recheck = true
-	return runRollback(cmd, *confirmed)
+	return confirmAndRollBack(cmd, *confirmed)
 }
 
-// recheckConfirmed runs before next, under the lock the rollback holds, and
-// refuses with a [*confirmedRollbackChangedError] when the migrations applied
-// above target are not the confirmed ones. A person confirmed rolling back
-// these versions and no others; another runner may have applied or rolled
-// back one while the prompt waited without the lock.
-func recheckConfirmed(mig *migrator.Migrator, target int64, confirmed []int64, next migrator.PreMigrationHook) migrator.PreMigrationHook {
-	return func(ctx context.Context, plan migrator.MigrationPlan) error {
-		applied, err := mig.GetAppliedMigrations(ctx)
-		if err != nil {
-			return fmt.Errorf("error getting applied migrations: %w", err)
-		}
-		now := newestFirst(versionsAboveTarget(applied, target))
-		if want := newestFirst(confirmed); !slices.Equal(now, want) {
-			return &confirmedRollbackChangedError{target: target, confirmed: want, applied: now}
-		}
-		return next(ctx, plan)
+// confirmAndRollBack asks for confirmation with the migration lock released,
+// then takes the lock again and rolls back what run selected, rechecking under
+// the lock that it is still what the prompt showed.
+func confirmAndRollBack(cmd *cobra.Command, run rollbackRun) error {
+	ok, err := confirmRollbackPrompt(cmd, run.opts, run.currentVersion, run.inputs.targetVersion, run.selected)
+	if err != nil || !ok {
+		return err
 	}
+	run.recheck = true
+	outer := cmd.Context()
+	return run.migrator.HoldMigrationLock(outer, "migrate down", func(ctx context.Context) error {
+		cmd.SetContext(ctx)
+		defer cmd.SetContext(outer)
+		return runRollback(cmd, run)
+	})
+}
+
+// recheckConfirmed reads the applied migrations again and refuses with a
+// [*confirmedRollbackChangedError] when the ones above target are not the
+// confirmed ones. A person confirmed rolling back these versions and no
+// others; another runner may have applied or rolled back one while the prompt
+// waited without the lock. The caller holds the lock.
+func recheckConfirmed(ctx context.Context, mig *migrator.Migrator, target int64, confirmed []int64) error {
+	applied, err := mig.GetAppliedMigrations(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting applied migrations: %w", err)
+	}
+	now := newestFirst(versionsAboveTarget(applied, target))
+	if want := newestFirst(confirmed); !slices.Equal(now, want) {
+		return &confirmedRollbackChangedError{target: target, confirmed: want, applied: now}
+	}
+	return nil
 }
 
 // confirmedRollbackChangedError reports that the migrations applied above the
@@ -786,10 +792,11 @@ type rollbackRun struct {
 	// currentVersion is the version the run read before the prompt.
 	currentVersion int64
 	// recheck is set when the run released the migration lock for the
-	// confirmation prompt. The rollback through the down bodies then reads the
-	// applied migrations again under the lock and refuses when the ones above
-	// the target are not the ones the prompt showed; a --plan rollback always
-	// does, through [migrator.Migrator.MigrateDownDerived].
+	// confirmation prompt and holds it again. A rollback through the down
+	// bodies then reads the applied migrations again before anything else and
+	// refuses when the ones above the target are not the ones the prompt
+	// showed; a --plan rollback always does, through
+	// [migrator.Migrator.MigrateDownDerived].
 	recheck bool
 }
 
@@ -807,9 +814,6 @@ func runRollback(cmd *cobra.Command, r rollbackRun) error {
 		plan = &migrator.MigrationPlan{Direction: migrator.MigrationDirectionDown, Versions: newestFirst(r.selected)}
 	}
 	preflightHook := capturePlan(&plan, downPreflightHook(cmd, opts, r.runtime, r.conn, r.dbURL, r.resolved, emit))
-	if r.recheck && !r.resolved.plan {
-		preflightHook = recheckConfirmed(mig, r.inputs.targetVersion, r.selected, preflightHook)
-	}
 
 	// Last on every path from here, so it follows any line that says success.
 	// Under --json the document carries the same report.
@@ -817,8 +821,16 @@ func runRollback(cmd *cobra.Command, r rollbackRun) error {
 		defer emitLostLogEntries(emit, mig)
 	}
 
-	// Run down migrations
-	runErr := executeRollback(cmd, buildRollbackExecution(r, preflightHook))
+	// Run down migrations, once the versions the prompt showed are still the
+	// applied ones: refused here, before the migrator's own checks, a rollback
+	// another runner emptied in the meantime is not reported as done.
+	var runErr error
+	if r.recheck && !r.resolved.plan {
+		runErr = recheckConfirmed(cmd.Context(), mig, r.inputs.targetVersion, r.selected)
+	}
+	if runErr == nil {
+		runErr = executeRollback(cmd, buildRollbackExecution(r, preflightHook))
+	}
 	if runErr != nil {
 		runErr = fmt.Errorf("error running down migrations: %w", runErr)
 	}
