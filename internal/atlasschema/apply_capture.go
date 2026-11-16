@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlaschange"
+	"ptah.run/internal/mysqldefiner"
 	"ptah.run/internal/planeffect"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrator"
@@ -169,7 +170,26 @@ func (p ApplyPlan) Preflight(ctx context.Context, conn *dbschema.DatabaseConnect
 	if err := preflightUnitTransaction(info.Dialect, info.Capabilities, mode, units); err != nil {
 		return err
 	}
+	// The SQL units of a plan that also holds a provider-native operation are
+	// asked too: the native units do not change which definers the SQL ones
+	// name, and a refusal there would otherwise come from the server, after
+	// the units before it ran.
+	if err := mysqldefiner.Check(ctx, conn, "", sqlUnitText(units)); err != nil {
+		return err
+	}
 	return validateApplyUnits(ctx, conn.Writer(), units, statements)
+}
+
+// sqlUnitText returns the SQL text of each unit that is not a provider-native
+// operation, in plan order.
+func sqlUnitText(units []renderer.Fragment) []string {
+	var text []string
+	for _, unit := range units {
+		if unit.Native == nil {
+			text = append(text, unit.SQL)
+		}
+	}
+	return text
 }
 
 // Execute applies the captured units after repeating preflight. Callers own

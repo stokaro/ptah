@@ -186,7 +186,8 @@ like this:
 
 `sql_security` does not describe the view's definer. A `CREATE OR REPLACE
 VIEW` that states no `DEFINER` makes the account that runs it the definer, so
-the plan refuses to replace a `DEFINER` view another account defined; see
+a plan that replaces a `DEFINER` view names its definer, and refuses to
+replace one another account defined; see
 [View security](../../databases/mysql/#view-security).
 
 The `before` values come from the database the plan read. The plan's source

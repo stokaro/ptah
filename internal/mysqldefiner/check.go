@@ -3,8 +3,11 @@ package mysqldefiner
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/dbschema"
 )
@@ -73,18 +76,75 @@ func GlobalPrivileges(lines []string) (map[string]bool, bool) {
 	return privileges, found
 }
 
+// Server is the server [Scan] reads statements for and [Decide] answers for.
+type Server struct {
+	// Dialect is the server's dialect, MySQL or MariaDB.
+	Dialect string
+	// VersionID is the server's version as [VersionID] spells it, and 0 where
+	// it is unknown.
+	VersionID int
+}
+
+// serverOf is the [Server] a connection reports.
+func serverOf(info catalog.ServerInfo) Server {
+	return Server{Dialect: platform.NormalizeDialect(info.Dialect), VersionID: VersionID(info.Version)}
+}
+
+// VersionID spells a version a server reports, such as "8.0.46" or
+// "11.4.2-MariaDB-log", as the server compares it with the version an
+// executable comment is gated on: major*10000 + minor*100 + patch. A version
+// it cannot read is 0.
+func VersionID(version string) int {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return 0
+	}
+	id := 0
+	for i, scale := range []int{10000, 100, 1} {
+		number := 0
+		if i < len(parts) {
+			digits := strings.IndexFunc(parts[i], func(r rune) bool { return r < '0' || r > '9' })
+			if digits < 0 {
+				digits = len(parts[i])
+			}
+			value, err := strconv.Atoi(parts[i][:digits])
+			if err != nil || i < 2 && digits != len(parts[i]) {
+				return 0
+			}
+			number = value
+		}
+		id += number * scale
+	}
+	return id
+}
+
+// The MySQL releases the definer privileges change at, as [VersionID] spells
+// them: 8.0 brought SET_USER_ID, and 8.2 SET_ANY_DEFINER and
+// ALLOW_NONEXISTENT_DEFINER in its place.
+const (
+	mysql80 = 80000
+	mysql82 = 80200
+)
+
+// beforeSetAnyDefiner reports a MySQL server known to be before 8.2.
+func (s Server) beforeSetAnyDefiner() bool {
+	return s.Dialect == platform.MySQL && s.VersionID > 0 && s.VersionID < mysql82
+}
+
 // Decide answers whether an account holding privileges may name a definer on
-// dialect, where definerExists is what the server said about that definer.
+// server, where definerExists is what the server said about that definer.
 //
 // On MySQL SET_ANY_DEFINER names an existing account, and naming one the
 // server lacks needs ALLOW_NONEXISTENT_DEFINER too; SUPER covers both, and
-// SET_USER_ID is the older name of the first. Measured on MySQL 8.4 and 26.10.
-// On MariaDB SET USER names any account, existing or not. SUPER alone is
-// accepted by MariaDB 10.11 and refused by 11.4, 11.8 and 12.3, and the grants
-// cannot tell those servers apart, so an account holding only SUPER is left
-// undecided.
-func Decide(dialect string, privileges map[string]bool, definerExists Existence) Verdict {
-	if dialect == platform.MariaDB {
+// SET_USER_ID is the older name of the first, the only one from 8.0 to 8.1
+// and gone from 26.10. Measured on MySQL 8.0.46, 8.4 and 26.10. A server
+// before 8.0, whose privilege is SUPER alone, is left undecided. On MariaDB
+// SET USER names any account,
+// existing or not. SUPER alone is accepted by MariaDB 10.11 and refused by
+// 11.4, 11.8 and 12.3, and the grants cannot tell those servers apart, so an
+// account holding only SUPER is left undecided.
+func Decide(server Server, privileges map[string]bool, definerExists Existence) Verdict {
+	if server.Dialect == platform.MariaDB {
 		switch {
 		case privileges[privilegeSetUser] || privileges[privilegeAll]:
 			return Verdict{Decided: true}
@@ -97,6 +157,10 @@ func Decide(dialect string, privileges map[string]bool, definerExists Existence)
 	switch {
 	case privileges[privilegeSuper] || privileges[privilegeSetUserID] || privileges[privilegeAll]:
 		return Verdict{Decided: true}
+	case server.beforeSetAnyDefiner() && server.VersionID < mysql80:
+		return Verdict{}
+	case server.beforeSetAnyDefiner():
+		return Verdict{Decided: true, Missing: privilegeSetUserID}
 	case !privileges[privilegeSetAnyDefiner]:
 		if definerExists == Missing && !privileges[privilegeAllowNonexistentDefiner] {
 			return Verdict{Decided: true, Missing: privilegeSetAnyDefiner + " and " + privilegeAllowNonexistentDefiner}
@@ -111,31 +175,65 @@ func Decide(dialect string, privileges map[string]bool, definerExists Existence)
 	}
 }
 
+// Source is statements that run in one run, and where they come from.
+type Source struct {
+	// Name says where the statements come from in a refusal, such as a
+	// migration file, and is empty for a plan.
+	Name string
+	// Statements are the statements, in the order they run.
+	Statements []string
+}
+
 // Check refuses statements that name a definer the account conn runs as may
 // not name, before any of them runs. source says where the statements come
 // from in the refusal, such as a migration file, and may be empty.
+func Check(ctx context.Context, conn *dbschema.DatabaseConnection, source string, statements []string) error {
+	return CheckSources(ctx, conn, []Source{{Name: source, Statements: statements}})
+}
+
+// CheckSources is [Check] over the statements of several sources that run in
+// one run, in order, such as the files of a migration run.
 //
 // It asks only on the MySQL family, and only for a definer other than the
 // connected account: naming oneself needs no privilege. Where the server does
 // not answer, or the grants do not decide, it refuses nothing, and a statement
 // the account may not run fails on the server with ERROR 1227 as it would
-// without the check.
-func Check(ctx context.Context, conn *dbschema.DatabaseConnection, source string, statements []string) error {
+// without the check. A host-less definer on MariaDB, which may be a role, is
+// not decided; neither is whether a definer exists where the run creates or
+// renames an account, since the server is read before any of it runs.
+//
+// The grants are read on a session of conn's pool, which holds the account's
+// default roles. A role a statement activates with SET ROLE is not counted.
+func CheckSources(ctx context.Context, conn *dbschema.DatabaseConnection, sources []Source) error {
 	if conn == nil || !appliesTo(conn.Info().Dialect) {
 		return nil
 	}
-	named := Scan(statements)
+	type found struct {
+		Named
+		source string
+	}
+	server := serverOf(conn.Info())
+	var named []found
+	for _, source := range sources {
+		for _, one := range Scan(server, source.Statements) {
+			named = append(named, found{Named: one, source: source.Name})
+		}
+	}
 	if len(named) == 0 {
 		return nil
 	}
-	dialect := platform.NormalizeDialect(conn.Info().Dialect)
+	createsAccounts := slices.ContainsFunc(sources, func(source Source) bool {
+		return slices.ContainsFunc(source.Statements, func(statement string) bool {
+			return changesAccounts(server, statement)
+		})
+	})
 	var account string
 	if err := conn.QueryRowContext(ctx, "SELECT CURRENT_USER()").Scan(&account); err != nil {
 		return nil
 	}
-	var foreign []Named
+	var foreign []found
 	for _, one := range named {
-		if !sameAccount(one.Definer, account) {
+		if !sameAccount(one.Definer, account) && (server.Dialect != platform.MariaDB || !one.Hostless) {
 			foreign = append(foreign, one)
 		}
 	}
@@ -146,24 +244,39 @@ func Check(ctx context.Context, conn *dbschema.DatabaseConnection, source string
 	if err != nil {
 		return nil
 	}
-	privileges, found := GlobalPrivileges(lines)
-	if !found {
+	privileges, granted := GlobalPrivileges(lines)
+	if !granted {
 		return nil
 	}
 	var missing []MissingPrivilege
 	for _, one := range foreign {
-		verdict := Decide(dialect, privileges, definerExistence(ctx, conn, dialect, privileges, one.Definer))
+		existence := ExistenceUnknown
+		if !createsAccounts {
+			existence = definerExistence(ctx, conn, server, privileges, one.Definer)
+		}
+		verdict := Decide(server, privileges, existence)
 		if !verdict.Decided || verdict.Missing == "" {
 			continue
 		}
 		missing = append(missing, MissingPrivilege{
-			Object: one.Object, Definer: one.Definer, Account: account, Privilege: verdict.Missing, Source: source,
+			Object: one.Object, Definer: one.Definer, Account: account, Privilege: verdict.Missing, Source: one.source,
 		})
 	}
 	if len(missing) == 0 {
 		return nil
 	}
 	return &PrivilegeError{Missing: missing}
+}
+
+// changesAccounts reports whether statement, read as server reads it, creates
+// or renames an account or a role. A run holding such a statement changes
+// which accounts exist after the server was read, so [CheckSources] does not
+// decide from that read.
+func changesAccounts(server Server, statement string) bool {
+	tokens := significantTokens(server, statement)
+	return len(tokens) >= 2 &&
+		(isWord(tokens, 0, "CREATE") && (isWord(tokens, 1, "USER") || isWord(tokens, 1, "ROLE")) ||
+			isWord(tokens, 0, "RENAME") && isWord(tokens, 1, "USER"))
 }
 
 // appliesTo reports whether dialect is one whose statements name definers
@@ -195,16 +308,17 @@ func showGrants(ctx context.Context, conn *dbschema.DatabaseConnection) ([]strin
 }
 
 // definerExistence asks whether a definer account exists, only where the
-// answer changes the verdict: on MySQL, for an account that holds
-// SET_ANY_DEFINER without ALLOW_NONEXISTENT_DEFINER or SUPER.
+// answer changes the verdict: on MySQL 8.2 and later, for an account that
+// holds SET_ANY_DEFINER without ALLOW_NONEXISTENT_DEFINER or SUPER.
 func definerExistence(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	dialect string,
+	server Server,
 	privileges map[string]bool,
 	account string,
 ) Existence {
-	if dialect == platform.MariaDB || privileges[privilegeSuper] || privileges[privilegeAllowNonexistentDefiner] {
+	if server.Dialect == platform.MariaDB || server.beforeSetAnyDefiner() ||
+		privileges[privilegeSuper] || privileges[privilegeAllowNonexistentDefiner] {
 		return ExistenceUnknown
 	}
 	at := strings.LastIndexByte(account, '@')

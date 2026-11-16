@@ -738,8 +738,11 @@ REPLACE] SQL SECURITY INVOKER VIEW`; reading the file preserves that mode.
 The read keeps `information_schema.VIEWS.SECURITY_TYPE`. A declaration that
 omits `security` states the server default, `DEFINER`, because a `CREATE OR
 REPLACE VIEW` without the clause selects it. A new view declared without
-`security` takes `DEFINER`, and so does a view held as `DEFINER`: its plan writes
-no clause.
+`security` takes `DEFINER`, and so does a view held as `DEFINER`. A plan that
+creates a view writes no `DEFINER` clause. A plan that replaces a view held as
+`DEFINER` names the view's definer when a database read answers for the plan,
+as the definer paragraphs below describe. A plan made from a replay or from
+two descriptions names no definer.
 
 When a view holds `SQL SECURITY INVOKER` and the declaration names no mode, the
 plan refuses before the server changes, whatever else changes on the view.
@@ -794,7 +797,10 @@ CREATE OR REPLACE DEFINER=`app`@`%` SQL SECURITY DEFINER VIEW `my_docs` AS ...
 
 A rollback migration is checked on the same terms. It names the definer the up
 migration's read recorded whenever it writes the view under `DEFINER`, since
-that is the view it restores.
+that is the view it restores. That includes a view the up migration moves from
+`DEFINER` to `INVOKER`: the rollback restores the `DEFINER` view for its
+definer, whichever account that is, and an account that cannot name the
+definer is refused when the rollback runs.
 
 #### A plan made from a replay
 
@@ -824,34 +830,60 @@ unless the account that runs it holds a global privilege. MySQL and MariaDB
 run DDL outside a transaction, so a failure in the middle of a run would
 leave the statements before it applied. `schema apply`, with a computed plan
 or with `--plan`, `ptah-compat schema apply` and `migrations up` and `down`
-therefore ask before the first statement. They scan the statements, and for
-`migrations` every pending file, for a `CREATE` or `ALTER` of a view,
-routine, trigger or event that names another account, and refuse when the
-connected account cannot name it. The message names the object, the definer,
-the account and the privilege. Grant the privilege, or apply as the definer:
+therefore ask before the first statement, and `--dry-run` refuses what the run
+would refuse. They scan the statements, and for `migrations` every pending
+file, for a `CREATE` or `ALTER` of a view, routine, trigger, event or MariaDB
+package that names another account, and refuse when the connected account
+cannot name it.
+
+A plan that also holds a provider-native operation is scanned over its SQL
+statements. A clause inside an executable comment the connected server runs is
+read as part of the statement: `/*!50013 DEFINER=... */` as `mysqldump` writes
+it, a comment gated on a version no later than the server's, and on MariaDB
+`/*M! ... */`. The message names the object, the definer, the account and the
+privilege. Grant the privilege, or apply as the definer:
 
 ```sql
 -- MySQL
 GRANT SET_ANY_DEFINER ON *.* TO 'deploy'@'%';
 -- MySQL, when the definer account does not exist on the server
 GRANT ALLOW_NONEXISTENT_DEFINER ON *.* TO 'deploy'@'%';
+-- MySQL 8.0 and 8.1, which have neither of the two
+GRANT SET_USER_ID ON *.* TO 'deploy'@'%';
 -- MariaDB
 GRANT SET USER ON *.* TO 'deploy'@'%';
 ```
 
 `SUPER` covers both on MySQL. Under `--json` the refusal is `outcome:
 refused` with the code `definer-privilege`, and `definer_privileges` names
-each `object` with its `definer`, the `account` and the `privilege`. A file
-that names the connected account, or `CURRENT_USER`, needs no privilege.
+each `object` with its `definer`, the `account` and the `privilege`. A
+statement that names the connected account or `CURRENT_USER` needs no
+privilege, and neither does `CURRENT_ROLE` on MariaDB, where it is the current
+role. MySQL reads `CURRENT_ROLE` as the account `CURRENT_ROLE@%`, and the check
+treats it as one.
 
 The check reads plain `SHOW GRANTS`, which on both servers includes the
 privileges of an active role and leaves out a role that is granted but not
-active, as the server does. Where it cannot decide, it refuses nothing and
-the server answers with error 1227 as it would without the check: when `SHOW
-GRANTS` fails, on MariaDB for an account that holds `SUPER` without `SET
-USER` (MariaDB 10.11 accepts it, 11.4 and later refuse it), and on MySQL for
-an account that holds `SET_ANY_DEFINER` without `ALLOW_NONEXISTENT_DEFINER`
-and cannot read `mysql.user` to learn whether the definer exists.
+active, as the server does. The grants are read on a session of their own,
+so a role that a file activates with `SET ROLE` is not counted. This is the one
+case where the check refuses a statement the server would accept: an account
+that holds the privilege only through such a role is refused, although the
+server would accept the statement after the `SET ROLE`.
+
+Where the check cannot decide, it refuses nothing, and the server answers with
+error 1227 as it would without the check:
+
+- `SHOW GRANTS` fails;
+- on MySQL before 8.0, the account lacks `SUPER`, the only privilege that
+  names another account there;
+- on MariaDB, the account holds `SUPER` without `SET USER`: MariaDB 10.11
+  accepts it, 11.4 and later refuse it;
+- on MariaDB, the definer is written without a host, so it may name a role;
+- on MySQL, the account holds `SET_ANY_DEFINER` without
+  `ALLOW_NONEXISTENT_DEFINER`, and it cannot read `mysql.user` to learn whether
+  the definer exists, or the run creates or renames an account, since the
+  server is read before the run starts;
+- a quoted name holds a backslash, whose meaning depends on `sql_mode`.
 
 The plan records the mode before and after each statement on a view, as the
 [`sql_security` effect](../../reference/statement-effects/).
