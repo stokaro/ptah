@@ -15,6 +15,7 @@ package ownqualifier
 import (
 	"strings"
 
+	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/lexer"
 )
 
@@ -22,13 +23,21 @@ import (
 // its schema or its name.
 type Matcher func(token lexer.Token) bool
 
+// FoldUnquoted is an unquoted identifier as PostgreSQL stores it: ASCII
+// letters in lower case and every other character as written, so `Ärzte`
+// stays `Ärzte`. Folding by Unicode would read that as `ärzte`, and a
+// subquery exposing the table's name in it would slip past [Qualifiers].
+func FoldUnquoted(name string) string {
+	return identifier.ComparisonASCIIInsensitive.IdentityKey(name)
+}
+
 // StoredName matches a name as the server stores it: an unquoted identifier
 // that folds to it, or a quoted one that spells it.
 func StoredName(name string) Matcher {
 	return func(token lexer.Token) bool {
 		switch token.Type {
 		case lexer.TokenIdentifier:
-			return name != "" && strings.ToLower(token.Value) == name
+			return name != "" && FoldUnquoted(token.Value) == name
 		case lexer.TokenString:
 			inner, quoted := strings.CutPrefix(token.Value, `"`)
 			inner, closed := strings.CutSuffix(inner, `"`)
@@ -54,7 +63,10 @@ func Tokens(expression string) []lexer.Token {
 // Qualifiers returns, in order, the index of each token that is the table's
 // schema written in front of the table and a column: schema, a dot, the table,
 // and another dot. A qualifier that is itself qualified, as in
-// `db.public.notes.owner`, is not one.
+// `db.public.notes.owner`, is not one, and neither is one whose column is
+// followed by a dot or a parenthesis: `public.notes.c.f` and `public.notes.f(1)`
+// are four-part names or calls, and without `public` they would read as another
+// schema's.
 //
 // It returns none when the table's name appears in tokens anywhere else. A
 // subquery may expose the same name, as `FROM other.notes` or `AS notes` does,
@@ -68,7 +80,8 @@ func Qualifiers(tokens []lexer.Token, schema, table Matcher) []int {
 	behind := make(map[int]bool)
 	for i := range tokens {
 		if i+3 < len(tokens) && (i == 0 || !isDot(tokens[i-1])) &&
-			schema(tokens[i]) && isDot(tokens[i+1]) && table(tokens[i+2]) && isDot(tokens[i+3]) {
+			schema(tokens[i]) && isDot(tokens[i+1]) && table(tokens[i+2]) && isDot(tokens[i+3]) &&
+			(i+5 >= len(tokens) || !isDot(tokens[i+5]) && !isOperator(tokens[i+5], "(")) {
 			found = append(found, i)
 			behind[i+2] = true
 		}
@@ -100,5 +113,9 @@ func Strip(expression string, schema, table Matcher) string {
 }
 
 func isDot(token lexer.Token) bool {
-	return token.Type == lexer.TokenOperator && token.Value == "."
+	return isOperator(token, ".")
+}
+
+func isOperator(token lexer.Token, value string) bool {
+	return token.Type == lexer.TokenOperator && token.Value == value
 }

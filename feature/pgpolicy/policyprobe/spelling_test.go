@@ -25,7 +25,13 @@ func (noSession) WithRolledBackTransaction(context.Context, string, func(context
 // observed, on table docs, and returns the declaration it hands back.
 func normalizedAgainst(c *qt.C, declared *pgpolicy.DesiredPolicy, observed *pgpolicy.ObservedPolicy) *pgpolicy.DesiredPolicy {
 	c.Helper()
-	ref := pgpolicy.PolicyRef("public", "docs", "p")
+	return normalizedOn(c, "docs", declared, observed)
+}
+
+// normalizedOn is [normalizedAgainst] on a table of another name.
+func normalizedOn(c *qt.C, table string, declared *pgpolicy.DesiredPolicy, observed *pgpolicy.ObservedPolicy) *pgpolicy.DesiredPolicy {
+	c.Helper()
+	ref := pgpolicy.PolicyRef("public", table, "p")
 	result, err := policyprobe.Service{}.NormalizeObjects(c.Context(), schemaext.NormalizationRequest{
 		Target:  "cockroachdb",
 		Session: noSession{},
@@ -180,4 +186,21 @@ func TestNormalizeObjects_LeavesARoleKeywordToTheServer(t *testing.T) {
 	got := normalizedAgainst(c, declared, observedUsing("owner_name = current_user()"))
 
 	c.Assert(got.Normalized, qt.IsNil)
+}
+
+// TestNormalizeObjects_KeepsAQualifierAnUnquotedNonASCIIExposureNeeds pins
+// PostgreSQL's folding of an unquoted name, which lowers ASCII letters only: in
+// a policy on "Ärzte", the subquery's unquoted `Ärzte` is the table's name, so
+// `public."Ärzte".n` names the outer table and `"Ärzte".n` the subquery's. The
+// clause is kept as declared rather than read as the stored one.
+func TestNormalizeObjects_KeepsAQualifierAnUnquotedNonASCIIExposureNeeds(t *testing.T) {
+	c := qt.New(t)
+	clause := `public."Ärzte".n > 0 AND EXISTS (SELECT 1 FROM f() AS Ärzte(n))`
+	declared := &pgpolicy.DesiredPolicy{Using: new(clause)}
+
+	got := normalizedOn(c, "Ärzte", declared, observedUsing(`n > 0 AND EXISTS (SELECT 1 FROM f() AS Ärzte(n))`))
+
+	projected, err := got.Observed()
+	c.Assert(err, qt.IsNil)
+	c.Assert(*projected.Using, qt.Equals, clause)
 }

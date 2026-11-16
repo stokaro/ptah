@@ -53,6 +53,8 @@ func TestStrip_KeepsAnyOtherSpelling(t *testing.T) {
 		{"a subquery exposing the name", "EXISTS (SELECT 1 FROM other.notes WHERE public.notes.id = 1)"},
 		{"an alias exposing the name", "EXISTS (SELECT 1 FROM other.t AS notes WHERE public.notes.id = notes.id)"},
 		{"a column named like the table", "public.notes.notes = 1"},
+		{"a four-part name", "public.notes.c.f = 1"},
+		{"a call through the table", "public.notes.f(1) = 1"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -70,6 +72,10 @@ func TestStoredName_MatchesTheServersSpelling(t *testing.T) {
 		{"a quoted mixed-case name", "Orders", `public."Orders".n = 1`, `"Orders".n = 1`},
 		{"an unquoted spelling of a mixed-case name", "Orders", `public.Orders.n = 1`, `public.Orders.n = 1`},
 		{"a doubled quote", `a"b`, `public."a""b".n = 1`, `"a""b".n = 1`},
+		{"an unquoted non-ASCII name the server does not fold", "Ärzte", `public.Ärzte.n = 1`, `Ärzte.n = 1`},
+		{"an unquoted exposure of a non-ASCII name", "Ärzte",
+			`public."Ärzte".n = 1 AND EXISTS (SELECT 1 FROM f() AS Ärzte(n))`,
+			`public."Ärzte".n = 1 AND EXISTS (SELECT 1 FROM f() AS Ärzte(n))`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
