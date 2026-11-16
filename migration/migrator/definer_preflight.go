@@ -18,24 +18,26 @@ import (
 // stay applied and the failing one is left failed with part of it applied.
 // The definers a file names do not depend on what the files before it did,
 // and neither does what the account holds, so the question is asked of every
-// file at once. [mysqldefiner.Check] refuses nothing it cannot decide, and the
-// server then answers as it would without this check.
+// file at once, and an account an earlier file creates is seen by the check of
+// a later one. [mysqldefiner.CheckSources] refuses nothing it cannot decide,
+// and the server then answers as it would without this check.
 func (m *Migrator) refuseDefinersTheAccountCannotName(
 	ctx context.Context,
 	migrations []*Migration,
 	direction MigrationDirection,
 ) error {
+	sources := make([]mysqldefiner.Source, 0, len(migrations))
 	for _, migration := range migrations {
 		body := migrationSQLForDirection(migration, direction)
 		if body == "" {
 			continue
 		}
-		statements := splitSQLStatementsForConnection(m.conn, body)
-		if err := mysqldefiner.Check(ctx, m.conn, migrationSourceName(migration, direction), statements); err != nil {
-			return err
-		}
+		sources = append(sources, mysqldefiner.Source{
+			Name:       migrationSourceName(migration, direction),
+			Statements: splitSQLStatementsForConnection(m.conn, body),
+		})
 	}
-	return nil
+	return mysqldefiner.CheckSources(ctx, m.conn, sources)
 }
 
 // migrationSourceName names the file of direction a refusal points at: the
