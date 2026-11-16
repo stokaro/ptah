@@ -335,7 +335,7 @@ func (r *Reader) readDatabase(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read views: %w", err)
 	}
-	schema.Views = views
+	schema.Views = views.views
 
 	triggers, err := r.readTriggers(ctx, dbName)
 	if err != nil {
@@ -348,7 +348,10 @@ func (r *Reader) readDatabase(
 		return nil, fmt.Errorf("failed to read functions: %w", err)
 	}
 	schema.Functions = routines.functions
-	schema.CurrentAccount = routines.currentAccount
+	// Both reads ask CURRENT_USER() on this connection, so they agree, and
+	// either one records the account when the database holds a routine or a
+	// view whose definer a replacement could change.
+	schema.CurrentAccount = cmp.Or(routines.currentAccount, views.currentAccount)
 
 	// Read only where the preset claims the object. MySQL answers a sequence
 	// question with a syntax error rather than an empty result, so asking
@@ -772,9 +775,23 @@ func enhanceTablesWithPrimaryKeys(tables []catalog.Table, constraints []catalog.
 	}
 }
 
-func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, error) {
+// viewRead is what [Reader.readViews] finds.
+type viewRead struct {
+	views []catalog.View
+	// currentAccount is the account the connection runs as, CURRENT_USER(),
+	// which the same query reports beside each view's DEFINER, as
+	// [Reader.readFunctions] does beside each routine's. It is empty when the
+	// database holds no view.
+	currentAccount string
+}
+
+// readViews reads the views of dbName, with the account each one runs as under
+// SQL SECURITY DEFINER. A CREATE OR REPLACE VIEW that names no DEFINER makes
+// the account that runs it the definer, so the planner compares the two to
+// refuse a replacement that hands a view to another account.
+func (r *Reader) readViews(ctx context.Context, dbName string) (viewRead, error) {
 	query := `
-		SELECT TABLE_NAME, VIEW_DEFINITION, CHECK_OPTION, SECURITY_TYPE
+		SELECT TABLE_NAME, VIEW_DEFINITION, CHECK_OPTION, SECURITY_TYPE, DEFINER, CURRENT_USER()
 		FROM information_schema.VIEWS
 		WHERE TABLE_SCHEMA = ?
 		AND TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
@@ -782,24 +799,24 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 
 	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
-		return nil, err
+		return viewRead{}, err
 	}
 	defer rows.Close()
 
-	var views []catalog.View
+	var read viewRead
 	for rows.Next() {
 		var view catalog.View
-		err := rows.Scan(&view.Name, &view.Body, &view.CheckOption, &view.Security)
+		err := rows.Scan(&view.Name, &view.Body, &view.CheckOption, &view.Security, &view.Definer, &read.currentAccount)
 		if err != nil {
-			return nil, err
+			return viewRead{}, err
 		}
 		view.Schema = dbName
-		views = append(views, view)
+		read.views = append(read.views, view)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return viewRead{}, err
 	}
-	return views, nil
+	return read, nil
 }
 
 // routineRead is what [Reader.readFunctions] finds.

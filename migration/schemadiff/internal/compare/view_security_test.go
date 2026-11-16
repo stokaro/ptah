@@ -55,3 +55,27 @@ func TestViewDefinitions_BodyChangeReportsTheLostSQLSecurity(t *testing.T) {
 	c.Assert(diff.PreviousSecurity, qt.Equals, "INVOKER")
 	c.Assert(diff.Desired.Security, qt.Equals, "")
 }
+
+// TestViewDefinitions_RecordsTheHeldDefiner pins the definer a view comparison
+// hands the planner: the one the view holds, on a target whose views have a
+// SQL SECURITY mode, and none elsewhere, where no view runs as its definer.
+func TestViewDefinitions_RecordsTheHeldDefiner(t *testing.T) {
+	tests := []struct {
+		name, dialect string
+		want          string
+	}{
+		{name: "MySQL", dialect: platform.MySQL, want: "owner@%"},
+		{name: "MariaDB", dialect: platform.MariaDB, want: "owner@%"},
+		{name: "a target whose views have no mode", dialect: platform.Postgres, want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compare.ViewDefinitionsWithDialect(schemamodel.View{Name: "v", Body: "SELECT 2"},
+				catalog.View{Name: "v", Body: "SELECT 1", Security: "DEFINER", Definer: "owner@%"}, test.dialect)
+
+			c.Assert(diff.PreviousDefiner, qt.Equals, test.want)
+		})
+	}
+}

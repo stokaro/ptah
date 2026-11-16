@@ -626,6 +626,15 @@ definer routine must preserve both facts; missing facts fail closed with
 `ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
 and is not the safety boundary for applying such a replacement.
 
+The same readers populate `catalog.View.Definer`. A database-aware comparison
+hands it to the planner as `difftypes.ViewDiff.PreviousDefiner`, beside
+`difftypes.SchemaDiff.ConnectedAccount`, which only those entry points set. The
+MySQL-family planner refuses a forward replacement of a view that runs under
+`SQL SECURITY DEFINER` before and after the change when the two differ or
+either one is empty. A nil `ConnectedAccount`, as an offline comparison leaves
+it, checks nothing, and a pointer to an empty string is refused. A diff built
+by hand for a live target sets both facts.
+
 The separate [`testkit`](https://github.com/stokaro/ptah-testkit) module
 (`ptah.run/testkit`) is an opt-in helper for tests that need real
 databases. It keeps `testcontainers-go` out of Ptah's main module graph, lives

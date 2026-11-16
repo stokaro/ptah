@@ -875,6 +875,10 @@ func viewDefinitions(genView schemamodel.View, dbView catalog.View, dialect stri
 		// planner refuses to make that change from a declaration that names no
 		// mode, and reads the held mode here for it.
 		viewDiff.PreviousSecurity = strings.ToUpper(strings.TrimSpace(dbView.Security))
+		// The account a DEFINER view runs as. A replacement makes the account
+		// that applies it the definer, so the planner refuses to replace a view
+		// another account defined, and reads the held definer here for it.
+		viewDiff.PreviousDefiner = dbView.Definer
 		declared := mysqlviewsecurity.Effective(genView.Security)
 		held := mysqlviewsecurity.Effective(dbView.Security)
 		if declared != held {

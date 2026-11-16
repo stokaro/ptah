@@ -221,8 +221,9 @@ type Database struct {
 	// CurrentAccount is the account the reading connection ran as, such as
 	// the MySQL family's CURRENT_USER(): a fact about the reading connection,
 	// not about the database. A plan applied through the same connection
-	// creates objects as this account, so beside [Function.Definer] it tells a
-	// replacement that keeps a routine's definer from one that changes it.
+	// creates objects as this account, so beside [Function.Definer] and
+	// [View.Definer] it tells a replacement that keeps a routine's or a view's
+	// definer from one that changes it.
 	//
 	// Empty from a reader that does not record it, and from a description that
 	// did not come from a live read. Like DatabasePath, it is never
@@ -1307,6 +1308,14 @@ type View struct {
 	Comment     string           `json:"comment"`      // View comment/description
 	// Security is the MySQL or MariaDB view's SQL SECURITY mode.
 	Security string `json:"security,omitempty"`
+	// Definer is the account a view under SQL SECURITY DEFINER runs as, where
+	// a reader records it: the MySQL family's DEFINER, spelled user@host. Empty
+	// where the reader records none. Like [Function.Definer] it is a
+	// reader-only execution fact: a CREATE OR REPLACE VIEW that names no
+	// DEFINER makes the account that runs it the definer, so replacing a view
+	// of another definer changes whose privileges it runs with, which the
+	// plan refuses with [Database.CurrentAccount].
+	Definer string `json:"-"`
 	// Attributes carries the view's own WITH clause -- SQL Server's
 	// SCHEMABINDING and VIEW_METADATA -- uppercased, in the order the server
 	// wrote them.

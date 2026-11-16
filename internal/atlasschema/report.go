@@ -131,6 +131,12 @@ const (
 	// it. State the option or the mode to keep it, or state the option as off or
 	// the mode as DEFINER to change it.
 	RefusalViewSecurityOption RefusalCode = "view-security-option"
+	// RefusalViewDefiner means the plan would replace a view that runs with
+	// its definer's privileges, and the replacement would make another
+	// account its definer, or the read did not record the definer or the
+	// account. Apply as the definer, declare SQL SECURITY INVOKER, or leave
+	// the view unchanged.
+	RefusalViewDefiner RefusalCode = "view-definer"
 	// RefusalDependentObject means the plan drops an object something else
 	// depends on, where the drop would stop on the dependent or take it with
 	// nothing to create it again. Change the dependent first.
@@ -161,6 +167,10 @@ type Refusal struct {
 	// one entry per view and option, in the order the comparison lists the views
 	// and each view's options in name order.
 	ViewOptions []planrefusal.ViewOption `json:"view_options,omitempty"`
+	// ViewDefiners are the views a view-definer refusal names, each with its
+	// definer and the account the replacement would make its definer, in the
+	// order the comparison lists the views.
+	ViewDefiners []planrefusal.ViewDefiner `json:"view_definers,omitempty"`
 }
 
 // PlanReport is the machine-readable record of one `schema plan` run.
@@ -508,6 +518,7 @@ func refusalFor(err error) *Refusal {
 	var ownerRequirement *txrequire.OwnerRequirementError
 	var simulation *SimulationError
 	var lostViewSecurity *planrefusal.LostViewSecurityError
+	var viewDefiner *planrefusal.ViewDefinerError
 	var dependentObject *planrefusal.DependentObjectError
 	var declaration *planrefusal.DeclarationError
 	switch {
@@ -534,6 +545,8 @@ func refusalFor(err error) *Refusal {
 		return &Refusal{Code: RefusalSimulationFailed}
 	case errors.As(err, &lostViewSecurity):
 		return &Refusal{Code: RefusalViewSecurityOption, ViewOptions: lostViewSecurity.Options}
+	case errors.As(err, &viewDefiner):
+		return &Refusal{Code: RefusalViewDefiner, ViewDefiners: viewDefiner.Views}
 	case errors.As(err, &dependentObject):
 		return &Refusal{Code: RefusalDependentObject}
 	case errors.As(err, &declaration):

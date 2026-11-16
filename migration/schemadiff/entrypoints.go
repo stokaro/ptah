@@ -229,6 +229,11 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	); err != nil {
 		return nil, Diagnostics{}, err
 	}
+	// The account a plan applied through this connection writes objects as.
+	// Only a comparison against a database read sets it, so a planner tells a
+	// read that did not record the account, which it refuses on, from a diff
+	// of two descriptions, which no connection applies.
+	diff.ConnectedAccount = new(database.CurrentAccount)
 	return diff, undecided, nil
 }
 

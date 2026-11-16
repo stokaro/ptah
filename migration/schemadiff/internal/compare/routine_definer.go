@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/definer"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/tableref"
 )
@@ -31,7 +32,8 @@ import (
 // A routine whose definer or connected account the read did not record, such as
 // one from a description rather than a live read, is refused as well: treating
 // missing facts as the same account would allow the change this guard exists
-// to stop.
+// to stop. Whether the definer is the connected account is [definer.Replace]'s
+// answer, which the MySQL planner's view rule reads too.
 //
 // Only database-aware comparison has an error channel and reader-supplied
 // ownership facts, so the validation belongs on that boundary rather than in
@@ -80,7 +82,10 @@ func ValidateRoutineDefinerReplacements(
 		if !strings.EqualFold(current.Security, "DEFINER") || desired.Security != "DEFINER" {
 			continue
 		}
-		if current.Definer == "" || database.CurrentAccount == "" {
+		switch definer.Replace(current.Definer, database.CurrentAccount) {
+		case definer.Kept:
+			continue
+		case definer.Unknown:
 			return fmt.Errorf(
 				"%w: cannot safely replace %s function %q with SQL SECURITY DEFINER: "+
 					"catalog ownership facts are incomplete (definer %q, connected account %q); "+
@@ -91,8 +96,7 @@ func ValidateRoutineDefinerReplacements(
 				current.Definer,
 				database.CurrentAccount,
 			)
-		}
-		if current.Definer != database.CurrentAccount {
+		default:
 			return fmt.Errorf(
 				"%w: cannot safely replace %s function %q with SQL SECURITY DEFINER: "+
 					"catalog definer %q differs from connected account %q; dropping and recreating "+
