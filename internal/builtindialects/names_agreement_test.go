@@ -60,7 +60,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 	}{
 		{
 			dialect:          platform.Postgres,
-			names:            descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
+			names:            descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true, RegclassConstants: true},
 			indexNaming:      pgFamily,
 			constraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
 			columns:          descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true},
@@ -103,14 +103,14 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			dialect: platform.CockroachDB,
 			columns: descriptor.Columns{IdentityNotNull: true},
 			names: descriptor.Names{
-				Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true,
+				Unquoted: "unicode_case_insensitive", Roles: "unicode_case_insensitive", PublicKeyword: true, RegclassConstants: true,
 			},
 			indexNaming: pgFamily,
 			statements:  descriptor.Statements{ViewsBlockDropTable: true, RelationsShareNames: true},
 		},
 		{
 			dialect:     platform.YugabyteDB,
-			names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
+			names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true, RegclassConstants: true},
 			indexNaming: pgFamily,
 			columns:     descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true},
 			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true, RelationsShareNames: true},

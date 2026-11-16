@@ -607,9 +607,26 @@ names it, a table, view or sequence where SQL names a relation, such as after
 `FROM`, `JOIN` or `REFERENCES`, and a type anywhere. So a planned column
 `title` does not recreate a function `title()`.
 
-A name inside a string literal does not count, so `nextval('app.ids')` with
-`app` excluded fails the rehearsal with `relation "app.ids" does not exist`.
-When a statement of the baseline or of the plan fails after objects were
+On PostgreSQL, CockroachDB and YugabyteDB, a string counts where the server
+reads it as the name of a relation as it reads the statement: a constant cast
+to `regclass`, as in `'app.ids'::regclass` or `CAST('app.ids' AS regclass)`,
+and the first argument of `nextval`, `currval` or `setval` written as a
+constant, as in `nextval('app.ids')`. So a column default `nextval('app.ids')`
+with `app` excluded recreates the sequence `app.ids` and its schema, whether the
+plan adds the default or the target already holds it. The text is read as the
+server reads it: a dot outside double quotes separates the schema from the
+name, an unquoted part is folded to lower case, and a bare name is a table, view
+or sequence found along the dev session's `search_path`. The sequence stays
+outside the comparison: the plan neither creates nor drops it.
+
+Any other name inside a string literal names nothing, so `DEFAULT 'app.ids'`
+and a string passed to another function recreate nothing. Neither does a name
+built from other strings, such as `nextval('app.' || 'ids')`, nor one passed as
+text, such as `nextval('app.ids'::text)`, which PostgreSQL looks up only when
+the expression runs. CockroachDB looks up the text form as it reads the
+statement, so there that default fails the rehearsal with `relation "app.ids"
+does not exist`. A sequence the target does not hold either fails it the same
+way on every engine. When a statement of the baseline or of the plan fails after objects were
 recreated this way, the error lists them.
 
 A dev URL that pins one schema with `search_path` leaves the other schemas the

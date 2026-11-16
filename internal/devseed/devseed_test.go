@@ -583,6 +583,194 @@ func TestClosure_FoldsAQuotedMixedCaseName(t *testing.T) {
 	c.Assert(calls, qt.Any(qt.DeepEquals), []string{"au.th", "public"})
 }
 
+// sequenceTarget is a target whose excluded schemas hold sequences and
+// relations a regclass constant can name, a function that shares a
+// sequence's name, and a sequence in public the selection leaves out.
+func sequenceTarget() *catalog.Database {
+	return &catalog.Database{
+		Schemas: schemas("public", "rebase", "Re Base", "util"),
+		Tables:  []catalog.Table{table("", "tasks", column("id", "integer")), table("rebase", "t", column("id", "integer"))},
+		Sequences: []catalog.Sequence{
+			{Schema: "rebase", Name: "ids"}, {Schema: "Re Base", Name: "Ids"}, {Schema: "util", Name: "tickets"}, {Schema: "public", Name: "counter"},
+		},
+		Functions: []catalog.Function{function("rebase", "ids", "SELECT NULL::uuid")},
+	}
+}
+
+// tasks is the compared state: one table, whose column defaults the row
+// gives.
+func tasks(defaults ...string) *catalog.Database {
+	columns := []catalog.Column{column("id", "integer")}
+	for i, expression := range defaults {
+		columns = append(columns, catalog.Column{Name: fmt.Sprintf("n%d", i), DataType: "bigint", ColumnDefault: new(expression)})
+	}
+	return &catalog.Database{Tables: []catalog.Table{table("", "tasks", columns...)}}
+}
+
+// TestClosure_ReadsTheRelationsARegclassConstantNames runs statements, and
+// column defaults of the compared state, that name a relation through a
+// string constant PostgreSQL reads as a regclass as it reads the statement.
+// The relation is added with its schema, and a function of the same name is
+// not: a regclass names a relation. A bare name is found along the search
+// path. The render here writes no column default, so a default's sequence is
+// found on the column, as the real render can write the column as serial.
+func TestClosure_ReadsTheRelationsARegclassConstantNames(t *testing.T) {
+	rebaseIDs := []devseed.Object{{Kind: "sequence", Schema: "rebase", Name: "ids"}, {Kind: "schema", Name: "rebase"}}
+	tests := []struct {
+		name     string
+		seed     *catalog.Database
+		executed []string
+		opts     devseed.Options
+		want     []devseed.Object
+	}{
+		{
+			name:     "a planned default of nextval",
+			seed:     tasks(),
+			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "n" bigint DEFAULT nextval('rebase.ids')`},
+			want:     rebaseIDs,
+			opts:     options,
+		},
+		{
+			name:     "a planned default of nextval of a regclass",
+			seed:     tasks(),
+			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "n" bigint DEFAULT nextval('rebase.ids'::regclass)`},
+			want:     rebaseIDs,
+			opts:     options,
+		},
+		{
+			name:     "a planned call of setval",
+			seed:     tasks(),
+			executed: []string{`SELECT setval('rebase.ids', 10)`},
+			want:     rebaseIDs,
+			opts:     options,
+		},
+		{
+			name:     "quoted names",
+			seed:     tasks(),
+			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "n" bigint DEFAULT nextval('"Re Base"."Ids"')`},
+			want:     []devseed.Object{{Kind: "sequence", Schema: "Re Base", Name: "Ids"}, {Kind: "schema", Name: "Re Base"}},
+			opts:     options,
+		},
+		{
+			name:     "a bare name in the default schema",
+			seed:     tasks(),
+			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "n" bigint DEFAULT nextval('counter')`},
+			want:     []devseed.Object{{Kind: "sequence", Schema: "public", Name: "counter"}},
+			opts:     options,
+		},
+		{
+			name:     "a bare name along the search path",
+			seed:     tasks(),
+			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "n" bigint DEFAULT nextval('tickets')`},
+			opts:     devseed.Options{Dialect: "postgres", DefaultSchema: "public", SearchPath: []string{"util", "public"}},
+			want:     []devseed.Object{{Kind: "sequence", Schema: "util", Name: "tickets"}, {Kind: "schema", Name: "util"}},
+		},
+		{
+			name:     "a planned view that casts a table's name",
+			seed:     tasks(),
+			executed: []string{`CREATE VIEW "public"."v" AS SELECT 'rebase.t'::regclass AS r`},
+			want:     []devseed.Object{{Kind: "table", Schema: "rebase", Name: "t"}, {Kind: "schema", Name: "rebase"}},
+			opts:     options,
+		},
+		{
+			name:     "an SQL body a planned function quotes",
+			seed:     tasks(),
+			executed: []string{`CREATE FUNCTION "public"."next"() RETURNS bigint LANGUAGE sql AS $$ SELECT nextval('rebase.ids') $$`},
+			want:     rebaseIDs,
+			opts:     options,
+		},
+		{
+			name: "a kept default as the server writes it back",
+			seed: tasks("nextval('rebase.ids'::regclass)"),
+			want: rebaseIDs,
+			opts: options,
+		},
+		{
+			name: "a kept default inside a larger expression",
+			seed: tasks("(nextval('rebase.ids'::regclass))::text"),
+			want: rebaseIDs,
+			opts: options,
+		},
+		{
+			name: "a kept default of a bare name the read's search path found",
+			seed: tasks("nextval('counter'::regclass)"),
+			want: []devseed.Object{{Kind: "sequence", Schema: "public", Name: "counter"}},
+			opts: options,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var calls [][]string
+			got, err := devseed.Closure(test.seed, test.executed, render, readOf(sequenceTarget(), &calls), test.opts)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Added, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestClosure_ReadsNoRelationFromOtherStrings runs statements, and column
+// defaults of the compared state, whose strings the server does not read as a
+// relation's name as it reads them, and on an engine whose descriptor states
+// no regclass constants. Nothing is added.
+func TestClosure_ReadsNoRelationFromOtherStrings(t *testing.T) {
+	tests := []struct {
+		name     string
+		seed     *catalog.Database
+		executed []string
+		opts     devseed.Options
+	}{
+		{
+			name:     "a string default",
+			seed:     tasks(),
+			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "label" text DEFAULT 'rebase.ids'`},
+			opts:     options,
+		},
+		{
+			name:     "a name the server looks up when the expression runs",
+			seed:     tasks(),
+			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "n" bigint DEFAULT nextval('rebase.ids'::text)`},
+			opts:     options,
+		},
+		{
+			name:     "an argument of another function",
+			seed:     tasks(),
+			executed: []string{`ALTER TABLE "public"."tasks" ADD COLUMN "label" text DEFAULT lower('rebase.ids')`},
+			opts:     options,
+		},
+		{
+			name:     "a comment",
+			seed:     tasks(),
+			executed: []string{"ALTER TABLE \"public\".\"tasks\" ADD COLUMN \"n\" bigint -- nextval('rebase.ids')\n"},
+			opts:     options,
+		},
+		{
+			name: "a default of a PL/pgSQL declaration",
+			seed: tasks(),
+			executed: []string{
+				`CREATE FUNCTION "public"."next"() RETURNS bigint LANGUAGE plpgsql AS $$ DECLARE n bigint := nextval('rebase.ids'); BEGIN RETURN n; END $$`,
+			},
+			opts: options,
+		},
+		{name: "a kept string default", seed: tasks("'rebase.ids'::text"), opts: options},
+		{
+			name:     "an engine with no regclass constants",
+			opts:     devseed.Options{Dialect: "mysql", DefaultSchema: "public", SearchPath: []string{"public"}},
+			seed:     tasks(),
+			executed: []string{"ALTER TABLE `tasks` ADD COLUMN `n` bigint DEFAULT (nextval('rebase.ids'))"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var calls [][]string
+			got, err := devseed.Closure(test.seed, test.executed, render, readOf(sequenceTarget(), &calls), test.opts)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Added, qt.IsNil)
+		})
+	}
+}
+
 // TestObjectsIn_HappyPath lists what a state holds in the schemas asked for,
 // whatever their case, in the order a closure adds objects: an extension by
 // the schema it is installed in, and an object a read left unqualified by the

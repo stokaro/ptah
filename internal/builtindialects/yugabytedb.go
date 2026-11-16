@@ -109,7 +109,10 @@ func yugabyteDB() descriptor.Dialect {
 		Lint: descriptor.Lint{Analyzed: true},
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
-		Names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true},
+		//
+		// Measured on 2026.1.2.0: the regclass constants are resolved as on
+		// PostgreSQL.
+		Names:       descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true, RegclassConstants: true},
 		IndexNaming: descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		// A second CREATE EXTENSION of one extension is refused, measured on
 		// 2026.1.2.0: `extension "pgcrypto" already exists`.

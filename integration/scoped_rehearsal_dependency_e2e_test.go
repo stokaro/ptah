@@ -324,32 +324,6 @@ func TestScopedRehearsalOnABoundURLRecreatesWhatItDoesNotReadE2E(t *testing.T) {
 	}
 }
 
-// TestScopedRehearsalReportsAReferenceSpelledAsTextE2E is the limit of the
-// recreation: a name inside a string literal is not read as a reference, so
-// a column default of nextval('rebase.ids') leaves the sequence out. The dev
-// database refuses the plan by the sequence's name, and nothing reaches the
-// target.
-func TestScopedRehearsalReportsAReferenceSpelledAsTextE2E(t *testing.T) {
-	tc := scopedRehearsalCase{
-		target:  "CREATE SCHEMA rebase;\nCREATE SEQUENCE rebase.ids;\nCREATE TABLE public.tasks (id int PRIMARY KEY);\n",
-		desired: "CREATE TABLE public.tasks (id int PRIMARY KEY, n bigint DEFAULT nextval('rebase.ids'));\n",
-		args:    scopedRehearsalExcludeRebase,
-	}
-	for _, surface := range scopedRehearsalSurfaces {
-		t.Run(surface.name, func(t *testing.T) {
-			c := qt.New(t)
-			env := newScopedRehearsalEnv(c, tc, scopedRehearsalRealm)
-
-			got := env.apply(c, surface, tc.args)
-
-			c.Assert(got.ExitCode, qt.Not(qt.Equals), 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-			c.Assert(got.Stderr, qt.Contains, `relation "rebase.ids" does not exist`)
-			c.Assert(got.Stderr, qt.Contains, "the plan was not applied to the target database")
-			c.Assert(scopedRehearsalColumns(c, env.target), qt.Equals, "id")
-		})
-	}
-}
-
 // TestScopedPlanOnASharedServerLeavesTheDevDatabaseAloneE2E is the control
 // for schema plan, which rehearses nothing: it reads the dev URL for the
 // dialect and the schema an unqualified file loads into, and never recreates

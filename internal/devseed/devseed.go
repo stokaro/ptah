@@ -27,10 +27,19 @@
 // resolves before the plan runs: all of an SQL body, the declarations of a
 // PL/pgSQL routine's body, and all of a DO block, which runs at once. That
 // holds for a routine of the state, a CREATE FUNCTION or CREATE PROCEDURE a
-// statement runs, and a DO block; see [bodyCode]. Any other name inside a
-// string literal or a comment names nothing, so a reference spelled as text, such as
-// nextval('app.ids'), is not found here, and the dev database reports the
-// object it lacks.
+// statement runs, and a DO block; see [bodyCode].
+//
+// A string constant names a table, a view or a sequence where the server reads
+// it as a relation's name as it reads the statement: on an engine whose
+// descriptor states [descriptor.Names.RegclassConstants], a constant cast to
+// regclass and the first argument of nextval, currval and setval, as in
+// nextval('app.ids'), read as [pgregclass.Relations] reads them. The column
+// defaults of the state count as well, since a render can write a column that
+// draws from a sequence it lacks as a serial column, which names none. Any
+// other name inside a string literal or a comment names nothing: DEFAULT
+// 'app.ids' needs no object, and neither does a name passed as text, such as
+// nextval('app.ids'::text), which PostgreSQL looks up only when the expression
+// runs.
 //
 // Roles are not added. A role belongs to the server, not to one database, and
 // the rehearsal relies on the dev server holding the roles the target's do,
@@ -50,6 +59,7 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/pgregclass"
 )
 
 // Object is one object of the target that [Closure] added to the recreated
@@ -480,17 +490,24 @@ func effective(schema string, opts Options) string {
 // that qualifies another.
 type names struct {
 	qualified map[key]bool
+	// qualifiedRelations are the qualified names a regclass constant spells,
+	// which name a table, a view, a materialized view or a sequence alone.
+	qualifiedRelations map[key]bool
 	// words are the unqualified names; called are the ones a call names, and
-	// relations the ones that stand where SQL names a relation.
+	// relations the ones that stand where SQL names a relation or that a
+	// regclass constant spells.
 	words, called, relations map[string]bool
 	schemas                  map[string]bool
 	searchPath               []string
+	// regclass reads the relations a text names through regclass constants.
+	regclass func(text string) []pgregclass.Relation
 }
 
 func readNames(texts []code, opts Options) names {
 	found := names{
-		qualified: make(map[key]bool), words: make(map[string]bool), called: make(map[string]bool),
-		relations: make(map[string]bool), schemas: make(map[string]bool),
+		qualified: make(map[key]bool), qualifiedRelations: make(map[key]bool), words: make(map[string]bool),
+		called: make(map[string]bool), relations: make(map[string]bool), schemas: make(map[string]bool),
+		regclass: regclassConstants(opts.Dialect),
 	}
 	for _, text := range texts {
 		body := text.text
@@ -515,6 +532,7 @@ func readNames(texts []code, opts Options) names {
 				found.schemas[parts[i]] = true
 			}
 		}
+		found.addRelations(body)
 	}
 	for _, schema := range opts.SearchPath {
 		if folded := fold(schema); folded != "" && folded != "$user" {
@@ -527,10 +545,39 @@ func readNames(texts []code, opts Options) names {
 	return found
 }
 
+// regclassConstants returns how a text of dialect names relations through
+// regclass constants: [pgregclass.Relations] on an engine whose descriptor
+// states [descriptor.Names.RegclassConstants], and no relation on any other.
+func regclassConstants(dialect string) func(string) []pgregclass.Relation {
+	if described, _ := platform.Lookup(dialect); !described.Names.RegclassConstants {
+		return func(string) []pgregclass.Relation { return nil }
+	}
+	return func(text string) []pgregclass.Relation { return pgregclass.Relations(text, dialect) }
+}
+
+// addRelations adds the relations text names through regclass constants: a
+// qualified one by its schema and name, which no object of another family
+// shares, and an unqualified one where a bare relation name stands, resolved
+// along the search path.
+func (n names) addRelations(text string) {
+	for _, relation := range n.regclass(text) {
+		if relation.Schema == "" {
+			n.relations[fold(relation.Name)] = true
+			continue
+		}
+		k := key{schema: fold(relation.Schema), name: fold(relation.Name)}
+		n.qualifiedRelations[k] = true
+		n.schemas[k.schema] = true
+	}
+}
+
 // addReferences adds the objects state's own objects reference by catalog
-// field rather than by text: the table each foreign key references, and the
-// type each column has. A reference left without a schema is in the default
-// schema, as a read leaves it.
+// field rather than by statement: the table each foreign key references, the
+// type each column has, and the relations a column's default names through
+// regclass constants. A reference left without a schema is in the default
+// schema, as a read leaves it, and a regclass constant's bare name is found
+// along the search path, where the server that wrote the default back left it
+// bare.
 func (n names) addReferences(state *catalog.Database, opts Options) {
 	add := func(schema, name string) {
 		if strings.TrimSpace(name) == "" {
@@ -552,20 +599,33 @@ func (n names) addReferences(state *catalog.Database, opts Options) {
 			if column.UDTSchema != "" {
 				add(column.UDTSchema, column.UDTName)
 			}
+			if column.ColumnDefault != nil {
+				n.addRelations(*column.ColumnDefault)
+			}
 		}
 	}
 }
 
 // reachesPast reports whether a qualified name names an object state does not
-// hold, in any family.
+// hold, in any family, or a qualified relation name one it does not hold among
+// its relations.
 func (n names) reachesPast(state *catalog.Database, opts Options) bool {
 	has := present(state, opts)
-	for k := range n.qualified {
-		held := false
-		for _, family := range has {
-			held = held || family[k]
+	held := func(k key, relationsOnly bool) bool {
+		for f, keys := range has {
+			if keys[k] && (!relationsOnly || f.relation()) {
+				return true
+			}
 		}
-		if !held {
+		return false
+	}
+	for k := range n.qualified {
+		if !held(k, false) {
+			return true
+		}
+	}
+	for k := range n.qualifiedRelations {
+		if !held(k, true) {
 			return true
 		}
 	}
@@ -586,22 +646,25 @@ func (n names) schemaNames() []string {
 }
 
 // named reports whether an object of family f in schema named name is named:
-// by its schema and name, or by its name alone along the search path. A name
-// alone names a function only where a call names it, and a table, a view or a
-// sequence only where SQL names a relation; it names a type, such as an enum
-// or a domain, wherever it stands, since a type is spelled bare after a column
-// or a cast as well as anywhere else.
+// by its schema and name, or by its name alone along the search path. A
+// qualified name a regclass constant spells names a table, a view or a
+// sequence alone. A name alone names a function only where a call names it,
+// and a table, a view or a sequence only where SQL names a relation or a
+// regclass constant spells it; it names a type, such as an enum or a domain,
+// wherever it stands, since a type is spelled bare after a column or a cast as
+// well as anywhere else.
 func (n names) named(f family, schema, name string) bool {
-	if n.qualified[key{schema: schema, name: name}] {
+	k := key{schema: schema, name: name}
+	if n.qualified[k] || (f.relation() && n.qualifiedRelations[k]) {
 		return true
 	}
 	if !slices.Contains(n.searchPath, schema) {
 		return false
 	}
-	switch f {
-	case familyFunction:
+	switch {
+	case f == familyFunction:
 		return n.called[name]
-	case familyTable, familyView, familyMatView, familySequence:
+	case f.relation():
 		return n.relations[name]
 	default:
 		return n.words[name]
@@ -638,6 +701,17 @@ const (
 	familyEnum
 	familyFeature
 )
+
+// relation reports whether f is a family of relations, which SQL names where
+// it names a table: tables, views, materialized views and sequences.
+func (f family) relation() bool {
+	switch f {
+	case familyTable, familyView, familyMatView, familySequence:
+		return true
+	default:
+		return false
+	}
+}
 
 // needed returns the objects of read that state lacks and names reach, in
 // family and name order so a run is deterministic.
