@@ -564,6 +564,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	// under it that the migrations above the target are still the ones shown.
 	outer := cmd.Context()
 	var confirmed *rollbackRun
+	var report *rollbackReport
 	err = mig.HoldMigrationLock(outer, "migrate down", func(ctx context.Context) error {
 		cmd.SetContext(ctx)
 		defer cmd.SetContext(outer)
@@ -661,8 +662,13 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 			confirmed = &run
 			return nil
 		}
-		return runRollback(cmd, run)
+		var runErr error
+		report, runErr = runRollback(cmd, run)
+		return runErr
 	})
+	if report != nil {
+		return report.finish(err)
+	}
 	if err != nil || confirmed == nil {
 		return err
 	}
@@ -679,11 +685,18 @@ func confirmAndRollBack(cmd *cobra.Command, run rollbackRun) error {
 	}
 	run.recheck = true
 	outer := cmd.Context()
-	return run.migrator.HoldMigrationLock(outer, "migrate down", func(ctx context.Context) error {
+	var report *rollbackReport
+	err = run.migrator.HoldMigrationLock(outer, "migrate down", func(ctx context.Context) error {
 		cmd.SetContext(ctx)
 		defer cmd.SetContext(outer)
-		return runRollback(cmd, run)
+		var runErr error
+		report, runErr = runRollback(cmd, run)
+		return runErr
 	})
+	if report == nil {
+		return err
+	}
+	return report.finish(err)
 }
 
 // recheckConfirmed reads the applied migrations again and refuses with a
@@ -800,10 +813,12 @@ type rollbackRun struct {
 	recheck bool
 }
 
-// runRollback rolls back, reads the history it left, and reports both: in the
-// document under --json, and in the closing summary.
-func runRollback(cmd *cobra.Command, r rollbackRun) error {
-	opts, mig, emit := r.opts, r.migrator, r.emit
+// runRollback rolls back and reads the history it left, under the migration
+// lock the caller holds. Its error is the rollback's. The caller reports the
+// run through [rollbackReport.finish] once the lock is released, because a lock
+// lost or not released fails a run whose statements all committed.
+func runRollback(cmd *cobra.Command, r rollbackRun) (*rollbackReport, error) {
+	mig := r.migrator
 	// The plan the migrator selects under its lock is what the document
 	// reports, and none when it selected nothing there. A derived rollback
 	// reports the versions it was derived for until the migrator selects them
@@ -813,13 +828,7 @@ func runRollback(cmd *cobra.Command, r rollbackRun) error {
 	if r.resolved.plan {
 		plan = &migrator.MigrationPlan{Direction: migrator.MigrationDirectionDown, Versions: newestFirst(r.selected)}
 	}
-	preflightHook := capturePlan(&plan, downPreflightHook(cmd, opts, r.runtime, r.conn, r.dbURL, r.resolved, emit))
-
-	// Last on every path from here, so it follows any line that says success.
-	// Under --json the document carries the same report.
-	if !opts.jsonOutput {
-		defer emitLostLogEntries(emit, mig)
-	}
+	preflightHook := capturePlan(&plan, downPreflightHook(cmd, r.opts, r.runtime, r.conn, r.dbURL, r.resolved, r.emit))
 
 	// Run down migrations, once the versions the prompt showed are still the
 	// applied ones: refused here, before the migrator's own checks, a rollback
@@ -843,17 +852,41 @@ func runRollback(cmd *cobra.Command, r rollbackRun) error {
 	if statusErr != nil {
 		finalStatus = nil
 	}
-	if err := r.document.Write(migrator.RunEvidence{Plan: plan, After: finalStatus, Err: runErr, DryRun: opts.dryRun}); err != nil {
+	return &rollbackReport{run: r, plan: plan, finalStatus: finalStatus, statusErr: statusErr}, runErr
+}
+
+// rollbackReport is what a rollback leaves to report once the migration lock
+// it ran under is released.
+type rollbackReport struct {
+	run         rollbackRun
+	plan        *migrator.MigrationPlan
+	finalStatus *migrator.MigrationStatus
+	statusErr   error
+}
+
+// finish reports the rollback with runErr, the outcome of the run and of the
+// lock it held: in the document under --json, and in the closing summary.
+func (rr *rollbackReport) finish(runErr error) error {
+	r := rr.run
+	opts, emit := r.opts, r.emit
+	// Last on every path from here, so it follows any line that says success.
+	// Under --json the document carries the same report.
+	if !opts.jsonOutput {
+		defer emitLostLogEntries(emit, r.migrator)
+	}
+	if err := r.document.Write(migrator.RunEvidence{
+		Plan: rr.plan, After: rr.finalStatus, Err: runErr, DryRun: opts.dryRun,
+	}); err != nil {
 		return errors.Join(runErr, err)
 	}
 	if runErr != nil {
 		return runErr
 	}
-	if statusErr != nil {
-		return fmt.Errorf("error getting final migration status: %w", statusErr)
+	if rr.statusErr != nil {
+		return fmt.Errorf("error getting final migration status: %w", rr.statusErr)
 	}
 
-	emitMigrateDownSummary(emit, opts, r.inputs.targetVersion, r.selected, finalStatus)
+	emitMigrateDownSummary(emit, opts, r.inputs.targetVersion, r.selected, rr.finalStatus)
 
 	return nil
 }
