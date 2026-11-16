@@ -189,3 +189,68 @@ func TestObservedFingerprintBindsThePlanningContext(t *testing.T) {
 	altered := &catalog.Database{PlanningContextObjects: must.Must(schemaext.NewObjects(changed, b)), PlanningContextCoverage: known}
 	c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, altered)), qt.Not(qt.Equals), first)
 }
+
+// rowFacts are the row statistics of a read of public.notes.
+type rowFacts struct {
+	rows    int64
+	unknown bool
+}
+
+// notes is a read holding one table, public.notes, with the row statistics
+// given.
+func notes(facts rowFacts) *catalog.Database {
+	return &catalog.Database{Tables: []catalog.Table{{
+		Name: "notes", Schema: "public", Type: "TABLE", EstimatedRows: facts.rows, RowStatsUnknown: facts.unknown,
+		Columns: []catalog.Column{{Name: "id", DataType: "integer"}},
+	}}}
+}
+
+// A table's row estimate moves with every write and every analyze, and of it
+// a plan depends only on whether the table holds rows. Two reads that agree on
+// that fingerprint alike, whatever their estimates, and a read keeps its own
+// statistics after it is fingerprinted.
+func TestObservedFingerprintIgnoresTheRowEstimateOfAPopulatedTable(t *testing.T) {
+	runtime := must.Must(builtin.New())
+	for _, test := range []struct {
+		name        string
+		read, other rowFacts
+	}{
+		{name: "one row, then three", read: rowFacts{rows: 1}, other: rowFacts{rows: 3}},
+		{name: "statistics unknown, then counted", read: rowFacts{unknown: true}, other: rowFacts{rows: 5}},
+		{name: "counted, then statistics unknown", read: rowFacts{rows: 2}, other: rowFacts{unknown: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			read := notes(test.read)
+
+			got, err := schemafingerprint.Observed(t.Context(), runtime, read)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, notes(test.other))), qt.Equals, got)
+			c.Assert(read, qt.DeepEquals, notes(test.read))
+		})
+	}
+}
+
+// Whether a table holds rows decides how a plan builds an index on it, so a
+// read in which an empty table holds rows fingerprints apart from the read
+// before.
+func TestObservedFingerprintBindsWhetherATableHoldsRows(t *testing.T) {
+	runtime := must.Must(builtin.New())
+	for _, test := range []struct {
+		name        string
+		read, other rowFacts
+	}{
+		{name: "empty, then one row", read: rowFacts{}, other: rowFacts{rows: 1}},
+		{name: "empty, then statistics unknown", read: rowFacts{}, other: rowFacts{unknown: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := schemafingerprint.Observed(t.Context(), runtime, notes(test.read))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(must.Must(schemafingerprint.Observed(t.Context(), runtime, notes(test.other))), qt.Not(qt.Equals), got)
+		})
+	}
+}

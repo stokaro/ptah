@@ -425,6 +425,15 @@ func withTypeSize(rawType string, column Column) string {
 	return rawType
 }
 
+// Populated reports whether the table holds rows: its statistics count at
+// least one, or the database reports no usable statistics, which counts as
+// populated because a guess of empty is the guess that takes a lock. Unlike
+// EstimatedRows, the answer stays the same while writes and analyzes move the
+// estimate of a table that holds rows.
+func (t Table) Populated() bool {
+	return t.RowStatsUnknown || t.EstimatedRows > 0
+}
+
 // QualifiedName returns schema.table when Schema is set, or Name otherwise.
 func (t Table) QualifiedName() string {
 	return QualifyTableName(t.Schema, t.Name)

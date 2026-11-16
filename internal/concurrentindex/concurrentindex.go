@@ -70,7 +70,7 @@ func IndexTableFacts(dbSchema *catalog.Database) TableIndex {
 	for _, table := range dbSchema.Tables {
 		facts := TableFacts{
 			Partitioned: table.Partitioned,
-			Populated:   table.RowStatsUnknown || table.EstimatedRows > 0,
+			Populated:   table.Populated(),
 		}
 		mergeTableFacts(index.qualified, table.QualifiedName(), facts)
 		if table.Schema != "" {
