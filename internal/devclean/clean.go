@@ -159,6 +159,14 @@ type Baseline struct {
 	roles []string
 }
 
+// RolesAtClaim returns the roles the dev server held at the claim, sorted, on
+// a server the run owns, where every reset drops the roles the run created. It
+// is nil on any other server: a reset there drops no role, so a role a run
+// creates outlives it.
+func (b Baseline) RolesAtClaim() []string {
+	return slices.Clone(b.roles)
+}
+
 // Extensions returns the extension names the baseline keeps, sorted.
 func (b Baseline) Extensions() []string {
 	return slices.Clone(b.extensions)

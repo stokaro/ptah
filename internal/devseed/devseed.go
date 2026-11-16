@@ -41,9 +41,9 @@
 // nextval('app.ids'::text), which PostgreSQL looks up only when the expression
 // runs.
 //
-// Roles are not added. A role belongs to the server, not to one database, and
-// the rehearsal relies on the dev server holding the roles the target's do,
-// as it does for the roles the narrowed state itself names.
+// Roles are not added. A role belongs to the server, not to one database, so
+// whether the dev server may hold one the run creates is the caller's
+// decision; [RolesNamed] reads which roles the statements name.
 package devseed
 
 import (
