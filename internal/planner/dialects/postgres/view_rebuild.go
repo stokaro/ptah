@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
@@ -890,16 +891,23 @@ func viewLikeKind(object deporder.ViewLike) string {
 // dependent went first. CASCADE is then written only in Ptah's own statement
 // style, where it also takes the dependents the plan does not know of, such
 // as a view in a schema the run leaves out; the exact style leaves the server
-// to refuse those. The exception is a relation a policy of a removed table
-// reads, which goes with its table only later; see [removedTableReads]. A
-// routine is dropped without CASCADE in both styles, as the plan drops every
-// routine.
+// to refuse those. A policy of a removed table that reads a relation the
+// rebuild drops went first too, and droppedPolicies names those; see
+// [policiesAheadOfRebuild]. A relation a policy of a removed table reads whose
+// drop is not among them keeps CASCADE, since that policy goes with its table
+// only later; see [removedTableReadsExcept]. A routine is dropped without
+// CASCADE in both styles, as the plan drops every routine.
 //
 // The views the plan replaces before the drops come first; see
 // [viewRebuild.replaceFirst]. The drops run against what the database holds,
 // so a view or materialized view the plan changes is ordered by its
 // definition there, where the plan knows it; see [heldDefinitions].
-func (p *Planner) dropRebuiltViewLikes(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
+func (p *Planner) dropRebuiltViewLikes(
+	result []ast.Node,
+	diff *difftypes.SchemaDiff,
+	rebuild viewRebuild,
+	droppedPolicies map[objectidentity.Key]bool,
+) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, object := range deporder.ViewLikesForCreateIn(rebuild.replaceFirst, p.targetDialect(), semantics) {
 		result = appendNode(result, p.viewReplace(diff, object, semantics))
@@ -909,7 +917,7 @@ func (p *Planner) dropRebuiltViewLikes(result []ast.Node, diff *difftypes.Schema
 			result = append(result, rebuild.routines[bareName(object.Name)].dropNodes()...)
 			continue
 		}
-		result = append(result, p.dropViewLikeNode(object, p.cascades(removedTableReads(diff, object.Name, nil))))
+		result = append(result, p.dropViewLikeNode(object, p.cascades(removedTableReadsExcept(diff, object.Name, nil, droppedPolicies))))
 	}
 	return result
 }

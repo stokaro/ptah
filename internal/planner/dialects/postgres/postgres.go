@@ -2048,11 +2048,21 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	droppedAhead := maps.Clone(foreignKeysReleased)
 	maps.Copy(droppedAhead, released.ConstraintSet())
 
+	// Feature operations of the tables are planned here and join the plan
+	// below; the drops of the policies a view rebuild depends on go first.
+	features, err := p.planTableFeatures(ctx, runtime, diff)
+	if err != nil {
+		return nil, err
+	}
+	var aheadOfRebuild []ast.Node
+	features.afterColumns, aheadOfRebuild = policiesAheadOfRebuild(features.afterColumns, diff, rebuild)
+	result = append(result, aheadOfRebuild...)
+
 	// 5c. Views that read a column whose type changes leave first: PostgreSQL
 	// refuses ALTER COLUMN TYPE under a view. A materialized view that changes,
 	// and a view the server cannot replace in place, leaves with everything
 	// that depends on it. Step 6.6 puts them back.
-	result = p.dropRebuiltViewLikes(result, diff, rebuild)
+	result = p.dropRebuiltViewLikes(result, diff, rebuild, policiesDroppedBeforeRelations(aheadOfRebuild, diff))
 
 	// 5d. A removed sequence leaves its owner before the column changes that
 	// take its default away; see [Planner.releaseRemovedSequenceOwners].
@@ -2061,10 +2071,6 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 
 	// Feature operations that stand in the way of a column change join the plan
 	// here.
-	features, err := p.planTableFeatures(ctx, runtime, diff)
-	if err != nil {
-		return nil, err
-	}
 	result = append(result, features.aheadOfColumns...)
 	windows.Lifecycle = &featurehost.Span{Start: len(result), End: len(result)}
 
@@ -2162,7 +2168,7 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	// moved an expression off a column and dropped it once emitted `DROP
 	// COLUMN … CASCADE` first (stokaro/ptah#1027, stokaro/ptah#2236).
 	result = append(result, features.afterColumns...)
-	droppedPolicies := policiesDroppedBeforeRelations(slices.Concat(features.aheadOfColumns, features.afterColumns), diff)
+	droppedPolicies := policiesDroppedBeforeRelations(slices.Concat(aheadOfRebuild, features.aheadOfColumns, features.afterColumns), diff)
 	earlyColumns := p.columnsLeavingEarly(diff)
 	ahead, err := p.routinesAheadOf(diff, rebuild, earlyColumns, droppedPolicies)
 	if err != nil {
