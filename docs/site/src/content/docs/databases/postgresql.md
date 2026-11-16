@@ -1070,13 +1070,6 @@ appears before the plan runs, the statement fails with SQLSTATE 42723 instead
 of overwriting it. The function Ptah writes for a trigger with a body follows
 the trigger: a new trigger creates it, and a changed trigger replaces it.
 
-A trigger that runs a function of its own is read with the function's name,
-and with its schema when that is not the schema the read resolves names in:
-`EXECUTE FUNCTION "audit"."set_updated_at"('updated_at')`. A rehearsal that
-recreates the trigger on a dev database, and a description written as SQL,
-then name the function the trigger runs, whatever the search path of the
-session that runs them.
-
 That function's name is `ptah_trigger_<table>_<name>`: the table and the
 trigger name are each folded to lower case, every run of characters outside
 `[a-z0-9_]` collapsed to one `_`, and every `_` that remains doubled before the
@@ -1086,6 +1079,14 @@ table `a_b` with trigger `c` and a table `a` with trigger `b_c` render as
 table or trigger name that contains an underscore therefore renders under a
 different generated name; a database already holding that trigger's function
 under the old name keeps it, unreferenced, until someone drops it by hand.
+
+A trigger that runs a function declared on its own is read with the function's
+name, and with its schema when that is not the schema the read resolves names
+in: `EXECUTE FUNCTION "audit"."set_updated_at"('updated_at')`. A rehearsal
+that recreates the trigger on a dev database, and a description written as
+SQL, then name the function the trigger runs, whatever the search path of the
+session that runs them. A function with the generated name is the trigger's
+own in whichever schema it is held.
 
 A changed function is planned as `CREATE OR REPLACE FUNCTION` where the server
 accepts that: a new body, language, security context, volatility, planner

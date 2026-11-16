@@ -1141,8 +1141,23 @@ func CanonicalTriggerEvent(event string) string {
 // generated one back into a body; removing a trigger leaves a declared function
 // in place and drops a generated one with it. The two must agree, or a
 // function described as shared is dropped with the first trigger that goes.
+//
+// The generated function is recognized by its name in any schema. A read names
+// a function outside the schema it resolves names in with that schema, and the
+// generated one is created wherever the session that created it resolved a
+// bare name, so `app.ptah_trigger_app__items_t` is still the trigger's own.
 func (t Trigger) RunsDeclaredFunction(executed string) bool {
-	return executed != "" && executed != t.FunctionName()
+	return executed != "" && functionNamePart(executed) != t.FunctionName()
+}
+
+// functionNamePart is the name a function reference names, without the schema
+// in front of it and without its quotes.
+func functionNamePart(reference string) string {
+	trimmed := strings.TrimSpace(reference)
+	if ref, ok := tableref.Parse(trimmed); ok {
+		return ref.Name
+	}
+	return trimmed
 }
 
 // FunctionName returns the deterministic PostgreSQL trigger function name used
