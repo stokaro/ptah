@@ -600,8 +600,15 @@ func convertTriggers(database *schemamodel.Database, dbTriggers []catalog.Trigge
 		// described. The native SQL description uses the reference and the HCL
 		// one keeps falling back to the body, which is the surface's existing
 		// limit rather than a new one.
+		//
+		// A generated function the read names with its schema keeps that
+		// schema, so a statement made from the description creates and drops
+		// it where the database holds it rather than where a bare name
+		// resolves.
 		if trigger.RunsDeclaredFunction(dbTrigger.ExecuteFunction) {
 			trigger.ExecuteFunction = dbTrigger.ExecuteFunction
+		} else {
+			trigger.FunctionSchema = trigger.GeneratedFunctionSchema(dbTrigger.ExecuteFunction)
 		}
 		database.Triggers = append(database.Triggers, trigger)
 	}

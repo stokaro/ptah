@@ -1085,8 +1085,15 @@ name, and with its schema when that is not the schema the read resolves names
 in: `EXECUTE FUNCTION "audit"."set_updated_at"('updated_at')`. A rehearsal
 that recreates the trigger on a dev database, and a description written as
 SQL, then name the function the trigger runs, whatever the search path of the
-session that runs them. A function with the generated name is the trigger's
-own in whichever schema it is held.
+session that runs them.
+
+A function with the generated name is the trigger's own in whichever schema it
+is held. Ptah creates it without a schema, so it lands in the first schema of
+the creating session's search path, which need not be the trigger table's.
+When a read finds it in a schema it names, that schema stays with the trigger:
+a rehearsal and a description written as SQL create the function there, a
+changed trigger replaces it there, and a removed trigger drops it there. A plan
+does not move it to another schema.
 
 A changed function is planned as `CREATE OR REPLACE FUNCTION` where the server
 accepts that: a new body, language, security context, volatility, planner

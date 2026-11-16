@@ -111,25 +111,50 @@ func TestSchemaInspectNamesTheSchemaOfATriggerFunctionE2E_HappyPath(t *testing.T
 	c.Assert(got.Stdout, qt.Contains, `EXECUTE FUNCTION "audit"."set_updated_at"('updated_at')`)
 }
 
+// generatedFunctionApplies are the schema apply commands that apply the plan
+// after rehearsing it on a dev database.
+var generatedFunctionApplies = []struct {
+	name    string
+	program clirun.Target
+	args    func(target, schema, dev string) []string
+}{
+	{
+		name:    "ptah schema apply",
+		program: clirun.Ptah,
+		args: func(target, schema, dev string) []string {
+			return []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--dev-url", dev, "--auto-approve"}
+		},
+	},
+	{
+		name:    "ptah-compat schema apply",
+		program: clirun.Compat,
+		args: func(target, schema, dev string) []string {
+			return []string{"schema", "apply", "--url", target, "--to", "file://" + filepath.ToSlash(schema), "--dev-url", dev, "--auto-approve"}
+		},
+	},
+}
+
 // TestSchemaApplyDropsAGeneratedTriggerFunctionOfAnotherSchemaE2E_HappyPath
 // removes a trigger whose function Ptah generated, held in the trigger
-// table's schema rather than the one the read resolves names in. The read
+// table's schema rather than the one the session resolves names in. The read
 // names the function with its schema and it is still the trigger's own: the
-// plan drops it with the trigger, and the rehearsal recreates the trigger
-// with its body rather than as a reference to a function the dev database
-// does not hold.
+// rehearsal recreates the trigger with its body, the plan drops the function
+// with the trigger by its schema, and both are gone from the target. A bare
+// DROP FUNCTION resolves along the search path, misses the function, and the
+// apply fails with SQLSTATE 42883.
 func TestSchemaApplyDropsAGeneratedTriggerFunctionOfAnotherSchemaE2E_HappyPath(t *testing.T) {
 	generated := schemamodel.Trigger{Name: "t2", Table: "app.items"}.FunctionName()
 	target := "CREATE SCHEMA app;\n" +
 		"CREATE TABLE app.items (id bigint PRIMARY KEY);\n" +
 		"CREATE FUNCTION app." + generated + "() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;\n" +
 		"CREATE TRIGGER t2 BEFORE UPDATE ON app.items FOR EACH ROW EXECUTE FUNCTION app." + generated + "();\n"
-	for _, run := range triggerFunctionRuns {
+	for _, run := range generatedFunctionApplies {
 		t.Run(run.name, func(t *testing.T) {
 			c := qt.New(t)
 			server := dbtarget.URL(c, dbtarget.PostgreSQL)
 			targetURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
-			_, err := connectDevDialect(c, targetURL).ExecContext(c.Context(), target)
+			conn := connectDevDialect(c, targetURL)
+			_, err := conn.ExecContext(c.Context(), target)
 			c.Assert(err, qt.IsNil)
 			devURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
 			schema := filepath.Join(c.TempDir(), "schema.sql")
@@ -139,8 +164,58 @@ func TestSchemaApplyDropsAGeneratedTriggerFunctionOfAnotherSchemaE2E_HappyPath(t
 			got := clirun.Run(c, run.program, options, run.args(targetURL, schema, devURL)...)
 
 			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-			c.Assert(got.Stdout, qt.Contains, `DROP TRIGGER "t2"`)
-			c.Assert(got.Stdout, qt.Contains, "DROP FUNCTION")
+			var functions, triggers int
+			c.Assert(conn.QueryRowContext(c.Context(),
+				"SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'app' AND p.proname = $1",
+				generated).Scan(&functions), qt.IsNil)
+			c.Assert(conn.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_trigger WHERE tgname = 't2'").Scan(&triggers), qt.IsNil)
+			c.Assert(functions, qt.Equals, 0)
+			c.Assert(triggers, qt.Equals, 0)
+		})
+	}
+}
+
+// TestSchemaApplyReplacesAGeneratedTriggerFunctionWhereItIsE2E_HappyPath
+// changes a trigger whose function Ptah generated, held in the trigger
+// table's schema rather than the one the session resolves names in. The
+// replacement rewrites that function and the trigger runs it: no second
+// function of the generated name appears where a bare name resolves.
+func TestSchemaApplyReplacesAGeneratedTriggerFunctionWhereItIsE2E_HappyPath(t *testing.T) {
+	generated := schemamodel.Trigger{Name: "t2", Table: "app.items"}.FunctionName()
+	target := "CREATE SCHEMA app;\n" +
+		"CREATE TABLE app.items (id bigint PRIMARY KEY);\n" +
+		"CREATE FUNCTION app." + generated + "() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;\n" +
+		"CREATE TRIGGER t2 BEFORE UPDATE ON app.items FOR EACH ROW EXECUTE FUNCTION app." + generated + "();\n"
+	desired := "CREATE SCHEMA IF NOT EXISTS app;\n" +
+		"CREATE TABLE app.items (id bigint PRIMARY KEY);\n" +
+		"CREATE FUNCTION " + generated + "() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;\n" +
+		"CREATE TRIGGER t2 AFTER UPDATE ON app.items FOR EACH ROW EXECUTE FUNCTION " + generated + "();\n"
+	for _, run := range generatedFunctionApplies {
+		t.Run(run.name, func(t *testing.T) {
+			c := qt.New(t)
+			server := dbtarget.URL(c, dbtarget.PostgreSQL)
+			targetURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			conn := connectDevDialect(c, targetURL)
+			_, err := conn.ExecContext(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			devURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(desired), 0o600), qt.IsNil)
+			options := clirun.Options{Dir: c.TempDir(), Env: append(os.Environ(), "PTAH_DEV_SERVER_DISPOSABLE=1")}
+
+			got := clirun.Run(c, run.program, options, run.args(targetURL, schema, devURL)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			var held string
+			c.Assert(conn.QueryRowContext(c.Context(),
+				"SELECT string_agg(n.nspname, ',' ORDER BY n.nspname) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE p.proname = $1",
+				generated).Scan(&held), qt.IsNil)
+			var runs string
+			c.Assert(conn.QueryRowContext(c.Context(),
+				"SELECT n.nspname || CASE WHEN t.tgtype & 2 = 0 THEN ' after' ELSE ' before' END FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_namespace n ON n.oid = p.pronamespace WHERE t.tgname = 't2'",
+			).Scan(&runs), qt.IsNil)
+			c.Assert(held, qt.Equals, "app")
+			c.Assert(runs, qt.Equals, "app after")
 		})
 	}
 }

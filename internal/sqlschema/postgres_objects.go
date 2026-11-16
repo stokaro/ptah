@@ -253,16 +253,20 @@ func adoptTriggerFunctions(database *schemamodel.Database) {
 	owned := make(map[string]bool, len(database.Triggers))
 	for index := range database.Triggers {
 		trigger := &database.Triggers[index]
-		if trigger.ExecuteFunction == "" || trigger.ExecuteFunction != trigger.FunctionName() {
+		if trigger.ExecuteFunction == "" || trigger.RunsDeclaredFunction(trigger.ExecuteFunction) {
 			continue
 		}
 		body, exists := bodies[trigger.ExecuteFunction]
 		if !exists {
 			continue
 		}
+		// A description names the generated function with its schema when the
+		// read found it outside the schema it resolves names in; the schema
+		// stays with the trigger, so the function is recreated there.
+		owned[trigger.ExecuteFunction] = true
 		trigger.Body = trimTriggerFunctionWrapper(body)
+		trigger.FunctionSchema = trigger.GeneratedFunctionSchema(trigger.ExecuteFunction)
 		trigger.ExecuteFunction = ""
-		owned[trigger.FunctionName()] = true
 	}
 	if len(owned) == 0 {
 		return

@@ -1094,6 +1094,12 @@ type Trigger struct {
 	// alternatives: when ExecuteFunction is set, Ptah does not render a
 	// function definition for the trigger.
 	ExecuteFunction string
+	// FunctionSchema is the schema of the function Ptah generates for the
+	// trigger, when a read found that function in a schema it names. Empty
+	// creates the function where the session resolves a bare name. It says
+	// where the function is, not where it should be: a comparison does not
+	// plan a move when it differs.
+	FunctionSchema string `json:",omitempty"`
 	// FunctionArguments are the text values passed to the trigger function.
 	FunctionArguments []string `json:",omitempty"`
 
@@ -1148,6 +1154,26 @@ func CanonicalTriggerEvent(event string) string {
 // bare name, so `app.ptah_trigger_app__items_t` is still the trigger's own.
 func (t Trigger) RunsDeclaredFunction(executed string) bool {
 	return executed != "" && functionNamePart(executed) != t.FunctionName()
+}
+
+// GeneratedFunction is the function Ptah generates for the trigger, as a
+// statement names it: FunctionName, in FunctionSchema when that is set.
+func (t Trigger) GeneratedFunction() string {
+	if t.FunctionSchema == "" {
+		return t.FunctionName()
+	}
+	return tableref.Canonical(t.FunctionSchema, t.FunctionName())
+}
+
+// GeneratedFunctionSchema is the schema executed names when it names the
+// function Ptah generates for this trigger with a schema, and empty when it
+// names that function bare or names another function.
+func (t Trigger) GeneratedFunctionSchema(executed string) string {
+	ref, ok := tableref.Parse(strings.TrimSpace(executed))
+	if !ok || !ref.Qualified || ref.Name != t.FunctionName() {
+		return ""
+	}
+	return ref.Schema
 }
 
 // functionNamePart is the name a function reference names, without the schema

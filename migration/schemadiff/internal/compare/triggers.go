@@ -114,7 +114,7 @@ func TriggersWithSemanticsAndConditions(
 			delete(triggerDiff.Changes, "when")
 		}
 		if len(triggerDiff.Changes) > 0 {
-			triggerDiff.Desired = declared
+			triggerDiff.Desired = inPlace(declared, database.Triggers[index])
 			diff.TriggersModified = append(diff.TriggersModified, triggerDiff)
 		}
 	}
@@ -127,8 +127,12 @@ func TriggersWithSemanticsAndConditions(
 		// The catalog reports every function a trigger runs, the generated
 		// one included; the removal carries it only when it is declared on its
 		// own, which is what a DROP must leave in place.
-		if (schemamodel.Trigger{Name: trigger.Name, Table: removal.TableName}).RunsDeclaredFunction(trigger.ExecuteFunction) {
+		owner := schemamodel.Trigger{Name: trigger.Name, Table: removal.TableName}
+		switch {
+		case owner.RunsDeclaredFunction(trigger.ExecuteFunction):
 			removal.ExecuteFunction = trigger.ExecuteFunction
+		case owner.GeneratedFunctionSchema(trigger.ExecuteFunction) != "":
+			removal.GeneratedFunction = trigger.ExecuteFunction
 		}
 		diff.TriggersRemoved = append(diff.TriggersRemoved, removal)
 	}
@@ -395,8 +399,9 @@ func normalizeTriggerBody(body string) string {
 // The two sides qualify differently. A declaration names the function the way
 // its author wrote it -- `app.touch` in a SQL file, or the qualified name an
 // HCL reference resolves to -- while a read names it with its schema only when
-// that schema is not the one the read resolves names in. Compared as text, a trigger nobody had touched was planned
-// for replacement on every run (stokaro/ptah#3113).
+// that schema is not the one the read resolves names in. Compared as text, a
+// trigger nobody had touched was planned for replacement on every run
+// (stokaro/ptah#3113).
 //
 // The comparison uses the more specific spelling BOTH sides carry. Two
 // qualified names are compared whole, so `app.touch` and `other.touch` stay two
@@ -412,6 +417,18 @@ func sameExecuteFunction(declared, observed string) bool {
 		return true
 	}
 	return strings.EqualFold(declaredSchema, observedSchema)
+}
+
+// inPlace is the declaration a replacement of current renders: declared, with
+// the schema the database holds the generated function in when the
+// declaration does not say one. A replacement then rewrites that function
+// rather than creating one of the same name where a bare name resolves and
+// leaving the one the database held behind.
+func inPlace(declared schemamodel.Trigger, current catalog.Trigger) schemamodel.Trigger {
+	if declared.ExecuteFunction == "" && declared.FunctionSchema == "" {
+		declared.FunctionSchema = declared.GeneratedFunctionSchema(current.ExecuteFunction)
+	}
+	return declared
 }
 
 // splitExecuteFunction separates a function reference into its schema and

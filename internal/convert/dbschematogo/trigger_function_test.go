@@ -72,6 +72,7 @@ func TestConvert_LeavesATriggerPtahOwnsInline(t *testing.T) {
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
+	c.Assert(trigger.FunctionSchema, qt.Equals, "")
 	c.Assert(trigger.Body, qt.Contains, "INSERT INTO audit_log")
 }
 
@@ -97,5 +98,6 @@ func TestConvert_LeavesATriggerPtahOwnsInlineInAnotherSchema(t *testing.T) {
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
+	c.Assert(trigger.FunctionSchema, qt.Equals, "app")
 	c.Assert(trigger.Body, qt.Contains, "INSERT INTO audit_log")
 }

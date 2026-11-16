@@ -356,11 +356,12 @@ func triggerAdditionsFromRemovals(
 // triggerRemovalsFromAdditions turns the forward direction's additions into the
 // rollback's removals, dropping the operand each one carried.
 //
-// A DROP is written from the two names and from whether the trigger runs a
-// separately declared function, which is the one fact of the declaration the
-// removal keeps. Carrying the whole declaration would leave the entry holding a
-// definition nothing reads, which reads to the next person as though something
-// did.
+// A DROP is written from the two names, from whether the trigger runs a
+// separately declared function, and from the schema its generated function is
+// held in when the declaration names one, which are the facts of the
+// declaration the removal keeps. Carrying the whole declaration would leave the
+// entry holding a definition nothing reads, which reads to the next person as
+// though something did.
 func triggerRemovalsFromAdditions(additions []difftypes.TriggerRef) []difftypes.TriggerRef {
 	if len(additions) == 0 {
 		return nil
@@ -371,6 +372,9 @@ func triggerRemovalsFromAdditions(additions []difftypes.TriggerRef) []difftypes.
 			TriggerName:     ref.TriggerName,
 			TableName:       ref.TableName,
 			ExecuteFunction: ref.Desired.ExecuteFunction,
+		}
+		if ref.Desired.ExecuteFunction == "" && ref.Desired.FunctionSchema != "" {
+			removals[i].GeneratedFunction = ref.Desired.GeneratedFunction()
 		}
 	}
 	return removals
