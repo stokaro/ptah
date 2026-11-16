@@ -1076,10 +1076,15 @@ trigger name are each folded to lower case, every run of characters outside
 two parts join on a single `_`. The doubling keeps the join unambiguous -- a
 table `a_b` with trigger `c` and a table `a` with trigger `b_c` render as
 `ptah_trigger_a__b_c` and `ptah_trigger_a_b__c` rather than the same name.
+
 The name follows the table as the declaration spells it: `ON public.items`
 gives `ptah_trigger_public__items_t`, and a read reports that trigger on
 `items`. The trigger keeps the function the database holds under either name,
-so a changed trigger replaces that function and a removed trigger drops it.
+so a changed trigger replaces that function and a removed trigger drops it. A
+name longer than PostgreSQL's 63 characters ends in a hash of the table as the
+declaration spells it, so it is recognized only when the read spells the table
+the same way. The folding also makes `x.items` and `x_items` one segment, so
+`ptah_trigger_x__items_t` is read as the function of trigger `t` on `items`.
 
 A trigger that runs a function declared on its own is read with the function's
 name, and with its schema when that is not the schema the read resolves names
