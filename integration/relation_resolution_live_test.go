@@ -260,7 +260,7 @@ func TestViewRebuildKeepsANamesakeReadersGrantLive(t *testing.T) {
 // schema named after the role, the default schema is not public, and
 // PostgreSQL prints the policy's public.order_totals as `order_totals`. Read in
 // the default schema alone, the policy reads nothing the plan drops: the
-// CASCADE takes it in Ptah's own style, and the exact style's drop fails. Both
+// CASCADE takes it in the annotated style, and the exact style's drop fails. Both
 // styles refuse the plan, and the database keeps the policy.
 func TestViewRebuildRefusesAPolicyAlongTheSearchPathLive(t *testing.T) {
 	const (

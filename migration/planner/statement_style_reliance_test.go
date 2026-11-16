@@ -745,9 +745,9 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_AnnotatedStyleKeepsTypeHolde
 // leaves the exact style's view drops nothing to rely on. A routine the
 // rebuild drops is dropped without CASCADE in either style, so a policy that
 // calls it has to leave first too, and a column the policy also reads is
-// dropped without CASCADE once the policy is gone. The annotated style
-// writes no DROP POLICY for a removed table, and its CASCADE drops take the
-// policy; that row is the control that the move changes only the exact style.
+// dropped without CASCADE once the policy is gone. The annotated style drops
+// the policy first too and keeps CASCADE on its view drops; without the early
+// drop there, its DROP FUNCTION stops on the policy.
 func TestGenerateSchemaDiffSQLStatementsWithOptions_PolicyLeavesBeforeTheViewsItsTableReads(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -781,10 +781,19 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_PolicyLeavesBeforeTheViewsIt
 			`DROP TABLE "public"."docs"`,
 		}},
 		{name: "annotated", change: rebuiltViewsUnderRemovedPolicy(), style: planext.StatementStyleAnnotated, want: []string{
+			`DROP POLICY "docs_member" ON "docs"`,
 			`DROP VIEW IF EXISTS "owner_names" CASCADE`,
 			`DROP VIEW IF EXISTS "owner_ids" CASCADE`,
 			"CREATE VIEW \"owner_ids\" AS\nSELECT id FROM owners",
 			"CREATE VIEW \"owner_names\" AS\nSELECT id FROM owner_ids",
+			"-- WARNING: This will delete all data!\nDROP TABLE IF EXISTS \"public\".\"docs\" CASCADE",
+		}},
+		{name: "annotated, with a routine the policy calls", change: rebuiltRoutineUnderRemovedPolicy(), style: planext.StatementStyleAnnotated, want: []string{
+			`DROP POLICY "docs_listed" ON "docs"`,
+			`DROP FUNCTION IF EXISTS "public"."list_skus"()`,
+			`DROP VIEW IF EXISTS "item_skus" CASCADE`,
+			"-- Add/modify columns for table: items\n-- Modify column items.sku: type: varchar -> VARCHAR(128)\nALTER TABLE \"items\" ALTER COLUMN \"sku\" TYPE VARCHAR(128)",
+			"CREATE VIEW \"item_skus\" AS\nSELECT id, sku FROM items",
 			"-- WARNING: This will delete all data!\nDROP TABLE IF EXISTS \"public\".\"docs\" CASCADE",
 		}},
 	}

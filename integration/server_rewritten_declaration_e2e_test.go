@@ -231,12 +231,16 @@ var serverRewrittenControls = []struct {
 		wantInPlan: "n > 1",
 	},
 	{
+		// A plan from the file writes the qualifier, and one to a database
+		// writes the server's `CHECK ((n > 1))`; both hold the bound.
 		name:       "a CHECK naming its table through the schema moves its bound",
 		migration:  `CREATE TABLE notes (id bigint PRIMARY KEY, n integer NOT NULL, CONSTRAINT notes_n_check CHECK (public.notes.n > 0));`,
 		schema:     `CREATE TABLE notes (id bigint PRIMARY KEY, n integer NOT NULL, CONSTRAINT notes_n_check CHECK (public.notes.n > 1));`,
-		wantInPlan: "public.notes.n > 1",
+		wantInPlan: "n > 1",
 	},
 	{
+		// The server stores `(editor = CURRENT_USER)`, so the row holds the
+		// part both spellings share.
 		name: "a policy naming its table through the schema compares another column",
 		migration: `CREATE TABLE notes (id bigint PRIMARY KEY, owner text, editor text);
 ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
@@ -244,7 +248,7 @@ CREATE POLICY notes_owner_read ON notes USING (public.notes.owner = current_user
 		schema: `CREATE TABLE notes (id bigint PRIMARY KEY, owner text, editor text);
 ALTER TABLE notes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY notes_owner_read ON notes USING (public.notes.editor = current_user);`,
-		wantInPlan: "public.notes.editor = current_user",
+		wantInPlan: "editor = ",
 	},
 	{
 		name:       "an unnamed CHECK bound moves",

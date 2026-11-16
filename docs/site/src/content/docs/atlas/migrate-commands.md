@@ -1588,7 +1588,7 @@ them again in the reverse order.
 When a view in a schema the run leaves out reads a dropped view, the migration
 stops at the drop, where `CASCADE` would drop the reader in silence. A plan
 that would drop a view a row-level security policy reads is refused and names
-the policy, as it is in Ptah's own style, unless the plan removes the policy
+the policy, as it is in the annotated style, unless the plan removes the policy
 too.
 
 The plan drops the views, materialized views and triggers the declaration

@@ -42,8 +42,12 @@ const (
 	// describe its statements, guards a drop with IF EXISTS and a new index
 	// with IF NOT EXISTS, and drops with CASCADE where the target accepts it.
 	// Such a CASCADE also removes a dependent the plan does not name, with its
-	// data. Ptah's commands plan in [StatementStyleExact]; this style is for a
-	// caller of the planning packages that selects it.
+	// data. A PostgreSQL row-level security policy is the exception to the
+	// guard: its DROP POLICY carries none in either style, so a plan that
+	// drops a policy, including one of a table it removes, fails where the
+	// policy or its table is already gone. Ptah's commands plan in
+	// [StatementStyleExact]; this style is for a caller of the planning
+	// packages that selects it.
 	StatementStyleAnnotated StatementStyle = iota
 	// StatementStyleExact writes a plan that runs only against the database it
 	// was made against. It leaves out the comments that only describe the

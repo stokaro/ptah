@@ -36,7 +36,7 @@ var viewRebuildStyles = []struct {
 	name  string
 	style planext.StatementStyle
 }{
-	{name: "Ptah's own style", style: planext.StatementStyleAnnotated},
+	{name: "the annotated style", style: planext.StatementStyleAnnotated},
 	{name: "the exact style", style: planext.StatementStyleExact},
 }
 
@@ -235,7 +235,10 @@ CREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total FROM orders
 	orderTotalsChangedSchema = `CREATE TABLE orders (id integer PRIMARY KEY, amount numeric NOT NULL);
 CREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total, count(*) AS n FROM orders;
 `
-	orderReport   = "CREATE VIEW order_report AS SELECT total FROM order_totals;\n"
+	orderReport = "CREATE VIEW order_report AS SELECT total FROM order_totals;\n"
+	// itemSkusList returns the rows of item_skus, so a change to the view's
+	// columns drops and creates it again.
+	itemSkusList  = "CREATE FUNCTION list_skus() RETURNS SETOF item_skus LANGUAGE sql STABLE AS $$ SELECT * FROM item_skus $$;\n"
 	itemSkusTable = `CREATE TABLE items (id integer PRIMARY KEY, sku varchar);
 CREATE VIEW item_skus AS SELECT id, sku FROM items;
 `
@@ -716,6 +719,38 @@ var viewRebuildForwardCases = []viewRebuildCase{
 			// A new routine already gives its owner EXECUTE and PUBLIC the
 			// default EXECUTE, so the rebuild needs no redundant GRANT.
 			"routine report_total() strict=false parallel=u definer=false config= acl=default comment=",
+		},
+	},
+	{
+		name: "views a removed table's policy reads",
+		live: `CREATE TABLE members (id integer PRIMARY KEY, who text NOT NULL);
+CREATE VIEW member_ids WITH (security_invoker = true) AS SELECT id, who FROM members;
+CREATE VIEW member_names WITH (security_invoker = true) AS SELECT id, who FROM member_ids;
+CREATE TABLE docs (id integer PRIMARY KEY, member_id integer NOT NULL);
+ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY docs_member ON docs USING (member_id IN (SELECT id FROM member_names));
+`,
+		declared: `CREATE TABLE members (id integer PRIMARY KEY, who text NOT NULL);
+CREATE VIEW member_ids WITH (security_invoker = true) AS SELECT id FROM members;
+CREATE VIEW member_names WITH (security_invoker = true) AS SELECT id FROM member_ids;
+`,
+		want: []string{"view/member_ids", "view/member_names"},
+		after: []string{
+			"relation member_ids options=security_invoker=true acl= comment=",
+			"relation member_names options=security_invoker=true acl= comment=",
+		},
+	},
+	{
+		name: "a routine a removed table's policy calls",
+		live: itemSkusTable + itemSkusList + `CREATE TABLE docs (id integer PRIMARY KEY);
+ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY docs_listed ON docs USING (id IN (SELECT s.id FROM list_skus() s));
+`,
+		declared: itemSkusWidened + itemSkusList,
+		want:     []string{"view/item_skus"},
+		after: []string{
+			"relation item_skus options= acl= comment=",
+			"routine list_skus() strict=false parallel=u definer=false config= acl=default comment=",
 		},
 	},
 	{
