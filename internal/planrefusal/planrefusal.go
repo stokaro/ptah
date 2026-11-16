@@ -39,6 +39,36 @@ func (e *LostViewSecurityError) Error() string { return e.Err.Error() }
 // Unwrap returns the wrapped refusal.
 func (e *LostViewSecurityError) Unwrap() error { return e.Err }
 
+// ViewDefiner is one view a plan would replace as another account than the one
+// the view runs as.
+type ViewDefiner struct {
+	// View is the view, as the schema spells it.
+	View string `json:"view"`
+	// Definer is the account the view runs as, as the catalog spells it, or
+	// empty where the read did not record it.
+	Definer string `json:"definer"`
+	// Account is the account the plan's read ran as, which the replacement
+	// makes the view's definer, or empty where the read did not record it.
+	Account string `json:"account"`
+}
+
+// ViewDefinerError is the refusal of a plan that would replace a view running
+// with its definer's privileges and make another account its definer, or that
+// cannot tell whether it would because the read did not record one of them.
+type ViewDefinerError struct {
+	// Views are the views the plan would replace, in the order the comparison
+	// lists them.
+	Views []ViewDefiner
+	// Err is the refusal as the command reports it.
+	Err error
+}
+
+// Error returns the message of the wrapped refusal.
+func (e *ViewDefinerError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the wrapped refusal.
+func (e *ViewDefinerError) Unwrap() error { return e.Err }
+
 // DependentObjectError is the refusal of a plan that drops an object something
 // else depends on, where a drop would stop on the dependent or take it with
 // nothing to create it again.

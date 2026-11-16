@@ -38,6 +38,7 @@ import (
 var nonCategoryFields = map[string]string{
 	"ConnectedRole":              "the role that read the live database, carried to prevent a REVOKE from silently leaving another grantor's privilege; it is planning context, not a schema change",
 	"ConnectedRoleSuperuser":     "the PostgreSQL connection's privilege level decides whether it can revoke a grant made by the object's owner; it is planning context, not a schema change",
+	"ConnectedAccount":           "the account that read the live database, which a replacement makes a MySQL view's definer; the planner refuses to hand a view to it from another definer, so it is planning context, not a schema change",
 	"TablePreparation":           "source and prepared comparison provenance, not a schema change",
 	"IdentifierSemantics":        "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
 	"DeclaredTables":             "every table the declaration holds, carried so a foreign key can be resolved to the table it references; like the vocabulary below it is an input to rendering rather than a difference, and reporting it would print the whole document's tables as though they had changed (stokaro/ptah#2315)",

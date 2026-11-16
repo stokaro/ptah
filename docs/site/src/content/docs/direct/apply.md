@@ -566,8 +566,7 @@ The report omits `undecided` when neither collection has a limit. Standard
 error names every limit and why, before the plan: one limit is its own line,
 and several are one warning that names each. The field is independent of the outcome: next to
 `changes` or `applied` it names state the comparison could not establish, and
-next to `no-changes` it means the database is not shown to match.
-A caller that decides "in sync" from the outcome reads `undecided` too. A plan
+next to `no-changes` it means the database is not shown to match. A plan
 file does not record the field, so `apply --plan` does not report it; the
 `schema plan` run that computed the file did.
 
@@ -582,6 +581,7 @@ file does not record the field, so `apply --plan` does not report it; the
 | `transaction-unavailable` | `apply` | The target cannot open a transaction; `--tx-mode none` runs without one |
 | `simulation-failed` | `apply` with `--dev-url` | The plan failed its rehearsal on the dev database and was not sent to the target |
 | `view-security-option` | `plan`, and `apply` without `--plan` | The plan would take a security option the schema does not state from a view. `view_options` lists each `view` and `option`; the [PostgreSQL](../../databases/postgresql/#a-security-option-the-declaration-leaves-out) and [MySQL](../../databases/mysql/#view-security) pages give the remedies |
+| `view-definer` | `plan`, and `apply` without `--plan` | The plan would replace a view that runs as another account. `view_definers` lists each `view`, `definer` and `account` |
 | `dependent-object` | `plan`, and `apply` without `--plan` | The plan drops an object something else depends on. The error message names both |
 | `declaration-refused` | `plan`, and `apply` without `--plan` | The target cannot host or plan what the schema states. The error message names it |
 
@@ -619,9 +619,7 @@ names no plan, because the gate runs before the file is decoded.
   re-run `schema plan` against the current database and review the fresh plan
   ```
 
-  Under `--json` the document reports it as the refusal code `stale-plan`,
-  with both fingerprints; see
-  [Read the result in a script](#read-the-result-in-a-script).
+  Under `--json` it is the refusal code [`stale-plan`](#refusal-codes).
 
 ## A whole MySQL or MariaDB server
 

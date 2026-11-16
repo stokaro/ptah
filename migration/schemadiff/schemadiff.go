@@ -48,6 +48,13 @@ func optionIdentifiers(opts *config.CompareOptions) identifier.Semantics {
 // not mutated. Invalid identifier snapshots and incomplete knowledge are errors.
 // Nil schema inputs return ptaherr.ErrInvalidSchemaDiff; an empty schema must
 // be supplied explicitly and retain the source's knowledge limits.
+//
+// This entry point does not check who a replaced object runs as. It leaves
+// [difftypes.SchemaDiff.ConnectedAccount] nil, so neither the routine definer
+// rule nor the planner's view definer rule runs, even over a catalog a live
+// read produced. To refuse a MySQL-family routine or view whose replacement
+// would make the connected account its definer, compare through
+// [CompareWithDatabase] or [CompareWithDatabaseInfo].
 func CompareWithOptions(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, opts *config.CompareOptions, runtime schemapreparation.Runtime) (*difftypes.SchemaDiff, error) {
 	return completeComparison(CompareReportingUndecidedAdditions(ctx, desired, current, opts, runtime))
 }
@@ -57,6 +64,13 @@ func CompareWithOptions(ctx context.Context, desired *schemamodel.Database, curr
 // changes. A caller rendering a partial diff must also report its knowledge
 // limits. Service errors and cancellation discard the complete result.
 // Nil schemas are missing inputs, not empty declarations or catalogs.
+//
+// This entry point does not check who a replaced object runs as. It leaves
+// [difftypes.SchemaDiff.ConnectedAccount] nil, so neither the routine definer
+// rule nor the planner's view definer rule runs, even over a catalog a live
+// read produced. To refuse a MySQL-family routine or view whose replacement
+// would make the connected account its definer, compare through
+// [CompareWithDatabase] or [CompareWithDatabaseInfo].
 func CompareReportingUndecidedAdditions(
 	ctx context.Context,
 	desired *schemamodel.Database,

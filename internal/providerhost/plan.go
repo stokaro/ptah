@@ -184,10 +184,14 @@ func indexRemovalPlacement(semantics identifier.Semantics, steps []ast.Node) (ah
 func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
 	// The declared tables, schemas, foreign keys and constraint hosts are
 	// context a planner reads, not changes: DeclaredForeignKeys holds every
-	// foreign key the declaration states, changed or not.
+	// foreign key the declaration states, changed or not. ConnectedAccount is
+	// the account the read ran as, which every comparison against a database
+	// records; the host's definer rules read it, and a provider plans its own
+	// statements, so refusing it would refuse every plan made from a read.
 	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
 		"DeclaredTables", "DeclaredSchemas", "HeldSchemas", "DeclaredForeignKeys", "DeclaredConstraintHosts", "ObservedConstraintHosts",
-		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched", "FeatureCounts"}
+		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched", "FeatureCounts",
+		"ConnectedAccount"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)
 	}

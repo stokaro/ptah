@@ -24,6 +24,7 @@ func plannerRefusals() []struct {
 } {
 	cause := fmt.Errorf("%w: what the plan would do", ptaherr.ErrUnsupportedFeature)
 	options := []planrefusal.ViewOption{{View: "v", Option: "security_invoker"}}
+	definers := []planrefusal.ViewDefiner{{View: "v", Definer: "owner@%", Account: "app@%"}}
 	return []struct {
 		name string
 		err  error
@@ -33,6 +34,11 @@ func plannerRefusals() []struct {
 			name: "a view security option the schema leaves out",
 			err:  fmt.Errorf("generate schema apply operations: %w", &planrefusal.LostViewSecurityError{Options: options, Err: cause}),
 			want: &atlasschema.Refusal{Code: atlasschema.RefusalViewSecurityOption, ViewOptions: options},
+		},
+		{
+			name: "a view another account defined",
+			err:  fmt.Errorf("generate schema apply operations: %w", &planrefusal.ViewDefinerError{Views: definers, Err: cause}),
+			want: &atlasschema.Refusal{Code: atlasschema.RefusalViewDefiner, ViewDefiners: definers},
 		},
 		{
 			name: "an object something else depends on",

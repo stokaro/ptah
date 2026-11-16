@@ -61,7 +61,8 @@ SQL:
   `CURRENT_USER()`. Connect as that definer, change the desired routine to
   `SQL SECURITY INVOKER`, or leave the foreign routine unchanged. Missing
   ownership facts fail closed too. An unrelated `--exclude` selector does not
-  change the connected account used for this check.
+  change the connected account used for this check. A view of another definer
+  is refused the same way; see [View security](#view-security).
 - Routines have no overloads. A schema that declares two functions, or two
   procedures, of one name with different parameters is refused before any
   statement is planned. Applied, the second `CREATE` fails with Error 1304 and
@@ -762,9 +763,44 @@ either. Under `--json`, `schema plan` and `schema apply` report the refusal as
 names the view with the option `sql_security`. The rule matches the one for
 [PostgreSQL view options](../postgresql/#a-security-option-the-declaration-leaves-out).
 
-A replacement records the connected account as the view's definer, whatever
-the mode. The plan records the mode before and after each statement on a view,
-as the [`sql_security` effect](../../reference/statement-effects/).
+A `CREATE OR REPLACE VIEW` that names no `DEFINER` makes the account that runs
+it the view's definer, whatever the mode. The read keeps
+`information_schema.VIEWS.DEFINER` and the connected account,
+`CURRENT_USER()` with its host, and compares them as it does for a routine.
+When a view runs under `SQL SECURITY DEFINER` before and after the change and
+its definer is another account, the plan refuses before the server changes.
+The replacement would run the view with the connected account's privileges,
+and no statement would fail:
+
+```text
+unsupported feature: view my_docs runs with the privileges of its definer owner@% under SQL SECURITY DEFINER, and replacing it as app@% would make app@% its definer. Connect as owner@% to replace it, declare SQL SECURITY INVOKER if it should run with its caller's privileges, or leave the view unchanged
+```
+
+A read that did not record the definer or the connected account is refused
+too, since nothing says the account stays the same. A view held as `INVOKER`
+runs with its caller's privileges until the change, and a view declared
+`INVOKER` runs with them after it, so the plan replaces either one and the
+connected account becomes the definer. Under `--json` the refusal is `outcome:
+refused` with the code `view-definer`, and `view_definers` names each `view`
+with its `definer` and the `account` the plan would make its definer.
+`schema drift` reports the difference and does not refuse.
+
+A rollback migration is not refused for a definer. It replaces the view its up
+migration wrote, whose definer is the account that applied that migration, so
+run as the same account it leaves the definer it finds. An up migration that
+declares `INVOKER` for a view another account defined is planned, and its
+rollback writes the view under `DEFINER` again as the account that runs it,
+not as the definer it had.
+
+The check compares the definer with the account that read the database, not
+the one that applies the plan. A migration file that `migrations generate`
+planned as one account and another account applies, or a rollback run as
+another account than its up migration, replaces the view with the applying
+account as its definer, and nothing checks it. The routine rule has the same
+limit, so generate and apply versioned migrations as one account.
+
+The plan records the mode before and after each statement on a view, as the
+[`sql_security` effect](../../reference/statement-effects/).
 
 ### Roles and grants
 

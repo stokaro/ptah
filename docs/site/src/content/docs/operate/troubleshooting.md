@@ -320,6 +320,53 @@ policy applies to them only while the view keeps `security_invoker`.
 Run `ptah schema compare` again. With the option declared it reports no
 difference; with it declared false it shows the `SET` it will run.
 
+## A plan refuses to replace a view another account defined
+
+**Symptom**
+
+`schema plan`, `schema apply`, `schema compare` or `migrations generate` stops
+with exit code 2, and `ptah-compat schema apply` with exit code 1, naming a
+MySQL or MariaDB view, its definer and the connected account:
+
+```text
+unsupported feature: view my_docs runs with the privileges of its definer owner@% under SQL SECURITY DEFINER, and replacing it as app@% would make app@% its definer.
+```
+
+Under `--json`, `schema plan` and `schema apply` report `outcome: refused` with
+the refusal code `view-definer`, and `view_definers` names each view with its
+`definer` and `account`. See [Refusal codes](../../direct/apply/#refusal-codes).
+
+**Likely cause**
+
+The schema changes a view that runs under `SQL SECURITY DEFINER`, and Ptah
+connects as another account than the view's definer. `CREATE OR REPLACE VIEW`
+without a `DEFINER` clause makes the connected account the definer, so the view
+would run with that account's privileges. A view created by a migration account
+and changed by a deploy account, or the other way round, is the usual case.
+
+**Diagnose**
+
+Read who the view runs as, and who the connection is:
+
+```sql
+SELECT TABLE_NAME, SECURITY_TYPE, DEFINER FROM information_schema.VIEWS WHERE TABLE_NAME = 'my_docs';
+SELECT CURRENT_USER();
+```
+
+**Resolve**
+
+Run the plan as the account the view names as its definer. If the view should
+run with the privileges of whoever queries it, declare `SQL SECURITY INVOKER`.
+Otherwise leave the view's declaration unchanged. The
+[MySQL page](../../databases/mysql/#view-security) says which changes the rule
+covers.
+
+**Verify**
+
+Run `ptah schema plan` again as the definer. The plan writes `CREATE OR REPLACE
+VIEW`, and after it applies, `DEFINER` in `information_schema.VIEWS` is the
+account it ran as.
+
 ## `atlas.hcl` fails to load
 
 **Symptom**

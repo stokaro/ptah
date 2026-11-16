@@ -1270,6 +1270,29 @@ type SchemaDiff struct {
 	ConnectedRole string `json:"-"`
 	// ConnectedRoleSuperuser means a PostgreSQL REVOKE runs as the object owner.
 	ConnectedRoleSuperuser bool `json:"-"`
+	// ConnectedAccount is the account the read of the database ran as,
+	// [ptah.run/catalog.Database.CurrentAccount]: on the MySQL family
+	// CURRENT_USER(), user@host. The database-aware comparison entry points of
+	// [ptah.run/migration/schemadiff], CompareWithDatabase and
+	// CompareWithDatabaseInfo with their reporting variants, set it. Compare,
+	// CompareWithDialect, CompareWithOptions and CompareSchemas leave it nil
+	// whatever catalog they are given, so a diff they return is checked for no
+	// definer.
+	//
+	// A plan applied through the same connection runs as this account, so a
+	// view it writes again without a DEFINER clause takes it as its definer.
+	// Beside [ViewDiff.PreviousDefiner] it tells a planner whether a
+	// replacement changes whose privileges a view runs with. It points at an
+	// empty string where the read did not record the account, which a planner
+	// reads as unknown rather than as the same account. Nil means no database
+	// read answers for the plan, as in a comparison of two descriptions, and a
+	// planner checks no definer then. ConnectedRole cannot carry this: empty
+	// is its offline value, so it has no way to say that a read recorded no
+	// account.
+	//
+	// It is not on the wire: the same database read by another account
+	// describes the same schema.
+	ConnectedAccount *string `json:"-"`
 
 	// ConstraintsAdded is the table-qualified definition of every constraint
 	// this diff creates.
@@ -2297,6 +2320,20 @@ type ViewDiff struct {
 	//
 	// It stays off the wire, as Desired does.
 	PreviousSecurity string `json:"-"`
+
+	// PreviousDefiner is the account the view holds as its definer before
+	// this change runs, as the read recorded it, on a target whose views have
+	// a SQL SECURITY mode: the MySQL family's DEFINER, spelled user@host.
+	// Under SQL SECURITY DEFINER the view runs with this account's privileges,
+	// and a statement that writes it again without a DEFINER clause makes the
+	// account that runs it the definer instead. A planner reads it beside
+	// [SchemaDiff.ConnectedAccount], and refuses a forward replacement of a
+	// view that runs as its definer before and after the change where the two
+	// differ or either one is empty. Empty where the read recorded none, and
+	// in a reversed entry, whose view is the one the forward change wrote.
+	//
+	// It stays off the wire, as Desired does.
+	PreviousDefiner string `json:"-"`
 }
 
 // OptionsChange is the key a view's or a materialized view's Changes carries

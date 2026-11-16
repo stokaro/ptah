@@ -4093,6 +4093,23 @@ definer routine must preserve both facts; missing facts fail closed with
 `ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
 and is not the safety boundary for applying such a replacement.
 
+The same readers populate `catalog.View.Definer`. A database-aware comparison
+hands it to the planner as `difftypes.ViewDiff.PreviousDefiner`, beside
+`difftypes.SchemaDiff.ConnectedAccount`. The MySQL-family planner refuses a
+forward replacement of a view that runs under `SQL SECURITY DEFINER` before
+and after the change when the two differ or either one is empty. The account
+is compared as the server compares it: the user name exactly, the host without
+ASCII case.
+
+Only `schemadiff.CompareWithDatabase`, `schemadiff.CompareWithDatabaseInfo`
+and their `ReportingUndecidedAdditions` variants set `ConnectedAccount` and run
+the routine rule. `schemadiff.Compare`, `CompareWithDialect`,
+`CompareWithOptions` and `CompareSchemas` leave it nil and check no definer,
+even over a catalog a live read produced, so an embedder that wants either
+refusal compares through one of the database-aware entry points. A
+`ConnectedAccount` pointing at an empty string is refused. A diff built by
+hand for a live target sets both facts.
+
 `schemamodel.Finalize` rebuilds materialized inline, JSON, and relation fields
 on every call. `Field.GeneratedFromEmbedded` identifies those derived fields so
 a caller can mutate the source fields or embedded declarations and finalize the

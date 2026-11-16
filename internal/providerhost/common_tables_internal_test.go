@@ -137,6 +137,33 @@ func TestCommonTablePlannerRetainsUnknownAccess(t *testing.T) {
 	c.Assert(diff.CurrentNotDescribed, qt.DeepEquals, limits)
 }
 
+// TestCommonTablePlannerIgnoresTheConnectedAccount plans a table creation
+// from a diff that records the account the read ran as. Every comparison
+// against a database records it, whether or not the read could say who it
+// was, so a planner that read it as a change would refuse every provider plan
+// made from a read.
+func TestCommonTablePlannerIgnoresTheConnectedAccount(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		account string
+	}{
+		{name: "a recorded account", account: "app@%"},
+		{name: "an account the read did not record", account: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			selected, runtime, diff := commonTableCoverageFixture(c)
+			diff.ConnectedAccount = new(test.account)
+
+			nodes, err := selected.registration().Planner(planext.Options{}).GenerateMigrationAST(c.Context(), runtime, diff)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.HasLen, 1)
+			c.Assert(nodes[0].(*ast.CreateTableNode).Name, qt.Equals, "items")
+		})
+	}
+}
+
 func TestUnknownAccessDoesNotEnableCommonMutations(t *testing.T) {
 	for _, test := range []struct {
 		name   string

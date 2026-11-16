@@ -15,6 +15,7 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone := *diff
 	clone.TablePreparation = cloneTablePreparation(diff.TablePreparation)
 	clone.IdentifierSemantics = cloneIdentifierSemantics(diff.IdentifierSemantics)
+	clone.ConnectedAccount = cloneStringPtr(diff.ConnectedAccount)
 	clone.TablesAdded = slices.Clone(diff.TablesAdded)
 	clone.TablesRemoved = diff.TablesRemoved.Clone()
 	clone.TablesModified = slices.Clone(diff.TablesModified)
@@ -97,6 +98,13 @@ func cloneIdentifierSemanticsValue(
 }
 
 func cloneBoolPtr(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	return new(*value)
+}
+
+func cloneStringPtr(value *string) *string {
 	if value == nil {
 		return nil
 	}
