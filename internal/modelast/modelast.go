@@ -1396,7 +1396,7 @@ func FromTrigger(trigger schemamodel.Trigger) *ast.CreateTriggerNode {
 	// then emits only the CREATE TRIGGER, because the function is not Ptah's to
 	// define. Otherwise the deterministic Ptah function name is used and the
 	// renderer emits the function alongside the trigger.
-	functionName := trigger.FunctionName()
+	functionName := trigger.GeneratedFunction()
 	if trigger.ExecuteFunction != "" {
 		functionName = trigger.ExecuteFunction
 	}

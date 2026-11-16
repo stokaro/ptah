@@ -1075,18 +1075,39 @@ trigger name are each folded to lower case, every run of characters outside
 `[a-z0-9_]` collapsed to one `_`, and every `_` that remains doubled before the
 two parts join on a single `_`. The doubling keeps the join unambiguous -- a
 table `a_b` with trigger `c` and a table `a` with trigger `b_c` render as
-`ptah_trigger_a__b_c` and `ptah_trigger_a_b__c` rather than the same name. A
-table or trigger name that contains an underscore therefore renders under a
-different generated name; a database already holding that trigger's function
-under the old name keeps it, unreferenced, until someone drops it by hand.
+`ptah_trigger_a__b_c` and `ptah_trigger_a_b__c` rather than the same name.
+
+The name follows the table as the declaration spells it: `ON public.items`
+gives `ptah_trigger_public__items_t`, and a read reports that trigger on
+`items`. The trigger keeps the function the database holds under either name,
+so a changed trigger replaces that function and a removed trigger drops it. A
+name longer than PostgreSQL's 63 characters ends in a hash of the table as the
+declaration spells it, so it is recognized only when the read spells the table
+the same way. The folding also makes `x.items` and `x_items` one segment, so
+`ptah_trigger_x__items_t` is read as the function of trigger `t` on `items`.
 
 A trigger that runs a function declared on its own is read with the function's
 name, and with its schema when that is not the schema the read resolves names
 in: `EXECUTE FUNCTION "audit"."set_updated_at"('updated_at')`. A rehearsal
 that recreates the trigger on a dev database, and a description written as
 SQL, then name the function the trigger runs, whatever the search path of the
-session that runs them. A function with the generated name is the trigger's
-own in whichever schema it is held.
+session that runs them.
+
+A function is the trigger's own when its name is one Ptah generates for that
+trigger, with the table written bare or in any schema, in whichever schema the
+function is held. A trigger that runs a function of any other name, another
+trigger's generated function included, runs a function declared on its own.
+The reader leaves every function whose name starts with `ptah_trigger_` out of
+the routines it describes, so do not give a function of your own that prefix:
+once it is created, a later apply that rehearses on a dev database cannot
+recreate a trigger that runs it, and fails with SQLSTATE 42883.
+
+Ptah creates the function without a schema, so it lands in the first schema of
+the creating session's search path, which need not be the trigger table's.
+When a read finds it in a schema it names, or under another name, that
+reference stays with the trigger: a rehearsal and a description written as SQL
+create the function there, a changed trigger replaces it there, and a removed
+trigger drops it there. A plan does not move or rename it.
 
 A changed function is planned as `CREATE OR REPLACE FUNCTION` where the server
 accepts that: a new body, language, security context, volatility, planner

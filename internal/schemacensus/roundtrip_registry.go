@@ -65,6 +65,9 @@ const (
 		"it is refused, so no single change of the type is valid there. The predicate's other fields are reached"
 	exemptRoleKeyword = "a role keyword such as CURRENT_USER has no observation until a server resolves it, and the " +
 		"conversion refuses it; a connected comparison reads the server's resolution from pgpolicy.NormalizedPolicy.Roles"
+	exemptGeneratedFunctionReference = "it says where and under which name a read found the function Ptah generates for a " +
+		"trigger, not what the function should be: the comparison plans no move or rename, and a replacement or removal " +
+		"reads it from the database side"
 	exemptClickHouseKey = "every fixture's only key column is its primary one, and a ClickHouse MergeTree table " +
 		"without a sorting key is refused"
 	exemptFeatureCoverage = "it is what a feature comparison may conclude from: without it the comparison refuses the " +
@@ -392,6 +395,7 @@ var roundTripGaps = []Unreached{
 		Reason:     gapComparison,
 	},
 	{Field: "schemamodel.Trigger.ExecuteFunction", Dialects: []string{"cockroachdb", "postgres", "yugabytedb"}, Directions: nil, Reason: gapToCatalog},
+	{Field: "schemamodel.Trigger.FunctionReference", Dialects: []string{"postgres"}, Directions: nil, Reason: exemptGeneratedFunctionReference},
 	{
 		Field:      "schemamodel.View.Dialects",
 		Dialects:   []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite"},

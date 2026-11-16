@@ -3219,7 +3219,10 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *difftypes.SchemaDiff) 
 			result = append(result, drop.SetExternalFunction())
 			continue
 		}
-		functionName := schemamodel.Trigger{Name: triggerRef.TriggerName, Table: triggerRef.TableName}.FunctionName()
+		functionName := triggerRef.GeneratedFunction
+		if functionName == "" {
+			functionName = schemamodel.Trigger{Name: triggerRef.TriggerName, Table: triggerRef.TableName}.FunctionName()
+		}
 		result = append(result, drop.SetFunctionName(functionName))
 	}
 	return result

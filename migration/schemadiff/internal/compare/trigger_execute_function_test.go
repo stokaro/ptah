@@ -93,16 +93,21 @@ func TestTriggerDefinitions_FunctionArgumentsAreCompared(t *testing.T) {
 // TestTriggers_ARemovedTriggerDropsItsGeneratedFunctionInAnySchema removes a
 // trigger whose read names the function Ptah generated for it with a schema.
 // The removal carries no function of its own, so the function is dropped with
-// the trigger; a declared function in another schema stays named, and stays.
+// the trigger, and it carries the read's name of the generated function, so the
+// drop names its schema; a declared function in another schema stays named,
+// and stays.
 func TestTriggers_ARemovedTriggerDropsItsGeneratedFunctionInAnySchema(t *testing.T) {
 	generated := schemamodel.Trigger{Name: "t2", Table: "app.items"}.FunctionName()
 	tests := []struct {
-		name     string
-		executed string
-		want     string
+		name          string
+		executed      string
+		wantDeclared  string
+		wantGenerated string
 	}{
-		{name: "generated, in another schema", executed: "app." + generated, want: ""},
-		{name: "declared, in another schema", executed: "audit.set_updated_at", want: "audit.set_updated_at"},
+		{name: "generated, in another schema", executed: "app." + generated, wantGenerated: "app." + generated},
+		{name: "generated, in the read's schema", executed: generated},
+		{name: "generated under the name another table spelling gave", executed: "ptah_trigger_public__items_t2", wantGenerated: "ptah_trigger_public__items_t2"},
+		{name: "declared, in another schema", executed: "audit.set_updated_at", wantDeclared: "audit.set_updated_at"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -117,7 +122,49 @@ func TestTriggers_ARemovedTriggerDropsItsGeneratedFunctionInAnySchema(t *testing
 			}, diff)
 
 			c.Assert(diff.TriggersRemoved, qt.HasLen, 1)
-			c.Assert(diff.TriggersRemoved[0].ExecuteFunction, qt.Equals, test.want)
+			c.Assert(diff.TriggersRemoved[0].ExecuteFunction, qt.Equals, test.wantDeclared)
+			c.Assert(diff.TriggersRemoved[0].GeneratedFunction, qt.Equals, test.wantGenerated)
+		})
+	}
+}
+
+// TestTriggers_AReplacementRewritesTheGeneratedFunctionWhereItIs modifies a
+// trigger whose generated function the database holds in a schema the read
+// names. The replacement's declaration carries that schema, so CREATE OR
+// REPLACE rewrites the function the trigger runs rather than creating one of
+// the same name where a bare name resolves and leaving the old one behind.
+func TestTriggers_AReplacementRewritesTheGeneratedFunctionWhereItIs(t *testing.T) {
+	generated := schemamodel.Trigger{Name: "t2", Table: "app.items"}.FunctionName()
+	tests := []struct {
+		name     string
+		executed string
+		declared string
+		want     string
+	}{
+		{name: "held in a schema the read names", executed: "app." + generated, want: "app." + generated},
+		{name: "held where a bare name resolves", executed: generated, want: ""},
+		{name: "held under the name another table spelling gave", executed: "fns.ptah_trigger_items_t2", want: "fns.ptah_trigger_items_t2"},
+		{name: "the declaration says where", executed: "app." + generated, declared: "other." + generated, want: "other." + generated},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := &difftypes.SchemaDiff{}
+
+			compare.Triggers(&schemamodel.Database{
+				Triggers: []schemamodel.Trigger{{
+					Name: "t2", Table: "app.items", Timing: "AFTER", Event: "UPDATE", ForEach: "ROW",
+					Body: "RETURN NEW;", FunctionReference: test.declared,
+				}},
+			}, &catalog.Database{
+				Triggers: []catalog.Trigger{{
+					Name: "t2", Schema: "app", Table: "items", Timing: "BEFORE", Event: "UPDATE", ForEach: "ROW",
+					Body: "BEGIN RETURN NEW; END;", ExecuteFunction: test.executed,
+				}},
+			}, diff)
+
+			c.Assert(diff.TriggersModified, qt.HasLen, 1)
+			c.Assert(diff.TriggersModified[0].Desired.FunctionReference, qt.Equals, test.want)
 		})
 	}
 }

@@ -2466,6 +2466,19 @@ type TriggerRef struct {
 	//
 	// It stays off the wire, like Desired.
 	ExecuteFunction string `json:"-"`
+
+	// GeneratedFunction is, for a REMOVAL of a trigger that runs a function
+	// Ptah generated, that function as the read names it when that is not the
+	// trigger's FunctionName named bare, and empty otherwise. The read names
+	// its schema when it is outside the schema the read resolves names in, and
+	// the name it was created under, which the table's spelling at the time
+	// decided. The DROP FUNCTION that goes with the trigger names it, so it
+	// drops the function the trigger ran rather than whichever function of the
+	// derived name the session's search path finds first; an empty value
+	// leaves the planner to derive the name.
+	//
+	// It stays off the wire, like Desired.
+	GeneratedFunction string `json:"-"`
 }
 
 // TriggerDiff represents changes to a trigger definition.

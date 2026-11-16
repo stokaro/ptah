@@ -210,6 +210,7 @@ func corpus() []Fixture {
 		{Name: "trigger-body-only", Schema: triggerBodyOnlyFixture()},
 		{Name: "trigger-foreach-statement", Schema: triggerForEachStatementFixture()},
 		{Name: "trigger-function-arguments", Schema: triggerFunctionArgumentsFixture()},
+		{Name: "trigger-generated-function-reference", Schema: triggerGeneratedFunctionReferenceFixture()},
 		{Name: "trigger-transition-tables", Schema: triggerTransitionTablesFixture()},
 		{Name: "function-procedure", Schema: functionProcedureFixture()},
 		{Name: "partition-expression", Schema: partitionExpressionFixture()},
@@ -511,6 +512,18 @@ func triggerFunctionArgumentsFixture() schemamodel.Database {
 	db.Triggers = []schemamodel.Trigger{{
 		StructName: "TR", Name: "t_touch", Table: "t", Timing: "BEFORE", Event: "UPDATE",
 		ForEach: "ROW", ExecuteFunction: "touch", FunctionArguments: []string{"updated_at"},
+		Dialects: []string{"postgres"},
+	}}
+	return db
+}
+
+// triggerGeneratedFunctionReferenceFixture is a trigger whose generated function
+// a read found in a schema it names, so the function is created there.
+func triggerGeneratedFunctionReferenceFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Triggers = []schemamodel.Trigger{{
+		StructName: "TR", Name: "t_touch", Table: "t", Timing: "BEFORE", Event: "UPDATE",
+		ForEach: "ROW", Body: "BEGIN RETURN NEW; END;", FunctionReference: "app.ptah_trigger_t_t__touch",
 		Dialects: []string{"postgres"},
 	}}
 	return db

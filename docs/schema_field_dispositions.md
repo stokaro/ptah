@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-486 fields are reachable from the desired schema, and each one carries
+487 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 389 | reaches rendered SQL on at least one target |
+| `ddl` | 390 | reaches rendered SQL on at least one target |
 | `comparison` | 36 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -111,7 +111,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-63 known gaps: a conversion or the comparison drops each one on the dialects named.
+64 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -174,6 +174,7 @@ migration nobody asked for.
 | `schemamodel.Trigger.Dialects` | `clickhouse` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Trigger.Dialects` | `cockroachdb`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Trigger.ExecuteFunction` | `cockroachdb`, `postgres`, `yugabytedb` | both | goschematodb drops it: the catalog is the same with and without it |
+| `schemamodel.Trigger.FunctionReference` | `postgres` | both | it says where and under which name a read found the function Ptah generates for a trigger, not what the function should be: the comparison plans no move or rename, and a replacement or removal reads it from the database side |
 | `schemamodel.View.Dialects` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `synonym.Synonym.Name` | `oracle`, `sqlserver` | both | goschematodb drops it: the catalog is the same with and without it |
 | `synonym.Synonym.Schema` | `oracle`, `sqlserver` | both | both conversions carry it, and the comparison plans nothing when it changes |
@@ -719,6 +720,7 @@ migration nobody asked for.
 | `schemamodel.Trigger.Facets` | `ddl` | — |
 | `schemamodel.Trigger.ForEach` | `ddl` | — |
 | `schemamodel.Trigger.FunctionArguments` | `ddl` | — |
+| `schemamodel.Trigger.FunctionReference` | `ddl` | — |
 | `schemamodel.Trigger.Name` | `ddl` | — |
 | `schemamodel.Trigger.NewTable` | `ddl` | — |
 | `schemamodel.Trigger.OldTable` | `ddl` | — |
