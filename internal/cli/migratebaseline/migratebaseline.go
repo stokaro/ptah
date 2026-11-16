@@ -58,6 +58,7 @@ type options struct {
 	dirFormat           string
 	atlasEnv            string
 	lockTimeout         string
+	lockName            string
 	connectTimeout      string
 	migrationsSchema    string
 	migrationsTable     string
@@ -99,6 +100,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
 		"refused against a dialect that takes no such lock")
+	migratelock.RegisterNameFlag(flags, &opts.lockName)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
@@ -122,12 +124,19 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
-	// `migrations baseline` reads no project config, so the request reaches it
-	// from the command line or PTAH_MIGRATION_LOCK_TIMEOUT only.
-	lockRequest := migratelock.Request{
-		Cmd:      cmd,
-		FlagName: lockTimeoutFlag,
-		DBURL:    opts.dbURL,
+	// `migrations baseline` reads no project config, so the requests reach it
+	// from the command line or the PTAH_MIGRATION_LOCK_* variables only.
+	lockRequest := migratelock.Requests{
+		Timeout: migratelock.Request{
+			Cmd:      cmd,
+			FlagName: lockTimeoutFlag,
+			DBURL:    opts.dbURL,
+		},
+		Name: migratelock.NameRequest(cmd, false, opts.dbURL),
+	}
+	lockName, err := migratelock.ResolveName(lockRequest.Name, opts.lockName)
+	if err != nil {
+		return err
 	}
 	if dialect, dialectErr := atlasurl.DialectFromURL(opts.dbURL); dialectErr == nil {
 		if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
@@ -208,9 +217,10 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
 		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(revisionFormat).
-		WithMigrationLockTimeout(lockTimeout)
+		WithMigrationLockTimeout(lockTimeout).
+		WithMigrationLockName(lockName.Value)
 	if opts.dryRun {
-		printDryRun(opts.dbURL, opts.migrationsDir, version, mig, rows)
+		printDryRun(opts.dbURL, opts.migrationsDir, version, mig, lockName, rows)
 		return nil
 	}
 
@@ -381,6 +391,7 @@ func printDryRun(
 	migrationsDir string,
 	version int64,
 	mig *migrator.Migrator,
+	lockName migratelock.Name,
 	rows []*migrator.Migration,
 ) {
 	fmt.Println("=== DRY RUN BASELINE ===")
@@ -388,6 +399,9 @@ func printDryRun(
 	fmt.Printf("Database: %s\n", dburldisplay.Format(dbURL))
 	fmt.Printf("Migrations directory: %s\n", migrationsDir)
 	fmt.Printf("Metadata table: %s\n", mig.MigrationsTableIdentifier())
+	if lockName.Explicit() {
+		fmt.Printf("Migration lock: %s\n", lockName.Value)
+	}
 	fmt.Printf("Baseline version: %d\n", version)
 	fmt.Println("Rows:")
 	for _, migration := range rows {

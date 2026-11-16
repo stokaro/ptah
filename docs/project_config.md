@@ -43,6 +43,7 @@ env:
       statement_timeout: 30s
       connect_timeout: 10s
       migration_lock_timeout: 15s
+      migration_lock_name: billing
       exec_order: linear
       tx_mode: file
       runner: ptah
@@ -112,6 +113,7 @@ env:
 | `migration.statement_timeout` | Default per-migration statement timeout; on YDB the provider puts it as a deadline on each query of the migration |
 | `migration.connect_timeout` | Initial database connection timeout |
 | `migration.migration_lock_timeout` | Session-level migration advisory lock timeout |
+| `migration.migration_lock_name` | Name of the session-level migration advisory lock; the default is `ptah_migrate`. Runners that share a name wait for each other. `migrations baseline` reads no project config and takes the name from its flag or variable only |
 | `migration.exec_order` | Pending migration execution policy |
 | `migration.tx_mode` | Migration transaction mode: `file`, `all`, or `none` |
 | `migration.runner` | Tool the directory is written for, read by `migrations lint`, `migrations up`, `migrations down` and `migrations repair`: `ptah` (default), whose migrator wraps each file in a transaction, or `golang-migrate`, which opens none and runs a file's own transactions |

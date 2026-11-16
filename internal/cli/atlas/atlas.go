@@ -672,9 +672,12 @@ func atlasMigrateDownVerb() atlasVerb {
 		// output rather than its narration -- measured, 2687 bytes became 0 on
 		// a rollback that still ran. quietingLogLevelArgs applies it only where
 		// the report reaches the writer directly.
-		prefixArgs:          []string{"--revision-format", "atlas", "--confirm"},
-		quietNarration:      true,
-		nativeOnlyFlags:     []string{"confirm"},
+		prefixArgs:     []string{"--revision-format", "atlas", "--confirm"},
+		quietNarration: true,
+		// The community binary has neither flag. The lock name in particular
+		// would be read and then ignored, since a forwarded run takes the
+		// default lock.
+		nativeOnlyFlags:     []string{"confirm", "migration-lock-name"},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),

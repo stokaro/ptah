@@ -17,6 +17,9 @@ type SetOptions struct {
 	FS              fs.FS
 	AtlasEnv        string
 	RevisionsSchema string
+	// MigrationLockName names the session advisory lock the revision write
+	// takes. Empty keeps the migrator's default lock name.
+	MigrationLockName string
 	// RevisionsTable overrides the revision table name. Empty uses the
 	// revision-format default.
 	RevisionsTable string
@@ -87,6 +90,7 @@ func Set(
 	}
 	mig = mig.WithMigrationsTable(opts.RevisionsSchema, opts.RevisionsTable).
 		WithRevisionTableFormat(revisionFormat).
+		WithMigrationLockName(opts.MigrationLockName).
 		WithAtlasRevisionVersionComparator(opts.RevisionVersionComparator)
 
 	result, err := mig.SetRevision(ctx, version)

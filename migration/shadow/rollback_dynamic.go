@@ -169,6 +169,9 @@ func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) (stat
 	if err != nil {
 		return nil, fmt.Errorf("dynamic rollback planning failed: register migrations: %w", err)
 	}
+	// The dev database is this planning's alone once claimed, so the replay
+	// takes no migration lock; see [VerifyRollback].
+	mig = mig.WithoutMigrationLock()
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateTo(ctx, opts.TargetVersion); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {

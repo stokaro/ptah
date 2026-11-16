@@ -75,6 +75,7 @@ type yamlMigration struct {
 	StatementTimeout     *string `yaml:"statement_timeout"`
 	ConnectTimeout       *string `yaml:"connect_timeout"`
 	MigrationLockTimeout *string `yaml:"migration_lock_timeout"`
+	MigrationLockName    *string `yaml:"migration_lock_name"`
 	ExecOrder            *string `yaml:"exec_order"`
 	TxMode               *string `yaml:"tx_mode"`
 	Runner               *string `yaml:"runner"`
@@ -333,6 +334,12 @@ func (c yamlSettings) projectConfig() (Config, error) {
 		c.Migration.MigrationLockTimeout,
 		&cfg.Migration.MigrationLockTimeout,
 		fieldMigrationMigrationLock,
+		&cfg.presence,
+	)
+	applyYAMLString(
+		c.Migration.MigrationLockName,
+		&cfg.Migration.MigrationLockName,
+		fieldMigrationLockName,
 		&cfg.presence,
 	)
 	applyYAMLString(

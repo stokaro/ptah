@@ -85,6 +85,22 @@ func (m *Migrator) MigrationLockSkipped() bool {
 	return m != nil && m.migrationLockSkipped
 }
 
+// HoldMigrationLock runs fn while holding the session-level migration advisory
+// lock, for a caller whose reads before an operation belong under the same
+// lock: a read initializes the revision metadata, so a caller that reads the
+// status, decides and then runs holds the lock from the first read.
+//
+// fn receives the context to run with. An operation of this migrator, or of a
+// copy of it with the same lock name, called with that context runs under the
+// held lock and takes no second one; the same operation called with another
+// context waits for the lock this call holds. The lock is acquired and
+// released, and a lost lock is reported, as for [Migrator.MigrateUp]. A
+// dry-run writer and [Migrator.WithoutMigrationLock] take no lock, and fn runs
+// at once.
+func (m *Migrator) HoldMigrationLock(ctx context.Context, operation string, fn func(context.Context) error) error {
+	return m.withMigrationLock(ctx, operation, fn)
+}
+
 func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn func(context.Context) error) error {
 	if m.conn == nil || m.conn.Writer().IsDryRun() || m.migrationLockSkipped {
 		return fn(ctx)
@@ -92,6 +108,10 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 
 	dialect := m.conn.Info().Dialect
 	lockName := m.effectiveMigrationLockName()
+	if holder, ok := ctx.Value(migrationLockHolderKey{}).(migrationLockHolder); ok &&
+		holder.conn == m.conn && holder.name == lockName {
+		return fn(ctx)
+	}
 	startedAt := time.Now()
 	observer := m.migrationObserver()
 	lockCtx, span := observer.StartSpan(ctx, "ptah.lock.acquire",
@@ -117,6 +137,7 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 
 	guarded, stopGuard := lock.Guard(ctx)
 	runCtx := withHeldMigrationLock(guarded, lock)
+	runCtx = context.WithValue(runCtx, migrationLockHolderKey{}, migrationLockHolder{conn: m.conn, name: lockName})
 	if service, err := m.conn.SessionLocker(); err == nil && service != nil {
 		runCtx = withMigrationLockSession(runCtx, m.conn)
 	}
@@ -166,6 +187,18 @@ type heldLock interface {
 
 func withHeldMigrationLock(ctx context.Context, lock heldLock) context.Context {
 	return context.WithValue(ctx, heldMigrationLockKey{}, lock)
+}
+
+// migrationLockHolderKey stores which lock a run holds, so an operation the
+// run calls under it takes no second one. A second acquisition would ask for
+// the lock on another session and wait on the run that holds it.
+type migrationLockHolderKey struct{}
+
+// migrationLockHolder names a held migration lock: the connection it was
+// taken through and its name.
+type migrationLockHolder struct {
+	conn *dbschema.DatabaseConnection
+	name string
 }
 
 // migrationLockSessionKey stores the connection whose own session holds the
