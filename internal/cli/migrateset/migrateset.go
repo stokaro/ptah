@@ -17,6 +17,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -44,6 +45,7 @@ type options struct {
 	migrationsSchema    string
 	migrationsTable     string
 	revisionTableFormat string
+	migrationLockName   string
 }
 
 // NewMigrateSetCommand returns the migrations set command.
@@ -65,7 +67,11 @@ one in the directory.
 This is a metadata-only operation for adopting Ptah on databases whose schema
 was changed outside the migration flow, or for resetting revision bookkeeping
 after a manual intervention. It never runs or reverts migration SQL; use
-"ptah migrations up" and "ptah migrations down" for that.`,
+"ptah migrations up" and "ptah migrations down" for that.
+
+The revision write holds the migration advisory lock, named ptah_migrate
+unless --migration-lock-name selects another name. Use the name the history's
+other commands use, or set does not wait for them.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runMigrateSet(cmd, opts)
@@ -84,6 +90,7 @@ after a manual intervention. It never runs or reverts migration SQL; use
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
+	migratelock.RegisterNameFlag(flags, &opts.migrationLockName)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -135,6 +142,18 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 		opts.revisionTableFormat,
 		projectCfg.StringValue(projectconfig.StringMigrationRevisionFormat),
 	)
+	opts.migrationLockName = dbcli.EffectiveString(
+		cmd,
+		migratelock.NameFlag,
+		opts.migrationLockName,
+		projectCfg.StringValue(projectconfig.StringMigrationMigrationLockName),
+	)
+	lockRequest := migratelock.NameRequest(
+		cmd, projectCfg.StringValue(projectconfig.StringMigrationMigrationLockName).Present, opts.dbURL)
+	lockName, err := migratelock.ResolveName(lockRequest, opts.migrationLockName)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	connectTimeoutValue := dbcli.EffectiveString(
 		cmd,
 		dbcli.ConnectTimeoutFlagName,
@@ -164,6 +183,9 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	if err := lockRequest.DecideFromURL(); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	source, err := migrationsource.CaptureLocal(opts.migrationsDir, migrationsource.LocalOptions{})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -176,16 +198,20 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("error connecting to database: %w", err))
 	}
 	defer dbschema.CloseAndWarn(conn)
+	if err := lockRequest.DecideSession(conn); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
 	result, err := atlasmigrate.Set(cmd.Context(), conn, version, atlasmigrate.SetOptions{
-		Dir:             source.Display,
-		FS:              source.FileSystem,
-		AtlasEnv:        opts.atlasEnv,
-		RevisionsSchema: opts.migrationsSchema,
-		RevisionsTable:  opts.migrationsTable,
-		DirFormat:       dirFormat,
-		RevisionFormat:  revisionFormat,
+		Dir:               source.Display,
+		FS:                source.FileSystem,
+		AtlasEnv:          opts.atlasEnv,
+		RevisionsSchema:   opts.migrationsSchema,
+		MigrationLockName: lockName.Value,
+		RevisionsTable:    opts.migrationsTable,
+		DirFormat:         dirFormat,
+		RevisionFormat:    revisionFormat,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

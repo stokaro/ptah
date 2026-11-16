@@ -2520,9 +2520,12 @@ the planner pairs with the rebuild.
 ## Migration locking
 
 Migration runs serialize through a session-level advisory lock
-(`pg_advisory_lock`, lock name `ptah_migrate`), so two concurrent
-`ptah migrations up` runs against one database cannot interleave. Timeout
-flags for the lock are on [Apply migrations](../../versioned/apply/).
+(`pg_advisory_lock`, lock name `ptah_migrate` unless
+`--migration-lock-name` chooses another), so two concurrent
+`ptah migrations up` runs against one database cannot interleave. The key
+derives from the name, not from the schema, so two histories in separate
+schemas of one database still share the lock until each has a name of its own.
+The name and the timeout flags are on [Apply migrations](../../versioned/apply/).
 
 ### Transaction poolers
 

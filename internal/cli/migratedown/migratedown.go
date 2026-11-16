@@ -88,6 +88,7 @@ type options struct {
 	execOrder            string
 	runner               string
 	migrationLockTimeout string
+	migrationLockName    string
 	lockTimeout          string
 	statementTimeout     string
 	preDownHook          string
@@ -112,6 +113,10 @@ type options struct {
 	metricsAddr          string
 	// resolvedRunner is what runner names once ptah.yaml is merged under it.
 	resolvedRunner migrateflags.Runner
+	// lockName is the migration lock name the run selected, once the flag, its
+	// environment variable and ptah.yaml are merged and a blank choice is
+	// refused.
+	lockName migratelock.Name
 	// planExclude is the project's exclude list a --plan rollback applies,
 	// and planExcludeSources names the file each selector came from.
 	planExclude        []string
@@ -185,6 +190,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRunnerFlag(flags, &opts.runner)
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
 		"refused against a dialect that takes no such lock")
+	migratelock.RegisterNameFlag(flags, &opts.migrationLockName)
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
 	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
 	flags.StringVar(&opts.preDownHook, preDownHookFlag, "", "Shell command to run before rolling back migrations; aborts unless it exits 0")
@@ -260,6 +266,20 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		opts.migrationLockTimeout,
 		projectconfig.StringMigrationMigrationLockTimeout,
 	)
+	opts.migrationLockName = effectiveString(
+		migratelock.NameFlag,
+		opts.migrationLockName,
+		projectconfig.StringMigrationMigrationLockName,
+	)
+	// Before the run connects, so a blank choice is refused without opening the
+	// target.
+	opts.lockName, err = migratelock.ResolveName(
+		migratelock.NameRequest(cmd, projectCfg.StringValue(projectconfig.StringMigrationMigrationLockName).Present, opts.dbURL),
+		opts.migrationLockName,
+	)
+	if err != nil {
+		return opts, err
+	}
 	opts.lockTimeout = effectiveString(lockTimeoutFlag, opts.lockTimeout, projectconfig.StringMigrationLockTimeout)
 	opts.statementTimeout = effectiveString(
 		statementTimeoutFlag,
@@ -416,12 +436,12 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
 
-	lockRequest := migratelock.Request{
-		Cmd:        cmd,
-		FlagName:   migrationLockTimeoutFlag,
-		FromConfig: projectCfg.StringValue(projectconfig.StringMigrationMigrationLockTimeout).Present,
-		DBURL:      dbURL,
-	}
+	lockRequest := migratelock.NewRequests(
+		cmd,
+		dbURL,
+		projectCfg.StringValue(projectconfig.StringMigrationMigrationLockTimeout).Present,
+		projectCfg.StringValue(projectconfig.StringMigrationMigrationLockName).Present,
+	)
 	if err := lockRequest.DecideFromURL(); err != nil {
 		return err
 	}
@@ -513,140 +533,183 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	// Set dry run mode if requested
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
+	mig, err := newDownMigrator(downMigratorSpec{
+		conn: conn, migrationsFS: migrationsFS, emit: emit, projectCfg: projectCfg, opts: opts, resolved: resolvedOpts,
+		settings: settings, runtime: runtime, dirFormat: dirFormat, revisionFormat: revisionFormat,
+		migrationsSchema: migrationsSchema, migrationsTable: migrationsTable,
+	})
+	if err != nil {
+		return err
+	}
+	document.Migrator = mig
+
+	// Before the lock, so a run that waits for it has said which lock it waits
+	// for.
 	writeDownBanner(emit, downBanner{
 		dryRun:        opts.dryRun,
 		dbURL:         dbURL,
 		dialect:       conn.Info().Dialect,
 		migrationsDir: migrationsDir,
 		dirFormat:     dirFormat,
+		lockName:      resolvedOpts.lockName,
 	})
-	// A tag names a directory state; resolving it here, before the banner,
-	// means the banner reports the version the rollback will actually stop at
-	// rather than the numeric default the tag replaced (stokaro/ptah#1621).
-	if resolvedOpts.toTag != "" {
-		if targetVersion, err = resolveDownTag(cmd, emit, downTagResolution{
-			toTag:            resolvedOpts.toTag,
-			conn:             conn,
-			migrationsFS:     migrationsFS,
-			dirFormat:        dirFormat,
-			migrationsSchema: migrationsSchema,
-			migrationsTable:  migrationsTable,
-			migrationsEngine: opts.migrationsEngine,
-			revisionFormat:   revisionFormat,
-		}); err != nil {
+
+	// The whole run holds the migration lock, from the first read to the last
+	// report, the confirmation prompt included: reading the status initializes
+	// the revision metadata, and a rollback decided on a history another runner
+	// is changing answers nothing. Each operation of mig called with the
+	// context of cmd below runs under this lock and takes no second one.
+	outer := cmd.Context()
+	return mig.HoldMigrationLock(outer, "migrate down", func(ctx context.Context) error {
+		cmd.SetContext(ctx)
+		defer cmd.SetContext(outer)
+
+		// A tag names a directory state; resolving it before the target line
+		// means the line reports the version the rollback will actually stop at
+		// rather than the numeric default the tag replaced.
+		if resolvedOpts.toTag != "" {
+			if targetVersion, err = resolveDownTag(cmd, emit, downTagResolution{
+				toTag:            resolvedOpts.toTag,
+				conn:             conn,
+				migrationsFS:     migrationsFS,
+				dirFormat:        dirFormat,
+				migrationsSchema: migrationsSchema,
+				migrationsTable:  migrationsTable,
+				migrationsEngine: opts.migrationsEngine,
+				revisionFormat:   revisionFormat,
+			}); err != nil {
+				return err
+			}
+		}
+		emit.Printf("Target version: %d\n", targetVersion)
+		emit.Println()
+
+		status, err := rollbackStatus(cmd.Context(), mig, emit, conn.Info().Dialect)
+		if err != nil {
 			return err
 		}
-	}
-	emit.Printf("Target version: %d\n", targetVersion)
-	emit.Println()
 
-	interceptor := downOnlineDDLInterceptor(emit, projectCfg, opts.dryRun)
+		if status.CurrentVersion <= targetVersion {
+			if err := finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{
+				migrator:       mig,
+				runtime:        runtime,
+				emit:           emit,
+				dialect:        conn.Info().Dialect,
+				currentVersion: status.CurrentVersion,
+				targetVersion:  targetVersion,
+			}); err != nil {
+				return err
+			}
+			return document.Write(migrator.RunEvidence{Plan: &migrator.MigrationPlan{}, After: status, DryRun: opts.dryRun})
+		}
 
-	// Create migrator to access applied migrations
+		// Get applied migrations from the database
+		appliedMigrations, err := mig.GetAppliedMigrations(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("error getting applied migrations: %w", err)
+		}
+
+		// Calculate which migrations will be rolled back
+		migrationsToRollback := versionsAboveTarget(appliedMigrations, targetVersion)
+
+		emitRollbackPlan(emit, opts, status.CurrentVersion, targetVersion, migrationsToRollback)
+
+		// --plan takes the dev database for itself: it builds the target schema
+		// there to derive the plan from. Verifying a file-based rollback on it
+		// first would run exactly the down bodies --plan exists to bypass, and
+		// would fail on the migration with no down body that is the reason to
+		// reach for --plan at all (stokaro/ptah#1621).
+		shadowVerificationURL := resolvedOpts.shadowDB
+		if resolvedOpts.plan {
+			shadowVerificationURL = ""
+		}
+		if err := verifyRollbackOnShadow(cmd.Context(), shadowVerification{
+			targetConnection: conn,
+			shadowDB:         shadowVerificationURL,
+			migrationsFS:     migrationsFS,
+			currentVersion:   status.CurrentVersion,
+			targetVersion:    targetVersion,
+			dirFormat:        dirFormat,
+			atlasEnv:         resolvedOpts.atlasEnv,
+			connectTimeout:   settings.connectTimeout,
+			skipChecks:       resolvedOpts.skipChecks,
+			providerOptions:  settings.providerOptions,
+		}, emit); err != nil {
+			return err
+		}
+
+		inputs := rollbackInputs{
+			migrationsFS: migrationsFS, targetVersion: targetVersion, dirFormat: dirFormat,
+			atlasEnv: resolvedOpts.atlasEnv, connectTimeout: settings.connectTimeout,
+			migrationsTable: migrationsTable, providerOptions: settings.providerOptions,
+		}
+		derived, err := planRollback(cmd, resolvedOpts, newDynamicRollback(resolvedOpts, opts, conn, inputs), emit)
+		if err != nil {
+			return err
+		}
+
+		// Safety confirmation (unless skipped or dry run)
+		confirmed, err := confirmRollbackPrompt(cmd, opts, status.CurrentVersion, targetVersion, migrationsToRollback)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return nil
+		}
+
+		return runRollback(cmd, rollbackRun{
+			opts: opts, resolved: resolvedOpts, migrator: mig, conn: conn, runtime: runtime, emit: emit,
+			document: document, dbURL: dbURL, selected: migrationsToRollback, derived: derived, inputs: inputs,
+		})
+	})
+}
+
+// downMigratorSpec is what the rollback's migrator is built from.
+type downMigratorSpec struct {
+	conn             *dbschema.DatabaseConnection
+	migrationsFS     fs.FS
+	emit             cliobs.Emitter
+	projectCfg       projectconfig.Config
+	opts             *options
+	resolved         options
+	settings         parsedRollbackSettings
+	runtime          *cliobs.Runtime
+	dirFormat        migrationfile.DirFormat
+	revisionFormat   migrator.RevisionTableFormat
+	migrationsSchema string
+	migrationsTable  string
+}
+
+// newDownMigrator builds the migrator that reads the history and rolls it
+// back, under the lock name and timeout the run resolved.
+func newDownMigrator(spec downMigratorSpec) (*migrator.Migrator, error) {
+	interceptor := downOnlineDDLInterceptor(spec.emit, spec.projectCfg, spec.opts.dryRun)
 	mig, err := migrator.NewFSMigrator(
-		conn,
-		migrationsFS,
+		spec.conn,
+		spec.migrationsFS,
 		append([]migrator.FSProviderOption{
 			migrator.WithStatementInterceptor(interceptor),
-			migrator.WithMigrationDirFormat(dirFormat),
-			migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: resolvedOpts.atlasEnv}),
-		}, settings.providerOptions...)...,
+			migrator.WithMigrationDirFormat(spec.dirFormat),
+			migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: spec.resolved.atlasEnv}),
+		}, spec.settings.providerOptions...)...,
 	)
 	if err != nil {
-		return fmt.Errorf("error registering migrations: %w", err)
+		return nil, fmt.Errorf("error registering migrations: %w", err)
 	}
-	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
-		WithMigrationsEngine(opts.migrationsEngine).
-		WithActor(opts.actor).
-		WithActorOrigin(opts.actorOrigin).
-		WithRunReference(opts.runReference).
-		WithMigrationLog(projectCfg.Migration.MigrationLogEnabled()).
-		WithRevisionTableFormat(revisionFormat).
-		WithSkipChecks(resolvedOpts.skipChecks).
-		WithDefaultTimeouts(settings.timeouts).
-		WithExecOrder(settings.execOrder).
-		WithMigrationLockTimeout(settings.migrationLockTimeout).
-		WithLogger(runtime.Logger()).
-		WithObserver(runtime.Observer())
-	document.Migrator = mig
-
-	status, err := rollbackStatus(cmd.Context(), mig, emit, conn.Info().Dialect)
-	if err != nil {
-		return err
-	}
-
-	if status.CurrentVersion <= targetVersion {
-		if err := finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{
-			migrator:       mig,
-			runtime:        runtime,
-			emit:           emit,
-			dialect:        conn.Info().Dialect,
-			currentVersion: status.CurrentVersion,
-			targetVersion:  targetVersion,
-		}); err != nil {
-			return err
-		}
-		return document.Write(migrator.RunEvidence{Plan: &migrator.MigrationPlan{}, After: status, DryRun: opts.dryRun})
-	}
-
-	// Get applied migrations from the database
-	appliedMigrations, err := mig.GetAppliedMigrations(cmd.Context())
-	if err != nil {
-		return fmt.Errorf("error getting applied migrations: %w", err)
-	}
-
-	// Calculate which migrations will be rolled back
-	migrationsToRollback := versionsAboveTarget(appliedMigrations, targetVersion)
-
-	emitRollbackPlan(emit, opts, status.CurrentVersion, targetVersion, migrationsToRollback)
-
-	// --plan takes the dev database for itself: it builds the target schema
-	// there to derive the plan from. Verifying a file-based rollback on it
-	// first would run exactly the down bodies --plan exists to bypass, and
-	// would fail on the migration with no down body that is the reason to
-	// reach for --plan at all (stokaro/ptah#1621).
-	shadowVerificationURL := resolvedOpts.shadowDB
-	if resolvedOpts.plan {
-		shadowVerificationURL = ""
-	}
-	if err := verifyRollbackOnShadow(cmd.Context(), shadowVerification{
-		targetConnection: conn,
-		shadowDB:         shadowVerificationURL,
-		migrationsFS:     migrationsFS,
-		currentVersion:   status.CurrentVersion,
-		targetVersion:    targetVersion,
-		dirFormat:        dirFormat,
-		atlasEnv:         resolvedOpts.atlasEnv,
-		connectTimeout:   settings.connectTimeout,
-		skipChecks:       resolvedOpts.skipChecks,
-		providerOptions:  settings.providerOptions,
-	}, emit); err != nil {
-		return err
-	}
-
-	inputs := rollbackInputs{
-		migrationsFS: migrationsFS, targetVersion: targetVersion, dirFormat: dirFormat,
-		atlasEnv: resolvedOpts.atlasEnv, connectTimeout: settings.connectTimeout,
-		migrationsTable: migrationsTable, providerOptions: settings.providerOptions,
-	}
-	derived, err := planRollback(cmd, resolvedOpts, newDynamicRollback(resolvedOpts, opts, conn, inputs), emit)
-	if err != nil {
-		return err
-	}
-
-	// Safety confirmation (unless skipped or dry run)
-	confirmed, err := confirmRollbackPrompt(cmd, opts, status.CurrentVersion, targetVersion, migrationsToRollback)
-	if err != nil {
-		return err
-	}
-	if !confirmed {
-		return nil
-	}
-
-	return runRollback(cmd, rollbackRun{
-		opts: opts, resolved: resolvedOpts, migrator: mig, conn: conn, runtime: runtime, emit: emit,
-		document: document, dbURL: dbURL, selected: migrationsToRollback, derived: derived, inputs: inputs,
-	})
+	return mig.WithMigrationsTable(spec.migrationsSchema, spec.migrationsTable).
+		WithMigrationsEngine(spec.opts.migrationsEngine).
+		WithActor(spec.opts.actor).
+		WithActorOrigin(spec.opts.actorOrigin).
+		WithRunReference(spec.opts.runReference).
+		WithMigrationLog(spec.projectCfg.Migration.MigrationLogEnabled()).
+		WithRevisionTableFormat(spec.revisionFormat).
+		WithSkipChecks(spec.resolved.skipChecks).
+		WithDefaultTimeouts(spec.settings.timeouts).
+		WithExecOrder(spec.settings.execOrder).
+		WithMigrationLockTimeout(spec.settings.migrationLockTimeout).
+		WithMigrationLockName(spec.resolved.lockName.Value).
+		WithLogger(spec.runtime.Logger()).
+		WithObserver(spec.runtime.Observer()), nil
 }
 
 // rollbackRun is what the rollback and its report need once the operator has
@@ -660,8 +723,8 @@ type rollbackRun struct {
 	emit     cliobs.Emitter
 	document *migraterun.Document
 	dbURL    string
-	// selected is the versions above the target the run read before the lock,
-	// and the versions a --plan rollback was derived for.
+	// selected is the versions above the target the run read, and the
+	// versions a --plan rollback was derived for.
 	selected []int64
 	// derived is the plan of a --plan rollback, derived before the prompt.
 	derived []string
@@ -775,7 +838,7 @@ func emitLostLogEntries(emit cliobs.Emitter, mig *migrator.Migrator) {
 func decideConnected(
 	cmd *cobra.Command,
 	projectCfg projectconfig.Config,
-	lockRequest migratelock.Request,
+	lockRequest migratelock.Requests,
 	conn *dbschema.DatabaseConnection,
 	timeouts migrationfile.Timeouts,
 ) error {
@@ -783,7 +846,7 @@ func decideConnected(
 		return err
 	}
 	server := conn.Info()
-	return newTimeoutRequest(cmd, projectCfg, lockRequest.DBURL).Decide(server.Dialect, server.Capabilities, timeouts)
+	return newTimeoutRequest(cmd, projectCfg, lockRequest.Timeout.DBURL).Decide(server.Dialect, server.Capabilities, timeouts)
 }
 
 // newTimeoutRequest is the run-wide timeout input of this command against
@@ -1099,6 +1162,9 @@ type downBanner struct {
 	dialect       string
 	migrationsDir string
 	dirFormat     migrationfile.DirFormat
+	// lockName is the migration lock the operator chose, and is reported only
+	// then: the default is the lock a run takes without being asked.
+	lockName migratelock.Name
 }
 
 func writeDownBanner(emit cliobs.Emitter, b downBanner) {
@@ -1112,6 +1178,9 @@ func writeDownBanner(emit cliobs.Emitter, b downBanner) {
 	emit.Printf("Dialect: %s\n", b.dialect)
 	emit.Printf("Migrations directory: %s\n", b.migrationsDir)
 	emit.Printf("Migration directory format: %s\n", b.dirFormat)
+	if b.lockName.Explicit() {
+		emit.Printf("Migration lock: %s\n", b.lockName.Value)
+	}
 }
 
 // downOnlineDDLInterceptor builds the statement interceptor for a rollback and

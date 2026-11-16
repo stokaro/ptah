@@ -248,6 +248,53 @@ lock earns a note on standard error and the replay goes ahead.
 refused. That surface answers to the Atlas contract, and what the Atlas CLI does
 with a lock timeout on a dialect that cannot lock is not measured here.
 
+### Choose the lock name
+
+The lock is named `ptah_migrate` unless you choose another name with
+`--migration-lock-name`, `PTAH_MIGRATION_LOCK_NAME`, or `migration.migration_lock_name`
+in [the project config](../../reference/configuration/). The flag wins over the
+variable, and the variable wins over the config file. `up`, `down`, `baseline`,
+`repair` and `set` all read it, and every one of them holds the lock under that
+name for the whole run, including the creation of the revision table. `down`
+takes it before it first reads the history and keeps it until it has reported,
+the confirmation prompt included, so an unanswered prompt keeps every other
+runner of that name waiting. The config key reaches every one of them except
+`baseline`, which reads no project config.
+
+On PostgreSQL the lock key comes from the name alone. The schema, the database
+name and the revision table do not enter it, so two histories in one database
+wait for each other under the default name, however their schemas are named.
+Runners of one history must therefore agree on one name, and two histories may
+run at the same time only when each has a name of its own. Give each history its
+own name when its migrations never read or change objects of the other. If a
+migration of one history reads a table, a type or a function that the other
+history creates or changes, keep both under one name, so they apply one after
+the other.
+
+```bash illustration
+ptah migrations up \
+  --db-url "$DATABASE_URL" \
+  --migrations-dir migrations/billing \
+  --migrations-schema billing \
+  --migration-lock-name billing
+```
+
+Leaving the setting out keeps `ptah_migrate`, so a pipeline that sets nothing
+keeps serializing on that name. A name is an explicit request for the lock. An empty or
+whitespace-only value is refused before the run connects, and the message names
+the spelling that carried it. An empty `PTAH_MIGRATION_LOCK_NAME` is the one
+exception: like every string variable, it reads as unset. A name given on a
+dialect that has no session advisory lock is refused as a lock timeout is, with
+the same message and the same dialects.
+
+When a name was chosen, the report of `up` and `down` and the dry run of
+`baseline` print `Migration lock: <name>`. A lock timeout names the lock it
+waited for in every case. `ptah-compat migrate down` forwards to
+`ptah migrations down` and does not read this setting: Atlas has no lock-name
+flag on that verb, so it refuses `--migration-lock-name` and ignores the variable
+and the config key. It keeps `ptah_migrate`, the name `ptah-compat migrate
+apply` takes unless it is given `--lock-name`.
+
 ## Run only the approved sequence
 
 A caller that approves a plan and applies it later reads the history twice:

@@ -84,6 +84,7 @@ type options struct {
 	txMode               string
 	runner               string
 	migrationLockTimeout string
+	migrationLockName    string
 	lockTimeout          string
 	statementTimeout     string
 	allowDestructive     bool
@@ -118,6 +119,10 @@ type options struct {
 	driftExclude         []string
 	// resolvedRunner is what runner names once ptah.yaml is merged under it.
 	resolvedRunner migrateflags.Runner
+	// lockName is the migration lock name the run selected, once the flag, its
+	// environment variable and ptah.yaml are merged and a blank choice is
+	// refused.
+	lockName migratelock.Name
 }
 
 type parsedMigrationSettings struct {
@@ -126,6 +131,7 @@ type parsedMigrationSettings struct {
 	execOrder            migrator.ExecOrder
 	txMode               migrator.MigrationTxMode
 	migrationLockTimeout time.Duration
+	lockName             migratelock.Name
 	connectTimeout       time.Duration
 	// runner is the tool the directory is written for; under golang-migrate
 	// each file runs the transactions it opens itself.
@@ -226,6 +232,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRunnerFlag(flags, &opts.runner)
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
 		"refused against a dialect that takes no such lock")
+	migratelock.RegisterNameFlag(flags, &opts.migrationLockName)
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
 	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow pending migrations that contain destructive statements")
@@ -349,6 +356,7 @@ func parseMigrationSettings(opts options) (parsedMigrationSettings, error) {
 		execOrder:            execOrder,
 		txMode:               txMode,
 		migrationLockTimeout: migrationLockTimeout,
+		lockName:             opts.lockName,
 		connectTimeout:       connectTimeout,
 		runner:               opts.resolvedRunner,
 	}, nil
@@ -400,6 +408,20 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		opts.migrationLockTimeout,
 		projectconfig.StringMigrationMigrationLockTimeout,
 	)
+	opts.migrationLockName = effectiveString(
+		migratelock.NameFlag,
+		opts.migrationLockName,
+		projectconfig.StringMigrationMigrationLockName,
+	)
+	// Before the run connects, so a blank choice is refused without opening the
+	// target.
+	opts.lockName, err = migratelock.ResolveName(
+		migratelock.NameRequest(cmd, projectCfg.StringValue(projectconfig.StringMigrationMigrationLockName).Present, opts.dbURL),
+		opts.migrationLockName,
+	)
+	if err != nil {
+		return opts, err
+	}
 	opts.lockTimeout = effectiveString(lockTimeoutFlag, opts.lockTimeout, projectconfig.StringMigrationLockTimeout)
 	opts.statementTimeout = effectiveString(
 		statementTimeoutFlag,
@@ -521,12 +543,12 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
 
-	lockRequest := migratelock.Request{
-		Cmd:        cmd,
-		FlagName:   migrationLockTimeoutFlag,
-		FromConfig: projectCfg.StringValue(projectconfig.StringMigrationMigrationLockTimeout).Present,
-		DBURL:      dbURL,
-	}
+	lockRequest := migratelock.NewRequests(
+		cmd,
+		dbURL,
+		projectCfg.StringValue(projectconfig.StringMigrationMigrationLockTimeout).Present,
+		projectCfg.StringValue(projectconfig.StringMigrationMigrationLockName).Present,
+	)
 	if err := lockRequest.DecideFromURL(); err != nil {
 		return err
 	}
@@ -767,7 +789,7 @@ func emitLostLogEntries(emit cliobs.Emitter, opts *options, mig *migrator.Migrat
 func decideConnected(
 	cmd *cobra.Command,
 	projectCfg projectconfig.Config,
-	lockRequest migratelock.Request,
+	lockRequest migratelock.Requests,
 	conn *dbschema.DatabaseConnection,
 	timeouts migrationfile.Timeouts,
 ) error {
@@ -775,7 +797,7 @@ func decideConnected(
 		return err
 	}
 	server := conn.Info()
-	return newTimeoutRequest(cmd, projectCfg, lockRequest.DBURL).Decide(server.Dialect, server.Capabilities, timeouts)
+	return newTimeoutRequest(cmd, projectCfg, lockRequest.Timeout.DBURL).Decide(server.Dialect, server.Capabilities, timeouts)
 }
 
 // newTimeoutRequest is the run-wide timeout input of this command against
@@ -852,6 +874,9 @@ func (r *planReport) write() {
 	r.emit.Printf("Migrations directory: %s\n", r.dir)
 	r.emit.Printf("Migration directory format: %s\n", r.settings.dirFormat)
 	r.emit.Printf("Transaction mode: %s\n", r.settings.txMode)
+	if r.settings.lockName.Explicit() {
+		r.emit.Printf("Migration lock: %s\n", r.settings.lockName.Value)
+	}
 	r.emit.Println()
 
 	if r.onlineCfg.Enabled() {
@@ -1057,6 +1082,7 @@ func newUpMigrator(in upMigratorOptions) (*migrator.Migrator, error) {
 		WithExecOrder(in.settings.execOrder).
 		WithTransactionMode(in.settings.txMode).
 		WithMigrationLockTimeout(in.settings.migrationLockTimeout).
+		WithMigrationLockName(in.settings.lockName.Value).
 		WithSkipChecks(in.opts.skipChecks).
 		WithLogger(slog.New(readFloor{
 			Handler: in.runtime.Logger().Handler(),

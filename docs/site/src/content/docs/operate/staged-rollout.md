@@ -275,13 +275,13 @@ no rollout is running.
 ## Concurrency and locks on a shared server
 
 Each target run takes the migration lock `ptah migrations up` takes, named
-`ptah_migrate`, on the server its URL names. How far stage concurrency gets
-depends on where that lock lives:
+`ptah_migrate` unless the target chooses another name, on the server its URL
+names. How far stage concurrency gets depends on where that lock lives:
 
 | Engine | Lock scope | Targets on one server |
 | --- | --- | --- |
-| PostgreSQL family | one database | Targets in different databases run in parallel. Targets in one database, such as one schema per tenant, take the same lock and run one after another. |
-| MySQL and MariaDB | the whole server | `GET_LOCK` names are server-wide, so every target on one server runs one after another, whatever the stage concurrency. |
+| PostgreSQL family | one database | Targets in different databases run in parallel. Targets in one database, such as one schema per tenant, take the same lock and run one after another, unless each target sets its own lock name. |
+| MySQL and MariaDB | the whole server | `GET_LOCK` names are server-wide, so every target on one server runs one after another, whatever the stage concurrency, unless each target sets its own lock name. |
 | SQL Server | one database | Targets in different databases run in parallel. |
 | SQLite | none | Each file is its own target. |
 
@@ -290,7 +290,12 @@ or as long as `--migration-lock-timeout` allows, after which its run fails with
 a lock timeout and leaves a clean revision table. Set the timeout the way you
 set it for a single run, in the target's project config or with
 `PTAH_MIGRATION_LOCK_TIMEOUT`, and size `concurrency` to the number of
-simultaneous schema changes the server can carry.
+simultaneous schema changes the server can carry. A name set with
+`migration.migration_lock_name` in the target's project config moves that target
+onto its own lock. That is safe only for targets that are independent histories;
+see [Choose the lock name](../../versioned/apply/#choose-the-lock-name). Every
+target's run inherits the rollout's environment, so `PTAH_MIGRATION_LOCK_NAME`
+gives all of them one name and separates none of them.
 
 Two targets whose URLs name one database with the same connection options and
 config are refused as duplicates. The comparison reads the URL as written

@@ -269,6 +269,8 @@ const (
 	StringMigrationBaseline
 	// StringMigrationRunner is appended for the same reason.
 	StringMigrationRunner
+	// StringMigrationMigrationLockName is appended for the same reason.
+	StringMigrationMigrationLockName
 	stringFieldCount
 )
 
@@ -291,6 +293,7 @@ const (
 	fieldMigrationStatementTimeout configField = "migration.statement_timeout"
 	fieldMigrationConnectTimeout   configField = "migration.connect_timeout"
 	fieldMigrationMigrationLock    configField = "migration.migration_lock_timeout"
+	fieldMigrationLockName         configField = "migration.migration_lock_name"
 	fieldMigrationExecOrder        configField = "migration.exec_order"
 	fieldMigrationTxMode           configField = "migration.tx_mode"
 	fieldMigrationPreUpHook        configField = "migration.pre_up_hook"
@@ -433,6 +436,10 @@ var stringFieldDescriptors = [stringFieldCount]stringFieldDescriptor{
 	StringMigrationMigrationLockTimeout: {
 		presence: fieldMigrationMigrationLock,
 		value:    func(c Config) string { return c.Migration.MigrationLockTimeout },
+	},
+	StringMigrationMigrationLockName: {
+		presence: fieldMigrationLockName,
+		value:    func(c Config) string { return c.Migration.MigrationLockName },
 	},
 	StringMigrationExecOrder: {
 		presence: fieldMigrationExecOrder,
@@ -719,6 +726,7 @@ type MigrationConfig struct {
 	StatementTimeout     string
 	ConnectTimeout       string
 	MigrationLockTimeout string
+	MigrationLockName    string
 	ExecOrder            string
 	TxMode               string
 	PreUpHook            string
@@ -1310,6 +1318,13 @@ func mergeMigration(
 		base.MigrationLockTimeout,
 		override.MigrationLockTimeout,
 		fieldMigrationMigrationLock,
+		overridePresence,
+		resultPresence,
+	)
+	result.MigrationLockName = mergeStringValue(
+		base.MigrationLockName,
+		override.MigrationLockName,
+		fieldMigrationLockName,
 		overridePresence,
 		resultPresence,
 	)

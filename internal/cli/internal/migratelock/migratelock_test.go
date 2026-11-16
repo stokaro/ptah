@@ -226,5 +226,209 @@ func commandWithLockFlag(c *qt.C, args []string) *cobra.Command {
 	var value string
 	cmd.Flags().StringVar(&value, flagName, "", "lock timeout")
 	c.Assert(cmd.Flags().Parse(args), qt.IsNil)
+	cmd.SetContext(c.Context())
 	return cmd
+}
+
+const nameFlagName = "migration-lock-name"
+
+// commandWithNameFlag registers the lock name flag the way the commands do and
+// parses args against it.
+func commandWithNameFlag(c *qt.C, args []string) *cobra.Command {
+	c.Helper()
+
+	cmd := &cobra.Command{
+		Use:  "probe",
+		RunE: func(*cobra.Command, []string) error { return nil },
+	}
+	var value string
+	migratelock.RegisterNameFlag(cmd.Flags(), &value)
+	c.Assert(cmd.Flags().Parse(args), qt.IsNil)
+	cmd.SetContext(c.Context())
+	return cmd
+}
+
+func TestResolveName_HappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		fromConfig bool
+		value      string
+		want       migratelock.Name
+	}{
+		{name: "nobody chose a name", value: "", want: migratelock.Name{}},
+		{
+			name:  "typed flag",
+			args:  []string{"--" + nameFlagName, "svc_a"},
+			value: "svc_a",
+			want:  migratelock.Name{Value: "svc_a", Spelling: "--" + nameFlagName},
+		},
+		{
+			name:  "surrounding space is dropped, as the migrator drops it",
+			args:  []string{"--" + nameFlagName, "  svc_a  "},
+			value: "  svc_a  ",
+			want:  migratelock.Name{Value: "svc_a", Spelling: "--" + nameFlagName},
+		},
+		{
+			name:       "project config",
+			fromConfig: true,
+			value:      "svc_b",
+			want:       migratelock.Name{Value: "svc_b", Spelling: migratelock.NameConfigKey},
+		},
+		{
+			name:       "the typed flag is the spelling when config carries a key too",
+			args:       []string{"--" + nameFlagName, "svc_a"},
+			fromConfig: true,
+			value:      "svc_a",
+			want:       migratelock.Name{Value: "svc_a", Spelling: "--" + nameFlagName},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := migratelock.NameRequest(commandWithNameFlag(c, test.args), test.fromConfig, "postgres://ptah@127.0.0.1:1/db")
+
+			got, err := migratelock.ResolveName(request, test.value)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+			c.Assert(got.Explicit(), qt.Equals, test.want.Spelling != "")
+		})
+	}
+}
+
+func TestResolveName_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		fromConfig bool
+		value      string
+		wantErr    string
+	}{
+		{
+			name:    "typed empty value",
+			args:    []string{"--" + nameFlagName, ""},
+			value:   "",
+			wantErr: `--migration-lock-name must name the migration lock: .*`,
+		},
+		{
+			name:    "typed whitespace-only value",
+			args:    []string{"--" + nameFlagName, " \t "},
+			value:   " \t ",
+			wantErr: `--migration-lock-name must name the migration lock: .*`,
+		},
+		{
+			name:       "project config written empty",
+			fromConfig: true,
+			value:      "",
+			wantErr:    `migration\.migration_lock_name must name the migration lock: .*`,
+		},
+		{
+			name:       "project config whitespace-only",
+			fromConfig: true,
+			value:      "   ",
+			wantErr:    `migration\.migration_lock_name must name the migration lock: .*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := migratelock.NameRequest(commandWithNameFlag(c, test.args), test.fromConfig, "postgres://ptah@127.0.0.1:1/db")
+
+			got, err := migratelock.ResolveName(request, test.value)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(got, qt.Equals, migratelock.Name{})
+		})
+	}
+}
+
+// TestNameRequestDecide_FailurePath is the lock name's half of the dialect
+// decision. A name is a request for the migration advisory lock, and a dialect
+// with none cannot honor it, so the refusal reuses the timeout's wording and
+// names the spelling the operator used.
+func TestNameRequestDecide_FailurePath(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		fromConfig bool
+		wantSpell  string
+	}{
+		{name: "typed flag", args: []string{"--" + nameFlagName, "svc_a"}, wantSpell: "--" + nameFlagName},
+		{name: "project config", fromConfig: true, wantSpell: migratelock.NameConfigKey},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := migratelock.NameRequest(commandWithNameFlag(c, test.args), test.fromConfig, "sqlite://target.db")
+
+			err := request.Decide("sqlite")
+
+			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantSpell+` requested the migration advisory lock, `+
+				`and dialect "sqlite" has none: only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. `+
+				`Remove `+test.wantSpell+` to run without a lock`))
+			var unsupported *migratelock.UnsupportedError
+			c.Assert(err, qt.ErrorAs, &unsupported)
+			c.Assert(unsupported.Request, qt.Equals, test.wantSpell)
+		})
+	}
+}
+
+func TestNameRequestDecide_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		dbURL   string
+		dialect string
+	}{
+		{name: "nobody chose a name", dbURL: "sqlite://target.db", dialect: "sqlite"},
+		{name: "the dialect locks", args: []string{"--" + nameFlagName, "svc_a"}, dbURL: "postgres://ptah@127.0.0.1:1/db", dialect: "postgres"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			request := migratelock.NameRequest(commandWithNameFlag(c, test.args), false, test.dbURL)
+
+			c.Assert(request.Decide(test.dialect), qt.IsNil)
+		})
+	}
+}
+
+// TestRequestsDecideFromURL_FailurePath holds the pair to both halves: either
+// request alone refuses an unlocked dialect, and the zero value of the other
+// half asks nothing.
+func TestRequestsDecideFromURL_FailurePath(t *testing.T) {
+	t.Run("name only", func(t *testing.T) {
+		c := qt.New(t)
+		requests := migratelock.Requests{
+			Name: migratelock.NameRequest(
+				commandWithNameFlag(c, []string{"--" + nameFlagName, "svc_a"}), false, "sqlite://target.db"),
+		}
+
+		c.Assert(requests.DecideFromURL(), qt.ErrorMatches, `--migration-lock-name requested the migration advisory lock.*`)
+	})
+
+	t.Run("timeout only", func(t *testing.T) {
+		c := qt.New(t)
+		requests := migratelock.Requests{
+			Timeout: migratelock.Request{
+				Cmd:      commandWithLockFlag(c, []string{"--migration-lock-timeout", "10s"}),
+				FlagName: flagName,
+				DBURL:    "sqlite://target.db",
+			},
+		}
+
+		c.Assert(requests.DecideFromURL(), qt.ErrorMatches, `--migration-lock-timeout requested the migration advisory lock.*`)
+	})
+}
+
+func TestRequestsDecideFromURL_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(migratelock.Requests{}.DecideFromURL(), qt.IsNil)
+	c.Assert(migratelock.Requests{}.DecideConnected("sqlite"), qt.IsNil)
 }

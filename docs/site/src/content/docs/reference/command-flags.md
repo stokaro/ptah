@@ -710,6 +710,7 @@ Read the columns as follows.
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 | `--force` | `bool` | `false` | `PTAH_FORCE` | — |
+| `--migration-lock-name` | `string` | — | `PTAH_MIGRATION_LOCK_NAME` | — |
 | `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
@@ -812,6 +813,7 @@ Read the columns as follows.
 | `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
 | `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |
 | `--metrics-addr` | `string` | — | `PTAH_METRICS_ADDR` | — |
+| `--migration-lock-name` | `string` | — | `PTAH_MIGRATION_LOCK_NAME` | — |
 | `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
@@ -1120,6 +1122,7 @@ Read the columns as follows.
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--force` | `bool` | `false` | `PTAH_FORCE` | — |
+| `--migration-lock-name` | `string` | — | `PTAH_MIGRATION_LOCK_NAME` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
 | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
@@ -1211,6 +1214,7 @@ Read the columns as follows.
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
+| `--migration-lock-name` | `string` | — | `PTAH_MIGRATION_LOCK_NAME` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
@@ -1343,6 +1347,7 @@ Read the columns as follows.
 | `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
 | `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |
 | `--metrics-addr` | `string` | — | `PTAH_METRICS_ADDR` | — |
+| `--migration-lock-name` | `string` | — | `PTAH_MIGRATION_LOCK_NAME` | — |
 | `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |

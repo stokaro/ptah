@@ -26,6 +26,7 @@ migration:
   statement_timeout: 2s
   connect_timeout: 3s
   migration_lock_timeout: 4s
+  migration_lock_name: base-lock
   exec_order: linear
   tx_mode: file
   pre_up_hook: base-backup
@@ -49,6 +50,7 @@ env:
       statement_timeout: 6s
       connect_timeout: 7s
       migration_lock_timeout: 8s
+      migration_lock_name: prod-lock
       exec_order: non-linear
       tx_mode: all
       runner: golang-migrate
@@ -78,6 +80,7 @@ env:
 	c.Assert(cfg.Migration.StatementTimeout, qt.Equals, "6s")
 	c.Assert(cfg.Migration.ConnectTimeout, qt.Equals, "7s")
 	c.Assert(cfg.Migration.MigrationLockTimeout, qt.Equals, "8s")
+	c.Assert(cfg.Migration.MigrationLockName, qt.Equals, "prod-lock")
 	c.Assert(cfg.Migration.ExecOrder, qt.Equals, "non-linear")
 	c.Assert(cfg.Migration.TxMode, qt.Equals, "all")
 	c.Assert(cfg.Migration.Runner, qt.Equals, "golang-migrate")
@@ -238,7 +241,7 @@ func TestParsePtahProjectConfigRejectsUnknownMigrationPreflightKeys(t *testing.T
   pg_dumpto: ./backups
 `), "ptah.yaml", "")
 
-	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "pg_dumpto" under migration; supported keys are dir, format, revisions_schema, revisions_table, revision_format, lock_timeout, statement_timeout, connect_timeout, migration_lock_timeout, exec_order, tx_mode, runner, pre_up_hook, pre_down_hook, pg_dump_to, mysqldump_to, webhook, log`)
+	c.Assert(err, qt.ErrorMatches, `failed to parse ptah config ptah\.yaml: line 2: unknown ptah\.yaml key "pg_dumpto" under migration; supported keys are dir, format, revisions_schema, revisions_table, revision_format, lock_timeout, statement_timeout, connect_timeout, migration_lock_timeout, migration_lock_name, exec_order, tx_mode, runner, pre_up_hook, pre_down_hook, pg_dump_to, mysqldump_to, webhook, log`)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
 }
 
@@ -390,4 +393,30 @@ env:
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.Diff.Skip.DropTable, qt.DeepEquals, projectconfig.ConfigBool{Set: true})
 	c.Assert(cfg.Diff.Skip.DropColumn.Value, qt.IsTrue)
+}
+
+func TestParsePtahProjectConfigMigrationLockName_HappyPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		raw         string
+		wantValue   string
+		wantPresent bool
+	}{
+		{name: "absent", raw: "migration:\n  dir: migrations\n"},
+		{name: "named", raw: "migration:\n  migration_lock_name: svc_a\n", wantValue: "svc_a", wantPresent: true},
+		{name: "written empty", raw: "migration:\n  migration_lock_name: \"\"\n", wantPresent: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := projectconfig.ParsePtah([]byte(test.raw), "ptah.yaml", "")
+
+			c.Assert(err, qt.IsNil)
+			value := cfg.StringValue(projectconfig.StringMigrationMigrationLockName)
+			c.Assert(value.Value, qt.Equals, test.wantValue)
+			c.Assert(value.Present, qt.Equals, test.wantPresent)
+		})
+	}
 }

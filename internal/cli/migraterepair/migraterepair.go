@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migratelock"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/migration/migrationfile"
@@ -47,6 +48,7 @@ type options struct {
 	migrationsTable     string
 	migrationsEngine    string
 	revisionTableFormat string
+	migrationLockName   string
 }
 
 func NewMigrateRepairCommand() *cobra.Command {
@@ -69,7 +71,9 @@ revision is removed, because a finished rollback means the migration is no
 longer applied; without --resume-from, a rollback that already committed a
 statement is refused rather than recorded applied over a schema it changed.
 Repair holds the migration advisory lock across inspection, resumed SQL, and
-the final metadata write.
+the final metadata write. The lock is named ptah_migrate unless
+--migration-lock-name selects another name, and it has to be the name the
+history's other commands use, or repair does not wait for them.
 
 With --runner golang-migrate, a file that opens and closes its own
 transactions is read with those transactions, as "migrations up" and
@@ -105,6 +109,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
 	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
+	migratelock.RegisterNameFlag(flags, &opts.migrationLockName)
 }
 
 // resolveProjectOptions merges ptah.yaml under the flags, the way
@@ -126,11 +131,19 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 		dbcli.RevisionTableFormatFlagName, opts.revisionTableFormat, projectconfig.StringMigrationRevisionFormat)
 	opts.connectTimeout = effectiveString(
 		dbcli.ConnectTimeoutFlagName, opts.connectTimeout, projectconfig.StringMigrationConnectTimeout)
+	opts.migrationLockName = effectiveString(
+		migratelock.NameFlag, opts.migrationLockName, projectconfig.StringMigrationMigrationLockName)
 	runner, err := dbcli.ResolveRunner(cmd, opts.runner, projectCfg)
 	if err != nil {
 		return options{}, "", err
 	}
 	return opts, runner, nil
+}
+
+// lockNameRequest is the lock-name input of this command against dbURL.
+func lockNameRequest(cmd *cobra.Command, projectCfg projectconfig.Config, dbURL string) migratelock.Request {
+	return migratelock.NameRequest(
+		cmd, projectCfg.StringValue(projectconfig.StringMigrationMigrationLockName).Present, dbURL)
 }
 
 func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
@@ -149,6 +162,11 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	opts = &resolved
+	lockRequest := lockNameRequest(cmd, projectCfg, opts.dbURL)
+	lockName, err := migratelock.ResolveName(lockRequest, opts.migrationLockName)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(opts.dbURL) == "" {
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("database URL is required"))
 	}
@@ -177,6 +195,11 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
+		return err
+	}
+	// Before the source is read and the target opened, so a lock name the
+	// target's dialect cannot honor is refused without touching either.
+	if err := lockRequest.DecideFromURL(); err != nil {
 		return err
 	}
 
@@ -227,10 +250,17 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	// Before the migrator is built, so no revision row is written under a lock
+	// the operator asked for and the target never took.
+	if err := lockRequest.DecideSession(conn); err != nil {
+		return err
+	}
+
 	mig := migrator.NewMigrator(conn, provider).
 		WithMigrationsTable(opts.migrationsSchema, opts.migrationsTable).
 		WithMigrationsEngine(opts.migrationsEngine).
-		WithRevisionTableFormat(revisionFormat)
+		WithRevisionTableFormat(revisionFormat).
+		WithMigrationLockName(lockName.Value)
 
 	err = mig.RepairMigration(ctx, migrator.RepairMigrationOptions{
 		Version:    version,

@@ -100,3 +100,88 @@ func TestNativeMigrateDownRefusesMigrationLockTimeoutOnUnlockedDialect(t *testin
 		qt.Commentf("%s", out.String()))
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "lock_scope_users"), qt.Equals, 1)
 }
+
+// `ptah migrations down --migration-lock-name` selects the advisory lock a
+// native history is serialized on. `ptah-compat migrate down` reaches that
+// command through the adapter, and Atlas registers no lock-name flag on that
+// verb, so the forwarded run keeps the default name `migrate apply` takes. A
+// PTAH_MIGRATION_LOCK_NAME exported for native commands must not move it onto
+// another lock than the apply it has to serialize with, and must not make it
+// refuse on a dialect that cannot lock.
+
+func TestCompatMigrateDownIgnoresMigrationLockNameSetting(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "a name on a dialect that cannot lock", value: "svc_a"},
+		{name: "a whitespace-only value", value: "   "},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv("PTAH_MIGRATION_LOCK_NAME", test.value)
+			dir := t.TempDir()
+			dbPath := filepath.Join(dir, "compat-down-name.db")
+			migrationsDir := filepath.Join(dir, "migrations")
+			atlastest.WriteHashedAtlasDir(c, migrationsDir, "20260101000001_init.sql", txtarWithDownSection)
+			applied, applyErr := runCompatLockCommand([]string{
+				"migrate", "apply",
+				"--url", "sqlite://" + dbPath,
+				"--dir", "file://" + migrationsDir,
+			})
+			c.Assert(applyErr, qt.IsNil, qt.Commentf("%s", applied))
+
+			out, err := runCompatLockCommand([]string{
+				"migrate", "down",
+				"--url", "sqlite://" + dbPath,
+				"--dir", "file://" + migrationsDir,
+				"--to-version", "0",
+			})
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(out, qt.Not(qt.Contains), "migration advisory lock")
+			c.Assert(out, qt.Not(qt.Contains), "must name the migration lock")
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, "lock_scope_users"), qt.Equals, 0)
+		})
+	}
+}
+
+// TestNativeMigrateDownRefusesMigrationLockNameOnUnlockedDialect is the control
+// for the scope above, on the command the adapter forwards to: the same
+// variable and target, run natively, is refused.
+func TestNativeMigrateDownRefusesMigrationLockNameOnUnlockedDialect(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "native-down-name.db")
+	migrationsDir := filepath.Join(dir, "migrations")
+	atlastest.WriteHashedAtlasDir(c, migrationsDir, "20260101000001_init.sql", txtarWithDownSection)
+	applied, applyErr := runCompatLockCommand([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+	})
+	c.Assert(applyErr, qt.IsNil, qt.Commentf("%s", applied))
+
+	cmd := migratedown.NewMigrateDownCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"--db-url", "sqlite://" + dbPath,
+		"--migrations-dir", migrationsDir,
+		"--dir-format", "atlas",
+		"--revision-format", "atlas",
+		"--target", "0",
+		"--confirm",
+		"--migration-lock-name", "svc_a",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(
+		`--migration-lock-name requested the migration advisory lock, and dialect "sqlite" has none`)+`.*`,
+		qt.Commentf("%s", out.String()))
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "lock_scope_users"), qt.Equals, 1)
+}

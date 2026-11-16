@@ -725,6 +725,33 @@ func TestCompatCommand_MigrateDownRejectsNativeConfirmationFlag(t *testing.T) {
 	}
 }
 
+// The forwarded run takes the default migration lock, so a lock name given
+// as a flag is refused rather than read and ignored.
+func TestCompatCommand_MigrateDownRejectsNativeLockNameFlag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "forward", args: []string{"--url", "sqlite://x.db", "--migration-lock-name", "billing"}},
+		{name: "format", args: []string{"--format", "{{ json . }}", "--migration-lock-name=billing"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := atlas.NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(append([]string{"migrate", "down"}, test.args...))
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, `atlas migrate down does not accept native Ptah flag --migration-lock-name`)
+		})
+	}
+}
+
 func TestNewCompatCommand_MigrateDownFormatResolvesAtRoot(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

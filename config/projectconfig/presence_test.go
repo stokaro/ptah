@@ -26,6 +26,7 @@ migration:
   statement_timeout: 2s
   connect_timeout: 3s
   migration_lock_timeout: 4s
+  migration_lock_name: root-lock
   exec_order: linear
   tx_mode: all
   pre_up_hook: backup
@@ -69,6 +70,7 @@ env:
       statement_timeout: ""
       connect_timeout: ""
       migration_lock_timeout: ""
+      migration_lock_name: ""
       exec_order: ""
       tx_mode: ""
       pre_up_hook: ""
@@ -303,6 +305,7 @@ func TestMergeProgrammaticNonZeroValuesOverrideEverySection(t *testing.T) {
 			StatementTimeout:     "2s",
 			ConnectTimeout:       "3s",
 			MigrationLockTimeout: "4s",
+			MigrationLockName:    "override-lock",
 			ExecOrder:            "non-linear",
 			TxMode:               "none",
 			PreUpHook:            "up",

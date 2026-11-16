@@ -298,8 +298,10 @@ the transactions that committed.
 
 `RepairMigration` acquires the same session advisory lock as migration up and
 down. It holds the lock across revision inspection, resumed SQL, safety checks,
-and the final metadata write. The native repair command currently uses the
-default lock name and waits indefinitely.
+and the final metadata write. The native repair command waits indefinitely and
+takes the lock under `ptah_migrate`, or under the name `--migration-lock-name`
+selects. Use the name the history's other commands use, or repair does not wait
+for them; see [Choose the lock name](../apply/#choose-the-lock-name).
 
 ```bash
 ptah migrations repair \

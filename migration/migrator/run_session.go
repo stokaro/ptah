@@ -35,7 +35,10 @@ func (m *Migrator) withRunSession(ctx context.Context, use func(*Migrator) error
 	if m.runSession != nil || m.conn == nil || m.conn.Writer().IsDryRun() || services.PoolSessions {
 		return use(m)
 	}
-	if locked := migrationLockSession(ctx); locked != nil {
+	// The lock is the session's that took it, so a migrator on another
+	// connection, such as a shadow replay run while the target's lock is held,
+	// keeps to its own connection.
+	if locked := migrationLockSession(ctx); locked != nil && locked == m.conn {
 		return use(m.inRunSession(locked))
 	}
 	return m.conn.WithSessionOrCurrent(ctx, func(session *dbschema.DatabaseConnection) error {

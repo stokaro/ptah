@@ -15,10 +15,12 @@
 package migratelock
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
@@ -31,6 +33,23 @@ import (
 // `--migration-lock-timeout`. A refusal names it so an operator who set it in
 // `ptah.yaml` is not sent looking through a command line that never carried it.
 const ConfigKey = "migration.migration_lock_timeout"
+
+const (
+	// NameFlag is the flag that selects the migration advisory lock's name.
+	NameFlag = "migration-lock-name"
+	// NameConfigKey is the project-config path that fills [NameFlag].
+	NameConfigKey = "migration.migration_lock_name"
+)
+
+// RegisterNameFlag adds `--migration-lock-name` to flags, storing the raw value
+// in dst. The environment binding the command tree installs gives it the
+// PTAH_MIGRATION_LOCK_NAME variable and the `[env: ...]` help marker.
+func RegisterNameFlag(flags *pflag.FlagSet, dst *string) {
+	flags.StringVar(dst, NameFlag, "", "Name of the session-level migration advisory lock; "+
+		"runners that share a name wait for each other, and the default is ptah_migrate. "+
+		"Give each independent migration history its own name to run them concurrently; "+
+		"refused against a dialect that takes no such lock")
+}
 
 // UnsupportedError reports that a caller asked for the migration advisory lock
 // on a target whose dialect has none. Request is the spelling the operator
@@ -82,7 +101,10 @@ type Request struct {
 	Cmd *cobra.Command
 	// FlagName is the lock timeout flag's name, without the leading dashes.
 	FlagName string
-	// FromConfig reports that the project config carries [ConfigKey]. It is
+	// ConfigKey is the project-config path that fills the flag. Empty means
+	// [ConfigKey], the lock timeout's key.
+	ConfigKey string
+	// FromConfig reports that the project config carries ConfigKey. It is
 	// read only when neither the command line nor the environment set the
 	// flag, which is exactly when the config value becomes the effective one.
 	FromConfig bool
@@ -116,6 +138,9 @@ func (r Request) Spelling() (string, bool) {
 		return "--" + r.FlagName, true
 	}
 	if r.FromConfig {
+		if r.ConfigKey != "" {
+			return r.ConfigKey, true
+		}
 		return ConfigKey, true
 	}
 	return "", false
@@ -210,4 +235,98 @@ func (r Request) DecideSession(conn *dbschema.DatabaseConnection) error {
 		return nil
 	}
 	return r.DecideConnected(conn.Info().Dialect)
+}
+
+// Requests is the pair of lock inputs one command can carry: the timeout that
+// bounds the wait, and the name that selects which lock is waited for. Either
+// half may be the zero value, which asks nothing. It answers every decision for
+// both, so a call site cannot decide one and forget the other.
+type Requests struct {
+	Timeout Request
+	Name    Request
+}
+
+// TimeoutFlag is the flag that bounds the wait for the migration advisory lock.
+const TimeoutFlag = "migration-lock-timeout"
+
+// NewRequests builds both requests of a command that reads the project config.
+// timeoutFromConfig and nameFromConfig report that the project config carries
+// [ConfigKey] and [NameConfigKey].
+func NewRequests(cmd *cobra.Command, dbURL string, timeoutFromConfig, nameFromConfig bool) Requests {
+	return Requests{
+		Timeout: Request{Cmd: cmd, FlagName: TimeoutFlag, FromConfig: timeoutFromConfig, DBURL: dbURL},
+		Name:    NameRequest(cmd, nameFromConfig, dbURL),
+	}
+}
+
+// NameRequest builds the [Request] for `--migration-lock-name`. fromConfig
+// reports that the project config carries [NameConfigKey].
+func NameRequest(cmd *cobra.Command, fromConfig bool, dbURL string) Request {
+	return Request{
+		Cmd:        cmd,
+		FlagName:   NameFlag,
+		ConfigKey:  NameConfigKey,
+		FromConfig: fromConfig,
+		DBURL:      dbURL,
+	}
+}
+
+// DecideFromURL runs [Request.DecideFromURL] for the timeout and then the name.
+func (r Requests) DecideFromURL() error {
+	return errors.Join(r.Timeout.DecideFromURL(), r.Name.DecideFromURL())
+}
+
+// DecideConnected runs [Request.DecideConnected] for the timeout and then the
+// name.
+func (r Requests) DecideConnected(connected string) error {
+	return errors.Join(r.Timeout.DecideConnected(connected), r.Name.DecideConnected(connected))
+}
+
+// DecideSession runs [Request.DecideSession] for the timeout and then the name.
+func (r Requests) DecideSession(conn *dbschema.DatabaseConnection) error {
+	return errors.Join(r.Timeout.DecideSession(conn), r.Name.DecideSession(conn))
+}
+
+// Name is the migration lock name one run selected.
+type Name struct {
+	// Value is the name the operator gave, without surrounding space. It is empty when nobody
+	// chose one, and the migrator then takes its default.
+	Value string
+	// Spelling is where the name came from: the flag, its environment
+	// variable or [NameConfigKey]. It is empty when nobody chose one.
+	Spelling string
+}
+
+// Explicit reports that the operator chose the name.
+func (n Name) Explicit() bool { return n.Spelling != "" }
+
+// ResolveName reads the lock name a run selected from value, which is the
+// effective flag value after the project config was merged in. request says
+// where the operator wrote it.
+//
+// Presence decides, as for the timeout: a name written as an empty or
+// whitespace-only string is refused, naming the spelling used, because the
+// migrator would read it as "use the default" and a caller who meant to
+// separate two histories would silently share a lock. An empty
+// PTAH_MIGRATION_LOCK_NAME is the one blank spelling that cannot be told from
+// an absent variable: every string flag treats an empty environment value as
+// unset.
+//
+// A forwarded run selects no name. `ptah-compat migrate down` reaches the
+// native command through the adapter, and the compatibility surface has no
+// lock-name flag there, so the setting belongs to the native commands only.
+func ResolveName(request Request, value string) (Name, error) {
+	if request.Cmd == nil || cmdadapter.Forwarded(request.Cmd) {
+		return Name{}, nil
+	}
+	spelling, asked := request.Spelling()
+	if !asked {
+		return Name{}, nil
+	}
+	if strings.TrimSpace(value) == "" {
+		return Name{}, fmt.Errorf("%s must name the migration lock: an empty or whitespace-only value would "+
+			"fall back to the default name, so it is refused rather than shared; "+
+			"remove it to use the default", spelling)
+	}
+	return Name{Value: strings.TrimSpace(value), Spelling: spelling}, nil
 }
