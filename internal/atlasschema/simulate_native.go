@@ -96,7 +96,7 @@ func (p ApplyRuntimePlan) rehearseNativeOnPreparedDev(
 		return &SimulationError{Stage: "reset", Err: err}
 	}
 	outside := rehearsalOutside{target: p.seed.target(ctx, p.conn), executed: p.plan.executedSQL()}
-	added, err := recreateCurrentSchema(ctx, devConn, p.current, p.conn.Info().URL, baseline, p.runtime, outside, urlScopedReads)
+	added, err := recreateCurrentSchema(ctx, devConn, p.current, p.conn.Info(), baseline, p.runtime, outside, urlScopedReads)
 	if err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}

@@ -281,3 +281,72 @@ func unquoteSchemaName(token lexer.Token) string {
 	}
 	return value
 }
+
+// inDevDatabase is state, the target's current schema read through target,
+// with the objects a one-database read names by the target's database moved
+// to dev's, where a schema is a database and the two connections select
+// databases of different names.
+//
+// A read of one database records that database on each view, on each
+// ClickHouse materialized view, and on each MySQL or MariaDB routine and
+// MariaDB sequence, where a table is left unqualified, and the server
+// qualifies the relations of a stored view body with it. Recreated as read,
+// the baseline wrote `app`.`v` with a body reading `app`.`t` from a dev
+// database `appdev`, and the baseline guard refused it as a write to another
+// database. Each of these objects in the target's database is left
+// unqualified, as its tables are, and a view body reads the dev database's
+// tables instead. A view body that also reads another database keeps that
+// name, and the guard refuses the statement as before.
+//
+// A routine body is not rewritten: it is procedural text, and a name in it
+// that reads the target's database is left as written. On a dev database of
+// the target's server the dev cleanup refuses first, since another database
+// holds a routine; on a dev server of its own the routine is created as
+// written, and a statement that calls it fails there as it would on any
+// server without that database. state is not modified.
+func inDevDatabase(state *catalog.Database, target, dev catalog.ServerInfo) *catalog.Database {
+	from, to := strings.TrimSpace(target.Schema), strings.TrimSpace(dev.Schema)
+	if state == nil || !schemaScopeNamesDatabase(dev.Dialect) || from == "" || to == "" || from == to {
+		return state
+	}
+	moved := *state
+	moved.Views = slices.Clone(state.Views)
+	for i := range moved.Views {
+		if moved.Views[i].Schema == from {
+			moved.Views[i].Schema = ""
+			moved.Views[i].Body = viewBodyInDev(moved.Views[i].Body, dev.Dialect, from, to)
+		}
+	}
+	moved.MatViews = slices.Clone(state.MatViews)
+	for i := range moved.MatViews {
+		if moved.MatViews[i].Schema == from {
+			moved.MatViews[i].Schema = ""
+			moved.MatViews[i].Body = viewBodyInDev(moved.MatViews[i].Body, dev.Dialect, from, to)
+		}
+	}
+	moved.Functions = slices.Clone(state.Functions)
+	for i := range moved.Functions {
+		if moved.Functions[i].Schema == from {
+			moved.Functions[i].Schema = ""
+		}
+	}
+	moved.Sequences = slices.Clone(state.Sequences)
+	for i := range moved.Sequences {
+		if moved.Sequences[i].Schema == from {
+			moved.Sequences[i].Schema = ""
+		}
+	}
+	return &moved
+}
+
+// viewBodyHead is the header a view body is rewritten under: the rewrite
+// tells a qualifier from a name the body binds, an alias or a table it reads,
+// only inside a statement whose body it can find.
+const viewBodyHead = "CREATE VIEW v AS "
+
+// viewBodyInDev is body, a stored view body, with each qualifier naming the
+// database from rewritten to name to. A name the body binds is kept, so
+// `SELECT app.id FROM app.t1 app` in database app keeps its alias.
+func viewBodyInDev(body, dialect, from, to string) string {
+	return strings.TrimPrefix(rewriteSchemaNames(viewBodyHead+body, dialect, from, to), viewBodyHead)
+}
