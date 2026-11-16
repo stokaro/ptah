@@ -394,6 +394,14 @@ func generateDiff(
 		replaySource,
 		migrationfile.DirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
+			// Placed against the connection the comparison runs on, so a name the
+			// desired state writes without a schema means the schema it is
+			// compared in, and the file names it; see
+			// [atlasschema.PlaceUnqualifiedNames].
+			desired, err := atlasschema.PlaceUnqualifiedNames(replayConn.Info(), desired)
+			if err != nil {
+				return err
+			}
 			compared, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devNaming, desired, baseline,
 				comparisonSelection{exclusion: exclusion, inclusion: prepared.inclusion, info: info},

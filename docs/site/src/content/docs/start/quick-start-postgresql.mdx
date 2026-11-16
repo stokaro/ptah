@@ -117,7 +117,7 @@ Expected output on standard output:
 
 ```text
 Planned schema changes:
-CREATE TABLE "users" (
+CREATE TABLE "public"."users" (
   "id" BIGSERIAL PRIMARY KEY NOT NULL,
   "email" TEXT NOT NULL
 );
@@ -219,7 +219,7 @@ ptah schema apply --schema-file schema.sql --db-url "$DB" --dry-run
 Expected output ends with, on standard output:
 
 ```text
-ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMPTZ;
+ALTER TABLE "public"."users" ADD COLUMN "created_at" TIMESTAMPTZ;
 ```
 
 ## Step 7. Apply the reviewed change, and check again

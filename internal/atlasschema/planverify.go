@@ -181,11 +181,15 @@ func RehearsePlanStatements(
 		return err
 	}
 
+	// The rehearsal has its dev database, so it asks it where an unqualified
+	// desired name goes rather than asking its URL again.
+	devInfo := devConn.Info()
 	computation, err := compareRehearsedState(ctx, devConn, conn.Info(), ApplyOptions{
 		Runtime:  opts.Runtime,
 		Desired:  desired,
 		Exclude:  opts.Exclude,
 		baseline: dev.baseline,
+		naming:   namingFor(conn.Info(), &devInfo),
 	})
 	if err != nil {
 		return fmt.Errorf("compare rehearsed plan state with the desired state: %w", err)
@@ -206,11 +210,15 @@ func RehearsePlanStatements(
 // the desired state, reading the dev database as the target names its objects.
 //
 // The rehearsal built the target's state on a dev session that resolves names
-// as the target does; see [resolveNamesAsTarget]. Read through a session of
-// the dev database's own, the objects of the target's current schema carry
-// that schema's name, and the desired state names them without one: the
-// comparison would plan their creation in public and their removal from the
-// target's schema, and refuse a rehearsal that reached the desired state.
+// as the target does; see [resolveNamesAsTarget]. The desired state's own names
+// are placed in a schema, so they read the same in any session; see
+// [namingFor]. What still depends on the session is SQL text the server prints
+// back, such as a view's body, which names a relation without its schema only
+// when the session's search path reaches it. Read through a session of the
+// dev database's own, a view the rehearsal built over a table of the target's
+// current schema reads back naming that schema, where a read of the target
+// names the table bare, and the comparison would report a rehearsal that
+// reached the desired state as drift.
 func compareRehearsedState(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
@@ -237,11 +245,16 @@ func compareRehearsedState(
 // must match the --to desired state under Ptah's own schema diff. Atlas
 // performs the equivalent verification on every `schema apply --plan`; the
 // check is always on and has no opt-out flag.
+//
+// devURL is the dev database the plan was rehearsed on, empty for none. Its
+// current schema is where the plan placed a name the desired state writes
+// without a schema, so the verification places it there too; see [namingFor].
 func VerifyAppliedPlanState(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	exclude []string,
+	devURL string,
 	runtime engine.SchemaRuntime,
 ) error {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
@@ -253,10 +266,16 @@ func VerifyAppliedPlanState(
 	if desired == nil {
 		return errors.New("plan end-state verification requires the desired schema state")
 	}
+	naming, err := resolveDesiredNaming(ctx, conn.Info(), devURL)
+	if err != nil {
+		return fmt.Errorf(
+			"the plan was applied successfully, but the end-state verification could not be completed: %w", err)
+	}
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
 		Runtime: runtime,
 		Desired: desired,
 		Exclude: exclude,
+		naming:  naming,
 	})
 	if err != nil {
 		// The plan already executed successfully; this is the verification

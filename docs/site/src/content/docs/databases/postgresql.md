@@ -54,20 +54,41 @@ shows.
 A URL that pins no `search_path` can still resolve to a schema other than
 `public`. With the default search path `"$user", public`, a role named `app`
 resolves to `app` in a database that holds a schema `app`, and to `public` in
-one that does not. Two rules apply to such a connection:
+one that does not. The rules below apply to such a connection.
 
-- A desired table written without a schema is in the connection's current
-  schema, `app` here. When the database holds a table of that name in another
-  schema, such as `public.notes`, the plan would create the table in `app` and
-  drop `public.notes` with its rows. `schema plan` and `schema apply` refuse
-  that plan and name the qualified spelling, `"public"."notes"`, that keeps the
-  table where it is.
-- The `--dev-url` database may resolve to another schema than the target, as a
-  sibling database without the schema `app` does. When both URLs pin no
-  `search_path`, the rehearsal gives the dev database the target's current
-  schema and sets the session's search path to the target's, so each statement
-  resolves its names as it will on the target. When either URL pins a
-  `search_path`, the two must name the same schema.
+A desired name written without a schema is placed in one schema before the
+comparison, and every statement the plan writes names that schema:
+`CREATE TABLE notes` is planned as `CREATE TABLE "public"."notes"`. This holds
+for tables, indexes, constraints, sequences, enums, views, functions, triggers,
+grants and the objects a feature owner keeps, such as domains and policies, in
+`schema plan`, `schema apply`, `schema diff`, `migrate diff` and
+`migrations generate --replay`. View and routine bodies, defaults and other
+expressions are SQL text and keep the names they were written with.
+
+- With a `--dev-url` that pins no `search_path`, the name is placed where the
+  dev database resolves it, as the community binary reads the desired state on
+  its dev database. A sibling database without the schema `app` resolves it to
+  `public`, so `CREATE TABLE notes` beside an existing `public.notes` plans
+  nothing for the table.
+- With no `--dev-url`, or with one that pins `search_path`, the name is placed
+  in the target's current schema, `app` here.
+- `migrate diff` and `migrations generate --replay` place the name where the
+  dev database they replay on resolves it.
+
+Where the two readings of a name differ, the target's current schema and the
+schema the name is placed in, a plan may create a table in one and drop the
+table of that name in the other with its rows. `schema plan` and `schema apply`
+refuse that plan and name the qualified spellings that settle it: with a dev
+database resolving to `public` and `app.notes` on the target, `"app"."notes"`
+keeps the table and `"public"."notes"` moves it; with no dev database and
+`public.notes` on the target, `"public"."notes"` keeps it. A desired table
+written with a schema, and a URL that pins `search_path`, are not refused.
+
+The rehearsal on a dev database of another current schema gives the dev
+database the target's current schema and sets the session's search path to the
+target's, so each statement, its bodies included, resolves its names as it will
+on the target. When either URL pins a `search_path`, the two must name the same
+schema.
 
 On connection, Ptah reads the server version and selects the matching
 capability preset, so planning adapts to the concrete server — see

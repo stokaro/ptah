@@ -1030,7 +1030,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// The semantic end-state verification mirrors Atlas: always on whenever a
 		// desired state is available, with no flag to disable it.
 		if desired != nil {
-			if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan.Exclude, opts.runtime); err != nil {
+			if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan.Exclude, opts.devURL, opts.runtime); err != nil {
 				return "", err
 			}
 		}

@@ -41,7 +41,7 @@ func TestPlanVerification_RejectsIncompleteEvidenceEvenWithoutChanges(t *testing
 	target := connectSQLite(c, filepath.Join(c.TempDir(), "target.db"))
 	c.Cleanup(func() { dbschema.CloseAndWarn(target) })
 	runtime := &incompleteVerificationRuntime{Runtime: inspectFeatureRuntime(c), after: 1}
-	err := atlasschema.VerifyAppliedPlanState(t.Context(), target, &schemamodel.Database{}, nil, runtime)
+	err := atlasschema.VerifyAppliedPlanState(t.Context(), target, &schemamodel.Database{}, nil, "", runtime)
 	c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)
 	c.Assert(err, qt.ErrorMatches, `.*applied successfully.*incomplete evidence.*`)
 	c.Assert(atlasschema.IsPlanDesiredStateFailure(err), qt.IsFalse)

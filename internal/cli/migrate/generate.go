@@ -20,6 +20,7 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -439,7 +440,13 @@ func planGeneratedMigrationByReplay(
 					if err != nil {
 						return err
 					}
-					replayOpts.Generated = desired
+					// A name the desired schema writes without a schema is placed
+					// where the dev database resolves it, and the migration names
+					// that schema, as `ptah-compat migrate diff` writes it.
+					replayOpts.Generated, err = atlasschema.PlaceUnqualifiedNames(replayConn.Info(), desired)
+					if err != nil {
+						return err
+					}
 					replayOpts.ShadowGenerated, err = opts.loadShadowDesired(replayConn.Info().Dialect, replayConn.Info().URL)
 					if err != nil {
 						return err
