@@ -35,12 +35,13 @@ import (
 // answer -- a caller that must not proceed without the transaction has to check
 // ran, not just err. label names the caller in every error.
 //
-// A provider session (see [NativeConnector]) reports ran false with a nil
-// error too, and never runs body. The provider owns the session and exposes
-// no database/sql transaction the host could roll back, whatever engine name
-// it serves: the spellings a probe asks for are the provider's to give through
-// its own comparison, so nothing is probed and each declaration compares as
-// the provider reads it.
+// A connection a [NativeConnector] opened reports ran false with a nil error
+// too, and never runs body. It carries the provider's session and no *sql.DB,
+// so there is no database/sql transaction the host could roll back, and the
+// engine name the provider serves does not change that: a provider serving
+// postgres answers the same way. The spellings a probe asks for are the
+// provider's to give through its own comparison, so nothing is probed and
+// each declaration compares as the provider reads it.
 //
 // Do not call this on a pool-backed in-memory SQLite connection. Discarding the
 // session takes such a database with it, because it has no existence apart from
