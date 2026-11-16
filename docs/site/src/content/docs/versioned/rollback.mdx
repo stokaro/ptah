@@ -463,6 +463,12 @@ says `failed`. A rollback whose second down file failed:
 }
 ```
 
+`--server-details` adds what the server said about a down statement or a
+commit that failed, as it does for `up`: after the error line, and as
+`server_details` in the document.
+[What the server said](../apply/#what-the-server-said) describes it, and what it
+may disclose.
+
 `planned` is what the migrator selected while holding the migration lock: the
 applied migrations above the target, newest first. `rolled_back` names the
 selected migrations the history no longer records as applied, and `applied`

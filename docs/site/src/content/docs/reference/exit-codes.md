@@ -168,6 +168,13 @@ These runs carry no `failure`:
   after every statement succeeded, and for `migrations up` a write to the revision
   table or a failed check.
 
+What the server said about the failure, such as the key a foreign key refused,
+is not in `failure` and not in any default output. `ptah migrations up` and
+`ptah migrations down` show it beside `failure` when asked with
+`--server-details`; see
+[what the server said](../../versioned/apply/#what-the-server-said). The flag
+changes no exit code.
+
 `failure` says where the run stopped, not what the database holds.
 [Apply a desired schema](../../direct/apply/#the-apply-document) says what to do with
 an `unknown` outcome, and

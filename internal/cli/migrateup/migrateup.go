@@ -113,6 +113,7 @@ type options struct {
 	logLevel             string
 	metricsAddr          string
 	jsonOutput           bool
+	serverDetails        bool
 	expectSequence       string
 	checkDrift           bool
 	shadowDB             string
@@ -194,7 +195,13 @@ explicitly opts out with -- +ptah no_transaction. Use --tx-mode=all to wrap the
 whole pending up batch in one transaction on supported dialects, or
 --tx-mode=none to run without migration transaction wrapping.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			document := &migraterun.Document{Enabled: opts.jsonOutput, Out: cmd.OutOrStdout(), Command: Command, Direction: migrator.MigrationDirectionUp}
+			document := &migraterun.Document{
+				Enabled:       opts.jsonOutput,
+				Out:           cmd.OutOrStdout(),
+				Command:       Command,
+				Direction:     migrator.MigrationDirectionUp,
+				ServerDetails: migraterun.NewServerDetails(cmd.Context(), opts.serverDetails),
+			}
 			if err := migrateUpCommand(cmd, &opts, document); err != nil {
 				return document.FailBeforeRun(err, opts.dryRun)
 			}
@@ -308,6 +315,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.BoolVar(&opts.skipReport, skipReportFlag, false, "Do not attach a deployment report after applying an OCI migration artifact")
 	flags.BoolVar(&opts.jsonOutput, jsonFlag, false, "Print the run's evidence as one JSON document, on success and on failure")
+	migraterun.RegisterServerDetailsFlag(flags, &opts.serverDetails)
 	flags.StringVar(&opts.logFormat, cliobs.LogFormatFlagName, "text", "Log format: text or json")
 	flags.StringVar(&opts.logLevel, cliobs.LogLevelFlagName, "info", "Log level: debug, info, warn, or error")
 	flags.StringVar(&opts.metricsAddr, cliobs.MetricsAddrFlagName, "", "Address for the Prometheus /metrics endpoint, such as :9090")
@@ -574,6 +582,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 	lintPathPrefix := lintPathPrefixForSource(requestedMigrationsDir, source)
 	migrationsFS := source.FileSystem
+	document.ServerDetails.Options.Source = migrationsFS
 	migrationsDir = source.Display
 	settings.dirFormat = source.DirFormat
 
@@ -754,7 +763,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 	finalStatus := outcome.status
 	if err := outcome.err(); err != nil {
-		return driftExitStatus(err)
+		return driftExitStatus(document.ServerDetails.Explain(err))
 	}
 	checksDeferred := outcome.checksDeferred
 	publishDeploymentReportIfNeeded(cmd.Context(), runtime, emit, deploymentReportPublication{

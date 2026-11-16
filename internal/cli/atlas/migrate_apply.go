@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/internal/cli/internal/migraterun"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/revisiontable"
@@ -58,6 +59,9 @@ type atlasMigrateApplyRunOptions struct {
 	toVersionSource atlasMigrateApplyOperandSource
 	lockRequest     atlasLockRequest
 	skipChecks      bool
+	// serverDetails is the PTAH_SERVER_DETAILS choice, with the directory it
+	// reads once the run has captured one.
+	serverDetails migraterun.ServerDetails
 }
 
 type atlasMigrateApplyOperandSource uint8
@@ -187,12 +191,17 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
+	serverDetails, err := resolveAtlasApplyServerDetails(cmd)
+	if err != nil {
+		return err
+	}
 	runOpts := atlasMigrateApplyRunOptions{
 		amount:          amount,
 		baselineSource:  atlasMigrateApplyFlagSource(cmd, "baseline"),
 		toVersionSource: atlasMigrateApplyFlagSource(cmd, "to-version"),
 		lockRequest:     lockRequest,
 		skipChecks:      skipChecks,
+		serverDetails:   serverDetails,
 	}
 
 	targets := projects.projects
@@ -341,6 +350,10 @@ func runAtlasMigrateApplyTarget(
 		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
 	migrationFS := converted.FS
+	// The details place a position in the file as the directory holds it,
+	// which is the captured source and not its conversion.
+	runOpts.serverDetails.Options.Source = captured
+	runOpts.serverDetails.Options.Renamed = converted.Renamed
 	versionTokens, err := resolveAtlasMigrateApplyDirVersions(
 		captured,
 		migrationFS,
@@ -455,6 +468,11 @@ func runAtlasMigrateApplyTarget(
 			// The structured report already carries the execution error. Atlas
 			// leaves stderr empty in this mode, so return a coded failure that
 			// bypasses the generic command diagnostic without losing exit status.
+			// The server details are the one exception, and only when asked for:
+			// the report has no field for them.
+			if text := runOpts.serverDetails.Text(err); text != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), text)
+			}
 			return formatOutput, exitcode.New(atlasErrorExitCode, err)
 		}
 		// The default report describes a run that reached its migrations,
@@ -468,7 +486,7 @@ func runAtlasMigrateApplyTarget(
 				return formatOutput, fmt.Errorf("%w; additionally failed to write the apply report: %v", applyErr, writeErr)
 			}
 		}
-		return formatOutput, applyErr
+		return formatOutput, runOpts.serverDetails.Explain(applyErr)
 	}
 	if opts.dryRun {
 		emitAtlasMigrateApplyDeferredChecks(cmd, result.ChecksDeferred, result.ChecksDeferredKeys)

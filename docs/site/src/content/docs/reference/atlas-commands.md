@@ -422,6 +422,25 @@ unaffected. See
 [Pre-migration checks](../../versioned/integrity-and-safety/) and
 [Boolean environment variables](../configuration/#boolean-environment-variables).
 
+What the server said about a failed statement, such as the DETAIL that names
+the key a foreign key refused, is behind the `PTAH_SERVER_DETAILS` variable for
+the same reason. It is the variable native `ptah migrations up --server-details`
+reads:
+
+```bash
+PTAH_SERVER_DETAILS=1 ptah-compat migrate apply --url "$DB" --dir file://migrations
+```
+
+The details follow the error line on stderr. With `--format` the template's
+output stays as it is, since it has no field for them, and the details go to
+stderr. They name the file as the directory holds it. Only a server that speaks
+the PostgreSQL protocol sends them. They may contain application data, so leave
+the variable unset where logs are published.
+[What the server said](../../versioned/apply/#what-the-server-said) lists the
+fields and what is taken out of them. The variable reads like every other
+boolean `PTAH_*` variable, changes no exit code, and is refused when set to true
+under `PTAH_ATLAS_STRICT_COMPAT=1`.
+
 Native twin: [`ptah migrations up`](../native-commands/).
 
 ### `ptah-compat migrate status`
@@ -802,7 +821,8 @@ roll back to a version nobody chose.
 `--skip-checks` bypasses the pre-migration checks the down bodies being rolled
 back carry — the `-- +ptah check` directives that abort a rollback when their
 assertion does not hold. It means on this verb exactly what it means on
-`migrate apply`, including through `PTAH_SKIP_CHECKS`.
+`migrate apply`, including through `PTAH_SKIP_CHECKS`. `PTAH_SERVER_DETAILS`
+shows what the server said about a failed down statement, as on `migrate apply`.
 
 `--plan` derives the rollback from the schema difference instead of running the
 down bodies, which is what makes a migration with **no** down body revertible:

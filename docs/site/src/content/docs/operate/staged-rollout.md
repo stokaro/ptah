@@ -314,6 +314,9 @@ A target's run starts with the rollout's environment and working directory, so
 `expect_sequence` and `allow_destructive` from the definition. The variables
 the other targets' `url_env` name are taken out of a run's environment, so a
 run, and any hook it starts, holds only its own target's URL.
+`PTAH_SERVER_DETAILS=1` reaches every run the same way, so each failed target's
+[server details](../../versioned/apply/#what-the-server-said), which may contain
+application data, are relayed to standard error with the rest of its output.
 
 A variable that would waive a target's guard, or change what its run does, for
 every target at once refuses the rollout instead: `PTAH_ALLOW_DIRTY`,

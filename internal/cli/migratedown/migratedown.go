@@ -85,6 +85,7 @@ type options struct {
 	verbose              bool
 	skipConfirm          bool
 	jsonOutput           bool
+	serverDetails        bool
 	execOrder            string
 	runner               string
 	migrationLockTimeout string
@@ -145,7 +146,13 @@ it opens itself, and a file of one statement without a transaction.
 ⚠️  WARNING: This operation can result in data loss! Make sure you have backups
 before running down migrations in production.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			document := &migraterun.Document{Enabled: opts.jsonOutput, Out: cmd.OutOrStdout(), Command: Command, Direction: migrator.MigrationDirectionDown}
+			document := &migraterun.Document{
+				Enabled:       opts.jsonOutput,
+				Out:           cmd.OutOrStdout(),
+				Command:       Command,
+				Direction:     migrator.MigrationDirectionDown,
+				ServerDetails: migraterun.NewServerDetails(cmd.Context(), opts.serverDetails),
+			}
 			if err := migrateDownCommand(cmd, &opts, document); err != nil {
 				return document.FailBeforeRun(err, opts.dryRun)
 			}
@@ -186,6 +193,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	if err := cmdflags.DisableEnvBinding(flags, jsonFlag); err != nil {
 		panic(err)
 	}
+	migraterun.RegisterServerDetailsFlag(flags, &opts.serverDetails)
 	flags.StringVar(&opts.execOrder, execOrderFlag, string(migrator.ExecOrderLinear), "Execution order policy for pending migrations below the current version: linear, linear-skip, or non-linear")
 	dbcli.RegisterRunnerFlag(flags, &opts.runner)
 	flags.StringVar(&opts.migrationLockTimeout, migrationLockTimeoutFlag, "", "Timeout for acquiring the session-level migration advisory lock, such as 10s or 2m; "+
@@ -469,6 +477,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		return err
 	}
 	migrationsFS := source.FileSystem
+	document.ServerDetails.Options.Source = migrationsFS
 	migrationsDir = source.Display
 	dirFormat = source.DirFormat
 
@@ -888,7 +897,7 @@ func (rr *rollbackReport) finish(runErr error) error {
 		return errors.Join(runErr, err)
 	}
 	if runErr != nil {
-		return runErr
+		return r.document.ServerDetails.Explain(runErr)
 	}
 	if rr.statusErr != nil {
 		return fmt.Errorf("error getting final migration status: %w", rr.statusErr)

@@ -830,6 +830,7 @@ Read the columns as follows.
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--run-reference` | `string` | — | `PTAH_RUN_REFERENCE` | — |
 | `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
+| `--server-details` | `bool` | `false` | `PTAH_SERVER_DETAILS` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
 | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
@@ -1363,6 +1364,7 @@ Read the columns as follows.
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--run-reference` | `string` | — | `PTAH_RUN_REFERENCE` | — |
 | `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |
+| `--server-details` | `bool` | `false` | `PTAH_SERVER_DETAILS` | — |
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
 | `--skip-report` | `bool` | `false` | `PTAH_SKIP_REPORT` | — |
