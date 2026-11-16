@@ -40,7 +40,10 @@ import (
 // statement a plan would run, and pg_policy is read back. The copy takes the
 // real table's name inside pg_temp, so a clause that names its own table
 // resolves, and pg_temp goes last in the search path, so every other name
-// resolves as it does for the real policy.
+// resolves as it does for the real policy. A column the clause qualifies with
+// the table's schema as well, `public.notes.owner`, names the real table, which
+// the server refuses on the copy; the probe sends `notes.owner`, which the
+// server stores the same way (see [ownSchemaQualifier]).
 //
 // A probe the server refuses is not an error: a read-only transaction refuses
 // the temporary table, a role without SELECT on the table refuses the column
@@ -181,10 +184,12 @@ func normalizeOne(ctx context.Context, tx *sql.Tx, probe probe) (*pgpolicy.Norma
 	schema := sqlident.Quote(platform.Postgres, probe.object.Ref.Schema.Source)
 	table := sqlident.Quote(platform.Postgres, probe.object.Ref.Parent.Source)
 	copied := "pg_temp." + table
+	declared := probe.value.Copy()
+	declared.Using, declared.WithCheck = probeClause(declared.Using, probe.object.Ref), probeClause(declared.WithCheck, probe.object.Ref)
 	statements := []string{
 		searchPathWithTempLast,
 		fmt.Sprintf("CREATE TEMPORARY TABLE %s (LIKE %s.%s)", copied, schema, table),
-		strings.TrimSuffix(policyrender.CreateStatement(savepoint, copied, probe.value), ";"),
+		strings.TrimSuffix(policyrender.CreateStatement(savepoint, copied, declared), ";"),
 	}
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
 		return nil, fmt.Errorf("resolve row-security policies: savepoint: %w", err)
