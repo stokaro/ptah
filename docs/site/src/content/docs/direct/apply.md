@@ -326,11 +326,7 @@ SHA-256 fingerprints of the starting and desired schema states:
 ```
 
 `ptah schema apply --plan` executes exactly the reviewed statements, after
-verifying that the database still matches the plan's starting fingerprint.
-The fingerprint covers the schema, and of each table's rows only whether it
-holds any, which decides whether an index is built concurrently: rows written
-to a table that already holds rows keep the plan valid, and the first row in an
-empty table makes it stale.
+verifying that the database still matches the plan's starting fingerprint:
 
 ```console
 ptah schema apply --db-url "sqlite://app.db" --plan add-created-at.plan.json --auto-approve
