@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/schemamodel"
 	"ptah.run/internal/clirun"
 	"ptah.run/internal/dbtarget"
 )
@@ -108,4 +109,38 @@ func TestSchemaInspectNamesTheSchemaOfATriggerFunctionE2E_HappyPath(t *testing.T
 
 	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
 	c.Assert(got.Stdout, qt.Contains, `EXECUTE FUNCTION "audit"."set_updated_at"('updated_at')`)
+}
+
+// TestSchemaApplyDropsAGeneratedTriggerFunctionOfAnotherSchemaE2E_HappyPath
+// removes a trigger whose function Ptah generated, held in the trigger
+// table's schema rather than the one the read resolves names in. The read
+// names the function with its schema and it is still the trigger's own: the
+// plan drops it with the trigger, and the rehearsal recreates the trigger
+// with its body rather than as a reference to a function the dev database
+// does not hold.
+func TestSchemaApplyDropsAGeneratedTriggerFunctionOfAnotherSchemaE2E_HappyPath(t *testing.T) {
+	generated := schemamodel.Trigger{Name: "t2", Table: "app.items"}.FunctionName()
+	target := "CREATE SCHEMA app;\n" +
+		"CREATE TABLE app.items (id bigint PRIMARY KEY);\n" +
+		"CREATE FUNCTION app." + generated + "() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;\n" +
+		"CREATE TRIGGER t2 BEFORE UPDATE ON app.items FOR EACH ROW EXECUTE FUNCTION app." + generated + "();\n"
+	for _, run := range triggerFunctionRuns {
+		t.Run(run.name, func(t *testing.T) {
+			c := qt.New(t)
+			server := dbtarget.URL(c, dbtarget.PostgreSQL)
+			targetURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			_, err := connectDevDialect(c, targetURL).ExecContext(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			devURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte("CREATE SCHEMA IF NOT EXISTS app;\nCREATE TABLE app.items (id bigint PRIMARY KEY);\n"), 0o600), qt.IsNil)
+			options := clirun.Options{Dir: c.TempDir(), Env: append(os.Environ(), "PTAH_DEV_SERVER_DISPOSABLE=1")}
+
+			got := clirun.Run(c, run.program, options, run.args(targetURL, schema, devURL)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stdout, qt.Contains, `DROP TRIGGER "t2"`)
+			c.Assert(got.Stdout, qt.Contains, "DROP FUNCTION")
+		})
+	}
 }

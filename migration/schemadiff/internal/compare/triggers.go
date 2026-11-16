@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/objectlookup"
+	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
 )
 
@@ -393,8 +394,8 @@ func normalizeTriggerBody(body string) string {
 //
 // The two sides qualify differently. A declaration names the function the way
 // its author wrote it -- `app.touch` in a SQL file, or the qualified name an
-// HCL reference resolves to -- while the catalog reports pg_proc.proname, which
-// carries no schema. Compared as text, a trigger nobody had touched was planned
+// HCL reference resolves to -- while a read names it with its schema only when
+// that schema is not the one the read resolves names in. Compared as text, a trigger nobody had touched was planned
 // for replacement on every run (stokaro/ptah#3113).
 //
 // The comparison uses the more specific spelling BOTH sides carry. Two
@@ -413,11 +414,13 @@ func sameExecuteFunction(declared, observed string) bool {
 	return strings.EqualFold(declaredSchema, observedSchema)
 }
 
-// splitExecuteFunction separates a function reference into its schema and name.
+// splitExecuteFunction separates a function reference into its schema and
+// name, reading quotes: the read writes `"Dot.Fn"` for a function whose name
+// holds a dot, and that is one name, not a schema and a name.
 func splitExecuteFunction(reference string) (schema, name string) {
 	trimmed := strings.TrimSpace(reference)
-	if qualifier, bare, qualified := strings.Cut(trimmed, "."); qualified {
-		return qualifier, bare
+	if ref, ok := tableref.Parse(trimmed); ok {
+		return ref.Schema, ref.Name
 	}
 	return "", trimmed
 }

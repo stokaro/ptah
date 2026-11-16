@@ -86,3 +86,16 @@ func TestConvert_LeavesATriggerWithNoReportedFunctionInline(t *testing.T) {
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
 	c.Assert(trigger.Body, qt.Contains, "INSERT INTO audit_log")
 }
+
+// TestConvert_LeavesATriggerPtahOwnsInlineInAnotherSchema is the same control
+// for a read that names the generated function with its schema, as a read does
+// for a function outside the schema it resolves names in.
+func TestConvert_LeavesATriggerPtahOwnsInlineInAnotherSchema(t *testing.T) {
+	c := qt.New(t)
+
+	database := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), triggerSchema("app.ptah_trigger_a_trg__a"), "postgres", must.Must(builtin.New())))
+
+	trigger := onlyTrigger(c, database)
+	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
+	c.Assert(trigger.Body, qt.Contains, "INSERT INTO audit_log")
+}

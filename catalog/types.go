@@ -1404,7 +1404,8 @@ type Trigger struct {
 	NewTable string `json:"new_table,omitempty"`
 
 	// ExecuteFunction is the name of the function the trigger runs, as the
-	// catalog reports it.
+	// catalog reports it, qualified with the function's schema when that is not
+	// the schema the read resolves names in.
 	//
 	// PostgreSQL has no inline trigger body: `CREATE TRIGGER ... EXECUTE
 	// FUNCTION f()` always names a function, and Ptah writes one per trigger
