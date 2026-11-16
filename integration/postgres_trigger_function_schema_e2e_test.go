@@ -302,3 +302,50 @@ func TestSchemaApplyReplacesAGeneratedTriggerFunctionOfAnotherTableSpellingE2E_H
 		})
 	}
 }
+
+// TestSchemaApplyKeepsATriggerFunctionTwoTriggersShareE2E_HappyPath adds a
+// column beside two triggers that run one function, the generated function of
+// one of them. The function is that trigger's own and a function of its own
+// to the other, so the rehearsal creates it once: read as each trigger's own,
+// the baseline creates it twice and fails with SQLSTATE 42723. Both triggers
+// still run it after the apply.
+func TestSchemaApplyKeepsATriggerFunctionTwoTriggersShareE2E_HappyPath(t *testing.T) {
+	const function = "CREATE FUNCTION fns.ptah_trigger_items_t() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;\n"
+	const target = "CREATE SCHEMA fns;\n" +
+		"CREATE TABLE public.items (id bigint PRIMARY KEY);\n" +
+		"CREATE TABLE public.other (id bigint PRIMARY KEY);\n" + function +
+		"CREATE TRIGGER t BEFORE UPDATE ON public.items FOR EACH ROW EXECUTE FUNCTION fns.ptah_trigger_items_t();\n" +
+		"CREATE TRIGGER u BEFORE UPDATE ON public.other FOR EACH ROW EXECUTE FUNCTION fns.ptah_trigger_items_t();\n"
+	const desired = "CREATE SCHEMA IF NOT EXISTS fns;\n" +
+		"CREATE TABLE items (id bigint PRIMARY KEY, note text);\n" +
+		"CREATE TABLE other (id bigint PRIMARY KEY);\n" + function +
+		"CREATE TRIGGER t BEFORE UPDATE ON items FOR EACH ROW EXECUTE FUNCTION fns.ptah_trigger_items_t();\n" +
+		"CREATE TRIGGER u BEFORE UPDATE ON other FOR EACH ROW EXECUTE FUNCTION fns.ptah_trigger_items_t();\n"
+	for _, run := range generatedFunctionApplies {
+		t.Run(run.name, func(t *testing.T) {
+			c := qt.New(t)
+			server := dbtarget.URL(c, dbtarget.PostgreSQL)
+			targetURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			conn := connectDevDialect(c, targetURL)
+			_, err := conn.ExecContext(c.Context(), target)
+			c.Assert(err, qt.IsNil)
+			devURL := createdDevDialectDatabase(c, server, "DROP DATABASE IF EXISTS %s WITH (FORCE)", renameInPath)
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(desired), 0o600), qt.IsNil)
+			options := clirun.Options{Dir: c.TempDir(), Env: append(os.Environ(), "PTAH_DEV_SERVER_DISPOSABLE=1")}
+
+			got := clirun.Run(c, run.program, options, run.args(targetURL, schema, devURL)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			var runs string
+			c.Assert(conn.QueryRowContext(c.Context(),
+				"SELECT string_agg(t.tgname || ' ' || n.nspname || '.' || p.proname, ',' ORDER BY t.tgname) FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_namespace n ON n.oid = p.pronamespace WHERE t.tgname IN ('t', 'u')",
+			).Scan(&runs), qt.IsNil)
+			var columns int
+			c.Assert(conn.QueryRowContext(c.Context(),
+				"SELECT count(*) FROM information_schema.columns WHERE table_name = 'items' AND column_name = 'note'").Scan(&columns), qt.IsNil)
+			c.Assert(runs, qt.Equals, "t fns.ptah_trigger_items_t,u fns.ptah_trigger_items_t")
+			c.Assert(columns, qt.Equals, 1)
+		})
+	}
+}

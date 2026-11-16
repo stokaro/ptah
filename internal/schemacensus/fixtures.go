@@ -210,7 +210,7 @@ func corpus() []Fixture {
 		{Name: "trigger-body-only", Schema: triggerBodyOnlyFixture()},
 		{Name: "trigger-foreach-statement", Schema: triggerForEachStatementFixture()},
 		{Name: "trigger-function-arguments", Schema: triggerFunctionArgumentsFixture()},
-		{Name: "trigger-generated-function-schema", Schema: triggerGeneratedFunctionReferenceFixture()},
+		{Name: "trigger-generated-function-reference", Schema: triggerGeneratedFunctionReferenceFixture()},
 		{Name: "trigger-transition-tables", Schema: triggerTransitionTablesFixture()},
 		{Name: "function-procedure", Schema: functionProcedureFixture()},
 		{Name: "partition-expression", Schema: partitionExpressionFixture()},

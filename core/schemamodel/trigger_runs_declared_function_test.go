@@ -9,12 +9,13 @@ import (
 	"ptah.run/core/schemamodel"
 )
 
-// RunsDeclaredFunction tells a function Ptah generates for a trigger from one
-// declared on its own. A read qualifies a function outside the schema it
+// RunsDeclaredFunction tells the function Ptah generates for a trigger from
+// one declared on its own. A read qualifies a function outside the schema it
 // resolves names in, the generated function lands wherever the session that
 // created it resolved a bare name, and its name follows the table's spelling
-// at the time, so any ptah_trigger_ function is a generated one, in any schema
-// and however it is quoted.
+// at the time, so the trigger's generated name is its own in any schema, with
+// the table written bare or in any schema, and however it is quoted. Any other
+// name is a function of its own, one carrying Ptah's prefix included.
 func TestTriggerRunsDeclaredFunction(t *testing.T) {
 	trigger := schemamodel.Trigger{Name: "t", Table: "app.items"}
 	generated := trigger.FunctionName()
@@ -28,8 +29,11 @@ func TestTriggerRunsDeclaredFunction(t *testing.T) {
 		{name: "the generated name in another schema", executed: "app." + generated, want: false},
 		{name: "the generated name quoted", executed: `"app"."` + generated + `"`, want: false},
 		{name: "the name a bare table spelling gives", executed: "ptah_trigger_items_t", want: false},
-		{name: "a hashed generated name", executed: "ptah_trigger_" + strings.Repeat("x", 40) + "_0badf00d", want: false},
+		{name: "the name another schema spelling gives", executed: "fns.ptah_trigger_public__items_t", want: false},
 		{name: "a declared function", executed: "set_updated_at", want: true},
+		{name: "a function of its own with Ptah's prefix", executed: "ptah_trigger_audit", want: true},
+		{name: "another trigger's generated name", executed: "ptah_trigger_items_u", want: true},
+		{name: "another table's generated name", executed: "ptah_trigger_orders_t", want: true},
 		{name: "a declared function in another schema", executed: "audit.set_updated_at", want: true},
 		{name: "a schema named like the generated function", executed: generated + ".touch", want: true},
 		{name: "the prefix in another case", executed: `"PTAH_TRIGGER_items_t"`, want: true},
@@ -96,4 +100,16 @@ func TestTriggerGeneratedFunction(t *testing.T) {
 			c.Assert(trigger.GeneratedFunction(), qt.Equals, test.want)
 		})
 	}
+}
+
+// A generated name long enough to be hashed is recognized as FunctionName
+// spells it, in any schema.
+func TestTriggerRunsDeclaredFunction_HashedName(t *testing.T) {
+	c := qt.New(t)
+	trigger := schemamodel.Trigger{Name: "t", Table: "app." + strings.Repeat("x", 60)}
+	generated := trigger.FunctionName()
+
+	c.Assert(len(generated) <= 63, qt.IsTrue)
+	c.Assert(trigger.RunsDeclaredFunction(generated), qt.IsFalse)
+	c.Assert(trigger.RunsDeclaredFunction("app."+generated), qt.IsFalse)
 }

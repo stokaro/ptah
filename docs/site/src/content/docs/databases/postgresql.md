@@ -1078,9 +1078,8 @@ table `a_b` with trigger `c` and a table `a` with trigger `b_c` render as
 `ptah_trigger_a__b_c` and `ptah_trigger_a_b__c` rather than the same name.
 The name follows the table as the declaration spells it: `ON public.items`
 gives `ptah_trigger_public__items_t`, and a read reports that trigger on
-`items`. The trigger keeps the function the database holds under whichever
-`ptah_trigger_` name it has, so a changed trigger replaces that function and a
-removed trigger drops it.
+`items`. The trigger keeps the function the database holds under either name,
+so a changed trigger replaces that function and a removed trigger drops it.
 
 A trigger that runs a function declared on its own is read with the function's
 name, and with its schema when that is not the schema the read resolves names
@@ -1089,12 +1088,14 @@ that recreates the trigger on a dev database, and a description written as
 SQL, then name the function the trigger runs, whatever the search path of the
 session that runs them.
 
-Every function whose name starts with `ptah_trigger_` is Ptah's, in whichever
-schema it is held. The reader leaves it out of the routines it describes and
-reads a trigger that runs it as a trigger with a body. Do not give a function of
-your own that prefix: each trigger that runs it is read as its owner, so
-removing one of two such triggers plans a `DROP FUNCTION` the server refuses
-while the other still runs it (SQLSTATE 2BP01).
+A function is the trigger's own when its name is one Ptah generates for that
+trigger, with the table written bare or in any schema, in whichever schema the
+function is held. A trigger that runs a function of any other name, another
+trigger's generated function included, runs a function declared on its own.
+The reader leaves every function whose name starts with `ptah_trigger_` out of
+the routines it describes, so do not give a function of your own that prefix:
+once it is created, a later apply that rehearses on a dev database cannot
+recreate a trigger that runs it, and fails with SQLSTATE 42883.
 
 Ptah creates the function without a schema, so it lands in the first schema of
 the creating session's search path, which need not be the trigger table's.
