@@ -275,7 +275,9 @@ type MigrationVerifyOptions struct {
 	// [ptah.run/core/selectext.Runtime]; a Runtime that does not, or a
 	// selector the grammar rejects, fails the verification at the
 	// configuration stage before the shadow database is connected. Selectors
-	// that select nothing on either side fail it at the schema-match stage.
+	// that select nothing on either side after the replay do not fail it: a
+	// plan may drop every object it selects, and the plan itself refuses a
+	// selection of nothing before it writes a candidate.
 	Include []string
 }
 
@@ -485,8 +487,8 @@ func convergenceOptions(opts *config.CompareOptions) *config.CompareOptions {
 // MySQL a schema is a database, and the target's database name means nothing
 // on the shadow server. Both the declaration and the read leave out what
 // exclusion names, and keep only what inclusion selects, as the plan that
-// wrote the candidates selected them. A read
-// leaves the objects of its connection's default schema unqualified, so both
+// wrote the candidates selected them. A read leaves the objects of its
+// connection's default schema unqualified, so both
 // sides are judged against the default schema of the target connection, the
 // one the plan was made on: a selector qualified with the target's database
 // name names, on MySQL, the table the replay created in the shadow database.
@@ -516,7 +518,10 @@ func assertSchemaMatches(
 	if err != nil {
 		return newVerificationError("re-introspect", "exclude_error", "apply exclude selectors to the shadow database", err)
 	}
-	dbSchema, generated, err = inclusion.Apply(ctx, opts.TargetConnection.Info().Dialect, planNaming, dbSchema, generated)
+	// The plan refused a selection of nothing before the change. After it,
+	// an empty selection is what a plan that drops everything it selects
+	// leaves, and the two empty sides agree.
+	dbSchema, generated, err = inclusion.ApplyAfterChange(ctx, opts.TargetConnection.Info().Dialect, planNaming, dbSchema, generated)
 	if err != nil {
 		return newVerificationError("schema-match", "include_error", "apply include selectors", err)
 	}

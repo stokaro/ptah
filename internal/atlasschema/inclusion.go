@@ -89,10 +89,35 @@ func (i Inclusion) Apply(
 	current *catalog.Database,
 	desired *schemamodel.Database,
 ) (*catalog.Database, *schemamodel.Database, error) {
+	return i.apply(ctx, countedOn{dialect: dialect, naming: naming, empty: refuseEmpty}, current, desired)
+}
+
+// ApplyAfterChange is [Inclusion.Apply] for a comparison made after the
+// change the plan made, such as a verification that replays it: selectors
+// that select nothing on either side return the two empty projections, because
+// a plan may drop every object it selects. A selector the grammar or the scope
+// rejects, and a selected object that depends on an unselected one, are still
+// refused.
+func (i Inclusion) ApplyAfterChange(
+	ctx context.Context,
+	dialect string,
+	naming atlasfilter.Naming,
+	current *catalog.Database,
+	desired *schemamodel.Database,
+) (*catalog.Database, *schemamodel.Database, error) {
+	return i.apply(ctx, countedOn{dialect: dialect, naming: naming, empty: compareEmpty}, current, desired)
+}
+
+func (i Inclusion) apply(
+	ctx context.Context,
+	on countedOn,
+	current *catalog.Database,
+	desired *schemamodel.Database,
+) (*catalog.Database, *schemamodel.Database, error) {
 	if !i.Includes() {
 		return current, desired, nil
 	}
-	current, desired, err := i.selection().applyCounted(ctx, i.runtime, dialect, naming, current, desired)
+	current, desired, err := i.selection().applyCounted(ctx, i.runtime, on, current, desired)
 	var empty *atlasfilter.EmptySelectionError
 	if errors.As(err, &empty) && i.source != "" {
 		return nil, nil, &atlasfilter.EmptySelectionError{Selectors: empty.Selectors, Source: i.source}

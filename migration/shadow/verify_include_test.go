@@ -85,21 +85,19 @@ func TestVerifyMigration_Include_FailurePath(t *testing.T) {
 	}
 }
 
-// TestVerifyMigration_IncludeSelectingNothing_FailurePath refuses at the
-// schema-match stage: a verification over nothing would pass whatever the
-// candidates did.
-func TestVerifyMigration_IncludeSelectingNothing_FailurePath(t *testing.T) {
+// TestVerifyMigration_IncludeSelectingNothingAfterTheReplay_HappyPath selects
+// a table neither the shadow database nor the declaration holds after the
+// replay, as a plan that dropped every object it selects leaves them: the two
+// empty sides agree. The plan refuses a selection of nothing before it writes
+// a candidate.
+func TestVerifyMigration_IncludeSelectingNothingAfterTheReplay_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	opts := excludeVerifyOptions(c, must.Must(builtin.New()), nil)
 	opts.Include = []string{"nothing_here"}
 
 	err := shadow.VerifyMigration(t.Context(), opts)
 
-	var verificationErr *shadow.VerificationError
-	c.Assert(err, qt.ErrorAs, &verificationErr)
-	c.Assert(verificationErr.Result.Stage, qt.Equals, "schema-match")
-	c.Assert(verificationErr.Result.Mismatches, qt.HasLen, 1)
-	c.Assert(verificationErr.Result.Mismatches[0].Kind, qt.Equals, "include_error")
+	c.Assert(err, qt.IsNil)
 }
 
 // TestVerifyMigration_IncludeNeedsScopeSelections_FailurePath refuses at the

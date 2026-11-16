@@ -153,7 +153,7 @@ func TestAtlasMigrateDiff_IncludeVariable_FailurePath(t *testing.T) {
 		want  string
 	}{
 		{name: "selects nothing", value: "nothing_here", want: `the PTAH_ATLAS_MIGRATE_DIFF_INCLUDE selection matched no objects: "nothing_here"`},
-		{name: "malformed", value: "widgets[type=", want: `.*widgets\[type=.*`},
+		{name: "malformed", value: "widgets[type=", want: `invalid PTAH_ATLAS_MIGRATE_DIFF_INCLUDE: .*widgets\[type=.*`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

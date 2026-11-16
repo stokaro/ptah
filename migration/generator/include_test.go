@@ -115,6 +115,35 @@ func TestGenerateMigration_IncludeReachesTheShadowVerification(t *testing.T) {
 	c.Assert(down, qt.Not(qt.Contains), "legacy_log")
 }
 
+// TestGenerateMigration_IncludeDropsAllItSelectsUnderTheShadow selects only
+// `external_audit`, which the history created and the entities no longer
+// declare. The plan drops it, so after the replay the shadow database holds
+// nothing the selection selects, and neither does the declaration: the
+// verification compares the two empty sides rather than refuse a selection
+// the plan accepted.
+func TestGenerateMigration_IncludeDropsAllItSelectsUnderTheShadow(t *testing.T) {
+	c := qt.New(t)
+	fixture := writeExcludeFixture(c, excludeTargetDDL,
+		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\nCREATE TABLE external_audit (id INTEGER PRIMARY KEY);\n",
+	)
+
+	_, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{
+		Runtime:           must.Must(builtin.New()),
+		GoEntitiesDir:     fixture.modelsDir,
+		DatabaseURL:       fixture.targetURL,
+		MigrationName:     "second",
+		OutputDir:         fixture.migrationsDir,
+		ShadowDatabaseURL: fixture.shadowURL,
+		Include:           []string{"external_audit"},
+	})
+
+	c.Assert(err, qt.IsNil)
+	up, down := generatedBodies(c, fixture.migrationsDir)
+	c.Assert(up, qt.Contains, `DROP TABLE "external_audit"`)
+	c.Assert(up, qt.Not(qt.Contains), "widgets")
+	c.Assert(down, qt.Contains, `CREATE TABLE "external_audit"`)
+}
+
 // TestGenerateMigration_IncludeSelectingNothing_FailurePath refuses a
 // selection that selects nothing on either side, which would write a
 // migration that reads as synced, and writes no file.

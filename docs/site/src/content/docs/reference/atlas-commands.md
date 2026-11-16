@@ -853,8 +853,9 @@ the commands that register the flag. Strict Community Edition mode refuses
 the objects its selectors select on both sides of the diff, with the meaning
 `schema apply --include` gives them, after the exclusion. The migration neither
 creates nor drops anything else, and a selected table keeps the children the
-exclusion leaves it. Selectors that select nothing are refused with an error
-that names the variable. An empty value selects everything. Strict Community
+exclusion leaves it. A malformed selector, and selectors that select nothing,
+are refused with an error that names the variable. An empty value selects
+everything. Strict Community
 Edition mode refuses the variable, even when it is empty.
 
 Strict mode applies the env's `exclude` list deliberately. Measured on SQLite

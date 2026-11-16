@@ -114,9 +114,10 @@ type DiffOptions struct {
 	// an index it names keeps the rest of its children. Selectors that select
 	// nothing on either side are refused.
 	Include []string
-	// IncludeSource names where Include was written, for the refusal of a
-	// selection that selects nothing, such as an environment variable on a
-	// command that registers no --include flag. Empty names --include.
+	// IncludeSource names where Include was written, such as an environment
+	// variable on a command that registers no --include flag, for the refusal
+	// of a malformed selector and of a selection that selects nothing. Empty
+	// names --include in the second and nothing in the first.
 	IncludeSource string
 	// LockTimeout bounds the wait for the migration directory lock and the
 	// dev database lock. Zero waits indefinitely; a negative value does not
@@ -593,6 +594,9 @@ func prepareDiff(
 	}
 	inclusion, err := atlasschema.NewInclusion(opts.Runtime, opts.Include)
 	if err != nil {
+		if opts.IncludeSource != "" {
+			return preparedDiff{}, fmt.Errorf("invalid %s: %w", opts.IncludeSource, err)
+		}
 		return preparedDiff{}, err
 	}
 	inclusion = inclusion.WrittenAs(opts.IncludeSource)
@@ -781,6 +785,15 @@ func normalizeDiffOptions(opts DiffOptions) DiffOptions {
 	return opts
 }
 
+// replayedComparison is the answer of [compareReplayedState]: the replayed
+// state and the desired schema, each narrowed by the selection, and the
+// difference between them.
+type replayedComparison struct {
+	current *catalog.Database
+	desired *schemamodel.Database
+	diff    *difftypes.SchemaDiff
+}
+
 // compareReplayedState reads the state the migration directory just replayed
 // on the dev database and compares the desired state against it.
 //
@@ -798,15 +811,6 @@ func normalizeDiffOptions(opts DiffOptions) DiffOptions {
 // this guard refuses is planned -- unless the project skips that drop, in
 // which case it is deleted again and the refusal is for nothing
 // (stokaro/ptah#1028).
-// replayedComparison is the answer of [compareReplayedState]: the replayed
-// state and the desired schema, each narrowed by the selection, and the
-// difference between them.
-type replayedComparison struct {
-	current *catalog.Database
-	desired *schemamodel.Database
-	diff    *difftypes.SchemaDiff
-}
-
 func compareReplayedState(
 	ctx context.Context,
 	replayConn *dbschema.DatabaseConnection,

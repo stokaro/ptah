@@ -219,11 +219,16 @@ it too; the exclusion applies first:
 `--include tasks --exclude 'tasks.tasks_user[type=policy]'`. Selectors count
 from the connection's schema, as `--exclude` counts them.
 
+Selectors that select nothing on either side are refused, exit `2`, before a
+migration file is written: a migration planned over nothing would read as
+synced. A selection whose objects a migration already dropped selects nothing
+the next time, so remove it from the command once that migration is applied. A
+selector with a syntax error is refused before Ptah connects to a database.
+
 `--shadow-db` reads the same selection when it compares the shadow database
-with the desired schema. Selectors that select nothing on either side are
-refused, exit `2`, before a migration file is written: a migration planned over
-nothing would read as synced. A selector with a syntax error is refused before
-Ptah connects to a database.
+with the desired schema after the replay. There an empty selection is not
+refused, because a migration that drops every object the selection names leaves
+nothing to compare on either side.
 
 ### Send the plan verdict to CI
 
