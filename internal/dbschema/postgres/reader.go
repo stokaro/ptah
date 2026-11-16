@@ -3576,6 +3576,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 			CASE WHEN (trg.tgtype & 1) <> 0 THEN 'ROW' ELSE 'STATEMENT' END AS for_each,
 			p.prosrc AS body,
 			p.proname AS execute_function,
+			fn.nspname AS function_schema,
 			encode(trg.tgargs, 'hex') AS function_arguments_hex,
 			COALESCE(obj_description(trg.oid, 'pg_trigger'), '') AS comment,
 			` + definition + ` AS definition,
@@ -3585,6 +3586,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 		JOIN pg_class tbl ON tbl.oid = trg.tgrelid
 		JOIN pg_namespace n ON n.oid = tbl.relnamespace
 		JOIN pg_proc p ON p.oid = trg.tgfoid
+		JOIN pg_namespace fn ON fn.oid = p.pronamespace
 		WHERE n.nspname = $1
 		AND NOT trg.tgisinternal
 		` + notCopy + `
@@ -3601,6 +3603,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 		var trigger catalog.Trigger
 		var definition string
 		var argumentsHex string
+		var functionSchema string
 		err := rows.Scan(
 			&trigger.Schema,
 			&trigger.Table,
@@ -3610,6 +3613,7 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 			&trigger.ForEach,
 			&trigger.Body,
 			&trigger.ExecuteFunction,
+			&functionSchema,
 			&argumentsHex,
 			&trigger.Comment,
 			&definition,
@@ -3630,6 +3634,11 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 		// [triggerdef.When] for why the catalog column cannot be printed.
 		trigger.When = triggerdef.When(definition)
 		trigger.Schema = r.outputSchema(trigger.Schema)
+		// The function can be in any schema, as a referenced table can, and a
+		// trigger written back from this read has to name the one it runs: a
+		// bare name resolves along the session's search path, which need not
+		// reach the function's schema on another database.
+		trigger.ExecuteFunction = catalog.QualifyTableName(r.referencedSchema(functionSchema), trigger.ExecuteFunction)
 		triggers = append(triggers, trigger)
 	}
 	if err := rows.Err(); err != nil {

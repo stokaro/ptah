@@ -32,7 +32,7 @@ func TestReadTriggersForSchema_ReportsTheFunctionItRuns(t *testing.T) {
 	triggers, err := reader.readTriggersForSchema(t.Context(), "public")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(triggers, qt.HasLen, 2)
+	c.Assert(triggers, qt.HasLen, 3)
 	// Both triggers run the same function. That is the fact the read has to
 	// carry: with only the source, the two are indistinguishable from two
 	// triggers that happen to have identical bodies.
@@ -40,9 +40,14 @@ func TestReadTriggersForSchema_ReportsTheFunctionItRuns(t *testing.T) {
 	c.Assert(triggers[0].FunctionArguments, qt.DeepEquals, []string{"updated_at"})
 	c.Assert(triggers[1].ExecuteFunction, qt.Equals, "audit_fn")
 	c.Assert(triggers[0].Body, qt.Contains, "INSERT INTO audit_log")
+	// A function outside the read's schema keeps its schema, as a referenced
+	// table does: written back, a bare name resolves along the session's search
+	// path, which need not reach it.
+	c.Assert(triggers[2].ExecuteFunction, qt.Equals, "audit.stamp_fn")
 }
 
-// answeringTriggerFunctions is two triggers on two tables running one function.
+// answeringTriggerFunctions is two triggers on two tables running one function
+// of the read's schema, and a third running a function of another schema.
 //
 // It answers what the QUERY asks for, not a fixed shape. A fake that returns the
 // same columns whatever it was handed cannot tell a projection that dropped a
@@ -66,14 +71,16 @@ func answeringTriggerFunctions(query string, _ []driver.NamedValue) (dbtest.Quer
 	return dbtest.QueryResult{
 		Columns: []string{
 			"schema_name", "table_name", "trigger_name",
-			"timing", "event", "for_each", "body", "execute_function", "function_arguments_hex", "comment",
-			"definition", "old_table", "new_table",
+			"timing", "event", "for_each", "body", "execute_function", "function_schema", "function_arguments_hex",
+			"comment", "definition", "old_table", "new_table",
 		},
 		Rows: [][]driver.Value{
-			{"public", "a", "trg_a", "AFTER", "INSERT", "ROW", body, "audit_fn", "757064617465645f617400", "",
+			{"public", "a", "trg_a", "AFTER", "INSERT", "ROW", body, "audit_fn", "public", "757064617465645f617400", "",
 				"CREATE TRIGGER trg_a AFTER INSERT ON public.a FOR EACH ROW EXECUTE FUNCTION audit_fn()", "", ""},
-			{"public", "b", "trg_b", "AFTER", "INSERT", "ROW", body, "audit_fn", "", "",
+			{"public", "b", "trg_b", "AFTER", "INSERT", "ROW", body, "audit_fn", "public", "", "",
 				"CREATE TRIGGER trg_b AFTER INSERT ON public.b FOR EACH ROW EXECUTE FUNCTION audit_fn()", "", ""},
+			{"public", "c", "trg_c", "BEFORE", "UPDATE", "ROW", body, "stamp_fn", "audit", "", "",
+				"CREATE TRIGGER trg_c BEFORE UPDATE ON public.c FOR EACH ROW EXECUTE FUNCTION audit.stamp_fn()", "", ""},
 		},
 	}, nil
 }
