@@ -37,7 +37,7 @@ func (p *commonObjects) Inspect(ctx context.Context, request *protocol.InspectRe
 		}
 		observed.Views = views
 		for _, view := range held.MatViews {
-			observed.Views = append(observed.Views, &protocol.ObservedView{Identity: &protocol.Reference{Engine: "fixture", Kind: "materialized_view", Name: view.Name},
+			observed.Views = append(observed.Views, &protocol.ObservedView{Identity: &protocol.Reference{Engine: servedEngine(), Kind: "materialized_view", Name: view.Name},
 				Body: foldSpaces(view.Body)})
 		}
 		for _, role := range held.Roles {
@@ -54,7 +54,7 @@ func (p *commonObjects) Inspect(ctx context.Context, request *protocol.InspectRe
 		}
 		for _, grant := range held.Grants {
 			observed.Grants = append(observed.Grants, &protocol.ObservedGrant{Role: grant.Role, Privilege: grant.Privilege,
-				Target: &protocol.Reference{Engine: "fixture", Kind: grant.Kind, Name: grant.Name}, WithGrantOption: grant.WithOption, Columns: slices.Clone(grant.Columns)})
+				Target: &protocol.Reference{Engine: servedEngine(), Kind: grant.Kind, Name: grant.Name}, WithGrantOption: grant.WithOption, Columns: slices.Clone(grant.Columns)})
 		}
 		for _, comment := range held.Comments {
 			if object := commentedObject(snapshot, views, held, comment); object != nil {
@@ -85,7 +85,7 @@ func readViews(ctx context.Context, access backend.Access) ([]*protocol.Observed
 			return nil, err
 		}
 		_, body, _ := strings.Cut(definition, " AS ")
-		views = append(views, &protocol.ObservedView{Identity: &protocol.Reference{Engine: "fixture", Kind: "view", Name: name}, Body: foldSpaces(body)})
+		views = append(views, &protocol.ObservedView{Identity: &protocol.Reference{Engine: servedEngine(), Kind: "view", Name: name}, Body: foldSpaces(body)})
 	}
 	return views, rows.Err()
 }
@@ -107,23 +107,23 @@ func commentedObject(snapshot *protocol.Schema, views []*protocol.ObservedView, 
 	switch comment.Kind {
 	case "table":
 		if _, found := tableHeld(comment.Name); found {
-			return &protocol.Reference{Engine: "fixture", Kind: "table", Name: comment.Name}
+			return &protocol.Reference{Engine: servedEngine(), Kind: "table", Name: comment.Name}
 		}
 	case "column":
 		if table, found := tableHeld(comment.Table); found && slices.ContainsFunc(table.GetColumns(), func(column *protocol.Column) bool { return column.GetName() == comment.Name }) {
-			return &protocol.Reference{Engine: "fixture", Kind: "column", Path: []string{comment.Table}, Name: comment.Name}
+			return &protocol.Reference{Engine: servedEngine(), Kind: "column", Path: []string{comment.Table}, Name: comment.Name}
 		}
 	case "view":
 		if slices.ContainsFunc(views, func(view *protocol.ObservedView) bool { return view.GetIdentity().GetName() == comment.Name }) {
-			return &protocol.Reference{Engine: "fixture", Kind: "view", Name: comment.Name}
+			return &protocol.Reference{Engine: servedEngine(), Kind: "view", Name: comment.Name}
 		}
 	case "materialized_view":
 		if held.matView(comment.Name) >= 0 {
-			return &protocol.Reference{Engine: "fixture", Kind: "materialized_view", Name: comment.Name}
+			return &protocol.Reference{Engine: servedEngine(), Kind: "materialized_view", Name: comment.Name}
 		}
 	case "role":
 		if held.role(comment.Name) >= 0 {
-			return &protocol.Reference{Engine: "fixture", Kind: "role", Name: comment.Name}
+			return &protocol.Reference{Engine: servedEngine(), Kind: "role", Name: comment.Name}
 		}
 	}
 	return nil

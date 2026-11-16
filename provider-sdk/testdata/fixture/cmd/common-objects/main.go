@@ -2,6 +2,8 @@
 // 25.3: views, roles and groups, grants and comments, with
 // FIXTURE_MATERIALIZED_VIEWS=true materialized views, and with
 // FIXTURE_VIEW_QUERIES=exact or context its own comparison of view queries.
+// FIXTURE_DEV_ENGINE serves the engine under another name, as the provider
+// FIXTURE_DEV_PROVIDER_ID names when it is set, as the devdb program does.
 //
 // SQLite has views and nothing else of these, so the program keeps roles,
 // grants, comments and materialized views in a file of its own beside the
@@ -38,6 +40,16 @@ func commonKinds() []protocol.CommonObjectSupport_Kind {
 	return kinds
 }
 
+// servedEngine is the engine the program serves: fixture, or the name
+// FIXTURE_DEV_ENGINE gives, such as postgres for a provider that serves an
+// engine Ptah builds in.
+func servedEngine() string {
+	if engine := os.Getenv("FIXTURE_DEV_ENGINE"); engine != "" {
+		return engine
+	}
+	return "fixture"
+}
+
 // materializedViews reports FIXTURE_MATERIALIZED_VIEWS=true, which makes the
 // program carry materialized views. Without it the program refuses one, as a
 // provider whose engine has none does.
@@ -58,6 +70,14 @@ func main() {
 	engine.Features = append(engine.Features, added...)
 	engine.CommonObjects = &protocol.CommonObjectSupport{Kinds: commonKinds()}
 	owner := &commonObjects{Provider: &backend.Provider{ViewsElsewhere: true}}
+	if served := servedEngine(); served != "fixture" {
+		owner.Engine = served
+		description.SemanticIdentity += "-" + served
+		engine.Id = served
+		if id := os.Getenv("FIXTURE_DEV_PROVIDER_ID"); id != "" {
+			description.ProviderId = id
+		}
+	}
 	server := runtime.Server{
 		Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, Locks: owner, SQLAnalyzer: owner,
 		ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, CommonObjects: owner,

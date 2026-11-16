@@ -83,6 +83,14 @@ for file-to-file comparison. Missing facts refuse the operation; they do not
 select a built-in parser or a live spelling probe. Domain identities and
 generated expressions remain separately owned.
 
+The host runs none of its own live spelling probes on a provider's session,
+even when the provider serves the name of an engine Ptah builds in, such as
+`postgres`. Those probes create the declared object in a transaction the host
+rolls back, and a provider session exposes no such transaction. A declared
+view body, CHECK, index expression, trigger condition or routine signature is
+then compared as the provider reads it, under the provider's own comparison
+rules.
+
 With `schema.column-collations` as well, the host also asks each pair's
 collation, and the provider answers it apart from the type: a column whose
 collation alone changes has a collation change, which a plan and a diff name as
