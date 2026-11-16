@@ -27,6 +27,13 @@ import (
 // CompareWithOptions. With no target it assumes no target's capabilities, so
 // what a capability gates, such as a comment or a role membership, is not
 // compared. Failures and incomplete results return no diff.
+//
+// This entry point does not check who a replaced object runs as. It leaves
+// [difftypes.SchemaDiff.ConnectedAccount] nil, so neither the routine definer
+// rule nor the planner's view definer rule runs, even over a catalog a live
+// read produced. To refuse a MySQL-family routine or view whose replacement
+// would make the connected account its definer, compare through
+// [CompareWithDatabase] or [CompareWithDatabaseInfo].
 func Compare(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, runtime schemapreparation.Runtime) (*difftypes.SchemaDiff, error) {
 	return CompareWithOptions(ctx, desired, current, nil, runtime)
 }
@@ -34,6 +41,13 @@ func Compare(ctx context.Context, desired *schemamodel.Database, current *catalo
 // CompareWithDialect compares snapshots under an explicit target. Provider
 // failures and incomplete results return no diff. The reporting variant retains
 // partial changes together with structured knowledge limits.
+//
+// This entry point does not check who a replaced object runs as. It leaves
+// [difftypes.SchemaDiff.ConnectedAccount] nil, so neither the routine definer
+// rule nor the planner's view definer rule runs, even over a catalog a live
+// read produced. To refuse a MySQL-family routine or view whose replacement
+// would make the connected account its definer, compare through
+// [CompareWithDatabase] or [CompareWithDatabaseInfo].
 func CompareWithDialect(ctx context.Context, desired *schemamodel.Database, current *catalog.Database, dialect string, runtime schemapreparation.Runtime) (*difftypes.SchemaDiff, error) {
 	opts := config.DefaultCompareOptions()
 	opts.Dialect = dialect

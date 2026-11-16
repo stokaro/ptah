@@ -37,6 +37,8 @@ func TestPlanner_ViewDefiner_HappyPath(t *testing.T) {
 	}{
 		{name: "the connected account's view", view: definerChange("DEFINER", "", "app@%"), account: new("app@%"),
 			want: "CREATE OR REPLACE VIEW v AS\nSELECT 2\n;\n"},
+		{name: "the connected account's view with its host in capitals", view: definerChange("DEFINER", "", "app@LOCALHOST"),
+			account: new("app@localhost"), want: "CREATE OR REPLACE VIEW v AS\nSELECT 2\n;\n"},
 		{name: "a declared definer over the connected account's view", view: definerChange("DEFINER", "DEFINER", "app@%"),
 			account: new("app@%"), want: "CREATE OR REPLACE SQL SECURITY DEFINER VIEW v AS\nSELECT 2\n;\n"},
 		{name: "an invoker view of another definer", view: definerChange("INVOKER", "INVOKER", "owner@%"),
@@ -94,6 +96,14 @@ func TestPlanner_ViewDefiner_FailurePath(t *testing.T) {
 			account:     new("app@%"),
 			wantViews:   []planrefusal.ViewDefiner{{View: "v", Definer: "owner@%", Account: "app@%"}},
 			wantMessage: `unsupported feature: view v runs with the privileges of its definer owner@% .*`,
+		},
+		{
+			name:      "a user name in another case",
+			views:     []difftypes.ViewDiff{definerChange("DEFINER", "", "App@localhost")},
+			account:   new("app@localhost"),
+			wantViews: []planrefusal.ViewDefiner{{View: "v", Definer: "App@localhost", Account: "app@localhost"}},
+			wantMessage: `unsupported feature: view v runs with the privileges of its definer App@localhost .*` +
+				`replacing it as app@localhost would make app@localhost its definer.*`,
 		},
 		{
 			name:      "a definer the read did not record",

@@ -1273,7 +1273,11 @@ type SchemaDiff struct {
 	// ConnectedAccount is the account the read of the database ran as,
 	// [ptah.run/catalog.Database.CurrentAccount]: on the MySQL family
 	// CURRENT_USER(), user@host. The database-aware comparison entry points of
-	// [ptah.run/migration/schemadiff] set it, and the others leave it nil.
+	// [ptah.run/migration/schemadiff], CompareWithDatabase and
+	// CompareWithDatabaseInfo with their reporting variants, set it. Compare,
+	// CompareWithDialect, CompareWithOptions and CompareSchemas leave it nil
+	// whatever catalog they are given, so a diff they return is checked for no
+	// definer.
 	//
 	// A plan applied through the same connection runs as this account, so a
 	// view it writes again without a DEFINER clause takes it as its definer.

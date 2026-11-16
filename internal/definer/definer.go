@@ -12,6 +12,8 @@
 // not, one kind of object would change hands where the other is refused.
 package definer
 
+import "strings"
+
 // Replacement is what writing an object again does to its definer.
 //
 // The zero value is [Unknown], so a verdict nobody computed refuses.
@@ -36,19 +38,62 @@ const (
 // object's definer, and account is the account the connection runs as, its
 // CURRENT_USER(). Either one empty is [Unknown].
 //
-// Both are compared as the server spells them, user@host with the host part.
-// The catalog's DEFINER column and CURRENT_USER() spell one account the same
-// way, and a CREATE that names no DEFINER records CURRENT_USER(), so an object
-// the connected account wrote compares equal. USER() is not the same fact: it
-// names the host the client connected from, not the account the server
-// matched, and a role name without its host names no account.
+// Both are read as the server spells them, user@host with the host part, and
+// compared as the server compares an account: the user name exactly, and the
+// host name without ASCII case. The catalog's DEFINER column and
+// CURRENT_USER() spell one account the same way, and a CREATE that names no
+// DEFINER records CURRENT_USER(), so an object the connected account wrote
+// compares equal. USER() is not the same fact: it names the host the client
+// connected from, not the account the server matched, and a role name without
+// its host names no account.
 func Replace(definer, account string) Replacement {
 	switch {
 	case definer == "" || account == "":
 		return Unknown
-	case definer == account:
+	case sameAccount(definer, account):
 		return Kept
 	default:
 		return Changed
 	}
+}
+
+// sameAccount reports whether a and b, each spelled user@host, name one
+// account. The host is what follows the last at sign, since a quoted user name
+// may hold one and a host name may not. A spelling with no at sign names no
+// account with a host, so it equals only itself.
+//
+// The servers write a host in lowercase, so a catalog read and CURRENT_USER()
+// agree byte for byte; folding the case keeps a host another reader spelled in
+// capitals from reading as another account. The fold is ASCII only: Unicode
+// case folding maps the Kelvin sign onto k, and a byte outside ASCII is
+// compared exactly, which can refuse one account and never accepts two.
+func sameAccount(a, b string) bool {
+	atA, atB := strings.LastIndexByte(a, '@'), strings.LastIndexByte(b, '@')
+	if atA < 0 || atB < 0 {
+		return a == b
+	}
+	return a[:atA] == b[:atB] && equalASCIIFold(a[atA+1:], b[atB+1:])
+}
+
+// equalASCIIFold reports whether a and b are equal once the letters A to Z
+// are read as a to z. Every other byte compares exactly.
+func equalASCIIFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range len(a) {
+		if lowerASCII(a[i]) != lowerASCII(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// lowerASCII maps an ASCII capital letter to its lowercase letter and leaves
+// every other byte as it is.
+func lowerASCII(b byte) byte {
+	if 'A' <= b && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
 }

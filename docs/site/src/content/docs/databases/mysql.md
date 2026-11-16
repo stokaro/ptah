@@ -792,6 +792,13 @@ declares `INVOKER` for a view another account defined is planned, and its
 rollback writes the view under `DEFINER` again as the account that runs it,
 not as the definer it had.
 
+The check compares the definer with the account that read the database, not
+the one that applies the plan. A migration file that `migrations generate`
+planned as one account and another account applies, or a rollback run as
+another account than its up migration, replaces the view with the applying
+account as its definer, and nothing checks it. The routine rule has the same
+limit, so generate and apply versioned migrations as one account.
+
 The plan records the mode before and after each statement on a view, as the
 [`sql_security` effect](../../reference/statement-effects/).
 

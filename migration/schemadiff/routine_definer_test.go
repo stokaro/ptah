@@ -228,6 +228,13 @@ func TestCompareWithDatabaseInfoAllowsSafeFunctionChanges(t *testing.T) {
 			wantModified: 1,
 		},
 		{
+			name:        "the connected definer with its host in capitals",
+			desiredBody: "RETURN 2", desiredSecurity: "DEFINER",
+			currentBody: "RETURN 1", currentSecurity: "DEFINER",
+			definer: "migrator_a@LOCALHOST", currentAccount: "migrator_a@localhost",
+			wantModified: 1,
+		},
+		{
 			name:        "an explicit change to invoker rights names the principal change",
 			desiredBody: "RETURN 2", desiredSecurity: "INVOKER",
 			currentBody: "RETURN 1", currentSecurity: "DEFINER",
