@@ -48,6 +48,15 @@ form, `mysql+unix://user:pass@/run/mysqld/mysqld.sock?database=app`, or
 names the database, and a host is ignored. The Go-driver form
 `mysql://user:pass@unix(/run/mysqld/mysqld.sock)/app` reaches the same socket.
 
+A MySQL or MariaDB server whose certificate a private certificate authority
+signed is verified with `ssl-ca`, the path of a PEM file of CA certificates:
+`mysql://user:pass@db.internal:3306/app?ssl-ca=/etc/ptah/mysql-ca.pem`. The
+connection then requires TLS and verifies the certificate and the host name
+against that file alone, for that URL only. A relative path is read from the
+directory the command runs in. The rules, the refused combinations and a
+local example are in
+[MySQL and MariaDB](../../databases/mysql/#tls-with-a-private-certificate-authority).
+
 A MySQL or MariaDB URL naming no database is the whole server, as in the
 Atlas CLI; as a dev database it is a
 [dev server](../../atlas/migrate-commands/#a-whole-dev-server).

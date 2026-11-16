@@ -6,6 +6,7 @@ package atlascompatpolicy
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"iter"
@@ -448,9 +449,17 @@ func (p Policy) ValidateLocalSchemaSource(source string) error {
 // ValidateURL refuses database dialects absent from the pinned CE binary while
 // leaving non-database source URLs and malformed values to their owning
 // command's existing validation. Full mode never narrows Ptah's dialect set.
+//
+// A MySQL-family URL with an ssl-ca parameter is refused too. The pinned
+// binary v1.3.0 does not apply the parameter: it reaches the server as a
+// session variable and fails with Error 1064, or, under tls=true, the
+// handshake fails against the system roots whichever CA it names.
 func (p Policy) ValidateURL(rawURL string) error {
 	if !p.strictCE {
 		return nil
+	}
+	if mysqlURL, err := atlasurl.ParseMySQLURL(strings.TrimSpace(rawURL)); err == nil && mysqlURL.CAFile() != "" {
+		return errors.New("Atlas Community Edition strict compatibility does not support the ssl-ca URL parameter")
 	}
 	parsed, err := atlasurl.Parse(strings.TrimSpace(rawURL))
 	if err != nil {

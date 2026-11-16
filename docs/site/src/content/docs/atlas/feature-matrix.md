@@ -119,7 +119,7 @@ Across the 202 capabilities below:
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
 | Ptah has it and neither Atlas edition does | 29 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
-| An Atlas column is ❔ — not established by this page's evidence | 6 |
+| An Atlas column is ❔ — not established by this page's evidence | 7 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
 issue that owns it, reproduced against a binary built from this repository;
@@ -353,6 +353,7 @@ seven of them as open capabilities regardless.
 | Functions | ✅ | ❌ | ✅ | Functions and procedures render, read and plan on the PostgreSQL and MySQL families and SQL Server. ClickHouse and SQLite host neither. |
 | MySQL and MariaDB | ✅ | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change plans a real MODIFY COLUMN and converges; matviews fail closed. |
 | Oracle, Snowflake, Redshift, Databricks | 🟡 | ❌ | ✅ | Oracle renders, plans, reads and converges; Snowflake, Redshift and Databricks have no endpoint anyone can measure and are out of scope with the reason (stokaro/ptah#1875). |
+| Per-connection CA bundle for MySQL and MariaDB (`ssl-ca`) | ✅ | ❌ | ❔ | `ssl-ca` names a PEM bundle that verifies the server's certificate and host name for that URL alone. The community binary sends it to the server as a variable; strict mode refuses it. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
 | Roles, grants, and row-level security | ✅ | ❌ | ✅ | Roles and grants wherever the `role_management` key is true, which the preset matrix names. Row-level security on the PostgreSQL family, SQL Server and ClickHouse; the rest have no such object. |
 | Spanner PostgreSQL interface (spanner) | ✅ | ❌ | ✅ | Served only by the optional official Spanner provider, through the PostgreSQL interface and PGAdapter. Best effort, measured on the emulator; without it a selection reports provider_missing. |

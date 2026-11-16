@@ -109,6 +109,13 @@ func TestParseDatabaseURL_FailurePath(t *testing.T) {
 			url:     "postgres://app@db/shop",
 			wantErr: "failed to parse database URL: not a MySQL or MariaDB URL",
 		},
+		// Neither tool is given TLS settings, so each would send the
+		// password to a server whose certificate nothing verified.
+		{
+			name:    "a URL with a CA bundle",
+			url:     "mysql://app@db:3306/shop?ssl-ca=/etc/mysql/ca.pem",
+			wantErr: "database URL sets ssl-ca, and online-DDL tools are given no TLS settings, .*",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

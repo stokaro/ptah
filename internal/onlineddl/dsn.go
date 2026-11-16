@@ -30,7 +30,9 @@ type DSN struct {
 // A socket address is refused: gh-ost and pt-online-schema-change are given a
 // host and a port here, and a socket path handed to either as a host would
 // reach some other server or none. A missing database name is refused because
-// both tools require one.
+// both tools require one. So is a URL with a CA bundle: neither tool is given
+// TLS settings, so each would send the credentials to a server whose
+// certificate nothing verified.
 func ParseDatabaseURL(dbURL string) (DSN, error) {
 	parsed, err := atlasurl.ParseMySQLURL(dbURL)
 	if err != nil {
@@ -39,6 +41,11 @@ func ParseDatabaseURL(dbURL string) (DSN, error) {
 	host, port, tcp := parsed.HostPort()
 	if !tcp {
 		return DSN{}, errors.New("database URL reaches the server through a Unix socket; online-DDL tools are given a TCP host and port")
+	}
+	if parsed.CAFile() != "" {
+		return DSN{}, errors.New("database URL sets ssl-ca, and online-DDL tools are given no TLS settings, " +
+			"so they would connect without verifying the server's certificate; " +
+			"run this migration without an online-DDL route, or without ssl-ca")
 	}
 	if parsed.Database() == "" {
 		// The raw URL is deliberately not echoed: it may carry credentials.

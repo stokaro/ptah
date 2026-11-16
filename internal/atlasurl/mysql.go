@@ -68,6 +68,9 @@ type MySQLURL struct {
 	// [MySQLURL.WithDatabase] can change one part and leave the rest as
 	// written.
 	parsed *url.URL
+	// caFile is the ssl-ca parameter, which the DSN does not carry; see
+	// [MySQLURL.CAFile].
+	caFile string
 }
 
 // ParseMySQLURL reads a MySQL-family database URL in any of its forms.
@@ -81,26 +84,35 @@ func ParseMySQLURL(rawURL string) (MySQLURL, error) {
 		return MySQLURL{}, ErrNotMySQLURL
 	}
 	parsed := MySQLURL{scheme: scheme}
+	var (
+		owned mysqlOwnedParams
+		err   error
+	)
 	switch {
 	case strings.HasSuffix(strings.ToLower(scheme), mysqlSocketTransport):
 		parsed.form = mysqlURLFormSocket
-		if err := parsed.readSocketForm(rawURL); err != nil {
+		if owned, err = parsed.readSocketForm(rawURL); err != nil {
 			return MySQLURL{}, err
 		}
 	case hasMySQLNetwork(rest):
 		parsed.form = mysqlURLFormDriver
-		parsed.dsn = rest
+		owned = parsed.readDriverForm(rest)
 	default:
 		parsed.form = mysqlURLFormURL
-		if err := parsed.readURLForm(rawURL); err != nil {
+		if owned, err = parsed.readURLForm(rawURL); err != nil {
 			return MySQLURL{}, err
 		}
 	}
-	config, err := mysqldriver.ParseDSN(parsed.dsn)
+	parsed.config, err = mysqldriver.ParseDSN(parsed.dsn)
 	if err != nil {
 		return MySQLURL{}, fmt.Errorf("invalid %s URL: %w", scheme, dsnRefusal(parsed.dsn))
 	}
-	parsed.config = config
+	if err := parsed.checkCA(owned); err != nil {
+		return MySQLURL{}, fmt.Errorf("invalid %s URL: %w", scheme, err)
+	}
+	if len(owned.caFiles) > 0 {
+		parsed.caFile = owned.caFiles[0]
+	}
 	return parsed, nil
 }
 
@@ -156,24 +168,37 @@ func hasMySQLNetwork(rest string) bool {
 	return false
 }
 
+// readDriverForm hands go-sql-driver's own form on as written, without the
+// parameters Ptah reads.
+func (u *MySQLURL) readDriverForm(rest string) mysqlOwnedParams {
+	head, query, ok := splitMySQLDriverQuery(rest)
+	if !ok {
+		u.dsn = rest
+		return mysqlOwnedParams{}
+	}
+	kept, owned := cutMySQLOwnedParams(query)
+	u.dsn = withMySQLQuery(head, kept)
+	return owned
+}
+
 // readURLForm builds the DSN for scheme://user:pass@host:port/database.
 //
 // net/url decodes the credentials and the database, and the database is
 // escaped again for the driver, which unescapes its database segment. Without
 // that, a name carrying "/" or "%" reaches the driver as a different split.
-func (u *MySQLURL) readURLForm(rawURL string) error {
+// The query is handed on as written, without the parameters Ptah reads.
+func (u *MySQLURL) readURLForm(rawURL string) (mysqlOwnedParams, error) {
 	parsed, err := dburldisplay.ParseURL(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
+		return mysqlOwnedParams{}, fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
 	}
 	password, _ := parsed.User.Password()
 	u.parsed = parsed
 	u.dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s", parsed.User.Username(), password, parsed.Host,
 		url.PathEscape(strings.TrimPrefix(parsed.Path, "/")))
-	if parsed.RawQuery != "" {
-		u.dsn += "?" + parsed.RawQuery
-	}
-	return nil
+	kept, owned := cutMySQLOwnedParams(parsed.RawQuery)
+	u.dsn = withMySQLQuery(u.dsn, kept)
+	return owned, nil
 }
 
 // readSocketForm builds the DSN for scheme+unix://user:pass@/path?database=name
@@ -184,15 +209,18 @@ func (u *MySQLURL) readURLForm(rawURL string) error {
 // An empty `database` is refused. The community binary hands it on and the
 // server answers with a syntax error; reading it as no database would open the
 // whole server for a URL that asked for one.
-func (u *MySQLURL) readSocketForm(rawURL string) error {
+func (u *MySQLURL) readSocketForm(rawURL string) (mysqlOwnedParams, error) {
 	parsed, err := dburldisplay.ParseURL(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
+		return mysqlOwnedParams{}, fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
 	}
-	query := parsed.Query()
+	kept, owned := cutMySQLOwnedParams(parsed.RawQuery)
+	// The rest is read as net/url reads a query, which keeps every pair it
+	// can and drops the ones it cannot.
+	query, _ := url.ParseQuery(kept)
 	database := query.Get(mysqlSocketDatabaseParam)
 	if query.Has(mysqlSocketDatabaseParam) && database == "" {
-		return fmt.Errorf("invalid %s URL: the %s parameter is empty; name the database in it, as in ?%s=app",
+		return mysqlOwnedParams{}, fmt.Errorf("invalid %s URL: the %s parameter is empty; name the database in it, as in ?%s=app",
 			u.scheme, mysqlSocketDatabaseParam, mysqlSocketDatabaseParam)
 	}
 	query.Del(mysqlSocketDatabaseParam)
@@ -211,7 +239,7 @@ func (u *MySQLURL) readSocketForm(rawURL string) error {
 		dsn.WriteString("?" + encoded)
 	}
 	u.dsn = dsn.String()
-	return nil
+	return owned, nil
 }
 
 // Scheme is the scheme as written.
@@ -226,9 +254,17 @@ func (u MySQLURL) Dialect() string {
 }
 
 // DSN is what the driver is handed. The driver's own form is passed on as
-// written; the other forms are rebuilt in that grammar.
+// written; the other forms are rebuilt in that grammar. It never carries the
+// parameters Ptah reads, such as ssl-ca, which the driver would send to the
+// server as system variables.
 func (u MySQLURL) DSN() string {
 	return u.dsn
+}
+
+// DriverConfig is the driver's reading of [MySQLURL.DSN], as a copy the caller
+// may change.
+func (u MySQLURL) DriverConfig() *mysqldriver.Config {
+	return u.config.Clone()
 }
 
 // Database is the database the URL selects, or "" when it selects none and
@@ -292,6 +328,9 @@ func (u MySQLURL) URL() *url.URL {
 		rendered.Host = u.config.Addr
 		rendered.Path = "/" + u.config.DBName
 	}
+	if u.caFile != "" {
+		query.Set(mysqlCAParam, u.caFile)
+	}
 	rendered.RawQuery = query.Encode()
 	return rendered
 }
@@ -334,7 +373,11 @@ func (u MySQLURL) WithDatabase(name string) string {
 	case mysqlURLFormDriver:
 		config := u.config.Clone()
 		config.DBName = name
-		return u.scheme + "://" + config.FormatDSN()
+		rendered := u.scheme + "://" + config.FormatDSN()
+		if u.caFile != "" {
+			rendered = withMySQLQuery(rendered, mysqlCAParam+"="+url.QueryEscape(u.caFile))
+		}
+		return rendered
 	default:
 		renamed := *u.parsed
 		renamed.Path = "/" + name

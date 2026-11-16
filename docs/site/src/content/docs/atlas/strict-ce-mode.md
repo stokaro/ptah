@@ -79,6 +79,14 @@ own words: a URL with `sql/sqlclient: unknown driver "<scheme>"`, and a
 YDB and every official engine only an executable provider serves, such as
 DuckDB.
 
+A MySQL or MariaDB URL carrying `ssl-ca` is refused with `Atlas Community
+Edition strict compatibility does not support the ssl-ca URL parameter`. The
+pinned binary does not apply the parameter: it sends it to the server as a
+session variable, and the connection fails with `Error 1064`. The default
+surface verifies the server against the named bundle, as
+[MySQL and MariaDB](../../databases/mysql/#tls-with-a-private-certificate-authority)
+describes.
+
 ## Content strict mode refuses
 
 Strict mode rejects content Atlas CE cannot represent safely instead of

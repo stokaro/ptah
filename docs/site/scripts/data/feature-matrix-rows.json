@@ -1207,6 +1207,15 @@
   },
   {
     "area": "Database engines",
+    "feature": "Per-connection CA bundle for MySQL and MariaDB (`ssl-ca`)",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "unknown",
+    "note": "`ssl-ca` names a PEM bundle that verifies the server's certificate and host name for that URL alone. The community binary sends it to the server as a variable; strict mode refuses it.",
+    "evidence": "Measured 2026-11-17 with the pinned community binary v1.3.0, `schema inspect -u` against MySQL 26.10 serving a certificate a private CA signed: without `tls`, `ssl-ca=<file>` fails with Error 1064 because the driver sends it as `SET ssl-ca=...`; with `tls=true` the handshake fails with `x509: certificate signed by unknown authority` whichever file `ssl-ca` names, the signing CA included. `ptah-compat schema inspect -u` with the same URL exits 0 for the signing CA and 1 for an unrelated one, and PTAH_ATLAS_STRICT_COMPAT=1 refuses the parameter. integration/mysql_ca_bundle_e2e_test.go drives both binaries; internal/connector/mysqlconnect/ca_bundle_test.go covers isolation between two roots."
+  },
+  {
+    "area": "Database engines",
     "feature": "SQLite (sqlite, sqlite3)",
     "ptah": "yes",
     "atlas_oss": "yes",

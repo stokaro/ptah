@@ -147,3 +147,32 @@ func TestMySQLDumpReachesTheServerTheURLNames(t *testing.T) {
 		})
 	}
 }
+
+// TestMySQLDumpRefusesACABundle refuses a URL that asks for verified TLS:
+// mysqldump is given no TLS settings, so it would send the password to a
+// server whose certificate nothing verified. The hook is refused before
+// mysqldump runs.
+func TestMySQLDumpRefusesACABundle(t *testing.T) {
+	// #nosec G101 -- fixture URL with a made-up password, which the error must not repeat
+	const databaseURL = "mysql://app:pw-value@db.internal:3306/shop?ssl-ca=/etc/mysql/ca.pem"
+	c := qt.New(t)
+	var name string
+	var args, env []string
+
+	results, err := preflight.Runner{
+		CommandRunner: recordingCommandRunner{name: &name, args: &args, env: &env},
+		Now:           func() time.Time { return time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC) },
+	}.Execute(context.Background(), preflight.Options{
+		Direction:      preflight.DirectionUp,
+		DatabaseURL:    databaseURL,
+		Dialect:        "mysql",
+		CurrentVersion: 1,
+		TargetVersion:  2,
+		MySQLDumpDir:   c.TempDir(),
+	})
+
+	c.Assert(err, qt.ErrorMatches, `.*the mysqldump pre-flight hook is given no TLS settings, and the database URL sets ssl-ca, .*`)
+	c.Assert(err, qt.Not(qt.ErrorMatches), `.*pw-value.*`)
+	c.Assert(results, qt.HasLen, 0)
+	c.Assert(name, qt.Equals, "")
+}

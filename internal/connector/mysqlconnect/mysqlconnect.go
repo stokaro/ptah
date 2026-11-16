@@ -5,17 +5,21 @@ package mysqlconnect
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
+
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/cabundle"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/dbschema/mysql"
 	"ptah.run/internal/sqlrunner"
@@ -61,8 +65,12 @@ func (Service) RequireDatabase(parsed *url.URL) error {
 }
 
 // Open opens the pool through go-sql-driver/mysql.
+//
+// A URL with an ssl-ca parameter has its CA bundle read and checked here,
+// before the first connection is dialed, so a missing or malformed bundle is
+// refused before any statement runs.
 func (Service) Open(ctx context.Context, request connector.Request) (*connector.Pool, error) {
-	db, err := connector.OpenDB(request.Dialect.Driver, convertMySQLURL(request.URL))
+	db, err := openMySQL(request)
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +78,54 @@ func (Service) Open(ctx context.Context, request connector.Request) (*connector.
 		return nil, err
 	}
 	return &connector.Pool{DB: db}, nil
+}
+
+// openMySQL opens the pool without connecting.
+//
+// A URL without ssl-ca is opened by the driver the dialect descriptor names,
+// from its DSN. A URL with one is opened from a driver configuration that
+// carries the TLS settings as a value. go-sql-driver otherwise takes custom TLS
+// settings only by name, from a registry every connection in the process
+// shares (mysql.RegisterTLSConfig), where two connections with different
+// roots would race for one name and a registered name outlives its
+// connection. The configuration holds the bundle's roots alone, so neither the
+// system trust store nor another connection's roots verify this server.
+func openMySQL(request connector.Request) (*sql.DB, error) {
+	parsed, err := atlasurl.ParseMySQLURL(request.URL)
+	if err != nil && !errors.Is(err, atlasurl.ErrNotMySQLURL) {
+		return nil, err
+	}
+	if err != nil || parsed.CAFile() == "" {
+		return connector.OpenDB(request.Dialect.Driver, convertMySQLURL(request.URL))
+	}
+	config, err := verifiedTLSConfig(parsed)
+	if err != nil {
+		return nil, err
+	}
+	driverConnector, err := mysqldriver.NewConnector(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database connection: %w", err)
+	}
+	return sql.OpenDB(driverConnector), nil
+}
+
+// verifiedTLSConfig is the driver configuration of a URL with ssl-ca: TLS
+// required, the certificate verified against the bundle's roots and its host
+// name against the host the URL dials. The parser has refused every setting
+// that would loosen either, and a socket address, which has no host.
+func verifiedTLSConfig(parsed atlasurl.MySQLURL) (*mysqldriver.Config, error) {
+	roots, err := cabundle.Load(parsed.CAFile())
+	if err != nil {
+		return nil, fmt.Errorf("the ssl-ca parameter names a CA bundle Ptah cannot use: %w", err)
+	}
+	host, _, _ := parsed.HostPort()
+	config := parsed.DriverConfig()
+	config.TLS = &tls.Config{
+		RootCAs:    roots,
+		ServerName: host,
+		MinVersion: tls.VersionTLS12,
+	}
+	return config, nil
 }
 
 // convertMySQLURL converts a MySQL-family URL into go-sql-driver's DSN.
