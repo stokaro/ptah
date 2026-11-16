@@ -169,9 +169,9 @@ func isTextType(tokens []lexer.Token, i int) bool {
 func namesPart(token lexer.Token, part objectidentity.Part) bool {
 	switch token.Type {
 	case lexer.TokenIdentifier:
-		return strings.ToLower(token.Value) == part.Normalized
+		return ownqualifier.FoldUnquoted(token.Value) == part.Normalized
 	case lexer.TokenString:
-		return strings.HasPrefix(token.Value, `"`) && strings.Trim(token.Value, `"`) == part.Source
+		return ownqualifier.StoredName(part.Source)(token)
 	}
 	return false
 }
