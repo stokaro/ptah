@@ -705,7 +705,8 @@ func recreateCurrentSchema(
 		read: func(ctx context.Context) (*catalog.Database, error) {
 			return reads.settled(readscope.Authored(ctx), devConn)
 		},
-		leftAsFound: baseline.SchemasLeftAsFound(),
+		leftAsFound:  baseline.SchemasLeftAsFound(),
+		rolesAtClaim: baseline.RolesAtClaim(),
 	}
 	return seedBaseline(ctx, dev, current, devCurrent, outside, render)
 }
@@ -722,6 +723,9 @@ type baselineDev struct {
 	// leftAsFound are the schemas every reset leaves as the claim found them;
 	// see [devclean.Baseline.SchemasLeftAsFound].
 	leftAsFound []string
+	// rolesAtClaim are the roles the dev server held at the claim, nil on a
+	// server the run does not own; see [devclean.Baseline.RolesAtClaim].
+	rolesAtClaim []string
 }
 
 // seedBaseline writes current onto dev, with what [devseed.Closure] adds to it
@@ -758,6 +762,10 @@ func seedBaseline(
 	if err != nil {
 		return nil, err
 	}
+	seeded, err = withTargetRoles(seeded, current, outside.executed, dev.rolesAtClaim, render, options)
+	if err != nil {
+		return seeded.Added, devseed.WithAdded(err, seeded.Added)
+	}
 	if len(seeded.Statements) > 0 {
 		if err := refuseWritesLeftAsFound(seeded.State, devCurrent, dev.leftAsFound, options); err != nil {
 			return seeded.Added, devseed.WithAdded(err, seeded.Added)
@@ -770,6 +778,67 @@ func seedBaseline(
 		}
 	}
 	return seeded.Added, devseed.WithAdded(nameColumnSequencesAsTarget(ctx, dev, seeded.State), seeded.Added)
+}
+
+// withTargetRoles adds to the state seeded holds each role of current, the
+// target's state, that the statements the dev database runs name and that the
+// dev server did not hold at the claim, and renders the state again; see
+// [seedBaseline] and [devseed.RolesNamed].
+//
+// A role belongs to the server, so the target's roles outside the compared
+// scope are in current.RolesOutOfScope, and a comparison plans no CREATE ROLE
+// for a role the target holds. A policy `TO app_admin` planned against such a
+// target names a role a dev server of its own does not hold, and fails there
+// at SQLSTATE 42704 where the target applies it.
+//
+// held is nil on a server the run does not own, and nothing is added there:
+// no reset drops a role, so the role would outlive the run. On a server the
+// run owns, the reset drops every role the claim did not find, these with the
+// others.
+func withTargetRoles(
+	seeded devseed.Result,
+	current *catalog.Database,
+	executed, held []string,
+	render devseed.Render,
+	options devseed.Options,
+) (devseed.Result, error) {
+	if held == nil || current == nil || seeded.State == nil {
+		return seeded, nil
+	}
+	for {
+		lacking := rolesLacking(seeded.State, slices.Concat(current.Roles, current.RolesOutOfScope), held)
+		named := devseed.RolesNamed(seeded.State, slices.Concat(executed, seeded.Statements), lacking, options)
+		if len(named) == 0 {
+			return seeded, nil
+		}
+		state := *seeded.State
+		state.Roles = slices.Concat(state.Roles, named)
+		state.RolesOutOfScope = slices.DeleteFunc(slices.Clone(state.RolesOutOfScope), func(role catalog.Role) bool {
+			return slices.ContainsFunc(named, func(added catalog.Role) bool { return added.Name == role.Name })
+		})
+		for _, role := range named {
+			seeded.Added = append(seeded.Added, devseed.Object{Kind: "role", Name: role.Name})
+		}
+		statements, err := render(&state)
+		if err != nil {
+			return seeded, err
+		}
+		seeded.State, seeded.Statements = &state, statements
+	}
+}
+
+// rolesLacking returns the roles of target that neither state nor held, the
+// roles the dev server held at the claim, has by name.
+func rolesLacking(state *catalog.Database, target []catalog.Role, held []string) []catalog.Role {
+	var lacking []catalog.Role
+	for _, role := range target {
+		inState := slices.ContainsFunc(state.Roles, func(present catalog.Role) bool { return present.Name == role.Name })
+		if !inState && !slices.Contains(held, role.Name) &&
+			!slices.ContainsFunc(lacking, func(seen catalog.Role) bool { return seen.Name == role.Name }) {
+			lacking = append(lacking, role)
+		}
+	}
+	return lacking
 }
 
 // refuseWritesLeftAsFound refuses state, the baseline a rehearsal writes onto

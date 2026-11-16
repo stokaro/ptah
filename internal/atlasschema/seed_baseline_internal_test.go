@@ -25,6 +25,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/devclean"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devseed"
 	"ptah.run/migration/migrator"
 )
@@ -255,4 +256,119 @@ func TestRehearsalCoreNamesTheAddedObjectsAPlanFailsAgainst(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s)dev database simulation failed during plan: .*no such table: missing.*; `+
 		`the rehearsal recreates these objects from outside the compared scope because the planned statements need them: table "parents"; `+
 		`the plan was not applied to the target database`)
+}
+
+// roleRender is seedRender with the roles of the state first and each
+// policy's roles in its statement.
+func roleRender(state *catalog.Database) ([]string, error) {
+	var statements []string
+	for _, role := range state.Roles {
+		statements = append(statements, "CREATE ROLE "+role.Name)
+	}
+	for _, table := range state.Tables {
+		statements = append(statements, "CREATE TABLE "+catalog.QualifyTableName(table.Schema, table.Name)+" (id integer)")
+	}
+	for _, policy := range state.RLSPolicies {
+		statements = append(statements, fmt.Sprintf("CREATE POLICY %s ON %s TO %s USING (true)", policy.Name, policy.Table, policy.ToRoles))
+	}
+	return statements, nil
+}
+
+// ownedDevOf is devOf on a server the operator declared disposable, which
+// held rolesAtClaim when the run claimed it; nil is a server the run does not
+// own.
+func ownedDevOf(c *qt.C, executor *recordingExecutor, rolesAtClaim []string) baselineDev {
+	c.Helper()
+	dev := devOf(executor, &catalog.Database{})
+	dev.info.URL = fmt.Sprintf("postgres://ptah@seed-role-dev-%d:5432/dev", len(rolesAtClaim))
+	if rolesAtClaim != nil {
+		_, release, err := devdocker.Resolve(c.Context(), dev.info.URL, devdocker.Options{DeclaredDisposable: true})
+		c.Assert(err, qt.IsNil)
+		c.Cleanup(release)
+	}
+	dev.guard = devclean.NewBaselineGuard(dev.info)
+	dev.rolesAtClaim = rolesAtClaim
+	return dev
+}
+
+// targetWithRoles is the compared state of a target holding public.tasks,
+// policies of it, and the roles outside the compared scope.
+func targetWithRoles(policies []catalog.RLSPolicy, roles ...string) *catalog.Database {
+	current := &catalog.Database{Tables: []catalog.Table{{Name: "tasks"}}, RLSPolicies: policies}
+	for _, role := range roles {
+		current.RolesOutOfScope = append(current.RolesOutOfScope, catalog.Role{Name: role})
+	}
+	return current
+}
+
+// TestSeedBaseline_CreatesARoleTheStatementsNameOnAServerTheRunOwns writes a
+// role of the target that the plan or the baseline names, on a server the run
+// owns that did not hold it at the claim, before what names it, and names it
+// among the added objects. A role nothing names is not written.
+func TestSeedBaseline_CreatesARoleTheStatementsNameOnAServerTheRunOwns(t *testing.T) {
+	tests := []struct {
+		name      string
+		current   *catalog.Database
+		executed  []string
+		wantSent  []string
+		wantAdded []devseed.Object
+	}{
+		{
+			name:      "a planned policy for the role",
+			current:   targetWithRoles(nil, "app_admin", "bystander"),
+			executed:  []string{`CREATE POLICY tasks_admin ON public.tasks FOR SELECT TO "app_admin" USING (true)`},
+			wantSent:  []string{"CREATE ROLE app_admin", "CREATE TABLE tasks (id integer)"},
+			wantAdded: []devseed.Object{{Kind: "role", Name: "app_admin"}},
+		},
+		{
+			name:    "a policy of the baseline for the role",
+			current: targetWithRoles([]catalog.RLSPolicy{{Name: "tasks_read", Table: "tasks", ToRoles: "auditor"}}, "auditor", "bystander"),
+			wantSent: []string{
+				"CREATE ROLE auditor", "CREATE TABLE tasks (id integer)", "CREATE POLICY tasks_read ON tasks TO auditor USING (true)",
+			},
+			wantAdded: []devseed.Object{{Kind: "role", Name: "auditor"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			executor := &recordingExecutor{}
+			outside := rehearsalOutside{target: targetHolding(&catalog.Database{}), executed: test.executed}
+
+			added, err := seedBaseline(c.Context(), ownedDevOf(c, executor, []string{"postgres"}), test.current, nil, outside, roleRender)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(executor.executed, qt.DeepEquals, test.wantSent)
+			c.Assert(added, qt.DeepEquals, test.wantAdded)
+		})
+	}
+}
+
+// TestSeedBaseline_LeavesARoleTheServerHoldsOrDoesNotOwn writes no role the
+// dev server held at the claim, and none on a server the run does not own,
+// whose reset would leave it behind.
+func TestSeedBaseline_LeavesARoleTheServerHoldsOrDoesNotOwn(t *testing.T) {
+	tests := []struct {
+		name         string
+		rolesAtClaim []string
+	}{
+		{name: "a server that held the role", rolesAtClaim: []string{"app_admin", "postgres"}},
+		{name: "a server the run does not own"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			executor := &recordingExecutor{}
+			outside := rehearsalOutside{
+				target:   targetHolding(&catalog.Database{}),
+				executed: []string{`CREATE POLICY tasks_admin ON public.tasks FOR SELECT TO "app_admin" USING (true)`},
+			}
+
+			added, err := seedBaseline(c.Context(), ownedDevOf(c, executor, test.rolesAtClaim), targetWithRoles(nil, "app_admin"), nil, outside, roleRender)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(executor.executed, qt.DeepEquals, []string{"CREATE TABLE tasks (id integer)"})
+			c.Assert(added, qt.HasLen, 0)
+		})
+	}
 }
