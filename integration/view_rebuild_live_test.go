@@ -36,7 +36,7 @@ var viewRebuildStyles = []struct {
 	name  string
 	style planext.StatementStyle
 }{
-	{name: "Ptah's own style", style: planext.StatementStyleAnnotated},
+	{name: "the annotated style", style: planext.StatementStyleAnnotated},
 	{name: "the exact style", style: planext.StatementStyleExact},
 }
 

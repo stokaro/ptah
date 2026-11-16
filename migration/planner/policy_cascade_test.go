@@ -130,15 +130,15 @@ func TestGenerateSchemaDiffSQL_ReplacesAViewAPolicyReads_HappyPath(t *testing.T)
 	c.Assert(sql, qt.Not(qt.Contains), "CASCADE")
 }
 
-// policyLossStyles is both statement styles. The refusal holds in each: Ptah's
-// own style would drop the view with CASCADE and lose the policy, and the
+// policyLossStyles is both statement styles. The refusal holds in each: the
+// annotated style would drop the view with CASCADE and lose the policy, and the
 // exact style would drop it without CASCADE, which the server refuses while
 // the policy reads it, or with CASCADE where the drop relies on it.
 var policyLossStyles = []struct {
 	name  string
 	style planext.StatementStyle
 }{
-	{name: "Ptah's own style", style: planext.StatementStyleAnnotated},
+	{name: "the annotated style", style: planext.StatementStyleAnnotated},
 	{name: "the exact style", style: planext.StatementStyleExact},
 }
 
@@ -210,7 +210,7 @@ func TestGenerateSchemaDiffSQL_RefusesARemovedViewAPolicyReads_FailurePath(t *te
 		style   planext.StatementStyle
 		outcome string
 	}{
-		{name: "Ptah's own style", style: planext.StatementStyleAnnotated,
+		{name: "the annotated style", style: planext.StatementStyleAnnotated,
 			outcome: "the drop's CASCADE would drop it too, with nothing to create it again"},
 		{name: "the exact style", style: planext.StatementStyleExact,
 			outcome: "PostgreSQL refuses the drop while it does, and a drop with CASCADE would take it too, with nothing to create it again"},
@@ -265,7 +265,7 @@ func TestGenerateSchemaDiffSQL_KeepsAPolicyThatReadsANamesake_HappyPath(t *testi
 		style planext.StatementStyle
 		want  []string
 	}{
-		{name: "Ptah's own style", style: planext.StatementStyleAnnotated, want: []string{
+		{name: "the annotated style", style: planext.StatementStyleAnnotated, want: []string{
 			`DROP VIEW IF EXISTS "reporting"."active_tenants" CASCADE`,
 			`DROP MATERIALIZED VIEW IF EXISTS "reporting"."tenant_flags" CASCADE`,
 			createReportingFlags,
@@ -320,7 +320,7 @@ func TestGenerateSchemaDiffSQL_RemovesAPolicyWithTheViewItReads_HappyPath(t *tes
 		style planext.StatementStyle
 		want  []string
 	}{
-		{name: "Ptah's own style", style: planext.StatementStyleAnnotated,
+		{name: "the annotated style", style: planext.StatementStyleAnnotated,
 			want: []string{`DROP POLICY "tenant_visible" ON "orders"`, `DROP VIEW IF EXISTS "active_tenants" CASCADE`}},
 		{name: "the exact style", style: planext.StatementStyleExact,
 			want: []string{`DROP POLICY "tenant_visible" ON "orders"`, `DROP VIEW "active_tenants"`}},

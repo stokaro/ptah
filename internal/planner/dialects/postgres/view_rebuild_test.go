@@ -275,8 +275,8 @@ const (
 // materialized view that reads it, after them, and comes back before them
 // (stokaro/ptah#4964); a column type change does the same with the views that
 // read the column. Each object the plan drops goes after the objects that read
-// it, so the exact style drops without CASCADE and writes no guard, and Ptah's
-// own style keeps both.
+// it, so the exact style drops without CASCADE and writes no guard, and the
+// annotated style keeps both.
 //
 // The drops follow what the database holds and the creates follow the
 // declaration. When two changed views, or two changed materialized views, swap

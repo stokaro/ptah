@@ -120,7 +120,7 @@ ALTER TABLE public.audit ENABLE ROW LEVEL SECURITY;
 // TestViewRebuildReadsEachSpellingOfAReaderLive runs, in both statement
 // styles, rebuilds whose reader names the changed relation in a spelling a
 // match of the whole name as text misses. A reader the plan does not find is
-// dropped by the CASCADE in Ptah's own style, and refused with 2BP01 by the
+// dropped by the CASCADE in the annotated style, and refused with 2BP01 by the
 // server in the exact style, or blocks the column type change with 0A000
 // (stokaro/ptah#5004).
 //
