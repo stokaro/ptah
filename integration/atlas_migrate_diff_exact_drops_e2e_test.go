@@ -58,7 +58,7 @@ func applyBothWays(c *qt.C, target *sql.DB, pairs []migrationPair) {
 // that returns, takes or reads a removed relation's row, a composite type
 // whose attribute is a table's row type, created after the table and dropped
 // before it, a policy of a removed table that reads a removed table, view or
-// column, a column that changes type
+// column, or a view the plan drops and creates again, a column that changes type
 // across an enum, an array of one or a domain over one with its default, a
 // trigger on a dropped column, a generated column computed from one, an index on a
 // materialized view a column type change rebuilds, and a materialized view put
@@ -103,6 +103,17 @@ CREATE VIEW current_members AS SELECT id FROM members WHERE who = current_user;
 CREATE TABLE docs (id bigint PRIMARY KEY, member_id bigint);
 ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p_docs ON docs USING (member_id IN (SELECT id FROM current_members));
+`)},
+		{name: "a policy of a removed table that reads views the plan rebuilds", steps: exactSteps(
+			`CREATE TABLE members (id bigint PRIMARY KEY, who text NOT NULL);
+CREATE VIEW member_ids WITH (security_invoker = true) AS SELECT id, who FROM members;
+CREATE VIEW member_names WITH (security_invoker = true) AS SELECT id, who FROM member_ids;
+CREATE TABLE docs (id bigint PRIMARY KEY, member_id bigint NOT NULL);
+ALTER TABLE docs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY docs_member ON docs USING (member_id IN (SELECT id FROM member_names));
+`, `CREATE TABLE members (id bigint PRIMARY KEY, who text NOT NULL);
+CREATE VIEW member_ids WITH (security_invoker = true) AS SELECT id FROM members;
+CREATE VIEW member_names WITH (security_invoker = true) AS SELECT id FROM member_ids;
 `)},
 		{name: "a policy that reads a column the rollback removes", steps: exactSteps(
 			`CREATE TABLE allowed (id bigint PRIMARY KEY, who text);

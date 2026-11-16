@@ -243,6 +243,31 @@ func removedViewWithPolicy() styleChange {
 	})}
 }
 
+// rebuiltViewsUnderRemovedPolicy keeps owner_ids and owner_names, which reads
+// it, with a column fewer each, so neither can be replaced in place, and
+// removes the table docs, whose policy reads owner_names.
+func rebuiltViewsUnderRemovedPolicy() styleChange {
+	declared := styleDeclaredWith(func(d *schemamodel.Database) {
+		d.Views = []schemamodel.View{
+			{Name: "owner_ids", Body: "SELECT id FROM owners"},
+			{Name: "owner_names", Body: "SELECT id FROM owner_ids"},
+		}
+	})
+	declared.FeatureCoverage = must.Must(pgpolicy.CompleteCoverage(schemaext.Desired))
+	return styleChange{declared: declared, held: styleHeldWith(func(h *catalog.Database) {
+		docs := styleTable("docs", styleKey("id"), styleColumn("owner_id"))
+		docs.Facets = must.Must(schemaext.NewFacets(&pgpolicy.ObservedTableState{Enabled: true}))
+		h.Tables = append(h.Tables, docs)
+		h.Views = []catalog.View{
+			{Name: "owner_ids", Schema: "public", Body: "SELECT id, name FROM owners"},
+			{Name: "owner_names", Schema: "public", Body: "SELECT id, name FROM owner_ids"},
+		}
+		h.FeatureObjects = must.Must(schemaext.NewObjects(observedPolicy("docs", "docs_member",
+			"((owner_id)::text IN ( SELECT (owner_names.id)::text FROM owner_names))")))
+		h.FeatureCoverage = must.Must(pgpolicy.CompleteCoverage(schemaext.Observed))
+	})}
+}
+
 // enumStatusHeld is the enum status and the table tickets(id, s status
 // DEFAULT 'a') as the database holds them.
 func enumStatusHeld(h *catalog.Database) {
@@ -684,4 +709,48 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_AnnotatedStyleKeepsTypeHolde
 	got := stylePlan(c, change.declared, change.held, change.opts)
 
 	c.Assert(got[0], qt.Contains, `DROP TABLE IF EXISTS "public"."archive" CASCADE`)
+}
+
+// TestGenerateSchemaDiffSQLStatementsWithOptions_PolicyLeavesBeforeTheViewsItsTableReads
+// drops the policy of a removed table before the drops of the views a rebuild
+// takes out and puts back. The policy reads one of them, so a view drop
+// written first relies on CASCADE to take it, and the policy's own DROP POLICY
+// later names a policy the server no longer holds. Dropped first, the policy
+// leaves the exact style's view drops nothing to rely on. The annotated style
+// writes no DROP POLICY for a removed table, and its CASCADE drops take the
+// policy; that row is the control that the move changes only the exact style.
+func TestGenerateSchemaDiffSQLStatementsWithOptions_PolicyLeavesBeforeTheViewsItsTableReads(t *testing.T) {
+	tests := []struct {
+		name  string
+		style planext.StatementStyle
+		want  []string
+	}{
+		{name: "exact", style: planext.StatementStyleExact, want: []string{
+			`DROP POLICY "docs_member" ON "docs"`,
+			`DROP VIEW "owner_names"`,
+			`DROP VIEW "owner_ids"`,
+			"CREATE VIEW \"owner_ids\" AS\nSELECT id FROM owners",
+			"CREATE VIEW \"owner_names\" AS\nSELECT id FROM owner_ids",
+			`DROP TABLE "public"."docs"`,
+		}},
+		{name: "annotated", style: planext.StatementStyleAnnotated, want: []string{
+			`DROP VIEW IF EXISTS "owner_names" CASCADE`,
+			`DROP VIEW IF EXISTS "owner_ids" CASCADE`,
+			"CREATE VIEW \"owner_ids\" AS\nSELECT id FROM owners",
+			"CREATE VIEW \"owner_names\" AS\nSELECT id FROM owner_ids",
+			"-- WARNING: This will delete all data!\nDROP TABLE IF EXISTS \"public\".\"docs\" CASCADE",
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			change := rebuiltViewsUnderRemovedPolicy()
+			opts := change.opts
+			opts.Statements = tt.style
+
+			got := stylePlan(c, change.declared, change.held, opts)
+
+			c.Assert(got, qt.DeepEquals, tt.want)
+		})
+	}
 }

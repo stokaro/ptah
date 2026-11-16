@@ -670,14 +670,10 @@ func sqlStandardBodyReads(routine difftypes.RoutineChange, relation string, sema
 		deporder.ReferencesRelation(routine.Body, relation, semantics)
 }
 
-// removedTableReads reports whether a captured object of a table the plan
-// removes, other than the tables skip names, reads relation.
-func removedTableReads(diff *difftypes.SchemaDiff, relation string, skip map[string]bool) bool {
-	return removedTableReadsExcept(diff, relation, skip, nil)
-}
-
-// removedTableReadsExcept ignores only captured policies whose standalone
-// drops the plan already placed before this relation or column drop.
+// removedTableReadsExcept reports whether a captured object of a table the
+// plan removes, other than the tables skip names, reads relation. It ignores
+// the captured policies droppedPolicies names, whose standalone drops the plan
+// already placed before this relation or column drop.
 func removedTableReadsExcept(diff *difftypes.SchemaDiff, relation string, skip map[string]bool, droppedPolicies map[objectidentity.Key]bool) bool {
 	for _, removal := range diff.TablesRemoved {
 		if skip[removal.Name] || removal.Name == relation {
@@ -712,6 +708,72 @@ func capturedReadsExcept(objects schemaext.Objects, relation string, semantics i
 		}
 	}
 	return false
+}
+
+// policiesAheadOfRebuild takes out of nodes, the table feature operations
+// planned to run after the columns, the drops of the policies of removed
+// tables that read or call an object the view rebuild drops, and returns them
+// apart, to run before the rebuild's drops.
+//
+// The server records that a policy depends on what its expressions read, so
+// the drop of such an object stops on the policy, or takes it with CASCADE.
+// Left in its place, the policy's own DROP POLICY then names a policy the
+// CASCADE already took, and the server refuses it at SQLSTATE 42704. Gone
+// first, the policy leaves the rebuild's drops nothing to rely on. Dropping a
+// policy of a table the plan removes earlier changes nothing a later step
+// reads: the table goes in the same plan.
+//
+// A node is taken only when every operation it carries is such a drop.
+func policiesAheadOfRebuild(nodes []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) (kept, ahead []ast.Node) {
+	readers := removedPoliciesReading(diff, namesOf(rebuild.dropped()))
+	if len(readers) == 0 {
+		return nodes, nil
+	}
+	for _, node := range nodes {
+		if dropsOnlyPolicies(node, diff, readers) {
+			ahead = append(ahead, node)
+			continue
+		}
+		kept = append(kept, node)
+	}
+	return kept, ahead
+}
+
+// removedPoliciesReading is the captured objects of the removed tables that
+// read or call one of relations, by identity.
+func removedPoliciesReading(diff *difftypes.SchemaDiff, relations []string) map[objectidentity.Key]bool {
+	readers := make(map[objectidentity.Key]bool)
+	semantics := relationSemantics(diff)
+	for _, removal := range diff.TablesRemoved {
+		objects, err := removal.Current.OwnedObjects.All()
+		if err != nil {
+			// An unreadable capture names no reader; the rebuild's drop keeps
+			// CASCADE for it, as [capturedReadsExcept] decides.
+			continue
+		}
+		for _, object := range objects {
+			reader, ok := object.Value.(schemaext.RelationReader)
+			if ok && slices.ContainsFunc(relations, func(relation string) bool {
+				return schemaext.ReadsRelationIn(reader, relation, semantics)
+			}) {
+				readers[object.Ref.Key()] = true
+			}
+		}
+	}
+	return readers
+}
+
+// dropsOnlyPolicies reports whether every operation node carries drops a
+// policy readers names, and it carries at least one.
+func dropsOnlyPolicies(node ast.Node, diff *difftypes.SchemaDiff, readers map[objectidentity.Key]bool) bool {
+	payloads := ast.OwnerOperations(node)
+	return len(payloads) != 0 && !slices.ContainsFunc(payloads, func(payload ast.ExtensionPayload) bool {
+		operation, ok := payload.(*pgpolicy.PolicyOperation)
+		if !ok || operation == nil || operation.Change.Before == nil || operation.Change.After != nil {
+			return true
+		}
+		return !readers[pgpolicy.PolicyRefWith(relationSemantics(diff), operation.Schema, operation.Table, operation.Name).Key()]
+	})
 }
 
 // policiesDroppedBeforeRelations records actual owner operations in the
