@@ -36,6 +36,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/featureselect"
+	"ptah.run/internal/mysqldefiner"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemafile"
@@ -708,6 +709,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn.Info(), statements); err != nil {
 			return "", err
 		}
+		if err := mysqldefiner.Check(cmd.Context(), conn, "", statements); err != nil {
+			return "", err
+		}
 		// The dev database rehearses the exact ordered statements that would be
 		// applied — including edited SQL — and a failed rehearsal refuses the
 		// apply before the target is touched.
@@ -978,6 +982,9 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			return "", err
 		}
 		if err := validateAtlasSchemaApplyDiffPolicy(txMode, conn.Info(), statements); err != nil {
+			return "", err
+		}
+		if err := mysqldefiner.Check(cmd.Context(), conn, "", statements); err != nil {
 			return "", err
 		}
 		// The rehearsal runs on --dry-run too: a dry run is how an operator

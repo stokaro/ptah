@@ -727,6 +727,9 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if err := viewrefusal.Security(DialectName, node); err != nil {
 		return err
 	}
+	if err := viewrefusal.Definer(DialectName, node); err != nil {
+		return err
+	}
 	if err := viewrefusal.Options(DialectName, "view", node.Name, node.Options); err != nil {
 		return err
 	}

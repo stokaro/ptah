@@ -132,6 +132,12 @@
     "reason": "The page keeps checksum, replay, and assertion gates together because they establish one pre-apply trust boundary."
   },
   {
+    "route": "/direct/apply/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The page carries the one table of refusal codes that schema apply and schema plan report under --json, and a consumer reads each code beside the apply step that raises it; moving the table would leave the run document described on one page and its codes on another."
+  },
+  {
     "route": "/direct/plan-and-approve/",
     "check": "page-length",
     "target": "page",

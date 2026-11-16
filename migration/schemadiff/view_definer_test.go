@@ -7,6 +7,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
@@ -61,9 +62,37 @@ func TestCompareWithDialect_RecordsNoConnectedAccount(t *testing.T) {
 	c.Assert(diff.ConnectedAccount, qt.IsNil)
 }
 
+// TestCompareWithDatabaseInfo_ReplayedCurrentRecordsNoDefinerFacts drives a
+// comparison whose current state a replay built on a dev database, through
+// the planner: the read's account and definer are the replay's, so the diff
+// carries neither, the replacement names no definer and nothing is refused,
+// although the definer is another account than the one that read it.
+func TestCompareWithDatabaseInfo_ReplayedCurrentRecordsNoDefinerFacts(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			runtime := must.Must(builtin.New())
+			opts := config.DefaultCompareOptions()
+			opts.ReplayedCurrent = true
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), viewDefinerDesired("SELECT 2"),
+				viewDefinerCurrent("owner_a@%", "root@%"), mysqlDefinerInfo(dialect), opts, runtime)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.ViewsModified, qt.HasLen, 1)
+			c.Assert(diff.ViewsModified[0].PreviousDefiner, qt.Equals, "")
+			c.Assert(diff.ConnectedAccount, qt.IsNil)
+			sql, err := planner.GenerateSchemaDiffSQL(t.Context(), runtime, diff, dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW")
+			c.Assert(sql, qt.Not(qt.Contains), "DEFINER=")
+		})
+	}
+}
+
 // TestCompareWithDatabaseInfo_PlansAViewOfTheConnectedAccount_HappyPath drives
 // the comparison and the planner together, as a plan does: a view the reading
-// account defined is replaced.
+// account defined is replaced, naming that account as its definer.
 func TestCompareWithDatabaseInfo_PlansAViewOfTheConnectedAccount_HappyPath(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		t.Run(dialect, func(t *testing.T) {
@@ -76,7 +105,7 @@ func TestCompareWithDatabaseInfo_PlansAViewOfTheConnectedAccount_HappyPath(t *te
 			sql, err := planner.GenerateSchemaDiffSQL(t.Context(), runtime, diff, dialect)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW")
+			c.Assert(sql, qt.Contains, "CREATE OR REPLACE DEFINER=`migrator_a`@`%` VIEW")
 		})
 	}
 }

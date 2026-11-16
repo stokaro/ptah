@@ -35,6 +35,7 @@ import (
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/internal/definer"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
@@ -470,6 +471,14 @@ func checkDiffSelections(fromErr, toErr error, fromReport, toReport atlasfilter.
 	return nil
 }
 
+// replaysCurrent reports whether the --from side of a comparison through
+// conn is a migration directory replayed on the dev database rather than a
+// read of a database. Its account and definers are the replay's, not those of
+// the database a plan is applied to.
+func replaysCurrent(conn *dbschema.DatabaseConnection, fromState atlassource.State) bool {
+	return conn != nil && fromState.Kind != atlassource.KindDatabase
+}
+
 // diffResolvedStates is the part of a schema diff that runs once both sides
 // are resolved: scoping, the refusals, the comparison and the plan.
 //
@@ -583,6 +592,7 @@ func diffResolvedStates(
 	if conn == nil {
 		compareOpts.IdentifierSemantics = offlineDiffSemantics(toState)
 	}
+	compareOpts.ReplayedCurrent = replaysCurrent(conn, fromState)
 	compared, undecided, err := compareDiffSides(ctx, conn, to, fromSide.database, compareOpts, opts.Runtime)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
@@ -591,6 +601,9 @@ func diffResolvedStates(
 		return atlasreport.SchemaDiff{}, nil, undecided.Err()
 	}
 	undecidednote.Report(ctx, opts.Diagnostics, undecided, "--from", "--to")
+	if compareOpts.ReplayedCurrent {
+		definer.WarnUnnamedViews(opts.Diagnostics, compared, dialect)
+	}
 	// Neither side's objects of a kind Ptah does not model reach the comparison,
 	// so a report that the two match says nothing about them.
 	unmodelednote.Report(ctx, opts.Diagnostics, "--from", fromState.DB)

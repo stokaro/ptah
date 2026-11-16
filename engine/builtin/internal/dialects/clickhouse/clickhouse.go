@@ -1172,6 +1172,9 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if err := viewrefusal.Security(DialectName, node); err != nil {
 		return err
 	}
+	if err := viewrefusal.Definer(DialectName, node); err != nil {
+		return err
+	}
 	statement := "CREATE VIEW"
 	if node.Replace {
 		statement = "CREATE OR REPLACE VIEW"

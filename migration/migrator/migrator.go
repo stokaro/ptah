@@ -2772,6 +2772,9 @@ func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*
 	if err := m.refuseUnsplittableMigrations(ctx, migrations, MigrationDirectionUp); err != nil {
 		return err
 	}
+	if err := m.refuseDefinersTheAccountCannotName(ctx, migrations, MigrationDirectionUp); err != nil {
+		return err
+	}
 	if err := m.refuseUpPlacements(migrations); err != nil {
 		return err
 	}
@@ -3952,6 +3955,9 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 		return err
 	}
 	if err := m.refuseUnsplittableMigrations(ctx, migrations, MigrationDirectionDown); err != nil {
+		return err
+	}
+	if err := m.refuseDefinersTheAccountCannotName(ctx, migrations, MigrationDirectionDown); err != nil {
 		return err
 	}
 	if err := m.validateOwnTransactions(migrations, MigrationDirectionDown); err != nil {

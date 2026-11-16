@@ -364,8 +364,43 @@ covers.
 **Verify**
 
 Run `ptah schema plan` again as the definer. The plan writes `CREATE OR REPLACE
-VIEW`, and after it applies, `DEFINER` in `information_schema.VIEWS` is the
-account it ran as.
+DEFINER=` with that account, and after it applies, `DEFINER` in
+`information_schema.VIEWS` is the account it names.
+
+## An apply refuses a definer the account cannot name
+
+**Symptom**
+
+`schema apply`, `ptah-compat schema apply`, or `migrations up` or `down` on
+MySQL or MariaDB stops before its first statement, naming an object, a
+definer, the connected account and a privilege:
+
+```text
+refusing before any statement runs: view my_docs names the definer owner@%, and the connected account deploy@% lacks SET_ANY_DEFINER, which naming another account needs. Grant it with GRANT SET_ANY_DEFINER ON *.* TO 'deploy'@'%', or apply as owner@%
+```
+
+Under `--json`, `schema apply` reports `outcome: refused` with the refusal code
+`definer-privilege`. See [Refusal codes](../../direct/apply/#refusal-codes).
+
+**Likely cause**
+
+The plan or a migration file writes `DEFINER=` for another account than the
+one applying it. A plan read by the view's definer and applied by a deploy
+account names that definer, so the view keeps it. The server refuses such a
+statement with error 1227 unless the applying account may name another
+definer, and MySQL-family DDL does not run in a transaction, so Ptah asks
+before anything runs.
+
+**Resolve**
+
+Grant the privilege the message names, or apply as the definer. The
+[MySQL page](../../databases/mysql/#naming-another-account-as-the-definer)
+lists the privilege each server checks.
+
+**Verify**
+
+Run the apply again. It applies, and `DEFINER` in `information_schema.VIEWS`
+is the account the statement names.
 
 ## `atlas.hcl` fails to load
 

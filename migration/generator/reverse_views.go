@@ -60,11 +60,12 @@ func reverseViewDiffs(
 			// terms. A rollback is not refused for the mode it leaves out, so
 			// no planner decides with it.
 			PreviousSecurity: viewDiff.Desired.Security,
-			// No definer. The view the rollback replaces is the one the up
-			// migration wrote, whose definer is the account that applied it,
-			// and nothing read that view. A rollback is not refused for its
-			// definer, so no planner decides with it.
-			PreviousDefiner: "",
+			// The definer the up migration's read recorded. It is the definer
+			// of the view the rollback restores, which the planner names in
+			// the statement so the rollback keeps it or fails, and the up
+			// migration named it in the view the rollback replaces whenever
+			// that view runs as its definer.
+			PreviousDefiner: viewDiff.PreviousDefiner,
 		}
 	}
 	return reversed

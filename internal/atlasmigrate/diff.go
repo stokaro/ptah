@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/internal/definer"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/devqualifier"
@@ -874,6 +875,7 @@ func compareReplayedState(
 		return replayedComparison{}, err
 	}
 	compareOpts := policy.CompareOptions()
+	compareOpts.ReplayedCurrent = true
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		ctx, replayConn, desired, replayed, compareOpts, selected,
 	)
@@ -887,6 +889,7 @@ func compareReplayedState(
 		"the replayed migration directory",
 		"--to",
 	)
+	definer.WarnUnnamedViews(diagnostics, diff, replayConn.Info().Dialect)
 	if err := undecided.Err(); err != nil {
 		return replayedComparison{}, err
 	}

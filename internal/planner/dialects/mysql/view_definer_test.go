@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -25,12 +26,19 @@ func definerChange(held, declared, definer string) difftypes.ViewDiff {
 }
 
 // TestPlanner_ViewDefiner_HappyPath pins the replacements the definer rule
-// lets through: a view the connected account defined, a view under SQL
-// SECURITY INVOKER before or after the change, a rollback, and a diff no
-// database read answers for.
+// lets through and the DEFINER clause each one writes: the definer the read
+// recorded where the view runs as its definer before and after the change, so
+// another account that applies the plan keeps it or fails, and none where the
+// declaration asks for the applying account or for the caller's privileges.
+// A rollback names the definer its forward plan read whenever it restores the
+// view under SQL SECURITY DEFINER.
 func TestPlanner_ViewDefiner_HappyPath(t *testing.T) {
-	rollback := definerChange("DEFINER", "", "owner@%")
-	rollback.Rollback = true
+	ownRollback := definerChange("DEFINER", "", "app@%")
+	ownRollback.Rollback = true
+	restoredDefiner := definerChange("INVOKER", "DEFINER", "owner@%")
+	restoredDefiner.Rollback = true
+	restoredInvoker := definerChange("DEFINER", "INVOKER", "owner@%")
+	restoredInvoker.Rollback = true
 	tests := []struct {
 		name    string
 		view    difftypes.ViewDiff
@@ -38,19 +46,23 @@ func TestPlanner_ViewDefiner_HappyPath(t *testing.T) {
 		want    string
 	}{
 		{name: "the connected account's view", view: definerChange("DEFINER", "", "app@%"), account: new("app@%"),
-			want: "CREATE OR REPLACE VIEW v AS\nSELECT 2\n;\n"},
+			want: "CREATE OR REPLACE DEFINER=app@`%` VIEW v AS\nSELECT 2\n;\n"},
 		{name: "the connected account's view with its host in capitals", view: definerChange("DEFINER", "", "app@LOCALHOST"),
-			account: new("app@localhost"), want: "CREATE OR REPLACE VIEW v AS\nSELECT 2\n;\n"},
+			account: new("app@localhost"), want: "CREATE OR REPLACE DEFINER=app@`LOCALHOST` VIEW v AS\nSELECT 2\n;\n"},
 		{name: "a declared definer over the connected account's view", view: definerChange("DEFINER", "DEFINER", "app@%"),
-			account: new("app@%"), want: "CREATE OR REPLACE SQL SECURITY DEFINER VIEW v AS\nSELECT 2\n;\n"},
+			account: new("app@%"), want: "CREATE OR REPLACE DEFINER=app@`%` SQL SECURITY DEFINER VIEW v AS\nSELECT 2\n;\n"},
 		{name: "an invoker view of another definer", view: definerChange("INVOKER", "INVOKER", "owner@%"),
 			account: new("app@%"), want: "CREATE OR REPLACE SQL SECURITY INVOKER VIEW v AS\nSELECT 2\n;\n"},
 		{name: "a definer view of another definer declared invoker", view: definerChange("DEFINER", "INVOKER", "owner@%"),
 			account: new("app@%"), want: "CREATE OR REPLACE SQL SECURITY INVOKER VIEW v AS\nSELECT 2\n;\n"},
 		{name: "an invoker view of another definer declared definer", view: definerChange("INVOKER", "DEFINER", "owner@%"),
 			account: new("app@%"), want: "CREATE OR REPLACE SQL SECURITY DEFINER VIEW v AS\nSELECT 2\n;\n"},
-		{name: "a rollback", view: rollback, account: new("app@%"),
-			want: "CREATE OR REPLACE VIEW v AS\nSELECT 2\n;\n"},
+		{name: "a rollback of the connected account's view", view: ownRollback, account: new("app@%"),
+			want: "CREATE OR REPLACE DEFINER=app@`%` VIEW v AS\nSELECT 2\n;\n"},
+		{name: "a rollback that restores a definer view of another definer", view: restoredDefiner, account: new("app@%"),
+			want: "CREATE OR REPLACE DEFINER=owner@`%` SQL SECURITY DEFINER VIEW v AS\nSELECT 2\n;\n"},
+		{name: "a rollback that restores an invoker view", view: restoredInvoker, account: new("app@%"),
+			want: "CREATE OR REPLACE SQL SECURITY INVOKER VIEW v AS\nSELECT 2\n;\n"},
 		{name: "no database read", view: definerChange("DEFINER", "", "owner@%"), account: nil,
 			want: "CREATE OR REPLACE VIEW v AS\nSELECT 2\n;\n"},
 	}
@@ -74,6 +86,8 @@ func TestPlanner_ViewDefiner_HappyPath(t *testing.T) {
 // definer, or that cannot tell, before a statement is planned. The refusal
 // names each view with its definer and the connected account.
 func TestPlanner_ViewDefiner_FailurePath(t *testing.T) {
+	foreignRollback := definerChange("DEFINER", "", "owner@%")
+	foreignRollback.Rollback = true
 	other := definerChange("DEFINER", "", "auditor@localhost")
 	other.ViewName, other.Desired.Name = "w", "w"
 	tests := []struct {
@@ -91,6 +105,13 @@ func TestPlanner_ViewDefiner_FailurePath(t *testing.T) {
 			wantMessage: `unsupported feature: view v runs with the privileges of its definer owner@% under SQL SECURITY DEFINER, ` +
 				`and replacing it as app@% would make app@% its definer\. Connect as owner@% to replace it, ` +
 				`declare SQL SECURITY INVOKER if it should run with its caller's privileges, or leave the view unchanged`,
+		},
+		{
+			name:        "a rollback of another definer's view",
+			views:       []difftypes.ViewDiff{foreignRollback},
+			account:     new("app@%"),
+			wantViews:   []planrefusal.ViewDefiner{{View: "v", Definer: "owner@%", Account: "app@%"}},
+			wantMessage: `unsupported feature: view v runs with the privileges of its definer owner@% .*`,
 		},
 		{
 			name:        "another definer and a declared definer",
@@ -179,6 +200,7 @@ func TestPlanner_ViewDefiner_TargetsWithoutAViewMode(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
+			c.Assert(nodes[0].(*ast.CreateViewNode).Definer, qt.Equals, "")
 		})
 	}
 }

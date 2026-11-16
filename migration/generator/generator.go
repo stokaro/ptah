@@ -19,6 +19,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/definer"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/revisiontable"
@@ -550,6 +551,7 @@ func compareForPlan(
 	if err := warnUndescribedSchemas(opts, conn.Info(), desired, diff); err != nil {
 		return nil, schemadiff.Diagnostics{}, err
 	}
+	definer.WarnUnnamedViews(opts.Diagnostics, diff, conn.Info().Dialect)
 	return diff, undecided, nil
 }
 

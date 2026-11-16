@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/mysqldefiner"
 	"ptah.run/internal/planrefusal"
 	"ptah.run/internal/providerdiagnostic"
 	"ptah.run/internal/servercode"
@@ -137,6 +138,13 @@ const (
 	// account. Apply as the definer, declare SQL SECURITY INVOKER, or leave
 	// the view unchanged.
 	RefusalViewDefiner RefusalCode = "view-definer"
+	// RefusalDefinerPrivilege means a statement names another account as the
+	// definer of a view, routine, trigger or event, and the connected account
+	// lacks the global privilege the server checks for that: SET_ANY_DEFINER
+	// on MySQL, with ALLOW_NONEXISTENT_DEFINER for an account the server lacks,
+	// and SET USER on MariaDB. The refusal comes before any statement runs.
+	// Grant the privilege, or apply as the definer.
+	RefusalDefinerPrivilege RefusalCode = "definer-privilege"
 	// RefusalDependentObject means the plan drops an object something else
 	// depends on, where the drop would stop on the dependent or take it with
 	// nothing to create it again. Change the dependent first.
@@ -171,6 +179,10 @@ type Refusal struct {
 	// definer and the account the replacement would make its definer, in the
 	// order the comparison lists the views.
 	ViewDefiners []planrefusal.ViewDefiner `json:"view_definers,omitempty"`
+	// DefinerPrivileges are the statements a definer-privilege refusal names,
+	// each with the definer it names, the connected account and the privilege
+	// that account lacks, in statement order.
+	DefinerPrivileges []mysqldefiner.MissingPrivilege `json:"definer_privileges,omitempty"`
 }
 
 // PlanReport is the machine-readable record of one `schema plan` run.
@@ -519,6 +531,7 @@ func refusalFor(err error) *Refusal {
 	var simulation *SimulationError
 	var lostViewSecurity *planrefusal.LostViewSecurityError
 	var viewDefiner *planrefusal.ViewDefinerError
+	var definerPrivilege *mysqldefiner.PrivilegeError
 	var dependentObject *planrefusal.DependentObjectError
 	var declaration *planrefusal.DeclarationError
 	switch {
@@ -547,6 +560,8 @@ func refusalFor(err error) *Refusal {
 		return &Refusal{Code: RefusalViewSecurityOption, ViewOptions: lostViewSecurity.Options}
 	case errors.As(err, &viewDefiner):
 		return &Refusal{Code: RefusalViewDefiner, ViewDefiners: viewDefiner.Views}
+	case errors.As(err, &definerPrivilege):
+		return &Refusal{Code: RefusalDefinerPrivilege, DefinerPrivileges: definerPrivilege.Missing}
 	case errors.As(err, &dependentObject):
 		return &Refusal{Code: RefusalDependentObject}
 	case errors.As(err, &declaration):

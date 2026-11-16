@@ -5,11 +5,8 @@ import (
 	"strings"
 
 	"ptah.run/core/difftypes"
-	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/definer"
-	"ptah.run/internal/descriptortable"
-	"ptah.run/internal/mysqlviewsecurity"
 	"ptah.run/internal/planrefusal"
 )
 
@@ -19,13 +16,16 @@ import (
 // CREATE OR REPLACE VIEW without a DEFINER clause makes the account that runs
 // it the view's definer. A view under SQL SECURITY DEFINER runs with its
 // definer's privileges, so replacing one another account defined changes whose
-// privileges it runs with, and no statement fails. The plan is applied through
-// the connection the comparison read, so the account that read recorded is the
-// one the replacement installs. The comparison's routine rule refuses the same
-// change to a routine, and both ask [definer.Replace] whether the two accounts
-// are one. A definer or an account the read did not record is refused too:
-// reading a missing fact as the same account would allow the change this check
-// exists to stop.
+// privileges it runs with, and no statement fails. For the replacements this
+// rule lets through, [definer.ViewClauseDefiner] names the definer in the
+// statement, so it keeps the definer it read. The rule refuses before the server changes rather
+// than leave it to the server: a statement that names another account fails
+// without a privilege, in the middle of an apply that may not run in a
+// transaction. The comparison's routine rule refuses the same change to a
+// routine, and both ask [definer.Replace] whether the two accounts are one. A
+// definer or an account the read did not record is refused too: reading a
+// missing fact as the same account would allow the change this check exists
+// to stop.
 //
 // A view under SQL SECURITY INVOKER on either side of the change is left
 // alone. Held as INVOKER, it runs with its caller's privileges until the
@@ -36,11 +36,11 @@ import (
 //
 // The check decides only where the comparison ran against a database read,
 // which sets [difftypes.SchemaDiff.ConnectedAccount]. A diff of two
-// descriptions has no connection that applies it, and the comparison's routine
-// rule leaves it alone too. A rollback replaces the view its forward change
-// wrote, not the one the read saw: that view's definer is the account that
-// applied the forward change, which nothing read, so there is nothing to
-// compare. Run as the same account, it leaves the definer it finds.
+// descriptions, or of a replay on a dev database, has no connection that
+// applies it, and the comparison's routine rule leaves it alone too; its
+// replacements name no definer, and the commands that write them warn. A rollback is checked on the same terms: its entry
+// carries the definer and the account its forward plan read, and the forward
+// plan wrote that definer into the view the rollback replaces.
 //
 // The rule reads the descriptor's Comparison.ViewSQLSecurity, as the
 // comparison does before it records a definer. This planner serves Oracle and
@@ -48,16 +48,14 @@ import (
 // none, and reading the missing mode as the MySQL default would refuse every
 // changed view there as unknown.
 func refuseForeignViewDefiner(diff *difftypes.SchemaDiff, dialect string) error {
-	if diff.ConnectedAccount == nil || !viewSQLSecurity.Get(dialect) {
+	if diff.ConnectedAccount == nil || !definer.ViewsHaveSQLSecurity(dialect) {
 		return nil
 	}
 	account := *diff.ConnectedAccount
 	var refusals []string
 	var views []planrefusal.ViewDefiner
 	for _, viewDiff := range diff.ViewsModified {
-		if viewDiff.Rollback || viewDiff.Desired.Name == "" ||
-			mysqlviewsecurity.Effective(viewDiff.PreviousSecurity) != "DEFINER" ||
-			mysqlviewsecurity.Effective(viewDiff.Desired.Security) != "DEFINER" {
+		if viewDiff.Desired.Name == "" || !definer.RunsAsDefiner(viewDiff, dialect) {
 			continue
 		}
 		name, held := viewDiff.Desired.Name, viewDiff.PreviousDefiner
@@ -87,9 +85,3 @@ func refuseForeignViewDefiner(diff *difftypes.SchemaDiff, dialect string) error 
 		Err:   fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, strings.Join(refusals, "; ")),
 	}
 }
-
-// viewSQLSecurity holds each descriptor's Comparison.ViewSQLSecurity: whether a
-// view on the target has a SQL SECURITY mode, and so a definer it runs as.
-var viewSQLSecurity = descriptortable.New(func(described descriptor.Dialect) bool {
-	return described.Comparison.ViewSQLSecurity
-})

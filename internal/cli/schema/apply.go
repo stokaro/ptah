@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/dispatchwitness"
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/mysqldefiner"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemaload"
@@ -745,6 +746,9 @@ func runSchemaApplyOnLockedSession(
 	if err := atlasschema.PreflightApplyTransaction(info.Dialect, info.Capabilities, txMode, statements); err != nil {
 		return "", err
 	}
+	if err := mysqldefiner.Check(ctx, conn, "", statements); err != nil {
+		return "", err
+	}
 	// The dev database rehearses the exact ordered statements that would be
 	// applied — including edited SQL — and a failed rehearsal refuses the
 	// apply before the target is touched.
@@ -908,6 +912,9 @@ func runSchemaApplyPlanFileOnLockedSession(
 	if err := atlasschema.PreflightApplyTransaction(
 		info.Dialect, info.Capabilities, txMode, plan.StatementSQL(),
 	); err != nil {
+		return "", err
+	}
+	if err := mysqldefiner.Check(ctx, conn, "", plan.StatementSQL()); err != nil {
 		return "", err
 	}
 	// As on a computed plan: the checks of a real run sit above this exit.

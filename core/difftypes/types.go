@@ -2327,10 +2327,15 @@ type ViewDiff struct {
 	// Under SQL SECURITY DEFINER the view runs with this account's privileges,
 	// and a statement that writes it again without a DEFINER clause makes the
 	// account that runs it the definer instead. A planner reads it beside
-	// [SchemaDiff.ConnectedAccount], and refuses a forward replacement of a
-	// view that runs as its definer before and after the change where the two
-	// differ or either one is empty. Empty where the read recorded none, and
-	// in a reversed entry, whose view is the one the forward change wrote.
+	// [SchemaDiff.ConnectedAccount]: it refuses a replacement of a view that
+	// runs as its definer before and after the change where the two differ or
+	// either one is empty, and names this definer in the statement where they
+	// agree, so another account that applies the plan keeps it or fails.
+	// Empty where the read recorded none.
+	//
+	// A reversed entry carries the forward entry's definer: the definer of the
+	// view the rollback restores, which a rollback that writes the view under
+	// SQL SECURITY DEFINER names.
 	//
 	// It stays off the wire, as Desired does.
 	PreviousDefiner string `json:"-"`
