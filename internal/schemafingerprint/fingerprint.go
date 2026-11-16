@@ -24,12 +24,29 @@ func Observed(ctx context.Context, runtime schemaext.ModelRuntime, database *cat
 		return "", fmt.Errorf("schema fingerprint requires schema")
 	}
 	common := cloneObservedEnvelopes(database)
+	keepWhetherPopulated(common.Tables)
 	common.FeatureObjects, common.FeatureCoverage = schemaext.Objects{}, schemaext.Coverage{}
 	common.PlanningContextObjects, common.PlanningContextCoverage = schemaext.Objects{}, schemaext.Coverage{}
 	return fingerprint(ctx, runtime.Codecs(), schemaext.Observed, &common, features{
 		objects: database.FeatureObjects, coverage: database.FeatureCoverage,
 		contextObjects: database.PlanningContextObjects, contextCoverage: database.PlanningContextCoverage,
 	}, common.FacetSlots())
+}
+
+// keepWhetherPopulated replaces the row statistics of each table with whether
+// it holds rows, [catalog.Table.Populated], which is the row fact a plan is
+// decided with. The estimate moves with every write and every analyze of the
+// target, so a fingerprint over it reports a saved plan as stale once a row is
+// written, though nothing the plan depends on changed. A populated table is
+// written as one estimated row and an empty one as none.
+func keepWhetherPopulated(tables []catalog.Table) {
+	for i := range tables {
+		var rows int64
+		if tables[i].Populated() {
+			rows = 1
+		}
+		tables[i].EstimatedRows, tables[i].RowStatsUnknown = rows, false
+	}
 }
 
 // Desired fingerprints a declaration without modifying the caller's snapshot.

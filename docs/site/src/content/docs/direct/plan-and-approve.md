@@ -212,15 +212,21 @@ and so is a plan for one database applied to the whole server. A `--dev-url`
 naming a database beside a whole server is refused, as `schema apply` refuses
 it.
 
-`from_fingerprint` describes structure, not rows. When the desired schema
-declares reference rows and the plan reads a table that holds them, the plan
-also records `managed_rows` -- each table, its key columns and the managed
-columns it read -- and `rows_fingerprint`, a digest of the rows those columns
-held. Applying the plan reads the same columns again, so a declared row that
-changed after the plan was computed makes the plan stale too, and a column the
-declaration does not manage does not. The row values themselves are not written
-into the plan file. A plan that declares no rows carries neither field, and the
-Atlas `.plan.hcl` format, which has no place for them, refuses a plan that does.
+`from_fingerprint` describes structure, not rows, with one exception where the
+database reports row statistics, as PostgreSQL does: it records whether each
+table holds any rows, which decides whether an index is built concurrently.
+Writing rows to a table that already holds some keeps the plan valid; the first
+row in an empty table makes it stale.
+
+When the desired schema declares reference rows and the plan reads a table that
+holds them, the plan also records `managed_rows` -- each table, its key columns
+and the managed columns it read -- and `rows_fingerprint`, a digest of the rows
+those columns held. Applying the plan reads the same columns again, so a
+declared row that changed after the plan was computed makes the plan stale too,
+and a column the declaration does not manage does not. The row values
+themselves are not written into the plan file. A plan that declares no rows
+carries neither field, and the Atlas `.plan.hcl` format, which has no place for
+them, refuses a plan that does.
 
 `from_fingerprint` also covers the role memberships the plan depends on, and no
 others. A membership counts when it connects to one of these roles, directly or
