@@ -82,6 +82,16 @@ type CompareOptions struct {
 	// no database.
 	ServerSchemas bool
 
+	// ReplayedCurrent says the current state is a dev database that a replay
+	// of a migration directory built, not the database the plan is applied
+	// to. Nothing that applies the plan read it, so the database-aware
+	// comparison records no connected account and no view definer, and asks
+	// the routine definer rule nothing: the account and definers on the dev
+	// database are the replay's, and a migration planned there is applied by
+	// whoever runs it. A MySQL-family plan then writes no DEFINER clause and
+	// refuses no change of definer. Leave it false for a read of the target.
+	ReplayedCurrent bool
+
 	// DesiredGrantsComplete says the desired state was read from a server, so
 	// it holds every grant on what it describes. A grant only the database
 	// holds is then a removal, whoever holds it. A declaration says nothing

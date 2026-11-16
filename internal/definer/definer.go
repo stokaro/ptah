@@ -12,7 +12,11 @@
 // not, one kind of object would change hands where the other is refused.
 package definer
 
-import "strings"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
 
 // Replacement is what writing an object again does to its definer.
 //
@@ -96,4 +100,35 @@ func lowerASCII(b byte) byte {
 		return b + ('a' - 'A')
 	}
 	return b
+}
+
+// ErrAccount is the refusal of a definer that does not spell an account as
+// user@host with both parts present.
+var ErrAccount = errors.New("definer is not an account spelled user@host")
+
+// Clause writes the DEFINER clause that names account, spelled user@host as
+// the catalog's DEFINER column and CURRENT_USER() spell it, so a statement
+// keeps the definer it names: DEFINER=`user`@`host`. The host is what follows
+// the last at sign, as in [Replace].
+//
+// Each part is a backtick-quoted identifier with its backticks doubled. A
+// quoted string would depend on the session: under NO_BACKSLASH_ESCAPES a
+// backslash in 'user' is a character, otherwise it escapes the next one, so
+// one spelling names two accounts. A backtick-quoted part reads the same
+// under every sql_mode, and SHOW CREATE VIEW writes the clause that way.
+//
+// It refuses an account with no at sign, an empty user name or an empty host
+// with an error wrapping [ErrAccount]: an anonymous account or a role name
+// without its host is not a definer a plan writes.
+func Clause(account string) (string, error) {
+	at := strings.LastIndexByte(account, '@')
+	if at <= 0 || at == len(account)-1 {
+		return "", fmt.Errorf("%w: %q", ErrAccount, account)
+	}
+	return "DEFINER=" + quoteIdentifier(account[:at]) + "@" + quoteIdentifier(account[at+1:]), nil
+}
+
+// quoteIdentifier quotes part in backticks, doubling each backtick it holds.
+func quoteIdentifier(part string) string {
+	return "`" + strings.ReplaceAll(part, "`", "``") + "`"
 }

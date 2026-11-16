@@ -55,3 +55,52 @@ func TestReplacement_ZeroValueIsUnknown(t *testing.T) {
 
 	c.Assert(zero, qt.Equals, definer.Unknown)
 }
+
+// TestClause_HappyPath pins the clause a statement writes to keep a definer:
+// each part in backticks, a backtick doubled, a quote and a backslash written
+// as they are, and the host after the last at sign.
+func TestClause_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, account, want string
+	}{
+		{name: "an account", account: "owner@%", want: "DEFINER=`owner`@`%`"},
+		{name: "a host name", account: "owner@localhost", want: "DEFINER=`owner`@`localhost`"},
+		{name: "a quote and a backslash", account: `o'q\b@%`, want: "DEFINER=`o'q\\b`@`%`"},
+		{name: "a backtick", account: "o`k@%", want: "DEFINER=`o``k`@`%`"},
+		{name: "an at sign in the user name", account: "a@b@10.0.0.%", want: "DEFINER=`a@b`@`10.0.0.%`"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := definer.Clause(test.account)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestClause_FailurePath pins the spellings that name no account a plan can
+// write as a definer.
+func TestClause_FailurePath(t *testing.T) {
+	tests := []struct {
+		name, account, says string
+	}{
+		{name: "empty", account: "", says: `definer is not an account spelled user@host: ""`},
+		{name: "a role name with no host", account: "auditor", says: `definer is not an account spelled user@host: "auditor"`},
+		{name: "an anonymous account", account: "@%", says: `definer is not an account spelled user@host: "@%"`},
+		{name: "no host", account: "owner@", says: `definer is not an account spelled user@host: "owner@"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := definer.Clause(test.account)
+
+			c.Assert(err, qt.ErrorIs, definer.ErrAccount)
+			c.Assert(err, qt.ErrorMatches, test.says)
+			c.Assert(got, qt.Equals, "")
+		})
+	}
+}

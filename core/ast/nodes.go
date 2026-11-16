@@ -1702,6 +1702,14 @@ type CreateViewNode struct {
 	// Security is the SQL SECURITY mode a view declares. Renderers refuse
 	// modes they cannot preserve.
 	Security string
+	// Definer is the account a MySQL or MariaDB view runs as under SQL
+	// SECURITY DEFINER, spelled user@host as the catalog's DEFINER column
+	// spells it. The MySQL-family renderer writes it as a DEFINER clause, so
+	// the statement keeps that definer or fails: naming another account than
+	// the one that runs it needs a privilege. Every other renderer refuses a
+	// view that carries one. Empty writes no clause, and the account that runs
+	// the statement becomes the definer.
+	Definer string
 	// Comment is an optional comment emitted as a SQL comment above the
 	// statement.
 	Comment string

@@ -88,9 +88,9 @@ func reverseSchemaDiffWithPrior(
 		IdentifierSemantics:    cloneIdentifierSemantics(diff.IdentifierSemantics),
 		ConnectedRole:          diff.ConnectedRole,
 		ConnectedRoleSuperuser: diff.ConnectedRoleSuperuser,
-		// The account the read ran as, which runs the down migration too. No
-		// planner refuses a rollback for a view's definer: the view it
-		// replaces is the one the up migration wrote, as that account.
+		// The account the read ran as. With each view's definer, which the
+		// reversed entry carries too, it decides the down migration's view
+		// definers on the terms it decided the up migration's.
 		ConnectedAccount: cloneStringPtr(diff.ConnectedAccount),
 		TablePreparation: cloneTablePreparation(diff.TablePreparation),
 

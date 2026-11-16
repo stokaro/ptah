@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/constraintscope"
+	"ptah.run/internal/definer"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/indexscope"
@@ -2160,7 +2161,9 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 		if viewDiff.Desired.Name == "" {
 			continue
 		}
-		result = append(result, modelast.FromView(viewDiff.Desired).SetReplace())
+		view := modelast.FromView(viewDiff.Desired).SetReplace()
+		view.Definer = definer.ViewClauseDefiner(viewDiff, diff.ConnectedAccount, p.targetDialect())
+		result = append(result, view)
 	}
 	return result
 }

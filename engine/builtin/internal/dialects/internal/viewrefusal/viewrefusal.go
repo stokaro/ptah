@@ -80,3 +80,14 @@ func Security(dialect string, view *ast.CreateViewNode) error {
 	return fmt.Errorf("%w: %s: view %s declares SQL SECURITY %s, which only MySQL and MariaDB views support",
 		ptaherr.ErrUnsupportedFeature, dialect, view.Name, view.Security)
 }
+
+// Definer refuses a view that names the account it runs as on a target whose
+// views have no definer clause: created without it, the view would not run as
+// the account the plan named.
+func Definer(dialect string, view *ast.CreateViewNode) error {
+	if view.Definer == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: %s: view %s names its definer %s, which only MySQL and MariaDB views have",
+		ptaherr.ErrUnsupportedFeature, dialect, view.Name, view.Definer)
+}

@@ -16,6 +16,7 @@ import (
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
+	"ptah.run/internal/definer"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/mysqlviewsecurity"
@@ -690,6 +691,13 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	create := "CREATE"
 	if node.Replace {
 		create += " OR REPLACE"
+	}
+	if node.Definer != "" {
+		definerClause, err := definer.Clause(node.Definer)
+		if err != nil {
+			return fmt.Errorf("view %s: %w", node.Name, err)
+		}
+		create += " " + definerClause
 	}
 	if securityClause != "" {
 		create += " " + securityClause

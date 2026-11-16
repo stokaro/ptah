@@ -222,6 +222,37 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	); err != nil {
 		return nil, Diagnostics{}, err
 	}
+	if err := recordDefiners(desired, database, info, merged, semantics, runtime, diff); err != nil {
+		return nil, Diagnostics{}, err
+	}
+	return diff, undecided, nil
+}
+
+// recordDefiners settles what a diff of a database read says about definers.
+// A replayed current state holds the replay's account and definers, not the
+// target's, so neither definer rule has anything to compare: the diff carries
+// no account and no view definer, as a diff of two descriptions does. See
+// [config.CompareOptions.ReplayedCurrent]. A read of the target refuses a
+// routine whose definer the change would take over, and records the account
+// a plan applied through this connection writes objects as. Only a comparison
+// against a database read sets it, so a planner tells a read that did not
+// record the account, which it refuses on, from a diff of two descriptions,
+// which no connection applies.
+func recordDefiners(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	info catalog.ServerInfo,
+	opts *config.CompareOptions,
+	semantics identifier.Semantics,
+	runtime TargetRuntime,
+	diff *difftypes.SchemaDiff,
+) error {
+	if opts.ReplayedCurrent {
+		for index := range diff.ViewsModified {
+			diff.ViewsModified[index].PreviousDefiner = ""
+		}
+		return nil
+	}
 	// A comparison given no capability set assumes the dialect's preset, as
 	// the comparison itself does.
 	caps := info.Capabilities
@@ -230,7 +261,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	}
 	rules, err := runtime.ComparisonRules(info.Dialect)
 	if err != nil {
-		return nil, Diagnostics{}, err
+		return err
 	}
 	if err := compare.ValidateRoutineDefinerReplacements(
 		desired,
@@ -241,14 +272,10 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		semantics,
 		rules.Routines,
 	); err != nil {
-		return nil, Diagnostics{}, err
+		return err
 	}
-	// The account a plan applied through this connection writes objects as.
-	// Only a comparison against a database read sets it, so a planner tells a
-	// read that did not record the account, which it refuses on, from a diff
-	// of two descriptions, which no connection applies.
 	diff.ConnectedAccount = new(database.CurrentAccount)
-	return diff, undecided, nil
+	return nil
 }
 
 // copyComparisonOptions owns the values this entry point fills from target

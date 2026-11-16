@@ -582,6 +582,7 @@ file does not record the field, so `apply --plan` does not report it; the
 | `simulation-failed` | `apply` with `--dev-url` | The plan failed its rehearsal on the dev database and was not sent to the target |
 | `view-security-option` | `plan`, and `apply` without `--plan` | The plan would take a security option the schema does not state from a view. `view_options` lists each `view` and `option`; the [PostgreSQL](../../databases/postgresql/#a-security-option-the-declaration-leaves-out) and [MySQL](../../databases/mysql/#view-security) pages give the remedies |
 | `view-definer` | `plan`, and `apply` without `--plan` | The plan would replace a view that runs as another account. `view_definers` lists each `view`, `definer` and `account` |
+| `definer-privilege` | `apply` | A statement names another account as a MySQL or MariaDB definer, and the connected account lacks the privilege to name it. `definer_privileges` lists each `object`, `definer`, `account` and `privilege`; see [MySQL](../../databases/mysql/#naming-another-account-as-the-definer) |
 | `dependent-object` | `plan`, and `apply` without `--plan` | The plan drops an object something else depends on. The error message names both |
 | `declaration-refused` | `plan`, and `apply` without `--plan` | The target cannot host or plan what the schema states. The error message names it |
 

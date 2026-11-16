@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/config"
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
@@ -443,6 +445,7 @@ func planGeneratedMigrationByReplay(
 						return err
 					}
 					replayOpts.DBConn = replayConn
+					replayOpts.CompareOptions = replayedCompareOptions(generateOpts.CompareOptions)
 					replayOpts.PriorMigrationsFS = priorMigrations
 					var planErr error
 					plan, planErr = generator.PlanMigration(lockedCtx, replayOpts)
@@ -921,4 +924,17 @@ func generateDiffPolicy(cmd *cobra.Command, projectCfg projectconfig.Config) (ge
 		AllowTableRebuild:   rebuild,
 		RotateSecrets:       rotateSecrets,
 	}, nil
+}
+
+// replayedCompareOptions is opts for a comparison whose current state the
+// replay built on the dev database; see [config.CompareOptions.ReplayedCurrent].
+// It copies opts, which the caller keeps.
+func replayedCompareOptions(opts *config.CompareOptions) *config.CompareOptions {
+	replayed := config.DefaultCompareOptions()
+	if opts != nil {
+		*replayed = *opts
+		replayed.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
+	}
+	replayed.ReplayedCurrent = true
+	return replayed
 }

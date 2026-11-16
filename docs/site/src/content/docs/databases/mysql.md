@@ -785,19 +785,73 @@ refused` with the code `view-definer`, and `view_definers` names each `view`
 with its `definer` and the `account` the plan would make its definer.
 `schema drift` reports the difference and does not refuse.
 
-A rollback migration is not refused for a definer. It replaces the view its up
-migration wrote, whose definer is the account that applied that migration, so
-run as the same account it leaves the definer it finds. An up migration that
-declares `INVOKER` for a view another account defined is planned, and its
-rollback writes the view under `DEFINER` again as the account that runs it,
-not as the definer it had.
+When the definer is the connected account, the replacement names it, so the
+view keeps its definer whichever account applies the plan later:
 
-The check compares the definer with the account that read the database, not
-the one that applies the plan. A migration file that `migrations generate`
-planned as one account and another account applies, or a rollback run as
-another account than its up migration, replaces the view with the applying
-account as its definer, and nothing checks it. The routine rule has the same
-limit, so generate and apply versioned migrations as one account.
+```sql
+CREATE OR REPLACE DEFINER=`app`@`%` SQL SECURITY DEFINER VIEW `my_docs` AS ...
+```
+
+A rollback migration is checked on the same terms. It names the definer the up
+migration's read recorded whenever it writes the view under `DEFINER`, since
+that is the view it restores.
+
+#### A plan made from a replay
+
+`migrations generate --replay`, `ptah-compat migrate diff` and `ptah-compat
+schema diff` with a migration directory as `--from` plan from a dev database
+that a replay built. Its account and its definers are the dev server's, so
+the plan names no definer and refuses no change of definer. The replayed
+state still records each view's mode, so a replacement of a view that runs as
+its definer warns on standard error, once per view, and the exit code stays
+the same:
+
+```text
+warning: view my_docs runs with its definer's privileges under SQL SECURITY DEFINER, and the migration replaces it without a DEFINER clause, so the account that applies the migration becomes its definer. To keep a definer, write DEFINER= into the file, or apply it as that definer
+```
+
+The warning is not written into the file or to standard output.
+
+A history that names definers needs a dev account that may name them: on
+MySQL `SET_ANY_DEFINER`, with `ALLOW_NONEXISTENT_DEFINER` for an account the
+dev server lacks, and on MariaDB `SET USER`. An administrative account holds
+them. Without them the replay fails with error 1227.
+
+#### Naming another account as the definer
+
+A statement that writes `DEFINER=` for another account fails with error 1227
+unless the account that runs it holds a global privilege. MySQL and MariaDB
+run DDL outside a transaction, so a failure in the middle of a run would
+leave the statements before it applied. `schema apply`, with a computed plan
+or with `--plan`, `ptah-compat schema apply` and `migrations up` and `down`
+therefore ask before the first statement. They scan the statements, and for
+`migrations` every pending file, for a `CREATE` or `ALTER` of a view,
+routine, trigger or event that names another account, and refuse when the
+connected account cannot name it. The message names the object, the definer,
+the account and the privilege. Grant the privilege, or apply as the definer:
+
+```sql
+-- MySQL
+GRANT SET_ANY_DEFINER ON *.* TO 'deploy'@'%';
+-- MySQL, when the definer account does not exist on the server
+GRANT ALLOW_NONEXISTENT_DEFINER ON *.* TO 'deploy'@'%';
+-- MariaDB
+GRANT SET USER ON *.* TO 'deploy'@'%';
+```
+
+`SUPER` covers both on MySQL. Under `--json` the refusal is `outcome:
+refused` with the code `definer-privilege`, and `definer_privileges` names
+each `object` with its `definer`, the `account` and the `privilege`. A file
+that names the connected account, or `CURRENT_USER`, needs no privilege.
+
+The check reads plain `SHOW GRANTS`, which on both servers includes the
+privileges of an active role and leaves out a role that is granted but not
+active, as the server does. Where it cannot decide, it refuses nothing and
+the server answers with error 1227 as it would without the check: when `SHOW
+GRANTS` fails, on MariaDB for an account that holds `SUPER` without `SET
+USER` (MariaDB 10.11 accepts it, 11.4 and later refuse it), and on MySQL for
+an account that holds `SET_ANY_DEFINER` without `ALLOW_NONEXISTENT_DEFINER`
+and cannot read `mysql.user` to learn whether the definer exists.
 
 The plan records the mode before and after each statement on a view, as the
 [`sql_security` effect](../../reference/statement-effects/).
