@@ -78,6 +78,16 @@ func (s *session) cleanupSchemas() []string {
 	return nil
 }
 
+// CarriesNamespaces reports whether the session's engine carries its
+// namespaces (schema.common-namespaces). A read of the session then answers
+// each schema selector with the schemas the provider binds it to, none for a
+// selector that names no schema, and inspects no other schema, so a rehearsal
+// can read the few schemas its statements name without inspecting every
+// object of the database.
+func (s *session) CarriesNamespaces() bool {
+	return s.target.carriesNamespaces()
+}
+
 // UserSchemas lists the schemas a read of the session's whole database
 // reports, for a provider that carries namespaces, so a claim of a dev
 // database whose URL pinned one schema records the others; see

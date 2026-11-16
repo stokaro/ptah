@@ -82,3 +82,9 @@ internal/cli/atlas/dev
 # The gates themselves use `go run`, which writes nothing, so nothing needed
 # the file. Build into `bin/`, which `/bin/*` above already ignores.
 /exporteddocs
+
+# A fixture program built from the fixture module's root. `go build
+# ./cmd/namespaces` there writes `namespaces` beside go.mod, and one such
+# build, 31 MB of darwin/arm64, reached a commit. The tests build each program
+# into a temporary directory, so nothing needs the file.
+/provider-sdk/testdata/fixture/namespaces

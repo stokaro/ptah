@@ -3,7 +3,9 @@ package atlasschema
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -50,6 +52,14 @@ func newRehearsalSeed(info catalog.ServerInfo, selections selectext.Set, schemas
 	return rehearsalSeed{narrowed: true, leftOut: atlasfilter.KindsLeftOut(selections, exclude, include)}
 }
 
+// namespaceCarrier is the writer of a provider session, which reports
+// whether its engine carries namespaces (schema.common-namespaces). The
+// provider then binds each schema selector of a read to the schemas its
+// engine names by it, and binds a selector that names none to nothing.
+type namespaceCarrier interface {
+	CarriesNamespaces() bool
+}
+
 // target returns the reader of the target conn reaches outside the compared
 // scope, or nil when the compared state was not narrowed.
 //
@@ -57,20 +67,33 @@ func newRehearsalSeed(info catalog.ServerInfo, selections selectext.Set, schemas
 // schemas of the target's realm that a statement names, which includes the
 // search path: a schema nothing names is not read, so a schema a selection
 // left out because the reader cannot describe it stays unread unless a
-// statement needs it. Any other engine reads what its URL reaches, once, and so
-// does a connection whose writer offers no realm probe, such as a provider
-// session serving a search-path engine's name: what lies outside its URL is
-// then not recreated, and a statement that needs it fails in the rehearsal.
+// statement needs it. A provider session whose engine carries namespaces reads
+// the same way without a realm list: each word a statement uses as a qualifier
+// is a schema selector of the provider's read, beside the session's own
+// schema, and the provider decides which schema a word names; see
+// [devseed.Selected].
+//
+// Any other engine reads what its URL reaches, once, and so does a provider
+// session whose engine carries no namespaces, whose read of its whole
+// database is what its URL reaches. What lies outside it is then not
+// recreated, and a statement that needs it fails in the rehearsal.
 //
 // A word a statement uses as a qualifier is often not a schema, such as a
-// table alias, so a read asked for a new word that selects the same schemas
-// returns the state it read before.
+// table alias. Matched against the realm, a read asked for a new word that
+// selects the same schemas returns the state it read before; a provider is
+// asked again, and binds a word that names no schema to nothing.
 func (s rehearsalSeed) target(ctx context.Context, conn *dbschema.DatabaseConnection) devseed.Target {
 	if !s.narrowed || conn == nil {
 		return nil
 	}
 	ctx = readscope.Without(ctx, s.leftOut...)
 	info := conn.Info()
+	if carrier, ok := conn.SchemaWriter().(namespaceCarrier); ok {
+		if carrier.CarriesNamespaces() {
+			return providerSchemasTarget(ctx, conn)
+		}
+		return providerDatabaseTarget(ctx, conn)
+	}
 	var read *catalog.Database
 	var readSchemas []string
 	urlOnly := described(info.Dialect).Schemas.Selection != descriptor.SchemaSelectionSearchPath
@@ -115,6 +138,52 @@ func (s rehearsalSeed) target(ctx context.Context, conn *dbschema.DatabaseConnec
 		readSchemas = schemas
 		return read, nil
 	}
+}
+
+// providerSchemasTarget is [rehearsalSeed.target] over a provider session
+// whose engine carries namespaces: it reads the schemas the statements name,
+// with the session's own schema, through the provider's filtered inspection.
+func providerSchemasTarget(ctx context.Context, conn *dbschema.DatabaseConnection) devseed.Target {
+	return devseed.Selected(func(selectors []string) (*catalog.Database, error) {
+		read, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, selectors)
+		if err != nil {
+			return nil, fmt.Errorf("read schemas %s of the target through its provider: %w", quotedList(selectors), err)
+		}
+		return read, nil
+	}, schemascope.SplitNames([]string{conn.Info().Schema}))
+}
+
+// providerDatabaseTarget is [rehearsalSeed.target] over a provider session
+// whose engine carries no namespaces: it reads the whole database once, and a
+// failed read says so, since a provider that cannot inspect every object of
+// that database cannot be read for the few the rehearsal needs.
+func providerDatabaseTarget(ctx context.Context, conn *dbschema.DatabaseConnection) devseed.Target {
+	var read *catalog.Database
+	return func([]string) (*catalog.Database, error) {
+		if read != nil {
+			return read, nil
+		}
+		whole, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
+		if err != nil {
+			return nil, fmt.Errorf("the provider of engine %q carries no namespaces (%s), so the rehearsal reads the target's whole database "+
+				"to find what the planned statements need outside the compared scope, and that read failed: %w", conn.Info().Dialect, commonNamespacesFeature, err)
+		}
+		read = whole
+		return read, nil
+	}
+}
+
+// commonNamespacesFeature names the provider feature an engine carries its
+// namespaces under, as a message names it.
+const commonNamespacesFeature = "schema.common-namespaces"
+
+// quotedList names each of names quoted, comma-separated.
+func quotedList(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, strconv.Quote(name))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // rehearsalOutside is what [recreateCurrentSchema] needs to add to the

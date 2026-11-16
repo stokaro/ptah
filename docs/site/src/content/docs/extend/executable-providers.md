@@ -710,6 +710,20 @@ stays; a down file removes the schema its up file created, after everything
 in it, without `CASCADE`. A rehearsal on a dev database removes the schemas it
 created when it cleans up.
 
+A rehearsal of a comparison narrowed to some schemas recreates on the dev
+database the objects of the target that its statements name outside the
+comparison. With the feature, Ptah finds them through the filtered inspection
+the contract already has: `InspectRequest.schemas` holds the words the
+statements use as qualifiers, folded to lower case, and the default schema the
+target's session reports (`Session.default_schema`). The provider binds each selector to the schemas it names, and binds a
+selector that names no schema to nothing. Ptah reads again with more selectors
+when a recreated object names another schema, and never reads a schema nothing
+names. A provider whose inspection fails for some schemas can still be
+rehearsed, as long as no statement needs those schemas.
+
+Without the feature, Ptah reads the whole database once, and a failure of that
+read fails the rehearsal and names the feature.
+
 Without the feature, nothing creates a declared schema. A schema that holds a
 table, view, sequence or provider object reaches the provider as the schema of
 that object, which is how a YDB directory comes to exist. A declared schema

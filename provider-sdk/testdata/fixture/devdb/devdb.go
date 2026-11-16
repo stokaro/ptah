@@ -373,8 +373,11 @@ func (p *Provider) Execute(ctx context.Context, request *protocol.ExecuteRequest
 	return result, nil
 }
 
-// filePath is the file a fixture address path names, with the drive letter
+// FilePath is the file a fixture address path names, with the drive letter
 // a Windows path carries after its leading slash.
+func FilePath(urlPath string) string { return filePath(urlPath) }
+
+// filePath is [FilePath].
 func filePath(urlPath string) string {
 	path := filepath.FromSlash(urlPath)
 	if runtime.GOOS == "windows" && len(path) > 3 && path[0] == '\\' && path[2] == ':' {

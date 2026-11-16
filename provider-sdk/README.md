@@ -2305,6 +2305,15 @@ A host that does not list it receives a description without the kind.
   `NamespaceCreation`: its name and, on an engine that carries comments, its
   comment. `drop_schema` removes one, named by a `schema` reference. The engine
   renders both.
+- A host reads the schemas a statement names through `InspectRequest.schemas`.
+  A rehearsal of a narrowed comparison sends the words its statements use as
+  qualifiers, folded to lower case, with the default schema the target's
+  session reports (`Session.default_schema`). Each selector binds to the
+  namespaces the engine names by it, or to none, and the read inspects nothing
+  outside them, so a namespace whose objects the provider cannot inspect is
+  read only when a statement names it. A quoted name that keeps upper-case
+  letters, such as `"App"`, arrives as `app`. A host reads the whole database
+  instead when the engine does not carry the kind.
 
 The host compares namespaces as it compares PostgreSQL schemas: it adds a
 namespace the declaration holds and the read does not, and creates the

@@ -11,12 +11,21 @@
 // FIXTURE_NAMESPACES selects how the engine takes part: "off" lists no
 // namespace feature, "uninspected" lists it and reads every schema as
 // uninspected, and any other value reads them completely.
+//
+// FIXTURE_UNINSPECTABLE_SCHEMAS names schemas, comma-separated, whose objects
+// the program cannot inspect: a read whose scope covers one, a read of the
+// whole database included, fails, as the read of a server holding objects its
+// provider does not model does. FIXTURE_DEV_ENGINE and FIXTURE_DEV_PROVIDER_ID
+// serve the engine under another name and provider identity, as the devdb
+// program does. FIXTURE_NAMESPACE_VIEWS=true has the engine carry views as
+// well; see views.go.
 package main
 
 import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"example.com/ptah-fixture-provider/devdb"
 	"example.com/ptah-fixture-provider/statements"
@@ -39,15 +48,30 @@ func main() {
 	}
 	description := devdb.Description()
 	description.SemanticIdentity += "-namespaces"
+	engineName := "fixture"
+	if engine := os.Getenv("FIXTURE_DEV_ENGINE"); engine != "" {
+		engineName = engine
+		description.SemanticIdentity += "-" + engine
+		description.Engines[0].Id = engine
+		if id := os.Getenv("FIXTURE_DEV_PROVIDER_ID"); id != "" {
+			description.ProviderId = id
+		}
+	}
 	mode := os.Getenv("FIXTURE_NAMESPACES")
+	views := mode != "off" && namespaceViews()
 	if mode != "off" {
 		added := []string{provider.CommonObjectsFeature, provider.CommonNamespacesFeature}
 		description.Features = append(description.Features, added...)
 		engine := description.Engines[0]
 		engine.Features = append(engine.Features, added...)
 		engine.CommonObjects = &protocol.CommonObjectSupport{Kinds: []protocol.CommonObjectSupport_Kind{protocol.CommonObjectSupport_SCHEMA}}
+		if views {
+			engine.CommonObjects.Kinds = append(engine.CommonObjects.Kinds, protocol.CommonObjectSupport_VIEW)
+		}
 	}
-	owner := &namespaces{Provider: &devdb.Provider{Dir: dir}, carried: mode != "off", uninspected: mode == "uninspected"}
+	owner := &namespaces{Provider: &devdb.Provider{Dir: dir}, engine: engineName, carried: mode != "off", uninspected: mode == "uninspected", views: views,
+		uninspectable: strings.FieldsFunc(os.Getenv("FIXTURE_UNINSPECTABLE_SCHEMAS"), func(r rune) bool { return r == ',' })}
+	owner.Engine = os.Getenv("FIXTURE_DEV_ENGINE")
 	server := runtime.Server{
 		Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner, Transactions: owner, History: owner, Locks: owner,
 		SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner,
@@ -61,3 +85,7 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+// namespaceViews reports whether FIXTURE_NAMESPACE_VIEWS asks the engine to
+// carry views.
+func namespaceViews() bool { return os.Getenv("FIXTURE_NAMESPACE_VIEWS") == "true" }
