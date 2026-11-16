@@ -24,12 +24,12 @@ import (
 	"ptah.run/internal/testutils"
 )
 
-// `ptah migrations down --plan` derives its rollback before the prompt and
-// runs it after, holding no lock while a person reads the plan. These runs
-// drive the shipped binary against PostgreSQL and change the target in that
-// window: the statements that run are the ones shown, and a rollback derived
-// for versions that are no longer the applied ones is refused under the
-// migration lock before any of them runs.
+// `ptah migrations down` reads the history and decides its rollback under the
+// migration lock, releases the lock while a person reads the prompt, and takes
+// it again to roll back. These runs drive the shipped binary against
+// PostgreSQL and change the target in that window: the statements that run are
+// the ones shown, and a rollback confirmed for versions that are no longer the
+// applied ones is refused under the migration lock before any of them runs.
 
 // migrationLockName is the advisory lock `ptah migrations up` and `down` take,
 // named as the migrator names it by default.
@@ -121,17 +121,31 @@ type promptedDown struct {
 	stderr *lockedBuffer
 }
 
-// startPromptedDown starts the rollback back to version 1 and waits until it
-// asks for confirmation.
+// startPromptedDown starts the --plan rollback back to version 1 and waits
+// until it asks for confirmation.
 func (r downPlanTargetRun) startPromptedDown(c *qt.C) *promptedDown {
+	c.Helper()
+	return r.startPrompted(c, "--plan", "--shadow-db", r.dev)
+}
+
+// startPromptedFileDown starts the rollback through the down files back to
+// version 1 and waits until it asks for confirmation.
+func (r downPlanTargetRun) startPromptedFileDown(c *qt.C) *promptedDown {
+	c.Helper()
+	return r.startPrompted(c)
+}
+
+// startPrompted starts `ptah migrations down` back to version 1 with args and
+// waits until it asks for confirmation.
+func (r downPlanTargetRun) startPrompted(c *qt.C, args ...string) *promptedDown {
 	c.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	c.Cleanup(cancel)
 	// #nosec G204 -- clirun.Build builds the binary from this tree, and every
 	// argument is a path or URL the test created.
 	cmd := exec.CommandContext(ctx, clirun.Build(c, clirun.Ptah),
-		"migrations", "down", "--db-url", r.target, "--migrations-dir", r.migrationsDir,
-		"--target", "1", "--plan", "--shadow-db", r.dev)
+		append([]string{"migrations", "down", "--db-url", r.target, "--migrations-dir", r.migrationsDir,
+			"--target", "1"}, args...)...)
 	cmd.Dir = c.TempDir()
 	cmd.Env = environmentWithoutPtahVariables()
 	stdin, err := cmd.StdinPipe()
@@ -230,10 +244,77 @@ func TestMigrationsDownPlanRefusesAChangedTargetE2E_FailurePath(t *testing.T) {
 	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1, 2, 3})
 }
 
+// TestMigrationsDownLeavesTheLockWhileThePromptWaitsE2E_HappyPath rolls back
+// through the down files. While the prompt waits, a session of the test's own
+// takes the migration lock at once, so the waiting run holds none. Once
+// answered, the run rolls back the migration it showed.
+func TestMigrationsDownLeavesTheLockWhileThePromptWaitsE2E_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	run := newDownPlanTargetRun(c)
+	prompted := run.startPromptedFileDown(c)
+
+	free := advisoryLockIsFree(c, run.target, migrationLockName)
+	code := prompted.answer(c)
+
+	c.Assert(free, qt.IsTrue, prompted.comment())
+
+	c.Assert(code, qt.Equals, 0, prompted.comment())
+	c.Assert(run.userTables(c), qt.DeepEquals, []string{"users"})
+	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1})
+}
+
+// TestMigrationsDownRefusesAChangedTargetE2E_FailurePath rolls back through the
+// down files of a directory that holds version 3, not yet applied, and applies
+// version 3 while the prompt waits. The person confirmed rolling back version
+// 2 alone, so the run reads the applied migrations again under the lock and
+// refuses before any down body runs: every table and every revision row is
+// still there.
+func TestMigrationsDownRefusesAChangedTargetE2E_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	run := newDownPlanTargetRun(c)
+	run.addCommentsMigration(c, "0000000000003")
+	prompted := run.startPromptedFileDown(c)
+
+	run.up(c)
+	code := prompted.answer(c)
+
+	c.Assert(code, qt.Equals, 2, prompted.comment())
+	c.Assert(stderrErrors(prompted.stderr.String()), qt.DeepEquals, []string{`error: error running down migrations: ` +
+		`the rollback to version 1 was confirmed for the applied migrations [2], ` +
+		`and the migrations applied above version 1 are now [3 2]; nothing was rolled back. ` +
+		`Run migrations down again to confirm the rollback of the database as it is now`}, prompted.comment())
+	c.Assert(run.userTables(c), qt.DeepEquals, []string{"comments", "posts", "users"})
+	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1, 2, 3})
+}
+
+// TestMigrationsDownRefusesARollbackAnotherRunnerFinishedE2E_FailurePath rolls
+// back through the down files while another runner rolls version 2 back during
+// the prompt. The confirmed rollback has nothing left to do, so the run refuses
+// rather than reporting a rollback it did not run.
+func TestMigrationsDownRefusesARollbackAnotherRunnerFinishedE2E_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	run := newDownPlanTargetRun(c)
+	prompted := run.startPromptedFileDown(c)
+
+	other := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Env: environmentWithoutPtahVariables()},
+		"migrations", "down", "--db-url", run.target, "--migrations-dir", run.migrationsDir, "--target", "1", "--confirm")
+	code := prompted.answer(c)
+
+	c.Assert(other.ExitCode, qt.Equals, 0, historyComment(other))
+	c.Assert(code, qt.Equals, 2, prompted.comment())
+	c.Assert(stderrErrors(prompted.stderr.String()), qt.DeepEquals, []string{`error: error running down migrations: ` +
+		`the rollback to version 1 was confirmed for the applied migrations [2], ` +
+		`and the migrations applied above version 1 are now []; nothing was rolled back. ` +
+		`Run migrations down again to confirm the rollback of the database as it is now`}, prompted.comment())
+	c.Assert(prompted.stdout.String(), qt.Not(qt.Contains), "completed successfully", prompted.comment())
+	c.Assert(run.userTables(c), qt.DeepEquals, []string{"users"})
+	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1})
+}
+
 // TestMigrationsDownPlanWaitsForTheMigrationLockE2E_FailurePath holds the
 // migration lock on a session of the test's own. The rollback waits for it
-// as long as --migration-lock-timeout allows and then gives up, before any
-// statement runs.
+// before it reads the history, as long as --migration-lock-timeout allows, and
+// then gives up before any statement runs.
 func TestMigrationsDownPlanWaitsForTheMigrationLockE2E_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	run := newDownPlanTargetRun(c)
@@ -242,7 +323,7 @@ func TestMigrationsDownPlanWaitsForTheMigrationLockE2E_FailurePath(t *testing.T)
 	got := run.down(c, "--migration-lock-timeout", "2s")
 
 	c.Assert(got.ExitCode, qt.Equals, 2, historyComment(got))
-	c.Assert(stderrErrors(got.Stderr), qt.DeepEquals, []string{`error: error running down migrations: ` +
+	c.Assert(stderrErrors(got.Stderr), qt.DeepEquals, []string{`error: ` +
 		`failed to acquire migration lock for migrate down: ` +
 		`timed out acquiring migration lock "ptah_migrate" for postgres after 2s`}, historyComment(got))
 	c.Assert(run.userTables(c), qt.DeepEquals, []string{"posts", "users"})
@@ -284,6 +365,19 @@ func TestMigrationsDownPlanToATargetNoFileNamesE2E_HappyPath(t *testing.T) {
 	c.Assert(got.Stdout, qt.Contains, "Database is now at version: 2", historyComment(got))
 	c.Assert(run.userTables(c), qt.DeepEquals, []string{"posts", "users"})
 	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1, 2})
+}
+
+// advisoryLockIsFree reports whether a session of the test's own takes the
+// advisory lock name at once. It releases the lock in the same statement,
+// because the session goes back to a pool rather than ending.
+func advisoryLockIsFree(c *qt.C, dbURL, name string) bool {
+	c.Helper()
+	var free bool
+	c.Assert(openReadScopeDatabase(c, dbURL).QueryRowContext(c.Context(),
+		"SELECT CASE WHEN pg_try_advisory_lock($1) THEN pg_advisory_unlock($1) ELSE false END",
+		pglock.Key(name),
+	).Scan(&free), qt.IsNil)
+	return free
 }
 
 // holdAdvisoryLock takes the PostgreSQL advisory lock name on a session of
