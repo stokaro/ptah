@@ -729,8 +729,9 @@ func policiesAheadOfRebuild(nodes []ast.Node, diff *difftypes.SchemaDiff, rebuil
 	if len(readers) == 0 {
 		return nodes, nil
 	}
+	semantics := relationSemantics(diff)
 	for _, node := range nodes {
-		if dropsOnlyPolicies(node, diff, readers) {
+		if dropsOnlyPolicies(node, semantics, readers) {
 			ahead = append(ahead, node)
 			continue
 		}
@@ -764,15 +765,16 @@ func removedPoliciesReading(diff *difftypes.SchemaDiff, relations []string) map[
 }
 
 // dropsOnlyPolicies reports whether every operation node carries drops a
-// policy readers names, and it carries at least one.
-func dropsOnlyPolicies(node ast.Node, diff *difftypes.SchemaDiff, readers map[objectidentity.Key]bool) bool {
+// policy readers names, and it carries at least one. Policy names compare as
+// semantics says.
+func dropsOnlyPolicies(node ast.Node, semantics identifier.Semantics, readers map[objectidentity.Key]bool) bool {
 	payloads := ast.OwnerOperations(node)
 	return len(payloads) != 0 && !slices.ContainsFunc(payloads, func(payload ast.ExtensionPayload) bool {
 		operation, ok := payload.(*pgpolicy.PolicyOperation)
 		if !ok || operation == nil || operation.Change.Before == nil || operation.Change.After != nil {
 			return true
 		}
-		return !readers[pgpolicy.PolicyRefWith(relationSemantics(diff), operation.Schema, operation.Table, operation.Name).Key()]
+		return !readers[pgpolicy.PolicyRefWith(semantics, operation.Schema, operation.Table, operation.Name).Key()]
 	})
 }
 

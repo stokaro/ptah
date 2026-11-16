@@ -215,7 +215,11 @@ func (p *Planner) planTableFeatures(ctx context.Context, runtime featureplan.Run
 	return planned, nil
 }
 
-// tableFeatures is what [Planner.planTableFeatures] plans, by where the plan takes it.
+// tableFeatures is what [Planner.planTableFeatures] plans, by where the plan
+// takes it: lifecycle steps ahead of the column changes, and dependent steps
+// after them. The plan moves the drops of a removed table's policies that read
+// an object the view rebuild drops out of afterColumns, to run before the
+// rebuild ([policiesAheadOfRebuild]).
 type tableFeatures struct {
 	aheadOfColumns []ast.Node
 	afterColumns   []ast.Node

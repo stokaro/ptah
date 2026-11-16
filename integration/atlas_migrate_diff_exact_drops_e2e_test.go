@@ -54,15 +54,16 @@ func applyBothWays(c *qt.C, target *sql.DB, pairs []migrationPair) {
 // shapes where the exact style keeps CASCADE or a guard, or orders its drops
 // so it needs neither, and runs every file forward, back to an empty database,
 // and forward again on PostgreSQL. Without the order or the reason the plan
-// relies on, each of these stops the server at a statement: a removed routine
-// that returns, takes or reads a removed relation's row, a composite type
-// whose attribute is a table's row type, created after the table and dropped
-// before it, a policy of a removed table that reads a removed table, view or
-// column, or a view the plan drops and creates again, a column that changes type
-// across an enum, an array of one or a domain over one with its default, a
-// trigger on a dropped column, a generated column computed from one, an index on a
-// materialized view a column type change rebuilds, and a materialized view put
-// back under a view dropped with CASCADE. Two removed tables whose policies
+// relies on, each of these stops the server at a statement. The shapes are a
+// removed routine that returns, takes or reads a removed relation's row; a
+// composite type whose attribute is a table's row type, created after the
+// table and dropped before it; a policy of a removed table that reads a
+// removed table, view or column, or a view the plan drops and creates again; a
+// column that changes type across an enum, an array of one or a domain over
+// one with its default; a trigger on a dropped column; a generated column
+// computed from one; an index on a materialized view a column type change
+// rebuilds; and a materialized view put back under a view dropped with
+// CASCADE. Two removed tables whose policies
 // read each other go in one DROP TABLE, which the unit tests pin: the dev
 // database cleanup cannot empty such a pair yet (stokaro/ptah#5002).
 func TestCompatMigrateDiffStatementStyleE2E_ReliedOnDropsApplyBothWays(t *testing.T) {

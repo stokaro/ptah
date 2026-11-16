@@ -1,6 +1,7 @@
 package planner_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -266,6 +267,31 @@ func rebuiltViewsUnderRemovedPolicy() styleChange {
 			"((owner_id)::text IN ( SELECT (owner_names.id)::text FROM owner_names))")))
 		h.FeatureCoverage = must.Must(pgpolicy.CompleteCoverage(schemaext.Observed))
 	})}
+}
+
+// rebuiltViewAndColumnUnderRemovedPolicy is [rebuiltViewsUnderRemovedPolicy]
+// with owners.name dropped too, which the policy of docs also reads.
+func rebuiltViewAndColumnUnderRemovedPolicy() styleChange {
+	change := rebuiltViewsUnderRemovedPolicy()
+	change.declared.Fields = slices.Delete(change.declared.Fields, 1, 2)
+	change.held.FeatureObjects = must.Must(schemaext.NewObjects(observedPolicy("docs", "docs_member",
+		"((owner_id)::text IN ( SELECT (owner_names.id)::text FROM owner_names WHERE (owner_names.id IN ( SELECT owners.id FROM owners WHERE ((owners.name)::text = 'x'::text)))))")))
+	return change
+}
+
+// rebuiltRoutineUnderRemovedPolicy retypes items.sku under item_skus, so the
+// rebuild drops list_skus, which returns its rows, and removes the table
+// docs, whose policy calls list_skus.
+func rebuiltRoutineUnderRemovedPolicy() styleChange {
+	change := retypedUnderViewWithRoutine(styleRoutine("list_skus", "", "SETOF item_skus", "SELECT * FROM item_skus"))
+	change.declared.FeatureCoverage = must.Must(pgpolicy.CompleteCoverage(schemaext.Desired))
+	docs := styleTable("docs", styleKey("id"))
+	docs.Facets = must.Must(schemaext.NewFacets(&pgpolicy.ObservedTableState{Enabled: true}))
+	change.held.Tables = append(change.held.Tables, docs)
+	change.held.FeatureObjects = must.Must(schemaext.NewObjects(observedPolicy("docs", "docs_listed",
+		"(id IN ( SELECT s.id FROM list_skus() s(id, sku)))")))
+	change.held.FeatureCoverage = must.Must(pgpolicy.CompleteCoverage(schemaext.Observed))
+	return change
 }
 
 // enumStatusHeld is the enum status and the table tickets(id, s status
@@ -716,16 +742,20 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_AnnotatedStyleKeepsTypeHolde
 // takes out and puts back. The policy reads one of them, so a view drop
 // written first relies on CASCADE to take it, and the policy's own DROP POLICY
 // later names a policy the server no longer holds. Dropped first, the policy
-// leaves the exact style's view drops nothing to rely on. The annotated style
+// leaves the exact style's view drops nothing to rely on. A routine the
+// rebuild drops is dropped without CASCADE in either style, so a policy that
+// calls it has to leave first too, and a column the policy also reads is
+// dropped without CASCADE once the policy is gone. The annotated style
 // writes no DROP POLICY for a removed table, and its CASCADE drops take the
 // policy; that row is the control that the move changes only the exact style.
 func TestGenerateSchemaDiffSQLStatementsWithOptions_PolicyLeavesBeforeTheViewsItsTableReads(t *testing.T) {
 	tests := []struct {
-		name  string
-		style planext.StatementStyle
-		want  []string
+		name   string
+		change styleChange
+		style  planext.StatementStyle
+		want   []string
 	}{
-		{name: "exact", style: planext.StatementStyleExact, want: []string{
+		{name: "exact", change: rebuiltViewsUnderRemovedPolicy(), style: planext.StatementStyleExact, want: []string{
 			`DROP POLICY "docs_member" ON "docs"`,
 			`DROP VIEW "owner_names"`,
 			`DROP VIEW "owner_ids"`,
@@ -733,7 +763,24 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_PolicyLeavesBeforeTheViewsIt
 			"CREATE VIEW \"owner_names\" AS\nSELECT id FROM owner_ids",
 			`DROP TABLE "public"."docs"`,
 		}},
-		{name: "annotated", style: planext.StatementStyleAnnotated, want: []string{
+		{name: "exact, with a column the policy reads", change: rebuiltViewAndColumnUnderRemovedPolicy(), style: planext.StatementStyleExact, want: []string{
+			`DROP POLICY "docs_member" ON "docs"`,
+			`DROP VIEW "owner_names"`,
+			`DROP VIEW "owner_ids"`,
+			"CREATE VIEW \"owner_ids\" AS\nSELECT id FROM owners",
+			"CREATE VIEW \"owner_names\" AS\nSELECT id FROM owner_ids",
+			`ALTER TABLE "owners" DROP COLUMN "name"`,
+			`DROP TABLE "public"."docs"`,
+		}},
+		{name: "exact, with a routine the policy calls", change: rebuiltRoutineUnderRemovedPolicy(), style: planext.StatementStyleExact, want: []string{
+			`DROP POLICY "docs_listed" ON "docs"`,
+			`DROP FUNCTION "public"."list_skus"()`,
+			`DROP VIEW "item_skus"`,
+			`ALTER TABLE "items" ALTER COLUMN "sku" TYPE VARCHAR(128)`,
+			"CREATE VIEW \"item_skus\" AS\nSELECT id, sku FROM items",
+			`DROP TABLE "public"."docs"`,
+		}},
+		{name: "annotated", change: rebuiltViewsUnderRemovedPolicy(), style: planext.StatementStyleAnnotated, want: []string{
 			`DROP VIEW IF EXISTS "owner_names" CASCADE`,
 			`DROP VIEW IF EXISTS "owner_ids" CASCADE`,
 			"CREATE VIEW \"owner_ids\" AS\nSELECT id FROM owners",
@@ -744,11 +791,10 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_PolicyLeavesBeforeTheViewsIt
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			change := rebuiltViewsUnderRemovedPolicy()
-			opts := change.opts
+			opts := tt.change.opts
 			opts.Statements = tt.style
 
-			got := stylePlan(c, change.declared, change.held, opts)
+			got := stylePlan(c, tt.change.declared, tt.change.held, opts)
 
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})
