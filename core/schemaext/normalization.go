@@ -12,7 +12,9 @@ import (
 // Every call runs body inside one transaction and rolls that transaction back
 // whatever body does, so nothing a probe creates survives it. ran is false,
 // with a nil error, when no isolated transaction was available; body did not
-// run, and the caller must treat every probe as unanswered.
+// run, and the caller must treat every probe as unanswered. A provider session
+// answers every call that way, so a caller reads ran and never takes an empty
+// answer for "probed, nothing found".
 type ProbeSession interface {
 	WithRolledBackTransaction(ctx context.Context, label string, body func(context.Context, *sql.Tx) error) (ran bool, err error)
 }

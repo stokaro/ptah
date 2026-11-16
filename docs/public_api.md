@@ -4512,7 +4512,9 @@ server stored it -- Ptah's own expression probes are the canonical consumer --
 and it is the supported way to do that without leaving state behind. A
 connection already pinned to a session reports `ran` false with a nil error
 and never runs the callback: the rollback would discard the session owner's
-work. Callers that need the transaction must check `ran` as well as the error.
+work. A provider session reports the same, whatever engine name it serves,
+because it exposes no `database/sql` transaction to roll back. Callers that
+need the transaction must check `ran` as well as the error.
 
 `dbschema.DatabaseConnection.WithIsolatedQuerySession` exposes a query-only
 `dbschema.IsolatedQueryer` on one physical session. Transaction-capable drivers

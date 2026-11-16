@@ -35,6 +35,14 @@ import (
 // answer -- a caller that must not proceed without the transaction has to check
 // ran, not just err. label names the caller in every error.
 //
+// A connection a [NativeConnector] opened reports ran false with a nil error
+// too, and never runs body. It carries the provider's session and no *sql.DB,
+// so there is no database/sql transaction the host could roll back, and the
+// engine name the provider serves does not change that: a provider serving
+// postgres answers the same way. The spellings a probe asks for are the
+// provider's to give through its own comparison, so nothing is probed and
+// each declaration compares as the provider reads it.
+//
 // Do not call this on a pool-backed in-memory SQLite connection. Discarding the
 // session takes such a database with it, because it has no existence apart from
 // its only connection: the next statement runs against a fresh, empty one.
@@ -47,6 +55,9 @@ func (dc *DatabaseConnection) WithRolledBackTransaction(
 	label string,
 	body func(ctx context.Context, tx *sql.Tx) error,
 ) (ran bool, resultErr error) {
+	if dc != nil && dc.native != nil {
+		return false, nil
+	}
 	if dc == nil || dc.db == nil {
 		return false, fmt.Errorf("%s: database connection is nil", label)
 	}
