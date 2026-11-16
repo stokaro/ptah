@@ -875,6 +875,14 @@ servers refuse to lock that view with error 1356, so cleanup drops the views
 the server cannot open first, then locks and drops the others. The checks for
 views and stored programs in other databases run again before that first drop.
 
+A `SQL SECURITY DEFINER` view whose definer account does not exist on the dev
+server cannot be opened either. MySQL refuses the lock with error 1449 and
+MariaDB with error 1446. A replayed file that writes `DEFINER=` for an account
+of the target server leaves such a view, because an account with the
+privileges to name another definer creates it with a note. Cleanup drops it
+with the other views the server cannot open. A `SQL SECURITY INVOKER` view
+naming the same account opens and goes through the usual lock.
+
 ## Replacing a trigger
 
 A plan runs every trigger change in one block, after the columns a new trigger

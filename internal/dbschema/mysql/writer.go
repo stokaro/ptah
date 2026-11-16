@@ -866,7 +866,7 @@ func (w *Writer) dropProtectedViews(
 	}()
 
 	if _, err := lockConn.ExecContext(ctx, buildLockTablesSQL(schema, slices.Concat(views, tables))); err != nil {
-		if !isInvalidViewError(err) {
+		if !isUnopenableViewError(err) {
 			return fmt.Errorf("mysql: lock cleanup views and tables: %w", err)
 		}
 		views, err = w.dropUnopenableViews(ctx, lockConn, schema, views)
@@ -931,25 +931,48 @@ func (w *Writer) dropProtectedViews(
 	return <-dropDone
 }
 
-// erViewInvalid is the error number MySQL and MariaDB answer with when a
-// statement opens a view whose definition names a table or a column that is
-// gone.
-const erViewInvalid = 1356
+// The error numbers a statement that opens a view the server cannot run is
+// answered with.
+const (
+	// erViewInvalid answers on MySQL and MariaDB when the definition names a
+	// table or a column that is gone.
+	erViewInvalid = 1356
+	// erNoSuchDefiner answers on MySQL when a SQL SECURITY DEFINER view names
+	// a definer account that does not exist.
+	erNoSuchDefiner = 1449
+	// erMissingDefiner answers on MariaDB in the same case.
+	erMissingDefiner = 1446
+)
 
-func isInvalidViewError(err error) bool {
+// isUnopenableViewError reports whether err says the server cannot open a
+// view, which is what LOCK TABLES answers for such a view.
+func isUnopenableViewError(err error) bool {
 	serverErr, ok := errors.AsType[*mysqldriver.MySQLError](err)
-	return ok && serverErr.Number == erViewInvalid
+	if !ok {
+		return false
+	}
+	switch serverErr.Number {
+	case erViewInvalid, erNoSuchDefiner, erMissingDefiner:
+		return true
+	default:
+		return false
+	}
 }
 
 // dropUnopenableViews drops the views of schema that the server cannot open,
 // and returns the others in their order.
 //
-// LOCK TABLES opens every view it names, so one view whose table a migration
-// dropped refuses the lock that protects all of them with error 1356, and the
-// cleanup cannot start. Measured on MySQL 8.4 and MariaDB 12.3, after `CREATE
-// VIEW v AS SELECT id FROM t; DROP TABLE t`. The same error answers `CREATE
-// VIEW other.x AS SELECT * FROM v`, so no view can come to read such a view
-// while it is dropped here, outside the handoff. A stored program can, since
+// LOCK TABLES opens every view it names, so one view the server cannot open
+// refuses the lock that protects all of them, and the cleanup cannot start.
+// A view whose table a migration dropped answers error
+// 1356 on MySQL 8.4 and MariaDB 12.3, after `CREATE VIEW v AS SELECT id FROM
+// t; DROP TABLE t`. A SQL SECURITY DEFINER view whose definer account does not
+// exist answers 1449 on MySQL 26.10 and 1446 on MariaDB 12.3; a migration
+// that writes `DEFINER=` for an account the dev server lacks leaves one
+// behind. An INVOKER view naming the same account locks. In both cases the
+// same error answers `CREATE VIEW other.x AS SELECT * FROM v`, so no view can
+// come to read such a view while it is dropped here, outside the handoff. A
+// stored program can, since
 // the server resolves its body when it runs, so the external-view and
 // stored-program checks run again right before the drop. A view that only
 // names a function that is gone opens, and the handoff drops it with the
@@ -970,7 +993,7 @@ func (w *Writer) dropUnopenableViews(
 		switch {
 		case err == nil:
 			lockable = append(lockable, view)
-		case isInvalidViewError(err):
+		case isUnopenableViewError(err):
 			unopenable = append(unopenable, view)
 		default:
 			return nil, errors.Join(
