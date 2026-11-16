@@ -849,6 +849,15 @@ in place. `PTAH_EXCLUDE` does not apply here: it is the twin of `--exclude` on
 the commands that register the flag. Strict Community Edition mode refuses
 `PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE`, even when it is empty.
 
+`PTAH_ATLAS_MIGRATE_DIFF_INCLUDE`, in full Ptah compatibility mode, keeps only
+the objects its selectors select on both sides of the diff, with the meaning
+`schema apply --include` gives them, after the exclusion. The migration neither
+creates nor drops anything else, and a selected table keeps the children the
+exclusion leaves it. A malformed selector, and selectors that select nothing,
+are refused with an error that names the variable. An empty value selects
+everything. Strict Community
+Edition mode refuses the variable, even when it is empty.
+
 Strict mode applies the env's `exclude` list deliberately. Measured on SQLite
 and on PostgreSQL 18, Atlas CE v1.3.0 accepts the list on this command and
 still writes the objects it names; applying it keeps what the project author

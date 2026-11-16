@@ -74,12 +74,45 @@ func (s LiveSelection) Apply(
 	current *catalog.Database,
 	desired *schemamodel.Database,
 ) (*catalog.Database, *schemamodel.Database, error) {
+	return s.applyCounted(ctx, runtime, countedOn{dialect: info.Dialect, naming: atlasfilter.ConnectionNaming(info)}, current, desired)
+}
+
+// emptyRule is what a projection answers when the Include selectors select
+// nothing on either side.
+type emptyRule int
+
+const (
+	// refuseEmpty returns the [atlasfilter.EmptySelectionError]: a comparison
+	// made before a change, over nothing, would report a synced database.
+	refuseEmpty emptyRule = iota
+	// compareEmpty returns the two empty projections: a comparison made after
+	// the change, where the change may have removed everything selected.
+	compareEmpty
+)
+
+// countedOn is how a projection counts its patterns: on a connection of
+// dialect, as naming says, and what it answers for a selection of nothing.
+type countedOn struct {
+	dialect string
+	naming  atlasfilter.Naming
+	empty   emptyRule
+}
+
+// applyCounted is [LiveSelection.Apply] counting each pattern as on says.
+func (s LiveSelection) applyCounted(
+	ctx context.Context,
+	runtime selectext.Runtime,
+	on countedOn,
+	current *catalog.Database,
+	desired *schemamodel.Database,
+) (*catalog.Database, *schemamodel.Database, error) {
+	dialect, naming := on.dialect, on.naming
 	scope := atlasfilter.Scope{
 		Schemas:               s.Schemas,
 		Include:               s.Include,
 		Exclude:               s.Exclude,
-		DefaultSchema:         info.Schema,
-		RealmRelativePatterns: ConnectionIsRealmScoped(info),
+		DefaultSchema:         naming.DefaultSchema,
+		RealmRelativePatterns: naming.RealmRelative,
 		Selections:            runtime.Selections(),
 	}
 	if !slices.ContainsFunc(s.Schemas, atlasfilter.NamesSelector) &&
@@ -87,12 +120,12 @@ func (s LiveSelection) Apply(
 		!slices.ContainsFunc(s.Exclude, atlasfilter.NamesSelector) {
 		return current, desired, nil
 	}
-	scoped, err := projectLiveStates(ctx, runtime, info.Dialect, current, desired, scope)
+	scoped, err := projectLiveStates(ctx, runtime, dialect, current, desired, scope)
 	if err != nil {
 		return nil, nil, err
 	}
 	reportUnmatchedExclude(s.Diagnostics, atlasfilter.UnmatchedAcrossStates(scoped.currentReports.Exclude, scoped.desiredReports.Exclude), s.ExcludeSources)
-	if emptySelection(scoped.currentErr) && emptySelection(scoped.desiredErr) {
+	if emptySelection(scoped.currentErr) && emptySelection(scoped.desiredErr) && on.empty == refuseEmpty {
 		return nil, nil, scoped.currentErr
 	}
 	applyExtensionSupportCoverage(scoped.desired, scoped.currentReports.Selection, scoped.desiredReports.Selection)

@@ -293,10 +293,17 @@ type EmptySelectionError struct {
 	// Selectors are the --include selectors as written, split and trimmed the
 	// way the parser splits them.
 	Selectors []string
+	// Source names where the selectors were written, such as an environment
+	// variable on a command with no --include flag. Empty names --include.
+	Source string
 }
 
 func (e *EmptySelectionError) Error() string {
-	return "the --include selection matched no objects: " + quoteSelectors(e.Selectors)
+	source := e.Source
+	if source == "" {
+		source = "--include"
+	}
+	return "the " + source + " selection matched no objects: " + quoteSelectors(e.Selectors)
 }
 
 // UnmatchedExcludeError reports exclude selectors that named no object in any

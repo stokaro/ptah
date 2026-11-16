@@ -197,6 +197,39 @@ whole kind also relieves the account of the privilege a read of that kind
 needs; see
 [A run that does not depend on a kind](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind).
 
+### Keep only what you select with `--include`
+
+`--include` is the positive selection, with the meaning `ptah schema apply
+--include` gives it. `plan` and `generate` keep only the objects it selects on
+both sides of the comparison, so the migration neither creates nor drops
+anything else. Use it when the migration history created objects that another
+workflow owns and the desired schema does not declare: a view the history
+created stays in the database, and the replay of the history holds it without
+the plan dropping it. `PTAH_INCLUDE` sets the same list.
+
+```bash illustration
+ptah migrations generate --replay --dev-url "$DEV_DATABASE_URL" \
+  --migrations-dir migrations --schema-file schema.sql --name add_tasks_view \
+  --include tasks --include tasks_v
+```
+
+A selected table keeps its indexes, constraints, triggers and policies, so an
+undeclared index on `tasks` is still dropped. To leave a child alone, exclude
+it too; the exclusion applies first:
+`--include tasks --exclude 'tasks.tasks_user[type=policy]'`. Selectors count
+from the connection's schema, as `--exclude` counts them.
+
+Selectors that select nothing on either side are refused, exit `2`, before a
+migration file is written: a migration planned over nothing would read as
+synced. A selection whose objects a migration already dropped selects nothing
+the next time, so remove it from the command once that migration is applied. A
+selector with a syntax error is refused before Ptah connects to a database.
+
+`--shadow-db` reads the same selection when it compares the shadow database
+with the desired schema after the replay. There an empty selection is not
+refused, because a migration that drops every object the selection names leaves
+nothing to compare on either side.
+
 ### Send the plan verdict to CI
 
 Use `--report json` when automation needs the safety verdict:

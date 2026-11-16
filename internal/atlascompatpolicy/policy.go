@@ -853,6 +853,11 @@ var gatedPresenceEnvVars = []string{
 	// the PTAH_EXCLUDE twin of the CE --exclude flag on the schema commands is
 	// a different variable and keeps its own rule.
 	"PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE",
+	// Names the objects `migrate diff` keeps on both sides of the comparison,
+	// a positive selection with the meaning of `schema apply --include`. The
+	// pinned community binary has no --include on `migrate diff`, no such
+	// variable, and no atlas.hcl list that selects the same objects there.
+	"PTAH_ATLAS_MIGRATE_DIFF_INCLUDE",
 }
 
 // validateStrictEnvironment applies the strict rule to every boolean `PTAH_*`

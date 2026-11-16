@@ -112,6 +112,7 @@ var nonBooleanPtahVars = []string{
 	// `ptah-compat migrate diff` registers no --exclude flag, so its exclusion
 	// has a variable of its own rather than a flag twin.
 	"PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE", // selectors to exclude, comma-separated
+	"PTAH_ATLAS_MIGRATE_DIFF_INCLUDE", // selectors to keep, comma-separated
 }
 
 // ptahVarPattern finds a variable name anywhere inside a string literal, so

@@ -106,6 +106,19 @@ type DiffOptions struct {
 	// Exclude subtracts objects from both comparison sides. The complete
 	// migration history still replays before its resulting catalog is scoped.
 	Exclude []string
+	// Include positively selects what both comparison sides keep, with the
+	// meaning `schema apply --include` gives it; see [atlasschema.Inclusion].
+	// An object it does not select is neither created nor dropped, so an
+	// object the history built and the desired state does not own stays as
+	// the history left it. Exclude applies first, so a selected table without
+	// an index it names keeps the rest of its children. Selectors that select
+	// nothing on either side are refused.
+	Include []string
+	// IncludeSource names where Include was written, such as an environment
+	// variable on a command that registers no --include flag, for the refusal
+	// of a malformed selector and of a selection that selects nothing. Empty
+	// names --include in the second and nothing in the first.
+	IncludeSource string
 	// LockTimeout bounds the wait for the migration directory lock and the
 	// dev database lock. Zero waits indefinitely; a negative value does not
 	// wait, and a lock another run holds is refused at once.
@@ -261,9 +274,10 @@ type preparedDiff struct {
 	opts    DiffOptions
 	schemas []string
 	format  string
-	// exclusion is the one native `migrations generate` applies, so both
-	// surfaces plan a migration that names the same objects.
+	// exclusion and inclusion are the ones native `migrations generate`
+	// applies, so both surfaces plan a migration that names the same objects.
 	exclusion atlasfilter.Exclusion
+	inclusion atlasschema.Inclusion
 }
 
 func GenerateDiff(
@@ -301,7 +315,7 @@ func generateDiff(
 	schemas := prepared.schemas
 	format := prepared.format
 	exclusion := prepared.exclusion
-	ctx = exclusion.ReadContext(ctx)
+	ctx = prepared.inclusion.ReadContext(exclusion.ReadContext(ctx))
 
 	if err := ensureMigrationDirParent(opts.Root, opts.Dir); err != nil {
 		return DiffResult{}, err
@@ -379,13 +393,15 @@ func generateDiff(
 		replaySource,
 		migrationfile.DirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
-			current, diff, err := compareReplayedState(
+			compared, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devNaming, desired, baseline,
-				exclusion, opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,
+				comparisonSelection{exclusion: exclusion, inclusion: prepared.inclusion, info: info},
+				opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,
 			)
 			if err != nil {
 				return err
 			}
+			current, selected, diff := compared.current, compared.desired, compared.diff
 			// The file carries no comment for a change the policy left out:
 			// the pinned community binary writes the same file without the
 			// change and without a word about it, and the file is what
@@ -396,7 +412,7 @@ func generateDiff(
 				synced = true
 				return nil
 			}
-			planned, err := planDiffFileContents(ctx, diff, desired, current, info, format, opts)
+			planned, err := planDiffFileContents(ctx, diff, selected, current, info, format, opts)
 			if err != nil {
 				return err
 			}
@@ -576,10 +592,18 @@ func prepareDiff(
 	if err != nil {
 		return preparedDiff{}, err
 	}
+	inclusion, err := atlasschema.NewInclusion(opts.Runtime, opts.Include)
+	if err != nil {
+		if opts.IncludeSource != "" {
+			return preparedDiff{}, fmt.Errorf("invalid %s: %w", opts.IncludeSource, err)
+		}
+		return preparedDiff{}, err
+	}
+	inclusion = inclusion.WrittenAs(opts.IncludeSource)
 	if err := ctx.Err(); err != nil {
 		return preparedDiff{}, err
 	}
-	return preparedDiff{opts: opts, schemas: schemas, format: format, exclusion: exclusion}, nil
+	return preparedDiff{opts: opts, schemas: schemas, format: format, exclusion: exclusion, inclusion: inclusion}, nil
 }
 
 func resolveDesiredState(
@@ -761,6 +785,15 @@ func normalizeDiffOptions(opts DiffOptions) DiffOptions {
 	return opts
 }
 
+// replayedComparison is the answer of [compareReplayedState]: the replayed
+// state and the desired schema, each narrowed by the selection, and the
+// difference between them.
+type replayedComparison struct {
+	current *catalog.Database
+	desired *schemamodel.Database
+	diff    *difftypes.SchemaDiff
+}
+
 // compareReplayedState reads the state the migration directory just replayed
 // on the dev database and compares the desired state against it.
 //
@@ -786,7 +819,7 @@ func compareReplayedState(
 	naming atlasfilter.Naming,
 	desired *schemamodel.Database,
 	baseline devclean.Baseline,
-	exclusion atlasfilter.Exclusion,
+	selection comparisonSelection,
 	diagnostics io.Writer,
 	validateLiveObject func(atlasschema.LiveSchemaObject) error,
 	policy atlasschema.DiffPolicy,
@@ -795,23 +828,23 @@ func compareReplayedState(
 		goschematodb.Runtime
 		selectext.Runtime
 	},
-) (*catalog.Database, *difftypes.SchemaDiff, error) {
+) (replayedComparison, error) {
 	defaultSchema := naming.DefaultSchema
 	readNames, err := schemascope.ComparisonReadNames(ctx, replayConn.Info(), schemas, replayConn, desired)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read dev database schema: %w", err)
+		return replayedComparison{}, fmt.Errorf("read dev database schema: %w", err)
 	}
 	replayed, err := runtime.readDevSchema(ctx, replayConn, readNames, defaultSchema)
 	if err != nil {
-		return nil, nil, err
+		return replayedComparison{}, err
 	}
 	replayed, err = schemascope.FilterDatabaseWithDefaultSchema(ctx, selected.Selections(), replayed, readNames, defaultSchema)
 	if err != nil {
-		return nil, nil, err
+		return replayedComparison{}, err
 	}
-	replayed, _, err = exclusion.Observed(replayed, naming)
+	replayed, _, err = selection.exclusion.Observed(replayed, naming)
 	if err != nil {
-		return nil, nil, err
+		return replayedComparison{}, err
 	}
 	devqualifier.Remove(replayed, defaultSchema, readNames)
 	// The extensions the dev database held before the replay are its
@@ -822,24 +855,30 @@ func compareReplayedState(
 	// which the directory did not create either.
 	desiredCatalog, err := goschematodb.ToDBSchema(ctx, desired, replayConn.Info().Dialect, selected)
 	if err != nil {
-		return nil, nil, fmt.Errorf("convert desired schema: %w", err)
+		return replayedComparison{}, fmt.Errorf("convert desired schema: %w", err)
 	}
 	replayed, err = baseline.WithoutStartingPoint(ctx, replayed,
 		desiredCatalog,
 		cmp.Or(defaultSchema, schemaselection.DialectDefault(replayConn.Info().Dialect)), selected.Selections(),
 	)
 	if err != nil {
-		return nil, nil, err
+		return replayedComparison{}, err
+	}
+	// An include pattern counts as an exclude one does; see
+	// [comparisonSelection].
+	replayed, desired, err = selection.inclusion.Apply(ctx, selection.info.Dialect, naming, replayed, desired)
+	if err != nil {
+		return replayedComparison{}, err
 	}
 	if err := atlasschema.ValidateLiveObjects(replayConn, readNames, validateLiveObject); err != nil {
-		return nil, nil, err
+		return replayedComparison{}, err
 	}
 	compareOpts := policy.CompareOptions()
 	diff, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(
 		ctx, replayConn, desired, replayed, compareOpts, selected,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("compare dev database schema: %w", err)
+		return replayedComparison{}, fmt.Errorf("compare dev database schema: %w", err)
 	}
 	undecidednote.Report(
 		ctx,
@@ -849,9 +888,20 @@ func compareReplayedState(
 		"--to",
 	)
 	if err := undecided.Err(); err != nil {
-		return nil, nil, err
+		return replayedComparison{}, err
 	}
-	return replayed, diff, nil
+	return replayedComparison{current: replayed, desired: desired, diff: diff}, nil
+}
+
+// comparisonSelection is what narrows both sides of the comparison
+// `migrate diff` makes: the exclusion, then the inclusion, each counting a
+// pattern as the dev connection names it, and info is that connection's. The
+// replay connection is not asked, because a confined replay runs in a
+// database or schema of its own.
+type comparisonSelection struct {
+	exclusion atlasfilter.Exclusion
+	inclusion atlasschema.Inclusion
+	info      catalog.ServerInfo
 }
 
 // filterDiffDesired scopes the desired state to schemas and leaves out what

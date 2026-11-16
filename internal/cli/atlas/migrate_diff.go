@@ -46,6 +46,7 @@ type atlasMigrateDiffOptions struct {
 	format      string
 	schemas     []string
 	exclude     []string
+	include     []string
 	lockTimeout time.Duration
 	dryRun      bool
 	qualifier   string
@@ -106,7 +107,7 @@ is refused for any other engine.
 When --env is set, the selected atlas.hcl env
 can provide schema.src, dev, migration.dir, exclude, schema.mode,
 format.migrate.diff, and supported
-diff policy values.` + atlasMigrateDiffExcludeHelp(policy),
+diff policy values.` + atlasMigrateDiffExcludeHelp(policy) + atlasMigrateDiffIncludeHelp(policy),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := "migration"
 			if len(args) == 1 {
@@ -157,6 +158,10 @@ func runAtlasMigrateDiff(
 		return cmdutil.Fail(cmd, err)
 	}
 	opts.exclude, err = atlasMigrateDiffExcludeFromEnv(opts.policy)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	opts.include, err = atlasMigrateDiffIncludeFromEnv(opts.policy)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -397,6 +402,8 @@ func runAtlasMigrateDiff(
 		PlanBidirectional:         compatBidirectionalPlannerForFormat(dirFormat, runtime),
 		Schemas:                   opts.schemas,
 		Exclude:                   opts.exclude,
+		Include:                   opts.include,
+		IncludeSource:             atlasMigrateDiffIncludeEnvVar,
 		LockTimeout:               lockTimeout,
 		Policy:                    policy,
 		Qualifier:                 qualifier,

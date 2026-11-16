@@ -206,6 +206,34 @@ func TestResolveFullCompatibilityAcceptsTheMigrateDiffExcludeVariable_HappyPath(
 	c.Assert(policy.IsStrictCE(), qt.IsFalse)
 }
 
+func TestResolveStrictCERejectsTheMigrateDiffIncludeVariable_FailurePath(t *testing.T) {
+	for _, value := range []string{"", "widgets", "public.tasks,public.tasks_v"} {
+		t.Run("value "+value, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+			// The community binary has no --include on `migrate diff` and no
+			// variable standing in for one. Presence alone is the refusal.
+			t.Setenv("PTAH_ATLAS_MIGRATE_DIFF_INCLUDE", value)
+
+			_, err := atlascompatpolicy.Resolve()
+
+			c.Assert(err, qt.ErrorMatches,
+				`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ATLAS_MIGRATE_DIFF_INCLUDE`)
+		})
+	}
+}
+
+func TestResolveFullCompatibilityAcceptsTheMigrateDiffIncludeVariable_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "false")
+	t.Setenv("PTAH_ATLAS_MIGRATE_DIFF_INCLUDE", "widgets")
+
+	policy, err := atlascompatpolicy.Resolve()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(policy.IsStrictCE(), qt.IsFalse)
+}
+
 // TestResolveStrictCEDoesNotRefuseTheProviderNamespaceByPrefix is the control
 // for the refusal above: the variable is refused by its name, so another
 // PTAH_PROVIDER_* name, which an atlas.hcl getenv may read, still resolves.

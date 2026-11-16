@@ -884,6 +884,7 @@ Read the columns as follows.
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
 | `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--name` | `string` | `migration` | `PTAH_NAME` | — |
@@ -1026,6 +1027,7 @@ Read the columns as follows.
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
 | `--ignore-extension` | `stringArray` | `[]` | `PTAH_IGNORE_EXTENSION` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-config` | `string` | — | — | — |

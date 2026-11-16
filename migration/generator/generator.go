@@ -118,6 +118,25 @@ type GenerateMigrationOptions struct {
 	// not map as the --exclude flag's. A key is one selector, split on commas
 	// and trimmed as Exclude is read. Nil maps nothing; it changes no plan.
 	ExcludeSources map[string]string
+	// Include keeps on both sides of the comparison only the objects these
+	// selectors select, with the meaning `ptah schema apply --include` gives
+	// them, so the migration neither creates nor drops anything else: an
+	// object the database or a replayed directory holds and the desired
+	// schema does not own stays as it is. It applies after Exclude, so a
+	// selected table without an index Exclude names keeps its other
+	// children, and it narrows the shadow verification's read-back too,
+	// through [ptah.run/migration/shadow.MigrationVerifyOptions.Include].
+	//
+	// The selectors take the grammar `ptah schema diff --include` takes,
+	// repeated or comma-separated. Nil selects everything, and so does a list
+	// holding only blanks and commas. Otherwise Runtime must implement
+	// [ptah.run/core/selectext.Runtime]; [PlanMigration] refuses a Runtime
+	// that does not with an error wrapping
+	// [ptah.run/core/selectext.ErrUnselected], and a selector the grammar
+	// rejects, before it connects. Selectors that select nothing on either
+	// side are refused before any file is written, because a migration
+	// planned over nothing would read as synced.
+	Include []string
 	// EnvironmentExtensions names extensions the database held before the
 	// current state was built and that the desired schema does not own: a dev
 	// database's own, which the replay that built the current state kept. The
@@ -355,7 +374,16 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		defer dbschema.CloseAndWarn(conn)
 	}
 
-	desired, dbSchema, err := readExcludedPlanStates(ctx, conn, desired, prepared.exclusion, opts)
+	// The read leaves out the kinds the inclusion leaves out whole, and the
+	// inclusion applies after the exclusion, to both sides.
+	desired, dbSchema, err := readExcludedPlanStates(prepared.inclusion.ReadContext(ctx), conn, desired, prepared.exclusion, opts)
+	if err != nil {
+		return nil, err
+	}
+	// Native patterns count from the connection's schema on every URL, as
+	// the exclusion counts them; see [readExcludedPlanStates].
+	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema}
+	dbSchema, desired, err = prepared.inclusion.Apply(ctx, conn.Info().Dialect, naming, dbSchema, desired)
 	if err != nil {
 		return nil, err
 	}

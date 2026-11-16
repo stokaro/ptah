@@ -429,10 +429,11 @@ as matching nothing. `*[type=policy]`, `public.*[type=policy]` and
 `notes.*[type=policy]` leave out every policy, every policy in `public`, and
 every policy on `notes`.
 
-`ptah migrations plan` and `ptah migrations generate` take `--exclude` with the
-same meaning. The selection reaches the desired schema, the current state read
-from the database or replayed from the migration directory, and the shadow
-check; [Generate migrations](../../versioned/generate/#leave-objects-out-with---exclude)
+`ptah migrations plan` and `ptah migrations generate` take `--exclude` and
+`--include` with the same meaning, the include applied after the exclusion. The
+selection reaches the desired schema, the current state read from the database
+or replayed from the migration directory, and the shadow check;
+[Generate migrations](../../versioned/generate/#leave-objects-out-with---exclude)
 describes it.
 
 The `exclude` list of the project file subtracts the same way on each of these

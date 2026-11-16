@@ -107,11 +107,11 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 200 capabilities below:
+Across the 201 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 186 |
+| Ptah supports it fully | 187 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
@@ -119,7 +119,7 @@ Across the 200 capabilities below:
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
 | Ptah has it and neither Atlas edition does | 28 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
-| An Atlas column is ❔ — not established by this page's evidence | 5 |
+| An Atlas column is ❔ — not established by this page's evidence | 6 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
 issue that owns it, reproduced against a binary built from this repository;
@@ -240,6 +240,7 @@ seven of them as open capabilities regardless.
 | Migration lock, lock timeout, `--lock-name`, `--skip-lock` | ✅ | 🟡 | ✅ | Compat `--lock-timeout` bounds directory and dev-db locks; native `migrations up`/`down`/`baseline` refuse `--migration-lock-timeout` where the dialect cannot lock. `--lock-name` is Pro. |
 | Migration status report | ✅ | ✅ | ✅ | Compat status mirrors the Atlas default report shape and renders Go templates over .Env, .Available, .Applied, .Pending, .Current, .Next. Native ptah keeps its own block. |
 | Online DDL routing via gh-ost or pt-osc | ✅ | ❌ | ❌ | ptah.yaml online_ddl.tool (ghost\|pt-osc), threshold_rows, args, and fallback (error\|plain) route large-table ALTERs through an online-DDL tool during migrations up/down. CE has no such routing. |
+| Positive selection when generating a migration | ✅ | ❌ | ❔ | `migrations generate --include`, `migrations plan --include` and compat `PTAH_ATLAS_MIGRATE_DIFF_INCLUDE` keep only the selected objects on both sides. A selection matching nothing fails. |
 | Pre-migration database backups (`--pg-dump-to`) | ✅ | ❌ | ❌ | `--pg-dump-to` writes a pg_dump custom-format backup and `--mysqldump-to` a SQL backup before applying or rolling back; ptah.yaml key migration.pg_dump_to. |
 | Pre-migration webhook and shell hook gates | ✅ | ❌ | ❌ | `--webhook` POSTs migration metadata and requires HTTP 200; `--pre-up-hook`/`--pre-down-hook` run a shell command that must exit 0, else the run aborts. Also ptah.yaml migration.webhook/pre_up_hook. |
 | Prometheus metrics endpoint (`--metrics-addr`) | ✅ | ❌ | ❌ | migrations up, down, and status serve a Prometheus /metrics endpoint at the given address for the run. |
