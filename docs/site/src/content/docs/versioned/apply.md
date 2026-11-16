@@ -257,9 +257,14 @@ variable, and the variable wins over the config file. `up`, `down`, `baseline`,
 `repair` and `set` all read it, and every one of them holds the lock under that
 name for the whole run, including the creation of the revision table. `down`
 takes it before it first reads the history and keeps it until it has reported,
-the confirmation prompt included, so an unanswered prompt keeps every other
+except while its confirmation prompt waits: an unanswered prompt keeps no other
 runner of that name waiting. The config key reaches every one of them except
 `baseline`, which reads no project config.
+
+Once its prompt is answered, `down` takes the lock again and reads the applied
+migrations under it. When the ones above the target are no longer the ones the
+prompt showed, it refuses before any statement runs, and nothing is rolled
+back.
 
 On PostgreSQL the lock key comes from the name alone. The schema, the database
 name and the revision table do not enter it, so two histories in one database
