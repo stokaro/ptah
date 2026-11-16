@@ -1100,7 +1100,8 @@ func rollbackStatus(
 //
 // The report says nothing of its own on a lock lost or not released: the run
 // sent no statement, so the document the command writes for an error before
-// the run is the true one.
+// the run is the true one, though it leaves out the status this run read. The
+// no-op observation is not recorded for that run either.
 func finishDownAtOrBelowTarget(ctx context.Context, in downNoopInputs) (downReport, error) {
 	if _, err := in.migrator.VerifyAppliedChecksums(ctx); err != nil &&
 		!in.migrator.AppliesOverMissingMigration(err) {
