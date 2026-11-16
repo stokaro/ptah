@@ -5,8 +5,10 @@ import (
 	"strings"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/definer"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/mysqlviewsecurity"
 	"ptah.run/internal/planrefusal"
 )
@@ -39,8 +41,14 @@ import (
 // wrote, not the one the read saw: that view's definer is the account that
 // applied the forward change, which nothing read, so there is nothing to
 // compare. Run as the same account, it leaves the definer it finds.
-func refuseForeignViewDefiner(diff *difftypes.SchemaDiff) error {
-	if diff.ConnectedAccount == nil {
+//
+// The rule reads the descriptor's Comparison.ViewSQLSecurity, as the
+// comparison does before it records a definer. This planner serves Oracle and
+// SQL Server too, whose views have no SQL SECURITY mode: their catalog records
+// none, and reading the missing mode as the MySQL default would refuse every
+// changed view there as unknown.
+func refuseForeignViewDefiner(diff *difftypes.SchemaDiff, dialect string) error {
+	if diff.ConnectedAccount == nil || !viewSQLSecurity.Get(dialect) {
 		return nil
 	}
 	account := *diff.ConnectedAccount
@@ -79,3 +87,9 @@ func refuseForeignViewDefiner(diff *difftypes.SchemaDiff) error {
 		Err:   fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, strings.Join(refusals, "; ")),
 	}
 }
+
+// viewSQLSecurity holds each descriptor's Comparison.ViewSQLSecurity: whether a
+// view on the target has a SQL SECURITY mode, and so a definer it runs as.
+var viewSQLSecurity = descriptortable.New(func(described descriptor.Dialect) bool {
+	return described.Comparison.ViewSQLSecurity
+})

@@ -1861,7 +1861,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := refuseLostSQLSecurity(diff); err != nil {
 		return nil, err
 	}
-	if err := refuseForeignViewDefiner(diff); err != nil {
+	if err := refuseForeignViewDefiner(diff, p.targetDialect()); err != nil {
 		return nil, err
 	}
 

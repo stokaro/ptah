@@ -7,6 +7,8 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/mysql"
@@ -150,6 +152,33 @@ func TestPlanner_ViewDefiner_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorAs, &refused)
 			c.Assert(refused.Views, qt.DeepEquals, test.wantViews)
 			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// TestPlanner_ViewDefiner_TargetsWithoutAViewMode pins the targets this
+// planner serves whose views have no SQL SECURITY mode: Oracle and SQL Server.
+// A database-aware comparison records the reading account there too, often as
+// an empty string, and the catalog records no mode and no definer, so a rule
+// that read the missing mode as the MySQL default would refuse every changed
+// view as unknown.
+func TestPlanner_ViewDefiner_TargetsWithoutAViewMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		planner *mysql.Planner
+	}{
+		{name: "oracle", planner: mysql.NewForDialect(platform.Oracle, capability.Oracle23())},
+		{name: "sqlserver", planner: mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022())},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := test.planner.GenerateMigrationAST(c.Context(), must.Must(builtin.New()),
+				&difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{definerChange("", "", "")}, ConnectedAccount: new("")})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.HasLen, 1)
 		})
 	}
 }
