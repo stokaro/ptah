@@ -510,7 +510,7 @@ func rehearseOnPreparedDev(
 	if err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
-	added, err := recreateCurrentSchema(ctx, devConn, current, target.URL, baseline, runtime, outside, reads)
+	added, err := recreateCurrentSchema(ctx, devConn, current, target, baseline, runtime, outside, reads)
 	if err != nil {
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
@@ -668,21 +668,23 @@ func readWholeDev(ctx context.Context, devConn *dbschema.DatabaseConnection) (*c
 // to drop the ones the target lacks: they are the dev database's environment,
 // not a difference from the target. See [devclean.Baseline].
 //
-// targetURL names the database current was read from. An executable provider
-// binds each value it reads to that database, and a dev realm binds values to
-// the realm, whether it is a realm of the target's database or of a database
-// of another name, so the target's values are moved to the realm before the
-// comparison (see [valuecontext.Move]); without the move the provider refuses
-// a comparison that holds values bound to two databases. What the realm does
-// not read is left out of what it recreates (see
-// [devclean.WithoutUnreadObjects]).
+// target is the connection current was read through, and its URL names the
+// database current was read from. An executable provider binds each value it
+// reads to that database, and a dev realm binds values to the realm, whether
+// it is a realm of the target's database or of a database of another name, so
+// the target's values are moved to the realm before the comparison (see
+// [valuecontext.Move]); without the move the provider refuses a comparison
+// that holds values bound to two databases. What the realm does not read is
+// left out of what it recreates (see [devclean.WithoutUnreadObjects]). The
+// objects a one-database read names by the target's database are moved to the
+// dev database's; see [inDevDatabase].
 //
 // reads are how devConn is read; see [resolveNamesAsTarget].
 func recreateCurrentSchema(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	current *catalog.Database,
-	targetURL string,
+	target catalog.ServerInfo,
 	baseline devclean.Baseline,
 	runtime engine.SchemaRuntime,
 	outside rehearsalOutside,
@@ -696,7 +698,7 @@ func recreateCurrentSchema(
 		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}
 	render := func(state *catalog.Database) ([]string, error) {
-		return baselineStatements(ctx, devConn, state, devCurrent, targetURL, baseline, runtime)
+		return baselineStatements(ctx, devConn, state, devCurrent, target, baseline, runtime)
 	}
 	dev := baselineDev{
 		info:     devConn.Info(),
@@ -886,11 +888,13 @@ func baselineStatements(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
 	state, devCurrent *catalog.Database,
-	targetURL string,
+	targetInfo catalog.ServerInfo,
 	baseline devclean.Baseline,
 	runtime engine.SchemaRuntime,
 ) ([]string, error) {
 	info := devConn.Info()
+	targetURL := targetInfo.URL
+	state = inDevDatabase(state, targetInfo, info)
 	target, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, state, info.Dialect, runtime)
 	if err != nil {
 		return nil, err
