@@ -589,7 +589,8 @@ to one database, so a plan has no `CREATE ROLE` for a role the target already
 holds, and a dev server of its own may still lack one a statement names, such
 as the role of a policy's `TO app_admin`. On a server the run owns, the
 baseline creates each such role that the dev server did not hold when the run
-claimed it, and the cleanup drops it with the run. A role is named the way an
+claimed it, with the attributes the target gives it and no password, and the
+cleanup drops it with the run. A role is named the way an
 object is, by its bare name in the code below, and the rule errs toward
 naming: a column called like the role counts too. On any other server no role
 is created, so the dev server has to hold the roles the statements name.

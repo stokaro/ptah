@@ -794,7 +794,10 @@ func seedBaseline(
 // held is nil on a server the run does not own, and nothing is added there:
 // no reset drops a role, so the role would outlive the run. On a server the
 // run owns, the reset drops every role the claim did not find, these with the
-// others.
+// others. A role is added with the attributes the target holds it with, and
+// what renders it names in turn is read again, so a role it names is added in
+// the next pass. A render that fails returns its error, and the roles of that
+// pass are not among the added objects, since nothing was written.
 func withTargetRoles(
 	seeded devseed.Result,
 	current *catalog.Database,
@@ -813,22 +816,23 @@ func withTargetRoles(
 		}
 		state := *seeded.State
 		state.Roles = slices.Concat(state.Roles, named)
-		state.RolesOutOfScope = slices.DeleteFunc(slices.Clone(state.RolesOutOfScope), func(role catalog.Role) bool {
-			return slices.ContainsFunc(named, func(added catalog.Role) bool { return added.Name == role.Name })
-		})
-		for _, role := range named {
-			seeded.Added = append(seeded.Added, devseed.Object{Kind: "role", Name: role.Name})
-		}
 		statements, err := render(&state)
 		if err != nil {
 			return seeded, err
 		}
 		seeded.State, seeded.Statements = &state, statements
+		for _, role := range named {
+			seeded.Added = append(seeded.Added, devseed.Object{Kind: "role", Name: role.Name})
+		}
 	}
 }
 
 // rolesLacking returns the roles of target that neither state nor held, the
-// roles the dev server held at the claim, has by name.
+// roles the dev server held at the claim, has by name. The names compare
+// exactly, as the server stores them: [devseed.RolesNamed] folds case to
+// decide what a statement names, and erring there costs a role the reset
+// drops, where erring here would plan a CREATE ROLE for a role the dev
+// server holds.
 func rolesLacking(state *catalog.Database, target []catalog.Role, held []string) []catalog.Role {
 	var lacking []catalog.Role
 	for _, role := range target {

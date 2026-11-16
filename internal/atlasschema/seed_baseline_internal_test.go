@@ -12,6 +12,7 @@ package atlasschema
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -259,11 +260,15 @@ func TestRehearsalCoreNamesTheAddedObjectsAPlanFailsAgainst(t *testing.T) {
 }
 
 // roleRender is seedRender with the roles of the state first and each
-// policy's roles in its statement.
+// policy's roles in its statement. A role whose comment names another role is
+// granted that role, which names it.
 func roleRender(state *catalog.Database) ([]string, error) {
 	var statements []string
 	for _, role := range state.Roles {
 		statements = append(statements, "CREATE ROLE "+role.Name)
+		if role.Comment != "" {
+			statements = append(statements, "GRANT "+role.Comment+" TO "+role.Name)
+		}
 	}
 	for _, table := range state.Tables {
 		statements = append(statements, "CREATE TABLE "+catalog.QualifyTableName(table.Schema, table.Name)+" (id integer)")
@@ -321,6 +326,16 @@ func TestSeedBaseline_CreatesARoleTheStatementsNameOnAServerTheRunOwns(t *testin
 			wantAdded: []devseed.Object{{Kind: "role", Name: "app_admin"}},
 		},
 		{
+			name: "a role granted to the role the plan names",
+			current: &catalog.Database{
+				Tables:          []catalog.Table{{Name: "tasks"}},
+				RolesOutOfScope: []catalog.Role{{Name: "app_admin", Comment: "auditor"}, {Name: "auditor"}, {Name: "bystander"}},
+			},
+			executed:  []string{`CREATE POLICY tasks_admin ON public.tasks FOR SELECT TO "app_admin" USING (true)`},
+			wantSent:  []string{"CREATE ROLE app_admin", "GRANT auditor TO app_admin", "CREATE ROLE auditor", "CREATE TABLE tasks (id integer)"},
+			wantAdded: []devseed.Object{{Kind: "role", Name: "app_admin"}, {Kind: "role", Name: "auditor"}},
+		},
+		{
 			name:    "a policy of the baseline for the role",
 			current: targetWithRoles([]catalog.RLSPolicy{{Name: "tasks_read", Table: "tasks", ToRoles: "auditor"}}, "auditor", "bystander"),
 			wantSent: []string{
@@ -371,4 +386,34 @@ func TestSeedBaseline_LeavesARoleTheServerHoldsOrDoesNotOwn(t *testing.T) {
 			c.Assert(added, qt.HasLen, 0)
 		})
 	}
+}
+
+// TestSeedBaseline_ARoleThatDoesNotRenderIsNotAdded returns the render's
+// error and names no role among the added objects: the baseline wrote
+// nothing.
+func TestSeedBaseline_ARoleThatDoesNotRenderIsNotAdded(t *testing.T) {
+	c := qt.New(t)
+	executor := &recordingExecutor{}
+	outside := rehearsalOutside{
+		target:   targetHolding(&catalog.Database{}),
+		executed: []string{`CREATE POLICY tasks_admin ON public.tasks FOR SELECT TO "app_admin" USING (true)`},
+	}
+
+	added, err := seedBaseline(c.Context(), ownedDevOf(c, executor, []string{"postgres"}), targetWithRoles(nil, "app_admin"), nil, outside, refusesRoles)
+
+	c.Assert(err, qt.ErrorIs, errRoleRender)
+	c.Assert(err, qt.Not(qt.ErrorAs), new(*devseed.AddedError))
+	c.Assert(added, qt.HasLen, 0)
+	c.Assert(executor.executed, qt.HasLen, 0)
+}
+
+// errRoleRender is the failure of a render that cannot write a role.
+var errRoleRender = errors.New("render role")
+
+// refusesRoles is roleRender failing on a state that holds a role.
+func refusesRoles(state *catalog.Database) ([]string, error) {
+	if len(state.Roles) > 0 {
+		return nil, errRoleRender
+	}
+	return roleRender(state)
 }
