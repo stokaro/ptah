@@ -58,6 +58,7 @@ const (
 	generateDirFormatFlag        = "dir-format"
 	generateQualifierFlag        = "qualifier"
 	generateExcludeFlag          = "exclude"
+	generateIncludeFlag          = "include"
 )
 
 func NewMigrateGenerateCommand() *cobra.Command {
@@ -83,7 +84,13 @@ current state, whether read from --db-url or replayed, and out of the shadow
 verification, so the migration neither creates nor drops them. It takes the
 selectors schema diff --exclude takes. Exclude in ptah.yaml or atlas.hcl
 leaves its objects out the same way, and the flag adds to that list and never
-replaces it.`,
+replaces it.
+
+--include keeps only the objects it selects on those same sides, after
+--exclude, with the meaning schema apply --include gives it: the migration
+neither creates nor drops anything else, so an object the migration history
+created and the desired schema does not own stays as it is. Selectors that
+select nothing are refused.`,
 		RunE: migrateGenerateCommand,
 	}
 
@@ -115,6 +122,8 @@ replaces it.`,
 	flags.StringArray(dbcli.IgnoreExtensionFlagName, nil,
 		"Database extension the comparison must leave alone, neither created nor dropped (repeatable; adds to the defaults)")
 	flags.StringArray(generateExcludeFlag, nil, "Schema objects to exclude from the generated migration (Atlas-style selectors)")
+	flags.StringArray(generateIncludeFlag, nil,
+		"Schema objects the generated migration may change, applied after --exclude; it neither creates nor drops anything else (Atlas-style selectors)")
 	dbcli.RegisterExternalSchemaOptInFlag(flags)
 	dbcli.RegisterTrustReplaySQLFlag(flags, new(bool))
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
@@ -135,12 +144,19 @@ type comparisonScope struct {
 	// excludeSources records where the run read each exclude selector, so a
 	// selector that matched nothing is reported under its own source.
 	excludeSources atlasfilter.ExcludeSources
+	// include holds the flag's positive selection, applied after exclude.
+	include []string
+}
+
+// selectIn hands the selectors the scope holds to the generation.
+func (s comparisonScope) selectIn(opts *generator.GenerateMigrationOptions) {
+	opts.Exclude, opts.ExcludeSources, opts.Include = s.exclude, s.excludeSources, s.include
 }
 
 // generateComparisonScope reads the flags that narrow what the comparison
-// holds: the extensions it leaves alone, and the exclude selectors, which are
-// the project's exclude list and the flag's together, with where the run read
-// each selector. A malformed selector is
+// holds: the extensions it leaves alone, the exclude selectors, which are the
+// project's exclude list and the flag's together, with where the run read each
+// selector, and the include selectors. A malformed selector is
 // refused here, under the scope selections of the run's runtime, before the
 // integrity gate or a replay reaches a database. The generator applies the
 // selectors to the desired schema, to the read of the target or of the
@@ -165,7 +181,14 @@ func generateComparisonScope(
 	if err := atlasfilter.ValidateExcludeSelectors(exclude, selections); err != nil {
 		return comparisonScope{}, fmt.Errorf("invalid --%s: %w", generateExcludeFlag, err)
 	}
-	return comparisonScope{ignoreExtensions: ignoreExtensions, exclude: exclude, excludeSources: excludeSources}, nil
+	include, err := cmd.Flags().GetStringArray(generateIncludeFlag)
+	if err != nil {
+		return comparisonScope{}, err
+	}
+	if err := atlasfilter.ValidateIncludeSelectors(include, selections); err != nil {
+		return comparisonScope{}, fmt.Errorf("invalid --%s: %w", generateIncludeFlag, err)
+	}
+	return comparisonScope{ignoreExtensions: ignoreExtensions, exclude: exclude, excludeSources: excludeSources, include: include}, nil
 }
 
 // revisionTables names the bookkeeping tables `migrations up` writes under the
@@ -721,8 +744,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		OutputDir:         migrationsDir,
 		Schemas:           dbcli.ParseSchemas(schemasValue),
 		RevisionTables:    revisionTables,
-		Exclude:           scope.exclude,
-		ExcludeSources:    scope.excludeSources,
 		CheckDestructive:  checkDestructive,
 		AllowDestructive:  allowDestructive,
 		ReportFormat:      reportFormat,
@@ -732,6 +753,7 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		DiffPolicy:        diffPolicy,
 		Diagnostics:       cmd.ErrOrStderr(),
 	}
+	scope.selectIn(&generateOpts)
 	outcome := &generateOutcome{current: "the database"}
 	generateOpts.OnUndecided = outcome.collect
 	var files *generator.MigrationFiles

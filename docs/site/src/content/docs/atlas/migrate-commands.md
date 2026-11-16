@@ -1312,6 +1312,28 @@ PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE='*[type=policy]' ptah-compat migrate diff add_or
 
 Strict mode refuses the variable; the `exclude` list works in both profiles.
 
+`PTAH_ATLAS_MIGRATE_DIFF_INCLUDE` is the positive selection, with the meaning
+`schema apply --include` gives it: the migration keeps only the objects it
+selects on both sides, so it neither creates nor drops anything else. Use it
+when the migration history created objects that another workflow owns and the
+desired schema does not declare. A selected table carries its indexes,
+constraints, triggers and policies; to leave one of them alone too, exclude it,
+because the exclusion applies first:
+
+```bash
+PTAH_ATLAS_MIGRATE_DIFF_INCLUDE='public.tasks,public.tasks_v' \
+PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE='public.tasks.tasks_user[type=policy]' \
+ptah-compat migrate diff add_tasks_view \
+  --dir file://migrations \
+  --to file://schema.sql \
+  --dev-url "$DEV_DATABASE_URL"
+```
+
+Selectors that select nothing on either side are refused, because an empty
+comparison would write nothing and read as synced. Atlas has no `include`
+list in `atlas.hcl` for this command, so the variable is the only spelling,
+and strict mode refuses it.
+
 The dev URL decides how a selector is counted, as the URL does on `schema
 apply`. A PostgreSQL dev URL without `search_path` describes the whole realm,
 so `public.notes.search_vector` names the `search_vector` column of

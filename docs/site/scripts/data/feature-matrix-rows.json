@@ -883,6 +883,15 @@
   },
   {
     "area": "Versioned migrations — directory",
+    "feature": "Positive selection when generating a migration",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "unknown",
+    "note": "`migrations generate --include`, `migrations plan --include` and compat `PTAH_ATLAS_MIGRATE_DIFF_INCLUDE` keep only the selected objects on both sides. A selection matching nothing fails.",
+    "evidence": "ptah migrations generate --help and ptah migrations plan --help (--include); ptah-compat migrate diff --help names PTAH_ATLAS_MIGRATE_DIFF_INCLUDE in full compatibility only. The pinned community binary registers no --include on migrate diff, which the conformance cli-surface tier asserts and TestAtlasMigrateDiff_RegistersNoIncludeFlag holds for both profiles; strict mode refuses the variable by presence (TestResolveStrictCERejectsTheMigrateDiffIncludeVariable_FailurePath). The selection is atlasschema.Inclusion, the schema apply --include projection, applied after the exclusion to the desired schema, the database read or replay, and the shadow read-back. integration/migration_generation_include_e2e_test.go replays a PostgreSQL history holding an undeclared view, index, policy and trigger, applies each generated migration and reads pg_catalog back: without a selection all four are dropped, under the include the view survives and the table's undeclared children are dropped, and with child excludes all four survive, on both binaries."
+  },
+  {
+    "area": "Versioned migrations — directory",
     "feature": "Statement form of a generated migration",
     "ptah": "yes",
     "atlas_oss": "yes",

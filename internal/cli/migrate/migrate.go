@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -51,6 +52,7 @@ const (
 	attachFlag           = "attach"
 	plainHTTPFlag        = "plain-http"
 	excludeFlag          = "exclude"
+	includeFlag          = "include"
 )
 
 type options struct {
@@ -68,6 +70,7 @@ type options struct {
 	schemas          string
 	ignoreExtensions []string
 	exclude          []string
+	include          []string
 }
 
 func NewMigrateCommand() *cobra.Command {
@@ -86,7 +89,11 @@ writing migration files.
 database read, so the plan neither creates nor drops them. It takes the
 selectors schema diff --exclude takes. Exclude in ptah.yaml or atlas.hcl
 leaves its objects out the same way, and the flag adds to that list and never
-replaces it.`,
+replaces it.
+
+--include keeps only the objects it selects on both sides, after --exclude,
+as migrations generate --include does. Selectors that select nothing are
+refused.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateCommandWithOptions(cmd, &opts)
 		},
@@ -115,6 +122,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterURLScopedDatabaseSchemasFlag(flags, &opts.schemas)
 	dbcli.RegisterIgnoreExtensionFlag(flags, &opts.ignoreExtensions)
 	flags.StringArrayVar(&opts.exclude, excludeFlag, nil, "Schema objects to exclude from planning (Atlas-style selectors)")
+	flags.StringArrayVar(&opts.include, includeFlag, nil,
+		"Schema objects the plan may change, applied after --exclude; it neither creates nor drops anything else (Atlas-style selectors)")
 	dbcli.RegisterMigrationsTableFlag(flags, new(string))
 	dbcli.RegisterRevisionTableFormatFlag(flags, new(string))
 	tablerebuild.Register(cmd)
@@ -185,9 +194,9 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
-	exclusion, err := atlasfilter.NewExclusion(runtime, exclude)
+	selection, err := newPlanSelection(runtime, exclude, excludeSources, opts.include)
 	if err != nil {
-		return fmt.Errorf("invalid --%s: %w", excludeFlag, err)
+		return err
 	}
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
 	if err != nil {
@@ -243,7 +252,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("--attach requires exactly one OCI --schema-file source")
 	}
 	requested := dbcli.ParseSchemas(schemasValue)
-	states, err := readPlanStates(cmd, conn, loadResult.Database, requested, bookkeeping, exclusion, excludeSources)
+	states, err := readPlanStates(cmd, conn, loadResult.Database, requested, bookkeeping, selection)
 	if err != nil {
 		return err
 	}
@@ -375,11 +384,34 @@ type planStates struct {
 	schemas []string
 }
 
+// planSelection is what narrows both sides of the plan: the exclusion, with
+// where the run read each of its selectors, then the inclusion.
+type planSelection struct {
+	exclusion      atlasfilter.Exclusion
+	excludeSources atlasfilter.ExcludeSources
+	inclusion      atlasschema.Inclusion
+}
+
+// newPlanSelection resolves the exclude and include selectors, so a malformed
+// one is refused before the target is connected.
+func newPlanSelection(runtime any, exclude []string, excludeSources atlasfilter.ExcludeSources, include []string) (planSelection, error) {
+	exclusion, err := atlasfilter.NewExclusion(runtime, exclude)
+	if err != nil {
+		return planSelection{}, fmt.Errorf("invalid --%s: %w", excludeFlag, err)
+	}
+	inclusion, err := atlasschema.NewInclusion(runtime, include)
+	if err != nil {
+		return planSelection{}, fmt.Errorf("invalid --%s: %w", includeFlag, err)
+	}
+	return planSelection{exclusion: exclusion, excludeSources: excludeSources, inclusion: inclusion}, nil
+}
+
 // readPlanStates reads the database at the scope a comparison with desired
 // reads, leaves the revision tables out of it, and returns it beside desired,
-// both without what exclusion names. A selector that named nothing on either
-// side is a warning on standard error, naming the source excludeSources records
-// for it.
+// both without what the exclusion names and with only what the inclusion
+// selects. An exclude selector that named nothing on either side is a warning
+// on standard error, naming the source the selection records for it; include
+// selectors that select nothing are refused.
 //
 // The desired schema is filtered before the read, because the scope is
 // resolved from what it declares: an excluded object does not bring its schema
@@ -389,9 +421,9 @@ func readPlanStates(
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
 	requested, bookkeeping []string,
-	exclusion atlasfilter.Exclusion,
-	excludeSources atlasfilter.ExcludeSources,
+	selection planSelection,
 ) (planStates, error) {
+	exclusion := selection.exclusion
 	// Native patterns count from the connection's schema on every URL; the
 	// realm-relative count is the Atlas contract `ptah-compat` takes from a URL
 	// that names no schema.
@@ -407,7 +439,7 @@ func readPlanStates(
 	if err != nil {
 		return planStates{}, fmt.Errorf("error reading database schema: %w", err)
 	}
-	current, err := dbschema.ReadSchemaWithSchemasContext(exclusion.ReadContext(cmd.Context()), conn, schemas)
+	current, err := dbschema.ReadSchemaWithSchemasContext(selection.inclusion.ReadContext(exclusion.ReadContext(cmd.Context())), conn, schemas)
 	if err != nil {
 		return planStates{}, fmt.Errorf("error reading database schema: %w", err)
 	}
@@ -416,7 +448,11 @@ func readPlanStates(
 	if err != nil {
 		return planStates{}, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}
-	atlasfilter.ReportUnmatched(cmd.ErrOrStderr(), excludeSources, desiredReport, currentReport)
+	atlasfilter.ReportUnmatched(cmd.ErrOrStderr(), selection.excludeSources, desiredReport, currentReport)
+	current, desired, err = selection.inclusion.Apply(cmd.Context(), conn.Info().Dialect, naming, current, desired)
+	if err != nil {
+		return planStates{}, err
+	}
 	return planStates{desired: desired, current: current, schemas: schemas}, nil
 }
 

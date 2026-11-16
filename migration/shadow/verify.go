@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemascope"
@@ -261,6 +262,21 @@ type MigrationVerifyOptions struct {
 	// connected. A selector with more parts than the scope allows fails it at
 	// the schema-match stage.
 	Exclude []string
+	// Include keeps on both sides of the comparison only the objects these
+	// selectors select, after Exclude: an object the prior history created
+	// and the selectors do not select is not reported as extra. The selectors
+	// take the grammar of
+	// [ptah.run/migration/generator.GenerateMigrationOptions.Include], and a
+	// caller verifying a plan made under an inclusion passes the same list.
+	// Patterns are counted from the default schema of TargetConnection, as
+	// the plan counted them and as Exclude is counted.
+	//
+	// Nil selects everything. Otherwise Runtime must implement
+	// [ptah.run/core/selectext.Runtime]; a Runtime that does not, or a
+	// selector the grammar rejects, fails the verification at the
+	// configuration stage before the shadow database is connected. Selectors
+	// that select nothing on either side fail it at the schema-match stage.
+	Include []string
 }
 
 // Candidate is one migration under verification: a version, a name, and the
@@ -298,6 +314,10 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 	exclusion, err := atlasfilter.NewExclusion(opts.Runtime, opts.Exclude)
 	if err != nil {
 		return newVerificationError("configuration", "exclude_error", "apply exclude selectors", err)
+	}
+	inclusion, err := atlasschema.NewInclusion(opts.Runtime, opts.Include)
+	if err != nil {
+		return newVerificationError("configuration", "include_error", "apply include selectors", err)
 	}
 	database, err := shadowdb.Open(ctx, opts.ShadowDatabaseURL, "")
 	if err != nil {
@@ -370,7 +390,7 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 		}
 		return newVerificationError("replay", "replay_error", "replay migrations", err)
 	}
-	if err := assertSchemaMatches(ctx, conn, opts, exclusion); err != nil {
+	if err := assertSchemaMatches(ctx, conn, opts, exclusion, inclusion); err != nil {
 		return err
 	}
 
@@ -381,7 +401,7 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 	if err := mig.MigrateTo(ctx, latestMigrationVersion(migrations)); err != nil {
 		return newVerificationError("round-trip-up", "round_trip_up_error", "round-trip up", err)
 	}
-	return assertSchemaMatches(ctx, conn, opts, exclusion)
+	return assertSchemaMatches(ctx, conn, opts, exclusion, inclusion)
 }
 
 func identifierSemanticsAgree(
@@ -464,7 +484,8 @@ func convergenceOptions(opts *config.CompareOptions) *config.CompareOptions {
 // with the declaration reads, resolved on the shadow's own connection: on
 // MySQL a schema is a database, and the target's database name means nothing
 // on the shadow server. Both the declaration and the read leave out what
-// exclusion names, as the plan that wrote the candidates left it out. A read
+// exclusion names, and keep only what inclusion selects, as the plan that
+// wrote the candidates selected them. A read
 // leaves the objects of its connection's default schema unqualified, so both
 // sides are judged against the default schema of the target connection, the
 // one the plan was made on: a selector qualified with the target's database
@@ -474,6 +495,7 @@ func assertSchemaMatches(
 	conn *dbschema.DatabaseConnection,
 	opts MigrationVerifyOptions,
 	exclusion atlasfilter.Exclusion,
+	inclusion atlasschema.Inclusion,
 ) error {
 	// The count is the one the plan was made with: native patterns count from
 	// the target connection's schema on every URL.
@@ -486,13 +508,17 @@ func assertSchemaMatches(
 	if err != nil {
 		return newVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}
-	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(exclusion.ReadContext(readscope.Authored(ctx)), conn, scope)
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(inclusion.ReadContext(exclusion.ReadContext(readscope.Authored(ctx))), conn, scope)
 	if err != nil {
 		return newVerificationError("re-introspect", "re_introspect_error", "re-introspect shadow database", err)
 	}
 	dbSchema, _, err = exclusion.Observed(dbSchema, planNaming)
 	if err != nil {
 		return newVerificationError("re-introspect", "exclude_error", "apply exclude selectors to the shadow database", err)
+	}
+	dbSchema, generated, err = inclusion.Apply(ctx, opts.TargetConnection.Info().Dialect, planNaming, dbSchema, generated)
+	if err != nil {
+		return newVerificationError("schema-match", "include_error", "apply include selectors", err)
 	}
 
 	diff, err := schemadiff.CompareWithDatabase(

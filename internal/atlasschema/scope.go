@@ -74,12 +74,25 @@ func (s LiveSelection) Apply(
 	current *catalog.Database,
 	desired *schemamodel.Database,
 ) (*catalog.Database, *schemamodel.Database, error) {
+	return s.applyCounted(ctx, runtime, info.Dialect, atlasfilter.ConnectionNaming(info), current, desired)
+}
+
+// applyCounted is [LiveSelection.Apply] counting each pattern as naming says,
+// on a connection of dialect.
+func (s LiveSelection) applyCounted(
+	ctx context.Context,
+	runtime selectext.Runtime,
+	dialect string,
+	naming atlasfilter.Naming,
+	current *catalog.Database,
+	desired *schemamodel.Database,
+) (*catalog.Database, *schemamodel.Database, error) {
 	scope := atlasfilter.Scope{
 		Schemas:               s.Schemas,
 		Include:               s.Include,
 		Exclude:               s.Exclude,
-		DefaultSchema:         info.Schema,
-		RealmRelativePatterns: ConnectionIsRealmScoped(info),
+		DefaultSchema:         naming.DefaultSchema,
+		RealmRelativePatterns: naming.RealmRelative,
 		Selections:            runtime.Selections(),
 	}
 	if !slices.ContainsFunc(s.Schemas, atlasfilter.NamesSelector) &&
@@ -87,7 +100,7 @@ func (s LiveSelection) Apply(
 		!slices.ContainsFunc(s.Exclude, atlasfilter.NamesSelector) {
 		return current, desired, nil
 	}
-	scoped, err := projectLiveStates(ctx, runtime, info.Dialect, current, desired, scope)
+	scoped, err := projectLiveStates(ctx, runtime, dialect, current, desired, scope)
 	if err != nil {
 		return nil, nil, err
 	}

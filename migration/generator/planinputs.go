@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/pathguard"
@@ -66,6 +67,7 @@ func verifyPlannedShadowMigration(
 		CompareOpts: opts.CompareOptions,
 		Schemas:     opts.Schemas,
 		Exclude:     opts.Exclude,
+		Include:     opts.Include,
 	})
 }
 
@@ -142,17 +144,18 @@ func resolveDesiredSchema(opts GenerateMigrationOptions) (*schemamodel.Database,
 
 // planPreconditions are what PlanMigration settles before it parses the
 // desired schema or connects: the normalized options, the prior migrations
-// the plan is authorized against, and the exclusion every compared state is
-// read under.
+// the plan is authorized against, and the exclusion and inclusion every
+// compared state is read under.
 type planPreconditions struct {
 	opts                      GenerateMigrationOptions
 	authorizedPriorMigrations fsnapshot.Snapshot
 	exclusion                 atlasfilter.Exclusion
+	inclusion                 atlasschema.Inclusion
 }
 
 // preparePlan normalizes opts, captures the prior migrations and resolves the
-// exclude selectors, so a malformed option or selector is refused before
-// anything is read.
+// exclude and include selectors, so a malformed option or selector is refused
+// before anything is read.
 func preparePlan(opts GenerateMigrationOptions) (planPreconditions, error) {
 	opts, err := normalizeGenerateMigrationOptions(opts)
 	if err != nil {
@@ -166,7 +169,11 @@ func preparePlan(opts GenerateMigrationOptions) (planPreconditions, error) {
 	if err != nil {
 		return planPreconditions{}, fmt.Errorf("invalid exclude selectors: %w", err)
 	}
-	return planPreconditions{opts: opts, authorizedPriorMigrations: authorized, exclusion: exclusion}, nil
+	inclusion, err := atlasschema.NewInclusion(opts.Runtime, opts.Include)
+	if err != nil {
+		return planPreconditions{}, fmt.Errorf("invalid include selectors: %w", err)
+	}
+	return planPreconditions{opts: opts, authorizedPriorMigrations: authorized, exclusion: exclusion, inclusion: inclusion}, nil
 }
 
 func normalizeGenerateMigrationOptions(opts GenerateMigrationOptions) (GenerateMigrationOptions, error) {

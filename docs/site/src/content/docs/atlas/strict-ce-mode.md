@@ -69,7 +69,9 @@ name, and a strict run starts no provider. See
 of its comparison in full compatibility mode, where no Atlas edition has an
 `--exclude` flag on that command. It is refused by presence and by name too.
 The selected env's `exclude` list selects the same objects and stays available
-in strict mode.
+in strict mode. `PTAH_ATLAS_MIGRATE_DIFF_INCLUDE`, the positive selection for
+the same command, is refused the same way; no Atlas spelling selects those
+objects there.
 
 An engine no Atlas edition has a driver for is refused in the pinned binary's
 own words: a URL with `sql/sqlclient: unknown driver "<scheme>"`, and a

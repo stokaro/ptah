@@ -109,10 +109,11 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 				},
 			}
 
-			_, _, err := compareReplayedState(
+			_, err := compareReplayedState(
 				c.Context(), conn, runtime, nil, atlasfilter.Naming{DefaultSchema: conn.Info().Schema},
 				&schemamodel.Database{FeatureCoverage: must.Must(sqlitetable.VirtualCoverage(schemaext.Desired, schemaext.Knowledge{State: schemaext.Complete}, nil))},
-				devclean.Baseline{}, must.Must(atlasfilter.NewExclusion(selectedRuntime(c), tt.exclude)), nil, nil, tt.policy, selectedRuntime(c),
+				devclean.Baseline{}, comparisonSelection{exclusion: must.Must(atlasfilter.NewExclusion(selectedRuntime(c), tt.exclude)), info: conn.Info()},
+				nil, nil, tt.policy, selectedRuntime(c),
 			)
 
 			c.Assert(err != nil, qt.Equals, tt.wantErr)
@@ -154,14 +155,14 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 		},
 	}
 
-	replayed, diff, err := compareReplayedState(
-		c.Context(), conn, runtime, schemas, atlasfilter.Naming{DefaultSchema: "public"}, desired, devclean.Baseline{}, atlasfilter.Exclusion{}, nil, nil,
+	compared, err := compareReplayedState(
+		c.Context(), conn, runtime, schemas, atlasfilter.Naming{DefaultSchema: "public"}, desired, devclean.Baseline{}, comparisonSelection{info: conn.Info()}, nil, nil,
 		atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(replayed.FeatureObjects.Refs(), qt.DeepEquals, current.FeatureObjects.Refs())
-	c.Assert(diff.HasChanges(), qt.IsFalse)
+	c.Assert(compared.current.FeatureObjects.Refs(), qt.DeepEquals, current.FeatureObjects.Refs())
+	c.Assert(compared.diff.HasChanges(), qt.IsFalse)
 }
 
 func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
@@ -182,14 +183,14 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	}
 	diagnostics := &bytes.Buffer{}
 
-	_, diff, err := compareReplayedState(
+	compared, err := compareReplayedState(
 		c.Context(), conn, runtime, nil, atlasfilter.Naming{DefaultSchema: conn.Info().Schema},
 		&schemamodel.Database{Sequences: []schemamodel.Sequence{{Name: "order_seq"}}},
-		devclean.Baseline{}, atlasfilter.Exclusion{}, diagnostics, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
+		devclean.Baseline{}, comparisonSelection{info: conn.Info()}, diagnostics, nil, atlasschema.DiffPolicy{}, selectedRuntime(c),
 	)
 
 	c.Assert(err, qt.ErrorIs, schemadiff.ErrIncompleteComparison)
-	c.Assert(diff, qt.IsNil)
+	c.Assert(compared.diff, qt.IsNil)
 	c.Assert(diagnostics.String(), qt.Equals, undecidedSequenceDiagnostic)
 }
 

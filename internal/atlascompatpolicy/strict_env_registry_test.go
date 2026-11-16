@@ -249,6 +249,7 @@ func clearDeclaredEnvironment(t *testing.T) {
 		envbooltest.Unset(variable.Name())(t)
 	}
 	envbooltest.Unset("PTAH_ATLAS_MIGRATE_DIFF_EXCLUDE")(t)
+	envbooltest.Unset("PTAH_ATLAS_MIGRATE_DIFF_INCLUDE")(t)
 	envbooltest.Unset("PTAH_LOG_FORMAT")(t)
 	envbooltest.Unset("PTAH_PROVIDER_CONFIG")(t)
 	envbooltest.Unset("PTAH_RUNNER")(t)
