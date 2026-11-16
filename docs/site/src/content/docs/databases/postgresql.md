@@ -244,6 +244,10 @@ The server stores that qualifier unqualified. The probe searches `pg_temp` last,
 so every other name in the expression, `public.clients` included, still reads
 the real table.
 
+A policy clause may also qualify a column with the schema and its own table, as
+`public.clients.id`. On the temporary table the server refuses that spelling,
+so the probe sends `clients.id`, which the server stores the same way.
+
 One pass through the server does not always reach the database's spelling.
 PostgreSQL prints `kind IN ('a', 'b')` as `kind::text = ANY ((ARRAY['a'::character
 varying, 'b'::character varying])::text[])`, and stores that text, written back,

@@ -214,3 +214,38 @@ func TestPolicyProbe_LivePostgresWithoutSelectLeavesItUnanswered(t *testing.T) {
 	c.Assert(attached(c, answered, fixture.declared), qt.DeepEquals,
 		&pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: role}}, Using: fixture.observed.Value.(*pgpolicy.ObservedPolicy).Using})
 }
+
+// TestPolicyProbe_LivePostgresAnswersForAColumnQualifiedByItsSchema pins a
+// clause that names its column through the table's schema and the table, as
+// `"app"."Orders".tenant`. PostgreSQL stores the reference without them, so the
+// policy is unchanged and the comparison plans nothing. The probe's copy of the
+// table sits in pg_temp, where the server refuses the reference as written, so
+// a probe sending it answers nothing and every run plans ALTER POLICY. The
+// control is the same declaration compared without the probe.
+func TestPolicyProbe_LivePostgresAnswersForAColumnQualifiedByItsSchema(t *testing.T) {
+	// Each clause formats the schema as written, the schema quoted and the
+	// table quoted, in that order.
+	tests := []struct{ name, clause string }{
+		{name: "quoted", clause: `%[2]s.%[3]s.tenant = 'x'`},
+		{name: "schema unquoted", clause: `%[1]s.%[3]s.tenant = 'x'`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newPolicyProbeFixture(c)
+			observed := fixture.observed.Value.(*pgpolicy.ObservedPolicy)
+			qualified := fixture
+			qualified.declared = must.Must(pgpolicy.DesiredPolicyObject(fixture.declared.Ref, pgpolicy.DesiredPolicy{
+				Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.CurrentUser}},
+				Using: new(fmt.Sprintf(test.clause, fixture.schema, postgresIdentifier(fixture.schema), postgresIdentifier(probedTable))),
+			}))
+
+			declared := qualified.normalize(c, fixture.admin)
+
+			c.Assert(attached(c, declared, qualified.declared), qt.DeepEquals,
+				&pgpolicy.NormalizedPolicy{Roles: []pgpolicy.RoleSelector{{Name: fixture.creator}}, Using: observed.Using})
+			c.Assert(qualified.changes(c, declared), qt.HasLen, 0)
+			c.Assert(qualified.changes(c, must.Must(schemaext.NewObjects(qualified.declared))), qt.HasLen, 1)
+		})
+	}
+}

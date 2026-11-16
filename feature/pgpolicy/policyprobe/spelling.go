@@ -33,8 +33,8 @@ func observedSpelling(request schemaext.NormalizationRequest, probe probe) *pgpo
 	if !ok {
 		return nil
 	}
-	table := probe.object.Ref.Parent
-	using, withCheck := clauseSpelling(declared.Using, observed.Using, table), clauseSpelling(declared.WithCheck, observed.WithCheck, table)
+	ref := probe.object.Ref
+	using, withCheck := clauseSpelling(declared.Using, observed.Using, ref), clauseSpelling(declared.WithCheck, observed.WithCheck, ref)
 	if using == declared.Using && withCheck == declared.WithCheck {
 		return nil
 	}
@@ -43,8 +43,8 @@ func observedSpelling(request schemaext.NormalizationRequest, probe probe) *pgpo
 
 // clauseSpelling is observed when it means what declared means, and declared
 // otherwise.
-func clauseSpelling(declared, observed *string, table objectidentity.Part) *string {
-	if declared == nil || observed == nil || canonicalClause(*declared, table) != canonicalClause(*observed, table) {
+func clauseSpelling(declared, observed *string, ref objectidentity.ID) *string {
+	if declared == nil || observed == nil || canonicalClause(*declared, ref) != canonicalClause(*observed, ref) {
 		return declared
 	}
 	return observed
@@ -57,8 +57,8 @@ func clauseSpelling(declared, observed *string, table objectidentity.Part) *stri
 // rewrites anything else, such as `n = 1 + 1` into `n = (1:::INT8 + 1:::INT8)`,
 // the two stay different and the plan changes the policy, which is the safe way
 // to be wrong.
-func canonicalClause(clause string, table objectidentity.Part) string {
-	return canonicalCondition(clauseTokens(clause, table))
+func canonicalClause(clause string, ref objectidentity.ID) string {
+	return canonicalCondition(clauseTokens(clause, ref))
 }
 
 // sqlValueKeywords maps each keyword a server stores as a call, measured on
@@ -79,15 +79,10 @@ var sqlValueKeywords = map[string]string{
 // clauseTokens reads a clause into comparable tokens: identifiers in lower case
 // and without the quotes a plain name does not need, one spelling of not-equal,
 // each SQL value keyword as its call, and no type annotation, no cast of a string
-// literal to text, and no prefix naming the policy's own table.
-func clauseTokens(clause string, table objectidentity.Part) []string {
-	var raw []lexer.Token
-	scanner := lexer.NewLexerWithOptions(clause, lexer.Options{StandardStrings: true})
-	for token := scanner.NextToken(); token.Type != lexer.TokenEOF; token = scanner.NextToken() {
-		if token.Type != lexer.TokenWhitespace && token.Type != lexer.TokenComment {
-			raw = append(raw, token)
-		}
-	}
+// literal to text, and no prefix naming the policy's own table, with or without
+// the schema that holds it.
+func clauseTokens(clause string, ref objectidentity.ID) []string {
+	raw := significantTokens(clause)
 	tokens := make([]string, 0, len(raw))
 	for i := 0; i < len(raw); i++ {
 		switch {
@@ -99,7 +94,9 @@ func clauseTokens(clause string, table objectidentity.Part) []string {
 		case startsOperator(raw, i, "<>"), startsOperator(raw, i, "!="):
 			tokens = append(tokens, "!=")
 			i++
-		case startsOperator(raw, i+1, ".") && isTableName(raw[i], table):
+		case ownSchemaQualifier(raw, i, ref):
+			i++
+		case startsOperator(raw, i+1, ".") && namesPart(raw[i], ref.Parent):
 			i++
 		case raw[i].Type == lexer.TokenIdentifier:
 			name := strings.ToLower(raw[i].Value)
@@ -165,13 +162,14 @@ func isTextType(tokens []lexer.Token, i int) bool {
 	return false
 }
 
-// isTableName reports whether token names the policy's table, quoted or not.
-func isTableName(token lexer.Token, table objectidentity.Part) bool {
+// namesPart reports whether token names part, quoted or not: the policy's
+// table or the schema that holds it.
+func namesPart(token lexer.Token, part objectidentity.Part) bool {
 	switch token.Type {
 	case lexer.TokenIdentifier:
-		return strings.ToLower(token.Value) == table.Normalized
+		return strings.ToLower(token.Value) == part.Normalized
 	case lexer.TokenString:
-		return strings.HasPrefix(token.Value, `"`) && strings.Trim(token.Value, `"`) == table.Source
+		return strings.HasPrefix(token.Value, `"`) && strings.Trim(token.Value, `"`) == part.Source
 	}
 	return false
 }
