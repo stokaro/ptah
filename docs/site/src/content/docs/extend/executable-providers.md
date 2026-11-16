@@ -715,11 +715,12 @@ database the objects of the target that its statements name outside the
 comparison. With the feature, Ptah finds them through the filtered inspection
 the contract already has: `InspectRequest.schemas` holds the words the
 statements use as qualifiers, folded to lower case, and the default schema the
-target's session reports (`Session.default_schema`). The provider binds each selector to the schemas it names, and binds a
-selector that names no schema to nothing. Ptah reads again with more selectors
-when a recreated object names another schema, and never reads a schema nothing
-names. A provider whose inspection fails for some schemas can still be
-rehearsed, as long as no statement needs those schemas.
+target's session reports (`Session.default_schema`). The provider binds each
+selector to the schemas it names, and binds a selector that names no schema to
+nothing. Ptah reads again with more selectors when a recreated object names
+another schema, and never reads a schema nothing names. A provider whose
+inspection fails for some schemas can still be rehearsed, as long as no
+statement needs those schemas.
 
 Without the feature, Ptah reads the whole database once, and a failure of that
 read fails the rehearsal and names the feature.
