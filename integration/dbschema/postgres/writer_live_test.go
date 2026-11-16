@@ -636,17 +636,24 @@ func newPostgresWriterLiveDatabase(
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.PingContext(ctx), qt.IsNil)
 
+	c.Check(admin.Close(), qt.IsNil)
+
 	return postgresWriterLiveDatabase{
 		db:   db,
 		name: name,
 		cleanup: func() {
 			c.Check(db.Close(), qt.IsNil)
-			_, dropErr := admin.ExecContext(
+			// A session of its own: YugabyteDB refuses DROP DATABASE on a session
+			// whose catalog snapshot a test's DROP ROLE moved (SQLSTATE 40001), and
+			// the session that created the database is older than every such drop.
+			server, openErr := sql.Open("pgx", rawURL)
+			c.Assert(openErr, qt.IsNil)
+			defer func() { c.Check(server.Close(), qt.IsNil) }()
+			_, dropErr := server.ExecContext(
 				context.Background(),
 				"DROP DATABASE IF EXISTS "+nameIdent,
 			)
 			c.Check(dropErr, qt.IsNil)
-			c.Check(admin.Close(), qt.IsNil)
 		},
 	}
 }
