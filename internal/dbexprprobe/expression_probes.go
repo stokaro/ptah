@@ -18,6 +18,10 @@ type IndexExpressionProbe struct {
 	// it. The probe table takes that name, so a declaration naming its own
 	// table resolves; see [newProbeRelation]. Empty keeps a numbered name.
 	Table string
+	// Schema is the schema that holds Table, as the server stores it. The probe
+	// takes it out where the expression or the predicate writes it in front of
+	// Table and a column; see [ownSchemaStripped]. Empty strips nothing.
+	Schema string
 	// Columns are the columns of the table the index is on, from the LIVE read.
 	Columns []CheckProbeColumn
 	// Expression is what the index is over, empty for an index over plain
@@ -69,7 +73,7 @@ func resolveOneIndexExpression(
 	}
 
 	relation := newProbeRelation(probe.Table, "ptah_index_probe", index)
-	over := expression
+	over := ownSchemaStripped(expression, probe.Schema, probe.Table)
 	if over == "" {
 		over = strings.Join(quoteProbeParts(probe.Parts), ", ")
 	}
@@ -81,7 +85,7 @@ func resolveOneIndexExpression(
 		create = fmt.Sprintf("CREATE INDEX ptah_index_probe_idx ON %s (%s)", relation.name, over)
 	}
 	if predicate != "" {
-		create += fmt.Sprintf(" WHERE (%s)", predicate)
+		create += fmt.Sprintf(" WHERE (%s)", ownSchemaStripped(predicate, probe.Schema, probe.Table))
 	}
 	statements := relation.statements(
 		fmt.Sprintf("CREATE TEMPORARY TABLE %s (%s)", relation.name, checkProbeColumnList(probe.Columns)),

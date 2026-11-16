@@ -132,6 +132,8 @@ func TestNormalizeObjects_KeepsADifferentClauseAsDeclared(t *testing.T) {
 		{"the schema in a case it does not fold to", `"Public".docs.owner_name = current_user`, "owner_name = current_user()"},
 		{"a schema prefix that is itself qualified", "db.public.docs.owner_name = current_user", "owner_name = current_user()"},
 		{"the schema in front of another table", "public.other.owner_name = current_user", "owner_name = current_user()"},
+		{"a subquery exposing the table's name", "EXISTS (SELECT 1 FROM other.docs WHERE public.docs.id = 1)",
+			"EXISTS (SELECT 1 FROM other.docs WHERE docs.id = 1:::INT8)"},
 		{"a cast to another type", "owner_name = 'x'::bytes", "owner_name = 'x':::STRING"},
 		{"arithmetic the server parenthesizes", "n = 1 + 1", "n = (1:::INT8 + 1:::INT8)"},
 		{"an array the server rewrites", "owner_name = ANY (ARRAY['a','b'])", "owner_name = ANY ARRAY['a':::STRING, 'b':::STRING]:::STRING[]"},

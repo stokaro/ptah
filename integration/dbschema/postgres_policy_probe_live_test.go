@@ -249,3 +249,54 @@ func TestPolicyProbe_LivePostgresAnswersForAColumnQualifiedByItsSchema(t *testin
 		})
 	}
 }
+
+// TestPolicyProbe_LivePostgresKeepsTheQualifierASubqueryNeeds pins the case
+// where the schema qualifier decides which table a column reads. The subquery
+// reads a table of the same name in another schema, so `S."Orders".id` is the
+// policy's table and `"Orders".id` is the subquery's. The database holds the
+// second, the declaration asks for the first, and the comparison plans the
+// change. Taken out, the qualifier would make the probe answer for the
+// database's clause and hide it. The control declares the database's clause
+// and plans nothing.
+func TestPolicyProbe_LivePostgresKeepsTheQualifierASubqueryNeeds(t *testing.T) {
+	tests := []struct {
+		name    string
+		clause  string
+		changes int
+	}{
+		{name: "the outer table, qualified", clause: `EXISTS (SELECT 1 FROM %[2]s.%[3]s WHERE %[1]s.%[3]s.id = 1)`, changes: 1},
+		{name: "the subquery's table, as held", clause: `EXISTS (SELECT 1 FROM %[2]s.%[3]s WHERE %[3]s.id = 1)`, changes: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newPolicyProbeFixture(c)
+			schema, other, table := postgresIdentifier(fixture.schema), postgresIdentifier(fixture.schema+"_other"), postgresIdentifier(probedTable)
+			c.Cleanup(func() {
+				_, _ = fixture.admin.ExecContext(context.Background(), `DROP SCHEMA IF EXISTS `+other+` CASCADE`)
+			})
+			held := fmt.Sprintf(`EXISTS (SELECT 1 FROM %[2]s.%[3]s WHERE %[3]s.id = 1)`, schema, other, table)
+			_, err := fixture.admin.ExecContext(c.Context(), fmt.Sprintf(`
+				CREATE SCHEMA %[2]s;
+				CREATE TABLE %[2]s.%[3]s (id integer);
+				ALTER POLICY tenant ON %[1]s.%[3]s USING (%[4]s)`, schema, other, table, held))
+			c.Assert(err, qt.IsNil)
+			var stored string
+			c.Assert(fixture.admin.QueryRowContext(c.Context(),
+				`SELECT pg_get_expr(polqual, polrelid) FROM pg_policy WHERE polrelid = $1::regclass`, schema+"."+table).Scan(&stored), qt.IsNil)
+			probed := fixture
+			probed.observed = must.Must(pgpolicy.ObservedPolicyObject(fixture.observed.Ref, pgpolicy.ObservedPolicy{
+				Command: pgpolicy.CommandAll, Roles: []pgpolicy.RoleSelector{{Name: fixture.creator}}, Using: &stored,
+				Composition: pgpolicy.Permissive,
+			}))
+			probed.declared = must.Must(pgpolicy.DesiredPolicyObject(fixture.declared.Ref, pgpolicy.DesiredPolicy{
+				Roles: []pgpolicy.RoleSelector{{Keyword: pgpolicy.CurrentUser}},
+				Using: new(fmt.Sprintf(test.clause, schema, other, table)),
+			}))
+
+			declared := probed.normalize(c, fixture.admin)
+
+			c.Assert(probed.changes(c, declared), qt.HasLen, test.changes)
+		})
+	}
+}
