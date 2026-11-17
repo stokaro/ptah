@@ -181,15 +181,15 @@ Findings:
 - columns_added: 1 (warning)
 ```
 
-Once the database gains the column — through a migration or a direct apply —
-the check passes at either threshold, as the next section shows.
+Once the database gains the column, the check passes at either threshold.
 
 These flags shape the check:
 
 - `--exclude` and `--include` select what both sides hold, on `schema compare` too.
   See [Selecting what a comparison holds](../../reference/native-commands/#selecting-what-a-comparison-holds).
 - `--ignore tables=audit_log` excludes a table from the check, with its declared
-  reference rows.
+  reference rows. A PostgreSQL table also matches by the name a finding gives
+  it, as `public.notes` ([PostgreSQL](../../databases/postgresql/#connecting)).
 - `--ignore-extension` names a database extension the comparison leaves alone; see
   [below](#an-extension-the-schema-does-not-describe).
 - `--format` selects `text`, `json` (the findings, the
@@ -583,13 +583,6 @@ those named by `--schemas` or `schemas` in `ptah.yaml`, or the URL's scope
 plus the desired schema's names. A PostgreSQL URL covers its pinned
 `search_path`, or every schema if none is pinned. Tables the desired schema
 does not describe within that selection are planned for removal.
-
-On a URL that pins no `search_path`, a name the desired schema writes without a
-schema is placed in the connection's current schema, as `schema apply` places
-it, and each finding names its object with the schema. A table `notes` in
-`public` is reported as `public.notes`, and `--ignore tables=public.notes`
-matches it. [PostgreSQL](../../databases/postgresql/#connecting)
-gives the rules.
 
 Privileges: [PostgreSQL](../../databases/postgresql/#what-the-connecting-role-needs),
 [MySQL and MariaDB](../../databases/mysql/#what-the-connecting-account-needs).
