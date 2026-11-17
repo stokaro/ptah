@@ -30,6 +30,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/providerurl"
 )
 
 // Server opens devURL, the value of the command's --flag, and answers what its
@@ -41,20 +42,25 @@ import (
 //
 // A docker:// URL is parsed and no container is started. Its server is the one
 // the image tag names, and a tag no release line matches, such as `latest`,
-// answers nil.
+// answers nil. A docker URL whose engine an executable provider in ctx
+// provisions answers nil unparsed: the provider reads the image, not Ptah.
 //
 // A URL naming a SQLite file answers nil without opening it, since opening it
 // creates the file and the engine is the one compiled into Ptah. A dev path
 // that does not exist is therefore not refused here.
 //
 // Any other URL is checked against dialect when dialect is not empty, before
-// anything is connected, in the words of [atlasurl.ValidateDialectMatch]. It is
-// then connected to and closed again, and a connection that fails within
+// anything is connected, in the words of [providerurl.ValidateDialectMatch], so
+// a scheme an executable provider in ctx serves names that provider's target.
+// It is then connected to and closed again, through that provider where one
+// serves it, and a connection that fails within
 // timeout is the error, wrapped as `connect to --<flag>: ...`. A timeout of
 // zero leaves the deadline of ctx, if any, as the only bound.
 func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Duration) (capability.Capabilities, error) {
 	switch {
 	case strings.TrimSpace(devURL) == "":
+		return capability.Capabilities{}, nil
+	case devdocker.IsURL(devURL) && providerProvisions(ctx, devURL):
 		return capability.Capabilities{}, nil
 	case devdocker.IsURL(devURL):
 		spec, err := devdocker.Parse(devURL)
@@ -71,7 +77,7 @@ func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Dura
 		return capability.Capabilities{}, nil
 	}
 	if dialect != "" {
-		if err := atlasurl.ValidateDialectMatch(devURL, dialect); err != nil {
+		if err := providerurl.ValidateDialectMatch(ctx, devURL, dialect); err != nil {
 			return capability.Capabilities{}, err
 		}
 	}
@@ -86,4 +92,11 @@ func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Dura
 	}
 	defer func() { _ = conn.Close() }()
 	return conn.Info().Capabilities, nil
+}
+
+// providerProvisions reports whether an executable provider in ctx starts the
+// dev database devURL names.
+func providerProvisions(ctx context.Context, devURL string) bool {
+	_, owned := devdocker.ExternalEngine(ctx, devURL)
+	return owned
 }

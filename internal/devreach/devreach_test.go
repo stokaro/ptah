@@ -1,6 +1,8 @@
 package devreach_test
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform/capability"
+	"ptah.run/dbschema"
 	"ptah.run/internal/devreach"
 )
 
@@ -128,6 +131,50 @@ func TestServer_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			got, err := devreach.Server(c.Context(), test.dialect, test.flag, test.devURL, 0)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(got.Len(), qt.Equals, 0)
+		})
+	}
+}
+
+// refusingProvider is a provider connector whose every session fails to open.
+type refusingProvider struct{}
+
+func (refusingProvider) Open(context.Context, dbschema.NativeRequest) (dbschema.NativeSession, error) {
+	return nil, errors.New("the provider refused the session")
+}
+
+// TestServer_ProviderScheme_FailurePath holds a dev URL whose scheme an
+// executable provider serves to that provider: its dialect is the provider's
+// target, and the connection is the provider's to open, so the refusal is the
+// provider's rather than an unsupported dialect.
+func TestServer_ProviderScheme_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		wantErr string
+	}{
+		{
+			name:    "the provider's target",
+			dialect: "fixture",
+			wantErr: `connect to --dev-url: .*the provider refused the session`,
+		},
+		{
+			name:    "another dialect",
+			dialect: "postgres",
+			wantErr: `--dev-url dialect "fixture" does not match --url dialect "postgres"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, err := dbschema.WithNativeConnections(c.Context(), map[string]dbschema.NativeRegistration{
+				"fixture": {Target: "fixture", Connector: refusingProvider{}},
+			})
+			c.Assert(err, qt.IsNil)
+
+			got, err := devreach.Server(ctx, test.dialect, "dev-url", "fixture:///dev.db", 0)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.Len(), qt.Equals, 0)
