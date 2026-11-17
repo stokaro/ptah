@@ -281,6 +281,7 @@ BEGIN
     error CLOB NULL,
     run_reference VARCHAR2(255) NULL,
     actor_origin VARCHAR2(64) NULL,
+    repeatable VARCHAR2(255) NULL,
     PRIMARY KEY (run_id, seq)
 )';
 EXCEPTION
@@ -313,6 +314,7 @@ END;`,
 		AddedColumns: map[string]string{
 			"run_reference": "VARCHAR2(255) NULL",
 			"actor_origin":  "VARCHAR2(64) NULL",
+			"repeatable":    "VARCHAR2(255) NULL",
 		},
 		FirstRow:          "fetch",
 		EmptyStringIsNull: true,

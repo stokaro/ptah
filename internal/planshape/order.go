@@ -34,10 +34,14 @@ type arrangement struct {
 	// absorbs says a foreign key into a table the plan changes moves into its new table
 	// once what it needs is in place.
 	absorbs bool
-	// movesComments says a table's or a column's comment is a statement of its own that
-	// moves to where the community binary writes it; see [arrangement.commentAccess].
+	// movesComments says a table's, a column's or an index's comment is a statement of
+	// its own that moves to where the community binary writes it; see
+	// [arrangement.commentAccess] and [arrangement.indexCommentSteps].
 	movesComments bool
-	facts         *planFacts
+	// created is the tables the plan creates, whose comments
+	// [createdTableCommentsAfterIndexes] places once the run is arranged.
+	created map[string]int
+	facts   *planFacts
 	// reorder, when set, changes the order a run's steps depend on each other in.
 	reorder func(run []*step) []*step
 	// places gives the steps of a run the place they want.
@@ -392,18 +396,23 @@ func chainDepths(references map[string][]string) map[string]int {
 // newTables is the tables a run creates: under their exact name, under the bare name a
 // foreign key may name one by, and how long a chain of them each bare name needs ahead
 // of it. Two new tables of one bare name share a depth, which can only hold one back.
+// It also holds the indexes the run creates, under [indexKey].
 type newTables struct {
 	exact, loose map[string]bool
 	depth        map[string]int
+	indexes      map[string]bool
 }
 
 func newTablesOf(run []*step) newTables {
-	tables := newTables{exact: make(map[string]bool), loose: make(map[string]bool)}
+	tables := newTables{exact: make(map[string]bool), loose: make(map[string]bool), indexes: make(map[string]bool)}
 	references := make(map[string][]string)
 	for _, s := range run {
-		if table, ok := s.node.(*ast.CreateTableNode); ok {
-			tables.exact[tableKey(table.Name)] = true
-			tables.loose[bare(table.Name)] = true
+		switch n := s.node.(type) {
+		case *ast.CreateTableNode:
+			tables.exact[tableKey(n.Name)] = true
+			tables.loose[bare(n.Name)] = true
+		case *ast.IndexNode:
+			tables.indexes[indexKey(n.Table, n.Name)] = true
 		}
 	}
 	for _, s := range run {
@@ -436,6 +445,15 @@ func (how arrangement) forwardPlace(s *step, created newTables, needed map[*step
 		// own first, then its columns' in the table's column order.
 		own.phase, own.part = phaseChanged, partComments
 		own.class, own.column = commentRank(n, columns[bare(s.table)])
+		return own
+	case *ast.ObjectCommentNode:
+		// An index's comment, after its table's and its columns': those of the indexes
+		// the table keeps by name, then those of the indexes the plan creates by name.
+		own.phase, own.part, own.name = phaseChanged, partComments, n.Name
+		own.class = keptIndexComment
+		if created.indexes[indexKey(n.Table, n.Name)] {
+			own.class = newIndexComment
+		}
 		return own
 	}
 	if created.exact[tableKey(s.table)] {
@@ -529,14 +547,24 @@ func (how arrangement) operationRank(s *step, positions map[string]int) (class, 
 	}
 }
 
+// The classes of a table's comments, in the order the community binary writes them:
+// the table's own, its columns', those of the indexes the table keeps, and those of the
+// indexes the plan creates on it.
+const (
+	tableComment = iota
+	columnComment
+	keptIndexComment
+	newIndexComment
+)
+
 // commentRank is a comment's place among the comments of its table: the table's own,
 // then each column's by position.
 func commentRank(alter *ast.AlterTableNode, positions map[string]int) (class, column int) {
 	comment, _ := alter.Operations[0].(*ast.SetCommentOperation)
 	if comment == nil || comment.Column == "" {
-		return 0, 0
+		return tableComment, 0
 	}
-	return 1, position(positions, comment.Column)
+	return columnComment, position(positions, comment.Column)
 }
 
 func position(positions map[string]int, column string) int {

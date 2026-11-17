@@ -39,14 +39,22 @@ func describeLostEntries(lost []migrator.MigrationLogLoss) string {
 		for ; index < len(lost) && sameLogAttempt(first, lost[index]); index++ {
 			states = append(states, string(lost[index].State))
 		}
-		parts = append(parts, fmt.Sprintf("version %d (%s)", first.Version, strings.Join(states, ", ")))
+		parts = append(parts, fmt.Sprintf("%s (%s)", lostEntrySubject(first), strings.Join(states, ", ")))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// lostEntrySubject names the migration a lost entry is about.
+func lostEntrySubject(entry migrator.MigrationLogLoss) string {
+	if entry.Repeatable != "" {
+		return "repeatable migration " + entry.Repeatable
+	}
+	return fmt.Sprintf("version %d", entry.Version)
 }
 
 // sameLogAttempt reports whether two lost entries belong to one attempt, which
 // is what writes a start and its outcome.
 func sameLogAttempt(left, right migrator.MigrationLogLoss) bool {
 	return right.State != "" && left.Operation == right.Operation &&
-		left.Version == right.Version && left.VersionKey == right.VersionKey
+		left.Version == right.Version && left.VersionKey == right.VersionKey && left.Repeatable == right.Repeatable
 }

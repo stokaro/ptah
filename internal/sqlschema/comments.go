@@ -49,6 +49,9 @@ func applyCommentStatement(database *schemamodel.Database, document *Document, s
 		return fmt.Errorf("%w: COMMENT ON %s %s names more than one declared overload; "+
 			"write its argument types to name one",
 			ErrUnmodeledStatement, statement.kind, statement.name)
+	case target == &ambiguousIndex:
+		return fmt.Errorf("%w: COMMENT ON INDEX %s names an index more than one declared table holds%s",
+			ErrUnmodeledStatement, statement.name, ambiguousIndexHint(sourcePlatform))
 	case !found:
 		return undeclared(fmt.Errorf("%w: COMMENT ON %s %s names an object this schema does not declare",
 			ErrUnmodeledStatement, statement.kind, statement.name))
@@ -71,6 +74,10 @@ var unmodeledDomainConstraint string
 // declared overloads.
 var ambiguousRoutine string
 
+// ambiguousIndex is the target commentTarget answers with for an index name
+// that indexes of more than one table in the named schema carry.
+var ambiguousIndex string
+
 // commentTarget returns the Comment field the statement sets, and whether the
 // document declares the object. Where the model has no place for the comment
 // at all it answers with &unmodeledKind.
@@ -83,8 +90,7 @@ func commentTarget(
 	case "COLUMN":
 		return columnCommentTarget(databases, statement.name, sourcePlatform)
 	case "INDEX":
-		_, bare := normalizeSQLTableIdentifier(sourcePlatform, statement.name)
-		return indexCommentTarget(databases, bare)
+		return indexCommentTarget(databases, statement.name, sourcePlatform)
 	case "SCHEMA":
 		return schemaCommentTarget(databases, normalizeSQLIdentifier(sourcePlatform, statement.name))
 	case "ROLE":
@@ -177,15 +183,78 @@ func tableCommentTarget(databases []*schemamodel.Database, qualified, sourcePlat
 	return &table.Comment, true
 }
 
-func indexCommentTarget(databases []*schemamodel.Database, name string) (*string, bool) {
+// indexCommentTarget finds the index COMMENT ON INDEX names. An index is named
+// in the schema of its table, as DROP INDEX names it ([findNamedIndex]):
+// `s2.t_a` is an index of a table in s2, and a bare `t_a` one of a table in the
+// default schema. Found by its name alone, with s2.t declared before public.t
+// and each holding an index t_a, both comments would land on s2.t_a and
+// public.t_a would keep none.
+//
+// CockroachDB names an index within its table, so two tables of one schema may
+// each have an index t_a. It names one of them with its table, `t@t_a`, and
+// refuses the name alone: measured on v26.4.0, `COMMENT ON INDEX t_a` and
+// `COMMENT ON INDEX public.t_a` each answer `index name "t_a" is ambiguous`
+// (SQLSTATE 42P08), and a read refuses them too.
+func indexCommentTarget(databases []*schemamodel.Database, written, sourcePlatform string) (*string, bool) {
+	schema, name := normalizeSQLTableIdentifier(sourcePlatform, written)
+	reaches := func(owner *schemamodel.Table) bool { return sameSchema(sourcePlatform, schema, owner.Schema) }
+	if tableName, indexName, onTable := cutIndexTable(sourcePlatform, written); onTable {
+		table := resolveTable(databases, normalizeSQLTableReference(sourcePlatform, tableName), sourcePlatform)
+		if table == nil {
+			return new(string), false
+		}
+		name = normalizeSQLIdentifier(sourcePlatform, indexName)
+		reaches = func(owner *schemamodel.Table) bool { return owner.QualifiedName() == table.QualifiedName() }
+	}
+	var targets []*string
 	for _, database := range databases {
 		for i := range database.Indexes {
-			if database.Indexes[i].Name == name {
-				return &database.Indexes[i].Comment, true
+			index := &database.Indexes[i]
+			if index.Name != name {
+				continue
+			}
+			if owner := indexOwner(databases, *index, sourcePlatform); owner != nil && reaches(owner) {
+				targets = append(targets, &index.Comment)
 			}
 		}
 	}
-	return new(string), false
+	switch len(targets) {
+	case 0:
+		return new(string), false
+	case 1:
+		return targets[0], true
+	default:
+		return &ambiguousIndex, false
+	}
+}
+
+// cutIndexTable splits the name of an index written with its table,
+// `table@index`, at the `@` outside double quotes. Only a dialect that names an
+// index within its table writes one; elsewhere a name holding `@` is a name no
+// index carries.
+func cutIndexTable(sourcePlatform, written string) (table, index string, found bool) {
+	if !factsOf(sourcePlatform).indexNamesPerTable {
+		return "", "", false
+	}
+	quoted := false
+	for i := 0; i < len(written); i++ {
+		switch {
+		case written[i] == '"':
+			quoted = !quoted
+		case !quoted && written[i] == '@':
+			return strings.TrimSpace(written[:i]), strings.TrimSpace(written[i+1:]), true
+		}
+	}
+	return "", "", false
+}
+
+// ambiguousIndexHint says how to name one of the indexes an ambiguous name
+// reaches, on a dialect that has a spelling for it.
+func ambiguousIndexHint(sourcePlatform string) string {
+	if factsOf(sourcePlatform).indexNamesPerTable {
+		return "; write it as table@index to name one"
+	}
+	return ""
 }
 
 func schemaCommentTarget(databases []*schemamodel.Database, name string) (*string, bool) {

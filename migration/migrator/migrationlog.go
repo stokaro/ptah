@@ -85,8 +85,12 @@ type MigrationLogEntry struct {
 	Seq int64
 	// Operation is the verb that wrote the entry: `up` or `down`.
 	Operation string
-	// Version is the migration the entry is about.
+	// Version is the migration the entry is about. It is zero for an entry
+	// about a repeatable migration.
 	Version int64
+	// Repeatable is the identity of the repeatable migration the entry is
+	// about, and empty for an entry about a versioned migration.
+	Repeatable string
 	// State is the outcome. See [MigrationLogStarted].
 	State MigrationLogState
 	// Actor is the name the run was given, empty when it was given none.
@@ -97,7 +101,8 @@ type MigrationLogEntry struct {
 	// from, empty when it gave none. See [Migrator.WithActorOrigin].
 	ActorOrigin string
 	// Checksum is the migration's content hash, so a later reader can tell
-	// which bytes ran.
+	// which bytes ran. For a repeatable migration it is the digest its record
+	// keeps.
 	Checksum string
 	// At is when the entry was written.
 	At time.Time
@@ -181,6 +186,10 @@ type MigrationLogLoss struct {
 	// [RunResult.PlannedKeys] spells it. It is always present, because an empty
 	// string is itself an identity a Flyway repeatable migration records.
 	VersionKey string `json:"version_key"`
+	// Repeatable is the identity of the repeatable migration the entry is
+	// about, with Version zero and VersionKey empty. It is absent for an entry
+	// about a versioned migration.
+	Repeatable string `json:"repeatable,omitempty"`
 	// State is the outcome the entry would have recorded. It is empty, with
 	// Version zero, when a rollback could not name the migrations it undoes, so
 	// this one loss stands for all of their entries.
@@ -375,7 +384,49 @@ func (m *Migrator) createMigrationLogTableSQL() string {
 	)
 }
 
-// logMigrationEvent appends one entry.
+// migrationLogSubject is the migration an entry is about: a versioned
+// migration, named by its version, or a repeatable one, named by its
+// identity.
+type migrationLogSubject struct {
+	version    int64
+	versionKey string
+	repeatable string
+	checksum   string
+}
+
+func versionedLogSubject(migration *Migration) migrationLogSubject {
+	return migrationLogSubject{
+		version: migration.Version, versionKey: migration.RevisionVersion(), checksum: migrationRevisionHash(migration),
+	}
+}
+
+func repeatableLogSubject(repeatable *repeatableMigration) migrationLogSubject {
+	return migrationLogSubject{repeatable: repeatable.identity, checksum: repeatable.checksum}
+}
+
+// logMigrationEvent appends one entry about a versioned migration.
+func (m *Migrator) logMigrationEvent(
+	ctx context.Context,
+	operation string,
+	migration *Migration,
+	state MigrationLogState,
+	failure error,
+) {
+	m.logEvent(ctx, operation, versionedLogSubject(migration), state, failure)
+}
+
+// logRepeatableEvent appends one entry about a repeatable migration, which
+// only an up run executes.
+func (m *Migrator) logRepeatableEvent(
+	ctx context.Context,
+	repeatable *repeatableMigration,
+	state MigrationLogState,
+	failure error,
+) {
+	m.logEvent(ctx, "up", repeatableLogSubject(repeatable), state, failure)
+}
+
+// logEvent appends one entry.
 //
 // It writes on the pool connection rather than inside the migration's
 // transaction, which is the whole point: a migration that failed and rolled
@@ -390,10 +441,10 @@ func (m *Migrator) createMigrationLogTableSQL() string {
 // caller gave it. Shortening an actor or replacing a character the column cannot
 // hold would write a record that names somebody else, so such an entry is lost
 // and says why rather than kept and wrong.
-func (m *Migrator) logMigrationEvent(
+func (m *Migrator) logEvent(
 	ctx context.Context,
 	operation string,
-	migration *Migration,
+	subject migrationLogSubject,
 	state MigrationLogState,
 	failure error,
 ) {
@@ -413,14 +464,15 @@ func (m *Migrator) logMigrationEvent(
 	}
 	lost := MigrationLogLoss{
 		Operation:  operation,
-		Version:    migration.Version,
-		VersionKey: migration.RevisionVersion(),
+		Version:    subject.version,
+		VersionKey: subject.versionKey,
+		Repeatable: subject.repeatable,
 		State:      state,
 	}
 	if err := m.ensureMigrationLogTable(ctx); err != nil {
 		if !errors.Is(err, errMigrationLogAlreadyRefused) {
 			m.logger.Warn("Could not create the migration log table",
-				"version", migration.Version, "error", err)
+				"version", subject.version, "repeatable", subject.repeatable, "error", err)
 		}
 		m.reportLostLogEntry(lost, err)
 		return
@@ -429,12 +481,13 @@ func (m *Migrator) logMigrationEvent(
 		RunID:        m.migrationLogRunID,
 		Seq:          m.nextMigrationLogSeq(),
 		Operation:    operation,
-		Version:      migration.Version,
+		Version:      subject.version,
+		Repeatable:   subject.repeatable,
 		State:        state,
 		Actor:        m.actor,
 		ActorSource:  m.actorSource,
 		ActorOrigin:  m.loggedActorOrigin(),
-		Checksum:     migrationRevisionHash(migration),
+		Checksum:     subject.checksum,
 		At:           time.Now().UTC(),
 		RunReference: m.runReference,
 	}
@@ -444,7 +497,8 @@ func (m *Migrator) logMigrationEvent(
 	stored, err := m.writeMigrationLogEntry(ctx, entry)
 	if err != nil {
 		m.logger.Warn("Could not append to the migration log",
-			"version", migration.Version, "operation", operation, "state", string(state), "error", err)
+			"version", subject.version, "repeatable", subject.repeatable, "operation", operation,
+			"state", string(state), "error", err)
 		m.reportLostLogEntry(lost, err)
 		return
 	}
@@ -554,12 +608,14 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 var migrationLogAddedColumns = []struct{ name, definition string }{
 	{name: "run_reference", definition: "VARCHAR(255) NULL"},
 	{name: "actor_origin", definition: "VARCHAR(64) NULL"},
+	{name: "repeatable", definition: "VARCHAR(255) NULL"},
 }
 
 // ensureMigrationLogColumns adds to a log table an older release created the
-// columns it lacks. Both are nullable and every existing row reads them as
-// NULL, which is what an entry written without a reference or an origin
-// holds. A failure loses the entry like a failed create does: the run goes on.
+// columns it lacks. Each is nullable and every existing row reads it as NULL,
+// which is what an entry written without a reference, an origin or a
+// repeatable migration holds. A failure loses the entry like a failed create
+// does: the run goes on.
 func (m *Migrator) ensureMigrationLogColumns(ctx context.Context) error {
 	table := m.migrationsTableName() + migrationLogTableSuffix
 	for _, column := range migrationLogAddedColumns {
@@ -601,12 +657,14 @@ func (m *Migrator) writeMigrationLogEntry(ctx context.Context, entry MigrationLo
 		insert = "INSERT"
 	}
 	query := sqlutil.Rebind(dialect, fmt.Sprintf(
-		`%s INTO %s (run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error, run_reference, actor_origin)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, insert, m.migrationLogTable()))
+		`%s INTO %s (run_id, seq, operation, version, state, actor, actor_source, checksum, logged_at, error,
+    run_reference, actor_origin, repeatable)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, insert, m.migrationLogTable()))
 	return entry, executeSQLOn(ctx, m.conn, query,
 		entry.RunID, entry.Seq, entry.Operation, entry.Version, string(entry.State),
 		m.nullableText(entry.Actor), string(entry.ActorSource), m.nullableText(entry.Checksum),
-		entry.At, m.nullableText(entry.Error), m.nullableText(entry.RunReference), m.nullableText(entry.ActorOrigin))
+		entry.At, m.nullableText(entry.Error), m.nullableText(entry.RunReference), m.nullableText(entry.ActorOrigin),
+		m.nullableText(entry.Repeatable))
 }
 
 // nullableText writes an empty string as NULL, because Oracle reads one back
@@ -759,9 +817,9 @@ FROM %s ORDER BY logged_at DESC, run_id DESC, seq DESC`, columns, m.migrationLog
 //
 // The entries arrive newest first, and the walk takes them oldest first, the
 // order they were written in, so a start is open by the time its outcome comes.
-// Correlating by run, operation and version is enough: one run applies a version
-// once, and a second attempt at the same version is a second run with its own
-// identifier.
+// Correlating by run, operation, version and repeatable identity is enough:
+// one run applies a version or runs a repeatable migration once, and a second
+// attempt is a second run with its own identifier.
 //
 // An outcome that finds no open start is an attempt of its own. The log's writes
 // fail one at a time and none of them stops the migration, so a start can be lost
@@ -788,7 +846,8 @@ func pairMigrationLogEntries(entries []MigrationLogEntry) []MigrationLogAttempt 
 }
 
 func migrationLogAttemptKey(entry MigrationLogEntry) string {
-	return entry.RunID + "\x00" + entry.Operation + "\x00" + strconv.FormatInt(entry.Version, 10)
+	return entry.RunID + "\x00" + entry.Operation + "\x00" + strconv.FormatInt(entry.Version, 10) +
+		"\x00" + entry.Repeatable
 }
 
 // presentMigrationLogColumns returns which of [migrationLogAddedColumns] the
@@ -843,6 +902,9 @@ func (m *Migrator) scanMigrationLogEntry(rows *sql.Rows, added []string) (Migrat
 	}
 	if value, ok := extra["actor_origin"]; ok {
 		entry.ActorOrigin = value.String
+	}
+	if value, ok := extra["repeatable"]; ok {
+		entry.Repeatable = value.String
 	}
 	at, err := m.parseStoredTime("logged_at", loggedAt)
 	if err != nil {

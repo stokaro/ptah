@@ -468,8 +468,11 @@ func (m *Migrator) applyRepeatable(ctx context.Context, attempt repeatableAttemp
 		return err
 	}
 	m.logger.Info("Applying repeatable migration", "identity", repeatable.identity, "checksum", repeatable.checksum)
+	m.logRepeatableEvent(ctx, repeatable, MigrationLogStarted, nil)
 	if err := m.markRepeatableAttempt(ctx, attempt); err != nil {
-		return fmt.Errorf("failed to record the attempt of repeatable migration %s: %w", repeatable.identity, err)
+		err = fmt.Errorf("failed to record the attempt of repeatable migration %s: %w", repeatable.identity, err)
+		m.logRepeatableEvent(ctx, repeatable, MigrationLogFailed, err)
+		return err
 	}
 	if attempt.transactional {
 		err = m.applyRepeatableInTransaction(ctx, repeatable)
@@ -477,10 +480,22 @@ func (m *Migrator) applyRepeatable(ctx context.Context, attempt repeatableAttemp
 		err = m.applyRepeatableWithoutTransaction(ctx, repeatable)
 	}
 	if err != nil {
+		m.logRepeatableFailure(ctx, repeatable, err)
 		return err
 	}
+	m.logRepeatableEvent(ctx, repeatable, MigrationLogApplied, nil)
 	m.logger.Info("Applied repeatable migration", "identity", repeatable.identity, "checksum", repeatable.checksum)
 	return nil
+}
+
+// logRepeatableFailure records the outcome of a failed attempt. An attempt
+// whose outcome nobody knows gets no outcome entry, so the log reports it as
+// undetermined, as the record keeps it running.
+func (m *Migrator) logRepeatableFailure(ctx context.Context, repeatable *repeatableMigration, err error) {
+	if failure, ok := errors.AsType[*RepeatableMigrationError](err); ok && failure.OutcomeUnknown {
+		return
+	}
+	m.logRepeatableEvent(ctx, repeatable, MigrationLogFailed, err)
 }
 
 // applyRepeatableInTransaction runs the body and the record of its digest in
