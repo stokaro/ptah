@@ -51,6 +51,9 @@ func Apply(dialect string, nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 	// Ahead of the respelling, which takes off a name the server gives anyway: the
 	// server gives it only where nothing holds it.
 	nodes = notnullname.Free(arrange(inlineConstraints(nodes), how), diff)
+	if how.movesComments {
+		nodes = createdTableCommentsAfterIndexes(nodes)
+	}
 	for _, node := range nodes {
 		respell(node, spelling)
 	}

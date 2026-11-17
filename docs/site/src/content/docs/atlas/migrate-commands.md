@@ -1695,7 +1695,8 @@ binary's order:
    comments follow: the table's own, then its columns' in the order the table holds
    them.
 2. The new tables with their indexes. A table comes after the new tables its foreign
-   keys need, and by name among the ones that need the same number.
+   keys need, and by name among the ones that need the same number. On PostgreSQL a
+   table's comments follow its indexes, in the same order as on a changed table.
 3. The foreign keys that wait for a new table.
 4. The tables the plan drops.
 

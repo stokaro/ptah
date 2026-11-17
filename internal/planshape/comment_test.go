@@ -1,6 +1,7 @@
 package planshape_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -110,4 +111,79 @@ func TestApply_LeavesACommentWhereItCannotMove_HappyPath(t *testing.T) {
 			c.Assert(must.Must(builtin.RenderSQL(test.dialect, got...)), qt.Equals, test.want)
 		})
 	}
+}
+
+// commentedNewTables is two tables a plan creates, each with an index and with
+// comments on the table and on some of its columns.
+func commentedNewTables() []ast.Node {
+	first := ast.NewCreateTable("a").AddColumn(key("id")).
+		AddColumn(nullable("name", "text").SetComment("na")).AddColumn(nullable("code", "text").SetComment("ca"))
+	first.Comment = "ta"
+	second := ast.NewCreateTable("b").AddColumn(key("id")).AddColumn(nullable("title", "text").SetComment("tb"))
+	second.Comment = "tbb"
+	return []ast.Node{first, ast.NewIndex("a_name", "a", "name"), second, ast.NewIndex("b_title", "b", "title")}
+}
+
+// TestApply_WritesANewTablesCommentsAfterItsIndexes_HappyPath pins the comments of a
+// table the plan creates where the community binary writes them on PostgreSQL: after
+// the table and its indexes, the table's own comment first, then its columns' in the
+// table's column order, ahead of the next table. The PostgreSQL renderer writes them
+// right after CREATE TABLE. The planner's nodes keep their comments.
+func TestApply_WritesANewTablesCommentsAfterItsIndexes_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	nodes := commentedNewTables()
+
+	got := planshape.Apply(platform.Postgres, slices.Clone(nodes), nil)
+
+	c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, got...)), qt.Equals, `CREATE TABLE "a" (
+  "id" integer NOT NULL,
+  "name" text NULL,
+  "code" text NULL,
+  PRIMARY KEY ("id")
+);
+
+CREATE INDEX "a_name" ON "a" ("name");
+COMMENT ON TABLE "a" IS 'ta';
+
+COMMENT ON COLUMN "a"."name" IS 'na';
+
+COMMENT ON COLUMN "a"."code" IS 'ca';
+
+CREATE TABLE "b" (
+  "id" integer NOT NULL,
+  "title" text NULL,
+  PRIMARY KEY ("id")
+);
+
+CREATE INDEX "b_title" ON "b" ("title");
+COMMENT ON TABLE "b" IS 'tbb';
+
+COMMENT ON COLUMN "b"."title" IS 'tb';
+
+`)
+	c.Assert(nodes[0].(*ast.CreateTableNode).Comment, qt.Equals, "ta")
+	c.Assert(nodes[0].(*ast.CreateTableNode).Columns[1].Comment, qt.Equals, "na")
+}
+
+// TestApply_KeepsANewTablesCommentsInItsTableOnMySQL_HappyPath is the control: the
+// MySQL family writes a new table's comments inside its CREATE TABLE, so they stay
+// there.
+func TestApply_KeepsANewTablesCommentsInItsTableOnMySQL_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	got := planshape.Apply(platform.MySQL, commentedNewTables(), nil)
+
+	c.Assert(must.Must(builtin.RenderSQL(platform.MySQL, got...)), qt.Equals, "CREATE TABLE `a` (\n"+
+		"  `id` int NOT NULL,\n"+
+		"  `name` text NULL COMMENT 'na',\n"+
+		"  `code` text NULL COMMENT 'ca',\n"+
+		"  PRIMARY KEY (`id`)\n"+
+		") COMMENT='ta';\n\n"+
+		"CREATE INDEX `a_name` ON `a` (`name`);\n"+
+		"CREATE TABLE `b` (\n"+
+		"  `id` int NOT NULL,\n"+
+		"  `title` text NULL COMMENT 'tb',\n"+
+		"  PRIMARY KEY (`id`)\n"+
+		") COMMENT='tbb';\n\n"+
+		"CREATE INDEX `b_title` ON `b` (`title`);\n")
 }
