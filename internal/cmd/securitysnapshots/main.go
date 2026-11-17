@@ -238,9 +238,16 @@ func sourceCVEIDs(source []byte) []string {
 	return slices.Compact(ids)
 }
 
+// idListLimit is how many IDs a mismatch names before it counts the rest: a
+// page whose every ID differs would otherwise put hundreds of IDs on one line.
+const idListLimit = 10
+
 func idList(ids []string) string {
 	if len(ids) == 0 {
 		return "none"
+	}
+	if len(ids) > idListLimit {
+		return fmt.Sprintf("%s and %d more", strings.Join(ids[:idListLimit], ", "), len(ids)-idListLimit)
 	}
 	return strings.Join(ids, ", ")
 }

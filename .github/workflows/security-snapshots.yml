@@ -71,12 +71,18 @@ jobs:
             git diff --cached --stat
           fi
 
+      # Summarize a failed check too: the log names which engine failed.
       - name: Summarize source checks
+        if: ${{ !cancelled() }}
         run: |
           {
             printf '## Server advisory source check\n\n'
             printf 'The scan binary uses only bundled or operator-selected local snapshots.\n\n'
-            sed 's/^/- /' "$RUNNER_TEMP/security-snapshots.log"
+            if [ -f "$RUNNER_TEMP/security-snapshots.log" ]; then
+              sed 's/^/- /' "$RUNNER_TEMP/security-snapshots.log"
+            else
+              printf 'The source check did not run.\n'
+            fi
           } >>"$GITHUB_STEP_SUMMARY"
 
       - name: Mint a GitHub App token

@@ -8,9 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -203,6 +205,29 @@ func TestRefreshAll_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, errOffline)
 	c.Assert(err, qt.ErrorIs, errStale)
 	c.Assert(applied, qt.DeepEquals, []string{"mariadb=maria", "clickhouse=ch"})
+}
+
+func TestIDList_HappyPath(t *testing.T) {
+	twelve := make([]string, 0, 12)
+	for index := range 12 {
+		twelve = append(twelve, fmt.Sprintf("CVE-2026-%05d", index+1))
+	}
+	tests := []struct {
+		name string
+		ids  []string
+		want string
+	}{
+		{name: "no ID", ids: nil, want: "none"},
+		{name: "IDs within the limit", ids: twelve[:2], want: "CVE-2026-00001, CVE-2026-00002"},
+		{name: "IDs at the limit", ids: twelve[:10], want: strings.Join(twelve[:10], ", ")},
+		{name: "IDs past the limit", ids: twelve, want: strings.Join(twelve[:10], ", ") + " and 2 more"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(idList(test.ids), qt.Equals, test.want)
+		})
+	}
 }
 
 func TestRecentSourceNeedsPastRetrievalWithinRefreshInterval(t *testing.T) {
