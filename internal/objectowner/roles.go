@@ -2,6 +2,7 @@ package objectowner
 
 import (
 	"slices"
+	"strings"
 
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
@@ -60,10 +61,12 @@ type Membership struct {
 // of a role, DROP of a role and RENAME of a role are read. CREATE, ALTER and
 // DROP of a table, view, index, schema, sequence, type, domain, routine,
 // trigger, policy, collation or statistics object, COMMENT, and SET and RESET
-// of anything but the session's role carry only their Text: they change no
-// membership. Every other statement is Opaque. A function a schema statement
-// evaluates as it runs, such as a column default, an index expression or the
-// query of a materialized view, is not read.
+// of a setting known not to change the role the session acts as carry only
+// their Text: they change no membership. Every other statement is Opaque, a
+// SET of role or session_authorization included. A schema statement that
+// evaluates a function as it runs, through a column default, an index
+// expression, a CHECK or the query of CREATE TABLE AS or a materialized view,
+// is still read as leaving memberships alone.
 func ReadRoleStatements(dialect, text string) []RoleStatement {
 	lex := lexer.NewLexerWithOptions(text, dialectlexer.Options(dialect))
 	var statements []RoleStatement
@@ -93,7 +96,7 @@ func readRoleStatement(dialect string, tokens []lexer.Token) RoleStatement {
 	switch {
 	case len(tokens) > 2 && tokens[0].MatchIdentifierValue("CREATE") && isRoleWord(tokens[1]) && !tokens[2].MatchIdentifierValue("MAPPING"):
 		return readCreateRole(dialect, tokens[2:])
-	case len(tokens) > 2 && tokens[0].MatchIdentifierValue("DROP") && isRoleWord(tokens[1]):
+	case len(tokens) > 2 && tokens[0].MatchIdentifierValue("DROP") && isRoleWord(tokens[1]) && !tokens[2].MatchIdentifierValue("MAPPING"):
 		return readDropRole(dialect, tokens[2:])
 	case len(tokens) > 0 && tokens[0].MatchIdentifierValue("GRANT"):
 		return RoleStatement{Grants: readMembershipGrant(dialect, tokens[1:], "TO")}
@@ -116,9 +119,39 @@ var schemaObjects = []string{
 // createModifiers are the words CREATE takes before the kind of object.
 var createModifiers = []string{"OR", "REPLACE", "TEMP", "TEMPORARY", "UNLOGGED", "UNIQUE", "RECURSIVE", "CONSTRAINT"}
 
-// sessionWords are the words after SET, SET LOCAL or RESET that change the
-// role the session acts as.
-var sessionWords = []string{"ROLE", "SESSION", "ALL"}
+// harmlessSettings are the settings, in lower case, a SET or a RESET may name
+// and still leave the role the session acts as alone: the ones Ptah's
+// renderers and pg_dump write, and a few that only tune the session. TIME ZONE
+// is read by its first word, SESSION CHARACTERISTICS by its second. Every
+// other setting, role and session_authorization among them, makes the
+// statement Opaque.
+var harmlessSettings = []string{
+	"search_path", "schema", "statement_timeout", "lock_timeout", "idle_in_transaction_session_timeout",
+	"idle_session_timeout", "transaction_timeout", "client_min_messages", "client_encoding", "names", "timezone",
+	"time", "transaction", "characteristics", "constraints", "check_function_bodies", "standard_conforming_strings",
+	"default_tablespace", "default_table_access_method", "default_with_oids", "default_toast_compression",
+	"xmloption", "row_security", "maintenance_work_mem", "work_mem", "datestyle", "intervalstyle",
+	"extra_float_digits", "application_name", "synchronous_commit",
+}
+
+// harmlessSetting reports whether tokens, what follows SET or RESET, name a
+// setting in harmlessSettings, after the SESSION or LOCAL that scopes a SET.
+// A quoted name is read without its quotes.
+func harmlessSetting(tokens []lexer.Token) bool {
+	if len(tokens) > 1 && (tokens[0].MatchIdentifierValue("LOCAL") || tokens[0].MatchIdentifierValue("SESSION")) {
+		tokens = tokens[1:]
+	}
+	if len(tokens) == 0 {
+		return false
+	}
+	name := tokens[0].Value
+	if tokens[0].Type == lexer.TokenString && len(name) >= 2 && name[0] == '"' && name[len(name)-1] == '"' {
+		name = name[1 : len(name)-1]
+	} else if tokens[0].Type != lexer.TokenIdentifier {
+		return false
+	}
+	return slices.ContainsFunc(harmlessSettings, func(setting string) bool { return strings.EqualFold(setting, name) })
+}
 
 // leavesMemberships reports whether tokens are a statement the reader knows
 // changes no role membership and not the role the session acts as.
@@ -129,11 +162,7 @@ func leavesMemberships(tokens []lexer.Token) bool {
 	case head.MatchIdentifierValue("COMMENT"):
 		return true
 	case head.MatchIdentifierValue("SET") || head.MatchIdentifierValue("RESET"):
-		characteristics := len(rest) > 1 && rest[0].MatchIdentifierValue("SESSION") && rest[1].MatchIdentifierValue("CHARACTERISTICS")
-		if len(rest) > 0 && (rest[0].MatchIdentifierValue("LOCAL") || characteristics) {
-			rest = rest[1:]
-		}
-		return len(rest) > 0 && !slices.ContainsFunc(sessionWords, rest[0].MatchIdentifierValue)
+		return harmlessSetting(rest)
 	case head.MatchIdentifierValue("CREATE"):
 		for len(rest) > 0 && slices.ContainsFunc(createModifiers, rest[0].MatchIdentifierValue) {
 			rest = rest[1:]

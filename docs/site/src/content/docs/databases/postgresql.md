@@ -1562,12 +1562,13 @@ The statements of the plan before an `OWNER TO` change the answer:
 - A plan that holds a statement Ptah does not read for its effect on roles
   counts none of its grants. Such statements include `DO`, `CALL`, `SELECT` and
   other statements that may call a function, `ALTER ROLE` other than a rename,
-  `DROP OWNED`, `REASSIGN OWNED`, `SET ROLE`, `RESET ROLE`,
-  `SET SESSION AUTHORIZATION` and `CREATE EXTENSION`. Schema statements on
-  tables, views, indexes, schemas, sequences, types, routines, triggers and
-  policies, `COMMENT` and other `SET` statements are read as leaving
-  memberships alone. A function such a statement evaluates as it runs, such as
-  a column default, is not read.
+  `DROP OWNED`, `REASSIGN OWNED`, `CREATE EXTENSION`, and a `SET` or `RESET`
+  of `role`, of `session_authorization`, or of any setting outside a short list
+  of harmless ones such as `search_path` and `lock_timeout`. Schema statements
+  on tables, views, indexes, schemas, sequences, types, routines, triggers and
+  policies, and `COMMENT`, are read as leaving memberships alone. That includes
+  one that calls a function while it executes, through a column default, an
+  index expression, a `CHECK` or `CREATE TABLE ... AS SELECT`.
 - A grant of a role the server does not hold gains nothing. A `GRANT` the
   server itself refuses, such as one by a role without `ADMIN` on the role, is
   left to the server, which refuses it as it runs. So is a statement that takes

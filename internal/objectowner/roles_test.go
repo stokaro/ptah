@@ -101,6 +101,13 @@ func TestReadRoleStatements_Opaque(t *testing.T) {
 		"RESET ROLE",
 		"RESET ALL",
 		"SET SESSION AUTHORIZATION o",
+		`SET "role" TO o`,
+		`SET "Role" TO o`,
+		"SET session_authorization = 'o'",
+		"SET LOCAL session_authorization TO o",
+		"RESET session_authorization",
+		"SET myext.mode = 'x'",
+		"DROP USER MAPPING FOR bob SERVER s",
 		"CREATE EXTENSION pgcrypto",
 		"CREATE USER MAPPING FOR app SERVER s",
 		"INSERT INTO t VALUES (1)",
@@ -129,6 +136,11 @@ func TestReadRoleStatements_LeavesMemberships(t *testing.T) {
 		"SET lock_timeout = '5s'",
 		"SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE",
 		"RESET search_path",
+		"SET TIME ZONE 'UTC'",
+		`SET "search_path" TO app`,
+		"SET LOCAL statement_timeout = 0",
+		"SET client_min_messages = warning",
+		"SET check_function_bodies = false",
 	} {
 		t.Run(text, func(t *testing.T) {
 			c := qt.New(t)

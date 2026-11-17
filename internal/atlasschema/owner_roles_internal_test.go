@@ -8,6 +8,7 @@ package atlasschema
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -81,16 +82,19 @@ func TestRefuseOwnerTransfers_FailurePath(t *testing.T) {
 }
 
 // TestRefuseMissingRoles_HappyPath pins the roles an ownership statement may
-// name: one the server holds, one a statement before creates, and the new
-// name of a role a statement before renames.
+// name: one the server holds, one a statement before creates, the new name of
+// a role a statement before renames, and a role the plan drops where a
+// statement the reader does not read may create it again, which the server
+// decides.
 func TestRefuseMissingRoles_HappyPath(t *testing.T) {
 	for _, statements := range [][]string{
 		{`ALTER VIEW "v" OWNER TO "rv_a"`},
 		{"CREATE USER fresh", `ALTER VIEW "v" OWNER TO "fresh"`},
 		{"ALTER ROLE rv_a RENAME TO renamed", `ALTER VIEW "v" OWNER TO "renamed"`},
 		{"DROP ROLE rv_a", "CREATE ROLE rv_a", `ALTER VIEW "v" OWNER TO "rv_a"`},
+		{"DROP ROLE rv_a", "DO $$ BEGIN CREATE ROLE rv_a; END $$", `ALTER VIEW "v" OWNER TO "rv_a"`},
 	} {
-		t.Run(statements[0], func(t *testing.T) {
+		t.Run(strings.Join(statements, "; "), func(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(refuseMissingRoles("postgres", []string{"rv_a"}, plannedOwners("postgres", statements)), qt.IsNil)
@@ -106,7 +110,7 @@ func TestRefuseMissingRoles_FailurePath(t *testing.T) {
 		{"DROP ROLE rv_a", `ALTER VIEW "v" OWNER TO "rv_a"`},
 		{"CREATE USER fresh", "ALTER ROLE fresh RENAME TO other", `ALTER VIEW "v" OWNER TO "fresh"`},
 	} {
-		t.Run(statements[0], func(t *testing.T) {
+		t.Run(strings.Join(statements, "; "), func(t *testing.T) {
 			c := qt.New(t)
 
 			err := refuseMissingRoles("postgres", []string{"rv_a"}, plannedOwners("postgres", statements))

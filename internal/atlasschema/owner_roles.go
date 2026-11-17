@@ -309,7 +309,11 @@ func plannedOwners(dialect string, statements []string) []plannedOwner {
 				removed, created = withoutRole(dialect, removed, role.Creates), append(withoutRole(dialect, created, role.Creates), role.Creates)
 			}
 			granted = append(granted, role.Grants...)
-			opaque = opaque || role.Opaque
+			if role.Opaque {
+				// The server decides from here which roles exist: the
+				// statement may create one the plan dropped.
+				opaque, removed = true, nil
+			}
 		}
 	}
 	return owners

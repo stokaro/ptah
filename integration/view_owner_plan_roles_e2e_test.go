@@ -73,8 +73,9 @@ func TestSchemaApplyCountsAGrantOfTheOwnerBeforeItE2E(t *testing.T) {
 // or of its SET option after the grant takes SET away again; and a grant of a
 // role the server does not hold gives nothing, and must not stop the check
 // from answering. A DO block may revoke what the grant gave, and the check
-// does not read it, so no grant before the ownership statement counts. The check refuses before any statement is sent: my_docs
-// keeps its owner, and the applier holds no grant of {owner} it made.
+// does not read it, so no grant before the ownership statement counts. The
+// check refuses before any statement is sent: my_docs keeps its owner, and
+// the applier holds no grant of {owner} it made.
 func TestSchemaApplyRefusesAGrantTheServerDoesNotFollowE2E(t *testing.T) {
 	engine := viewOwnerEngines[0]
 	for _, prepended := range []string{
