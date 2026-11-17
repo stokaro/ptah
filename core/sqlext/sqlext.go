@@ -296,6 +296,11 @@ type Value struct {
 	// at this position, even when another claim carries its final facets.
 	// Only a statement takes them; syntax-only readers do not resolve them.
 	TableReferences []string
+	// RoleReferences name roles the statement requires the load to declare
+	// at this position, as the statement writes them, even when another
+	// claim carries their final facets. Only a statement takes them;
+	// syntax-only readers do not resolve them.
+	RoleReferences []string
 	// DescribedBy is the one-based index in Request.Claims of a later
 	// statement claim that supplies this statement's combined declaration.
 	// Zero means this value describes itself. The referenced value must

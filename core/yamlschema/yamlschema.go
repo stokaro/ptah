@@ -430,6 +430,11 @@ type roleSpec struct {
 	// member of; see [schemamodel.Role].
 	Group    bool       `yaml:"group"`
 	MemberOf stringList `yaml:"member_of"`
+
+	// Owned holds the keys the frontend does not read itself: the ones a
+	// selected owner adds to a role, such as PostgreSQL's settings, and
+	// anything else, which is refused as unknown.
+	Owned map[string]yaml.Node `yaml:",inline"`
 }
 
 type grantSpec struct {
@@ -545,7 +550,9 @@ func (d document) toDatabase(ctx context.Context, owners yamlext.Set, data []byt
 		return nil, err
 	}
 	db.FeatureCoverage = coverage
-	d.addRoles(db)
+	if err := d.addRoles(db, owners); err != nil {
+		return nil, err
+	}
 	if err := d.addGrants(db); err != nil {
 		return nil, err
 	}
@@ -1326,9 +1333,17 @@ func rowSecurityScope(origin string, node yaml.Node) ([]string, error) {
 	return scope, nil
 }
 
-func (d document) addRoles(db *schemamodel.Database) {
+func (d document) addRoles(db *schemamodel.Database, owners yamlext.Set) error {
 	for _, key := range sortedKeys(d.Roles) {
 		spec := d.Roles[key]
+		attributes, _, err := ownedKeys(owners, yamlext.EntryRole, fmt.Sprintf("role %q", key), spec.Owned)
+		if err != nil {
+			return err
+		}
+		facets, err := owners.DecodeEntryAttributes(yamlext.EntryRole, attributes)
+		if err != nil {
+			return fmt.Errorf("role %q: %w", key, err)
+		}
 		inherit := true
 		if spec.Inherit != nil {
 			inherit = *spec.Inherit
@@ -1351,8 +1366,10 @@ func (d document) addRoles(db *schemamodel.Database) {
 			Comment:     string(spec.Comment),
 			Group:       spec.Group,
 			MemberOf:    memberOf,
+			Facets:      facets,
 		})
 	}
+	return nil
 }
 
 func (d document) addGrants(db *schemamodel.Database) error {

@@ -242,6 +242,7 @@ const (
 	indexDirective      = "ptah:schema:index"
 	constraintDirective = "ptah:schema:constraint"
 	matviewDirective    = "ptah:schema:matview"
+	roleDirective       = "ptah:schema:role"
 )
 
 // ownerSlots are the declarations of the frontend's own directives in the
@@ -327,6 +328,9 @@ func (ctx *renderContext) collectOwnerSlots() ownerSlots {
 		function := &db.Functions[i]
 		add(routineAnnotationSlot(*function), &function.Facets)
 	}
+	for i := range db.Roles {
+		add(roleAnnotationSlot(db.Roles[i]), &db.Roles[i].Facets)
+	}
 	collected.fields = ownerFieldDeclarations(db, declared)
 	collected.tables = declared
 	return collected
@@ -396,6 +400,12 @@ func (ctx *renderContext) undeclaredStructs(declared map[string]annotationext.Ta
 	}
 	slices.Sort(names)
 	return names
+}
+
+// roleAnnotationSlot is the role directive of role, which the owners add
+// attributes to, such as PostgreSQL's settings.
+func roleAnnotationSlot(role schemamodel.Role) annotationext.Slot {
+	return annotationext.Slot{Directive: roleDirective, Name: role.Name}
 }
 
 func routineAnnotationSlot(function schemamodel.Function) annotationext.Slot {

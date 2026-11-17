@@ -55,6 +55,11 @@ func applyOwnerStatement(database *schemamodel.Database, document *Document, stm
 			return true, err
 		}
 	}
+	for _, name := range note.RoleReferences {
+		if _, err := requiredRole(databases, name, note.Text, sourcePlatform); err != nil {
+			return true, err
+		}
+	}
 	for _, object := range note.Objects {
 		object.Ref = declaredChild(databases, object.Ref, sourcePlatform)
 		if skipsGuardedRepeat(databases, object) {
@@ -212,22 +217,31 @@ func setTableFacets(databases []*schemamodel.Database, facets sqlext.TableFacets
 // refuses a role it does not declare and a facet the role already holds.
 // written is the statement, which a refusal names first.
 func setRoleFacets(databases []*schemamodel.Database, facets sqlext.RoleFacets, written, sourcePlatform string) error {
-	name := roleName(sourcePlatform, facets.Name)
+	role, err := requiredRole(databases, facets.Name, written, sourcePlatform)
+	if err != nil {
+		return err
+	}
+	merged, err := role.Facets.Merge(facets.Facets)
+	if err != nil {
+		return fmt.Errorf("%s: %w", statementExcerpt(written), err)
+	}
+	role.Facets = merged
+	return nil
+}
+
+// requiredRole is the role the schema declares under the name a statement
+// writes, read as CREATE ROLE reads one, and refuses a role it does not
+// declare at this point of the script.
+func requiredRole(databases []*schemamodel.Database, writtenName, written, sourcePlatform string) (*schemamodel.Role, error) {
+	name := roleName(sourcePlatform, writtenName)
 	for _, database := range databases {
 		for i := range database.Roles {
-			role := &database.Roles[i]
-			if role.Name != name {
-				continue
+			if database.Roles[i].Name == name {
+				return &database.Roles[i], nil
 			}
-			merged, err := role.Facets.Merge(facets.Facets)
-			if err != nil {
-				return fmt.Errorf("%s: %w", statementExcerpt(written), err)
-			}
-			role.Facets = merged
-			return nil
 		}
 	}
-	return undeclared(statementRefusal{
+	return nil, undeclared(statementRefusal{
 		text: fmt.Sprintf("%s: role %q is not declared in this schema", statementExcerpt(written), name),
 		err:  ErrUnmodeledStatement,
 	})

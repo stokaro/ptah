@@ -435,7 +435,7 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 	}
 	ctx.writeOwnerDirectives(w, ownerPlace{placement: annotationext.AfterViews})
 	for _, role := range sortedRoles(ctx.db.Roles) {
-		w.writeComment(roleAnnotation(role))
+		w.writeComment(roleAnnotation(role, ctx.ownerAttrs(roleAnnotationSlot(role), annotationext.WithOwnAttributes)))
 	}
 	for _, grant := range sortedGrants(ctx.db.Grants) {
 		w.writeComment(grantAnnotation(grant))
@@ -816,20 +816,21 @@ func triggerAnnotation(trigger schemamodel.Trigger) string {
 	)
 }
 
-func roleAnnotation(role schemamodel.Role) string {
-	return annotation("ptah:schema:role",
-		attr{name: "name", value: role.Name, set: true},
-		attr{name: "login", value: strconv.FormatBool(role.Login), set: role.Login},
-		attr{name: "superuser", value: strconv.FormatBool(role.Superuser), set: role.Superuser},
-		attr{name: "create_db", value: strconv.FormatBool(role.CreateDB), set: role.CreateDB},
-		attr{name: "create_role", value: strconv.FormatBool(role.CreateRole), set: role.CreateRole},
-		attr{name: "inherit", value: strconv.FormatBool(role.Inherit), set: !role.Inherit},
-		attr{name: "replication", value: strconv.FormatBool(role.Replication), set: role.Replication},
-		attr{name: "group", value: strconv.FormatBool(role.Group), set: role.Group},
-		attr{name: "member_of", value: strings.Join(role.MemberOf, ","), set: len(role.MemberOf) > 0},
-		attr{name: "comment", value: role.Comment, set: role.Comment != ""},
-		dialectsAttr(role.Dialects),
-	)
+// roleAnnotation writes role's directive, with the attributes owners add to
+// it before its dialects.
+func roleAnnotation(role schemamodel.Role, owned []attr) string {
+	return annotation(roleDirective, append([]attr{
+		{name: "name", value: role.Name, set: true},
+		{name: "login", value: strconv.FormatBool(role.Login), set: role.Login},
+		{name: "superuser", value: strconv.FormatBool(role.Superuser), set: role.Superuser},
+		{name: "create_db", value: strconv.FormatBool(role.CreateDB), set: role.CreateDB},
+		{name: "create_role", value: strconv.FormatBool(role.CreateRole), set: role.CreateRole},
+		{name: "inherit", value: strconv.FormatBool(role.Inherit), set: !role.Inherit},
+		{name: "replication", value: strconv.FormatBool(role.Replication), set: role.Replication},
+		{name: "group", value: strconv.FormatBool(role.Group), set: role.Group},
+		{name: "member_of", value: strings.Join(role.MemberOf, ","), set: len(role.MemberOf) > 0},
+		{name: "comment", value: role.Comment, set: role.Comment != ""},
+	}, append(owned, dialectsAttr(role.Dialects))...)...)
 }
 
 func grantAnnotation(grant schemamodel.Grant) string {

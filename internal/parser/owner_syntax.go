@@ -451,6 +451,7 @@ func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
 		statement.Payload = value.Statement
 		note.Objects, note.Replaces, note.TableFacets, note.RoleFacets = value.Objects, value.Replaces, value.TableFacets, value.RoleFacets
 		note.TableReferences, note.UnmodeledReason = value.TableReferences, value.UnmodeledReason
+		note.RoleReferences = value.RoleReferences
 		note.DescribedBy = value.DescribedBy
 		return nil
 	})
@@ -549,6 +550,8 @@ type OwnerStatement struct {
 	DescribedBy int
 	// TableReferences must resolve when the schema applies this statement.
 	TableReferences []string
+	// RoleReferences must resolve when the schema applies this statement.
+	RoleReferences []string
 	// UnmodeledReason is the owner's refusal to describe this statement.
 	UnmodeledReason string
 	// Objects are the objects the statement declares; see

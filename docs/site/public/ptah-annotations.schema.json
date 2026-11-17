@@ -1926,6 +1926,14 @@
               ],
               "type": "string"
             },
+            "reset_settings": {
+              "description": "Comma-separated PostgreSQL settings to take away from the role with ALTER ROLE ... RESET, such as \"work_mem, app.tenant\".",
+              "type": "string"
+            },
+            "settings": {
+              "description": "PostgreSQL configuration defaults the role logs in with, `name = value` separated by semicolons, each value written in SQL: \"statement_timeout = '30s'; search_path = '$user', public\". A setting the role holds and this list leaves out stays as it is.",
+              "type": "string"
+            },
             "superuser": {
               "description": "Creates the role as SUPERUSER.",
               "enum": [

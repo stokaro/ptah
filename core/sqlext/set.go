@@ -638,6 +638,8 @@ func checkStatementValue(extension Extension, claim Claim, value Value) error {
 		problem = "a table and statement requirements"
 	case slices.ContainsFunc(value.TableReferences, func(name string) bool { return strings.TrimSpace(name) == "" }):
 		problem = "a blank table reference"
+	case slices.ContainsFunc(value.RoleReferences, func(name string) bool { return strings.TrimSpace(name) == "" }):
+		problem = "a blank role reference"
 	case value.TableFacets != nil && strings.TrimSpace(value.TableFacets.Name) == "":
 		problem = "table facets without a table name"
 	case value.TableFacets != nil && value.TableFacets.Facets.IsZero():
@@ -710,7 +712,7 @@ func checkCombinedDeclarations(extension Extension, claims []Claim, values []Val
 // hasStatementRequirements is shared by every site check. Adding a statement
 // requirement must reject it both on another site and beside a declined claim.
 func hasStatementRequirements(value Value) bool {
-	return len(value.TableReferences) > 0 || value.UnmodeledReason != "" || value.DescribedBy != 0
+	return len(value.TableReferences) > 0 || len(value.RoleReferences) > 0 || value.UnmodeledReason != "" || value.DescribedBy != 0
 }
 
 // clonePattern isolates both registered grammar and the candidates handed to

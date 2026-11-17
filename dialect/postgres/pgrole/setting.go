@@ -2,6 +2,7 @@ package pgrole
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/core/schemaext"
@@ -130,8 +131,14 @@ func ParseValue(written string) (string, ValueForm, error) {
 			return "", ValueLiteral, fmt.Errorf("%w: role setting value %q: expected a comma after %s", schemaext.ErrInvalidValue, written, element)
 		}
 		rest = strings.TrimSpace(remainder[1:])
+		if rest == "" {
+			return "", ValueLiteral, fmt.Errorf("%w: role setting value %q ends in a comma", schemaext.ErrInvalidValue, written)
+		}
 	}
-	if len(elements) == 1 && strings.EqualFold(elements[0], "DEFAULT") {
+	if slices.ContainsFunc(elements, func(element string) bool { return strings.EqualFold(element, "DEFAULT") }) {
+		if len(elements) > 1 {
+			return "", ValueLiteral, fmt.Errorf("%w: role setting value %q: DEFAULT stands alone, never in a list", schemaext.ErrInvalidValue, written)
+		}
 		return "", ValueDefault, nil
 	}
 	return strings.Join(elements, ", "), ValueLiteral, nil
@@ -204,7 +211,11 @@ func number(text string) (element, rest string, err error) {
 		}
 	}
 	if i < len(text) && isWordByte(text[i], false) {
-		return "", "", fmt.Errorf("a number followed by %q; a value with a unit, such as '30s', is a string literal", text[start:])
+		end := i
+		for end < len(text) && isWordByte(text[end], false) {
+			end++
+		}
+		return "", "", fmt.Errorf("%s is a number followed by a word; a value with a unit is a string literal: '%s'", text[start:end], text[start:end])
 	}
 	b.WriteString(text[start:i])
 	return b.String(), text[i:], nil
