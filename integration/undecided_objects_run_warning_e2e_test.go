@@ -17,8 +17,10 @@ import (
 // Two declared sequences a --from document records it does not describe are
 // two changes `schema diff` cannot plan. The run reports them as one warning
 // that names both, on both binaries. The two documents are HCL, which the
-// command reads without a database, so the dev database URL names a port
-// nothing listens on: a run that tried to connect would fail rather than pass.
+// command reads without a database when the dev URL pins search_path, so the
+// dev database URL names a port nothing listens on: a run that tried to
+// connect would fail rather than pass. Without search_path the run connects
+// to learn where the dev database places a name written without a schema.
 
 // undecidedFromDocument records that it describes no sequences.
 const undecidedFromDocument = `// ptah:not-described sequence
@@ -67,7 +69,7 @@ func undecidedDiffArgs(c *qt.C) []string {
 	c.Assert(os.WriteFile(to, []byte(undecidedToDocument), 0o600), qt.IsNil)
 	return []string{
 		"schema", "diff", "--from", "file://" + filepath.ToSlash(from), "--to", "file://" + filepath.ToSlash(to),
-		"--dev-url", "postgres://nobody@127.0.0.1:1/dev",
+		"--dev-url", "postgres://nobody@127.0.0.1:1/dev?search_path=public",
 	}
 }
 

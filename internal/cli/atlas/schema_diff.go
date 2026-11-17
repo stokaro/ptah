@@ -102,7 +102,8 @@ refuses.`
 	flags := cmd.Flags()
 	flags.StringArrayVarP(&opts.fromURLs, atlasFromFlagName, atlasFromFlagShorthand, nil, "Current schema state URL")
 	flags.StringArrayVar(&opts.toURLs, "to", nil, "Desired schema state URL")
-	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to choose the SQL dialect, replay migration directories, and materialize a --from schema file compared with a database or directory")
+	flags.StringVar(&opts.devURL, "dev-url", "", "Dev database URL used to choose the SQL dialect, replay migration directories, "+
+		"materialize a --from schema file compared with a database or directory, and place the unqualified names of two schema files")
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from diffing")
 	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to diff when a database URL is used")

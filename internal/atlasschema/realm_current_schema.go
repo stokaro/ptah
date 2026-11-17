@@ -3,6 +3,7 @@ package atlasschema
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -114,6 +115,28 @@ func resolveDesiredNaming(ctx context.Context, target catalog.ServerInfo, devURL
 	return namingFor(target, &info), nil
 }
 
+// resolveDevNaming is where a run that compares two documents places an
+// unqualified name: the current schema of the dev database devURL names, when
+// that URL describes every schema of its database and the engine resolves a
+// name along a search path, and nowhere otherwise. A dev database the run
+// provisions resolves a name to the dialect's default schema, as in
+// [resolveDesiredNaming].
+func resolveDevNaming(ctx context.Context, dialect, devURL string) (desiredNaming, error) {
+	dev := catalog.ServerInfo{Dialect: dialect, URL: strings.TrimSpace(devURL)}
+	if dev.URL == "" || !placesUnqualifiedNames(dev) {
+		return namingFor(dev, nil), nil
+	}
+	if devdocker.ResolvedPerRun(ctx, dev.URL) {
+		return desiredNaming{resolved: true, schema: dialectDefaultSchema(dialect)}, nil
+	}
+	devConn, err := dbschema.ConnectToDatabase(ctx, dev.URL)
+	if err != nil {
+		return desiredNaming{}, fmt.Errorf("connect to --dev-url: %w", err)
+	}
+	defer dbschema.CloseAndWarn(devConn)
+	return namingFor(devConn.Info(), nil), nil
+}
+
 // recordedNaming is the naming a saved plan recorded, placed, and false when
 // the plan recorded none or a run over target places no name.
 func recordedNaming(target catalog.ServerInfo, placedSchema string) (desiredNaming, bool) {
@@ -139,6 +162,20 @@ func PlaceUnqualifiedNames(info catalog.ServerInfo, desired *schemamodel.Databas
 // naming says; see [schemaprep.PlaceUnqualified].
 func (n desiredNaming) place(desired *schemamodel.Database, dialect string) (*schemamodel.Database, error) {
 	return schemaprep.PlaceUnqualified(desired, n.schema, dialect)
+}
+
+// held returns database holding the schema naming places names in, as a
+// database read on that connection does, and database as it is when it
+// declares that schema already or naming places nothing. database is not
+// modified.
+func (n desiredNaming) held(database *schemamodel.Database) *schemamodel.Database {
+	if database == nil || n.schema == "" ||
+		slices.ContainsFunc(database.Schemas, func(schema schemamodel.Schema) bool { return schema.Name == n.schema }) {
+		return database
+	}
+	holding := *database
+	holding.Schemas = append(slices.Clone(database.Schemas), schemamodel.Schema{Name: n.schema})
+	return &holding
 }
 
 // checkDevNaming refuses a rehearsal on a dev database that resolves an
