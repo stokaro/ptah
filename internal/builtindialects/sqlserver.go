@@ -283,6 +283,7 @@ BEGIN
         error NVARCHAR(MAX) NULL,
         run_reference NVARCHAR(255) NULL,
         actor_origin NVARCHAR(64) NULL,
+        repeatable NVARCHAR(255) NULL,
         PRIMARY KEY (run_id, seq)
     )
 END`,
@@ -316,6 +317,7 @@ END`,
 			// The operation log's.
 			"run_reference": "NVARCHAR(255) NULL",
 			"actor_origin":  "NVARCHAR(64) NULL",
+			"repeatable":    "NVARCHAR(255) NULL",
 		},
 		FirstRow: "top",
 		RowLock:  "table-hint",

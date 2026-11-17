@@ -13,8 +13,8 @@ import (
 )
 
 // releasedMigrationLogDDL is the operation log as Ptah v0.26.0 creates it on
-// SQLite: the layout before run_reference and actor_origin, which every
-// database a released Ptah migrated already holds.
+// SQLite: the layout before run_reference, actor_origin and repeatable, which
+// every database a released Ptah migrated already holds.
 const releasedMigrationLogDDL = `CREATE TABLE IF NOT EXISTS schema_migrations_log (
     run_id VARCHAR(64) NOT NULL,
     seq BIGINT NOT NULL,
@@ -150,7 +150,7 @@ VALUES ('released-run', 1, 'up', 9, 'started', 'bob', 'provided', NULL, ?, NULL)
 	c.Assert(err, qt.IsNil)
 	c.Assert(logColumns(c, conn), qt.DeepEquals, []string{
 		"run_id", "seq", "operation", "version", "state", "actor", "actor_source", "checksum", "logged_at", "error",
-		"run_reference", "actor_origin",
+		"run_reference", "actor_origin", "repeatable",
 	})
 	attempts, err := m.MigrationLog(ctx, 0)
 	c.Assert(err, qt.IsNil)

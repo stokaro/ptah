@@ -127,7 +127,16 @@ func (m *Migrator) readProviderLog(ctx context.Context, store dbschema.Migration
 	return attempts, nil
 }
 
+// appendProviderLog appends entry to a provider's migration log. A provider's
+// record holds no repeatable identity, so an entry about a repeatable migration
+// is refused rather than stored as version 0, where two repeatables of one run
+// would pair with each other's entries. No provider engine runs repeatable
+// migrations: [Migrator] refuses them where the revision table declares no
+// table for them.
 func (m *Migrator) appendProviderLog(ctx context.Context, store dbschema.MigrationLogStore, entry MigrationLogEntry) error {
+	if entry.Repeatable != "" {
+		return fmt.Errorf("provider migration log cannot record repeatable migration %q", entry.Repeatable)
+	}
 	return store.Append(ctx, m.providerLogTable(), dbschema.MigrationLogRecord{RunID: entry.RunID, Seq: entry.Seq, Operation: entry.Operation,
 		Version: entry.Version, State: string(entry.State), Actor: entry.Actor, ActorSource: string(entry.ActorSource), Checksum: entry.Checksum, At: entry.At, Error: entry.Error})
 }
