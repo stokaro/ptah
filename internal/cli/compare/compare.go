@@ -230,8 +230,11 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	// Placed and read as `schema apply` places and reads them, so the
-	// comparison shows the statements apply runs; see
-	// [atlasschema.PlaceUnqualifiedNames] and [readscope.Qualified].
+	// comparison shows the plan apply computes; see
+	// [atlasschema.PlaceUnqualifiedNames] and [readscope.Qualified]. Apply
+	// refuses some of those plans before it runs them, such as a bare name
+	// whose plan drops a table of another schema with its rows; compare shows
+	// such a plan as a difference.
 	result, err = atlasschema.PlaceUnqualifiedNames(conn.Info(), result)
 	if err != nil {
 		return err
