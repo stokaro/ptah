@@ -79,7 +79,7 @@ func (w *PostgreSQLWriter) HeldRoles(ctx context.Context, role, privilege string
 	if w.db == nil {
 		return nil, fmt.Errorf("no database connection")
 	}
-	rows, err := w.db.QueryContext(ctx, `SELECT rolname FROM pg_catalog.pg_roles WHERE pg_has_role($1::name, oid, $2::text)`, role, privilege)
+	rows, err := w.db.QueryContext(ctx, `SELECT rolname FROM pg_catalog.pg_roles WHERE pg_has_role($1::text, oid, $2::text)`, role, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("read the roles %q holds: %w", role, err)
 	}
