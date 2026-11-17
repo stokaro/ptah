@@ -43,7 +43,8 @@ func TestCurrentOwners_HappyPath(t *testing.T) {
 		{name: "CockroachDB", target: platform.CockroachDB, want: managed},
 		{name: "YugabyteDB", target: platform.YugabyteDB, want: managed},
 		{name: "SQL Server, which reads owners and manages none", target: platform.SQLServer},
-		{name: "a provider's engine", target: "ydb"},
+		{name: "YDB, which manages no owner", target: "ydb"},
+		{name: "a name no descriptor describes, as a provider's engine is", target: "no-such-engine"},
 		{name: "no target", target: ""},
 	}
 	for _, test := range tests {

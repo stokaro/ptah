@@ -179,7 +179,7 @@ func TestCommonTablePlannerCurrentOwners_FailurePath(t *testing.T) {
 	nodes, err := selected.registration().Planner(planext.Options{}).GenerateMigrationAST(c.Context(), runtime, diff)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `.*does not support SchemaDiff\.CurrentOwners`)
+	c.Assert(err, qt.ErrorMatches, `.*the provider serves engine ".*", whose views .* does not support SchemaDiff\.CurrentOwners; serve an engine name of the provider's own`)
 	c.Assert(nodes, qt.HasLen, 0)
 }
 

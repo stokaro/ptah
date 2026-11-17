@@ -64,6 +64,7 @@ func TestProviderReplacesAViewWhoseOwnerTheReadReports_FailurePath(t *testing.T)
 		"--auto-approve")
 
 	c.Assert(code, qt.Equals, 2)
+	c.Assert(diagnostics, qt.Contains, `the provider serves engine "postgres", whose views a plan gives back their owners`)
 	c.Assert(diagnostics, qt.Contains, "the experimental provider contract does not support SchemaDiff.CurrentOwners")
 	c.Assert(heldViewDefinitions(c, f.databasePath), qt.DeepEquals, []string{`recent: CREATE VIEW "recent" AS SELECT id FROM items`})
 }
