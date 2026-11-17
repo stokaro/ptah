@@ -22,7 +22,7 @@ func (p *Parser) parseAlterSequence() (ast.Node, error) {
 	_, after, named := p.namedWords(1, 1)
 	ownedBy := named && len(after) == 1 && strings.EqualFold(after[0], "OWNED")
 	if !ownedBy || (p.target.known && !p.target.ownedSequences) {
-		return nil, p.parseAlterOwnerTo("SEQUENCE")
+		return p.parseAlterOwnerTo("SEQUENCE")
 	}
 	p.advance()
 	p.skipWhitespace()

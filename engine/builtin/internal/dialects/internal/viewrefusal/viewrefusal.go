@@ -12,7 +12,8 @@
 // option.
 //
 // It also holds the refusal every renderer but PostgreSQL's makes for a view
-// or a materialized view that carries PostgreSQL options:
+// or a materialized view that declares an owner, and for one that carries
+// PostgreSQL options:
 // [ptah.run/core/ast.CreateViewNode.Options] and
 // [ptah.run/core/ast.CreateMaterializedViewNode.Options], and the refusal of
 // WITH LOCAL CHECK OPTION by the renderers whose target has no level.
@@ -53,6 +54,21 @@ func Options(dialect, kind, name string, options []string) error {
 	return fmt.Errorf(
 		"%w: %s: %s %s carries the PostgreSQL options %s, which this target has no clause for",
 		ptaherr.ErrUnsupportedFeature, dialect, kind, name, strings.Join(options, ", "))
+}
+
+// Owner reports the owner a view or a materialized view declares on a target
+// whose renderer does not write one, wrapping [ptaherr.ErrUnsupportedFeature],
+// or nil when it declares none. kind is "view" or "materialized view".
+//
+// A view written without it would belong to the role that applies the plan,
+// and the declaration would say otherwise.
+func Owner(dialect, kind, name, owner string) error {
+	if owner == "" {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: %s: %s %s declares owner %q, and Ptah does not manage the owner of a %s on this target",
+		ptaherr.ErrUnsupportedFeature, dialect, kind, name, owner, kind)
 }
 
 // LocalCheck reports a view that asks for WITH LOCAL CHECK OPTION on a target

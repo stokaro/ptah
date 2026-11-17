@@ -94,6 +94,8 @@ func changedNodeSubject(node ast.Node) (string, bool) {
 		return n.Name, true
 	case *ast.AlterViewOptionsNode:
 		return n.Name, true
+	case *ast.AlterOwnerNode:
+		return n.Name, true
 	case *ast.AlterTableDisableRLSNode:
 		return n.Table, true
 	case *ast.AlterTableEnableRLSNode:

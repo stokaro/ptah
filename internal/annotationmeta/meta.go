@@ -668,6 +668,7 @@ var directives = []Directive{
 			attr("with_check", "The view's check option: `true` or `cascaded` for WITH CHECK OPTION, `local` for WITH LOCAL CHECK OPTION, `false` for none.", valueString, false, false),
 			attr("security", "MySQL and MariaDB view SQL SECURITY mode: `DEFINER` or `INVOKER`. Empty states the server default, `DEFINER`, and a plan that would change a view held as `INVOKER` that way is refused.", valueString, false, false),
 			attr("options", "Comma-separated PostgreSQL view options, `name=value`, such as `security_invoker=true`; a bare name is true. PostgreSQL family.", valueList, false, false),
+			attr("owner", ownerAttributeDescription("view"), valueString, false, false),
 			attr("depends_on", "Comma-separated objects this view must be created after.", valueList, false, false),
 			attr("comment", "View comment.", valueString, false, false),
 			dialectsAttr(),
@@ -682,6 +683,7 @@ var directives = []Directive{
 			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("body", "Materialized view SELECT body.", valueSQL, true, false),
 			attr("options", "Comma-separated PostgreSQL storage parameters, `name=value`, such as `fillfactor=70`. PostgreSQL family.", valueList, false, false),
+			attr("owner", ownerAttributeDescription("materialized view"), valueString, false, false),
 			attr("depends_on", "Comma-separated objects this view must be created after.", valueList, false, false),
 			retiredAttr("refresh_strategy",
 				"Retired: refused when the annotation is parsed, on every dialect.",
@@ -913,4 +915,11 @@ func alias(name, aliasFor, description, value string, boolean bool) Attribute {
 	a := attr(name, description, value, false, boolean)
 	a.AliasFor = aliasFor
 	return a
+}
+
+// ownerAttributeDescription is the description of the owner attribute of a
+// directive declaring an object of kind.
+func ownerAttributeDescription(kind string) string {
+	return "Role that owns the " + kind + ", as the server stores its name. A plan gives the " + kind +
+		" to it; omitted, the owner is unmanaged and no plan changes it. Declaring it does not declare the role. PostgreSQL."
 }

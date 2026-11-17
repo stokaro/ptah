@@ -319,6 +319,7 @@ func (r *renderer) renderViews() {
 			r.warn("views."+view.Name, "view body is required for HCL schema export")
 			continue
 		}
+		r.warnOwnerLeftOut("views."+view.Name, view.Owner)
 		name := objectNameFromQualified(view.Name)
 		r.linef(`view %s {`, quote(name))
 		if schema := r.schemaFor(schemaNameFromQualified(view.Name)); schema != "" {
@@ -401,6 +402,18 @@ func (r *renderer) renderViewSecurity(view schemamodel.View) {
 	r.line("  }")
 }
 
+// warnOwnerLeftOut reports the owner a view or a materialized view declares,
+// which an Atlas HCL document has no attribute for and so leaves out. The
+// document is still written: an owner is a declaration about who holds the
+// object, not about what it is, and a reader of the document finds the view
+// unmanaged, which keeps whatever owner it has.
+func (r *renderer) warnOwnerLeftOut(path, owner string) {
+	if owner == "" {
+		return
+	}
+	r.warn(path, fmt.Sprintf("owner %q is left out: Atlas HCL has no owner attribute", owner))
+}
+
 func (r *renderer) renderMaterializedViews() {
 	views := append([]schemamodel.MaterializedView(nil), r.db.MaterializedViews...)
 	slices.SortFunc(views, func(a, b schemamodel.MaterializedView) int {
@@ -416,6 +429,7 @@ func (r *renderer) renderMaterializedView(view schemamodel.MaterializedView) {
 		r.warn("materialized_views."+view.Name, "materialized view body is required for HCL schema export")
 		return
 	}
+	r.warnOwnerLeftOut("materialized_views."+view.Name, view.Owner)
 	slot := materializedViewSlot(view)
 	owned := r.ownerSlot(slot, view.Facets)
 	r.reportSlotLosses("materialized_views."+view.Name, owned)

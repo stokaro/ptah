@@ -21,6 +21,7 @@ import (
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/notnullfill"
+	"ptah.run/internal/objectowner"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/renderdiag"
@@ -385,6 +386,8 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		return r.renderRefreshMaterializedView(n)
 	case *ast.AlterViewOptionsNode:
 		return r.renderAlterViewOptions(n)
+	case *ast.AlterOwnerNode:
+		return r.renderAlterOwner(n)
 
 	// Functions and triggers.
 	case *ast.CreateFunctionNode:
@@ -3128,7 +3131,7 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	}
 	r.w.WriteLine(";")
 	r.writeCreatedObjectComment(ast.CommentedView, target, node.Name, node.Comment)
-	return nil
+	return r.writeOwner(objectowner.View, node.Name, node.Owner)
 }
 
 // relationOptionsClause is the WITH clause that gives a view or a materialized
@@ -3308,6 +3311,43 @@ func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedView
 	r.w.WriteLine(strings.TrimSpace(node.Body))
 	r.w.WriteLine(";")
 	r.writeCreatedObjectComment(ast.CommentedMaterializedView, target, node.Name, node.Comment)
+	return r.writeOwner(objectowner.MaterializedView, node.Name, node.Owner)
+}
+
+// renderAlterOwner gives an existing view or materialized view to a role.
+func (r *Renderer) renderAlterOwner(node *ast.AlterOwnerNode) error {
+	kind := objectowner.Kind(node.Kind)
+	if !slices.Contains(objectowner.Kinds(), kind) {
+		return fmt.Errorf("%w: %s: giving a %s to a role, which Ptah does not manage",
+			ptaherr.ErrUnsupportedFeature, r.dialect, strings.ToLower(node.Kind))
+	}
+	// A change of owner names the role it gives the object to, where a view
+	// that names none is simply unmanaged.
+	if err := objectowner.ValidateRole(node.Owner); err != nil {
+		return fmt.Errorf("%s %s: %w", kind.Label(), node.Name, err)
+	}
+	return r.writeOwner(kind, node.Name, node.Owner)
+}
+
+// writeOwner writes the ALTER ... OWNER TO that gives the object of kind named
+// name to owner, and nothing for an empty owner. A target whose descriptor
+// does not list the kind among its managed owner kinds refuses it, so an
+// owner is never written to a server whose read would not report it back.
+func (r *Renderer) writeOwner(kind objectowner.Kind, name, owner string) error {
+	if owner == "" {
+		return nil
+	}
+	if !objectowner.Manages(r.dialect, kind) {
+		return &ptaherr.CapabilityError{
+			Dialect: r.dialect, Feature: kind.Label() + " owner", Err: ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s %s declares owner %q, and Ptah does not manage the owner of a %s on %s",
+				kind.Label(), name, owner, kind.Label(), r.dialect),
+		}
+	}
+	if err := objectowner.ValidateRole(owner); err != nil {
+		return fmt.Errorf("%s %s: %w", kind.Label(), name, err)
+	}
+	r.w.WriteLinef("ALTER %s %s OWNER TO %s;", kind, r.escapeQualifiedIdentifier(name), r.escapeIdentifier(owner))
 	return nil
 }
 

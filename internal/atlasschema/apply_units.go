@@ -17,7 +17,9 @@ import (
 )
 
 // applyUnits preflights the complete batch before opening a transaction. The
-// transaction repeats validation so switching executors cannot bypass it.
+// transaction repeats validation so switching executors cannot bypass it. A
+// statement that gives an object to a role the server does not hold refuses
+// the batch before it sends anything; see [refuseMissingOwners].
 func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrator.MigrationTxMode, units []renderer.Fragment) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -27,6 +29,9 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 		return err
 	}
 	if err := validateApplyUnits(ctx, conn.Writer(), prepared, statements); err != nil {
+		return err
+	}
+	if err := refuseMissingOwners(ctx, conn, statements); err != nil {
 		return err
 	}
 	switch mode {

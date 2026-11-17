@@ -1440,6 +1440,10 @@
               "description": "Comma-separated PostgreSQL storage parameters, `name=value`, such as `fillfactor=70`. PostgreSQL family.",
               "type": "string"
             },
+            "owner": {
+              "description": "Role that owns the materialized view, as the server stores its name. A plan gives the materialized view to it; omitted, the owner is unmanaged and no plan changes it. Declaring it does not declare the role. PostgreSQL.",
+              "type": "string"
+            },
             "refresh": {
               "description": "ClickHouse refresh schedule, as ClickHouse spells it: `every 1 hour`, `after 30 minute`, `every 1 day offset 2 hour`. Omitted leaves the view maintained by inserts into its source.",
               "type": "string"
@@ -2411,6 +2415,10 @@
             },
             "options": {
               "description": "Comma-separated PostgreSQL view options, `name=value`, such as `security_invoker=true`; a bare name is true. PostgreSQL family.",
+              "type": "string"
+            },
+            "owner": {
+              "description": "Role that owns the view, as the server stores its name. A plan gives the view to it; omitted, the owner is unmanaged and no plan changes it. Declaring it does not declare the role. PostgreSQL.",
               "type": "string"
             },
             "schema": {

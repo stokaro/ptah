@@ -368,10 +368,18 @@ type StatementForms struct {
 	// comma, renames a table, as ALTER TABLE a RENAME TO b does.
 	RenameTable bool `json:"rename_table,omitempty"`
 	// OwnerTo states the kinds of object whose owner `ALTER <kind> <name>
-	// OWNER TO <role>` changes, each one of [OwnerKinds]. The parser reads the
-	// statement to its end and contributes no node: the schema model describes
-	// objects, not who owns them. A kind that is not listed is refused.
+	// OWNER TO <role>` changes, each one of [OwnerKinds]. A kind that is not
+	// listed is refused. The parser reads the statement to its end, and
+	// contributes a node for a kind of ManagedOwners alone.
 	OwnerTo []string `json:"owner_to,omitempty"`
+	// ManagedOwners states the kinds of OwnerTo whose owner a desired schema
+	// declares and Ptah reconciles: the engine changes the owner with that
+	// statement, a read reports it, and an object the engine creates belongs
+	// to the role that runs the CREATE. A schema file's statement of such a
+	// kind declares the owner of the object it names. A kind of OwnerTo that
+	// is not listed here is read and plans nothing, and a declaration of an
+	// owner for it in any source is refused.
+	ManagedOwners []string `json:"managed_owners,omitempty"`
 }
 
 // Drop states how DROP reads one kind of object.
@@ -667,6 +675,9 @@ func validateStatementForms(grammar Grammar) error {
 		return err
 	}
 	if err := validateWords("OWNER TO kind", statements.OwnerTo, OwnerKinds()); err != nil {
+		return err
+	}
+	if err := validateWords("managed owner kind", statements.ManagedOwners, statements.OwnerTo); err != nil {
 		return err
 	}
 	openings := make([]string, 0, len(statements.Operations))

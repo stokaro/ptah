@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-491 fields are reachable from the desired schema, and each one carries
+493 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 394 | reaches rendered SQL on at least one target |
+| `ddl` | 396 | reaches rendered SQL on at least one target |
 | `comparison` | 36 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -182,7 +182,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-52 exemptions, each with the reason it is right.
+54 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -221,6 +221,8 @@ migration nobody asked for.
 | `schemamodel.Database.NotDescribed` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
 | `schemamodel.Field.Primary` | `clickhouse` | both | every fixture's only key column is its primary one, and a ClickHouse MergeTree table without a sorting key is refused |
 | `schemamodel.Function.Body` | `mariadb`, `mysql` | from-catalog | a routine that states no security mode is a definer routine here, a definer routine is replaced only beside a recorded definer and connected account, and a description converted from a catalog records neither, so the comparison refuses the replacement and names the routine |
+| `schemamodel.MaterializedView.Owner` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the owner a read reports is an observation, never a declaration, so the converted-back declaration leaves the owner unmanaged and a change of it plans nothing |
+| `schemamodel.View.Owner` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the owner a read reports is an observation, never a declaration, so the converted-back declaration leaves the owner unmanaged and a change of it plans nothing |
 | `schemamodel.Index.Operator` | `cockroachdb` | both | CockroachDB reports no operator class: on v26.3.2 pg_index.indclass is 0 for every key and pg_opclass is empty, also for an index built with gin_trgm_ops |
 | `schemamodel.Index.StorageParams` | `cockroachdb` | both | CockroachDB accepts WITH (fillfactor = 70) on CREATE INDEX and stores nothing: pg_class.reloptions stays empty on v26.3.2 |
 | `schemamodel.IndexPart.NullsOrder` | `cockroachdb` | both | CockroachDB has no NULLS FIRST or NULLS LAST in an index key (v26.3.2 answers `unimplemented: this syntax`) and orders NULLs by the key's direction, which the comparison reads |
@@ -634,6 +636,7 @@ migration nobody asked for.
 | `schemamodel.MaterializedView.Facets` | `ddl` | — |
 | `schemamodel.MaterializedView.Name` | `ddl` | — |
 | `schemamodel.MaterializedView.Options` | `ddl` | — |
+| `schemamodel.MaterializedView.Owner` | `ddl` | — |
 | `schemamodel.MaterializedView.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.PrimaryKeyPart.Desc` | `ddl` | — |
 | `schemamodel.PrimaryKeyPart.Name` | `ddl` | — |
@@ -742,6 +745,7 @@ migration nobody asked for.
 | `schemamodel.View.LocalCheck` | `ddl` | — |
 | `schemamodel.View.Name` | `ddl` | — |
 | `schemamodel.View.Options` | `ddl` | — |
+| `schemamodel.View.Owner` | `ddl` | — |
 | `schemamodel.View.Security` | `ddl` | — |
 | `schemamodel.View.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.View.WithCheck` | `ddl` | — |

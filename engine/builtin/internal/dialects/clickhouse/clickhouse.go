@@ -1197,6 +1197,9 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if err := viewrefusal.Options(DialectName, "view", node.Name, node.Options); err != nil {
 		return err
 	}
+	if err := viewrefusal.Owner(DialectName, "view", node.Name, node.Owner); err != nil {
+		return err
+	}
 	if node.WithCheck {
 		return fmt.Errorf(
 			"%w: clickhouse: WITH CHECK OPTION is not supported for views",
@@ -1288,6 +1291,9 @@ func (r *Renderer) renderCreateMaterializedView(node *ast.CreateMaterializedView
 		)
 	}
 	if err := viewrefusal.Options(DialectName, "materialized view", node.Name, node.Options); err != nil {
+		return err
+	}
+	if err := viewrefusal.Owner(DialectName, "materialized view", node.Name, node.Owner); err != nil {
 		return err
 	}
 	if node.Comment != "" {

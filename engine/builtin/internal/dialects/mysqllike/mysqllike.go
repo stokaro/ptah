@@ -681,6 +681,9 @@ func (r *Renderer) renderCreateView(node *ast.CreateViewNode) error {
 	if err := viewrefusal.Options(r.dialect, "view", node.Name, node.Options); err != nil {
 		return err
 	}
+	if err := viewrefusal.Owner(r.dialect, "view", node.Name, node.Owner); err != nil {
+		return err
+	}
 	securityClause, err := mysqlviewsecurity.Clause(node.Security)
 	if err != nil {
 		return fmt.Errorf("view %s: %w", node.Name, err)

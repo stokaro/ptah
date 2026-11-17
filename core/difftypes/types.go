@@ -1270,6 +1270,15 @@ type SchemaDiff struct {
 	ConnectedRole string `json:"-"`
 	// ConnectedRoleSuperuser means a PostgreSQL REVOKE runs as the object owner.
 	ConnectedRoleSuperuser bool `json:"-"`
+	// CurrentOwners is the owner the read reported for each view and
+	// materialized view, changed or not, carried once for the whole diff and
+	// off the wire. A view without a declared owner is unmanaged, and nothing
+	// plans a change of its owner; a plan that drops such a view and creates it
+	// again reads its owner here, because the CREATE gives the view to the
+	// role that runs it. A comparison with no read leaves it empty.
+	//
+	// A reversal runs against the same database and carries the same owners.
+	CurrentOwners []OwnerRef `json:"-"`
 	// ConnectedAccount is the account the read of the database ran as,
 	// [ptah.run/catalog.Database.CurrentAccount]: on the MySQL family
 	// CURRENT_USER(), user@host. The database-aware comparison entry points of
@@ -2321,6 +2330,15 @@ type ViewDiff struct {
 	// It stays off the wire, as Desired does.
 	PreviousSecurity string `json:"-"`
 
+	// PreviousOwner is the role that owns the view before this change runs,
+	// as the read reported it: the database side of a forward comparison, and
+	// the owner the forward change declares in a reversed one. Empty where the
+	// read reported none. A reversal gives the view back to it only where the
+	// forward entry changes the owner.
+	//
+	// It stays off the wire, as Desired does.
+	PreviousOwner string `json:"-"`
+
 	// PreviousDefiner is the account the view holds as its definer before
 	// this change runs, as the read recorded it, on a target whose views have
 	// a SQL SECURITY mode: the MySQL family's DEFINER, spelled user@host.
@@ -2343,16 +2361,63 @@ type ViewDiff struct {
 
 // OptionsChange is the key a view's or a materialized view's Changes carries
 // when the options the declaration states differ from the ones the database
-// holds. It is the one change either kind takes in place, without touching
-// the definition: ALTER VIEW and ALTER MATERIALIZED VIEW set and reset
-// options, and a materialized view keeps its rows.
+// holds. It is one of the two changes either kind takes in place, without
+// touching the definition: ALTER VIEW and ALTER MATERIALIZED VIEW set and
+// reset options, and a materialized view keeps its rows.
 const OptionsChange = "options"
 
-// OptionsOnly reports whether the options are all this change changes, so
-// the view keeps its definition and a planner changes the options in place.
+// OwnerChange is the key a view's or a materialized view's Changes carries
+// when the declaration names an owner and the database reports another one,
+// or none. It is the other change either kind takes in place: ALTER VIEW and
+// ALTER MATERIALIZED VIEW ... OWNER TO give the object to the declared role,
+// and it keeps its definition, its rows and its privileges. A declaration that
+// names no owner never carries it.
+const OwnerChange = "owner"
+
+// OwnerRef is the owner a read reported for one object.
+type OwnerRef struct {
+	// Kind is the kind of object, spelled as ALTER spells it: VIEW or
+	// MATERIALIZED VIEW.
+	Kind string
+	// Name is the object's name, qualified by its schema as the read
+	// qualifies it.
+	Name string
+	// Owner is the role that owns the object, as the server stores its name.
+	Owner string
+}
+
+// inPlaceChange reports whether key is a change a view keeps its definition
+// through: its options or its owner.
+func inPlaceChange(key string) bool {
+	return key == OptionsChange || key == OwnerChange
+}
+
+// KeepsDefinition reports whether every change this entry holds is made in
+// place, so the view keeps its definition, what depends on it and its
+// privileges: its options, its owner, or both. An entry with no change keeps
+// it too.
+func (d ViewDiff) KeepsDefinition() bool {
+	for key := range d.Changes {
+		if !inPlaceChange(key) {
+			return false
+		}
+	}
+	return true
+}
+
+// OptionsOnly reports whether the options change and the definition does
+// not, so a planner changes the options in place. An owner change beside them
+// is made in place too.
 func (d ViewDiff) OptionsOnly() bool {
 	_, changed := d.Changes[OptionsChange]
-	return changed && len(d.Changes) == 1
+	return changed && d.KeepsDefinition()
+}
+
+// ChangesOwner reports whether the declared owner differs from the one the
+// database reported.
+func (d ViewDiff) ChangesOwner() bool {
+	_, changed := d.Changes[OwnerChange]
+	return changed
 }
 
 // MaterializedViewDiff represents changes to a materialized view definition.
@@ -2402,15 +2467,20 @@ type MaterializedViewDiff struct {
 	// change runs, on the terms of [ViewDiff.PreviousOptions]. It stays off
 	// the wire, as Desired does.
 	PreviousOptions []string `json:"-"`
+
+	// PreviousOwner is the role that owns the view before this change runs,
+	// on the terms of [ViewDiff.PreviousOwner]. It stays off the wire, as
+	// Desired does.
+	PreviousOwner string `json:"-"`
 }
 
 // Replaces reports whether planning this change drops and recreates the view.
-// Every modification does, except one whose only changes are its options,
-// which ALTER MATERIALIZED VIEW sets and resets, and attached settings their
-// owner applies in place.
+// Every modification does, except one whose only changes are its options and
+// its owner, which ALTER MATERIALIZED VIEW sets in place, and attached
+// settings their owner applies in place.
 func (d MaterializedViewDiff) Replaces() bool {
 	for key := range d.Changes {
-		if key != OptionsChange {
+		if !inPlaceChange(key) {
 			return true
 		}
 	}
@@ -2427,6 +2497,14 @@ func (d MaterializedViewDiff) Replaces() bool {
 // [MaterializedViewDiff.Replaces] the view.
 func (d MaterializedViewDiff) ChangesOptions() bool {
 	_, changed := d.Changes[OptionsChange]
+	return changed
+}
+
+// ChangesOwner reports whether the declared owner differs from the one the
+// database reported, which a planner changes in place unless the change
+// [MaterializedViewDiff.Replaces] the view.
+func (d MaterializedViewDiff) ChangesOwner() bool {
+	_, changed := d.Changes[OwnerChange]
 	return changed
 }
 

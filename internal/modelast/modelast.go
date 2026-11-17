@@ -1287,6 +1287,7 @@ func FromView(view schemamodel.View) *ast.CreateViewNode {
 	viewNode.Security = view.Security
 	viewNode.Attributes = view.Attributes
 	viewNode.Options = slices.Clone(view.Options)
+	viewNode.Owner = view.Owner
 	return viewNode
 }
 
@@ -1300,6 +1301,7 @@ func FromMaterializedView(view schemamodel.MaterializedView) *ast.CreateMaterial
 	// collection; the selected renderer interprets or refuses it.
 	node.Facets = view.Facets
 	node.Options = slices.Clone(view.Options)
+	node.Owner = view.Owner
 	return node
 }
 

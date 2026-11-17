@@ -5547,7 +5547,7 @@ func (p *Parser) parseAlterStatement() (ast.Node, error) {
 	case "SEQUENCE":
 		return p.parseAlterSequence()
 	case "SCHEMA", "TYPE", "DOMAIN", "FUNCTION", "PROCEDURE", "VIEW", "MATERIALIZED":
-		return nil, p.parseAlterOwnerTo(target)
+		return p.parseAlterOwnerTo(target)
 	default:
 		return nil, p.refuseHead(p.current.Start, "ALTER", target, "unsupported ALTER target: %s")
 	}
@@ -5576,7 +5576,8 @@ func (p *Parser) parseAlterTable() (ast.Node, error) {
 
 	p.skipWhitespace()
 	if p.current.MatchIdentifierValue("OWNER") && p.readsOwnerTo(descriptor.OwnerKindTable) {
-		return nil, p.readOwnerTo("ALTER TABLE")
+		_, err := p.readOwnerTo("ALTER TABLE")
+		return nil, err
 	}
 
 	alterNode := &ast.AlterTableNode{

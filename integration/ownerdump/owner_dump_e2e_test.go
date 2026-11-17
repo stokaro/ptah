@@ -7,10 +7,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -163,15 +165,29 @@ func withoutOwners(dump string) string {
 	return ownerLine.ReplaceAllString(dump, "")
 }
 
+// withOwner is dump as the role writes it: pg_dump names the role that owns
+// each object, and the role that builds a database owns what it creates.
+func withOwner(dump, role string) string {
+	return strings.ReplaceAll(dump, " OWNER TO postgres;", " OWNER TO "+role+";")
+}
+
+// dumps are the dumps the tests read. viewOwners are the statements a plan
+// of the dump writes for its ownership statements, with {role} for the role
+// that owns the objects: the owner of a view is a declaration, and every
+// other ownership statement declares nothing.
 var dumps = []struct {
-	name    string
-	built   string
-	dump    string
-	schemas string
-	owners  int
+	name       string
+	built      string
+	dump       string
+	schemas    string
+	owners     int
+	viewOwners []string
 }{
 	{name: "the issue's partitioned table", built: partitionedEventsBuilt, dump: partitionedEventsDump, schemas: "public", owners: 3},
-	{name: "a schema, a type, functions, a sequence, a table and a view", built: everyKindBuilt, dump: everyKindDump, schemas: "public,app", owners: 7},
+	{
+		name: "a schema, a type, functions, a sequence, a table and a view", built: everyKindBuilt, dump: everyKindDump, schemas: "public,app", owners: 7,
+		viewOwners: []string{`ALTER VIEW "app"."v" OWNER TO "{role}"`},
+	},
 }
 
 // ptah runs the native binary's command tree with empty standard input.
@@ -186,10 +202,11 @@ func ptah(args ...string) (string, error) {
 	return out.String(), err
 }
 
-// scratch is an empty database of its own.
+// scratch is an empty database of its own, and the role it connects as.
 type scratch struct {
 	url  string
 	conn *dbschema.DatabaseConnection
+	role string
 }
 
 func newScratch(c *qt.C) scratch {
@@ -215,7 +232,9 @@ func newScratch(c *qt.C) scratch {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), parsed.String())
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	return scratch{url: parsed.String(), conn: conn}
+	var role string
+	c.Assert(conn.QueryRowContext(c.Context(), "SELECT current_user").Scan(&role), qt.IsNil)
+	return scratch{url: parsed.String(), conn: conn, role: role}
 }
 
 func (s scratch) exec(c *qt.C, statements string) {
@@ -237,6 +256,23 @@ func (s scratch) plan(c *qt.C, source, schemas string) string {
 	out, err := ptah("schema", "plan", "--db-url", s.url, "--schema-file", writeSchema(c, source), "--dry-run", "--schemas", schemas)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	return out
+}
+
+// planStatements is the SQL of each statement of plan, the document `schema
+// plan --dry-run` prints.
+func planStatements(c *qt.C, plan string) []string {
+	c.Helper()
+	var document struct {
+		Statements []struct {
+			SQL string `json:"sql"`
+		} `json:"statements"`
+	}
+	c.Assert(json.Unmarshal([]byte(plan), &document), qt.IsNil, qt.Commentf("%s", plan))
+	statements := make([]string, len(document.Statements))
+	for i, statement := range document.Statements {
+		statements[i] = statement.SQL
+	}
+	return statements
 }
 
 // drift is the output of `schema drift` of source against the scratch database.
@@ -262,20 +298,22 @@ func TestAPlainDumpValidatesE2E(t *testing.T) {
 	}
 }
 
-// TestAPlainDumpReadsSyncedE2E reads each dump against the database it
-// describes. The plain dump and its `--no-owner` twin plan and drift alike: the
-// database is synced under both, and the output is the same text.
+// TestAPlainDumpReadsSyncedE2E reads each dump, as the role that built the
+// database would write it, against the database it describes. The plain dump
+// and its `--no-owner` twin plan and drift alike: the database is synced under
+// both, and the output is the same text.
 func TestAPlainDumpReadsSyncedE2E(t *testing.T) {
 	for _, test := range dumps {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dev := newScratch(c)
 			dev.exec(c, test.built)
+			dump := withOwner(test.dump, dev.role)
 
-			plainPlan := dev.plan(c, test.dump, test.schemas)
-			twinPlan := dev.plan(c, withoutOwners(test.dump), test.schemas)
-			plainDrift := dev.drift(c, test.dump, test.schemas)
-			twinDrift := dev.drift(c, withoutOwners(test.dump), test.schemas)
+			plainPlan := dev.plan(c, dump, test.schemas)
+			twinPlan := dev.plan(c, withoutOwners(dump), test.schemas)
+			plainDrift := dev.drift(c, dump, test.schemas)
+			twinDrift := dev.drift(c, withoutOwners(dump), test.schemas)
 
 			c.Assert(plainPlan, qt.Contains, "Schema is synced")
 			c.Assert(plainPlan, qt.Equals, twinPlan)
@@ -285,23 +323,34 @@ func TestAPlainDumpReadsSyncedE2E(t *testing.T) {
 	}
 }
 
-// TestAPlainDumpPlansNoOwnershipE2E plans each dump against an empty database.
-// The statements are the twin's: no CREATE ROLE for the role that owns the
-// objects, no GRANT, and no OWNER TO.
-func TestAPlainDumpPlansNoOwnershipE2E(t *testing.T) {
+// TestAPlainDumpPlansOnlyItsViewOwnersE2E plans each dump, as the connected
+// role would write it, against an empty database. The statements are the
+// twin's and the owner of each view the dump declares: no CREATE ROLE for the
+// role that owns the objects, no GRANT, and no OWNER TO for any other object.
+func TestAPlainDumpPlansOnlyItsViewOwnersE2E(t *testing.T) {
 	for _, test := range dumps {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dev := newScratch(c)
+			dump := withOwner(test.dump, dev.role)
 
-			plainPlan := dev.plan(c, test.dump, test.schemas)
-			twinPlan := dev.plan(c, withoutOwners(test.dump), test.schemas)
+			plain := planStatements(c, dev.plan(c, dump, test.schemas))
+			twin := planStatements(c, dev.plan(c, withoutOwners(dump), test.schemas))
 
-			c.Assert(plainPlan, qt.Equals, twinPlan)
-			c.Assert(plainPlan, qt.Contains, "CREATE TABLE")
-			c.Assert(plainPlan, qt.Not(qt.Contains), "ROLE")
-			c.Assert(plainPlan, qt.Not(qt.Contains), "GRANT")
-			c.Assert(plainPlan, qt.Not(qt.Contains), "OWNER")
+			viewOwners := make([]string, len(test.viewOwners))
+			for i, statement := range test.viewOwners {
+				viewOwners[i] = strings.ReplaceAll(statement, "{role}", dev.role)
+			}
+			others := slices.DeleteFunc(slices.Clone(plain), func(statement string) bool {
+				return slices.Contains(viewOwners, statement)
+			})
+			c.Assert(others, qt.DeepEquals, twin)
+			c.Assert(len(plain)-len(others), qt.Equals, len(viewOwners), qt.Commentf("%q", plain))
+			plainText := strings.Join(plain, "\n")
+			c.Assert(plainText, qt.Contains, "CREATE TABLE")
+			c.Assert(plainText, qt.Not(qt.Contains), "ROLE")
+			c.Assert(plainText, qt.Not(qt.Contains), "GRANT")
+			c.Assert(strings.Count(plainText, " OWNER TO "), qt.Equals, len(viewOwners))
 		})
 	}
 }

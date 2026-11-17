@@ -392,6 +392,11 @@ a security option the view holds on: write `security_invoker = false` for that.
 parameters](../../databases/postgresql/#view-options-and-storage-parameters) says
 how they are compared and changed, and which engines take them.
 
+`ALTER VIEW order_report OWNER TO reporting` after the view declares its owner,
+and `ALTER MATERIALIZED VIEW` does the same for a materialized view. A view no
+such statement names keeps whatever owner it has; see [View and materialized
+view owners](../../databases/postgresql/#view-and-materialized-view-owners).
+
 ## Declare a check option
 
 A view that ends in `WITH CHECK OPTION` declares a check option, as
@@ -544,17 +549,25 @@ writes after each object it dumps:
 ALTER SCHEMA app OWNER TO postgres;
 ALTER TABLE app.t OWNER TO postgres;
 ALTER FUNCTION app.f(integer) OWNER TO postgres;
+ALTER VIEW app.v OWNER TO postgres;
 ```
 
 The reader takes `ALTER ... OWNER TO` for a table, schema, type, domain,
 function, procedure, sequence, view or materialized view, and a function or
-procedure may carry its argument list. A statement of this form declares
-nothing: Ptah describes no ownership, so the role is not a role of the schema,
-the statement plans no `CREATE ROLE`, `GRANT` or `OWNER TO`, and the file plans
-exactly as the same dump written with `--no-owner` does. Another action on one
-of these kinds, such as `ALTER SCHEMA ... RENAME TO`, and a role missing after
-`OWNER TO` are refused by name. Every target other than PostgreSQL refuses the
-statement, because its server has no `OWNER TO`.
+procedure may carry its argument list. After a view or a materialized view the
+statement declares the view's owner, as it does in any SQL file; see [View and
+materialized view owners](../../databases/postgresql/#view-and-materialized-view-owners).
+After any other object it declares nothing: the role is not a role of the
+schema, and the statement plans no `CREATE ROLE`, `GRANT` or `OWNER TO`.
+
+So a plain dump plans as the same dump written with `--no-owner` does, plus the
+owner of each view it holds. A dump names the roles of the server it was taken
+from: create them on the target, or write the dump with `--no-owner` to leave
+the owner of its views unmanaged. Another action on one of these kinds, such as
+`ALTER SCHEMA ... RENAME TO`, and a role missing after `OWNER TO` are refused by
+name. CockroachDB and YugabyteDB take the statement for a view and a
+materialized view only, and every other target refuses it, because its server
+has no `OWNER TO`.
 
 ### Serial and identity columns
 

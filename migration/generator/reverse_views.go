@@ -43,6 +43,14 @@ func reverseViewDiffs(
 ) []difftypes.ViewDiff {
 	reversed := make([]difftypes.ViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
+		desired := priorView(prior, viewDiff.ViewName, semantics)
+		previousOwner := ""
+		if viewDiff.ChangesOwner() {
+			// The owner the forward change replaces is the one the rollback
+			// gives the view back to, and the forward change's owner is the
+			// one the view has when the rollback runs.
+			desired.Owner, previousOwner = viewDiff.PreviousOwner, viewDiff.Desired.Owner
+		}
 		reversed[i] = difftypes.ViewDiff{
 			ViewName:     viewDiff.ViewName,
 			Changes:      reverseChangeMap(viewDiff.Changes),
@@ -51,8 +59,9 @@ func reverseViewDiffs(
 			// The forward entry carries the declaration; reversing the change
 			// map without reversing the operand would have the down direction
 			// reapply the very body it is undoing (stokaro/ptah#2315).
-			Desired:  priorView(prior, viewDiff.ViewName, semantics),
-			Rollback: true,
+			Desired:       desired,
+			PreviousOwner: previousOwner,
+			Rollback:      true,
 			// The options the up migration leaves, which are the ones the
 			// view holds when the rollback runs, as PreviousBody is its body.
 			PreviousOptions: slices.Clone(viewDiff.Desired.Options),
@@ -110,6 +119,13 @@ func reverseMaterializedViewDiffs(
 ) []difftypes.MaterializedViewDiff {
 	reversed := make([]difftypes.MaterializedViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
+		desired := priorMaterializedView(prior, viewDiff.ViewName, semantics)
+		previousOwner := ""
+		if viewDiff.ChangesOwner() {
+			// The owners trade places, as they do for a plain view; see
+			// reverseViewDiffs.
+			desired.Owner, previousOwner = viewDiff.PreviousOwner, viewDiff.Desired.Owner
+		}
 		reversed[i] = difftypes.MaterializedViewDiff{
 			ViewName:     viewDiff.ViewName,
 			Changes:      reverseChangeMap(viewDiff.Changes),
@@ -121,10 +137,11 @@ func reverseMaterializedViewDiffs(
 			// a refresh schedule, so a rollback that replaces the view
 			// restores them; its feature changes are reversed by their owners
 			// afterwards (stokaro/ptah#2418).
-			Desired: priorMaterializedView(prior, viewDiff.ViewName, semantics),
+			Desired: desired,
 			// The storage parameters the forward change leaves, for the same
 			// reason as PreviousBody.
 			PreviousOptions: slices.Clone(viewDiff.Desired.Options),
+			PreviousOwner:   previousOwner,
 		}
 	}
 	return reversed
@@ -160,4 +177,59 @@ func priorMaterializedView(
 		return *view
 	}
 	return schemamodel.MaterializedView{}
+}
+
+// withReversedOwners is vocabulary, the views the pre-change database held,
+// with the owner each reversed entry gives back. A read declares no owner, so
+// a view of that database names none, and a rollback that rebuilds or
+// replaces a view the forward change gave away renders it from that view:
+// without the owner here, the rebuilt view keeps the role the forward change
+// gave it. The lists are copied, so the pre-change schema is left as it is.
+func withReversedOwners(
+	vocabulary difftypes.ViewLikeVocabulary,
+	views []difftypes.ViewDiff,
+	materialized []difftypes.MaterializedViewDiff,
+	semantics identifier.Semantics,
+) difftypes.ViewLikeVocabulary {
+	vocabulary.Views = slices.Clone(vocabulary.Views)
+	vocabulary.MaterializedViews = slices.Clone(vocabulary.MaterializedViews)
+	for _, viewDiff := range views {
+		if view := objectlookup.View(vocabulary.Views, viewDiff.ViewName, semantics); view != nil && viewDiff.ChangesOwner() {
+			view.Owner = viewDiff.Desired.Owner
+		}
+	}
+	for _, viewDiff := range materialized {
+		if view := objectlookup.MaterializedView(vocabulary.MaterializedViews, viewDiff.ViewName, semantics); view != nil && viewDiff.ChangesOwner() {
+			view.Owner = viewDiff.Desired.Owner
+		}
+	}
+	return vocabulary
+}
+
+// ownersAfter is the owner of each view and materialized view once the
+// forward change of diff has run: the owners its read reported, each one the
+// change gives to another role replaced by that role. A rollback runs against
+// that database, and a rebuild it plans gives an unmanaged view back to the
+// owner it has then.
+func ownersAfter(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []difftypes.OwnerRef {
+	owners := slices.Clone(diff.CurrentOwners)
+	give := func(kind, name, owner string) {
+		for i := range owners {
+			if owners[i].Kind == kind && (owners[i].Name == name ||
+				semantics.QualifiedTableIdentityKey(owners[i].Name) == semantics.QualifiedTableIdentityKey(name)) {
+				owners[i].Owner = owner
+			}
+		}
+	}
+	for _, viewDiff := range diff.ViewsModified {
+		if viewDiff.ChangesOwner() {
+			give("VIEW", viewDiff.ViewName, viewDiff.Desired.Owner)
+		}
+	}
+	for _, viewDiff := range diff.MaterializedViewsModified {
+		if viewDiff.ChangesOwner() {
+			give("MATERIALIZED VIEW", viewDiff.ViewName, viewDiff.Desired.Owner)
+		}
+	}
+	return owners
 }

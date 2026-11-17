@@ -53,8 +53,13 @@ const (
 	gapRoutineKind = "the conversions drop a routine's kind; the other direction is a recorded loss"
 )
 
+// viewOwnerDialects are the targets that manage the owner of a view.
+var viewOwnerDialects = []string{"cockroachdb", "postgres", "yugabytedb"}
+
 // The reasons a compared field does not reach the plan by design.
 const (
+	exemptObservedOwner = "the owner a read reports is an observation, never a declaration, so the converted-back " +
+		"declaration leaves the owner unmanaged and a change of it plans nothing"
 	exemptCoupledGranularity = "a granularity's state changes only with its value: an explicit one carries a value and no " +
 		"other state may, so no single change of the state is valid. The value beside it is reached"
 	exemptCoupledSetting = "a setting's state changes only with its value: an explicit one carries a value and no " +
@@ -458,6 +463,8 @@ var roundTripExemptions = []Unreached{
 	{Field: "schemamodel.Database.NotDescribed", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},
 	{Field: "schemamodel.Field.Primary", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptClickHouseKey},
 	{Field: "schemamodel.Function.Body", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: exemptForeignDefiner},
+	{Field: "schemamodel.MaterializedView.Owner", Dialects: viewOwnerDialects, Directions: []Direction{FromCatalog}, Reason: exemptObservedOwner},
+	{Field: "schemamodel.View.Owner", Dialects: viewOwnerDialects, Directions: []Direction{FromCatalog}, Reason: exemptObservedOwner},
 	{Field: "schemamodel.Index.Operator", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachOperatorClass},
 	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachIndexStorage},
 	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachNullsOrder},

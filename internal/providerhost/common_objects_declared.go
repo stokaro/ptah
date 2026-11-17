@@ -39,8 +39,8 @@ func (t *target) commonKinds() map[protocol.CommonObjectSupport_Kind]bool {
 
 // declaredViews is the views and materialized views of source on the wire,
 // each view with the level of its check option the engine receives. The
-// common view carries no settings and no PostgreSQL options, so a view that
-// declares either is refused by name rather than sent without them.
+// common view carries no settings, no PostgreSQL options and no owner, so a
+// view that declares one is refused by name rather than sent without it.
 func (t *target) declaredViews(source *schemamodel.Database) ([]*protocol.SQLView, error) {
 	var views []*protocol.SQLView
 	for _, view := range source.Views {
@@ -52,6 +52,9 @@ func (t *target) declaredViews(source *schemamodel.Database) ([]*protocol.SQLVie
 		}
 		if len(view.Options) > 0 {
 			return nil, unsupported(fmt.Sprintf("the options %s of view %q", strings.Join(view.Options, ", "), view.Name))
+		}
+		if view.Owner != "" {
+			return nil, unsupported(fmt.Sprintf("the owner %q of view %q", view.Owner, view.Name))
 		}
 		option, err := t.declaredCheckOption(view)
 		if err != nil {
@@ -67,6 +70,9 @@ func (t *target) declaredViews(source *schemamodel.Database) ([]*protocol.SQLVie
 		}
 		if len(view.Options) > 0 {
 			return nil, unsupported(fmt.Sprintf("the storage parameters %s of materialized view %q", strings.Join(view.Options, ", "), view.Name))
+		}
+		if view.Owner != "" {
+			return nil, unsupported(fmt.Sprintf("the owner %q of materialized view %q", view.Owner, view.Name))
 		}
 		schema, name := splitQualified(view.Name)
 		views = append(views, &protocol.SQLView{Schema: schema, Name: name, Body: view.Body, Materialized: true, Comment: view.Comment,

@@ -105,6 +105,22 @@ remove](../../databases/postgresql/#a-security-option-the-declaration-leaves-out
 a security option the view holds on: write `security_invoker=false` for that. See
 [View options and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters).
 
+## View owners
+
+A `views` or `matviews` entry takes `owner`, the role that owns it, on the
+PostgreSQL family:
+
+```yaml
+views:
+  order_report:
+    body: SELECT id, amount FROM orders
+    owner: reporting
+```
+
+The value is the role's name as the server stores it, written as a string. An
+entry without `owner` leaves the owner unmanaged. See [View and materialized
+view owners](../../databases/postgresql/#view-and-materialized-view-owners).
+
 ## Top-level objects
 
 Top-level objects are maps. Their keys are used as default object names when a
@@ -116,8 +132,8 @@ Top-level objects are maps. Their keys are used as default object names when a
 | `enums` | Standalone enum types and values. |
 | `extensions` | PostgreSQL extension declarations. |
 | `functions` | PostgreSQL-style function metadata and SQL bodies. |
-| `views` | View definitions, with PostgreSQL `options`, a check option in `with_check` (`true`, `cascaded`, `local`, or `false`), and MySQL/MariaDB `security` (`DEFINER` or `INVOKER`). |
-| `matviews` / `materialized_views` | Materialized view definitions, with PostgreSQL storage parameters in `options` and a ClickHouse `refresh` clause. |
+| `views` | View definitions, with PostgreSQL `options` and `owner`, a check option in `with_check` (`true`, `cascaded`, `local`, or `false`), and MySQL/MariaDB `security` (`DEFINER` or `INVOKER`). |
+| `matviews` / `materialized_views` | Materialized view definitions, with PostgreSQL storage parameters in `options`, a PostgreSQL `owner` and a ClickHouse `refresh` clause. |
 | `triggers` | Trigger definitions. |
 | `rls_policies` | Row-level security policies, with the attributes of `//ptah:schema:rls:policy`, `as` included. An entry and an `rls_enabled_tables` entry take `dialects`: without it, or scoped to the PostgreSQL family, it is PostgreSQL row-level security and other targets refuse it. An entry scoped to ClickHouse is refused. |
 | `row_policies` | ClickHouse row policies, keyed by name, with the attributes of `//ptah:schema:rowpolicy`; `struct_name` may name the table instead. See [row policies](../../databases/clickhouse/#row-policies). |

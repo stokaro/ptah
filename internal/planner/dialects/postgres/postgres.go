@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/objectlookup"
+	"ptah.run/internal/objectowner"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/pgtypealias"
@@ -3016,7 +3017,39 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 			result = appendNode(result, p.viewReplace(diff, object, semantics))
 		}
 	}
-	return p.alterViewOptions(result, diff, rebuild)
+	result = p.alterViewOptions(result, diff, rebuild)
+	return alterViewOwners(result, diff, rebuild)
+}
+
+// alterViewOwners gives each view and materialized view whose declared owner
+// the database does not report to that owner, in place: ALTER [MATERIALIZED]
+// VIEW ... OWNER TO. The object keeps its definition, its rows, what depends on
+// it and the privileges granted on it. It runs after every view is created or
+// replaced and before any privilege is granted, so a grant the plan makes on
+// the view is made to the view the declared role owns.
+//
+// An object the rebuild drops or replaces is left out: its CREATE, or its
+// CREATE OR REPLACE VIEW, gives it to the declared owner.
+func alterViewOwners(result []ast.Node, diff *difftypes.SchemaDiff, rebuild viewRebuild) []ast.Node {
+	owned, replaced := rebuild.owns(), rebuild.replaces()
+	alter := func(kind objectowner.Kind, name, owner string, materialized bool) {
+		object := deporder.ViewLike{Name: name, Materialized: materialized}
+		if owned.has(object) || replaced.has(object) {
+			return
+		}
+		result = append(result, ast.NewAlterOwner(string(kind), name, owner))
+	}
+	for _, viewDiff := range diff.ViewsModified {
+		if viewDiff.Desired.Name != "" && viewDiff.ChangesOwner() && viewDiff.Desired.Owner != "" && viewDiff.KeepsDefinition() {
+			alter(objectowner.View, viewDiff.Desired.Name, viewDiff.Desired.Owner, false)
+		}
+	}
+	for _, viewDiff := range diff.MaterializedViewsModified {
+		if viewDiff.Desired.Name != "" && viewDiff.ChangesOwner() && viewDiff.Desired.Owner != "" && !viewDiff.Replaces() {
+			alter(objectowner.MaterializedView, viewDiff.Desired.Name, viewDiff.Desired.Owner, true)
+		}
+	}
+	return result
 }
 
 // alterViewOptions changes in place the options of each view whose options are
@@ -3068,7 +3101,7 @@ func modifiedViewPaths(diff *difftypes.SchemaDiff) viewPaths {
 		// The view this change leaves behind travels WITH it, in the direction
 		// being planned (stokaro/ptah#2315).
 		view := &viewDiff.Desired
-		if view.Name == "" || viewDiff.OptionsOnly() {
+		if view.Name == "" || viewDiff.KeepsDefinition() {
 			continue
 		}
 		object := deporder.ViewLike{Name: view.Name, Body: view.Body}

@@ -84,10 +84,13 @@ type Database struct {
 	// ObjectOwners are the owners of the objects this read covers, one row per
 	// object, on the engines that have an owner to report.
 	//
-	// Like RoleMemberships it is read for ANALYSIS rather than for planning:
-	// Ptah renders no OWNER TO and no CREATE SCHEMA ... AUTHORIZATION, and
-	// treating ownership as part of the description is what made an inspect
-	// describe the connecting superuser and plan a CREATE ROLE for it
+	// They are observations, never declarations. A comparison reads the
+	// owner of a view or a materialized view here only where the desired
+	// schema declares one for it, and a plan that drops and creates such an
+	// object again reads here the owner to give it back. Nothing turns a row
+	// into a declared owner or a declared role: an inspect writes no owner,
+	// and treating ownership as part of the description is what made an
+	// inspect describe the connecting superuser and plan a CREATE ROLE for it
 	// (stokaro/ptah#1950).
 	ObjectOwners []ObjectOwner `json:"object_owners,omitempty"`
 

@@ -40,6 +40,7 @@ func compareViewLikes(ctx context.Context, comparison viewLikeComparison) error 
 	compare.ViewsWithSemantics(comparison.desired, comparison.database, comparison.diff, comparison.opts.Dialect, comparison.semantics, comparison.opts.ViewBodies, views)
 	compare.MaterializedViewsWithSemantics(comparison.desired, comparison.database, comparison.diff, comparison.opts.Dialect, comparison.semantics,
 		comparison.opts.ViewBodies, views)
+	comparison.diff.CurrentOwners = compare.CurrentOwners(comparison.database)
 	return attachMaterializedViewChanges(comparison.diff, comparison.desired, comparison.database, comparison.changes, comparison.semantics)
 }
 

@@ -64,6 +64,7 @@ var namedSubjects = []subjectRow{
 	{node: &ast.AlterTableNode{Name: "products"}, subject: "products"},
 	{node: &ast.AlterTypeNode{Name: "status"}, subject: "status"},
 	{node: &ast.AlterViewOptionsNode{Name: "active_users"}, subject: "active_users"},
+	{node: &ast.AlterOwnerNode{Kind: "VIEW", Name: "active_users", Owner: "reporting"}, subject: "active_users"},
 	{node: &ast.CreateDatabaseNode{Name: "app"}, subject: "app"},
 	{node: &ast.CreateFunctionNode{Name: "total"}, subject: "total"},
 	{node: &ast.CreateMaterializedViewNode{Name: "daily"}, subject: "daily"},
