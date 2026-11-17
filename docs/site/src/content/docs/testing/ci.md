@@ -299,7 +299,10 @@ docker run --rm -v "$PWD:/src" -w /src \
 ```
 
 Pin the image by digest in a pipeline that must be reproducible, the same way
-the [deployment path](../../operate/deliver/) pins a migration artifact.
+the [deployment path](../../operate/deliver/) pins a migration artifact, and
+verify that digest's signature as
+[Verify the image signature](../../start/install-options/#verify-the-image-signature)
+shows.
 
 ### GitLab CI
 

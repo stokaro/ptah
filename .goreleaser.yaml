@@ -178,6 +178,13 @@ release:
 # a manifest list without pushing it, so the list is the product of the push
 # rather than something assembled afterwards from per-architecture tags, and a
 # release publishes no `-amd64` or `-arm64` tag of its own.
+#
+# The manifest list is signed by the release workflow after this push, not
+# here: once per registry, by digest, and only after both registries are proven
+# to serve the digest GoReleaser records for the version tag. That is why there
+# is no `docker_signs` section. It would run inside the publish phase, before
+# that proof, and once per tag rather than once per registry
+# (.github/workflows/release.yml, stokaro/ptah#5977).
 dockers_v2:
   - id: ptah
     ids:

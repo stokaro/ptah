@@ -17,6 +17,14 @@
 # tag can still serve different images: a partial re-run, a manual push, or a
 # manifest built from the wrong architecture set. Comparing content is what
 # distinguishes a mirror from two registries that merely both have something.
+#
+# Given the digest this run pushed, the version tag must also resolve to it on
+# both hosts. Agreement alone would accept two registries that both serve an
+# image from another run, and the release job signs the pushed digest right
+# after this check (scripts/check-release-image-signatures.sh), so a tag that
+# names any other digest would leave a reader resolving it to an image nothing
+# signed. `latest` is held to agreement only: two release tags pushed together
+# race for it, and neither run owns the result.
 set -euo pipefail
 
 readonly REPOSITORY="stokaro/ptah"
@@ -44,9 +52,10 @@ digest_of() {
 }
 
 # compare_digests is the whole rule, and it is separate from the network so the
-# self-test can drive every branch without a registry.
+# self-test can drive every branch without a registry. The fourth argument is
+# the digest this run pushed, or empty where the tag is held to agreement only.
 compare_digests() {
-	local tag=$1 ghcr=$2 hub=$3
+	local tag=$1 ghcr=$2 hub=$3 pushed=${4:-}
 	if [ -z "$ghcr" ] && [ -z "$hub" ]; then
 		echo "  ${tag}: neither registry answers" >&2
 		return 1
@@ -65,14 +74,20 @@ compare_digests() {
 		echo "    docker.io ${hub}" >&2
 		return 1
 	fi
+	if [ -n "$pushed" ] && [ "$ghcr" != "$pushed" ]; then
+		echo "  ${tag}: both registries serve an image this run did not push" >&2
+		echo "    served ${ghcr}" >&2
+		echo "    pushed ${pushed}" >&2
+		return 1
+	fi
 	printf '  %-12s %s\n' "$tag" "$ghcr"
 }
 
 selftest() {
 	local failures=0
 	assert_refused() {
-		local name=$1 tag=$2 ghcr=$3 hub=$4
-		if compare_digests "$tag" "$ghcr" "$hub" >/dev/null 2>&1; then
+		local name=$1 tag=$2 ghcr=$3 hub=$4 pushed=${5:-}
+		if compare_digests "$tag" "$ghcr" "$hub" "$pushed" >/dev/null 2>&1; then
 			echo "release image mirror self-test: ${name} was accepted" >&2
 			failures=$((failures + 1))
 			return
@@ -80,24 +95,31 @@ selftest() {
 		printf '  %-44s rejected\n' "$name"
 	}
 
+	assert_accepted() {
+		local name=$1 tag=$2 ghcr=$3 hub=$4 pushed=${5:-}
+		if ! compare_digests "$tag" "$ghcr" "$hub" "$pushed" >/dev/null 2>&1; then
+			echo "release image mirror self-test: ${name} was rejected" >&2
+			failures=$((failures + 1))
+			return
+		fi
+		printf '  %-44s accepted\n' "$name"
+	}
+
 	echo "check-release-image-mirror-selftest: breaking the rule and requiring it to notice"
 
-	# The control first. A rule that refused everything would satisfy every case
-	# below, so this is what makes the four rejections mean anything.
-	if ! compare_digests "1.0.0" "sha256:aaa" "sha256:aaa" >/dev/null; then
-		echo "release image mirror self-test: the control was rejected" >&2
-		failures=$((failures + 1))
-	else
-		printf '  %-44s accepted\n' "the control: equal digests"
-	fi
+	# The controls first. A rule that refused everything would satisfy every
+	# case below, so these are what make the five rejections mean anything.
+	assert_accepted "the control: equal digests" 1.0.0 "sha256:aaa" "sha256:aaa"
+	assert_accepted "the control: equal and the pushed digest" 1.0.0 "sha256:aaa" "sha256:aaa" "sha256:aaa"
 
 	assert_refused "GHCR has the tag and Docker Hub does not" 1.0.0 "sha256:aaa" ""
 	assert_refused "Docker Hub has the tag and GHCR does not" 1.0.0 "" "sha256:aaa"
 	assert_refused "neither registry answers" 1.0.0 "" ""
 	assert_refused "both answer with different images" 1.0.0 "sha256:aaa" "sha256:bbb"
+	assert_refused "both agree on a digest this run did not push" 1.0.0 "sha256:bbb" "sha256:bbb" "sha256:aaa"
 
 	[ "$failures" -eq 0 ] || exit 1
-	echo "check-release-image-mirror-selftest: OK (4 broken rules noticed, control accepted)"
+	echo "check-release-image-mirror-selftest: OK (5 broken rules noticed, 2 controls accepted)"
 }
 
 main() {
@@ -105,22 +127,23 @@ main() {
 		selftest
 		return
 	fi
-	local version=${1:-}
+	local version=${1:-} pushed=${2:-}
 	if [ -z "$version" ]; then
-		echo "usage: $0 <version-without-v> | --selftest" >&2
+		echo "usage: $0 <version-without-v> [<pushed-digest>] | --selftest" >&2
 		exit 2
 	fi
 
 	echo "release image mirror: ${REPOSITORY} at ${version} and latest"
 	local status=0
-	local tag
-	for tag in "$version" latest; do
-		compare_digests "$tag" \
-			"$(digest_of "$GHCR_AUTH" "$GHCR_API" "$tag")" \
-			"$(digest_of "$HUB_AUTH" "$HUB_API" "$tag")" || status=1
-	done
+	compare_digests "$version" \
+		"$(digest_of "$GHCR_AUTH" "$GHCR_API" "$version")" \
+		"$(digest_of "$HUB_AUTH" "$HUB_API" "$version")" \
+		"$pushed" || status=1
+	compare_digests latest \
+		"$(digest_of "$GHCR_AUTH" "$GHCR_API" latest)" \
+		"$(digest_of "$HUB_AUTH" "$HUB_API" latest)" || status=1
 	if [ "$status" -ne 0 ]; then
-		echo "release image mirror: the registries do not agree; see stokaro/ptah#2362" >&2
+		echo "release image mirror: the registries do not serve this release; see stokaro/ptah#2362" >&2
 		exit 1
 	fi
 	echo "release image mirror: OK (both registries serve the same image for both tags)"

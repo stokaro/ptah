@@ -6,11 +6,10 @@ on:
       - "v*"
   pull_request:
 
+# Read-only by default. Each job states what it needs, so a job added later
+# without a block of its own gets no write access and no OIDC token.
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  pull-requests: read
+  contents: read
 
 concurrency:
   group: release-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
@@ -157,6 +156,14 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # `id-token: write` is the signing credential: cosign exchanges the job's
+    # OIDC token for a Fulcio certificate naming this workflow at the tag. Only
+    # this job holds it. The pull-request jobs above build unsigned snapshots
+    # with read-only permissions of their own.
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
     steps:
       # First, before the checkout and the eleven minutes of build behind it.
       # GoReleaser reaches the Homebrew formula only after the release assets
@@ -288,6 +295,18 @@ jobs:
           # credential the step above resolved.
           HOMEBREW_TAP_TOKEN: ${{ steps.tap-token.outputs.value }}
 
+      # The digest buildx reported for the version tag's manifest list, as
+      # GoReleaser recorded it in dist/artifacts.json. Every step after this one
+      # is about that one digest: the registries are held to it, and it is what
+      # gets signed.
+      - name: Find the image index this release pushed
+        id: image
+        run: |
+          set -euo pipefail
+          digest="$(scripts/check-release-image-signatures.sh digest "${GITHUB_REF_NAME#v}" dist/artifacts.json)"
+          echo "digest=${digest}" >>"${GITHUB_OUTPUT}"
+          echo "GoReleaser pushed ${digest} for ${GITHUB_REF_NAME#v}"
+
       # The mirror, verified rather than assumed.
       #
       # "Both registries or neither" is a property of what a READER can pull,
@@ -301,8 +320,40 @@ jobs:
       # Anonymous on purpose. The job holds a push credential for both hosts,
       # and a check that used it would pass for an image the public cannot
       # reach -- the exact fault this issue opened with.
+      #
+      # The version tag is also held to the digest this run pushed. Agreement
+      # alone would accept two registries that both serve an image from another
+      # run, and the next step would then sign a digest no reader resolves.
       - name: Both registries carry this release
-        run: scripts/check-release-image-mirror.sh "${GITHUB_REF_NAME#v}"
+        env:
+          PUSHED_DIGEST: ${{ steps.image.outputs.digest }}
+        run: scripts/check-release-image-mirror.sh "${GITHUB_REF_NAME#v}" "$PUSHED_DIGEST"
+
+      # Signed here rather than by GoReleaser's `docker_signs`, which runs
+      # inside the publish phase before the step above: the signature then
+      # covers the digest both registries were just proven to serve anonymously
+      # for the version tag, not only the digest buildx reported. One signature
+      # per registry, because a signature is stored beside the image it signs and
+      # Docker Hub does not see one pushed to GHCR. By digest, never by tag
+      # (stokaro/ptah#5977).
+      - name: Sign the image index at both registries
+        env:
+          PUSHED_DIGEST: ${{ steps.image.outputs.digest }}
+        run: scripts/check-release-image-signatures.sh sign "$GITHUB_REF_NAME" "$PUSHED_DIGEST"
+
+      # The step that makes a rerun safe. A rerun pushes and signs again under
+      # the same identity, because the identity names this workflow file and
+      # this tag and neither changes between attempts; signing a digest that is
+      # already signed only adds a second signature. What this step refuses is
+      # a run that left either registry without one. It reads each registry
+      # anonymously, as a reader does, and runs the `cosign verify` the install
+      # page documents, pinned to this workflow at this tag and to the GitHub
+      # Actions issuer, then requires the verified claim to name the pushed
+      # digest.
+      - name: Both registries serve a verifiable signature
+        env:
+          PUSHED_DIGEST: ${{ steps.image.outputs.digest }}
+        run: scripts/check-release-image-signatures.sh verify "$GITHUB_REF_NAME" "$PUSHED_DIGEST"
 
   npm-publish:
     name: Publish npm CLI packages

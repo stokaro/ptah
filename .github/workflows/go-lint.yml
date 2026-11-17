@@ -154,14 +154,16 @@ jobs:
           scripts/check-module-path-selftest.sh
           scripts/check-module-path.sh
 
-      # The release image mirror's RULE, on every pull request. The gate itself
-      # reads two live registries and only means something after a release, so
-      # what runs here is the decision it makes, driven through every branch
-      # with no network (stokaro/ptah#2362).
-      - name: Check the release image mirror rule
+      # The release image mirror's and signatures' RULES, on every pull
+      # request. Both gates read two live registries, and the signing one needs
+      # the OIDC identity only a release tag holds, so what runs here is the
+      # decisions they make, driven through every branch with no network
+      # (stokaro/ptah#2362, stokaro/ptah#5977).
+      - name: Check the release image mirror and signature rules
         run: |
           set -euo pipefail
           scripts/check-release-image-mirror-selftest.sh
+          scripts/check-release-image-signatures-selftest.sh
 
       # The report runs only on a night something failed, so the rule that keeps
       # one open issue is driven here with a stub in place of gh.

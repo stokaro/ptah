@@ -12,6 +12,7 @@ sourceOfTruth:
   - docs/site/public/install.sh
   - docs/site/public/install.ps1
   - .github/workflows/release.yml
+  - scripts/check-release-image-signatures.sh
   - Dockerfile
   - .goreleaser.yaml
   - Makefile
@@ -19,6 +20,7 @@ generated: false
 searchAliases:
   - install Ptah with Homebrew
   - verify Ptah checksum
+  - verify the Ptah container image signature
   - build Ptah from source
 overlaps:
   - /start/install/
@@ -307,6 +309,85 @@ FROM stokaro/ptah:0.11.2 AS ptah-bin
 FROM postgres:15-alpine
 COPY --from=ptah-bin /usr/local/bin/ptah-compat /usr/local/bin/ptah-compat
 ```
+
+### Pin the image by digest
+
+A tag such as `X.Y.Z` or `latest` is a name the registry resolves when you ask.
+The registry can point it at another image after you read it, and `latest`
+moves with every release. A digest names the bytes of one image index and
+cannot change. The signature belongs to the digest, so resolve the tag once,
+then verify, pull and deploy that one digest.
+
+Read the digest a release tag names:
+
+```bash
+VERSION=X.Y.Z
+DIGEST="$(docker buildx imagetools inspect "ghcr.io/stokaro/ptah:$VERSION" --format '{{.Manifest.Digest}}')"
+echo "$DIGEST"
+```
+
+The digest is the image index, the entry that lists the amd64 and arm64
+images. Pin and verify the index. The release signs the index only, so the
+digest of one architecture's manifest has no signature. Docker Hub serves the
+same digest for the same release.
+
+Pull by digest from either registry:
+
+```bash
+docker pull "ghcr.io/stokaro/ptah@$DIGEST"
+docker pull "docker.io/stokaro/ptah@$DIGEST"
+```
+
+### Verify the image signature
+
+The release workflow signs the image index with Sigstore keyless signing, under
+the same identity that signs `checksums.txt`. A signature is stored in the
+registry beside the image it signs, so each registry carries its own, and the
+release verifies both before it finishes. Verify the digest at the registry you
+pull from, with cosign 3 or later.
+
+For GHCR:
+
+```bash
+cosign verify \
+  --certificate-identity "https://github.com/stokaro/ptah/.github/workflows/release.yml@refs/tags/v$VERSION" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "ghcr.io/stokaro/ptah@$DIGEST"
+```
+
+For Docker Hub:
+
+```bash
+cosign verify \
+  --certificate-identity "https://github.com/stokaro/ptah/.github/workflows/release.yml@refs/tags/v$VERSION" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "docker.io/stokaro/ptah@$DIGEST"
+```
+
+cosign exits 0 and prints the verified claims on standard output as JSON. The
+`critical.image.docker-manifest-digest` of each claim is `$DIGEST`. cosign
+refuses a certificate issued to another workflow, repository or tag, a
+certificate from another OIDC issuer, and a digest the release did not sign,
+such as one architecture's manifest or an image from another publisher. For a
+digest that carries no signature at all, which includes the images of releases
+published before image signing, it reports `no signatures found`. Stop if it
+refuses.
+
+`cosign verify` also accepts a tag, and then checks the digest the tag names at
+that moment. That need not be the digest you pull a minute later, so verify
+the digest you deploy.
+
+An admission policy that accepts every release rather than one names the
+identity as a regular expression, anchored at both ends:
+
+```text
+^https://github\.com/stokaro/ptah/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$
+```
+
+The signature says which workflow published the digest. It does not describe
+how the image was built: the release publishes no signed build provenance and
+makes no SLSA claim. Snapshot and pull-request builds are never pushed, so no
+such image exists to sign.
 
 ## Install a database provider
 

@@ -6,8 +6,8 @@
 # no registry at all. That separation is the reason the rule can be proven on a
 # pull request while the gate itself only means something after a release.
 #
-# Four rejections and a control. The control is what keeps a rule that refused
-# everything from satisfying the four (stokaro/ptah#2362).
+# Five rejections and two controls. The controls are what keep a rule that
+# refused everything from satisfying the five (stokaro/ptah#2362).
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"

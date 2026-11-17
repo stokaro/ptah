@@ -47,6 +47,9 @@ waiting on one is a reason to cut it rather than a note on its own backlog
   margin for every job that mints one.
 - GitHub Actions package permissions enabled for publishing
   `ghcr.io/stokaro/ptah`.
+- No signing key or secret. The release job signs with its own GitHub OIDC
+  token, which `id-token: write` on that job alone grants, so there is no key
+  to rotate or leak.
 - `DOCKER_HUB_USER` and `DOCKER_HUB_TOKEN` as repository secrets, for the
   Docker Hub mirror. The account is a secret rather than the repository owner's
   name because the two are different things that look alike: `stokaro` on
@@ -157,13 +160,39 @@ that job stays skipped and npm is not a release channel.
    The release workflow already asserts this, anonymously and by digest, in its
    `Both registries carry this release` step. A tag that reached one registry
    and not the other fails the release rather than leaving a reader unable to
-   tell which host is behind:
+   tell which host is behind. Given the digest GoReleaser recorded, the step
+   also requires both version tags to name it:
 
    ```bash
    scripts/check-release-image-mirror.sh 0.1.2
+   scripts/check-release-image-mirror.sh 0.1.2 sha256:<digest>
    ```
 
-7. Verify the versioned documentation. The tag's `Docs` run deploys it under a
+7. Verify the image signatures. After the mirror check the workflow signs the
+   image index once per registry, by digest, with keyless cosign, and then
+   verifies each registry anonymously with the identity and issuer the
+   [install page](site/src/content/docs/start/install-options.mdx) documents.
+   Either step failing fails the release. The signing runs in the workflow
+   rather than in GoReleaser's `docker_signs`, which would sign before the
+   mirror check and once per tag. The same verification by hand, given the
+   digest the version tag names:
+
+   ```bash
+   DIGEST="$(docker buildx imagetools inspect ghcr.io/stokaro/ptah:0.1.2 --format '{{.Manifest.Digest}}')"
+   scripts/check-release-image-signatures.sh verify v0.1.2 "$DIGEST"
+   ```
+
+   A rerun of the release job pushes, signs and verifies again. The signing
+   identity names `release.yml` and the tag, so it is the same on every
+   attempt, and signing a digest that already has a signature adds a second
+   one. A rebuilt index can have a new digest; the tag then names the new one,
+   and the verification holds the rerun to it. Snapshots are never pushed or
+   signed, and no pull-request job holds `id-token: write`.
+
+   The signature identifies the publisher of the digest. It is separate from the
+   SBOM files and from build provenance, and it makes no SLSA claim.
+
+8. Verify the versioned documentation. The tag's `Docs` run deploys it under a
    commit of its own — Pages keys a deployment by a commit the repository holds,
    and the tag's own commit is the one `master` already deployed — and the
    deploy job waits for the public site to serve that build before it finishes.
@@ -187,7 +216,7 @@ that job stays skipped and npm is not a release channel.
    matching page as their canonical URL. A page absent from `latest` has no
    canonical, and its archive warning links to the latest documentation home.
 
-8. Verify the Homebrew install:
+9. Verify the Homebrew install:
 
    ```bash
    brew update
@@ -197,14 +226,14 @@ that job stays skipped and npm is not a release channel.
    ptah-compat migrate --help
    ```
 
-9. When `PTAH_NPM_PUBLISH=true`, verify all three npm commands from a fresh
-   project. Pin the tag's version rather than using npm's `latest` tag:
+10. When `PTAH_NPM_PUBLISH=true`, verify all three npm commands from a fresh
+    project. Pin the tag's version rather than using npm's `latest` tag:
 
-   ```bash
-   npx @stokaro/ptah@X.Y.Z version
-   npx --package=@stokaro/ptah@X.Y.Z ptah-compat version
-   npx --package=@stokaro/ptah@X.Y.Z ptah-ls --version
-   ```
+    ```bash
+    npx @stokaro/ptah@X.Y.Z version
+    npx --package=@stokaro/ptah@X.Y.Z ptah-compat version
+    npx --package=@stokaro/ptah@X.Y.Z ptah-ls --version
+    ```
 
 ## The Tap Holds A Cask And A Formula
 
