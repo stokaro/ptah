@@ -81,7 +81,8 @@ func TestServer_FailurePath(t *testing.T) {
 			dialect: "postgres",
 			flag:    "dev-url",
 			devURL:  closedPort,
-			wantErr: `(?s)connect to --dev-url: .*dial tcp 127\.0\.0\.1:1: connect: connection refused.*`,
+			// The clause after the address is the operating system's.
+			wantErr: `(?s)connect to --dev-url: .*dial tcp 127\.0\.0\.1:1: .*`,
 		},
 		{
 			name:    "the flag the caller names",
