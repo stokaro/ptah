@@ -61,6 +61,18 @@ func attachIndexPartition(database *schemamodel.Database, document *Document, no
 	if !found {
 		return fmt.Errorf("ALTER INDEX %s ATTACH PARTITION %s names an index this schema does not declare", node.Name, node.AttachPartition)
 	}
+	// A materialized view has no partitions and is no partition. Measured on
+	// PostgreSQL 18.6, the server refuses the view's index as the parent,
+	// `ALTER action ATTACH PARTITION cannot be performed on relation`, and as
+	// the copy, `Index "mv_a" is not an index on any partition of table "p"`.
+	if parent.view != "" {
+		return fmt.Errorf("ALTER INDEX %s ATTACH PARTITION %s: %s is an index of materialized view %s, which has no partitions",
+			node.Name, node.AttachPartition, node.Name, parent.view)
+	}
+	if attached.view != "" {
+		return fmt.Errorf("ALTER INDEX %s ATTACH PARTITION %s: %s is an index of materialized view %s, not of a partition of %s",
+			node.Name, node.AttachPartition, node.AttachPartition, attached.view, parent.target.qualified)
+	}
 	tables := declaredTables(databases)
 	parentTable, partition := parent.target.table, attached.target.table
 	if of, isPartition := schemamodel.FacetParentTable(tables, *partition); !isPartition || of != parentTable.QualifiedName() {

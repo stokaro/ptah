@@ -311,6 +311,16 @@ database URL that selects another schema by `search_path` creates a table
 written without a schema in that schema, so a file read for such a run spells
 each table one way.
 
+`CREATE INDEX ... ON` finds a table or a materialized view by the same rule, in
+the schema the name spells. A bare name means the default schema: `public` on
+PostgreSQL, YugabyteDB and CockroachDB, `dbo` on SQL Server, and `main` on
+SQLite. On MySQL and MariaDB it means the database the connection selects,
+which the file does not name, so `app.items` and `items` are two tables there,
+as they are to `ALTER TABLE`. A name that only a relation of another schema or
+database carries is refused on every engine. PostgreSQL refuses
+`CREATE INDEX ON items` beside only `app.items` with
+`relation "items" does not exist`.
+
 `DROP TABLE`, `DROP INDEX`, `DROP VIEW` and `DROP MATERIALIZED VIEW` remove the
 object and what the server drops with it. A drop the server refuses is refused:
 an undeclared object without `IF EXISTS`, a table a foreign key or a PostgreSQL
@@ -327,7 +337,10 @@ statements that change no schema object change nothing the read returns.
 
 On PostgreSQL, `ALTER INDEX ... RENAME TO` renames an index, and the constraint
 it backs. A column's own `UNIQUE` becomes a named one. A name another relation
-holds is refused.
+holds is refused. `DROP INDEX` and `ALTER INDEX` find an index of a table or of
+a materialized view in the schema the name spells, and a bare name means the
+default schema, so `DROP INDEX app.items_idx` and `DROP INDEX items_idx` name
+two indexes.
 
 These operations are read:
 

@@ -10,15 +10,22 @@ import (
 	"ptah.run/core/schemamodel"
 )
 
-// namedIndex is what an index name reaches on one table: an index the schema
-// declares, the constraint whose index it is, the primary key, or a column's
-// own UNIQUE. Exactly one of index, constraint, primaryKey and column is set.
+// namedIndex is what an index name reaches on one table or materialized view:
+// an index the schema declares, the constraint whose index it is, the primary
+// key, or a column's own UNIQUE. Exactly one of index, constraint, primaryKey
+// and column is set.
 //
 // DROP INDEX and ALTER INDEX read an index name through this one type, so the
 // two statements cannot disagree about what a name holds: which one deletes
 // or renames, and which one refuses because a constraint owns the index.
 type namedIndex struct {
+	// target is the table the index belongs to. It is the zero alterTarget
+	// for an index of a materialized view, which only an index the schema
+	// declares can be.
 	target alterTarget
+	// view is the materialized view the index belongs to, empty for an index
+	// of a table.
+	view string
 	// owner and position place a declared index, which DROP INDEX deletes.
 	owner      *schemamodel.Database
 	position   int
@@ -74,8 +81,13 @@ func (n namedIndex) rename(database *schemamodel.Database, to string) error {
 	return nil
 }
 
-// findNamedIndex looks name up among the indexes of the tables in schema, a
-// bare name among the tables of the default schema; see [sameSchema].
+// findNamedIndex looks name up among the indexes of the tables and the
+// materialized views in schema, a bare name among those of the default schema;
+// see [sameSchema]. PostgreSQL indexes a materialized view as it indexes a
+// table, in one namespace with the tables' indexes: measured on 18.6, `DROP
+// INDEX`, `ALTER INDEX ... RENAME TO` and `COMMENT ON INDEX` each reach an
+// index of a materialized view, and `ALTER INDEX IF EXISTS ... RENAME TO`
+// renames it rather than skipping.
 func findNamedIndex(
 	databases []*schemamodel.Database, document *Document, schema, name, sourcePlatform string,
 ) (namedIndex, bool) {
@@ -87,6 +99,24 @@ func findNamedIndex(
 			target := tableTarget(&holder.Tables[i], databases, document, sourcePlatform)
 			if index, found := target.namedIndex(name); found {
 				return index, true
+			}
+		}
+	}
+	return viewIndex(databases, schema, name, sourcePlatform)
+}
+
+// viewIndex answers the declared index called name of a materialized view in
+// schema, by the rule [indexHolder] gives. A materialized view has no
+// constraint, so its index is always one the schema declares.
+func viewIndex(databases []*schemamodel.Database, schema, name, sourcePlatform string) (namedIndex, bool) {
+	for _, owner := range databases {
+		for i := range owner.Indexes {
+			if owner.Indexes[i].Name != name {
+				continue
+			}
+			holder, found := indexHolder(databases, owner.Indexes[i], sourcePlatform)
+			if found && holder.table == nil && sameSchema(sourcePlatform, schema, holder.schema) {
+				return namedIndex{view: holder.qualified, owner: owner, position: i, index: &owner.Indexes[i]}, true
 			}
 		}
 	}

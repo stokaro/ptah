@@ -316,7 +316,10 @@ func Finalize(r *Database) {
 
 // NormalizeTableScopedNames resolves the names an index or constraint carries
 // against the table that owns it, so two objects that name one table by
-// different spellings resolve to the same owner.
+// different spellings resolve to the same owner. An index whose table name is
+// exactly the name a materialized view is declared under belongs to that view
+// and keeps the name, unless a table matches it by its qualified name or by
+// the struct that declares both the table and the index.
 //
 // It is exported because the split put the parser in another package and the
 // parser runs it as the last step of building a database: a description whose
@@ -337,12 +340,7 @@ func NormalizeTableScopedNames(r *Database) {
 			constraint.ForeignTable = resolveReferenceTableName(r.Tables, *table, constraint.ForeignTable)
 		}
 	}
-	for i := range r.Indexes {
-		index := &r.Indexes[i]
-		if table := resolveTableReference(r.Tables, index.StructName, index.TableName); table != nil {
-			index.TableName = table.QualifiedName()
-		}
-	}
+	normalizeIndexTableNames(r)
 	for i := range r.RLSPolicies {
 		policy := &r.RLSPolicies[i]
 		if table := resolveTableReference(r.Tables, policy.StructName, policy.Table); table != nil {
@@ -381,29 +379,76 @@ func NormalizeTableScopedNames(r *Database) {
 	// preserved for compatibility with YAML and existing parser paths.
 }
 
+// normalizeIndexTableNames is [NormalizeTableScopedNames] for the indexes. A
+// bare name a materialized view is declared under is the view's rather than a
+// table of that name in another schema. A table its struct declares keeps the
+// index: `table="items"` on a field of a struct declaring app.items names that
+// table beside a view items.
+func normalizeIndexTableNames(r *Database) {
+	views := make(map[string]bool, len(r.MaterializedViews))
+	for _, view := range r.MaterializedViews {
+		views[view.Name] = true
+	}
+	for i := range r.Indexes {
+		index := &r.Indexes[i]
+		table, settled := declaredTableReference(r.Tables, index.StructName, index.TableName)
+		if !settled && !views[strings.TrimSpace(index.TableName)] {
+			table = onlyTableNamed(r.Tables, index.TableName)
+		}
+		if table != nil {
+			index.TableName = table.QualifiedName()
+		}
+	}
+}
+
+// resolveTableReference answers the table an object of structName that names
+// tableName belongs to: the one [declaredTableReference] settles on, or else
+// the only table of that bare name in any schema.
 func resolveTableReference(tables []Table, structName, tableName string) *Table {
+	if table, settled := declaredTableReference(tables, structName, tableName); settled {
+		return table
+	}
+	return onlyTableNamed(tables, tableName)
+}
+
+// declaredTableReference is what [resolveTableReference] answers from the
+// declarations alone: the table of structName when tableName is empty, the
+// table whose qualified name is tableName, nothing for a qualified name no
+// table carries, and the table of structName called tableName. settled is
+// false when only a match by bare name in any schema is left to try.
+func declaredTableReference(tables []Table, structName, tableName string) (table *Table, settled bool) {
 	tableName = strings.TrimSpace(tableName)
 	if tableName == "" {
 		for i := range tables {
 			if tables[i].StructName == structName {
-				return &tables[i]
+				return &tables[i], true
 			}
 		}
-		return nil
+		return nil, true
 	}
 	for i := range tables {
 		if tables[i].QualifiedName() == tableName {
-			return &tables[i]
+			return &tables[i], true
 		}
 	}
 	ref, ok := tableref.Parse(tableName)
 	if !ok || ref.Qualified {
-		return nil
+		return nil, true
 	}
 	for i := range tables {
 		if tables[i].StructName == structName && tables[i].Name == ref.Name {
-			return &tables[i]
+			return &tables[i], true
 		}
+	}
+	return nil, false
+}
+
+// onlyTableNamed answers the one table called tableName, a bare name, in any
+// schema, or nil when no table or more than one is.
+func onlyTableNamed(tables []Table, tableName string) *Table {
+	ref, ok := tableref.Parse(strings.TrimSpace(tableName))
+	if !ok {
+		return nil
 	}
 	var match *Table
 	for i := range tables {

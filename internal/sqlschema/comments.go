@@ -228,38 +228,6 @@ func indexCommentTarget(databases []*schemamodel.Database, written, sourcePlatfo
 	}
 }
 
-// indexRelation is the table or materialized view an index belongs to: its
-// name as the reader stores it, schema included, and its schema, empty for the
-// default.
-type indexRelation struct {
-	qualified, schema string
-}
-
-// indexHolder answers the relation index belongs to: a table, found by the
-// rule [indexOwner] gives, or a materialized view, which PostgreSQL indexes as
-// it indexes a table. An index whose table names neither answers false.
-func indexHolder(databases []*schemamodel.Database, index schemamodel.Index, sourcePlatform string) (indexRelation, bool) {
-	if table := indexOwner(databases, index, sourcePlatform); table != nil {
-		return indexRelation{qualified: table.QualifiedName(), schema: table.Schema}, true
-	}
-	if index.TableName == "" {
-		return indexRelation{}, false
-	}
-	var views, names []string
-	for _, database := range databases {
-		for _, view := range database.MaterializedViews {
-			views = append(views, view.Name)
-			names = append(names, unqualified(view.Name, sourcePlatform))
-		}
-	}
-	at := resolveDeclaredName(sourcePlatform, unqualified(normalizeSQLTableReference("", index.TableName), sourcePlatform), names)
-	if at < 0 {
-		return indexRelation{}, false
-	}
-	schema, view := normalizeSQLTableIdentifier("", views[at])
-	return indexRelation{qualified: schemamodel.QualifyTableName(schema, view), schema: schema}, true
-}
-
 // cutIndexTable splits the name of an index written with its table,
 // `table@index`, at the `@` outside double quotes. Only a dialect that names an
 // index within its table writes one; elsewhere a name holding `@` is a name no
