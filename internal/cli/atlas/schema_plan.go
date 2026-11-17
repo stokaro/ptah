@@ -244,7 +244,7 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if !plan.HasChanges() && len(plan.Annotations) == 0 {
+	if !plan.HasChanges() {
 		// With --format the operator asked for a document to parse, and a
 		// synced schema is one of its answers. Printing the sentence here
 		// instead would hand a JSON consumer a line of English on the one
@@ -252,7 +252,16 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		if opts.format != "" {
 			return writeAtlasSchemaPlanFormat(cmd, opts.format, plan)
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
+		if len(plan.Annotations) == 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
+			return nil
+		}
+		// Notes and no statement: a difference the target cannot apply, such
+		// as a generated column whose expression it cannot change. There is
+		// nothing to save or push, and the Atlas .plan.hcl format has no field
+		// for the notes, so print them as schema apply does and save nothing.
+		atlasschema.WriteUnitReports(cmd.ErrOrStderr(), nil, plan.Annotations)
+		fmt.Fprintln(cmd.OutOrStdout(), nothingPlannedMessage(len(plan.Annotations))+".")
 		return nil
 	}
 	// Everything that can refuse the plan without looking at its statements

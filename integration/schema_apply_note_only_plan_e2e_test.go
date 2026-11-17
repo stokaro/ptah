@@ -24,7 +24,7 @@ import (
 const noteOnlyPlanTable = "CREATE TABLE tasks (id INT8 PRIMARY KEY, title STRING, code STRING NOT NULL AS (upper(title)) STORED)"
 
 // noteOnlyPlanWarning is the start of the note the planner writes for it.
-const noteOnlyPlanWarning = "-- WARNING: Generated column tasks.code changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression"
+const noteOnlyPlanWarning = "-- WARNING: Generated column public.tasks.code changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression"
 
 // noteOnlyPlanDatabases creates a target holding the table and an empty dev
 // database, both dropped when the test ends, and returns their URLs.
@@ -59,8 +59,9 @@ func noteOnlyPlanExpression(c *qt.C, target string) []string {
 	return clauseReadBack(c, target, "SELECT generation_expression FROM information_schema.columns WHERE table_name = 'tasks' AND column_name = 'code'")
 }
 
-// noteOnlyPlanVerbs is schema apply on both surfaces, as the shipped binaries
-// run it, with the closing sentence each writes for a synced schema.
+// noteOnlyPlanVerbs is schema apply on both surfaces and ptah-compat schema
+// plan, as the shipped binaries run them, with the closing sentence each
+// writes for a synced schema.
 var noteOnlyPlanVerbs = []struct {
 	name   string
 	binary clirun.Target
@@ -83,14 +84,24 @@ var noteOnlyPlanVerbs = []struct {
 		},
 		synced: "Schema is synced, no changes to be made\n",
 	},
+	{
+		// A plan of notes alone has nothing to save, and the Atlas .plan.hcl
+		// format has no field for the notes.
+		name:   "ptah-compat schema plan",
+		binary: clirun.Compat,
+		args: func(target, dev, schema string) []string {
+			return []string{"schema", "plan", "--from", target, "--to", "file://" + filepath.ToSlash(schema), "--dev-url", dev}
+		},
+		synced: "Schema is synced, no changes to be made.\n",
+	},
 }
 
-// TestSchemaApplyShowsANoteOnlyPlanE2E applies a declaration whose one change
-// the target cannot make. Both surfaces show the planner's note and say that
-// the schema is not synced, and the database keeps its expression. Without the
+// TestANoteOnlyPlanIsShownE2E plans and applies a declaration whose one change
+// the target cannot make. Each verb shows the planner's note and says that the
+// schema is not synced, and the database keeps its expression. Without the
 // note kept in the plan, the plan reads as empty and both answer that the
 // schema is synced (stokaro/ptah#6160).
-func TestSchemaApplyShowsANoteOnlyPlanE2E(t *testing.T) {
+func TestANoteOnlyPlanIsShownE2E(t *testing.T) {
 	declared := "CREATE TABLE tasks (id INT8 PRIMARY KEY, title STRING, code STRING NOT NULL AS (lower(title)) STORED)"
 	for _, verb := range noteOnlyPlanVerbs {
 		t.Run(verb.name, func(t *testing.T) {
@@ -109,10 +120,10 @@ func TestSchemaApplyShowsANoteOnlyPlanE2E(t *testing.T) {
 	}
 }
 
-// TestSchemaApplyReportsASyncedGeneratedColumnE2E is the control: the table
-// declared as it is plans nothing and holds no note, so both surfaces still
-// answer that the schema is synced, and say nothing else.
-func TestSchemaApplyReportsASyncedGeneratedColumnE2E(t *testing.T) {
+// TestASyncedGeneratedColumnIsReportedSyncedE2E is the control: the table
+// declared as it is plans nothing and holds no note, so each verb still
+// answers that the schema is synced, and says nothing else.
+func TestASyncedGeneratedColumnIsReportedSyncedE2E(t *testing.T) {
 	for _, verb := range noteOnlyPlanVerbs {
 		t.Run(verb.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -124,4 +135,26 @@ func TestSchemaApplyReportsASyncedGeneratedColumnE2E(t *testing.T) {
 			c.Assert(applied.Stdout, qt.Equals, verb.synced)
 		})
 	}
+}
+
+// TestSchemaApplyRunsASavedNoteOnlyPlanE2E saves the note-only plan with ptah
+// schema plan and applies the file. The apply shows the note and says that the
+// schema is not synced; without the sentence it shows the note and says
+// nothing about the schema at all.
+func TestSchemaApplyRunsASavedNoteOnlyPlanE2E(t *testing.T) {
+	c := qt.New(t)
+	target, _ := noteOnlyPlanDatabases(c)
+	declared := "CREATE TABLE tasks (id INT8 PRIMARY KEY, title STRING, code STRING NOT NULL AS (lower(title)) STORED)"
+	planFile := filepath.Join(c.TempDir(), "note.plan.json")
+	planned := runPtahIn(c, "schema", "plan", "--db-url", target, "--schema-file", writeNoteOnlyPlanSchema(c, declared), "--output", planFile)
+	c.Assert(planned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned.Stdout, planned.Stderr))
+
+	applied := runPtahIn(c, "schema", "apply", "--db-url", target, "--plan", planFile, "--auto-approve")
+
+	out := applied.Stdout + applied.Stderr
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, noteOnlyPlanWarning)
+	c.Assert(applied.Stdout, qt.Contains, "No statements planned, but the plan holds the notes above, so the schema is not synced.\n")
+	c.Assert(out, qt.Not(qt.Contains), "Schema is synced")
+	c.Assert(noteOnlyPlanExpression(c, target), qt.DeepEquals, []string{"upper(title)"})
 }

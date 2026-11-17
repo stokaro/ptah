@@ -20,21 +20,29 @@ import (
 // schema synced (stokaro/ptah#6160).
 func TestCaptureApplyPlan_KeepsANoteNoStatementCarries_HappyPath(t *testing.T) {
 	const warning = "WARNING: Generated column tasks.code changed; manual migration required."
+	skipped := "Skipped view report: the target cannot read it."
 	tests := []struct {
 		name      string
-		fragments []string
+		fragments []renderer.Fragment
 		wantUnits []string
 		wantNotes []renderer.Annotation
 	}{
 		{
 			name:      "a note with no statement before it",
-			fragments: []string{"-- " + warning + "\n"},
+			fragments: []renderer.Fragment{{SQL: "-- " + warning + "\n"}},
 			wantNotes: []renderer.Annotation{{Before: 0, Text: warning}},
 		},
 		{
 			name:      "a note that follows a statement",
-			fragments: []string{"CREATE TABLE tasks (id INTEGER);\n", "-- " + warning + "\n"},
+			fragments: []renderer.Fragment{{SQL: "CREATE TABLE tasks (id INTEGER);\n"}, {SQL: "-- " + warning + "\n"}},
 			wantUnits: []string{"CREATE TABLE tasks (id INTEGER)\n-- " + warning},
+		},
+		{
+			// The note is the plan's trailing comment piece, and a rendered
+			// annotation is positioned after it, so the note comes first.
+			name:      "a rendered annotation beside a note",
+			fragments: []renderer.Fragment{{Annotation: &skipped}, {SQL: "-- " + warning + "\n"}},
+			wantNotes: []renderer.Annotation{{Before: 0, Text: warning}, {Before: 0, Text: skipped}},
 		},
 	}
 
@@ -43,15 +51,13 @@ func TestCaptureApplyPlan_KeepsANoteNoStatementCarries_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			conn := connectSQLite(c, filepath.Join(c.TempDir(), "target.db"))
 			c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
-			fragments := make([]renderer.Fragment, len(test.fragments))
 			nodes := make([]ast.Node, len(test.fragments))
-			for i, sql := range test.fragments {
-				fragments[i] = renderer.Fragment{SQL: sql}
-				nodes[i] = ast.NewRawSQL(sql)
+			for i, fragment := range test.fragments {
+				nodes[i] = ast.NewRawSQL(fragment.SQL)
 			}
 			rendered := planner.RenderedPlan{
 				Request: renderer.Request{Target: "sqlite", Capabilities: conn.Info().Capabilities, Nodes: nodes},
-				Result:  renderer.Result{Complete: true, Fragments: fragments},
+				Result:  renderer.Result{Complete: true, Fragments: test.fragments},
 				Dialect: "sqlite",
 			}
 

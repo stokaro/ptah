@@ -76,16 +76,6 @@ func captureApplyPlan(
 	names := atlaschange.For(info.Dialect).Forward(rendered.Request.Nodes)
 	named := -1
 	var indexes []int
-	next := 0
-	// placeAnnotations moves the rendered annotations positioned up to unit
-	// last into the plan, in their order, before a note the loop adds there.
-	placeAnnotations := func(last int) {
-		for ; next < len(annotations) && annotations[next].Before <= last; next++ {
-			annotation := annotations[next]
-			annotation.Before = positions[annotation.Before]
-			plan.annotations = append(plan.annotations, annotation)
-		}
-	}
 	for i, unit := range units {
 		positions[i] = len(plan.units)
 		if !rendered.Result.ExecutableUnits && strings.TrimSpace(sqlutil.StripCommentsForDialect(unit.Fragment.SQL, rendered.Dialect)) == "" {
@@ -99,8 +89,10 @@ func captureApplyPlan(
 			// With no SQL unit before it, the note is all the plan says about
 			// a difference it plans no statement for, such as a generated
 			// column whose expression the target cannot change. Dropped, the
-			// plan reads as empty and apply reports the schema synced.
-			placeAnnotations(i)
+			// plan reads as empty and apply reports the schema synced. Such a
+			// unit is the plan's trailing comment piece, which
+			// RenderedPlan.Annotations positions ahead of every rendered
+			// annotation, so the rendered ones follow it.
 			plan.annotations = append(plan.annotations, renderer.Annotation{
 				Before: len(plan.units),
 				Text:   commentProse(unit.Fragment.SQL),
@@ -120,7 +112,10 @@ func captureApplyPlan(
 		plan.texts = nil
 	}
 	positions[len(units)] = len(plan.units)
-	placeAnnotations(len(units))
+	for _, annotation := range annotations {
+		annotation.Before = positions[annotation.Before]
+		plan.annotations = append(plan.annotations, annotation)
+	}
 	plan.transactions, err = txrequire.OwnerRequirements(rendered.Request.Nodes, indexes)
 	if err != nil {
 		return ApplyPlan{}, err
