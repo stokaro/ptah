@@ -48,17 +48,22 @@ func describePlan(c *qt.C, held, declared string) []statementEffect {
 // description.
 func planPostgres(c *qt.C, held, declared string) ([]string, [][]planeffect.Effect) {
 	c.Helper()
+	return planOn(c, platform.Postgres, capability.Postgres17(), held, declared)
+}
+
+func planOn(c *qt.C, dialect string, capabilities capability.Capabilities, held, declared string) ([]string, [][]planeffect.Effect) {
+	c.Helper()
 	runtime := must.Must(builtin.New())
-	current, _, err := sqlschema.Read([]byte(pipelineTable+held), platform.Postgres)
+	current, _, err := sqlschema.Read([]byte(pipelineTable+held), dialect)
 	c.Assert(err, qt.IsNil)
-	desired, _, err := sqlschema.Read([]byte(pipelineTable+declared), platform.Postgres)
+	desired, _, err := sqlschema.Read([]byte(pipelineTable+declared), dialect)
 	c.Assert(err, qt.IsNil)
-	database, err := goschematodb.ToDBSchema(c.Context(), &current, platform.Postgres, runtime)
+	database, err := goschematodb.ToDBSchema(c.Context(), &current, dialect, runtime)
 	c.Assert(err, qt.IsNil)
-	diff, err := schemadiff.CompareWithDialect(c.Context(), &desired, database, platform.Postgres, runtime)
+	diff, err := schemadiff.CompareWithDialect(c.Context(), &desired, database, dialect, runtime)
 	c.Assert(err, qt.IsNil)
-	plan, err := planner.GenerateSchemaDiffRenderedPlan(c.Context(), runtime, diff, platform.Postgres,
-		planext.Options{Capabilities: capability.Postgres17()})
+	plan, err := planner.GenerateSchemaDiffRenderedPlan(c.Context(), runtime, diff, dialect,
+		planext.Options{Capabilities: capabilities})
 	c.Assert(err, qt.IsNil)
 	units, err := plan.Units()
 	c.Assert(err, qt.IsNil)
@@ -70,7 +75,7 @@ func planPostgres(c *qt.C, held, declared string) ([]string, [][]planeffect.Effe
 	described := planeffect.Describe(planeffect.Target{
 		Current:       database,
 		DefaultSchema: "public",
-		Semantics:     diff.EffectiveIdentifierSemantics(platform.Postgres),
+		Semantics:     diff.EffectiveIdentifierSemantics(dialect),
 		ViewOptions:   true,
 	}, plan.Request.Nodes, nodes)
 	statements := make([]string, len(units))
@@ -335,4 +340,61 @@ func TestDescribe_PostgreSQLPlanRecordsTheViewsItTakes(t *testing.T) {
 			Properties: security(created(false), created(true)), BeforePlan: invoker,
 		}},
 	})
+}
+
+// TestDescribe_RebuildGivingTheViewAnOwner pins the effect of a rebuild whose
+// CREATE VIEW the planner follows with a comment and an ALTER VIEW ... OWNER
+// TO: the CREATE carries the view's options, and the statements after it,
+// which change no option, carry none. CockroachDB 26 cannot hold a view
+// comment and writes it as a comment line in front of the OWNER TO, so the
+// node renders fewer statements than it could.
+func TestDescribe_RebuildGivingTheViewAnOwner(t *testing.T) {
+	createView := "CREATE VIEW \"order_totals\" WITH (security_invoker=true) AS\nSELECT id FROM orders"
+	ownerTo := `ALTER VIEW "order_totals" OWNER TO "reporting"`
+	tests := []struct {
+		name         string
+		dialect      string
+		capabilities capability.Capabilities
+		after        []string
+	}{
+		{
+			name:         "PostgreSQL 17",
+			dialect:      platform.Postgres,
+			capabilities: capability.Postgres17(),
+			after:        []string{`COMMENT ON VIEW "order_totals" IS 'totals'`, ownerTo},
+		},
+		{
+			name:         "CockroachDB 26.3",
+			dialect:      platform.CockroachDB,
+			capabilities: capability.CockroachDB263(),
+			after:        []string{`COMMENT ON VIEW "order_totals" IS 'totals'`, ownerTo},
+		},
+		{
+			name:         "CockroachDB 26, which writes the comment as a comment line",
+			dialect:      platform.CockroachDB,
+			capabilities: capability.CockroachDB26(),
+			after:        []string{"-- COCKROACHDB: view comment order_totals is not supported by this target; skipped.\n" + ownerTo},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, described := planOn(c, test.dialect, test.capabilities,
+				orderTotalsView("security_invoker=true", "SELECT id, total FROM orders"),
+				orderTotalsView("security_invoker=true", "SELECT id FROM orders")+
+					"COMMENT ON VIEW order_totals IS 'totals';\nALTER VIEW order_totals OWNER TO reporting;\n")
+
+			c.Assert(statements, qt.DeepEquals, append([]string{`DROP VIEW IF EXISTS "order_totals" CASCADE`, createView}, test.after...))
+			c.Assert(described, qt.HasLen, len(statements))
+			c.Assert(described[1], qt.HasLen, 1)
+			c.Assert(described[1][0].Object, qt.Equals, orderTotals)
+			c.Assert(described[1][0].Action, qt.Equals, planeffect.ActionCreate)
+			c.Assert(described[1][0].Properties, qt.DeepEquals, []planeffect.Property{
+				{Name: "security_barrier", After: false, Changed: true},
+				{Name: "security_invoker", After: true, Changed: true},
+			})
+			c.Assert(described[2:], qt.DeepEquals, make([][]planeffect.Effect, len(test.after)))
+		})
+	}
 }
