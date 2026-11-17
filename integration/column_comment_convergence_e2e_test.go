@@ -40,11 +40,11 @@ COMMENT ON COLUMN tasks.note IS 'plain note';
 COMMENT ON COLUMN tasks.search_vector IS 'search:v1:0df63add';
 `,
 		wantChange: `-- Modify "tasks" table
-ALTER TABLE "tasks" ADD COLUMN "note" text NULL, ADD COLUMN "search_vector" tsvector NULL GENERATED ALWAYS AS (setweight(to_tsvector('simple', coalesce(title, '')), 'B')) STORED;
+ALTER TABLE "public"."tasks" ADD COLUMN "note" text NULL, ADD COLUMN "search_vector" tsvector NULL GENERATED ALWAYS AS (setweight(to_tsvector('simple', coalesce(title, '')), 'B')) STORED;
 -- Set comment to column: "note" on table: "tasks"
-COMMENT ON COLUMN "tasks"."note" IS 'plain note';
+COMMENT ON COLUMN "public"."tasks"."note" IS 'plain note';
 -- Set comment to column: "search_vector" on table: "tasks"
-COMMENT ON COLUMN "tasks"."search_vector" IS 'search:v1:0df63add';
+COMMENT ON COLUMN "public"."tasks"."search_vector" IS 'search:v1:0df63add';
 `,
 		wantComments: []string{"", "", "plain note", "search:v1:0df63add"},
 	},
@@ -65,9 +65,9 @@ COMMENT ON COLUMN tasks.search_vector IS 'search:v1';
 COMMENT ON COLUMN tasks.search_vector IS 'search:v2';
 `,
 		wantChange: `-- Modify "tasks" table
-ALTER TABLE "tasks" ALTER COLUMN "search_vector" SET EXPRESSION AS (to_tsvector('english', coalesce(title, '')));
+ALTER TABLE "public"."tasks" ALTER COLUMN "search_vector" SET EXPRESSION AS (to_tsvector('english', coalesce(title, '')));
 -- Set comment to column: "search_vector" on table: "tasks"
-COMMENT ON COLUMN "tasks"."search_vector" IS 'search:v2';
+COMMENT ON COLUMN "public"."tasks"."search_vector" IS 'search:v2';
 `,
 		wantComments: []string{"", "", "search:v2"},
 	},
@@ -93,17 +93,17 @@ COMMENT ON COLUMN tasks.title IS 'v2';
 COMMENT ON COLUMN tasks.owner IS 'who';
 CREATE INDEX tasks_owner_idx ON tasks (owner);
 `,
-		wantChange: `-- POSTGRES: SET NOT NULL fails if any row of "tasks" holds NULL in "title"; the column declares no default to fill it with.
+		wantChange: `-- POSTGRES: SET NOT NULL fails if any row of "public"."tasks" holds NULL in "title"; the column declares no default to fill it with.
 -- Modify "tasks" table
-ALTER TABLE "tasks" ALTER COLUMN "title" SET NOT NULL, DROP COLUMN "old", ADD COLUMN "due" date NULL, ADD COLUMN "owner" text NULL;
+ALTER TABLE "public"."tasks" ALTER COLUMN "title" SET NOT NULL, DROP COLUMN "old", ADD COLUMN "due" date NULL, ADD COLUMN "owner" text NULL;
 -- Create index "tasks_owner_idx" to table: "tasks"
-CREATE INDEX "tasks_owner_idx" ON "tasks" ("owner");
+CREATE INDEX "tasks_owner_idx" ON "public"."tasks" ("owner");
 -- Set comment to table: "tasks"
-COMMENT ON TABLE "tasks" IS 't2';
+COMMENT ON TABLE "public"."tasks" IS 't2';
 -- Set comment to column: "title" on table: "tasks"
-COMMENT ON COLUMN "tasks"."title" IS 'v2';
+COMMENT ON COLUMN "public"."tasks"."title" IS 'v2';
 -- Set comment to column: "owner" on table: "tasks"
-COMMENT ON COLUMN "tasks"."owner" IS 'who';
+COMMENT ON COLUMN "public"."tasks"."owner" IS 'who';
 `,
 		wantComments: []string{"", "v2", "", "", "who"},
 	},
