@@ -2,6 +2,7 @@ package shard_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -343,4 +344,69 @@ func TestVerify_FailurePathJudgesTheShardsThatReported(t *testing.T) {
 	c.Assert(result.Missing, qt.DeepEquals, []shard.Test{{Package: pkgA, Name: "TestA2"}, {Package: pkgB, Name: "TestB1"}})
 	c.Assert(result.PerShard, qt.HasLen, 1)
 	c.Assert(result.Timings.Packages[pkgA].Tests, qt.DeepEquals, map[string]int64{"TestA1": 1500, "TestA3": 2000})
+}
+
+// withUnits returns partition with the tests of shard's first unit replaced,
+// and its digest recomputed, so that every manifest still agrees with its own
+// content. It builds the partitions Plan never produces.
+func withUnits(partition shard.Partition, part int, tests ...string) shard.Partition {
+	parts := slices.Clone(partition.Parts)
+	units := slices.Clone(parts[part].Units)
+	units[0].Tests = tests
+	parts[part].Units = units
+	partition.Parts = parts
+	partition.Digest = partition.ComputeDigest()
+	return partition
+}
+
+// TestVerify_FailurePathRefusesAPartitionThatLosesOrDoublesATest covers a
+// partition that does not split the listing exactly: one that gives a listed
+// test to no shard, as the gate was shown on a pull request with a test
+// dropped from the plan, and one that gives a test to two shards. Every shard
+// carries the same digest, so only the coverage check can see either.
+func TestVerify_FailurePathRefusesAPartitionThatLosesOrDoublesATest(t *testing.T) {
+	c := qt.New(t)
+	partition := gatePartition(c)
+	tests := []struct {
+		name      string
+		partition shard.Partition
+		events    []string
+		wantErr   string
+	}{
+		{
+			name:      "a listed test given to no shard",
+			partition: withUnits(partition, 0, "TestA1"),
+			events: []string{
+				lines(passed(pkgA, "TestA1", 1), packagePassed(pkgA, 1)),
+				cleanShard2,
+			},
+			wantErr: `the partition gives example\.com/a:TestA3 to no shard\n` +
+				`1 listed tests never ran: example\.com/a:TestA3`,
+		},
+		{
+			name:      "a listed test given to no shard that ran anyway",
+			partition: withUnits(partition, 0, "TestA1"),
+			events:    []string{cleanShard1, cleanShard2},
+			wantErr: `the partition gives example\.com/a:TestA3 to no shard\n` +
+				`1 tests ran on a shard the partition did not give them: example\.com/a:TestA3`,
+		},
+		{
+			name:      "a listed test given to two shards",
+			partition: withUnits(partition, 0, "TestA1", "TestA2", "TestA3"),
+			events: []string{
+				lines(passed(pkgA, "TestA1", 1), passed(pkgA, "TestA2", 1), passed(pkgA, "TestA3", 1), packagePassed(pkgA, 3)),
+				cleanShard2,
+			},
+			wantErr: `the partition gives example\.com/a:TestA2 to shards 1 and 2\n` +
+				`1 tests ran more than once: example\.com/a:TestA2\n` +
+				`1 tests ran on a shard the partition did not give them: example\.com/a:TestA2`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			_, err := shard.Verify(reports(tc.partition, tc.events...), 4)
+			c.Assert(err, qt.ErrorMatches, tc.wantErr)
+		})
+	}
 }

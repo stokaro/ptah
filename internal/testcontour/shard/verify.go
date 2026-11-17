@@ -160,7 +160,7 @@ func Verify(reports []Report, floor int) (Result, error) {
 		result.PerShard = append(result.PerShard, shardResult)
 	}
 
-	ledger.judge(listed, &result)
+	ledger.judge(partition.Tests, listed, &result)
 	result.Timings = ledger.timings()
 	failures = append(failures, findings(result)...)
 	return result, errors.Join(failures...)
@@ -311,8 +311,13 @@ func (l *ledger) record(shard int, event testEvent, result *ShardResult) {
 	}
 }
 
-func (l *ledger) judge(listed map[Test]int, result *Result) {
-	for test, owner := range listed {
+// judge accounts for every test of the listing against the shards the
+// partition gave it to. A listed test the partition gave to no shard is judged
+// as well: it is missing when nothing ran it and misplaced wherever it ran.
+func (l *ledger) judge(listing []Test, assigned map[Test]int, result *Result) {
+	inListing := make(map[Test]bool, len(listing))
+	for _, test := range listing {
+		inListing[test] = true
 		starts := l.starts[test]
 		if len(starts) == 0 {
 			result.Missing = append(result.Missing, test)
@@ -322,7 +327,8 @@ func (l *ledger) judge(listed map[Test]int, result *Result) {
 		if len(starts) > 1 {
 			result.Repeated = append(result.Repeated, test)
 		}
-		if slices.ContainsFunc(starts, func(shard int) bool { return shard != owner }) {
+		owner, owned := assigned[test]
+		if slices.ContainsFunc(starts, func(shard int) bool { return !owned || shard != owner }) {
 			result.Misplaced = append(result.Misplaced, test)
 		}
 		if !l.finished[test] {
@@ -333,7 +339,7 @@ func (l *ledger) judge(listed map[Test]int, result *Result) {
 		}
 	}
 	for test := range l.starts {
-		if _, ok := listed[test]; !ok {
+		if !inListing[test] {
 			result.Unexpected = append(result.Unexpected, test)
 		}
 	}
