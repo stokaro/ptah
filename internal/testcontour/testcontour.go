@@ -46,9 +46,12 @@ type Config struct {
 	// part this run executes, counted from 1. Both zero run the whole contour.
 	Shard  int
 	Shards int
-	// Timings balances the partition of a sharded run; see shard.Plan. It
-	// changes which part a test lands in, never whether it runs.
-	Timings shard.Timings
+	// TimingsFile names the timing report that balances the partition of a
+	// sharded run; see shard.Plan. It changes which part a test lands in, never
+	// whether it runs, so a report that cannot be read is reported on Stderr
+	// and the run balances by test count instead. A run of the whole contour
+	// has no partition to balance and refuses one.
+	TimingsFile string
 	// Report, when set, receives the raw go test -json stream.
 	Report io.Writer
 	// Manifest, when set, receives the sharded run's shard.Manifest as JSON
@@ -145,7 +148,7 @@ func runShard(ctx context.Context, config Config, declared []testID) error {
 	if err := compareListing(listed, declared); err != nil {
 		return err
 	}
-	partition, err := shard.Plan(listed, config.Timings, config.Shards)
+	partition, err := shard.Plan(listed, readTimings(config), config.Shards)
 	if err != nil {
 		return fmt.Errorf("partition test contour %s: %w", config.Package, err)
 	}
@@ -170,6 +173,27 @@ func runShard(ctx context.Context, config Config, declared []testID) error {
 	)
 	label := fmt.Sprintf("%s shard %d of %d", config.Package, config.Shard, config.Shards)
 	return run(ctx, config, label, assigned, invocations)
+}
+
+// readTimings reads the report that balances the partition. Every shard reads
+// the same bytes, so every shard that cannot read them falls back to the test
+// count the same way, and the fallback is named in the partition's Weighting.
+func readTimings(config Config) shard.Timings {
+	if config.TimingsFile == "" {
+		return shard.Timings{}
+	}
+	file, err := os.Open(config.TimingsFile)
+	if err != nil {
+		_, _ = fmt.Fprintf(config.Stderr, "testcontour: no contour timings, balancing by test count: %s\n", err)
+		return shard.Timings{Source: "no readable timings"}
+	}
+	defer file.Close()
+	timings, err := shard.ReadTimings(file)
+	if err != nil {
+		_, _ = fmt.Fprintf(config.Stderr, "testcontour: unreadable contour timings, balancing by test count: %s\n", err)
+		return shard.Timings{Source: "unreadable timings"}
+	}
+	return timings
 }
 
 // listTests asks the test binaries which tests they hold. It refuses a
@@ -288,6 +312,9 @@ func normalizeConfig(config Config) (Config, error) {
 	}
 	if config.Manifest != nil && config.Shards == 0 {
 		return Config{}, errors.New("a shard manifest is written only by a sharded run")
+	}
+	if config.TimingsFile != "" && config.Shards == 0 {
+		return Config{}, errors.New("contour timings balance a sharded run, and a run of the whole contour reads none")
 	}
 	if config.Stdout == nil {
 		config.Stdout = io.Discard

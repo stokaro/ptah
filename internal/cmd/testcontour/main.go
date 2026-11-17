@@ -9,10 +9,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,9 +57,8 @@ func runContour(arguments []string) error {
 		Stderr:  os.Stderr,
 		Shard:   *shardFlag,
 		Shards:  *shards,
-	}
-	if *timings != "" {
-		config.Timings = readTimings(*timings)
+
+		TimingsFile: *timings,
 	}
 	if *reportDir != "" {
 		closeReports, err := openReports(&config, *reportDir)
@@ -71,25 +68,6 @@ func runContour(arguments []string) error {
 		defer closeReports()
 	}
 	return testcontour.Run(context.Background(), config)
-}
-
-// readTimings reads the report that balances the partition. A report that
-// cannot be read changes only the balance, so it is reported and the partition
-// falls back to the test count instead of failing the run. Every shard reads
-// the same bytes, so every shard falls back the same way.
-func readTimings(path string) shard.Timings {
-	file, err := os.Open(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "testcontour: no contour timings, balancing by test count: %s\n", err)
-		return shard.Timings{Source: "no readable timings"}
-	}
-	defer file.Close()
-	timings, err := shard.ReadTimings(file)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "testcontour: unreadable contour timings, balancing by test count: %s\n", err)
-		return shard.Timings{Source: "unreadable timings"}
-	}
-	return timings
 }
 
 func openReports(config *testcontour.Config, dir string) (func(), error) {
@@ -125,79 +103,19 @@ func verify(arguments []string) error {
 	var (
 		reports    = flags.String("reports", "", "directory holding every shard's manifest.json and report.jsonl")
 		floor      = flags.Int("floor", 0, "the fewest tests the contour may list")
-		timingsOut = flags.String("timings-out", "", "file that receives the measured timings")
+		timingsOut = flags.String("timings-out", "", "file that receives the measured timings when the contour passes")
 		source     = flags.String("source", "", "where the measured timings came from, recorded in them")
 		summary    = flags.String("summary", "", "file the Markdown account is appended to")
 	)
 	_ = flags.Parse(arguments)
-	if *reports == "" {
-		return errors.New("verify needs --reports")
-	}
-
-	loaded, err := shard.LoadReports(*reports)
-	if err != nil {
-		return err
-	}
-	result, verdict := shard.Verify(loaded, *floor)
-	account := describe(result, *floor, verdict)
-	fmt.Print(account)
-	if *summary != "" {
-		if err := appendFile(*summary, account); err != nil {
-			return err
-		}
-	}
-	if *timingsOut != "" {
-		result.Timings.Source = *source
-		if err := shard.WriteTimingsFile(*timingsOut, result.Timings); err != nil {
-			return err
-		}
-	}
-	return verdict
-}
-
-func describe(result shard.Result, floor int, verdict error) string {
-	var b strings.Builder
-	b.WriteString("### Integration contour\n\n")
-	b.WriteString("| shard | tests | planned | test binaries ran |\n|---:|---:|---:|---:|\n")
-	for _, part := range result.PerShard {
-		fmt.Fprintf(&b, "| %d | %d | %s | %s |\n", part.Shard, part.Tests, minutes(part.PlannedMS), minutes(part.ElapsedMS))
-	}
-	fmt.Fprintf(&b, "\n- shards: %d; listed: %d (floor %d); ran: %d; passed: %d\n",
-		result.Shards, result.Listed, floor, result.Ran, result.Passed)
-	if len(result.Absent) != 0 {
-		fmt.Fprintf(&b, "- shards that sent no report: %v\n", result.Absent)
-	}
-	fmt.Fprintf(&b, "- missing: %d; unexpected: %d; repeated: %d; misplaced: %d; incomplete: %d; skipped: %d; failed: %d\n",
-		len(result.Missing), len(result.Unexpected), len(result.Repeated), len(result.Misplaced),
-		len(result.Incomplete), len(result.Skipped), len(result.Failed))
-	if result.Weighting != "" {
-		fmt.Fprintf(&b, "- balanced by %s; partition %s\n", result.Weighting, result.Digest)
-	}
-	if verdict == nil {
-		b.WriteString("\nEvery listed test ran exactly once, on its shard, and passed.\n")
-		return b.String()
-	}
-	b.WriteString("\nThe contour is refused:\n\n")
-	for line := range strings.SplitSeq(verdict.Error(), "\n") {
-		fmt.Fprintf(&b, "- %s\n", line)
-	}
-	return b.String()
-}
-
-func minutes(ms int64) string {
-	return (time.Duration(ms) * time.Millisecond).Round(time.Second).String()
-}
-
-func appendFile(path, text string) error {
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open summary: %w", err)
-	}
-	if _, err := io.WriteString(file, text); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("write summary: %w", err)
-	}
-	return file.Close()
+	return testcontour.Verify(testcontour.VerifyConfig{
+		Reports:    *reports,
+		Floor:      *floor,
+		TimingsOut: *timingsOut,
+		Source:     *source,
+		Summary:    *summary,
+		Stdout:     os.Stdout,
+	})
 }
 
 func splitTags(value string) []string {
