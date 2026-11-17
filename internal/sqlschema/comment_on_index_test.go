@@ -87,6 +87,27 @@ func TestRead_CommentOnIndex_HappyPath(t *testing.T) {
 			want:    map[string]string{"t@t_a": "", "u@t_a": "uia"},
 		},
 		{
+			name:    "an index of a materialized view",
+			dialect: "postgres",
+			file: "CREATE TABLE orders (amount int);\nCREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total FROM orders;\n" +
+				"CREATE UNIQUE INDEX order_totals_total ON order_totals (total);\nCOMMENT ON INDEX order_totals_total IS 'one row';",
+			want: map[string]string{"order_totals@order_totals_total": "one row"},
+		},
+		{
+			name:    "an index of a materialized view declared with the default schema",
+			dialect: "postgres",
+			file: "CREATE TABLE orders (amount int);\nCREATE MATERIALIZED VIEW public.order_totals AS SELECT sum(amount) AS total FROM orders;\n" +
+				"CREATE UNIQUE INDEX order_totals_total ON order_totals (total);\nCOMMENT ON INDEX order_totals_total IS 'one row';",
+			want: map[string]string{"order_totals@order_totals_total": "one row"},
+		},
+		{
+			name:    "an index of a materialized view in another schema",
+			dialect: "postgres",
+			file: "CREATE SCHEMA s2;\nCREATE TABLE s2.orders (amount int);\nCREATE MATERIALIZED VIEW s2.order_totals AS SELECT sum(amount) AS total FROM s2.orders;\n" +
+				"CREATE UNIQUE INDEX order_totals_total ON s2.order_totals (total);\nCOMMENT ON INDEX s2.order_totals_total IS 'one row';",
+			want: map[string]string{"s2.order_totals@order_totals_total": "one row"},
+		},
+		{
 			name:    "CockroachDB, a name only one table holds yet",
 			dialect: "cockroachdb",
 			file: "CREATE TABLE t (a int);\nCREATE INDEX t_a ON t (a);\nCOMMENT ON INDEX t_a IS 'tia';\n" +
@@ -128,6 +149,13 @@ func TestRead_CommentOnIndex_FailurePath(t *testing.T) {
 			dialect: "postgres",
 			file:    "CREATE SCHEMA s2;\nCREATE TABLE t (a int);\nCREATE INDEX t_a ON t (a);\nCOMMENT ON INDEX s2.t_a IS 'x';",
 			wantErr: `line 4, column 1: the schema model has no place for this statement: COMMENT ON INDEX s2.t_a names an object this schema does not declare`,
+		},
+		{
+			name:    "a bare name for an index of another schema's materialized view",
+			dialect: "postgres",
+			file: "CREATE SCHEMA s2;\nCREATE TABLE s2.orders (amount int);\nCREATE MATERIALIZED VIEW s2.order_totals AS SELECT sum(amount) AS total FROM s2.orders;\n" +
+				"CREATE UNIQUE INDEX order_totals_total ON s2.order_totals (total);\nCOMMENT ON INDEX order_totals_total IS 'x';",
+			wantErr: `line 5, column 1: the schema model has no place for this statement: COMMENT ON INDEX order_totals_total names an object this schema does not declare`,
 		},
 		{
 			name:    "PostgreSQL names no index by its table",
