@@ -10,21 +10,156 @@ import (
 	"ptah.run/internal/atlasreport"
 )
 
-func TestSchemaApplyCustomSQLTemplate(t *testing.T) {
-	c := qt.New(t)
-	var out bytes.Buffer
-	report := atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{
-		Driver: "sqlite",
-		URL:    "sqlite://apply.db",
-		Statements: []string{
-			`CREATE TABLE "users" ("id" integer);`,
-		},
+// pendingUsersTable is a `schema apply --dry-run` report planning one table.
+func pendingUsersTable() atlasreport.SchemaApply {
+	return atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{
+		Driver:     "postgres",
+		URL:        "postgres://app@localhost:5432/app",
+		DryRun:     true,
+		Statements: []string{`CREATE TABLE "users" ("id" integer);`},
+		Comments:   []string{`create "users" table`},
 	})
+}
 
-	err := atlasreport.WriteSchemaApply(&out, `{{ len .Changes }}|{{ .MarshalSQL }}|{{ sql . "  " }}`, report)
+// TestSchemaApplyTemplate_HappyPath renders the members the pinned community
+// binary v1.3.0 hands a `schema apply --format` template, each measured there
+// on PostgreSQL 18 with the same template.
+func TestSchemaApplyTemplate_HappyPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		format string
+		want   string
+	}{
+		{
+			name:   "the target's members are promoted from Env",
+			format: `{{ .Driver }}|{{ .Env.Driver }}|{{ .Env.Dir }}|{{ .Dir }}|{{ .Error }}`,
+			want:   "postgres|postgres|||",
+		},
+		{
+			name:   "a dry run lists its changes under Pending",
+			format: `{{ range .Changes.Pending }}{{ .Comment }}: {{ .Cmd }}|{{ end }}`,
+			want:   `create "users" table: CREATE TABLE "users" ("id" integer)|`,
+		},
+		{
+			name:   "a dry run applies nothing",
+			format: `{{ len .Changes.Pending }}|{{ len .Changes.Applied }}|{{ .Changes.Error }}`,
+			want:   "1|0|<nil>",
+		},
+		{
+			name:   "the changes encode as statements",
+			format: `{{ json .Changes }}`,
+			want:   `{"Pending":["CREATE TABLE \"users\" (\"id\" integer)"]}`,
+		},
+		{
+			name:   "the URL is the target's",
+			format: `{{ .URL.Scheme }}|{{ .URL.Host }}|{{ .URL.Path }}`,
+			want:   "postgres|localhost:5432|/app",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var out bytes.Buffer
+
+			err := atlasreport.WriteSchemaApply(&out, test.format, pendingUsersTable())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(out.String(), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestSchemaApplyTemplate_FailurePath refuses what the pinned community binary
+// v1.3.0 refuses on `schema apply --format`. Measured there on PostgreSQL 18,
+// `{{ sql . }}` fails to parse, and `.MarshalSQL`, `.MarshalJSON`, `len
+// .Changes` and `range .Changes` fail to execute, because the report has
+// neither method and Changes is a struct. Each error is the community binary's
+// but for the Go type it names. Nothing is written in front of a refusal.
+func TestSchemaApplyTemplate_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		format  string
+		wantErr string
+	}{
+		{
+			name:    "sql is not a helper here",
+			format:  `before {{ sql . }}`,
+			wantErr: `parse log format: template: format:1: function "sql" not defined`,
+		},
+		{
+			name:    "the report has no MarshalSQL",
+			format:  `before {{ .MarshalSQL }}`,
+			wantErr: `template: format:1:10: executing "format" at <.MarshalSQL>: can't evaluate field MarshalSQL in type atlasreport.SchemaApply`,
+		},
+		{
+			name:    "the report has no MarshalJSON",
+			format:  `before {{ .MarshalJSON }}`,
+			wantErr: `template: format:1:10: executing "format" at <.MarshalJSON>: can't evaluate field MarshalJSON in type atlasreport.SchemaApply`,
+		},
+		{
+			name:    "Changes has no length",
+			format:  `before {{ len .Changes }}`,
+			wantErr: `template: format:1:10: executing "format" at <len .Changes>: error calling len: len of type atlasreport.SchemaApplyChanges`,
+		},
+		{
+			name:    "Changes is not a list",
+			format:  `before {{ range .Changes }}x{{ end }}`,
+			wantErr: `template: format:1:16: executing "format" at <.Changes>: range can't iterate over .*`,
+		},
+		{
+			name:    "a change carries no Args",
+			format:  `before {{ range .Changes.Pending }}{{ .Args }}{{ end }}`,
+			wantErr: `template: format:1:38: executing "format" at <.Args>: can't evaluate field Args in type atlasreport.SchemaChange`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var out bytes.Buffer
+
+			err := atlasreport.WriteSchemaApply(&out, test.format, pendingUsersTable())
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(out.String(), qt.Equals, "")
+		})
+	}
+}
+
+// TestSchemaApplyTemplateExtensions_HappyPath renders Ptah's own `sql` helper
+// when atlasreport.TemplateExtensionsEnvVar opens it.
+func TestSchemaApplyTemplateExtensions_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
+	var out bytes.Buffer
+
+	err := atlasreport.WriteSchemaApply(&out, `{{ sql . "  " }}`, pendingUsersTable())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "1|CREATE TABLE \"users\" (\"id\" integer);\n|CREATE TABLE \"users\" (\"id\" integer);\n")
+	c.Assert(out.String(), qt.Equals, "-- Create \"users\" table\nCREATE TABLE \"users\" (\"id\" integer);\n")
+}
+
+// TestSchemaApplyTemplateExtensions_FailurePath refuses a malformed value of
+// the variable before any template is parsed, and refuses a call of `sql`
+// with too many arguments without writing what came before it.
+func TestSchemaApplyTemplateExtensions_FailurePath(t *testing.T) {
+	t.Run("a malformed value", func(t *testing.T) {
+		c := qt.New(t)
+		t.Setenv(atlasreport.TemplateExtensionsEnvVar, "yes-please")
+
+		err := atlasreport.ValidateSchemaApplyTemplate(`{{ json . }}`)
+
+		c.Assert(err, qt.ErrorMatches, `(?s).*PTAH_ATLAS_TEMPLATE_EXTENSIONS.*`)
+	})
+	t.Run("too many arguments", func(t *testing.T) {
+		c := qt.New(t)
+		t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
+		var out bytes.Buffer
+
+		err := atlasreport.WriteSchemaApply(&out, `before {{ sql . "  " "extra" }}`, pendingUsersTable())
+
+		c.Assert(err, qt.ErrorMatches, `template: format:.*unexpected number of arguments: 2.*`)
+		c.Assert(out.String(), qt.Equals, "")
+	})
 }
 
 // TestSchemaApplyRegistersJSONHelper is the regression test for stokaro/ptah#940
@@ -149,21 +284,4 @@ func TestSchemaApplySyncedJSONCarriesNoEnvironment(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, `{"Changes":{}}`)
-}
-
-func TestSchemaApplyTemplateExecutionErrorDoesNotWritePartialOutput(t *testing.T) {
-	c := qt.New(t)
-	var out bytes.Buffer
-	report := atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{
-		Driver: "sqlite",
-		URL:    "sqlite://apply.db",
-		Statements: []string{
-			`CREATE TABLE "users" ("id" integer);`,
-		},
-	})
-
-	err := atlasreport.WriteSchemaApply(&out, `before {{ sql . "  " "extra" }}`, report)
-
-	c.Assert(err, qt.ErrorMatches, `template: format:.*unexpected number of arguments: 2.*`)
-	c.Assert(out.String(), qt.Equals, "")
 }

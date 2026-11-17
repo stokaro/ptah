@@ -66,11 +66,11 @@ func WriteMigrateStatusFormat(w io.Writer, format string, opts MigrateStatusOpti
 	if err != nil {
 		return err
 	}
-	return renderAtlasGoTemplate(w, atlasMigrateVerbTemplateWording, format, result)
+	return renderAtlasGoTemplate(w, atlasMigrateVerbTemplateWording, format, result, migrateStatusWithheldHelpers...)
 }
 
 func ValidateMigrateStatusTemplate(format string) error {
-	return validateAtlasGoTemplate(atlasMigrateVerbTemplateWording, format)
+	return validateAtlasGoTemplate(atlasMigrateVerbTemplateWording, format, migrateStatusWithheldHelpers...)
 }
 
 func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {

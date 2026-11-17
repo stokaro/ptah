@@ -149,7 +149,7 @@ func TestSchemaApplyPlanFileSupportsFormat(t *testing.T) {
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE format_orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
-		"--auto-approve", "--format", `{{ len .Changes }}`)
+		"--auto-approve", "--format", `{{ len .Changes.Applied }}`)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(strings.TrimSpace(out), qt.Equals, "1")

@@ -34,7 +34,7 @@ func TestInspect_HappyPathCustomTemplate(t *testing.T) {
 	createInspectSchema(c, conn)
 
 	renderedResult, err := atlasschema.Inspect(context.Background(), conn, atlasschema.InspectOptions{Runtime: inspectFeatureRuntime(c),
-		Format: `{{ len .Realm.Schemas }}/{{ len (index .Schema.Schemas 0).Tables }}/{{ base64url "a+b/c=" }}/{{ printf "%.6s" (sql .) }}`,
+		Format: `{{ len .Realm.Schemas }}/{{ len (index .Realm.Schemas 0).Tables }}/{{ base64url "a+b/c=" }}/{{ printf "%.6s" (sql .) }}`,
 	})
 
 	c.Assert(err, qt.IsNil)

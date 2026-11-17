@@ -469,8 +469,10 @@ func atlasMigrateApplyVersionKeyAt(versions []int64, keys []string, index int) s
 	return atlasMigrateApplyVersionString(versions[index])
 }
 
-func renderAtlasGoTemplate(w io.Writer, wording templateWording, format string, data any) error {
-	tmpl, err := newAtlasGoTemplate(wording, format)
+// renderAtlasGoTemplate renders format over data with the shared helper set,
+// less the helpers withheld names; see [verbTemplateFuncs].
+func renderAtlasGoTemplate(w io.Writer, wording templateWording, format string, data any, withheld ...string) error {
+	tmpl, err := newAtlasGoTemplate(wording, format, withheld)
 	if err != nil {
 		return err
 	}
@@ -486,16 +488,14 @@ func ValidateMigrateApplyTemplate(format string) error {
 	return validateAtlasGoTemplate(atlasMigrateApplyTemplateWording, format)
 }
 
-func validateAtlasGoTemplate(wording templateWording, format string) error {
-	_, err := newAtlasGoTemplate(wording, format)
+func validateAtlasGoTemplate(wording templateWording, format string, withheld ...string) error {
+	_, err := newAtlasGoTemplate(wording, format, withheld)
 	return err
 }
 
-// atlasTemplateFuncs is the helper set every Atlas Go-template surface in this
-// package exposes. It is shared rather than duplicated so a template that works
-// on one compat verb works on the next: the drop-in promise is that an Atlas
-// pipeline's template keeps running here, and a helper missing on one verb
-// breaks that quietly.
+// atlasTemplateFuncs is the helper set the community binary defines on `migrate
+// apply` and `schema apply`, and the set the other verbs here start from. A verb
+// that defines fewer of them withholds the rest; see [verbTemplateFuncs].
 func atlasTemplateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"json":         atlasTemplateJSON,
@@ -511,8 +511,12 @@ func atlasTemplateFuncs() template.FuncMap {
 	}
 }
 
-func newAtlasGoTemplate(wording templateWording, format string) (*template.Template, error) {
-	tmpl, err := template.New(wording.name).Funcs(atlasTemplateFuncs()).Parse(format)
+func newAtlasGoTemplate(wording templateWording, format string, withheld []string) (*template.Template, error) {
+	funcs, err := verbTemplateFuncs(withheld)
+	if err != nil {
+		return nil, err
+	}
+	tmpl, err := template.New(wording.name).Funcs(funcs).Parse(format)
 	if err != nil {
 		return nil, wording.parseError(err)
 	}

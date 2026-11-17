@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/cli/internal/cmdutil"
@@ -217,9 +218,15 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	if formatConfigured && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
 	}
-	opts.format = atlasSchemaInspectCompatibilityFormat(opts.format)
+	opts.format, err = atlasSchemaInspectCompatibilityFormat(opts.format)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	normalizedFormat, err := atlasschema.NormalizeInspectFormat(opts.format)
 	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if err := atlasreport.ValidateCompatSchemaInspectTemplate(normalizedFormat); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := opts.policy.ValidateSchemaInspectFormat(normalizedFormat); err != nil {
@@ -302,12 +309,27 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 // interpretation of shorthand-looking template text. Exact bare hcl/sql/json
 // and their whitespace-wrapped forms remain literal text, byte for byte.
 // Explicit helper calls still reach the shared renderer.
-func atlasSchemaInspectCompatibilityFormat(format string) string {
+//
+// Bare dbml is literal too unless [atlasreport.TemplateExtensionsEnvVar] is
+// on: measured on v1.3.0 against PostgreSQL 18, `--format dbml` writes `dbml`
+// there. With the variable on it is the shorthand native `ptah schema inspect`
+// reads it as, the DBML document. The variable is resolved whatever the
+// format is, so a malformed value fails every run.
+func atlasSchemaInspectCompatibilityFormat(format string) (string, error) {
+	extended, err := atlasreport.ResolveTemplateExtensions()
+	if err != nil {
+		return "", err
+	}
 	switch strings.TrimSpace(format) {
 	case "hcl", "sql", "json":
-		return "{{ " + strconv.Quote(format) + " }}"
+		return "{{ " + strconv.Quote(format) + " }}", nil
+	case "dbml":
+		if extended {
+			return format, nil
+		}
+		return "{{ " + strconv.Quote(format) + " }}", nil
 	}
-	return format
+	return format, nil
 }
 
 // atlasInspectOmitsRefusedBlocks is this surface's default for the top-level

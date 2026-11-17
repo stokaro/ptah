@@ -389,7 +389,7 @@ func TestSchemaInspectIncludeAppliesToEveryOutputFormat(t *testing.T) {
 		{name: "hcl", format: `{{ hcl . }}`, want: `table "inspect_users"`},
 		{name: "sql", format: `{{ sql . }}`, want: `CREATE TABLE "inspect_users"`},
 		{name: "json", format: `{{ json . }}`, want: `"name":"inspect_users"`},
-		{name: "template", format: `{{ range (index .Schema.Schemas 0).Tables }}{{ .Name }};{{ end }}`, want: "inspect_users;"},
+		{name: "template", format: `{{ range (index .Realm.Schemas 0).Tables }}{{ .Name }};{{ end }}`, want: "inspect_users;"},
 	}
 
 	for _, test := range tests {

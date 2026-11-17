@@ -17,7 +17,8 @@ import (
 // file a reviewer approves (stokaro/ptah#3903).
 //
 // migrate diff, schema diff, schema apply and schema plan each have their own
-// `sql`, so each is asserted.
+// `sql`, so each is asserted. The one on schema apply is Ptah's alone and needs
+// atlasreport.TemplateExtensionsEnvVar.
 func TestSQLTemplate_ANoteWithNothingAfterItEndsWithoutASemicolon(t *testing.T) {
 	c := qt.New(t)
 	drop := "-- Drop RLS policy tenant_only from table site_media_settings\n" +
@@ -37,9 +38,11 @@ func TestSQLTemplate_ANoteWithNothingAfterItEndsWithoutASemicolon(t *testing.T) 
 	c.Assert(atlasreport.WriteSchemaDiff(t.Context(), &schemaDiff, `{{ sql . "  " }}`, atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Statements: statements}), schemaext.Registry{}), qt.IsNil)
 	c.Assert(schemaDiff.String(), qt.Equals, want)
 
-	apply, err := atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{Statements: statements}).MarshalSQL("  ")
-	c.Assert(err, qt.IsNil)
-	c.Assert(apply, qt.Equals, want)
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
+	var apply bytes.Buffer
+	c.Assert(atlasreport.WriteSchemaApply(&apply, `{{ sql . "  " }}`,
+		atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{Statements: statements})), qt.IsNil)
+	c.Assert(apply.String(), qt.Equals, want)
 
 	plan, err := atlasreport.NewSchemaPlan(atlasreport.SchemaPlanOptions{
 		Statements: []atlasreport.SchemaPlanChange{{Cmd: drop}, {Cmd: note}},

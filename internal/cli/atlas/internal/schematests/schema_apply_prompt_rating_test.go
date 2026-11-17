@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/atlas/internal/atlastest"
 )
@@ -122,12 +123,14 @@ func TestCompatSchemaApplyRatesTheEditedText(t *testing.T) {
 }
 
 // TestCompatSchemaApplyFormatKeepsItsOutput holds --format, whose standard output a
-// template decides: the rating goes to standard error there too.
+// template decides: the rating goes to standard error there too. A --format run
+// prompts only under atlasreport.TemplateExtensionsEnvVar.
 func TestCompatSchemaApplyFormatKeepsItsOutput(t *testing.T) {
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
 	c := qt.New(t)
 	target, desired := compatPromptDatabases(c)
 
-	stdout, stderr := compatApplyStreams(c, atlascompatpolicy.Full(), "--url", "sqlite://"+target, "--to", "sqlite://"+desired, "--format", `{{ len .Changes }}`)
+	stdout, stderr := compatApplyStreams(c, atlascompatpolicy.Full(), "--url", "sqlite://"+target, "--to", "sqlite://"+desired, "--format", `{{ len .Changes.Pending }}`)
 
 	c.Assert(stdout, qt.Equals, "1\nApply these schema changes? Type 'YES' to confirm: Schema apply canceled.\n")
 	c.Assert(stderr, qt.Equals, droppingPlanRating)

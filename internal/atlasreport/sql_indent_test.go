@@ -2,6 +2,7 @@ package atlasreport_test
 
 import (
 	"bytes"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -88,6 +89,7 @@ func TestMigrateDiffIndentReadsTheStatementsDialect(t *testing.T) {
 
 func TestSchemaReportsIndentPreservesRoutineBody(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
 	const body = "BEGIN\n  RETURN 'first\n  second';\nEND;"
 	const statement = "CREATE FUNCTION f() RETURNS text AS $$" + body + "$$ LANGUAGE plpgsql;"
 	reports := []struct {
@@ -95,7 +97,7 @@ func TestSchemaReportsIndentPreservesRoutineBody(t *testing.T) {
 		marshal func(...string) (string, error)
 	}{
 		{"diff", atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Dialect: platform.Postgres, Statements: []string{statement}}).MarshalSQL},
-		{"apply", atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{Driver: platform.Postgres, Statements: []string{statement}}).MarshalSQL},
+		{"apply", schemaApplySQL(atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{Driver: platform.Postgres, Statements: []string{statement}}))},
 		{"plan", atlasreport.NewSchemaPlan(atlasreport.SchemaPlanOptions{Dialect: platform.Postgres, Statements: []atlasreport.SchemaPlanChange{{Cmd: statement}}}).MarshalSQL},
 		{"inspect", newInspectReport(c,
 			&schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Returns: "text", Language: "plpgsql", Body: body}}},
@@ -118,6 +120,7 @@ func TestSchemaReportsIndentPreservesRoutineBody(t *testing.T) {
 // report that dropped its dialect would reindent the second line of the name.
 func TestSchemaReportsIndentReadTheirDialect(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
 	const name = "[first\n  second]"
 	const statement = "CREATE TABLE " + name + " ([id] INT)"
 	reports := []struct {
@@ -125,7 +128,7 @@ func TestSchemaReportsIndentReadTheirDialect(t *testing.T) {
 		marshal func(...string) (string, error)
 	}{
 		{"diff", atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Dialect: platform.SQLServer, Statements: []string{statement}}).MarshalSQL},
-		{"apply", atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{Driver: platform.SQLServer, Statements: []string{statement}}).MarshalSQL},
+		{"apply", schemaApplySQL(atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{Driver: platform.SQLServer, Statements: []string{statement}}))},
 		{"plan", atlasreport.NewSchemaPlan(atlasreport.SchemaPlanOptions{Dialect: platform.SQLServer, Statements: []atlasreport.SchemaPlanChange{{Cmd: statement}}}).MarshalSQL},
 		{"inspect", newInspectReport(c,
 			&schemamodel.Database{
@@ -143,5 +146,20 @@ func TestSchemaReportsIndentReadTheirDialect(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(output, qt.Contains, name)
 		})
+	}
+}
+
+// schemaApplySQL is the `schema apply` report's `sql` helper, called as a
+// template calls it. The helper is Ptah's own on that verb, so a test that
+// calls it sets [atlasreport.TemplateExtensionsEnvVar].
+func schemaApplySQL(report atlasreport.SchemaApply) func(...string) (string, error) {
+	return func(indent ...string) (string, error) {
+		args := ""
+		for _, arg := range indent {
+			args += " " + strconv.Quote(arg)
+		}
+		var out bytes.Buffer
+		err := atlasreport.WriteSchemaApply(&out, "{{ sql ."+args+" }}", report)
+		return out.String(), err
 	}
 }

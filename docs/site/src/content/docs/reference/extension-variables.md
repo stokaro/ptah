@@ -58,7 +58,7 @@ community CLI does on the same input.
 | [`PTAH_STRICT_DIR_QUERY`](#ptah_strict_dir_query) | Refuse an unknown `--dir` query key |
 | [`PTAH_ATLAS_LINT_ALL_VERSIONS`](#ptah_atlas_lint_all_versions) | Lint the whole directory |
 | [`PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR`](#ptah_atlas_plan_lint_fail_on_error) | Let a plan-lint error decide the exit code |
-| [`PTAH_SCHEMA_DIFF_TEMPLATE_HELPERS`](#ptah_schema_diff_template_helpers) | Register the shared `--format` helpers |
+| [`PTAH_ATLAS_TEMPLATE_EXTENSIONS`](#ptah_atlas_template_extensions) | Open Ptah's own `--format` helpers and members |
 | [`PTAH_HCL_MERGE_REDECLARATIONS`](#ptah_hcl_merge_redeclarations) | Merge repeated blocks again |
 | [`PTAH_HCL_STRICT_REDECLARATIONS`](#ptah_hcl_strict_redeclarations) | Refuse four more repeated block kinds |
 | [`PTAH_HCL_SCHEMA_SCOPED_ENUMS`](#ptah_hcl_schema_scoped_enums) | Key `enum` blocks by qualified name |
@@ -260,19 +260,38 @@ variable rather than a flag for the same reason the two above are — the
 conformance `cli-surface` tier asserts flag parity with the pinned binary, and an
 environment variable is invisible to the help surface.
 
-## `PTAH_SCHEMA_DIFF_TEMPLATE_HELPERS`
+## `PTAH_ATLAS_TEMPLATE_EXTENSIONS`
 
-By default, `ptah-compat schema diff
---format` registers one helper, `sql`, which is what the pinned community binary
-offers there; `{{ json . }}` exits 1 with `function "json" not defined`. Set the
-variable to `1` and the shared helper set `schema apply` already registers
-becomes available on this verb too, so `{{ json . }}` renders a
-document carrying `From`, `To` and `Changes`. `json` writes the
-engine-specific settings of `From` and `To`, such as a ClickHouse table's TTL,
-through the codecs of the runtime that compared them. The default stays narrow because
-registering more would let ptah-compat accept a template the community binary
-refuses. Native `ptah schema diff` needs no variable: `--format json` emits a
-machine-readable diff there already.
+By default, a `ptah-compat` `--format` template reads what the pinned community
+binary hands its template on the same verb, and calls the helpers that binary
+defines there. A template that reads anything else fails as it fails there:
+`migrate diff --format '{{ .MarshalSQL }}'` exits 1 with `can't evaluate field
+MarshalSQL`, and `schema apply --format '{{ sql . }}'` exits 1 with
+`function "sql" not defined`. The default stays narrow because a template that
+renders here and fails on that binary passes in one pipeline and breaks the
+next.
+
+Set the variable to `1` and every verb opens what Ptah has beyond that:
+
+- `migrate diff` and `schema diff` read Ptah's whole diff report, so each
+  change carries its statement as `.Cmd` on `schema diff` too, and the shared
+  helpers, `json` among them, are registered. `json` writes the engine-specific
+  settings of `.From` and `.To`, such as a ClickHouse table's TTL, through the
+  codecs of the runtime that compared them.
+- `schema apply` registers `sql`, and a `--format` run may prompt, writing the
+  report above the question with its changes still `Pending`. Without the
+  variable, `--format` needs `--dry-run` or `--auto-approve`, as on that
+  binary.
+- `schema inspect` registers `dbml`, and a bare `--format dbml` writes the DBML
+  document rather than the word `dbml`.
+- `migrate lint` and `migrate status` register the rest of the shared set:
+  `indent_ln`, `json_merge` and `upper` on lint, and `add`, `indent_ln` and
+  `upper` on status.
+
+Every verb the variable governs refuses a malformed value before it does any
+work, with or without `--format`. Strict mode refuses the variable when it is
+on. Native `ptah` needs no variable: its verbs write their own documents, such
+as `ptah schema diff --format json`.
 
 ## `PTAH_HCL_MERGE_REDECLARATIONS`
 

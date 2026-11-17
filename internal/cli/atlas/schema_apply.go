@@ -494,6 +494,9 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	policy = withAtlasTableRebuild(policy, rebuild)
 	opts.formatOutput = formatOutput
+	if err := validateAtlasSchemaApplyFormat(opts); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	// The toggle belongs to every SQLite apply invocation. Resolve it as soon
 	// as the effective target URL is known, before classifying or executing a
 	// desired source. Invalid non-SQLite URLs retain their Atlas-compatible
@@ -527,14 +530,6 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	}
 	if cmd.Flags().Changed(atlasFileFlagName) {
 		opts.toURLs = opts.filePaths
-	}
-	if formatOutput && strings.TrimSpace(opts.format) == "" {
-		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
-	}
-	if formatOutput {
-		if err := atlasreport.ValidateSchemaApplyTemplate(opts.format); err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
 	}
 
 	projectEnv := atlassource.ProjectEnv{}
@@ -826,14 +821,6 @@ func atlasSchemaFileSourceURLs(sources []schemafile.Source) []string {
 // Whenever a desired state is available, the end state is verified again on
 // the target after the apply.
 func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOptions) error {
-	if opts.formatOutput && strings.TrimSpace(opts.format) == "" {
-		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
-	}
-	if opts.formatOutput {
-		if err := atlasreport.ValidateSchemaApplyTemplate(opts.format); err != nil {
-			return cmdutil.Fail(cmd, err)
-		}
-	}
 	if err := validateAtlasSchemaApplyPlanOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -1595,6 +1582,43 @@ func writeAtlasSchemaApplyFormat(
 	return err
 }
 
+// errAtlasSchemaApplyInteractiveFormat is the pinned community binary v1.3.0's
+// refusal of a --format run that would prompt, word for word. Measured on
+// PostgreSQL 18 and SQLite, it exits 1 with this error before it connects or
+// parses the template. That binary also spells the flag --log, which is why
+// the sentence names a flag this one does not register.
+var errAtlasSchemaApplyInteractiveFormat = errors.New("--log and --format can only be used with --dry-run or --auto-approve")
+
+// validateAtlasSchemaApplyFormat refuses a --format the run cannot render,
+// before any source is read or database opened, on both the saved-plan path
+// and the planning one.
+//
+// It resolves [atlasreport.TemplateExtensionsEnvVar] first and on every run,
+// since the variable changes which templates render: a malformed value fails
+// a run with no --format too. It then refuses a --format run that would
+// prompt, as the community binary does, unless the variable is on, when the
+// report is written above the prompt with its changes still Pending. Last it
+// parses the template.
+func validateAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions) error {
+	extended, err := atlasreport.ResolveTemplateExtensions()
+	if err != nil {
+		return err
+	}
+	if !opts.formatOutput {
+		return nil
+	}
+	if !opts.dryRun && !opts.autoApprove && !extended {
+		return errAtlasSchemaApplyInteractiveFormat
+	}
+	if strings.TrimSpace(opts.format) == "" {
+		return errors.New("--format must not be empty")
+	}
+	return atlasreport.ValidateSchemaApplyTemplate(opts.format)
+}
+
+// renderAtlasSchemaApplyFormat renders the --format report of a plan. Only a
+// run that applies without asking reports its changes as Applied; a dry run,
+// and a run that prompts first, reports them as Pending.
 func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, driver string, statements, comments []string) (string, error) {
 	if opts.edit {
 		// An edit can change the statements, so the comments of the plan no
@@ -1604,7 +1628,7 @@ func renderAtlasSchemaApplyFormat(opts atlasSchemaApplyOptions, driver string, s
 	report := atlasreport.NewSchemaApply(atlasreport.SchemaApplyOptions{
 		Driver:     driver,
 		URL:        opts.url,
-		DryRun:     opts.dryRun,
+		DryRun:     opts.dryRun || !opts.autoApprove,
 		Statements: statements,
 		Comments:   comments,
 	})

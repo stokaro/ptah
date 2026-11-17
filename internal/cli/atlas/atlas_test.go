@@ -1248,7 +1248,7 @@ func TestCompatCommand_SchemaInspectFormatsCustomTemplate(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "inspect",
 		"--url", "sqlite://" + dbPath,
-		"--format", `{{ len .Realm.Schemas }}/{{ len (index .Schema.Schemas 0).Tables }}/{{ base64url "a+b/c=" }}/{{ printf "%.6s" (sql .) }}`,
+		"--format", `{{ len .Realm.Schemas }}/{{ len (index .Realm.Schemas 0).Tables }}/{{ base64url "a+b/c=" }}/{{ printf "%.6s" (sql .) }}`,
 	})
 
 	err := cmd.Execute()
