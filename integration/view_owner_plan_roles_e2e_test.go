@@ -65,30 +65,42 @@ func TestSchemaApplyCountsAGrantOfTheOwnerBeforeItE2E(t *testing.T) {
 	}
 }
 
-// TestSchemaApplyRefusesAGrantTheServerDoesNotFollowE2E is the control: a
-// grant WITH SET FALSE gives the applier membership in {owner} but not SET,
-// which PostgreSQL 16 and later require of the new owner, so the server would
-// refuse the ALTER VIEW ... OWNER TO after the GRANT ran. The check refuses
-// before either is sent: my_docs keeps its owner, and the applier holds no
-// grant of {owner} it made.
+// TestSchemaApplyRefusesAGrantTheServerDoesNotFollowE2E is the control: each
+// plan grants {owner} to the applier in a way that leaves it without SET on
+// {owner}, which PostgreSQL 16 and later require of the new owner, so the
+// server would refuse the ALTER VIEW ... OWNER TO after the statements before
+// it ran. A grant WITH SET FALSE gives membership only; a REVOKE of the role
+// or of its SET option after the grant takes SET away again; and a grant of a
+// role the server does not hold gives nothing, and must not stop the check
+// from answering. The check refuses before any statement is sent: my_docs
+// keeps its owner, and the applier holds no grant of {owner} it made.
 func TestSchemaApplyRefusesAGrantTheServerDoesNotFollowE2E(t *testing.T) {
-	c := qt.New(t)
 	engine := viewOwnerEngines[0]
-	applier := newViewOwnerApplier(c, engine)
-	target := newViewOwnerTarget(c, engine, applier.statements(slices.Concat(viewOwnerApplierGrants, viewOwnerGrantHeld))...)
+	for _, prepended := range []string{
+		"GRANT {owner} TO {applier} WITH INHERIT TRUE, SET FALSE",
+		"GRANT {owner} TO {applier};\nREVOKE {owner} FROM {applier}",
+		"GRANT {owner} TO {applier};\nREVOKE SET OPTION FOR {owner} FROM {applier}",
+		"GRANT ptah_vo_no_such_role TO {applier}",
+	} {
+		t.Run(prepended, func(t *testing.T) {
+			c := qt.New(t)
+			applier := newViewOwnerApplier(c, engine)
+			target := newViewOwnerTarget(c, engine, applier.statements(slices.Concat(viewOwnerApplierGrants, viewOwnerGrantHeld))...)
 
-	got := applyWithPrepended(c, applier.url(c, target), target.schemaFile(c, viewOwnerBody, "ALTER VIEW my_docs OWNER TO {owner};\n"),
-		target.expand(applier.expand("GRANT {owner} TO {applier} WITH INHERIT TRUE, SET FALSE")))
+			got := applyWithPrepended(c, applier.url(c, target), target.schemaFile(c, viewOwnerBody, "ALTER VIEW my_docs OWNER TO {owner};\n"),
+				target.expand(applier.expand(prepended)))
 
-	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-	c.Assert(got.Stderr, qt.Contains, target.expand(applier.expand(`ALTER VIEW "public"."my_docs" OWNER TO "{owner}" gives the view to role "{owner}", `+
-		`which connected role "{applier}" may not give an object to: `+refusalSET)))
-	c.Assert(got.Stderr, qt.Not(qt.Contains), "42501")
-	c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", applier.expand("my_docs={applier}")))
-	var made int
-	c.Assert(target.db.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_auth_members WHERE roleid = to_regrole($1) AND grantor = to_regrole($2)",
-		target.names["{owner}"], applier.name).Scan(&made), qt.IsNil)
-	c.Assert(made, qt.Equals, 0)
+			c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Contains, target.expand(applier.expand(`ALTER VIEW "public"."my_docs" OWNER TO "{owner}" gives the view to role "{owner}", `+
+				`which connected role "{applier}" may not give an object to: `+refusalSET)))
+			c.Assert(got.Stderr, qt.Not(qt.Contains), "SQLSTATE")
+			c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", applier.expand("my_docs={applier}")))
+			var made int
+			c.Assert(target.db.QueryRowContext(c.Context(), "SELECT count(*) FROM pg_auth_members WHERE roleid = to_regrole($1) AND grantor = to_regrole($2)",
+				target.names["{owner}"], applier.name).Scan(&made), qt.IsNil)
+			c.Assert(made, qt.Equals, 0)
+		})
+	}
 }
 
 // TestSchemaApplyGivesAViewToARoleThePlanCreatesE2E applies, as a superuser,

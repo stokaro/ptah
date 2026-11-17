@@ -46,6 +46,16 @@ func TestReadRoleStatements_HappyPath(t *testing.T) {
 		{name: "a GRANT of privileges", dialect: "postgres", text: "GRANT SELECT ON docs TO app", want: []objectowner.RoleStatement{{Text: "GRANT SELECT ON docs TO app"}}},
 		{name: "a GRANT of a privilege list", dialect: "postgres", text: "GRANT SELECT, UPDATE (body) ON docs TO app",
 			want: []objectowner.RoleStatement{{Text: "GRANT SELECT, UPDATE (body) ON docs TO app"}}},
+		{name: "a REVOKE of a role", dialect: "postgres", text: "REVOKE r FROM app, CURRENT_ROLE GRANTED BY admin CASCADE",
+			want: []objectowner.RoleStatement{{Text: "REVOKE r FROM app, CURRENT_ROLE GRANTED BY admin CASCADE",
+				Grants: []objectowner.Membership{{Role: "r", Member: "app", Revoked: true}, {Role: "r", Revoked: true}}}}},
+		{name: "a REVOKE of the SET option", dialect: "postgres", text: "REVOKE SET OPTION FOR r FROM app",
+			want: []objectowner.RoleStatement{{Text: "REVOKE SET OPTION FOR r FROM app", Grants: []objectowner.Membership{{Role: "r", Member: "app", Revoked: true}}}}},
+		{name: "a REVOKE of privileges", dialect: "postgres", text: "REVOKE SELECT ON docs FROM app", want: []objectowner.RoleStatement{{Text: "REVOKE SELECT ON docs FROM app"}}},
+		{name: "DROP ROLE IF EXISTS", dialect: "postgres", text: `DROP ROLE IF EXISTS a, "B"`,
+			want: []objectowner.RoleStatement{{Text: `DROP ROLE IF EXISTS a, "B"`, Grants: []objectowner.Membership{{Role: "a", Revoked: true}, {Role: "B", Revoked: true}}}}},
+		{name: "DROP USER", dialect: "cockroachdb", text: "DROP USER Reporting",
+			want: []objectowner.RoleStatement{{Text: "DROP USER Reporting", Grants: []objectowner.Membership{{Role: "reporting", Revoked: true}}}}},
 		{name: "statements in order", dialect: "postgres", text: "CREATE USER x; -- note\nGRANT x TO app; ALTER VIEW v OWNER TO x",
 			want: []objectowner.RoleStatement{
 				{Text: "CREATE USER x", Creates: "x"},
@@ -62,11 +72,20 @@ func TestReadRoleStatements_HappyPath(t *testing.T) {
 	}
 }
 
-// heldRoles answers the roles a role the server holds holds the privilege on,
-// from a fixed set: rv_g holds rv_far through a membership the server holds.
+// serverHeld is the roles each role the server holds holds the privilege on,
+// itself included: rv_g holds rv_far through a membership the server holds.
+// rv_nosuch is not on the server, and answers nothing.
+var serverHeld = map[string][]string{
+	"rv_a": {"rv_a"}, "rv_b": {"rv_b"}, "rv_g": {"rv_g", "rv_far"}, "rv_far": {"rv_far"}, "held": {"held"},
+}
+
+// heldErrors fails the question about a role the plan creates, which the
+// server cannot answer about yet, so a check that asks it fails.
+var heldErrors = map[string]error{"fresh": errors.New(`role "fresh" does not exist`)}
+
+// heldRoles answers from serverHeld and heldErrors.
 func heldRoles(role string) ([]string, error) {
-	held := map[string][]string{"rv_g": {"rv_g", "rv_far"}}
-	return held[role], nil
+	return serverHeld[role], heldErrors[role]
 }
 
 // TestTransfers_Gains_HappyPath pins which grants before an ownership
@@ -95,6 +114,20 @@ func TestTransfers_Gains_HappyPath(t *testing.T) {
 		{name: "a grant to a role the connection does not hold", transfers: set, role: "rv_a", grants: []objectowner.Membership{{Role: "rv_a", Member: "rv_b"}}},
 		{name: "a grant to a role the plan creates", transfers: set, role: "rv_a", created: []string{"fresh"},
 			grants: []objectowner.Membership{{Role: "rv_a", Member: "fresh"}}},
+		{name: "a role the plan creates, granted, then granted the owner", transfers: set, role: "rv_a", created: []string{"fresh"},
+			grants: []objectowner.Membership{{Role: "fresh", Member: "app"}, {Role: "rv_a", Member: "fresh"}}, want: true},
+		{name: "a grant of a role the server does not hold", transfers: set, role: "rv_a",
+			grants: []objectowner.Membership{{Role: "rv_nosuch", Member: "app"}, {Role: "rv_a", Member: "rv_nosuch"}}},
+		{name: "a REVOKE after the grant", transfers: set, role: "rv_a",
+			grants: []objectowner.Membership{{Role: "rv_a", Member: "app"}, {Role: "rv_a", Member: "other", Revoked: true}}},
+		{name: "a DROP after the grant", transfers: member, role: "rv_a",
+			grants: []objectowner.Membership{{Role: "rv_a", Member: "app"}, {Role: "rv_a", Revoked: true}}},
+		{name: "a grant after a REVOKE", transfers: set, role: "rv_a",
+			grants: []objectowner.Membership{{Role: "rv_a", Member: "app", Revoked: true}, {Role: "rv_a", Member: "app"}}, want: true},
+		{name: "a grant to a held role the plan revokes", transfers: set, role: "rv_a",
+			grants: []objectowner.Membership{{Role: "rv_a", Member: "held"}, {Role: "held", Member: "other", Revoked: true}}},
+		{name: "a membership the server holds, after a REVOKE", transfers: set, role: "rv_far",
+			grants: []objectowner.Membership{{Role: "rv_g", Member: "app"}, {Role: "rv_b", Member: "other", Revoked: true}}},
 		{name: "a chain of grants in any order", transfers: set, role: "rv_a",
 			grants: []objectowner.Membership{{Role: "rv_a", Member: "rv_b"}, {Role: "rv_b", Member: "app"}}, want: true},
 		{name: "a membership the server holds", transfers: set, role: "rv_far", grants: []objectowner.Membership{{Role: "rv_g", Member: "app"}}, want: true},

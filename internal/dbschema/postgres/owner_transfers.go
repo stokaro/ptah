@@ -74,12 +74,15 @@ func (w *PostgreSQLWriter) OwnerTransfers(ctx context.Context) (objectowner.Tran
 // [PostgreSQLWriter.OwnerTransfers] answers it, through the memberships the
 // server holds, role itself included, as the server stores their names. It
 // answers what role would let a connection give an object to once a plan
-// grants role to that connection.
+// grants role to that connection. A role the server does not hold answers no
+// roles rather than an error: the server refuses a GRANT of it as the
+// statement runs. PostgreSQL 18 and CockroachDB 26.4 both answer the query.
 func (w *PostgreSQLWriter) HeldRoles(ctx context.Context, role, privilege string) ([]string, error) {
 	if w.db == nil {
 		return nil, fmt.Errorf("no database connection")
 	}
-	rows, err := w.db.QueryContext(ctx, `SELECT rolname FROM pg_catalog.pg_roles WHERE pg_has_role($1::text, oid, $2::text)`, role, privilege)
+	rows, err := w.db.QueryContext(ctx, `SELECT r.rolname FROM pg_catalog.pg_roles g
+		JOIN pg_catalog.pg_roles r ON pg_catalog.pg_has_role(g.oid, r.oid, $2::text) WHERE g.rolname = $1::text`, role, privilege)
 	if err != nil {
 		return nil, fmt.Errorf("read the roles %q holds: %w", role, err)
 	}

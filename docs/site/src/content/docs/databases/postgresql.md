@@ -1533,20 +1533,34 @@ to hold `CREATE` on the view's schema:
 
 Ptah asks the server both questions before it sends a statement, and refuses
 a plan the server would refuse partway through, after a rebuild had already
-dropped the view. A `GRANT` of a role earlier in the plan counts as the server
-counts it once it has run: a grant to the connected role, or to a role it may
-give an object to, lets it give an object to the granted role and to the roles
-that role holds. On PostgreSQL 16 and later a grant `WITH SET FALSE` does not
-count, and neither does a grant that states no `SET` option after one of the
-same membership stated `FALSE`. The refusal names the statement, the role and the connected
+dropped the view. The refusal names the statement, the role and the connected
 role, says when the role owns the view now, and ends with what to do: the
 `GRANT` that lets the plan run, such as
 `GRANT "reporting" TO "app" WITH SET TRUE` or
 `GRANT CREATE ON SCHEMA "public" TO "reporting"`, or an owner to declare
-instead. The `CREATE` question is asked about a view the server holds. For a
-new view the server answers as the statement runs: PostgreSQL refuses it with
-SQLSTATE 42501, the plan rolls back, and Ptah reports the code with the
-statement. YugabyteDB is not asked, and answers the same way.
+instead.
+
+The statements of the plan before an `OWNER TO` change the answer:
+
+- A `GRANT` of a role to the connected role, or to a role it may give an
+  object to, lets it give an object to the granted role and to the roles that
+  role holds on the server.
+- On PostgreSQL 16 and later, a grant `WITH SET FALSE` does not count. Neither
+  does a grant that states no `SET` option after an earlier grant of the same
+  membership stated `FALSE`. The grantor is not read, so this also applies when
+  the two grants name different grantors with `GRANTED BY`, where the server
+  would accept the plan.
+- A `REVOKE` of a role, whichever option it names, and a `DROP ROLE` of it stop
+  every earlier grant of that role from counting. After either, no chain
+  through the memberships the server holds counts.
+- A grant of a role the server does not hold gains nothing. A `GRANT` the
+  server itself refuses, such as one by a role without `ADMIN` on the role, is
+  left to the server, which refuses it as it runs.
+
+The `CREATE` question is asked about a view the server holds. For a new view
+the server answers as the statement runs: PostgreSQL refuses it with SQLSTATE
+42501, the plan rolls back, and Ptah reports the code with the statement.
+YugabyteDB is not asked, and answers the same way.
 
 Under `--json` the refusals Ptah issues before it sends a statement, and the
 refusal of a role the server does not hold, are `outcome: refused` with their
