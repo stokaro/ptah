@@ -107,11 +107,11 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 202 capabilities below:
+Across the 203 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 188 |
+| Ptah supports it fully | 189 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
