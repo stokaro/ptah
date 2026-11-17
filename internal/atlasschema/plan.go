@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	digest "github.com/opencontainers/go-digest"
 
@@ -186,7 +187,16 @@ type PlanFileOptions struct {
 	// dev database, and a `docker://` value is answered with a diagnostic
 	// rather than a container (stokaro/ptah#1635).
 	DevURL string
-	ToURLs []string
+	// SkipUnusedDevURL leaves DevURL unopened. By default it is opened, though
+	// the plan reads nothing from it, and one nothing answers on fails the run,
+	// as on the Atlas CLI; see [ptah.run/internal/devreach]. A native command
+	// sets it for a URL taken from the project file rather than given for the
+	// run.
+	SkipUnusedDevURL bool
+	// ConnectTimeout bounds opening DevURL. Zero leaves the caller's context
+	// deadline unchanged.
+	ConnectTimeout time.Duration
+	ToURLs         []string
 	// ProtectedTables fences declared row sets off from this plan; see
 	// [ApplyOptions.ProtectedTables]. A plan is refused rather than saved,
 	// because a saved plan is applied later by whoever holds it.
@@ -318,10 +328,13 @@ func PreparePlanFileReportingUndecided(
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 	// A saved plan reads the dev URL for its schema and nothing else, and the
-	// URL is still opened, so one nothing answers on fails the run here rather
-	// than the run that applies the plan; see [devreach].
-	if _, err := devreach.Server(ctx, conn.Info().Dialect, "dev-url", opts.DevURL, 0); err != nil {
-		return PlanFile{}, schemadiff.Diagnostics{}, err
+	// URL is still opened unless the caller says otherwise, so one nothing
+	// answers on fails the run here rather than the run that applies the plan;
+	// see [devreach].
+	if !opts.SkipUnusedDevURL {
+		if _, err := devreach.Server(ctx, conn.Info().Dialect, "dev-url", opts.DevURL, opts.ConnectTimeout); err != nil {
+			return PlanFile{}, schemadiff.Diagnostics{}, err
+		}
 	}
 	// The pair `schema apply` refuses with the same arguments, refused here
 	// too, so no plan is saved for a whole server beside a dev database. The

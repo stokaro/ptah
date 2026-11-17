@@ -229,6 +229,9 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		ExcludeSources:        opts.excludeSources,
 		Vars:                  schemaVars,
 		Diagnostics:           cmd.ErrOrStderr(),
+		// The bound of the --from connection above; the Atlas CLI has no
+		// --connect-timeout.
+		ConnectTimeout: dbcli.DefaultConnectTimeout,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

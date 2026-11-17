@@ -391,12 +391,27 @@ func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings
 const Command = "migrations down"
 
 // shadowDBFlagAsTyped names --shadow-db the way the operator spelled it:
-// ptah-compat's `migrate down` forwards its --dev-url here.
+// ptah-compat's `migrate down` forwards its --dev-url here. It is the flag's
+// counterpart of [typedCommand], which does the same for the command name.
 func shadowDBFlagAsTyped(cmd *cobra.Command) string {
 	if cmdadapter.Forwarded(cmd) {
 		return "dev-url"
 	}
 	return shadowDBFlag
+}
+
+// checkUnusedShadowDB opens the shadow database of a run that rolls nothing
+// back, so verifies nothing: a --shadow-db given for this run that nothing
+// answers on fails this run rather than the next one that has a rollback to
+// verify. One from the project file's dev: key is left alone; see
+// [dbcli.ChecksUnusedDevURL]. A docker:// URL is parsed and no container is
+// started.
+func checkUnusedShadowDB(cmd *cobra.Command, dialect, shadowDB string, timeout time.Duration) error {
+	if !dbcli.ChecksUnusedDevURL(cmd, shadowDBFlag) {
+		return nil
+	}
+	_, err := devreach.Server(cmd.Context(), dialect, shadowDBFlagAsTyped(cmd), shadowDB, timeout)
+	return err
 }
 
 // typedCommand is the command a refusal names: [Command], or the spelling the
@@ -617,11 +632,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		}
 
 		if status.CurrentVersion <= targetVersion {
-			// Nothing is rolled back, so nothing is verified, and the shadow
-			// database is opened all the same: a --shadow-db nothing answers on
-			// fails this run rather than the next one that has a rollback to
-			// verify. A docker:// URL is parsed and no container is started.
-			if _, err := devreach.Server(cmd.Context(), conn.Info().Dialect, shadowDBFlagAsTyped(cmd), resolvedOpts.shadowDB, settings.connectTimeout); err != nil {
+			if err := checkUnusedShadowDB(cmd, conn.Info().Dialect, resolvedOpts.shadowDB, settings.connectTimeout); err != nil {
 				return err
 			}
 			report, err = finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{

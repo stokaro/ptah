@@ -293,17 +293,19 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		return atlasschema.PlanEvidence{}, err
 	}
 	plan, undecided, err := atlasschema.PreparePlanFileReportingUndecided(cmd.Context(), conn, atlasschema.PlanFileOptions{
-		Runtime:         runtime,
-		ProjectRoots:    schemaroot.Of(opts.rootDirs),
-		Name:            opts.name,
-		DevURL:          opts.devURL,
-		Desired:         desired,
-		Exclude:         opts.exclude,
-		ExcludeSources:  opts.excludeSources,
-		Schemas:         dbcli.ParseSchemas(opts.schemas),
-		Policy:          policy,
-		ProtectedTables: opts.protectedTables,
-		Diagnostics:     cmd.ErrOrStderr(),
+		Runtime:          runtime,
+		ProjectRoots:     schemaroot.Of(opts.rootDirs),
+		Name:             opts.name,
+		DevURL:           opts.devURL,
+		SkipUnusedDevURL: !dbcli.ChecksUnusedDevURL(cmd, planDevURLFlag),
+		ConnectTimeout:   connectTimeout,
+		Desired:          desired,
+		Exclude:          opts.exclude,
+		ExcludeSources:   opts.excludeSources,
+		Schemas:          dbcli.ParseSchemas(opts.schemas),
+		Policy:           policy,
+		ProtectedTables:  opts.protectedTables,
+		Diagnostics:      cmd.ErrOrStderr(),
 		// Warned about as `schema apply` warns, since this plan is what
 		// `schema apply --plan` runs; see [schemascope.UndescribedRemovals].
 		WarnUndescribedSchemas: true,

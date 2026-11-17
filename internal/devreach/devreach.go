@@ -12,7 +12,12 @@
 //
 // Both of Ptah's command trees call [Server] where they take the URL, so the
 // native and the compatible commands refuse the same URLs, each in its own
-// words.
+// words. They differ on where the URL came from. ptah-compat opens every dev
+// URL it is given, from a flag or from atlas.hcl, as the Atlas CLI does. A
+// native command opens one only when the operator gave it for this run, as the
+// flag or its PTAH_* variable: a project file's `dev:` key is a default for
+// every command in the project, and a command that does not use the database
+// has no reason to fail on it.
 package devreach
 
 import (
@@ -32,16 +37,21 @@ import (
 //
 // A URL of only spaces answers nil and no error: the command was given none.
 // Any other URL is taken as written, so a docker:// URL behind a space is no
-// docker URL, as it is none to the pinned community binary. A docker:// URL is
-// parsed and not started; its server is the one the image tag
-// names, and a tag no release line matches, such as `latest`, answers nil. A
-// URL naming a SQLite file answers nil without opening it, since opening it
-// creates the file and the engine is the one compiled into Ptah. Any other URL
-// is checked against dialect when dialect is not empty, before anything is
-// connected, in the words of [atlasurl.ValidateDialectMatch], then connected to
-// and closed again, and a connection that fails within timeout
-// is the error, wrapped as `connect to --<flag>: ...`. A timeout of zero
-// leaves the connector's own.
+// docker URL, as it is none to the pinned community binary.
+//
+// A docker:// URL is parsed and no container is started. Its server is the one
+// the image tag names, and a tag no release line matches, such as `latest`,
+// answers nil.
+//
+// A URL naming a SQLite file answers nil without opening it, since opening it
+// creates the file and the engine is the one compiled into Ptah. A dev path
+// that does not exist is therefore not refused here.
+//
+// Any other URL is checked against dialect when dialect is not empty, before
+// anything is connected, in the words of [atlasurl.ValidateDialectMatch]. It is
+// then connected to and closed again, and a connection that fails within
+// timeout is the error, wrapped as `connect to --<flag>: ...`. A timeout of
+// zero leaves the deadline of ctx, if any, as the only bound.
 func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Duration) (capability.Capabilities, error) {
 	switch {
 	case strings.TrimSpace(devURL) == "":

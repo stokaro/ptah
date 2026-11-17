@@ -430,14 +430,20 @@ func withAtlasSchemaApplyPolicy(
 }
 
 // checkAtlasSchemaApplyDevURL refuses a --dev-url naming no driver before
-// anything is contacted, and then one nothing answers on. The pinned community
-// binary v1.3.0 opens the dev database on every `schema apply` it is given one,
-// whatever --to names, and fails before it plans; see [devreach].
-func checkAtlasSchemaApplyDevURL(ctx context.Context, devURL string) error {
+// anything is contacted, then one of a dialect other than --url's, and then one
+// nothing answers on. The pinned community binary v1.3.0 opens the dev database
+// on every `schema apply` it is given one, whatever --to names, and fails
+// before it plans; see [devreach]. A --url whose scheme names no dialect skips
+// the dialect check, and the connection to --url refuses it next.
+func checkAtlasSchemaApplyDevURL(ctx context.Context, url, devURL string) error {
 	if err := atlasDevURLDriverDiagnostic(ctx, devURL); err != nil {
 		return err
 	}
-	_, err := devreach.Server(ctx, "", "dev-url", devURL, 0)
+	dialect, err := atlasurl.DialectFromURL(url)
+	if err != nil {
+		dialect = ""
+	}
+	_, err = devreach.Server(ctx, dialect, "dev-url", devURL, dbcli.DefaultConnectTimeout)
 	return err
 }
 
@@ -585,7 +591,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	// measured on 2026-08-13, `--to` a database and `--dev-url notadriver://x`
 	// answers `sql/sqlclient: unknown driver "notadriver"` there, on the argv
 	// where ensureAtlasSchemaApplyDevURL below deliberately exempts the source.
-	if err := checkAtlasSchemaApplyDevURL(contextOrBackground(cmd), opts.devURL); err != nil {
+	if err := checkAtlasSchemaApplyDevURL(contextOrBackground(cmd), opts.url, opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	if err := ensureAtlasSchemaApplyDevURL(contextOrBackground(cmd), opts, projectEnv); err != nil {

@@ -91,14 +91,25 @@ validation:
 - Atlas-compatible verbs use it for planning, linting, and rollback
   verification.
 
-A command given a dev or shadow URL connects to it even when the run needs
-nothing from it, such as `schema diff` of two schema files, `schema compare`,
-or a `migrations down` with nothing to roll back. A URL nothing answers on
-fails the run there, as on the Atlas CLI, rather than the first run that
-needs the database. A `docker://` URL in such a run is read for the server
-its tag names, and no container is started. `ptah-compat schema inspect` of a
-database is the exception, as on the Atlas CLI: it reads the database and
-never opens the dev URL.
+A dev or shadow URL given for the run, on the command line or through its
+`PTAH_*` variable, is opened even when the run needs nothing from it, such as
+`ptah schema diff` of two schema files, `ptah schema compare`, `ptah schema
+plan` or a `ptah migrations down` with nothing to roll back. A URL nothing
+answers on then fails this run, while the mistake is in front of the operator,
+rather than the first later run that needs the database. The `dev:` key in
+`ptah.yaml` is different: it is a default for every command in the project, so
+a native command that needs nothing from the dev database does not fail on a
+`dev:` URL nothing answers on. `ptah schema inspect` of a database never opens
+a dev URL, wherever it came from.
+
+`ptah-compat` opens every dev URL it is given, from a flag or from `atlas.hcl`,
+because the Atlas CLI fails on one it cannot reach. Its `schema inspect` of a
+database is the exception, as it is on the Atlas CLI.
+
+Two kinds of URL are read without a connection in such a run. A `docker://` URL
+is read for the server its tag names, and no container is started. A
+`sqlite://` URL or a file path is not opened, since opening it would create the
+file, so a SQLite dev path that does not exist is not refused there.
 
 A dev database must hold nothing the reset would drop when a command starts.
 Ptah refuses a table before anything is dropped, as the Atlas CLI does, and

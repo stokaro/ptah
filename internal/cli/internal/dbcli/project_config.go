@@ -15,6 +15,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/schemasource"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/cli/internal/cmdadapter"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/pathguard"
@@ -334,6 +335,21 @@ func EffectiveString(
 		return flagValue
 	}
 	return configValue.Value
+}
+
+// ChecksUnusedDevURL reports whether a run that needs nothing from its dev or
+// shadow database opens the URL in flagName anyway, only to refuse one nothing
+// answers on (see [ptah.run/internal/devreach]).
+//
+// It does when the operator gave the URL for this run, on the command line or
+// through the flag's PTAH_* variable, which is what pflag's Changed bit says on
+// a Ptah surface. A URL [EffectiveString] took from the project file's `dev:`
+// key does not count: it is a default for every command in the project, and a
+// command that does not use it has no reason to fail on it. A run ptah-compat
+// forwarded here always does, because the Atlas CLI opens every dev URL it is
+// given, wherever the URL came from.
+func ChecksUnusedDevURL(cmd *cobra.Command, flagName string) bool {
+	return cmdadapter.Forwarded(cmd) || flagChanged(cmd, flagName)
 }
 
 // JoinSchemasValue converts a presence-aware schema list to its CLI form.
