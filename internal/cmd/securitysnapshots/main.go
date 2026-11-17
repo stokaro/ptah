@@ -31,6 +31,15 @@ var sourceURLs = map[string]string{
 
 var cveID = regexp.MustCompile(`CVE-[0-9]{4}-[0-9]{4,}`)
 
+// reviewSchemaVersion changes whenever a review field changes meaning, so a
+// pending report in an older shape is written again rather than kept.
+const reviewSchemaVersion = 2
+
+// review is the report a changed versioned source leaves for a person. Added
+// and removed IDs compare the observed page with the CVE IDs the reviewed
+// snapshot records for its own page, not with the pinned advisories: most IDs
+// on a page are never pinned, and counting them as new hides what changed.
+// ObservedIDs is the list the updated snapshot records as source_cve_ids.
 type review struct {
 	SchemaVersion int       `json:"schema_version"`
 	Product       string    `json:"product"`
@@ -38,9 +47,9 @@ type review struct {
 	RetrievedAt   time.Time `json:"retrieved_at"`
 	ReviewedSHA   string    `json:"reviewed_sha256"`
 	ObservedSHA   string    `json:"observed_sha256"`
+	AddedIDs      []string  `json:"added_cve_ids"`
+	RemovedIDs    []string  `json:"removed_cve_ids"`
 	ObservedIDs   []string  `json:"observed_cve_ids"`
-	AddedIDs      []string  `json:"new_cve_ids"`
-	MissingIDs    []string  `json:"missing_cve_ids"`
 }
 
 func main() {
@@ -120,13 +129,31 @@ func updateVersioned(product string, source []byte, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	return reconcileVersioned(current, source, now)
+}
+
+// reconcileVersioned compares a fetched source with the reviewed snapshot and
+// either confirms the snapshot, refreshes its retrieval time, or leaves a
+// review report. Paths are relative to the repository root.
+func reconcileVersioned(current vulnerability.VersionedSnapshot, source []byte, now time.Time) error {
+	product := current.Product
 	if current.Source != sourceURLs[product] {
 		return fmt.Errorf("unexpected reviewed source %q", current.Source)
+	}
+	if len(current.SourceCVEIDs) == 0 {
+		return errors.New("reviewed snapshot records no source_cve_ids, so a changed source cannot show what changed")
 	}
 	digest := sha256.Sum256(source)
 	observedSHA := hex.EncodeToString(digest[:])
 	reviewPath := filepath.Join("internal", "vulnerability", "review", product+".json")
 	if observedSHA == current.SourceSHA256 {
+		// The page is the reviewed one, so its IDs are the recorded list. A
+		// snapshot whose hash moved without its list would make the next
+		// review diff against the wrong page.
+		if observed := sourceCVEIDs(source); !slices.Equal(observed, current.SourceCVEIDs) {
+			return fmt.Errorf("source_cve_ids differ from the reviewed source: %d not recorded, %d recorded but absent",
+				len(difference(observed, current.SourceCVEIDs)), len(difference(current.SourceCVEIDs, observed)))
+		}
 		if err := os.Remove(reviewPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -147,7 +174,7 @@ func updateVersioned(product string, source []byte, now time.Time) error {
 		if err := json.Unmarshal(data, &pending); err != nil {
 			return fmt.Errorf("decode pending source review: %w", err)
 		}
-		if pending.ReviewedSHA == current.SourceSHA256 && pending.ObservedSHA == observedSHA {
+		if pending.SchemaVersion == reviewSchemaVersion && pending.ReviewedSHA == current.SourceSHA256 && pending.ObservedSHA == observedSHA {
 			fmt.Printf("%s: source review is still pending\n", product)
 			return nil
 		}
@@ -169,29 +196,33 @@ func updateVersioned(product string, source []byte, now time.Time) error {
 }
 
 func buildReview(current vulnerability.VersionedSnapshot, source []byte, observedSHA string, now time.Time) (review, error) {
-	observed := cveID.FindAllString(string(source), -1)
-	slices.Sort(observed)
-	observed = slices.Compact(observed)
+	observed := sourceCVEIDs(source)
 	if len(observed) == 0 {
 		return review{}, errors.New("changed source contains no CVE IDs")
 	}
-	known := make([]string, 0, len(current.Advisories)+len(current.OutOfScope))
-	for _, advisory := range current.Advisories {
-		known = append(known, advisory.ID)
+	if len(current.SourceCVEIDs) == 0 {
+		return review{}, errors.New("reviewed snapshot records no source_cve_ids to compare with")
 	}
-	for _, excluded := range current.OutOfScope {
-		known = append(known, excluded.ID)
-	}
-	slices.Sort(known)
 	return review{
-		SchemaVersion: 1, Product: current.Product, Source: current.Source, RetrievedAt: now,
-		ReviewedSHA: current.SourceSHA256, ObservedSHA: observedSHA, ObservedIDs: observed,
-		AddedIDs: difference(observed, known), MissingIDs: difference(known, observed),
+		SchemaVersion: reviewSchemaVersion, Product: current.Product, Source: current.Source, RetrievedAt: now,
+		ReviewedSHA: current.SourceSHA256, ObservedSHA: observedSHA,
+		AddedIDs:    difference(observed, current.SourceCVEIDs),
+		RemovedIDs:  difference(current.SourceCVEIDs, observed),
+		ObservedIDs: observed,
 	}, nil
 }
 
+// sourceCVEIDs is the one reading of a page's CVE IDs: the review report and
+// the reviewed snapshot's source_cve_ids must agree on it, or every refresh
+// reports IDs that did not change.
+func sourceCVEIDs(source []byte) []string {
+	ids := cveID.FindAllString(string(source), -1)
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
 func difference(left, right []string) []string {
-	var result []string
+	result := make([]string, 0)
 	for _, id := range left {
 		if !slices.Contains(right, id) {
 			result = append(result, id)
