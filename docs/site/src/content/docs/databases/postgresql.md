@@ -1513,7 +1513,8 @@ Ownership is explicit:
   no `GRANT` for it. Declare the role in the schema, or create it on the server.
   A plan that gives a view to a role the server does not hold, and that no
   earlier statement of the plan creates, is refused before any statement is
-  sent. The refusal names the statement and the role, where the server would
+  sent. `CREATE ROLE`, `CREATE USER` and `CREATE GROUP` each create the role,
+  whatever options follow the name. The refusal names the statement and the role, where the server would
   answer with SQLSTATE 42704 partway through the plan.
 
 The plan check rates an `OWNER TO` a warning, as it rates a `REVOKE`: the role
@@ -1532,7 +1533,12 @@ to hold `CREATE` on the view's schema:
 
 Ptah asks the server both questions before it sends a statement, and refuses
 a plan the server would refuse partway through, after a rebuild had already
-dropped the view. The refusal names the statement, the role and the connected
+dropped the view. A `GRANT` of a role earlier in the plan counts as the server
+counts it once it has run: a grant to the connected role, or to a role it may
+give an object to, lets it give an object to the granted role and to the roles
+that role holds. On PostgreSQL 16 and later a grant `WITH SET FALSE` does not
+count, and neither does a grant that states no `SET` option after one of the
+same membership stated `FALSE`. The refusal names the statement, the role and the connected
 role, says when the role owns the view now, and ends with what to do: the
 `GRANT` that lets the plan run, such as
 `GRANT "reporting" TO "app" WITH SET TRUE` or
