@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/revisiontable"
 )
 
 // serverExtensionEntities declares one table and no extension.
@@ -65,8 +66,8 @@ func installedExtensions(c *qt.C, dsn string) []string {
 	return names
 }
 
-// dropServerExtensionTable removes the table this file created, so a shared
-// server is left as it was found.
+// dropServerExtensionTable removes the table this file created and the apply
+// log schema apply wrote beside it, so a shared server is left as it was found.
 func dropServerExtensionTable(c *qt.C, dsn string) {
 	c.Helper()
 	db, err := sql.Open("pgx", dsn)
@@ -75,7 +76,9 @@ func dropServerExtensionTable(c *qt.C, dsn string) {
 		return
 	}
 	defer db.Close()
-	if _, err := db.Exec("DROP TABLE IF EXISTS ptah3687_notes CASCADE"); err != nil {
-		c.Logf("cleanup did not drop the table: %v", err)
+	for _, table := range []string{"ptah3687_notes", revisiontable.ApplyLog} {
+		if _, err := db.Exec("DROP TABLE IF EXISTS " + table + " CASCADE"); err != nil {
+			c.Logf("cleanup did not drop %s: %v", table, err)
+		}
 	}
 }

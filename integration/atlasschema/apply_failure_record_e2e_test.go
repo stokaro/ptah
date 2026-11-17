@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/clirun"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/rolepassword"
 )
 
@@ -54,6 +55,7 @@ type failureTarget struct {
 	// suffix makes each table name unique, on the one engine whose target is a
 	// schema shared with other tests.
 	suffix string
+	engine dbtarget.Engine
 }
 
 // newFailureTarget creates the database. Oracle has no database to create without
@@ -70,7 +72,7 @@ func newFailureTarget(c *qt.C, engine dbtarget.Engine) *failureTarget {
 	if engine != dbtarget.Oracle {
 		// The MySQL family's test account may create only this prefix.
 		name = "ptah_rt_failure_" + suffix
-		_, err = admin.ExecContext(c.Context(), "CREATE DATABASE "+quotedFailureDatabase(engine, name))
+		_, err = admin.ExecContext(c.Context(), "CREATE DATABASE "+quotedFailureName(engine, name))
 		c.Assert(err, qt.IsNil)
 		target = failureDatabaseURL(c, engine, address, name)
 	}
@@ -84,11 +86,11 @@ func newFailureTarget(c *qt.C, engine dbtarget.Engine) *failureTarget {
 		}
 		dbschema.CloseAndWarn(admin)
 	})
-	return &failureTarget{url: target, conn: conn, suffix: suffix}
+	return &failureTarget{url: target, conn: conn, suffix: suffix, engine: engine}
 }
 
-// quotedFailureDatabase is the database's name as the engine quotes it.
-func quotedFailureDatabase(engine dbtarget.Engine, name string) string {
+// quotedFailureName is a database's or a table's name as the engine quotes it.
+func quotedFailureName(engine dbtarget.Engine, name string) string {
 	switch engine {
 	case dbtarget.MySQL, dbtarget.MariaDB, dbtarget.ClickHouse:
 		return "`" + name + "`"
@@ -102,7 +104,7 @@ func quotedFailureDatabase(engine dbtarget.Engine, name string) string {
 // dropFailureDatabase drops the database, ending the sessions a server keeps open
 // on it.
 func dropFailureDatabase(engine dbtarget.Engine, name string) string {
-	quoted := quotedFailureDatabase(engine, name)
+	quoted := quotedFailureName(engine, name)
 	switch engine {
 	case dbtarget.PostgreSQL:
 		return "DROP DATABASE IF EXISTS " + quoted + " WITH (FORCE)"
@@ -159,6 +161,24 @@ func (f *failureTarget) dropAfterwards(c *qt.C, tables ...string) {
 	})
 }
 
+// dropRecordsAfterwards drops, when the test ends, the tables Ptah keeps its
+// own records in: the schema apply log, and each revision table with every
+// table the migrator keeps beside it. Ptah creates them under quoted names, and
+// on Oracle an unquoted name reaches the upper-case table rather than the
+// lower-case one Ptah created, so each is dropped quoted.
+func (f *failureTarget) dropRecordsAfterwards(c *qt.C, revisionTables ...string) {
+	c.Helper()
+	names := []string{revisiontable.ApplyLog}
+	for _, table := range revisionTables {
+		names = append(names, revisiontable.Configured("", table)...)
+	}
+	c.Cleanup(func() {
+		for _, name := range names {
+			_, _ = f.conn.ExecContext(context.Background(), "DROP TABLE "+quotedFailureName(f.engine, name))
+		}
+	})
+}
+
 // newSharedFailureTarget works in the database the engine's address names, under
 // names only this test uses. It is for a command that touches only what a test
 // names, so the database is the one a test account holds its grants on.
@@ -168,7 +188,7 @@ func newSharedFailureTarget(c *qt.C, engine dbtarget.Engine) *failureTarget {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), address)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	return &failureTarget{url: address, conn: conn, suffix: fmt.Sprintf("%d", time.Now().UnixNano())}
+	return &failureTarget{url: address, conn: conn, suffix: fmt.Sprintf("%d", time.Now().UnixNano()), engine: engine}
 }
 
 // tableExists asks the server whether a table is there.
@@ -323,6 +343,7 @@ func TestSchemaApplyFailureRecordOfASavedPlanE2E(t *testing.T) {
 			f := newFailureTarget(c, test.engine)
 			accounts, first, third, planned := f.table("accounts"), f.table("first_unit"), f.table("third_unit"), f.table("planned")
 			f.dropAfterwards(c, accounts, first, third)
+			f.dropRecordsAfterwards(c)
 			named := func(template, table string) string { return strings.ReplaceAll(template, "{t}", table) }
 			f.exec(c, named(test.seedDDL, accounts))
 			f.exec(c, seedStatements(named(test.seedRow, accounts))...)
@@ -411,6 +432,7 @@ func TestSchemaApplyFailureRecordOfAComputedPlanE2E(t *testing.T) {
 			f := newFailureTarget(c, test.engine)
 			accounts, notes := f.table("accounts"), f.table("notes")
 			f.dropAfterwards(c, accounts, notes)
+			f.dropRecordsAfterwards(c)
 			root := c.TempDir()
 			c.Assert(os.WriteFile(filepath.Join(root, "entities.go"), fmt.Appendf(nil, declaredRowsEntities, accounts, accounts, notes), 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(filepath.Join(root, "rows.yaml"), fmt.Appendf(nil, "- id: 1\n  email: %[1]q\n- id: 2\n  email: %[1]q\n", failureRowValue), 0o600), qt.IsNil)

@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,9 +60,13 @@ func newDevAliasFixture(c *qt.C, state string) devAliasFixture {
 	conn, err := dbschema.ConnectToDatabase(c.Context(), direct)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	// The database is this file's alone, and every test starts it over.
-	c.Assert(atlasschema.ApplySQL(c.Context(), conn, migrator.MigrationTxModeNone,
-		"DROP SCHEMA IF EXISTS public CASCADE;\nCREATE SCHEMA public;\n"+state), qt.IsNil)
+	// The database is this file's alone, and every test starts it over and
+	// empties it again when it ends.
+	const reset = "DROP SCHEMA IF EXISTS public CASCADE;\nCREATE SCHEMA public;\n"
+	c.Assert(atlasschema.ApplySQL(c.Context(), conn, migrator.MigrationTxModeNone, reset+state), qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(atlasschema.ApplySQL(context.Background(), conn, migrator.MigrationTxModeNone, reset), qt.IsNil)
+	})
 	schemaFile, dir := writeDevIdentitySources(c)
 	emptyDir := filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(emptyDir, 0o755), qt.IsNil)

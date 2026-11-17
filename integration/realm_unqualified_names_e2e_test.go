@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -183,7 +184,7 @@ func TestSchemaDiffPlacesAnUnqualifiedNameWhereTheDevDatabaseResolvesIt_HappyPat
 			target: clirun.Compat,
 			to:     "file://schema.sql",
 			want: "-- Create \"fresh\" table\n" +
-				"CREATE TABLE \"public\".\"fresh\" (\n  \"id\" bigint NOT NULL,\n  PRIMARY KEY (\"id\")\n);\n",
+				"CREATE TABLE \"public\".\"fresh\" (\"id\" bigint NOT NULL, PRIMARY KEY (\"id\"));\n",
 		},
 		{
 			name:   "ptah",
@@ -470,6 +471,60 @@ func TestSchemaApplyRendersASequenceOwnerInTheSequencesSchema_HappyPathE2E(t *te
 				qt.DeepEquals, []string{"app.id", "app.note"})
 			c.Assert(again.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", again.Stdout, again.Stderr))
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced, no changes to be made")
+		})
+	}
+}
+
+// TestSchemaDiffQualifiesTwoDocumentsOnARealmDevDatabase_HappyPathE2E diffs two
+// files on a dev database. The community binary creates each file there and
+// reads it back, so on a dev URL without search_path every name of its plan
+// carries the schema the dev database resolves it to: measured with v1.3.0 on
+// PostgreSQL 18, `DROP INDEX "public"."i"`, `ALTER TABLE "public"."t"` and
+// `CREATE TABLE "public"."u"`. On a URL that pins search_path it writes the bare
+// names. Native `ptah schema diff` places the names the same way. The compat rows
+// pass the indented layout so that only the names vary.
+func TestSchemaDiffQualifiesTwoDocumentsOnARealmDevDatabase_HappyPathE2E(t *testing.T) {
+	const (
+		compatRealm = "-- Drop index \"i\" from table: \"t\"\nDROP INDEX \"public\".\"i\";\n" +
+			"-- Modify \"t\" table\nALTER TABLE \"public\".\"t\" ADD COLUMN \"b\" text NULL;\n" +
+			"-- Create \"u\" table\nCREATE TABLE \"public\".\"u\" (\n  \"id\" integer NOT NULL,\n  PRIMARY KEY (\"id\")\n);\n"
+		compatPinned = "-- Drop index \"i\" from table: \"t\"\nDROP INDEX \"i\";\n" +
+			"-- Modify \"t\" table\nALTER TABLE \"t\" ADD COLUMN \"b\" text NULL;\n" +
+			"-- Create \"u\" table\nCREATE TABLE \"u\" (\n  \"id\" integer NOT NULL,\n  PRIMARY KEY (\"id\")\n);\n"
+		nativeRealm = "CREATE TABLE \"public\".\"u\" (\n  \"id\" int PRIMARY KEY NOT NULL\n);\n" +
+			"ALTER TABLE \"public\".\"t\" ADD COLUMN \"b\" text;\nDROP INDEX \"public\".\"i\";\n"
+		nativePinned = "CREATE TABLE \"u\" (\n  \"id\" int PRIMARY KEY NOT NULL\n);\n" +
+			"ALTER TABLE \"t\" ADD COLUMN \"b\" text;\nDROP INDEX \"i\";\n"
+	)
+	compat := []string{"schema", "diff", "--from", "file://a.sql", "--to", "file://b.sql", "--format", `{{ sql . "  " }}`}
+	native := []string{"schema", "diff", "--from", "a.sql", "--to", "b.sql"}
+	for _, test := range []struct {
+		name   string
+		target clirun.Target
+		args   []string
+		pinned bool
+		want   string
+	}{
+		{name: "ptah-compat on a realm dev URL", target: clirun.Compat, args: compat, want: compatRealm},
+		{name: "ptah-compat on a dev URL that pins search_path", target: clirun.Compat, args: compat, pinned: true, want: compatPinned},
+		{name: "ptah on a realm dev URL", target: clirun.Ptah, args: native, want: nativeRealm},
+		{name: "ptah on a dev URL that pins search_path", target: clirun.Ptah, args: native, pinned: true, want: nativePinned},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dev, _ := scratchReplayDatabase(c)
+			devURL := map[bool]string{false: realmURL(c, dev), true: pinnedDevURL(c, dev, "public")}[test.pinned]
+			root := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(root, "a.sql"),
+				[]byte("CREATE TABLE t (id int PRIMARY KEY, a int);\nCREATE INDEX i ON t (a);\n"), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(root, "b.sql"),
+				[]byte("CREATE TABLE t (id int PRIMARY KEY, a int, b text);\nCREATE TABLE u (id int PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+			result := clirun.Run(c, test.target, clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()},
+				append(slices.Clone(test.args), "--dev-url", devURL)...)
+
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
+			c.Assert(result.Stdout, qt.Equals, test.want)
 		})
 	}
 }

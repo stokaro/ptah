@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -79,7 +80,7 @@ func dropPostconditionFixture(
 	table, migrationsTable string,
 ) {
 	c.Helper()
-	for _, name := range []string{table, migrationsTable} {
+	for _, name := range append([]string{table}, revisiontable.Configured("", migrationsTable)...) {
 		_, err := conn.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", name))
 		c.Check(err, qt.IsNil)
 	}

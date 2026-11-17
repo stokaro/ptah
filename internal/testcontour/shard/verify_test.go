@@ -98,14 +98,16 @@ func TestVerify_HappyPath(t *testing.T) {
 }
 
 // TestVerify_HappyPathMeasuresTheNextTimings reads the timings back from the
-// reports: one entry per top-level test, and a split package's elapsed time
-// summed over the shards that ran it.
+// reports: one entry per top-level test, and a package's elapsed time as its
+// tests plus what it spent outside them. Package a is split: shard 1 spends
+// 500 ms outside its tests and shard 2 spends 750 ms, so a's 3750 ms of tests
+// carry 750 ms once rather than the 1250 ms the two shards spent together.
 func TestVerify_HappyPathMeasuresTheNextTimings(t *testing.T) {
 	c := qt.New(t)
 	result, err := shard.Verify(reports(gatePartition(c), cleanShard1, cleanShard2), 1)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Timings, qt.DeepEquals, shard.Timings{Packages: map[string]shard.PackageTiming{
-		pkgA: {ElapsedMS: 5000, Tests: map[string]int64{"TestA1": 1500, "TestA2": 250, "TestA3": 2000}},
+		pkgA: {ElapsedMS: 4500, Tests: map[string]int64{"TestA1": 1500, "TestA2": 250, "TestA3": 2000}},
 		pkgB: {ElapsedMS: 3500, Tests: map[string]int64{"TestB1": 3000}},
 	}})
 }

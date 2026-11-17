@@ -96,6 +96,10 @@ resolves where the session finds it: a trigger that runs the built-in
   in the target's current schema, `app` here.
 - `migrate diff` and `migrations generate --replay` place the name where the
   dev database they replay on resolves it.
+- `schema diff` between two files places the names of both where the dev
+  database resolves them, as the community binary creates each file on its dev
+  database and reads it back: `DROP INDEX "public"."i"` on a dev URL that pins
+  no `search_path`, `DROP INDEX "i"` on one that pins `public`.
 
 Where the two readings of a name differ, the target's current schema and the
 schema the name is placed in, a plan may create a table in one and drop the

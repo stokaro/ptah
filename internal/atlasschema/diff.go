@@ -484,8 +484,8 @@ func replaysCurrent(conn *dbschema.DatabaseConnection, fromState atlassource.Sta
 
 // scopedDiffSides prepares the two resolved sides for scoping: each side's
 // view bodies are rebased on the other's database, both are narrowed on a dev
-// server, the one-database rule reads the narrowed sides, and the --to
-// document's unqualified names are placed; see [placeDiffDocument].
+// server, the one-database rule reads the narrowed sides, and the documents'
+// unqualified names are placed; see [placeDiffDocuments].
 func scopedDiffSides(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -506,11 +506,7 @@ func scopedDiffSides(
 	if err := validateResolvedDiffScope(fromState, toState, dialect); err != nil {
 		return atlassource.State{}, atlassource.State{}, err
 	}
-	toState, err = placeDiffDocument(ctx, conn, toState, devURL)
-	if err != nil {
-		return atlassource.State{}, atlassource.State{}, err
-	}
-	return fromState, toState, nil
+	return placeDiffDocuments(ctx, conn, fromState, toState, dialect, devURL)
 }
 
 // diffResolvedStates is the part of a schema diff that runs once both sides
@@ -1362,30 +1358,60 @@ func scopeDiffState(
 	}
 }
 
-// placeDiffDocument places the names a --to document writes without a schema
-// where `schema apply` places them against the --from database; see
-// [namingFor]. conn is the connection --from was read on, nil when --from is not
-// a database, and then nothing is placed: the comparison holds no connection
-// whose names the document's could be read against. A --to database is read
-// with its own names and is left as it is.
-func placeDiffDocument(
+// placeDiffDocuments places the names a document side writes without a schema.
+//
+// Beside a --from database, conn is the connection it was read on, and the --to
+// document's names are placed where `schema apply` places them against that
+// database; see [namingFor]. A --to database is read with its own names and is
+// left as it is.
+//
+// When both sides are documents, conn is nil and both are placed where the dev
+// database resolves a name, since the community binary creates each document
+// there and reads it back. On a realm-scoped dev URL it then writes every name
+// with its schema: measured with v1.3.0 on PostgreSQL 18, `schema diff --from
+// file://a.sql --to file://b.sql` against a dev URL without search_path writes
+// `DROP INDEX "public"."i"` and `CREATE TABLE "public"."u"`, and with
+// `search_path=public` it writes the bare names. A --from document compared
+// with a --to database is created on the dev database and read back, so it
+// reaches this function as a database and holds its names already.
+func placeDiffDocuments(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	toState atlassource.State,
-	devURL string,
-) (atlassource.State, error) {
-	if conn == nil || toState.DB != nil || toState.Schema == nil {
-		return toState, nil
+	fromState, toState atlassource.State,
+	dialect, devURL string,
+) (from, to atlassource.State, err error) {
+	if toState.DB != nil || toState.Schema == nil {
+		return fromState, toState, nil
 	}
-	naming, err := resolveDesiredNaming(ctx, conn.Info(), devURL)
+	if conn != nil {
+		naming, err := resolveDesiredNaming(ctx, conn.Info(), devURL)
+		if err != nil {
+			return atlassource.State{}, atlassource.State{}, err
+		}
+		toState.Schema, err = naming.place(toState.Schema, conn.Info().Dialect)
+		if err != nil {
+			return atlassource.State{}, atlassource.State{}, err
+		}
+		return fromState, toState, nil
+	}
+	if fromState.DB != nil || fromState.Schema == nil {
+		return fromState, toState, nil
+	}
+	naming, err := resolveDevNaming(ctx, dialect, devURL)
 	if err != nil {
-		return atlassource.State{}, err
+		return atlassource.State{}, atlassource.State{}, err
 	}
-	toState.Schema, err = naming.place(toState.Schema, conn.Info().Dialect)
-	if err != nil {
-		return atlassource.State{}, err
+	if fromState.Schema, err = naming.place(fromState.Schema, dialect); err != nil {
+		return atlassource.State{}, atlassource.State{}, err
 	}
-	return toState, nil
+	if toState.Schema, err = naming.place(toState.Schema, dialect); err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	// The --from document stands for what the dev database holds once it is
+	// created there, and that database holds the schema it resolves names to.
+	// Without it, a table the plan creates there also creates its schema.
+	fromState.Schema = naming.held(fromState.Schema)
+	return fromState, toState, nil
 }
 
 // diffPatternScope resolves both halves of an exclude pattern's scope for one

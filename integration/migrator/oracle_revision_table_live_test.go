@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -44,7 +45,8 @@ func TestOracleMigratorAppliesAndRollsBackLive(t *testing.T) {
 			c := qt.New(t)
 			ctx := context.Background()
 			conn := connectOracle3298(c)
-			dropOracle3298Tables(c, conn, "ptah_3298_widgets", "ptah_3298_gadgets", `"`+test.table+`"`)
+			dropOracle3298Tables(c, conn, append([]string{"ptah_3298_widgets", "ptah_3298_gadgets"},
+				oracleRevisionTables("", test.table)...)...)
 
 			applier := newOracle3298Migrator(c, conn, oracle3298Migrations(), test.format, test.table)
 			present, err := applier.MetadataPresent(ctx)
@@ -86,7 +88,7 @@ func TestOracleMigratorKeepsEveryStatementItRanLive(t *testing.T) {
 	ctx := context.Background()
 	conn := connectOracle3298(c)
 	const table = "ptah_3298_durable_revisions"
-	dropOracle3298Tables(c, conn, "ptah_3298_durable", `"`+table+`"`)
+	dropOracle3298Tables(c, conn, append([]string{"ptah_3298_durable"}, oracleRevisionTables("", table)...)...)
 	fsys := fstest.MapFS{
 		"0000000001_durable.up.sql": &fstest.MapFile{Data: []byte(
 			"CREATE TABLE ptah_3298_durable (id NUMBER(10) PRIMARY KEY);\n" +
@@ -126,7 +128,8 @@ func TestOracleMigratorKeepsTheRevisionTableInANamedSchemaLive(t *testing.T) {
 	conn := connectOracle3298(c)
 	schema := conn.Info().Schema
 	const table = "ptah_3298_schema_revisions"
-	dropOracle3298Tables(c, conn, "ptah_3298_widgets", "ptah_3298_gadgets", `"`+schema+`"."`+table+`"`)
+	dropOracle3298Tables(c, conn, append([]string{"ptah_3298_widgets", "ptah_3298_gadgets"},
+		oracleRevisionTables(schema, table)...)...)
 	mig, err := migrator.NewFSMigrator(conn, oracle3298Migrations())
 	c.Assert(err, qt.IsNil)
 	mig = mig.WithMigrationsTable(schema, table)
@@ -194,4 +197,20 @@ func dropOracle3298Tables(c *qt.C, conn *dbschema.DatabaseConnection, tables ...
 	}
 	drop()
 	c.Cleanup(drop)
+}
+
+// oracleRevisionTables quotes the revision table and every table the migrator
+// keeps beside it, such as the operation log, qualified by schema when one is
+// given, for dropOracle3298Tables.
+func oracleRevisionTables(schema, table string) []string {
+	names := revisiontable.Configured("", table)
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		name = `"` + name + `"`
+		if schema != "" {
+			name = `"` + schema + `".` + name
+		}
+		quoted = append(quoted, name)
+	}
+	return quoted
 }

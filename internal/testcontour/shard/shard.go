@@ -60,7 +60,9 @@ type Timings struct {
 // PackageTiming is one package's measurement, in milliseconds.
 type PackageTiming struct {
 	// ElapsedMS is the package's whole run: every test plus what the test
-	// binary spends outside them, such as TestMain.
+	// binary spends outside them, such as TestMain. A package split across
+	// several shards pays that outside cost on each of them, and it is counted
+	// once, at the most one shard spent.
 	ElapsedMS int64 `json:"elapsed_ms"`
 	// Tests maps a top-level test name to its elapsed time.
 	Tests map[string]int64 `json:"tests_ms,omitempty"`

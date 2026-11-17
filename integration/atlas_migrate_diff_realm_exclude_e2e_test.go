@@ -83,17 +83,14 @@ func migrateDiffRealmRoot(c *qt.C, schema string) string {
 const realmDiffNotes = `"public"."notes"`
 
 // migrateDiffRealmNotes is the migration that creates notes, spelled table,
-// with extra between its body column and its primary key. A realm dev URL
-// writes the table qualified, as the pinned community binary does; a URL that
-// pins search_path writes it bare.
+// with extra between its body column and its primary key, on one line as the
+// default layout writes it. A realm dev URL writes the table qualified, as the
+// pinned community binary does; a URL that pins search_path writes it bare.
 func migrateDiffRealmNotes(table, extra string) string {
 	return "-- Create \"notes\" table\n" +
-		"CREATE TABLE " + table + " (\n" +
-		"  \"id\" bigint NOT NULL,\n" +
-		"  \"body\" text NOT NULL,\n" +
+		"CREATE TABLE " + table + " (\"id\" bigint NOT NULL, \"body\" text NOT NULL, " +
 		extra +
-		"  PRIMARY KEY (\"id\")\n" +
-		");\n"
+		"PRIMARY KEY (\"id\"));\n"
 }
 
 // migrateDiffRealmFile returns the body of the one migration named "add" under
@@ -126,7 +123,7 @@ func TestAtlasCompatMigrateDiffCountsExcludesFromARealmDevURL_HappyPathE2E(t *te
 	}{
 		{
 			name: "realm URL, nothing excluded",
-			want: migrateDiffRealmNotes(realmDiffNotes, `  "search_vector" text NULL,`+"\n") +
+			want: migrateDiffRealmNotes(realmDiffNotes, `"search_vector" text NULL, `) +
 				"-- Create index \"notes_body_idx\" to table: \"notes\"\n" +
 				"CREATE INDEX \"notes_body_idx\" ON \"public\".\"notes\" (\"body\");\n",
 		},

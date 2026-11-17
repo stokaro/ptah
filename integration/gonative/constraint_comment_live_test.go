@@ -24,6 +24,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/revisiontable"
 )
 
 // constraintCommentEntities is the reproduction from the issue: one CHECK
@@ -94,8 +95,8 @@ func constraintCommentInCatalog(c *qt.C, dsn, constraint string) string {
 	return comment.String
 }
 
-// dropConstraintCommentTable removes what this file created, so a shared server
-// is left as it was found.
+// dropConstraintCommentTable removes what this file created, the apply log
+// schema apply writes included, so a shared server is left as it was found.
 func dropConstraintCommentTable(c *qt.C, dsn string) {
 	c.Helper()
 	db, err := sql.Open("pgx", dsn)
@@ -104,8 +105,10 @@ func dropConstraintCommentTable(c *qt.C, dsn string) {
 		return
 	}
 	defer db.Close()
-	if _, err := db.Exec("DROP TABLE IF EXISTS ptah2611_orders CASCADE"); err != nil {
-		c.Logf("cleanup did not drop the table: %v", err)
+	for _, table := range []string{"ptah2611_orders", revisiontable.ApplyLog} {
+		if _, err := db.Exec("DROP TABLE IF EXISTS " + table + " CASCADE"); err != nil {
+			c.Logf("cleanup did not drop %s: %v", table, err)
+		}
 	}
 }
 
@@ -147,7 +150,10 @@ func TestConstraintCommentChangesInPlaceIntegration(t *testing.T) {
 			url := dbtarget.URL(t, test.engine)
 			dsn := requireReachableEngine(t, test.engine, "pgx", test.name)
 			dir := t.TempDir()
-			c.Cleanup(func() { dropTable(c, dsn, "ptah3678_orders") })
+			c.Cleanup(func() {
+				dropTable(c, dsn, "ptah3678_orders")
+				dropTable(c, dsn, revisiontable.ApplyLog)
+			})
 
 			steps := []struct {
 				attribute string

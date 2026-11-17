@@ -238,12 +238,12 @@ func issue265TableExists(t *testing.T, conn *dbschema.DatabaseConnection, tableN
 func cleanupIssue265(t *testing.T, conn *dbschema.DatabaseConnection, names issue265TestNames) {
 	t.Helper()
 
-	for _, statement := range []string{
-		fmt.Sprintf("DROP TABLE IF EXISTS %s", names.migrationsTable),
+	for _, statement := range append(
+		dropRevisionTableStatements(names.migrationsTable),
 		fmt.Sprintf("DROP TABLE IF EXISTS %s", names.headTable),
 		fmt.Sprintf("DROP TABLE IF EXISTS %s", names.partialTable),
 		fmt.Sprintf("DROP TABLE IF EXISTS %s", names.baseTable),
-	} {
+	) {
 		if strings.TrimSpace(statement) == "" {
 			continue
 		}

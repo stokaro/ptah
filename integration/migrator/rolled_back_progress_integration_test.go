@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrator"
 )
@@ -2506,10 +2507,14 @@ type issue887TestNames struct {
 	createdTable   string
 }
 
+// issue887Names names a test's tables. The revision table's name is short
+// because the migrator's companions append to it, and MySQL and MariaDB refuse
+// any name longer than 64 characters, in a DROP TABLE IF EXISTS too: with the
+// longest prefix here, <revision table>_repeatable is 62 characters.
 func issue887Names(prefix string) issue887TestNames {
 	suffix := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 	return issue887TestNames{
-		revisionsTable: "atlas_revisions_887_" + suffix,
+		revisionsTable: "rev887_" + suffix,
 		ledgerTable:    "ptah_887_ledger_" + suffix,
 		blockerTable:   "ptah_887_blocker_" + suffix,
 		createdTable:   "ptah_887_created_" + suffix,
@@ -2891,7 +2896,8 @@ func issue887CleanupSQL(t *testing.T, conn *dbschema.DatabaseConnection, query s
 func cleanupIssue887(t *testing.T, conn *dbschema.DatabaseConnection, names issue887TestNames) {
 	t.Helper()
 
-	for _, table := range []string{names.revisionsTable, names.blockerTable, names.createdTable, names.ledgerTable} {
+	tables := append(revisiontable.Configured("", names.revisionsTable), names.blockerTable, names.createdTable, names.ledgerTable)
+	for _, table := range tables {
 		issue887CleanupSQL(t, conn, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
 	}
 }

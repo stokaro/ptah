@@ -50,7 +50,9 @@ func newOwnTransactionsRun(c *qt.C, dbURL, body string) *ownTransactionsRun {
 		for _, table := range []string{"owntx_base_", "owntx_a_", "owntx_b_", "owntx_c_", "owntx_d_", "owntx_missing_", "owntx_log_"} {
 			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "DROP TABLE IF EXISTS "+table+suffix+" CASCADE")
 		}
-		_, _ = conn.ExecContext(context.WithoutCancel(ctx), "DROP TABLE IF EXISTS "+run.table)
+		for _, statement := range dropRevisionTableStatements(run.table) {
+			_, _ = conn.ExecContext(context.WithoutCancel(ctx), statement)
+		}
 		dbschema.CloseAndWarn(conn)
 	})
 	run.fsys = fstest.MapFS{

@@ -105,13 +105,13 @@ func issue261Migration(version int64, description, upSQL, downSQL string) *migra
 func cleanupIssue261(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
 
-	for _, statement := range []string{
-		"DROP TABLE IF EXISTS schema_migrations_issue_261",
+	for _, statement := range append(
+		dropRevisionTableStatements("schema_migrations_issue_261"),
 		"DROP TABLE IF EXISTS ptah_issue_261_v5",
 		"DROP TABLE IF EXISTS ptah_issue_261_v3",
 		"DROP TABLE IF EXISTS ptah_issue_261_v2",
 		"DROP TABLE IF EXISTS ptah_issue_261_v1",
-	} {
+	) {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
 }

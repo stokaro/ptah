@@ -197,14 +197,14 @@ func tableCommentTarget(databases []*schemamodel.Database, qualified, sourcePlat
 // (SQLSTATE 42P08), and a read refuses them too.
 func indexCommentTarget(databases []*schemamodel.Database, written, sourcePlatform string) (*string, bool) {
 	schema, name := normalizeSQLTableIdentifier(sourcePlatform, written)
-	reaches := func(owner *schemamodel.Table) bool { return sameSchema(sourcePlatform, schema, owner.Schema) }
+	reaches := func(holder indexRelation) bool { return sameSchema(sourcePlatform, schema, holder.schema) }
 	if tableName, indexName, onTable := cutIndexTable(sourcePlatform, written); onTable {
-		table := resolveTable(databases, normalizeSQLTableReference(sourcePlatform, tableName), sourcePlatform)
-		if table == nil {
+		named, found := indexHolder(databases, schemamodel.Index{TableName: normalizeSQLTableReference(sourcePlatform, tableName)}, sourcePlatform)
+		if !found {
 			return new(string), false
 		}
 		name = normalizeSQLIdentifier(sourcePlatform, indexName)
-		reaches = func(owner *schemamodel.Table) bool { return owner.QualifiedName() == table.QualifiedName() }
+		reaches = func(holder indexRelation) bool { return holder.qualified == named.qualified }
 	}
 	var targets []*string
 	for _, database := range databases {
@@ -213,7 +213,7 @@ func indexCommentTarget(databases []*schemamodel.Database, written, sourcePlatfo
 			if index.Name != name {
 				continue
 			}
-			if owner := indexOwner(databases, *index, sourcePlatform); owner != nil && reaches(owner) {
+			if holder, found := indexHolder(databases, *index, sourcePlatform); found && reaches(holder) {
 				targets = append(targets, &index.Comment)
 			}
 		}

@@ -210,8 +210,9 @@ func dropTxDDLFixture(c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
 
 	ctx := context.Background()
-	for _, table := range []string{txDDLFirstTable, txDDLRevisionTable} {
-		_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+table)
+	for _, statement := range append([]string{"DROP TABLE IF EXISTS " + txDDLFirstTable},
+		dropRevisionTableStatements(txDDLRevisionTable)...) {
+		_, _ = conn.ExecContext(ctx, statement)
 	}
 }
 

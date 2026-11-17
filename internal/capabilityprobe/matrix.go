@@ -390,9 +390,9 @@ var launchers = map[string]launcher{
 		suiteURLEnv:   "YUGABYTEDB_URL",
 	},
 	platform.SQLServer: {
-		// The three variables go-integration-tests.yml sets on its own SQL
-		// Server service, so a cell probes the server that contour already
-		// runs against. The password carries both cases, a digit and a symbol
+		// The three variables go-integration-tests.yml sets on the SQL Server
+		// it starts, so a cell probes the server that contour already runs
+		// against. The password carries both cases, a digit and a symbol
 		// because the container validates it and exits rather than starting
 		// with a weaker one.
 		flags: []string{

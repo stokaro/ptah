@@ -142,7 +142,7 @@ permission {
   for        = schema.shop
 }
 `)
-	options.DevURL = "postgres://localhost/dev"
+	options.DevURL = "postgres://localhost/dev?search_path=shop"
 
 	_, err := atlasschema.Diff(c.Context(), options)
 
