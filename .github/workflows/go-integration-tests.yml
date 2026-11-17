@@ -324,20 +324,6 @@ jobs:
           - 8124:8123
           - 9001:9000
 
-      sqlserver:
-        image: mcr.microsoft.com/mssql/server:2025-latest
-        env:
-          ACCEPT_EULA: "Y"
-          MSSQL_PID: "Developer"
-          MSSQL_SA_PASSWORD: "P@ssw0rd-ptah-2026"
-        options: >-
-          --health-cmd "sqlcmd=/opt/mssql-tools18/bin/sqlcmd; if [ ! -x $sqlcmd ]; then sqlcmd=/opt/mssql-tools/bin/sqlcmd; fi; $sqlcmd -S localhost -U sa -P \"$MSSQL_SA_PASSWORD\" -No -Q \"SELECT 1\""
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 18
-        ports:
-          - 1433:1433
-
       # Oracle, which the tagged contour needs because internal/testcontour
       # refuses a skipped integration test: a test in ./integration/... either
       # runs here or does not belong there. gvenzl/oracle-free:slim is the
@@ -383,6 +369,55 @@ jobs:
 
       - name: Install dependencies
         run: go mod download
+
+      # SQL Server starts from a step rather than as a job service, because
+      # its container sometimes crashes while it starts: a fatal error in
+      # sqlpal (Reason 0x00000002 or 0x00000006) on 23 of the 611 runs of
+      # this workflow that completed from 2026-10-20 to 2026-11-17, and no
+      # other service failed to start in them. A job service that does not
+      # start fails the job before its first step, and every leg starts one,
+      # so nine legs lose about three runs in ten. Here a crash costs another
+      # attempt. Readiness is the published port plus a login, never the
+      # container's state: a running container is not yet a server that
+      # answers on 1433.
+      - name: Start SQL Server
+        run: |
+          password='P@ssw0rd-ptah-2026'
+          deadline=$((SECONDS + 600))
+          for attempt in 1 2 3; do
+            docker rm --force ptah-sqlserver >/dev/null 2>&1 || true
+            # renovate: datasource=docker depName=mcr.microsoft.com/mssql/server
+            docker run --detach --name ptah-sqlserver \
+              --publish 1433:1433 \
+              --env ACCEPT_EULA=Y \
+              --env MSSQL_PID=Developer \
+              --env "MSSQL_SA_PASSWORD=$password" \
+              mcr.microsoft.com/mssql/server:2025-latest >/dev/null || {
+              echo "attempt $attempt: the container did not start"
+              continue
+            }
+            attempt_deadline=$((SECONDS + 180))
+            while [ "$SECONDS" -lt "$attempt_deadline" ] && [ "$SECONDS" -lt "$deadline" ]; do
+              if [ "$(docker inspect --format '{{.State.Running}}' ptah-sqlserver)" != true ]; then
+                echo "attempt $attempt: the container exited"
+                break
+              fi
+              if timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/1433' 2>/dev/null &&
+                docker exec ptah-sqlserver sh -c \
+                  'sqlcmd=/opt/mssql-tools18/bin/sqlcmd; [ -x "$sqlcmd" ] || sqlcmd=/opt/mssql-tools/bin/sqlcmd; exec "$sqlcmd" "$@"' \
+                  sh -S localhost -U sa -P "$password" -No -Q 'SELECT 1' >/dev/null 2>&1
+              then
+                echo "SQL Server answers a login on port 1433, attempt $attempt"
+                exit 0
+              fi
+              sleep 3
+            done
+            echo "::group::SQL Server log, attempt $attempt"
+            docker logs ptah-sqlserver 2>&1 || true
+            echo "::endgroup::"
+          done
+          echo "::error::SQL Server did not answer a login on port 1433 in 3 attempts"
+          exit 1
 
       - name: Start distributed SQL databases
         run: |
