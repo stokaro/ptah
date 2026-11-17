@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // columnCommentStep is a database a migration directory starts from, a desired
@@ -107,6 +108,36 @@ COMMENT ON COLUMN "tasks"."owner" IS 'who';
 `,
 		wantComments: []string{"", "v2", "", "", "who"},
 	},
+	{
+		// The community binary writes a created table's comments after its
+		// indexes too, the table's own first.
+		name:    "a table created with comments and an index",
+		initial: "CREATE TABLE other (id bigint PRIMARY KEY);\n",
+		desired: `CREATE TABLE other (id bigint PRIMARY KEY);
+CREATE TABLE tasks (id bigint PRIMARY KEY, title text, owner text);
+COMMENT ON TABLE tasks IS 'work';
+COMMENT ON COLUMN tasks.title IS 'what';
+COMMENT ON COLUMN tasks.owner IS 'who';
+CREATE INDEX tasks_owner_idx ON tasks (owner);
+`,
+		wantChange: `-- Create "tasks" table
+CREATE TABLE "tasks" (
+  "id" bigint NOT NULL,
+  "title" text NULL,
+  "owner" text NULL,
+  PRIMARY KEY ("id")
+);
+-- Create index "tasks_owner_idx" to table: "tasks"
+CREATE INDEX "tasks_owner_idx" ON "tasks" ("owner");
+-- Set comment to table: "tasks"
+COMMENT ON TABLE "tasks" IS 'work';
+-- Set comment to column: "title" on table: "tasks"
+COMMENT ON COLUMN "tasks"."title" IS 'what';
+-- Set comment to column: "owner" on table: "tasks"
+COMMENT ON COLUMN "tasks"."owner" IS 'who';
+`,
+		wantComments: []string{"", "what", "who"},
+	},
 }
 
 // TestMigrateDiffCarriesTheCommentsOfTheColumnsItChangesE2E runs the shipped
@@ -183,16 +214,10 @@ type addedColumnCommentEngine struct {
 	want     string
 }
 
-var addedColumnCommentEngines = []addedColumnCommentEngine{
-	{
-		name: "postgresql",
-		target: func(c *qt.C) string {
-			target, _ := scratchReplayDatabase(c)
-			return target
-		},
-		file:    "schema.sql",
-		initial: "CREATE TABLE tasks (id bigint PRIMARY KEY, title text);\n",
-		desired: `CREATE TABLE tasks (
+const (
+	// postgresFamilyCommentedTasks is tasks with a plain and a stored generated
+	// column added, each with a comment.
+	postgresFamilyCommentedTasks = `CREATE TABLE tasks (
   id bigint PRIMARY KEY,
   title text,
   note text,
@@ -200,10 +225,43 @@ var addedColumnCommentEngines = []addedColumnCommentEngine{
 );
 COMMENT ON COLUMN tasks.note IS 'plain note';
 COMMENT ON COLUMN tasks.code IS 'derived code';
-`,
-		comments: `SELECT string_agg(coalesce(col_description(attrelid, attnum), '-'), ',' ORDER BY attname)
-FROM pg_attribute WHERE attrelid = 'tasks'::regclass AND attnum > 0 AND NOT attisdropped`,
-		want: "derived code,-,plain note,-",
+`
+	// postgresFamilyColumnComments answers the comment of every column of
+	// tasks, by column name.
+	postgresFamilyColumnComments = `SELECT string_agg(coalesce(col_description(attrelid, attnum), '-'), ',' ORDER BY attname)
+FROM pg_attribute WHERE attrelid = 'tasks'::regclass AND attnum > 0 AND NOT attisdropped`
+)
+
+var addedColumnCommentEngines = []addedColumnCommentEngine{
+	{
+		name: "postgresql",
+		target: func(c *qt.C) string {
+			target, _ := scratchReplayDatabase(c)
+			return target
+		},
+		file:     "schema.sql",
+		initial:  "CREATE TABLE tasks (id bigint PRIMARY KEY, title text);\n",
+		desired:  postgresFamilyCommentedTasks,
+		comments: postgresFamilyColumnComments,
+		want:     "derived code,-,plain note,-",
+	},
+	{
+		name:     "cockroachdb",
+		target:   func(c *qt.C) string { return declaredSchemaTarget(c, dbtarget.CockroachDB) },
+		file:     "schema.sql",
+		initial:  "CREATE TABLE tasks (id bigint PRIMARY KEY, title text);\n",
+		desired:  postgresFamilyCommentedTasks,
+		comments: postgresFamilyColumnComments,
+		want:     "derived code,-,plain note,-",
+	},
+	{
+		name:     "yugabytedb",
+		target:   func(c *qt.C) string { return declaredSchemaTarget(c, dbtarget.YugabyteDB) },
+		file:     "schema.sql",
+		initial:  "CREATE TABLE tasks (id bigint PRIMARY KEY, title text);\n",
+		desired:  postgresFamilyCommentedTasks,
+		comments: postgresFamilyColumnComments,
+		want:     "derived code,-,plain note,-",
 	},
 	{
 		name: "sqlserver",

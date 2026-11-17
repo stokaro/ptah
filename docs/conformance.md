@@ -1491,10 +1491,13 @@ changes keeps the comment that changes with it. Measured on PostgreSQL 18: the
 diff after the apply is in sync, and `col_description` reads back each comment
 (`integration/column_comment_convergence_e2e_test.go`).
 
-On a table the plan changes, the comments follow the table's one `ALTER TABLE`
-and its new indexes: the table's own comment first, then its columns' in the
-order the table holds them. CE writes them in that order, and a column comment
-between two of the table's column changes would split the `ALTER TABLE` in two.
+In `ptah-compat` files the comments follow the table's other statements, as CE
+writes them. On a table the plan changes they follow its one `ALTER TABLE` and its
+new indexes, and on a table the plan creates they follow its `CREATE TABLE` and its
+indexes: the table's own comment first, then its columns' in the order the table
+holds them. A column comment between two of a changed table's column changes would
+split the `ALTER TABLE` in two. The native `ptah` files keep a new table's comments
+right after its `CREATE TABLE`.
 
 ### Attributes of the same family that are still dropped
 
