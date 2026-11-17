@@ -703,11 +703,14 @@ Ptah refuses a URL that contradicts `ssl-ca`, before it connects:
 - a port with no host, as in `mysql://app@:3306/shop`. A URL that names no
   address at all dials `127.0.0.1:3306`, and the certificate must name
   `127.0.0.1`;
-- an empty `ssl-ca`, or `ssl-ca` given twice, in any spelling;
-- every other `ssl-` or `ssl_` parameter, in any case, such as `ssl-mode`,
-  `ssl-cert` and `ssl-key`. The driver would send each to the server as a
-  session variable, which the server refuses, and the server's error would
-  carry the value.
+- an empty `ssl-ca`, or `ssl-ca` given twice, in any spelling.
+
+Every URL parameter whose name starts with `ssl-` or `ssl_`, in any case,
+belongs to Ptah, whether or not the URL names `ssl-ca`. Ptah reads `ssl-ca` and
+refuses each of the others, such as `ssl-mode`, `ssl-cert` and `ssl-key`,
+before it connects. The driver would send such a parameter to the server as a
+session variable, which the server refuses with an error that carries the
+value. So the URL cannot set a session variable whose name starts with `ssl_`.
 
 ### Where the path is read
 

@@ -279,7 +279,13 @@ func TestNamesMySQLCABundle(t *testing.T) {
 		{name: "a URL the parser refuses", rawURL: "mysql://app@db:3306/shop?ssl-ca=/ca.pem&tls=false", want: true},
 		{name: "a path naming a SQLite file", rawURL: "mysql:///tmp/app.db?ssl-ca=/ca.pem", want: true},
 		{name: "a socket URL refused for its empty database", rawURL: "mysql+unix://app@/run/x.sock?database=&ssl-ca=/ca.pem", want: true},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{name: "a password with a bad percent escape", rawURL: "mysql://app:p%zzw@db:3306/shop?ssl-ca=/ca.pem", want: true},
+		{name: "a socket URL with a bad percent escape", rawURL: "mysql+unix://app:p%zzw@/run/x.sock?database=shop&SSL_CA=/ca.pem", want: true},
+		{name: "a driver form with no database separator", rawURL: "mysql://app@tcp(db:3306)shop?ssl-ca=/ca.pem", want: true},
 		{name: "no ssl-ca", rawURL: "mysql://app@db:3306/shop?tls=true", want: false},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{name: "no ssl-ca in a URL with a bad percent escape", rawURL: "mysql://app:p%zzw@db:3306/shop?tls=true", want: false},
 		{name: "another ssl- parameter alone", rawURL: "mysql://app@db:3306/shop?ssl-cert=/client.pem", want: false},
 		{name: "another engine", rawURL: "postgres://app@db:5432/shop?ssl-ca=/ca.pem", want: false},
 	}

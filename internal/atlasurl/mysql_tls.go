@@ -88,6 +88,16 @@ func cutMySQLOwnedParams(rawQuery string) (string, mysqlOwnedParams) {
 	return strings.Join(kept, "&"), owned
 }
 
+// rawMySQLOwnedParams reads Ptah's parameters out of a URL that no reader can
+// split, so that a URL refused for another reason still reports the ssl-ca it
+// names. Where such a URL's query starts is not known, so everything after its
+// first "?" is read as the query.
+func rawMySQLOwnedParams(rawURL string) mysqlOwnedParams {
+	_, query, _ := strings.Cut(rawURL, "?")
+	_, owned := cutMySQLOwnedParams(query)
+	return owned
+}
+
 // splitMySQLDriverQuery splits go-sql-driver's own form at the "?" that starts
 // its parameters.
 //
@@ -138,7 +148,9 @@ func joinMySQLQuery(dsn, rawQuery string) string {
 
 // NamesMySQLCABundle reports whether rawURL is a MySQL-family URL whose query
 // names a CA bundle, in any spelling of ssl-ca, including a URL the parser
-// refuses for another reason.
+// refuses for another reason. Where the URL cannot be split into its parts at
+// all, as with a password holding a malformed percent escape, everything after
+// its first "?" is read as the query, so the answer errs toward true.
 //
 // Ptah's MySQL connector is what applies the bundle. Code that hands such a
 // URL to anything else, such as a provider that serves the engine, refuses it

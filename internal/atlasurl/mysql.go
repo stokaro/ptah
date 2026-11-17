@@ -181,7 +181,7 @@ func (u *MySQLURL) readDriverForm(rest string) mysqlOwnedParams {
 	head, query, ok := splitMySQLDriverQuery(rest)
 	if !ok {
 		u.dsn = rest
-		return mysqlOwnedParams{}
+		return rawMySQLOwnedParams(rest)
 	}
 	kept, owned := cutMySQLOwnedParams(query)
 	u.dsn = joinMySQLQuery(head, kept)
@@ -197,7 +197,7 @@ func (u *MySQLURL) readDriverForm(rest string) mysqlOwnedParams {
 func (u *MySQLURL) readURLForm(rawURL string) (mysqlOwnedParams, error) {
 	parsed, err := dburldisplay.ParseURL(rawURL)
 	if err != nil {
-		return mysqlOwnedParams{}, fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
+		return rawMySQLOwnedParams(rawURL), fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
 	}
 	password, _ := parsed.User.Password()
 	u.parsed = parsed
@@ -219,7 +219,7 @@ func (u *MySQLURL) readURLForm(rawURL string) (mysqlOwnedParams, error) {
 func (u *MySQLURL) readSocketForm(rawURL string) (mysqlOwnedParams, error) {
 	parsed, err := dburldisplay.ParseURL(rawURL)
 	if err != nil {
-		return mysqlOwnedParams{}, fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
+		return rawMySQLOwnedParams(rawURL), fmt.Errorf("invalid %s URL: %w", u.scheme, errors.Unwrap(err))
 	}
 	kept, owned := cutMySQLOwnedParams(parsed.RawQuery)
 	// The rest is read as net/url reads a query, which keeps every pair it
