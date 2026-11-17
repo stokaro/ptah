@@ -95,6 +95,37 @@ func OwnerVerdicts(nodes []ast.Node, statementNodes []int) ([]StatementAssessmen
 	return verdicts, nil
 }
 
+// OwnerRestores returns, for each statement of a plan, whether a view or a
+// materialized view node that gives the view back to the role that owned it
+// before the plan dropped it rendered the statement
+// ([ast.CreateViewNode.OwnerRestored]). The words of that node's ALTER ... OWNER
+// TO read as any other change of owner, so only the provenance tells them
+// apart; [RestoredOwnerReason] gives such a statement its reason.
+//
+// nodes and statementNodes are as [OwnerVerdicts] takes them, and provenance
+// outside nodes is refused with [renderer.ErrInvalidResult].
+func OwnerRestores(nodes []ast.Node, statementNodes []int) ([]bool, error) {
+	restores := make([]bool, len(statementNodes))
+	for i, index := range statementNodes {
+		if index < -1 || index >= len(nodes) {
+			return nil, fmt.Errorf("%w: statement provenance %d is outside the %d planned nodes", renderer.ErrInvalidResult, index, len(nodes))
+		}
+		restores[i] = index >= 0 && restoresOwner(nodes[index])
+	}
+	return restores, nil
+}
+
+// RestoredOwnerReason is the reason of a statement [OwnerRestores] reports,
+// given the reason its words gave it: the reason of a change of owner becomes
+// the reason of an owner given back, and any other reason, such as a CREATE
+// VIEW's or a GRANT's, is returned as it is.
+func RestoredOwnerReason(reason string) string {
+	if reason == ownerReason {
+		return restoreOwnerReason
+	}
+	return reason
+}
+
 // ColumnVerdicts returns, for each statement of a plan, what a column modification
 // establishes that the statement's words cannot say, and a zero assessment for any
 // other statement.

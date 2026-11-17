@@ -1259,11 +1259,11 @@ func keepHeldOwner(diff *difftypes.SchemaDiff, object deporder.ViewLike, node as
 	switch created := node.(type) {
 	case *ast.CreateViewNode:
 		if created.Owner == "" {
-			created.Owner = held
+			created.Owner, created.OwnerRestored = held, true
 		}
 	case *ast.CreateMaterializedViewNode:
 		if created.Owner == "" {
-			created.Owner = held
+			created.Owner, created.OwnerRestored = held, true
 		}
 	}
 	return node

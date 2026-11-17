@@ -129,7 +129,7 @@ func (p ApplyRuntimePlan) RatingOfSQL(ctx context.Context, sqlText string) (Plan
 // plan, without the native operations' encoded bytes.
 func (p ApplyRuntimePlan) plannedStatements(ctx context.Context, runtime safety.Runtime) ([]PlanStatement, error) {
 	computation := applyComputation{ApplyPlan: p.rehearsal.schema, dataStatements: p.rehearsal.data}
-	statements, err := judgePlanUnits(ctx, runtime, computation.units, p.conn.Info().Dialect, computation.owned, computation.columns)
+	statements, err := judgePlanUnits(ctx, runtime, computation.units, p.conn.Info().Dialect, computation.owned, computation.columns, computation.restores)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (p PlanFile) Rating(ctx context.Context, runtime safety.Runtime, dialect st
 			text = append(text, statement.SQL)
 		}
 	}
-	judged, _, err := classifyPlanStatements(ctx, runtime, text, dialect, nil, nil)
+	judged, _, err := classifyPlanStatements(ctx, runtime, text, dialect, nil, nil, nil)
 	if err != nil {
 		return PlanRating{}, err
 	}

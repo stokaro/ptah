@@ -434,7 +434,7 @@ func TestPlanningVerbsRefuseToLoseAViewSecurityOptionE2E(t *testing.T) {
 		args func(url, schema, dev, dir string) []string
 	}
 	tests := []verb{
-		{name: "schema compare", target: clirun.Ptah, wantExit: 2, view: "my_docs", args: func(url, schema, _, _ string) []string {
+		{name: "schema compare", target: clirun.Ptah, wantExit: 2, view: "public.my_docs", args: func(url, schema, _, _ string) []string {
 			return []string{"schema", "compare", "--db-url", url, "--schema-file", schema}
 		}},
 		{name: "migrations generate", target: clirun.Ptah, wantExit: 2, view: "my_docs", args: func(url, schema, _, dir string) []string {

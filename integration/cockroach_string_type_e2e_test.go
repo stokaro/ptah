@@ -81,7 +81,7 @@ func TestSchemaCompareReportsACockroachStringWidthChangeE2E(t *testing.T) {
 	got := runPtahIn(c, "schema", "compare", "--db-url", target, "--schema-file", schema, "--exit-code")
 
 	c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-	c.Assert(got.Stdout, qt.Contains, `ALTER TABLE "t" ALTER COLUMN "b" TYPE STRING(20);`)
+	c.Assert(got.Stdout, qt.Contains, `ALTER TABLE "public"."t" ALTER COLUMN "b" TYPE STRING(20);`)
 	for _, column := range []string{"a", "c", "d", "e"} {
 		c.Assert(got.Stdout, qt.Not(qt.Contains), `ALTER COLUMN "`+column+`"`)
 	}

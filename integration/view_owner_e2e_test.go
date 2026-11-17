@@ -378,41 +378,280 @@ func TestSchemaApplyRefusesAnOwnerOnANamedDevDatabaseE2E(t *testing.T) {
 	c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", "my_docs={admin}"))
 }
 
-// TestSchemaApplyReportsAnOwnerTheConnectionMayNotGiveE2E applies as a role
-// that owns the view and is not a member of the declared owner. PostgreSQL
-// refuses the change with SQLSTATE 42501, and Ptah reports the statement and
-// the code with the server's reason; the transaction leaves the owner as it
-// was.
-func TestSchemaApplyReportsAnOwnerTheConnectionMayNotGiveE2E(t *testing.T) {
-	c := qt.New(t)
-	applier := fmt.Sprintf("ptah_vo_applier_%d", time.Now().UnixNano())
-	admin, err := sql.Open("pgx", postgresFamilyDriverURL(c, dbtarget.URL(c, dbtarget.PostgreSQL)))
+// viewOwnerApplier is a login role a test applies as, other than the one it
+// administers the server with. It is created before the target and dropped
+// after it, and holds only what each test grants it.
+type viewOwnerApplier struct {
+	name string
+	// password is empty on CockroachDB, which refuses one on an insecure
+	// server. It is no part of name: the command masks the password wherever
+	// it writes it, and would mask the role's name with it.
+	password string
+}
+
+// newViewOwnerApplier creates the applier on the engine's server.
+func newViewOwnerApplier(c *qt.C, engine viewOwnerEngine) viewOwnerApplier {
+	c.Helper()
+	applier := viewOwnerApplier{name: fmt.Sprintf("ptah_vo_applier_%d", time.Now().UnixNano()), password: connectingRolePassword}
+	login := " LOGIN PASSWORD '" + connectingRolePassword + "'"
+	if engine.engine == dbtarget.CockroachDB {
+		applier.password, login = "", " LOGIN"
+	}
+	admin, err := sql.Open("pgx", postgresFamilyDriverURL(c, dbtarget.URL(c, engine.engine)))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Assert(admin.Close(), qt.IsNil) })
-	_, err = admin.ExecContext(c.Context(), "CREATE ROLE "+applier+" LOGIN PASSWORD 'ptah_vo_applier'")
+	_, err = admin.ExecContext(c.Context(), "CREATE ROLE "+quoteE2EIdent(applier.name)+login)
 	c.Assert(err, qt.IsNil)
 	// Registered before the target's, so it runs after the database that
-	// holds the applier's view is gone.
+	// holds the applier's grants is gone.
 	c.Cleanup(func() {
-		_, err := admin.ExecContext(context.Background(), "DROP ROLE "+applier)
+		_, err := admin.ExecContext(context.Background(), "DROP ROLE "+quoteE2EIdent(applier.name))
 		c.Assert(err, qt.IsNil)
 	})
-	target := newViewOwnerTarget(c, viewOwnerEngines[0])
-	for _, statement := range []string{
-		"GRANT USAGE, CREATE ON SCHEMA public TO " + applier,
-		"GRANT SELECT ON docs TO " + applier,
-		"ALTER VIEW my_docs OWNER TO " + applier,
-	} {
-		execPostgresFamilySQL(c, c.Context(), target.url, statement)
-	}
-	asApplier, err := url.Parse(target.url)
-	c.Assert(err, qt.IsNil)
-	asApplier.User = url.UserPassword(applier, "ptah_vo_applier")
+	return applier
+}
 
-	got := runPtahIn(c, "schema", "apply", "--db-url", asApplier.String(), "--auto-approve",
-		"--schema-file", target.schemaFile(c, viewOwnerBody, "ALTER VIEW my_docs OWNER TO {owner};\n"))
+// expand is text with {applier} replaced by the applier's name.
+func (a viewOwnerApplier) expand(text string) string {
+	return strings.ReplaceAll(text, "{applier}", a.name)
+}
+
+// statements are held, each expanded.
+func (a viewOwnerApplier) statements(held []string) []string {
+	expanded := make([]string, len(held))
+	for i, statement := range held {
+		expanded[i] = a.expand(statement)
+	}
+	return expanded
+}
+
+// url is the target's address with the applier as its user.
+func (a viewOwnerApplier) url(c *qt.C, target viewOwnerTarget) string {
+	c.Helper()
+	parsed, err := url.Parse(target.url)
+	c.Assert(err, qt.IsNil)
+	parsed.User = url.User(a.name)
+	if a.password != "" {
+		parsed.User = url.UserPassword(a.name, a.password)
+	}
+	return parsed.String()
+}
+
+// viewOwnerApplierGrants let the applier read docs and create a view in
+// public, which a rebuild of my_docs needs.
+var viewOwnerApplierGrants = []string{"GRANT USAGE, CREATE ON SCHEMA public TO {applier}", "GRANT SELECT ON docs TO {applier}"}
+
+// viewOwnerTransfer is one plan that gives my_docs to a role, applied as a role
+// the server may not let do it.
+type viewOwnerTransfer struct {
+	name string
+	// held are the statements that set the target up on each engine beyond
+	// [viewOwnerApplierGrants], by engine name: who owns my_docs, and what
+	// else the applier holds.
+	held map[string][]string
+	// body is the view's declared body, and owners the ownership statements
+	// the schema declares.
+	body, owners string
+	// refusal is what Ptah reports on each engine, by engine name: the
+	// server checks SET on PostgreSQL 18 and membership on CockroachDB.
+	refusal map[string]string
+	// owner is who owns my_docs before and after the refused apply.
+	owner string
+}
+
+// The parts of a refusal that more than one row words alike.
+const (
+	refusalSET     = `the server requires the SET privilege on the new owner, and "{applier}" lacks it`
+	refusalMember  = `the server requires membership in the new owner, and "{applier}" is not a member`
+	refusalWaysOut = `or declare the owner the view should have, one "{applier}" may give it to`
+)
+
+var viewOwnerTransfers = []viewOwnerTransfer{
+	{
+		name: "a declared owner",
+		held: map[string][]string{
+			"postgresql":  {"ALTER VIEW my_docs OWNER TO {applier}"},
+			"cockroachdb": {"ALTER VIEW my_docs OWNER TO {applier}"},
+		},
+		body:   viewOwnerBody,
+		owners: "ALTER VIEW my_docs OWNER TO {owner};\n",
+		refusal: map[string]string{
+			"postgresql": `ALTER VIEW "public"."my_docs" OWNER TO "{owner}" gives the view to role "{owner}", which connected role ` +
+				`"{applier}" may not give an object to: ` + refusalSET + `; run GRANT "{owner}" TO "{applier}" WITH SET TRUE, ` + refusalWaysOut,
+			"cockroachdb": `ALTER VIEW "public"."my_docs" OWNER TO "{owner}" gives the view to role "{owner}", which connected role ` +
+				`"{applier}" may not give an object to: ` + refusalMember + `; run GRANT "{owner}" TO "{applier}", ` + refusalWaysOut,
+		},
+		owner: "my_docs={applier}",
+	},
+	{
+		// The applier may drop the view: through its membership in {other}
+		// on PostgreSQL, which INHERIT grants and SET FALSE does not extend
+		// to giving an object to {other}, and through the DROP privilege on
+		// CockroachDB, where it is no member at all. The server accepts the
+		// DROP VIEW and the CREATE VIEW and refuses the ALTER VIEW ... OWNER
+		// TO that gives the view back.
+		name: "an owner a rebuild gives back",
+		held: map[string][]string{
+			"postgresql":  {"ALTER VIEW my_docs OWNER TO {other}", "GRANT {other} TO {applier} WITH INHERIT TRUE, SET FALSE"},
+			"cockroachdb": {"ALTER VIEW my_docs OWNER TO {other}", "GRANT DROP ON my_docs TO {applier}"},
+		},
+		body: viewOwnerNarrow,
+		refusal: map[string]string{
+			"postgresql": `ALTER VIEW "public"."my_docs" OWNER TO "{other}" gives the view to role "{other}", which connected role ` +
+				`"{applier}" may not give an object to: ` + refusalSET + `; "{other}" owns the view now, and the plan gives it back ` +
+				`after it creates the view again; run GRANT "{other}" TO "{applier}" WITH SET TRUE, ` + refusalWaysOut,
+			"cockroachdb": `ALTER VIEW "public"."my_docs" OWNER TO "{other}" gives the view to role "{other}", which connected role ` +
+				`"{applier}" may not give an object to: ` + refusalMember + `; "{other}" owns the view now, and the plan gives it back ` +
+				`after it creates the view again; run GRANT "{other}" TO "{applier}", ` + refusalWaysOut,
+		},
+		owner: "my_docs={other}",
+	},
+	{
+		// The applier may give the view to {other}, and {other} may not own
+		// an object in public: neither engine gives the PUBLIC role CREATE
+		// there in this fixture.
+		name: "an owner that may not create in the schema",
+		held: map[string][]string{
+			"postgresql":  {"ALTER VIEW my_docs OWNER TO {other}", "GRANT {other} TO {applier} WITH INHERIT TRUE, SET TRUE"},
+			"cockroachdb": {"ALTER VIEW my_docs OWNER TO {other}", "REVOKE CREATE ON SCHEMA public FROM public", "GRANT {other} TO {applier}"},
+		},
+		body: viewOwnerNarrow,
+		refusal: map[string]string{
+			"postgresql":  refusalNoCreate,
+			"cockroachdb": refusalNoCreate,
+		},
+		owner: "my_docs={other}",
+	},
+}
+
+// refusalNoCreate is the refusal of a view given back to {other}, which holds
+// no CREATE privilege on public.
+const refusalNoCreate = `ALTER VIEW "public"."my_docs" OWNER TO "{other}" gives the view to role "{other}", which holds no CREATE ` +
+	`privilege on schema "public": the server requires it of the new owner; "{other}" owns the view now, and the plan gives it ` +
+	`back after it creates the view again; run GRANT CREATE ON SCHEMA "public" TO "{other}", or declare the owner the view ` +
+	`should have, one that holds it`
+
+// TestSchemaApplyRefusesAnOwnerTheConnectionMayNotGiveE2E applies each of
+// [viewOwnerTransfers] as a role the server answers may not give my_docs to
+// the role the plan names. The server would refuse the ALTER ... OWNER TO with
+// SQLSTATE 42501 after the statements before it ran, a rebuild's DROP VIEW
+// among them. Ptah asks the server first and refuses before any statement,
+// naming the view, the role, the connected role and both ways out, so my_docs
+// keeps its oid and its owner.
+func TestSchemaApplyRefusesAnOwnerTheConnectionMayNotGiveE2E(t *testing.T) {
+	for _, engine := range viewOwnerEngines[:2] {
+		for _, transfer := range viewOwnerTransfers {
+			t.Run(engine.name+"/"+transfer.name, func(t *testing.T) {
+				c := qt.New(t)
+				applier := newViewOwnerApplier(c, engine)
+				target := newViewOwnerTarget(c, engine, applier.statements(slices.Concat(viewOwnerApplierGrants, transfer.held[engine.name]))...)
+				objects := target.objectIDs(c)
+
+				got := runPtahIn(c, "schema", "apply", "--db-url", applier.url(c, target), "--auto-approve",
+					"--schema-file", target.schemaFile(c, transfer.body, transfer.owners))
+
+				c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+				c.Assert(got.Stderr, qt.Contains, target.expand(applier.expand(transfer.refusal[engine.name])))
+				c.Assert(got.Stderr, qt.Not(qt.Contains), "42501")
+				c.Assert(target.owners(c), qt.DeepEquals,
+					target.ownersWant("Doc Totals={admin}", applier.expand(transfer.owner)))
+				c.Assert(target.objectIDs(c), qt.DeepEquals, objects)
+			})
+		}
+	}
+}
+
+// TestSchemaApplyRefusesAnOwnerTheConnectionMayNotGiveOnADevDatabaseE2E
+// rehearses the rebuild on a dev database first, as a role that may give the
+// view to anyone. The rehearsal passes, and the target, applied as the
+// applier, refuses as it does without one: the plan was not applied, and
+// my_docs keeps its oid and its owner.
+func TestSchemaApplyRefusesAnOwnerTheConnectionMayNotGiveOnADevDatabaseE2E(t *testing.T) {
+	c := qt.New(t)
+	engine, transfer := viewOwnerEngines[0], viewOwnerTransfers[1]
+	applier := newViewOwnerApplier(c, engine)
+	target := newViewOwnerTarget(c, engine, applier.statements(slices.Concat(viewOwnerApplierGrants, transfer.held[engine.name]))...)
+	objects := target.objectIDs(c)
+	dev := postgresScratchDevURL(c, "ptah_view_owner_dev")
+
+	got := runPtahIn(c, "schema", "apply", "--db-url", applier.url(c, target), "--auto-approve", "--dev-url", dev,
+		"--schema-file", target.schemaFile(c, transfer.body, transfer.owners))
 
 	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-	c.Assert(got.Stderr, qt.Contains, target.expand(`(SQLSTATE 42501)`+"\n"+`SQL: ALTER VIEW "public"."my_docs" OWNER TO "{owner}"`))
-	c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", "my_docs="+applier))
+	c.Assert(got.Stderr, qt.Contains, target.expand(applier.expand(transfer.refusal[engine.name])))
+	c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", "my_docs={other}"))
+	c.Assert(target.objectIDs(c), qt.DeepEquals, objects)
+}
+
+// TestSchemaApplyGivesBackAnOwnerTheConnectionMayGiveE2E is the control for
+// the refusals: an applier the server lets give my_docs to {other}, through
+// SET on PostgreSQL and membership on CockroachDB, with {other} able to
+// create in public, rebuilds the view, and the rebuilt view keeps its owner,
+// so the reader sees what {other} sees.
+func TestSchemaApplyGivesBackAnOwnerTheConnectionMayGiveE2E(t *testing.T) {
+	granted := map[string][]string{
+		"postgresql": {"ALTER VIEW my_docs OWNER TO {other}", "GRANT {other} TO {applier} WITH INHERIT TRUE, SET TRUE",
+			"GRANT CREATE ON SCHEMA public TO {other}"},
+		"cockroachdb": {"ALTER VIEW my_docs OWNER TO {other}", "GRANT {other} TO {applier}"},
+	}
+	for _, engine := range viewOwnerEngines[:2] {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			applier := newViewOwnerApplier(c, engine)
+			target := newViewOwnerTarget(c, engine, applier.statements(slices.Concat(viewOwnerApplierGrants, granted[engine.name]))...)
+			objects := target.objectIDs(c)
+
+			got := runPtahIn(c, "schema", "apply", "--db-url", applier.url(c, target), "--auto-approve",
+				"--schema-file", target.schemaFile(c, viewOwnerNarrow, ""))
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stdout, qt.Contains, target.expand(`ALTER VIEW "public"."my_docs" OWNER TO "{other}";`+"\n"))
+			c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", "my_docs={other}"))
+			c.Assert(target.rowsReaderSees(c), qt.Equals, 0)
+			c.Assert(slices.Equal(target.objectIDs(c), objects), qt.IsFalse)
+		})
+	}
+}
+
+// TestSchemaApplyRatesAnOwnerItGivesBackE2E reads the rating the apply prompt
+// shows for a rebuild of my_docs, which {other} owns, and the plan document
+// schema plan prints for it. The rebuild's ALTER VIEW ... OWNER TO reads the
+// same whether it gives the view back to {other}, where the schema declares no
+// owner, or to the owner the schema declares, so the reason comes from the
+// plan: only the second moves the view to another role. The person declines,
+// and my_docs keeps its oid.
+func TestSchemaApplyRatesAnOwnerItGivesBackE2E(t *testing.T) {
+	tests := []struct {
+		name, owners, role, reason string
+	}{
+		{name: "an owner given back", role: "{other}",
+			reason: "OWNER TO gives the view the plan creates again back to the role that owned it before the drop, " +
+				"which the declaration does not name: the view reads its tables with that role's privileges, as it did before"},
+		{name: "a declared owner", owners: "ALTER VIEW my_docs OWNER TO {owner};\n", role: "{owner}",
+			reason: "OWNER TO gives the object to another role: the role that owned it loses an owner's privileges, " +
+				"and a view then reads its tables with the new owner's privileges"},
+	}
+	for _, engine := range viewOwnerEngines[:2] {
+		for _, test := range tests {
+			t.Run(engine.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				target := newViewOwnerTarget(c, engine, "ALTER VIEW my_docs OWNER TO {other}")
+				objects := target.objectIDs(c)
+
+				schema := target.schemaFile(c, viewOwnerNarrow, test.owners)
+
+				got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Stdin: "no\n"}, "schema", "apply",
+					"--db-url", target.url, "--schema-file", schema)
+				plan := runPtahIn(c, "schema", "plan", "--db-url", target.url, "--schema-file", schema, "--dry-run")
+
+				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+				c.Assert(got.Stdout+got.Stderr, qt.Contains,
+					target.expand("warning: "+test.reason+"\n  "+`ALTER VIEW "public"."my_docs" OWNER TO "`+test.role+`"`+"\n"))
+				c.Assert(plan.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", plan.Stdout, plan.Stderr))
+				c.Assert(plan.Stdout, qt.Contains, `"reason": "`+test.reason+`"`)
+				c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", "my_docs={other}"))
+				c.Assert(target.objectIDs(c), qt.DeepEquals, objects)
+			})
+		}
+	}
 }

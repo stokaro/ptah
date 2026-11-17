@@ -206,3 +206,29 @@ func TestSameRole_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestTransfers_Refuses_HappyPath pins how an answer about owner transfers is
+// read: a role the server reported is refused, compared as the dialect stores
+// role names, and an answer whose privilege is empty refuses nothing, since
+// the server was not asked.
+func TestTransfers_Refuses_HappyPath(t *testing.T) {
+	refused := objectowner.Transfers{Connected: "app", Privilege: "SET", Refused: []string{"Reporting", "rv_a"}}
+	for _, test := range []struct {
+		name          string
+		transfers     objectowner.Transfers
+		dialect, role string
+		want          bool
+	}{
+		{name: "a refused role", transfers: refused, dialect: "postgres", role: "rv_a", want: true},
+		{name: "a role the server did not report", transfers: refused, dialect: "postgres", role: "rv_b", want: false},
+		{name: "another spelling on PostgreSQL", transfers: refused, dialect: "postgres", role: "reporting", want: false},
+		{name: "another spelling on CockroachDB", transfers: refused, dialect: "cockroachdb", role: "reporting", want: true},
+		{name: "a server not asked", transfers: objectowner.Transfers{Refused: []string{"rv_a"}}, dialect: "postgres", role: "rv_a", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.transfers.Refuses(test.dialect, test.role), qt.Equals, test.want)
+		})
+	}
+}
