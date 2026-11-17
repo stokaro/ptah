@@ -681,6 +681,8 @@ jobs:
     # the Playwright browser with its system packages.
     timeout-minutes: 15
     strategy:
+      # Every shard runs to its end, so one run names every tag that fails.
+      fail-fast: false
       matrix:
         shard: ${{ fromJSON(needs.release-plan.outputs.shards) }}
     steps:
@@ -717,16 +719,16 @@ jobs:
           # Round robin over the oldest-first list, so the newest and slowest
           # tags spread across the shards. pages-site checks that the shards
           # together delivered every tag.
-          release_tags=""
+          shard_tags=""
           index=0
           for tag in $RELEASE_TAGS; do
             if [ $(( index % SHARD_COUNT )) -eq $(( SHARD - 1 )) ]; then
-              release_tags="$release_tags $tag"
+              shard_tags="$shard_tags $tag"
             fi
             index=$(( index + 1 ))
           done
-          echo "Shard $SHARD of $SHARD_COUNT builds:$release_tags"
-          for tag in $release_tags; do
+          echo "Shard $SHARD of $SHARD_COUNT builds:$shard_tags"
+          for tag in $shard_tags; do
             echo "::group::Building $tag"
             workdir="$(mktemp -d)"
             tag_source_commit="$(git rev-list -n 1 "$tag")"
