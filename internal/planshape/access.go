@@ -83,6 +83,11 @@ func columnOrderResource(table string) string { return "column order " + bare(ta
 // not empty.
 func commentResource(table, column string) string { return "comment " + memberKey(table, column) }
 
+// indexCommentResource is the comment of one index of a table.
+func indexCommentResource(table, name string) string {
+	return "index comment " + memberKey(table, name)
+}
+
 // linkResource is a foreign key as a tie between two tables. A change to the type of a
 // column at either end of it writes it, so changes at the two ends keep their order even
 // where the key itself stays.
@@ -91,6 +96,9 @@ func linkResource(key constraintFact) string { return "link " + memberKey(key.ta
 // stepsOf splits node into the steps of a plan. It answers false for a node the pass
 // has no rule for, and for one whose access it cannot state.
 func (how arrangement) stepsOf(node ast.Node) ([]*step, bool) {
+	if comment, ok := node.(*ast.ObjectCommentNode); ok {
+		return how.indexCommentSteps(comment)
+	}
 	if !movable(node) {
 		return nil, false
 	}
@@ -112,7 +120,58 @@ func (how arrangement) stepsOf(node ast.Node) ([]*step, bool) {
 	if !ok {
 		return nil, false
 	}
+	if index, ok := node.(*ast.IndexNode); ok && how.movesIndexComment(index) {
+		return how.indexWithItsComment(index, use), true
+	}
 	return []*step{{table: tableOf(node), node: node, access: use}}, true
+}
+
+// indexCommentSteps is COMMENT ON INDEX, a step of the index's table where comments
+// move: the comment of an index the plan keeps, which the planner writes after every
+// new index. Anywhere else it is a statement this pass has no rule for.
+func (how arrangement) indexCommentSteps(comment *ast.ObjectCommentNode) ([]*step, bool) {
+	if !how.movesComments || comment.Object != ast.CommentedIndex || comment.Table == "" {
+		return nil, false
+	}
+	return []*step{{table: comment.Table, node: comment, access: indexCommentAccess(comment.Table, comment.Name)}}, true
+}
+
+// movesIndexComment reports a new index whose comment moves away from its CREATE
+// INDEX: a commented index of a table the plan changes. The comments of a table the
+// plan creates go with the table's own, which [createdTableCommentsAfterIndexes]
+// places.
+func (how arrangement) movesIndexComment(index *ast.IndexNode) bool {
+	_, created := how.created[tableKey(index.Table)]
+	return how.movesComments && index.Comment != "" && !created
+}
+
+// indexWithItsComment is a new index and its comment as two steps. The renderer writes
+// an index's comment right after its CREATE INDEX, and the community binary writes it
+// with the other comments of the table, so the comment is a COMMENT ON INDEX of its
+// own. The index is copied rather than changed, so a caller holding the planner's nodes
+// still reads its comment.
+func (how arrangement) indexWithItsComment(index *ast.IndexNode, use access) []*step {
+	bare := *index
+	bare.Comment = ""
+	comment := ast.NewObjectComment(ast.CommentedIndex, index.Name, index.Comment).SetTable(index.Table)
+	return []*step{
+		{table: index.Table, node: &bare, access: use},
+		{table: index.Table, node: comment, access: indexCommentAccess(index.Table, index.Name)},
+	}
+}
+
+// indexCommentAccess is a statement that sets the comment of an index. It reads the
+// table and the index's name, so it follows the statement that creates the index and
+// keeps its place beside any statement that gives or frees the name, and it writes the
+// comment, so two comments of one index keep the planner's order. The places
+// [arrangement.forwardPlace] gives already put a table's comments after its indexes,
+// so no plan the planner writes is decided by these edges; they keep a statement the
+// server needs in order behind its index if those places change.
+func indexCommentAccess(table, name string) access {
+	var use access
+	use.read(tableResource(table), nameResource(name))
+	use.write(indexCommentResource(table, name))
+	return use
 }
 
 // commentAccess is a statement that sets one comment of a table the plan changes, the

@@ -114,6 +114,177 @@ func TestApply_LeavesACommentWhereItCannotMove_HappyPath(t *testing.T) {
 	}
 }
 
+// taskIndex is an index of tasks on column, with comment when it is not empty.
+func taskIndex(name, column, comment string) *ast.IndexNode {
+	index := ast.NewIndex(name, "tasks", column)
+	index.Comment = comment
+	return index
+}
+
+// keptIndexComment is the COMMENT ON INDEX the planner writes for an index of table
+// the plan keeps, after every new index.
+func keptIndexComment(table, name, comment string) *ast.ObjectCommentNode {
+	return ast.NewObjectComment(ast.CommentedIndex, name, comment).SetTable(table)
+}
+
+// TestApply_WritesAChangedTablesIndexCommentsAfterItsOwn_HappyPath pins the comments
+// of the indexes of a table the plan changes where the community binary writes them
+// on PostgreSQL: after the table's new indexes and its columns' comments, those of the
+// indexes the table keeps by name, then those of its new indexes by name, ahead of the
+// next table the plan changes. The PostgreSQL renderer writes a new index's comment
+// right after its CREATE INDEX, and the planner writes a kept index's comment after
+// every new index of the plan. The planner's indexes keep their comments.
+func TestApply_WritesAChangedTablesIndexCommentsAfterItsOwn_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	nodes := []ast.Node{
+		alter("tasks", addColumn("due")),
+		alter("users", addColumn("nick")),
+		setComment("tasks", "title", "v2"),
+		taskIndex("tasks_title", "title", "it"),
+		taskIndex("tasks_body", "body", ""),
+		taskIndex("tasks_due", "due", "id"),
+		ast.NewIndex("users_nick", "users", "nick"),
+		keptIndexComment("tasks", "tasks_old", "ko"),
+		keptIndexComment("tasks", "tasks_id", "ki"),
+	}
+
+	got := planshape.Apply(platform.Postgres, slices.Clone(nodes), commentedTasks())
+
+	c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, got...)), qt.Equals,
+		"ALTER TABLE \"tasks\" ADD COLUMN \"due\" integer NULL;\n\n"+
+			"CREATE INDEX \"tasks_body\" ON \"tasks\" (\"body\");\n"+
+			"CREATE INDEX \"tasks_due\" ON \"tasks\" (\"due\");\n"+
+			"CREATE INDEX \"tasks_title\" ON \"tasks\" (\"title\");\n"+
+			"COMMENT ON COLUMN \"tasks\".\"title\" IS 'v2';\n\n"+
+			"COMMENT ON INDEX \"tasks_id\" IS 'ki';\n"+
+			"COMMENT ON INDEX \"tasks_old\" IS 'ko';\n"+
+			"COMMENT ON INDEX \"tasks_due\" IS 'id';\n"+
+			"COMMENT ON INDEX \"tasks_title\" IS 'it';\n"+
+			"ALTER TABLE \"users\" ADD COLUMN \"nick\" integer NULL;\n\n"+
+			"CREATE INDEX \"users_nick\" ON \"users\" (\"nick\");\n")
+	c.Assert(nodes[3].(*ast.IndexNode).Comment, qt.Equals, "it")
+}
+
+// TestApply_LeavesAnObjectCommentWhereItCannotMove_HappyPath is a COMMENT ON the pass
+// keeps where the planner put it. A concurrent build ends the run, so its comment stays
+// with its CREATE INDEX; a view ends it too, so a kept index's comment the planner
+// wrote after the view stays there; and the MySQL family writes an index's comment
+// into its CREATE INDEX. An index's comment that names no table, which only a diff
+// built by hand plans, and a trigger's comment are not a table's comments, so each
+// ends the run and keeps the ALTER TABLE split around it.
+func TestApply_LeavesAnObjectCommentWhereItCannotMove_HappyPath(t *testing.T) {
+	concurrent := taskIndex("tasks_due", "due", "id")
+	concurrent.Concurrently = true
+	tests := []struct {
+		name    string
+		dialect string
+		nodes   []ast.Node
+		want    string
+	}{
+		{
+			name:    "a concurrent index on PostgreSQL",
+			dialect: platform.Postgres,
+			nodes:   []ast.Node{alter("tasks", addColumn("due")), concurrent, setComment("tasks", "title", "v2")},
+			want: "ALTER TABLE \"tasks\" ADD COLUMN \"due\" integer NULL;\n\n" +
+				"CREATE INDEX CONCURRENTLY \"tasks_due\" ON \"tasks\" (\"due\");\n" +
+				"COMMENT ON INDEX \"tasks_due\" IS 'id';\n" +
+				"COMMENT ON COLUMN \"tasks\".\"title\" IS 'v2';\n\n",
+		},
+		{
+			name:    "a kept index's comment behind a view on PostgreSQL",
+			dialect: platform.Postgres,
+			nodes: []ast.Node{
+				alter("tasks", addColumn("due")),
+				&ast.CreateViewNode{Name: "v", Body: "SELECT id FROM tasks"},
+				keptIndexComment("tasks", "tasks_old", "ko"),
+			},
+			want: "ALTER TABLE \"tasks\" ADD COLUMN \"due\" integer NULL;\n\n" +
+				"CREATE VIEW \"v\" AS\nSELECT id FROM tasks\n;\n" +
+				"COMMENT ON INDEX \"tasks_old\" IS 'ko';\n",
+		},
+		{
+			name:    "a new index's comment on MySQL",
+			dialect: platform.MySQL,
+			nodes:   []ast.Node{alter("tasks", addColumn("due")), taskIndex("tasks_due", "due", "id")},
+			want: "ALTER TABLE `tasks` ADD COLUMN `due` int NULL;\n\n" +
+				"CREATE INDEX `tasks_due` ON `tasks` (`due`) COMMENT 'id';\n",
+		},
+		{
+			name:    "an index's comment that names no table on PostgreSQL",
+			dialect: platform.Postgres,
+			nodes: []ast.Node{
+				alter("tasks", addColumn("due")),
+				ast.NewObjectComment(ast.CommentedIndex, "tasks_old", "ko"),
+				alter("tasks", addColumn("owner")),
+			},
+			want: "ALTER TABLE \"tasks\" ADD COLUMN \"due\" integer NULL;\n\n" +
+				"COMMENT ON INDEX \"tasks_old\" IS 'ko';\n" +
+				"ALTER TABLE \"tasks\" ADD COLUMN \"owner\" integer NULL;\n\n",
+		},
+		{
+			name:    "a trigger's comment on PostgreSQL",
+			dialect: platform.Postgres,
+			nodes: []ast.Node{
+				alter("tasks", addColumn("due")),
+				ast.NewObjectComment(ast.CommentedTrigger, "tasks_touch", "tt").SetTable("tasks"),
+				alter("tasks", addColumn("owner")),
+			},
+			want: "ALTER TABLE \"tasks\" ADD COLUMN \"due\" integer NULL;\n\n" +
+				"COMMENT ON TRIGGER \"tasks_touch\" ON \"tasks\" IS 'tt';\n" +
+				"ALTER TABLE \"tasks\" ADD COLUMN \"owner\" integer NULL;\n\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := planshape.Apply(test.dialect, test.nodes, commentedTasks())
+
+			c.Assert(must.Must(builtin.RenderSQL(test.dialect, got...)), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestAlignRollback_LeavesAnIndexCommentWhereThePlannerPutIt_HappyPath is a rollback,
+// which keeps each comment where the planner wrote it: what it undoes says nothing
+// about where a comment goes. A kept index's comment between two changes to its table
+// keeps the ALTER TABLE split around it, and an index the rollback creates keeps its
+// comment right after its CREATE INDEX.
+func TestAlignRollback_LeavesAnIndexCommentWhereThePlannerPutIt_HappyPath(t *testing.T) {
+	tests := []struct {
+		name              string
+		forward, rollback []ast.Node
+		want              string
+	}{
+		{
+			name:     "a kept index's comment",
+			forward:  []ast.Node{alter("tasks", addColumn("due"), addColumn("owner")), keptIndexComment("tasks", "tasks_old", "ko")},
+			rollback: []ast.Node{alter("tasks", dropColumn("owner")), keptIndexComment("tasks", "tasks_old", "k0"), alter("tasks", dropColumn("due"))},
+			want: "ALTER TABLE \"tasks\" DROP COLUMN \"owner\";\n\n" +
+				"COMMENT ON INDEX \"tasks_old\" IS 'k0';\n" +
+				"ALTER TABLE \"tasks\" DROP COLUMN \"due\";\n\n",
+		},
+		{
+			name:     "an index the rollback creates",
+			forward:  []ast.Node{alter("tasks", addColumn("due")), ast.NewDropIndex("tasks_title").SetTable("tasks"), alter("tasks", addColumn("owner"))},
+			rollback: []ast.Node{alter("tasks", dropColumn("owner")), taskIndex("tasks_title", "title", "it"), alter("tasks", dropColumn("due"))},
+			want: "ALTER TABLE \"tasks\" DROP COLUMN \"owner\";\n\n" +
+				"CREATE INDEX \"tasks_title\" ON \"tasks\" (\"title\");\n" +
+				"COMMENT ON INDEX \"tasks_title\" IS 'it';\n" +
+				"ALTER TABLE \"tasks\" DROP COLUMN \"due\";\n\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := planshape.AlignRollback(platform.Postgres, test.forward, test.rollback, commentedTasks())
+
+			c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, got...)), qt.Equals, test.want)
+		})
+	}
+}
+
 // commentedNewTables is two tables a plan creates, each with an index and with
 // comments on the table and on some of its columns.
 func commentedNewTables() []ast.Node {
@@ -267,6 +438,38 @@ COMMENT ON TABLE "t" IS 'tt';
 COMMENT ON COLUMN "t"."a" IS 'aa';
 
 COMMENT ON INDEX "t_a" IS 'ia';
+`)
+}
+
+// TestApply_WritesANewTablesIndexCommentsTogetherWhenOneWaits_HappyPath pins the
+// comments of a new table with two indexes, of which the second waits for a view the
+// plan creates after the table. Every comment of the table follows the second index,
+// the first index's included, as on a table whose indexes nothing holds back.
+func TestApply_WritesANewTablesIndexCommentsTogetherWhenOneWaits_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	view := &ast.CreateViewNode{Name: "v", Body: "SELECT id, a FROM t"}
+
+	got := planshape.Apply(platform.Postgres,
+		[]ast.Node{commentedTable(), commentedIndex("t_a", "a", "ia"), view, commentedIndex("t_b", "b", "ib")}, nil)
+
+	c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, got...)), qt.Equals, `CREATE TABLE "t" (
+  "id" integer NOT NULL,
+  "a" text NULL,
+  "b" text NULL,
+  PRIMARY KEY ("id")
+);
+
+CREATE INDEX "t_a" ON "t" ("a");
+CREATE VIEW "v" AS
+SELECT id, a FROM t
+;
+CREATE INDEX "t_b" ON "t" ("b");
+COMMENT ON TABLE "t" IS 'tt';
+
+COMMENT ON COLUMN "t"."a" IS 'aa';
+
+COMMENT ON INDEX "t_a" IS 'ia';
+COMMENT ON INDEX "t_b" IS 'ib';
 `)
 }
 
