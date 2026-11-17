@@ -1482,11 +1482,14 @@ writes the rebuild as one statement, `ALTER TABLE t DROP INDEX k, ADD INDEX k
 and MySQL 8.4.11 refuses the drop alone on an index a foreign key needs with
 `ERROR 1553`, so we are stricter here, deliberately.
 
-Table and column comments are a separate, wider gap that predates this work and
-is untouched by it. Ptah's PostgreSQL renderer emits an object comment as an SQL
-line comment rather than a `COMMENT ON` statement, so `COMMENT ON TABLE` and
-`COMMENT ON COLUMN` are still dropped where CE emits both — measured on the same
-fixture, CE emitted all three statements and Ptah emitted only the index one.
+Table and column comments take the same shape on PostgreSQL. `COMMENT ON TABLE`
+and `COMMENT ON COLUMN` are statements of their own, written after the statement
+that creates the table or adds the column, and a changed comment is one `COMMENT
+ON` statement. A column the plan adds carries its comment in the same migration,
+a stored generated column included, and a generated column whose expression
+changes keeps the comment that changes with it. Measured on PostgreSQL 18: the
+diff after the apply is in sync, and `col_description` reads back each comment
+(`integration/column_comment_convergence_e2e_test.go`).
 
 ### Attributes of the same family that are still dropped
 
@@ -1498,7 +1501,6 @@ same statement.
 | --- | --- | --- | --- | --- |
 | Per-key collation, `(name COLLATE "C")` | `pg_index.indcollation` | Dropped | Dropped | Not a parity gap. The Atlas HCL surface has no per-key collation attribute — CE inspects the fixture as a bare `columns = [column.name]`. Adding one would emit a document CE cannot read, trading a silent index difference for a loud interop break |
 | Index storage parameters other than `pages_per_range` | `pg_class.reloptions` | Dropped | Dropped | Not a parity gap. Same reason: no HCL slot, so a recorded value would churn forever. See above |
-| Table and column comments | `obj_description` / `col_description` | Emits `COMMENT ON TABLE` / `COMMENT ON COLUMN` | Emits an SQL line comment | **A parity gap**, wider than the index family and predating it: the PostgreSQL renderer has no `COMMENT ON` statement for either object |
 
 `pg_index` has four per-key vectors — `indkey`, `indclass`, `indoption` and
 `indcollation` — and the reader asks for three of them. `indcollation` is the

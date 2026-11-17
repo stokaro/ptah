@@ -770,13 +770,23 @@ func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName strin
 	}
 }
 
+// addNewTableColumns appends an ALTER TABLE for each column tableDiff adds, and
+// returns apart from them the statements that set the new columns' comments.
+//
+// PostgreSQL has no comment clause in a column definition, so a column's comment
+// is a COMMENT ON COLUMN of its own, and it can only follow the statement that
+// adds the column. The caller writes them after all of the table's column
+// statements, so the exact style can still join the table's ADD COLUMN and ALTER
+// COLUMN clauses into one ALTER TABLE. Without them a plan adds the column bare,
+// and the next comparison finds the comment missing and plans it again: the
+// schema takes two migrations to converge.
 func (p *Planner) addNewTableColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
 	declared []schemamodel.Table,
 	vocabulary difftypes.UserTypeVocabulary,
 	semantics identifier.Semantics,
-) []ast.Node {
+) (_, comments []ast.Node) {
 	// The TABLE still has to be declared. The column travels with the change,
 	// so a field lookup here cannot fail -- but the guard is load-bearing on
 	// its own: a diff naming `app.users` against a schema that declares
@@ -785,7 +795,7 @@ func (p *Planner) addNewTableColumns(
 	// PostgreSQL 17.10; see TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare.
 	table := findGeneratedTableByDiffName(declared, tableDiff.TableName, semantics)
 	if table == nil {
-		return result
+		return result, nil
 	}
 
 	// The column itself is not looked up. Finding it by the table's Go STRUCT
@@ -814,8 +824,14 @@ func (p *Planner) addNewTableColumns(
 			Name:       tableDiff.TableName,
 			Operations: operations,
 		})
+		if columnNode.Comment != "" {
+			comments = append(comments, &ast.AlterTableNode{
+				Name:       tableDiff.TableName,
+				Operations: []ast.AlterOperation{&ast.SetCommentOperation{Column: columnNode.Name, Comment: columnNode.Comment}},
+			})
+		}
 	}
-	return result
+	return result, comments
 }
 
 // addForeignKeyConstraintsForNewColumns adds foreign key constraints for newly added columns.
@@ -890,6 +906,16 @@ func (p *Planner) modifyExistingTableColumns(
 	removedSequences []schemamodel.Sequence,
 ) []ast.Node {
 	for _, colDiff := range tableDiff.ColumnsModified {
+		// A comment is not part of ALTER TABLE on PostgreSQL, so it is emitted
+		// beside the column's other changes rather than inside them. A column
+		// whose ONLY difference is its comment gets no ALTER at all: the
+		// statement would be `ALTER COLUMN ... SET NOT NULL` for a column that
+		// is already NOT NULL, which is noise the operator has to read past
+		// and a write to a table nothing needed to write to (stokaro/ptah#2168).
+		// It goes ahead of the generated column branch: a column whose
+		// expression and comment both change keeps the comment, which the
+		// expression's statement does not carry.
+		result = appendColumnComment(result, tableDiff.TableName, colDiff)
 		if isGeneratedColumnChange(colDiff) {
 			node, ok := columnNodeFor(colDiff, vocabulary)
 			if !ok {
@@ -900,13 +926,6 @@ func (p *Planner) modifyExistingTableColumns(
 			continue
 		}
 
-		// A comment is not part of ALTER TABLE on PostgreSQL, so it is emitted
-		// beside the column's other changes rather than inside them. A column
-		// whose ONLY difference is its comment gets no ALTER at all: the
-		// statement would be `ALTER COLUMN ... SET NOT NULL` for a column that
-		// is already NOT NULL, which is noise the operator has to read past
-		// and a write to a table nothing needed to write to (stokaro/ptah#2168).
-		result = appendColumnComment(result, tableDiff.TableName, colDiff)
 		result = p.appendNotNullConstraintRename(result, tableDiff.TableName, colDiff)
 		if len(colDiff.Changes) == 0 {
 			continue
@@ -1415,10 +1434,12 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 			initialLength := len(result)
 
 			// Add new columns
-			result = p.addNewTableColumns(result, tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
+			var comments []ast.Node
+			result, comments = p.addNewTableColumns(result, tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
 
 			// Modify existing columns
 			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes, diff.SequencesRemoved)
+			result = append(result, comments...)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
