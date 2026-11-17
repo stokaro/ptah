@@ -310,9 +310,13 @@ script. Each refusal below comes before anything changes:
   any row, including the row of a file that was deleted or renamed. Drop what
   the repeatable migrations created, delete their rows from the record table,
   and then roll back, or roll forward with a new migration instead.
-- **A drift check.** `--check-drift` replays the versioned history on the
-  shadow database, which does not create what repeatable migrations create, so
-  it is refused over a directory that holds one.
+- **A drift check over a changed repeatable migration.** `--check-drift`
+  replays the applied versioned history on the shadow database, and then each
+  repeatable migration whose file is the content the database last applied.
+  A repeatable migration whose file changed after it applied, whose file is
+  gone, or whose last attempt did not finish has no content in the directory
+  to replay, so the check exits with status 2 and the run applies nothing. Run
+  without `--check-drift` to apply the change.
 - **The Atlas-compatible revision format.** `--revision-format atlas` defines
   the revision table and nothing beside it.
 - **A runner that opens its own transactions.** Under

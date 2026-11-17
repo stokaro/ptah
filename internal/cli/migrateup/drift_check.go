@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"strings"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/revisiontable"
-	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/shadow"
 )
@@ -71,11 +69,6 @@ type driftCheck struct {
 // an object the project leaves to another tool is not drift. A selector that
 // matched nothing on either side is a warning on standard error naming where
 // it was written, as `schema drift` gives one, and the check goes on.
-//
-// A directory that holds repeatable migrations is refused before a shadow
-// database starts: the replay the check compares against creates what the
-// versioned history creates, and the objects of a repeatable migration are not
-// part of it.
 func prepareDriftCheck(
 	cmd *cobra.Command,
 	opts options,
@@ -84,20 +77,9 @@ func prepareDriftCheck(
 	settings parsedMigrationSettings,
 	conn *dbschema.DatabaseConnection,
 	mig *migrator.Migrator,
-	migrationsFS fs.FS,
 ) (*driftCheck, func(), error) {
 	if !opts.checkDrift {
 		return nil, func() {}, nil
-	}
-	repeatables, err := migrationfile.DiscoverRepeatables(migrationsFS, settings.dirFormat)
-	if err != nil {
-		return nil, func() {}, err
-	}
-	if len(repeatables) > 0 {
-		return nil, func() {}, fmt.Errorf(
-			"--%s replays the versioned history on the shadow database, and this directory holds repeatable "+
-				"migrations whose objects that replay does not create; run without --%s",
-			checkDriftFlag, checkDriftFlag)
 	}
 	ctx := cmd.Context()
 	runtime, err := engineruntime.Resolve(ctx, engineruntime.DatabaseURL(dbURL))
@@ -173,7 +155,7 @@ type DriftError struct {
 func (e *DriftError) Error() string {
 	return fmt.Sprintf("the database schema differs from the schema its %s, in %d %s, "+
 		"so no pending migration was run; first: %s",
-		appliedMigrations(len(e.Check.Replayed)), len(e.Check.Findings), plural(len(e.Check.Findings), "place", "places"),
+		appliedMigrations(e.Check), len(e.Check.Findings), plural(len(e.Check.Findings), "place", "places"),
 		e.Check.Findings[0].Message)
 }
 
@@ -233,7 +215,7 @@ func reportDriftCheck(cmd *cobra.Command, emit cliobs.Emitter, drift *driftCheck
 	switch {
 	case check == nil:
 	case check.Outcome == migrator.DriftClean:
-		emit.Printf("Drift check: the database matches the schema its %s\n", appliedMigrations(len(check.Replayed)))
+		emit.Printf("Drift check: the database matches the schema its %s\n", appliedMigrations(*check))
 	case check.Outcome == migrator.DriftDrifted:
 		writeDriftReport(cmd.ErrOrStderr(), *check)
 	}
@@ -275,6 +257,9 @@ func (d *driftCheck) run(ctx context.Context) (migrator.DriftCheck, error) {
 	if len(check.Replayed) == 0 {
 		check.Replayed, check.ReplayedKeys = nil, nil
 	}
+	for _, repeatable := range history.Repeatables {
+		check.ReplayedRepeatables = append(check.ReplayedRepeatables, repeatable.Identity)
+	}
 
 	info := d.conn.Info()
 	result, err := shadow.VerifyApplied(d.selection.ReadContext(ctx, d.runtime.Selections()), shadow.AppliedVerifyOptions{
@@ -282,6 +267,7 @@ func (d *driftCheck) run(ctx context.Context) (migrator.DriftCheck, error) {
 		ShadowDatabaseURL: d.shadowURL,
 		TargetConn:        d.conn,
 		Migrations:        history.Migrations,
+		Repeatables:       history.Repeatables,
 		Dialect:           info.Dialect,
 		Capabilities:      info.Capabilities,
 		MetadataTables:    d.metadata,
@@ -346,7 +332,7 @@ func driftFindings(mismatches []shadow.Mismatch) []migrator.DriftFinding {
 // difference. The run returns its own exit status for drift, so this is the
 // diagnostic the root does not print.
 func writeDriftReport(out io.Writer, check migrator.DriftCheck) {
-	_, _ = fmt.Fprintf(out, "Drift check: the database differs from the schema its %s:\n", appliedMigrations(len(check.Replayed)))
+	_, _ = fmt.Fprintf(out, "Drift check: the database differs from the schema its %s:\n", appliedMigrations(check))
 	for _, finding := range check.Findings {
 		_, _ = fmt.Fprintf(out, "  - %s\n", finding.Message)
 	}
@@ -355,8 +341,16 @@ func writeDriftReport(out io.Writer, check migrator.DriftCheck) {
 }
 
 // appliedMigrations is "N applied migrations produce", agreed in number.
-func appliedMigrations(count int) string {
-	return fmt.Sprintf("%d applied %s", count, plural(count, "migration produces", "migrations produce"))
+// appliedMigrations says what the check replayed, as the subject of the verb
+// that ends the phrase.
+func appliedMigrations(check migrator.DriftCheck) string {
+	versions, repeatables := len(check.Replayed), len(check.ReplayedRepeatables)
+	if repeatables == 0 {
+		return fmt.Sprintf("%d applied %s", versions, plural(versions, "migration produces", "migrations produce"))
+	}
+	return fmt.Sprintf("%d applied %s and %d repeatable %s produce",
+		versions, plural(versions, "migration", "migrations"),
+		repeatables, plural(repeatables, "migration", "migrations"))
 }
 
 func plural(count int, one, many string) string {

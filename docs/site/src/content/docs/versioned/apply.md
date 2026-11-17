@@ -361,10 +361,12 @@ hand or an index dropped during an incident leaves every checksum intact.
 Under the migration lock, after reading the history and selecting what is
 pending, `up` replays the migrations the revision table records as applied on
 the `--shadow-db` database and compares that schema with the target's, before
-anything runs. The baseline is the applied
+anything runs. Each [repeatable migration](../repeatable/) the record holds as
+applied is replayed after them. The baseline is the applied
 history, not the directory, so what a pending migration is about to create is
-not drift. The revision table and its log, under the names this run is
-configured with, are left out of the comparison.
+not drift. The revision table, its log and the record of repeatable
+migrations, under the names this run is configured with, are left out of the
+comparison.
 
 Run it against the database this page migrated, with a shadow database that
 does not exist yet:
@@ -393,8 +395,9 @@ A check that cannot decide is never reported as clean. It exits with status 2
 and applies nothing, when:
 
 - the history cannot be replayed: an applied revision whose file is gone, an
-  applied repeatable migration, whose row records only its last run, or a
-  history that applied a lower version after a higher one;
+  Atlas `R` version, whose row records only its last run, a history that
+  applied a lower version after a higher one, or a repeatable migration whose
+  file is gone or changed after it applied;
 - the shadow database cannot be used: it is the target under another name, it
   is not empty, or the replay of the applied migrations fails on it;
 - the target read cannot describe an object the applied migrations create, so
@@ -434,8 +437,9 @@ lock, since a dry run takes none, and changes nothing on the target.
 
 With `--json`, the run document carries the result in `drift_check`. Its
 `outcome` is `clean`, `drifted` or `unable`; `replayed` lists the versions the
-check replayed, `findings` the differences, and an `unable` check names its
-`stage` and `reason`:
+check replayed, `replayed_repeatables` the identities of the repeatable
+migrations it replayed after them, `findings` the differences, and an `unable`
+check names its `stage` and `reason`:
 
 ```json
 {

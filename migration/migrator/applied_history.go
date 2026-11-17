@@ -11,8 +11,9 @@ import (
 // migrations whose effects the history recorded, in the order a replay applies
 // them, and the rows it was read from.
 //
-// Replaying Migrations on an empty database with [Migrator.MigrateUp] rebuilds
-// the schema the history produced. An Atlas baseline stands for every file at
+// Replaying Migrations on an empty database with [Migrator.MigrateUp], and
+// Repeatables after them, rebuilds the schema the history produced;
+// [AppliedHistory.ReplayProvider] holds both. An Atlas baseline stands for every file at
 // or below it, so those files are in Migrations although they have no row. A
 // checkpoint the database was bootstrapped from is the only checkpoint a
 // history records, and the files below it have no row either, so a replay of
@@ -20,6 +21,26 @@ import (
 type AppliedHistory struct {
 	Migrations []*Migration
 	Revisions  []MigrationRevision
+	// Repeatables are the repeatable migrations whose record says the file
+	// the directory holds is the content the database last applied, in the
+	// order an up run executes them. A directory read without
+	// [WithRepeatableMigrations] contributes none.
+	Repeatables []AppliedRepeatable
+}
+
+// AppliedRepeatable is a repeatable migration whose file hashes to the digest
+// its record says applied.
+type AppliedRepeatable struct {
+	// Identity is the name the record keys the migration by.
+	Identity string
+	// Path is the file's path in the migration directory.
+	Path string
+	// Checksum is the digest of the file, which is the digest recorded as
+	// applied.
+	Checksum string
+	// Migration carries the body the way a versioned up migration carries it.
+	// A history [Migrator.AppliedHistory] returns never holds a nil one.
+	Migration *Migration
 }
 
 // Versions lists the versions of the history's migrations in replay order.
@@ -50,6 +71,10 @@ const (
 	// higher one. A replay applies versions in order, so it would not run the
 	// statements in the order the database ran them.
 	UnreplayableOutOfOrder = "out_of_order"
+	// UnreplayableChanged is a repeatable migration whose file changed after
+	// it applied. The database holds what the earlier content created, and
+	// the directory no longer has that content to replay.
+	UnreplayableChanged = "changed"
 )
 
 // UnreplayableHistoryError says why a history cannot be replayed into the
@@ -58,20 +83,34 @@ const (
 type UnreplayableHistoryError struct {
 	// Reason is one of the Unreplayable constants.
 	Reason string
-	// Version is the revision the reason is about.
+	// Version is the revision the reason is about. It is zero when the reason
+	// is about a repeatable migration.
 	Version    int64
 	VersionKey string
+	// Repeatable is the identity of the repeatable migration the reason is
+	// about, and empty when the reason is about a revision.
+	Repeatable string
 	// Detail says what was found, for a person.
 	Detail string
 }
 
 func (e *UnreplayableHistoryError) Error() string {
+	if e.Repeatable != "" {
+		return fmt.Sprintf("the applied history cannot be replayed: repeatable migration %s: %s", e.Repeatable, e.Detail)
+	}
 	return fmt.Sprintf("the applied history cannot be replayed: version %s: %s", e.VersionKey, e.Detail)
 }
 
 // AppliedHistory reads the revision table and returns the migrations its
 // applied revisions name, or an [UnreplayableHistoryError] when the history
 // does not say what the database holds. It writes nothing.
+//
+// When the provider loads repeatable migrations, it reads their record too.
+// Each one whose file hashes to the applied digest is in Repeatables. A
+// record whose last attempt did not finish, whose file is gone, or whose file
+// changed after it applied is an [UnreplayableHistoryError] naming the
+// repeatable migration, because no file in the directory is the content the
+// database ran.
 //
 // Call it while holding the migration lock, as a [MigrationPlanGuard] does: a
 // cooperating runner cannot then change the history between this read and the
@@ -81,7 +120,15 @@ func (m *Migrator) AppliedHistory(ctx context.Context) (AppliedHistory, error) {
 	if err != nil {
 		return AppliedHistory{}, fmt.Errorf("read the applied history: %w", err)
 	}
-	return m.appliedHistory(revisions)
+	history, err := m.appliedHistory(revisions)
+	if err != nil {
+		return AppliedHistory{}, err
+	}
+	history.Repeatables, err = m.appliedRepeatables(ctx)
+	if err != nil {
+		return AppliedHistory{}, err
+	}
+	return history, nil
 }
 
 func (m *Migrator) appliedHistory(revisions []MigrationRevision) (AppliedHistory, error) {
@@ -191,6 +238,10 @@ type DriftCheck struct {
 	// shadow database, in order. They are absent when it replayed nothing.
 	Replayed     []int64  `json:"replayed,omitempty"`
 	ReplayedKeys []string `json:"replayed_keys,omitempty"`
+	// ReplayedRepeatables are the identities of the repeatable migrations the
+	// check replayed after the versions, in order. They are absent when it
+	// replayed none.
+	ReplayedRepeatables []string `json:"replayed_repeatables,omitempty"`
 	// Stage and Reason say where and why a check came back unable; both are
 	// absent otherwise. Reason is a stable code, such as an
 	// [UnreplayableHistoryError] reason or a shadow-verification kind.
