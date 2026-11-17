@@ -52,9 +52,9 @@ func TestPlanner_AGeneratedColumnsOtherChanges_HappyPath(t *testing.T) {
 			caps:    capability.Postgres18(),
 			changes: map[string]string{"nullable": "true -> false"},
 			want: `-- Add/modify columns for table: tasks
+-- Modify generated column tasks.code: STORED upper(title) -> STORED lower(title)
 ALTER TABLE "tasks" ALTER COLUMN "code" SET EXPRESSION AS (lower(title));
 
--- Modify generated column tasks.code: STORED upper(title) -> STORED lower(title)
 -- Modify column tasks.code: nullable: true -> false
 -- POSTGRES: SET NOT NULL fails if any row of "tasks" holds NULL in "code"; the column declares no default to fill it with.
 ALTER TABLE "tasks" ALTER COLUMN "code" SET NOT NULL;
@@ -66,9 +66,9 @@ ALTER TABLE "tasks" ALTER COLUMN "code" SET NOT NULL;
 			caps:   capability.Postgres18(),
 			rename: &difftypes.NotNullConstraintNameChange{Current: "old_nn", Desired: "code_nn"},
 			want: `-- Add/modify columns for table: tasks
+-- Modify generated column tasks.code: STORED upper(title) -> STORED lower(title)
 ALTER TABLE "tasks" ALTER COLUMN "code" SET EXPRESSION AS (lower(title));
 
--- Modify generated column tasks.code: STORED upper(title) -> STORED lower(title)
 ALTER TABLE "tasks" RENAME CONSTRAINT "old_nn" TO "code_nn";
 
 `,
