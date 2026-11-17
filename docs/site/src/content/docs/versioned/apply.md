@@ -689,6 +689,111 @@ is absent when the server gave no answer, such as after a lost connection or a
 canceled statement. [Where a run stopped](../../reference/exit-codes/#where-a-run-stopped)
 lists what each engine gives.
 
+### What the server said
+
+`failure` holds codes alone, so it says where the run stopped and not why. The
+server's own account, such as the DETAIL that names the key a foreign key
+refused, is shown only when you ask for it with `--server-details`. A migration
+that inserts an order for a customer who does not exist fails on its foreign key:
+
+```bash illustration
+ptah migrations up --db-url "$DATABASE_URL" --migrations-dir migrations --server-details
+```
+
+The details follow the error line on standard error:
+
+```text illustration
+error: error running migrations: failed to apply migration 2: failed to execute migration SQL: SQL execution failed: ERROR: insert or update on table "orders" violates foreign key constraint "orders_customer_fkey" (SQLSTATE 23503)
+SQL: INSERT INTO orders (id, customer) VALUES (1, 4242)
+server details (may contain application data):
+  failed at: statement 1 of 1 of migration 2 (0000000002_orders.up.sql)
+  sqlstate: 23503
+  severity: ERROR
+  message: insert or update on table "orders" violates foreign key constraint "orders_customer_fkey"
+  detail: Key (customer)=(4242) is not present in table "customers".
+  schema: public
+  table: orders
+  constraint: orders_customer_fkey
+```
+
+With `--json` the document carries the same details as `server_details`, next
+to `failure`, which stays as it is:
+
+```json
+{
+  "outcome": "failed",
+  "failure": {
+    "version": 2,
+    "version_key": "2",
+    "statement": 1,
+    "statements": 1,
+    "sqlstate": "23503"
+  },
+  "server_details": {
+    "file": "0000000002_orders.up.sql",
+    "server": {
+      "severity": "ERROR",
+      "sqlstate": "23503",
+      "message": "insert or update on table \"orders\" violates foreign key constraint \"orders_customer_fkey\"",
+      "detail": "Key (customer)=(4242) is not present in table \"customers\".",
+      "schema": "public",
+      "table": "orders",
+      "constraint": "orders_customer_fkey"
+    }
+  },
+  "…": "the rest of the document"
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `file` | The migration file the failed statement came from. Absent for a commit, which belongs to the transaction |
+| `location` | Where the server's `position` falls: `line` and `column` in the statement as sent, and `file_line` and `file_column` in the file. A column counts characters, as the server does |
+| `server` | What the server answered: `severity`, `sqlstate`, `message`, `detail`, `hint`, `position`, `where`, `schema`, `table`, `column`, `data_type` and `constraint`. A field the server did not send is absent |
+
+**The details may contain application data.** A DETAIL can quote the row a
+constraint refused, and a WHERE can quote a statement. That is why no default
+output carries them and why `failure` never does: a caller that must not publish
+data, such as the [Kubernetes operator](../../operate/kubernetes-operator/),
+reads `failure` and sees no change. Leave the flag off where the output is
+published, such as in a public CI log.
+
+Some rules hold whatever the server sends:
+
+- The password of every database address the command opened, and a role
+  password Ptah wrote into a statement, are taken out of every field. Each field
+  is then cut to 1024 bytes at a character boundary, and `server.truncated`
+  says that one was.
+- The text form writes control characters other than a newline or a tab, format
+  characters such as the right-to-left override U+202E, and the line and
+  paragraph separators as escapes such as `\x1b` and `\u202e`, while the JSON
+  form keeps the server's text. The escapes and the indentation of a
+  continuation line count toward the 1024 bytes of the text form, so a field
+  the escapes lengthen is cut again, and the note
+  `a field longer than 1024 bytes is cut` follows.
+- Only servers that speak the PostgreSQL protocol send these fields:
+  PostgreSQL, CockroachDB and YugabyteDB. On another engine `server` is absent
+  and `file` still names the file.
+- A statement with no answer, such as after a lost connection or a client-side
+  timeout, has no `server`. The text says `server: no details reported`, and
+  nothing is filled in from another source.
+- A deferred constraint fails at the commit, after every statement ran. Its
+  details say `the commit of the transaction that ran migration 2` and carry no
+  file and no location. Under `--tx-mode all` the commit names the last
+  migration, as `failure` does.
+- A migration in an Atlas txtar file is named by that file, and its `location`
+  has a line and a column in the statement but no file line or column.
+- `location` is present only when it is certain. A statement Ptah changed before
+  sending it, such as one it wrote a role password into, has none. The file
+  line and column are present only when the statement appears in the file
+  exactly once, as it was sent.
+
+The flag changes neither the outcome nor the exit code. It reads
+`PTAH_SERVER_DETAILS` like every boolean `PTAH_*` variable, and
+`ptah migrations down` takes it too. `ptah-compat migrate apply` and
+`ptah-compat migrate down` take no new flag, so they read only the variable; see
+[Atlas-compatible commands](../../reference/atlas-commands/#ptah-compat-migrate-apply).
+
 `migration_log` says what the run's writes to the
 [migration log](../migration-log/) came to. A failed write does not stop the
 migration, so it changes neither `outcome` nor the exit status, and the table

@@ -358,31 +358,77 @@ func appliedFromPlan(planned []int64, plannedKeys []string, after *MigrationStat
 	return versions, keys
 }
 
-// runFailure reads the failed statement or commit out of a run's error.
+// RunFailureCause is the statement or the commit a failed run stopped at, with
+// what a caller needs to explain it to the person who ran it: the statement
+// as it was sent, the file it came from, and the error it failed with.
+//
+// It is not part of the run document. Statement and Err can quote the
+// statement's text and the row values it carried, as can the server's answer
+// inside Err, so a caller that must not publish data reads Failure alone.
+// [RunFailure], which the document carries, holds no text.
+type RunFailureCause struct {
+	// Failure is the record [RunResult.Failure] carries for the same error.
+	Failure RunFailure
+	// SourcePath is the migration file the failed statement came from, as
+	// [MigrationExecutionError.SourcePath] names it: relative to the
+	// migration directory, with "#" and the section name after it for a
+	// section of an Atlas txtar file. It is empty for a commit, which belongs
+	// to the transaction rather than to a statement of a file, and for a
+	// migration that was not read from a file.
+	SourcePath string
+	// Statement is the failed statement as the migrator sent it, and empty
+	// for a commit.
+	Statement string
+	// Err is the failed statement's or commit's own error. It is never a
+	// failure the migrator met after it and joined to the run's error, such
+	// as a rollback that failed too, so an answer the database gave to that
+	// later request is not read as the answer to this one.
+	Err error
+}
+
+// FailureCauseOf reads the statement or the commit a failed run stopped at
+// out of the run's error. It reports false exactly where [RunResult.Failure]
+// is absent for the same error, and returns the zero RunFailureCause with it:
+// for a nil error, for an error that is not a migration failure, such as a
+// lock or connection failure, and for a migration failure that stopped at
+// neither a statement nor a commit.
 //
 // Both halves have to be in the chain: the migration the migrator was running,
 // and a statement it sent or a commit it asked for. A refusal raised before any
 // statement ran -- the transaction preflight, a statement validator -- names a
 // statement too, but the database never saw it, so it is not a failure the
 // database answered.
-func runFailure(err error) *RunFailure {
+func FailureCauseOf(err error) (RunFailureCause, bool) {
 	migration, ok := errors.AsType[*FailedMigrationError](err)
+	if !ok {
+		return RunFailureCause{}, false
+	}
+	cause := RunFailureCause{Failure: RunFailure{Version: migration.Version, VersionKey: migration.VersionKey}}
+	if commit, ok := errors.AsType[*failedCommitError](migration.Err); ok {
+		cause.Failure.Statements = commit.statements
+		cause.Failure.Commit = true
+		cause.Err = commit.err
+	} else {
+		statement, ok := errors.AsType[*MigrationExecutionError](migration.Err)
+		if !ok || !statement.sent {
+			return RunFailureCause{}, false
+		}
+		cause.Failure.Statement = statement.StatementIndex
+		cause.Failure.Statements = statement.Total
+		cause.SourcePath = statement.SourcePath
+		cause.Statement = statement.Statement
+		cause.Err = statement.Err
+	}
+	cause.Failure.SQLState, cause.Failure.ErrorNumber = servercode.Read(cause.Err)
+	return cause, true
+}
+
+// runFailure reads the failed statement or commit out of a run's error, as
+// [FailureCauseOf] does, and nil when the run stopped at neither.
+func runFailure(err error) *RunFailure {
+	cause, ok := FailureCauseOf(err)
 	if !ok {
 		return nil
 	}
-	failure := &RunFailure{Version: migration.Version, VersionKey: migration.VersionKey}
-	if commit, ok := errors.AsType[*failedCommitError](migration.Err); ok {
-		failure.Statements = commit.statements
-		failure.Commit = true
-		failure.SQLState, failure.ErrorNumber = servercode.Read(commit.err)
-		return failure
-	}
-	statement, ok := errors.AsType[*MigrationExecutionError](migration.Err)
-	if !ok || !statement.sent {
-		return nil
-	}
-	failure.Statement = statement.StatementIndex
-	failure.Statements = statement.Total
-	failure.SQLState, failure.ErrorNumber = servercode.Read(statement.Err)
-	return failure
+	return &cause.Failure
 }

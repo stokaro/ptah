@@ -42,22 +42,38 @@ func (e passwordExpansion) redact(err error) error {
 	if err == nil || len(e.values) == 0 {
 		return err
 	}
-	text := err.Error()
-	for _, value := range e.values {
+	return redactedPasswordError{err: err, text: redactValues(err.Error(), e.values), values: e.values}
+}
+
+// redactValues replaces every value in text, longest first as the expansion
+// sorts them, so a value that holds a shorter one is taken out whole.
+func redactValues(text string, values []string) string {
+	for _, value := range values {
 		if value != "" {
 			text = strings.ReplaceAll(text, value, "[secret]")
 		}
 	}
-	return redactedPasswordError{err: err, text: text}
+	return text
 }
 
+// redactedPasswordError is the failure of a statement this writer wrote a
+// password into. Its message has the password taken out; the driver error it
+// wraps does not, so it also takes the password out of the server's own fields
+// for a reader that reads them (see [ptah.run/internal/serverdiag.Redactor]).
 type redactedPasswordError struct {
-	err  error
-	text string
+	err    error
+	text   string
+	values []string
 }
 
 func (e redactedPasswordError) Error() string { return e.text }
 func (e redactedPasswordError) Unwrap() error { return e.err }
+
+// RedactServerText takes every password the statement was sent with out of a
+// text the server answered with.
+func (e redactedPasswordError) RedactServerText(text string) string {
+	return redactValues(text, e.values)
+}
 
 // expandPasswords writes, in statement, the value of every password variable
 // it names after PASSWORD in a CREATE or ALTER of a ROLE, USER or GROUP, read

@@ -107,17 +107,17 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 201 capabilities below:
+Across the 202 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 187 |
+| Ptah supports it fully | 188 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 66 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
-| Ptah has it and neither Atlas edition does | 28 |
+| Ptah has it and neither Atlas edition does | 29 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 6 |
 
@@ -248,6 +248,7 @@ seven of them as open capabilities regardless.
 | Report of an ignored `--dir` URL query key | ✅ | ❌ | ❌ | Only `?format=` selects a layout. On the eight verbs accepting a `--dir` query, other keys are ignored, named on stderr, exit 0 unchanged; `PTAH_STRICT_DIR_QUERY=1` refuses. Six verbs take no query. |
 | Revision table format and placement | ✅ | ✅ | ✅ | `--revision-format` ptah\|atlas plus `--migrations-table` and `--migrations-schema`. Both binaries place the Atlas layout as Atlas does: `atlas_schema_revisions` on PostgreSQL without `search_path`. |
 | Roll back applied migrations (down) | ✅ | ❌ | ✅ | Ptah validates all down bodies before changing state, dry-run reports separate preflight rejection from attempted rollback, and `--plan`, `--to-tag` and `--skip-checks` are implemented. |
+| Server details of a failed migration statement | ✅ | ❌ | ❌ | Opt-in DETAIL, HINT, position and object names of a failed PostgreSQL statement or commit: `--server-details` natively, PTAH_SERVER_DETAILS on compat. CE prints none of them. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
 | Statement form of a generated migration | ✅ | ✅ | ✅ | On PostgreSQL, MySQL, MariaDB and SQLite a file takes the binary's spelling, grouping and order wherever nothing depends on the order. Other engines keep the planner's form. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❌ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |

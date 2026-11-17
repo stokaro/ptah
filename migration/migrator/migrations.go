@@ -1364,7 +1364,9 @@ func runMigrationFileStatement(
 
 // migrationFileStatementError reports that event's statement failed.
 func migrationFileStatementError(err error, event StatementEvent) error {
-	return sentStatementError(fmt.Errorf("failed to execute migration SQL: %w", err), event.Statement, event.Index, event.Total)
+	failure := sentStatementError(fmt.Errorf("failed to execute migration SQL: %w", err), event.Statement, event.Index, event.Total)
+	failure.SourcePath = event.SourcePath
+	return failure
 }
 
 // observeMigrationFileStatement reports a statement that ran to observer, when
@@ -1443,6 +1445,12 @@ type MigrationExecutionError struct {
 	Statement      string
 	StatementIndex int
 	Total          int
+	// SourcePath is the migration file the statement came from, as the
+	// migrator names it, for a statement of a migration read from a file that
+	// the migrator sent: relative to the migration directory, with "#" and
+	// the section name after it for a section of an Atlas txtar file. It is
+	// empty otherwise.
+	SourcePath string
 	// sent reports that the statement reached the database, or the executor
 	// that runs it there, and failed. A refusal raised before any statement ran
 	// names a statement too, and leaves it false.

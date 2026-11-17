@@ -7,11 +7,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/rolepassword"
+	"ptah.run/internal/serverdiag"
 )
 
 // passwordRunner records the statements a writer sends and answers each with
@@ -162,4 +164,47 @@ func TestWriterKeepsThePasswordOutOfARefusal_FailurePath(t *testing.T) {
 	c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*SENTINEL.*`)
 	c.Assert(err, qt.ErrorMatches, `(?s)SQL execution failed: .*\[secret\].*SQL: CREATE ROLE app PASSWORD \$PTAH_SECRET_PASSWORD_APP;`)
 	c.Assert(runner.sent, qt.HasLen, 1)
+}
+
+// The server's own fields are read past the writer's message, from the driver
+// error it wraps, and lose the password there too: a reader of the fields
+// finds the redaction in the chain. The statement the server read is not the
+// one the error shows, which the chain says as well.
+func TestWriterKeepsThePasswordOutOfTheServerFields_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	refusal := &pgconn.PgError{
+		Code:     "42601",
+		Message:  `syntax error at or near "pw'SENTINEL"`,
+		Detail:   `the literal was E'pw\'SENTINEL'`,
+		Hint:     "pw'SENTINEL",
+		Position: 31,
+	}
+	runner := &passwordRunner{refusal: refusal}
+	ctx := rolepassword.With(c.Context(), map[string]string{"PTAH_SECRET_PASSWORD_APP": "pw'SENTINEL"})
+
+	err := passwordWriter(runner).ExecuteSQL(ctx, "CREATE ROLE app PASSWORD $PTAH_SECRET_PASSWORD_APP;")
+
+	c.Assert(serverdiag.Read(err, nil), qt.DeepEquals, &serverdiag.Answer{
+		SQLState: "42601",
+		Message:  `syntax error at or near "[secret]"`,
+		Detail:   `the literal was E'[secret]'`,
+		Hint:     "[secret]",
+		Position: 31,
+	})
+	c.Assert(serverdiag.Rewritten(err), qt.IsTrue)
+}
+
+// The control: a statement that names no password variable is sent as
+// written, and its error carries no redaction.
+func TestWriterSendsAStatementWithoutAPasswordAsWritten(t *testing.T) {
+	c := qt.New(t)
+	refusal := &pgconn.PgError{Code: "42601", Message: `syntax error at or near "PASWORD"`, Position: 17}
+	runner := &passwordRunner{refusal: refusal}
+
+	err := passwordWriter(runner).ExecuteSQL(c.Context(), "CREATE ROLE app PASWORD 'x';")
+
+	c.Assert(serverdiag.Read(err, nil), qt.DeepEquals, &serverdiag.Answer{
+		SQLState: "42601", Message: `syntax error at or near "PASWORD"`, Position: 17,
+	})
+	c.Assert(serverdiag.Rewritten(err), qt.IsFalse)
 }

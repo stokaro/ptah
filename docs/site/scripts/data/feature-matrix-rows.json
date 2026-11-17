@@ -775,6 +775,15 @@
   },
   {
     "area": "Versioned migrations — execution",
+    "feature": "Server details of a failed migration statement",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "no",
+    "note": "Opt-in DETAIL, HINT, position and object names of a failed PostgreSQL statement or commit: `--server-details` natively, PTAH_SERVER_DETAILS on compat. CE prints none of them.",
+    "evidence": "Measured 2026-11-17 on the pinned community binary v1.3.0 (scripts/atlas-ce-reference.lock, built from the verified source archive with scripts/build-atlas-ce-reference.sh, as .github/workflows/atlas-reference.yml builds it) against PostgreSQL 18.6, on a scratch database dropped afterwards. `atlas migrate apply --url postgres://...:55701/<db>?sslmode=disable --dir file://fk` over a hashed directory whose second migration is `INSERT INTO orders (id, customer) VALUES (1, 4242);`, with no customer 4242, exits 1. It prints `pq: insert or update on table \"orders\" violates foreign key constraint \"orders_customer_fkey\" (23503)` on stdout and in the stderr Error line, and the `--format '{{ json . }}'` report carries the same text in Applied[].Error.Text and Error. The server's DETAIL, `Key (customer)=(4242) is not present in table \"customers\".`, appears in none of them. A second directory calling `lower(42)` prints `pq: function lower(integer) does not exist at position 2:12 (42883)`: the statement line and column of the position, and no HINT. A search of every output for the DETAIL and HINT text found nothing. Atlas Pro: reported, not measured; no non-community build was run. Atlas's public CLI reference (atlasgo.io/cli-reference, read 2026-11-17) lists no `migrate apply` flag or setting that shows server DETAIL or HINT, and ariga/atlas#1722, which asks for DETAIL in error messages, is open. Ptah: internal/serverdiag/serverdiag.go reads the pgx error and internal/migrationfailure/migrationfailure.go places it. Native `ptah migrations up --server-details` and `ptah migrations down --server-details`; compat `migrate apply` and `migrate down` read PTAH_SERVER_DETAILS (internal/cli/atlas/migrate_apply_server_details.go, envbool Gated, refused when true under PTAH_ATLAS_STRICT_COMPAT=1), with and without --format. The default compat output stays the community shape. Tests: integration/atlasschema/migrations_server_details_e2e_test.go (TestMigrationsUpServerDetailsOfAForeignKeyE2E, TestMigrationsUpServerDetailsOfAHintAndPositionE2E, TestMigrationsUpServerDetailsOfADeferredCommitE2E, TestMigrationsUpServerDetailsOfALostConnectionE2E, TestCompatMigrateApplyServerDetailsE2E), internal/cli/atlas/internal/migratetests/migrate_apply_server_details_env_test.go, internal/serverdiag/serverdiag_test.go and internal/migrationfailure/migrationfailure_test.go."
+  },
+  {
+    "area": "Versioned migrations — execution",
     "feature": "Migration status report",
     "ptah": "yes",
     "atlas_oss": "yes",

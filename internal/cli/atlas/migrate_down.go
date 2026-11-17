@@ -138,6 +138,14 @@ func runAtlasMigrateDownFormat(
 	if err != nil {
 		return err
 	}
+	// The forwarded rollback reads PTAH_SERVER_DETAILS through the native
+	// --server-details binding. This path builds its own migrator, so it reads
+	// the variable itself, for the reason it reads PTAH_RUNNER: an output flag
+	// must not drop what the run was asked to show.
+	serverDetails, err := resolveAtlasApplyServerDetails(cmd)
+	if err != nil {
+		return err
+	}
 	// A golang-migrate file runs the way golang-migrate runs it, which opens no
 	// transaction around a file, on the target and on the dev database alike.
 	ownTransactions := runner.TransactionOwner() == lintext.TransactionOwnerFile
@@ -313,6 +321,12 @@ func runAtlasMigrateDownFormat(
 		DownError:        result.DownError,
 	})
 	if execErr != nil {
+		// The template has no field for the server details, so they go to
+		// stderr beside it, as on `migrate apply --format`.
+		serverDetails.Options.Source = source.FileSystem
+		if text := serverDetails.Text(execErr); text != "" {
+			fmt.Fprintln(cmd.ErrOrStderr(), text)
+		}
 		if writeErr != nil {
 			return fmt.Errorf("%w; additionally failed to write --format output: %v", execErr, writeErr)
 		}
