@@ -1542,13 +1542,14 @@ new view the server answers as the statement runs: PostgreSQL refuses it with
 SQLSTATE 42501, the plan rolls back, and Ptah reports the code with the
 statement. YugabyteDB is not asked, and answers the same way.
 
-Under `--json` each of these refusals, and the refusal of a role the server
-does not hold, is `outcome: refused` with its own code: `missing-owner-role`,
-`owner-transfer` or `owner-schema-privilege`. `owner` names the statement, the
-role and what the server checks; see
-[Refusal codes](../../direct/apply/#refusal-codes). A rehearsal on a dev
-database that refuses an owner is `simulation-failed` instead, because the dev
-server's roles answered, not the target's.
+Under `--json` the refusals Ptah issues before it sends a statement, and the
+refusal of a role the server does not hold, are `outcome: refused` with their
+own codes: `missing-owner-role`, `owner-transfer` or `owner-schema-privilege`.
+`owner` names the statement, the role and what the server checks; see
+[Refusal codes](../../direct/apply/#refusal-codes). A refusal the server
+issues as the statement runs is not one of them. A rehearsal on a dev database
+that refuses an owner is `simulation-failed` instead, because the dev server's
+roles answered, not the target's.
 
 A rebuild drops a view and creates it again, and the `CREATE` gives the view to
 the role that runs the plan. So the plan gives the view back its owner in the

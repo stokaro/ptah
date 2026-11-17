@@ -345,10 +345,12 @@ func (s *viewStates) follow(node ast.Node, statement statementOf) (Effect, bool)
 }
 
 // create follows CREATE VIEW and CREATE OR REPLACE VIEW. The node renders the
-// statement first, and a COMMENT ON VIEW after it when it carries a comment;
-// the comment changes no option and has no effect.
+// statement first, then a COMMENT ON VIEW when it carries a comment and an
+// ALTER VIEW ... OWNER TO when it carries an owner (see [createStatements]);
+// neither changes an option, so neither has an effect. A dialect that writes
+// the comment as a comment line renders it as no statement at all.
 func (s *viewStates) create(node *ast.CreateViewNode, statement statementOf) (Effect, bool) {
-	if statement.of != 1 && (statement.of != 2 || node.Comment == "") {
+	if statement.of > createStatements(node) {
 		s.forget(node.Name)
 		return Effect{}, false
 	}
@@ -602,6 +604,24 @@ func sqlSecurity(held viewHeld) (any, bool) {
 		return nil, false
 	}
 	return mode, true
+}
+
+// createStatements is the most statements a CREATE VIEW node renders: the
+// CREATE, a COMMENT ON VIEW for a comment, and an ALTER VIEW ... OWNER TO for
+// an owner. A target that cannot hold a view comment writes it as a comment
+// line, which is no statement, so a node may render fewer. Without the owner
+// term, the CREATE of a view the plan gives an owner, a declared one or the
+// one a rebuild gives back, reads as a node this package cannot follow and
+// carries no effect.
+func createStatements(node *ast.CreateViewNode) int {
+	statements := 1
+	if node.Comment != "" {
+		statements++
+	}
+	if node.Owner != "" {
+		statements++
+	}
+	return statements
 }
 
 // alterStatements is how many statements an option change renders: one ALTER
