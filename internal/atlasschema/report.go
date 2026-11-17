@@ -147,6 +147,24 @@ const (
 	// and SET USER on MariaDB. The refusal comes before any statement runs.
 	// Grant the privilege, or apply as the definer.
 	RefusalDefinerPrivilege RefusalCode = "definer-privilege"
+	// RefusalMissingOwnerRole means a statement gives an object, such as a
+	// view, to a role the server does not hold, and no statement before it
+	// creates the role. A role belongs to the server, not to a database. The
+	// refusal comes before any statement runs. Create the role on the server,
+	// or declare it in the desired schema.
+	RefusalMissingOwnerRole RefusalCode = "missing-owner-role"
+	// RefusalOwnerTransfer means a statement gives an object to a role the
+	// connected role may not give an object to: it lacks the SET privilege on
+	// that role, or membership in it where the server checks membership. The
+	// refusal comes before any statement runs, where the server would refuse
+	// the statement after the ones before it. Grant the connected role what
+	// the server checks, or declare an owner it may give the object to.
+	RefusalOwnerTransfer RefusalCode = "owner-transfer"
+	// RefusalOwnerSchemaPrivilege means a statement gives an object to a role
+	// that holds no CREATE privilege on the object's schema, which the server
+	// requires of a new owner. The refusal comes before any statement runs.
+	// Grant the role CREATE on the schema, or declare an owner that holds it.
+	RefusalOwnerSchemaPrivilege RefusalCode = "owner-schema-privilege"
 	// RefusalDependentObject means the plan drops an object something else
 	// depends on, where the drop would stop on the dependent or take it with
 	// nothing to create it again. Change the dependent first.
@@ -185,6 +203,36 @@ type Refusal struct {
 	// each with the definer it names, the connected account and the privilege
 	// that account lacks, in statement order.
 	DefinerPrivileges []mysqldefiner.MissingPrivilege `json:"definer_privileges,omitempty"`
+	// Owner is the ownership statement a missing-owner-role, owner-transfer
+	// or owner-schema-privilege refusal names. The check stops at the first
+	// statement the server would refuse, so it names one.
+	Owner *OwnerRefusal `json:"owner,omitempty"`
+}
+
+// OwnerRefusal is the ownership statement an owner refusal names, with what
+// the server would refuse about it. Only the fields the refusal's code
+// describes are set.
+type OwnerRefusal struct {
+	// Statement is the ownership statement, as the plan writes it.
+	Statement string `json:"statement"`
+	// Kind is the kind of object, as ALTER spells it, such as VIEW or
+	// MATERIALIZED VIEW.
+	Kind string `json:"kind"`
+	// Role is the role the statement gives the object to, as the server
+	// stores the name.
+	Role string `json:"role"`
+	// Connected is the role the connection runs as, and Privilege what the
+	// server requires of it on Role: SET, or MEMBER where the server checks
+	// membership. An owner-transfer refusal sets both.
+	Connected string `json:"connected,omitempty"`
+	Privilege string `json:"privilege,omitempty"`
+	// Schema is the object's schema, on which Role holds no CREATE privilege.
+	// An owner-schema-privilege refusal sets it.
+	Schema string `json:"schema,omitempty"`
+	// Holds reports that Role owns the object now, so the plan gives it back
+	// after it creates the object again. It is false under missing-owner-role,
+	// where the server does not hold the role at all.
+	Holds bool `json:"holds,omitempty"`
 }
 
 // PlanReport is the machine-readable record of one `schema plan` run.
@@ -524,6 +572,11 @@ func schemaDiagnostics(err error) []providerdiagnostic.SchemaDiagnostic {
 // promise is as narrow as the one [SimulationError] makes: the command did not
 // send the plan to the target. The statements did run on the dev database, and
 // what they did there, or through it, is outside what the error can speak for.
+//
+// The rehearsal runs the plan the way the target would, so an owner refusal
+// can come from the dev server. That one names the dev server's roles, not
+// the target's, which is why the simulation case is asked before the owner
+// cases and the refusal is simulation-failed.
 func refusalFor(err error) *Refusal {
 	var stale *StalePlanError
 	var fenced *ProtectedTableError
@@ -534,6 +587,9 @@ func refusalFor(err error) *Refusal {
 	var lostViewSecurity *planrefusal.LostViewSecurityError
 	var viewDefiner *planrefusal.ViewDefinerError
 	var definerPrivilege *mysqldefiner.PrivilegeError
+	var missingOwner *MissingOwnerRoleError
+	var ownerTransfer *OwnerTransferError
+	var ownerSchema *OwnerSchemaError
 	var dependentObject *planrefusal.DependentObjectError
 	var declaration *planrefusal.DeclarationError
 	switch {
@@ -564,6 +620,20 @@ func refusalFor(err error) *Refusal {
 		return &Refusal{Code: RefusalViewDefiner, ViewDefiners: viewDefiner.Views}
 	case errors.As(err, &definerPrivilege):
 		return &Refusal{Code: RefusalDefinerPrivilege, DefinerPrivileges: definerPrivilege.Missing}
+	case errors.As(err, &missingOwner):
+		return &Refusal{Code: RefusalMissingOwnerRole, Owner: &OwnerRefusal{
+			Statement: missingOwner.Statement, Kind: missingOwner.Kind, Role: missingOwner.Role,
+		}}
+	case errors.As(err, &ownerTransfer):
+		return &Refusal{Code: RefusalOwnerTransfer, Owner: &OwnerRefusal{
+			Statement: ownerTransfer.Statement, Kind: ownerTransfer.Kind, Role: ownerTransfer.Role,
+			Connected: ownerTransfer.Connected, Privilege: ownerTransfer.Privilege, Holds: ownerTransfer.Holds,
+		}}
+	case errors.As(err, &ownerSchema):
+		return &Refusal{Code: RefusalOwnerSchemaPrivilege, Owner: &OwnerRefusal{
+			Statement: ownerSchema.Statement, Kind: ownerSchema.Kind, Role: ownerSchema.Role,
+			Schema: ownerSchema.Schema, Holds: ownerSchema.Holds,
+		}}
 	case errors.As(err, &dependentObject):
 		return &Refusal{Code: RefusalDependentObject}
 	case errors.As(err, &declaration):

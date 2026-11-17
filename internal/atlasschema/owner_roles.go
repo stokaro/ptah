@@ -20,6 +20,8 @@ import (
 type MissingOwnerRoleError struct {
 	// Statement is the ownership statement, as the plan writes it.
 	Statement string
+	// Kind is the kind of object, as ALTER spells it.
+	Kind string
 	// Role is the role it names, as the server would store the name.
 	Role string
 	// Hint says what the caller can do about it, when the place the plan runs
@@ -198,7 +200,7 @@ func refuseMissingOwners(ctx context.Context, conn *dbschema.DatabaseConnection,
 			if slices.ContainsFunc(held, exists) || slices.ContainsFunc(created[i], exists) {
 				continue
 			}
-			return &MissingOwnerRoleError{Statement: owner.statement, Role: owner.role}
+			return &MissingOwnerRoleError{Statement: owner.statement, Kind: owner.kind, Role: owner.role}
 		}
 	}
 	checker, ok := writer.(ownerTransferChecker)

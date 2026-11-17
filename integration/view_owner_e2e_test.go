@@ -5,6 +5,7 @@ package integration_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -342,6 +343,8 @@ const missingOwnerRefusal = `ALTER VIEW "public"."my_docs" OWNER TO "ptah_vo_mis
 // role on the server is, beside a table the plan would create first. The
 // refusal comes before any statement is sent, so the table is not created, and
 // it names the statement and the role rather than the server's SQLSTATE 42704.
+// The --json document says refused rather than failed, with the code and the
+// owner a caller acts on.
 func TestSchemaApplyRefusesAnOwnerTheServerDoesNotHoldE2E(t *testing.T) {
 	for _, engine := range viewOwnerEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -349,11 +352,17 @@ func TestSchemaApplyRefusesAnOwnerTheServerDoesNotHoldE2E(t *testing.T) {
 			target := newViewOwnerTarget(c, engine)
 
 			got := target.apply(c, target.schemaFile(c, viewOwnerBody,
-				"CREATE TABLE extra (id integer PRIMARY KEY);\nALTER VIEW my_docs OWNER TO ptah_vo_missing;\n"))
+				"CREATE TABLE extra (id integer PRIMARY KEY);\nALTER VIEW my_docs OWNER TO ptah_vo_missing;\n"), "--json")
 
 			c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 			c.Assert(got.Stderr, qt.Contains, missingOwnerRefusal)
 			c.Assert(got.Stderr, qt.Not(qt.Contains), "42704")
+			document := readOwnerRefusal(c, got)
+			c.Assert(document.Outcome, qt.Equals, "refused")
+			c.Assert(document.Refusal.Code, qt.Equals, "missing-owner-role")
+			c.Assert(document.Refusal.Owner, qt.DeepEquals, &viewOwnerRefusal{
+				Statement: `ALTER VIEW "public"."my_docs" OWNER TO "ptah_vo_missing"`, Kind: "VIEW", Role: "ptah_vo_missing",
+			})
 			c.Assert(queryStrings(c, target.db, "SELECT COALESCE(to_regclass('extra')::text, 'absent')"), qt.DeepEquals, []string{"absent"})
 			c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", "my_docs={admin}"))
 		})
@@ -364,17 +373,24 @@ func TestSchemaApplyRefusesAnOwnerTheServerDoesNotHoldE2E(t *testing.T) {
 // on a dev database Ptah does not start. Its roles are the dev server's own, so
 // the rehearsal refuses first, says where to create the role or that a
 // docker:// dev URL brings the target's roles, and the target is untouched.
+// The --json document names the failed rehearsal and no owner: the dev
+// server's roles answered, not the target's.
 func TestSchemaApplyRefusesAnOwnerOnANamedDevDatabaseE2E(t *testing.T) {
 	c := qt.New(t)
 	target := newViewOwnerTarget(c, viewOwnerEngines[0])
 	dev := postgresScratchDevURL(c, "ptah_view_owner_dev")
 
-	got := target.apply(c, target.schemaFile(c, viewOwnerBody, "ALTER VIEW my_docs OWNER TO ptah_vo_missing;\n"), "--dev-url", dev)
+	got := target.apply(c, target.schemaFile(c, viewOwnerBody, "ALTER VIEW my_docs OWNER TO ptah_vo_missing;\n"),
+		"--dev-url", dev, "--json")
 
 	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(got.Stderr, qt.Contains, "dev database simulation failed during plan: "+missingOwnerRefusal+
 		"; a dev server Ptah does not start keeps its own roles: create the role there, or use a docker:// dev URL")
 	c.Assert(got.Stderr, qt.Contains, "the plan was not applied to the target database")
+	document := readOwnerRefusal(c, got)
+	c.Assert(document.Outcome, qt.Equals, "refused")
+	c.Assert(document.Refusal.Code, qt.Equals, "simulation-failed")
+	c.Assert(document.Refusal.Owner, qt.IsNil)
 	c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", "my_docs={admin}"))
 }
 
@@ -457,6 +473,48 @@ type viewOwnerTransfer struct {
 	refusal map[string]string
 	// owner is who owns my_docs before and after the refused apply.
 	owner string
+	// code is the refusal code the --json document names, and refused the
+	// owner it names on each engine, by engine name.
+	code    string
+	refused map[string]viewOwnerRefusal
+}
+
+// viewOwnerRefusal is the owner a refusal of the --json document names. Its
+// statement, role and connected role hold the placeholders of
+// [viewOwnerTarget] and [viewOwnerApplier].
+type viewOwnerRefusal struct {
+	Statement string `json:"statement"`
+	Kind      string `json:"kind"`
+	Role      string `json:"role"`
+	Connected string `json:"connected"`
+	Privilege string `json:"privilege"`
+	Schema    string `json:"schema"`
+	Holds     bool   `json:"holds"`
+}
+
+// expanded is r with each placeholder replaced by what it stands for.
+func (r viewOwnerRefusal) expanded(target viewOwnerTarget, applier viewOwnerApplier) *viewOwnerRefusal {
+	expand := func(text string) string { return target.expand(applier.expand(text)) }
+	r.Statement, r.Role, r.Connected = expand(r.Statement), expand(r.Role), expand(r.Connected)
+	return &r
+}
+
+// ownerRefusalDocument is the part of a refused apply document that names an
+// owner refusal.
+type ownerRefusalDocument struct {
+	Outcome string `json:"outcome"`
+	Refusal struct {
+		Code  string            `json:"code"`
+		Owner *viewOwnerRefusal `json:"owner"`
+	} `json:"refusal"`
+}
+
+// readOwnerRefusal decodes the document `schema apply --json` printed.
+func readOwnerRefusal(c *qt.C, got clirun.Result) ownerRefusalDocument {
+	c.Helper()
+	var document ownerRefusalDocument
+	c.Assert(json.Unmarshal([]byte(got.Stdout), &document), qt.IsNil, qt.Commentf("stdout:\n%s", got.Stdout))
+	return document
 }
 
 // The parts of a refusal that more than one row words alike.
@@ -482,6 +540,11 @@ var viewOwnerTransfers = []viewOwnerTransfer{
 				`"{applier}" may not give an object to: ` + refusalMember + `; run GRANT "{owner}" TO "{applier}", ` + refusalWaysOut,
 		},
 		owner: "my_docs={applier}",
+		code:  "owner-transfer",
+		refused: map[string]viewOwnerRefusal{
+			"postgresql":  {Statement: `ALTER VIEW "public"."my_docs" OWNER TO "{owner}"`, Kind: "VIEW", Role: "{owner}", Connected: "{applier}", Privilege: "SET"},
+			"cockroachdb": {Statement: `ALTER VIEW "public"."my_docs" OWNER TO "{owner}"`, Kind: "VIEW", Role: "{owner}", Connected: "{applier}", Privilege: "MEMBER"},
+		},
 	},
 	{
 		// The applier may drop the view: through its membership in {other}
@@ -505,6 +568,13 @@ var viewOwnerTransfers = []viewOwnerTransfer{
 				`after it creates the view again; run GRANT "{other}" TO "{applier}", ` + refusalWaysOut,
 		},
 		owner: "my_docs={other}",
+		code:  "owner-transfer",
+		refused: map[string]viewOwnerRefusal{
+			"postgresql": {Statement: `ALTER VIEW "public"."my_docs" OWNER TO "{other}"`, Kind: "VIEW", Role: "{other}", Connected: "{applier}",
+				Privilege: "SET", Holds: true},
+			"cockroachdb": {Statement: `ALTER VIEW "public"."my_docs" OWNER TO "{other}"`, Kind: "VIEW", Role: "{other}", Connected: "{applier}",
+				Privilege: "MEMBER", Holds: true},
+		},
 	},
 	{
 		// The applier may give the view to {other}, and {other} may not own
@@ -521,6 +591,11 @@ var viewOwnerTransfers = []viewOwnerTransfer{
 			"cockroachdb": refusalNoCreate,
 		},
 		owner: "my_docs={other}",
+		code:  "owner-schema-privilege",
+		refused: map[string]viewOwnerRefusal{
+			"postgresql":  {Statement: `ALTER VIEW "public"."my_docs" OWNER TO "{other}"`, Kind: "VIEW", Role: "{other}", Schema: "public", Holds: true},
+			"cockroachdb": {Statement: `ALTER VIEW "public"."my_docs" OWNER TO "{other}"`, Kind: "VIEW", Role: "{other}", Schema: "public", Holds: true},
+		},
 	},
 }
 
@@ -537,7 +612,8 @@ const refusalNoCreate = `ALTER VIEW "public"."my_docs" OWNER TO "{other}" gives 
 // SQLSTATE 42501 after the statements before it ran, a rebuild's DROP VIEW
 // among them. Ptah asks the server first and refuses before any statement,
 // naming the view, the role, the connected role and both ways out, so my_docs
-// keeps its oid and its owner.
+// keeps its oid and its owner. The --json document says refused rather than
+// failed, with the code and the owner a caller acts on.
 func TestSchemaApplyRefusesAnOwnerTheConnectionMayNotGiveE2E(t *testing.T) {
 	for _, engine := range viewOwnerEngines[:2] {
 		for _, transfer := range viewOwnerTransfers {
@@ -547,12 +623,16 @@ func TestSchemaApplyRefusesAnOwnerTheConnectionMayNotGiveE2E(t *testing.T) {
 				target := newViewOwnerTarget(c, engine, applier.statements(slices.Concat(viewOwnerApplierGrants, transfer.held[engine.name]))...)
 				objects := target.objectIDs(c)
 
-				got := runPtahIn(c, "schema", "apply", "--db-url", applier.url(c, target), "--auto-approve",
+				got := runPtahIn(c, "schema", "apply", "--db-url", applier.url(c, target), "--auto-approve", "--json",
 					"--schema-file", target.schemaFile(c, transfer.body, transfer.owners))
 
 				c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 				c.Assert(got.Stderr, qt.Contains, target.expand(applier.expand(transfer.refusal[engine.name])))
 				c.Assert(got.Stderr, qt.Not(qt.Contains), "42501")
+				document := readOwnerRefusal(c, got)
+				c.Assert(document.Outcome, qt.Equals, "refused")
+				c.Assert(document.Refusal.Code, qt.Equals, transfer.code)
+				c.Assert(document.Refusal.Owner, qt.DeepEquals, transfer.refused[engine.name].expanded(target, applier))
 				c.Assert(target.owners(c), qt.DeepEquals,
 					target.ownersWant("Doc Totals={admin}", applier.expand(transfer.owner)))
 				c.Assert(target.objectIDs(c), qt.DeepEquals, objects)
@@ -565,7 +645,8 @@ func TestSchemaApplyRefusesAnOwnerTheConnectionMayNotGiveE2E(t *testing.T) {
 // rehearses the rebuild on a dev database first, as a role that may give the
 // view to anyone. The rehearsal passes, and the target, applied as the
 // applier, refuses as it does without one: the plan was not applied, and
-// my_docs keeps its oid and its owner.
+// my_docs keeps its oid and its owner. The --json document names the target's
+// refusal, not a failed rehearsal.
 func TestSchemaApplyRefusesAnOwnerTheConnectionMayNotGiveOnADevDatabaseE2E(t *testing.T) {
 	c := qt.New(t)
 	engine, transfer := viewOwnerEngines[0], viewOwnerTransfers[1]
@@ -574,11 +655,15 @@ func TestSchemaApplyRefusesAnOwnerTheConnectionMayNotGiveOnADevDatabaseE2E(t *te
 	objects := target.objectIDs(c)
 	dev := postgresScratchDevURL(c, "ptah_view_owner_dev")
 
-	got := runPtahIn(c, "schema", "apply", "--db-url", applier.url(c, target), "--auto-approve", "--dev-url", dev,
+	got := runPtahIn(c, "schema", "apply", "--db-url", applier.url(c, target), "--auto-approve", "--dev-url", dev, "--json",
 		"--schema-file", target.schemaFile(c, transfer.body, transfer.owners))
 
 	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(got.Stderr, qt.Contains, target.expand(applier.expand(transfer.refusal[engine.name])))
+	document := readOwnerRefusal(c, got)
+	c.Assert(document.Outcome, qt.Equals, "refused")
+	c.Assert(document.Refusal.Code, qt.Equals, transfer.code)
+	c.Assert(document.Refusal.Owner, qt.DeepEquals, transfer.refused[engine.name].expanded(target, applier))
 	c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", "my_docs={other}"))
 	c.Assert(target.objectIDs(c), qt.DeepEquals, objects)
 }
