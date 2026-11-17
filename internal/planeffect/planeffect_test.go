@@ -166,6 +166,29 @@ func TestDescribe_ViewSecurity(t *testing.T) {
 			want:  [][]planeffect.Effect{effect(planeffect.ActionReplace, security(kept(false), kept(true))), nil},
 		},
 		{
+			name:   "the owner a rebuild gives back has no effect, and the CREATE keeps its own",
+			target: target(view("order_totals", "security_invoker=true")),
+			nodes: []ast.Node{
+				ast.NewDropView("order_totals"),
+				&ast.CreateViewNode{Name: "order_totals", Body: "SELECT 2", Options: []string{"security_invoker=true"},
+					Owner: "reporting", OwnerRestored: true},
+			},
+			units: []int{0, 1, 1},
+			want: [][]planeffect.Effect{
+				effect(planeffect.ActionDrop, security(dropped(false), dropped(true))),
+				effect(planeffect.ActionCreate, security(created(false), created(true))),
+				nil,
+			},
+		},
+		{
+			name:   "a declared owner after the comment has no effect, and the replace keeps its own",
+			target: target(view("order_totals")),
+			nodes: []ast.Node{&ast.CreateViewNode{Name: "order_totals", Body: "SELECT 2", Replace: true,
+				Options: []string{"security_invoker=true"}, Comment: "totals", Owner: "reporting"}},
+			units: []int{0, 0, 0},
+			want:  [][]planeffect.Effect{effect(planeffect.ActionReplace, security(kept(false), moved(false, true))), nil, nil},
+		},
+		{
 			name:   "a statement about something else has no effect",
 			target: target(view("order_totals", "security_invoker=true")),
 			nodes:  []ast.Node{ast.NewRawSQL("SELECT 1;"), replace("security_invoker=true")},
