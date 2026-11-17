@@ -199,6 +199,12 @@ that job stays skipped and npm is not a release channel.
    the signing job again with the digest the `release` job published, under
    the same identity, because that identity names `release.yml` and the tag.
    Signing a digest that already has a signature adds a second one beside it.
+   `cosign sign` does not retry, so a transient Fulcio or Rekor error fails the
+   signing job, and **Re-run failed jobs** is the recovery for that too. The
+   rerun repeats the mirror check. If the version tag names another digest by
+   then, for example after a full rerun or a manual push, the rerun refuses
+   there. That is intended, because the signature would cover a digest no
+   reader resolves from the tag. Follow step 3 and cut the next patch version.
    Never use **Re-run all jobs** on a published release. It runs GoReleaser
    again, which builds and pushes a new index. The attestations buildx
    attaches record the build, so the new index has a new digest. The version
