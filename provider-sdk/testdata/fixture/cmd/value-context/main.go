@@ -1,4 +1,6 @@
 // Package main exercises host database interpretation and durable value binding.
+// FIXTURE_DEV_ENGINE serves the engine under another name, whose URLs it
+// interprets, as the devdb program does.
 package main
 
 import (
@@ -24,7 +26,12 @@ func main() {
 	description.Features = append(description.Features, features...)
 	description.Engines[0].Features = append(description.Engines[0].Features, features...)
 	description.Engines[0].Aliases = append(description.Engines[0].Aliases, "fixture-context")
-	owner := &contextOwner{Provider: &backend.Provider{}}
+	owner := &contextOwner{Provider: &backend.Provider{}, engine: "fixture"}
+	if served := os.Getenv("FIXTURE_DEV_ENGINE"); served != "" {
+		owner.engine, owner.Engine = served, served
+		description.SemanticIdentity += "-" + served
+		description.Engines[0].Id = served
+	}
 	if err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner,
 		SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, DatabaseContexts: owner, SQLSchemaReader: owner}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -32,14 +39,19 @@ func main() {
 	}
 }
 
-type contextOwner struct{ *backend.Provider }
+type contextOwner struct {
+	*backend.Provider
+	// engine is the engine served, and the scheme of the addresses
+	// interpreted.
+	engine string
+}
 
-func (*contextOwner) ResolveDatabaseContext(ctx context.Context, request *protocol.DatabaseContextRequest) (*protocol.DatabaseContext, error) {
+func (p *contextOwner) ResolveDatabaseContext(ctx context.Context, request *protocol.DatabaseContextRequest) (*protocol.DatabaseContext, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	u, err := url.Parse(request.Address)
-	if err != nil || u.Scheme != "fixture" || u.Host != "" || u.Path == "" {
+	if err != nil || u.Scheme != p.engine || u.Host != "" || u.Path == "" {
 		return nil, fmt.Errorf("invalid fixture context address")
 	}
 	path := filepath.FromSlash(u.Path)

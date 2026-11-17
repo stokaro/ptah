@@ -1,6 +1,6 @@
 ---
 title: MySQL and MariaDB
-description: MySQL and MariaDB in Ptah - the dialect differences that reach generated SQL, the foreign-key and routine rules, cleanup privileges, and online-DDL routing.
+description: MySQL and MariaDB in Ptah - the dialect differences that reach generated SQL, the foreign-key and routine rules, TLS with a private CA, cleanup privileges, and online-DDL routing.
 type: reference
 audience:
   - "database-engineer"
@@ -595,6 +595,172 @@ not a name of letters, digits and underscores is refused where it is written.
 The parser applies when the index is created. A read does not report it, so a
 plan never changes it on an index that exists, and another target leaves it
 out.
+
+## TLS with a private certificate authority
+
+A server whose certificate a private certificate authority signed is verified
+against that authority with the `ssl-ca` URL parameter. It names a PEM file of
+one or more CA certificates:
+
+```text
+mysql://app:secret@db.internal:3306/shop?ssl-ca=/etc/ptah/mysql-ca.pem
+```
+
+`ssl-ca` requires TLS and verifies two properties: the server's certificate
+chains to a certificate in the bundle, and the certificate names the URL's
+host. That is what the MySQL client's `--ssl-mode=VERIFY_IDENTITY` checks. The
+bundle replaces the system roots for this connection only. The process trust
+store is neither read nor changed, so two URLs naming different bundles connect
+side by side. `mariadb://`, `maria://` and the Go-driver form
+`mysql://app:secret@tcp(db.internal:3306)/shop?ssl-ca=...` take the parameter
+the same way, and `tls=true` beside it changes nothing. The name is read
+without regard to case, and `ssl_ca` is the same parameter, as in MySQL option
+files.
+
+The name is the MySQL and MariaDB client option for the same file, and the
+name the Atlas URL documentation gives a custom CA. `ptah-compat` reads it in
+the same URLs. The pinned Atlas CLI community binary does not apply it.
+Without `tls`, it sends `ssl-ca` to the server as a session variable, and the
+server answers `Error 1064`. With `tls=true`, the handshake fails with
+`x509: certificate signed by unknown authority` whichever file `ssl-ca` names.
+`PTAH_ATLAS_STRICT_COMPAT=1` refuses the parameter for that reason (see [Strict Community Edition mode](../../atlas/strict-ce-mode/)).
+
+### Try it locally
+
+These commands create a certificate authority and a server certificate for
+`127.0.0.1` and `localhost`, start MySQL with them, and read the database
+through the authority. They need `openssl`, Docker and a free port 3306.
+
+```sh
+mkdir tls
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=Local MySQL CA" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" \
+  -keyout tls/ca-key.pem -out tls/ca.pem
+openssl req -newkey rsa:2048 -nodes -subj "/CN=127.0.0.1" \
+  -keyout tls/server-key.pem -out tls/server.csr
+printf 'subjectAltName=IP:127.0.0.1,DNS:localhost\n' > tls/server.ext
+openssl x509 -req -in tls/server.csr -CA tls/ca.pem -CAkey tls/ca-key.pem \
+  -CAcreateserial -days 30 -extfile tls/server.ext -out tls/server-cert.pem
+chmod 0644 tls/*.pem
+```
+
+The server runs as another user inside the container, so the files are made
+readable to it. These keys exist for this example only.
+
+```sh
+docker run -d --name mysql-tls -p 3306:3306 \
+  -e MYSQL_ROOT_PASSWORD=secret -e MYSQL_DATABASE=app \
+  -v "$PWD/tls:/etc/mysql-tls:ro" \
+  mysql:8.4 \
+  --ssl-ca=/etc/mysql-tls/ca.pem \
+  --ssl-cert=/etc/mysql-tls/server-cert.pem \
+  --ssl-key=/etc/mysql-tls/server-key.pem
+until docker exec mysql-tls mysql -uroot -psecret -h127.0.0.1 -e 'SELECT 1' >/dev/null 2>&1; do sleep 2; done
+docker exec mysql-tls mysql -uroot -psecret -h127.0.0.1 app -e 'CREATE TABLE notes (id int PRIMARY KEY)'
+ptah db read --db-url 'mysql://root:secret@127.0.0.1:3306/app?ssl-ca=tls/ca.pem'
+```
+
+The read prints the `notes` table. A bundle that did not sign the server's
+certificate stops the command at exit 2:
+
+```sh
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=Another CA" \
+  -addext "basicConstraints=critical,CA:TRUE" -keyout other-key.pem -out other-ca.pem
+ptah db read --db-url 'mysql://root:secret@127.0.0.1:3306/app?ssl-ca=other-ca.pem'
+```
+
+```text
+Error connecting to database: failed to ping database: tls: failed to verify certificate: x509: certificate signed by unknown authority
+```
+
+Remove the server with `docker rm -f mysql-tls`.
+
+### A bundle Ptah cannot use
+
+The bundle is read when the connection opens, before the server is contacted.
+Every PEM block in it must be a certificate that parses; text between blocks,
+such as the comments a distribution bundle carries, is ignored. A missing or
+unreadable file, a file holding no PEM certificate, a damaged certificate, and
+a block that is not a certificate, such as a private key, each stop the command
+at exit 2 and name the file by its absolute path:
+
+```text
+the ssl-ca parameter names a CA bundle Ptah cannot use: CA bundle /work/tls/server-key.pem holds a PEM block that is not a certificate: block 1 is "PRIVATE KEY", and the bundle takes CA certificates only
+```
+
+A server certificate issued for another host name fails the handshake with
+`x509: certificate is valid for ..., not ...`. No failure falls back to an
+unverified or an unencrypted connection, and no message repeats the password.
+
+Ptah refuses a URL that contradicts `ssl-ca`, before it connects:
+
+- `tls=false`, `tls=skip-verify`, `tls=preferred` and
+  `allowFallbackToPlaintext=true`, each of which leaves the connection
+  unverified or unencrypted;
+- a socket address, `mysql+unix://` or `unix(...)`, which names no host to
+  verify;
+- a port with no host, as in `mysql://app@:3306/shop`. A URL that names no
+  address at all dials `127.0.0.1:3306`, and the certificate must name
+  `127.0.0.1`;
+- an empty `ssl-ca`, or `ssl-ca` given twice, in any spelling.
+
+Every URL parameter whose name starts with `ssl-` or `ssl_`, in any case,
+belongs to Ptah, whether or not the URL names `ssl-ca`. Ptah reads `ssl-ca` and
+refuses each of the others, such as `ssl-mode`, `ssl-cert` and `ssl-key`,
+before it connects. The driver would send such a parameter to the server as a
+session variable, which the server refuses with an error that carries the
+value. So the URL cannot set a session variable whose name starts with `ssl_`.
+
+### Where the path is read
+
+A relative path is read from the directory the command runs in, not from the
+directory of a configuration file that holds the URL. Percent-encode a `%`,
+`&`, `+` or `#` in the path; a `/` may be written as is or as `%2F`.
+
+The Ptah process reads the file, so when Ptah runs in a container the bundle
+has to be inside that container, and the URL names the path there:
+
+```sh
+docker run --rm -v "$PWD/tls/ca.pem:/tls/ca.pem:ro" ghcr.io/stokaro/ptah:latest \
+  db read --db-url 'mysql://app:secret@db.internal:3306/shop?ssl-ca=/tls/ca.pem'
+```
+
+In Kubernetes, mount the CA certificate from a ConfigMap or a Secret and name
+the mounted file. A CA certificate is public, and a ConfigMap is enough for it.
+
+A dev database or shadow database URL takes `ssl-ca` the same way, and a
+scratch database Ptah creates on the server a URL names is reached with that
+URL's `ssl-ca`.
+
+### A CA certificate is not a client certificate
+
+`ssl-ca` decides which servers Ptah trusts. It sends nothing to the server, and
+the account still logs in with its password. An account created with
+`REQUIRE SSL` needs TLS alone, and `ssl-ca` meets it. An account created with
+`REQUIRE X509`, `REQUIRE ISSUER` or `REQUIRE SUBJECT` needs a client
+certificate, which is mutual TLS. Ptah does not support mutual TLS: `ssl-cert`
+and `ssl-key` are refused rather than ignored. The bundle holds CA certificates
+only, and a private key in it is refused.
+
+A MySQL server started without certificates generates its own, and the
+generated server certificate names no host. Host name verification cannot pass
+against it, so give the server a certificate whose `subjectAltName` holds the
+host name or address the URL uses. Ptah does not read a host name from the
+certificate's common name.
+
+### Tools Ptah starts
+
+The `mysqldump` pre-flight hook and the online-DDL tools, gh-ost and
+pt-online-schema-change, open their own connections, and Ptah gives them no TLS
+settings. A URL with `ssl-ca` is refused for them, because the tool would
+connect without verifying the server.
+
+A provider manifest can claim a MySQL-family engine, such as `mysql`, and a
+command can name it with `--provider-engine`. The provider is then handed the URL as
+text, and Ptah's connector does not take part. A URL with `ssl-ca` is refused
+before the provider receives it, because nothing says the provider verifies
+the server against the bundle.
 
 ## What the connecting account needs
 

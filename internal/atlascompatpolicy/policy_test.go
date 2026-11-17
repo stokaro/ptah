@@ -773,6 +773,34 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 	}
 }
 
+// The pinned binary v1.3.0 does not apply ssl-ca, so strict mode refuses a
+// URL that relies on it, in every MySQL-family form. The default profile keeps
+// it, and a URL without it stays accepted.
+func TestStrictCERefusesTheCABundleParameter(t *testing.T) {
+	for _, rawURL := range []string{
+		"mysql://app@localhost:3306/shop?ssl-ca=/etc/mysql/ca.pem",
+		" mariadb://app@localhost:3306/shop?tls=true&ssl-ca=ca.pem ",
+		"maria://app@tcp(localhost:3306)/shop?ssl-ca=/etc/mysql/ca.pem",
+		"mysql://app@localhost:3306/shop?SSL_CA=/etc/mysql/ca.pem",
+		// The parser refuses this one for tls=false; strict mode names the
+		// parameter CE lacks rather than the contradiction.
+		"mysql://app@localhost:3306/shop?ssl-ca=/etc/mysql/ca.pem&tls=false",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := atlascompatpolicy.StrictCE().ValidateURL(rawURL)
+
+			c.Assert(err, qt.ErrorMatches, `Atlas Community Edition strict compatibility does not support the ssl-ca URL parameter`)
+			c.Assert(atlascompatpolicy.Full().ValidateURL(rawURL), qt.IsNil)
+		})
+	}
+	t.Run("a URL with tls=true alone", func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(atlascompatpolicy.StrictCE().ValidateURL("mysql://app@localhost:3306/shop?tls=true"), qt.IsNil)
+	})
+}
+
 // A docker engine Ptah starts and the pinned binary does not is refused in
 // that binary's words, and only in strict mode.
 func TestStrictCEDockerExtensionEnginePolicy(t *testing.T) {

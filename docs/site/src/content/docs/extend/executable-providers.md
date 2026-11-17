@@ -870,6 +870,12 @@ built-in implementation, such as YDB, DuckDB or Spanner. A built-in engine keeps
 implementation when the command does none of these, and the presence of an
 installed provider changes nothing.
 
+A provider of an engine Ptah also builds in is handed the URL as text. A TLS
+parameter that Ptah's own connector applies has no meaning the contract carries
+to the provider, so the host refuses a URL with one before any request names the
+address. For a MySQL-family URL that parameter is `ssl-ca` (see
+[MySQL and MariaDB](../../databases/mysql/#tls-with-a-private-certificate-authority)).
+
 Rule 2 builds the installation in memory from the catalog and the install
 record: the provider ID and engines come from the catalog, and the expected
 SHA-256 is the one the record holds. Nothing is written to a manifest. The

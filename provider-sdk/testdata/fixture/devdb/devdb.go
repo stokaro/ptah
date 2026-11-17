@@ -7,6 +7,7 @@
 package devdb
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -139,8 +140,8 @@ func (p *Provider) ProvisionDevDatabase(_ context.Context, request *protocol.Pro
 	lease := fmt.Sprintf("lease-%d", p.next)
 	if address := request.GetAddress(); address != "" {
 		operator, err := url.Parse(address)
-		if err != nil || operator.Scheme != "fixture" {
-			return nil, fmt.Errorf("the fixture creates a realm only in a fixture database")
+		if err != nil || operator.Scheme != cmp.Or(p.Engine, "fixture") {
+			return nil, fmt.Errorf("the fixture creates a realm only in a database of the engine it serves")
 		}
 		realm := *operator
 		realm.Path += "." + lease

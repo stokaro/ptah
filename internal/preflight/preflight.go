@@ -467,6 +467,9 @@ func isMySQLDumpDialect(dialect string) bool {
 // connection reads the URL with too, so the port and the host are the driver's
 // even where the URL leaves them out, and a socket URL reaches the socket
 // rather than a host named after its path.
+//
+// A URL with a CA bundle is refused: mysqldump is given no TLS settings, so it
+// would send the credentials to a server whose certificate nothing verified.
 func mysqlDumpCommand(dbURL, outputPath string) (args, env []string, err error) {
 	parsed, err := atlasurl.ParseMySQLURL(dbURL)
 	if err != nil {
@@ -474,6 +477,10 @@ func mysqlDumpCommand(dbURL, outputPath string) (args, env []string, err error) 
 	}
 	if parsed.Database() == "" {
 		return nil, nil, fmt.Errorf("mysqldump pre-flight hook requires a database name in %s", parsed.URL().Redacted())
+	}
+	if parsed.CAFile() != "" {
+		return nil, nil, errors.New("the mysqldump pre-flight hook is given no TLS settings, and the database URL sets ssl-ca, " +
+			"so mysqldump would connect without verifying the server's certificate; remove the hook or ssl-ca")
 	}
 
 	args = []string{"--result-file", outputPath}

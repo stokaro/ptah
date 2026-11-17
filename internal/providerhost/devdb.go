@@ -121,6 +121,9 @@ func (o *DevDatabaseOwner) EnterRealm(ctx context.Context, rawURL string) (strin
 }
 
 func (o *DevDatabaseOwner) provision(ctx context.Context, engine string, request *protocol.ProvisionDevRequest) (string, func(), error) {
+	if err := checkProviderAddress(request.GetAddress()); err != nil {
+		return "", nil, err
+	}
 	reply, err := o.host.client.ProvisionDevDatabase(ctx, request)
 	if err != nil {
 		return "", nil, err
