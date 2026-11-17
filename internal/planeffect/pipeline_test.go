@@ -336,3 +336,30 @@ func TestDescribe_PostgreSQLPlanRecordsTheViewsItTakes(t *testing.T) {
 		}},
 	})
 }
+
+// TestDescribe_PostgreSQLRebuildGivingTheViewAnOwner pins the effect of a
+// rebuild whose CREATE VIEW the planner follows with an ALTER VIEW ... OWNER
+// TO: the CREATE carries the view's options, and the ownership statement,
+// which changes no option, carries none.
+func TestDescribe_PostgreSQLRebuildGivingTheViewAnOwner(t *testing.T) {
+	c := qt.New(t)
+
+	statements, described := planPostgres(c,
+		orderTotalsView("security_invoker=true", "SELECT id, total FROM orders"),
+		orderTotalsView("security_invoker=true", "SELECT id FROM orders")+"ALTER VIEW order_totals OWNER TO reporting;\n")
+
+	c.Assert(statements, qt.DeepEquals, []string{
+		`DROP VIEW IF EXISTS "order_totals" CASCADE`,
+		"CREATE VIEW \"order_totals\" WITH (security_invoker=true) AS\nSELECT id FROM orders",
+		`ALTER VIEW "order_totals" OWNER TO "reporting"`,
+	})
+	c.Assert(described, qt.HasLen, 3)
+	c.Assert(described[1], qt.HasLen, 1)
+	c.Assert(described[1][0].Object, qt.Equals, orderTotals)
+	c.Assert(described[1][0].Action, qt.Equals, planeffect.ActionCreate)
+	c.Assert(described[1][0].Properties, qt.DeepEquals, []planeffect.Property{
+		{Name: "security_barrier", After: false, Changed: true},
+		{Name: "security_invoker", After: true, Changed: true},
+	})
+	c.Assert(described[2], qt.HasLen, 0)
+}
