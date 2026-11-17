@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"text/template"
 	"unicode"
@@ -43,7 +44,20 @@ const schemaDiffDefaultFormat = `{{- with .Changes -}}
 {{ end -}}
 `
 
-const migrateDiffDefaultFormat = `{{ sql . "  " }}`
+// NativeSchemaDiffFormat is the template native `ptah schema diff` renders: the
+// default `schema diff` template with each statement laid out as Ptah's
+// renderer writes it, the columns of a CREATE TABLE one per line. The default
+// writes each statement on one line, as the community binary does.
+const NativeSchemaDiffFormat = `{{- with .Changes -}}
+{{ sql $ "  " }}
+{{- else -}}
+{{ .NoChangesText -}}
+{{ end -}}
+`
+
+// migrateDiffDefaultFormat writes each statement on one line, as the community
+// binary writes a migration file when no format is given; see [oneLine].
+const migrateDiffDefaultFormat = `{{ sql . }}`
 
 type SchemaDiff struct {
 	From    *schemamodel.Database
@@ -60,6 +74,10 @@ type SchemaDiff struct {
 	commentsAsWritten bool
 	// foreignLayout is [SchemaDiffOptions.ForeignLayout].
 	foreignLayout bool
+	// laidOut is each change's statement as the renderer lays it out, in the
+	// order of Changes, whose Cmd holds it on one line. The `sql` helper writes
+	// it when it is given an indent.
+	laidOut []string
 }
 
 // SchemaDiffLimit names a part of one database source that a diff could not
@@ -88,7 +106,10 @@ func (d SchemaDiff) NoChangesText() string {
 // binary's template data that Ptah fills, under the same names, so a
 // `--format` template that reads them reads them on both binaries.
 type SchemaChange struct {
-	// Cmd is the statement, without its terminating semicolon.
+	// Cmd is the statement, without its terminating semicolon. In a report
+	// [NewSchemaDiff] builds, a statement the community binary writes is on one
+	// line, as that binary's template data holds it; see [SchemaDiff.Statements]
+	// for the renderer's layout.
 	Cmd string
 	// Comment names the change Cmd makes, the way the community binary names
 	// it: `create "users" table`. It is empty for a change nothing names and
@@ -143,7 +164,13 @@ func NewSchemaDiff(opts SchemaDiffOptions) SchemaDiff {
 			changes = append(changes, SchemaChange{Cmd: schemaStatement(change.Cmd), Comment: change.Comment})
 		}
 	}
+	laidOut := make([]string, len(changes))
+	for i := range changes {
+		laidOut[i] = changes[i].Cmd
+		changes[i].Cmd = oneLine(opts.Dialect, changes[i].Cmd)
+	}
 	return SchemaDiff{
+		laidOut:           laidOut,
 		From:              opts.From,
 		To:                opts.To,
 		Changes:           changes,
@@ -282,11 +309,40 @@ func (d SchemaDiff) MarshalSQL(indent ...string) (string, error) {
 	if d.foreignLayout {
 		end = sqlscript.Terminator
 	}
-	sql := schemaChangesSQLText(d.Changes, spell, end)
-	if len(indent) == 0 || indent[0] == "" || sql == "" {
+	// Without an indent each statement is on one line, as Cmd holds it; an
+	// indent lays the renderer's lines out with it.
+	if len(indent) == 0 || indent[0] == "" {
+		return schemaChangesSQLText(d.Changes, spell, end), nil
+	}
+	sql := schemaChangesSQLText(d.laidOutChanges(), spell, end)
+	if sql == "" {
 		return sql, nil
 	}
 	return schemaIndentSQL(d.dialect, sql, indent[0]), nil
+}
+
+// Statements is the plan's statements as Ptah's renderer lays them out, one for
+// each change and in the same order, without their terminating semicolons.
+func (d SchemaDiff) Statements() []string {
+	statements := make([]string, len(d.Changes))
+	for i, change := range d.laidOutChanges() {
+		statements[i] = change.Cmd
+	}
+	return statements
+}
+
+// laidOutChanges is Changes with each statement as the renderer lays it out. A
+// report not built by [NewSchemaDiff] holds no layout of its own, and its
+// changes are returned as they are.
+func (d SchemaDiff) laidOutChanges() []SchemaChange {
+	if len(d.laidOut) != len(d.Changes) {
+		return d.Changes
+	}
+	changes := slices.Clone(d.Changes)
+	for i := range changes {
+		changes[i].Cmd = d.laidOut[i]
+	}
+	return changes
 }
 
 func schemaDiffSQL(result SchemaDiff, indent ...string) (string, error) {

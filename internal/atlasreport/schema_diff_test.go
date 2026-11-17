@@ -51,7 +51,7 @@ func TestSchemaDiffCustomSQLTemplate(t *testing.T) {
 func TestNormalizeMigrateDiffFormat_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(atlasreport.NormalizeMigrateDiffFormat(""), qt.Equals, `{{ sql . "  " }}`)
+	c.Assert(atlasreport.NormalizeMigrateDiffFormat(""), qt.Equals, `{{ sql . }}`)
 	c.Assert(atlasreport.NormalizeMigrateDiffFormat(`{{ sql . "" }}`), qt.Equals, `{{ sql . "" }}`)
 }
 

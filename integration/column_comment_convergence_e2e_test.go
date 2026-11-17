@@ -147,12 +147,7 @@ COMMENT ON INDEX tasks_owner_idx IS 'by owner';
 COMMENT ON INDEX tasks_title_idx IS 'by title';
 `,
 		wantChange: `-- Create "tasks" table
-CREATE TABLE "public"."tasks" (
-  "id" bigint NOT NULL,
-  "title" text NULL,
-  "owner" text NULL,
-  PRIMARY KEY ("id")
-);
+CREATE TABLE "public"."tasks" ("id" bigint NOT NULL, "title" text NULL, "owner" text NULL, PRIMARY KEY ("id"));
 -- Create index "tasks_owner_idx" to table: "tasks"
 CREATE INDEX "tasks_owner_idx" ON "public"."tasks" ("owner");
 -- Create index "tasks_title_idx" to table: "tasks"
@@ -220,16 +215,9 @@ CREATE TABLE users (id bigint PRIMARY KEY);
 CREATE VIEW titles AS SELECT id, title FROM tasks;
 `,
 		wantChange: `-- Create "tasks" table
-CREATE TABLE "public"."tasks" (
-  "id" bigint NOT NULL,
-  "title" text NULL,
-  PRIMARY KEY ("id")
-);
+CREATE TABLE "public"."tasks" ("id" bigint NOT NULL, "title" text NULL, PRIMARY KEY ("id"));
 -- Create "users" table
-CREATE TABLE "public"."users" (
-  "id" bigint NOT NULL,
-  PRIMARY KEY ("id")
-);
+CREATE TABLE "public"."users" ("id" bigint NOT NULL, PRIMARY KEY ("id"));
 -- Create "titles" view
 CREATE VIEW "public"."titles" AS
 SELECT id, title FROM tasks;

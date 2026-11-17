@@ -41,7 +41,7 @@ func TestBuildMigrationFileContents_WritesEachChangeUnderItsComment_HappyPath(t 
 			name:   "a native file",
 			format: atlasmigrate.FileFormat{Template: atlasreport.NormalizeMigrateDiffFormat("")},
 			want: "-- Create \"owners\" table\n" +
-				"CREATE TABLE \"owners\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL\n);\n" +
+				"CREATE TABLE \"owners\" (\"id\" BIGINT PRIMARY KEY NOT NULL);\n" +
 				"-- Create index \"owners_id_idx\" to table: \"owners\"\n" +
 				"CREATE INDEX \"owners_id_idx\" ON \"owners\" (\"id\");\n" +
 				"-- NOTE: archive is dropped by request\n" +
@@ -52,7 +52,7 @@ func TestBuildMigrationFileContents_WritesEachChangeUnderItsComment_HappyPath(t 
 			name:   "a file another tool reads",
 			format: atlasmigrate.FileFormat{Template: atlasreport.NormalizeMigrateDiffFormat(""), Foreign: true},
 			want: "-- create \"owners\" table\n" +
-				"CREATE TABLE \"owners\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL\n);\n" +
+				"CREATE TABLE \"owners\" (\"id\" BIGINT PRIMARY KEY NOT NULL);\n" +
 				"-- create index \"owners_id_idx\" to table: \"owners\"\n" +
 				"CREATE INDEX \"owners_id_idx\" ON \"owners\" (\"id\");\n" +
 				"-- NOTE: archive is dropped by request\n" +
@@ -64,7 +64,7 @@ func TestBuildMigrationFileContents_WritesEachChangeUnderItsComment_HappyPath(t 
 			// of its line comment.
 			name:   "a template that writes every statement on one line",
 			format: atlasmigrate.FileFormat{Template: atlasreport.NormalizeMigrateDiffFormat(`{{ range .Changes }}{{ .Cmd }}; {{ end }}`)},
-			want: "CREATE TABLE \"owners\" (\n  \"id\" BIGINT PRIMARY KEY NOT NULL\n); " +
+			want: "CREATE TABLE \"owners\" (\"id\" BIGINT PRIMARY KEY NOT NULL); " +
 				"CREATE INDEX \"owners_id_idx\" ON \"owners\" (\"id\"); " +
 				"-- NOTE: archive is dropped by request\n; " +
 				"DROP TABLE \"archive\"; ",

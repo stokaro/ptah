@@ -194,7 +194,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 	if format == "json" {
 		return writeSchemaDiffJSON(cmd, report, changes, runtime.Codecs())
 	}
-	if err := atlasreport.WriteSchemaDiff(cmd.Context(), cmd.OutOrStdout(), atlasreport.NormalizeSchemaDiffFormat(""), report, runtime.Codecs()); err != nil {
+	if err := atlasreport.WriteSchemaDiff(cmd.Context(), cmd.OutOrStdout(), atlasreport.NativeSchemaDiffFormat, report, runtime.Codecs()); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	return nil
@@ -282,10 +282,7 @@ const schemaDiffFormatVersion = 1
 // consumption in CI. Feature data is encoded through codecs, the registry of
 // the runtime that compared the schemas.
 func writeSchemaDiffJSON(cmd *cobra.Command, report atlasreport.SchemaDiff, changes *difftypes.SchemaDiff, codecs schemaext.Registry) error {
-	statements := make([]string, 0, len(report.Changes))
-	for _, change := range report.Changes {
-		statements = append(statements, change.Cmd)
-	}
+	statements := report.Statements()
 	document, err := featurejson.MarshalIndent(cmd.Context(), codecs, schemaext.Desired, schemaDiffDocument{
 		FormatVersion:    schemaDiffFormatVersion,
 		Statements:       statements,

@@ -90,22 +90,14 @@ func TestSchemaDiffLeavesTheServerToNameAKeyColumn(t *testing.T) {
 			name: "ptah-compat",
 			run:  runCompat,
 			want: `-- Create "t" table
-CREATE TABLE "public"."t" (
-  "id" integer NOT NULL,
-  "v" text NULL,
-  PRIMARY KEY ("id")
-);
+CREATE TABLE "public"."t" ("id" integer NOT NULL, "v" text NULL, PRIMARY KEY ("id"));
 `,
 		},
 		{
 			name: "ptah-compat strict",
 			run:  runStrictCompat,
 			want: `-- Create "t" table
-CREATE TABLE "public"."t" (
-  "id" integer NOT NULL,
-  "v" text NULL,
-  PRIMARY KEY ("id")
-);
+CREATE TABLE "public"."t" ("id" integer NOT NULL, "v" text NULL, PRIMARY KEY ("id"));
 `,
 		},
 	}

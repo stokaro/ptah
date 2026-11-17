@@ -38,10 +38,29 @@ type engineCommentsCase struct {
 	steps   []engineCommentsStep
 }
 
-// diffEngineSteps runs `migrate diff` once per step into one golang-migrate
-// directory, against dev, and returns the directory. binary empty runs this
-// binary's verb in process.
+// migrationLayouts are the --format values a comparison with the pinned
+// community binary runs under. With no --format and with an empty indent that
+// binary writes each statement on one line; with an indent it writes the
+// columns of a new table one per line.
+var migrationLayouts = []struct{ name, format string }{
+	{name: "the default layout", format: ""},
+	{name: "an empty indent", format: `{{ sql . "" }}`},
+	{name: "an indent", format: `{{ sql . "  " }}`},
+}
+
+// diffEngineSteps is [diffEngineStepsIn] with the files laid out by an indent,
+// the columns of a new table one per line, which is the form the assertions
+// over them read.
 func diffEngineSteps(c *qt.C, binary, dev string, schemas []string) string {
+	c.Helper()
+	return diffEngineStepsIn(c, binary, dev, `{{ sql . "  " }}`, schemas)
+}
+
+// diffEngineStepsIn runs `migrate diff` once per step into one golang-migrate
+// directory, against dev, and returns the directory. binary empty runs this
+// binary's verb in process. format is the --format value, and an empty one
+// passes no --format, so the files take the default layout.
+func diffEngineStepsIn(c *qt.C, binary, dev, format string, schemas []string) string {
 	c.Helper()
 	work := c.TempDir()
 	dir := filepath.Join(work, "migrations")
@@ -54,7 +73,9 @@ func diffEngineSteps(c *qt.C, binary, dev string, schemas []string) string {
 			"--dir", "file://" + filepath.ToSlash(dir) + "?format=golang-migrate",
 			"--to", "file://" + filepath.ToSlash(path),
 			"--dev-url", dev,
-			"--format", `{{ sql . "  " }}`,
+		}
+		if format != "" {
+			args = append(args, "--format", format)
 		}
 		output, err := runEngineVerb(binary, args)
 		c.Assert(err, qt.IsNil, qt.Commentf("step %s:\n%s", name, output))
@@ -216,7 +237,7 @@ func TestCompatMigrateDiffEngineCommentsE2E_NameEachChange(t *testing.T) {
 				schemas = append(schemas, step.schema)
 			}
 
-			pairs := readMigrationPairs(c, diffEngineSteps(c, "", test.target(c), schemas))
+			pairs := readMigrationPairs(c, diffEngineStepsIn(c, "", test.target(c), "", schemas))
 			target := test.target(c)
 
 			c.Assert(pairs, qt.HasLen, len(test.steps))
@@ -250,8 +271,8 @@ func TestCompatMigrateDiffEngineCommentsE2E_SpeakTheBinarysWordsOnSQLite(t *test
 	}
 	const dev = "sqlite://dev?mode=memory&_fk=1"
 
-	ours := readMigrationPairs(c, diffEngineSteps(c, "", dev, schemas))
-	theirs := readMigrationPairs(c, diffEngineSteps(c, reference, dev, schemas))
+	ours := readMigrationPairs(c, diffEngineStepsIn(c, "", dev, "", schemas))
+	theirs := readMigrationPairs(c, diffEngineStepsIn(c, reference, dev, "", schemas))
 
 	c.Assert(ours, qt.HasLen, len(theirs))
 	for i := range theirs {

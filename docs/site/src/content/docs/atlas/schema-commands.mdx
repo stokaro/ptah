@@ -1983,7 +1983,9 @@ CREATE TABLE "main"."posts" (
 ```
 
 `--format` accepts Atlas-style Go templates over Ptah's local diff report. The
-supported template surface includes the `sql` helper and `.MarshalSQL`:
+supported template surface includes the `sql` helper and `.MarshalSQL`. Without
+`--format`, each statement is written on one line, as the pinned community
+binary writes it; an indent lays the columns of a new table out one per line:
 
 ```bash
 ptah-compat schema diff \
