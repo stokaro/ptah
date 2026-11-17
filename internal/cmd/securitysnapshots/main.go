@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"ptah.run/internal/vulnerability"
@@ -52,27 +53,43 @@ type review struct {
 	ObservedIDs   []string  `json:"observed_cve_ids"`
 }
 
+var products = []string{"postgresql", "mariadb", "clickhouse"}
+
 func main() {
 	inputDir := flag.String("input-dir", "", "Directory of saved source pages for offline checks")
 	flag.Parse()
 	client := &http.Client{Timeout: 30 * time.Second}
 	now := time.Now().UTC()
-	for _, product := range []string{"postgresql", "mariadb", "clickhouse"} {
-		var source []byte
-		var err error
+	read := func(product string) ([]byte, error) {
 		if *inputDir != "" {
-			source, err = os.ReadFile(filepath.Join(*inputDir, product+".source"))
-		} else {
-			source, err = fetch(client, sourceURLs[product])
+			return os.ReadFile(filepath.Join(*inputDir, product+".source"))
 		}
+		return fetch(client, sourceURLs[product])
+	}
+	err := refreshAll(products, read, func(product string, source []byte) error {
+		return update(product, source, now)
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// refreshAll checks every product even when an earlier one fails, so one
+// engine's broken source or snapshot does not hide the state of the others.
+// The joined error names each failing product on its own line.
+func refreshAll(products []string, read func(string) ([]byte, error), apply func(string, []byte) error) error {
+	var failures []error
+	for _, product := range products {
+		source, err := read(product)
 		if err == nil {
-			err = update(product, source, now)
+			err = apply(product, source)
 		}
 		if err != nil {
-			fmt.Fprintln(os.Stderr, product+":", err)
-			os.Exit(1)
+			failures = append(failures, fmt.Errorf("%s: %w", product, err))
 		}
 	}
+	return errors.Join(failures...)
 }
 
 func fetch(client *http.Client, url string) ([]byte, error) {
@@ -151,8 +168,8 @@ func reconcileVersioned(current vulnerability.VersionedSnapshot, source []byte, 
 		// snapshot whose hash moved without its list would make the next
 		// review diff against the wrong page.
 		if observed := sourceCVEIDs(source); !slices.Equal(observed, current.SourceCVEIDs) {
-			return fmt.Errorf("source_cve_ids differ from the reviewed source: %d not recorded, %d recorded but absent",
-				len(difference(observed, current.SourceCVEIDs)), len(difference(current.SourceCVEIDs, observed)))
+			return fmt.Errorf("source_cve_ids differ from the reviewed source: not recorded %s; recorded but absent %s",
+				idList(difference(observed, current.SourceCVEIDs)), idList(difference(current.SourceCVEIDs, observed)))
 		}
 		if err := os.Remove(reviewPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -219,6 +236,20 @@ func sourceCVEIDs(source []byte) []string {
 	ids := cveID.FindAllString(string(source), -1)
 	slices.Sort(ids)
 	return slices.Compact(ids)
+}
+
+// idListLimit is how many IDs a mismatch names before it counts the rest: a
+// page whose every ID differs would otherwise put hundreds of IDs on one line.
+const idListLimit = 10
+
+func idList(ids []string) string {
+	if len(ids) == 0 {
+		return "none"
+	}
+	if len(ids) > idListLimit {
+		return fmt.Sprintf("%s and %d more", strings.Join(ids[:idListLimit], ", "), len(ids)-idListLimit)
+	}
+	return strings.Join(ids, ", ")
 }
 
 func difference(left, right []string) []string {
