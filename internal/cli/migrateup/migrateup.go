@@ -934,7 +934,11 @@ func writeRepeatableStatus(emit cliobs.Emitter, records []migrator.RepeatableRec
 		emit.Printf("Repeatable migration records with no file in the directory: %d\n", len(orphaned))
 	}
 	for _, record := range orphaned {
-		emit.Printf("  %s %s %s\n", record.Identity, record.State, record.AppliedChecksum)
+		line := "  " + record.Identity + " " + record.State
+		if record.AppliedChecksum != "" {
+			line += " " + record.AppliedChecksum
+		}
+		emit.Println(line)
 	}
 }
 

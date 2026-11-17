@@ -63,6 +63,15 @@ func repeatableMigrator(c *qt.C, conn *dbschema.DatabaseConnection, fsys fstest.
 	return mig
 }
 
+// recordRows counts the rows of the default repeatable migration record.
+func (f *foreignMetadataFixture) recordRows(c *qt.C) int {
+	c.Helper()
+	var count int
+	c.Assert(f.adminConn.QueryRowContext(context.Background(),
+		`SELECT count(*) FROM public.schema_migrations_repeatable`).Scan(&count), qt.IsNil)
+	return count
+}
+
 // indexExists asks whether the public schema holds an index named name.
 func (f *foreignMetadataFixture) indexExists(c *qt.C, name string) bool {
 	c.Helper()
@@ -182,11 +191,69 @@ func TestRepeatableRecordRefusalsLive_HappyPath(t *testing.T) {
 	t.Run("the same migrations table name runs without a repeatable migration", func(t *testing.T) {
 		c := qt.New(t)
 		fixture := newForeignMetadataFixture(t, "")
+		long := strings.Repeat("c", 55)
 		mig := repeatableMigrator(c, fixture.repeatableConnection(c), repeatableRecordMigrations(nil)).
-			WithMigrationsTable("", strings.Repeat("c", 55))
+			WithMigrationsTable("", long)
 
 		c.Assert(mig.MigrateUpWithOptions(t.Context(), migrator.MigrateUpOptions{}), qt.IsNil)
 		c.Assert(fixture.relationExists(c, "widgets"), qt.IsTrue)
+		c.Assert(fixture.relationExists(c, long), qt.IsTrue)
+		// PostgreSQL would have stored the record's name cut to 63 bytes.
+		c.Assert(fixture.relationExists(c, (long + "_repeatable")[:63]), qt.IsFalse)
+		c.Assert(fixture.relationExists(c, "schema_migrations_repeatable"), qt.IsFalse)
+	})
+
+	// The record is created before the first versioned statement, so a
+	// versioned migration that fails leaves it behind, empty. The next run
+	// finds it as it would any record and proceeds.
+	t.Run("an empty record left by a failed versioned migration does not stop the next run", func(t *testing.T) {
+		c := qt.New(t)
+		fixture := newForeignMetadataFixture(t, "")
+		fsys := repeatableRecordMigrations(map[string]string{"R__widget_ids.sql": repeatableRecordView})
+		fsys["0000000002_seed.up.sql"] = &fstest.MapFile{Data: []byte("INSERT INTO public.widget_seed (id) VALUES (1);\n")}
+		fsys["0000000002_seed.down.sql"] = &fstest.MapFile{Data: []byte("DELETE FROM public.widget_seed;\n")}
+
+		err := repeatableMigrator(c, fixture.repeatableConnection(c), fsys).
+			MigrateUpWithOptions(t.Context(), migrator.MigrateUpOptions{})
+		c.Assert(err, qt.ErrorMatches, `(?s).*widget_seed.*`)
+		c.Assert(fixture.relationExists(c, "schema_migrations_repeatable"), qt.IsTrue)
+		c.Assert(fixture.recordRows(c), qt.Equals, 0)
+		c.Assert(fixture.relationExists(c, "widget_ids"), qt.IsFalse)
+
+		fixture.adminExec(c, "CREATE TABLE public.widget_seed (id integer)")
+		fixture.adminExec(c, "GRANT INSERT, DELETE ON public.widget_seed TO PUBLIC")
+		mig := repeatableMigrator(c, fixture.repeatableConnection(c), fsys)
+		c.Assert(mig.MigrateUpWithOptions(t.Context(), migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
+
+		c.Assert(fixture.relationExists(c, "widget_ids"), qt.IsTrue)
+		c.Assert(fixture.recordRows(c), qt.Equals, 1)
+		status, err := mig.GetMigrationStatus(t.Context())
+		c.Assert(err, qt.IsNil)
+		c.Assert(status.CurrentVersion, qt.Equals, int64(2))
+		c.Assert(status.Repeatables, qt.HasLen, 1)
+		c.Assert(status.Repeatables[0].State, qt.Equals, migrator.RepeatableStateApplied)
+	})
+
+	// Repair removes the row of a file that is gone and leaves what the
+	// migration created, and the rollback the row blocked then runs.
+	t.Run("repair removes the row of a deleted file, and the rollback it blocked then runs", func(t *testing.T) {
+		c := qt.New(t)
+		fixture := newForeignMetadataFixture(t, "")
+		fsys := repeatableRecordMigrations(map[string]string{"R__widget_ids.sql": repeatableRecordView})
+		c.Assert(repeatableMigrator(c, fixture.repeatableConnection(c), fsys).
+			MigrateUpWithOptions(t.Context(), migrator.MigrateUpOptions{}), qt.IsNil)
+		delete(fsys, "R__widget_ids.sql")
+		mig := repeatableMigrator(c, fixture.repeatableConnection(c), fsys)
+		c.Assert(mig.MigrateTo(t.Context(), 0), qt.ErrorAs, new(*migrator.RepeatableRollbackError))
+		fixture.adminExec(c, "DROP VIEW public.widget_ids")
+
+		removed, err := mig.RemoveRepeatableRecord(t.Context(), migrator.RemoveRepeatableRecordOptions{Identity: "widget_ids"})
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(removed.State, qt.Equals, migrator.RepeatableStateOrphaned)
+		c.Assert(fixture.recordRows(c), qt.Equals, 0)
+		c.Assert(mig.MigrateTo(t.Context(), 0), qt.IsNil)
+		c.Assert(fixture.relationExists(c, "widgets"), qt.IsFalse)
 	})
 
 	t.Run("CREATE INDEX CONCURRENTLY runs in a file marked no_transaction", func(t *testing.T) {

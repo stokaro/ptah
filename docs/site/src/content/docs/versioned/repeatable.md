@@ -125,8 +125,16 @@ the applied digest), `applied`, `failed`, `running`, and `orphaned` for a
 record whose file is no longer in the directory. With `--json`, the status
 document carries them under `repeatables`, each with `identity`, `path`,
 `checksum`, `applied_checksum`, `state`, `orphaned`, and what the last attempt
-recorded. An orphaned record is listed with `(no file in the directory)` and is
-not a pending change.
+recorded. The text output counts the files on the first line and the orphaned
+records apart, after them, as the up run reports them; a clean orphaned record
+is not a pending change:
+
+```text
+Repeatable Migrations: 1
+  account_names_v2 applied h1:Td8a3lsNQ6sxg5EVO97tgeSSgPbOG9E1KnfN3tI0tc0=
+Repeatable migration records with no file in the directory: 1
+  account_names orphaned h1:Td8a3lsNQ6sxg5EVO97tgeSSgPbOG9E1KnfN3tI0tc0=
+```
 
 `ptah migrations up --dry-run` selects under the migration lock as a real run
 does, prints the repeatable work it would run, and runs and records nothing:
@@ -157,8 +165,11 @@ selects an extra version is:
 ## The record table
 
 The record is a table beside the revision table, named after it with
-`_repeatable`: `schema_migrations_repeatable` by default, and
-`<table>_repeatable` under `--migrations-table <table>`. It holds one row per
+`_repeatable`: `schema_migrations_repeatable` by default, `<table>_repeatable`
+under `--migrations-table <table>`, and in the schema `--migrations-schema`
+names when one is set. The refusals of `ptah migrations up` and `ptah
+migrations down` print the name quoted, the way the engine spells it, so copy
+it from there when you write SQL against the table. It holds one row per
 identity: the digest that last applied, the state of the last attempt, the
 digest that attempt executed, its position in that run, whether it ran in a
 transaction, the run identifier, when it started, when content last applied,
@@ -178,15 +189,18 @@ revision table.
 
 The record says what ran, not what the database holds now. A view dropped by
 hand, outside a migration, leaves its row `applied`, and the next run does
-nothing for it. To run the file again, delete its row, and the next up run
-executes it as new:
+nothing for it. To run the file again, remove its row, and the next up run
+executes it as new. The file is still in the directory, so the removal takes
+`--force`:
 
-```sql
-DELETE FROM schema_migrations_repeatable WHERE identity = 'account_names';
+```bash
+ptah migrations repair --db-url "$DATABASE_URL" --migrations-dir ./migrations --repeatable account_names --force
 ```
 
-Any edit of the file works too, since the run compares digests; a comment line
-is enough, followed by `ptah migrations hash`.
+Pass the same `--migrations-table` and `--migrations-schema` as the up run, so
+repair reads the same record. Any edit of the file works too, since the run
+compares digests; a comment line is enough, followed by `ptah migrations
+hash`.
 
 ## When one fails
 
@@ -217,19 +231,30 @@ When it ran without a transaction, check what it left behind before the retry.
 
 A failed or running record whose file is no longer in the directory cannot run
 again, so it blocks every up run, `--allow-dirty` included. Check what it left
-behind, then delete its row as [below](#remove-or-rename-one) shows.
+behind, then remove its row as [below](#remove-or-rename-one) shows. Status
+then offers that step rather than the retry.
 
 ## Remove or rename one
 
 Deleting a repeatable migration's file does not undo it: the view or function
 it created stays, and so does its row, which status lists as `orphaned`. An up
-run leaves an orphaned record alone and logs a warning naming it. A rollback is
-refused while the record holds any row, orphaned rows included, because rolling
-back under an object the record still claims leaves a row that says `applied`
-over a schema without the object.
+run leaves an orphaned record alone, and every up run logs a warning naming it
+until its row is removed. A rollback is refused while the record holds any row,
+orphaned rows included, because rolling back under an object the record still
+claims leaves a row that says `applied` over a schema without the object.
 
 To remove one for good, drop what it created in a new versioned migration, then
-delete its row from the record table:
+remove its row. No file carries the identity any more, so no `--force` is
+needed:
+
+```bash
+ptah migrations repair --db-url "$DATABASE_URL" --migrations-dir ./migrations --repeatable account_names
+```
+
+Repair holds the migration lock, runs no migration SQL, and refuses an identity
+the record has no row for. Without `--force` it also refuses one whose file is
+still in the directory, since the next up run would execute that file again.
+The same row can be deleted with SQL, naming the table as the refusal prints it:
 
 ```sql
 DELETE FROM schema_migrations_repeatable WHERE identity = 'account_names';
@@ -238,7 +263,7 @@ DELETE FROM schema_migrations_repeatable WHERE identity = 'account_names';
 A rename is a removal and an addition. The next up run executes the file under
 its new identity, so its body must run against a database where the old one
 already did, and the row of the old identity stays orphaned until it is
-deleted.
+removed.
 
 ## What a repeatable migration refuses
 
@@ -287,8 +312,8 @@ migrations; stokaro/ptah#6152 records the gap.
   record table keeps the last attempt of each repeatable migration.
 - `ptah migrations lint` and the destructive gate of `ptah migrations up` read
   versioned files only.
-- There is no repair verb for a repeatable migration. A record row is deleted
-  with SQL, as [Remove or rename one](#remove-or-rename-one) shows, which makes
-  the next run treat a file of that identity as new.
+- `ptah migrations repair --repeatable` removes a row; nothing marks a
+  repeatable migration applied without running it. Removing the row of a file
+  still in the directory makes the next run execute it as new.
 
 stokaro/ptah#6153 records these.

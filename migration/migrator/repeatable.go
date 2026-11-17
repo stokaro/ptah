@@ -292,7 +292,7 @@ func describeDirtyRepeatable(record RepeatableRecord, table string) string {
 	}
 	if record.Orphaned {
 		fmt.Fprintf(&b, "; no file of the directory carries it, so it cannot run again: check what it left behind, "+
-			"then delete its row from %s", table)
+			"then remove its row from %s with 'ptah migrations repair --repeatable %s'", table, record.Identity)
 	}
 	return b.String()
 }
@@ -340,8 +340,8 @@ type RepeatableRollbackError struct {
 func (e *RepeatableRollbackError) Error() string {
 	return fmt.Sprintf(
 		"cannot roll back: this database records repeatable migrations %s, which have no rollback and were written "+
-			"against the latest schema; drop what they created and delete their rows from %s first, or roll forward "+
-			"with a new migration instead",
+			"against the latest schema; drop what they created and remove their rows from %s with "+
+			"'ptah migrations repair --repeatable <identity>' first, or roll forward with a new migration instead",
 		strings.Join(e.Identities, ", "), e.Table)
 }
 

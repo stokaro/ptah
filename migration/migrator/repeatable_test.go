@@ -509,7 +509,8 @@ func TestRepeatableMigrations_FailurePath(t *testing.T) {
 		_, err = runRepeatableUp(c, dbPath, deleted, migrator.MigrateUpOptions{AllowDirty: true})
 		c.Assert(err, qt.ErrorAs, new(*migrator.DirtyRepeatableError))
 		c.Assert(err, qt.ErrorMatches,
-			`(?s)repeatable migrations did not finish: user_names .*no file of the directory carries it, so it cannot run again.*"schema_migrations_repeatable".*`)
+			`(?s)repeatable migrations did not finish: user_names .*no file of the directory carries it, so it cannot run again.*`+
+				`remove its row from "schema_migrations_repeatable" with 'ptah migrations repair --repeatable user_names'.*`)
 		c.Assert(repeatableAudit(c, dbPath), qt.HasLen, 0)
 		status := repeatableStatus(c, dbPath, deleted)
 		c.Assert(status.HasPendingChanges, qt.IsTrue)

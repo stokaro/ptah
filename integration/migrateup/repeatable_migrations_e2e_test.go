@@ -288,6 +288,30 @@ func TestRepeatableMigrationsE2E_HappyPath(t *testing.T) {
 			`(?s).*cannot roll back: this database records repeatable migrations account_names, account_names_v2,.*`)
 		c.Assert(userTables(c, r.conn), qt.Contains, "accounts")
 	})
+
+	t.Run("repair removes the row of a deleted file, and the rollback it blocked then runs", func(t *testing.T) {
+		c := qt.New(t)
+		r := newRepeatableE2ETarget(c)
+		result, _ := r.up(c)
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(os.Remove(filepath.Join(r.dir, "R__account_names.sql")), qt.IsNil)
+		result = r.ptah(c, "migrations", "hash", "--dir", r.dir)
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+
+		result = r.ptah(c, "migrations", "repair", "--db-url", r.url, "--migrations-dir", r.dir,
+			"--repeatable", "account_names")
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(result.Stdout, qt.Equals, "Removed the record of repeatable migration account_names, state orphaned; "+
+			"no file of the directory carries it; no migration SQL ran\n")
+		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name"})
+		c.Assert(r.status(c).Repeatables, qt.HasLen, 0)
+
+		_, err := r.conn.ExecContext(c.Context(), "DROP VIEW account_names")
+		c.Assert(err, qt.IsNil)
+		result = r.ptah(c, "migrations", "down", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(userTables(c, r.conn), qt.Not(qt.Contains), "accounts")
+	})
 }
 
 func TestRepeatableMigrationsE2E_FailurePath(t *testing.T) {
@@ -389,6 +413,19 @@ func TestRepeatableMigrationsE2E_FailurePath(t *testing.T) {
 		records := r.status(c).Repeatables
 		c.Assert(records, qt.HasLen, 1)
 		c.Assert(records[0].State, qt.Equals, migrator.RepeatableStateOrphaned)
+	})
+
+	t.Run("repair keeps the row of a file still in the directory unless forced", func(t *testing.T) {
+		c := qt.New(t)
+		r := newRepeatableE2ETarget(c)
+		result, _ := r.up(c)
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+
+		result = r.ptah(c, "migrations", "repair", "--db-url", r.url, "--migrations-dir", r.dir,
+			"--repeatable", "account_names")
+		c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
+		c.Assert(result.Stderr, qt.Matches, `(?s).*R__account_names.sql carries account_names, .*rerun with --force.*`)
+		c.Assert(r.status(c).Repeatables[0].State, qt.Equals, migrator.RepeatableStateApplied)
 	})
 }
 

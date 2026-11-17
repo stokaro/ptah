@@ -30,6 +30,7 @@ const (
 	atlasEnvFlag   = "atlas-env"
 	forceFlag      = "force"
 	resumeFromFlag = "resume-from"
+	repeatableFlag = "repeatable"
 )
 
 type options struct {
@@ -40,6 +41,7 @@ type options struct {
 	atlasEnv            string
 	force               bool
 	resumeFrom          string
+	repeatable          string
 	runner              string
 	connectTimeout      string
 	configPath          string
@@ -81,7 +83,15 @@ transactions is read with those transactions, as "migrations up" and
 finished without running SQL: an up migration is recorded applied, and a
 rollback's revision is removed. Such a file is never resumed from a
 statement, because a resume would run the rest of it outside the
-transactions it opens; the refusal names what ends the revision instead.`,
+transactions it opens; the refusal names what ends the revision instead.
+
+With --repeatable in place of --version, repair deletes the row of one
+repeatable migration from the record beside the revision table, and runs no
+migration SQL. That is the way out of a row whose file was deleted or renamed:
+such a row blocks every rollback, and one whose last attempt did not finish
+blocks every up run, because nothing can run it again. What the migration
+created stays. A row whose file is still in the directory is removed only with
+--force, and the next up run then executes that file as new.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateRepairCommand(cmd, &opts)
 		},
@@ -99,8 +109,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.version, versionFlag, "", "Migration version to repair (required)")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
-	flags.BoolVar(&opts.force, forceFlag, false, "Allow metadata-only repair: record an incomplete up migration applied without running SQL, or rewrite or create its revision row")
+	flags.BoolVar(&opts.force, forceFlag, false, "Allow metadata-only repair: record an incomplete up migration applied without running SQL, "+
+		"or rewrite or create its revision row; with --repeatable, remove the row of a repeatable migration whose file is still in the directory")
 	flags.StringVar(&opts.resumeFrom, resumeFromFlag, "", "Execute the remaining statements of the body that failed, starting from this 1-based statement number. An up migration is then marked applied; a rollback's revision is removed")
+	flags.StringVar(&opts.repeatable, repeatableFlag, "", "Identity of a repeatable migration, the name between R__ and .sql, whose row to delete from the repeatable migration record instead of repairing a version")
 	dbcli.RegisterRunnerFlag(flags, &opts.runner)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
@@ -173,15 +185,7 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	if strings.TrimSpace(opts.migrationsDir) == "" {
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
 	}
-	if opts.version == "" {
-		return fmt.Errorf("migration version is required")
-	}
-
-	version, err := strconv.ParseInt(opts.version, 10, 64)
-	if err != nil || version <= 0 {
-		return fmt.Errorf("invalid migration version %q", opts.version)
-	}
-	resumeFrom, err := parseResumeFrom(opts.resumeFrom)
+	target, err := parseRepairTarget(opts)
 	if err != nil {
 		return err
 	}
@@ -208,6 +212,7 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
 	// The shared integrity gate, and it fires only for --resume-from.
+	resumeFrom := target.resumeFrom
 	//
 	// That is the class predicate applied exactly, not a softened version of
 	// it. A plain repair rewrites revision metadata and executes none of the
@@ -236,6 +241,11 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	if runner.TransactionOwner() == lintext.TransactionOwnerFile {
 		providerOptions = append(providerOptions, migrator.WithOwnTransactions())
 	}
+	// Only a repeatable repair reads the repeatable files, to tell a row no
+	// file carries from one whose file is still here.
+	if target.repeatable != "" {
+		providerOptions = append(providerOptions, migrator.WithRepeatableMigrations())
+	}
 	provider, err := migrator.NewFSMigrationProvider(source.FileSystem, providerOptions...)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
@@ -262,6 +272,10 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 		WithRevisionTableFormat(revisionFormat).
 		WithMigrationLockName(lockName.Value)
 
+	if target.repeatable != "" {
+		return removeRepeatableRecord(cmd, mig, target.repeatable, opts.force)
+	}
+	version := target.version
 	err = mig.RepairMigration(ctx, migrator.RepairMigrationOptions{
 		Version:    version,
 		Force:      opts.force,
@@ -276,6 +290,64 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	} else {
 		fmt.Fprintf(cmd.OutOrStdout(), "Repaired migration %d\n", version)
 	}
+	return nil
+}
+
+// repairTarget is what one invocation repairs: the revision of a versioned
+// migration, or the record row of a repeatable one.
+type repairTarget struct {
+	version    int64
+	resumeFrom int
+	repeatable string
+}
+
+// parseRepairTarget reads which repair the flags ask for. --version and
+// --repeatable name different tables, so exactly one of them is given, and
+// --resume-from belongs to a version: a repeatable migration that did not
+// finish runs again from its first statement under 'migrations up
+// --allow-dirty'.
+func parseRepairTarget(opts *options) (repairTarget, error) {
+	switch {
+	case opts.version != "" && opts.repeatable != "":
+		return repairTarget{}, fmt.Errorf("--version and --repeatable select different repairs; give one of them")
+	case opts.repeatable != "" && opts.resumeFrom != "":
+		return repairTarget{}, fmt.Errorf("--resume-from resumes a versioned migration; a repeatable migration " +
+			"that did not finish runs again from its first statement with 'ptah migrations up --allow-dirty'")
+	case opts.repeatable != "":
+		if _, err := migrationfile.ParseRepeatableFileName(migrationfile.RepeatableFileName(opts.repeatable)); err != nil {
+			return repairTarget{}, fmt.Errorf("invalid repeatable migration identity %q: %w", opts.repeatable, err)
+		}
+		return repairTarget{repeatable: opts.repeatable}, nil
+	case opts.version == "":
+		return repairTarget{}, fmt.Errorf("migration version is required, or --repeatable for a repeatable migration's record")
+	}
+	version, err := strconv.ParseInt(opts.version, 10, 64)
+	if err != nil || version <= 0 {
+		return repairTarget{}, fmt.Errorf("invalid migration version %q", opts.version)
+	}
+	resumeFrom, err := parseResumeFrom(opts.resumeFrom)
+	if err != nil {
+		return repairTarget{}, err
+	}
+	return repairTarget{version: version, resumeFrom: resumeFrom}, nil
+}
+
+// removeRepeatableRecord deletes the record row of identity and says what the
+// row recorded.
+func removeRepeatableRecord(cmd *cobra.Command, mig *migrator.Migrator, identity string, force bool) error {
+	removed, err := mig.RemoveRepeatableRecord(cmd.Context(), migrator.RemoveRepeatableRecordOptions{
+		Identity: identity,
+		Force:    force,
+	})
+	if err != nil {
+		return err
+	}
+	where := "its file is still in the directory, and the next up run executes it as new"
+	if removed.Orphaned {
+		where = "no file of the directory carries it"
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Removed the record of repeatable migration %s, state %s; %s; no migration SQL ran\n",
+		identity, removed.State, where)
 	return nil
 }
 

@@ -114,12 +114,12 @@ func (s *repeatableState) orphans() []string {
 // reads as orphaned; an unfinished one keeps its state, because it is the one
 // that stops a run.
 func orphanedRecord(row repeatableRow) RepeatableRecord {
-	record := RepeatableRecord{Identity: row.identity, Orphaned: true}
-	record.fill(row)
-	record.State = row.state
-	if row.state == RepeatableStateApplied {
-		record.State = RepeatableStateOrphaned
+	state := row.state
+	if state == RepeatableStateApplied {
+		state = RepeatableStateOrphaned
 	}
+	record := RepeatableRecord{Identity: row.identity, State: state, Orphaned: true}
+	record.fill(row)
 	return record
 }
 

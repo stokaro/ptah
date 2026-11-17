@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -492,17 +493,13 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	if dirty := dirtyRepeatables(status.Repeatables); len(dirty) > 0 {
 		emit.Println("Status: ❌ Repeatable migration did not finish")
 		for _, record := range dirty {
-			emit.Printf("Dirty Repeatable: identity=%s state=%s attempted=%s no_transaction=%t\n",
-				record.Identity, record.State, record.AttemptChecksum, record.NoTransaction)
+			emit.Printf("Dirty Repeatable: identity=%s state=%s attempted=%s no_transaction=%t orphaned=%t\n",
+				record.Identity, record.State, record.AttemptChecksum, record.NoTransaction, record.Orphaned)
 			if record.Error != "" {
 				emit.Printf("Error: %s\n", record.Error)
 			}
 		}
-		emit.Println("\nAn up run refuses while a repeatable migration's last attempt has no successful " +
-			"outcome. Fix the cause, then run 'ptah migrations up --allow-dirty', which runs it again " +
-			"from its first statement. When it ran without a transaction, check what it left behind first. " +
-			"A record whose file is no longer in the directory cannot run again: check what it left behind, " +
-			"then delete its row from the record table, the migrations table name followed by _repeatable.")
+		emit.Printf("\n%s\n", dirtyRepeatableHint(dirty))
 		return nil
 	}
 
@@ -573,22 +570,63 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	return nil
 }
 
-// writeRepeatables prints the directory's repeatable migrations, one line
-// each, in the order an up run executes them, and then the records no file of
-// the directory carries, with the digest that last applied. A directory and a
-// database without repeatable migrations print nothing.
-func writeRepeatables(emit cliobs.Emitter, records []migrator.RepeatableRecord) {
-	if len(records) == 0 {
-		return
+// dirtyRepeatableHint says how to recover the dirty records. A record whose
+// file is still in the directory runs again under --allow-dirty; one no file
+// carries cannot, so its row is removed instead, and when every dirty record
+// is of that kind, retrying is not the first step to offer.
+func dirtyRepeatableHint(dirty []migrator.RepeatableRecord) string {
+	const refuses = "An up run refuses while a repeatable migration's last attempt has no successful outcome."
+	const orphaned = "A record whose file is no longer in the directory cannot run again, so --allow-dirty does not " +
+		"clear it: check what it left behind, then remove its row with " +
+		"'ptah migrations repair --repeatable <identity>'."
+	withFile := slices.ContainsFunc(dirty, func(record migrator.RepeatableRecord) bool { return !record.Orphaned })
+	withoutFile := slices.ContainsFunc(dirty, func(record migrator.RepeatableRecord) bool { return record.Orphaned })
+	if !withFile {
+		return refuses + " " + orphaned
 	}
-	emit.Printf("Repeatable Migrations: %d\n", len(records))
+	hint := refuses + " Fix the cause, then run 'ptah migrations up --allow-dirty', which runs it again from its " +
+		"first statement. When it ran without a transaction, check what it left behind first."
+	if withoutFile {
+		hint += " " + orphaned
+	}
+	return hint
+}
+
+// writeRepeatables prints the directory's repeatable migrations, one line
+// each, in the order an up run executes them, and then, counted apart, the
+// records no file of the directory carries, with the digest that last applied.
+// A directory and a database without repeatable migrations print nothing.
+func writeRepeatables(emit cliobs.Emitter, records []migrator.RepeatableRecord) {
+	var files, orphaned []migrator.RepeatableRecord
 	for _, record := range records {
 		if record.Orphaned {
-			emit.Printf("  %s %s %s (no file in the directory)\n", record.Identity, record.State, record.AppliedChecksum)
+			orphaned = append(orphaned, record)
 			continue
 		}
+		files = append(files, record)
+	}
+	if len(files) > 0 {
+		emit.Printf("Repeatable Migrations: %d\n", len(files))
+	}
+	for _, record := range files {
 		emit.Printf("  %s %s %s\n", record.Identity, record.State, record.Checksum)
 	}
+	if len(orphaned) > 0 {
+		emit.Printf("Repeatable migration records with no file in the directory: %d\n", len(orphaned))
+	}
+	for _, record := range orphaned {
+		emit.Println(orphanLine(record))
+	}
+}
+
+// orphanLine is one record no file carries: its identity, its state, and the
+// digest that last applied, when one did.
+func orphanLine(record migrator.RepeatableRecord) string {
+	line := "  " + record.Identity + " " + record.State
+	if record.AppliedChecksum != "" {
+		line += " " + record.AppliedChecksum
+	}
+	return line
 }
 
 // dirtyRepeatables returns the records whose last attempt failed or recorded
