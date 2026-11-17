@@ -35,7 +35,9 @@ func TestMigrateUpAllowDirtyRefusesAnInterruptedFirstStatementLive(t *testing.T)
 	itemsTable := fmt.Sprintf("ptah_first_stmt_items_%d", suffix)
 	defer func() {
 		_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+itemsTable)
-		_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+migrationsTable)
+		for _, statement := range dropRevisionTableStatements(migrationsTable) {
+			_, _ = conn.ExecContext(context.Background(), statement)
+		}
 	}()
 
 	// The table exists before the run, so the migration's one statement is an

@@ -136,14 +136,13 @@ func issue262Migrator(conn *dbschema.DatabaseConnection, migrations ...*migrator
 func cleanupIssue262(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
 
-	for _, statement := range []string{
+	for _, statement := range append([]string{
 		"DROP SCHEMA IF EXISTS ptah_issue_262 CASCADE",
-		"DROP TABLE IF EXISTS schema_migrations_issue_262",
 		"DROP TABLE IF EXISTS ptah_issue_262_dry_run",
 		"DROP TABLE IF EXISTS ptah_issue_262_enum_items",
 		"DROP TABLE IF EXISTS ptah_issue_262_users",
 		"DROP TYPE IF EXISTS ptah_issue_262_mood",
-	} {
+	}, dropRevisionTableStatements("schema_migrations_issue_262")...) {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
 }

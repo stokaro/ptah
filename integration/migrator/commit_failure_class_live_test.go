@@ -18,7 +18,9 @@ func TestCommitFailure_PostgresTransactionalLive(t *testing.T) {
 
 	conn, err := dbschema.ConnectToDatabase(t.Context(), postgresTestURL(t))
 	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
+	// A cleanup rather than a defer: a deferred close runs before the cleanup
+	// below, whose drop would then fail on the closed connection.
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 	target := postgresRevisionCompletionTarget()
 	names := newRevisionCompletionNames("commit")

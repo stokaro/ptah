@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -30,7 +31,7 @@ func TestMigrateDownDerivedRefusesTheBoundaryMoveFirstClickHouse_FailurePath(t *
 	const revisionsTable = "ptah_derived_rollback_revisions"
 	const userTable = "ptah_derived_rollback_two"
 	dropTables := func() {
-		for _, table := range []string{revisionsTable, revisionsTable + "_log", userTable} {
+		for _, table := range append(revisiontable.Configured("", revisionsTable), userTable) {
 			dropNoTransactionClickHouseTable(c, conn, table)
 		}
 	}

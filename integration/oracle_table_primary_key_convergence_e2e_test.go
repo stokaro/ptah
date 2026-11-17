@@ -141,7 +141,8 @@ func oraclePrimaryKeyColumns(schema *catalog.Database, table string) []string {
 }
 
 // dropOracleTable removes what this test creates, and says nothing when there
-// is nothing to remove.
+// is nothing to remove. PURGE skips the recycle bin, which keeps a dropped
+// table's identity sequence in the schema until the bin is emptied.
 func dropOracleTable(ctx context.Context, conn *dbschema.DatabaseConnection, table string) {
-	_ = conn.SchemaWriter().ExecuteSQL(ctx, "DROP TABLE "+table+" CASCADE CONSTRAINTS")
+	_ = conn.SchemaWriter().ExecuteSQL(ctx, "DROP TABLE "+table+" CASCADE CONSTRAINTS PURGE")
 }

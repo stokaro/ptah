@@ -587,6 +587,14 @@ pull request for that line.
   verify`) proves from the shards' reports that their union is the listing,
   above a floor, with every test run once and none skipped or failed. Nothing
   else selects integration tests: no build tag, package or name pattern.
+- **A test removes what it creates in a shared database**, a revision table's
+  companions included (`revisiontable.Configured`, plus
+  `revisiontable.ApplyLog` for `schema apply`). A shard runs part of the
+  contour, and the timings move the partition, so a leftover turns a different
+  test red on each run, far from the test that left it. `Configured` also
+  names `ptah_migration_tags`, which every revision table shares. Dropping it
+  after a test is safe only because the contour runs one test at a time
+  (`-p=1`, and no `t.Parallel` in a package that migrates).
 - **A live test asks for an engine, never for a variable**: `dbtarget.URL(c,
   dbtarget.PostgreSQL)` for the address ptah connects with,
   `dbtarget.DriverDSN(c, dbtarget.MySQL)` for a raw driver. They differ:

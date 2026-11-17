@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -121,11 +122,10 @@ func sqlServerTableCount(c *qt.C, conn *dbschema.DatabaseConnection, name string
 func dropSQLServerTxModeAllFixture(c *qt.C, conn *dbschema.DatabaseConnection) {
 	c.Helper()
 	ctx := context.Background()
-	for _, statement := range []string{
+	for _, statement := range append([]string{
 		"DROP TABLE IF EXISTS ptah_mssql_txall_first",
 		"DROP TABLE IF EXISTS ptah_mssql_txall_second",
-		"DROP TABLE IF EXISTS schema_migrations",
-	} {
+	}, dropRevisionTableStatements(revisiontable.Ptah)...) {
 		_, _ = conn.ExecContext(ctx, statement)
 	}
 }

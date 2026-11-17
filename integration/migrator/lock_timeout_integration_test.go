@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -24,14 +25,10 @@ func TestMigrateUp_PostgresLockTimeoutIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
 
-	_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS schema_migrations")
-	_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_lock_timeout_items")
+	dropLockTimeoutFixture(ctx, conn)
 	_, err = conn.ExecContext(ctx, "CREATE TABLE ptah_lock_timeout_items (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
-	defer func() {
-		_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS schema_migrations")
-		_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_lock_timeout_items")
-	}()
+	defer dropLockTimeoutFixture(ctx, conn)
 
 	lockDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -63,4 +60,14 @@ func TestMigrateUp_PostgresLockTimeoutIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "lock timeout")
 	c.Assert(elapsed < 2*time.Second, qt.IsTrue, qt.Commentf("migration took %s", elapsed))
+}
+
+// dropLockTimeoutFixture drops the items table and the default revision table
+// with every table the migrator keeps beside it. A table that is not there is
+// the state this wants, so the error is not read.
+func dropLockTimeoutFixture(ctx context.Context, conn *dbschema.DatabaseConnection) {
+	for _, statement := range append(dropRevisionTableStatements(revisiontable.Ptah),
+		"DROP TABLE IF EXISTS ptah_lock_timeout_items") {
+		_, _ = conn.ExecContext(ctx, statement)
+	}
 }

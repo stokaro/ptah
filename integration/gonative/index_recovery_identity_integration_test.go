@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -571,28 +572,23 @@ func openIndexRecoveryIdentityDB(c *qt.C, dsn string) *sql.DB {
 func seedIndexRecoveryIdentityPublicTables(c *qt.C, db *sql.DB) {
 	c.Helper()
 	cleanup := func() {
-		_, err := db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTable + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityLegacy + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec(`DROP TABLE IF EXISTS "` + indexRecoveryIdentityName + `" CASCADE`)
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTrackerA + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTrackerB + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTrackerE + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTrackerF + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTrackerG + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTrackerH + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTrackerI + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTrackerJ + " CASCADE")
-		c.Check(err, qt.IsNil)
+		tables := []string{indexRecoveryIdentityTable, indexRecoveryIdentityLegacy, `"` + indexRecoveryIdentityName + `"`}
+		for _, tracker := range []string{
+			indexRecoveryIdentityTrackerA,
+			indexRecoveryIdentityTrackerB,
+			indexRecoveryIdentityTrackerE,
+			indexRecoveryIdentityTrackerF,
+			indexRecoveryIdentityTrackerG,
+			indexRecoveryIdentityTrackerH,
+			indexRecoveryIdentityTrackerI,
+			indexRecoveryIdentityTrackerJ,
+		} {
+			tables = append(tables, revisiontable.Configured("", tracker)...)
+		}
+		for _, table := range tables {
+			_, err := db.Exec("DROP TABLE IF EXISTS " + table + " CASCADE")
+			c.Check(err, qt.IsNil)
+		}
 	}
 	cleanup()
 	c.Cleanup(cleanup)
@@ -610,15 +606,19 @@ func seedIndexRecoveryIdentitySearchPathSchemas(c *qt.C, db *sql.DB, tracker str
 		c.Check(err, qt.IsNil)
 		_, err = db.Exec("DROP SCHEMA IF EXISTS " + indexRecoveryIdentityPathB + " CASCADE")
 		c.Check(err, qt.IsNil)
-		_, err = db.Exec(`DROP TABLE IF EXISTS "` + tracker + `"`)
-		c.Check(err, qt.IsNil)
+		for _, table := range revisiontable.Configured("", tracker) {
+			_, err = db.Exec(`DROP TABLE IF EXISTS "` + table + `"`)
+			c.Check(err, qt.IsNil)
+		}
 	})
 	_, err := db.Exec("DROP SCHEMA IF EXISTS " + indexRecoveryIdentityPathA + " CASCADE")
 	c.Assert(err, qt.IsNil)
 	_, err = db.Exec("DROP SCHEMA IF EXISTS " + indexRecoveryIdentityPathB + " CASCADE")
 	c.Assert(err, qt.IsNil)
-	_, err = db.Exec(`DROP TABLE IF EXISTS "` + tracker + `"`)
-	c.Assert(err, qt.IsNil)
+	for _, table := range revisiontable.Configured("", tracker) {
+		_, err = db.Exec(`DROP TABLE IF EXISTS "` + table + `"`)
+		c.Assert(err, qt.IsNil)
+	}
 	_, err = db.Exec("CREATE SCHEMA " + indexRecoveryIdentityPathA)
 	c.Assert(err, qt.IsNil)
 	_, err = db.Exec("CREATE SCHEMA " + indexRecoveryIdentityPathB)

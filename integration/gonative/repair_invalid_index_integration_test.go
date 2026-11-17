@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -591,16 +592,19 @@ func openRepairInvalidIndexDB(c *qt.C, dsn string) *sql.DB {
 func seedRepairInvalidIndexTable(c *qt.C, db *sql.DB, emailExpr string) {
 	c.Helper()
 	cleanup := func() {
-		_, err := db.Exec("DROP TABLE IF EXISTS " + repairInvalidIndexTable + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + repairInvalidIndexTracker + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + repairInvalidIndexDropTracker + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + repairInvalidIndexTxTracker + " CASCADE")
-		c.Check(err, qt.IsNil)
-		_, err = db.Exec("DROP TABLE IF EXISTS " + repairInvalidIndexResumeTracker + " CASCADE")
-		c.Check(err, qt.IsNil)
+		tables := []string{repairInvalidIndexTable}
+		for _, tracker := range []string{
+			repairInvalidIndexTracker,
+			repairInvalidIndexDropTracker,
+			repairInvalidIndexTxTracker,
+			repairInvalidIndexResumeTracker,
+		} {
+			tables = append(tables, revisiontable.Configured("", tracker)...)
+		}
+		for _, table := range tables {
+			_, err := db.Exec("DROP TABLE IF EXISTS " + table + " CASCADE")
+			c.Check(err, qt.IsNil)
+		}
 	}
 	cleanup()
 	c.Cleanup(cleanup)
@@ -624,8 +628,10 @@ func seedRepairInvalidIndexSchemaTable(c *qt.C, db *sql.DB) {
 	cleanup := func() {
 		_, err := db.Exec(`DROP SCHEMA IF EXISTS "` + repairInvalidIndexSchema + `" CASCADE`)
 		c.Check(err, qt.IsNil)
-		_, err = db.Exec(`DROP TABLE IF EXISTS "` + repairInvalidIndexSchemaTracker + `" CASCADE`)
-		c.Check(err, qt.IsNil)
+		for _, table := range revisiontable.Configured("", repairInvalidIndexSchemaTracker) {
+			_, err = db.Exec(`DROP TABLE IF EXISTS "` + table + `" CASCADE`)
+			c.Check(err, qt.IsNil)
+		}
 	}
 	cleanup()
 	c.Cleanup(cleanup)

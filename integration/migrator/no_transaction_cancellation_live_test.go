@@ -48,7 +48,9 @@ func TestNoTransactionCancellationDuringExecPreservesUnknownOutcome(t *testing.T
 	c.Assert(m.Initialize(ctx), qt.IsNil)
 	defer func() {
 		_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+itemsTable)
-		_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+migrationsTable)
+		for _, statement := range dropRevisionTableStatements(migrationsTable) {
+			_, _ = conn.ExecContext(context.Background(), statement)
+		}
 	}()
 
 	go func() {

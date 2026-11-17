@@ -574,6 +574,39 @@ func TestRun_FailurePathRefusesToShardABenchmark(t *testing.T) {
 // whose TestMain prints a test-shaped line while go test lists its tests. The
 // listing then names a test no source file declares, and the run refuses to
 // partition it rather than hand a shard a test that does not exist.
+// TestRun_FailurePathRefusesATestItWasNotGiven runs the whole contour, where
+// the declared test functions are the only account of what should run. The
+// fixture's example runs as a test and is declared nowhere.
+func TestRun_FailurePathRefusesATestItWasNotGiven(t *testing.T) {
+	c := qt.New(t)
+	var stdout bytes.Buffer
+	err := testcontour.Run(context.Background(), testcontour.Config{
+		Package: "./testdata/unlisted",
+		Tags:    []string{"testcontour_fixture"},
+		Timeout: time.Minute,
+		Stdout:  &stdout,
+	})
+	c.Assert(err, qt.ErrorMatches, `test contour \./testdata/unlisted ran tests it was not given: `+
+		`ptah\.run/internal/testcontour/testdata/unlisted:Example`)
+	c.Assert(stdout.String(), qt.Contains, "--- PASS: Example")
+}
+
+// TestRun_FailurePathRefusesAShardWhoseListingNamesAnExample is the sharded
+// half: the listing names the example, so the shard is refused before any test
+// runs.
+func TestRun_FailurePathRefusesAShardWhoseListingNamesAnExample(t *testing.T) {
+	c := qt.New(t)
+	err := testcontour.Run(context.Background(), testcontour.Config{
+		Package: "./testdata/unlisted",
+		Tags:    []string{"testcontour_fixture"},
+		Timeout: time.Minute,
+		Shard:   1,
+		Shards:  1,
+	})
+	c.Assert(err, qt.ErrorMatches, `test contour \./testdata/unlisted runs tests only, and lists `+
+		`ptah\.run/internal/testcontour/testdata/unlisted:Example`)
+}
+
 func TestRun_FailurePathRefusesAListingTheSourceDoesNotDeclare(t *testing.T) {
 	c := qt.New(t)
 	err := testcontour.Run(context.Background(), testcontour.Config{

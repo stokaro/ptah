@@ -15,6 +15,7 @@ import (
 
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -62,12 +63,16 @@ func TestSQLServerMigratorHonorsURLSchemaForMetadata(t *testing.T) {
 func cleanupSQLServerMigratorSchema(t *testing.T, conn *dbschema.DatabaseConnection, schemaName string) {
 	t.Helper()
 
-	for _, statement := range []string{
-		"DROP TABLE IF EXISTS " + quoteSQLServerIdentifier(schemaName) + ".[ptah_issue_149_items]",
-		"DROP TABLE IF EXISTS " + quoteSQLServerIdentifier(schemaName) + ".[schema_migrations_issue_149]",
-		"DROP TABLE IF EXISTS [dbo].[schema_migrations_issue_149]",
-		"DROP SCHEMA IF EXISTS " + quoteSQLServerIdentifier(schemaName),
-	} {
+	statements := []string{"DROP TABLE IF EXISTS " + quoteSQLServerIdentifier(schemaName) + ".[ptah_issue_149_items]"}
+	// The schema cannot be dropped while the operation log is still in it.
+	for _, name := range revisiontable.Configured("", "schema_migrations_issue_149") {
+		statements = append(statements,
+			"DROP TABLE IF EXISTS "+quoteSQLServerIdentifier(schemaName)+"."+quoteSQLServerIdentifier(name),
+			"DROP TABLE IF EXISTS [dbo]."+quoteSQLServerIdentifier(name),
+		)
+	}
+	statements = append(statements, "DROP SCHEMA IF EXISTS "+quoteSQLServerIdentifier(schemaName))
+	for _, statement := range statements {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
 }

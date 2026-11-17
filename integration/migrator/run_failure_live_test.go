@@ -85,7 +85,9 @@ func TestRunResultCarriesTheServerCodeLive(t *testing.T) {
 			createdTable := fmt.Sprintf("ptah_run_failure_%d", suffix)
 			defer func() {
 				_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+createdTable)
-				_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+migrationsTable)
+				for _, statement := range dropRevisionTableStatements(migrationsTable) {
+					_, _ = conn.ExecContext(context.Background(), statement)
+				}
 			}()
 
 			// The literal is what the run document must not repeat: the

@@ -79,6 +79,10 @@ jobs:
   # whole listing keeps a skipped or dropped test from reading as green.
   plan:
     name: plan the contour
+    needs: [scope]
+    # Skipped with the contour it plans, so a pull request the contour cannot
+    # affect shows no planning job that could go red.
+    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -127,7 +131,11 @@ jobs:
           echo "contour legs: $legs"
 
   contour:
-    name: ${{ matrix.kind == 'smoke' && 'smoke suites' || format('contour shard {0} of {1}', matrix.shard, matrix.shards) }}
+    # The name is fixed rather than built from the matrix: a skipped job is
+    # never expanded, and its check would show the expression itself. GitHub
+    # adds each leg's matrix values to the name, as in "integration leg
+    # (contour, 3, 8)" and "integration leg (smoke)".
+    name: integration leg
     needs: [scope, plan]
     # Skipped rather than absent: the check is still listed on the
     # pull request, and the scope job above says why it was skipped.
@@ -138,6 +146,12 @@ jobs:
     # it, and the limits here are sized for that slower run. A hung test fails
     # its package at the contour's --timeout, which sits below this limit, so a
     # hang ends with the package's goroutine dump rather than a canceled job.
+    # Measured on the race run 44080683951: the race detector adds about 13% to
+    # the contour's test binaries, its largest one (providercli) ran 22 minutes
+    # against the 40-minute --timeout, and the parts balanced on the timings of
+    # a run without it come to at most 21 minutes of tests, beside 7 to 9
+    # minutes of setup and listing. Balanced by test count, its slowest leg
+    # took 39 minutes.
     timeout-minutes: 60
     strategy:
       # Every leg runs to its end. A shard canceled because another failed
@@ -324,20 +338,6 @@ jobs:
           - 8124:8123
           - 9001:9000
 
-      sqlserver:
-        image: mcr.microsoft.com/mssql/server:2025-latest
-        env:
-          ACCEPT_EULA: "Y"
-          MSSQL_PID: "Developer"
-          MSSQL_SA_PASSWORD: "P@ssw0rd-ptah-2026"
-        options: >-
-          --health-cmd "sqlcmd=/opt/mssql-tools18/bin/sqlcmd; if [ ! -x $sqlcmd ]; then sqlcmd=/opt/mssql-tools/bin/sqlcmd; fi; $sqlcmd -S localhost -U sa -P \"$MSSQL_SA_PASSWORD\" -No -Q \"SELECT 1\""
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 18
-        ports:
-          - 1433:1433
-
       # Oracle, which the tagged contour needs because internal/testcontour
       # refuses a skipped integration test: a test in ./integration/... either
       # runs here or does not belong there. gvenzl/oracle-free:slim is the
@@ -383,6 +383,62 @@ jobs:
 
       - name: Install dependencies
         run: go mod download
+
+      # SQL Server starts from a step rather than as a job service, because
+      # its container sometimes crashes while it starts: a fatal error in
+      # sqlpal (Reason 0x00000002 or 0x00000006) on 23 of the 611 runs of
+      # this workflow that completed from 2026-10-20 to 2026-11-17, and no
+      # other service failed to start in them. A job service that does not
+      # start fails the job before its first step, and every leg starts one,
+      # so nine legs lose about three runs in ten. Here a crash costs another
+      # attempt. Readiness is a login through the published port: sqlcmd in
+      # the container connects to the host's port 1433 by the bridge gateway,
+      # so the port mapping and the server are measured together. A running
+      # container, or a port the proxy already accepts, is not yet a server
+      # that answers. The deadline includes the image pull, so an attempt
+      # starts only while a minute of it is left.
+      - name: Start SQL Server
+        run: |
+          password='P@ssw0rd-ptah-2026'
+          deadline=$((SECONDS + 600))
+          for attempt in 1 2 3; do
+            if [ "$((deadline - SECONDS))" -lt 60 ]; then
+              echo "attempt $attempt: less than a minute of the deadline is left"
+              break
+            fi
+            docker rm --force ptah-sqlserver >/dev/null 2>&1 || true
+            # renovate: datasource=docker depName=mcr.microsoft.com/mssql/server
+            docker run --detach --name ptah-sqlserver \
+              --publish 1433:1433 \
+              --env ACCEPT_EULA=Y \
+              --env MSSQL_PID=Developer \
+              --env "MSSQL_SA_PASSWORD=$password" \
+              mcr.microsoft.com/mssql/server:2025-latest >/dev/null || {
+              echo "attempt $attempt: the container did not start"
+              continue
+            }
+            attempt_deadline=$((SECONDS + 180))
+            while [ "$SECONDS" -lt "$attempt_deadline" ] && [ "$SECONDS" -lt "$deadline" ]; do
+              if [ "$(docker inspect --format '{{.State.Running}}' ptah-sqlserver)" != true ]; then
+                echo "attempt $attempt: the container exited"
+                break
+              fi
+              gateway=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' ptah-sqlserver)
+              if docker exec ptah-sqlserver sh -c \
+                'sqlcmd=/opt/mssql-tools18/bin/sqlcmd; [ -x "$sqlcmd" ] || sqlcmd=/opt/mssql-tools/bin/sqlcmd; exec "$sqlcmd" "$@"' \
+                sh -S "$gateway,1433" -U sa -P "$password" -No -l 5 -Q 'SELECT 1' >/dev/null 2>&1
+              then
+                echo "SQL Server answers a login on port 1433, attempt $attempt"
+                exit 0
+              fi
+              sleep 3
+            done
+            echo "::group::SQL Server log, attempt $attempt"
+            docker logs ptah-sqlserver 2>&1 || true
+            echo "::endgroup::"
+          done
+          echo "::error::SQL Server did not answer a login on port 1433 within three attempts and ten minutes"
+          exit 1
 
       - name: Start distributed SQL databases
         run: |
@@ -542,6 +598,7 @@ jobs:
           done
 
       - name: Install Graphviz
+        if: matrix.kind == 'contour'
         # Measured: this step hung for 4h08m on 2026-08-19, retrying
         # azure.archive.ubuntu.com forever, on master and two branches at
         # once. apt has no business taking ten minutes, and the job ceiling
@@ -552,6 +609,7 @@ jobs:
           sudo apt-get install --yes graphviz
 
       - name: Create Atlas oracle development databases
+        if: matrix.kind == 'contour'
         run: |
           PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
             -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_oracle_dev'
@@ -571,6 +629,7 @@ jobs:
       # to the file and the pooler reloads it. The last line proves the alias
       # reaches ptah_aliased before any test relies on it.
       - name: Serve a PostgreSQL database under a second name
+        if: matrix.kind == 'contour'
         run: |
           PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
             -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_aliased'
@@ -598,12 +657,14 @@ jobs:
       # than trusted. Measured: a matching stamp beside a corrupted binary
       # rebuilds.
       - name: Cache the pinned Atlas CE reference
+        if: matrix.kind == 'contour'
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ptah-atlas-ce
           key: atlas-ce-${{ runner.os }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('scripts/atlas-ce-reference.lock', 'scripts/build-atlas-ce-reference.sh', 'scripts/lib/atlas-ce-reference.sh') }}
 
       - name: Build pinned Atlas CE reference
+        if: matrix.kind == 'contour'
         run: scripts/build-atlas-ce-reference.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
 
       - name: Download the contour timings
@@ -721,68 +782,6 @@ jobs:
           overwrite: true
           if-no-files-found: ignore
 
-      - name: SCRATCH list what the contour left in the shared databases
-        if: ${{ !cancelled() && matrix.kind == 'contour' }}
-        env:
-          PGPASSWORD: ptah_password
-          SQLSERVER_ID: ${{ job.services.sqlserver.id }}
-          ORACLE_ID: ${{ job.services.oracle.id }}
-        run: |
-          section() { echo "== LEFTOVER $1"; }
-          pg_tables="select table_catalog||'.'||table_schema||'.'||table_name from information_schema.tables where table_schema not in ('pg_catalog','information_schema') and table_schema not like '\_timescaledb%' and table_schema not like 'timescaledb\_%' order by 1"
-          for db in ptah_test ptah_aliased ptah_oracle_dev ptah_oracle_realmdev; do
-            section "postgres $db tables"
-            psql -h localhost -p 5432 -U ptah_user -d "$db" -Atc "$pg_tables" || echo "query failed"
-          done
-          section "postgres databases"
-          psql -h localhost -p 5432 -U ptah_user -d postgres -Atc "select datname from pg_database where not datistemplate order by 1" || echo "query failed"
-          section "postgres roles"
-          psql -h localhost -p 5432 -U ptah_user -d postgres -Atc "select rolname from pg_roles where rolname !~ '^pg_' order by 1" || echo "query failed"
-          section "timescaledb ptah_test tables"
-          psql -h localhost -p 5435 -U ptah_user -d ptah_test -Atc "$pg_tables" || echo "query failed"
-          section "timescaledb databases"
-          psql -h localhost -p 5435 -U ptah_user -d postgres -Atc "select datname from pg_database where not datistemplate order by 1" || echo "query failed"
-          my_tables="select concat(table_schema,'.',table_name) from information_schema.tables where table_schema not in ('mysql','information_schema','performance_schema','sys') order by 1"
-          my_users="select concat(user,'@',host) from mysql.user where user not in ('root','mysql.sys','mysql.session','mysql.infoschema','mariadb.sys','healthcheck','ptah_user','') order by 1"
-          for port in 3306 3307 3316 3317; do
-            section "mysql-family $port tables"
-            mysql -h 127.0.0.1 -P "$port" -uroot -proot_password -N -e "$my_tables" 2>&1 || echo "query failed"
-            section "mysql-family $port users"
-            mysql -h 127.0.0.1 -P "$port" -uroot -proot_password -N -e "$my_users" 2>&1 || echo "query failed"
-          done
-          for port in 8123 8124; do
-            section "clickhouse $port tables"
-            curl -sS "http://127.0.0.1:$port/" --user ptah_user:ptah_password --data-binary "SELECT database || '.' || name FROM system.tables WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') ORDER BY 1" || echo "query failed"
-            section "clickhouse $port users and roles"
-            curl -sS "http://127.0.0.1:$port/" --user ptah_user:ptah_password --data-binary "SELECT 'user ' || name FROM system.users WHERE name NOT IN ('default', 'ptah_user') UNION ALL SELECT 'role ' || name FROM system.roles ORDER BY 1" || echo "query failed"
-          done
-          section "sqlserver databases and master tables"
-          docker exec "$SQLSERVER_ID" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'P@ssw0rd-ptah-2026' -No -h -1 -W \
-            -Q "SET NOCOUNT ON; SELECT 'database ' + name FROM sys.databases WHERE database_id > 4; SELECT 'table ' + s.name + '.' + t.name FROM master.sys.tables t JOIN master.sys.schemas s ON s.schema_id = t.schema_id WHERE t.is_ms_shipped = 0; SELECT 'login ' + name FROM sys.server_principals WHERE type IN ('S', 'U') AND name NOT LIKE '##%' AND name NOT IN ('sa', 'NT AUTHORITY\SYSTEM')" || echo "query failed"
-          section "cockroachdb tables and databases"
-          docker exec ptah-cockroachdb /cockroach/cockroach sql --insecure --host=127.0.0.1:26257 --format=tsv \
-            -e "select table_catalog||'.'||table_schema||'.'||table_name from defaultdb.information_schema.tables where table_schema not in ('pg_catalog','information_schema','crdb_internal','pg_extension') order by 1" \
-            -e "select database_name from [show databases] order by 1" \
-            -e "select username from [show roles] order by 1" || echo "query failed"
-          section "yugabytedb tables, databases and roles"
-          docker exec -i ptah-yugabytedb bash -lc 'ip=$(hostname -i); ip=${ip%% *}; exec bin/ysqlsh -h "$ip" -p 5433 -U yugabyte -d yugabyte -At' <<'SQL' || echo "query failed"
-          select 'table ' || table_schema || '.' || table_name from information_schema.tables where table_schema not in ('pg_catalog', 'information_schema') order by 1;
-          select 'database ' || datname from pg_database where not datistemplate order by 1;
-          select 'role ' || rolname from pg_roles where rolname !~ '^(pg_|yb_)' order by 1;
-          SQL
-          section "oracle ptah objects"
-          docker exec -i "$ORACLE_ID" sqlplus -s ptah/ptah_password@localhost/FREEPDB1 <<'SQL' || echo "query failed"
-          set heading off feedback off pagesize 0 linesize 200
-          select object_type || ' ' || object_name from user_objects where object_name not like 'SYS\_%' escape '\' order by 1;
-          exit
-          SQL
-          section "oracle users"
-          docker exec -i "$ORACLE_ID" sqlplus -s system/ptah_password@localhost/FREEPDB1 <<'SQL' || echo "query failed"
-          set heading off feedback off pagesize 0 linesize 200
-          select username from all_users where oracle_maintained = 'N' order by 1;
-          exit
-          SQL
-
       - name: Build integration test binary
         if: matrix.kind == 'smoke'
         run: |
@@ -871,8 +870,10 @@ jobs:
 
       # The union of the shards' tests must equal the listing they partitioned,
       # each test must have run once, on its shard, and none may have skipped
-      # or failed. The floor sits below the 3,472 tests listed when it was set
-      # and far above zero, so a listing that stopped matching cannot pass.
+      # or failed. The floor is far above zero and below what the contour
+      # lists: it exists so that a listing that stopped matching most of the
+      # tests cannot pass, and it moves by hand when the contour shrinks below
+      # it.
       - name: Prove the shards ran the contour exactly once
         run: |
           go run ./internal/cmd/testcontour verify \
@@ -883,19 +884,30 @@ jobs:
             --summary "$GITHUB_STEP_SUMMARY"
 
       # The measurement balances the next run's shards; the plan job reads it
-      # from the newest master run that kept it.
+      # from the newest master run that kept it. Only a contour that passed
+      # keeps one: verify writes no timings for a refused contour, and this
+      # step runs only after verify passed. A refused run measures whatever
+      # went wrong, such as tests that failed in milliseconds against a
+      # database that never started, and balancing on that overloads a shard.
       - name: Keep the measured timings
-        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: integration-timings
           path: ${{ runner.temp }}/integration-timings/timings.json
           retention-days: 30
           overwrite: true
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       # A leg can fail without a test failing: a database that never came up,
       # or a smoke suite. The verdict covers those too.
+      #
+      # This step is required beside verify, not a second opinion on it. A
+      # re-run reads every artifact the run holds, and a shard re-run that
+      # dies before its upload leaves the report of its earlier attempt in
+      # place, which verify judges like any other. Refusing a report from an
+      # earlier attempt would not close it: the shards a partial re-run leaves
+      # alone send theirs from that earlier attempt too, and they are right.
+      # Only the legs' own results say which attempt each leg's report is.
       - name: Require every leg to have succeeded
         if: ${{ !cancelled() }}
         env:

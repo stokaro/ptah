@@ -35,7 +35,8 @@ func TestOracleSetRevisionMovesTheBoundaryLive(t *testing.T) {
 			c := qt.New(t)
 			ctx := context.Background()
 			conn := connectOracle3298(c)
-			dropOracle3298Tables(c, conn, "ptah_3298_widgets", "ptah_3298_gadgets", `"`+test.table+`"`)
+			dropOracle3298Tables(c, conn, append([]string{"ptah_3298_widgets", "ptah_3298_gadgets"},
+				oracleRevisionTables("", test.table)...)...)
 			mig := newOracle3298Migrator(c, conn, oracle3298Migrations(), test.format, test.table)
 			c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 
@@ -60,7 +61,8 @@ func TestOracleSetRevisionToZeroClearsTheHistoryLive(t *testing.T) {
 	ctx := context.Background()
 	conn := connectOracle3298(c)
 	const table = "ptah_3462_zero_revisions"
-	dropOracle3298Tables(c, conn, "ptah_3298_widgets", "ptah_3298_gadgets", `"`+table+`"`)
+	dropOracle3298Tables(c, conn, append([]string{"ptah_3298_widgets", "ptah_3298_gadgets"},
+		oracleRevisionTables("", table)...)...)
 	mig := newOracle3298Migrator(c, conn, oracle3298Migrations(), migrator.RevisionTableFormatPtah, table)
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 

@@ -43,7 +43,9 @@ func newSearchPathRun(c *qt.C) *searchPathRun {
 	c.Cleanup(func() {
 		_, _ = conn.ExecContext(context.WithoutCancel(ctx), "DROP SCHEMA IF EXISTS rs_"+suffix+" CASCADE")
 		_, _ = conn.ExecContext(context.WithoutCancel(ctx), "DROP TABLE IF EXISTS rs_t3_"+suffix)
-		_, _ = conn.ExecContext(context.WithoutCancel(ctx), "DROP TABLE IF EXISTS "+run.table)
+		for _, statement := range dropRevisionTableStatements(run.table) {
+			_, _ = conn.ExecContext(context.WithoutCancel(ctx), statement)
+		}
 		dbschema.CloseAndWarn(conn)
 	})
 	run.fsys = fstest.MapFS{

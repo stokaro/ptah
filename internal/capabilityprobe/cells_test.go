@@ -261,8 +261,8 @@ var imageLine = regexp.MustCompile(`(?m)^\s*image:\s*["']?([^"'\s#]+)`)
 
 // dockerRun matches a `docker run` invocation and captures its arguments. The
 // capture runs to the end of the shell command rather than to the end of the
-// line, because the workflow's two invocations span four and three lines and
-// every continued line ends in a backslash.
+// line, because the workflow's invocations span several lines and every
+// continued line ends in a backslash.
 //
 // A YAML `image:` key is not the only way this repository starts a database,
 // and the difference was measured rather than imagined: the integration
@@ -404,7 +404,11 @@ func TestDockerRun_FindsTheDatabasesTheWorkflowStartsByHand(t *testing.T) {
 		repository, _ := splitImageRef(ref)
 		repositories = append(repositories, repository)
 	}
-	c.Assert(repositories, qt.ContentEquals, []string{"cockroachdb/cockroach", "yugabytedb/yugabyte"})
+	c.Assert(repositories, qt.ContentEquals, []string{
+		"cockroachdb/cockroach",
+		"mcr.microsoft.com/mssql/server",
+		"yugabytedb/yugabyte",
+	})
 }
 
 // readPinnedImages returns every image reference the two files start, sorted
@@ -744,7 +748,8 @@ func exercisedLines(c *qt.C) map[string]bool {
 // suiteStartedCells returns the cells whose line the integration workflow
 // starts a server for, whether it declares the container as a job service or
 // starts it from a step with `docker run`. Both count: the job runs against
-// either one, and CockroachDB and YugabyteDB are only reachable the second way.
+// either one, and CockroachDB, YugabyteDB and SQL Server are only reachable
+// the second way.
 func suiteStartedCells(c *qt.C) []capabilityprobe.Cell {
 	c.Helper()
 
