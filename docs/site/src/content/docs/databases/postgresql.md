@@ -1551,11 +1551,28 @@ The statements of the plan before an `OWNER TO` change the answer:
   the two grants name different grantors with `GRANTED BY`, where the server
   would accept the plan.
 - A `REVOKE` of a role, whichever option it names, and a `DROP ROLE` of it stop
-  every earlier grant of that role from counting. After either, no chain
-  through the memberships the server holds counts.
+  every earlier grant of that role from counting. One `REVOKE` or `DROP ROLE`
+  anywhere before the `OWNER TO` also stops every chain through the memberships
+  the server holds from counting, for the whole plan. `REVOKE ADMIN OPTION FOR`
+  and `REVOKE INHERIT OPTION FOR` leave `SET` in place, so a plan that holds
+  one can be refused where the server would accept it.
+- `ALTER ROLE ... RENAME TO` removes the old name: an `OWNER TO` that names it
+  afterward is refused as naming a role the server does not hold. The new name
+  counts as a role the plan creates.
+- A plan that holds a statement Ptah does not read for its effect on roles
+  counts none of its grants. Such statements include `DO`, `CALL`, `SELECT` and
+  other statements that may call a function, `ALTER ROLE` other than a rename,
+  `DROP OWNED`, `REASSIGN OWNED`, `SET ROLE`, `RESET ROLE`,
+  `SET SESSION AUTHORIZATION` and `CREATE EXTENSION`. Schema statements on
+  tables, views, indexes, schemas, sequences, types, routines, triggers and
+  policies, `COMMENT` and other `SET` statements are read as leaving
+  memberships alone. A function such a statement evaluates as it runs, such as
+  a column default, is not read.
 - A grant of a role the server does not hold gains nothing. A `GRANT` the
   server itself refuses, such as one by a role without `ADMIN` on the role, is
-  left to the server, which refuses it as it runs.
+  left to the server, which refuses it as it runs. So is a statement that takes
+  away a membership the server holds now, such as a `REVOKE` inside a `DO`
+  block.
 
 The `CREATE` question is asked about a view the server holds. For a new view
 the server answers as the statement runs: PostgreSQL refuses it with SQLSTATE

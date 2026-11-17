@@ -53,10 +53,14 @@ func TestReadRoleStatements_HappyPath(t *testing.T) {
 			want: []objectowner.RoleStatement{{Text: "REVOKE SET OPTION FOR r FROM app", Grants: []objectowner.Membership{{Role: "r", Member: "app", Revoked: true}}}}},
 		{name: "a REVOKE of privileges", dialect: "postgres", text: "REVOKE SELECT ON docs FROM app", want: []objectowner.RoleStatement{{Text: "REVOKE SELECT ON docs FROM app"}}},
 		{name: "DROP ROLE IF EXISTS", dialect: "postgres", text: `DROP ROLE IF EXISTS a, "B"`,
-			want: []objectowner.RoleStatement{{Text: `DROP ROLE IF EXISTS a, "B"`, Grants: []objectowner.Membership{{Role: "a", Revoked: true}, {Role: "B", Revoked: true}}}}},
+			want: []objectowner.RoleStatement{{Text: `DROP ROLE IF EXISTS a, "B"`, Grants: []objectowner.Membership{{Role: "a", Revoked: true}, {Role: "B", Revoked: true}}, Removes: []string{"a", "B"}}}},
 		{name: "DROP USER", dialect: "cockroachdb", text: "DROP USER Reporting",
-			want: []objectowner.RoleStatement{{Text: "DROP USER Reporting", Grants: []objectowner.Membership{{Role: "reporting", Revoked: true}}}}},
-		{name: "statements in order", dialect: "postgres", text: "CREATE USER x; -- note\nGRANT x TO app; ALTER VIEW v OWNER TO x",
+			want: []objectowner.RoleStatement{{Text: "DROP USER Reporting", Grants: []objectowner.Membership{{Role: "reporting", Revoked: true}}, Removes: []string{"reporting"}}}},
+		{name: "ALTER ROLE RENAME", dialect: "postgres", text: `ALTER ROLE o RENAME TO "X"`,
+			want: []objectowner.RoleStatement{{Text: `ALTER ROLE o RENAME TO "X"`, Creates: "X", Removes: []string{"o"}}}},
+		{name: "schema statements", dialect: "postgres", text: "CREATE TABLE t (id int); SET search_path TO app",
+			want: []objectowner.RoleStatement{{Text: "CREATE TABLE t (id int)"}, {Text: "SET search_path TO app"}}},
+		{name: "role statements in order", dialect: "postgres", text: "CREATE USER x; -- note\nGRANT x TO app; ALTER VIEW v OWNER TO x",
 			want: []objectowner.RoleStatement{
 				{Text: "CREATE USER x", Creates: "x"},
 				{Text: "GRANT x TO app", Grants: []objectowner.Membership{{Role: "x", Member: "app"}}},
@@ -68,6 +72,68 @@ func TestReadRoleStatements_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(objectowner.ReadRoleStatements(test.dialect, test.text), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestReadRoleStatements_Opaque pins the statements that may change role
+// memberships, or the role the session acts as, in a way the reader does not
+// read: a block or a routine call that may run a REVOKE, ALTER ROLE other than
+// RENAME, DROP OWNED and REASSIGN OWNED, the statements that set the session's
+// role, and a statement the reader does not recognize. The statements around
+// them that it knows leave memberships alone are not.
+func TestReadRoleStatements_Opaque(t *testing.T) {
+	for _, text := range []string{
+		"DO $$ BEGIN REVOKE o FROM app; END $$",
+		"CALL revoke_everything()",
+		"SELECT revoke_everything()",
+		"PERFORM revoke_everything()",
+		"EXECUTE revoke_plan",
+		"WITH x AS (SELECT 1) SELECT * FROM x",
+		"ALTER ROLE o NOINHERIT",
+		"ALTER USER app SET search_path TO app",
+		"ALTER GROUP g ADD USER app",
+		"DROP OWNED BY app",
+		"REASSIGN OWNED BY app TO admin",
+		"SET ROLE o",
+		"SET LOCAL ROLE o",
+		"SET SESSION ROLE o",
+		"RESET ROLE",
+		"RESET ALL",
+		"SET SESSION AUTHORIZATION o",
+		"CREATE EXTENSION pgcrypto",
+		"CREATE USER MAPPING FOR app SERVER s",
+		"INSERT INTO t VALUES (1)",
+	} {
+		t.Run(text, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(objectowner.ReadRoleStatements("postgres", text), qt.DeepEquals, []objectowner.RoleStatement{{Text: text, Opaque: true}})
+		})
+	}
+}
+
+// TestReadRoleStatements_LeavesMemberships pins the schema statements an
+// ordinary plan holds, which change no membership and are not opaque.
+func TestReadRoleStatements_LeavesMemberships(t *testing.T) {
+	for _, text := range []string{
+		"CREATE OR REPLACE VIEW v AS SELECT 1",
+		"CREATE UNIQUE INDEX i ON t (id)",
+		"CREATE TEMP TABLE t (id int)",
+		"CREATE MATERIALIZED VIEW m AS SELECT 1",
+		"CREATE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$",
+		"ALTER TABLE t ADD COLUMN body text",
+		"ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO app",
+		"DROP VIEW v",
+		"COMMENT ON TABLE t IS 'x'",
+		"SET lock_timeout = '5s'",
+		"SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE",
+		"RESET search_path",
+	} {
+		t.Run(text, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(objectowner.ReadRoleStatements("postgres", text), qt.DeepEquals, []objectowner.RoleStatement{{Text: text}})
 		})
 	}
 }

@@ -64,6 +64,8 @@ func TestRefuseOwnerTransfers_FailurePath(t *testing.T) {
 	}{
 		{name: "a grant after the statement", statements: []string{`ALTER VIEW "v" OWNER TO "rv_a"`, "GRANT rv_a TO app"}},
 		{name: "a revoke after the grant", statements: []string{"GRANT rv_a TO app", "REVOKE rv_a FROM app", `ALTER VIEW "v" OWNER TO "rv_a"`}},
+		{name: "a block after the grant", statements: []string{"GRANT rv_a TO app", "DO $$ BEGIN REVOKE rv_a FROM app; END $$", `ALTER VIEW "v" OWNER TO "rv_a"`}},
+		{name: "a block before the grant", statements: []string{"SET ROLE other", "GRANT rv_a TO app", `ALTER VIEW "v" OWNER TO "rv_a"`}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -74,6 +76,43 @@ func TestRefuseOwnerTransfers_FailurePath(t *testing.T) {
 			var refusal *OwnerTransferError
 			c.Assert(err, qt.ErrorAs, &refusal)
 			c.Assert(refusal.Role, qt.Equals, "rv_a")
+		})
+	}
+}
+
+// TestRefuseMissingRoles_HappyPath pins the roles an ownership statement may
+// name: one the server holds, one a statement before creates, and the new
+// name of a role a statement before renames.
+func TestRefuseMissingRoles_HappyPath(t *testing.T) {
+	for _, statements := range [][]string{
+		{`ALTER VIEW "v" OWNER TO "rv_a"`},
+		{"CREATE USER fresh", `ALTER VIEW "v" OWNER TO "fresh"`},
+		{"ALTER ROLE rv_a RENAME TO renamed", `ALTER VIEW "v" OWNER TO "renamed"`},
+		{"DROP ROLE rv_a", "CREATE ROLE rv_a", `ALTER VIEW "v" OWNER TO "rv_a"`},
+	} {
+		t.Run(statements[0], func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(refuseMissingRoles("postgres", []string{"rv_a"}, plannedOwners("postgres", statements)), qt.IsNil)
+		})
+	}
+}
+
+// TestRefuseMissingRoles_FailurePath pins that a role a statement before the
+// ownership statement renames or drops away is one the server will not hold.
+func TestRefuseMissingRoles_FailurePath(t *testing.T) {
+	for _, statements := range [][]string{
+		{"ALTER ROLE rv_a RENAME TO renamed", `ALTER VIEW "v" OWNER TO "rv_a"`},
+		{"DROP ROLE rv_a", `ALTER VIEW "v" OWNER TO "rv_a"`},
+		{"CREATE USER fresh", "ALTER ROLE fresh RENAME TO other", `ALTER VIEW "v" OWNER TO "fresh"`},
+	} {
+		t.Run(statements[0], func(t *testing.T) {
+			c := qt.New(t)
+
+			err := refuseMissingRoles("postgres", []string{"rv_a"}, plannedOwners("postgres", statements))
+
+			var refusal *MissingOwnerRoleError
+			c.Assert(err, qt.ErrorAs, &refusal)
 		})
 	}
 }

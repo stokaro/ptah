@@ -175,6 +175,12 @@ type plannedOwner struct {
 	statement, kind, name, role string
 	created                     []string
 	granted                     []objectowner.Membership
+	// removed is the roles the statements before it drop or rename away and
+	// none creates again, and opaque reports that one of them may change
+	// memberships in a way the reader does not read, so no grant counts; see
+	// [objectowner.RoleStatement].
+	removed []string
+	opaque  bool
 }
 
 // refuseMissingOwners refuses statements, about to run on conn, when one gives
@@ -200,12 +206,8 @@ func refuseMissingOwners(ctx context.Context, conn *dbschema.DatabaseConnection,
 		if err != nil {
 			return err
 		}
-		for _, owner := range owners {
-			exists := func(role string) bool { return objectowner.SameRole(dialect, role, owner.role) }
-			if slices.ContainsFunc(held, exists) || slices.ContainsFunc(owner.created, exists) {
-				continue
-			}
-			return &MissingOwnerRoleError{Statement: owner.statement, Kind: owner.kind, Role: owner.role}
+		if err := refuseMissingRoles(dialect, held, owners); err != nil {
+			return err
 		}
 	}
 	checker, ok := writer.(ownerTransferChecker)
@@ -215,6 +217,21 @@ func refuseMissingOwners(ctx context.Context, conn *dbschema.DatabaseConnection,
 	return refuseOwnerTransfers(ctx, dialect, checker, owners)
 }
 
+// refuseMissingRoles refuses the first of owners whose role the server will
+// not hold when the statement runs: a role neither the server holds, held, nor
+// a statement before it creates, or one a statement before it drops or
+// renames away.
+func refuseMissingRoles(dialect string, held []string, owners []plannedOwner) error {
+	for _, owner := range owners {
+		exists := func(role string) bool { return objectowner.SameRole(dialect, role, owner.role) }
+		if slices.ContainsFunc(owner.created, exists) || (slices.ContainsFunc(held, exists) && !slices.ContainsFunc(owner.removed, exists)) {
+			continue
+		}
+		return &MissingOwnerRoleError{Statement: owner.statement, Kind: owner.kind, Role: owner.role}
+	}
+	return nil
+}
+
 // refuseOwnerTransfers refuses the first of owners the server would refuse to
 // give its object to: a role the connection may not give an object to, or,
 // for an object the server holds and a connection the server does not exempt,
@@ -222,7 +239,8 @@ func refuseMissingOwners(ctx context.Context, conn *dbschema.DatabaseConnection,
 // server about the roles once, and about each object only where the answer
 // can refuse it. A role the connection may not give an object to now is not
 // refused where a GRANT before the statement gives the connection the
-// privilege on it; see [objectowner.Transfers.Gains]. The schema of an object the server does not hold yet is not
+// privilege on it, unless a statement before it is opaque; see
+// [objectowner.Transfers.Gains]. The schema of an object the server does not hold yet is not
 // asked about: the server refuses that owner as the statement runs, and the
 // plan rolls back with nothing the server held dropped.
 func refuseOwnerTransfers(ctx context.Context, dialect string, checker ownerTransferChecker, owners []plannedOwner) error {
@@ -237,7 +255,7 @@ func refuseOwnerTransfers(ctx context.Context, dialect string, checker ownerTran
 			continue
 		}
 		refused := answer.Refuses(dialect, owner.role)
-		if refused {
+		if refused && !owner.opaque {
 			gains, err := answer.Gains(dialect, owner.role, owner.created, owner.granted, heldBy)
 			if err != nil {
 				return err
@@ -270,8 +288,9 @@ func refuseOwnerTransfers(ctx context.Context, dialect string, checker ownerTran
 // server.
 func plannedOwners(dialect string, statements []string) []plannedOwner {
 	var owners []plannedOwner
-	var created []string
+	var created, removed []string
 	var granted []objectowner.Membership
+	opaque := false
 	for _, statement := range statements {
 		for _, role := range objectowner.ReadRoleStatements(dialect, statement) {
 			if strings.Contains(strings.ToUpper(role.Text), "OWNER") {
@@ -279,17 +298,26 @@ func plannedOwners(dialect string, statements []string) []plannedOwner {
 				for _, node := range parsedStatements(parsed, err) {
 					if n, ok := node.(*ast.AlterOwnerNode); ok {
 						owners = append(owners, plannedOwner{statement: statement, kind: n.Kind, name: n.Name, role: objectowner.StoredRole(dialect, n.Owner),
-							created: slices.Clone(created), granted: slices.Clone(granted)})
+							created: slices.Clone(created), granted: slices.Clone(granted), removed: slices.Clone(removed), opaque: opaque})
 					}
 				}
 			}
+			for _, gone := range role.Removes {
+				created, removed = withoutRole(dialect, created, gone), append(withoutRole(dialect, removed, gone), gone)
+			}
 			if role.Creates != "" {
-				created = append(created, role.Creates)
+				removed, created = withoutRole(dialect, removed, role.Creates), append(withoutRole(dialect, created, role.Creates), role.Creates)
 			}
 			granted = append(granted, role.Grants...)
+			opaque = opaque || role.Opaque
 		}
 	}
 	return owners
+}
+
+// withoutRole is roles without role, in a new slice.
+func withoutRole(dialect string, roles []string, role string) []string {
+	return slices.DeleteFunc(slices.Clone(roles), func(name string) bool { return objectowner.SameRole(dialect, name, role) })
 }
 
 // parsedStatements is the statements of a parse, none where it failed.

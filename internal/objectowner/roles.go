@@ -27,6 +27,18 @@ type RoleStatement struct {
 	// away, one for each role and member it names, and the roles a DROP ROLE,
 	// USER or GROUP drops, in order.
 	Grants []Membership
+	// Removes is the roles the statement takes off the server, as it stores
+	// their names: the roles a DROP drops, and the old name of a role ALTER
+	// ROLE ... RENAME TO renames, whose new name is Creates.
+	Removes []string
+	// Opaque reports that the statement may change role memberships, or the
+	// role the session acts as, in a way the reader does not read: any
+	// statement that is not role creation, GRANT, REVOKE, DROP or RENAME of a
+	// role, and not one of the schema statements [ReadRoleStatements] knows
+	// leave memberships alone. DO, CALL, SELECT, ALTER ROLE, DROP OWNED, SET
+	// ROLE and SET SESSION AUTHORIZATION are opaque, and so is a statement the
+	// reader does not recognize.
+	Opaque bool
 }
 
 // Membership is one membership a GRANT of a role grants, or one a REVOKE or a
@@ -44,9 +56,14 @@ type Membership struct {
 }
 
 // ReadRoleStatements reads each statement of text, in order, as the server of
-// dialect reads it, for what it does to roles. Only role creation, GRANT and
-// REVOKE of a role and DROP of a role are read; any other statement, and one
-// these do not recognize, carries only its Text.
+// dialect reads it, for what it does to roles. Role creation, GRANT and REVOKE
+// of a role, DROP of a role and RENAME of a role are read. CREATE, ALTER and
+// DROP of a table, view, index, schema, sequence, type, domain, routine,
+// trigger, policy, collation or statistics object, COMMENT, and SET and RESET
+// of anything but the session's role carry only their Text: they change no
+// membership. Every other statement is Opaque. A function a schema statement
+// evaluates as it runs, such as a column default, an index expression or the
+// query of a materialized view, is not read.
 func ReadRoleStatements(dialect, text string) []RoleStatement {
 	lex := lexer.NewLexerWithOptions(text, dialectlexer.Options(dialect))
 	var statements []RoleStatement
@@ -74,7 +91,7 @@ func ReadRoleStatements(dialect, text string) []RoleStatement {
 
 func readRoleStatement(dialect string, tokens []lexer.Token) RoleStatement {
 	switch {
-	case len(tokens) > 2 && tokens[0].MatchIdentifierValue("CREATE") && isRoleWord(tokens[1]):
+	case len(tokens) > 2 && tokens[0].MatchIdentifierValue("CREATE") && isRoleWord(tokens[1]) && !tokens[2].MatchIdentifierValue("MAPPING"):
 		return readCreateRole(dialect, tokens[2:])
 	case len(tokens) > 2 && tokens[0].MatchIdentifierValue("DROP") && isRoleWord(tokens[1]):
 		return readDropRole(dialect, tokens[2:])
@@ -82,8 +99,60 @@ func readRoleStatement(dialect string, tokens []lexer.Token) RoleStatement {
 		return RoleStatement{Grants: readMembershipGrant(dialect, tokens[1:], "TO")}
 	case len(tokens) > 0 && tokens[0].MatchIdentifierValue("REVOKE"):
 		return readRevokeRole(dialect, tokens[1:])
+	case len(tokens) > 4 && tokens[0].MatchIdentifierValue("ALTER") && isRoleWord(tokens[1]) &&
+		tokens[3].MatchIdentifierValue("RENAME") && tokens[4].MatchIdentifierValue("TO") && len(tokens) == 6:
+		return readRenameRole(dialect, tokens[2], tokens[5])
 	}
-	return RoleStatement{}
+	return RoleStatement{Opaque: !leavesMemberships(tokens)}
+}
+
+// schemaObjects are the words after CREATE, ALTER or DROP that name a kind of
+// schema object, whose statements change no role membership.
+var schemaObjects = []string{
+	"TABLE", "VIEW", "MATERIALIZED", "INDEX", "SCHEMA", "SEQUENCE", "TYPE", "DOMAIN", "FUNCTION", "PROCEDURE",
+	"ROUTINE", "TRIGGER", "POLICY", "COLLATION", "STATISTICS", "DEFAULT",
+}
+
+// createModifiers are the words CREATE takes before the kind of object.
+var createModifiers = []string{"OR", "REPLACE", "TEMP", "TEMPORARY", "UNLOGGED", "UNIQUE", "RECURSIVE", "CONSTRAINT"}
+
+// sessionWords are the words after SET, SET LOCAL or RESET that change the
+// role the session acts as.
+var sessionWords = []string{"ROLE", "SESSION", "ALL"}
+
+// leavesMemberships reports whether tokens are a statement the reader knows
+// changes no role membership and not the role the session acts as.
+func leavesMemberships(tokens []lexer.Token) bool {
+	head := tokens[0]
+	rest := tokens[1:]
+	switch {
+	case head.MatchIdentifierValue("COMMENT"):
+		return true
+	case head.MatchIdentifierValue("SET") || head.MatchIdentifierValue("RESET"):
+		characteristics := len(rest) > 1 && rest[0].MatchIdentifierValue("SESSION") && rest[1].MatchIdentifierValue("CHARACTERISTICS")
+		if len(rest) > 0 && (rest[0].MatchIdentifierValue("LOCAL") || characteristics) {
+			rest = rest[1:]
+		}
+		return len(rest) > 0 && !slices.ContainsFunc(sessionWords, rest[0].MatchIdentifierValue)
+	case head.MatchIdentifierValue("CREATE"):
+		for len(rest) > 0 && slices.ContainsFunc(createModifiers, rest[0].MatchIdentifierValue) {
+			rest = rest[1:]
+		}
+	case !head.MatchIdentifierValue("ALTER") && !head.MatchIdentifierValue("DROP"):
+		return false
+	}
+	return len(rest) > 0 && slices.ContainsFunc(schemaObjects, rest[0].MatchIdentifierValue)
+}
+
+// readRenameRole reads ALTER ROLE from RENAME TO to: the role named from is
+// gone, and one named to exists, with the memberships from had.
+func readRenameRole(dialect string, from, to lexer.Token) RoleStatement {
+	old, okOld := roleName(dialect, from)
+	renamed, okNew := roleName(dialect, to)
+	if !okOld || !okNew {
+		return RoleStatement{Opaque: true}
+	}
+	return RoleStatement{Creates: renamed, Removes: []string{old}}
 }
 
 // isRoleWord reports whether token is the word CREATE and DROP name a role
@@ -113,7 +182,7 @@ func readDropRole(dialect string, tokens []lexer.Token) RoleStatement {
 	for _, role := range dropped {
 		drops = append(drops, Membership{Role: role, Revoked: true})
 	}
-	return RoleStatement{Grants: drops}
+	return RoleStatement{Grants: drops, Removes: dropped}
 }
 
 // readRevokeRole reads `[option OPTION FOR] role [, ...] FROM member [, ...]
