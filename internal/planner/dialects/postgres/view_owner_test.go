@@ -17,6 +17,9 @@ const (
 	createReportWide     = "CREATE VIEW \"order_report\" AS\nSELECT total, 1 AS one FROM order_totals"
 )
 
+// salesReport is a view of the name orderReport has, in the schema sales.
+var salesReport = rebuildObject{schema: "sales", name: "order_report", body: "SELECT total FROM order_totals"}
+
 // TestViewRebuild_KeepsTheOwnerItFound_HappyPath pins the owner of the views
 // a rebuild drops and creates again. A declared owner is given to the view
 // the plan creates, right after it and before its privileges. A view whose
@@ -51,6 +54,19 @@ func TestViewRebuild_KeepsTheOwnerItFound_HappyPath(t *testing.T) {
 			live:     rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport}, connected: "postgres"},
 			declared: rebuildState{skuType: declaredSKU, objects: []rebuildObject{orderTotalsChanged, orderReport}},
 			want:     []string{`DROP VIEW "order_report"`, `DROP MATERIALIZED VIEW "order_totals"`, createTotalsChanged, createReport},
+		},
+		{
+			// The owners are read by schema and name: a view of the same name
+			// in another schema is another view, held by another role.
+			name: "views of one name in two schemas",
+			live: rebuildState{skuType: liveSKU, objects: []rebuildObject{orderTotals, orderReport, salesReport}, connected: "postgres",
+				owners: map[string]string{"order_report": "reporting", "sales.order_report": "Audit Team"}},
+			declared: rebuildState{skuType: declaredSKU, objects: []rebuildObject{orderTotalsChanged, orderReport, salesReport}},
+			want: []string{
+				`DROP VIEW "order_report"`, `DROP VIEW IF EXISTS "sales"."order_report"`, `DROP MATERIALIZED VIEW "order_totals"`,
+				createTotalsChanged, createReport, ownReportToReporting,
+				"CREATE VIEW \"sales\".\"order_report\" AS\nSELECT total FROM order_totals", `ALTER VIEW "sales"."order_report" OWNER TO "Audit Team"`,
+			},
 		},
 		{
 			name: "a declared owner the view already has",

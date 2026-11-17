@@ -56,7 +56,7 @@ type rebuildState struct {
 	options map[string][]string
 	// owners is the owner of a view or a materialized view the read reports
 	// on the database side, and the one the declaration names on the
-	// declaration side, by name.
+	// declaration side, by the name a declaration gives it.
 	owners map[string]string
 	// connected is the role the read ran as, on the database side.
 	connected string
@@ -120,12 +120,12 @@ func declaredRebuild(declared rebuildState) *schemamodel.Database {
 	for _, object := range declared.objects {
 		if object.materialized {
 			desired.MaterializedViews = append(desired.MaterializedViews, schemamodel.MaterializedView{
-				Name: object.declaredName(), Body: object.body, Options: declared.options[object.name], Owner: declared.owners[object.name],
+				Name: object.declaredName(), Body: object.body, Options: declared.options[object.name], Owner: declared.owners[object.declaredName()],
 			})
 			continue
 		}
 		desired.Views = append(desired.Views, schemamodel.View{
-			Name: object.declaredName(), Body: object.body, Options: declared.options[object.name], Owner: declared.owners[object.name],
+			Name: object.declaredName(), Body: object.body, Options: declared.options[object.name], Owner: declared.owners[object.declaredName()],
 		})
 	}
 	for _, routine := range declared.routines {
@@ -176,7 +176,7 @@ func liveRebuild(live rebuildState) *catalog.Database {
 		}},
 	}, ConnectedRole: live.connected}
 	for _, object := range live.objects {
-		if owner, ok := live.owners[object.name]; ok {
+		if owner, ok := live.owners[object.declaredName()]; ok {
 			kind := "view"
 			if object.materialized {
 				kind = "materialized view"

@@ -191,6 +191,11 @@ type ApplyPlan struct {
 	// [safety.ColumnVerdicts]. It stays apart from owned because a plan marks a
 	// statement an owner judged, and an edit to such a plan fails closed.
 	columns []safety.StatementAssessment
+	// restores holds, position for position with the planned statements,
+	// whether a view node that gives the view back to its owner rendered the
+	// statement; see [safety.OwnerRestores]. Like columns, it is read where
+	// the plan's statements are judged.
+	restores []bool
 	// texts is, for each unit, the text its owner writes the operation as,
 	// where the unit is native and the owner has a text form for it, and
 	// "" otherwise. It is a display projection, as a migration file holds the

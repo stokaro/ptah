@@ -132,6 +132,10 @@ func captureApplyPlan(
 	if err != nil {
 		return ApplyPlan{}, err
 	}
+	plan.restores, err = safety.OwnerRestores(rendered.Request.Nodes, indexes)
+	if err != nil {
+		return ApplyPlan{}, err
+	}
 	plan.effects = describeUnits(effects, plan.provider, rendered.Request.Nodes, indexes)
 	return plan, nil
 }

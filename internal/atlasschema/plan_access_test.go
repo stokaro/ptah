@@ -49,10 +49,18 @@ func failedClosed(statement atlasschema.PlanStatement) atlasschema.PlanStatement
 	return statement
 }
 
+// restoredOwner is the ALTER ... OWNER TO with which a rebuild gives a view
+// back to the role that owned it, as a plan records it. Its words read as a
+// change of owner, which carries another reason at the same severity.
+var restoredOwner = atlasschema.PlanStatement{SQL: `ALTER VIEW "public"."v" OWNER TO "rv_a"`, Severity: safety.Warning,
+	Reason: "OWNER TO gives the view the plan creates again back to the role that owned it before the drop, " +
+		"which the declaration does not name: the view reads its tables with that role's privileges, as it did before"}
+
 // An edit that leaves the statement sequence as it was keeps every recorded
-// verdict position for position, even where its text rates lower and where two
-// statements share a text but not a verdict. Comments and whitespace are not
-// part of the sequence, which is what lets a directive header be spliced in.
+// verdict position for position, even where its text rates lower, where its
+// text gives another reason at the same severity, and where two statements
+// share a text but not a verdict. Comments and whitespace are not part of the
+// sequence, which is what lets a directive header be spliced in.
 func TestPlanFileWithStatementsFromSQLKeepsEveryVerdictWhenTheSequenceIsUnchanged(t *testing.T) {
 	sameText := []atlasschema.PlanStatement{
 		{SQL: "SELECT 1", Severity: safety.Warning, Owned: true, Reason: "can narrow access: r",
@@ -70,6 +78,8 @@ func TestPlanFileWithStatementsFromSQLKeepsEveryVerdictWhenTheSequenceIsUnchange
 		{name: "a data-stage verdict above its text", recorded: []atlasschema.PlanStatement{declaredRowDelete},
 			edited: declaredRowDelete.SQL + ";\n", wantDestructive: true},
 		{name: "two statements with one text", recorded: sameText, edited: "SELECT 1;\nSELECT 1;\n"},
+		{name: "an owner given back", recorded: []atlasschema.PlanStatement{restoredOwner, commonTable},
+			edited: restoredOwner.SQL + ";\n" + commonTable.SQL + ";\n"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -87,8 +87,9 @@ func classifyPlanUnits(
 	units []renderer.Fragment,
 	dialect string,
 	owned, columns []safety.StatementAssessment,
+	restores []bool,
 ) (statements []PlanStatement, destructive bool, err error) {
-	statements, err = judgePlanUnits(ctx, runtime, units, dialect, owned, columns)
+	statements, err = judgePlanUnits(ctx, runtime, units, dialect, owned, columns, restores)
 	if err != nil {
 		return nil, false, err
 	}
@@ -123,9 +124,11 @@ func judgePlanUnits(
 	units []renderer.Fragment,
 	dialect string,
 	owned, columns []safety.StatementAssessment,
+	restores []bool,
 ) ([]PlanStatement, error) {
 	var sqlText []string
 	var sqlOwned, sqlColumns []safety.StatementAssessment
+	var sqlRestores []bool
 	var natives []renderer.Fragment
 	var nativeOwned []safety.StatementAssessment
 	for i, unit := range units {
@@ -141,12 +144,13 @@ func judgePlanUnits(
 				column = columns[i]
 			}
 			sqlColumns = append(sqlColumns, column)
+			sqlRestores = append(sqlRestores, i < len(restores) && restores[i])
 			continue
 		}
 		natives = append(natives, unit)
 		nativeOwned = append(nativeOwned, verdict)
 	}
-	sqlStatements, _, err := classifyPlanStatements(ctx, runtime, sqlText, dialect, sqlOwned, sqlColumns)
+	sqlStatements, _, err := classifyPlanStatements(ctx, runtime, sqlText, dialect, sqlOwned, sqlColumns, sqlRestores)
 	if err != nil {
 		return nil, err
 	}
