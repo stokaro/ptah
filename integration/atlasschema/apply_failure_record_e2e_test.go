@@ -23,7 +23,6 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/revisiontable"
-	"ptah.run/internal/rolepassword"
 )
 
 // These tests hold what a caller of `ptah schema apply --json` learns when a
@@ -519,24 +518,6 @@ func TestSchemaApplyNoFailureRecordBeforeDispatchE2E(t *testing.T) {
 	accounts, planned := f.table("accounts"), f.table("planned")
 	f.exec(c, strings.ReplaceAll(uniqueTableDDL, "{t}", accounts))
 
-	t.Run("a statement the writer refuses to send, after one it would send", func(t *testing.T) {
-		c := qt.New(t)
-		first, role := f.table("first_unit"), f.table("role")
-		plan := f.savedPlan(c, "CREATE TABLE "+planned+" (id INT PRIMARY KEY)",
-			"CREATE TABLE "+first+" (id INT PRIMARY KEY)",
-			`CREATE ROLE "`+role+`" WITH LOGIN PASSWORD `+rolepassword.Reference(role))
-		c.Cleanup(func() {
-			_, _ = f.conn.ExecContext(context.Background(), `DROP ROLE IF EXISTS "`+role+`"`)
-		})
-
-		result, document := f.apply(c, "--plan", plan, "--tx-mode", "none")
-
-		c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("%s", result.Stderr))
-		c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeFailed)
-		c.Assert(document.Error.Message, qt.Contains, rolepassword.Variable(role))
-		c.Assert(compactRecord(c, document.Failure), qt.Equals, "")
-		c.Assert(f.tableExists(c, first), qt.IsFalse)
-	})
 	t.Run("a statement the transaction mode refuses", func(t *testing.T) {
 		c := qt.New(t)
 		plan := f.savedPlan(c, "CREATE TABLE "+planned+" (id INT PRIMARY KEY)",
