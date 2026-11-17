@@ -55,6 +55,9 @@ func TestCompareUsesSelectedRuntimeAndReturnsNoPartialResult(t *testing.T) {
 	})
 	c.Assert(err, qt.ErrorIs, failure)
 	c.Assert(result, qt.IsNil)
-	c.Assert(runtime.received, qt.Equals, t.Context())
+	// The comparison adds what the read needs to the caller's context, such as
+	// readscope.Qualified, so the runtime gets a child of it: the same
+	// cancellation, not the same value.
+	c.Assert(runtime.received.Done(), qt.Equals, t.Context().Done())
 	c.Assert(runtime.request.Target, qt.Equals, "sqlite")
 }

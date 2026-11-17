@@ -584,6 +584,13 @@ plus the desired schema's names. A PostgreSQL URL covers its pinned
 `search_path`, or every schema if none is pinned. Tables the desired schema
 does not describe within that selection are planned for removal.
 
+On a URL that pins no `search_path`, a name the desired schema writes without a
+schema is placed in the connection's current schema, as `schema apply` places
+it, and each finding names its object with the schema. A table `notes` in
+`public` is reported as `public.notes`, and `--ignore tables=public.notes`
+matches it. [PostgreSQL](../../databases/postgresql/#connecting)
+gives the rules.
+
 Privileges: [PostgreSQL](../../databases/postgresql/#what-the-connecting-role-needs),
 [MySQL and MariaDB](../../databases/mysql/#what-the-connecting-account-needs).
 
