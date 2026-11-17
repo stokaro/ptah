@@ -43,7 +43,8 @@ import (
 // A docker:// URL is parsed and no container is started. Its server is the one
 // the image tag names, and a tag no release line matches, such as `latest`,
 // answers nil. A docker URL whose engine an executable provider in ctx
-// provisions answers nil unparsed: the provider reads the image, not Ptah.
+// provisions answers nil unparsed, since the provider reads the image, not
+// Ptah; the engine is still checked against dialect.
 //
 // A URL naming a SQLite file answers nil without opening it, since opening it
 // creates the file and the engine is the one compiled into Ptah. A dev path
@@ -60,9 +61,13 @@ func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Dura
 	switch {
 	case strings.TrimSpace(devURL) == "":
 		return capability.Capabilities{}, nil
-	case devdocker.IsURL(devURL) && providerProvisions(ctx, devURL):
-		return capability.Capabilities{}, nil
 	case devdocker.IsURL(devURL):
+		if engine, provisioned := devdocker.ExternalEngine(ctx, devURL); provisioned {
+			if dialect != "" && engine != dialect {
+				return capability.Capabilities{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", engine, dialect)
+			}
+			return capability.Capabilities{}, nil
+		}
 		spec, err := devdocker.Parse(devURL)
 		if err != nil {
 			return capability.Capabilities{}, err
@@ -92,11 +97,4 @@ func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Dura
 	}
 	defer func() { _ = conn.Close() }()
 	return conn.Info().Capabilities, nil
-}
-
-// providerProvisions reports whether an executable provider in ctx starts the
-// dev database devURL names.
-func providerProvisions(ctx context.Context, devURL string) bool {
-	_, owned := devdocker.ExternalEngine(ctx, devURL)
-	return owned
 }

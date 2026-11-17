@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
+	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devreach"
 )
 
@@ -180,4 +181,44 @@ func TestServer_ProviderScheme_FailurePath(t *testing.T) {
 			c.Assert(got.Len(), qt.Equals, 0)
 		})
 	}
+}
+
+// fixtureDevOwner is a provider that provisions the dev databases of the
+// fixture engine. Nothing here asks it to.
+type fixtureDevOwner struct{}
+
+func (fixtureDevOwner) DevEngines() []string { return []string{"fixture"} }
+
+func (fixtureDevOwner) ProvisionDev(context.Context, string) (string, func(), error) {
+	return "", nil, errors.New("not provisioned here")
+}
+
+// TestServer_ProviderDocker_HappyPath leaves a docker URL whose engine a
+// provider provisions to that provider: it is not parsed as an image Ptah
+// knows, and no capability is answered. A docker URL of another engine is
+// still read from its image tag.
+func TestServer_ProviderDocker_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
+
+	provisioned, err := devreach.Server(ctx, "fixture", "dev-url", "docker://fixture/dev", 0)
+	c.Assert(err, qt.IsNil)
+	c.Assert(provisioned.Len(), qt.Equals, 0)
+
+	builtIn, err := devreach.Server(ctx, "postgres", "dev-url", "docker://postgres/18/dev", 0)
+	c.Assert(err, qt.IsNil)
+	c.Assert(builtIn.Equal(capability.ResolveServerVersion("postgres", "18").Capabilities), qt.IsTrue)
+}
+
+// TestServer_ProviderDocker_FailurePath refuses a docker URL whose engine a
+// provider provisions when the target is of another dialect, as it refuses a
+// built-in docker URL of another dialect.
+func TestServer_ProviderDocker_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
+
+	got, err := devreach.Server(ctx, "postgres", "dev-url", "docker://fixture/dev", 0)
+
+	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "fixture" does not match --url dialect "postgres"`)
+	c.Assert(got.Len(), qt.Equals, 0)
 }
