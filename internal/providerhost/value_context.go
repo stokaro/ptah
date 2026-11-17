@@ -29,6 +29,9 @@ func (t *target) ResolveDatabaseContext(ctx context.Context, request schemaext.D
 	if request.Target != t.engine.GetId() {
 		return schemaext.DatabaseContext{}, fmt.Errorf("%w: database context target changed", schemaext.ErrInvalidValue)
 	}
+	if err := checkProviderAddress(request.Address); err != nil {
+		return schemaext.DatabaseContext{}, err
+	}
 	value, err := t.host.client.ResolveDatabaseContext(ctx, &protocol.DatabaseContextRequest{Engine: request.Target, Address: request.Address})
 	if err != nil {
 		return schemaext.DatabaseContext{}, err

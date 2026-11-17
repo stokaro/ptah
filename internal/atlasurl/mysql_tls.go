@@ -31,8 +31,18 @@ import (
 const mysqlCAParam = "ssl-ca"
 
 // mysqlOwnedParamPrefix starts every parameter Ptah reads out of a
-// MySQL-family URL before the driver is handed the rest.
+// MySQL-family URL before the driver is handed the rest, compared as
+// [mysqlOwnedKey] spells it.
 const mysqlOwnedParamPrefix = "ssl-"
+
+// mysqlOwnedKey is a parameter name as Ptah compares it with its own:
+// lowercase, with "_" read as "-", as MySQL reads `ssl_ca` and `ssl-ca` as one
+// option. SSL-CA and ssl_ca would otherwise reach the driver, which sends
+// them to the server as `SET ssl_ca=...`, and the server's error and log
+// would carry the path.
+func mysqlOwnedKey(key string) string {
+	return strings.ReplaceAll(strings.ToLower(key), "_", "-")
+}
 
 // mysqlOwnedParams is what a MySQL-family URL's query holds of Ptah's
 // parameters.
@@ -59,11 +69,11 @@ func cutMySQLOwnedParams(rawQuery string) (string, mysqlOwnedParams) {
 	for pair := range strings.SplitSeq(rawQuery, "&") {
 		rawKey, rawValue, _ := strings.Cut(pair, "=")
 		key, err := url.QueryUnescape(rawKey)
-		if err != nil || !strings.HasPrefix(key, mysqlOwnedParamPrefix) {
+		if err != nil || !strings.HasPrefix(mysqlOwnedKey(key), mysqlOwnedParamPrefix) {
 			kept = append(kept, pair)
 			continue
 		}
-		if key != mysqlCAParam {
+		if mysqlOwnedKey(key) != mysqlCAParam {
 			if owned.unsupported == "" {
 				owned.unsupported = key
 			}
@@ -116,16 +126,26 @@ func splitMySQLDriverQuery(dsn string) (head, query string, ok bool) {
 	return dsn[:databaseStart+question], dsn[databaseStart+question+1:], true
 }
 
-// withMySQLQuery appends a raw query to a DSN or URL that may carry one.
-func withMySQLQuery(base, rawQuery string) string {
-	switch {
-	case rawQuery == "":
-		return base
-	case strings.Contains(base, "?"):
-		return base + "&" + rawQuery
-	default:
-		return base + "?" + rawQuery
+// joinMySQLQuery appends a raw query to a DSN that carries none. The caller
+// knows that it carries none: the text cannot say, because a password may
+// hold a "?".
+func joinMySQLQuery(dsn, rawQuery string) string {
+	if rawQuery == "" {
+		return dsn
 	}
+	return dsn + "?" + rawQuery
+}
+
+// NamesMySQLCABundle reports whether rawURL is a MySQL-family URL whose query
+// names a CA bundle, in any spelling of ssl-ca, including a URL the parser
+// refuses for another reason.
+//
+// Ptah's MySQL connector is what applies the bundle. Code that hands such a
+// URL to anything else, such as a provider that serves the engine, refuses it
+// instead: nothing else is known to verify the server against the bundle.
+func NamesMySQLCABundle(rawURL string) bool {
+	_, owned, _ := readMySQLURL(rawURL)
+	return len(owned.caFiles) > 0
 }
 
 // errUnsupportedSSLParam is the reason for an ssl- parameter Ptah does not read.
@@ -150,12 +170,24 @@ func (u MySQLURL) checkCA(owned mysqlOwnedParams) error {
 	case u.config.Net != "tcp":
 		return errors.New("ssl-ca verifies the server's certificate against the host the URL connects to, " +
 			"and a socket address names no host; connect over TCP to use ssl-ca")
+	case u.verifiedHost() == "":
+		return errors.New("ssl-ca verifies the server's certificate against the host the URL connects to, " +
+			"and the URL names a port with no host; name the host the server's certificate is issued for, " +
+			"as in mysql://app@db.example.com:3306/shop?ssl-ca=/etc/mysql/ca.pem")
 	}
 	if contradiction := u.unverifiedTLS(); contradiction != "" {
 		return fmt.Errorf("ssl-ca asks for TLS with a verified server certificate, and %s; remove one of the two parameters",
 			contradiction)
 	}
 	return nil
+}
+
+// verifiedHost is the host a TCP connection dials, which the server's
+// certificate must name. A URL that names no address at all dials the
+// driver's default, 127.0.0.1, and the certificate must name that.
+func (u MySQLURL) verifiedHost() string {
+	host, _, _ := u.HostPort()
+	return host
 }
 
 // unverifiedTLS says how the URL's driver TLS settings would leave a

@@ -3,6 +3,7 @@ package atlasurl
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"strings"
@@ -79,41 +80,47 @@ type MySQLURL struct {
 // and an error naming the problem when the URL cannot be read. The error never
 // repeats the URL, which may carry a password.
 func ParseMySQLURL(rawURL string) (MySQLURL, error) {
-	scheme, rest, ok := cutMySQLScheme(rawURL)
-	if !ok {
-		return MySQLURL{}, ErrNotMySQLURL
-	}
-	parsed := MySQLURL{scheme: scheme}
-	var (
-		owned mysqlOwnedParams
-		err   error
-	)
-	switch {
-	case strings.HasSuffix(strings.ToLower(scheme), mysqlSocketTransport):
-		parsed.form = mysqlURLFormSocket
-		if owned, err = parsed.readSocketForm(rawURL); err != nil {
-			return MySQLURL{}, err
-		}
-	case hasMySQLNetwork(rest):
-		parsed.form = mysqlURLFormDriver
-		owned = parsed.readDriverForm(rest)
-	default:
-		parsed.form = mysqlURLFormURL
-		if owned, err = parsed.readURLForm(rawURL); err != nil {
-			return MySQLURL{}, err
-		}
+	parsed, owned, err := readMySQLURL(rawURL)
+	if err != nil {
+		return MySQLURL{}, err
 	}
 	parsed.config, err = mysqldriver.ParseDSN(parsed.dsn)
 	if err != nil {
-		return MySQLURL{}, fmt.Errorf("invalid %s URL: %w", scheme, dsnRefusal(parsed.dsn))
+		return MySQLURL{}, fmt.Errorf("invalid %s URL: %w", parsed.scheme, dsnRefusal(parsed.dsn))
 	}
 	if err := parsed.checkCA(owned); err != nil {
-		return MySQLURL{}, fmt.Errorf("invalid %s URL: %w", scheme, err)
+		return MySQLURL{}, fmt.Errorf("invalid %s URL: %w", parsed.scheme, err)
 	}
 	if len(owned.caFiles) > 0 {
 		parsed.caFile = owned.caFiles[0]
 	}
 	return parsed, nil
+}
+
+// readMySQLURL reads the form of a MySQL-family URL into a DSN, and takes the
+// parameters Ptah reads out of its query. The driver has not read the DSN yet.
+//
+// The parameters come back with an error when the form read them before it
+// failed, so [NamesMySQLCABundle] can see a bundle in a URL the parser refuses.
+func readMySQLURL(rawURL string) (MySQLURL, mysqlOwnedParams, error) {
+	scheme, rest, ok := cutMySQLScheme(rawURL)
+	if !ok {
+		return MySQLURL{}, mysqlOwnedParams{}, ErrNotMySQLURL
+	}
+	parsed := MySQLURL{scheme: scheme}
+	switch {
+	case strings.HasSuffix(strings.ToLower(scheme), mysqlSocketTransport):
+		parsed.form = mysqlURLFormSocket
+		owned, err := parsed.readSocketForm(rawURL)
+		return parsed, owned, err
+	case hasMySQLNetwork(rest):
+		parsed.form = mysqlURLFormDriver
+		return parsed, parsed.readDriverForm(rest), nil
+	default:
+		parsed.form = mysqlURLFormURL
+		owned, err := parsed.readURLForm(rawURL)
+		return parsed, owned, err
+	}
 }
 
 // errUnreadableDSN is the reason for a DSN the driver refuses only because of
@@ -177,7 +184,7 @@ func (u *MySQLURL) readDriverForm(rest string) mysqlOwnedParams {
 		return mysqlOwnedParams{}
 	}
 	kept, owned := cutMySQLOwnedParams(query)
-	u.dsn = withMySQLQuery(head, kept)
+	u.dsn = joinMySQLQuery(head, kept)
 	return owned
 }
 
@@ -197,7 +204,7 @@ func (u *MySQLURL) readURLForm(rawURL string) (mysqlOwnedParams, error) {
 	u.dsn = fmt.Sprintf("%s:%s@tcp(%s)/%s", parsed.User.Username(), password, parsed.Host,
 		url.PathEscape(strings.TrimPrefix(parsed.Path, "/")))
 	kept, owned := cutMySQLOwnedParams(parsed.RawQuery)
-	u.dsn = withMySQLQuery(u.dsn, kept)
+	u.dsn = joinMySQLQuery(u.dsn, kept)
 	return owned, nil
 }
 
@@ -220,7 +227,7 @@ func (u *MySQLURL) readSocketForm(rawURL string) (mysqlOwnedParams, error) {
 	query, _ := url.ParseQuery(kept)
 	database := query.Get(mysqlSocketDatabaseParam)
 	if query.Has(mysqlSocketDatabaseParam) && database == "" {
-		return mysqlOwnedParams{}, fmt.Errorf("invalid %s URL: the %s parameter is empty; name the database in it, as in ?%s=app",
+		return owned, fmt.Errorf("invalid %s URL: the %s parameter is empty; name the database in it, as in ?%s=app",
 			u.scheme, mysqlSocketDatabaseParam, mysqlSocketDatabaseParam)
 	}
 	query.Del(mysqlSocketDatabaseParam)
@@ -373,11 +380,17 @@ func (u MySQLURL) WithDatabase(name string) string {
 	case mysqlURLFormDriver:
 		config := u.config.Clone()
 		config.DBName = name
-		rendered := u.scheme + "://" + config.FormatDSN()
 		if u.caFile != "" {
-			rendered = withMySQLQuery(rendered, mysqlCAParam+"="+url.QueryEscape(u.caFile))
+			// The driver writes the "?" after the database, which a "?" in
+			// the password cannot move. The map is a new one, so ssl-ca never
+			// lands in this URL's own Params, which reach the server as
+			// session variables.
+			params := make(map[string]string, len(config.Params)+1)
+			maps.Copy(params, config.Params)
+			params[mysqlCAParam] = u.caFile
+			config.Params = params
 		}
-		return rendered
+		return u.scheme + "://" + config.FormatDSN()
 	default:
 		renamed := *u.parsed
 		renamed.Path = "/" + name

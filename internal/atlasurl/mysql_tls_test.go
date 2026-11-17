@@ -66,6 +66,49 @@ func TestParseMySQLURL_CABundle_HappyPath(t *testing.T) {
 			wantURL:     "mysql://app@db.internal:3306/shop?parseTime=true&ssl-ca=%2Fetc%2Fmy%3Fsql%2Fca.pem",
 			wantRenamed: "mysql://app@tcp(db.internal:3306)/other?parseTime=true&ssl-ca=%2Fetc%2Fmy%3Fsql%2Fca.pem",
 		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:        "driver form with a ? in the password",
+			rawURL:      "mysql://app:p?w@tcp(db.internal:3306)/shop?ssl-ca=/a/b.pem",
+			wantCAFile:  "/a/b.pem",
+			wantDSN:     "app:p?w@tcp(db.internal:3306)/shop",
+			wantURL:     "mysql://app:p%3Fw@db.internal:3306/shop?ssl-ca=%2Fa%2Fb.pem",
+			wantRenamed: "mysql://app:p?w@tcp(db.internal:3306)/other?ssl-ca=%2Fa%2Fb.pem",
+		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:        "driver form with & and # in the password, beside a driver parameter",
+			rawURL:      "mysql://app:p&w#x@tcp(db.internal:3306)/shop?parseTime=true&ssl-ca=/a/b.pem",
+			wantCAFile:  "/a/b.pem",
+			wantDSN:     "app:p&w#x@tcp(db.internal:3306)/shop?parseTime=true",
+			wantURL:     "mysql://app:p&w%23x@db.internal:3306/shop?parseTime=true&ssl-ca=%2Fa%2Fb.pem",
+			wantRenamed: "mysql://app:p&w#x@tcp(db.internal:3306)/other?parseTime=true&ssl-ca=%2Fa%2Fb.pem",
+		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:        "URL form with ?, & and # in the password, beside a driver parameter",
+			rawURL:      "mysql://app:p%3Fw%26x%23y@db.internal:3306/shop?parseTime=true&ssl-ca=/a/b.pem",
+			wantCAFile:  "/a/b.pem",
+			wantDSN:     "app:p?w&x#y@tcp(db.internal:3306)/shop?parseTime=true",
+			wantURL:     "mysql://app:p%3Fw&x%23y@db.internal:3306/shop?parseTime=true&ssl-ca=/a/b.pem",
+			wantRenamed: "mysql://app:p%3Fw&x%23y@db.internal:3306/other?parseTime=true&ssl-ca=/a/b.pem",
+		},
+		{
+			name:        "SSL_CA, with an underscore and in capitals",
+			rawURL:      "mysql://app@db.internal:3306/shop?SSL_CA=/a/b.pem&parseTime=true",
+			wantCAFile:  "/a/b.pem",
+			wantDSN:     "app:@tcp(db.internal:3306)/shop?parseTime=true",
+			wantURL:     "mysql://app@db.internal:3306/shop?SSL_CA=/a/b.pem&parseTime=true",
+			wantRenamed: "mysql://app@db.internal:3306/other?SSL_CA=/a/b.pem&parseTime=true",
+		},
+		{
+			name:        "Ssl-Ca in the driver form",
+			rawURL:      "maria://app@tcp(db.internal:3306)/shop?Ssl-Ca=/a/b.pem",
+			wantCAFile:  "/a/b.pem",
+			wantDSN:     "app@tcp(db.internal:3306)/shop",
+			wantURL:     "maria://app@db.internal:3306/shop?ssl-ca=%2Fa%2Fb.pem",
+			wantRenamed: "maria://app@tcp(db.internal:3306)/other?ssl-ca=%2Fa%2Fb.pem",
+		},
 		{
 			name:        "a URL without ssl-ca carries none",
 			rawURL:      "mysql://app@db.internal:3306/shop?tls=skip-verify",
@@ -172,6 +215,30 @@ func TestParseMySQLURL_CABundle_FailurePath(t *testing.T) {
 			rawURL:  "mysql://app:Pa5wordX9@db:3306/shop?ssl-mode=VERIFY_IDENTITY",
 			wantErr: `invalid mysql URL: the ssl-mode parameter is not supported; .*`,
 		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:    "a client certificate spelled SSL_CERT",
+			rawURL:  "mysql://app:Pa5wordX9@db:3306/shop?ssl-ca=/ca.pem&SSL_CERT=/client.pem",
+			wantErr: `invalid mysql URL: the SSL_CERT parameter is not supported; .*`,
+		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:    "ssl_ca beside ssl-ca",
+			rawURL:  "mysql://app:Pa5wordX9@db:3306/shop?ssl-ca=/a.pem&ssl_ca=/a.pem",
+			wantErr: `invalid mysql URL: the ssl-ca parameter is given more than once; .*`,
+		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:    "a port with no host",
+			rawURL:  "mysql://app:Pa5wordX9@:3306/shop?ssl-ca=/ca.pem",
+			wantErr: `invalid mysql URL: ssl-ca verifies the server's certificate against the host the URL connects to, and the URL names a port with no host; name the host the server's certificate is issued for, as in mysql://app@db\.example\.com:3306/shop\?ssl-ca=/etc/mysql/ca\.pem`,
+		},
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
+		{
+			name:    "a port with no host in the driver form",
+			rawURL:  "mysql://app:Pa5wordX9@tcp(:3306)/shop?ssl-ca=/ca.pem",
+			wantErr: `invalid mysql URL: ssl-ca verifies the server's certificate .* names a port with no host; .*`,
+		},
 		{
 			name:    "the socket form",
 			rawURL:  "mysql+unix://app:Pa5wordX9@/run/x.sock?database=shop&ssl-ca=/ca.pem",
@@ -193,6 +260,35 @@ func TestParseMySQLURL_CABundle_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*(Pa5|wordX9).*`)
 			c.Assert(got, qt.Equals, atlasurl.MySQLURL{})
+		})
+	}
+}
+
+// TestNamesMySQLCABundle finds ssl-ca in every spelling and form, in a URL
+// the parser refuses too, so a caller that hands a URL on unread can refuse
+// one that asks for a bundle.
+func TestNamesMySQLCABundle(t *testing.T) {
+	tests := []struct {
+		name   string
+		rawURL string
+		want   bool
+	}{
+		{name: "URL form", rawURL: "mysql://app@db:3306/shop?ssl-ca=/ca.pem", want: true},
+		{name: "SSL_CA", rawURL: "mariadb://app@db:3306/shop?SSL_CA=/ca.pem", want: true},
+		{name: "driver form with a ? in the password", rawURL: "mysql://app:p?w@tcp(db:3306)/shop?ssl-ca=/ca.pem", want: true},
+		{name: "a URL the parser refuses", rawURL: "mysql://app@db:3306/shop?ssl-ca=/ca.pem&tls=false", want: true},
+		{name: "a path naming a SQLite file", rawURL: "mysql:///tmp/app.db?ssl-ca=/ca.pem", want: true},
+		{name: "a socket URL refused for its empty database", rawURL: "mysql+unix://app@/run/x.sock?database=&ssl-ca=/ca.pem", want: true},
+		{name: "no ssl-ca", rawURL: "mysql://app@db:3306/shop?tls=true", want: false},
+		{name: "another ssl- parameter alone", rawURL: "mysql://app@db:3306/shop?ssl-cert=/client.pem", want: false},
+		{name: "another engine", rawURL: "postgres://app@db:5432/shop?ssl-ca=/ca.pem", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(atlasurl.NamesMySQLCABundle(test.rawURL), qt.Equals, test.want)
 		})
 	}
 }

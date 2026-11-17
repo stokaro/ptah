@@ -32,6 +32,9 @@ type session struct {
 }
 
 func (t *target) Open(ctx context.Context, request dbschema.NativeRequest) (dbschema.NativeSession, error) {
+	if err := checkProviderAddress(request.Address); err != nil {
+		return nil, err
+	}
 	remote, err := t.host.client.Open(ctx, &protocol.OpenRequest{Engine: t.engine.GetId(), Address: request.Address})
 	if err != nil {
 		return nil, err

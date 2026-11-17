@@ -613,14 +613,17 @@ bundle replaces the system roots for this connection only. The process trust
 store is neither read nor changed, so two URLs naming different bundles connect
 side by side. `mariadb://`, `maria://` and the Go-driver form
 `mysql://app:secret@tcp(db.internal:3306)/shop?ssl-ca=...` take the parameter
-the same way, and `tls=true` beside it changes nothing.
+the same way, and `tls=true` beside it changes nothing. The name is read
+without regard to case, and `ssl_ca` is the same parameter, as in MySQL option
+files.
 
 The name is the MySQL and MariaDB client option for the same file, and the
 name the Atlas URL documentation gives a custom CA. `ptah-compat` reads it in
-the same URLs. The pinned Atlas CLI community binary does not apply it: it
-sends `ssl-ca` to the server as a session variable, and the connection fails
-with `Error 1064`. `PTAH_ATLAS_STRICT_COMPAT=1` refuses the parameter for that
-reason (see [Strict Community Edition mode](../../atlas/strict-ce-mode/)).
+the same URLs. The pinned Atlas CLI community binary does not apply it.
+Without `tls`, it sends `ssl-ca` to the server as a session variable, and the
+server answers `Error 1064`. With `tls=true`, the handshake fails with
+`x509: certificate signed by unknown authority` whichever file `ssl-ca` names.
+`PTAH_ATLAS_STRICT_COMPAT=1` refuses the parameter for that reason (see [Strict Community Edition mode](../../atlas/strict-ce-mode/)).
 
 ### Try it locally
 
@@ -697,10 +700,14 @@ Ptah refuses a URL that contradicts `ssl-ca`, before it connects:
   unverified or unencrypted;
 - a socket address, `mysql+unix://` or `unix(...)`, which names no host to
   verify;
-- an empty `ssl-ca`, or `ssl-ca` given twice;
-- every other `ssl-` parameter, such as `ssl-mode`, `ssl-cert` and `ssl-key`.
-  The driver would send each to the server as a session variable, which the
-  server refuses.
+- a port with no host, as in `mysql://app@:3306/shop`. A URL that names no
+  address at all dials `127.0.0.1:3306`, and the certificate must name
+  `127.0.0.1`;
+- an empty `ssl-ca`, or `ssl-ca` given twice, in any spelling;
+- every other `ssl-` or `ssl_` parameter, in any case, such as `ssl-mode`,
+  `ssl-cert` and `ssl-key`. The driver would send each to the server as a
+  session variable, which the server refuses, and the server's error would
+  carry the value.
 
 ### Where the path is read
 
@@ -745,6 +752,12 @@ The `mysqldump` pre-flight hook and the online-DDL tools, gh-ost and
 pt-online-schema-change, open their own connections, and Ptah gives them no TLS
 settings. A URL with `ssl-ca` is refused for them, because the tool would
 connect without verifying the server.
+
+A provider manifest can claim a MySQL-family engine, such as `mysql`, and a
+command can name it with `--provider-engine`. The provider is then handed the URL as
+text, and Ptah's connector does not take part. A URL with `ssl-ca` is refused
+before the provider receives it, because nothing says the provider verifies
+the server against the bundle.
 
 ## What the connecting account needs
 

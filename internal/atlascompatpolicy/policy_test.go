@@ -781,6 +781,10 @@ func TestStrictCERefusesTheCABundleParameter(t *testing.T) {
 		"mysql://app@localhost:3306/shop?ssl-ca=/etc/mysql/ca.pem",
 		" mariadb://app@localhost:3306/shop?tls=true&ssl-ca=ca.pem ",
 		"maria://app@tcp(localhost:3306)/shop?ssl-ca=/etc/mysql/ca.pem",
+		"mysql://app@localhost:3306/shop?SSL_CA=/etc/mysql/ca.pem",
+		// The parser refuses this one for tls=false; strict mode names the
+		// parameter CE lacks rather than the contradiction.
+		"mysql://app@localhost:3306/shop?ssl-ca=/etc/mysql/ca.pem&tls=false",
 	} {
 		t.Run(rawURL, func(t *testing.T) {
 			c := qt.New(t)

@@ -269,7 +269,10 @@ func TestMySQLCABundleE2E_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorAs, new(x509.UnknownAuthorityError))
 		c.Assert(err, qt.Not(qt.ErrorMatches), `(?s).*`+tlsMySQLPassword+`.*`)
 		c.Assert(conn, qt.IsNil)
-		c.Assert(server.connectionAttempts(c)-before, qt.Equals, 1)
+		// The server was reached and the client refused it. How many
+		// connections that took is database/sql's business, so the count
+		// is only required to have moved.
+		c.Assert(server.connectionAttempts(c)-before > 0, qt.IsTrue)
 	})
 
 	t.Run("an unrelated root through the compatibility binary", func(t *testing.T) {

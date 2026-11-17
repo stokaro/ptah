@@ -46,10 +46,18 @@ type fakeServer struct {
 	handshakes atomic.Int32
 }
 
-// startFakeServer starts a server presenting certificate until the test ends.
+// startFakeServer starts a server on 127.0.0.1 presenting certificate until
+// the test ends.
 func startFakeServer(c *qt.C, certificate tls.Certificate) *fakeServer {
 	c.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	return startFakeServerOn(c, "127.0.0.1", certificate)
+}
+
+// startFakeServerOn starts a server on the loopback address ip presenting
+// certificate until the test ends.
+func startFakeServerOn(c *qt.C, ip string, certificate tls.Certificate) *fakeServer {
+	c.Helper()
+	listener, err := net.Listen("tcp", net.JoinHostPort(ip, "0"))
 	c.Assert(err, qt.IsNil)
 	server := &fakeServer{address: listener.Addr().String()}
 	config := &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
@@ -73,6 +81,15 @@ func startFakeServer(c *qt.C, certificate tls.Certificate) *fakeServer {
 		served.Wait()
 	})
 	return server
+}
+
+// at is the server's address with host in place of the address it listens
+// on, as a URL that names it by another name dials it.
+func (s *fakeServer) at(c *qt.C, host string) string {
+	c.Helper()
+	_, port, err := net.SplitHostPort(s.address)
+	c.Assert(err, qt.IsNil)
+	return net.JoinHostPort(host, port)
 }
 
 // MySQL capability flags the handshake announces, in its two 16-bit halves.
@@ -213,6 +230,67 @@ func TestConnect_CABundle_HappyPath(t *testing.T) {
 			c.Assert(err, qt.ErrorAs, &refused)
 			c.Assert(refused.Number, qt.Equals, uint16(accessDenied))
 			c.Assert(server.handshakes.Load(), qt.Equals, int32(1))
+		})
+	}
+}
+
+// TestConnect_CABundle_HappyPath_HostNames verifies the host name the URL
+// dials, in each form a host takes: a DNS name the certificate names, and the
+// IPv6 loopback address. Every runner the unit tests run on, Linux, macOS and
+// Windows, has an IPv6 loopback interface.
+func TestConnect_CABundle_HappyPath_HostNames(t *testing.T) {
+	tests := []struct {
+		name string
+		// listen is the address the server listens on, and host the name the
+		// URL dials it by and the certificate is issued for.
+		listen string
+		host   string
+	}{
+		{name: "a DNS name", listen: "127.0.0.1", host: "localhost"},
+		{name: "the IPv6 loopback address", listen: "::1", host: "::1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			authority, bundle := newAuthority(c, "mysqlconnect host names")
+			server := startFakeServerOn(c, test.listen, issue(c, authority, test.host))
+
+			err := connect(c, caURL("mysql", server.at(c, test.host), bundle, ""))
+
+			var refused *mysqldriver.MySQLError
+			c.Assert(err, qt.ErrorAs, &refused)
+			c.Assert(refused.Number, qt.Equals, uint16(accessDenied))
+			c.Assert(server.handshakes.Load(), qt.Equals, int32(1))
+		})
+	}
+}
+
+// TestConnect_CABundle_FailurePath_HostNames refuses a certificate that does
+// not name the host the URL dials, though the bundle signed it. The
+// certificate is checked against the name in the URL, not the address the
+// name resolves to.
+func TestConnect_CABundle_FailurePath_HostNames(t *testing.T) {
+	tests := []struct {
+		name   string
+		listen string
+		host   string
+		// issuedFor is the host the certificate names.
+		issuedFor string
+	}{
+		{name: "another DNS name", listen: "127.0.0.1", host: "localhost", issuedFor: "db.example.test"},
+		{name: "the address a DNS name resolves to", listen: "127.0.0.1", host: "localhost", issuedFor: "127.0.0.1"},
+		{name: "the IPv4 loopback address for the IPv6 one", listen: "::1", host: "::1", issuedFor: "127.0.0.1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			authority, bundle := newAuthority(c, "mysqlconnect host mismatch")
+			server := startFakeServerOn(c, test.listen, issue(c, authority, test.issuedFor))
+
+			err := connect(c, caURL("mysql", server.at(c, test.host), bundle, ""))
+
+			c.Assert(err, qt.ErrorAs, new(x509.HostnameError))
+			c.Assert(server.handshakes.Load(), qt.Equals, int32(0))
 		})
 	}
 }
