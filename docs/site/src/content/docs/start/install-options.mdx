@@ -377,12 +377,16 @@ refuses.
 that moment. That need not be the digest you pull a minute later, so verify
 the digest you deploy.
 
-An admission policy that accepts every release rather than one names the
-identity as a regular expression, anchored at both ends:
+To accept any release rather than one, name the identity as a regular
+expression anchored at both ends. An admission policy takes the same pattern:
 
-```text
-^https://github\.com/stokaro/ptah/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$
+```bash
+cosign verify --certificate-identity-regexp '^https://github\.com/stokaro/ptah/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' --certificate-oidc-issuer https://token.actions.githubusercontent.com "ghcr.io/stokaro/ptah@$DIGEST"
 ```
+
+A prerelease tag such as `v1.2.3-rc.1` publishes images and signs them under
+the same identity, so the optional `-` part matches it. Leave that part out of
+the pattern to accept final releases only.
 
 The signature says which workflow published the digest. It does not describe
 how the image was built: the release publishes no signed build provenance and

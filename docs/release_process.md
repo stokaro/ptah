@@ -47,9 +47,10 @@ waiting on one is a reason to cut it rather than a note on its own backlog
   margin for every job that mints one.
 - GitHub Actions package permissions enabled for publishing
   `ghcr.io/stokaro/ptah`.
-- No signing key or secret. The release job signs with its own GitHub OIDC
-  token, which `id-token: write` on that job alone grants, so there is no key
-  to rotate or leak.
+- No signing key or secret. The `release` job signs the checksum file and the
+  SBOMs, and the `Sign the release images` job signs the image index, each
+  with its own GitHub OIDC token. `id-token: write` on those two jobs grants
+  it, and on no pull-request job, so there is no key to rotate or leak.
 - `DOCKER_HUB_USER` and `DOCKER_HUB_TOKEN` as repository secrets, for the
   Docker Hub mirror. The account is a secret rather than the repository owner's
   name because the two are different things that look alike: `stokaro` on
@@ -168,29 +169,49 @@ that job stays skipped and npm is not a release channel.
    scripts/check-release-image-mirror.sh 0.1.2 sha256:<digest>
    ```
 
-7. Verify the image signatures. After the mirror check the workflow signs the
-   image index once per registry, by digest, with keyless cosign, and then
-   verifies each registry anonymously with the identity and issuer the
+7. Verify the image signatures. The `release` job reads the index digest
+   GoReleaser pushed and passes it on. The `Sign the release images` job then
+   runs the mirror check above, signs the index once per registry, by digest,
+   with keyless cosign, and verifies each registry anonymously with the
+   identity and issuer the
    [install page](site/src/content/docs/start/install-options.mdx) documents.
-   Either step failing fails the release. The signing runs in the workflow
-   rather than in GoReleaser's `docker_signs`, which would sign before the
-   mirror check and once per tag. The same verification by hand, given the
-   digest the version tag names:
+   The mirror check and the verification each read a host again for up to a
+   minute while it is behind. Any of the steps failing fails the release, and
+   `Publish npm CLI packages` waits for the signing job. The signing runs in
+   the workflow rather than in GoReleaser's `docker_signs`, which would sign
+   before the mirror check and once per tag. The same verification by hand,
+   given the digest the version tag names:
 
    ```bash
    DIGEST="$(docker buildx imagetools inspect ghcr.io/stokaro/ptah:0.1.2 --format '{{.Manifest.Digest}}')"
    scripts/check-release-image-signatures.sh verify v0.1.2 "$DIGEST"
    ```
 
-   A rerun of the release job pushes, signs and verifies again. The signing
-   identity names `release.yml` and the tag, so it is the same on every
-   attempt, and signing a digest that already has a signature adds a second
-   one. A rebuilt index can have a new digest; the tag then names the new one,
-   and the verification holds the rerun to it. Snapshots are never pushed or
-   signed, and no pull-request job holds `id-token: write`.
+   The images, the GitHub Release and the Homebrew formula are public before
+   they are signed. GoReleaser publishes all of them in the `release` job, and
+   the signing job starts after it. Until the signing job passes, `cosign
+   verify` reports `no signatures found` for the new digest, which is the
+   right answer for an image nothing has signed yet. That is normally a few
+   minutes. When the signing job fails, the window lasts until a rerun of it
+   passes. Announce the release only after the signing job has passed.
 
-   The signature identifies the publisher of the digest. It is separate from the
-   SBOM files and from build provenance, and it makes no SLSA claim.
+   When `Sign the release images` fails, use **Re-run failed jobs**. It runs
+   the signing job again with the digest the `release` job published, under
+   the same identity, because that identity names `release.yml` and the tag.
+   Signing a digest that already has a signature adds a second one beside it.
+   Never use **Re-run all jobs** on a published release. It runs GoReleaser
+   again, which builds and pushes a new index. The attestations buildx
+   attaches record the build, so the new index has a new digest. The version
+   tag and `latest` move to it, and only the new digest is signed. The first
+   digest stays in both registries without a signature, so anyone who pinned
+   it during the window cannot verify it. A failure in the `release` job
+   after GoReleaser pushed the images has the same effect when it is rerun,
+   so for that failure follow step 3 and cut the next patch version.
+
+   Snapshots are never pushed or signed, and no pull-request job holds
+   `id-token: write`. The signature identifies the publisher of the digest. It
+   is separate from the SBOM files and from build provenance, and it makes no
+   SLSA claim.
 
 8. Verify the versioned documentation. The tag's `Docs` run deploys it under a
    commit of its own — Pages keys a deployment by a commit the repository holds,
