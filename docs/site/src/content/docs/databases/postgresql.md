@@ -57,13 +57,21 @@ resolves to `app` in a database that holds a schema `app`, and to `public` in
 one that does not. The rules below apply to such a connection.
 
 A desired name written without a schema is placed in one schema before the
-comparison, and every statement the plan writes names that schema:
-`CREATE TABLE notes` is planned as `CREATE TABLE "public"."notes"`. This holds
-for tables, indexes, constraints, sequences, enums, views, functions, triggers,
-grants and the objects a feature owner keeps, such as domains and policies, in
-`schema plan`, `schema apply`, `schema diff`, `migrate diff` and
-`migrations generate --replay`. View and routine bodies, defaults and other
-expressions are SQL text and keep the names they were written with.
+comparison, and every statement the plan writes names its schema:
+`CREATE TABLE notes` is planned as `CREATE TABLE "public"."notes"`. A drop or an
+alter of an object the target holds names its schema too, the current schema
+included: removing the index `i` of `public.t` is `DROP INDEX "public"."i"`. This
+holds for tables, indexes, constraints, sequences, enums, views, functions,
+triggers, grants and the objects a feature owner keeps, such as domains,
+policies and partitions, in `schema plan`, `schema apply`, `schema diff`,
+`migrate diff` and `migrations generate --replay`.
+
+The comment `ptah-compat` writes above a statement, such as
+`-- Drop index "i" from table: "t"`, keeps the bare name, as the community
+binary writes it. View and routine bodies, defaults and other expressions are
+SQL text and keep the names they were written with. A URL that pins
+`search_path` resolves a bare name in that schema, and its plans name an object
+of that schema bare.
 
 A reference written without a schema, such as the table of an index or the
 function a trigger runs, is placed when it names an object the desired schema
@@ -786,10 +794,10 @@ read the old column until an earlier statement moves it to the new one. It moves
 the name instead, and the interim name leaves with the old column:
 
 ```sql
-ALTER TABLE "t" RENAME CONSTRAINT "t_full_name_not_null" TO "t_full_name_not_null__ptah_old";
--- POSTGRES: ADD COLUMN "display_name" fails if "t" holds any row; the column is NOT NULL and declares no default to fill it with.
-ALTER TABLE "t" ADD COLUMN "display_name" text CONSTRAINT "t_full_name_not_null" NOT NULL;
-ALTER TABLE "t" DROP COLUMN "full_name";
+ALTER TABLE "public"."t" RENAME CONSTRAINT "t_full_name_not_null" TO "t_full_name_not_null__ptah_old";
+-- POSTGRES: ADD COLUMN "display_name" fails if "public"."t" holds any row; the column is NOT NULL and declares no default to fill it with.
+ALTER TABLE "public"."t" ADD COLUMN "display_name" text CONSTRAINT "t_full_name_not_null" NOT NULL;
+ALTER TABLE "public"."t" DROP COLUMN "full_name";
 ```
 
 A column whose `NOT NULL` the plan renames holds its name in the same way until
@@ -864,7 +872,7 @@ A declared name that is not the one the server would give takes the same steps a
 a different statement, because `SET NOT NULL` leaves the name to the server:
 
 ```sql
-ALTER TABLE "t" ADD CONSTRAINT "nn" NOT NULL "a";
+ALTER TABLE "public"."t" ADD CONSTRAINT "nn" NOT NULL "a";
 ```
 
 It fails on a `NULL` row as `SET NOT NULL` does, with the same SQLSTATE, and the
@@ -880,8 +888,8 @@ with SQLSTATE 23502, so a comment says so, on every verb that writes a plan and
 on CockroachDB and YugabyteDB too:
 
 ```sql
--- POSTGRES: ADD COLUMN "required" fails if "t" holds any row; the column is NOT NULL and declares no default to fill it with.
-ALTER TABLE "t" ADD COLUMN "required" text NOT NULL;
+-- POSTGRES: ADD COLUMN "required" fails if "public"."t" holds any row; the column is NOT NULL and declares no default to fill it with.
+ALTER TABLE "public"."t" ADD COLUMN "required" text NOT NULL;
 ```
 
 A declared default, an identity, a serial and a generated column give the row a
@@ -1025,8 +1033,8 @@ that changes a bound in place, so a bound change detaches the partition and atta
 it again under the same parent:
 
 ```sql
-ALTER TABLE "events" DETACH PARTITION "e1";
-ALTER TABLE "events" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');
+ALTER TABLE "public"."events" DETACH PARTITION "public"."e1";
+ALTER TABLE "public"."events" ATTACH PARTITION "public"."e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');
 ```
 
 The table keeps its rows. Both statements run in the plan's transaction, so a move

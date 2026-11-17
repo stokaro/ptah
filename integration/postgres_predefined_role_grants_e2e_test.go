@@ -38,7 +38,7 @@ func TestSchemaApplyConvergesAGrantToAPredefinedRoleE2E(t *testing.T) {
 	stdout, stderr, err := runCLIProcess(ctx, dir, binaries.native, args...)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stdout, qt.Contains, "GRANT SELECT ON TABLE \"t\" TO \"pg_monitor\";\n")
+	c.Assert(stdout, qt.Contains, "GRANT SELECT ON TABLE \"public\".\"t\" TO \"pg_monitor\";\n")
 	c.Assert(stdout, qt.Not(qt.Contains), "REVOKE")
 
 	stdout, stderr, err = runCLIProcess(ctx, dir, binaries.native, args...)

@@ -88,7 +88,7 @@ func TestSchemaApplySetNotNullWithoutDefault_FailurePath(t *testing.T) {
 			plan := runPtahNative(c, "schema", "apply", "--db-url", target.url, "--schema-file", target.schema, "--dry-run")
 			out, err := runPtahNativeOutcome("schema", "apply", "--db-url", target.url, "--schema-file", target.schema, "--auto-approve")
 
-			c.Assert(plan, qt.Contains, `SET NOT NULL fails if any row of "t3648" holds NULL in "c"; the column declares no default to fill it with.`)
+			c.Assert(plan, qt.Contains, `SET NOT NULL fails if any row of "public"."t3648" holds NULL in "c"; the column declares no default to fill it with.`)
 			c.Assert(plan, qt.Not(qt.Contains), "UPDATE")
 			c.Assert(err, qt.ErrorMatches, `(?s).*column "c" of relation "t3648" contains null values.*`, qt.Commentf("%s", out))
 			rows, nullable := readNotNullRows(c, target.url)
@@ -130,7 +130,7 @@ func TestSchemaApplySetNotNullWithoutDefault_HappyPath(t *testing.T) {
 }
 
 // addedNotNullComment is what a plan says above a column that stops on a row.
-const addedNotNullComment = `ADD COLUMN "c" fails if "t3648" holds any row; the column is NOT NULL and declares no default to fill it with.`
+const addedNotNullComment = `ADD COLUMN "c" fails if "public"."t3648" holds any row; the column is NOT NULL and declares no default to fill it with.`
 
 // readAddedColumnState answers how many rows t3648 holds, and the nullability of its
 // column c, or an empty string where it has no such column.

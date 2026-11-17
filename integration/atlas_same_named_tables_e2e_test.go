@@ -45,7 +45,7 @@ CREATE TABLE b.t (id int PRIMARY KEY, code int, CONSTRAINT t_code_key UNIQUE (co
 		current: `CREATE TABLE users (id int PRIMARY KEY, code int);`,
 		schema: `CREATE TABLE "Users" (id int PRIMARY KEY, code int);
 CREATE TABLE users (id int PRIMARY KEY, code int, CONSTRAINT users_code_key UNIQUE (code));`,
-		want:   `ALTER TABLE "users" ADD CONSTRAINT "users_code_key" UNIQUE ("code");`,
+		want:   `ALTER TABLE "public"."users" ADD CONSTRAINT "users_code_key" UNIQUE ("code");`,
 		held:   `SELECT count(*) FROM pg_constraint WHERE conrelid = 'users'::regclass AND conname = 'users_code_key'`,
 		absent: `SELECT count(*) FROM pg_constraint WHERE conrelid = '"Users"'::regclass AND conname = 'users_code_key'`,
 	},
@@ -79,7 +79,7 @@ CREATE TABLE a.b (id int PRIMARY KEY, code int, CONSTRAINT b_code_key UNIQUE (co
 		current: `CREATE TABLE ab (id int PRIMARY KEY, code int);`,
 		schema: `CREATE TABLE "a""b" (id int PRIMARY KEY, code int);
 CREATE TABLE ab (id int PRIMARY KEY, code int, CONSTRAINT ab_code_key UNIQUE (code));`,
-		want:   `ALTER TABLE "ab" ADD CONSTRAINT "ab_code_key" UNIQUE ("code");`,
+		want:   `ALTER TABLE "public"."ab" ADD CONSTRAINT "ab_code_key" UNIQUE ("code");`,
 		held:   `SELECT count(*) FROM pg_constraint WHERE conrelid = 'ab'::regclass AND conname = 'ab_code_key'`,
 		absent: `SELECT count(*) FROM pg_constraint WHERE conrelid = '"a""b"'::regclass AND conname = 'ab_code_key'`,
 	},

@@ -59,9 +59,9 @@ type viewSecurityPath struct {
 }
 
 const (
-	viewSecurityAlterStatement   = `ALTER VIEW "my_docs" SET (security_invoker=false)`
-	viewSecurityReplaceStatement = `CREATE OR REPLACE VIEW "my_docs" WITH (security_invoker=false)`
-	viewSecurityDropStatement    = `DROP VIEW "my_docs"`
+	viewSecurityAlterStatement   = `ALTER VIEW "public"."my_docs" SET (security_invoker=false)`
+	viewSecurityReplaceStatement = `CREATE OR REPLACE VIEW "public"."my_docs" WITH (security_invoker=false)`
+	viewSecurityDropStatement    = `DROP VIEW "public"."my_docs"`
 )
 
 var viewSecurityPaths = []viewSecurityPath{
@@ -184,9 +184,10 @@ func assertViewSecurityUnchanged(c *qt.C, target viewSecurityTarget, definition 
 	c.Assert(target.rowsReaderSees(c), qt.Equals, 1)
 }
 
-// viewSecurityRefused asserts on a refusal: it names the view, as the schema
-// spells it, and the option, says what removing it does, and gives both
-// remedies.
+// viewSecurityRefused asserts on a refusal: it names the view, as the plan
+// names it, and the option, says what removing it does, and gives both
+// remedies. A realm-scoped plan places a view the schema writes without a
+// schema, and names it with the schema it placed it in.
 func viewSecurityRefused(c *qt.C, got clirun.Result, view string) {
 	c.Helper()
 	for _, part := range []string{
@@ -217,7 +218,7 @@ func TestSchemaApplyRefusesToLoseAViewSecurityOptionE2E(t *testing.T) {
 					"--schema-file", target.schemaFile(c, path.body, ""), "--auto-approve")
 
 				c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-				viewSecurityRefused(c, got, "my_docs")
+				viewSecurityRefused(c, got, "public.my_docs")
 				assertViewSecurityUnchanged(c, target, definition)
 			})
 		}
@@ -427,19 +428,22 @@ func TestPlanningVerbsRefuseToLoseAViewSecurityOptionE2E(t *testing.T) {
 		name     string
 		target   clirun.Target
 		wantExit int
-		args     func(url, schema, dev, dir string) []string
+		// view is the view's name in the refusal: a verb that places the
+		// schema's unqualified names names it with the schema it placed it in.
+		view string
+		args func(url, schema, dev, dir string) []string
 	}
 	tests := []verb{
-		{name: "schema compare", target: clirun.Ptah, wantExit: 2, args: func(url, schema, _, _ string) []string {
+		{name: "schema compare", target: clirun.Ptah, wantExit: 2, view: "my_docs", args: func(url, schema, _, _ string) []string {
 			return []string{"schema", "compare", "--db-url", url, "--schema-file", schema}
 		}},
-		{name: "migrations generate", target: clirun.Ptah, wantExit: 2, args: func(url, schema, _, dir string) []string {
+		{name: "migrations generate", target: clirun.Ptah, wantExit: 2, view: "my_docs", args: func(url, schema, _, dir string) []string {
 			return []string{"migrations", "generate", "--db-url", url, "--schema-file", schema, "--migrations-dir", dir}
 		}},
-		{name: "compat schema apply", target: clirun.Compat, wantExit: 1, args: func(url, schema, dev, _ string) []string {
+		{name: "compat schema apply", target: clirun.Compat, wantExit: 1, view: "public.my_docs", args: func(url, schema, dev, _ string) []string {
 			return []string{"schema", "apply", "-u", url, "--to", "file://" + schema, "--dev-url", dev, "--auto-approve"}
 		}},
-		{name: "compat schema diff", target: clirun.Compat, wantExit: 1, args: func(url, schema, dev, _ string) []string {
+		{name: "compat schema diff", target: clirun.Compat, wantExit: 1, view: "public.my_docs", args: func(url, schema, dev, _ string) []string {
 			return []string{"schema", "diff", "--from", url, "--to", "file://" + schema, "--dev-url", dev}
 		}},
 	}
@@ -461,7 +465,7 @@ func TestPlanningVerbsRefuseToLoseAViewSecurityOptionE2E(t *testing.T) {
 				test.args(target.url, filepath.ToSlash(target.schemaFile(c, viewSecurityBody, "")), replaceDatabaseName(c, adminURL, devName), dir)...)
 
 			c.Assert(got.ExitCode, qt.Equals, test.wantExit, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-			viewSecurityRefused(c, got, "my_docs")
+			viewSecurityRefused(c, got, test.view)
 			assertViewSecurityUnchanged(c, target, definition)
 			written, err := os.ReadDir(dir)
 			c.Assert(err, qt.IsNil)

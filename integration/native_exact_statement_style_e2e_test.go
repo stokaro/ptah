@@ -332,10 +332,10 @@ func TestNativePlanningVerbsE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard(t 
 
 			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
 			planned := run.Stdout + plannedFiles(c, dir)
-			c.Assert(planned, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old";`)
-			c.Assert(planned, qt.Contains, `DROP VIEW "v";`)
-			c.Assert(planned, qt.Contains, `DROP INDEX "i";`)
-			c.Assert(planned, qt.Contains, `ALTER TABLE "t" DROP CONSTRAINT "t_a_check";`)
+			c.Assert(planned, qt.Contains, `ALTER TYPE "public"."e" RENAME TO "e__ptah_old";`)
+			c.Assert(planned, qt.Contains, `DROP VIEW "public"."v";`)
+			c.Assert(planned, qt.Contains, `DROP INDEX "public"."i";`)
+			c.Assert(planned, qt.Contains, `ALTER TABLE "public"."t" DROP CONSTRAINT "t_a_check";`)
 			c.Assert(planned, qt.Not(qt.Contains), "IF EXISTS")
 		})
 	}

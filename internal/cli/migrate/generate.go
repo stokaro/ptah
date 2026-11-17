@@ -35,6 +35,7 @@ import (
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -455,7 +456,10 @@ func planGeneratedMigrationByReplay(
 					replayOpts.CompareOptions = replayedCompareOptions(generateOpts.CompareOptions)
 					replayOpts.PriorMigrationsFS = priorMigrations
 					var planErr error
-					plan, planErr = generator.PlanMigration(lockedCtx, replayOpts)
+					// The replayed directory is read with the schema of every
+					// object on a realm-scoped dev URL, so a drop names its
+					// schema as a placed creation does; see [readscope.Qualified].
+					plan, planErr = generator.PlanMigration(readscope.Qualified(lockedCtx), replayOpts)
 					return planErr
 				},
 			)

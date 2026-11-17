@@ -294,9 +294,13 @@ func refineExtensionCapabilities(
 }
 
 // NewReader returns the PostgreSQL-wire reader, configured with the
-// connection's capabilities rather than with a dialect name.
+// connection's capabilities rather than with a dialect name, and told whether
+// the URL describes every schema of the database; see
+// [postgres.Reader.SetRealmScoped].
 func (Service) NewReader(_ *connector.Pool, info catalog.ServerInfo, runner sqlrunner.Runner) catalog.SchemaReader {
-	return postgres.NewPostgreSQLWireReaderWithCapabilities(runner, info.Schema, info.Dialect, info.Capabilities)
+	reader := postgres.NewPostgreSQLWireReaderWithCapabilities(runner, info.Schema, info.Dialect, info.Capabilities)
+	reader.SetRealmScoped(schemaselection.Realm(info.Dialect, info.URL, info.Schema))
+	return reader
 }
 
 // NewWriter returns the PostgreSQL-wire writer. The set decides whether

@@ -46,7 +46,7 @@ var nullBackfillDiffs = []nullBackfillDiff{
 		schema:     "CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer NOT NULL DEFAULT 9);",
 		written:    ".sql",
 		target:     []string{"CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer)", "INSERT INTO t3660 VALUES (1, NULL)"},
-		wantStrict: []string{`ALTER TABLE "t3660" ALTER COLUMN "c" SET NOT NULL, ALTER COLUMN "c" SET DEFAULT 9`},
+		wantStrict: []string{`ALTER TABLE "public"."t3660" ALTER COLUMN "c" SET NOT NULL, ALTER COLUMN "c" SET DEFAULT 9`},
 	},
 	{
 		name:       "NOT NULL gained under a default the column has",
@@ -54,7 +54,7 @@ var nullBackfillDiffs = []nullBackfillDiff{
 		schema:     "CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer NOT NULL DEFAULT 9);",
 		written:    ".sql",
 		target:     []string{"CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer DEFAULT 9)", "INSERT INTO t3660 VALUES (1, NULL)"},
-		wantStrict: []string{`ALTER TABLE "t3660" ALTER COLUMN "c" SET NOT NULL`},
+		wantStrict: []string{`ALTER TABLE "public"."t3660" ALTER COLUMN "c" SET NOT NULL`},
 	},
 	{
 		name:      "the rollback of a dropped NOT NULL, in the golang-migrate layout",
@@ -66,7 +66,7 @@ var nullBackfillDiffs = []nullBackfillDiff{
 		schema:     "CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer DEFAULT 9);",
 		written:    ".down.sql",
 		target:     []string{"CREATE TABLE t3660 (id bigint PRIMARY KEY, c integer DEFAULT 9)", "INSERT INTO t3660 VALUES (1, NULL)"},
-		wantStrict: []string{`ALTER TABLE "t3660" ALTER COLUMN "c" SET NOT NULL`},
+		wantStrict: []string{`ALTER TABLE "public"."t3660" ALTER COLUMN "c" SET NOT NULL`},
 	},
 }
 
@@ -139,9 +139,9 @@ func nullBackfillRow(c *qt.C, db *sql.DB) string {
 //	ALTER TABLE "public"."t3660" ALTER COLUMN "c" SET NOT NULL;
 //	ALTER TABLE "public"."t3660" ALTER COLUMN "c" SET NOT NULL;  -- the .down.sql
 //
-// Ptah leaves the schema unqualified; the statements are the same. Run on a table
-// holding a NULL, each file fails with
-// SQLSTATE 23502, as the pinned binary's does, and the row keeps its NULL.
+// Ptah writes the same statements. Run on a table holding a NULL, each file
+// fails with SQLSTATE 23502, as the pinned binary's does, and the row keeps its
+// NULL.
 func TestStrictCompatMigrateDiffWritesNoNullBackfill_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat")
@@ -173,8 +173,8 @@ func TestStrictCompatMigrateDiffWritesNoNullBackfill_HappyPath(t *testing.T) {
 			row, runErr := runOnNullRow(c, diff.target, statements)
 
 			c.Assert(statements, qt.Not(qt.HasLen), 0)
-			c.Assert(statements[0], qt.Matches, `UPDATE "t3660" SET "c" = '?9'? WHERE "c" IS NULL`)
-			c.Assert(strings.Join(statements, "\n"), qt.Contains, `ALTER TABLE "t3660" ALTER COLUMN "c" SET NOT NULL`)
+			c.Assert(statements[0], qt.Matches, `UPDATE "public"."t3660" SET "c" = '?9'? WHERE "c" IS NULL`)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, `ALTER TABLE "public"."t3660" ALTER COLUMN "c" SET NOT NULL`)
 			c.Assert(runErr, qt.IsNil)
 			c.Assert(row, qt.Equals, "9")
 		})

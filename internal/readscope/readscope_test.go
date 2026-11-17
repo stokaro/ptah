@@ -28,6 +28,31 @@ func TestIsAuthored(t *testing.T) {
 	}
 }
 
+func TestIsQualified(t *testing.T) {
+	tests := []struct {
+		name   string
+		ctx    context.Context
+		wanted bool
+	}{
+		{name: "a run that says nothing", ctx: t.Context(), wanted: false},
+		{name: "a run that left a kind out", ctx: readscope.Without(t.Context(), readscope.Views), wanted: false},
+		{name: "a read of what the run created", ctx: readscope.Authored(t.Context()), wanted: false},
+		{name: "a run that names every schema", ctx: readscope.Qualified(t.Context()), wanted: true},
+		{
+			name:   "a kind left out after the run named every schema",
+			ctx:    readscope.Without(readscope.Qualified(t.Context()), readscope.Views),
+			wanted: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(readscope.IsQualified(test.ctx), qt.Equals, test.wanted)
+		})
+	}
+}
+
 func TestNeeds(t *testing.T) {
 	tests := []struct {
 		name   string

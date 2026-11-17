@@ -111,7 +111,7 @@ func TestSchemaApplyPrimaryKeyBeforeColumnsE2E_ADuplicateTakesEverythingBack(t *
 		"CREATE TABLE parent (id bigint, code bigint NOT NULL, CONSTRAINT parent_pkey PRIMARY KEY (code));\n")
 
 	c.Assert(run.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, "DROP CONSTRAINT \"parent_pkey\";\nALTER TABLE \"parent\" ALTER COLUMN \"id\" DROP NOT NULL;")
+	c.Assert(run.Stdout, qt.Contains, "DROP CONSTRAINT \"parent_pkey\";\nALTER TABLE \"public\".\"parent\" ALTER COLUMN \"id\" DROP NOT NULL;")
 	c.Assert(run.Stderr, qt.Contains, `could not create unique index "parent_pkey"`)
 	c.Assert(keyBeforeColumnsKey(c, target), qt.Equals, "PRIMARY KEY (id)")
 	c.Assert(readInt(c, target, keyBeforeColumnsNullable), qt.Equals, 0)

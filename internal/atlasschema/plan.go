@@ -544,7 +544,9 @@ func planTargetState(ctx context.Context,
 	exclude []string,
 	runtime selectext.Runtime,
 ) (*catalog.Database, error) {
-	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(runtime.Selections(), exclude, nil)...)
+	// Read as computeApplyPlan read it, with every schema named, or the
+	// fingerprint of an unchanged database would differ.
+	ctx = readscope.Qualified(readscope.Without(ctx, atlasfilter.KindsLeftOut(runtime.Selections(), exclude, nil)...))
 	names := schemascope.Union(scope.schemas, nil)
 	if len(names) == 0 {
 		urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)

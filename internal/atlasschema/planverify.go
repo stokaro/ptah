@@ -123,6 +123,9 @@ func RehearsePlanStatements(
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
 		return err
 	}
+	// The dev database and the target are read as the plan read the target;
+	// see [readscope.Qualified].
+	ctx = readscope.Qualified(ctx)
 	if opts.OwnerTransactions != nil && len(opts.OwnerTransactions) != len(statements) {
 		return errors.New("plan rehearsal transaction requirements do not match the statements")
 	}

@@ -549,7 +549,10 @@ func computeApplyPlan(
 	if err := validateApplyPlanningInputs(conn, opts); err != nil {
 		return applyComputation{}, err
 	}
-	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
+	// Every statement of a realm-scoped plan names its schema, a drop or an
+	// alter of an object read from the target as well as a creation the
+	// desired schema places; see [namingFor].
+	ctx = readscope.Qualified(readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...))
 	allowUnmatched, err := resolveApplyAllowUnmatched(opts)
 	if err != nil {
 		return applyComputation{}, err

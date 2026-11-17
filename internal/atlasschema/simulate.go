@@ -112,7 +112,9 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	if err := schemaext.RequireRuntime(ctx, p.runtime); err != nil {
 		return err
 	}
-	ctx = rolepassword.With(ctx, p.passwords)
+	// The dev database and the target are read as the plan read the target;
+	// see [readscope.Qualified].
+	ctx = readscope.Qualified(rolepassword.With(ctx, p.passwords))
 	if strings.TrimSpace(opts.DevURL) == "" {
 		return nil
 	}

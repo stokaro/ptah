@@ -308,6 +308,9 @@ func generateDiff(
 	opts DiffOptions,
 	runtime diffRuntime,
 ) (result DiffResult, err error) {
+	// The replayed directory is read with the schema of every object when the
+	// dev URL is realm-scoped, so the file names it; see [readscope.Qualified].
+	ctx = readscope.Qualified(ctx)
 	prepared, err := prepareDiff(ctx, conn, opts)
 	if err != nil {
 		return DiffResult{}, err
