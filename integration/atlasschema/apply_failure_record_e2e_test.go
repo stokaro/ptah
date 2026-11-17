@@ -509,29 +509,6 @@ func TestSchemaApplyFailureRecordOfACommitE2E(t *testing.T) {
 	}
 }
 
-// TestSchemaApplyFailureRecordOfAStatementNeverSentE2E stops a run at a statement
-// the writer refuses to send, after an earlier one went out. The run reached the
-// database, and the record names where it stopped, with no code because no server
-// answered.
-func TestSchemaApplyFailureRecordOfAStatementNeverSentE2E(t *testing.T) {
-	c := qt.New(t)
-	f := newFailureTarget(c, dbtarget.PostgreSQL)
-	first, role := f.table("first_unit"), f.table("role")
-	plan := f.savedPlan(c, "CREATE TABLE "+f.table("planned")+" (id INT PRIMARY KEY)",
-		"CREATE TABLE "+first+" (id INT PRIMARY KEY)",
-		`CREATE ROLE "`+role+`" WITH LOGIN PASSWORD `+rolepassword.Reference(role))
-	c.Cleanup(func() {
-		_, _ = f.conn.ExecContext(context.Background(), `DROP ROLE IF EXISTS "`+role+`"`)
-	})
-
-	result, document := f.apply(c, "--plan", plan, "--tx-mode", "none")
-
-	c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("%s", result.Stderr))
-	c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
-	c.Assert(compactRecord(c, document.Failure), qt.Equals, `{"statement":2,"statements":2}`)
-	c.Assert(f.tableExists(c, first), qt.IsTrue)
-}
-
 // TestSchemaApplyNoFailureRecordBeforeDispatchE2E stops a run on a real server
 // before its first statement leaves. A preflight and a rehearsal both name a
 // statement, and a server answers the rehearsal's, on the dev database. Nothing
@@ -542,6 +519,24 @@ func TestSchemaApplyNoFailureRecordBeforeDispatchE2E(t *testing.T) {
 	accounts, planned := f.table("accounts"), f.table("planned")
 	f.exec(c, strings.ReplaceAll(uniqueTableDDL, "{t}", accounts))
 
+	t.Run("a statement the writer refuses to send, after one it would send", func(t *testing.T) {
+		c := qt.New(t)
+		first, role := f.table("first_unit"), f.table("role")
+		plan := f.savedPlan(c, "CREATE TABLE "+planned+" (id INT PRIMARY KEY)",
+			"CREATE TABLE "+first+" (id INT PRIMARY KEY)",
+			`CREATE ROLE "`+role+`" WITH LOGIN PASSWORD `+rolepassword.Reference(role))
+		c.Cleanup(func() {
+			_, _ = f.conn.ExecContext(context.Background(), `DROP ROLE IF EXISTS "`+role+`"`)
+		})
+
+		result, document := f.apply(c, "--plan", plan, "--tx-mode", "none")
+
+		c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("%s", result.Stderr))
+		c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeFailed)
+		c.Assert(document.Error.Message, qt.Contains, rolepassword.Variable(role))
+		c.Assert(compactRecord(c, document.Failure), qt.Equals, "")
+		c.Assert(f.tableExists(c, first), qt.IsFalse)
+	})
 	t.Run("a statement the transaction mode refuses", func(t *testing.T) {
 		c := qt.New(t)
 		plan := f.savedPlan(c, "CREATE TABLE "+planned+" (id INT PRIMARY KEY)",

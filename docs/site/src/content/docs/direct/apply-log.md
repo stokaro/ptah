@@ -57,8 +57,8 @@ the engine took the run's statements back; `unknown` says that nothing after
 the first statement is confirmed.
 
 A run that sent nothing writes nothing, and does not create the table: a dry
-run, a declined prompt, a refused stale plan, a plan with no changes, or a
-failure before the first statement. The record is of statements that reached
+run, a declined prompt, a refused stale plan, a view owner the server would
+refuse, a plan with no changes, or a failure before the first statement. The record is of statements that reached
 the database.
 
 The started entry is written over the session the plan runs on. The outcome is
