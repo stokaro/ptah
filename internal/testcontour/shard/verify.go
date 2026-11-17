@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -54,6 +55,7 @@ type ShardResult struct {
 
 // Result is the gate's account of a sharded contour. Every slice is sorted.
 type Result struct {
+	// Shards is the number of parts the agreed partition has.
 	Shards int
 	// Weighting and Digest repeat the agreed partition's fields.
 	Weighting string
@@ -65,6 +67,9 @@ type Result struct {
 	// Passed counts the listed tests that ran once and passed.
 	Passed int
 
+	// Absent lists the shards that sent no report. Their tests count as
+	// Missing.
+	Absent []int
 	// Missing tests were listed and never reported starting.
 	Missing []Test
 	// Unexpected tests reported starting but were not listed.
@@ -97,18 +102,27 @@ func Verify(reports []Report, floor int) (Result, error) {
 	if floor < 1 {
 		return Result{}, fmt.Errorf("the contour floor must be positive, got %d", floor)
 	}
-	partition, err := agreedPartition(reports)
+	partition, absent, err := agreedPartition(reports)
 	if err != nil {
 		return Result{}, err
 	}
 
 	result := Result{
-		Shards:    len(reports),
+		Shards:    len(partition.Parts),
 		Weighting: partition.Weighting,
 		Digest:    partition.Digest,
 		Listed:    len(partition.Tests),
+		Absent:    absent,
 	}
 	var failures []error
+	if len(absent) != 0 {
+		// The reports that arrived still agree on the partition, so the gate
+		// judges and measures them; the absent shards' tests count as missing.
+		failures = append(failures, fmt.Errorf(
+			"shard %s of %d sent no report, so the tests given to it are unaccounted for",
+			joinInts(absent), len(partition.Parts),
+		))
+	}
 	if len(partition.Tests) < floor {
 		failures = append(failures, fmt.Errorf(
 			"the contour lists %d tests, below the floor of %d; a listing that stopped matching would look like this",
@@ -152,15 +166,16 @@ func Verify(reports []Report, floor int) (Result, error) {
 	return result, errors.Join(failures...)
 }
 
-// agreedPartition returns the partition every report carries, after checking
-// that they carry the same one and that each shard reported exactly once.
-func agreedPartition(reports []Report) (Partition, error) {
+// agreedPartition returns the partition every report carries and the shards
+// that sent none, after checking that the reports carry the same partition and
+// that no shard reported twice.
+func agreedPartition(reports []Report) (Partition, []int, error) {
 	if len(reports) == 0 {
-		return Partition{}, errors.New("no shard reported; nothing proves the contour ran")
+		return Partition{}, nil, errors.New("no shard reported; nothing proves the contour ran")
 	}
 	first := reports[0].Manifest
 	if first.Shards < 1 || len(first.Partition.Parts) != first.Shards {
-		return Partition{}, fmt.Errorf(
+		return Partition{}, nil, fmt.Errorf(
 			"shard %d claims %d shards but carries a partition of %d parts",
 			first.Shard, first.Shards, len(first.Partition.Parts),
 		)
@@ -169,44 +184,46 @@ func agreedPartition(reports []Report) (Partition, error) {
 	for _, report := range reports {
 		manifest := report.Manifest
 		if manifest.Shards != first.Shards {
-			return Partition{}, fmt.Errorf(
+			return Partition{}, nil, fmt.Errorf(
 				"shard %d claims %d shards and shard %d claims %d",
 				first.Shard, first.Shards, manifest.Shard, manifest.Shards,
 			)
 		}
 		if manifest.Shard < 1 || manifest.Shard > manifest.Shards {
-			return Partition{}, fmt.Errorf("a report names shard %d of %d", manifest.Shard, manifest.Shards)
+			return Partition{}, nil, fmt.Errorf("a report names shard %d of %d", manifest.Shard, manifest.Shards)
 		}
 		if seen[manifest.Shard] {
-			return Partition{}, fmt.Errorf("shard %d reported twice", manifest.Shard)
+			return Partition{}, nil, fmt.Errorf("shard %d reported twice", manifest.Shard)
 		}
 		seen[manifest.Shard] = true
 		if computed := manifest.Partition.ComputeDigest(); computed != manifest.Partition.Digest {
-			return Partition{}, fmt.Errorf(
+			return Partition{}, nil, fmt.Errorf(
 				"shard %d carries a partition whose digest %s does not match its content (%s)",
 				manifest.Shard, manifest.Partition.Digest, computed,
 			)
 		}
 		if manifest.Partition.Digest != first.Partition.Digest {
-			return Partition{}, fmt.Errorf(
+			return Partition{}, nil, fmt.Errorf(
 				"shards %d and %d computed different partitions (%s and %s); their inputs differed",
 				first.Shard, manifest.Shard, first.Partition.Digest, manifest.Partition.Digest,
 			)
 		}
 	}
-	var absent []string
+	var absent []int
 	for shard := 1; shard <= first.Shards; shard++ {
 		if !seen[shard] {
-			absent = append(absent, fmt.Sprint(shard))
+			absent = append(absent, shard)
 		}
 	}
-	if len(absent) != 0 {
-		return Partition{}, fmt.Errorf(
-			"shard %s of %d sent no report, so the tests given to it are unaccounted for",
-			strings.Join(absent, ", "), first.Shards,
-		)
+	return first.Partition, absent, nil
+}
+
+func joinInts(values []int) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		parts = append(parts, strconv.Itoa(value))
 	}
-	return first.Partition, nil
+	return strings.Join(parts, ", ")
 }
 
 type testEvent struct {

@@ -224,9 +224,9 @@ func TestVerify_FailurePathRefusesAContourThatDidNotRunExactlyOnce(t *testing.T)
 }
 
 // TestVerify_FailurePathRefusesReportsThatDisagreeAboutThePartition covers the
-// manifests rather than the events: a shard that is absent, reported twice, or
-// carries a partition other than its peers' leaves the gate with no agreed
-// contour to judge.
+// manifests rather than the events: a shard reported twice, or one that carries
+// a partition other than its peers', leaves the gate with no agreed contour to
+// judge.
 func TestVerify_FailurePathRefusesReportsThatDisagreeAboutThePartition(t *testing.T) {
 	c := qt.New(t)
 	partition := gatePartition(c)
@@ -246,11 +246,6 @@ func TestVerify_FailurePathRefusesReportsThatDisagreeAboutThePartition(t *testin
 		{
 			name:    "no report",
 			wantErr: `no shard reported; nothing proves the contour ran`,
-		},
-		{
-			name:    "a shard sent no report",
-			reports: reports(partition, cleanShard1),
-			wantErr: `shard 2 of 2 sent no report, so the tests given to it are unaccounted for`,
 		},
 		{
 			name: "a shard reported twice",
@@ -329,4 +324,23 @@ func TestVerify_FailurePathKeepsTheAccountBesideTheError(t *testing.T) {
 	c.Assert(result.Ran, qt.Equals, 3)
 	c.Assert(result.Passed, qt.Equals, 3)
 	c.Assert(result.Missing, qt.DeepEquals, []shard.Test{{Package: pkgA, Name: "TestA3"}})
+}
+
+// TestVerify_FailurePathJudgesTheShardsThatReported covers a shard that sent
+// nothing, as one whose runner lost a service container at startup does. The
+// shards that reported still agree on the partition, so the gate refuses the
+// contour, counts the absent shard's tests as missing, and still measures the
+// rest for the next run's balance.
+func TestVerify_FailurePathJudgesTheShardsThatReported(t *testing.T) {
+	c := qt.New(t)
+	result, err := shard.Verify(reports(gatePartition(c), cleanShard1), 4)
+	c.Assert(err, qt.ErrorMatches, `shard 2 of 2 sent no report, so the tests given to it are unaccounted for\n`+
+		`2 listed tests never ran: example\.com/a:TestA2, example\.com/b:TestB1`)
+	c.Assert(result.Shards, qt.Equals, 2)
+	c.Assert(result.Absent, qt.DeepEquals, []int{2})
+	c.Assert(result.Ran, qt.Equals, 2)
+	c.Assert(result.Passed, qt.Equals, 2)
+	c.Assert(result.Missing, qt.DeepEquals, []shard.Test{{Package: pkgA, Name: "TestA2"}, {Package: pkgB, Name: "TestB1"}})
+	c.Assert(result.PerShard, qt.HasLen, 1)
+	c.Assert(result.Timings.Packages[pkgA].Tests, qt.DeepEquals, map[string]int64{"TestA1": 1500, "TestA3": 2000})
 }

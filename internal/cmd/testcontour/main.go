@@ -164,6 +164,9 @@ func describe(result shard.Result, floor int, verdict error) string {
 	}
 	fmt.Fprintf(&b, "\n- shards: %d; listed: %d (floor %d); ran: %d; passed: %d\n",
 		result.Shards, result.Listed, floor, result.Ran, result.Passed)
+	if len(result.Absent) != 0 {
+		fmt.Fprintf(&b, "- shards that sent no report: %v\n", result.Absent)
+	}
 	fmt.Fprintf(&b, "- missing: %d; unexpected: %d; repeated: %d; misplaced: %d; incomplete: %d; skipped: %d; failed: %d\n",
 		len(result.Missing), len(result.Unexpected), len(result.Repeated), len(result.Misplaced),
 		len(result.Incomplete), len(result.Skipped), len(result.Failed))
