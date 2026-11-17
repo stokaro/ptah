@@ -146,6 +146,13 @@ or [YAML](../../reference/yaml-schema/#view-options-and-storage-parameters).
 [View options and storage parameters](../../databases/postgresql/#view-options-and-storage-parameters)
 says how they are compared.
 
+Neither block has an owner attribute, as Atlas's has none, so an `owner`
+attribute is refused, and an HCL schema leaves the owner of its views
+unmanaged. A schema rendered as HCL from a source that declares an owner
+reports each owner it leaves out. To declare one, use SQL, Go annotations or
+YAML; see [View and materialized view
+owners](../../databases/postgresql/#view-and-materialized-view-owners).
+
 ## Declare API export metadata
 
 Ptah HCL extends the Atlas-compatible table and column blocks with contract

@@ -4087,9 +4087,9 @@ func (r *Reader) readDefaultPrivilegeGrantees(ctx context.Context, schemas []str
 // merely exists in the cluster certainly is not.
 //
 // Ownership is deliberately NOT a reason, and this was measured rather than
-// assumed. Ptah describes no ownership -- it emits no OWNER TO and no CREATE
-// SCHEMA ... AUTHORIZATION -- so an owner is a role the description creates
-// and then never refers to. Because the connecting superuser owns every object
+// assumed. A description writes no owner -- an owner is declared only by the
+// desired schema, never by a read -- so an owner is a role the description
+// creates and then never refers to. Because the connecting superuser owns every object
 // it creates, treating ownership as a reason made every inspect describe the
 // connecting role, and a diff between a populated database and an empty dev
 // database in the same cluster then planned
@@ -4402,10 +4402,12 @@ var ownerKinds = map[string]string{
 // an object somebody owns and the one whose ownership decides who may create
 // in it.
 //
-// Ownership is read for analysis and nothing else. Ptah renders no OWNER TO,
-// and the note above readRoles records what happened the last time ownership
-// leaked into the description: every inspect described the connecting
-// superuser, and a diff then planned CREATE ROLE for it (stokaro/ptah#1950).
+// Ownership is an observation and never a declaration. A comparison reads a
+// view's or a materialized view's owner here only where the desired schema
+// declares one, and the note above readRoles records what happened the last
+// time ownership leaked into the description: every inspect described the
+// connecting superuser, and a diff then planned CREATE ROLE for it
+// (stokaro/ptah#1950).
 func (r *Reader) readObjectOwners(ctx context.Context) ([]catalog.ObjectOwner, error) {
 	schemas := r.schemasToRead()
 	placeholders := make([]string, 0, len(schemas))

@@ -89,6 +89,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.RawSQLNode{}},
 	{node: &ast.RefreshMaterializedViewNode{}},
 	{node: &ast.AlterViewOptionsNode{}},
+	{node: &ast.AlterOwnerNode{}},
 	{node: &ast.RevokePrivilegeNode{}},
 	{node: &ast.RevokeRoleMembershipNode{}},
 	{node: &ast.UpsertNode{}},

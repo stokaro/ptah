@@ -78,7 +78,8 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 			Operations:       []string{"TRUNCATE [TABLE] <names>"},
 			UnreadStatements: []string{"REPLACE"},
 			RenameTable:      true,
-			OwnerTo:          []string{descriptor.OwnerKindSchema},
+			OwnerTo:          []string{descriptor.OwnerKindSchema, descriptor.OwnerKindView},
+			ManagedOwners:    []string{descriptor.OwnerKindView},
 		},
 		Routines: descriptor.RoutineGrammar{
 			Body:                   descriptor.RoutineQuotedBody,
@@ -153,6 +154,22 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 				g.Forms.OwnerTo = []string{descriptor.OwnerKindSchema, descriptor.OwnerKindSchema}
 			}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: OWNER TO kind "SCHEMA" is written twice`,
+		},
+		{
+			name: "a managed owner kind the dialect does not read OWNER TO for",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Forms.OwnerTo = []string{descriptor.OwnerKindSchema}
+				g.Forms.ManagedOwners = []string{descriptor.OwnerKindView}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: managed owner kind "VIEW" is not one of \["SCHEMA"\]`,
+		},
+		{
+			name: "a managed owner kind stated twice",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Forms.OwnerTo = []string{descriptor.OwnerKindView}
+				g.Forms.ManagedOwners = []string{descriptor.OwnerKindView, descriptor.OwnerKindView}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: managed owner kind "VIEW" is written twice`,
 		},
 		{
 			name:    "a statement form a parser could not read",

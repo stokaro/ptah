@@ -327,6 +327,10 @@ func reverseSchemaDiffWithPrior(
 	// same absolute path, and a table it rebuilds held the same grants.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
 	reversed.CurrentGrants = diff.CurrentGrants
+	// The same database's owners, as the forward change leaves them.
+	reversed.CurrentOwners = ownersAfter(diff, semantics)
+	reversed.DeclaredViewLikes = withReversedOwners(reversed.DeclaredViewLikes,
+		reversed.ViewsModified, reversed.MaterializedViewsModified, semantics)
 	return reversed
 }
 

@@ -520,9 +520,28 @@ func rehearseOnPreparedDev(
 		return &SimulationError{Stage: "baseline", Err: err}
 	}
 	if err := applyStatements(ctx, devConn, txMode, statements); err != nil {
-		return &SimulationError{Stage: "plan", Err: devseed.WithAdded(err, added)}
+		return &SimulationError{Stage: "plan", Err: devseed.WithAdded(withDevRoleHint(err, baseline), added)}
 	}
 	return nil
+}
+
+// withDevRoleHint says, on the refusal of a plan that gives an object to a role
+// the dev server does not hold, why that server lacks it. A dev database Ptah
+// starts is given each role of the target the plan names, so there the target
+// lacks it too. A dev database on a server Ptah does not own is given no role,
+// since no reset would drop it.
+func withDevRoleHint(err error, baseline devclean.Baseline) error {
+	var missing *MissingOwnerRoleError
+	if !errors.As(err, &missing) || missing.Hint != "" {
+		return err
+	}
+	if baseline.RolesAtClaim() != nil {
+		missing.Hint = "the target server does not hold the role either, and Ptah gives a dev database it starts only the target's roles"
+		return err
+	}
+	missing.Hint = "a dev server Ptah does not start keeps its own roles: create the role there, " +
+		"or use a docker:// dev URL, which Ptah starts with the target's roles the plan names"
+	return err
 }
 
 // checkSimulationSchemaScope fails explicitly when the dev database's schema

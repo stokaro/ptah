@@ -808,6 +808,7 @@ Declares a database view.
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | View name. |
 | `options` | No | Comma-separated PostgreSQL view options, `name=value`, such as `security_invoker=true`; a bare name is true. PostgreSQL family. |
+| `owner` | No | The role that owns the view. PostgreSQL family. Omitted, the owner is not managed. See [View and materialized view owners](../../databases/postgresql/#view-and-materialized-view-owners). |
 | `schema` | No | Target schema/namespace. |
 | `security` | No | MySQL and MariaDB SQL SECURITY mode: `DEFINER` or `INVOKER`. Omitted, it is `DEFINER`, and a plan that would change a view held as `INVOKER` that way is [refused](../../databases/mysql/#view-security). |
 | `with_check` | No | The view's check option: `true` or `cascaded` for WITH CHECK OPTION, `local` for WITH LOCAL CHECK OPTION, `false` for none. Any other value is refused. |
@@ -835,6 +836,7 @@ Declares a materialized view.
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Materialized view name. |
 | `options` | No | Comma-separated PostgreSQL storage parameters, `name=value`, such as `fillfactor=70`. PostgreSQL family. |
+| `owner` | No | The role that owns the materialized view, as on `//ptah:schema:view`. PostgreSQL family. |
 | `schema` | No | Target schema/namespace. |
 | `refresh` | No | ClickHouse refresh schedule, as ClickHouse spells it. See below. |
 

@@ -54,6 +54,12 @@ type rebuildState struct {
 	// options is the options a view or a materialized view is held with on
 	// the database side, and declared with on the declaration side, by name.
 	options map[string][]string
+	// owners is the owner of a view or a materialized view the read reports
+	// on the database side, and the one the declaration names on the
+	// declaration side, by name.
+	owners map[string]string
+	// connected is the role the read ran as, on the database side.
+	connected string
 }
 
 // rebuildRoutine is a routine of the schema in public. identity is its
@@ -114,11 +120,13 @@ func declaredRebuild(declared rebuildState) *schemamodel.Database {
 	for _, object := range declared.objects {
 		if object.materialized {
 			desired.MaterializedViews = append(desired.MaterializedViews, schemamodel.MaterializedView{
-				Name: object.declaredName(), Body: object.body, Options: declared.options[object.name],
+				Name: object.declaredName(), Body: object.body, Options: declared.options[object.name], Owner: declared.owners[object.name],
 			})
 			continue
 		}
-		desired.Views = append(desired.Views, schemamodel.View{Name: object.declaredName(), Body: object.body, Options: declared.options[object.name]})
+		desired.Views = append(desired.Views, schemamodel.View{
+			Name: object.declaredName(), Body: object.body, Options: declared.options[object.name], Owner: declared.owners[object.name],
+		})
 	}
 	for _, routine := range declared.routines {
 		desired.Functions = append(desired.Functions, schemamodel.Function{
@@ -166,8 +174,17 @@ func liveRebuild(live rebuildState) *catalog.Database {
 			{Name: "id", DataType: "integer", UDTName: "int4", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 			{Name: "sku", DataType: live.skuType, UDTName: "varchar", IsNullable: "NO", OrdinalPosition: 2},
 		}},
-	}}
+	}, ConnectedRole: live.connected}
 	for _, object := range live.objects {
+		if owner, ok := live.owners[object.name]; ok {
+			kind := "view"
+			if object.materialized {
+				kind = "materialized view"
+			}
+			database.ObjectOwners = append(database.ObjectOwners, catalog.ObjectOwner{
+				Kind: kind, Schema: cmp.Or(object.schema, "public"), Name: object.name, Owner: owner,
+			})
+		}
 		if object.materialized {
 			database.MatViews = append(database.MatViews, catalog.MaterializedView{
 				Name: object.name, Schema: cmp.Or(object.schema, "public"), Body: object.body, Options: live.options[object.name],

@@ -1523,7 +1523,7 @@ func CheckApplyStatements(ctx context.Context, conn *dbschema.DatabaseConnection
 			return statementFailure(stmt, i, len(statements), err)
 		}
 	}
-	return nil
+	return refuseMissingOwners(ctx, conn, statements)
 }
 
 // statementFailure is the error of the statement at index i of total.

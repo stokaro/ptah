@@ -731,8 +731,8 @@ func appendFamilyStatement(
 
 // changeDeclared applies a statement that changes or removes an object an
 // earlier statement declared, rather than declaring one: ALTER TABLE, ALTER
-// INDEX, ALTER SEQUENCE, COMMENT ON and DROP. handled is false for any other
-// statement.
+// INDEX, ALTER SEQUENCE, ALTER ... OWNER TO, COMMENT ON and DROP. handled is
+// false for any other statement.
 func changeDeclared(
 	ctx context.Context, database *schemamodel.Database, document *Document, stmt ast.Node, sourcePlatform string,
 ) (handled bool, err error) {
@@ -751,6 +751,8 @@ func changeDeclared(
 		return true, applyDropView(ctx, database, document, node, sourcePlatform)
 	case *ast.DropMaterializedViewNode:
 		return true, applyDropMaterializedView(ctx, database, document, node, sourcePlatform)
+	case *ast.AlterOwnerNode:
+		return true, applyAlterOwner(database, document, node, sourcePlatform)
 	case *ast.DropTriggerNode:
 		return true, refuseDrop("TRIGGER", node.Name)
 	case *ast.DropFunctionNode:

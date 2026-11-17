@@ -445,13 +445,15 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 - `extensions`: `name`, `schema`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
   `security`, `volatility`, `body`, `comment`
-- `views`: `name`, `body`, `with_check`, `options`, `comment`. `with_check` is
-  the view's check option: `true` or `cascaded` for `WITH CHECK OPTION`,
-  `local` for `WITH LOCAL CHECK OPTION`, `false` for none. `options` is a
-  list of PostgreSQL view options, each `name=value`, such as
-  `security_invoker=true`.
-- `matviews`: `name`, `body`, `options`, `comment`. `options` is a list of
-  PostgreSQL storage parameters, such as `fillfactor=70`.
+- `views`: `name`, `body`, `with_check`, `options`, `owner`, `comment`.
+  `with_check` is the view's check option: `true` or `cascaded` for `WITH CHECK
+  OPTION`, `local` for `WITH LOCAL CHECK OPTION`, `false` for none. `options`
+  is a list of PostgreSQL view options, each `name=value`, such as
+  `security_invoker=true`. `owner` is the role that owns the view on the
+  PostgreSQL family; without it the owner is not managed.
+- `matviews`: `name`, `body`, `options`, `owner`, `comment`. `options` is a
+  list of PostgreSQL storage parameters, such as `fillfactor=70`, and `owner`
+  is the role that owns the materialized view, as for `views`.
 - `triggers`: `name`, `table`, `timing`, `event`, `for`, `body`, `comment`
 - `rls_enabled_tables` or `rls_enabled`: map of tables with optional `table`,
   `struct_name`, `comment` and `dialects`

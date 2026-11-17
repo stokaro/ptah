@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/convert/features"
+	"ptah.run/internal/objectowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
@@ -156,10 +157,13 @@ func describeDatabase(ctx context.Context, db *schemamodel.Database, prepared []
 		Sequences:   toDBSequences(db.Sequences),
 		Views:       toDBViews(db.Views),
 		MatViews:    toDBMaterializedViews(db.MaterializedViews),
-		Triggers:    toDBTriggers(db.Triggers, tableByStruct),
-		RLSPolicies: toDBRLSPolicies(db.RLSPolicies),
-		Roles:       toDBRoles(db.Roles),
-		Grants:      toDBGrants(db, dialect),
+		// The owner a document declares for a view is the owner the database
+		// it stands for holds, so a file compared with itself plans no OWNER TO.
+		ObjectOwners: toDBObjectOwners(db.Views, db.MaterializedViews),
+		Triggers:     toDBTriggers(db.Triggers, tableByStruct),
+		RLSPolicies:  toDBRLSPolicies(db.RLSPolicies),
+		Roles:        toDBRoles(db.Roles),
+		Grants:       toDBGrants(db, dialect),
 
 		RoleMemberships: toDBRoleMemberships(db.Roles),
 		// A default privilege is an object family of its own rather than an
@@ -811,6 +815,26 @@ func toDBViews(views []schemamodel.View) []catalog.View {
 			Attributes: slices.Clone(view.Attributes),
 			Options:    slices.Clone(view.Options),
 		})
+	}
+	return out
+}
+
+// toDBObjectOwners is the owner of each view and materialized view that
+// declares one, as a read reports it. A view that declares none has no row: an
+// owner nobody declared is no part of the document.
+func toDBObjectOwners(views []schemamodel.View, materialized []schemamodel.MaterializedView) []catalog.ObjectOwner {
+	var out []catalog.ObjectOwner
+	for _, view := range views {
+		if view.Owner != "" {
+			name, schema := splitTableIdentity(view.Name)
+			out = append(out, catalog.ObjectOwner{Kind: objectowner.View.Label(), Schema: schema, Name: name, Owner: view.Owner})
+		}
+	}
+	for _, view := range materialized {
+		if view.Owner != "" {
+			name, schema := splitTableIdentity(view.Name)
+			out = append(out, catalog.ObjectOwner{Kind: objectowner.MaterializedView.Label(), Schema: schema, Name: name, Owner: view.Owner})
+		}
 	}
 	return out
 }

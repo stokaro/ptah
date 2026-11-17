@@ -107,11 +107,11 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 204 capabilities below:
+Across the 205 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 190 |
+| Ptah supports it fully | 191 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
@@ -119,7 +119,7 @@ Across the 204 capabilities below:
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
 | Ptah has it and neither Atlas edition does | 29 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
-| An Atlas column is ❔ — not established by this page's evidence | 8 |
+| An Atlas column is ❔ — not established by this page's evidence | 9 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
 issue that owns it, reproduced against a binary built from this repository;
@@ -356,6 +356,7 @@ seven of them as open capabilities regardless.
 | Per-connection CA bundle for MySQL and MariaDB (`ssl-ca`) | ✅ | ❌ | ❔ | `ssl-ca` names a PEM bundle that verifies the server's certificate and host name for that URL alone. The community binary sends it to the server as a variable; strict mode refuses it. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
 | PostgreSQL role configuration settings | ✅ | ❌ | ❔ | `ALTER ROLE ... SET` defaults a declaration names, from Go, YAML or SQL; unnamed settings stay. IN DATABASE, ALL and FROM CURRENT are refused. HCL has no spelling. |
+| PostgreSQL view and materialized view owners | ✅ | ❌ | ❔ | A declared owner, from Go, YAML or SQL `ALTER VIEW ... OWNER TO`, is applied in place and kept through a rebuild; an undeclared one is unmanaged. HCL has no spelling. |
 | Roles, grants, and row-level security | ✅ | ❌ | ✅ | Roles and grants wherever the `role_management` key is true, which the preset matrix names. Row-level security on the PostgreSQL family, SQL Server and ClickHouse; the rest have no such object. |
 | Spanner PostgreSQL interface (spanner) | ✅ | ❌ | ✅ | Served only by the optional official Spanner provider, through the PostgreSQL interface and PGAdapter. Best effort, measured on the emulator; without it a selection reports provider_missing. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | ✅ | ❌ | ✅ | Every spelling renders the same DDL. Tables, views, triggers, synonyms, sequences, roles/grants, row-level security, functions and extended properties all render, read back and plan. |

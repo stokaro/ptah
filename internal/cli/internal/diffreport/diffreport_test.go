@@ -53,6 +53,19 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 			},
 		},
 		{
+			name: "a modified view is named by the fields it sends on the wire, its prior owner left out",
+			diff: &difftypes.SchemaDiff{
+				ViewsModified: []difftypes.ViewDiff{{ViewName: "report", Changes: map[string]string{"owner": "app -> reporting"},
+					PreviousBody: "SELECT 1", PreviousOwner: "app"}},
+				MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "totals", Changes: map[string]string{"owner": "app -> reporting"},
+					PreviousBody: "SELECT 1", PreviousOwner: "app"}},
+			},
+			want: []diffreport.Category{
+				{Name: "views_modified", Objects: []string{"report SELECT 1"}},
+				{Name: "materialized_views_modified", Objects: []string{"totals"}},
+			},
+		},
+		{
 			name: "a role is named by its name alone, its password left out",
 			diff: &difftypes.SchemaDiff{RolesAdded: difftypes.RoleChanges{{Name: "app", Password: "pw-SENTINEL", Login: true}}},
 			want: []diffreport.Category{

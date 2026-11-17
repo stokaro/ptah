@@ -1728,6 +1728,13 @@ type CreateViewNode struct {
 	// CREATE OR REPLACE VIEW replaces the options the view holds with the ones
 	// it states, so a replace that states none clears them.
 	Options []string
+	// Owner is the role the view is given to after it is created, as the
+	// server stores the role's name; empty leaves the view with the role that
+	// runs the statement, or, for a replace, with the owner it has. Only a
+	// renderer whose target manages the owner of a view writes it, as an
+	// ALTER VIEW ... OWNER TO after the CREATE and its comment; every other
+	// target refuses a view that carries one.
+	Owner string
 }
 
 // NewCreateView starts a CREATE VIEW for a named view.
@@ -1821,6 +1828,9 @@ type CreateMaterializedViewNode struct {
 	// [ptah.run/core/platform/capability.MaterializedViewOptions]; every other
 	// target refuses a materialized view that carries any.
 	Options []string
+	// Owner is the role the materialized view is given to after it is
+	// created, on the terms of [CreateViewNode.Owner].
+	Owner string
 }
 
 // NewCreateMaterializedView starts a CREATE MATERIALIZED VIEW for a named view.
@@ -1950,6 +1960,34 @@ func (n *AlterViewOptionsNode) ResetOptions(names []string) *AlterViewOptionsNod
 
 // Accept implements the Node interface for AlterViewOptionsNode.
 func (n *AlterViewOptionsNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
+
+// AlterOwnerNode gives an existing object to a role:
+// ALTER <kind> <name> OWNER TO <role>. The object keeps its definition, its
+// rows and the privileges granted on it; the new owner holds the privileges an
+// owner has, and the role that owned it before keeps none of them.
+//
+// Kind is one of the kinds a target's descriptor lists among its managed owner
+// kinds ([ptah.run/core/platform/descriptor.StatementForms.ManagedOwners]):
+// VIEW or MATERIALIZED VIEW. Only a renderer whose target manages the kind
+// writes it; every other target refuses it.
+type AlterOwnerNode struct {
+	// Kind is the kind of object, spelled as ALTER spells it.
+	Kind string
+	// Name is the object's name, possibly qualified by its schema, written as
+	// an identifier and quoted by the renderer.
+	Name string
+	// Owner is the role the object is given to, as the server stores the
+	// role's name, quoted by the renderer.
+	Owner string
+}
+
+// NewAlterOwner gives the object of kind named name to owner.
+func NewAlterOwner(kind, name, owner string) *AlterOwnerNode {
+	return &AlterOwnerNode{Kind: kind, Name: name, Owner: owner}
+}
+
+// Accept implements the Node interface for AlterOwnerNode.
+func (n *AlterOwnerNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // CreateTriggerNode represents a CREATE TRIGGER statement.
 type CreateTriggerNode struct {

@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/foreignkeyscope"
+	"ptah.run/internal/objectowner"
 	"ptah.run/internal/pgreservedrole"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/schemaprep"
@@ -398,6 +399,11 @@ func validateDeclaredBeforeComparison(
 		return err
 	}
 	if err := pgreservedrole.ValidateDeclared(info.Dialect, desired.Roles); err != nil {
+		return err
+	}
+	// An owner declared for an object of a kind the target does not manage
+	// the owner of is refused, so it is never compared, planned or dropped.
+	if err := objectowner.ValidateDeclared(info.Dialect, desired); err != nil {
 		return err
 	}
 	// On a target where the grant option belongs to the grantee at the whole

@@ -9,8 +9,9 @@ import (
 	"ptah.run/internal/parser"
 )
 
-// An ownership statement names no object of the schema, so it contributes no
-// node: the table before it is the only statement the parse returns.
+// An ownership statement of a kind whose owner the dialect does not manage
+// contributes no node: the table before it is the only statement the parse
+// returns.
 func TestParse_AlterOwnerTo_HappyPath(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -30,8 +31,6 @@ func TestParse_AlterOwnerTo_HappyPath(t *testing.T) {
 		{name: "function with no argument list", sql: "ALTER FUNCTION app.f OWNER TO r;"},
 		{name: "procedure with arguments", sql: "ALTER PROCEDURE app.p(integer) OWNER TO r;"},
 		{name: "sequence", sql: "ALTER SEQUENCE app.seq OWNER TO postgres;"},
-		{name: "view", sql: "ALTER VIEW app.v OWNER TO postgres;"},
-		{name: "materialized view", sql: "ALTER MATERIALIZED VIEW app.mv OWNER TO postgres;"},
 		{name: "role keyword", sql: "ALTER TABLE t OWNER TO CURRENT_USER;"},
 		{name: "no semicolon at the end of the file", sql: "ALTER TABLE t OWNER TO postgres"},
 		{name: "lower case", sql: "alter table t owner to postgres;"},
@@ -46,6 +45,54 @@ func TestParse_AlterOwnerTo_HappyPath(t *testing.T) {
 			c.Assert(statements.Statements, qt.HasLen, 1)
 			_, isTable := statements.Statements[0].(*ast.CreateTableNode)
 			c.Assert(isTable, qt.IsTrue)
+		})
+	}
+}
+
+// An ownership statement of a view or a materialized view, whose owner
+// PostgreSQL's descriptor lists as managed, is a node naming the object and
+// the role as the statement writes them; deciding what the role's name is
+// belongs to the schema reader.
+func TestParse_AlterOwnerTo_ManagedKind_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name, sql string
+		want      ast.AlterOwnerNode
+	}{
+		{name: "view", sql: "ALTER VIEW app.v OWNER TO reporting;", want: ast.AlterOwnerNode{Kind: "VIEW", Name: "app.v", Owner: "reporting"}},
+		{name: "view, unqualified", sql: "ALTER VIEW v OWNER TO reporting;", want: ast.AlterOwnerNode{Kind: "VIEW", Name: "v", Owner: "reporting"}},
+		{name: "view, quoted names", sql: `ALTER VIEW "App"."V" OWNER TO "Report Role";`, want: ast.AlterOwnerNode{Kind: "VIEW", Name: `"App"."V"`, Owner: `"Report Role"`}},
+		{name: "materialized view", sql: "ALTER MATERIALIZED VIEW app.mv OWNER TO reporting;", want: ast.AlterOwnerNode{Kind: "MATERIALIZED VIEW", Name: "app.mv", Owner: "reporting"}},
+		{name: "lower case", sql: "alter materialized view mv owner to Reporting;", want: ast.AlterOwnerNode{Kind: "MATERIALIZED VIEW", Name: "mv", Owner: "Reporting"}},
+		{name: "role keyword", sql: "ALTER VIEW v OWNER TO CURRENT_USER;", want: ast.AlterOwnerNode{Kind: "VIEW", Name: "v", Owner: "CURRENT_USER"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(test.sql+"\n", parser.WithDialect("postgres")).Parse()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+			node, isOwner := statements.Statements[0].(*ast.AlterOwnerNode)
+			c.Assert(isOwner, qt.IsTrue)
+			c.Assert(*node, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// CockroachDB and YugabyteDB manage the owner of a view too, and read the
+// statement of no other kind.
+func TestParse_AlterOwnerTo_PostgresFamily_HappyPath(t *testing.T) {
+	for _, dialect := range []string{"cockroachdb", "yugabytedb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser("ALTER MATERIALIZED VIEW mv OWNER TO reporting;\n", parser.WithDialect(dialect)).Parse()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+			node, isOwner := statements.Statements[0].(*ast.AlterOwnerNode)
+			c.Assert(isOwner, qt.IsTrue)
+			c.Assert(*node, qt.DeepEquals, ast.AlterOwnerNode{Kind: "MATERIALIZED VIEW", Name: "mv", Owner: "reporting"})
 		})
 	}
 }

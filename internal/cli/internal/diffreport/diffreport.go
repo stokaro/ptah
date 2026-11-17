@@ -204,9 +204,10 @@ func describeAll(list reflect.Value) []string {
 // describe names one changed object.
 //
 // A category of plain names is its own description. A category of object
-// references or per-object diffs is described by its string fields joined in
-// declaration order, which puts the object's own name first and its qualifying
-// context — the owning table, the granted privilege — after it. Anything else
+// references or per-object diffs is described by the string fields it sends on
+// the wire, joined in declaration order, which puts the object's own name first
+// and its qualifying context — the owning table, the granted privilege — after
+// it. Anything else
 // falls back to the value's default formatting, so a category is never dropped
 // from a report because its element type is new.
 func describe(element reflect.Value) string {
@@ -266,7 +267,9 @@ func stringFields(element reflect.Value) []string {
 		if len(parts) == maxObjectNameParts {
 			break
 		}
-		if !structType.Field(index).IsExported() {
+		// A field kept off the wire is a planner's operand, such as the body
+		// or the owner a view has before the change, and names nothing.
+		if !structType.Field(index).IsExported() || structType.Field(index).Tag.Get("json") == "-" {
 			continue
 		}
 		field := element.Field(index)

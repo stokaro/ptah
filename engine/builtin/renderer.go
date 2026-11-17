@@ -76,6 +76,7 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/nullsdistinct"
+	"ptah.run/internal/objectowner"
 	"ptah.run/internal/pgreservedrole"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/renderdiag"
@@ -1854,6 +1855,11 @@ func validateDeclaredRoleNames(
 			Err:     err,
 			Message: err.Error(),
 		}
+	}
+	// An owner of a kind the target does not manage is refused before
+	// anything renders, rather than rendered as a view without it.
+	if err := objectowner.ValidateDeclared(dialect, database); err != nil {
+		return err
 	}
 	if err := mysqllike.ValidateDeclaredRoles(dialect, caps, database.Roles); err != nil {
 		return err

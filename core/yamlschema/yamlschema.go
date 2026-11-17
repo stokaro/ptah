@@ -87,6 +87,7 @@ import (
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/matviewrefresh"
 	"ptah.run/internal/mysqlviewsecurity"
+	"ptah.run/internal/objectowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/viewcheck"
@@ -357,6 +358,10 @@ type viewSpec struct {
 	// Options are the view's PostgreSQL options, each `name=value`.
 	Options []stringScalar `yaml:"options"`
 	Comment stringScalar   `yaml:"comment"`
+	// Owner is the role that owns the view; see [schemamodel.View.Owner]. It
+	// is a yaml.Node so that `owner:` with no value is refused rather than
+	// read as an unmanaged owner.
+	Owner yaml.Node `yaml:"owner"`
 }
 
 type matViewSpec struct {
@@ -372,9 +377,28 @@ type matViewSpec struct {
 	RefreshStrategy yaml.Node `yaml:"refresh_strategy"`
 	// Options are the materialized view's PostgreSQL storage parameters, each
 	// `name=value`.
-	Options []stringScalar       `yaml:"options"`
-	Comment stringScalar         `yaml:"comment"`
-	Owned   map[string]yaml.Node `yaml:",inline"`
+	Options []stringScalar `yaml:"options"`
+	Comment stringScalar   `yaml:"comment"`
+	// Owner is the role that owns the materialized view, read as
+	// [viewSpec.Owner] is.
+	Owner yaml.Node            `yaml:"owner"`
+	Owned map[string]yaml.Node `yaml:",inline"`
+}
+
+// objectOwner reads the owner key of the object what describes, empty when
+// the document does not write it. A key with no role, a value that is not a
+// string, and a role [objectowner.ValidateRole] refuses are refused.
+func objectOwner(what string, node yaml.Node) (string, error) {
+	if node.Kind == 0 {
+		return "", nil
+	}
+	if node.Kind != yaml.ScalarNode || node.Tag == "!!null" {
+		return "", fmt.Errorf("%s: owner: %w: write the role's name as a string", what, objectowner.ErrInvalidOwner)
+	}
+	if err := objectowner.ValidateRole(node.Value); err != nil {
+		return "", fmt.Errorf("%s: owner: %w", what, err)
+	}
+	return node.Value, nil
 }
 
 type triggerSpec struct {
@@ -1089,6 +1113,10 @@ func (d document) addViews(db *schemamodel.Database) error {
 		if err != nil {
 			return fmt.Errorf("view %q: security: %w", key, err)
 		}
+		owner, err := objectOwner(fmt.Sprintf("view %q", key), spec.Owner)
+		if err != nil {
+			return err
+		}
 		db.Views = append(db.Views, schemamodel.View{
 			StructName: string(spec.StructName),
 			Name:       valueOrDefault(spec.Name, key),
@@ -1098,6 +1126,7 @@ func (d document) addViews(db *schemamodel.Database) error {
 			Security:   security,
 			Comment:    string(spec.Comment),
 			Options:    options,
+			Owner:      owner,
 		})
 	}
 	return nil
@@ -1125,6 +1154,10 @@ func (d document) addMaterializedViews(db *schemamodel.Database, owners yamlext.
 		if err != nil {
 			return fmt.Errorf("materialized view %q: %w", key, err)
 		}
+		owner, err := objectOwner(fmt.Sprintf("materialized view %q", key), spec.Owner)
+		if err != nil {
+			return err
+		}
 		db.MaterializedViews = append(db.MaterializedViews, schemamodel.MaterializedView{
 			Facets:     facets,
 			StructName: string(spec.StructName),
@@ -1132,6 +1165,7 @@ func (d document) addMaterializedViews(db *schemamodel.Database, owners yamlext.
 			Body:       string(spec.Body),
 			Comment:    string(spec.Comment),
 			Options:    options,
+			Owner:      owner,
 		})
 	}
 	return nil

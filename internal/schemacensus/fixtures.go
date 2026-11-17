@@ -143,6 +143,7 @@ func corpus() []Fixture {
 		{Name: "view-security", Schema: viewSecurityFixture()},
 		{Name: "view-attributes", Schema: viewAttributesFixture()},
 		{Name: "view-options", Schema: viewOptionsFixture()},
+		{Name: "view-owner", Schema: viewOwnerFixture()},
 		{Name: "view-local-check", Schema: viewLocalCheckFixture()},
 		{Name: "matview", Schema: matViewFixture()},
 		{Name: "matview-options", Schema: matViewOptionsFixture()},
@@ -1272,6 +1273,19 @@ func viewOptionsFixture() schemamodel.Database {
 	db.Views = []schemamodel.View{{
 		StructName: "V", Name: "guarded", Body: "SELECT id FROM t",
 		Options: []string{"security_invoker=true", "security_barrier=true"},
+	}}
+	return db
+}
+
+// viewOwnerFixture declares the owner of a view and of a materialized view. It
+// is apart from viewFixture because the targets that do not manage an owner
+// refuse the declaration, and a refused pair would take the view's other
+// fields out of the measurement there too.
+func viewOwnerFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Views = []schemamodel.View{{StructName: "V", Name: "owned", Body: "SELECT id FROM t", Owner: "reporting"}}
+	db.MaterializedViews = []schemamodel.MaterializedView{{
+		StructName: "MV", Name: "owned_rollup", Body: "SELECT id FROM t", Owner: "Report Owner",
 	}}
 	return db
 }

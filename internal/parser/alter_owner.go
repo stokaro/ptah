@@ -6,6 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"ptah.run/core/ast"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/lexer"
@@ -17,28 +18,42 @@ func (p *Parser) readsOwnerTo(kind string) bool {
 	return !p.target.known || slices.Contains(p.target.grammar.Forms.OwnerTo, kind)
 }
 
+// managesOwner reports whether the document's dialect manages the owner of an
+// object of kind, so the statement that changes it is a node. A document of no
+// dialect manages the kinds any engine does, and a target decides later.
+func (p *Parser) managesOwner(kind string) bool {
+	if !p.target.known {
+		return kind == descriptor.OwnerKindView || kind == descriptor.OwnerKindMaterializedView
+	}
+	return slices.Contains(p.target.grammar.Forms.ManagedOwners, kind)
+}
+
 // parseAlterOwnerTo reads `ALTER kind name [(arguments)] OWNER TO role` for a
 // kind other than a table, with ALTER consumed and the kind's first word
-// current. It contributes no node.
+// current.
 //
-// pg_dump writes one such statement after every object it dumps, unless it is
-// run with --no-owner. Ptah renders no OWNER TO and keeps ownership for
-// analysis only, so a desired schema has nothing to plan from the statement,
-// and the same statement in a migration changes no object a rule models.
+// For a kind the dialect manages the owner of
+// ([descriptor.StatementForms.ManagedOwners]), the statement is an
+// [ast.AlterOwnerNode] naming the object and the role as written. For any
+// other kind it contributes no node: pg_dump writes one such statement after
+// every object it dumps, unless it is run with --no-owner, and Ptah keeps the
+// owner of that kind for analysis only, so a desired schema has nothing to plan
+// from it and the same statement in a migration changes no object a rule
+// models.
 //
 // Every other action on the kind keeps the refusal the kind had before it was
 // read at all, so a RENAME TO or SET SCHEMA is not taken for ownership.
-func (p *Parser) parseAlterOwnerTo(target string) error {
+func (p *Parser) parseAlterOwnerTo(target string) (ast.Node, error) {
 	start := p.current.Start
 	kind := target
 	if target == "MATERIALIZED" {
 		if !p.nextIsWord("VIEW") {
-			return p.refuseHead(start, "ALTER", target, "unsupported ALTER target: %s")
+			return nil, p.refuseHead(start, "ALTER", target, "unsupported ALTER target: %s")
 		}
 		kind = descriptor.OwnerKindMaterializedView
 	}
 	if !p.readsOwnerTo(kind) {
-		return p.refuseHead(start, "ALTER", target, "unsupported ALTER target: %s")
+		return nil, p.refuseHead(start, "ALTER", target, "unsupported ALTER target: %s")
 	}
 	p.advance()
 	if target == "MATERIALIZED" {
@@ -47,40 +62,45 @@ func (p *Parser) parseAlterOwnerTo(target string) error {
 	}
 	p.skipWhitespace()
 
-	if _, err := p.parseTableName("name"); err != nil {
-		return p.refuseHead(start, "ALTER", target, "unsupported ALTER target: %s")
+	name, err := p.parseTableName("name")
+	if err != nil {
+		return nil, p.refuseHead(start, "ALTER", target, "unsupported ALTER target: %s")
 	}
 	p.skipWhitespace()
 	if kind == descriptor.OwnerKindFunction || kind == descriptor.OwnerKindProcedure {
 		if p.current.MatchOperatorValue("(") {
 			if _, err := p.collectParenthesizedBody("routine arguments"); err != nil {
-				return err
+				return nil, err
 			}
 			p.skipWhitespace()
 		}
 	}
 	if !p.current.MatchIdentifierValue("OWNER") {
-		return p.refuseHead(start, "ALTER", target, "unsupported ALTER target: %s")
+		return nil, p.refuseHead(start, "ALTER", target, "unsupported ALTER target: %s")
 	}
-	return p.readOwnerTo("ALTER " + kind)
+	role, err := p.readOwnerTo("ALTER " + kind)
+	if err != nil || !p.managesOwner(kind) {
+		return nil, err
+	}
+	return ast.NewAlterOwner(kind, name, role), nil
 }
 
 // readOwnerTo reads `OWNER TO role` and the end of the statement, with OWNER
-// current. The role is a name, CURRENT_ROLE, CURRENT_USER or SESSION_USER; it
-// is read and dropped.
-func (p *Parser) readOwnerTo(statement string) error {
+// current, and returns the role as written: a name, double-quoted or not, or
+// CURRENT_ROLE, CURRENT_USER or SESSION_USER.
+func (p *Parser) readOwnerTo(statement string) (string, error) {
 	p.advance()
 	p.skipWhitespace()
 	if err := p.expect(lexer.TokenIdentifier, "TO"); err != nil {
-		return fmt.Errorf("expected TO after %s OWNER: %w", statement, err)
+		return "", fmt.Errorf("expected TO after %s OWNER: %w", statement, err)
 	}
 	p.skipWhitespace()
 	role := p.current
 	if !isRoleName(role) {
-		return ptaherr.At(role.Start, fmt.Errorf("expected the role after %s OWNER TO, got %q", statement, role.Value))
+		return "", ptaherr.At(role.Start, fmt.Errorf("expected the role after %s OWNER TO, got %q", statement, role.Value))
 	}
 	p.advance()
-	return p.endStatement(statement + " OWNER TO")
+	return role.Value, p.endStatement(statement + " OWNER TO")
 }
 
 // isRoleName reports a token PostgreSQL reads as the role of OWNER TO: a

@@ -1083,16 +1083,19 @@ partition, and `ALTER INDEX parent_index ATTACH PARTITION copy` for each copy:
 - The `\restrict` and `\unrestrict` lines around a dump, which `pg_dump` writes from
   its August 2025 minor releases on, 17.6 and 18 among them, are psql commands that
   declare nothing, and the reader skips them. Any other psql command is refused.
-- The `ALTER ... OWNER TO` line after each object, which plans nothing. [Start from a
-  `pg_dump` file](../../schema/sql/#start-from-a-pg_dump-file) has the kinds it takes.
+- The `ALTER ... OWNER TO` line after each object. After a view or a materialized
+  view it declares the [owner](#view-and-materialized-view-owners); after any other
+  object it plans nothing. [Start from a `pg_dump`
+  file](../../schema/sql/#start-from-a-pg_dump-file) has the kinds it takes.
 - The statements a `serial` column and an identity column are written as: `CREATE
   SEQUENCE`, `ALTER SEQUENCE ... OWNED BY` and `SET DEFAULT nextval(...)` for the
   first, `ADD GENERATED ... AS IDENTITY` for the second. Each reads as the column.
   [Serial and identity columns](../../schema/sql/#serial-and-identity-columns) has
   the rule, and the `REPLICA IDENTITY` line the reader refuses.
 
-YugabyteDB reads a dump the same way, except the `ALTER ... OWNER TO` lines and
-`ADD GENERATED ... AS IDENTITY`, which it refuses, and reads `ALTER INDEX ...
+YugabyteDB reads a dump the same way, except the `ALTER ... OWNER TO` lines of
+objects other than a view or a materialized view, and `ADD GENERATED ... AS
+IDENTITY`, which it refuses, and reads `ALTER INDEX ...
 RENAME TO` as PostgreSQL does. The sequence of a `serial` column stays a sequence
 the column owns, and a plan against a database that holds it does not create it
 again.
@@ -1460,6 +1463,89 @@ a `security_invoker` view, two once the option is gone. A materialized view
 cannot hold these options: PostgreSQL and YugabyteDB answer `unrecognized
 parameter`, and CockroachDB answers a syntax error.
 
+## View and materialized view owners
+
+A view reads its tables with its owner's privileges, and the owner's row-level
+security policies decide which rows it returns, unless the view sets
+`security_invoker`. So the owner is part of what a view does, and a schema may
+declare it:
+
+```sql
+CREATE VIEW order_report AS SELECT id, amount FROM orders;
+ALTER VIEW order_report OWNER TO reporting;
+
+CREATE MATERIALIZED VIEW order_totals AS SELECT sum(amount) AS total FROM orders;
+ALTER MATERIALIZED VIEW order_totals OWNER TO reporting;
+```
+
+Go annotations write `owner="reporting"` on
+[`//ptah:schema:view`](../../reference/go-annotations/#ptahschemaview) and
+[`//ptah:schema:matview`](../../reference/go-annotations/#ptahschemamatview),
+and YAML writes `owner: reporting` on a
+[`views` or `matviews` entry](../../reference/yaml-schema/#view-owners). In a SQL
+file the statement follows the view it names, and the last one for a view is
+the owner it declares, as it is the owner the server leaves. An unquoted role
+name folds to lower case and a quoted one keeps its spelling. `PUBLIC`,
+`CURRENT_USER`, `CURRENT_ROLE` and `SESSION_USER` are refused, because none of
+them names one role. An HCL `view` or `materialized` block has no owner
+attribute, as Atlas's has none: `owner` there is refused, and a schema written
+as HCL reports each owner it leaves out.
+
+Ownership is explicit:
+
+- A view whose declaration names an owner gets that owner. The read reports the
+  role that owns each view, and the plan writes `ALTER VIEW ... OWNER TO` or
+  `ALTER MATERIALIZED VIEW ... OWNER TO` where the two differ. The change is
+  made in place: the view keeps its definition and its privileges, and a
+  materialized view keeps its rows. A new view gets its owner right after its
+  `CREATE`, before its grants.
+- A view whose declaration names no owner is not managed. The plan writes no
+  `OWNER TO` for it, whoever owns it, and never gives it to a default role. Its
+  owner is not drift and changes no exit code.
+- Declaring an owner declares no role, so the plan writes no `CREATE ROLE` and
+  no `GRANT` for it. Declare the role in the schema, or create it on the server.
+  A plan that gives a view to a role the server does not hold, and that no
+  earlier statement of the plan creates, is refused before any statement is
+  sent. The refusal names the statement and the role, where the server would
+  answer with SQLSTATE 42704 partway through the plan.
+
+The plan check rates an `OWNER TO` a warning, as it rates a `REVOKE`: the role
+that owned the view loses an owner's privileges, and the view then reads its
+tables with the new owner's. The server
+decides who may make the change. The connected role has to own the view and be
+able to `SET ROLE` to the new owner, or be a superuser. Otherwise PostgreSQL
+refuses the statement with SQLSTATE 42501, and Ptah reports the code with the
+statement.
+
+A rebuild drops a view and creates it again, and the `CREATE` gives the view to
+the role that runs the plan. So the plan gives the view back its owner in the
+same migration, right after the `CREATE`: the declared owner, or, for a view
+that declares none, the owner the read reported, unless that is the connected
+role. The end state of a view the schema does not give an owner is the state it
+started in, as its privileges are, so the restore decides nothing about
+ownership. The rollback `ptah migrations generate` writes gives each view the
+owner it had before the migration.
+
+A rehearsal on a dev database runs the same plan, so the dev server needs the
+roles the plan names, and a role belongs to a server rather than to a database.
+A `docker://` dev database starts with the target's roles the plan names, so a
+role it lacks is one the target lacks too. A dev server Ptah does not start
+keeps its own roles, and the refusal says to create the role there or to use a
+`docker://` dev URL.
+
+CockroachDB and YugabyteDB take the same declarations and statements.
+CockroachDB stores a role name in lower case whether it is quoted or not, so a
+quoted name there declares the folded one.
+
+The contract covers a view and a materialized view. Go annotations and YAML have
+no owner on any other kind, and the `ALTER ... OWNER TO` that `pg_dump` writes
+after a table, a schema, a type, a sequence or a routine declares nothing; see
+[Start from a `pg_dump` file](../../schema/sql/#start-from-a-pg_dump-file).
+Reading a database declares no owner either: `schema inspect` writes no `OWNER
+TO`, a database read as the desired side of `schema diff` manages no owner, and
+the security rules that read owners, such as `OWN01`, describe what the
+database holds without declaring a role.
+
 ## What a view rebuild keeps
 
 Ptah drops a view or materialized view and creates it again when a column
@@ -1492,7 +1578,10 @@ declaration. Right after each object it creates again, it writes:
   could not execute has that privilege revoked again, since a new routine is
   executable by `PUBLIC`;
 - the options its declaration states, in the `WITH` list of the `CREATE`;
-  see [View options and storage parameters](#view-options-and-storage-parameters).
+  see [View options and storage parameters](#view-options-and-storage-parameters);
+- the owner of a view or a materialized view: the declared one, or the one the
+  read reported where the declaration names none; see [View and materialized view
+  owners](#view-and-materialized-view-owners).
 
 A comment is part of each `CREATE`, and a routine keeps its language,
 volatility, `SECURITY DEFINER`, `STRICT`, `LEAKPROOF`, `PARALLEL` and `SET`
@@ -1508,9 +1597,8 @@ holds, because the replace sets the options it states and clears the others.
 
 What a rebuild does not keep:
 
-- the owner. The new object belongs to the role that runs the migration, since
-  Ptah does not describe ownership. What the old owner of a view held as its owner
-  is not granted back;
+- the owner of a routine it creates again, which belongs to the role that runs
+  the migration: Ptah manages the owner of a view and a materialized view only;
 - an object that depends on a dropped one and that the schema does not
   declare, such as a view in a schema the run leaves out. The drop has no
   `CASCADE`, so the server stops the migration at the drop and names the
@@ -1624,8 +1712,8 @@ The same rule applies to a routine owner's `EXECUTE`. It is separate from
 An owner that revoked a privilege from itself holds less, and that is a
 difference. Between two databases where the same role owns the object, one
 direction prints the `REVOKE` and the other prints the `GRANT` that gives it back.
-Ptah describes no ownership, so where another role owns the object on the other
-side, nothing is planned for either owner. The privileges of a server's own release
+A database read declares no owner, so where another role owns the object on the
+other side, nothing is planned for either owner. The privileges of a server's own release
 are the ones compared: PostgreSQL 16 has no `MAINTAIN`, so a difference in it against
 a later release plans nothing.
 

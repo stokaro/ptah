@@ -38,11 +38,20 @@ func postgresStatementForms() descriptor.StatementForms {
 			descriptor.OwnerKindFunction, descriptor.OwnerKindProcedure, descriptor.OwnerKindSequence,
 			descriptor.OwnerKindView, descriptor.OwnerKindMaterializedView,
 		},
+		ManagedOwners: viewOwnerKinds(),
 	}
+}
+
+// viewOwnerKinds are the kinds whose owner the PostgreSQL family manages: each server
+// changes the owner of a view and a materialized view with ALTER ... OWNER TO and
+// reports it in pg_class.relowner.
+func viewOwnerKinds() []string {
+	return []string{descriptor.OwnerKindView, descriptor.OwnerKindMaterializedView}
 }
 
 // yugabyteStatementForms is PostgreSQL's, without a list of views, materialized views
 // or sequences: YugabyteDB 2026.1 answers `DROP multiple objects not supported yet`.
+// Of the OWNER TO forms it reads the ones of the kinds whose owner it manages.
 func yugabyteStatementForms() descriptor.StatementForms {
 	return descriptor.StatementForms{
 		Drops: []descriptor.Drop{
@@ -54,13 +63,16 @@ func yugabyteStatementForms() descriptor.StatementForms {
 			{Kind: descriptor.DropKindSequence, IfExists: true, Behavior: true},
 			{Kind: descriptor.DropKindType, IfExists: true, List: true, Behavior: true},
 		},
-		Operations: []string{postgresTruncate, savepointForm, releaseForm, postgresLock},
+		Operations:    []string{postgresTruncate, savepointForm, releaseForm, postgresLock},
+		OwnerTo:       viewOwnerKinds(),
+		ManagedOwners: viewOwnerKinds(),
 	}
 }
 
 // cockroachStatementForms is PostgreSQL's less what CockroachDB 26.3 refuses:
 // CASCADE on a routine or a type answers `unimplemented`, TRUNCATE takes no IDENTITY
-// clause, and LOCK TABLE answers `is not supported`.
+// clause, and LOCK TABLE answers `is not supported`. Of the OWNER TO forms it reads
+// the ones of the kinds whose owner it manages.
 func cockroachStatementForms() descriptor.StatementForms {
 	return descriptor.StatementForms{
 		Drops: []descriptor.Drop{
@@ -74,6 +86,8 @@ func cockroachStatementForms() descriptor.StatementForms {
 		},
 		Operations:       []string{"TRUNCATE [TABLE] [ONLY] <names> [CASCADE|RESTRICT]", savepointForm, releaseForm},
 		UnreadStatements: []string{"UPSERT"},
+		OwnerTo:          viewOwnerKinds(),
+		ManagedOwners:    viewOwnerKinds(),
 	}
 }
 

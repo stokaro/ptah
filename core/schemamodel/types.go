@@ -1003,6 +1003,18 @@ type View struct {
 	// declared edge answers that a scan of the body cannot.
 	DependsOn []string `json:",omitempty"`
 
+	// Owner is the role that owns the view, spelled as the server stores the
+	// role's name. A view without a declared owner keeps whatever owner it
+	// has: no plan changes it, and a plan that drops and creates the view
+	// again gives it back to the owner the database reported. A declared
+	// owner is reconciled: a new view is given to it after its CREATE, a view
+	// another role owns is given to it with ALTER VIEW ... OWNER TO, and a
+	// view created again is given to it in the same plan, before its grants.
+	// Declaring an owner never declares the role. Only a target whose
+	// descriptor lists views among its managed owner kinds takes one; every
+	// other target refuses it.
+	Owner string `json:",omitempty"`
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`
@@ -1050,6 +1062,10 @@ type MaterializedView struct {
 	// its body mentions. See [ptah.run/internal/deporder.ViewLike] for what a
 	// declared edge answers that a scan of the body cannot.
 	DependsOn []string `json:",omitempty"`
+
+	// Owner is the role that owns the materialized view, under the rules
+	// [View.Owner] states. Changing it alone keeps the view's rows.
+	Owner string `json:",omitempty"`
 
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToTarget].

@@ -14,6 +14,7 @@ package nodedispatch
 
 import (
 	"fmt"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
@@ -49,6 +50,20 @@ func RefuseSerialSequence(dialect string, node *ast.AlterSerialSequenceNode) err
 		Err:     ptaherr.ErrUnsupportedFeature,
 		Message: fmt.Sprintf("changing the sequence of Serial column %q of table %q, which requires target "+
 			"capability %s, unavailable on this %s target", node.Column, node.Table, capability.SerialSequenceOptions, dialect),
+	}
+}
+
+// RefuseOwner refuses node, a change of the owner of a view or a materialized
+// view, on dialect, a target whose descriptor manages no such owner. A plan
+// that left the statement out would report the owner changed while the object
+// kept the one it had.
+func RefuseOwner(dialect string, node *ast.AlterOwnerNode) error {
+	kind := strings.ToLower(node.Kind)
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: kind + " owner",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("giving %s %q to role %q, and Ptah does not manage the owner of a %s on %s", kind, node.Name, node.Owner, kind, dialect),
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/objectlookup"
+	"ptah.run/internal/objectowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinebody"
 )
@@ -482,7 +483,7 @@ func replacedViews(diff *difftypes.SchemaDiff) []replacedView {
 	var views []replacedView
 	for _, viewDiff := range diff.ViewsModified {
 		view := viewDiff.Desired
-		if view.Name == "" || viewDiff.OptionsOnly() || !viewReplaceKeepsDependents(diff, viewDiff, view.Body) {
+		if view.Name == "" || viewDiff.KeepsDefinition() || !viewReplaceKeepsDependents(diff, viewDiff, view.Body) {
 			continue
 		}
 		previous := viewDiff.PreviousBody
@@ -1025,7 +1026,11 @@ func (p *Planner) createRebuiltViewLikes(
 		case replaced.has(object):
 			result = appendNode(result, p.viewReplace(diff, object, semantics))
 		default:
-			result = appendNode(result, p.viewLikeCreate(diff, object, semantics))
+			node := p.viewLikeCreate(diff, object, semantics)
+			if recreated.has(object) {
+				node = keepHeldOwner(diff, object, node, semantics)
+			}
+			result = appendNode(result, node)
 			if recreated.has(object) {
 				result = append(result, rebuiltIndexes(diff, object, semantics)...)
 				result = append(result, rebuiltTriggers(diff, object, semantics)...)
@@ -1219,12 +1224,60 @@ func (p *Planner) viewLikeCreate(diff *difftypes.SchemaDiff, object deporder.Vie
 // definition and the options its declaration holds: the replace sets the
 // options it states and clears the others. It is nil when the declaration
 // holds no such view.
+//
+// CREATE OR REPLACE VIEW keeps the owner the view has, so the replacement
+// gives it to the declared owner only where the plan changes the owner.
 func (p *Planner) viewReplace(diff *difftypes.SchemaDiff, object deporder.ViewLike, semantics identifier.Semantics) ast.Node {
 	node, isView := p.viewLikeCreate(diff, object, semantics).(*ast.CreateViewNode)
 	if !isView {
 		return nil
 	}
+	if !slices.ContainsFunc(diff.ViewsModified, func(viewDiff difftypes.ViewDiff) bool {
+		return viewDiff.ChangesOwner() && sameObject(viewDiff.Desired.Name, object.Name, semantics)
+	}) {
+		node.Owner = ""
+	}
 	return node.SetReplace()
+}
+
+// keepHeldOwner gives node, the CREATE of object the rebuild dropped, the owner
+// the read reported for object where its declaration names none. The CREATE
+// gives a view to the role that runs it, so without this a rebuild would move
+// an unmanaged view to whichever role applies the plan. The owner is restored
+// rather than decided: a declaration that names an owner keeps it, and an
+// object the role that read the database owns, or one whose owner the read
+// does not report, is created as it is.
+func keepHeldOwner(diff *difftypes.SchemaDiff, object deporder.ViewLike, node ast.Node, semantics identifier.Semantics) ast.Node {
+	kind := objectowner.View
+	if object.Materialized {
+		kind = objectowner.MaterializedView
+	}
+	held := heldOwner(diff, kind, object.Name, semantics)
+	if held == "" || held == diff.ConnectedRole {
+		return node
+	}
+	switch created := node.(type) {
+	case *ast.CreateViewNode:
+		if created.Owner == "" {
+			created.Owner = held
+		}
+	case *ast.CreateMaterializedViewNode:
+		if created.Owner == "" {
+			created.Owner = held
+		}
+	}
+	return node
+}
+
+// heldOwner is the owner the read reported for the object of kind named name,
+// empty where it reported none.
+func heldOwner(diff *difftypes.SchemaDiff, kind objectowner.Kind, name string, semantics identifier.Semantics) string {
+	for _, owner := range diff.CurrentOwners {
+		if owner.Kind == string(kind) && sameObject(owner.Name, name, semantics) {
+			return owner.Owner
+		}
+	}
+	return ""
 }
 
 // deferredRoutines is the routines placed with the relations, other than the

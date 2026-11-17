@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/objectowner"
 	"ptah.run/internal/tableref"
 )
 
@@ -112,11 +113,15 @@ var materializedViewFamily = viewLikeFamily[
 // declared columns, so a declared `*` matches the columns a server stores in
 // its place, and against spelled, the server's spelling of each declared body.
 // A target's view rules, where it registers them, replace both.
+//
+// owners are the owners the read reported, which a declared owner is
+// compared with.
 func plainViewFamilyFor(
 	desired *schemamodel.Database,
 	spelled map[string]config.ViewBody,
 	rules schemacomparison.Views,
 	defaultSchema string,
+	owners heldOwners,
 ) viewLikeFamily[
 	difftypes.ViewChanges, []difftypes.ViewDiff,
 	schemamodel.View, catalog.View, difftypes.ViewDiff,
@@ -131,13 +136,20 @@ func plainViewFamilyFor(
 		if dbView.Schema == "" {
 			dbView.Schema = defaultSchema
 		}
-		return viewDefinitions(genView, dbView, dialect, bodies)
+		viewDiff := viewDefinitions(genView, dbView, dialect, bodies)
+		viewDiff.PreviousOwner = owners.compare(viewDiff.Changes, objectowner.View, dbView.Schema, dbView.Name, genView.Owner)
+		return viewDiff
 	}
 	return family
 }
 
 // materializedViewFamilyFor is [plainViewFamilyFor] for materialized views.
-func materializedViewFamilyFor(desired *schemamodel.Database, spelled map[string]config.ViewBody, rules schemacomparison.Views) viewLikeFamily[
+func materializedViewFamilyFor(
+	desired *schemamodel.Database,
+	spelled map[string]config.ViewBody,
+	rules schemacomparison.Views,
+	owners heldOwners,
+) viewLikeFamily[
 	difftypes.MaterializedViewChanges, []difftypes.MaterializedViewDiff,
 	schemamodel.MaterializedView, catalog.MaterializedView, difftypes.MaterializedViewDiff,
 ] {
@@ -148,9 +160,68 @@ func materializedViewFamilyFor(desired *schemamodel.Database, spelled map[string
 		dbView catalog.MaterializedView,
 		dialect string,
 	) difftypes.MaterializedViewDiff {
-		return materializedViewDefinitions(genView, dbView, dialect, bodies)
+		viewDiff := materializedViewDefinitions(genView, dbView, dialect, bodies)
+		viewDiff.PreviousOwner = owners.compare(viewDiff.Changes, objectowner.MaterializedView, dbView.Schema, dbView.Name, genView.Owner)
+		return viewDiff
 	}
 	return family
+}
+
+// heldOwners are the owners a read reported for its views and materialized
+// views. An object a read reports without a schema is in defaultSchema, and
+// two role names are one role as dialect compares role names.
+type heldOwners struct {
+	observed      objectowner.Observed
+	defaultSchema string
+	dialect       string
+}
+
+// heldOwnersOf indexes the owners database reports, nil for none.
+func heldOwnersOf(database *catalog.Database, defaultSchema, dialect string) heldOwners {
+	if database == nil {
+		return heldOwners{defaultSchema: defaultSchema, dialect: dialect}
+	}
+	return heldOwners{observed: objectowner.ObservedOwners(database.ObjectOwners), defaultSchema: defaultSchema, dialect: dialect}
+}
+
+// compare records in changes the owner change of an object of kind in schema
+// named name whose declaration names declared, and returns the owner the read
+// reported for it, empty where it reported none.
+//
+// A declaration that names no owner leaves the object's owner unmanaged, so
+// nothing is recorded however the owner reads. One that names an owner the
+// read does not report for the object cannot be confirmed as held, and is
+// recorded too: the statement that gives the object to the declared role
+// changes nothing where the role owns it already.
+func (h heldOwners) compare(changes map[string]string, kind objectowner.Kind, schema, name, declared string) string {
+	held, known := h.observed.Owner(kind, schema, name, h.defaultSchema)
+	if declared == "" || (known && objectowner.SameRole(h.dialect, held, declared)) {
+		return held
+	}
+	if !known {
+		changes[difftypes.OwnerChange] = "(unknown) -> " + declared
+		return held
+	}
+	changes[difftypes.OwnerChange] = held + " -> " + declared
+	return held
+}
+
+// CurrentOwners is the owner database reports for each view and materialized
+// view, in the order it reports them, for [difftypes.SchemaDiff.CurrentOwners].
+// An object of the schema the read names objects in is qualified by it.
+func CurrentOwners(database *catalog.Database) []difftypes.OwnerRef {
+	if database == nil {
+		return nil
+	}
+	var owners []difftypes.OwnerRef
+	for _, row := range database.ObjectOwners {
+		kind, ok := objectowner.KindOfCatalog(row.Kind)
+		if !ok || row.Owner == "" {
+			continue
+		}
+		owners = append(owners, difftypes.OwnerRef{Kind: string(kind), Name: catalog.QualifyTableName(row.Schema, row.Name), Owner: row.Owner})
+	}
+	return owners
 }
 
 // Views compares view definitions between generated and database schemas.
@@ -162,7 +233,7 @@ func Views(desired *schemamodel.Database, current *catalog.Database, diff *difft
 // for catalog readback forms that are semantically equivalent to Ptah-rendered
 // view SQL.
 func ViewsWithDialect(desired *schemamodel.Database, current *catalog.Database, diff *difftypes.SchemaDiff, dialect string) {
-	compareViewLikesByName(plainViewFamilyFor(desired, nil, nil, ""), desired, current, diff, dialect)
+	compareViewLikesByName(plainViewFamilyFor(desired, nil, nil, "", heldOwnersOf(current, "", dialect)), desired, current, diff, dialect)
 }
 
 // ViewsWithSemantics compares view identity with the live database's resolved
@@ -182,7 +253,7 @@ func ViewsWithSemantics(
 	rules schemacomparison.Views,
 ) {
 	bodySchema := semantics.Normalize(dialect).DefaultSchema
-	compareViewLikesByIdentity(plainViewFamilyFor(desired, spelled, rules, bodySchema), desired, database, diff, dialect, semantics)
+	compareViewLikesByIdentity(plainViewFamilyFor(desired, spelled, rules, bodySchema, heldOwnersOf(database, bodySchema, dialect)), desired, database, diff, dialect, semantics)
 }
 
 // MaterializedViews compares materialized view definitions between generated
@@ -216,7 +287,7 @@ func MaterializedViewsWithDialect(
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
-	compareViewLikesByName(materializedViewFamilyFor(desired, nil, nil), desired, database, diff, dialect)
+	compareViewLikesByName(materializedViewFamilyFor(desired, nil, nil, heldOwnersOf(database, "", dialect)), desired, database, diff, dialect)
 }
 
 // MaterializedViewsWithSemantics compares materialized-view identities using
@@ -231,7 +302,8 @@ func MaterializedViewsWithSemantics(
 	spelled map[string]config.ViewBody,
 	rules schemacomparison.Views,
 ) {
-	compareViewLikesByIdentity(materializedViewFamilyFor(desired, spelled, rules), desired, database, diff, dialect, semantics)
+	defaultSchema := semantics.Normalize(dialect).DefaultSchema
+	compareViewLikesByIdentity(materializedViewFamilyFor(desired, spelled, rules, heldOwnersOf(database, defaultSchema, dialect)), desired, database, diff, dialect, semantics)
 }
 
 // compareViewLikesByName matches a declaration to a database row by its name:

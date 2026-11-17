@@ -717,6 +717,11 @@ func assessNode(node ast.Node) StatementAssessment {
 	case *ast.RevokePrivilegeNode:
 		assessment.Severity = Warning
 		assessment.Reason = revokeReason
+	case *ast.AlterOwnerNode, *ast.CreateViewNode, *ast.CreateMaterializedViewNode:
+		if givesOwnerAway(n) {
+			assessment.Severity = Warning
+			assessment.Reason = ownerReason
+		}
 	case *ast.RevokeRoleMembershipNode:
 		assessment.Severity = Warning
 		assessment.Reason = revokeMembershipReason
@@ -999,12 +1004,9 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 		kind := replacesInPlace(words)
 		assessment.Severity = modifiedSeverity(replaceableKinds[kind])
 		assessment.Reason = inPlaceReplacementReason(kind)
-	case hasWordPrefix(words, "REVOKE"):
+	case accessChangeReason(words) != "":
 		assessment.Severity = Warning
-		assessment.Reason = revokeReason
-	case hasWordPrefix(words, "ALTER", "GROUP") && hasWordSequence(words, "DROP", "USER"):
-		assessment.Severity = Warning
-		assessment.Reason = revokeMembershipReason
+		assessment.Reason = accessChangeReason(words)
 	case hasWordSequence(words, "RENAME", "COLUMN"), hasWordSequence(words, "RENAME", "TO"):
 		assessment.Severity = Warning
 		assessment.Reason = "rename can break deployed readers and writers"
@@ -1028,6 +1030,36 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 		raiseAssessment(&assessment, nextInsertVerdict(statement.Words))
 	}
 	return assessment
+}
+
+// accessChangeReason is why a raw statement that changes who may reach an
+// object is a warning: a REVOKE, an OWNER TO, or an ALTER GROUP ... DROP USER.
+// It is empty for any other statement.
+func accessChangeReason(words []string) string {
+	switch {
+	case hasWordPrefix(words, "REVOKE"):
+		return revokeReason
+	case hasWordPrefix(words, "ALTER") && hasWordSequence(words, "OWNER", "TO"):
+		return ownerReason
+	case hasWordPrefix(words, "ALTER", "GROUP") && hasWordSequence(words, "DROP", "USER"):
+		return revokeMembershipReason
+	}
+	return ""
+}
+
+// givesOwnerAway reports whether node gives an object to a role: an ALTER ...
+// OWNER TO, or the CREATE of a view or a materialized view that names its
+// owner, which the renderer follows with one.
+func givesOwnerAway(node ast.Node) bool {
+	switch n := node.(type) {
+	case *ast.AlterOwnerNode:
+		return true
+	case *ast.CreateViewNode:
+		return n.Owner != ""
+	case *ast.CreateMaterializedViewNode:
+		return n.Owner != ""
+	}
+	return false
 }
 
 // nextInsertVerdict judges an ALTER by what an insert does after it, which is all a
@@ -1401,6 +1433,8 @@ const (
 	dropTriggerReason          = "DROP TRIGGER removes executable behavior from every write to its table"
 	revokeReason               = "REVOKE takes away access a role may rely on"
 	revokeMembershipReason     = "removing a member from a role takes away the privileges it held through the role"
+	ownerReason                = "OWNER TO gives the object to another role: the role that owned it loses an owner's privileges, " +
+		"and a view then reads its tables with the new owner's privileges"
 )
 
 // rlsForceDirections counts the FORCE changes that turn the flag on and off.

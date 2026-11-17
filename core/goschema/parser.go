@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/constraintkind"
 	"ptah.run/internal/dialectscope"
 	"ptah.run/internal/mysqlviewsecurity"
+	"ptah.run/internal/objectowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/routinesetting"
 	"ptah.run/internal/tableref"
@@ -1678,6 +1679,10 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 			Message: fmt.Sprintf("invalid %q value %q on %s at %s: %s", "security", kv["security"], ctx.directive, ctx.location, err),
 		}
 	}
+	owner, err := parseObjectOwner(kv, ctx)
+	if err != nil {
+		return err
+	}
 	s.views = append(s.views, schemamodel.View{
 		StructName: structName,
 		Name:       qualifiedObjectName(kv),
@@ -1687,10 +1692,31 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 		Security:   security,
 		Comment:    kv["comment"],
 		Options:    options,
+		Owner:      owner,
 		DependsOn:  splitDependsOn(kv["depends_on"]),
 		Dialects:   scope,
 	})
 	return nil
+}
+
+// parseObjectOwner reads the owner attribute of a view or a materialized view
+// directive, empty when it names none. An attribute written with no role,
+// or naming PUBLIC or the role of the session, is refused; see
+// [objectowner.ValidateRole]. Whether the target manages the owner is decided
+// where the schema meets a target, since one declaration may reach several.
+func parseObjectOwner(kv map[string]string, ctx annotationErrorContext) (string, error) {
+	owner, written := kv["owner"]
+	if !written {
+		return "", nil
+	}
+	if err := objectowner.ValidateRole(owner); err != nil {
+		return "", &ptaherr.ParseError{
+			File: ctx.file, Line: ctx.line, Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "owner", Err: ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf("invalid %q value %q on %s at %s: %s", "owner", owner, ctx.directive, ctx.location, err),
+		}
+	}
+	return owner, nil
 }
 
 func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, structName string) error {
@@ -1719,6 +1745,10 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	if err != nil {
 		return err
 	}
+	owner, err := parseObjectOwner(kv, ctx)
+	if err != nil {
+		return err
+	}
 	s.materializedViews = append(s.materializedViews, schemamodel.MaterializedView{
 		Facets:     owned,
 		StructName: structName,
@@ -1726,6 +1756,7 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 		Body:       kv["body"],
 		Comment:    kv["comment"],
 		Options:    options,
+		Owner:      owner,
 		DependsOn:  splitDependsOn(kv["depends_on"]),
 		Dialects:   scope,
 	})
