@@ -28,7 +28,7 @@ func clickHouseDiff() atlasreport.SchemaDiff {
 // with the same settings.
 func TestSchemaDiffTemplateJSON_EncodesFeatureData(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(atlasreport.SchemaDiffTemplateHelpersEnvVar, "1")
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
 	codecs := must.Must(builtin.New()).Codecs()
 	report := clickHouseDiff()
 	var out bytes.Buffer
@@ -45,7 +45,7 @@ func TestSchemaDiffTemplateJSON_EncodesFeatureData(t *testing.T) {
 // rather than writing a side without its settings.
 func TestSchemaDiffTemplateJSON_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(atlasreport.SchemaDiffTemplateHelpersEnvVar, "1")
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
 	var out bytes.Buffer
 
 	err := atlasreport.WriteSchemaDiff(t.Context(), &out, `{{ json .To }}`, clickHouseDiff(), schemaext.Registry{})

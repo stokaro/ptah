@@ -937,7 +937,7 @@ each session selected.
 | Flag | Behavior |
 | --- | --- |
 | `--dry-run` | Atlas-hidden; prints the generated SQL instead of writing files. |
-| `--format` | Renders generated SQL with `sql` and `.MarshalSQL` templates. The default is Atlas's `{{ sql . }}`, each statement on one line; `{{ sql . "  " }}` puts the columns of a new table two spaces in. |
+| `--format` | Renders generated SQL over `.Changes` with the `sql` helper, as Atlas does. The default is Atlas's `{{ sql . }}`, each statement on one line; `{{ sql . "  " }}` puts the columns of a new table two spaces in. `.MarshalSQL` and the shared helpers need `PTAH_ATLAS_TEMPLATE_EXTENSIONS=1`. |
 | `--schema`/`-s` | Narrows the current and desired schemas used for comparison and output. |
 | `--edit` | Opens the generated migrations in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized. |
 | `--env` | Reads `env.schema.src`, `env.dev`, `migration.dir`, `env.exclude`, `env.schema.mode`, `format.migrate.diff`, and supported `diff` policy from `atlas.hcl`. |
@@ -1339,7 +1339,7 @@ the target database is contacted.
 | `--dry-run` | Prints the plan without applying. Mutually exclusive with `--auto-approve` on the command line. |
 | `--auto-approve` | Applies without the interactive confirmation. Mutually exclusive with `--dry-run` on the command line. |
 | `--tx-mode` | `file` (the default) executes the generated plan in one transaction; `none` executes statements without transaction wrapping. Any other value is refused as Atlas refuses it, `unknown tx-mode "<value>"`; `--plan` also takes `all`. |
-| `--format` | Atlas-style templates over planned changes with `sql`, `.MarshalSQL`, and the shared helper set including `json`. `{{ json . }}` renders `{Driver, URL, Changes{Applied\|Pending}}`. |
+| `--format` | Atlas-style templates over Atlas's report, `.Changes.Pending` or `.Changes.Applied`, with the shared helper set including `json`. `{{ json . }}` renders `{Driver, URL, Changes{Applied\|Pending}}`. Needs `--dry-run` or `--auto-approve`, as in Atlas; `sql`, `.MarshalSQL` and a prompting run need `PTAH_ATLAS_TEMPLATE_EXTENSIONS=1`. |
 | `--exclude` | Filters matching resources out of both sides of the comparison before planning, as do disabled `schema.mode` values. |
 | `--edit` | Opens the planned SQL in `$VISUAL`/`$EDITOR` before approval; the edited SQL is what gets applied. |
 | `--file`/`-f` | Atlas's hidden alias, accepted for local HCL or SQL paths. |
@@ -1584,7 +1584,7 @@ What it is chosen to match is the sibling verb: `.Changes[].Cmd` is
 `sql` renders the statements as one script and takes the same optional indent
 argument it takes on `schema diff`. The shared helpers (`json`, `json_merge`,
 `upper`, `add`, `indent_ln`, and the color helpers) are all registered — on
-`schema diff` the shared set is behind `PTAH_SCHEMA_DIFF_TEMPLATE_HELPERS`
+`schema diff` the shared set is behind `PTAH_ATLAS_TEMPLATE_EXTENSIONS`
 because Atlas offers `sql` alone there, and no such narrower surface exists on
 a verb Atlas does not run at all.
 
@@ -1888,7 +1888,7 @@ without one, as the native twin does.
 
 | Flag | Behavior |
 | --- | --- |
-| `--format` | Atlas-style templates with `sql` and `.MarshalSQL`. |
+| `--format` | Atlas-style templates over `.From`, `.To`, `.Changes` and `.MarshalSQL`, with `sql` alone, as in Atlas. `PTAH_ATLAS_TEMPLATE_EXTENSIONS=1` adds each change's statement and the shared helpers. |
 | `--exclude` | Filters resources out of both sides before diffing, as do disabled `schema.mode` values. |
 | `--schema`/`-s`, `--include` | Positively scope both sides, with the same selection semantics as `schema apply`. |
 | `--env` | Reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy from `atlas.hcl`. |

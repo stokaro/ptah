@@ -13,29 +13,9 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/internal/envbool"
 	"ptah.run/internal/featurejson"
 	"ptah.run/internal/sqlscript"
 )
-
-// SchemaDiffTemplateHelpersEnvVar opens the shared `--format` helper set on
-// compat `schema diff`.
-//
-// The narrow registration is deliberate and stays the default: the pinned
-// community binary offers `sql` alone here, and registering more would let
-// ptah-compat render a template that binary refuses -- the first half of the
-// compatibility policy. The second half says compatibility must not withhold a
-// capability Ptah has, and Ptah has the document: `schema apply` and
-// `schema inspect` already render it, and native `ptah schema diff --format
-// json` emits a machine-readable diff with no variable at all.
-//
-// So the fuller behavior lives behind this variable rather than behind a new
-// flag, leaving the command and flag inventory identical (stokaro/ptah#1705).
-// It is Gated because a true value adds a reading the pinned binary does not
-// have.
-const SchemaDiffTemplateHelpersEnvVar = "PTAH_SCHEMA_DIFF_TEMPLATE_HELPERS"
-
-var schemaDiffTemplateHelpers = envbool.New(SchemaDiffTemplateHelpersEnvVar, false, envbool.Gated)
 
 const schemaDiffDefaultFormat = `{{- with .Changes -}}
 {{ sql $ }}
@@ -181,83 +161,69 @@ func NewSchemaDiff(opts SchemaDiffOptions) SchemaDiff {
 	}
 }
 
-// WriteSchemaDiff renders a `schema diff --format` template over result. With
-// the template helpers enabled, `json` encodes the feature data of `.From` and
+// WriteSchemaDiff renders a `schema diff --format` template over result; see
+// [diffTemplateSurface] for what the template reads. With
+// [TemplateExtensionsEnvVar] on, `json` encodes the feature data of `.From` and
 // `.To` through codecs, the registry of the runtime that produced the diff.
 func WriteSchemaDiff(ctx context.Context, w io.Writer, format string, result SchemaDiff, codecs schemaext.Registry) error {
-	return renderSchemaDiffTemplate(ctx, w, atlasSchemaVerbTemplateWording, format, result, codecs)
+	return renderSchemaDiffTemplate(ctx, w, schemaDiffVerb, format, result, codecs)
 }
 
+// ValidateSchemaDiffTemplate parses a `schema diff --format` template so a
+// malformed one fails before either side is read. It resolves
+// [TemplateExtensionsEnvVar] whatever the template is.
 func ValidateSchemaDiffTemplate(format string) error {
-	_, err := newSchemaDiffTemplate(context.Background(), atlasSchemaVerbTemplateWording, format, schemaext.Registry{})
-	return err
+	return validateDiffTemplate(schemaDiffVerb, format)
 }
 
 // WriteMigrateDiff renders a `migrate diff --format` template over the
-// planned statements. It reads the same document as `schema diff` and refuses
-// a template in `migrate diff`'s own words; see [templateWording].
+// planned statements, and refuses a template in `migrate diff`'s own words;
+// see [templateWording] and [diffTemplateSurface].
 //
 // The document a migration directory diff renders has no `.From` or `.To`, so
 // it carries no feature data and its `json` helper needs no codecs.
 func WriteMigrateDiff(w io.Writer, format string, result SchemaDiff) error {
-	return renderSchemaDiffTemplate(context.Background(), w, atlasMigrateVerbTemplateWording, format, result, schemaext.Registry{})
+	return renderSchemaDiffTemplate(context.Background(), w, migrateDiffVerb, format, result, schemaext.Registry{})
 }
 
 // ValidateMigrateDiffTemplate parses a `migrate diff --format` template so a
-// malformed one fails before the directory is replayed.
+// malformed one fails before the directory is replayed. It resolves
+// [TemplateExtensionsEnvVar] whatever the template is.
 func ValidateMigrateDiffTemplate(format string) error {
-	_, err := newSchemaDiffTemplate(context.Background(), atlasMigrateVerbTemplateWording, format, schemaext.Registry{})
+	return validateDiffTemplate(migrateDiffVerb, format)
+}
+
+func validateDiffTemplate(verb diffVerb, format string) error {
+	if _, err := ResolveTemplateExtensions(); err != nil {
+		return err
+	}
+	_, _, err := newSchemaDiffTemplate(context.Background(), verb, format, schemaext.Registry{})
 	return err
 }
 
-func renderSchemaDiffTemplate(ctx context.Context, w io.Writer, wording templateWording, format string, data SchemaDiff, codecs schemaext.Registry) error {
-	tmpl, err := newSchemaDiffTemplate(ctx, wording, format, codecs)
+func renderSchemaDiffTemplate(ctx context.Context, w io.Writer, verb diffVerb, format string, data SchemaDiff, codecs schemaext.Registry) error {
+	tmpl, view, err := newSchemaDiffTemplate(ctx, verb, format, codecs)
 	if err != nil {
 		return err
 	}
 	var out bytes.Buffer
-	if err := tmpl.Execute(&out, data); err != nil {
-		return wording.executeError(err)
+	if err := tmpl.Execute(&out, view(data)); err != nil {
+		return verb.wording.executeError(err)
 	}
 	_, err = w.Write(out.Bytes())
 	return err
 }
 
-func newSchemaDiffTemplate(ctx context.Context, wording templateWording, format string, codecs schemaext.Registry) (*template.Template, error) {
-	funcs, err := schemaDiffTemplateFuncs(ctx, codecs)
+func newSchemaDiffTemplate(ctx context.Context, verb diffVerb, format string, codecs schemaext.Registry) (*template.Template, func(SchemaDiff) any, error) {
+	funcs, view, err := diffTemplateSurface(ctx, verb, format, codecs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	tmpl, err := template.New(wording.name).Funcs(funcs).Parse(format)
+	tmpl, err := template.New(verb.wording.name).Funcs(funcs).Parse(format)
 	if err != nil {
-		return nil, wording.parseError(err)
+		return nil, nil, verb.wording.parseError(err)
 	}
-	return tmpl, nil
-}
-
-// schemaDiffTemplateFuncs is `sql` alone by default, and the shared set plus
-// `sql` when [SchemaDiffTemplateHelpersEnvVar] is on.
-//
-// The variable is resolved here rather than at start-up so that a malformed
-// value is refused by the command that would have used it, naming the
-// template it refused to parse.
-//
-// The shared `json` helper is replaced by one bound to codecs: `.From` and
-// `.To` carry feature data, which only the registry that produced it can
-// encode. A template without feature data renders as it does with the shared
-// helper.
-func schemaDiffTemplateFuncs(ctx context.Context, codecs schemaext.Registry) (template.FuncMap, error) {
-	enabled, err := schemaDiffTemplateHelpers.Resolve()
-	if err != nil {
-		return nil, err
-	}
-	if !enabled {
-		return template.FuncMap{"sql": schemaDiffSQL}, nil
-	}
-	funcs := atlasTemplateFuncs()
-	funcs["sql"] = schemaDiffSQL
-	funcs["json"] = featureTemplateJSON(ctx, codecs)
-	return funcs, nil
+	return tmpl, view, nil
 }
 
 // featureTemplateJSON is the `json` template helper over schema documents: the

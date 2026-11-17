@@ -128,6 +128,11 @@ func runAtlasMigrateStatus(
 	if _, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "status", opts.dirFormat, nil); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// The variable changes which helpers a --format template may call, so a
+	// malformed value fails this run whether or not it renders a template.
+	if _, err := atlasreport.ResolveTemplateExtensions(); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if formatOutput {
 		if err := validateAtlasMigrateStatusFormat(opts.format); err != nil {
 			return cmdutil.Fail(cmd, err)

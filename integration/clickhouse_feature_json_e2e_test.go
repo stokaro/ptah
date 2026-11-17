@@ -185,7 +185,7 @@ func TestCompatSchemaDiffTemplateJSONEncodesTableSettingsE2E(t *testing.T) {
 	fixture := newClickHouseTTLFixture(c)
 	codecs := must.Must(builtin.New()).Codecs()
 
-	got := clirun.Run(c, clirun.Compat, clirun.Options{Env: append(os.Environ(), atlasreport.SchemaDiffTemplateHelpersEnvVar+"=1")},
+	got := clirun.Run(c, clirun.Compat, clirun.Options{Env: append(os.Environ(), atlasreport.TemplateExtensionsEnvVar+"=1")},
 		"schema", "diff", "--from", fixture.url, "--to", "file://"+filepath.ToSlash(fixture.schema),
 		"--dev-url", fixture.devURL, "--format", "{{ json .From }}")
 

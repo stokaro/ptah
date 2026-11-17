@@ -2863,6 +2863,17 @@ Ptah-native migrations instead; see
 
 ## Format template fields
 
+A verb refuses a template helper the pinned community binary does not define on
+it, with that binary's error, such as `function "upper" not defined`.
+`migrate apply` has the shared set: `json`, `json_merge`, `add`, `indent_ln`,
+`upper` and the color helpers. `migrate lint` has no `indent_ln`, `json_merge`
+or `upper`, `migrate status` has no `add`, `indent_ln` or `upper`, and `migrate
+diff` has `sql` alone.
+[`PTAH_ATLAS_TEMPLATE_EXTENSIONS=1`](../../reference/extension-variables/#ptah_atlas_template_extensions)
+gives every verb the whole set. Some helpers that binary defines are not
+implemented here: `join`, `lower`, `maxWidth`, `repeat`, `sub` and `underline`
+on `migrate lint`, and `default` on `migrate status`.
+
 **`ptah-compat migrate apply --format`**
 
 - Top level: `.Driver`, `.URL`, `.Dir`, `.Env`, `.Pending`, `.Applied`,
@@ -2883,7 +2894,9 @@ Ptah-native migrations instead; see
 
 **`ptah-compat migrate diff --format`**
 
-- `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL.
+- `.Changes`, plus the `sql` helper for generated migration SQL, as on the
+  pinned community binary. `.MarshalSQL` and the shared helpers need
+  [`PTAH_ATLAS_TEMPLATE_EXTENSIONS=1`](../../reference/extension-variables/#ptah_atlas_template_extensions).
 - Each change: `.Cmd`, the statement, and `.Comment`, the change comment
   written above it.
 

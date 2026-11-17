@@ -211,7 +211,7 @@ a synced schema.
 
 **Implementation status.** Documented. `ptah schema diff` is the native path and `ptah-compat schema diff` the Atlas spelling. Both sides of the comparison accept a database URL, a desired-schema file, a replayed migration directory or an `env://` reference, and the output is the ordered SQL that reconciles them.
 
-`ptah-compat schema diff` supports local `file://` schema-file diffs for `.hcl`, `.yaml`, `.yml`, and `.sql` sources, Atlas-style SQL/custom output formatting with `--format`, `sql`, and `.MarshalSQL`, `--exclude` and disabled `schema.mode` resource filters over the local inputs, and evaluated `atlas.hcl` defaults for `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy.
+`ptah-compat schema diff` supports local `file://` schema-file diffs for `.hcl`, `.yaml`, `.yml`, and `.sql` sources, Atlas-style SQL/custom output formatting with `--format`, `sql`, and `.MarshalSQL` over Atlas's template members, `--exclude` and disabled `schema.mode` resource filters over the local inputs, and evaluated `atlas.hcl` defaults for `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy.
 
 `--from` and `--to` also accept one directly connectable database URL, one migration directory replayed on the required `--dev-url` dev database, or one `env://` reference resolved through the evaluated `atlas.hcl` env, with the dialect pinned by `--dev-url` first and then by database URLs.
 
@@ -368,7 +368,7 @@ writes Atlas-style migration files. It:
 - reads `env.schema.src`, `env.dev`, `migration.dir`, `format.migrate.diff`, and supported `diff` policy from `atlas.hcl` including `diff.concurrent_index.create` with `-- atlas:txmode none` file tagging and transactional/concurrent file splitting
 - supports the Atlas-hidden `--dry-run` flag to print generated SQL without writing a migration file or `atlas.sum`
 - supports `--lock-timeout` for Ptah's local migration-directory lock
-- supports Atlas-style `--format` templates with `sql` and `.MarshalSQL` for the generated migration SQL
+- supports Atlas-style `--format` templates with `sql` for the generated migration SQL, and `.MarshalSQL` under `PTAH_ATLAS_TEMPLATE_EXTENSIONS=1`
 - supports `--schema` scoping for the resolved desired state plus the replayed dev database state
 - supports `--edit` to open the generated migration in `$VISUAL`/`$EDITOR` before `atlas.sum` is finalized
 

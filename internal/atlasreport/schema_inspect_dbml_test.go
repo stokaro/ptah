@@ -26,11 +26,11 @@ func excludeTable() *schemamodel.Database {
 	}
 }
 
-// TestSchemaInspectReport_MarshalDBML_ReportsWhatItLeavesOut writes what DBML
+// TestSchemaInspectReport_DBML_ReportsWhatItLeavesOut writes what DBML
 // cannot express to the diagnostics writer, and keeps it out of the document
 // (stokaro/ptah#3917). Without the warning, `schema inspect --format dbml`
 // read as a complete description of a database it was not.
-func TestSchemaInspectReport_MarshalDBML_ReportsWhatItLeavesOut(t *testing.T) {
+func TestSchemaInspectReport_DBML_ReportsWhatItLeavesOut(t *testing.T) {
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
 	report := newInspectReport(c,
@@ -38,19 +38,19 @@ func TestSchemaInspectReport_MarshalDBML_ReportsWhatItLeavesOut(t *testing.T) {
 		atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 	)
 
-	document, err := report.MarshalDBML()
+	document, err := atlasreport.RenderSchemaInspect(`{{ dbml . }}`, report)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnostics.String(), qt.Equals,
 		"warning: DBML cannot express EXCLUDE constraints (1); the export leaves them out\n")
-	c.Assert(document, qt.Contains, `Table "t" {`)
-	c.Assert(document, qt.Not(qt.Contains), "warning")
+	c.Assert(document.Text, qt.Contains, `Table "t" {`)
+	c.Assert(document.Text, qt.Not(qt.Contains), "warning")
 }
 
-// TestSchemaInspectReport_MarshalDBML_SaysNothingWhenNothingIsLeftOut is the
+// TestSchemaInspectReport_DBML_SaysNothingWhenNothingIsLeftOut is the
 // control: a schema DBML can write in full leaves the diagnostics writer
 // empty.
-func TestSchemaInspectReport_MarshalDBML_SaysNothingWhenNothingIsLeftOut(t *testing.T) {
+func TestSchemaInspectReport_DBML_SaysNothingWhenNothingIsLeftOut(t *testing.T) {
 	c := qt.New(t)
 	var diagnostics bytes.Buffer
 	db := excludeTable()
@@ -60,9 +60,9 @@ func TestSchemaInspectReport_MarshalDBML_SaysNothingWhenNothingIsLeftOut(t *test
 		atlasreport.SchemaInspectReportOptions{DescribeSchemas: true},
 	)
 
-	document, err := report.MarshalDBML()
+	document, err := atlasreport.RenderSchemaInspect(`{{ dbml . }}`, report)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnostics.String(), qt.Equals, "")
-	c.Assert(document, qt.Contains, `Table "t" {`)
+	c.Assert(document.Text, qt.Contains, `Table "t" {`)
 }

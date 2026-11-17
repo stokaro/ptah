@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/atlas"
 	"ptah.run/internal/cli/atlas/internal/atlastest"
@@ -32,14 +33,14 @@ func TestSchemaApplySupportsFormat(t *testing.T) {
 		"schema", "apply",
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
-		"--format", `{{ len .Changes }}|{{ printf "%.6s" (.MarshalSQL) }}|{{ sql . "  " }}`,
+		"--format", `{{ len .Changes.Applied }}|{{ range .Changes.Applied }}{{ .Comment }}: {{ printf "%.12s" .Cmd }}{{ end }}`,
 		"--auto-approve",
 	})
 
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "1|-- Cre|-- Create \"users\" table\nCREATE TABLE")
+	c.Assert(out.String(), qt.Contains, "1|create \"users\" table: CREATE TABLE")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Auto-approval enabled")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
@@ -95,7 +96,7 @@ func TestSchemaApplyFormatDryRunDoesNotApply(t *testing.T) {
 		"schema", "apply",
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
-		"--format", `{{ sql . "" }}`,
+		"--format", `{{ range .Changes.Pending }}{{ .Cmd }}{{ end }}`,
 		"--dry-run",
 	})
 
@@ -106,8 +107,12 @@ func TestSchemaApplyFormatDryRunDoesNotApply(t *testing.T) {
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "dry_run_users"), qt.Equals, 0)
 }
 
+// TestSchemaApplyFormatSeparatesInteractivePrompt writes the report above the
+// prompt, its change still pending, when atlasreport.TemplateExtensionsEnvVar
+// lets a --format run prompt at all.
 func TestSchemaApplyFormatSeparatesInteractivePrompt(t *testing.T) {
 	atlastest.AllowSchemaApplyWithoutDevURL(t)
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-format-prompt.db")
@@ -123,14 +128,45 @@ func TestSchemaApplyFormatSeparatesInteractivePrompt(t *testing.T) {
 		"schema", "apply",
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
-		"--format", `{{ len .Changes }}`,
+		"--format", `{{ len .Changes.Pending }}|{{ len .Changes.Applied }}`,
 	})
 
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "1\nApply these schema changes?")
+	c.Assert(out.String(), qt.Contains, "1|0\nApply these schema changes?")
 	c.Assert(out.String(), qt.Contains, "Schema apply canceled.")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "prompt_users"), qt.Equals, 0)
+}
+
+// TestSchemaApplyFormatRefusesAPromptingRun refuses --format on a run that
+// would ask before applying, in the pinned community binary v1.3.0's words, and
+// asks nothing. That binary exits 1 with the same error, measured on
+// PostgreSQL 18 and SQLite.
+func TestSchemaApplyFormatRefusesAPromptingRun(t *testing.T) {
+	atlastest.AllowSchemaApplyWithoutDevURL(t)
+	c := qt.New(t)
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "apply-format-prompt-refused.db")
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE prompt_users (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetIn(bytes.NewBufferString("YES\n"))
+	cmd.SetArgs([]string{
+		"schema", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--to", "file://" + schemaPath,
+		"--format", `{{ len .Changes.Pending }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `--log and --format can only be used with --dry-run or --auto-approve`)
+	c.Assert(out.String(), qt.Not(qt.Contains), "Apply these schema changes?")
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "prompt_users"), qt.Equals, 0)
 }
 
@@ -155,7 +191,8 @@ func TestSchemaApplyFormatReportsSynced(t *testing.T) {
 		"schema", "apply",
 		"--url", "sqlite://" + dbPath,
 		"--to", "file://" + schemaPath,
-		"--format", `{{ with .Changes }}changed{{ else }}synced{{ end }}`,
+		"--format", `{{ with .Changes.Applied }}changed{{ else }}synced{{ end }}`,
+		"--auto-approve",
 	})
 
 	err = cmd.Execute()
@@ -208,7 +245,7 @@ func TestSchemaApplyUsesAtlasProjectEnvSchemaBlockAndFormat(t *testing.T) {
   }
   format {
     schema {
-      apply = "{{ len .Changes }}"
+      apply = "{{ len .Changes.Applied }}"
     }
   }
 }
@@ -248,7 +285,7 @@ func TestSchemaApplyUsesAtlasProjectSchemaMode(t *testing.T) {
   }
   format {
     schema {
-      apply = "{{ with .Changes }}changed{{ else }}synced{{ end }}"
+      apply = "{{ with .Changes.Applied }}changed{{ else }}synced{{ end }}"
     }
   }
 }
@@ -286,7 +323,7 @@ func TestSchemaApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T
   }
   format {
     schema {
-      apply = "{{ with .Changes }}changed{{ else }}synced{{ end }}"
+      apply = "{{ with .Changes.Applied }}changed{{ else }}synced{{ end }}"
     }
   }
 }
@@ -416,7 +453,7 @@ func TestSchemaApplyUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
   }
   format {
     schema {
-      apply = "{{ with .Changes }}changed{{ else }}synced{{ end }}"
+      apply = "{{ with .Changes.Applied }}changed{{ else }}synced{{ end }}"
     }
   }
   diff {
@@ -664,6 +701,7 @@ func TestSchemaApplyRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
 		"--url", "sqlite://apply.db",
 		"--to", "file://schema.sql",
 		"--format", "{{ if }}",
+		"--dry-run",
 	})
 
 	err := cmd.Execute()

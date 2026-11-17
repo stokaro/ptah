@@ -1682,15 +1682,19 @@ message would claim success for work that did not happen. A `--schemas`
 selection that narrows to nothing is not an error. Malformed selectors fail
 during validation, before any database is contacted.
 
-`--format` accepts Atlas-style Go templates over the planned apply changes. The
-supported template surface includes the `sql` helper and `.MarshalSQL`:
+`--format` accepts Atlas-style Go templates over the report the pinned
+community binary renders: the planned changes are `.Changes.Pending` on a dry
+run and `.Changes.Applied` after an approved run, each with `.Cmd` and
+`.Comment`. As on that binary, `--format` needs `--dry-run` or
+`--auto-approve`, and the `sql` helper and `.MarshalSQL` are refused; with
+[`PTAH_ATLAS_TEMPLATE_EXTENSIONS=1`](../../reference/extension-variables/#ptah_atlas_template_extensions) both render, and a `--format` run may prompt:
 
 ```bash
 ptah-compat schema apply \
   --url "$DATABASE_URL" \
   --to file://schema.sql \
   --dry-run \
-  --format '{{ sql . "  " }}'
+  --format '{{ range .Changes.Pending }}{{ .Cmd }};{{ "\n" }}{{ end }}'
 ```
 
 ## Save and execute plan files
@@ -1980,8 +1984,11 @@ With an `old.hcl` declaring only a `users` table and a `schema.hcl` adding a
 CREATE TABLE "main"."posts" ("id" integer NOT NULL, "user_id" integer NOT NULL, PRIMARY KEY ("id"));
 ```
 
-`--format` accepts Atlas-style Go templates over Ptah's local diff report. The
-supported template surface includes the `sql` helper and `.MarshalSQL`. Without
+`--format` accepts Atlas-style Go templates over `.From`, `.To`, `.Changes` and
+`.MarshalSQL`, with the `sql` helper alone, as on the pinned community binary.
+A change there is a schema change rather than a statement, so `.Changes` can be
+counted but carries no `.Cmd`; [`PTAH_ATLAS_TEMPLATE_EXTENSIONS=1`](../../reference/extension-variables/#ptah_atlas_template_extensions) hands the template
+Ptah's whole report and the shared helpers. Without
 `--format`, each statement is written on one line, as the pinned community
 binary writes it; an indent lays the columns of a new table out one per line:
 
@@ -2168,9 +2175,9 @@ Without `--dry-run`, cleanup drops the listed objects after confirmation
 
 | Command | Format data fields |
 | --- | --- |
-| `ptah-compat schema inspect --format` | `.Realm`, `.Schema`, `.MarshalHCL`, `.MarshalSQL`, `.MarshalJSON`, plus `hcl`, `sql`, `json`, `base64url`, `mermaid`, `split`, and `write` template helpers. |
-| `ptah-compat schema apply --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for the planned SQL statements. |
-| `ptah-compat schema diff --format` | `.Changes`, `.MarshalSQL`, plus the `sql` helper for generated migration SQL. |
+| `ptah-compat schema inspect --format` | `.Realm`, `.MarshalHCL`, `.MarshalSQL`, `.MarshalJSON`, plus `hcl`, `sql`, `json`, `base64url`, `mermaid`, `split`, and `write` template helpers. `dbml` needs `PTAH_ATLAS_TEMPLATE_EXTENSIONS=1`. |
+| `ptah-compat schema apply --format` | `.Driver`, `.URL`, `.Dir`, `.Env`, `.Error`, and `.Changes.Pending`, `.Changes.Applied` and `.Changes.Error`, each change with `.Cmd` and `.Comment`; the shared helpers. `sql` needs `PTAH_ATLAS_TEMPLATE_EXTENSIONS=1`. |
+| `ptah-compat schema diff --format` | `.From`, `.To`, `.Changes`, `.MarshalSQL`, plus the `sql` helper. `PTAH_ATLAS_TEMPLATE_EXTENSIONS=1` adds each change's `.Cmd` and `.Comment`, `.Limits`, and the shared helpers. |
 | `ptah-compat schema clean --format` | `.Env.Driver`, `.Env.URL`, `.DryRun`, `.Applied`, `.Objects`, and `.Changes`. |
 
 Function entries in `.Objects` and `.Changes` also carry `.Parameters`, and

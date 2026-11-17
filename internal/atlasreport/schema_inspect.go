@@ -77,7 +77,6 @@ type SchemaInspectReport struct {
 	// genuinely disagree and only the SQL one is gated here.
 	describeSchemas bool
 	Realm           atlasSchemaInspectJSONRealm `json:"-"`
-	Schema          atlasSchemaInspectJSONRealm `json:"-"`
 }
 
 // SchemaInspectReportOptions selects policies for one inspect report.
@@ -236,7 +235,6 @@ func NewSchemaInspectReport(
 		compatibilityHCLFraming: opts.CompatibilityHCLFraming,
 		describeSchemas:         opts.DescribeSchemas,
 		Realm:                   realm,
-		Schema:                  realm,
 	}, nil
 }
 
@@ -335,8 +333,22 @@ func newAtlasSchemaInspectTemplate(
 	report *SchemaInspectReport,
 	files *[]SchemaInspectFile,
 ) (*template.Template, error) {
+	return parseSchemaInspectTemplate(format, schemaInspectTemplateFuncs(report, files))
+}
+
+func parseSchemaInspectTemplate(format string, funcs template.FuncMap) (*template.Template, error) {
 	wording := atlasSchemaVerbTemplateWording
-	tmpl, err := template.New(wording.name).Funcs(template.FuncMap{
+	tmpl, err := template.New(wording.name).Funcs(funcs).Parse(format)
+	if err != nil {
+		return nil, wording.parseError(err)
+	}
+	return tmpl, nil
+}
+
+// schemaInspectTemplateFuncs is every helper a `schema inspect` template may
+// call: the community binary's, and `dbml`, which is Ptah's alone.
+func schemaInspectTemplateFuncs(report *SchemaInspectReport, files *[]SchemaInspectFile) template.FuncMap {
+	return template.FuncMap{
 		"base64url": atlasSchemaInspectBase64URL,
 		"hcl":       atlasSchemaInspectHCL,
 		"json":      atlasTemplateJSON,
@@ -349,11 +361,27 @@ func newAtlasSchemaInspectTemplate(
 		"write": func(args ...any) (string, error) {
 			return atlasSchemaInspectWrite(files, args...)
 		},
-	}).Parse(format)
-	if err != nil {
-		return nil, wording.parseError(err)
 	}
-	return tmpl, nil
+}
+
+// ValidateCompatSchemaInspectTemplate parses a `ptah-compat schema inspect`
+// template with the helpers the community binary defines there, and `dbml` as
+// well when [TemplateExtensionsEnvVar] is on. Measured on v1.3.0 against
+// PostgreSQL 18, `{{ dbml . }}` exits 1 there with `parse log format: template:
+// format:1: function "dbml" not defined`, before the database is read. It
+// resolves the variable whatever the template is.
+func ValidateCompatSchemaInspectTemplate(format string) error {
+	extended, err := ResolveTemplateExtensions()
+	if err != nil {
+		return err
+	}
+	var files []SchemaInspectFile
+	funcs := schemaInspectTemplateFuncs(nil, &files)
+	if !extended {
+		delete(funcs, "dbml")
+	}
+	_, err = parseSchemaInspectTemplate(format, funcs)
+	return err
 }
 
 // defaultSchemaName resolves the schema that owns unqualified objects for
@@ -562,7 +590,10 @@ func atlasSchemaInspectSQL(report *SchemaInspectReport, indent ...string) (strin
 	return report.MarshalSQL(indent...)
 }
 
-// MarshalDBML writes the inspected schema as DBML.
+// marshalDBML writes the inspected schema as DBML. It is the `dbml` helper
+// rather than a method a template can read, because the community binary's
+// report has no such method: `{{ .MarshalDBML }}` would render here and fail
+// there.
 //
 // It reads the same source MarshalSQL does, so the two formats describe one
 // inspection rather than two.
@@ -581,7 +612,7 @@ func atlasSchemaInspectSQL(report *SchemaInspectReport, indent ...string) (strin
 // diagnostics. Never into the document: a warning written there would be part
 // of the artifact. Without the warnings the export reads as a complete
 // description of the database when it is not (stokaro/ptah#3917).
-func (r *SchemaInspectReport) MarshalDBML() (string, error) {
+func (r *SchemaInspectReport) marshalDBML() (string, error) {
 	rendered, err := dbmlrender.Render(r.ctx, r.sqlSource(), dbmlrender.Options{Target: r.info.Dialect}, r.runtime)
 	if err != nil {
 		return "", fmt.Errorf("render DBML: %w", err)
@@ -595,7 +626,7 @@ func (r *SchemaInspectReport) MarshalDBML() (string, error) {
 }
 
 func atlasSchemaInspectDBML(report *SchemaInspectReport, _ ...string) (string, error) {
-	return report.MarshalDBML()
+	return report.marshalDBML()
 }
 
 func atlasSchemaInspectMermaid(report *SchemaInspectReport, _ ...string) (string, error) {

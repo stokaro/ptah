@@ -19,7 +19,7 @@ import (
 // (stokaro/ptah#1620).
 
 const exportProjectHCL = `exporter "markdown" {
-  template = "## Rollout\n{{ range .Changes }}- {{ .Cmd }}\n{{ end }}"
+  template = "## Rollout\n{{ sql . }}"
 }
 
 env "local" {

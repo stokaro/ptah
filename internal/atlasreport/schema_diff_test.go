@@ -89,7 +89,7 @@ func TestSchemaDiffTemplateExecutionErrorDoesNotWritePartialOutput(t *testing.T)
 // of this pair: with the variable absent, the same template is still refused.
 func TestSchemaDiffTemplateHelpers_OpenTheSharedSet(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(atlasreport.SchemaDiffTemplateHelpersEnvVar, "1")
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
 	var out bytes.Buffer
 	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Statements: []string{
 		`CREATE TABLE "users" ("id" integer);`,
@@ -108,7 +108,7 @@ func TestSchemaDiffTemplateHelpers_OpenTheSharedSet(t *testing.T) {
 // work.
 func TestSchemaDiffTemplateHelpers_KeepSQL(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(atlasreport.SchemaDiffTemplateHelpersEnvVar, "1")
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "1")
 	var out bytes.Buffer
 	report := atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{Statements: []string{
 		`CREATE TABLE "users" ("id" integer);`,
@@ -125,9 +125,9 @@ func TestSchemaDiffTemplateHelpers_KeepSQL(t *testing.T) {
 // template it did not parse, rather than lying dormant until a later run.
 func TestSchemaDiffTemplateHelpers_RefuseAMalformedValue(t *testing.T) {
 	c := qt.New(t)
-	t.Setenv(atlasreport.SchemaDiffTemplateHelpersEnvVar, "yes-please")
+	t.Setenv(atlasreport.TemplateExtensionsEnvVar, "yes-please")
 
 	err := atlasreport.ValidateSchemaDiffTemplate(`{{ sql . }}`)
 
-	c.Assert(err, qt.ErrorMatches, `(?s).*PTAH_SCHEMA_DIFF_TEMPLATE_HELPERS.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*PTAH_ATLAS_TEMPLATE_EXTENSIONS.*`)
 }

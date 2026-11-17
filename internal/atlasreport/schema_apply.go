@@ -5,36 +5,78 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"text/template"
 )
 
-// SchemaApply is the `schema apply --format` template data.
+// SchemaApply is the `schema apply --format` template data, in the shape the
+// pinned community binary v1.3.0 hands its template. Measured on PostgreSQL 18,
+// these render there:
 //
-// Driver and URL name the target the plan was built against. They are part of
-// the Atlas template surface — `{{ .Driver }}` and `{{ .URL.Schema }}` both
-// render on the pinned community binary v1.3.0 — and they are what the JSON
-// document below carries alongside the statements.
+//	{{ .Driver }} {{ .URL.Host }} {{ .Env.Driver }} {{ .Dir }} {{ .Error }}
+//	{{ range .Changes.Pending }}{{ .Cmd }} {{ .Comment }}{{ end }}
+//	{{ .Changes.Applied }} {{ .Changes.Error }}
 //
-// Changes stays a slice of rendered statements, which is Ptah's own surface:
-// `{{ len .Changes }}` and `{{ range .Changes }}` work here. The JSON document
-// is a different shape on purpose; see [SchemaApply.MarshalJSON].
+// and `{{ range .Changes }}`, `{{ len .Changes }}`, `{{ .MarshalSQL }}` and
+// `{{ .MarshalJSON }}` fail, because Changes is a struct there and the report
+// has neither method. The members here are the ones that binary carries and
+// Ptah fills; the rest of its change members -- Args, Reverse, Source -- fail
+// here, where a template reading them would print a value Ptah does not have.
 type SchemaApply struct {
-	Driver  string
-	URL     atlasTemplateURL
-	Changes []SchemaApplyChange
-
-	// pending records that this report describes a plan that has not been
-	// executed (`--dry-run`). It selects the JSON member the statements land
-	// under, matching Atlas: a dry run reports Changes.Pending and a real
-	// apply reports Changes.Applied. It is unexported because Atlas has no
-	// such template field, and a field only Ptah offers would let a template
-	// succeed here that the community binary refuses.
-	pending bool
+	// Env names the target the plan was built against. Its members are
+	// promoted, as the community binary's are: `{{ .Driver }}` and
+	// `{{ .Env.Driver }}` read the same value.
+	Env
+	// Changes holds the plan: Pending before it runs, on `--dry-run`, and
+	// Applied once it has.
+	Changes SchemaApplyChanges
+	// Error is the community binary's member for a failed run. A run that
+	// fails here reports on stderr, so it is empty whenever a template renders.
+	Error string `json:"Error,omitempty"`
 
 	// dialect is the dialect the statements were planned for, which the `sql`
-	// helper reads them as when it indents them. It is unexported for the
-	// reason pending is.
+	// helper reads them as when it indents them. It is unexported because
+	// the community binary has no such template member.
 	dialect string
+}
+
+// Env is the target of a `schema apply` report. It is the type of
+// [SchemaApply.Env] under the name the community binary gives that member, so
+// that `{{ .Env.Driver }}` resolves.
+type Env = atlasEnv
+
+// SchemaApplyChanges is the plan of a `schema apply` report.
+type SchemaApplyChanges struct {
+	Applied []SchemaApplyChange
+	Pending []SchemaApplyChange
+	// Error is the community binary's member for the statement a run failed
+	// on. It is nil whenever a template renders, and prints as `<nil>` there.
+	Error error
+}
+
+// MarshalJSON renders the document `{{ json .Changes }}` produces: each
+// statement as a string, under Pending before the plan runs and under Applied
+// after, `{"Pending":["CREATE TABLE ..."]}`. The community binary writes the
+// same document, and an empty list is left out there too.
+func (c SchemaApplyChanges) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Applied []string `json:"Applied,omitempty"`
+		Pending []string `json:"Pending,omitempty"`
+	}{
+		Applied: changeStatements(c.Applied),
+		Pending: changeStatements(c.Pending),
+	})
+}
+
+func changeStatements(changes []SchemaChange) []string {
+	if len(changes) == 0 {
+		return nil
+	}
+	statements := make([]string, 0, len(changes))
+	for _, change := range changes {
+		statements = append(statements, change.Cmd)
+	}
+	return statements
 }
 
 type SchemaApplyChange = SchemaChange
@@ -57,23 +99,25 @@ type SchemaApplyOptions struct {
 }
 
 func NewSchemaApply(opts SchemaApplyOptions) SchemaApply {
-	report := SchemaApply{
-		Changes: schemaChanges(opts.Statements),
-		pending: opts.DryRun,
-		dialect: opts.Driver,
-	}
-	for i := range report.Changes {
+	changes := schemaChanges(opts.Statements)
+	for i := range changes {
 		if i < len(opts.Comments) {
-			report.Changes[i].Comment = opts.Comments[i]
+			changes[i].Comment = opts.Comments[i]
 		}
 	}
+	report := SchemaApply{dialect: opts.Driver}
 	// A synced schema carries no environment on the community binary either:
 	// `{{ json . }}` there renders exactly `{"Changes":{}}` when there is
 	// nothing to apply, because the command returns before it fills the env
 	// in. Populating Driver and URL only when there is a plan keeps the two
 	// documents identical on that path too.
-	if len(opts.Statements) == 0 {
+	if len(changes) == 0 {
 		return report
+	}
+	if opts.DryRun {
+		report.Changes.Pending = changes
+	} else {
+		report.Changes.Applied = changes
 	}
 	report.Driver = opts.Driver
 	report.URL = atlasRedactedURL(opts.URL)
@@ -102,15 +146,20 @@ func renderSchemaApplyTemplate(w io.Writer, format string, data SchemaApply) err
 	return err
 }
 
-// newSchemaApplyTemplate registers the helper set every Atlas Go-template
-// surface exposes, plus this verb's own `sql`. Registering `sql` alone leaves
-// `{{ json . }}` — which the community binary renders here — failing at parse
-// time. Every helper in the shared set was measured on the
-// pinned community binary v1.3.0's own `schema apply --format`, so registering
-// them cannot make this binary accept a template that one refuses.
+// newSchemaApplyTemplate parses format with the helpers the community binary
+// defines here, the whole shared set, and with Ptah's own `sql` when
+// [TemplateExtensionsEnvVar] is on. That binary has no `sql` on this verb:
+// `{{ sql . }}` exits 1 there with `parse log format: template: format:1:
+// function "sql" not defined`.
 func newSchemaApplyTemplate(format string) (*template.Template, error) {
 	funcs := atlasTemplateFuncs()
-	funcs["sql"] = schemaApplySQL
+	extended, err := ResolveTemplateExtensions()
+	if err != nil {
+		return nil, err
+	}
+	if extended {
+		funcs["sql"] = schemaApplySQL
+	}
 	wording := atlasSchemaVerbTemplateWording
 	tmpl, err := template.New(wording.name).Funcs(funcs).Parse(format)
 	if err != nil {
@@ -119,58 +168,16 @@ func newSchemaApplyTemplate(format string) (*template.Template, error) {
 	return tmpl, nil
 }
 
-// schemaApplyJSONChanges is the Changes member of the JSON document: the
-// statements land under Pending before they run and under Applied after.
-type schemaApplyJSONChanges struct {
-	Applied []string `json:"Applied,omitempty"`
-	Pending []string `json:"Pending,omitempty"`
-}
-
-// MarshalJSON renders the document `{{ json . }}` produces.
-//
-// The shape follows the pinned community binary v1.3.0 rather than this Go
-// struct: `{"Driver":…,"URL":{…},"Changes":{"Applied":[…]}}` for a real apply
-// and `"Changes":{"Pending":[…]}` for `--dry-run`. A pipeline that reads
-// `.Changes.Applied` out of an Atlas run keeps reading it here.
-//
-// It is deliberately not the struct's own field layout: `Changes` is a
-// statement slice for templates and an object with one member in JSON, exactly
-// as it is on the community binary.
-func (r SchemaApply) MarshalJSON() ([]byte, error) {
-	statements := make([]string, 0, len(r.Changes))
-	for _, change := range r.Changes {
-		statements = append(statements, change.Cmd)
-	}
-	changes := schemaApplyJSONChanges{}
-	switch {
-	case len(statements) == 0:
-	case r.pending:
-		changes.Pending = statements
-	default:
-		changes.Applied = statements
-	}
-	return json.Marshal(struct {
-		Driver  string                 `json:"Driver,omitempty"`
-		URL     atlasTemplateURL       `json:"URL,omitzero"`
-		Changes schemaApplyJSONChanges `json:"Changes"`
-	}{
-		Driver:  r.Driver,
-		URL:     r.URL,
-		Changes: changes,
-	})
-}
-
-func (r SchemaApply) MarshalSQL(indent ...string) (string, error) {
+// schemaApplySQL is the `sql` helper of [TemplateExtensionsEnvVar]: the plan as
+// a script, each change's comment above its statement, indented with indent.
+func schemaApplySQL(result SchemaApply, indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
 	}
-	sql := schemaChangesSQLText(r.Changes, capitalized, statementEnd(r.dialect))
+	changes := append(slices.Clone(result.Changes.Applied), result.Changes.Pending...)
+	sql := schemaChangesSQLText(changes, capitalized, statementEnd(result.dialect))
 	if len(indent) == 0 || indent[0] == "" || sql == "" {
 		return sql, nil
 	}
-	return schemaIndentSQL(r.dialect, sql, indent[0]), nil
-}
-
-func schemaApplySQL(result SchemaApply, indent ...string) (string, error) {
-	return result.MarshalSQL(indent...)
+	return schemaIndentSQL(result.dialect, sql, indent[0]), nil
 }
