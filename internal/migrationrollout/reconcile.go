@@ -54,6 +54,11 @@ func reconcileTarget(state *TargetState, target Target, status *migrator.Migrati
 		state.Note = fmt.Sprintf("the revision table holds a dirty row for migration %s, which a rollout never retries; "+
 			"recover it with ptah migrations up --allow-dirty or ptah migrations repair against this target, then resume",
 			dirtyVersion(status.DirtyRevision))
+	case dirtyRepeatable(status) != nil:
+		record := dirtyRepeatable(status)
+		state.Status = dirtyRepeatableStatus(record)
+		state.Version = currentVersion(status)
+		state.Note = dirtyRepeatableNote(record)
 	case releaseApplied(status):
 		state.Version = currentVersion(status)
 		if !recorded.Success() {
@@ -91,6 +96,42 @@ func releaseApplied(status *migrator.MigrationStatus) bool {
 		}
 	}
 	return true
+}
+
+// dirtyRepeatable returns the first repeatable migration record whose last
+// attempt failed or recorded no outcome, and nil when there is none. An up run
+// refuses while one exists, so a rollout that retried the target would be
+// refused each time.
+func dirtyRepeatable(status *migrator.MigrationStatus) *migrator.RepeatableRecord {
+	for index, record := range status.Repeatables {
+		if record.State == migrator.RepeatableStateFailed || record.State == migrator.RepeatableStateRunning {
+			return &status.Repeatables[index]
+		}
+	}
+	return nil
+}
+
+// dirtyRepeatableStatus classifies a dirty repeatable record the way the run
+// document does: a body that failed inside its transaction committed nothing,
+// and any other dirty record leaves the outcome unknown.
+func dirtyRepeatableStatus(record *migrator.RepeatableRecord) TargetStatus {
+	if record.State == migrator.RepeatableStateFailed && !record.NoTransaction {
+		return TargetFailed
+	}
+	return TargetUnknown
+}
+
+// dirtyRepeatableNote says what a dirty repeatable record holds and how an
+// operator recovers it. A record no file carries cannot be retried, so its
+// way out is deleting the row.
+func dirtyRepeatableNote(record *migrator.RepeatableRecord) string {
+	note := fmt.Sprintf("the repeatable migration record holds a %s attempt of %s, which a rollout never retries; ",
+		record.State, record.Identity)
+	if record.Orphaned {
+		return note + "no file of the directory carries it any more, so check what it left behind and delete its row " +
+			"from the record table against this target, then resume"
+	}
+	return note + "recover it with ptah migrations up --allow-dirty against this target, then resume"
 }
 
 func dirtyVersion(revision *migrator.MigrationRevision) string {

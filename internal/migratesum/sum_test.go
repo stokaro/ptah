@@ -2,6 +2,7 @@ package migratesum_test
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"maps"
 	"strings"
@@ -440,4 +441,33 @@ func TestVerify_HandEditedSumFileDirHashMismatch(t *testing.T) {
 	c.Assert(res.DirHashMismatch, qt.IsTrue)
 	c.Assert(res.FirstMismatch(), qt.IsNil)
 	c.Assert(res.Describe(), qt.Contains, "directory hash mismatch")
+}
+
+func TestCompute_CoversRepeatableMigrations(t *testing.T) {
+	c := qt.New(t)
+
+	body := "CREATE OR REPLACE VIEW v AS SELECT 1;\n"
+	base := map[string]string{
+		"0000000001_init.up.sql":   "CREATE TABLE t (id INT);\n",
+		"0000000001_init.down.sql": "DROP TABLE t;\n",
+		"R__v.sql":                 body,
+	}
+
+	sum, err := migratesum.ComputeWithFormat(fixture(base), migrationfile.DirFormatPtah)
+	c.Assert(err, qt.IsNil)
+	entries := make(map[string]string, len(sum.Entries))
+	for _, e := range sum.Entries {
+		entries[e.Name] = e.Hash
+	}
+	// The entry is the digest the migrator records for the file, so ptah.sum
+	// and the database name the same bytes the same way.
+	digest := sha256.Sum256([]byte(body))
+	c.Assert(entries["R__v.sql"], qt.Equals, "h1:"+base64.StdEncoding.EncodeToString(digest[:]))
+
+	edited := make(map[string]string, len(base))
+	maps.Copy(edited, base)
+	edited["R__v.sql"] = "CREATE OR REPLACE VIEW v AS SELECT 2;\n"
+	editedSum, err := migratesum.ComputeWithFormat(fixture(edited), migrationfile.DirFormatPtah)
+	c.Assert(err, qt.IsNil)
+	c.Assert(editedSum.DirHash, qt.Not(qt.Equals), sum.DirHash)
 }

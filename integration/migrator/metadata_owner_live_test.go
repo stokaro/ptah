@@ -312,6 +312,12 @@ func squatForeignMetadataTable(
 			 ) PARTITION BY RANGE (version)`,
 			`GRANT ALL ON public.schema_migrations TO PUBLIC`,
 		},
+		"schema_migrations_repeatable": {
+			foreignMetadataRepeatableTableDDL,
+			`CREATE TRIGGER ptah_squat_trg BEFORE INSERT ON public.schema_migrations_repeatable
+			 FOR EACH ROW EXECUTE FUNCTION public.ptah_squat_probe()`,
+			`GRANT ALL ON public.schema_migrations_repeatable TO PUBLIC`,
+		},
 		"schema_migrations_log": {
 			foreignMetadataLogTableDDL,
 			`CREATE TRIGGER ptah_squat_trg BEFORE INSERT ON public.schema_migrations_log

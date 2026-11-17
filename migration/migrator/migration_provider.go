@@ -146,6 +146,11 @@ type FSMigrationProvider struct {
 	// written for a runner that opens no transaction around a file; see
 	// [WithOwnTransactions].
 	ownTransactions bool
+	// loadsRepeatables asks for the directory's repeatable migrations, which
+	// repeatables then holds in execution order; see
+	// [WithRepeatableMigrations].
+	loadsRepeatables bool
+	repeatables      []*repeatableMigration
 }
 
 // FSProviderOption configures a FSMigrationProvider before it loads
@@ -270,6 +275,11 @@ func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationP
 	p.hooks.ownTransactions = p.ownTransactions
 	if err := p.load(); err != nil {
 		return nil, err
+	}
+	if p.loadsRepeatables {
+		if err := p.loadRepeatables(); err != nil {
+			return nil, err
+		}
 	}
 	for _, migration := range p.migrations {
 		migration.ownTransactions = p.ownTransactions

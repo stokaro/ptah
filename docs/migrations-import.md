@@ -25,6 +25,7 @@ ptah migrations import \
 | `--from` | Source tool. Auto-detected from the directory layout when omitted. |
 | `--dry-run` | Print the migrations that would be written without writing them. |
 | `--allow-partial` | Import and write `ptah.sum` even though some source files were not converted. |
+| `--repeatables` | What a source repeatable migration becomes: `once` (default), a one-time migration ordered after the versioned ones, or `on-change`, a Ptah repeatable migration `R__<identity>.sql` that `ptah migrations up` runs again whenever its content changes. |
 | `--dialect` | Target dialect Liquibase typed changes such as `createTable` are rendered for. Refused for any other source tool. See [Typed changes](#typed-changes). |
 | `--server-version` | Release line of that dialect's server, such as `17` or `10.11.6-MariaDB`, so the rendering follows what that release accepts. Requires `--dialect`. |
 
@@ -36,7 +37,7 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
 | --- | --- | --- |
 | golang-migrate | **Supported** | `<version>_<name>.up.sql` / `.down.sql`; integer or timestamp versions. |
 | Goose | **Supported** | Single-file `<version>_<name>.sql` split by `-- +goose Up` / `-- +goose Down` (SQL only; `StatementBegin/End` directives are stripped, the exact line `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both output directions, and Go-based migrations are rejected). |
-| Flyway | **Supported** | Versioned `V<version>__<desc>.sql` (dotted versions such as `V2.1` are supported), undo `U<version>__<desc>.sql` (paired to its versioned migration by version and imported as the down), and repeatable `R__<desc>.sql` (imported as a one-time migration ordered after the versioned ones). |
+| Flyway | **Supported** | Versioned `V<version>__<desc>.sql` (dotted versions such as `V2.1` are supported), undo `U<version>__<desc>.sql` (paired to its versioned migration by version and imported as the down), and repeatable `R__<desc>.sql` (see `--repeatables`). |
 | Liquibase | **Supported** | All four serializations: formatted SQL, XML, YAML and JSON. See [Liquibase specifics](#liquibase-specifics). |
 
 ## Behavior
@@ -59,9 +60,11 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
   integers keeps them. An undo (`U<version>__…`) migration becomes the down of
   the versioned migration with the same version. A repeatable (`R__…`) migration
   is imported as a one-time migration ordered after every versioned one (named
-  `repeatable_<desc>`), because Ptah-native migrations do not have Flyway-style
-  reapply semantics — a later source change becomes a new Ptah migration rather
-  than an automatic re-run.
+  `repeatable_<desc>`) by default, and a later source change becomes a new Ptah
+  migration rather than a re-run. With `--repeatables on-change` it is imported
+  as a Ptah repeatable migration, `R__<identity>.sql`, which `ptah migrations up`
+  runs again whenever its content changes. Only PostgreSQL and SQLite run
+  repeatable migrations; against another engine `up` refuses the directory.
 - **Liquibase specifics.** All four serializations are read, and a changelog
   construct that cannot become a migration file is refused by name. See
   [Liquibase specifics](#liquibase-specifics) below.

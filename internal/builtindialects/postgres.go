@@ -61,7 +61,7 @@ func postgres() descriptor.Dialect {
 		// records it commit together, measured by
 		// TestRevisionCompletionFailure_PostgresTransactionalLive.
 		DDLTransactions: "transactional",
-		RevisionTable:   postgresFamilyRevisionTable(),
+		RevisionTable:   postgresRevisionTable(),
 
 		Schemas: descriptor.Schemas{Selection: descriptor.SchemaSelectionSearchPath, Implicit: true},
 		Roles:   descriptor.Roles{OutOfScope: descriptor.RoleScopeReferenced, Widenable: true},

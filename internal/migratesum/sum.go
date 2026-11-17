@@ -58,9 +58,9 @@ type SumFile struct {
 
 // Compute walks fsys and builds the sum over every migration file the
 // migrator recognizes (NNNNNNNNNN_description.(up|down).sql, including the
-// .checkpoint. variant), so the checksum covers exactly what `ptah migrations
-// up` and `ptah migrations down` execute. The ptah.sum file itself
-// and any non-migration file are excluded.
+// .checkpoint. variant, and repeatable R__<identity>.sql files), so the
+// checksum covers exactly what `ptah migrations up` and `ptah migrations down`
+// execute. The ptah.sum file itself and any non-migration file are excluded.
 func Compute(fsys fs.FS) (*SumFile, error) {
 	return ComputeWithFormat(fsys, migrationfile.DirFormatAuto)
 }
@@ -85,14 +85,29 @@ func ComputeWithFormat(fsys fs.FS, format migrationfile.DirFormat) (*SumFile, er
 	if err != nil {
 		return nil, err
 	}
-
-	entries := make([]Entry, 0, len(files))
+	// A repeatable migration runs from the directory as a versioned one does,
+	// so the sum covers it too: an edit that has not been hashed is refused
+	// before it runs. The entry hashes the file's bytes, which is also the
+	// digest the migrator records for it.
+	repeatables, err := migrationfile.DiscoverRepeatables(fsys, normalized)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(files)+len(repeatables))
 	for _, file := range files {
-		data, err := fs.ReadFile(fsys, file.Path)
+		paths = append(paths, file.Path)
+	}
+	for _, repeatable := range repeatables {
+		paths = append(paths, repeatable.Path)
+	}
+
+	entries := make([]Entry, 0, len(paths))
+	for _, name := range paths {
+		data, err := fs.ReadFile(fsys, name)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read %s: %w", file.Path, err)
+			return nil, fmt.Errorf("failed to read %s: %w", name, err)
 		}
-		entries = append(entries, Entry{Name: file.Path, Hash: hashContent(data)})
+		entries = append(entries, Entry{Name: name, Hash: hashContent(data)})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 

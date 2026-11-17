@@ -206,6 +206,7 @@
   "/versioned/online-mode/",
   "/versioned/overview/",
   "/versioned/reference-data/",
+  "/versioned/repeatable/",
   "/versioned/rollback/",
   "/workflows/api-schema-export/",
   "/workflows/atlas-cli/",

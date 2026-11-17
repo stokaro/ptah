@@ -325,7 +325,10 @@ func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T
 			c.Assert(args, qt.HasLen, len(names)+1)
 			c.Assert(args[0], qt.Equals, test.wantScopeArg)
 			c.Assert(args[1:], qt.DeepEquals,
-				[]any{revisiontable.Atlas, revisiontable.Ptah, revisiontable.PtahLog, revisiontable.Tags, revisiontable.ApplyLog, revisiontable.Seeds})
+				[]any{
+					revisiontable.Atlas, revisiontable.Ptah, revisiontable.PtahLog, revisiontable.PtahRepeatable,
+					revisiontable.Tags, revisiontable.ApplyLog, revisiontable.Seeds,
+				})
 			c.Assert(query, qt.Contains, test.wantCatalog)
 			for _, token := range test.wantTokens {
 				c.Assert(query, qt.Contains, token)
@@ -334,6 +337,7 @@ func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T
 			// bound, so a name carrying a quote cannot reshape the statement.
 			c.Assert(query, qt.Not(qt.Contains), revisiontable.Ptah)
 			c.Assert(query, qt.Not(qt.Contains), revisiontable.PtahLog)
+			c.Assert(query, qt.Not(qt.Contains), revisiontable.PtahRepeatable)
 			c.Assert(query, qt.Not(qt.Contains), revisiontable.Atlas)
 			c.Assert(query, qt.Not(qt.Contains), revisiontable.Tags)
 		})

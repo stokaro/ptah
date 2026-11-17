@@ -1756,13 +1756,13 @@
       "shells": [
         {
           "shell": "bash",
-          "steps": 11,
-          "expectations": 7
+          "steps": 17,
+          "expectations": 12
         },
         {
           "shell": "powershell",
-          "steps": 11,
-          "expectations": 7
+          "steps": 17,
+          "expectations": 12
         }
       ]
     },

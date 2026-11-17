@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/shadow"
 )
@@ -69,6 +71,11 @@ type driftCheck struct {
 // an object the project leaves to another tool is not drift. A selector that
 // matched nothing on either side is a warning on standard error naming where
 // it was written, as `schema drift` gives one, and the check goes on.
+//
+// A directory that holds repeatable migrations is refused before a shadow
+// database starts: the replay the check compares against creates what the
+// versioned history creates, and the objects of a repeatable migration are not
+// part of it.
 func prepareDriftCheck(
 	cmd *cobra.Command,
 	opts options,
@@ -77,9 +84,20 @@ func prepareDriftCheck(
 	settings parsedMigrationSettings,
 	conn *dbschema.DatabaseConnection,
 	mig *migrator.Migrator,
+	migrationsFS fs.FS,
 ) (*driftCheck, func(), error) {
 	if !opts.checkDrift {
 		return nil, func() {}, nil
+	}
+	repeatables, err := migrationfile.DiscoverRepeatables(migrationsFS, settings.dirFormat)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	if len(repeatables) > 0 {
+		return nil, func() {}, fmt.Errorf(
+			"--%s replays the versioned history on the shadow database, and this directory holds repeatable "+
+				"migrations whose objects that replay does not create; run without --%s",
+			checkDriftFlag, checkDriftFlag)
 	}
 	ctx := cmd.Context()
 	runtime, err := engineruntime.Resolve(ctx, engineruntime.DatabaseURL(dbURL))
