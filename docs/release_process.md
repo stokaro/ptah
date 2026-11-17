@@ -47,6 +47,10 @@ waiting on one is a reason to cut it rather than a note on its own backlog
   margin for every job that mints one.
 - GitHub Actions package permissions enabled for publishing
   `ghcr.io/stokaro/ptah`.
+- No signing key or secret. The `release` job signs the checksum file and the
+  SBOMs, and the `Sign the release images` job signs the image index, each
+  with its own GitHub OIDC token. `id-token: write` on those two jobs grants
+  it, and on no pull-request job, so there is no key to rotate or leak.
 - `DOCKER_HUB_USER` and `DOCKER_HUB_TOKEN` as repository secrets, for the
   Docker Hub mirror. The account is a secret rather than the repository owner's
   name because the two are different things that look alike: `stokaro` on
@@ -157,13 +161,65 @@ that job stays skipped and npm is not a release channel.
    The release workflow already asserts this, anonymously and by digest, in its
    `Both registries carry this release` step. A tag that reached one registry
    and not the other fails the release rather than leaving a reader unable to
-   tell which host is behind:
+   tell which host is behind. Given the digest GoReleaser recorded, the step
+   also requires both version tags to name it:
 
    ```bash
    scripts/check-release-image-mirror.sh 0.1.2
+   scripts/check-release-image-mirror.sh 0.1.2 sha256:<digest>
    ```
 
-7. Verify the versioned documentation. The tag's `Docs` run deploys it under a
+7. Verify the image signatures. The `release` job reads the index digest
+   GoReleaser pushed and passes it on. The `Sign the release images` job then
+   runs the mirror check above, signs the index once per registry, by digest,
+   with keyless cosign, and verifies each registry anonymously with the
+   identity and issuer the
+   [install page](site/src/content/docs/start/install-options.mdx) documents.
+   The mirror check and the verification each read a host again for up to a
+   minute while it is behind. Any of the steps failing fails the release, and
+   `Publish npm CLI packages` waits for the signing job. The signing runs in
+   the workflow rather than in GoReleaser's `docker_signs`, which would sign
+   before the mirror check and once per tag. The same verification by hand,
+   given the digest the version tag names:
+
+   ```bash
+   DIGEST="$(docker buildx imagetools inspect ghcr.io/stokaro/ptah:0.1.2 --format '{{.Manifest.Digest}}')"
+   scripts/check-release-image-signatures.sh verify v0.1.2 "$DIGEST"
+   ```
+
+   The images, the GitHub Release and the Homebrew formula are public before
+   they are signed. GoReleaser publishes all of them in the `release` job, and
+   the signing job starts after it. Until the signing job passes, `cosign
+   verify` reports `no signatures found` for the new digest, which is the
+   right answer for an image nothing has signed yet. That is normally a few
+   minutes. When the signing job fails, the window lasts until a rerun of it
+   passes. Announce the release only after the signing job has passed.
+
+   When `Sign the release images` fails, use **Re-run failed jobs**. It runs
+   the signing job again with the digest the `release` job published, under
+   the same identity, because that identity names `release.yml` and the tag.
+   Signing a digest that already has a signature adds a second one beside it.
+   `cosign sign` does not retry, so a transient Fulcio or Rekor error fails the
+   signing job, and **Re-run failed jobs** is the recovery for that too. The
+   rerun repeats the mirror check. If the version tag names another digest by
+   then, for example after a full rerun or a manual push, the rerun refuses
+   there. That is intended, because the signature would cover a digest no
+   reader resolves from the tag. Follow step 3 and cut the next patch version.
+   Never use **Re-run all jobs** on a published release. It runs GoReleaser
+   again, which builds and pushes a new index. The attestations buildx
+   attaches record the build, so the new index has a new digest. The version
+   tag and `latest` move to it, and only the new digest is signed. The first
+   digest stays in both registries without a signature, so anyone who pinned
+   it during the window cannot verify it. A failure in the `release` job
+   after GoReleaser pushed the images has the same effect when it is rerun,
+   so for that failure follow step 3 and cut the next patch version.
+
+   Snapshots are never pushed or signed, and no pull-request job holds
+   `id-token: write`. The signature identifies the publisher of the digest. It
+   is separate from the SBOM files and from build provenance, and it makes no
+   SLSA claim.
+
+8. Verify the versioned documentation. The tag's `Docs` run deploys it under a
    commit of its own — Pages keys a deployment by a commit the repository holds,
    and the tag's own commit is the one `master` already deployed — and the
    deploy job waits for the public site to serve that build before it finishes.
@@ -187,7 +243,7 @@ that job stays skipped and npm is not a release channel.
    matching page as their canonical URL. A page absent from `latest` has no
    canonical, and its archive warning links to the latest documentation home.
 
-8. Verify the Homebrew install:
+9. Verify the Homebrew install:
 
    ```bash
    brew update
@@ -197,14 +253,14 @@ that job stays skipped and npm is not a release channel.
    ptah-compat migrate --help
    ```
 
-9. When `PTAH_NPM_PUBLISH=true`, verify all three npm commands from a fresh
-   project. Pin the tag's version rather than using npm's `latest` tag:
+10. When `PTAH_NPM_PUBLISH=true`, verify all three npm commands from a fresh
+    project. Pin the tag's version rather than using npm's `latest` tag:
 
-   ```bash
-   npx @stokaro/ptah@X.Y.Z version
-   npx --package=@stokaro/ptah@X.Y.Z ptah-compat version
-   npx --package=@stokaro/ptah@X.Y.Z ptah-ls --version
-   ```
+    ```bash
+    npx @stokaro/ptah@X.Y.Z version
+    npx --package=@stokaro/ptah@X.Y.Z ptah-compat version
+    npx --package=@stokaro/ptah@X.Y.Z ptah-ls --version
+    ```
 
 ## The Tap Holds A Cask And A Formula
 
