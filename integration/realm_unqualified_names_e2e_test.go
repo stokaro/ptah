@@ -184,7 +184,7 @@ func TestSchemaDiffPlacesAnUnqualifiedNameWhereTheDevDatabaseResolvesIt_HappyPat
 			target: clirun.Compat,
 			to:     "file://schema.sql",
 			want: "-- Create \"fresh\" table\n" +
-				"CREATE TABLE \"public\".\"fresh\" (\n  \"id\" bigint NOT NULL,\n  PRIMARY KEY (\"id\")\n);\n",
+				"CREATE TABLE \"public\".\"fresh\" (\"id\" bigint NOT NULL, PRIMARY KEY (\"id\"));\n",
 		},
 		{
 			name:   "ptah",

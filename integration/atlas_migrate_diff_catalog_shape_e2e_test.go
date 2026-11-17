@@ -92,7 +92,7 @@ func TestCompatMigrateDiffCatalogShapeE2E_ATableRunsAsPlanned(t *testing.T) {
 			c := qt.New(t)
 			dev := test.target(c)
 
-			dir := diffEngineSteps(c, "", dev, []string{test.schema})
+			dir := diffEngineStepsIn(c, "", dev, "", []string{test.schema})
 			pairs := readMigrationPairs(c, dir)
 			target := test.target(c)
 
@@ -215,43 +215,48 @@ var catalogForwardBytesCases = []struct {
 
 // TestCompatMigrateDiffCatalogShapeE2E_MatchesTheBinarysForwardBytes compares the forward
 // file of each step of [catalogForwardBytesCases] with what the pinned community binary
-// writes.
+// writes, in each of [migrationLayouts].
 func TestCompatMigrateDiffCatalogShapeE2E_MatchesTheBinarysForwardBytes(t *testing.T) {
 	reference := requireEngineReference(t)
 	for _, test := range catalogForwardBytesCases {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			dev := pinnedDevURL(c, postgresScratchDevURL(c, "ptah_shape_ref"), "public")
+		for _, layout := range migrationLayouts {
+			t.Run(test.name+"/"+layout.name, func(t *testing.T) {
+				c := qt.New(t)
+				dev := pinnedDevURL(c, postgresScratchDevURL(c, "ptah_shape_ref"), "public")
 
-			ours := readMigrationPairs(c, diffEngineSteps(c, "", dev, test.steps))
-			theirs := readMigrationPairs(c, diffEngineSteps(c, reference, dev, test.steps))
+				ours := readMigrationPairs(c, diffEngineStepsIn(c, "", dev, layout.format, test.steps))
+				theirs := readMigrationPairs(c, diffEngineStepsIn(c, reference, dev, layout.format, test.steps))
 
-			c.Assert(ours, qt.HasLen, len(theirs))
-			for i := range theirs {
-				c.Assert(ours[i].Up, qt.Equals, theirs[i].Up)
-			}
-		})
+				c.Assert(ours, qt.HasLen, len(theirs))
+				for i := range theirs {
+					c.Assert(ours[i].Up, qt.Equals, theirs[i].Up)
+				}
+			})
+		}
 	}
 }
 
 // TestCompatMigrateDiffCatalogShapeE2E_MatchesTheBinarysBytes compares both files of
-// each step of [catalogBytesCases] with what the pinned community binary writes.
+// each step of [catalogBytesCases] with what the pinned community binary writes, in
+// each of [migrationLayouts].
 func TestCompatMigrateDiffCatalogShapeE2E_MatchesTheBinarysBytes(t *testing.T) {
 	reference := requireEngineReference(t)
 	for _, test := range catalogBytesCases {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			dev := pinnedDevURL(c, postgresScratchDevURL(c, "ptah_shape_ref"), "public")
+		for _, layout := range migrationLayouts {
+			t.Run(test.name+"/"+layout.name, func(t *testing.T) {
+				c := qt.New(t)
+				dev := pinnedDevURL(c, postgresScratchDevURL(c, "ptah_shape_ref"), "public")
 
-			ours := readMigrationPairs(c, diffEngineSteps(c, "", dev, test.steps))
-			theirs := readMigrationPairs(c, diffEngineSteps(c, reference, dev, test.steps))
+				ours := readMigrationPairs(c, diffEngineStepsIn(c, "", dev, layout.format, test.steps))
+				theirs := readMigrationPairs(c, diffEngineStepsIn(c, reference, dev, layout.format, test.steps))
 
-			c.Assert(ours, qt.HasLen, len(theirs))
-			for i := range theirs {
-				c.Assert(ours[i].Up, qt.Equals, theirs[i].Up)
-				c.Assert(ours[i].Down, qt.Equals, theirs[i].Down)
-			}
-		})
+				c.Assert(ours, qt.HasLen, len(theirs))
+				for i := range theirs {
+					c.Assert(ours[i].Up, qt.Equals, theirs[i].Up)
+					c.Assert(ours[i].Down, qt.Equals, theirs[i].Down)
+				}
+			})
+		}
 	}
 }
 
@@ -336,7 +341,7 @@ func TestCompatMigrateDiffCatalogShapeE2E_AGroupedPlanRunsBothWays(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			pairs := readMigrationPairs(c, diffEngineSteps(c, "", catalogRunTarget(c, test.engine), test.steps))
+			pairs := readMigrationPairs(c, diffEngineStepsIn(c, "", catalogRunTarget(c, test.engine), "", test.steps))
 			target := catalogRunTarget(c, test.engine)
 
 			c.Assert(pairs, qt.HasLen, len(test.steps))
