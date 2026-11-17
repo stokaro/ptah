@@ -163,7 +163,10 @@ func (how arrangement) indexWithItsComment(index *ast.IndexNode, use access) []*
 // indexCommentAccess is a statement that sets the comment of an index. It reads the
 // table and the index's name, so it follows the statement that creates the index and
 // keeps its place beside any statement that gives or frees the name, and it writes the
-// comment, so two comments of one index keep the planner's order.
+// comment, so two comments of one index keep the planner's order. The places
+// [arrangement.forwardPlace] gives already put a table's comments after its indexes,
+// so no plan the planner writes is decided by these edges; they keep a statement the
+// server needs in order behind its index if those places change.
 func indexCommentAccess(table, name string) access {
 	var use access
 	use.read(tableResource(table), nameResource(name))
