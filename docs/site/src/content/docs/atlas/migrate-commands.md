@@ -1718,8 +1718,8 @@ only where it can show that nothing depends on their order:
   kind, such as a view or a routine, stays where the plan puts it, and the tables are
   ordered on each side of it. An expression that calls a routine the schema declares
   counts as one, because the pass does not read the routine's body.
-- Added columns keep the order the plan gives them, since that is the order the table
-  holds them in.
+- Added columns keep the order the declaration gives them, since that is the order the
+  table holds them in, as a table created from the declaration does.
 - Two changes the server refuses in one statement stay in two: on MySQL a foreign key
   dropped and added under one name, and on MySQL and MariaDB a foreign key of a table
   to itself and the change it references.

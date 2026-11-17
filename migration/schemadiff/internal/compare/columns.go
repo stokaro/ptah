@@ -181,11 +181,18 @@ func tableColumnsWithSemantics(
 
 	desiredDomains := desiredDomainIdentities(desired, semantics)
 
-	// Find added and removed columns
-	for identity, column := range genColumns {
-		if _, exists := dbColumns[identity]; !exists {
-			tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, column.Clone())
+	// Find added and removed columns. The added ones keep the order the
+	// declaration gives them: it is the order a table created from it holds
+	// its columns in, and the order the community binary adds them in, so a
+	// table that gains its columns holds them as one created from scratch does.
+	added := make(map[string]bool, len(genFields))
+	for _, field := range genFields {
+		identity := semantics.ColumnIdentityKey(field.Name)
+		if _, exists := dbColumns[identity]; exists || added[identity] {
+			continue
 		}
+		added[identity] = true
+		tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, genColumns[identity].Clone())
 	}
 
 	for identity, column := range dbColumns {
@@ -236,7 +243,6 @@ func tableColumnsWithSemantics(
 	}
 
 	// Sort for consistent output
-	sortColumns(tableDiff.ColumnsAdded)
 	sortColumns(tableDiff.ColumnsRemoved)
 	sort.Slice(tableDiff.ColumnsModified, func(i, j int) bool {
 		return tableDiff.ColumnsModified[i].ColumnName < tableDiff.ColumnsModified[j].ColumnName
