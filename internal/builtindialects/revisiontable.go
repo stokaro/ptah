@@ -107,6 +107,24 @@ const createApplyLog = `CREATE TABLE IF NOT EXISTS {table} (
     PRIMARY KEY (run_id, seq)
 ){engine}`
 
+// createRepeatables is the record of repeatable migrations, one row per
+// identity. checksum is the digest of the content that last applied, empty
+// until one has; the attempt columns describe the last attempt, whichever way
+// it went. An engine states it only where the migrator's repeatable path is
+// measured, so leaving it out is what refuses the path elsewhere.
+const createRepeatables = `CREATE TABLE IF NOT EXISTS {table} (
+    identity VARCHAR(255) NOT NULL PRIMARY KEY,
+    checksum VARCHAR(64) NOT NULL DEFAULT '',
+    state VARCHAR(32) NOT NULL,
+    attempt_checksum VARCHAR(64) NOT NULL,
+    attempt_order INTEGER NOT NULL,
+    transactional INTEGER NOT NULL,
+    run_id VARCHAR(64) NOT NULL,
+    attempted_at TIMESTAMP NOT NULL,
+    applied_at TIMESTAMP NULL,
+    error TEXT NULL
+){engine}`
+
 // respellRevision gives a revision row its file's version spelling in place.
 func respellRevision() []string {
 	return []string{"UPDATE {table} SET version = '{file}' WHERE version = '{recorded}'"}
@@ -184,6 +202,16 @@ func postgresFamilyRevisionTable() descriptor.RevisionTable {
 		DerivedTableAs: " AS",
 		AtlasSchema:    "search-path",
 	}
+}
+
+// postgresRevisionTable is the PostgreSQL family's tables with the record of
+// repeatable migrations, which the repeatable live tests measure on PostgreSQL.
+// CockroachDB and YugabyteDB share every other statement and leave it out until
+// a test runs the path against them.
+func postgresRevisionTable() descriptor.RevisionTable {
+	table := postgresFamilyRevisionTable()
+	table.CreateRepeatables = createRepeatables
+	return table
 }
 
 // GenericRevisionTable is what the migrator writes for an engine whose

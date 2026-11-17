@@ -117,7 +117,7 @@ assert it explicitly (`golang-migrate`, `goose`, `flyway`, `liquibase`,
 | --- | --- |
 | golang-migrate | `NNN_name.up.sql` / `.down.sql` pairs. A file's own `BEGIN` and `COMMIT` are copied as written; set `migration.runner: golang-migrate` in `ptah.yaml` so on PostgreSQL `migrations up`, `migrations down` and `migrations repair` run a file's as golang-migrate does and `migrations lint` does not report them as `TX201`. |
 | Goose | Annotated single files (`-- +goose Up` / `-- +goose Down`); the exact whole-file line `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both imported directions. |
-| Flyway | Including dotted versions, undo `U__` scripts, and repeatable `R__` scripts. |
+| Flyway | Including dotted versions, undo `U__` scripts, and repeatable `R__` scripts; `--repeatables` chooses what a repeatable becomes. |
 | Liquibase | Formatted-SQL changelogs (`--changeset` / `--rollback`), and XML, YAML or JSON changesets that carry SQL. Typed changes such as `createTable` convert with `--dialect`; a changeset carrying a selector, or a change type Ptah does not convert, is refused by name. |
 | dbmate | Annotated single files (`-- migrate:up` / `-- migrate:down`); a directive keeps its options out of the SQL, and `transaction:false` on one direction becomes `-- +ptah no_transaction` on that direction alone. |
 
@@ -125,13 +125,31 @@ This is native Ptah-format import, distinct from the Atlas-compatible
 `migrate import` verb of the `ptah-compat` binary, which writes an Atlas-format directory with
 `atlas.sum`.
 
-### A repeatable becomes a one-time migration
+### What a repeatable becomes
 
-Flyway's `R__name.sql` re-runs whenever its body changes. Import converts it to
-an ordinary one-time migration ordered after every versioned file, because the
-destination format has no reapply semantics to convert it into.
+Flyway's `R__name.sql` re-runs whenever its body changes. `--repeatables`
+chooses what the import writes for it:
 
-That changes what editing the file means. The converted file is checksummed
+- `--repeatables on-change` writes a Ptah
+  [repeatable migration](../repeatable/), `R__<identity>.sql`, with the same body
+  and no down file. `ptah migrations up` runs it after the versioned migrations
+  and again whenever its content changes, which is the Flyway contract. The
+  identity is the Flyway description with every character outside ASCII
+  letters, digits, underscores and hyphens replaced by an underscore, so
+  `R__report.v2.sql` becomes `R__report_v2.sql`; two descriptions that land on
+  one identity are refused. Ptah runs repeatable migrations in byte order of
+  their identities, which can differ from Flyway's order for descriptions that
+  differ in punctuation or letter case. Only PostgreSQL and SQLite run
+  repeatable migrations: against another engine `ptah migrations up` refuses the
+  directory, so import with the default there.
+- `--repeatables once`, the default, writes a one-time migration ordered after
+  every versioned file, named `repeatable_<name>`. A directory imported this
+  way keeps that meaning: importing again with `on-change` is a different
+  directory, not an upgrade of the first.
+
+#### A one-time import of a repeatable
+
+Under `--repeatables once`, editing the file means something else. The converted file is checksummed
 like every other migration: `ptah migrations validate` refuses the directory
 once you edit it, and re-hashing only seals the files to each other. The
 database separately recorded the checksum of what ran, so `ptah migrations up`

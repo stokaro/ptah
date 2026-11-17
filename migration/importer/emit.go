@@ -80,8 +80,10 @@ func downFileSQL(migration SourceMigration) string {
 // migrations are reassigned to sequential Ptah versions in their existing order,
 // carrying the original version into the description so history stays traceable.
 // A source name that sanitizes to empty falls back to "migration". A repeatable
-// source migration (Ptah has no such concept) is imported as a one-time
-// migration ordered after every versioned one, named "repeatable_<name>". A
+// source migration is imported as opts.Repeatables says: by default as a
+// one-time migration ordered after every versioned one, named
+// "repeatable_<name>", and under [RepeatablesOnChange] as a Ptah repeatable
+// migration, R__<identity>.sql, with no down file. A
 // source whole-migration no-transaction mode is translated onto both Ptah
 // directions so importing never loses its execution semantics.
 //
@@ -99,12 +101,26 @@ func downFileSQL(migration SourceMigration) string {
 // [EmitResult.Declined], so a caller can preview a partial import before
 // deciding.
 func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, opts Options) (*EmitResult, error) {
+	onChange, err := importsRepeatablesOnChange(opts.Repeatables)
+	if err != nil {
+		return nil, err
+	}
 	remap := needsVersionRemap(migrations)
 	result := &EmitResult{Remapped: remap, Declined: declined}
 
 	planned := make([]plannedFile, 0, len(migrations)*2)
+	repeatables := make(repeatableIdentities)
 	var maxVersion int64 // highest output version assigned so far (versioned sort first)
 	for index, migration := range migrations {
+		if migration.Repeatable && onChange {
+			file, err := repeatables.plan(migration)
+			if err != nil {
+				return nil, err
+			}
+			planned = append(planned, file)
+			result.Files = append(result.Files, file.name)
+			continue
+		}
 		// Preserve the source version when it fits Ptah's 10-digit format;
 		// otherwise reassign sequentially (order is already normalized), folding
 		// the original version into the description so history stays traceable.
@@ -112,10 +128,10 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 		description := migration.Name
 		switch {
 		case migration.Repeatable:
-			// Ptah has no repeatable-migration concept, so a source repeatable is
-			// imported as a one-time migration ordered after every versioned one
-			// (Normalize sorts repeatables last). A later content change in the
-			// source becomes a new Ptah migration rather than a re-run.
+			// Imported once, as a one-time migration ordered after every
+			// versioned one (Normalize sorts repeatables last). A later content
+			// change in the source becomes a new Ptah migration rather than a
+			// re-run.
 			maxVersion++
 			version = maxVersion
 			description = "repeatable_" + migration.Name
@@ -129,28 +145,12 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 		if sanitizedDescriptionIsEmpty(description) {
 			description = fallbackMigrationName
 		}
-		upName := migrationfile.FileName(version, description, "up")
-		downName := migrationfile.FileName(version, description, "down")
-		// Ptah's reader is strict (exactly 10 digits, non-empty name); confirm the
-		// generated names round-trip before committing to writing anything.
-		for _, name := range []string{upName, downName} {
-			if _, err := migrationfile.ParseFileName(name); err != nil {
-				return nil, fmt.Errorf("cannot import migration %q as Ptah file %q: %w", migration.Name, name, err)
-			}
+		up, down, err := plannedPair(migration, version, description)
+		if err != nil {
+			return nil, err
 		}
-		downSQL := downFileSQL(migration)
-		upSQL := migration.UpSQL
-		if migration.UpNoTransaction {
-			upSQL = addImportedNoTransactionDirective(upSQL)
-		}
-		if migration.DownNoTransaction {
-			downSQL = addImportedNoTransactionDirective(downSQL)
-		}
-		planned = append(planned,
-			plannedFile{upName, []byte(terminatedSQL(upSQL))},
-			plannedFile{downName, []byte(terminatedSQL(downSQL))},
-		)
-		result.Files = append(result.Files, upName, downName)
+		planned = append(planned, up, down)
+		result.Files = append(result.Files, up.name, down.name)
 	}
 
 	if opts.DryRun {
@@ -194,6 +194,89 @@ func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, 
 	}
 	result.SumFile = sumName
 	return result, nil
+}
+
+// importsRepeatablesOnChange reads [Options.Repeatables], refusing a value it
+// does not define.
+func importsRepeatablesOnChange(mode RepeatableImport) (bool, error) {
+	switch mode {
+	case "", RepeatablesOnce:
+		return false, nil
+	case RepeatablesOnChange:
+		return true, nil
+	default:
+		return false, fmt.Errorf("unknown repeatable import mode %q: use %q or %q",
+			mode, RepeatablesOnce, RepeatablesOnChange)
+	}
+}
+
+// repeatableIdentityUnsafeRE matches each character a repeatable identity
+// does not take.
+var repeatableIdentityUnsafeRE = regexp.MustCompile(`[^A-Za-z0-9_-]`)
+
+// plannedPair is the up and down file of one versioned migration at version
+// under description.
+func plannedPair(migration SourceMigration, version int64, description string) (up, down plannedFile, err error) {
+	upName := migrationfile.FileName(version, description, "up")
+	downName := migrationfile.FileName(version, description, "down")
+	// Ptah's reader is strict (exactly 10 digits, non-empty name); confirm the
+	// generated names round-trip before committing to writing anything.
+	for _, name := range []string{upName, downName} {
+		if _, err := migrationfile.ParseFileName(name); err != nil {
+			return plannedFile{}, plannedFile{}, fmt.Errorf(
+				"cannot import migration %q as Ptah file %q: %w", migration.Name, name, err)
+		}
+	}
+	downSQL := downFileSQL(migration)
+	upSQL := migration.UpSQL
+	if migration.UpNoTransaction {
+		upSQL = addImportedNoTransactionDirective(upSQL)
+	}
+	if migration.DownNoTransaction {
+		downSQL = addImportedNoTransactionDirective(downSQL)
+	}
+	return plannedFile{upName, []byte(terminatedSQL(upSQL))}, plannedFile{downName, []byte(terminatedSQL(downSQL))}, nil
+}
+
+// repeatableIdentities maps each Ptah repeatable identity an import planned,
+// folded to lower case, to the source name that produced it.
+type repeatableIdentities map[string]string
+
+// plan is migration as a Ptah repeatable file. Two source names that differ
+// only in a replaced character or in letter case would land on one identity,
+// and the second write would replace the first, so the second is refused.
+func (r repeatableIdentities) plan(migration SourceMigration) (plannedFile, error) {
+	file, err := plannedRepeatableFile(migration)
+	if err != nil {
+		return plannedFile{}, err
+	}
+	folded := strings.ToLower(file.name)
+	if previous, ok := r[folded]; ok {
+		return plannedFile{}, fmt.Errorf("cannot import repeatable migrations %q and %q: both become %s",
+			previous, migration.Name, file.name)
+	}
+	r[folded] = migration.Name
+	return file, nil
+}
+
+// plannedRepeatableFile is a source repeatable migration as a Ptah repeatable
+// file. A repeatable migration has no rollback, so a source one that carries
+// one is refused rather than imported without it.
+func plannedRepeatableFile(migration SourceMigration) (plannedFile, error) {
+	if migration.DownSQL != "" {
+		return plannedFile{}, fmt.Errorf(
+			"cannot import repeatable migration %q as a Ptah repeatable migration: it carries a rollback, "+
+				"and a Ptah repeatable migration has none", migration.Name)
+	}
+	name := migrationfile.RepeatableFileName(repeatableIdentityUnsafeRE.ReplaceAllString(migration.Name, "_"))
+	if _, err := migrationfile.ParseRepeatableFileName(name); err != nil {
+		return plannedFile{}, fmt.Errorf("cannot import repeatable migration %q: %w", migration.Name, err)
+	}
+	upSQL := migration.UpSQL
+	if migration.UpNoTransaction {
+		upSQL = addImportedNoTransactionDirective(upSQL)
+	}
+	return plannedFile{name, []byte(terminatedSQL(upSQL))}, nil
 }
 
 // terminatedSQL gives a migration body the line terminator a text file's last

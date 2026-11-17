@@ -23,6 +23,10 @@ beside the revision table, written by `ptah migrations up` and `ptah migrations
 down`, and read by `ptah migrations log`. `ptah schema apply` keeps a log of its
 own, [the schema apply log](../../direct/apply-log/).
 
+The log records versioned migrations. A [repeatable
+migration](../repeatable/) keeps its last attempt in a record table of its own,
+which `ptah migrations status` reads.
+
 ```bash
 ptah migrations log --db-url "$DATABASE_URL"
 ```

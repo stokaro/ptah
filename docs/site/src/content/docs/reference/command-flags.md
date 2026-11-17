@@ -937,6 +937,7 @@ Read the columns as follows.
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
 | `--provider-exchanges` | `string` | — | — | — |
+| `--repeatables` | `string` | `once` | `PTAH_REPEATABLES` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--source-dir` | `string` | — | `PTAH_SOURCE_DIR` | — |
 
@@ -1131,6 +1132,7 @@ Read the columns as follows.
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
 | `--provider-exchanges` | `string` | — | — | — |
+| `--repeatable` | `string` | — | — | — |
 | `--resume-from` | `string` | — | `PTAH_RESUME_FROM` | — |
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--runner` | `string` | `ptah` | `PTAH_RUNNER` | — |

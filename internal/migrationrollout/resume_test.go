@@ -290,3 +290,65 @@ func TestResume_DirtyRowOutcomes(t *testing.T) {
 		})
 	}
 }
+
+// A dirty repeatable record stops an up run as a dirty revision row does, so a
+// resumed rollout classifies it from what the record says and points at the
+// command that recovers it, rather than reading the target as clean.
+func TestResume_DirtyRepeatableOutcomes(t *testing.T) {
+	cases := []struct {
+		name     string
+		record   migrator.RepeatableRecord
+		want     migrationrollout.TargetStatus
+		wantNote string
+	}{
+		{
+			name:   "failed inside its transaction",
+			record: migrator.RepeatableRecord{Identity: "views", State: migrator.RepeatableStateFailed},
+			want:   migrationrollout.TargetFailed,
+			wantNote: "the repeatable migration record holds a failed attempt of views, which a rollout never retries; " +
+				"recover it with ptah migrations up --allow-dirty against this target, then resume",
+		},
+		{
+			name:   "failed outside a transaction",
+			record: migrator.RepeatableRecord{Identity: "views", State: migrator.RepeatableStateFailed, NoTransaction: true},
+			want:   migrationrollout.TargetUnknown,
+			wantNote: "the repeatable migration record holds a failed attempt of views, which a rollout never retries; " +
+				"recover it with ptah migrations up --allow-dirty against this target, then resume",
+		},
+		{
+			name:   "recorded no outcome",
+			record: migrator.RepeatableRecord{Identity: "views", State: migrator.RepeatableStateRunning},
+			want:   migrationrollout.TargetUnknown,
+			wantNote: "the repeatable migration record holds a running attempt of views, which a rollout never retries; " +
+				"recover it with ptah migrations up --allow-dirty against this target, then resume",
+		},
+		{
+			name:   "failed and no file carries it",
+			record: migrator.RepeatableRecord{Identity: "views", State: migrator.RepeatableStateFailed, Orphaned: true},
+			want:   migrationrollout.TargetFailed,
+			wantNote: "the repeatable migration record holds a failed attempt of views, which a rollout never retries; " +
+				"no file of the directory carries it any more, so check what it left behind and delete its row " +
+				"from the record table against this target, then resume",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			plan, state := interruptedRun(c)
+			executor := &fakeExecutor{inspections: map[string]inspection{
+				"canary": cleanAt("2"),
+				"t1":     cleanAt("2"),
+				"t2": {status: &migrator.MigrationStatus{
+					CurrentVersion: 2, HasPendingChanges: true, Repeatables: []migrator.RepeatableRecord{tc.record},
+				}},
+				"t3": cleanAt("2"),
+			}}
+
+			err := (&migrationrollout.Runner{Executor: executor}).Resume(context.Background(), plan, state, migrationrollout.ResumeOptions{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statuses(state)["t2"], qt.Equals, tc.want)
+			c.Assert(targetState(c, state, "t2").Note, qt.Equals, tc.wantNote)
+		})
+	}
+}

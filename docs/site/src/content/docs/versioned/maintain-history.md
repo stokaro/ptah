@@ -234,6 +234,12 @@ names carries `--runner golang-migrate`, and none of them is a `--resume-from`;
 see
 [A directory written for golang-migrate](../rollback/#a-directory-written-for-golang-migrate).
 
+A repeatable migration keeps its state in a record of its own rather than in a
+revision row, and `--allow-dirty` retries one that did not finish. Repair takes
+`--repeatable <identity>` in place of `--version` to remove such a row, which is
+the way out when the file is gone; see
+[Remove or rename one](../repeatable/#remove-or-rename-one).
+
 The statement is recorded as it was written. Where one carries bytes that are
 not valid UTF-8, such as a binary value written as a text literal, each of those
 bytes is recorded as a `\xFF` escape. The revision table stores this text as

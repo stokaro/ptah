@@ -85,6 +85,12 @@ type RunResult struct {
 	// leaves them empty.
 	RolledBack     []int64  `json:"rolled_back,omitempty"`
 	RolledBackKeys []string `json:"rolled_back_keys,omitempty"`
+	// PlannedRepeatables is the repeatable work the run selected under the
+	// migration lock, in the order it runs after the versioned migrations.
+	// AppliedRepeatables names the selected repeatable migrations whose
+	// record says the planned digest applied after the run, in that order.
+	PlannedRepeatables []RepeatableWork `json:"planned_repeatables,omitempty"`
+	AppliedRepeatables []string         `json:"applied_repeatables,omitempty"`
 	// Error is the run's error, present whenever the run failed. It is not
 	// evidence about the database.
 	Error *ErrorReport `json:"error,omitempty"`
@@ -221,7 +227,9 @@ func NewRunResult(evidence RunEvidence) RunResult {
 		result.Inputs = cloneMigrationInputs(evidence.Plan.Inputs)
 		result.Planned = slices.Clone(evidence.Plan.Versions)
 		result.PlannedKeys = slices.Clone(evidence.Plan.VersionKeys)
+		result.PlannedRepeatables = slices.Clone(evidence.Plan.Repeatables)
 	}
+	result.AppliedRepeatables = appliedRepeatablesFromPlan(result.PlannedRepeatables, evidence.After)
 	if result.Direction == MigrationDirectionDown {
 		result.RolledBack, result.RolledBackKeys = rolledBackFromPlan(result.Planned, result.PlannedKeys, evidence.After)
 	} else {
@@ -248,19 +256,67 @@ func runOutcome(evidence RunEvidence, result RunResult) RunOutcome {
 			return RunOutcomePartial
 		}
 	}
+	if outcome, ok := dirtyRepeatableOutcome(evidence.After); ok && result.Direction == MigrationDirectionUp {
+		// The repeatable migrations run after the versioned ones, so a run
+		// whose repeatable failed cleanly may still have applied versions.
+		if outcome == RunOutcomeFailed && (len(result.Applied) > 0 || len(result.AppliedRepeatables) > 0) {
+			return RunOutcomePartial
+		}
+		return outcome
+	}
 	if evidence.DryRun {
 		return RunOutcomeDryRun
 	}
 	if evidence.Err != nil {
 		return RunOutcomeFailed
 	}
-	if len(result.Planned) == 0 {
+	if len(result.Planned) == 0 && len(result.PlannedRepeatables) == 0 {
 		return RunOutcomeUpToDate
 	}
-	if len(result.Applied)+len(result.RolledBack) == len(result.Planned) {
+	if len(result.Applied)+len(result.RolledBack) == len(result.Planned) &&
+		len(result.AppliedRepeatables) == len(result.PlannedRepeatables) {
 		return RunOutcomeApplied
 	}
 	return RunOutcomePartial
+}
+
+// dirtyRepeatableOutcome reads a dirty repeatable record the way a dirty
+// revision row is read: a body that failed inside its transaction committed
+// nothing, and every other dirty record leaves the outcome unknown, because no
+// statement progress is recorded for a repeatable migration.
+func dirtyRepeatableOutcome(after *MigrationStatus) (RunOutcome, bool) {
+	outcome, found := RunOutcome(""), false
+	for _, record := range after.Repeatables {
+		if !record.dirty() {
+			continue
+		}
+		if record.State != RepeatableStateFailed || record.NoTransaction {
+			return RunOutcomeUnknown, true
+		}
+		outcome, found = RunOutcomeFailed, true
+	}
+	return outcome, found
+}
+
+// appliedRepeatablesFromPlan names the planned repeatable migrations whose
+// record says the planned digest applied, in plan order.
+func appliedRepeatablesFromPlan(planned []RepeatableWork, after *MigrationStatus) []string {
+	if after == nil || len(planned) == 0 {
+		return nil
+	}
+	applied := make(map[string]string, len(after.Repeatables))
+	for _, record := range after.Repeatables {
+		if record.State == RepeatableStateApplied {
+			applied[record.Identity] = record.AppliedChecksum
+		}
+	}
+	var identities []string
+	for _, work := range planned {
+		if checksum, ok := applied[work.Identity]; ok && checksum == work.Checksum {
+			identities = append(identities, work.Identity)
+		}
+	}
+	return identities
 }
 
 // rolledBackFromPlan names the selected migrations the history no longer

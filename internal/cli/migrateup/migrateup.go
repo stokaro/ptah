@@ -656,7 +656,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 	document.Migrator = mig
 
-	drift, releaseShadow, err := prepareDriftCheck(cmd, resolvedOpts, projectCfg, dbURL, settings, conn, mig)
+	drift, releaseShadow, err := prepareDriftCheck(cmd, resolvedOpts, projectCfg, dbURL, settings, conn, mig, migrationsFS)
 	if err != nil {
 		return err
 	}
@@ -903,7 +903,43 @@ func (r *planReport) write() {
 			r.emit.Printf("Out-of-order migration versions: %v\n", r.status.OutOfOrderMigrations)
 		}
 	}
+	writeRepeatableStatus(r.emit, r.status.Repeatables)
 	r.emit.Println()
+}
+
+// writeRepeatableStatus prints the repeatable migrations that are not applied
+// as they stand, one line each, in the order an up run executes them, and the
+// records no file of the directory carries, which the run leaves alone. A
+// directory and a database without repeatable migrations print nothing.
+func writeRepeatableStatus(emit cliobs.Emitter, records []migrator.RepeatableRecord) {
+	var files, waiting, orphaned []migrator.RepeatableRecord
+	for _, record := range records {
+		switch {
+		case record.Orphaned:
+			orphaned = append(orphaned, record)
+		case record.State == migrator.RepeatableStateApplied:
+			files = append(files, record)
+		default:
+			files = append(files, record)
+			waiting = append(waiting, record)
+		}
+	}
+	if len(files) > 0 {
+		emit.Printf("Repeatable migrations: %d, not applied as they stand: %d\n", len(files), len(waiting))
+	}
+	for _, record := range waiting {
+		emit.Printf("  %s %s %s\n", record.Identity, record.State, record.Checksum)
+	}
+	if len(orphaned) > 0 {
+		emit.Printf("Repeatable migration records with no file in the directory: %d\n", len(orphaned))
+	}
+	for _, record := range orphaned {
+		line := "  " + record.Identity + " " + record.State
+		if record.AppliedChecksum != "" {
+			line += " " + record.AppliedChecksum
+		}
+		emit.Println(line)
+	}
 }
 
 // migrateUpOutcome is one run and everything the command has to say about it.
@@ -923,6 +959,15 @@ func (o migrateUpOutcome) selectedCount() int {
 		return 0
 	}
 	return len(o.plan.Versions)
+}
+
+// selectedRepeatables is the repeatable work this run selected under its
+// lock, none when no plan was selected.
+func (o migrateUpOutcome) selectedRepeatables() []migrator.RepeatableWork {
+	if o.plan == nil {
+		return nil
+	}
+	return o.plan.Repeatables
 }
 
 // selectedNothing reports a run whose migrator reached a decision, under its own
@@ -1072,6 +1117,7 @@ func newUpMigrator(in upMigratorOptions) (*migrator.Migrator, error) {
 		migrator.WithStatementInterceptor(in.interceptor),
 		migrator.WithMigrationDirFormat(in.settings.dirFormat),
 		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: in.atlasEnv}),
+		migrator.WithRepeatableMigrations(),
 	}
 	if in.settings.runner.TransactionOwner() == lintext.TransactionOwnerFile {
 		options = append(options, migrator.WithOwnTransactions())
@@ -1188,10 +1234,26 @@ func emitMigrateUpSummary(emit cliobs.Emitter, opts *options, outcome migrateUpO
 	if opts.dryRun {
 		emit.Println("✅ Dry run completed successfully!")
 		emit.Printf("Would have applied %d migrations\n", outcome.selectedCount())
+		if repeatables := outcome.selectedRepeatables(); len(repeatables) > 0 {
+			emit.Printf("Would have run %d repeatable migrations:\n", len(repeatables))
+			writeRepeatableWork(emit, repeatables)
+		}
 		return
 	}
 	emit.Println("✅ Migrations completed successfully!")
 	emit.Printf("Database is now at version: %d\n", outcome.status.CurrentVersion)
+	if repeatables := outcome.selectedRepeatables(); len(repeatables) > 0 {
+		emit.Printf("Ran %d repeatable migrations:\n", len(repeatables))
+		writeRepeatableWork(emit, repeatables)
+	}
+}
+
+// writeRepeatableWork prints selected repeatable work, one line each, in run
+// order.
+func writeRepeatableWork(emit cliobs.Emitter, work []migrator.RepeatableWork) {
+	for _, item := range work {
+		emit.Printf("  %s %s %s\n", item.Identity, item.Reason, item.Checksum)
+	}
 }
 
 func lintPathPrefixForSource(requested string, source migrationsource.Source) string {

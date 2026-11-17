@@ -321,6 +321,10 @@ gives one. The file is read strictly: an unknown field, a second document, a
 missing `migrations` list or a version below one is an error, because a field
 this build did not read would be a constraint the caller believes it set.
 
+A directory with [repeatable migrations](../repeatable/) approves their work in
+a `repeatables` list, each entry an `identity` and a `checksum`. Without the
+list, an approval approves no repeatable work.
+
 The database this page migrated already records `1785255952`, so an approval
 naming it again describes a history that has since moved: `up` selects nothing
 under the lock, and the approval says something should run. Write the approval:

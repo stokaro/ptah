@@ -106,9 +106,9 @@ func TestImportFallsBackForEmptySanitizedName(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
-// TestEmitRepeatableImportedAsOneTime checks that a repeatable source migration
-// (which Ptah has no concept of) is emitted as a one-time migration ordered
-// after every versioned one, named "repeatable_<name>".
+// TestEmitRepeatableImportedAsOneTime checks that, by default, a repeatable
+// source migration is emitted as a one-time migration ordered after every
+// versioned one, named "repeatable_<name>".
 func TestEmitRepeatableImportedAsOneTime(t *testing.T) {
 	c := qt.New(t)
 	out := t.TempDir()

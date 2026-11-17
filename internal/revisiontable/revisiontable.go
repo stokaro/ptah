@@ -47,6 +47,18 @@ const (
 	// operator who renamed or moved one finds the other beside it.
 	LogSuffix = "_log"
 
+	// PtahRepeatable is the table Ptah's native layout records repeatable
+	// migrations in: one row per identity, with the digest of the content
+	// that last applied and the outcome of the last attempt. The migrator
+	// derives it from whatever revision table it was given, so this is the
+	// name a default configuration produces. The Atlas-compatible layout has
+	// no counterpart.
+	PtahRepeatable = Ptah + RepeatableSuffix
+
+	// RepeatableSuffix separates the repeatable migration table's name from
+	// the revision table's, as [LogSuffix] does for the operation log.
+	RepeatableSuffix = "_repeatable"
+
 	// Tags is the table the migrator records directory tags in, beside the
 	// revision table in either layout. It is Ptah's own bookkeeping as the
 	// native revision table is, so it is in [NativeNames] and every reader
@@ -105,15 +117,16 @@ const (
 // only these can go missing from a schema snapshot; a custom name is
 // read back as an ordinary table and needs no restoring.
 func DefaultNames() []string {
-	return []string{Atlas, Ptah, PtahLog, Tags, ApplyLog, Seeds}
+	return []string{Atlas, Ptah, PtahLog, PtahRepeatable, Tags, ApplyLog, Seeds}
 }
 
 // NativeNames returns the tables Ptah's own bookkeeping writes under their
-// default names: the native revision table, its operation log, [Tags], which
-// either revision format writes and which only Ptah knows, the schema apply
-// log [ApplyLog], and the seed ledger [Seeds].
+// default names: the native revision table, its operation log, its record of
+// repeatable migrations, [Tags], which either revision format writes and
+// which only Ptah knows, the schema apply log [ApplyLog], and the seed ledger
+// [Seeds].
 func NativeNames() []string {
-	return []string{Ptah, PtahLog, Tags, ApplyLog, Seeds}
+	return []string{Ptah, PtahLog, PtahRepeatable, Tags, ApplyLog, Seeds}
 }
 
 // IsNative reports whether name is one of [NativeNames].
@@ -146,16 +159,18 @@ func IsDefault(name string) bool {
 // for a reader that leaves them out in its catalog query:
 // `name NOT IN (` + NativeSQLNames + `)`. It is a constant so a query declared
 // as one can use it; TestSQLNamesMatchTheNameLists keeps it equal to the list.
-const NativeSQLNames = "'" + Ptah + "', '" + PtahLog + "', '" + Tags + "', '" + ApplyLog + "', '" + Seeds + "'"
+const NativeSQLNames = "'" + Ptah + "', '" + PtahLog + "', '" + PtahRepeatable + "', '" + Tags + "', '" +
+	ApplyLog + "', '" + Seeds + "'"
 
 // DefaultSQLNames is [DefaultNames] as SQL string literals separated by commas,
 // as [NativeSQLNames] is for the native set.
-const DefaultSQLNames = "'" + Atlas + "', '" + Ptah + "', '" + PtahLog + "', '" + Tags + "', '" + ApplyLog + "', '" + Seeds + "'"
+const DefaultSQLNames = "'" + Atlas + "', '" + Ptah + "', '" + PtahLog + "', '" + PtahRepeatable + "', '" +
+	Tags + "', '" + ApplyLog + "', '" + Seeds + "'"
 
 // Configured returns the bookkeeping tables a migrator configured with format
 // and table writes: the revision table, for Ptah's native format the operation
-// log beside it, and in either format the [Tags] table `migrations tag` records
-// in. An empty table selects the format's default name, and a format other than
+// log and the repeatable migration record beside it, and in either format the
+// [Tags] table `migrations tag` records in. An empty table selects the format's default name, and a format other than
 // "atlas" is Ptah's native one, as it is to the migrator.
 //
 // The tags table has no setting of its own, so its name is the same under every
@@ -177,7 +192,7 @@ func Configured(format, table string) []string {
 	if table == "" {
 		table = Ptah
 	}
-	return []string{table, table + LogSuffix, Tags}
+	return []string{table, table + LogSuffix, table + RepeatableSuffix, Tags}
 }
 
 // Without returns a copy of schema with the tables named in names removed,

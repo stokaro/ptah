@@ -25,10 +25,53 @@ import (
 // When atlas.sum governs the directory the candidate set is narrowed to exactly
 // the files that sum covers; see [atlasSumGovernsSelection] for why that is a
 // correctness rule rather than a compatibility preference.
+//
+// In a directory read in the Ptah format, a file named R__<identity>.sql is a
+// repeatable migration, which [DiscoverRepeatables] returns and this function
+// leaves out.
 func Discover(fsys fs.FS, format DirFormat) ([]File, error) {
-	format, err := normalizeDirFormat(format)
+	discovered, err := discover(fsys, format)
 	if err != nil {
 		return nil, err
+	}
+	return discovered.files, nil
+}
+
+// discovered is what one walk of a migration directory found: the versioned
+// files of the format it resolved to, and the repeatable migrations, which
+// only a directory read in the Ptah format has.
+type discovered struct {
+	files       []File
+	repeatables []RepeatableFile
+}
+
+// classifySQLFiles reads each SQL file name as a Ptah versioned file and, when
+// parseAtlas is not nil, as an Atlas file through it.
+func classifySQLFiles(sqlFiles []string, parseAtlas func(string) (*File, error)) (ptahFiles, atlasFiles []File) {
+	for _, p := range sqlFiles {
+		base := path.Base(p)
+		if migrationFile, err := ParseFileName(base); err == nil {
+			migrationFile.Path = p
+			ptahFiles = append(ptahFiles, *migrationFile)
+		}
+		if parseAtlas == nil {
+			continue
+		}
+		if migrationFile, err := parseAtlas(base); err == nil {
+			migrationFile.Path = p
+			atlasFiles = append(atlasFiles, *migrationFile)
+		}
+	}
+	return ptahFiles, atlasFiles
+}
+
+// discover is the walk behind [Discover] and [DiscoverRepeatables]. One walk
+// answers both, so the versioned files and the repeatable files of a directory
+// are always read under the same format and the same atlas.sum narrowing.
+func discover(fsys fs.FS, format DirFormat) (discovered, error) {
+	format, err := normalizeDirFormat(format)
+	if err != nil {
+		return discovered{}, err
 	}
 
 	var sqlFiles []string
@@ -65,40 +108,35 @@ func Discover(fsys fs.FS, format DirFormat) ([]File, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan migrations directory: %w", err)
+		return discovered{}, fmt.Errorf("failed to scan migrations directory: %w", err)
 	}
 
 	if atlasSumGovernsSelection(format, hasAtlasSum) {
 		sqlFiles = retainAtlasSumCovered(sqlFiles)
 	}
 
-	var ptahFiles []File
-	var atlasFiles []File
-	for _, p := range sqlFiles {
-		base := path.Base(p)
-		if migrationFile, err := ParseFileName(base); err == nil {
-			migrationFile.Path = p
-			ptahFiles = append(ptahFiles, *migrationFile)
-		}
-		if format == DirFormatPtah {
-			continue
-		}
-		if format == DirFormatAtlas || hasAtlasSum {
-			if migrationFile, err := ParseAtlasFileName(base); err == nil {
-				migrationFile.Path = p
-				atlasFiles = append(atlasFiles, *migrationFile)
-			}
-			continue
-		}
-		if migrationFile, err := ParseAtlasFileNameForAutoDetection(base); err == nil {
-			migrationFile.Path = p
-			atlasFiles = append(atlasFiles, *migrationFile)
+	// The Atlas reading of a file name: none under the Ptah format, strict
+	// under the Atlas format or beside a top-level atlas.sum, and the
+	// auto-detection reading otherwise.
+	var parseAtlas func(string) (*File, error)
+	switch {
+	case format == DirFormatPtah:
+	case format == DirFormatAtlas || hasAtlasSum:
+		parseAtlas = ParseAtlasFileName
+	default:
+		parseAtlas = ParseAtlasFileNameForAutoDetection
+	}
+	ptahFiles, atlasFiles := classifySQLFiles(sqlFiles, parseAtlas)
+	files := selectFiles(format, ptahFiles, atlasFiles)
+	var repeatables []RepeatableFile
+	if readsRepeatables(format, ptahFiles) {
+		repeatables, err = collectRepeatables(sqlFiles)
+		if err != nil {
+			return discovered{}, err
 		}
 	}
-
-	files := selectFiles(format, ptahFiles, atlasFiles)
-	if len(files) == 0 && len(sqlFiles) > 0 {
-		return nil, fmt.Errorf("no migration files matched format %q; unrecognized SQL files: %s", format, strings.Join(sqlFiles, ", "))
+	if len(files) == 0 && len(repeatables) == 0 && len(sqlFiles) > 0 {
+		return discovered{}, fmt.Errorf("no migration files matched format %q; unrecognized SQL files: %s", format, strings.Join(sqlFiles, ", "))
 	}
 	sort.Slice(files, func(i, j int) bool {
 		if files[i].Version != files[j].Version {
@@ -106,7 +144,22 @@ func Discover(fsys fs.FS, format DirFormat) ([]File, error) {
 		}
 		return files[i].Path < files[j].Path
 	})
-	return files, nil
+	return discovered{files: files, repeatables: repeatables}, nil
+}
+
+// readsRepeatables reports whether a walk resolved to the Ptah format, the
+// only one whose directories hold repeatable migrations: it was asked for by
+// name, or auto mode found Ptah versioned files and selected them, as
+// [selectFiles] does.
+func readsRepeatables(format DirFormat, ptahFiles []File) bool {
+	switch format {
+	case DirFormatPtah:
+		return true
+	case DirFormatAuto:
+		return len(ptahFiles) > 0
+	default:
+		return false
+	}
 }
 
 // atlasSumGovernsSelection reports whether the directory's integrity file is

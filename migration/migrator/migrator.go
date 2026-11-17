@@ -63,8 +63,8 @@ type MigrationStatus struct {
 	OutOfOrderMigrationKeys []string `json:"out_of_order_migration_keys,omitempty"`
 	// TotalMigrations counts the migrations the provider holds.
 	TotalMigrations int `json:"total_migrations"`
-	// HasPendingChanges reports that pending migrations exist or that a dirty
-	// revision does.
+	// HasPendingChanges reports that pending migrations exist, that a dirty
+	// revision does, or that a repeatable migration is new, changed or dirty.
 	HasPendingChanges bool `json:"has_pending_changes"`
 	// DirtyRevision is a revision row a failed or interrupted run left in a
 	// non-applied state, and nil when every row is clean. While it is non-nil,
@@ -95,6 +95,13 @@ type MigrationStatus struct {
 	// checkpoint or a baseline is absent from here: those boundaries are what
 	// make a missing file the intended shape.
 	MissingMigrations []MigrationRecord `json:"missing_migrations,omitempty"`
+	// Repeatables is every repeatable migration the directory holds, in the
+	// order an up run executes them, with what the database records for each,
+	// followed by the records no file of the directory carries, in identity
+	// order (see [RepeatableRecord.Orphaned]). It is empty when neither the
+	// directory nor the database holds any, and for a migrator whose provider
+	// does not load them; see [WithRepeatableMigrations].
+	Repeatables []RepeatableRecord `json:"repeatables,omitempty"`
 	// CheckpointVersion is the checkpoint that covers the migrations below it:
 	// the one a fresh database bootstraps from, or the newest one this database
 	// has applied. It is zero when no checkpoint covers anything. A migration
@@ -134,6 +141,10 @@ type MigrationPlan struct {
 	TargetVersionKey     string
 	Versions             []int64
 	VersionKeys          []string
+	// Repeatables is the repeatable work an up run selected, in the order it
+	// runs after every versioned migration in Versions has succeeded. A
+	// rollback selects none.
+	Repeatables []RepeatableWork
 }
 
 // PreMigrationHook runs after the migrator has acquired its migration lock and
@@ -1628,6 +1639,10 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 	if err != nil {
 		return MigrationStatusSnapshot{}, err
 	}
+	repeatables, err := m.readRepeatableState(ctx)
+	if err != nil {
+		return MigrationStatusSnapshot{}, err
+	}
 	// The floor, not the bootstrap. A checkpoint bootstraps a database that has
 	// applied nothing, so the bootstrap is nil the moment one has -- including
 	// the moment right after the bootstrap ran. What a reader needs is the
@@ -1646,7 +1661,7 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 		OutOfOrderMigrations:    outOfOrderMigrations,
 		OutOfOrderMigrationKeys: outOfOrderMigrationKeys,
 		TotalMigrations:         len(providerMigrations),
-		HasPendingChanges:       len(pendingMigrationList) > 0 || dirtyRevision != nil,
+		HasPendingChanges:       len(pendingMigrationList) > 0 || dirtyRevision != nil || repeatables.hasWork(),
 		DirtyRevision:           dirtyRevision,
 		CheckpointVersion:       floor,
 		Migrations: m.migrationRecords(
@@ -1659,6 +1674,7 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 			classified.mismatchedKeys(),
 		),
 		MissingMigrations: m.missingMigrationRecords(classified.missing),
+		Repeatables:       repeatables.records(),
 	}
 	span.SetAttributes(
 		attr("migration.current_version", status.CurrentVersion),
@@ -1914,15 +1930,7 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	appliedMigrations = mergeAppliedVersions(appliedMigrations, opts.AssumedAppliedVersions)
 	appliedIdentities.addVersionsWithKeys(opts.AssumedAppliedVersions, opts.AssumedAppliedVersionKeys)
 	currentVersion := maxAppliedVersion(appliedMigrations)
-	currentVersionKey, currentVersionKeySet := m.currentRevisionVersionKey(revisions)
-	if assumedCurrent := maxAppliedVersion(opts.AssumedAppliedVersions); assumedCurrent > 0 && assumedCurrent >= currentVersion {
-		currentVersionKey = assumedAppliedVersionKey(
-			opts.AssumedAppliedVersions,
-			opts.AssumedAppliedVersionKeys,
-			assumedCurrent,
-		)
-		currentVersionKeySet = true
-	}
+	currentVersionKey, currentVersionKeySet := m.upStartVersionKey(revisions, opts, currentVersion)
 
 	reconcileChecksums, err := m.verifyBeforeApply(ctx, migrations)
 	if err != nil {
@@ -1930,6 +1938,12 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	}
 
 	migrationsToApply, err := m.selectUpMigrations(opts, migrations, appliedMigrations, appliedIdentities, currentVersion)
+	if err != nil {
+		return err
+	}
+	repeatables, repeatableWork, err := m.planRepeatables(
+		ctx, opts, migrations, appliedMigrations, appliedIdentities, migrationsToApply,
+	)
 	if err != nil {
 		return err
 	}
@@ -1947,6 +1961,7 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		TargetVersionKey:     upTargetVersionKey(currentVersionKey, migrationsToApply),
 		Versions:             migrationVersions(migrationsToApply),
 		VersionKeys:          migrationVersionKeys(migrationsToApply),
+		Repeatables:          repeatableWork,
 	}
 	if err := m.admitUpPlan(ctx, opts, plan, migrationsToApply); err != nil {
 		return err
@@ -1959,12 +1974,13 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		)
 	}
 
+	if err := m.createRepeatableRecord(ctx, repeatableWork); err != nil {
+		return err
+	}
+
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "totalMigrations", len(migrations))
-	checksDeferred, err := m.applyUpMigrations(ctx, migrationsToApply)
+	checksDeferred, err := m.applyUpBatch(ctx, opts, migrationsToApply)
 	if err != nil {
-		if opts.DiscardRolledBackFailure {
-			return errors.Join(err, m.discardRolledBackFailure(ctx, err))
-		}
 		return err
 	}
 	notifyChecksDeferredObserver(ctx, opts.ChecksDeferredObserver, checksDeferred)
@@ -1973,9 +1989,36 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 			return err
 		}
 	}
+	if err := m.applyRepeatables(ctx, repeatables, repeatableWork); err != nil {
+		return err
+	}
 
 	m.logger.Info("All migrations applied successfully")
 	return nil
+}
+
+// applyUpBatch applies the selected versioned migrations. A failure the run
+// rolled back is discarded from the revision table when opts asks for that.
+func (m *Migrator) applyUpBatch(ctx context.Context, opts MigrateUpOptions, migrations []*Migration) ([]int64, error) {
+	checksDeferred, err := m.applyUpMigrations(ctx, migrations)
+	if err != nil && opts.DiscardRolledBackFailure {
+		return checksDeferred, errors.Join(err, m.discardRolledBackFailure(ctx, err))
+	}
+	return checksDeferred, err
+}
+
+// upStartVersionKey is the key of the version an up run starts from: the
+// newest revision row's, or the newest assumed version's when the caller's
+// assumption reaches at least as high as the recorded history.
+func (m *Migrator) upStartVersionKey(
+	revisions []MigrationRevision,
+	opts MigrateUpOptions,
+	currentVersion int64,
+) (string, bool) {
+	if assumedCurrent := maxAppliedVersion(opts.AssumedAppliedVersions); assumedCurrent > 0 && assumedCurrent >= currentVersion {
+		return assumedAppliedVersionKey(opts.AssumedAppliedVersions, opts.AssumedAppliedVersionKeys, assumedCurrent), true
+	}
+	return m.currentRevisionVersionKey(revisions)
 }
 
 // upSelection is what one selection pass decided: the migrations an up run
@@ -2232,6 +2275,9 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 		m.logger.Info("Already at or below target version", "targetVersion", targetVersion, "currentVersion", currentVersion)
 		return nil
 	}
+	if err := m.repeatableRollbackRefusal(ctx); err != nil {
+		return err
+	}
 
 	if boundary := checkpointRollbackBoundary(m.migrationProvider.Migrations(), appliedMigrations, targetVersion); boundary > 0 {
 		return &CheckpointRollbackError{TargetVersion: targetVersion, CheckpointVersion: boundary}
@@ -2310,6 +2356,12 @@ func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) (err erro
 }
 
 func (m *Migrator) migrateToLocked(ctx context.Context, targetVersion int64) error {
+	if len(m.providerRepeatables()) > 0 {
+		return &RepeatableMigrationsUnsupportedError{
+			Reason: "MigrateTo moves between versions only; run MigrateUpWithOptions, which executes repeatable " +
+				"migrations after the versioned ones, and roll back with MigrateDownTo",
+		}
+	}
 	// Initialize the migrations table
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
