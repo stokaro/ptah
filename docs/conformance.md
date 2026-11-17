@@ -1491,13 +1491,31 @@ changes keeps the comment that changes with it. Measured on PostgreSQL 18: the
 diff after the apply is in sync, and `col_description` reads back each comment
 (`integration/column_comment_convergence_e2e_test.go`).
 
-In `ptah-compat` files the comments follow the table's other statements, as CE
-writes them. On a table the plan changes they follow its one `ALTER TABLE` and its
-new indexes, and on a table the plan creates they follow its `CREATE TABLE` and its
-indexes: the table's own comment first, then its columns' in the order the table
-holds them. A column comment between two of a changed table's column changes would
-split the `ALTER TABLE` in two. The native `ptah` files keep a new table's comments
-right after its `CREATE TABLE`.
+In the up files of `ptah-compat migrate diff`, and in the plans `ptah-compat
+schema diff` and `schema apply` print and run, the comments follow the table's
+other statements, as CE writes them. On a table the plan changes they follow its
+one `ALTER TABLE` and its new indexes. On a table the plan creates they follow its
+`CREATE TABLE` and its indexes: the table's own comment first, then its columns' in
+the order the table holds them, then its indexes' in the order the plan creates
+them. Measured against CE v1.3.0 on PostgreSQL 18, a new table with comments on
+itself, a column and two indexes is byte for byte the same
+(`integration/atlas_migrate_diff_catalog_shape_e2e_test.go`).
+
+A column comment between two of a changed table's column changes would split the
+`ALTER TABLE` in two. A new index on a table the plan changes keeps its comment
+right after its `CREATE INDEX`, where CE v1.3.0 writes it after the table's other
+comments.
+
+An index of a new table that has to wait for a view or a routine the plan creates
+comes after that statement, and the table's comments follow the index there. CE
+v1.3.0 writes neither a view nor a routine, so this order has no reference.
+
+Other files keep each comment right after the statement it describes, so a new
+table's comments follow its `CREATE TABLE` and an index's follow its `CREATE
+INDEX`. That holds for a `ptah-compat migrate diff` down file that recreates a
+table the up file drops, for the plan file `ptah-compat schema plan` writes, and for
+the native `ptah` files. CE v1.3.0 writes the recreated table of a down file with
+its indexes first and its comments after them.
 
 ### Attributes of the same family that are still dropped
 
