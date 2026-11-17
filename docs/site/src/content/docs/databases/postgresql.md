@@ -54,20 +54,72 @@ shows.
 A URL that pins no `search_path` can still resolve to a schema other than
 `public`. With the default search path `"$user", public`, a role named `app`
 resolves to `app` in a database that holds a schema `app`, and to `public` in
-one that does not. Two rules apply to such a connection:
+one that does not. The rules below apply to such a connection.
 
-- A desired table written without a schema is in the connection's current
-  schema, `app` here. When the database holds a table of that name in another
-  schema, such as `public.notes`, the plan would create the table in `app` and
-  drop `public.notes` with its rows. `schema plan` and `schema apply` refuse
-  that plan and name the qualified spelling, `"public"."notes"`, that keeps the
-  table where it is.
-- The `--dev-url` database may resolve to another schema than the target, as a
-  sibling database without the schema `app` does. When both URLs pin no
-  `search_path`, the rehearsal gives the dev database the target's current
-  schema and sets the session's search path to the target's, so each statement
-  resolves its names as it will on the target. When either URL pins a
-  `search_path`, the two must name the same schema.
+A desired name written without a schema is placed in one schema before the
+comparison, and every statement the plan writes names its schema:
+`CREATE TABLE notes` is planned as `CREATE TABLE "public"."notes"`. A drop or an
+alter of an object the target holds names its schema too, the current schema
+included: removing the index `i` of `public.t` is `DROP INDEX "public"."i"`. This
+holds for tables, indexes, constraints, sequences, enums, views, functions,
+triggers, grants and the objects a feature owner keeps, such as domains,
+policies and partitions, in `schema plan`, `schema apply`, `schema diff`,
+`migrate diff` and `migrations generate --replay`.
+
+The comment `ptah-compat` writes above a statement, such as
+`-- Drop index "i" from table: "t"`, keeps the bare name, as the community
+binary writes it. View and routine bodies, defaults and other expressions are
+SQL text and keep the names they were written with. A URL that pins
+`search_path` resolves a bare name in that schema, and its plans name an object
+of that schema bare.
+
+A reference written without a schema, such as the table of an index or the
+function a trigger runs, is placed when it names an object the desired schema
+declares without a schema. A grant on the sequence a serial or identity
+column creates is placed with the table, so a grant on `notes_id_seq` goes
+where `notes` goes. The sequence is known by the name PostgreSQL gives it,
+`<table>_<column>_seq` cut to 63 bytes. A grant on a sequence that an identity
+column names with `SEQUENCE NAME`, or that PostgreSQL numbered because the name
+was taken, keeps its name. A reference to anything else keeps its name and
+resolves where the session finds it: a trigger that runs the built-in
+`suppress_redundant_updates_trigger()` runs the one in `pg_catalog`.
+
+- With a `--dev-url` that pins no `search_path`, the name is placed where the
+  dev database resolves it, as the community binary reads the desired schema on
+  its dev database. A sibling database without the schema `app` resolves it to
+  `public`, so `CREATE TABLE notes` beside an existing `public.notes` plans
+  nothing for the table.
+- With no `--dev-url`, or with one that pins `search_path`, the name is placed
+  in the target's current schema, `app` here.
+- `migrate diff` and `migrations generate --replay` place the name where the
+  dev database they replay on resolves it.
+
+Where the two readings of a name differ, the target's current schema and the
+schema the name is placed in, a plan may create a table in one and drop the
+table of that name in the other with its rows. `schema plan` and `schema apply`
+refuse that plan and name the qualified spellings that settle it: with a dev
+database resolving to `public` and `app.notes` on the target, `"app"."notes"`
+keeps the table and `"public"."notes"` moves it; with no dev database and
+`public.notes` on the target, `"public"."notes"` keeps it. A sequence is refused
+the same way, since a drop loses its current value. A desired table or sequence
+written with a schema, and a URL that pins `search_path`, are not refused.
+
+A plan saved with `schema plan` records the schema it placed names in. Applied
+with `schema apply --plan`, its rehearsal and the check of the state it reached
+place the desired schema's names there too, whatever dev database the apply
+names. An Atlas `.plan.hcl` has no place for it, so its names are placed where
+the apply's dev database resolves them.
+
+A sequence's `OWNED BY table.column` names a table in the sequence's own
+schema, which is where PostgreSQL requires the owner to be and how a read
+writes it. Ptah renders the owner with that schema, so the statement does not
+depend on the session's search path.
+
+The rehearsal on a dev database of another current schema gives the dev
+database the target's current schema and sets the session's search path to the
+target's, so each statement, its bodies included, resolves its names as it will
+on the target. When either URL pins a `search_path`, the two must name the same
+schema.
 
 On connection, Ptah reads the server version and selects the matching
 capability preset, so planning adapts to the concrete server — see
@@ -742,10 +794,10 @@ read the old column until an earlier statement moves it to the new one. It moves
 the name instead, and the interim name leaves with the old column:
 
 ```sql
-ALTER TABLE "t" RENAME CONSTRAINT "t_full_name_not_null" TO "t_full_name_not_null__ptah_old";
--- POSTGRES: ADD COLUMN "display_name" fails if "t" holds any row; the column is NOT NULL and declares no default to fill it with.
-ALTER TABLE "t" ADD COLUMN "display_name" text CONSTRAINT "t_full_name_not_null" NOT NULL;
-ALTER TABLE "t" DROP COLUMN "full_name";
+ALTER TABLE "public"."t" RENAME CONSTRAINT "t_full_name_not_null" TO "t_full_name_not_null__ptah_old";
+-- POSTGRES: ADD COLUMN "display_name" fails if "public"."t" holds any row; the column is NOT NULL and declares no default to fill it with.
+ALTER TABLE "public"."t" ADD COLUMN "display_name" text CONSTRAINT "t_full_name_not_null" NOT NULL;
+ALTER TABLE "public"."t" DROP COLUMN "full_name";
 ```
 
 A column whose `NOT NULL` the plan renames holds its name in the same way until
@@ -820,7 +872,7 @@ A declared name that is not the one the server would give takes the same steps a
 a different statement, because `SET NOT NULL` leaves the name to the server:
 
 ```sql
-ALTER TABLE "t" ADD CONSTRAINT "nn" NOT NULL "a";
+ALTER TABLE "public"."t" ADD CONSTRAINT "nn" NOT NULL "a";
 ```
 
 It fails on a `NULL` row as `SET NOT NULL` does, with the same SQLSTATE, and the
@@ -836,8 +888,8 @@ with SQLSTATE 23502, so a comment says so, on every verb that writes a plan and
 on CockroachDB and YugabyteDB too:
 
 ```sql
--- POSTGRES: ADD COLUMN "required" fails if "t" holds any row; the column is NOT NULL and declares no default to fill it with.
-ALTER TABLE "t" ADD COLUMN "required" text NOT NULL;
+-- POSTGRES: ADD COLUMN "required" fails if "public"."t" holds any row; the column is NOT NULL and declares no default to fill it with.
+ALTER TABLE "public"."t" ADD COLUMN "required" text NOT NULL;
 ```
 
 A declared default, an identity, a serial and a generated column give the row a
@@ -981,8 +1033,8 @@ that changes a bound in place, so a bound change detaches the partition and atta
 it again under the same parent:
 
 ```sql
-ALTER TABLE "events" DETACH PARTITION "e1";
-ALTER TABLE "events" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');
+ALTER TABLE "public"."events" DETACH PARTITION "public"."e1";
+ALTER TABLE "public"."events" ATTACH PARTITION "public"."e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');
 ```
 
 The table keeps its rows. Both statements run in the plan's transaction, so a move

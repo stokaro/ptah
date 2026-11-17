@@ -188,6 +188,13 @@ outside a pinned URL, the plan also records `schemas_beyond_url`, and applying
 the plan reads those schemas as well. A change in any schema the plan writes
 then makes the plan stale.
 
+On a PostgreSQL-family URL that pins no `search_path`, the plan places every
+name the desired schema writes without a schema in one schema, and records it
+as `placed_schema`. Applying the plan places the names there again, so its
+rehearsal and the check after it compare with the names the plan was computed
+with, whatever dev database the apply names; see
+[PostgreSQL](../../databases/postgresql/).
+
 `--schemas`, or `schemas` in `ptah.yaml`, names the schemas to plan for, as it
 does for `ptah schema apply`, and takes precedence over the URL. `--schemas`
 outranks the file. The plan records the selection as `schemas`, and

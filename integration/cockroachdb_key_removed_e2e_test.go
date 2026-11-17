@@ -117,8 +117,8 @@ func TestNativePlanningVerbsCockroachDBE2E_AKeyLeavingForRowIDLeavesTheOtherDrop
 			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
 			planned := run.Stdout + plannedFiles(c, dir)
 			c.Assert(planned, qt.Contains, `ADD COLUMN "rowid"`)
-			c.Assert(planned, qt.Contains, `DROP VIEW "v";`)
-			c.Assert(planned, qt.Contains, `DROP TABLE "archive";`)
+			c.Assert(planned, qt.Contains, `DROP VIEW `+test.qualifier+`"v";`)
+			c.Assert(planned, qt.Contains, `DROP TABLE `+test.qualifier+`"archive";`)
 			c.Assert(planned, qt.Not(qt.Contains), "IF EXISTS")
 		})
 	}
@@ -135,8 +135,8 @@ func TestCompatSchemaDiffCockroachDBE2E_AKeyLeavingForRowIDLeavesTheOtherDropsWi
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, `ADD COLUMN "rowid"`)
-	c.Assert(out, qt.Contains, `DROP VIEW "v";`)
-	c.Assert(out, qt.Contains, `DROP TABLE "archive";`)
+	c.Assert(out, qt.Contains, `DROP VIEW "public"."v";`)
+	c.Assert(out, qt.Contains, `DROP TABLE "public"."archive";`)
 	c.Assert(out, qt.Not(qt.Contains), "IF EXISTS")
 }
 

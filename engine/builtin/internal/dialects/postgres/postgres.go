@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/sqlident"
+	"ptah.run/internal/tableref"
 )
 
 // Renderer provides PostgreSQL-specific SQL rendering
@@ -2706,11 +2707,20 @@ func (r *Renderer) sequenceIdentifier(name, schema string) string {
 	return r.escapeQualifiedIdentifier(schemamodel.QualifyTableName(schema, name))
 }
 
-// sequenceOwnedByClause renders the OWNED BY target: either NONE or a
-// schema-qualified table.column reference.
-func (r *Renderer) sequenceOwnedByClause(ownedBy string) string {
+// sequenceOwnedByClause renders the OWNED BY target of a sequence in schema:
+// either NONE or a table.column reference.
+//
+// PostgreSQL requires the owning table to be in the sequence's schema, and a
+// description writes the owner without a schema when it is there, so an owner
+// written as table.column is rendered in schema. Rendered bare, the server
+// resolves the table along the session's search path, which finds another
+// table or none when schema is not its first schema.
+func (r *Renderer) sequenceOwnedByClause(ownedBy, schema string) string {
 	if strings.EqualFold(strings.TrimSpace(ownedBy), "NONE") {
 		return "NONE"
+	}
+	if ref, ok := tableref.ParseColumn(ownedBy); ok && ref.Schema == "" && strings.TrimSpace(schema) != "" {
+		ownedBy = tableref.Column(schema, ref.Table, ref.Column)
 	}
 	return r.escapeQualifiedIdentifier(ownedBy)
 }
@@ -2932,7 +2942,7 @@ func (r *Renderer) renderCreateSequence(node *ast.CreateSequenceNode) error {
 	parts = append(parts, sequenceOptions(node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, cycle)...)
 
 	if node.OwnedBy != "" {
-		parts = append(parts, "OWNED BY "+r.sequenceOwnedByClause(node.OwnedBy))
+		parts = append(parts, "OWNED BY "+r.sequenceOwnedByClause(node.OwnedBy, node.Schema))
 	}
 
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
@@ -3017,7 +3027,7 @@ func (r *Renderer) renderAlterSequence(node *ast.AlterSequenceNode) error {
 
 	options := sequenceOptions(node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle)
 	if node.OwnedBy != "" {
-		options = append(options, "OWNED BY "+r.sequenceOwnedByClause(node.OwnedBy))
+		options = append(options, "OWNED BY "+r.sequenceOwnedByClause(node.OwnedBy, node.Schema))
 	}
 	if len(options) == 0 {
 		return nil

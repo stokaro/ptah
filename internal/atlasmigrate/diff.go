@@ -16,7 +16,9 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/lintext"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
@@ -308,6 +310,9 @@ func generateDiff(
 	opts DiffOptions,
 	runtime diffRuntime,
 ) (result DiffResult, err error) {
+	// The replayed directory is read with the schema of every object when the
+	// dev URL is realm-scoped, so the file names it; see [readscope.Qualified].
+	ctx = readscope.Qualified(ctx)
 	prepared, err := prepareDiff(ctx, conn, opts)
 	if err != nil {
 		return DiffResult{}, err
@@ -394,6 +399,14 @@ func generateDiff(
 		replaySource,
 		migrationfile.DirFormatAtlas,
 		func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
+			// Placed against the connection the comparison runs on, so a name the
+			// desired schema writes without a schema means the schema it is
+			// compared in, and the file names it; see
+			// [atlasschema.PlaceUnqualifiedNames].
+			desired, err := atlasschema.PlaceUnqualifiedNames(replayConn.Info(), desired)
+			if err != nil {
+				return err
+			}
 			compared, err := compareReplayedState(
 				ctx, replayConn, runtime, schemas, devNaming, desired, baseline,
 				comparisonSelection{exclusion: exclusion, inclusion: prepared.inclusion, info: info},
@@ -795,6 +808,19 @@ type replayedComparison struct {
 	diff    *difftypes.SchemaDiff
 }
 
+// readNamesTheDevDatabase reports whether a read of the replayed dev database
+// on dialect names an object's schema with the dev database's name, which
+// [devqualifier.Remove] takes off. That holds where a schema is a database of
+// the server, and for an engine this process does not describe. On a
+// search-path engine a schema is a namespace the target holds under the same
+// name: a realm-scoped read names the current schema on every object (see
+// [readscope.Qualified]), and taking it off a view, a function or a sequence
+// alone writes DROP VIEW "v" beside ALTER TABLE "public"."t".
+func readNamesTheDevDatabase(dialect string) bool {
+	described, _ := platform.Lookup(dialect)
+	return described.Schemas.Selection != descriptor.SchemaSelectionSearchPath
+}
+
 // compareReplayedState reads the state the migration directory just replayed
 // on the dev database and compares the desired state against it.
 //
@@ -847,7 +873,9 @@ func compareReplayedState(
 	if err != nil {
 		return replayedComparison{}, err
 	}
-	devqualifier.Remove(replayed, defaultSchema, readNames)
+	if readNamesTheDevDatabase(replayConn.Info().Dialect) {
+		devqualifier.Remove(replayed, defaultSchema, readNames)
+	}
 	// The extensions the dev database held before the replay are its
 	// environment, not something the directory built; see
 	// [devclean.Baseline.WithoutEnvironment].

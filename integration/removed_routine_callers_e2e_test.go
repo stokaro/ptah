@@ -31,63 +31,63 @@ const (
 var removedCallerRows = []struct{ name, built, plan string }{
 	{
 		name: "a function calls the reader", built: removedCallerReader + "CREATE FUNCTION b_fn() RETURNS bigint LANGUAGE SQL RETURN a_fn();\n",
-		plan: "DROP FUNCTION \"b_fn\"();\nDROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+		plan: "DROP FUNCTION \"public\".\"b_fn\"();\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a chain of callers", built: removedCallerReader + "CREATE FUNCTION b_fn() RETURNS bigint LANGUAGE SQL RETURN a_fn();\n" +
 			"CREATE FUNCTION c_fn() RETURNS bigint LANGUAGE SQL RETURN b_fn();\n",
-		plan: "DROP FUNCTION \"c_fn\"();\nDROP FUNCTION \"b_fn\"();\nDROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+		plan: "DROP FUNCTION \"public\".\"c_fn\"();\nDROP FUNCTION \"public\".\"b_fn\"();\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a procedure calls the reader", built: removedCallerReader + "CREATE PROCEDURE p_proc() LANGUAGE SQL BEGIN ATOMIC SELECT a_fn(); END;\n",
-		plan: "DROP PROCEDURE \"p_proc\"();\nDROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+		plan: "DROP PROCEDURE \"public\".\"p_proc\"();\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a routine reads two removed tables", built: "CREATE TABLE gone2 (id bigint PRIMARY KEY);\n" +
 			"CREATE FUNCTION a_fn() RETURNS bigint LANGUAGE SQL RETURN (SELECT count(*) FROM gone) + (SELECT count(*) FROM gone2);\n",
-		plan: "DROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+		plan: "DROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a routine reads a removed view and a removed table", built: "CREATE VIEW gv AS SELECT id FROM gone;\n" +
 			"CREATE FUNCTION a_fn() RETURNS bigint LANGUAGE SQL RETURN (SELECT count(*) FROM gv) + (SELECT count(*) FROM gone);\n",
-		plan: "DROP FUNCTION \"a_fn\"();\nDROP VIEW \"gv\";\nDROP TABLE \"gone\";",
+		plan: "DROP FUNCTION \"public\".\"a_fn\"();\nDROP VIEW \"public\".\"gv\";\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "two readers call each other", built: removedCallerReader + "CREATE FUNCTION b_fn() RETURNS bigint LANGUAGE SQL RETURN a_fn();\n" +
 			"CREATE OR REPLACE FUNCTION a_fn() RETURNS bigint LANGUAGE SQL RETURN (SELECT count(*) FROM gone) + b_fn();\n",
-		plan: "DROP FUNCTION \"a_fn\"(), \"b_fn\"();\nDROP TABLE \"gone\";",
+		plan: "DROP FUNCTION \"public\".\"a_fn\"(), \"public\".\"b_fn\"();\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a function calls a routine that takes the row", built: "CREATE FUNCTION a_fn(g gone) RETURNS bigint LANGUAGE SQL RETURN g.id;\n" +
 			"CREATE FUNCTION b_fn() RETURNS bigint LANGUAGE SQL RETURN a_fn(NULL::gone);\n",
-		plan: "DROP FUNCTION \"b_fn\"();\nDROP FUNCTION \"a_fn\"(g gone);\nDROP TABLE \"gone\";",
+		plan: "DROP FUNCTION \"public\".\"b_fn\"();\nDROP FUNCTION \"public\".\"a_fn\"(g gone);\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a removed table's default calls the reader", built: removedCallerReader + "CREATE TABLE zzz (id bigint PRIMARY KEY, n bigint DEFAULT a_fn());\n",
-		plan: "DROP TABLE \"zzz\";\nDROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+		plan: "DROP TABLE \"public\".\"zzz\";\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a removed view calls the reader", built: removedCallerReader + "CREATE VIEW cv AS SELECT a_fn() AS n;\n",
-		plan: "DROP VIEW \"cv\";\nDROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+		plan: "DROP VIEW \"public\".\"cv\";\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a removed view calls the reader of another removed view", built: "CREATE VIEW gv AS SELECT id FROM gone;\n" +
 			"CREATE FUNCTION a_fn() RETURNS bigint LANGUAGE SQL RETURN (SELECT count(*) FROM gv);\nCREATE VIEW zv AS SELECT a_fn() AS n;\n",
-		plan: "DROP VIEW \"zv\";\nDROP FUNCTION \"a_fn\"();\nDROP VIEW \"gv\";\nDROP TABLE \"gone\";",
+		plan: "DROP VIEW \"public\".\"zv\";\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP VIEW \"public\".\"gv\";\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a materialized view calls the reader of a removed view", built: "CREATE VIEW gv AS SELECT id FROM gone;\n" +
 			"CREATE FUNCTION a_fn() RETURNS bigint LANGUAGE SQL RETURN (SELECT count(*) FROM gv);\nCREATE MATERIALIZED VIEW mv AS SELECT a_fn() AS n;\n",
-		plan: "DROP MATERIALIZED VIEW \"mv\";\nDROP FUNCTION \"a_fn\"();\nDROP VIEW \"gv\";\nDROP TABLE \"gone\";",
+		plan: "DROP MATERIALIZED VIEW \"public\".\"mv\";\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP VIEW \"public\".\"gv\";\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a dropped column's default calls the reader", built: removedCallerReader + "ALTER TABLE keep ADD COLUMN n bigint DEFAULT a_fn();\n",
-		plan: "ALTER TABLE \"keep\" DROP COLUMN \"n\";\nDROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+		plan: "ALTER TABLE \"public\".\"keep\" DROP COLUMN \"n\";\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 	},
 	{
 		name: "a policy of the removed table calls the reader", built: removedCallerReader +
 			"ALTER TABLE gone ENABLE ROW LEVEL SECURITY;\nCREATE POLICY p ON gone USING (a_fn() > 0);\n",
-		plan: "DROP POLICY \"p\" ON \"gone\";\nDROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+		plan: "DROP POLICY \"p\" ON \"public\".\"gone\";\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 	},
 }
 
@@ -144,7 +144,7 @@ func TestSchemaApplyRemovedRoutineCallersE2E_AReaderOfADroppedColumn(t *testing.
 		built = "CREATE TABLE keep (id bigint PRIMARY KEY, b int);\n" +
 			"CREATE FUNCTION a_fn() RETURNS bigint LANGUAGE SQL RETURN (SELECT count(b) FROM keep);\n" +
 			"CREATE FUNCTION b_fn() RETURNS bigint LANGUAGE SQL RETURN a_fn();\n"
-		plan    = "DROP FUNCTION \"b_fn\"();\nDROP FUNCTION \"a_fn\"();\nALTER TABLE \"keep\" DROP COLUMN \"b\";"
+		plan    = "DROP FUNCTION \"public\".\"b_fn\"();\nDROP FUNCTION \"public\".\"a_fn\"();\nALTER TABLE \"public\".\"keep\" DROP COLUMN \"b\";"
 		columnB = "SELECT count(*) FROM pg_attribute WHERE attrelid = 'public.keep'::regclass AND attname = 'b'"
 	)
 	t.Run("the plan ends in the declared state", func(t *testing.T) {
@@ -227,20 +227,20 @@ func TestSchemaApplyRemovedRoutineCallersE2E_OnCockroachDB(t *testing.T) {
 			name: "a function calls the reader",
 			built: "CREATE FUNCTION a_fn() RETURNS INT8 LANGUAGE SQL AS $$ SELECT count(*) FROM gone $$;\n" +
 				"CREATE FUNCTION b_fn() RETURNS INT8 LANGUAGE SQL AS $$ SELECT a_fn() $$;\n",
-			plan: "DROP FUNCTION \"b_fn\"();\nDROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+			plan: "DROP FUNCTION \"public\".\"b_fn\"();\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 		},
 		{
 			name: "a removed view calls the reader of another removed view",
 			built: "CREATE VIEW gv AS SELECT id FROM gone;\n" +
 				"CREATE FUNCTION a_fn() RETURNS INT8 LANGUAGE SQL AS $$ SELECT count(*) FROM gv $$;\n" +
 				"CREATE VIEW zv AS SELECT a_fn() AS n;\n",
-			plan: "DROP VIEW \"zv\";\nDROP FUNCTION \"a_fn\"();\nDROP VIEW \"gv\";\nDROP TABLE \"gone\";",
+			plan: "DROP VIEW \"public\".\"zv\";\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP VIEW \"public\".\"gv\";\nDROP TABLE \"public\".\"gone\";",
 		},
 		{
 			name: "a removed table's default calls the reader",
 			built: "CREATE FUNCTION a_fn() RETURNS INT8 LANGUAGE SQL AS $$ SELECT count(*) FROM gone $$;\n" +
 				"CREATE TABLE zzz (id INT8 PRIMARY KEY, n INT8 DEFAULT a_fn());\n",
-			plan: "DROP TABLE \"zzz\";\nDROP FUNCTION \"a_fn\"();\nDROP TABLE \"gone\";",
+			plan: "DROP TABLE \"public\".\"zzz\";\nDROP FUNCTION \"public\".\"a_fn\"();\nDROP TABLE \"public\".\"gone\";",
 		},
 	}
 	for _, test := range tests {

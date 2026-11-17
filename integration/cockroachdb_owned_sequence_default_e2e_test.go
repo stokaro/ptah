@@ -39,21 +39,21 @@ func TestSchemaApplyCockroachDBOwnedSequenceDefaultE2E_HappyPath(t *testing.T) {
 			column:  "a",
 			built:   ownedSequenceBuilt,
 			desired: "CREATE TABLE t (id INT8 PRIMARY KEY, a INT8);\nCREATE SEQUENCE s OWNED BY t.a;\n",
-			plan:    "ALTER SEQUENCE \"s\" OWNED BY NONE;\nALTER TABLE \"t\" ALTER COLUMN \"a\" DROP DEFAULT;\nALTER SEQUENCE \"s\" OWNED BY \"t\".\"a\";",
+			plan:    "ALTER SEQUENCE \"public\".\"s\" OWNED BY NONE;\nALTER TABLE \"public\".\"t\" ALTER COLUMN \"a\" DROP DEFAULT;\nALTER SEQUENCE \"public\".\"s\" OWNED BY \"public\".\"t\".\"a\";",
 		},
 		{
 			name:    "the default leaves, and the declaration names no owner",
 			column:  "a",
 			built:   ownedSequenceBuilt,
 			desired: "CREATE TABLE t (id INT8 PRIMARY KEY, a INT8);\nCREATE SEQUENCE s;\n",
-			plan:    "ALTER SEQUENCE \"s\" OWNED BY NONE;\nALTER TABLE \"t\" ALTER COLUMN \"a\" DROP DEFAULT;\nALTER SEQUENCE \"s\" OWNED BY \"t\".\"a\";",
+			plan:    "ALTER SEQUENCE \"public\".\"s\" OWNED BY NONE;\nALTER TABLE \"public\".\"t\" ALTER COLUMN \"a\" DROP DEFAULT;\nALTER SEQUENCE \"public\".\"s\" OWNED BY \"public\".\"t\".\"a\";",
 		},
 		{
 			name:    "the default moves to another sequence",
 			column:  "a",
 			built:   ownedSequenceBuilt + "CREATE SEQUENCE s2;\n",
 			desired: "CREATE SEQUENCE s2;\nCREATE TABLE t (id INT8 PRIMARY KEY, a INT8 DEFAULT nextval('s2'));\nCREATE SEQUENCE s OWNED BY t.a;\n",
-			plan:    "ALTER SEQUENCE \"s\" OWNED BY NONE;\nALTER TABLE \"t\" ALTER COLUMN \"a\" SET DEFAULT nextval('s2');\nALTER SEQUENCE \"s\" OWNED BY \"t\".\"a\";",
+			plan:    "ALTER SEQUENCE \"public\".\"s\" OWNED BY NONE;\nALTER TABLE \"public\".\"t\" ALTER COLUMN \"a\" SET DEFAULT nextval('s2');\nALTER SEQUENCE \"public\".\"s\" OWNED BY \"public\".\"t\".\"a\";",
 			reads:   "nextval('public.s2'::REGCLASS)", sequencesLeft: 1,
 		},
 		{
@@ -61,7 +61,7 @@ func TestSchemaApplyCockroachDBOwnedSequenceDefaultE2E_HappyPath(t *testing.T) {
 			column:  "a.b",
 			built:   "CREATE TABLE t (id INT8 PRIMARY KEY, \"a.b\" INT8);\nCREATE SEQUENCE s OWNED BY t.\"a.b\";\nALTER TABLE t ALTER COLUMN \"a.b\" SET DEFAULT nextval('s');\n",
 			desired: "CREATE TABLE t (id INT8 PRIMARY KEY, \"a.b\" INT8);\nCREATE SEQUENCE s OWNED BY t.\"a.b\";\n",
-			plan:    "ALTER SEQUENCE \"s\" OWNED BY NONE;\nALTER TABLE \"t\" ALTER COLUMN \"a.b\" DROP DEFAULT;\nALTER SEQUENCE \"s\" OWNED BY \"t\".\"a.b\";",
+			plan:    "ALTER SEQUENCE \"public\".\"s\" OWNED BY NONE;\nALTER TABLE \"public\".\"t\" ALTER COLUMN \"a.b\" DROP DEFAULT;\nALTER SEQUENCE \"public\".\"s\" OWNED BY \"public\".\"t\".\"a.b\";",
 		},
 	}
 	for _, test := range tests {

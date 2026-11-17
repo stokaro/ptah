@@ -187,7 +187,7 @@ func TestSchemaApplyForeignKeyOverRemovedKeyE2E_FailurePath(t *testing.T) {
 			name:    "the declaration leaves no key under the foreign key",
 			built:   keyMoveHeld + keyMoveChild,
 			desired: "CREATE TABLE parent (id bigint NOT NULL, code bigint NOT NULL, CONSTRAINT parent_pkey PRIMARY KEY (code));\n" + keyMoveChild,
-			refusal: `requires referenced columns id on table "parent" to be declared unique`,
+			refusal: `requires referenced columns id on table "public.parent" to be declared unique`,
 		},
 		{
 			name:    "a foreign key in a schema the run leaves out",

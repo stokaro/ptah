@@ -99,6 +99,11 @@ type PlanRehearsalOptions struct {
 	// DevServerDisposable is the operator's declaration that the server
 	// DevURL names is the run's own; see [SimulateOptions.DevServerDisposable].
 	DevServerDisposable bool
+	// PlacedSchema is the plan's [PlanFile.PlacedSchema]. The comparison of the
+	// rehearsed state places the desired schema's unqualified names there. Empty
+	// asks the dev database the rehearsal runs on, which is what a plan that
+	// records no schema, such as an Atlas .plan.hcl document, leaves to decide.
+	PlacedSchema string
 }
 
 // RehearsePlanStatements verifies a pre-planned migration semantically, the
@@ -118,6 +123,9 @@ func RehearsePlanStatements(
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
 		return err
 	}
+	// The dev database and the target are read as the plan read the target;
+	// see [readscope.Qualified].
+	ctx = readscope.Qualified(ctx)
 	if opts.OwnerTransactions != nil && len(opts.OwnerTransactions) != len(statements) {
 		return errors.New("plan rehearsal transaction requirements do not match the statements")
 	}
@@ -181,11 +189,20 @@ func RehearsePlanStatements(
 		return err
 	}
 
+	// A plan that records where it placed an unqualified desired name is
+	// compared with the names placed there. Otherwise the rehearsal has its dev
+	// database, so it asks it rather than asking its URL again.
+	devInfo := devConn.Info()
+	naming := namingFor(conn.Info(), &devInfo)
+	if recorded, ok := recordedNaming(conn.Info(), opts.PlacedSchema); ok {
+		naming = recorded
+	}
 	computation, err := compareRehearsedState(ctx, devConn, conn.Info(), ApplyOptions{
 		Runtime:  opts.Runtime,
 		Desired:  desired,
 		Exclude:  opts.Exclude,
 		baseline: dev.baseline,
+		naming:   naming,
 	})
 	if err != nil {
 		return fmt.Errorf("compare rehearsed plan state with the desired state: %w", err)
@@ -206,11 +223,15 @@ func RehearsePlanStatements(
 // the desired state, reading the dev database as the target names its objects.
 //
 // The rehearsal built the target's state on a dev session that resolves names
-// as the target does; see [resolveNamesAsTarget]. Read through a session of
-// the dev database's own, the objects of the target's current schema carry
-// that schema's name, and the desired state names them without one: the
-// comparison would plan their creation in public and their removal from the
-// target's schema, and refuse a rehearsal that reached the desired state.
+// as the target does; see [resolveNamesAsTarget]. The desired schema's own names
+// are placed in a schema, so they read the same in any session; see
+// [namingFor]. What still depends on the session is SQL text the server prints
+// back, such as a view's body, which names a relation without its schema only
+// when the session's search path reaches it. Read through a session of the
+// dev database's own, a view the rehearsal built over a table of the target's
+// current schema reads back naming that schema, where a read of the target
+// names the table bare, and the comparison would report a rehearsal that
+// reached the desired schema as drift.
 func compareRehearsedState(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
@@ -237,11 +258,19 @@ func compareRehearsedState(
 // must match the --to desired state under Ptah's own schema diff. Atlas
 // performs the equivalent verification on every `schema apply --plan`; the
 // check is always on and has no opt-out flag.
+//
+// The verification compares with the plan's exclude patterns, and places a
+// name the desired schema writes without a schema where the plan placed it
+// ([PlanFile.PlacedSchema]). A plan that records no schema, such as an Atlas
+// .plan.hcl document, places it where devURL, the dev database the apply
+// names, resolves it, or where the target does when devURL is empty; see
+// [namingFor].
 func VerifyAppliedPlanState(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	desired *schemamodel.Database,
-	exclude []string,
+	plan PlanFile,
+	devURL string,
 	runtime engine.SchemaRuntime,
 ) error {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
@@ -253,10 +282,19 @@ func VerifyAppliedPlanState(
 	if desired == nil {
 		return errors.New("plan end-state verification requires the desired schema state")
 	}
+	naming, recorded := recordedNaming(conn.Info(), plan.PlacedSchema)
+	if !recorded {
+		var err error
+		if naming, err = resolveDesiredNaming(ctx, conn.Info(), devURL); err != nil {
+			return fmt.Errorf(
+				"the plan was applied successfully, but the end-state verification could not be completed: %w", err)
+		}
+	}
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
 		Runtime: runtime,
 		Desired: desired,
-		Exclude: exclude,
+		Exclude: plan.Exclude,
+		naming:  naming,
 	})
 	if err != nil {
 		// The plan already executed successfully; this is the verification

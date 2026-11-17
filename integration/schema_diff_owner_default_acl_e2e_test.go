@@ -210,8 +210,8 @@ func TestSchemaDiffRebuildGivesAViewItsGrantsAndNotItsOwnersE2E(t *testing.T) {
 
 	got := runPtahNative(c, "schema", "diff", "--from", database, "--to", "file://"+declaration)
 
-	c.Assert(got, qt.Contains, `DROP VIEW "v";`)
-	c.Assert(got, qt.Contains, fmt.Sprintf(`GRANT SELECT ON TABLE "v" TO %q;`, roles.grantee))
+	c.Assert(got, qt.Contains, `DROP VIEW "public"."v";`)
+	c.Assert(got, qt.Contains, fmt.Sprintf(`GRANT SELECT ON TABLE "public"."v" TO %q;`, roles.grantee))
 	c.Assert(got, qt.Not(qt.Contains), roles.owner)
 }
 

@@ -154,7 +154,7 @@ func TestOwnedSequenceDefault_AnotherSchema(t *testing.T) {
 func TestOwnedSequenceDefault_HappyPath(t *testing.T) {
 	const (
 		detach = `ALTER SEQUENCE "public"."s" OWNED BY NONE`
-		attach = `ALTER SEQUENCE "public"."s" OWNED BY "owners"."code"`
+		attach = `ALTER SEQUENCE "public"."s" OWNED BY "public"."owners"."code"`
 	)
 	tests := []struct {
 		name, dialect, ownedBy, declared string

@@ -11,6 +11,10 @@
 //
 // The zero answer is that a run depends on every kind, so a caller that says
 // nothing gets the refusal.
+//
+// The context also says how a read names what it reports: by default an object
+// of the connection's current schema carries no schema, and a run whose
+// statements name every schema asks for it with [Qualified].
 package readscope
 
 import (
@@ -74,4 +78,28 @@ func Authored(ctx context.Context) context.Context {
 func IsAuthored(ctx context.Context) bool {
 	authored, _ := ctx.Value(authoredKey{}).(bool)
 	return authored
+}
+
+type qualifiedKey struct{}
+
+// Qualified returns ctx saying that the statements the run plans from a read
+// name the schema of every object, so the read names it too: an object of the
+// connection's current schema carries that schema rather than none. A
+// realm-scoped plan on an engine that resolves names along a search path is
+// written that way, as the pinned community binary writes it. A drop or an
+// alter takes its name from the read, and from a read that left the current
+// schema out it would name the object bare.
+//
+// A reader honors it only on a connection that resolves a bare name along a
+// search path and describes every schema. On a connection scoped to one schema
+// a bare name resolves where the read found the object, and a reader that names
+// every object by its schema anyway has nothing to change.
+func Qualified(ctx context.Context) context.Context {
+	return context.WithValue(ctx, qualifiedKey{}, true)
+}
+
+// IsQualified reports whether ctx carries [Qualified].
+func IsQualified(ctx context.Context) bool {
+	qualified, _ := ctx.Value(qualifiedKey{}).(bool)
+	return qualified
 }

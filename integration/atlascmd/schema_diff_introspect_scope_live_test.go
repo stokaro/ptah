@@ -202,7 +202,7 @@ func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 			name:  "default schema control",
 			scope: func() string { return "public" },
 			wantContains: func() []string {
-				return []string{`ALTER TABLE "` + defaultTable + `" ADD COLUMN "extra" text NULL;`}
+				return []string{`ALTER TABLE "public"."` + defaultTable + `" ADD COLUMN "extra" text NULL;`}
 			},
 			wantAbsent: func() []string {
 				return []string{"CREATE TABLE", "Schemas are synced", scoped}

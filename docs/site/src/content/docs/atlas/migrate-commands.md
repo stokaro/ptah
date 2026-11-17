@@ -1487,20 +1487,23 @@ server-level authorization required to replay migration history.
 ### The statements of a generated file
 
 Each statement of a file `migrate diff` writes sits under a comment that names
-its change, in the words the pinned community binary v1.3.0 writes:
+its change, in the words the pinned community binary v1.3.0 writes. On a
+PostgreSQL dev URL that pins no `search_path`, the statement names the schema
+and the comment keeps the bare name, as the community binary writes them:
 
 ```sql
 -- create "owners" table
-CREATE TABLE "owners" (
-  "id" bigint PRIMARY KEY NOT NULL,
-  "name" varchar
+CREATE TABLE "public"."owners" (
+  "id" bigint NOT NULL,
+  "name" character varying NULL,
+  PRIMARY KEY ("id")
 );
 -- create index "owners_name_idx" to table: "owners"
-CREATE INDEX "owners_name_idx" ON "owners" ("name");
+CREATE INDEX "owners_name_idx" ON "public"."owners" ("name");
 ```
 
 A rollback writes `reverse: ` and the forward change each statement undoes:
-`-- reverse: create "owners" table` above `DROP TABLE "owners";`. That is the
+`-- reverse: create "owners" table` above `DROP TABLE "public"."owners";`. That is the
 `.down.sql` file of golang-migrate and flyway and the down section of goose
 and dbmate. Ptah plans the rollback on its own rather than by reversing the
 forward plan, so each of these comments is read off the statement it heads.
@@ -1668,12 +1671,12 @@ community binary writes it. Native verbs keep the planner's statements.
 
 ```sql
 -- create "items" table
-CREATE TABLE "items" (
+CREATE TABLE "public"."items" (
   "id" bigint NOT NULL,
   "owner_id" bigint NOT NULL,
   "note" character varying NULL DEFAULT 'a',
   PRIMARY KEY ("id"),
-  CONSTRAINT "items_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "owners" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "items_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "public"."owners" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
   CONSTRAINT "items_note_len" CHECK (length(note) < 100)
 );
 ```
