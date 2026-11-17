@@ -25,7 +25,7 @@ func ownerRefusals() (missing *atlasschema.MissingOwnerRoleError, transfer *atla
 	}
 	schema = &atlasschema.OwnerSchemaError{
 		Statement: `ALTER MATERIALIZED VIEW "Sales"."Doc Totals" OWNER TO "Audit Team"`, Kind: "MATERIALIZED VIEW",
-		Role: "Audit Team", Schema: "Sales", Hint: "h",
+		Role: "Audit Team", Schema: "Sales", Holds: true, Hint: "h",
 	}
 	return missing, transfer, schema
 }
@@ -56,7 +56,7 @@ func TestNewApplyReportOwnerRefusal_HappyPath(t *testing.T) {
 		Statement: transfer.Statement, Kind: "VIEW", Role: "rv_a", Connected: "app", Privilege: "SET", Holds: true,
 	}}
 	schemaWant := &atlasschema.Refusal{Code: atlasschema.RefusalOwnerSchemaPrivilege, Owner: &atlasschema.OwnerRefusal{
-		Statement: schema.Statement, Kind: "MATERIALIZED VIEW", Role: "Audit Team", Schema: "Sales",
+		Statement: schema.Statement, Kind: "MATERIALIZED VIEW", Role: "Audit Team", Schema: "Sales", Holds: true,
 	}}
 	tests := []struct {
 		name string
