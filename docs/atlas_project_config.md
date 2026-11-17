@@ -126,9 +126,11 @@ The supported attributes map to Ptah settings as follows:
 `format.schema.inspect` follows the Atlas-compatible command's template
 semantics. The exact bare values `"hcl"`, `"sql"`, and `"json"` write those
 literal bytes with no line feed. Surrounding whitespace is also preserved; for
-example, `" sql "` writes hex `20 73 71 6c 20`. Use `"{{ hcl . }}"`,
-`"{{ sql . }}"`, or `"{{ json . }}"` to render the inspected schema. The native
-`ptah schema inspect --format hcl|sql|json` shorthands continue to render.
+example, `" sql "` writes hex `20 73 71 6c 20`. Use `"{{ hcl . }}"` or
+`"{{ json . }}"` to render the inspected schema; `"{{ sql . }}"` writes the plan
+that creates it on a new database, one statement a line under its change
+comment, as the Atlas CLI does. The native
+`ptah schema inspect --format hcl|sql|json` shorthands render the schema.
 
 `env.src` and `env.schema.src` accept either one string or a list of strings.
 The nested `schema.src` form matches Atlas project config syntax. They are the

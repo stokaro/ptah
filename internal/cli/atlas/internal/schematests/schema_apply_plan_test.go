@@ -64,7 +64,7 @@ func TestSchemaApplyPlanFileExecutesPlannedSQL(t *testing.T) {
 	// The pre-approved plan executes exactly the planned SQL instead of
 	// re-planning, and the target ends up with the planned schema.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "Planned schema changes:")
+	c.Assert(out, qt.Contains, "-- Planned Changes:")
 	c.Assert(out, qt.Contains, `CREATE TABLE "planned_orders"`)
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "planned_orders"), qt.Equals, 1)

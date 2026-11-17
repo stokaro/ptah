@@ -20,7 +20,8 @@ import (
 // TestCompatBinarySchemaInspectFormatLiterals exercises the compatibility
 // formatter across the process, filesystem, and SQLite boundaries. The pinned
 // Atlas CE v1.3.0 binary prints bare and whitespace-wrapped hcl/sql/json bodies
-// literally; explicit helpers retain Ptah's complete rendering capability.
+// literally; the explicit `sql` helper writes the plan that creates the
+// inspected schema, and the `json` and `hcl` helpers write the schema.
 func TestCompatBinarySchemaInspectFormatLiterals(t *testing.T) {
 	c := qt.New(t)
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat")
@@ -51,10 +52,14 @@ func TestCompatBinarySchemaInspectFormatLiterals(t *testing.T) {
 		{name: "wrapped HCL populated", dbPath: populatedDB, format: " hcl ", want: " hcl "},
 		{name: "explicit SQL empty", dbPath: emptyDB, format: `{{ sql . }}`},
 		{
+			// The plan that creates the table, as the community binary writes
+			// it (`-- Create "users" table` over CREATE TABLE `users`
+			// (`id` integer NULL, PRIMARY KEY (`id`));), quoted with double
+			// quotes as every Ptah SQLite statement is.
 			name:   "explicit SQL populated",
 			dbPath: populatedDB,
 			format: `{{ sql . }}`,
-			want:   "CREATE TABLE \"users\" (\n  \"id\" INTEGER PRIMARY KEY\n);\n",
+			want:   "-- Create \"users\" table\nCREATE TABLE \"users\" (\"id\" integer NULL, PRIMARY KEY (\"id\"));\n",
 		},
 		{
 			name:   "explicit JSON empty",

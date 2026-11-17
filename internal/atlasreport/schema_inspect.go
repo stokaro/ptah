@@ -57,6 +57,9 @@ type SchemaInspectReport struct {
 	// frame independently of block omission: the Ptah generated-code marker is
 	// absent and a nonempty HCL document ends in exactly one line feed.
 	compatibilityHCLFraming bool
+	// creationPlan is what the `sql` helper writes when it is set; see
+	// [SchemaInspectReportOptions.CreationPlan].
+	creationPlan func(context.Context) ([]SchemaChange, error)
 	// describeSchemas renders the schema itself -- CREATE SCHEMA, its comment,
 	// its charset and collation -- into the SQL format. It is false when the
 	// connection URL chose the scope rather than the run choosing it.
@@ -89,6 +92,12 @@ type SchemaInspectReportOptions struct {
 	// CompatibilityHCLFraming selects the Atlas-compatible single-document HCL
 	// frame. It does not change which blocks the document contains.
 	CompatibilityHCLFraming bool
+	// CreationPlan, when set, is what the `sql` helper writes in place of the
+	// rendered schema: the plan that creates the inspected schema on a new
+	// database, each statement under the comment naming its change and on one
+	// line unless the helper is given an indent, as [SchemaDiff.MarshalSQL]
+	// writes a plan. It is called only when a template calls the helper.
+	CreationPlan func(context.Context) ([]SchemaChange, error)
 }
 
 type atlasSchemaInspectJSONRealm struct {
@@ -234,6 +243,7 @@ func NewSchemaInspectReport(
 		omitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
 		compatibilityHCLFraming: opts.CompatibilityHCLFraming,
 		describeSchemas:         opts.DescribeSchemas,
+		creationPlan:            opts.CreationPlan,
 		Realm:                   realm,
 	}, nil
 }
@@ -545,9 +555,19 @@ func (r *SchemaInspectReport) sqlSource() *schemamodel.Database {
 	return &source
 }
 
+// MarshalSQL is the `sql` helper: the creation plan where
+// [SchemaInspectReportOptions.CreationPlan] is set, and the rendered schema
+// otherwise. An indent argument lays each statement out with it.
 func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 	if len(indent) > 1 {
 		return "", fmt.Errorf("unexpected number of arguments: %d", len(indent))
+	}
+	if r.creationPlan != nil {
+		changes, err := r.creationPlan(r.ctx)
+		if err != nil {
+			return "", fmt.Errorf("plan SQL: %w", err)
+		}
+		return NewSchemaDiff(SchemaDiffOptions{Dialect: r.info.Dialect, Changes: changes}).MarshalSQL(indent...)
 	}
 	rendered, err := renderer.RenderSchema(r.ctx, r.runtime, renderer.SchemaRequest{
 		Target: r.info.Dialect, Schema: r.sqlSource(), Capabilities: r.info.Capabilities,

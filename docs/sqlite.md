@@ -71,16 +71,26 @@ table are ignored.
 
 ## Virtual Tables
 
-Virtual tables are read as virtual tables. `ptah db read`, and
-`ptah-compat schema inspect --format '{{ sql . }}'`, emit the statement that
-created one:
+Virtual tables are read as virtual tables. `ptah db read` emits the statement
+that created one:
 
 ```bash
 ptah db read --db-url "sqlite://app.db"
+```
+
+```sql
+CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
+```
+
+`ptah-compat schema inspect --format '{{ sql . }}'` writes the same statement
+in the plan that creates the schema, under its change comment:
+
+```bash
 ptah-compat schema inspect --url "sqlite://app.db" --format '{{ sql . }}'
 ```
 
 ```sql
+-- Create "docs" table
 CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
 ```
 

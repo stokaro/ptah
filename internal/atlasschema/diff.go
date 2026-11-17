@@ -750,17 +750,9 @@ func plannedDiffChanges(
 	// anything to plan. The plan is made from compared with the kinds the
 	// policy skips, as schema apply makes it: the planner removes the same
 	// changes again, and the statements open with a comment for each.
-	plan, err := planner.GenerateSchemaDiffTextPlan(ctx, opts.Runtime, compared, dialect, planOptions)
+	changes, plan, err := planChanges(ctx, opts.Runtime, compared, dialect, planOptions)
 	if err != nil {
 		return nil, fmt.Errorf("generate schema diff SQL: %w", err)
-	}
-	statements, err := plan.Statements()
-	if err != nil {
-		return nil, fmt.Errorf("generate schema diff SQL: %w", err)
-	}
-	changes := make([]atlasreport.SchemaChange, 0, len(statements))
-	for _, statement := range statements {
-		changes = append(changes, atlasreport.SchemaChange{Cmd: statement})
 	}
 	if opts.ChangeComments {
 		if err := nameDiffChanges(changes, plan, dialect); err != nil {
@@ -768,6 +760,30 @@ func plannedDiffChanges(
 		}
 	}
 	return changes, nil
+}
+
+// planChanges plans compared and returns its statements, with the plan that
+// rendered them for [nameDiffChanges].
+func planChanges(
+	ctx context.Context,
+	runtime planner.Runtime,
+	compared *difftypes.SchemaDiff,
+	dialect string,
+	planOptions planext.Options,
+) ([]atlasreport.SchemaChange, planner.RenderedPlan, error) {
+	plan, err := planner.GenerateSchemaDiffTextPlan(ctx, runtime, compared, dialect, planOptions)
+	if err != nil {
+		return nil, planner.RenderedPlan{}, err
+	}
+	statements, err := plan.Statements()
+	if err != nil {
+		return nil, planner.RenderedPlan{}, err
+	}
+	changes := make([]atlasreport.SchemaChange, 0, len(statements))
+	for _, statement := range statements {
+		changes = append(changes, atlasreport.SchemaChange{Cmd: statement})
+	}
+	return changes, plan, nil
 }
 
 // nameDiffChanges writes the comment that names each change on the first statement

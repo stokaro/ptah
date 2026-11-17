@@ -96,7 +96,7 @@ const sqliteSkippedPlan = "Planned schema changes:\n" +
 
 // sqliteCompatSkippedPlan is what ptah-compat prints for the same plan: the
 // community binary's comment naming the change, directly above its statement.
-const sqliteCompatSkippedPlan = "Planned schema changes:\n" +
+const sqliteCompatSkippedPlan = "-- Planned Changes:\n" +
 	"-- " + skippedColumnB + "\n" +
 	"-- " + skippedIndexTA + "\n" +
 	"-- Add column \"c\" to table: \"t\"\n" +

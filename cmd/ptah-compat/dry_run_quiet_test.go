@@ -222,7 +222,7 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 					"--dry-run",
 				}
 			},
-			wantStdout: "Planned schema changes:\n" +
+			wantStdout: "-- Planned Changes:\n" +
 				"-- Create \"quiet_schema\" table\n" +
 				"CREATE TABLE \"quiet_schema\" (\n  \"id\" integer NULL,\n  PRIMARY KEY (\"id\")\n);\n",
 		},

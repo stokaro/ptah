@@ -104,25 +104,31 @@ deliberate safety and correctness improvements, so a green result never
 depends on copying a CE behavior that silently drops authored content or
 corrupts migration state.
 
-### SQL inspect statement terminators
+### SQL inspect output
 
-Finding 4.6 in
-[`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) was measured
-on August 7, 2026, against the pinned Atlas CE v1.3.0 binary:
+`ptah-compat schema inspect --format '{{ sql . }}'` writes the plan that
+creates the inspected schema on a new database, as the pinned Atlas CE v1.3.0
+binary does, measured on PostgreSQL 18 and SQLite. Each statement is on one
+line under the comment that names its change. A foreign key sits inside the
+`CREATE TABLE` of its table, and that table comes after the one it references.
+An indent argument lays each statement out, and an empty database writes 0
+bytes.
 
-| Result | Empty SQLite database | Populated SQLite database |
-| --- | --- | --- |
-| Atlas CE v1.3.0 | 0 bytes | no semicolon-only lines |
-| Ptah before | `;\n` | a semicolon-only line after every statement |
-| Ptah now | 0 bytes | no semicolon-only lines |
+The bytes are those `ptah-compat schema diff` writes from a new database to the
+inspected one, so both commands differ from the community binary in the same
+places. A SQLite identifier is quoted with `"` where that binary writes a
+backtick. A PostgreSQL text default keeps its cast, `'x'::text`. A read of the
+whole database writes no `CREATE SCHEMA IF NOT EXISTS "public"` and no comment
+for the schema a new database already holds. The plan also keeps what that
+binary leaves out of its own: extensions, standalone sequences, row-level
+security policies and SQLite virtual tables.
 
-The shared report serializer now keeps each renderer-produced statement
-verbatim instead of adding another terminator. An indent argument still
-prefixes every line of nonempty SQL, while empty SQL stays empty. Exact tests
-cover `ptah schema inspect --format sql`, the Atlas-compatible
-`ptah-compat schema inspect --format '{{ sql . }}'`, and HCL and JSON controls.
-This closes only finding 4.6; the issue's comment, indentation, view, and object
-ordering findings remain separate.
+A read scoped with `--schema` holds the database's extensions as well, since an
+extension belongs to the database, not to a schema. The plan creates each one
+where it is installed: `--schema app` on a database with `pgcrypto` in `public`
+writes `CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "public"`, where
+the community binary writes no extension. Native
+`ptah schema inspect --format sql` writes the rendered schema instead.
 
 ## How to read green and red checks
 

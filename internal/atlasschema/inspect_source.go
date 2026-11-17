@@ -117,6 +117,9 @@ type InspectSourceOptions struct {
 	// CompatibilityHCLFraming is the Atlas-compatible surface's independent
 	// single-document HCL framing policy; see [InspectOptions].
 	CompatibilityHCLFraming bool
+	// SQLCreationPlan is the Atlas-compatible surface's `sql` helper policy;
+	// see [InspectOptions].
+	SQLCreationPlan CreationPlanRuntime
 	// DevURLDiagnostic lets the Atlas-compatible surface answer a --dev-url in
 	// its own words before the shared resolution reaches it, and is nil on
 	// every native path. It receives the value as written and the source that
@@ -284,6 +287,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 		SuppressRoleCoverageNote: opts.SuppressRoleCoverageNote,
 		OmitAtlasRefusedBlocks:   opts.OmitAtlasRefusedBlocks,
 		CompatibilityHCLFraming:  opts.CompatibilityHCLFraming,
+		SQLCreationPlan:          opts.SQLCreationPlan,
 		PrepareSchema:            opts.PrepareInspectedSchema,
 		ValidateSchema:           opts.ValidateInspectedSchema,
 		ValidateLiveObject:       opts.ValidateLiveObject,

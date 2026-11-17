@@ -167,7 +167,7 @@ CREATE TABLE users (
 	// displayed and applied, so the statement the editor appended lands in the
 	// target database alongside the planned one.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
+	c.Assert(out.String(), qt.Contains, "-- Planned Changes:")
 	c.Assert(out.String(), qt.Contains, "audit_log")
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
 	assertEditorFlagsSQLiteTableExists(c, dbPath, "users")

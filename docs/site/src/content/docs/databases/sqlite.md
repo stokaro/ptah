@@ -154,8 +154,9 @@ CREATE VIRTUAL TABLE "docs" USING fts5(title, body);
 ```
 
 On the compatibility surface the SQL format has to be asked for —
-`ptah-compat schema inspect --url "sqlite://app.db" --format '{{ sql . }}'`.
-Without it, `schema inspect` returns HCL, as the community CLI does, and
+`ptah-compat schema inspect --url "sqlite://app.db" --format '{{ sql . }}'`. It
+writes the plan that creates the schema, so the statement comes under a
+`-- Create "docs" table` comment line. Without it, `schema inspect` returns HCL, as the community CLI does, and
 neither HCL nor JSON has a virtual-table construct: the table renders as
 `table "docs" { schema = schema.main }` with no columns, which is what the
 pinned community binary emits for the same object and which does not replay.
