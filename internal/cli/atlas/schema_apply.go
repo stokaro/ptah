@@ -1766,8 +1766,8 @@ func atlasApplySQL(ctx context.Context, plan atlasschema.ApplyRuntimePlan, opts 
 	return sqlText, statements, nil
 }
 
-// nothingPlannedMessage is what schema apply says when no statement was
-// planned. A plan that holds notes does not report the schema synced: a note
+// nothingPlannedMessage is what schema apply and schema plan say when no
+// statement was planned. A plan that holds notes does not report the schema synced: a note
 // is what the planner writes about a difference it plans no statement for,
 // such as a generated column whose expression the target cannot change, so
 // the schema did not converge. The community binary has no such plan;

@@ -391,9 +391,15 @@ expression changes on a server without `ALTER COLUMN ... SET EXPRESSION` is one
 case. The run then prints the notes and does not report the schema as synced:
 
 ```text
--- WARNING: Generated column tasks.code changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression, unavailable on this target (PostgreSQL added it in 17); manual migration required.
+-- WARNING: Generated column public.tasks.code changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression, unavailable on this target (PostgreSQL added it in 17); manual migration required.
 No statements planned, but the plan holds the notes above, so the schema is not synced.
 ```
+
+`ptah schema apply --plan` prints the same sentence for a plan file that
+`ptah schema plan` saved with notes and no statement. `ptah-compat schema
+apply` and `ptah-compat schema plan` print the notes and the same sentence, and
+`ptah-compat schema plan` saves no plan file for such a plan: it has no
+statement to apply, and the Atlas `.plan.hcl` format has no field for the notes.
 
 The exit code is 0, as for a synced schema: `schema apply` does not use exit
 code 1 (see [Exit codes](../../reference/exit-codes/)). A pipeline that must

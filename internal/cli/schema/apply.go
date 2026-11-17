@@ -900,6 +900,10 @@ func runSchemaApplyPlanFileOnLockedSession(
 	run.evidence.Units = plan.UnitReports()
 	run.evidence.Annotations = plan.Annotations
 	if !plan.HasChanges() {
+		// schema plan saves no plan that holds neither a statement nor a
+		// note, so a plan with no statement holds notes, and the schema is
+		// not synced.
+		printNothingPlanned(run.human, schemadiff.Diagnostics{}, len(plan.Annotations))
 		return atlasschema.ApplyOutcomeNoChanges, nil
 	}
 	if plan.HasNative() || plan.HasInputReferences() {
