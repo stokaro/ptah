@@ -97,8 +97,8 @@ func TestNotValidAllowanceKeepsAnUnvalidatedKeyE2E(t *testing.T) {
 	url := databaseWith(c, orphanedItems+`ALTER TABLE items ADD CONSTRAINT items_owner_fk FOREIGN KEY (owner_id) REFERENCES owners (id) NOT VALID;`)
 
 	native, compat := diffBothBinaries(c, url, desiredDir(c, ""))
-	c.Assert(native, qt.Contains, `ALTER TABLE "items" VALIDATE CONSTRAINT "items_owner_fk"`)
-	c.Assert(compat, qt.Contains, `ALTER TABLE "items" VALIDATE CONSTRAINT "items_owner_fk"`)
+	c.Assert(native, qt.Contains, `ALTER TABLE "public"."items" VALIDATE CONSTRAINT "items_owner_fk"`)
+	c.Assert(compat, qt.Contains, `ALTER TABLE "public"."items" VALIDATE CONSTRAINT "items_owner_fk"`)
 
 	native, compat = diffBothBinaries(c, url, withDirective(c, desiredDir(c, "")))
 	c.Assert(native, qt.Contains, "Schemas are synced")
@@ -211,5 +211,5 @@ func TestNotValidAllowanceAbsentInMigrateDiffValidatesE2E(t *testing.T) {
 	c.Assert(written, qt.HasLen, 1)
 	migration, err := os.ReadFile(written[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(migration), qt.Contains, `ALTER TABLE "items" VALIDATE CONSTRAINT "items_owner_fk"`)
+	c.Assert(string(migration), qt.Contains, `ALTER TABLE "public"."items" VALIDATE CONSTRAINT "items_owner_fk"`)
 }

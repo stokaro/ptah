@@ -238,7 +238,7 @@ func TestMigrationsDownPlanExcludeAsksAfterThePlanE2E_HappyPath(t *testing.T) {
 	got := run.downAnswering(c, "YES")
 
 	c.Assert(got.ExitCode, qt.Equals, 0, historyComment(got))
-	c.Assert(got.Stdout, qt.Matches, `(?s).*Derived rollback plan: 1 statements\n  DROP TABLE "posts"[^\n]*\n.*Type 'YES' to confirm: .*`)
+	c.Assert(got.Stdout, qt.Matches, `(?s).*Derived rollback plan: 1 statements\n  DROP TABLE "public"."posts"[^\n]*\n.*Type 'YES' to confirm: .*`)
 	c.Assert(run.userTables(c), qt.DeepEquals, []string{"audit_events", "users"})
 	c.Assert(run.appliedVersion(c), qt.Equals, 1)
 }

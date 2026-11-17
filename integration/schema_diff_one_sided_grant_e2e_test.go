@@ -45,14 +45,14 @@ func TestSchemaDiffReportsAGrantOnlyOneSideHoldsE2E(t *testing.T) {
 		{
 			name:   "a table grant to a role the other side does not name",
 			extra:  `GRANT INSERT ON t TO {grantee};`,
-			revoke: `REVOKE INSERT ON TABLE "t" FROM GRANTEE;`,
-			grant:  `GRANT INSERT ON TABLE "t" TO GRANTEE;`,
+			revoke: `REVOKE INSERT ON TABLE "public"."t" FROM GRANTEE;`,
+			grant:  `GRANT INSERT ON TABLE "public"."t" TO GRANTEE;`,
 		},
 		{
 			name:   "a table grant to PUBLIC",
 			extra:  `GRANT SELECT ON t TO PUBLIC;`,
-			revoke: `REVOKE SELECT ON TABLE "t" FROM PUBLIC;`,
-			grant:  `GRANT SELECT ON TABLE "t" TO PUBLIC;`,
+			revoke: `REVOKE SELECT ON TABLE "public"."t" FROM PUBLIC;`,
+			grant:  `GRANT SELECT ON TABLE "public"."t" TO PUBLIC;`,
 		},
 		{
 			name:   "a view grant",
@@ -63,14 +63,14 @@ func TestSchemaDiffReportsAGrantOnlyOneSideHoldsE2E(t *testing.T) {
 		{
 			name:   "a column grant",
 			extra:  `GRANT UPDATE (a) ON t TO {grantee};`,
-			revoke: `REVOKE UPDATE ("a") ON TABLE "t" FROM GRANTEE;`,
-			grant:  `GRANT UPDATE ("a") ON TABLE "t" TO GRANTEE;`,
+			revoke: `REVOKE UPDATE ("a") ON TABLE "public"."t" FROM GRANTEE;`,
+			grant:  `GRANT UPDATE ("a") ON TABLE "public"."t" TO GRANTEE;`,
 		},
 		{
 			name:   "a sequence grant",
 			extra:  `GRANT SELECT ON SEQUENCE s TO {grantee};`,
-			revoke: `REVOKE SELECT ON SEQUENCE "s" FROM GRANTEE;`,
-			grant:  `GRANT SELECT ON SEQUENCE "s" TO GRANTEE;`,
+			revoke: `REVOKE SELECT ON SEQUENCE "public"."s" FROM GRANTEE;`,
+			grant:  `GRANT SELECT ON SEQUENCE "public"."s" TO GRANTEE;`,
 		},
 		{
 			name:   "a schema grant",
@@ -81,8 +81,8 @@ func TestSchemaDiffReportsAGrantOnlyOneSideHoldsE2E(t *testing.T) {
 		{
 			name:   "a routine grant",
 			extra:  `GRANT EXECUTE ON FUNCTION f() TO {grantee};`,
-			revoke: `REVOKE EXECUTE ON FUNCTION "f"() FROM GRANTEE;`,
-			grant:  `GRANT EXECUTE ON FUNCTION "f"() TO GRANTEE;`,
+			revoke: `REVOKE EXECUTE ON FUNCTION "public"."f"() FROM GRANTEE;`,
+			grant:  `GRANT EXECUTE ON FUNCTION "public"."f"() TO GRANTEE;`,
 		},
 	}
 	for _, test := range tests {
@@ -143,7 +143,7 @@ func TestSchemaDiffLeavesWhatTheOtherSideHoldsByDefaultE2E(t *testing.T) {
 
 		out := runPtahNative(c, "schema", "diff", "--from", left, "--to", right)
 
-		c.Assert(strings.TrimSpace(out), qt.Equals, fmt.Sprintf(`REVOKE EXECUTE ON FUNCTION "f"() FROM %q;`, roles.grantee))
+		c.Assert(strings.TrimSpace(out), qt.Equals, fmt.Sprintf(`REVOKE EXECUTE ON FUNCTION "public"."f"() FROM %q;`, roles.grantee))
 	})
 	t.Run("the privileges of a table's owner", func(t *testing.T) {
 		c := qt.New(t)
@@ -156,7 +156,7 @@ func TestSchemaDiffLeavesWhatTheOtherSideHoldsByDefaultE2E(t *testing.T) {
 
 		out := runPtahNative(c, "schema", "diff", "--from", left, "--to", right)
 
-		c.Assert(out, qt.Contains, fmt.Sprintf(`REVOKE SELECT ON TABLE "t" FROM %q;`, roles.grantee))
-		c.Assert(out, qt.Not(qt.Contains), fmt.Sprintf(`ON TABLE "t" FROM %q`, roles.owner))
+		c.Assert(out, qt.Contains, fmt.Sprintf(`REVOKE SELECT ON TABLE "public"."t" FROM %q;`, roles.grantee))
+		c.Assert(out, qt.Not(qt.Contains), fmt.Sprintf(`ON TABLE "public"."t" FROM %q`, roles.owner))
 	})
 }

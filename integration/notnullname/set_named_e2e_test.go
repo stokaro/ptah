@@ -24,7 +24,7 @@ func TestSchemaDiffNamesTheNotNullItAdds_HappyPath(t *testing.T) {
 			name:          "a name somebody chose",
 			left:          `CREATE TABLE t (id int PRIMARY KEY, a text)`,
 			right:         `CREATE TABLE t (id int PRIMARY KEY, a text CONSTRAINT nn NOT NULL)`,
-			wantStatement: `ALTER TABLE "t" ADD CONSTRAINT "nn" NOT NULL "a"`,
+			wantStatement: `ALTER TABLE "public"."t" ADD CONSTRAINT "nn" NOT NULL "a"`,
 		},
 		{
 			name:          "the name the server gives, which leaves the statement alone",

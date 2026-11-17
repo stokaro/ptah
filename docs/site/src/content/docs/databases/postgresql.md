@@ -64,7 +64,10 @@ included: removing the index `i` of `public.t` is `DROP INDEX "public"."i"`. Thi
 holds for tables, indexes, constraints, sequences, enums, views, functions,
 triggers, grants and the objects a feature owner keeps, such as domains,
 policies and partitions, in `schema plan`, `schema apply`, `schema diff`,
-`migrate diff` and `migrations generate --replay`.
+`schema compare`, `migrate diff`, `migrations generate --replay` and the
+rollback `migrations down` derives. `migrations plan` and `migrations generate`
+without `--replay` compare the names as the source writes them, so the file
+they write keeps a bare name bare.
 
 The comment `ptah-compat` writes above a statement, such as
 `-- Drop index "i" from table: "t"`, keeps the bare name, as the community
@@ -1737,10 +1740,11 @@ a revoke somebody made on purpose.
 What the owner lacks is still reported. Against a table whose owner ran
 `REVOKE INSERT, UPDATE ON orders FROM app_owner`, a file that declares `orders` and
 names no privilege of `app_owner` gets a synced plan and one line on standard error,
-from `schema plan`, `schema apply` and `schema compare`:
+from `schema plan`, `schema apply` and `schema compare`. On a URL that pins no
+`search_path` it names the table's schema, as the plan does:
 
 ```text
-UNMANAGED: table orders: owner app_owner lacks INSERT, UPDATE, which PostgreSQL gives an owner by default; the schema does not manage them, so nothing is planned
+UNMANAGED: table public.orders: owner app_owner lacks INSERT, UPDATE, which PostgreSQL gives an owner by default; the schema does not manage them, so nothing is planned
 ```
 
 The line is a diagnostic, not drift: it changes neither the plan nor the exit

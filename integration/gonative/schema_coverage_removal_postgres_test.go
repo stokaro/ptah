@@ -71,8 +71,8 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 	t.Run("with the header removed, the same document drops all three", func(t *testing.T) {
 		c := qt.New(t)
 		c.Assert(boundaryApplyBack(c, conn, authored, true), qt.DeepEquals, []string{
-			`DROP POLICY "p" ON "guarded"`,
-			`DROP SEQUENCE "order_seq"`,
+			`DROP POLICY "p" ON "public"."guarded"`,
+			`DROP SEQUENCE "public"."order_seq"`,
 			`DROP EXTENSION "pgcrypto"`,
 		})
 	})

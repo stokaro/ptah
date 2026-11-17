@@ -66,15 +66,15 @@ func TestSchemaDiffLeavesAnOwnerWhoseACLWasWrittenE2E(t *testing.T) {
 			name:   "a table",
 			create: `CREATE TABLE t (id int PRIMARY KEY);`,
 			grant:  `GRANT SELECT ON t TO {grantee};`,
-			want:   `GRANT SELECT ON TABLE "t" TO GRANTEE;`,
-			revoke: `REVOKE SELECT ON TABLE "t" FROM GRANTEE;`,
+			want:   `GRANT SELECT ON TABLE "public"."t" TO GRANTEE;`,
+			revoke: `REVOKE SELECT ON TABLE "public"."t" FROM GRANTEE;`,
 		},
 		{
 			name:   "a sequence",
 			create: `CREATE SEQUENCE t;`,
 			grant:  `GRANT USAGE ON SEQUENCE t TO {grantee};`,
-			want:   `GRANT USAGE ON SEQUENCE "t" TO GRANTEE;`,
-			revoke: `REVOKE USAGE ON SEQUENCE "t" FROM GRANTEE;`,
+			want:   `GRANT USAGE ON SEQUENCE "public"."t" TO GRANTEE;`,
+			revoke: `REVOKE USAGE ON SEQUENCE "public"."t" FROM GRANTEE;`,
 		},
 		{
 			name:   "a schema",
@@ -138,29 +138,29 @@ func TestSchemaDiffShowsWhatAnOwnerRevokedFromItselfE2E(t *testing.T) {
 		{
 			name:    "one privilege",
 			revoke:  `REVOKE SELECT ON t FROM {owner};`,
-			toLost:  `REVOKE SELECT ON TABLE "t" FROM OWNER;`,
-			toHeld:  `GRANT SELECT ON TABLE "t" TO OWNER;`,
+			toLost:  `REVOKE SELECT ON TABLE "public"."t" FROM OWNER;`,
+			toHeld:  `GRANT SELECT ON TABLE "public"."t" TO OWNER;`,
 			lostACL: `{owner=awdDxtm/owner}`,
 		},
 		{
 			name:   "every privilege",
 			revoke: `REVOKE ALL ON t FROM {owner};`,
-			toLost: `REVOKE DELETE ON TABLE "t" FROM OWNER;
-REVOKE INSERT ON TABLE "t" FROM OWNER;
-REVOKE MAINTAIN ON TABLE "t" FROM OWNER;
-REVOKE REFERENCES ON TABLE "t" FROM OWNER;
-REVOKE SELECT ON TABLE "t" FROM OWNER;
-REVOKE TRIGGER ON TABLE "t" FROM OWNER;
-REVOKE TRUNCATE ON TABLE "t" FROM OWNER;
-REVOKE UPDATE ON TABLE "t" FROM OWNER;`,
-			toHeld: `GRANT DELETE ON TABLE "t" TO OWNER;
-GRANT INSERT ON TABLE "t" TO OWNER;
-GRANT MAINTAIN ON TABLE "t" TO OWNER;
-GRANT REFERENCES ON TABLE "t" TO OWNER;
-GRANT SELECT ON TABLE "t" TO OWNER;
-GRANT TRIGGER ON TABLE "t" TO OWNER;
-GRANT TRUNCATE ON TABLE "t" TO OWNER;
-GRANT UPDATE ON TABLE "t" TO OWNER;`,
+			toLost: `REVOKE DELETE ON TABLE "public"."t" FROM OWNER;
+REVOKE INSERT ON TABLE "public"."t" FROM OWNER;
+REVOKE MAINTAIN ON TABLE "public"."t" FROM OWNER;
+REVOKE REFERENCES ON TABLE "public"."t" FROM OWNER;
+REVOKE SELECT ON TABLE "public"."t" FROM OWNER;
+REVOKE TRIGGER ON TABLE "public"."t" FROM OWNER;
+REVOKE TRUNCATE ON TABLE "public"."t" FROM OWNER;
+REVOKE UPDATE ON TABLE "public"."t" FROM OWNER;`,
+			toHeld: `GRANT DELETE ON TABLE "public"."t" TO OWNER;
+GRANT INSERT ON TABLE "public"."t" TO OWNER;
+GRANT MAINTAIN ON TABLE "public"."t" TO OWNER;
+GRANT REFERENCES ON TABLE "public"."t" TO OWNER;
+GRANT SELECT ON TABLE "public"."t" TO OWNER;
+GRANT TRIGGER ON TABLE "public"."t" TO OWNER;
+GRANT TRUNCATE ON TABLE "public"."t" TO OWNER;
+GRANT UPDATE ON TABLE "public"."t" TO OWNER;`,
 			lostACL: `{}`,
 		},
 	}

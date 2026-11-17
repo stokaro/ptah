@@ -216,7 +216,7 @@ func TestMigrationsDownPlanRunsTheShownPlanE2E_HappyPath(t *testing.T) {
 	code := prompted.answer(c)
 
 	c.Assert(code, qt.Equals, 0, prompted.comment())
-	c.Assert(prompted.stdout.String(), qt.Matches, `(?s).*Derived rollback plan: 1 statements\n  DROP TABLE "posts"[^\n]*\n.*`)
+	c.Assert(prompted.stdout.String(), qt.Matches, `(?s).*Derived rollback plan: 1 statements\n  DROP TABLE "public"."posts"[^\n]*\n.*`)
 	c.Assert(run.userTables(c), qt.DeepEquals, []string{"late_tool", "users"})
 	c.Assert(run.appliedVersions(c), qt.DeepEquals, []int64{1})
 }
