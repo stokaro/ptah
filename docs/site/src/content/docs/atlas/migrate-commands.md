@@ -1688,7 +1688,9 @@ Where the order cannot change the result, the statements read in the community
 binary's order:
 
 1. The tables the plan changes, by name, a table after the one whose change it needs.
-   Each is its index drops, its `ALTER TABLE` and its new indexes.
+   Each is its index drops, its `ALTER TABLE` and its new indexes. On PostgreSQL its
+   comments follow: the table's own, then its columns' in the order the table holds
+   them.
 2. The new tables with their indexes. A table comes after the new tables its foreign
    keys need, and by name among the ones that need the same number.
 3. The foreign keys that wait for a new table.
@@ -1698,8 +1700,9 @@ On PostgreSQL, MySQL and MariaDB one `ALTER TABLE` holds the changes to a table:
 dropped primary key, the checks, the columns by position, an added primary key, the
 unique constraints and the foreign keys. That order holds only inside one statement. So
 where a change needs another statement beside it, such as the `UPDATE` that fills a
-column gaining `NOT NULL` or a `COMMENT ON`, each change of that table is a statement of
-its own, in the order the plan gives them. SQLite takes one change in each `ALTER
+column gaining `NOT NULL`, each change of that table is a statement of its own, in the
+order the plan gives them. A `COMMENT ON` does not split the statement, since it follows
+all of the table's column changes. SQLite takes one change in each `ALTER
 TABLE`, so its statements stay apart. A rollback reads as the forward file backwards.
 
 A file that runs comes first. The pass moves a statement or merges one into another

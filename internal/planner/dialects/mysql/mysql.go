@@ -397,6 +397,11 @@ func (p *Planner) addNewTableColumns(
 	// holds them too.
 	together := keys.gainsAKey(tableDiff)
 	var joined []ast.AlterOperation
+	// Where the comment does not ride with the column, it is a statement of its
+	// own that can only follow the one adding the column: COMMENT ON COLUMN on
+	// Oracle, sp_addextendedproperty on SQL Server. Without it the column is added
+	// bare and the next comparison plans its comment again.
+	var comments []ast.Node
 
 	// The column itself is not looked up. Finding it by the table's Go STRUCT
 	// name and a scan of every field in the schema is the route
@@ -406,6 +411,12 @@ func (p *Planner) addNewTableColumns(
 
 		{
 			columnNode := modelast.FromField(*targetField, vocabulary.Enums, p.targetDialect())
+			if columnNode.Comment != "" && !p.columnCommentRidesWithTheColumn() {
+				comments = append(comments, &ast.AlterTableNode{
+					Name:       tableDiff.TableName,
+					Operations: []ast.AlterOperation{&ast.SetCommentOperation{Column: columnNode.Name, Comment: columnNode.Comment}},
+				})
+			}
 
 			// Create operations list starting with ADD COLUMN
 			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
@@ -453,7 +464,7 @@ func (p *Planner) addNewTableColumns(
 		}
 		result = append(result, oneStatement(tableDiff.TableName, joined...))
 	}
-	return result
+	return append(result, comments...)
 }
 
 func (p *Planner) modifyExistingColumns(
@@ -897,12 +908,6 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *difftypes.TableDif
 	return result, nil
 }
 
-// columnCommentRidesWithTheColumn reports whether this dialect's MODIFY COLUMN
-// carries the comment, so no separate statement is needed.
-//
-// It is a question about the SQL these engines accept, not about Ptah: MySQL
-// and MariaDB have an inline COMMENT clause in a column definition and Oracle
-// does not, and the planners share this algorithm.
 // isMySQLFamily reports whether the target is MySQL or MariaDB, whose MODIFY
 // COLUMN restates the whole column.
 func (p *Planner) isMySQLFamily() bool {
@@ -914,6 +919,13 @@ func (p *Planner) isMySQLFamily() bool {
 	}
 }
 
+// columnCommentRidesWithTheColumn reports whether this dialect writes a column's
+// comment inside the column's definition, in ADD COLUMN and MODIFY COLUMN alike,
+// so no separate statement is needed.
+//
+// It is a question about the SQL these engines accept, not about Ptah: MySQL
+// and MariaDB have an inline COMMENT clause in a column definition, Oracle and
+// SQL Server do not, and the planners share this algorithm.
 func (p *Planner) columnCommentRidesWithTheColumn() bool {
 	switch p.targetDialect() {
 	case platform.MySQL, platform.MariaDB:

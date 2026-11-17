@@ -770,13 +770,21 @@ func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName strin
 	}
 }
 
+// addNewTableColumns appends an ALTER TABLE for each column tableDiff adds, and
+// returns apart from them the statements that set the new columns' comments.
+//
+// PostgreSQL has no comment clause in a column definition, so a column's comment
+// is a COMMENT ON COLUMN of its own, and it can only follow the statement that
+// adds the column; see [Planner.addAndModifyTableColumns]. Without them a plan
+// adds the column bare, and the next comparison finds the comment missing and
+// plans it again: the schema takes two migrations to converge.
 func (p *Planner) addNewTableColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
 	declared []schemamodel.Table,
 	vocabulary difftypes.UserTypeVocabulary,
 	semantics identifier.Semantics,
-) []ast.Node {
+) (_, comments []ast.Node) {
 	// The TABLE still has to be declared. The column travels with the change,
 	// so a field lookup here cannot fail -- but the guard is load-bearing on
 	// its own: a diff naming `app.users` against a schema that declares
@@ -785,7 +793,7 @@ func (p *Planner) addNewTableColumns(
 	// PostgreSQL 17.10; see TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare.
 	table := findGeneratedTableByDiffName(declared, tableDiff.TableName, semantics)
 	if table == nil {
-		return result
+		return result, nil
 	}
 
 	// The column itself is not looked up. Finding it by the table's Go STRUCT
@@ -814,8 +822,14 @@ func (p *Planner) addNewTableColumns(
 			Name:       tableDiff.TableName,
 			Operations: operations,
 		})
+		if columnNode.Comment != "" {
+			comments = append(comments, &ast.AlterTableNode{
+				Name:       tableDiff.TableName,
+				Operations: []ast.AlterOperation{&ast.SetCommentOperation{Column: columnNode.Name, Comment: columnNode.Comment}},
+			})
+		}
 	}
-	return result
+	return result, comments
 }
 
 // addForeignKeyConstraintsForNewColumns adds foreign key constraints for newly added columns.
@@ -883,13 +897,26 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 // The vocabulary is the diff's own, for the same reason a created column's is:
 // a column may name an enum this diff does not change, so the type list cannot
 // come from the change itself.
+//
+// The columns' comment transitions are returned apart from the statements; see
+// [Planner.addAndModifyTableColumns].
 func (p *Planner) modifyExistingTableColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
 	vocabulary difftypes.UserTypeVocabulary,
 	removedSequences []schemamodel.Sequence,
-) []ast.Node {
+) (_, comments []ast.Node) {
 	for _, colDiff := range tableDiff.ColumnsModified {
+		// A comment is not part of ALTER TABLE on PostgreSQL, so it is a
+		// statement of its own beside the column's other changes. A column
+		// whose ONLY difference is its comment gets no ALTER at all: the
+		// statement would be `ALTER COLUMN ... SET NOT NULL` for a column that
+		// is already NOT NULL, which is noise the operator has to read past
+		// and a write to a table nothing needed to write to (stokaro/ptah#2168).
+		// It is taken ahead of the generated column branch: a column whose
+		// expression and comment both change keeps the comment, which the
+		// expression's statement does not carry.
+		comments = appendColumnComment(comments, tableDiff.TableName, colDiff)
 		if isGeneratedColumnChange(colDiff) {
 			node, ok := columnNodeFor(colDiff, vocabulary)
 			if !ok {
@@ -904,13 +931,6 @@ func (p *Planner) modifyExistingTableColumns(
 			colDiff = withoutGeneratedChange(colDiff)
 		}
 
-		// A comment is not part of ALTER TABLE on PostgreSQL, so it is emitted
-		// beside the column's other changes rather than inside them. A column
-		// whose ONLY difference is its comment gets no ALTER at all: the
-		// statement would be `ALTER COLUMN ... SET NOT NULL` for a column that
-		// is already NOT NULL, which is noise the operator has to read past
-		// and a write to a table nothing needed to write to (stokaro/ptah#2168).
-		result = appendColumnComment(result, tableDiff.TableName, colDiff)
 		result = p.appendNotNullConstraintRename(result, tableDiff.TableName, colDiff)
 		if len(colDiff.Changes) == 0 {
 			continue
@@ -961,7 +981,7 @@ func (p *Planner) modifyExistingTableColumns(
 			result = append(result, node)
 		}
 	}
-	return result
+	return result, comments
 }
 
 // sequenceGivingWayToIdentity names the removed sequence a column owns where the plan
@@ -1280,14 +1300,18 @@ func (p *Planner) modifyGeneratedColumnExpression(
 			},
 		},
 	}
-	result = append(result, alterNode)
-	result = append(result, ast.NewDescriptiveComment(fmt.Sprintf(
-		"Modify generated column %s.%s: %s",
-		tableName,
-		colDiff.ColumnName,
-		colDiff.Changes["generated"],
-	)))
-	return result
+	// The description heads the statement it describes, as every other one
+	// does: written after it, it would read as the heading of the statement
+	// that follows, such as the column's comment.
+	return append(result,
+		ast.NewDescriptiveComment(fmt.Sprintf(
+			"Modify generated column %s.%s: %s",
+			tableName,
+			colDiff.ColumnName,
+			colDiff.Changes["generated"],
+		)),
+		alterNode,
+	)
 }
 
 func isGeneratedColumnChange(colDiff difftypes.ColumnDiff) bool {
@@ -1429,10 +1453,18 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 			initialLength := len(result)
 
 			// Add new columns
-			result = p.addNewTableColumns(result, tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
+			var added, modified []ast.Node
+			result, added = p.addNewTableColumns(result, tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
 
 			// Modify existing columns
-			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes, diff.SequencesRemoved)
+			result, modified = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes, diff.SequencesRemoved)
+
+			// The column comments follow all of the table's column statements,
+			// the columns the table holds first, as the community binary writes
+			// them. Between two column changes a comment would split the one
+			// ALTER TABLE the exact style writes for the table, and ahead of a
+			// change to its own column it would hold that change behind it.
+			result = slices.Concat(result, modified, added)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
