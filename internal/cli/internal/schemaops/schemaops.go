@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemaroot"
 	"ptah.run/internal/schemascope"
@@ -215,6 +216,17 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Placed and read as `schema apply` and `schema compare` place and read
+	// them, so the comparison finds what apply plans and names each object by
+	// its schema; see [atlasschema.PlaceUnqualifiedNames] and
+	// [readscope.Qualified]. On a realm-scoped PostgreSQL URL without them, a
+	// table of the current schema reads with no schema on both sides, and an
+	// IgnoredTables entry such as public.audit_log matches neither.
+	desired, err = atlasschema.PlaceUnqualifiedNames(conn.Info(), desired)
+	if err != nil {
+		return nil, err
+	}
+	ctx = readscope.Qualified(ctx)
 
 	schemas, err := schemascope.ComparisonReadNames(ctx, conn.Info(), opts.Schemas, conn, desired)
 	if err != nil {

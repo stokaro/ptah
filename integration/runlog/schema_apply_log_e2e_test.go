@@ -4,6 +4,8 @@ package runlog_test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -191,6 +193,59 @@ func TestSchemaApplyLogKeepsNothingOfARefusedPlanE2E(t *testing.T) {
 			c.Assert(target.tableExists(c, notes), qt.IsFalse)
 			// The control: the same question finds the table the drift created.
 			c.Assert(target.tableExists(c, drifted), qt.IsTrue)
+		})
+	}
+}
+
+// A plan that gives a view to a role the server does not hold is refused
+// before its first statement leaves, so the run writes nothing, as a refused
+// stale plan does. The refusal is asked ahead of the started entry: asked only
+// as the statements are sent, it would follow the entry and create the table
+// on a target that received nothing else. YugabyteDB is not asked who may own
+// a view, so it is not here.
+func TestSchemaApplyLogKeepsNothingOfAnOwnerRefusalE2E(t *testing.T) {
+	statements := func(target *runLogTarget, notes, view, role string) []string {
+		return []string{
+			target.createTable(notes),
+			"CREATE VIEW " + view + " AS SELECT 1 AS id",
+			"ALTER VIEW " + view + ` OWNER TO "` + role + `"`,
+		}
+	}
+	for _, engine := range []runLogEngine{postgresRunLog, cockroachRunLog} {
+		t.Run(engine.name+", a saved plan", func(t *testing.T) {
+			c := qt.New(t)
+			target := newRunLogTarget(c, engine)
+			notes, view, role := target.name("notes"), target.name("notes_view"), target.name("nobody")
+			planPath, _, _ := target.savedPlan(c, statements(target, notes, view, role)...)
+
+			result, document := target.apply(c, append([]string{"--plan", planPath},
+				attribution(newRunReference(c))...)...)
+
+			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("%s", result.Stderr))
+			c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeRefused)
+			c.Assert(document.Refusal, qt.IsNotNil)
+			c.Assert(document.Refusal.Code, qt.Equals, atlasschema.RefusalMissingOwnerRole)
+			c.Assert(document.ApplyLog, qt.IsNil)
+			c.Assert(target.tableExists(c, target.quoted("ptah_schema_apply_log")), qt.IsFalse)
+			c.Assert(target.tableExists(c, notes), qt.IsFalse)
+		})
+		t.Run(engine.name+", a plan computed from the schema", func(t *testing.T) {
+			c := qt.New(t)
+			target := newRunLogTarget(c, engine)
+			notes, view, role := target.name("notes"), target.name("notes_view"), target.name("nobody")
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(strings.Join(statements(target, notes, view, role), ";\n")+";\n"), 0o600), qt.IsNil)
+
+			result, document := target.apply(c, append([]string{"--schema-file", schema},
+				attribution(newRunReference(c))...)...)
+
+			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("%s", result.Stderr))
+			c.Assert(document.Outcome, qt.Equals, atlasschema.ApplyOutcomeRefused)
+			c.Assert(document.Refusal, qt.IsNotNil)
+			c.Assert(document.Refusal.Code, qt.Equals, atlasschema.RefusalMissingOwnerRole)
+			c.Assert(document.ApplyLog, qt.IsNil)
+			c.Assert(target.tableExists(c, target.quoted("ptah_schema_apply_log")), qt.IsFalse)
+			c.Assert(target.tableExists(c, notes), qt.IsFalse)
 		})
 	}
 }

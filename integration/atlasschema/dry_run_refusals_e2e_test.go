@@ -119,7 +119,7 @@ func TestSchemaApplyDryRunAnswersAsARealRunE2E(t *testing.T) {
 		c.Cleanup(func() { _, _ = f.conn.ExecContext(context.Background(), `DROP ROLE IF EXISTS "`+role+`"`) })
 
 		dry, dryDoc := runApply(c, f, "--plan", plan, "--dry-run")
-		// A real run asks for this statement as it sends it, after the prompt.
+		// A real run asks for this statement before its prompt, as a dry run does.
 		ran, ranDoc := runApply(c, f, "--plan", plan, "--auto-approve")
 
 		assertSameAnswer(c, dry, dryDoc, ran, ranDoc)
@@ -190,10 +190,11 @@ func TestSchemaApplyDryRunOfADeclaredPasswordReferenceE2E(t *testing.T) {
 	c.Assert(f.roleExists(c, role), qt.IsFalse)
 }
 
-// TestSchemaApplyDryRunNamesAVariableALaterStatementNeedsE2E is the one place the two
-// answers part. A real run without a transaction has sent the first statement when it
-// reaches the second, so it reports unknown, and the table is there. A dry run has sent
-// nothing, so it reports failed, with the same exit code and the same words.
+// TestSchemaApplyDryRunNamesAVariableALaterStatementNeedsE2E stops a plan whose
+// second statement names a password variable that is not set, run without a
+// transaction. A real run asks before its prompt, as a dry run does, so neither
+// sends the first statement: both report failed, with the same exit code, the
+// same words and no failure record, and the first table is not there.
 func TestSchemaApplyDryRunNamesAVariableALaterStatementNeedsE2E(t *testing.T) {
 	c := qt.New(t)
 	f := newFailureTarget(c, dbtarget.PostgreSQL)
@@ -204,18 +205,14 @@ func TestSchemaApplyDryRunNamesAVariableALaterStatementNeedsE2E(t *testing.T) {
 	c.Cleanup(func() { _, _ = f.conn.ExecContext(context.Background(), `DROP ROLE IF EXISTS "`+role+`"`) })
 
 	dry, dryDoc := runApply(c, f, "--plan", plan, "--tx-mode", "none", "--dry-run")
-
-	c.Assert(dry.ExitCode, qt.Equals, 2, qt.Commentf("%s\n%s", dry.Stdout, dry.Stderr))
-	c.Assert(dryDoc.Outcome, qt.Equals, atlasschema.ApplyOutcomeFailed)
-	c.Assert(compactRecord(c, dryDoc.Failure), qt.Equals, "")
-	c.Assert(f.tableExists(c, first), qt.IsFalse)
-
 	ran, ranDoc := runApply(c, f, "--plan", plan, "--tx-mode", "none", "--auto-approve")
 
-	c.Assert(ran.ExitCode, qt.Equals, dry.ExitCode)
-	c.Assert(ranDoc.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
-	c.Assert(ranDoc.Error, qt.DeepEquals, dryDoc.Error)
-	c.Assert(f.tableExists(c, first), qt.IsTrue)
+	assertSameAnswer(c, dry, dryDoc, ran, ranDoc)
+	c.Assert(ran.ExitCode, qt.Equals, 2)
+	c.Assert(ranDoc.Outcome, qt.Equals, atlasschema.ApplyOutcomeFailed)
+	c.Assert(ranDoc.Error.Message, qt.Contains, rolepassword.Variable(role)+", which is not set")
+	c.Assert(compactRecord(c, ranDoc.Failure), qt.Equals, "")
+	c.Assert(f.tableExists(c, first), qt.IsFalse)
 }
 
 // indexExists asks the server whether an index is there.

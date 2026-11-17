@@ -25,7 +25,7 @@ require (
 	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/mattn/go-isatty v0.0.24
-	github.com/microsoft/go-mssqldb v1.11.2
+	github.com/microsoft/go-mssqldb v1.12.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/oasdiff/yaml3 v0.0.16
 	github.com/opencontainers/go-digest v1.0.0
