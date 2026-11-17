@@ -235,13 +235,22 @@ type testEvent struct {
 
 // ledger accumulates what every report says about every test.
 type ledger struct {
-	starts     map[Test][]int
-	finished   map[Test]bool
-	outcome    map[Test]string
-	elapsed    map[Test]int64
-	packageMS  map[string]int64
+	starts   map[Test][]int
+	finished map[Test]bool
+	outcome  map[Test]string
+	elapsed  map[Test]int64
+	// packageMS is what one shard's runs of a package took, and testsMS the
+	// part of it its top-level tests account for.
+	packageMS  map[shardPackage]int64
+	testsMS    map[shardPackage]int64
 	skipped    map[string]bool
 	failedPkgs map[string]bool
+}
+
+// shardPackage names one package as one shard ran it.
+type shardPackage struct {
+	shard int
+	pkg   string
 }
 
 func newLedger() *ledger {
@@ -250,7 +259,8 @@ func newLedger() *ledger {
 		finished:   make(map[Test]bool),
 		outcome:    make(map[Test]string),
 		elapsed:    make(map[Test]int64),
-		packageMS:  make(map[string]int64),
+		packageMS:  make(map[shardPackage]int64),
+		testsMS:    make(map[shardPackage]int64),
 		skipped:    make(map[string]bool),
 		failedPkgs: make(map[string]bool),
 	}
@@ -281,13 +291,14 @@ func (l *ledger) read(report Report) (ShardResult, error) {
 
 func (l *ledger) record(shard int, event testEvent, result *ShardResult) {
 	elapsedMS := int64(event.Elapsed * 1000)
+	ran := shardPackage{shard: shard, pkg: event.Package}
 	if event.Test == "" {
 		switch event.Action {
 		case "pass":
-			l.packageMS[event.Package] += elapsedMS
+			l.packageMS[ran] += elapsedMS
 			result.ElapsedMS += elapsedMS
 		case "fail":
-			l.packageMS[event.Package] += elapsedMS
+			l.packageMS[ran] += elapsedMS
 			result.ElapsedMS += elapsedMS
 			l.failedPkgs[event.Package] = true
 		}
@@ -308,6 +319,7 @@ func (l *ledger) record(shard int, event testEvent, result *ShardResult) {
 		l.finished[test] = true
 		l.outcome[test] = event.Action
 		l.elapsed[test] = elapsedMS
+		l.testsMS[ran] += elapsedMS
 	}
 }
 
@@ -370,9 +382,20 @@ func (l *ledger) timings() Timings {
 		measured.Tests[test.Name] = elapsed
 		timings.Packages[test.Package] = measured
 	}
-	for pkg, elapsed := range l.packageMS {
+	// A package's own cost, such as TestMain, is paid once on every shard that
+	// runs any of its tests, and each shard's account carries it. It is counted
+	// once here, at the most one shard spent outside the tests: the weight of a
+	// package split across every shard would otherwise carry it once per shard.
+	overhead := make(map[string]int64)
+	for ran, elapsed := range l.packageMS {
+		overhead[ran.pkg] = max(overhead[ran.pkg], elapsed-l.testsMS[ran], 0)
+	}
+	for pkg, outside := range overhead {
 		measured := timings.Packages[pkg]
-		measured.ElapsedMS = elapsed
+		measured.ElapsedMS = outside
+		for _, elapsed := range measured.Tests {
+			measured.ElapsedMS += elapsed
+		}
 		timings.Packages[pkg] = measured
 	}
 	return timings
