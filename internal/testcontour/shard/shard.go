@@ -90,19 +90,78 @@ type Unit struct {
 	Tests []string `json:"tests"`
 }
 
-// RunPatterns returns the -run arguments that select exactly the unit's tests,
-// each at most limit bytes long so that no argument outgrows what an operating
-// system passes to a process. A whole unit needs no filter and returns nil. A
-// single name longer than limit still gets a pattern of its own.
-func (u Unit) RunPatterns(limit int) []string {
-	if u.Whole || len(u.Tests) == 0 {
+// Part is what one shard runs.
+type Part struct {
+	// Units are sorted by package.
+	Units []Unit `json:"units"`
+	// WeightMS is the planned duration: the sum of the weights assigned to
+	// the part.
+	WeightMS int64 `json:"weight_ms"`
+}
+
+// Invocations returns the package and -run arguments of the go test runs
+// that execute the part, in the order the unsharded contour runs the same
+// tests. Two tests that share a part then run in the order they run in when
+// one go test run executes the whole contour, so a test that leaves state
+// behind meets no test it did not meet there.
+//
+// The unsharded run goes through packages in import-path order and runs a
+// package's tests in the order go test -list prints them; listed is that
+// listing. Consecutive whole packages share one run without a filter. Each
+// package split by test name gets runs of its own whose -run patterns follow
+// the listing order and are each at most limit bytes, so that no argument
+// outgrows what an operating system passes to a process; a single name longer
+// than limit still gets a pattern of its own. A test listed nowhere in listed
+// runs after the package's listed tests, in name order.
+func (p Part) Invocations(listed []Test, limit int) [][]string {
+	position := make(map[Test]int, len(listed))
+	for index, test := range listed {
+		position[test] = index
+	}
+	var invocations [][]string
+	var whole []string
+	for _, unit := range p.Units {
+		if unit.Whole {
+			whole = append(whole, unit.Package)
+			continue
+		}
+		if len(whole) != 0 {
+			invocations = append(invocations, whole)
+			whole = nil
+		}
+		rank := func(name string) int {
+			if index, ok := position[Test{Package: unit.Package, Name: name}]; ok {
+				return index
+			}
+			return len(listed)
+		}
+		// Tests are sorted by name, so the stable sort leaves the unlisted
+		// ones, which share the last rank, in name order.
+		names := slices.Clone(unit.Tests)
+		slices.SortStableFunc(names, func(left, right string) int {
+			return cmp.Compare(rank(left), rank(right))
+		})
+		for _, pattern := range runPatterns(names, limit) {
+			invocations = append(invocations, []string{"-run", pattern, unit.Package})
+		}
+	}
+	if len(whole) != 0 {
+		invocations = append(invocations, whole)
+	}
+	return invocations
+}
+
+// runPatterns returns the anchored alternations that select exactly names, in
+// their order, each at most limit bytes long where a name allows it.
+func runPatterns(names []string, limit int) []string {
+	if len(names) == 0 {
 		return nil
 	}
 	const prefix, suffix = "^(?:", ")$"
 	var patterns []string
 	var current []string
 	size := len(prefix) + len(suffix)
-	for _, name := range u.Tests {
+	for _, name := range names {
 		quoted := regexp.QuoteMeta(name)
 		if len(current) != 0 && size+1+len(quoted) > limit {
 			patterns = append(patterns, prefix+strings.Join(current, "|")+suffix)
@@ -116,15 +175,6 @@ func (u Unit) RunPatterns(limit int) []string {
 		size += len(quoted)
 	}
 	return append(patterns, prefix+strings.Join(current, "|")+suffix)
-}
-
-// Part is what one shard runs.
-type Part struct {
-	// Units are sorted by package.
-	Units []Unit `json:"units"`
-	// WeightMS is the planned duration: the sum of the weights assigned to
-	// the part.
-	WeightMS int64 `json:"weight_ms"`
 }
 
 // Tests returns every test the part runs, sorted.

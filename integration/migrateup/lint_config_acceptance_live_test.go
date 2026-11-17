@@ -17,6 +17,7 @@ import (
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/cli/migrateup"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/lint"
 )
 
@@ -133,8 +134,19 @@ func requireLintGatePostgresURL(t *testing.T) string {
 	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
-func dropLintGatePostgresTables(c *qt.C, conn *dbschema.DatabaseConnection, names ...string) {
+// dropLintGatePostgresTables drops the table a test migrated and every table
+// the migrator kept beside revisionTable. The operation log and the repeatable
+// migration table take their names from the revision table, and the lint gate
+// database is shared, so a companion left behind is a table every later test
+// that reads the whole public schema finds there.
+func dropLintGatePostgresTables(c *qt.C, conn *dbschema.DatabaseConnection, tableName, revisionTable string) {
 	c.Helper()
+	names := []string{
+		tableName,
+		revisionTable,
+		revisionTable + revisiontable.LogSuffix,
+		revisionTable + revisiontable.RepeatableSuffix,
+	}
 	for _, name := range names {
 		statement, err := builtin.RenderSQL(platform.Postgres, ast.NewDropTable(name).SetIfExists().SetCascade())
 		c.Assert(err, qt.IsNil)

@@ -300,55 +300,126 @@ func TestReadTimings_FailurePathRefusesAnotherShape(t *testing.T) {
 	c.Assert(timings, qt.DeepEquals, shard.Timings{})
 }
 
-func TestUnitRunPatterns_HappyPath(t *testing.T) {
-	split := shard.Unit{Package: root, Tests: []string{"TestA", "TestB", "TestC"}}
+// TestPartInvocations_HappyPath pins the order a part runs in. Packages go in
+// import-path order, as go test ./integration/... runs them, so a whole
+// package sorted after a split one runs after it; consecutive whole packages
+// share a run; and a split package's tests follow the listing, which is the
+// order its test binary runs them in, rather than name order.
+func TestPartInvocations_HappyPath(t *testing.T) {
+	part := shard.Part{Units: []shard.Unit{
+		{Package: root, Tests: []string{"TestA", "TestB", "TestC"}},
+		{Package: atlascmd, Whole: true, Tests: []string{"TestX"}},
+		{Package: providercli, Whole: true, Tests: []string{"TestY"}},
+		{Package: safety, Tests: []string{"TestS1"}},
+		{Package: safety + "/z", Whole: true, Tests: []string{"TestZ"}},
+	}}
+	listed := []shard.Test{
+		{Package: root, Name: "TestC"},
+		{Package: atlascmd, Name: "TestX"},
+		{Package: root, Name: "TestA"},
+		{Package: root, Name: "TestOther"},
+		{Package: root, Name: "TestB"},
+		{Package: providercli, Name: "TestY"},
+		{Package: safety, Name: "TestS1"},
+		{Package: safety + "/z", Name: "TestZ"},
+	}
 	tests := []struct {
-		name  string
-		unit  shard.Unit
-		limit int
-		want  []string
+		name   string
+		listed []shard.Test
+		limit  int
+		want   [][]string
 	}{
 		{
-			name:  "a whole package needs no filter",
-			unit:  shard.Unit{Package: root, Whole: true, Tests: []string{"TestA"}},
+			name:   "every name of a package fits one pattern",
+			listed: listed,
+			limit:  1 << 10,
+			want: [][]string{
+				{"-run", `^(?:TestC|TestA|TestB)$`, root},
+				{atlascmd, providercli},
+				{"-run", `^(?:TestS1)$`, safety},
+				{safety + "/z"},
+			},
+		},
+		{
+			name:   "a pattern that holds two names splits in listing order",
+			listed: listed,
+			limit:  len(`^(?:TestC|TestA)$`),
+			want: [][]string{
+				{"-run", `^(?:TestC|TestA)$`, root},
+				{"-run", `^(?:TestB)$`, root},
+				{atlascmd, providercli},
+				{"-run", `^(?:TestS1)$`, safety},
+				{safety + "/z"},
+			},
+		},
+		{
+			name:   "a limit one byte short of two names counts the separator",
+			listed: listed,
+			limit:  len(`^(?:TestC|TestA)$`) - 1,
+			want: [][]string{
+				{"-run", `^(?:TestC)$`, root},
+				{"-run", `^(?:TestA)$`, root},
+				{"-run", `^(?:TestB)$`, root},
+				{atlascmd, providercli},
+				{"-run", `^(?:TestS1)$`, safety},
+				{safety + "/z"},
+			},
+		},
+		{
+			name:   "a name longer than the limit keeps a pattern of its own",
+			listed: listed,
+			limit:  4,
+			want: [][]string{
+				{"-run", `^(?:TestC)$`, root},
+				{"-run", `^(?:TestA)$`, root},
+				{"-run", `^(?:TestB)$`, root},
+				{atlascmd, providercli},
+				{"-run", `^(?:TestS1)$`, safety},
+				{safety + "/z"},
+			},
+		},
+		{
+			name: "a test the listing does not name runs last, in name order",
+			listed: []shard.Test{
+				{Package: root, Name: "TestB"},
+			},
 			limit: 1 << 10,
-		},
-		{
-			name:  "every name fits one pattern",
-			unit:  split,
-			limit: 1 << 10,
-			want:  []string{`^(?:TestA|TestB|TestC)$`},
-		},
-		{
-			name:  "the limit holds two names",
-			unit:  split,
-			limit: len(`^(?:TestA|TestB)$`),
-			want:  []string{`^(?:TestA|TestB)$`, `^(?:TestC)$`},
-		},
-		{
-			name:  "a name longer than the limit keeps a pattern of its own",
-			unit:  split,
-			limit: 4,
-			want:  []string{`^(?:TestA)$`, `^(?:TestB)$`, `^(?:TestC)$`},
+			want: [][]string{
+				{"-run", `^(?:TestB|TestA|TestC)$`, root},
+				{atlascmd, providercli},
+				{"-run", `^(?:TestS1)$`, safety},
+				{safety + "/z"},
+			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(tc.unit.RunPatterns(tc.limit), qt.DeepEquals, tc.want)
+			c.Assert(part.Invocations(tc.listed, tc.limit), qt.DeepEquals, tc.want)
 		})
 	}
 }
 
-// TestUnitRunPatterns_HappyPathSelectsExactlyTheUnit compiles each pattern as
+// TestPartInvocations_HappyPathWholePartsShareOneRun covers a part that holds
+// no split package: it runs as one go test run with no filter.
+func TestPartInvocations_HappyPathWholePartsShareOneRun(t *testing.T) {
+	c := qt.New(t)
+	part := shard.Part{Units: []shard.Unit{
+		{Package: atlascmd, Whole: true, Tests: []string{"TestX"}},
+		{Package: safety, Whole: true, Tests: []string{"TestS1"}},
+	}}
+	c.Assert(part.Invocations(nil, 1<<10), qt.DeepEquals, [][]string{{atlascmd, safety}})
+}
+
+// TestPartInvocations_HappyPathSelectsExactlyTheUnit compiles each pattern as
 // go test would and checks that the patterns together select the unit's names
 // and nothing that only shares a prefix with them.
-func TestUnitRunPatterns_HappyPathSelectsExactlyTheUnit(t *testing.T) {
+func TestPartInvocations_HappyPathSelectsExactlyTheUnit(t *testing.T) {
 	c := qt.New(t)
-	unit := shard.Unit{Package: root, Tests: []string{"TestApply", "TestApplyDown", "TestPlan"}}
+	part := shard.Part{Units: []shard.Unit{{Package: root, Tests: []string{"TestApply", "TestApplyDown", "TestPlan"}}}}
 	var selected []string
-	for _, pattern := range unit.RunPatterns(len(`^(?:TestApply|TestApplyDown)$`)) {
-		compiled := regexp.MustCompile(pattern)
+	for _, invocation := range part.Invocations(nil, len(`^(?:TestApply|TestApplyDown)$`)) {
+		compiled := regexp.MustCompile(invocation[1])
 		for _, name := range []string{"TestApply", "TestApplyDown", "TestApplyDownAll", "TestPlan", "TestPlanX", "XTestPlan"} {
 			selected = append(selected, compiled.FindString(name))
 		}

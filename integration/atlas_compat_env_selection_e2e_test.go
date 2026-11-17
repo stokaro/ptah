@@ -5,7 +5,6 @@ package integration_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -13,6 +12,7 @@ import (
 	"ptah.run/atlascompat"
 	"ptah.run/dbschema"
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/testutils"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -84,7 +84,7 @@ func TestCompatMigrateApplyWithoutEnvLeavesTheEnvDatabaseAloneE2E(t *testing.T) 
 			args := append([]string{"migrate", "apply", "--dir", "file://migrations"}, test.args...)
 
 			communityOut, communityStderr, err := runCLIProcess(c.Context(), communityDir, reference, args...)
-			communityErr := withoutCommunityBuildNotice(communityStderr)
+			communityErr := testutils.WithoutAtlasCommunityBuildNotice(communityStderr)
 			compat := clirun.Run(c, clirun.Compat, clirun.Options{
 				Dir: compatDir,
 				Env: append(environmentWithoutPtahVariables(), test.env...),
@@ -100,19 +100,6 @@ func TestCompatMigrateApplyWithoutEnvLeavesTheEnvDatabaseAloneE2E(t *testing.T) 
 			c.Assert(envSelectionTables(c, compatDir), qt.HasLen, 0)
 		})
 	}
-}
-
-// communityBuildNotice opens the paragraph a source build of the community
-// binary may append to an error, advising the official build. It is not part
-// of the error and does not appear on every run: in CI only the first
-// invocation printed it.
-const communityBuildNotice = "You're running the community build of Atlas"
-
-// withoutCommunityBuildNotice returns stderr up to the community build's
-// notice, so the error line is what a comparison reads.
-func withoutCommunityBuildNotice(stderr string) string {
-	before, _, _ := strings.Cut(stderr, communityBuildNotice)
-	return before
 }
 
 // TestCompatMigrateApplyWithEnvMigratesTheEnvDatabaseE2E is the control for the

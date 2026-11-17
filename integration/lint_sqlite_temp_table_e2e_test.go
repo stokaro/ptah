@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/testutils"
 )
 
 // sqliteTempTableVersions is a migration that stages rows in a TEMP table.
@@ -63,7 +64,7 @@ func TestCompatMigrateLintSQLiteTempTableE2E(t *testing.T) {
 			c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("community stdout:\n%s\nstderr:\n%s", communityOut, communityStderr))
 			c.Assert(compat.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
 			c.Assert(redactLintE2EDurations(compat.Stdout), qt.Equals, redactLintE2EDurations(communityOut))
-			c.Assert(compat.Stderr, qt.Equals, withoutCommunityBuildNotice(communityStderr))
+			c.Assert(compat.Stderr, qt.Equals, testutils.WithoutAtlasCommunityBuildNotice(communityStderr))
 		})
 	}
 }

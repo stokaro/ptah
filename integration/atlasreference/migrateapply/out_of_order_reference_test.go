@@ -16,6 +16,7 @@ import (
 
 	"ptah.run/internal/atlasreference"
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/testutils"
 )
 
 const (
@@ -103,7 +104,7 @@ func TestReferenceDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 		c.Assert(firstCompat.code, qt.Equals, 0, qt.Commentf("ptah-compat output: %s", firstCompat.output))
 		secondCompat := runApply(c, compat, compatDB, withMiddle)
 		c.Assert(secondCompat.code, qt.Equals, 1, qt.Commentf("ptah-compat output: %s", secondCompat.output))
-		c.Assert(secondCompat.output, qt.Equals, secondReference.output)
+		c.Assert(secondCompat.output, qt.Equals, testutils.WithoutAtlasCommunityBuildNotice(secondReference.output))
 		assertMigrationState(c, compatDB,
 			[]string{"reference_early", "reference_late"},
 			[]string{earlyVersion, lateVersion})

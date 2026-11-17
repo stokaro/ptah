@@ -161,20 +161,7 @@ func runShard(ctx context.Context, config Config, declared []testID) error {
 	for _, test := range part.Tests() {
 		assigned = append(assigned, testID{Package: test.Package, Name: test.Name})
 	}
-	var whole []string
-	var invocations [][]string
-	for _, unit := range part.Units {
-		if unit.Whole {
-			whole = append(whole, unit.Package)
-			continue
-		}
-		for _, pattern := range unit.RunPatterns(maxRunPattern) {
-			invocations = append(invocations, []string{"-run", pattern, unit.Package})
-		}
-	}
-	if len(whole) != 0 {
-		invocations = append([][]string{whole}, invocations...)
-	}
+	invocations := part.Invocations(listed, maxRunPattern)
 	_, _ = fmt.Fprintf(
 		config.Stderr,
 		"testcontour: shard %d of %d runs %d of %d tests in %d go test invocations, planned at %s; partition %s, balanced by %s\n",

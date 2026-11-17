@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/testutils"
 )
 
 // lintTemplateDataCase is one `migrate lint --format` invocation over one
@@ -145,7 +146,7 @@ func TestCompatMigrateLintFormatTemplateDataE2E(t *testing.T) {
 
 			c.Assert(compat.ExitCode, qt.Equals, exitStatusOf(c, err), qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
 			c.Assert(compat.Stdout, qt.Equals, communityOut)
-			c.Assert(compat.Stderr, qt.Equals, withoutCommunityBuildNotice(communityErr))
+			c.Assert(compat.Stderr, qt.Equals, testutils.WithoutAtlasCommunityBuildNotice(communityErr))
 		})
 	}
 }
