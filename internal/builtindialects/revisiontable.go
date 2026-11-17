@@ -69,8 +69,8 @@ const createTags = `CREATE TABLE IF NOT EXISTS {table} (
 // createLog is the operation log. The primary key is (run_id, seq) rather
 // than a generated identity, because every engine spells auto-increment
 // differently and the order the log needs is the order the migrator wrote
-// its entries in. run_reference and actor_origin come last because the
-// migrator adds them there to a log an older layout created.
+// its entries in. run_reference, actor_origin and repeatable come last
+// because the migrator adds them there to a log an older layout created.
 const createLog = `CREATE TABLE IF NOT EXISTS {table} (
     run_id VARCHAR(64) NOT NULL,
     seq BIGINT NOT NULL,
@@ -84,6 +84,7 @@ const createLog = `CREATE TABLE IF NOT EXISTS {table} (
     error TEXT NULL,
     run_reference VARCHAR(255) NULL,
     actor_origin VARCHAR(64) NULL,
+    repeatable VARCHAR(255) NULL,
     PRIMARY KEY (run_id, seq)
 ){engine}`
 

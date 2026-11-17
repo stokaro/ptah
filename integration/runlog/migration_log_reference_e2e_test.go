@@ -49,9 +49,11 @@ func TestMigrationsUpStoresTheRunReferenceE2E(t *testing.T) {
 	}
 }
 
-// An operation log a released Ptah created has neither column. The first run
-// that writes to it adds both, keeps the row the release wrote, and the
-// release's row reads back with neither, in the table and in the document.
+// An operation log a released Ptah created has none of the added columns. The
+// first run that writes to it adds them, keeps the row the release wrote, and
+// the release's row reads back with none of them, in the table and in the
+// document. The run's insert names every added column, so a column the run
+// failed to add loses both entries.
 func TestMigrationsUpUpgradesALogTableAReleaseCreatedE2E(t *testing.T) {
 	for _, engine := range runLogEngines {
 		t.Run(engine.name, func(t *testing.T) {

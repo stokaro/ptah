@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"testing/fstest"
 	"text/tabwriter"
@@ -23,6 +24,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
+	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
 
@@ -53,11 +55,12 @@ func NewMigrateLogCommand() *cobra.Command {
 		Short: "Show the recorded history of migration operations",
 		Long: `Show what happened to this database, newest first.
 
-Each line is one attempt: when it started, which migration it was about, which
-direction it ran, how it ended, and who the run said it was. An attempt whose
-process stopped mid-flight has no outcome and is reported as undetermined,
-because a run that was killed says nothing about whether its work landed. An
-attempt whose start the log could not write shows its outcome and no start time.
+Each line is one attempt: when it started, which migration it was about (a
+version, or R__<identity> for a repeatable migration), which direction it ran,
+how it ended, and who the run said it was. An attempt whose process stopped
+mid-flight has no outcome and is reported as undetermined, because a run that
+was killed says nothing about whether its work landed. An attempt whose start
+the log could not write shows its outcome and no start time.
 
 This reads a log, not an audit trail. The table lives in the database it
 describes and is writable by the account that runs migrations: whoever can
@@ -163,6 +166,7 @@ type logRecord struct {
 	RunID        string     `json:"run_id"`
 	Operation    string     `json:"operation"`
 	Version      int64      `json:"version"`
+	Repeatable   string     `json:"repeatable,omitempty"`
 	Outcome      string     `json:"outcome"`
 	Undetermined bool       `json:"undetermined"`
 	StartLost    bool       `json:"start_lost"`
@@ -190,6 +194,7 @@ func newLogRecord(attempt migrator.MigrationLogAttempt) logRecord {
 		RunID:        entry.RunID,
 		Operation:    entry.Operation,
 		Version:      entry.Version,
+		Repeatable:   entry.Repeatable,
 		Outcome:      string(attempt.Outcome.State),
 		Undetermined: attempt.Undetermined(),
 		StartLost:    attempt.StartLost(),
@@ -220,9 +225,9 @@ func writeTable(out io.Writer, attempts []migrator.MigrationLogAttempt) error {
 	fmt.Fprintln(writer, "STARTED\tVERSION\tOPERATION\tOUTCOME\tACTOR\tSOURCE")
 	for _, attempt := range attempts {
 		entry := describingEntry(attempt)
-		fmt.Fprintf(writer, "%s\t%d\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			startedLabel(attempt),
-			entry.Version,
+			versionLabel(entry),
 			entry.Operation,
 			outcomeLabel(attempt),
 			actorLabel(entry.Actor),
@@ -240,6 +245,16 @@ func describingEntry(attempt migrator.MigrationLogAttempt) migrator.MigrationLog
 		return attempt.Outcome
 	}
 	return attempt.Start
+}
+
+// versionLabel names the migration an entry is about: its version, or for a
+// repeatable migration the file name its identity comes from, without the
+// extension.
+func versionLabel(entry migrator.MigrationLogEntry) string {
+	if entry.Repeatable != "" {
+		return migrationfile.RepeatableFilePrefix + entry.Repeatable
+	}
+	return strconv.FormatInt(entry.Version, 10)
 }
 
 // startedLabel is when the attempt began, or a dash when the log lost the entry

@@ -56,6 +56,16 @@ func TestLostLogEntriesNotice_NamesEachAttempt(t *testing.T) {
 			want: "lost 2 of 2 entries: version 1 (applied), version 1 (started).",
 		},
 		{
+			name: "two repeatable migrations of one run are two attempts, named by identity",
+			lost: []migrator.MigrationLogLoss{
+				{Operation: "up", Repeatable: "a_first", State: migrator.MigrationLogStarted},
+				{Operation: "up", Repeatable: "a_first", State: migrator.MigrationLogApplied},
+				{Operation: "up", Repeatable: "user_names", State: migrator.MigrationLogStarted},
+			},
+			want: "lost 3 of 3 entries: repeatable migration a_first (started, applied), " +
+				"repeatable migration user_names (started).",
+		},
+		{
 			name: "a rollback that could not name its migrations",
 			lost: []migrator.MigrationLogLoss{{Operation: "down"}},
 			want: "lost 1 of 1 entries: a down whose migrations could not be named.",

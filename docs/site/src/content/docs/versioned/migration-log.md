@@ -23,9 +23,11 @@ beside the revision table, written by `ptah migrations up` and `ptah migrations
 down`, and read by `ptah migrations log`. `ptah schema apply` keeps a log of its
 own, [the schema apply log](../../direct/apply-log/).
 
-The log records versioned migrations. A [repeatable
-migration](../repeatable/) keeps its last attempt in a record table of its own,
-which `ptah migrations status` reads.
+The log records every attempt of a versioned or a [repeatable
+migration](../repeatable/). An entry about a repeatable migration carries its
+identity in the `repeatable` column and version `0`, and `ptah migrations log`
+prints it as `R__<identity>`. The record table of repeatable migrations keeps
+only the last attempt of each, which is what `ptah migrations status` reads.
 
 ```bash
 ptah migrations log --db-url "$DATABASE_URL"
@@ -58,7 +60,8 @@ back still leaves the record that it was attempted. A log written inside the
 transaction would describe only the runs that succeeded.
 
 `--json` prints the same attempts with the start and finish timestamps, the run
-identifier, the checksum of the migration that ran, and the error. Start and
+identifier, the checksum of the migration that ran, and the error. An attempt
+of a repeatable migration also carries `repeatable`, its identity. Start and
 finish timestamps are recorded in UTC, including when the applying process
 uses another time zone.
 
@@ -131,9 +134,10 @@ does not hold.
 ## A log an older release created
 
 Ptah v0.26.0 and earlier created the log without `run_reference` and
-`actor_origin`. The first run that writes an entry adds both, as nullable
-columns, before the entry. The rows already there keep their values and read
-back with neither. Reading never alters the table, so an account that may only
+`actor_origin`, and an older log also lacks `repeatable`. The first run that
+writes an entry adds the columns the table lacks, as nullable columns, before
+the entry. The rows already there keep their values and read
+back with none of them. Reading never alters the table, so an account that may only
 read runs `ptah migrations log` against an old table as it stands. An account
 that may not alter the table loses the run's entries, and the run reports them
 as it reports any lost entry. Measured on PostgreSQL 18, MySQL 26.10, MariaDB

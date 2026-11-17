@@ -347,8 +347,6 @@ migrations; stokaro/ptah#6152 records the gap.
 
 - SQL Server, Oracle, ClickHouse and engines reached through a provider do not
   run repeatable migrations.
-- The [migration log](../migration-log/) records versioned migrations only. The
-  record table keeps the last attempt of each repeatable migration.
 - `ptah migrations repair --repeatable` removes a row; nothing marks a
   repeatable migration applied without running it. Removing the row of a file
   still in the directory makes the next run execute it as new.
