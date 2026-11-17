@@ -210,7 +210,7 @@ var viewOwnerChanges = []viewOwnerChange{
 		name:       "an owner given in place",
 		body:       viewOwnerBody,
 		owners:     "ALTER VIEW my_docs OWNER TO {owner};\n",
-		statements: []string{`ALTER VIEW "my_docs" OWNER TO "{owner}"`},
+		statements: []string{`ALTER VIEW "public"."my_docs" OWNER TO "{owner}"`},
 		after:      []string{"Doc Totals={admin}", "my_docs={owner}"},
 		rows:       1,
 		inPlace:    true,
@@ -220,7 +220,7 @@ var viewOwnerChanges = []viewOwnerChange{
 		held:       []string{"ALTER VIEW my_docs OWNER TO {other}"},
 		body:       viewOwnerBody,
 		owners:     "ALTER VIEW my_docs OWNER TO {owner};\n",
-		statements: []string{`ALTER VIEW "my_docs" OWNER TO "{owner}"`},
+		statements: []string{`ALTER VIEW "public"."my_docs" OWNER TO "{owner}"`},
 		after:      []string{"Doc Totals={admin}", "my_docs={owner}"},
 		rows:       1,
 		inPlace:    true,
@@ -229,7 +229,7 @@ var viewOwnerChanges = []viewOwnerChange{
 		name:       "a quoted role and a quoted materialized view",
 		body:       viewOwnerBody,
 		owners:     `ALTER MATERIALIZED VIEW "Doc Totals" OWNER TO {auditors};` + "\n",
-		statements: []string{`ALTER MATERIALIZED VIEW "Doc Totals" OWNER TO "{auditors.stored}"`},
+		statements: []string{`ALTER MATERIALIZED VIEW "public"."Doc Totals" OWNER TO "{auditors.stored}"`},
 		after:      []string{"Doc Totals={auditors.stored}", "my_docs={admin}"},
 		rows:       2,
 		inPlace:    true,
@@ -238,7 +238,7 @@ var viewOwnerChanges = []viewOwnerChange{
 		name:       "a rebuild gives the declared owner",
 		body:       viewOwnerNarrow,
 		owners:     "ALTER VIEW my_docs OWNER TO {owner};\n",
-		statements: []string{`DROP VIEW "my_docs"`, "CREATE VIEW \"my_docs\" AS\n" + viewOwnerNarrow, `ALTER VIEW "my_docs" OWNER TO "{owner}"`},
+		statements: []string{`DROP VIEW "public"."my_docs"`, "CREATE VIEW \"public\".\"my_docs\" AS\n" + viewOwnerNarrow, `ALTER VIEW "public"."my_docs" OWNER TO "{owner}"`},
 		after:      []string{"Doc Totals={admin}", "my_docs={owner}"},
 		rows:       1,
 	},
@@ -248,7 +248,7 @@ var viewOwnerChanges = []viewOwnerChange{
 		name:       "a rebuild gives an undeclared owner back",
 		held:       []string{"ALTER VIEW my_docs OWNER TO {other}"},
 		body:       viewOwnerNarrow,
-		statements: []string{`DROP VIEW "my_docs"`, "CREATE VIEW \"my_docs\" AS\n" + viewOwnerNarrow, `ALTER VIEW "my_docs" OWNER TO "{other}"`},
+		statements: []string{`DROP VIEW "public"."my_docs"`, "CREATE VIEW \"public\".\"my_docs\" AS\n" + viewOwnerNarrow, `ALTER VIEW "public"."my_docs" OWNER TO "{other}"`},
 		after:      []string{"Doc Totals={admin}", "my_docs={other}"},
 		rows:       0,
 	},
@@ -334,7 +334,7 @@ func TestSchemaDriftReportsADeclaredOwnerE2E(t *testing.T) {
 
 // missingOwnerRefusal is the part of the refusal every place a plan runs
 // writes, for a view given to the role ptah_vo_missing.
-const missingOwnerRefusal = `ALTER VIEW "my_docs" OWNER TO "ptah_vo_missing" gives the object to role "ptah_vo_missing", ` +
+const missingOwnerRefusal = `ALTER VIEW "public"."my_docs" OWNER TO "ptah_vo_missing" gives the object to role "ptah_vo_missing", ` +
 	`which the server does not hold and no statement before it creates; a role belongs to the server, not to a database, ` +
 	`so create the role on the server or declare it in the desired schema`
 
@@ -413,6 +413,6 @@ func TestSchemaApplyReportsAnOwnerTheConnectionMayNotGiveE2E(t *testing.T) {
 		"--schema-file", target.schemaFile(c, viewOwnerBody, "ALTER VIEW my_docs OWNER TO {owner};\n"))
 
 	c.Assert(got.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-	c.Assert(got.Stderr, qt.Contains, target.expand(`(SQLSTATE 42501)`+"\n"+`SQL: ALTER VIEW "my_docs" OWNER TO "{owner}"`))
+	c.Assert(got.Stderr, qt.Contains, target.expand(`(SQLSTATE 42501)`+"\n"+`SQL: ALTER VIEW "public"."my_docs" OWNER TO "{owner}"`))
 	c.Assert(target.owners(c), qt.DeepEquals, target.ownersWant("Doc Totals={admin}", "my_docs="+applier))
 }
