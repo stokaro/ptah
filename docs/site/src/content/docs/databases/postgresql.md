@@ -66,7 +66,7 @@ grants and the objects a feature owner keeps, such as domains and policies, in
 expressions are SQL text and keep the names they were written with.
 
 A reference written without a schema, such as the table of an index or the
-function a trigger runs, is placed when it names an object the desired state
+function a trigger runs, is placed when it names an object the desired schema
 declares without a schema. A grant on the sequence a serial or identity
 column creates is placed with the table, so a grant on `notes_id_seq` goes
 where `notes` goes. The sequence is known by the name PostgreSQL gives it,
@@ -77,7 +77,7 @@ resolves where the session finds it: a trigger that runs the built-in
 `suppress_redundant_updates_trigger()` runs the one in `pg_catalog`.
 
 - With a `--dev-url` that pins no `search_path`, the name is placed where the
-  dev database resolves it, as the community binary reads the desired state on
+  dev database resolves it, as the community binary reads the desired schema on
   its dev database. A sibling database without the schema `app` resolves it to
   `public`, so `CREATE TABLE notes` beside an existing `public.notes` plans
   nothing for the table.
@@ -98,7 +98,7 @@ written with a schema, and a URL that pins `search_path`, are not refused.
 
 A plan saved with `schema plan` records the schema it placed names in. Applied
 with `schema apply --plan`, its rehearsal and the check of the state it reached
-place the desired state's names there too, whatever dev database the apply
+place the desired schema's names there too, whatever dev database the apply
 names. An Atlas `.plan.hcl` has no place for it, so its names are placed where
 the apply's dev database resolves them.
 
