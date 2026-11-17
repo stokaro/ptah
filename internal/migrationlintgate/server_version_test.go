@@ -111,7 +111,7 @@ func TestAnalyze_UnsupportedLintDialect_HappyPath(t *testing.T) {
 		},
 	}
 
-	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "oracle", "")
+	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "oracle", "")
 
 	c.Assert(err, qt.IsNil)
 	// The dialect-independent data-safety rule still protects the apply.

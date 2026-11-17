@@ -36,7 +36,7 @@ func gateRules(findings []lint.Finding) []string {
 func TestAnalyze_GateFamiliesWidenWhatBlocks(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), gateFS("dialect: mysql\ngate:\n  families: [MY]\nrules:\n  MY101:\n    severity: error\n"), []int64{1}, "mysql", "")
+	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), gateFS("dialect: mysql\ngate:\n  families: [MY]\nrules:\n  MY101:\n    severity: error\n"), migrationlintgate.Pending{Versions: []int64{1}}, "mysql", "")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(gateRules(findings), qt.DeepEquals, []string{"MY101"})
@@ -48,7 +48,7 @@ func TestAnalyze_GateFamiliesWidenWhatBlocks(t *testing.T) {
 func TestAnalyze_GateFamiliesStillNeedAnErrorSeverity(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), gateFS("dialect: mysql\ngate:\n  families: [MY]\n"), []int64{1}, "mysql", "")
+	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), gateFS("dialect: mysql\ngate:\n  families: [MY]\n"), migrationlintgate.Pending{Versions: []int64{1}}, "mysql", "")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0)
@@ -60,7 +60,7 @@ func TestAnalyze_GateFamiliesStillNeedAnErrorSeverity(t *testing.T) {
 func TestAnalyze_WithoutAGateSectionOnlyDataSafetyBlocks(t *testing.T) {
 	c := qt.New(t)
 
-	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), gateFS("dialect: mysql\nrules:\n  MY101:\n    severity: error\n"), []int64{1}, "mysql", "")
+	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), gateFS("dialect: mysql\nrules:\n  MY101:\n    severity: error\n"), migrationlintgate.Pending{Versions: []int64{1}}, "mysql", "")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0)

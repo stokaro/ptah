@@ -72,7 +72,7 @@ func fullPass(tb testing.TB, fsys fstest.MapFS, dialect string) []lint.Finding {
 func gatePass(tb testing.TB, fsys fstest.MapFS, dialect string) []lint.Finding {
 	c := qt.New(tb)
 
-	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), fsys, []int64{1}, dialect, "")
+	findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, dialect, "")
 	c.Assert(err, qt.IsNil)
 	return findings
 }

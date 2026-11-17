@@ -21,6 +21,7 @@ import (
 	"ptah.run/internal/lintkit"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/repeatableset"
 	"ptah.run/internal/sqlsyntax"
 	"ptah.run/migration/migrationfile"
 )
@@ -188,8 +189,13 @@ type File struct {
 	// RevisionVersion is the revision-table token for parsed migration files.
 	// Atlas repeatables use string keys such as "3R" and "R".
 	RevisionVersion string
-	// Repeatable reports whether the migrator classifies this as an imported
-	// repeatable migration rather than an ordered version.
+	// Repeatable reports whether the migrator classifies this as a repeatable
+	// migration rather than an ordered version: an Atlas repeatable version
+	// such as "R" or "3R", or, under the native profile, an
+	// R__<identity>.sql file of a directory read in the Ptah format, which
+	// `ptah migrations up` runs after every versioned migration and again
+	// whenever its content changes. That file has no Version, RevisionVersion
+	// or Direction, and no down file.
 	Repeatable bool
 	// Selected reports whether this file belongs to the requested version
 	// selection. Analysis keeps unselected files so reports can distinguish a
@@ -201,10 +207,11 @@ type File struct {
 	Ignored bool
 	// Direction is the migration direction ("up"/"down") exactly as the
 	// migrator's name parser classifies this file; empty when the migrator
-	// cannot parse the name at all.
+	// cannot parse the name as a versioned file.
 	Direction string
 	// IsUp reports whether statement rules treat this as an up migration:
-	// the migrator parses it as up, or its name carries the .up.sql suffix.
+	// the migrator parses it as up, its name carries the .up.sql suffix, or it
+	// is a repeatable migration of a directory read in the Ptah format.
 	IsUp bool
 	// IsDown reports whether this is the rollback half of a migration: the
 	// migrator parses it as down, or its name carries the .down.sql suffix.
@@ -221,7 +228,8 @@ type File struct {
 	// WellFormedName reports whether the name matches the documented
 	// NNNNNNNNNN_description.(up|down).sql convention, checked
 	// independently of the migrator's parser as defense in depth (see the
-	// strictNameRe comment).
+	// strictNameRe comment), or names a repeatable migration the migrator
+	// runs.
 	WellFormedName bool
 	// NoTransaction reports whether file-scoped directives opt this migration
 	// out of the migrator's transaction wrapper, or the migration runs without
@@ -312,8 +320,13 @@ type VersionSelection struct {
 	// VersionKeys lists selected revision-table tokens. It is used for
 	// Atlas-style repeatable files whose identity is not only numeric.
 	VersionKeys []string
-	// Restricted reports whether Versions is an explicit selection. When true,
-	// empty version selectors select no migrations.
+	// Repeatables lists selected repeatable migrations of a directory read in
+	// the Ptah format, by their slash-separated path relative to the linted
+	// directory, as [File.Name] spells it.
+	Repeatables []string
+	// Restricted reports whether the selectors are an explicit selection. When
+	// true, empty selectors select no migrations, and a repeatable migration is
+	// selected only when Repeatables lists it.
 	Restricted bool
 }
 
@@ -528,6 +541,10 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 	if err != nil {
 		return Analysis{}, err
 	}
+	repeatables, err := nativeRepeatables(snapshot, dirFormat, opts.Compatibility)
+	if err != nil {
+		return Analysis{}, err
+	}
 
 	present := make(map[string]struct{}, len(names))
 	for _, name := range names {
@@ -575,6 +592,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 			dependents,
 			registered,
 			naming,
+			repeatables,
 		)
 		if err != nil {
 			return Analysis{}, err
@@ -653,6 +671,21 @@ func versionDirections(names []string, dirFormat migrationfile.DirFormat) map[in
 }
 
 type sqlSources map[string]string
+
+// nativeRepeatables names the files the native migrator runs as repeatable
+// migrations, by [File.Name]; see [repeatableset.Paths]. The Atlas profile
+// names none: the community binary reads R__<name>.sql as the one-time
+// version "R", and so does ptah-compat.
+func nativeRepeatables(
+	fsys fs.FS,
+	dirFormat migrationfile.DirFormat,
+	profile CompatibilityProfile,
+) (map[string]struct{}, error) {
+	if profile == CompatibilityProfileAtlas {
+		return nil, nil
+	}
+	return repeatableset.Paths(fsys, dirFormat)
+}
 
 func loadSQLSources(fsys fs.FS) (sqlSources, []string, error) {
 	var names []string
@@ -754,6 +787,7 @@ func prepareFile(
 	dependents map[int64]baselineDependents,
 	registered map[string]struct{},
 	naming *namingPolicy,
+	repeatables map[string]struct{},
 ) (File, error) {
 	raw := sources[name]
 	base := path.Base(name)
@@ -762,8 +796,12 @@ func prepareFile(
 	revisionVersion := ""
 	hasVersion := false
 	atlasFormat := false
-	repeatable := false
-	if parsed, parseErr := parseKnownMigrationName(base, dirFormat); parseErr == nil {
+	// A repeatable migration of the Ptah format is not a version, so it is not
+	// read with the version parsers, one of which takes R__<name>.sql for the
+	// Atlas version "R".
+	_, ptahRepeatable := repeatables[name]
+	repeatable := ptahRepeatable
+	if parsed, parseErr := parseKnownMigrationName(base, dirFormat); parseErr == nil && !ptahRepeatable {
 		direction = parsed.Direction
 		version = parsed.Version
 		revisionVersion = parsed.RevisionVersion()
@@ -780,14 +818,14 @@ func prepareFile(
 		Version:         version,
 		RevisionVersion: revisionVersion,
 		Repeatable:      repeatable,
-		Selected:        selectionIncludes(selection, version, revisionVersion, hasVersion),
+		Selected:        selectionIncludes(selection, name, version, revisionVersion, hasVersion, repeatables),
 		Direction:       direction,
 		// The migrator executes whatever its parser classifies as up, so
 		// lint must follow it; the suffix check keeps hazard scanning for
 		// .up.sql files whose version prefix is malformed.
-		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql"),
+		IsUp:           direction == "up" || strings.HasSuffix(base, ".up.sql") || ptahRepeatable,
 		IsDown:         direction == "down" || strings.HasSuffix(base, ".down.sql"),
-		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
+		WellFormedName: strictNameRe.MatchString(base) || atlasFormat || ptahRepeatable,
 		compatibility:  compatibility,
 		dialect:        dialect,
 		registered:     registered,
@@ -1009,9 +1047,19 @@ func unparsedReason(file *File, sql, dialect string, scope UnparsedScope) string
 	return err.Error()
 }
 
-func selectionIncludes(selection VersionSelection, version int64, revisionVersion string, hasVersion bool) bool {
+func selectionIncludes(
+	selection VersionSelection,
+	name string,
+	version int64,
+	revisionVersion string,
+	hasVersion bool,
+	repeatables map[string]struct{},
+) bool {
 	if !selection.Restricted {
 		return true
+	}
+	if _, ok := repeatables[name]; ok {
+		return slices.Contains(selection.Repeatables, name)
 	}
 	if len(selection.VersionKeys) > 0 {
 		return revisionVersion != "" && slices.Contains(selection.VersionKeys, revisionVersion)

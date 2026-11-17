@@ -1242,7 +1242,9 @@ func migrationFormRules() []Rule {
 			Title:    "missing down migration",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
-				if !file.IsUp || file.HasPair {
+				// A repeatable migration has no down file: a rollback refuses a
+				// database that recorded one.
+				if !file.IsUp || file.HasPair || file.Repeatable {
 					return nil
 				}
 				return []Finding{{

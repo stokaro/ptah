@@ -37,7 +37,7 @@ func TestAnalyzeWithPolicy_TransactionOwnerDecidesTX201(t *testing.T) {
 			policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "postgres")
 			c.Assert(err, qt.IsNil)
 
-			findings, err := migrationlintgate.AnalyzeWithPolicy(c.Context(), builtintest.Runtime(), fsys, []int64{1},
+			findings, err := migrationlintgate.AnalyzeWithPolicy(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}},
 				policy.WithTransactionOwner(test.owner), "")
 
 			c.Assert(err, qt.IsNil)

@@ -149,7 +149,8 @@ type MigrationPlan struct {
 
 // PreMigrationHook runs after the migrator has acquired its migration lock and
 // selected the final migration plan, but before it changes schema or revision
-// state.
+// state. It runs for a plan that applies a versioned migration or runs a
+// repeatable one, and not for a plan that selects neither.
 type PreMigrationHook func(ctx context.Context, plan MigrationPlan) error
 
 // MigrationPlanObserver sees the final migration plan while the migration lock
@@ -2455,6 +2456,7 @@ func notifyMigrationPlanObserver(ctx context.Context, observer MigrationPlanObse
 	}
 	plan.Versions = slices.Clone(plan.Versions)
 	plan.VersionKeys = slices.Clone(plan.VersionKeys)
+	plan.Repeatables = slices.Clone(plan.Repeatables)
 	plan.Inputs = cloneMigrationInputs(plan.Inputs)
 	observer(ctx, plan)
 }
@@ -2493,16 +2495,21 @@ func runMigrationPlanGuard(ctx context.Context, guard MigrationPlanGuard, plan M
 	}
 	plan.Versions = slices.Clone(plan.Versions)
 	plan.VersionKeys = slices.Clone(plan.VersionKeys)
+	plan.Repeatables = slices.Clone(plan.Repeatables)
 	plan.Inputs = cloneMigrationInputs(plan.Inputs)
 	return guard(ctx, plan)
 }
 
+// runPreMigrationHook runs hook over a plan that changes something: one that
+// applies a versioned migration, or runs a repeatable one, which changes the
+// schema as much.
 func runPreMigrationHook(ctx context.Context, hook PreMigrationHook, plan MigrationPlan) error {
-	if hook == nil || len(plan.Versions) == 0 {
+	if hook == nil || len(plan.Versions) == 0 && len(plan.Repeatables) == 0 {
 		return nil
 	}
 	plan.Versions = slices.Clone(plan.Versions)
 	plan.VersionKeys = slices.Clone(plan.VersionKeys)
+	plan.Repeatables = slices.Clone(plan.Repeatables)
 	plan.Inputs = cloneMigrationInputs(plan.Inputs)
 	return hook(ctx, plan)
 }

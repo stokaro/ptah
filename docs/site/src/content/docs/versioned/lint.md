@@ -486,8 +486,9 @@ Destructive statements require explicit policy at two points:
 - **At generation**, `plan`/`generate --check-destructive` refuse to write
   destructive SQL without `--allow-destructive` — see
   [Generate migrations](../generate/).
-- **At apply**, `ptah migrations up` refuses pending migrations that contain
-  destructive statements (exit `2`):
+- **At apply**, `ptah migrations up` refuses pending migrations, and
+  [repeatable ones](../repeatable/), that contain destructive statements (exit
+  `2`):
 
 ```text
 error: error running migrations: pending migrations contain destructive statements; rerun with --allow-destructive after review:
@@ -521,10 +522,10 @@ or execution. The families are the ones on
 
 Naming a family member rather than the exact engine is accepted because it
 does not change the analysis: every built-in MySQL-family rule applies to both
-`mysql` and `mariadb`, and the scanner treats them identically. Note the one
+`mysql` and `mariadb`, and the scanner treats them identically. The one
 asymmetry inside the PostgreSQL family: the `PG` and `TX` rules apply to
 PostgreSQL only, except where a rule was measured on the other engines, which
-today is `PG303` on CockroachDB and YugabyteDB. So those databases
+is `PG303` on CockroachDB and YugabyteDB. So those databases
 run the dialect-independent families plus that measured set — whether or not
 a policy file exists, and regardless of what it declares.
 
