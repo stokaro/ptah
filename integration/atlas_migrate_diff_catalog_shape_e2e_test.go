@@ -186,6 +186,14 @@ var catalogForwardBytesCases = []struct {
 		"CREATE TABLE t (id int PRIMARY KEY, a int, b int, c text);\n",
 		"CREATE TABLE t (id int PRIMARY KEY, a bigint, c text DEFAULT 'x', d int, e int, CONSTRAINT ck CHECK (d > 0));\n",
 	}},
+	{name: "a new table with comments on itself, a column and its indexes", steps: []string{
+		"CREATE TABLE other (id int PRIMARY KEY);\n",
+		"CREATE TABLE other (id int PRIMARY KEY);\n" +
+			"CREATE TABLE t (id int PRIMARY KEY, a text, b text);\n" +
+			"COMMENT ON TABLE t IS 'tt';\nCOMMENT ON COLUMN t.a IS 'aa';\n" +
+			"CREATE INDEX t_a ON t (a);\nCREATE INDEX t_b ON t (b);\n" +
+			"COMMENT ON INDEX t_a IS 'ia';\nCOMMENT ON INDEX t_b IS 'ib';\n",
+	}},
 }
 
 // TestCompatMigrateDiffCatalogShapeE2E_MatchesTheBinarysForwardBytes compares the forward

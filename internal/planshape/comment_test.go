@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemacapture"
+	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planshape"
 )
@@ -186,4 +187,154 @@ func TestApply_KeepsANewTablesCommentsInItsTableOnMySQL_HappyPath(t *testing.T) 
 		"  PRIMARY KEY (`id`)\n"+
 		") COMMENT='tbb';\n\n"+
 		"CREATE INDEX `b_title` ON `b` (`title`);\n")
+}
+
+// commentedTable is a table t the plan creates, with a comment on the table and on
+// its column a.
+func commentedTable() *ast.CreateTableNode {
+	table := ast.NewCreateTable("t").AddColumn(key("id")).
+		AddColumn(nullable("a", "text").SetComment("aa")).AddColumn(nullable("b", "text"))
+	table.Comment = "tt"
+	return table
+}
+
+// commentedIndex is an index of t on column, with a comment.
+func commentedIndex(name, column, comment string) *ast.IndexNode {
+	index := ast.NewIndex(name, "t", column)
+	index.Comment = comment
+	return index
+}
+
+// TestApply_WritesANewTablesIndexCommentsAfterItsOwn_HappyPath pins the comments of
+// a new table's indexes where the community binary writes them on PostgreSQL: after
+// the table's indexes and the comments of the table and its columns, in the order
+// the plan creates the indexes. The PostgreSQL renderer writes an index's comment
+// right after its CREATE INDEX. The planner's indexes keep their comments.
+func TestApply_WritesANewTablesIndexCommentsAfterItsOwn_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	nodes := []ast.Node{commentedTable(), commentedIndex("t_a", "a", "ia"), commentedIndex("t_b", "b", "ib")}
+
+	got := planshape.Apply(platform.Postgres, slices.Clone(nodes), nil)
+
+	c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, got...)), qt.Equals, `CREATE TABLE "t" (
+  "id" integer NOT NULL,
+  "a" text NULL,
+  "b" text NULL,
+  PRIMARY KEY ("id")
+);
+
+CREATE INDEX "t_a" ON "t" ("a");
+CREATE INDEX "t_b" ON "t" ("b");
+COMMENT ON TABLE "t" IS 'tt';
+
+COMMENT ON COLUMN "t"."a" IS 'aa';
+
+COMMENT ON INDEX "t_a" IS 'ia';
+COMMENT ON INDEX "t_b" IS 'ib';
+`)
+	c.Assert(nodes[1].(*ast.IndexNode).Comment, qt.Equals, "ia")
+}
+
+// TestApply_WritesANewTablesCommentsAfterAnIndexThatWaits_HappyPath pins the
+// comments of a new table whose index has to wait for a view the plan creates after
+// the table: they follow the index, after the view and the next table, rather than
+// the CREATE TABLE.
+func TestApply_WritesANewTablesCommentsAfterAnIndexThatWaits_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	other := ast.NewCreateTable("u").AddColumn(key("id"))
+	view := &ast.CreateViewNode{Name: "v", Body: "SELECT id, a FROM t"}
+
+	got := planshape.Apply(platform.Postgres, []ast.Node{commentedTable(), other, view, commentedIndex("t_a", "a", "ia")}, nil)
+
+	c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, got...)), qt.Equals, `CREATE TABLE "t" (
+  "id" integer NOT NULL,
+  "a" text NULL,
+  "b" text NULL,
+  PRIMARY KEY ("id")
+);
+
+CREATE TABLE "u" (
+  "id" integer NOT NULL,
+  PRIMARY KEY ("id")
+);
+
+CREATE VIEW "v" AS
+SELECT id, a FROM t
+;
+CREATE INDEX "t_a" ON "t" ("a");
+COMMENT ON TABLE "t" IS 'tt';
+
+COMMENT ON COLUMN "t"."a" IS 'aa';
+
+COMMENT ON INDEX "t_a" IS 'ia';
+`)
+}
+
+// TestApply_WritesANewTablesCommentsBeforeAnotherTablesIndex_HappyPath pins the
+// comments of a new table followed by another table's index. A function that reads
+// the first table stands between the two tables, so the first table's index waits
+// until after the second table: the second table's comments follow its CREATE
+// TABLE, and the first table's index comes after them.
+func TestApply_WritesANewTablesCommentsBeforeAnotherTablesIndex_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	first := ast.NewCreateTable("a").AddColumn(key("id")).AddColumn(nullable("n", "text"))
+	reader := ast.NewCreateFunction("a_count").SetReturns("bigint")
+	reader.Body = "SELECT count(*) FROM a"
+	reader.Language = "sql"
+
+	second := commentedTable().AddColumn(nullable("code", "bigint").SetDefaultExpression("a_count()"))
+
+	got := planshape.Apply(platform.Postgres, []ast.Node{first, reader, second, ast.NewIndex("a_n", "a", "n")},
+		&difftypes.SchemaDiff{FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "a_count"}}}})
+
+	c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, got...)), qt.Equals, `CREATE TABLE "a" (
+  "id" integer NOT NULL,
+  "n" text NULL,
+  PRIMARY KEY ("id")
+);
+
+CREATE FUNCTION "a_count"() RETURNS bigint AS $$
+SELECT count(*) FROM a
+$$
+LANGUAGE sql;
+CREATE TABLE "t" (
+  "id" integer NOT NULL,
+  "a" text NULL,
+  "b" text NULL,
+  "code" bigint NULL DEFAULT a_count(),
+  PRIMARY KEY ("id")
+);
+
+COMMENT ON TABLE "t" IS 'tt';
+
+COMMENT ON COLUMN "t"."a" IS 'aa';
+
+CREATE INDEX "a_n" ON "a" ("n");
+`)
+}
+
+// TestApply_KeepsANewTablesIndexAheadOfAnotherTablesConcurrentIndex_HappyPath pins
+// the index of a new table that the planner writes after another table's index. The
+// other index is built concurrently, so it ends the run the pass arranges, and only
+// the index found to be the new table's moves ahead of it with the table's comments.
+func TestApply_KeepsANewTablesIndexAheadOfAnotherTablesConcurrentIndex_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	table := ast.NewCreateTable("t").AddColumn(key("id")).AddColumn(nullable("a", "text"))
+	table.Comment = "tt"
+	other := ast.NewIndex("b_x", "b", "x")
+	other.Concurrently = true
+
+	got := planshape.Apply(platform.Postgres, []ast.Node{table, other, ast.NewIndex("t_a", "t", "a")}, nil)
+
+	c.Assert(must.Must(builtin.RenderSQL(platform.Postgres, got...)), qt.Equals, `CREATE TABLE "t" (
+  "id" integer NOT NULL,
+  "a" text NULL,
+  PRIMARY KEY ("id")
+);
+
+CREATE INDEX "t_a" ON "t" ("a");
+COMMENT ON TABLE "t" IS 'tt';
+
+CREATE INDEX CONCURRENTLY "b_x" ON "b" ("x");
+`)
 }

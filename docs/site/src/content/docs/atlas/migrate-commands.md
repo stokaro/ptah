@@ -1693,12 +1693,19 @@ binary's order:
 1. The tables the plan changes, by name, a table after the one whose change it needs.
    Each is its index drops, its `ALTER TABLE` and its new indexes. On PostgreSQL its
    comments follow: the table's own, then its columns' in the order the table holds
-   them.
+   them. A new index keeps its comment right after its `CREATE INDEX`.
 2. The new tables with their indexes. A table comes after the new tables its foreign
    keys need, and by name among the ones that need the same number. On PostgreSQL a
-   table's comments follow its indexes, in the same order as on a changed table.
+   table's comments follow its indexes: the table's own and its columns', as on a
+   changed table, then its indexes' in the order the plan creates them. An index that
+   waits for a view or a routine takes the comments with it.
 3. The foreign keys that wait for a new table.
 4. The tables the plan drops.
+
+The comments take that place in the up file of `migrate diff` and in the plan
+`schema diff` and `schema apply` print and run. A down file that recreates a table
+the up file drops writes each comment right after the statement it describes, and so
+do `schema plan` and the native verbs.
 
 On PostgreSQL, MySQL and MariaDB one `ALTER TABLE` holds the changes to a table: a
 dropped primary key, the checks, the columns by position, an added primary key, the
