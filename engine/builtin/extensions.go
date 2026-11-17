@@ -12,6 +12,7 @@ import (
 	"ptah.run/dialect/clickhouse/chrender"
 	"ptah.run/dialect/cockroachdb/crdbrender"
 	"ptah.run/dialect/mysql/mysqlrender"
+	"ptah.run/dialect/postgres/pgrolerender"
 	"ptah.run/dialect/postgres/pgtablerender"
 	"ptah.run/dialect/timescaledb/tsrender"
 	"ptah.run/engine/builtin/internal/dialects/postgres"
@@ -26,7 +27,7 @@ import (
 // renderer built the same handlers for every statement of a plan.
 var (
 	postgresRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
-		return renderer.NewExtensions(postgresFamilyHandlers(pgtablerender.Handlers()...)...)
+		return renderer.NewExtensions(postgresFamilyHandlers(slices.Concat(pgtablerender.Handlers(), pgrolerender.Handlers())...)...)
 	})
 	postgresFamilyRegistry = sync.OnceValues(func() (renderer.Extensions, error) {
 		return renderer.NewExtensions(postgresFamilyHandlers(slices.Concat(pgtablerender.DeleteColumnsHandlers(), pgtablerender.PartitionMoveHandlers())...)...)
@@ -79,14 +80,17 @@ type renderOwners struct {
 	// lowerTableFacets turns the owned facets a CREATE TABLE cannot carry into
 	// the statements after it; nil means none.
 	lowerTableFacets func(table string, facets schemaext.Facets) ([]ast.ExtensionPayload, schemaext.Facets, error)
+	// lowerRoleFacets turns the owned facets a CREATE ROLE cannot carry into
+	// the statements after it; nil means none.
+	lowerRoleFacets func(role string, facets schemaext.Facets) ([]ast.ExtensionPayload, schemaext.Facets, error)
 }
 
 // ownersFor selects a target's feature owners. Neutral contracts and
 // non-owning backends know no payload types. TimescaleDB and row security are
 // owners on every PostgreSQL-family target, and their renderers refuse or skip
-// what a target without the capability cannot hold; row-level TTL is
-// CockroachDB's alone, and the security policy and the extended property SQL
-// Server's. The synonym owner serves SQL
+// what a target without the capability cannot hold; role settings are
+// PostgreSQL's alone, row-level TTL CockroachDB's, and the security policy
+// and the extended property SQL Server's. The synonym owner serves SQL
 // Server and Oracle, and the MySQL owner's index replacement MySQL and
 // MariaDB.
 func ownersFor(dialect string) renderOwners {
@@ -102,7 +106,8 @@ func ownersFor(dialect string) renderOwners {
 			lowerTableFacets: lowerPostgresFamilyFacets}
 	case platform.Postgres:
 		return renderOwners{extensions: postgresRegistry, tableConstraints: pgtablerender.SourceExclusions, tableObjects: pgtablerender.CreateTableExclusionStatements, tableStorage: pgtablerender.CreateTablePartition,
-			tableDefinition: pgtablerender.CreateTablePartitionOf, tablePrefix: pgtablerender.CreateTablePrefix, lowerTableFacets: lowerPostgresFamilyFacets}
+			tableDefinition: pgtablerender.CreateTablePartitionOf, tablePrefix: pgtablerender.CreateTablePrefix, lowerTableFacets: lowerPostgresFamilyFacets,
+			lowerRoleFacets: pgrolerender.LowerRoleFacets}
 	case platform.YugabyteDB:
 		return renderOwners{extensions: postgresFamilyRegistry, tableStorage: pgtablerender.CreateTablePartition, tableDefinition: pgtablerender.CreateTablePartitionOf,
 			lowerTableFacets: lowerPostgresFamilyFacets}
@@ -134,7 +139,7 @@ func postgresOwners(dialect string) (postgres.Owners, error) {
 		Extensions: registry, TableObjects: owners.tableObjects,
 		TableConstraints: owners.tableConstraints, TableStorage: owners.tableStorage, TableDefinition: owners.tableDefinition,
 		ForeignKeyDelete: pgtablerender.DeleteColumnsSuffix,
-		TablePrefix:      owners.tablePrefix, LowerTableFacets: owners.lowerTableFacets,
+		TablePrefix:      owners.tablePrefix, LowerTableFacets: owners.lowerTableFacets, LowerRoleFacets: owners.lowerRoleFacets,
 	}, nil
 }
 

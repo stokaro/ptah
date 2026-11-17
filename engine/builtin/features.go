@@ -15,6 +15,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlrender"
+	"ptah.run/dialect/postgres/pgrole"
 	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/postgres/pgtablerender"
@@ -399,6 +400,26 @@ func prepareRoutineFacets(dialect string, facets schemaext.Facets) (schemaext.Fa
 	return projected, nil
 }
 
+// prepareRoleFacets projects a role's facets onto the target. PostgreSQL
+// interprets the role's configuration settings; any other active value, and
+// every value on another target, is refused rather than rendered without it.
+func prepareRoleFacets(dialect string, facets schemaext.Facets) (schemaext.Facets, error) {
+	projected, err := projectFacets(dialect, facets)
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	if !pgrole.SupportsSettings(dialect) {
+		return refuseActiveFacets(dialect, projected)
+	}
+	if _, _, err := pgrole.SettingsOf(projected); err != nil {
+		return schemaext.Facets{}, err
+	}
+	if _, err := refuseActiveFacets(dialect, projected.Without(pgrole.SettingsKind)); err != nil {
+		return schemaext.Facets{}, err
+	}
+	return projected, nil
+}
+
 func validateDeclaredFacets(dialect string, database *schemamodel.Database) error {
 	owners := make(map[*schemaext.Facets]func(string, schemaext.Facets) (schemaext.Facets, error),
 		len(database.Tables)+len(database.Indexes)+len(database.MaterializedViews))
@@ -420,6 +441,9 @@ func validateDeclaredFacets(dialect string, database *schemamodel.Database) erro
 	}
 	for i := range database.Functions {
 		owners[&database.Functions[i].Facets] = prepareRoutineFacets
+	}
+	for i := range database.Roles {
+		owners[&database.Roles[i].Facets] = prepareRoleFacets
 	}
 	for _, facets := range database.FacetSlots() {
 		prepare := prepareFacets

@@ -11,6 +11,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/postgres/pgrole"
 	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
@@ -55,6 +56,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: pgtype.Owner, codecs: pgtype.Codecs()},
 		{owner: oratype.Owner, codecs: oratype.Codecs()},
 		{owner: pgroutine.PropertiesOwner, codecs: pgroutine.PropertiesCodecs()},
+		{owner: pgrole.Owner, codecs: pgrole.SettingsCodecs()},
 		{owner: pgtable.Owner, codecs: pgtable.PersistenceCodecs()},
 		{owner: pgtable.Owner, codecs: pgtable.PartitionCodecs()},
 		{owner: pgtable.Owner, codecs: pgtable.PartitionMemberCodecs()},

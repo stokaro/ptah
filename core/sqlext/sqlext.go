@@ -217,6 +217,17 @@ type TableFacets struct {
 	Facets schemaext.Facets
 }
 
+// RoleFacets are an owner's facets of a common role a statement sets, such as
+// the configuration defaults `ALTER ROLE r SET work_mem = '64MB'` gives r.
+type RoleFacets struct {
+	// Name is the role's name as the statement writes it, quoted where the
+	// statement quotes it.
+	Name string
+	// Facets contains at least one setting of the role. Each setting has one
+	// of the extension's Facets kinds.
+	Facets schemaext.Facets
+}
+
 // TableDeclaration is a table an owner's statement declares and defines by
 // the owner's facets alone, with no column list, such as a SQLite virtual
 // table, which its module defines.
@@ -274,6 +285,13 @@ type Value struct {
 	// wrapping [ErrUndeclared]. Only a [Statement] value carries it, beside
 	// the owner's statement.
 	TableFacets *TableFacets
+	// RoleFacets sets the owner's facets of a role the load declares, such
+	// as the settings `ALTER ROLE r SET ...` gives r. The reader merges them
+	// into the role, refuses a facet the role already holds, and refuses a
+	// role the load does not declare with an error wrapping [ErrUndeclared].
+	// Only a [Statement] value carries it, beside the owner's statement and
+	// never beside a table.
+	RoleFacets *RoleFacets
 	// TableReferences name tables the statement requires the load to declare
 	// at this position, even when another claim carries its final facets.
 	// Only a statement takes them; syntax-only readers do not resolve them.
@@ -281,7 +299,8 @@ type Value struct {
 	// DescribedBy is the one-based index in Request.Claims of a later
 	// statement claim that supplies this statement's combined declaration.
 	// Zero means this value describes itself. The referenced value must
-	// carry objects, replacements or table facets, and may not defer again.
+	// carry objects, replacements, table facets or role facets, and may not
+	// defer again.
 	// Syntax-only readers keep each statement's own operation payload.
 	DescribedBy int
 	// UnmodeledReason explains why a valid statement cannot describe a

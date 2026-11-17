@@ -449,7 +449,7 @@ func (p *Parser) claimOwnerStatement() (ast.Node, bool) {
 			return nil
 		}
 		statement.Payload = value.Statement
-		note.Objects, note.Replaces, note.TableFacets = value.Objects, value.Replaces, value.TableFacets
+		note.Objects, note.Replaces, note.TableFacets, note.RoleFacets = value.Objects, value.Replaces, value.TableFacets, value.RoleFacets
 		note.TableReferences, note.UnmodeledReason = value.TableReferences, value.UnmodeledReason
 		note.DescribedBy = value.DescribedBy
 		return nil
@@ -560,6 +560,9 @@ type OwnerStatement struct {
 	// TableFacets are the owner's facets of a declared table the statement
 	// sets; see [sqlext.Value.TableFacets].
 	TableFacets *sqlext.TableFacets
+	// RoleFacets are the owner's facets of a declared role the statement
+	// sets; see [sqlext.Value.RoleFacets].
+	RoleFacets *sqlext.RoleFacets
 	// Text is the statement as the document writes it, without the
 	// semicolon that ends it, so a refusal can name it.
 	Text string

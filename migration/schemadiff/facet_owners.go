@@ -83,6 +83,9 @@ func declaredFacetSlots(db *schemamodel.Database, target string, semantics ident
 		function := &db.Functions[i]
 		slots = append(slots, facetOwnerSlot{routineidentity.Subject(builder, function.Kind, function.Name, function.Parameters), &function.Facets})
 	}
+	for i := range db.Roles {
+		slots = append(slots, facetOwnerSlot{builder.Role(db.Roles[i].Name), &db.Roles[i].Facets})
+	}
 	return slots, nil
 }
 
@@ -211,6 +214,15 @@ func observedFacetSlots(db *catalog.Database, target string, semantics identifie
 	for i := range db.Functions {
 		function := &db.Functions[i]
 		slots = append(slots, facetOwnerSlot{routineidentity.Subject(builder, function.Kind, function.QualifiedName(), function.Parameters), &function.Facets})
+	}
+	// A role the read leaves out of its description still exists, and the
+	// role comparison treats a declaration of it as present. Its settings are
+	// owned the same way, or a declared role no inspected object uses would
+	// have its settings neither compared nor reported.
+	for _, roles := range [][]catalog.Role{db.Roles, db.RolesOutOfScope} {
+		for i := range roles {
+			slots = append(slots, facetOwnerSlot{builder.Role(roles[i].Name), &roles[i].Facets})
+		}
 	}
 	return slots
 }

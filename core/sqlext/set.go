@@ -558,18 +558,22 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 	if value.Declined {
 		return checkDeclined(extension, claim, value)
 	}
-	var tableFacets schemaext.Facets
+	var tableFacets, roleFacets schemaext.Facets
 	if value.TableFacets != nil {
 		tableFacets = value.TableFacets.Facets
 	}
-	for _, kind := range slices.Concat(value.Facets.Kinds(), tableFacets.Kinds()) {
+	if value.RoleFacets != nil {
+		roleFacets = value.RoleFacets.Facets
+	}
+	for _, kind := range slices.Concat(value.Facets.Kinds(), tableFacets.Kinds(), roleFacets.Kinds()) {
 		if !slices.Contains(extension.Facets, kind) {
 			return fmt.Errorf("%w: SQL parser of %s answered a facet of kind %q, which its extension does not declare",
 				schemaext.ErrInvalidValue, extension.Owner, kind)
 		}
 	}
 	if claim.Site != Statement {
-		if value.Statement != nil || value.Table != nil || value.TableFacets != nil || (!namesObjects(claim.Site) && len(value.Objects) > 0) || len(value.Replaces) > 0 ||
+		if value.Statement != nil || value.Table != nil || value.TableFacets != nil || value.RoleFacets != nil ||
+			(!namesObjects(claim.Site) && len(value.Objects) > 0) || len(value.Replaces) > 0 ||
 			hasStatementRequirements(value) {
 			return fmt.Errorf("%w: SQL parser of %s answered its %s claim %q with a statement's value",
 				schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
@@ -602,7 +606,7 @@ func checkDeclined(extension Extension, claim Claim, value Value) error {
 			schemaext.ErrInvalidValue, extension.Owner, claim.Site, claim.Pattern)
 	}
 	if value.Index != nil || value.Constraint != nil || value.Operation != nil || !value.Facets.IsZero() || value.Statement != nil || value.Table != nil ||
-		value.TableFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 || hasStatementRequirements(value) {
+		value.TableFacets != nil || value.RoleFacets != nil || len(value.Objects) > 0 || len(value.Replaces) > 0 || hasStatementRequirements(value) {
 		return fmt.Errorf("%w: SQL parser of %s declined its statement claim %q and answered a value beside it",
 			schemaext.ErrInvalidValue, extension.Owner, claim.Pattern)
 	}
@@ -611,8 +615,8 @@ func checkDeclined(extension Extension, claim Claim, value Value) error {
 
 // checkStatementValue refuses a statement's value that carries neither the
 // owner's statement nor a table, or both, a table without a name or with
-// objects or another table's facets beside it, and table facets that name no
-// table or contain no facets.
+// objects, another table's facets or a role's facets beside it, and table or
+// role facets that name no table or role or contain no facets.
 func checkStatementValue(extension Extension, claim Claim, value Value) error {
 	var problem string
 	switch {
@@ -628,6 +632,8 @@ func checkStatementValue(extension Extension, claim Claim, value Value) error {
 		problem = "a table and objects beside it"
 	case value.Table != nil && value.TableFacets != nil:
 		problem = "a table and another table's facets"
+	case value.Table != nil && value.RoleFacets != nil:
+		problem = "a table and a role's facets"
 	case value.Table != nil && (hasStatementRequirements(value)):
 		problem = "a table and statement requirements"
 	case slices.ContainsFunc(value.TableReferences, func(name string) bool { return strings.TrimSpace(name) == "" }):
@@ -636,6 +642,10 @@ func checkStatementValue(extension Extension, claim Claim, value Value) error {
 		problem = "table facets without a table name"
 	case value.TableFacets != nil && value.TableFacets.Facets.IsZero():
 		problem = "table facets without a facet"
+	case value.RoleFacets != nil && strings.TrimSpace(value.RoleFacets.Name) == "":
+		problem = "role facets without a role name"
+	case value.RoleFacets != nil && value.RoleFacets.Facets.IsZero():
+		problem = "role facets without a facet"
 	default:
 		return nil
 	}
@@ -690,7 +700,7 @@ func checkCombinedDeclarations(extension Extension, claims []Claim, values []Val
 			return fmt.Errorf("%w: SQL parser of %s claim %q must be described by a later statement claim", schemaext.ErrInvalidValue, extension.Owner, claims[i].Pattern)
 		}
 		described := values[target-1]
-		if described.DescribedBy != 0 || (len(described.Objects) == 0 && len(described.Replaces) == 0 && described.TableFacets == nil) {
+		if described.DescribedBy != 0 || (len(described.Objects) == 0 && len(described.Replaces) == 0 && described.TableFacets == nil && described.RoleFacets == nil) {
 			return fmt.Errorf("%w: SQL parser of %s claim %q refers to claim %d without its own model declaration", schemaext.ErrInvalidValue, extension.Owner, claims[i].Pattern, target)
 		}
 	}

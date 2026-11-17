@@ -5112,6 +5112,9 @@ func (r *Reader) readRoleManagedObjects(ctx context.Context, schema *catalog.Dat
 	if err := r.readRolesInto(ctx, schema, defaultACL); err != nil {
 		return err
 	}
+	if err := r.readRoleSettings(ctx, schema); err != nil {
+		return err
+	}
 
 	grants, err := r.readGrants(ctx)
 	if err != nil {

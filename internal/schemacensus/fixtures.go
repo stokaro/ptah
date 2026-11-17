@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/dialect/postgres/pgrole"
 	"ptah.run/dialect/postgres/pgroutine"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/sqlite/sqlitetable"
@@ -165,6 +166,7 @@ func corpus() []Fixture {
 		{Name: "oratype-types", Schema: ownedOracleTypeFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
 		{Name: "role", Schema: roleFixture()},
+		{Name: "role-settings", Schema: roleSettingsFixture()},
 		{Name: "role-cockroachdb", Schema: cockroachRoleFixture()},
 		{Name: "role-group", Schema: roleGroupFixture()},
 		{Name: "role-membership", Schema: roleMembershipFixture()},
@@ -1410,6 +1412,20 @@ func roleFixture() schemamodel.Database {
 		StructName: "RO", Name: "app_reader", Login: true, Password: "s3cret",
 		Superuser: true, CreateDB: true, CreateRole: true, Inherit: true, Replication: true,
 		Comment: "reader", Dialects: []string{"postgres", "yugabytedb"},
+	}}
+	return db
+}
+
+// roleSettingsFixture declares the defaults a PostgreSQL role holds in every
+// database: a value, a list setting and a reset, which a new role needs no
+// statement for.
+func roleSettingsFixture() schemamodel.Database {
+	db := oneTable("T", schemamodel.Table{Name: "t"})
+	db.Roles = []schemamodel.Role{{
+		StructName: "RO", Name: "app_reader", Login: true, Inherit: true, Dialects: []string{"postgres"},
+		Facets: must.Must(pgrole.WithSettings(schemaext.Facets{}, []pgrole.Setting{
+			{Name: "search_path", Value: "'$user', public"}, {Name: "statement_timeout", Value: "'30s'"}, {Name: "work_mem", Reset: true},
+		})),
 	}}
 	return db
 }
