@@ -70,13 +70,19 @@ func TestSchemaInspectReadsAMySQLServerE2E(t *testing.T) {
 			native := runPtahNative(c, "schema", "inspect", "--db-url", server.url,
 				"--schemas", server.first+","+server.second, "--format", "sql")
 
-			for _, output := range []string{compat, native} {
-				c.Assert(output, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `"+server.first+"`")
-				c.Assert(output, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `"+server.second+"`")
-				c.Assert(output, qt.Contains, "CREATE TABLE `"+server.first+"`.`t`")
-				c.Assert(output, qt.Contains, "CREATE TABLE `"+server.second+"`.`x`")
-				c.Assert(output, qt.Contains, "REFERENCES `"+server.first+"`.`t`(`id`)")
-				c.Assert(output, qt.Contains, "REFERENCES `"+server.second+"`.`u`(`id`)")
+			// The compat `sql` helper writes the plan that creates the
+			// schema, in the statement style of `schema diff`, which puts a
+			// space before a key's columns; native inspect renders the schema.
+			for _, row := range []struct{ output, keyColumns string }{
+				{output: compat, keyColumns: " (`id`)"},
+				{output: native, keyColumns: "(`id`)"},
+			} {
+				c.Assert(row.output, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `"+server.first+"`")
+				c.Assert(row.output, qt.Contains, "CREATE SCHEMA IF NOT EXISTS `"+server.second+"`")
+				c.Assert(row.output, qt.Contains, "CREATE TABLE `"+server.first+"`.`t`")
+				c.Assert(row.output, qt.Contains, "CREATE TABLE `"+server.second+"`.`x`")
+				c.Assert(row.output, qt.Contains, "REFERENCES `"+server.first+"`.`t`"+row.keyColumns)
+				c.Assert(row.output, qt.Contains, "REFERENCES `"+server.second+"`.`u`"+row.keyColumns)
 			}
 			c.Assert(hcl, qt.Contains, `schema "`+server.first+`" {`)
 			c.Assert(hcl, qt.Contains, `schema "`+server.second+`" {`)
