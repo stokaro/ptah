@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/sqlutil"
+	"ptah.run/migration/migrationfile"
 )
 
 // ErrRepeatableNotRecorded reports an identity the repeatable migration record
@@ -23,9 +24,10 @@ type RemoveRepeatableRecordOptions struct {
 	// Identity is the repeatable migration whose row is deleted: the part of
 	// its file name between R__ and .sql.
 	Identity string
-	// Force deletes a row whose identity a file of the directory still
-	// carries, or might carry, when the migrator's provider does not load
-	// repeatable migrations. The next up run then executes that file as new.
+	// Force deletes the row even when a file of the directory still carries
+	// the identity, and also when the migrator's provider does not load
+	// repeatable migrations, which leaves it unable to tell whether a file
+	// does. The next up run then executes such a file as new.
 	Force bool
 }
 
@@ -43,14 +45,29 @@ type RemoveRepeatableRecordOptions struct {
 // migrations returns [*RepeatableMigrationsUnsupportedError] before it
 // connects to the record. The read and the delete hold the migration lock.
 //
-// It returns what the record said of the row before it was deleted, with
-// [RepeatableRecord.Orphaned] set when no file carries the identity.
+// An empty identity, or one no repeatable file name could carry (see
+// [migrationfile.ParseRepeatableFileName]), returns an error that wraps no
+// sentinel, before anything is read.
+//
+// The migration lock is awaited under ctx and the migrator's lock timeout (see
+// [Migrator.WithMigrationLockTimeout]). A ctx canceled during the wait
+// abandons it and returns an error wrapping ctx's error; a wait that outlasts
+// the timeout returns an error wrapping [*MigrationLockTimeoutError]. Either
+// way nothing is deleted. A lock lost or not released after the delete is an
+// error too, although the row is gone by then.
+//
+// On success it returns what the record said of the row before it was deleted,
+// with [RepeatableRecord.Orphaned] set when no file carries the identity. The
+// returned record is nil whenever the error is not nil.
 func (m *Migrator) RemoveRepeatableRecord(
 	ctx context.Context,
 	opts RemoveRepeatableRecordOptions,
 ) (*RepeatableRecord, error) {
 	if opts.Identity == "" {
 		return nil, errors.New("a repeatable migration identity is required")
+	}
+	if _, err := migrationfile.ParseRepeatableFileName(migrationfile.RepeatableFileName(opts.Identity)); err != nil {
+		return nil, fmt.Errorf("invalid repeatable migration identity %q: %w", opts.Identity, err)
 	}
 	if err := m.refuseRepeatablesHere(); err != nil {
 		return nil, err

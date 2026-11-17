@@ -12,6 +12,7 @@ import (
 	"ptah.run/config/projectconfig"
 	"ptah.run/core/lintext"
 	"ptah.run/dbschema"
+	"ptah.run/internal/cli/internal/cmdflags"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
@@ -106,13 +107,18 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Directory containing migration files (required)")
-	flags.StringVar(&opts.version, versionFlag, "", "Migration version to repair (required)")
+	flags.StringVar(&opts.version, versionFlag, "", "Migration version to repair; required unless --repeatable is given")
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.force, forceFlag, false, "Allow metadata-only repair: record an incomplete up migration applied without running SQL, "+
 		"or rewrite or create its revision row; with --repeatable, remove the row of a repeatable migration whose file is still in the directory")
 	flags.StringVar(&opts.resumeFrom, resumeFromFlag, "", "Execute the remaining statements of the body that failed, starting from this 1-based statement number. An up migration is then marked applied; a rollback's revision is removed")
 	flags.StringVar(&opts.repeatable, repeatableFlag, "", "Identity of a repeatable migration, the name between R__ and .sql, whose row to delete from the repeatable migration record instead of repairing a version")
+	// An identity names one row to delete, which is a choice for one command
+	// line rather than state an environment carries; a PTAH_REPEATABLE left
+	// set would also collide with a PTAH_VERSION meant for another repair.
+	// The flag was registered above, so the lookup cannot fail.
+	_ = cmdflags.DisableEnvBinding(flags, repeatableFlag)
 	dbcli.RegisterRunnerFlag(flags, &opts.runner)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
@@ -184,6 +190,9 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	}
 	if strings.TrimSpace(opts.migrationsDir) == "" {
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
+	}
+	if err := settleRepeatableSelection(cmd, opts); err != nil {
+		return err
 	}
 	target, err := parseRepairTarget(opts)
 	if err != nil {
@@ -293,6 +302,32 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	return nil
 }
 
+// settleRepeatableSelection withdraws a --version or --resume-from that
+// arrived from PTAH_VERSION or PTAH_RESUME_FROM once --repeatable is given.
+// --repeatable reads no variable, so it is always typed, and a typed choice
+// of the record row settles which repair this command line asks for: a
+// variable exported for a versioned repair would otherwise refuse it as a
+// request for two repairs, naming a flag the command line never carried.
+func settleRepeatableSelection(cmd *cobra.Command, opts *options) error {
+	if opts.repeatable == "" {
+		return nil
+	}
+	flags := cmd.Flags()
+	if _, fromEnv := cmdflags.AppliedEnvName(flags, versionFlag); fromEnv {
+		if err := cmdflags.WithdrawEnvValue(flags, versionFlag); err != nil {
+			return err
+		}
+		opts.version = ""
+	}
+	if _, fromEnv := cmdflags.AppliedEnvName(flags, resumeFromFlag); fromEnv {
+		if err := cmdflags.WithdrawEnvValue(flags, resumeFromFlag); err != nil {
+			return err
+		}
+		opts.resumeFrom = ""
+	}
+	return nil
+}
+
 // repairTarget is what one invocation repairs: the revision of a versioned
 // migration, or the record row of a repeatable one.
 type repairTarget struct {
@@ -346,9 +381,23 @@ func removeRepeatableRecord(cmd *cobra.Command, mig *migrator.Migrator, identity
 	if removed.Orphaned {
 		where = "no file of the directory carries it"
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Removed the record of repeatable migration %s, state %s; %s; no migration SQL ran\n",
-		identity, removed.State, where)
+	fmt.Fprintf(cmd.OutOrStdout(), "Removed the record of repeatable migration %s, state %s; %s; %sno migration SQL ran\n",
+		identity, removed.State, where, lastAttemptNote(removed))
 	return nil
+}
+
+// lastAttemptNote says what a removed row leaves unknown about the database:
+// an attempt with no outcome may have taken effect, and a failed one that ran
+// without a transaction may have taken effect in part. The row was the only
+// record of that, so the operator is told once more before it goes.
+func lastAttemptNote(record *migrator.RepeatableRecord) string {
+	switch {
+	case record.State == migrator.RepeatableStateRunning:
+		return "its last attempt recorded no outcome, so it may have taken effect; "
+	case record.State == migrator.RepeatableStateFailed && record.NoTransaction:
+		return "its last attempt failed without a transaction, so it may have taken effect in part; "
+	}
+	return ""
 }
 
 func parseResumeFrom(value string) (int, error) {

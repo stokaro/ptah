@@ -254,6 +254,11 @@ ptah migrations repair --db-url "$DATABASE_URL" --migrations-dir ./migrations --
 Repair holds the migration lock, runs no migration SQL, and refuses an identity
 the record has no row for. Without `--force` it also refuses one whose file is
 still in the directory, since the next up run would execute that file again.
+When the row records an attempt that failed without a transaction, or one with
+no outcome, the line that reports the removal says that attempt may have taken
+effect, so check what it left behind first. `--repeatable` reads no environment
+variable, and a `PTAH_VERSION` or `PTAH_RESUME_FROM` exported for a versioned
+repair is set aside when it is given.
 The same row can be deleted with SQL, naming the table as the refusal prints it:
 
 ```sql

@@ -502,3 +502,44 @@ func ExampleVerifyChecks() {
 	// failed: backfill covered every row
 	// verdict: failed
 }
+
+// ExampleMigrator_RemoveRepeatableRecord clears the record of a repeatable
+// migration whose file was deleted. The view it created stays, and so does its
+// row, which would refuse every rollback; removing the row runs no migration
+// SQL, and needs no Force because no file of the directory carries the
+// identity any more.
+func ExampleMigrator_RemoveRepeatableRecord() {
+	ctx := context.Background()
+	conn, cleanup := exampleSQLiteConnection()
+	defer cleanup()
+
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql":   &fstest.MapFile{Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);")},
+		"0000000001_create_users.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE users;")},
+		"R__user_names.sql": &fstest.MapFile{
+			Data: []byte("DROP VIEW IF EXISTS user_names;\nCREATE VIEW user_names AS SELECT name FROM users;"),
+		},
+	}
+	applied := must.Must(migrator.NewFSMigrator(conn, fsys, migrator.WithRepeatableMigrations()))
+	if err := applied.MigrateUp(ctx); err != nil {
+		fmt.Println("migrate up:", err)
+		return
+	}
+
+	delete(fsys, "R__user_names.sql")
+	m := must.Must(migrator.NewFSMigrator(conn, fsys, migrator.WithRepeatableMigrations()))
+	removed, err := m.RemoveRepeatableRecord(ctx, migrator.RemoveRepeatableRecordOptions{Identity: "user_names"})
+	if err != nil {
+		fmt.Println("remove:", err)
+		return
+	}
+
+	fmt.Println("removed:", removed.Identity)
+	fmt.Println("orphaned:", removed.Orphaned)
+	fmt.Println("records left:", len(must.Must(m.GetMigrationStatus(ctx)).Repeatables))
+
+	// Output:
+	// removed: user_names
+	// orphaned: true
+	// records left: 0
+}

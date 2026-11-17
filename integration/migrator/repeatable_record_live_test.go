@@ -7,10 +7,12 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/dblock"
 	"ptah.run/migration/migrator"
 )
 
@@ -79,6 +81,65 @@ func (f *foreignMetadataFixture) indexExists(c *qt.C, name string) bool {
 	c.Assert(f.adminConn.QueryRowContext(context.Background(),
 		`SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname = $1`, name).Scan(&count), qt.IsNil)
 	return count > 0
+}
+
+// orphanedRecordFixture applies one repeatable migration, then returns a
+// migrator over the directory without its file, so the record holds one row no
+// file carries.
+func orphanedRecordFixture(c *qt.C, t *testing.T) (*foreignMetadataFixture, *migrator.Migrator) {
+	c.Helper()
+	fixture := newForeignMetadataFixture(t, "")
+	fsys := repeatableRecordMigrations(map[string]string{"R__widget_ids.sql": repeatableRecordView})
+	c.Assert(repeatableMigrator(c, fixture.repeatableConnection(c), fsys).
+		MigrateUpWithOptions(t.Context(), migrator.MigrateUpOptions{}), qt.IsNil)
+	delete(fsys, "R__widget_ids.sql")
+	return fixture, repeatableMigrator(c, fixture.repeatableConnection(c), fsys)
+}
+
+// holdMigrationLock takes the default migration lock from a connection of its
+// own and keeps it until the test ends.
+func (f *foreignMetadataFixture) holdMigrationLock(c *qt.C) {
+	c.Helper()
+	holder, err := dbschema.ConnectToDatabase(context.Background(), f.migrationURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(holder) })
+	lock, err := dblock.Acquire(context.Background(), holder, "ptah_migrate", time.Second)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(lock.Release(context.Background()), qt.IsNil) })
+}
+
+// Repair reads and deletes under the migration lock, so a runner that holds
+// it keeps the row where it is: an up run planning over the record sees the
+// row it read until that run lets go.
+func TestRemoveRepeatableRecordLockLive_FailurePath(t *testing.T) {
+	t.Run("a held lock outlasts the timeout and the row stays", func(t *testing.T) {
+		c := qt.New(t)
+		fixture, mig := orphanedRecordFixture(c, t)
+		fixture.holdMigrationLock(c)
+
+		removed, err := mig.WithMigrationLockTimeout(500*time.Millisecond).RemoveRepeatableRecord(
+			t.Context(), migrator.RemoveRepeatableRecordOptions{Identity: "widget_ids"})
+
+		c.Assert(err, qt.ErrorAs, new(*migrator.MigrationLockTimeoutError))
+		c.Assert(removed, qt.IsNil)
+		c.Assert(fixture.recordRows(c), qt.Equals, 1)
+	})
+
+	t.Run("a context canceled during the wait abandons it and the row stays", func(t *testing.T) {
+		c := qt.New(t)
+		fixture, mig := orphanedRecordFixture(c, t)
+		fixture.holdMigrationLock(c)
+		ctx, cancel := context.WithCancel(t.Context())
+		stop := time.AfterFunc(500*time.Millisecond, cancel)
+		c.Cleanup(func() { stop.Stop(); cancel() })
+
+		removed, err := mig.WithMigrationLockTimeout(time.Minute).RemoveRepeatableRecord(
+			ctx, migrator.RemoveRepeatableRecordOptions{Identity: "widget_ids"})
+
+		c.Assert(err, qt.ErrorIs, context.Canceled)
+		c.Assert(removed, qt.IsNil)
+		c.Assert(fixture.recordRows(c), qt.Equals, 1)
+	})
 }
 
 func TestRepeatableRecordRefusalsLive_FailurePath(t *testing.T) {

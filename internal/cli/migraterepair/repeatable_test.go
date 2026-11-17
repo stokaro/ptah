@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/internal/cli/migraterepair"
 	"ptah.run/internal/cli/migrateup"
+	"ptah.run/internal/cli/root"
 )
 
 const repairRepeatableView = "DROP VIEW IF EXISTS widget_ids;\nCREATE VIEW widget_ids AS SELECT id FROM widgets;\n"
@@ -47,6 +48,29 @@ func repairStdout(c *qt.C, args ...string) (string, error) {
 	return stdout.String(), err
 }
 
+// repairThroughRoot runs `ptah migrations repair` through the root command,
+// which installs the PTAH_* bindings, and returns its standard output alone.
+func repairThroughRoot(c *qt.C, args ...string) (string, error) {
+	c.Helper()
+	cmd := root.NewRootCommand()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs(append([]string{"migrations", "repair"}, args...))
+	err := cmd.Execute()
+	return stdout.String(), err
+}
+
+// execRecord runs statement against the SQLite database at dbPath.
+func execRecord(c *qt.C, dbPath, statement string) {
+	c.Helper()
+	db, err := sql.Open("sqlite", dbPath)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(db.Close(), qt.IsNil) }()
+	_, err = db.Exec(statement)
+	c.Assert(err, qt.IsNil)
+}
+
 // recordRows counts the rows of the repeatable migration record at dbPath.
 func recordRows(c *qt.C, dbPath string) int {
 	c.Helper()
@@ -71,6 +95,89 @@ func TestMigrateRepairRepeatable_HappyPath(t *testing.T) {
 			"no file of the directory carries it; no migration SQL ran\n")
 		c.Assert(recordRows(c, dbPath), qt.Equals, 0)
 	})
+
+	// A variable exported for a versioned repair names no repair of a command
+	// line that types --repeatable, so it is set aside rather than read as a
+	// request for two.
+	for _, variable := range []struct{ name, value string }{
+		{name: "PTAH_VERSION", value: "1"},
+		{name: "PTAH_RESUME_FROM", value: "2"},
+	} {
+		t.Run(variable.name+" in the environment leaves a typed --repeatable to run", func(t *testing.T) {
+			t.Setenv(variable.name, variable.value)
+			c := qt.New(t)
+			dir, dbPath := appliedRepeatableDirectory(c)
+			c.Assert(os.Remove(filepath.Join(dir, "R__widget_ids.sql")), qt.IsNil)
+
+			out, err := repairThroughRoot(c, "--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--repeatable", "widget_ids")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(out, qt.Equals, "Removed the record of repeatable migration widget_ids, state orphaned; "+
+				"no file of the directory carries it; no migration SQL ran\n")
+			c.Assert(recordRows(c, dbPath), qt.Equals, 0)
+		})
+	}
+
+	t.Run("PTAH_REPEATABLE is not read, so a typed --version repairs the version", func(t *testing.T) {
+		t.Setenv("PTAH_REPEATABLE", "widget_ids")
+		c := qt.New(t)
+		dir, dbPath := appliedRepeatableDirectory(c)
+
+		out, err := repairThroughRoot(c, "--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--version", "1", "--force")
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(out, qt.Equals, "Updated migration 1 revision metadata; no migration SQL ran\n")
+		c.Assert(recordRows(c, dbPath), qt.Equals, 1)
+	})
+
+	t.Run("--repeatable carries no environment binding in help", func(t *testing.T) {
+		c := qt.New(t)
+
+		out, err := repairThroughRoot(c, "--help")
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(out, qt.Matches, `(?s).*\n +--repeatable string +Identity of a repeatable migration[^\n]*instead of repairing a version\n.*`)
+		c.Assert(out, qt.Contains, "Migration version to repair; required unless --repeatable is given [env: PTAH_VERSION]")
+	})
+
+	// The row was the only record that an attempt may have changed the
+	// database, so the line that reports its removal says so.
+	for _, tc := range []struct {
+		name      string
+		statement string
+		want      string
+	}{
+		{
+			name:      "a failed attempt without a transaction",
+			statement: "UPDATE schema_migrations_repeatable SET state = 'failed', transactional = 0",
+			want: "Removed the record of repeatable migration widget_ids, state failed; no file of the directory carries it; " +
+				"its last attempt failed without a transaction, so it may have taken effect in part; no migration SQL ran\n",
+		},
+		{
+			name:      "an attempt with no outcome",
+			statement: "UPDATE schema_migrations_repeatable SET state = 'running'",
+			want: "Removed the record of repeatable migration widget_ids, state running; no file of the directory carries it; " +
+				"its last attempt recorded no outcome, so it may have taken effect; no migration SQL ran\n",
+		},
+		{
+			name:      "a failed attempt inside a transaction",
+			statement: "UPDATE schema_migrations_repeatable SET state = 'failed', transactional = 1",
+			want: "Removed the record of repeatable migration widget_ids, state failed; no file of the directory carries it; " +
+				"no migration SQL ran\n",
+		},
+	} {
+		t.Run("the removal line for "+tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir, dbPath := appliedRepeatableDirectory(c)
+			c.Assert(os.Remove(filepath.Join(dir, "R__widget_ids.sql")), qt.IsNil)
+			execRecord(c, dbPath, tc.statement)
+
+			out, err := repairStdout(c, "--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--repeatable", "widget_ids")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(out, qt.Equals, tc.want)
+		})
+	}
 
 	t.Run("the row of a file still in the directory is removed with force", func(t *testing.T) {
 		c := qt.New(t)

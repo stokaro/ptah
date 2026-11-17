@@ -167,6 +167,19 @@ func TestRemoveRepeatableRecord_FailurePath(t *testing.T) {
 		c.Assert(removed, qt.IsNil)
 	})
 
+	t.Run("an identity no repeatable file name could carry", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+
+		removed, err := removeRepeatable(c, dbPath, repeatableFiles(nil),
+			migrator.RemoveRepeatableRecordOptions{Identity: "user.names", Force: true})
+
+		c.Assert(err, qt.ErrorMatches, `invalid repeatable migration identity "user.names": .*`)
+		c.Assert(err, qt.Not(qt.ErrorIs), migrator.ErrRepeatableNotRecorded)
+		c.Assert(removed, qt.IsNil)
+		c.Assert(repeatableTableCount(c, dbPath, "schema_migrations_repeatable"), qt.Equals, 0)
+	})
+
 	t.Run("the Atlas-compatible revision format keeps no record to remove a row from", func(t *testing.T) {
 		c := qt.New(t)
 		_, mig := openRepeatableMigrator(c, filepath.Join(c.TempDir(), "app.db"), repeatableFiles(nil))
