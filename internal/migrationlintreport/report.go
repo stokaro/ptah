@@ -39,6 +39,7 @@ import (
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/repeatableset"
 	"ptah.run/internal/schemalineage"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/servertarget"
@@ -307,6 +308,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		Selection: lint.VersionSelection{
 			Versions:    selection.versions,
 			VersionKeys: selection.versionKeys,
+			Repeatables: selection.repeatables,
 			Restricted:  selection.restricted,
 		},
 		DirFormat:         prepared.dirFormat,
@@ -1030,7 +1032,11 @@ func lintVersions(
 		if err != nil {
 			return lintVersionSelection{}, err
 		}
-		selection, err := latestMigrationSelection(fsys, uint(latest), dirFormat)
+		repeatables, err := selectorRepeatables(fsys, dirFormat, opts.Compatibility)
+		if err != nil {
+			return lintVersionSelection{}, err
+		}
+		selection, err := latestMigrationSelection(fsys, uint(latest), dirFormat, repeatables)
 		selection.restricted = true
 		return selection, err
 	}
@@ -1039,16 +1045,39 @@ func lintVersions(
 		if err != nil {
 			return lintVersionSelection{}, err
 		}
-		selection, err := gitChangedMigrationSelection(ctx, opts.Dir, git.base, git.dir, dirFormat)
+		repeatables, err := selectorRepeatables(fsys, dirFormat, opts.Compatibility)
+		if err != nil {
+			return lintVersionSelection{}, err
+		}
+		selection, err := gitChangedMigrationSelection(ctx, opts.Dir, git.base, git.dir, dirFormat, repeatables)
 		selection.restricted = true
 		return selection, err
 	}
 	return lintVersionSelection{}, nil
 }
 
+// selectorRepeatables is the set of repeatable migrations a file selector
+// reads the directory with. It is the set [lint.AnalyzeFS] reads under the
+// same profile and format, from the same [repeatableset.Paths], so a selector
+// never picks a file by a version the analysis does not give it, and never
+// refuses as unversioned a file the migrator runs.
+func selectorRepeatables(
+	fsys fs.FS,
+	dirFormat migrationfile.DirFormat,
+	profile lint.CompatibilityProfile,
+) (map[string]struct{}, error) {
+	if profile == lint.CompatibilityProfileAtlas {
+		return nil, nil
+	}
+	return repeatableset.Paths(fsys, dirFormat)
+}
+
 type lintVersionSelection struct {
 	versions    []int64
 	versionKeys []string
+	// repeatables are the selected repeatable migrations, by path relative to
+	// the migration directory.
+	repeatables []string
 	restricted  bool
 	seenVersion map[int64]struct{}
 	seenKey     map[string]struct{}
@@ -1078,6 +1107,7 @@ func (s *lintVersionSelection) add(file migrationfile.File) {
 
 func (s *lintVersionSelection) sort() {
 	slices.Sort(s.versions)
+	slices.Sort(s.repeatables)
 	slices.SortFunc(s.versionKeys, compareRevisionVersionKeys)
 }
 
@@ -1215,6 +1245,7 @@ func gitChangedMigrationSelection(
 	gitBase,
 	gitDir string,
 	dirFormat migrationfile.DirFormat,
+	repeatables map[string]struct{},
 ) (lintVersionSelection, error) {
 	repoRoot, err := gitOutput(ctx, gitDir, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -1259,7 +1290,7 @@ func gitChangedMigrationSelection(
 	if err != nil {
 		return lintVersionSelection{}, fmt.Errorf("detect git changeset against %q: %w", gitBase, err)
 	}
-	selection, err := migrationSelectionFromChangedPaths(changed, dirFormat)
+	selection, err := migrationSelectionFromChangedPaths(changed, filepath.ToSlash(relDir), dirFormat, repeatables)
 	if err != nil {
 		return lintVersionSelection{}, err
 	}
@@ -1311,13 +1342,27 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 	return strings.TrimSpace(string(output)), nil
 }
 
-func migrationSelectionFromChangedPaths(changed string, dirFormat migrationfile.DirFormat) (lintVersionSelection, error) {
+// migrationSelectionFromChangedPaths selects the migrations of the changed
+// files git names, relative to the repository root, under the migration
+// directory relDir. A changed repeatable migration is selected by its path in
+// the directory, since it has no version.
+func migrationSelectionFromChangedPaths(
+	changed, relDir string,
+	dirFormat migrationfile.DirFormat,
+	repeatables map[string]struct{},
+) (lintVersionSelection, error) {
 	selection := newLintVersionSelection()
 	var unversioned []string
 	for name := range strings.Lines(changed) {
 		name = strings.TrimSpace(name)
 		if !strings.EqualFold(path.Ext(name), ".sql") {
 			continue
+		}
+		if inDir, ok := pathInDir(name, relDir); ok {
+			if _, repeatable := repeatables[inDir]; repeatable {
+				selection.repeatables = append(selection.repeatables, inDir)
+				continue
+			}
 		}
 		parsed, err := parseChangedMigrationName(path.Base(name), dirFormat)
 		if err != nil {
@@ -1349,8 +1394,26 @@ func parseChangedMigrationName(name string, dirFormat migrationfile.DirFormat) (
 	return migrationfile.ParseAtlasFileNameForAutoDetection(name)
 }
 
-func latestMigrationSelection(fsys fs.FS, latest uint, dirFormat migrationfile.DirFormat) (lintVersionSelection, error) {
-	unversioned, err := unversionedSQLFiles(fsys, dirFormat)
+// pathInDir is name, a slash-separated path relative to the repository root,
+// relative to the directory dir under that root instead, and false when name is
+// not inside dir.
+func pathInDir(name, dir string) (string, bool) {
+	if dir == "." || dir == "" {
+		return name, true
+	}
+	return strings.CutPrefix(name, dir+"/")
+}
+
+// latestMigrationSelection selects the latest migration versions. A repeatable
+// migration has no version, so it is never among them, and it does not count
+// as an unversioned file either: a full run or --git-base lints it.
+func latestMigrationSelection(
+	fsys fs.FS,
+	latest uint,
+	dirFormat migrationfile.DirFormat,
+	repeatables map[string]struct{},
+) (lintVersionSelection, error) {
+	unversioned, err := unversionedSQLFiles(fsys, dirFormat, repeatables)
 	if err != nil {
 		return lintVersionSelection{}, err
 	}
@@ -1435,7 +1498,11 @@ func migrationFileVersionRank(file migrationfile.File, maxVersion int64) int64 {
 	return file.Version
 }
 
-func unversionedSQLFiles(fsys fs.FS, dirFormat migrationfile.DirFormat) ([]string, error) {
+func unversionedSQLFiles(
+	fsys fs.FS,
+	dirFormat migrationfile.DirFormat,
+	repeatables map[string]struct{},
+) ([]string, error) {
 	var names []string
 	hasAtlasSum := false
 	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
@@ -1449,7 +1516,7 @@ func unversionedSQLFiles(fsys fs.FS, dirFormat migrationfile.DirFormat) ([]strin
 			hasAtlasSum = true
 			return nil
 		}
-		if strings.EqualFold(path.Ext(p), ".sql") {
+		if _, repeatable := repeatables[p]; !repeatable && strings.EqualFold(path.Ext(p), ".sql") {
 			names = append(names, p)
 		}
 		return nil

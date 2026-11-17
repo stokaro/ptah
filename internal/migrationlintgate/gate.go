@@ -15,6 +15,7 @@ import (
 	"ptah.run/internal/lintdialect"
 	"ptah.run/internal/servertarget"
 	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/risk"
 )
 
@@ -65,6 +66,17 @@ type Policy struct {
 	// transactionOwner is who opens the transaction each file runs in, as
 	// the apply runs the files.
 	transactionOwner lintext.TransactionOwner
+	// dirFormat is the format the apply reads the directory in, which decides
+	// whether an R__<identity>.sql file is a repeatable migration.
+	dirFormat migrationfile.DirFormat
+}
+
+// Pending is the work an apply selected: the versioned migrations by version,
+// and the repeatable migrations by their slash-separated path in the
+// migration directory.
+type Pending struct {
+	Versions    []int64
+	Repeatables []string
 }
 
 // ServerVersionNote is what the policy's declared server version resolved to
@@ -171,12 +183,12 @@ func disabledRegisteredFamilies(runtime lintext.Runtime, enabled []string) ([]st
 }
 
 // Analyze loads policy and returns blocking data-safety findings for the
-// selected pending migration versions.
+// selected pending migrations.
 func Analyze(
 	ctx context.Context,
 	runtime lint.Runtime,
 	fsys fs.FS,
-	pending []int64,
+	pending Pending,
 	databaseDialect,
 	pathPrefix string,
 ) ([]lint.Finding, error) {
@@ -193,14 +205,15 @@ func AnalyzeWithPolicy(
 	ctx context.Context,
 	runtime lint.Runtime,
 	fsys fs.FS,
-	pending []int64,
+	pending Pending,
 	policy Policy,
 	pathPrefix string,
 ) ([]lint.Finding, error) {
 	options := policy.options(pathPrefix)
 	options.Selection = lint.VersionSelection{
-		Versions:   pending,
-		Restricted: true,
+		Versions:    pending.Versions,
+		Repeatables: pending.Repeatables,
+		Restricted:  true,
 	}
 	findings, err := lint.LintFS(ctx, runtime, fsys, options)
 	if err != nil {
@@ -234,7 +247,16 @@ func (p Policy) options(pathPrefix string) lint.Options {
 		RuleConfigs:      p.rules,
 		RequireOnline:    p.online,
 		TransactionOwner: p.transactionOwner,
+		DirFormat:        p.dirFormat,
 	}
+}
+
+// WithDirFormat returns the policy reading the directory in the format the
+// apply reads it in. A gate that read it in another format could take a
+// repeatable migration the apply runs for a file it never selects.
+func (p Policy) WithDirFormat(format migrationfile.DirFormat) Policy {
+	p.dirFormat = format
+	return p
 }
 
 // WithTransactionOwner returns the policy judging transaction control for

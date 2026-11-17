@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/execpolicy"
 	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationlintgate"
 	"ptah.run/internal/testutils"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
@@ -93,7 +94,7 @@ ALTER TABLE ledger NO FORCE ROW LEVEL SECURITY;
 		},
 	}
 
-	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{2}, "postgres", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{2}}, "postgres", "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 6)
 	c.Assert(
@@ -128,12 +129,12 @@ rules:
 		"0000000003_drop_table.down.sql": &fstest.MapFile{Data: []byte("-- restore\n")},
 	}
 
-	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1, 2}, "postgres", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1, 2}}, "postgres", "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0,
 		qt.Commentf("DS103 is warning-grade and DS102 is disabled by config"))
 
-	findings, err = lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1, 2, 3}, "postgres", "")
+	findings, err = lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1, 2, 3}}, "postgres", "")
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
 	c.Assert(findings[0].Rule, qt.Equals, "DS101")

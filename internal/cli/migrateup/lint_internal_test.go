@@ -33,7 +33,7 @@ func TestLintPendingDestructive_DoesNotApplyAtlasFileSuppression(t *testing.T) {
 		},
 	}
 
-	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
@@ -76,7 +76,7 @@ func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T)
 				"0000000001_drop.down.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 			}
 
-			findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "")
+			findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "")
 
 			c.Assert(err, qt.IsNil)
 			codes := make([]string, 0, len(findings))
@@ -102,7 +102,7 @@ func TestLintPendingDestructive_HonorsDirectoryPrefixedExclusion(t *testing.T) {
 		},
 	}
 
-	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "migrations")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "migrations")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0)
@@ -122,7 +122,7 @@ func TestLintPendingDestructive_RejectsConfiguredDialectMismatch(t *testing.T) {
 		},
 	}
 
-	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, []int64{1}, "sqlite", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "")
 
 	c.Assert(err, qt.ErrorMatches, `lint dialect "mysql" does not match database dialect "sqlite"`)
 	c.Assert(findings, qt.IsNil)
@@ -170,7 +170,7 @@ func TestCapturedMigrationsFeedProviderAndDestructiveGateFromSameBytes(t *testin
 		migrator.WithMigrationDirFormat(migrationfile.DirFormatPtah),
 	)
 	c.Assert(err, qt.IsNil)
-	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), snapshot, []int64{1}, "sqlite", "")
+	findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), snapshot, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "")
 	c.Assert(err, qt.IsNil)
 
 	migrations := provider.Migrations()

@@ -75,6 +75,18 @@ them have succeeded, it runs every repeatable migration that is new or whose
 content changed, in byte order of the identities, under the same migration
 lock. A repeatable migration whose content is unchanged sends no statement.
 
+What a run checks before it changes anything covers its repeatable work too.
+The [destructive-change gate](../lint/#the-destructive-change-gate) judges each
+repeatable migration the run executes because its file is new, changed or
+retried, and not one whose content already applied. `--pre-up-hook`,
+`--webhook`, `--pg-dump-to` and `--mysqldump-to` run before a run whose only
+work is a repeatable migration.
+
+`ptah migrations lint` reads a repeatable migration as an up migration that has
+no down file, so `MF101P` and `MF103` do not report it. `--latest N` never
+selects one, because it has no version; `--git-base` selects one whose file
+changed.
+
 Byte order puts digits before upper case and upper case before lower case, and
 compares character by character: `10` runs before `9`. Pad a numeric prefix,
 `R__09_base.sql` and `R__10_views.sql`, when the order matters.
@@ -315,8 +327,6 @@ migrations; stokaro/ptah#6152 records the gap.
 
 - The [migration log](../migration-log/) records versioned migrations only. The
   record table keeps the last attempt of each repeatable migration.
-- `ptah migrations lint` and the destructive gate of `ptah migrations up` read
-  versioned files only.
 - `ptah migrations repair --repeatable` removes a row; nothing marks a
   repeatable migration applied without running it. Removing the row of a file
   still in the directory makes the next run execute it as new.

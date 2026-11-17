@@ -620,8 +620,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)
 	}
-	// The gate judges transaction control the way the run applies the files.
-	lintPolicy = lintPolicy.WithTransactionOwner(settings.runner.TransactionOwner())
+	// The gate judges transaction control the way the run applies the files,
+	// and reads the directory in the format the run reads it in, which decides
+	// what a repeatable migration is.
+	lintPolicy = lintPolicy.WithTransactionOwner(settings.runner.TransactionOwner()).WithDirFormat(settings.dirFormat)
 	// Before the first migration, because it says which server the gate about
 	// to run planned against.
 	emitLintPolicyVersionNote(emit, lintPolicy)
@@ -974,7 +976,7 @@ func (o migrateUpOutcome) selectedRepeatables() []migrator.RepeatableWork {
 // lock, to apply nothing. A run refused before the plan was built is not this:
 // it never decided what it would do, so it has nothing to say about it.
 func (o migrateUpOutcome) selectedNothing() bool {
-	return o.plan != nil && len(o.plan.Versions) == 0
+	return o.plan != nil && len(o.plan.Versions) == 0 && len(o.plan.Repeatables) == 0
 }
 
 // err is the failure the command returns, in the order the caller can act on:
@@ -1348,11 +1350,22 @@ func lintPendingDestructive(
 	ctx context.Context,
 	runtime lint.Runtime,
 	fsys fs.FS,
-	pending []int64,
+	pending migrationlintgate.Pending,
 	dialect,
 	pathPrefix string,
 ) ([]lint.Finding, error) {
 	return migrationlintgate.Analyze(ctx, runtime, fsys, pending, dialect, pathPrefix)
+}
+
+// pendingWork is what the gate judges of a plan: every versioned migration it
+// applies, and every repeatable migration it runs, which a plan selects only
+// when the file is new, changed or retried.
+func pendingWork(plan migrator.MigrationPlan) migrationlintgate.Pending {
+	pending := migrationlintgate.Pending{Versions: plan.Versions}
+	for _, work := range plan.Repeatables {
+		pending.Repeatables = append(pending.Repeatables, work.Path)
+	}
+	return pending
 }
 
 func lockedDestructiveLintHook(
@@ -1362,7 +1375,7 @@ func lockedDestructiveLintHook(
 	pathPrefix string,
 ) migrator.PreMigrationHook {
 	return func(ctx context.Context, plan migrator.MigrationPlan) error {
-		findings, err := migrationlintgate.AnalyzeWithPolicy(ctx, runtime, fsys, plan.Versions, policy, pathPrefix)
+		findings, err := migrationlintgate.AnalyzeWithPolicy(ctx, runtime, fsys, pendingWork(plan), policy, pathPrefix)
 		if err != nil {
 			return fmt.Errorf("error checking pending migration safety: %w", err)
 		}
