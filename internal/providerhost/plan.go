@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/featureplan"
 	"ptah.run/core/planext"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/modelast"
@@ -182,6 +183,14 @@ func indexRemovalPlacement(semantics identifier.Semantics, steps []ast.Node) (ah
 // context even when none of those objects is writable; refusing it would
 // block table changes merely because access was not inspected.
 func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
+	if len(diff.CurrentOwners) != 0 {
+		// The comparison carries owners only for an engine name whose
+		// descriptor manages them, so the provider serves a built-in name.
+		// The projection below refuses the field too; this says why.
+		return commonObjectPlan{}, fmt.Errorf("%w: the provider serves engine %q, whose views a plan gives back their owners "+
+			"when it creates them again, and the experimental provider contract does not support SchemaDiff.CurrentOwners; "+
+			"serve an engine name of the provider's own", ptaherr.ErrUnsupportedFeature, p.target)
+	}
 	// The declared tables, schemas, foreign keys and constraint hosts are
 	// context a planner reads, not changes: DeclaredForeignKeys holds every
 	// foreign key the declaration states, changed or not. ConnectedAccount is
