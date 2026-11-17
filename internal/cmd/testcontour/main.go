@@ -9,7 +9,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -149,7 +148,7 @@ func verify(arguments []string) error {
 	}
 	if *timingsOut != "" {
 		result.Timings.Source = *source
-		if err := writeTimings(*timingsOut, result.Timings); err != nil {
+		if err := shard.WriteTimingsFile(*timingsOut, result.Timings); err != nil {
 			return err
 		}
 	}
@@ -196,17 +195,6 @@ func appendFile(path, text string) error {
 		return fmt.Errorf("write summary: %w", err)
 	}
 	return file.Close()
-}
-
-func writeTimings(path string, timings shard.Timings) error {
-	payload, err := json.Marshal(timings)
-	if err != nil {
-		return fmt.Errorf("encode contour timings: %w", err)
-	}
-	if err := os.WriteFile(path, payload, 0o600); err != nil {
-		return fmt.Errorf("write contour timings: %w", err)
-	}
-	return nil
 }
 
 func splitTags(value string) []string {

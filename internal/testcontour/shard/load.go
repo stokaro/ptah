@@ -2,6 +2,7 @@ package shard
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -57,4 +58,21 @@ func LoadReports(dir string) ([]Report, error) {
 		reports = append(reports, Report{Manifest: manifest, Events: bytes.NewReader(events)})
 	}
 	return reports, nil
+}
+
+// WriteTimingsFile writes timings to path as JSON that ReadTimings reads back,
+// creating the directories path names. The next run's shards balance by the
+// file, so a directory that does not exist yet is created rather than reported.
+func WriteTimingsFile(path string, timings Timings) error {
+	payload, err := json.Marshal(timings)
+	if err != nil {
+		return fmt.Errorf("encode contour timings: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("write contour timings: %w", err)
+	}
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		return fmt.Errorf("write contour timings: %w", err)
+	}
+	return nil
 }

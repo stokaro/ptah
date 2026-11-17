@@ -80,3 +80,30 @@ func TestLoadReports_FailurePathRefusesAManifestOfAnotherShape(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*manifest\.json: decode shard manifest: json: unknown field "total"`)
 	c.Assert(loaded, qt.IsNil)
 }
+
+// TestWriteTimingsFile_HappyPath writes where the gate writes, into a directory
+// nothing has created yet, and reads the file back the way the next run does.
+func TestWriteTimingsFile_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(c.TempDir(), "integration-timings", "timings.json")
+	timings := shard.Timings{Source: "run 7", Packages: map[string]shard.PackageTiming{
+		root: {ElapsedMS: 3000, Tests: map[string]int64{"TestR1": 2000}},
+	}}
+	c.Assert(shard.WriteTimingsFile(path, timings), qt.IsNil)
+	file, err := os.Open(path)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(file.Close(), qt.IsNil) })
+	read, err := shard.ReadTimings(file)
+	c.Assert(err, qt.IsNil)
+	c.Assert(read, qt.DeepEquals, timings)
+}
+
+// TestWriteTimingsFile_FailurePath names a directory that cannot exist, below
+// a regular file, so creating it fails and nothing is written.
+func TestWriteTimingsFile_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	blocker := filepath.Join(c.TempDir(), "file")
+	c.Assert(os.WriteFile(blocker, nil, 0o600), qt.IsNil)
+	err := shard.WriteTimingsFile(filepath.Join(blocker, "timings.json"), shard.Timings{})
+	c.Assert(err, qt.ErrorMatches, `write contour timings: .*`)
+}
