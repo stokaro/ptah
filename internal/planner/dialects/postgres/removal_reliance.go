@@ -313,7 +313,7 @@ func typesOverRemovedRows(diff *difftypes.SchemaDiff) []string {
 	for changed := true; changed; {
 		changed = false
 		for _, typ := range readers {
-			name := typeReaderName(typ)
+			name := sourceName(typ.id)
 			if !slices.Contains(names, name) && slices.ContainsFunc(over, func(relation string) bool {
 				return schemaext.ReadsRelationIn(typ.reader, relation, semantics)
 			}) {
@@ -324,11 +324,6 @@ func typesOverRemovedRows(diff *difftypes.SchemaDiff) []string {
 		}
 	}
 	return names
-}
-
-// typeReaderName is the name a definition spells typ with.
-func typeReaderName(typ removedTypeReader) string {
-	return sourceName(typ.id)
 }
 
 // sourceName is id as the read spelled it, with its schema when the read named
