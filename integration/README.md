@@ -90,12 +90,18 @@ test -list`, partitions the listing the way every other shard does, and runs
 its own part; it balances the parts with the timings of the newest master run
 whose contour passed, and by test count when there are none. A shard runs its
 tests in the order the unsharded contour runs them, but it runs only some of
-them, so a test must not rely on state another test leaves behind, and must
-remove what it creates in a shared database. The partition moves with the
-timings, so a leftover lands in front of a different test on each run. The
-`integration-tests` job then runs `testcontour verify` over every shard's
-report and fails unless the shards together ran each listed test exactly once,
-with none skipped or failed.
+them. The `integration-tests` job then runs `testcontour verify` over every
+shard's report and fails unless the shards together ran each listed test
+exactly once, with none skipped or failed.
+
+So a test must not rely on state another test leaves behind, and must remove
+what it creates in a shared database: the partition moves with the timings, so
+a leftover lands in front of a different test on each run. That includes a
+revision table's companions, which `revisiontable.Configured` names, and the
+log `revisiontable.ApplyLog` names for `schema apply`. `Configured` also names
+`ptah_migration_tags`, which every revision table shares; dropping it after a
+test is safe only because the contour runs one test at a time, with `-p=1` and
+no `t.Parallel` in a package that migrates.
 
 The nightly `complete integration contour` job in `atlas-reference.yml` adds
 `--race`. A failed scheduled run of that workflow comments on the open issue
