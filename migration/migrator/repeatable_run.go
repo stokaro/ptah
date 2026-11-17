@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 
+	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqliterebuild"
 	"ptah.run/migration/migrationfile"
@@ -75,7 +76,7 @@ func (m *Migrator) refuseRepeatablesHere() error {
 	if m.revisionTable().CreateRepeatables == "" {
 		return &RepeatableMigrationsUnsupportedError{
 			Dialect: m.connectionDialect(),
-			Reason:  "Ptah runs repeatable migrations on PostgreSQL and SQLite only",
+			Reason:  "Ptah keeps no record of repeatable migrations on this engine",
 		}
 	}
 	return nil
@@ -362,18 +363,34 @@ func (m *Migrator) refuseRepeatablesWhatFilesRefuse(state *repeatableState, work
 // migrator's mode does. Under --tx-mode all each repeatable migration still
 // runs in a transaction of its own, after the one around the versioned batch
 // has committed.
+//
+// On an engine that does not roll schema changes back as a unit
+// ([capability.TransactionalDDL] off: the MySQL family and CockroachDB from
+// 25 commit the open transaction before each one, and YugabyteDB keeps them
+// through a rollback), a repeatable migration runs without a transaction. The
+// record keeps the last attempt's outcome and no progress within it, so a
+// transaction there would make it say that a failed body took no effect while
+// the server kept part of it. A file whose directive asks for a transaction is
+// refused there instead, before anything runs.
 func (m *Migrator) repeatableRunsInTransaction(repeatable *repeatableMigration) (bool, error) {
 	parsed := repeatable.migration.parsedUpTxModeForDialect(m.connectionDialect())
 	if parsed.Err != nil {
 		return false, fmt.Errorf("repeatable migration %s: %w", repeatable.path, parsed.Err)
 	}
+	atomic := m.conn.Info().Capabilities.Has(capability.TransactionalDDL)
 	switch parsed.Mode {
 	case migrationfile.FileTxModeNone:
 		return false, nil
 	case migrationfile.FileTxModeFile:
+		if !atomic {
+			return false, fmt.Errorf("repeatable migration %s asks for a transaction of its own, and %s does not roll "+
+				"schema changes back as a unit, so a failed attempt could leave part of it behind while its record "+
+				"said it took no effect; remove the txmode directive to run it without a transaction",
+				repeatable.path, m.connectionDialect())
+		}
 		return true, nil
 	default:
-		return m.txMode != MigrationTxModeNone, nil
+		return atomic && m.txMode != MigrationTxModeNone, nil
 	}
 }
 

@@ -344,6 +344,34 @@ const mysqlCreateApplyLog = `CREATE TABLE IF NOT EXISTS {table} (
     PRIMARY KEY (run_id, seq)
 ){engine} DEFAULT CHARSET=utf8mb4`
 
+// mysqlCreateRepeatables is the record of repeatable migrations on the MySQL
+// family. The identity is binary-collated, as the Atlas version column is, so
+// a row matches the file whose identity it spells byte for byte: under the
+// default case-insensitive collation an orphaned row named Widget would
+// answer the UPDATE of a new file named widget.
+//
+// attempted_at states a default because a session with
+// explicit_defaults_for_timestamp off, the MariaDB default before 10.10 and a
+// setting on every server of the family, gives the first TIMESTAMP NOT NULL
+// column without one ON UPDATE CURRENT_TIMESTAMP (measured on MySQL 26.10 and
+// MariaDB 10.11.19). Every outcome written to the row would then move the
+// time its attempt started.
+//
+// error is LONGTEXT for the reason the apply log's is: in strict mode a
+// failure longer than TEXT holds would fail the write that records it.
+const mysqlCreateRepeatables = `CREATE TABLE IF NOT EXISTS {table} (
+    identity VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL PRIMARY KEY,
+    checksum VARCHAR(64) NOT NULL DEFAULT '',
+    state VARCHAR(32) NOT NULL,
+    attempt_checksum VARCHAR(64) NOT NULL,
+    attempt_order INTEGER NOT NULL,
+    transactional INTEGER NOT NULL,
+    run_id VARCHAR(64) NOT NULL,
+    attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    applied_at TIMESTAMP NULL,
+    error LONGTEXT NULL
+){engine} DEFAULT CHARSET=utf8mb4`
+
 func mysqlFamilyRevisionTable(logInsertPrefix string) descriptor.RevisionTable {
 	return descriptor.RevisionTable{
 		Create: createRevisions + " DEFAULT CHARSET=utf8mb4",
@@ -361,17 +389,18 @@ func mysqlFamilyRevisionTable(logInsertPrefix string) descriptor.RevisionTable {
     partial_hashes JSON NULL,
     operator_version VARCHAR(255) NOT NULL
 ){engine} DEFAULT CHARSET=utf8mb4`,
-		CreateTags:      createTags + " ENGINE=InnoDB",
-		CreateLog:       createLog,
-		CreateApplyLog:  mysqlCreateApplyLog,
-		LogInsertPrefix: logInsertPrefix,
-		CreateSchema:    createSchema,
-		EngineClause:    " ENGINE=InnoDB",
-		RequiredEngine:  "InnoDB",
-		FirstRow:        "limit",
-		RowLock:         "for-update",
-		Update:          updateRevision,
-		Respell:         respellRevision(),
+		CreateTags:        createTags + " ENGINE=InnoDB",
+		CreateLog:         createLog,
+		CreateApplyLog:    mysqlCreateApplyLog,
+		CreateRepeatables: mysqlCreateRepeatables,
+		LogInsertPrefix:   logInsertPrefix,
+		CreateSchema:      createSchema,
+		EngineClause:      " ENGINE=InnoDB",
+		RequiredEngine:    "InnoDB",
+		FirstRow:          "limit",
+		RowLock:           "for-update",
+		Update:            updateRevision,
+		Respell:           respellRevision(),
 		Conflict: `ON DUPLICATE KEY UPDATE
 description = VALUES(description),
 applied_at = VALUES(applied_at),
