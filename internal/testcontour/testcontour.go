@@ -728,15 +728,17 @@ func isFunctionName(name, prefix string) bool {
 // commands still runs all of them, and judges the tests they report against
 // expected. label names the contour in errors.
 //
-// A test the invocations ran beyond expected is judged like the rest, not
-// refused. A sharded run cannot produce one: its listing has to match the
-// declared tests, and its -run filters name exactly the part's tests. The gate
-// owns the question for the contour as a whole, where a test that ran outside
-// its shard or outside the listing is misplaced or unexpected.
+// A test the invocations ran beyond expected is refused. expected comes from
+// the declared test functions, and go test runs more than those: an example
+// with an output comment is a test the declarations do not name. A sharded run
+// refuses one earlier, when its listing names anything but a test, so on the
+// whole contour this is the only check that sees it.
 func run(ctx context.Context, config Config, label string, expected []testID, invocations [][]string) error {
 	states := make(map[testID]testState, len(expected))
+	assigned := make(map[testID]bool, len(expected))
 	for _, id := range expected {
 		states[id] = testState{}
+		assigned[id] = true
 	}
 	skips := make([]testID, 0)
 	var failures []error
@@ -757,6 +759,16 @@ func run(ctx context.Context, config Config, label string, expected []testID, in
 	missing := missingResults(states)
 	if len(missing) != 0 {
 		return fmt.Errorf("test contour %s produced no complete result for %s", label, formatTestIDs(missing))
+	}
+	var unassigned []testID
+	for id := range states {
+		if !strings.Contains(id.Name, "/") && !assigned[id] {
+			unassigned = append(unassigned, id)
+		}
+	}
+	if len(unassigned) != 0 {
+		sortTestIDs(unassigned)
+		return fmt.Errorf("test contour %s ran tests it was not given: %s", label, formatTestIDs(unassigned))
 	}
 	return nil
 }
