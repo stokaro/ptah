@@ -79,6 +79,10 @@ func autoIncrementResource(table string) string { return "auto increment " + bar
 // added in is the order the table holds them in, which `SELECT *` shows.
 func columnOrderResource(table string) string { return "column order " + bare(table) }
 
+// commentResource is the comment of a table, or of one of its columns when column is
+// not empty.
+func commentResource(table, column string) string { return "comment " + memberKey(table, column) }
+
 // linkResource is a foreign key as a tie between two tables. A change to the type of a
 // column at either end of it writes it, so changes at the two ends keep their order even
 // where the key itself stays.
@@ -91,6 +95,9 @@ func (how arrangement) stepsOf(node ast.Node) ([]*step, bool) {
 		return nil, false
 	}
 	if alter, ok := node.(*ast.AlterTableNode); ok {
+		if use, ok := how.commentAccess(alter); ok {
+			return []*step{{table: alter.Name, node: node, access: use}}, true
+		}
 		steps := make([]*step, 0, len(alter.Operations))
 		for _, operation := range alter.Operations {
 			use, ok := how.operationAccess(alter.Name, operation)
@@ -106,6 +113,30 @@ func (how arrangement) stepsOf(node ast.Node) ([]*step, bool) {
 		return nil, false
 	}
 	return []*step{{table: tableOf(node), node: node, access: use}}, true
+}
+
+// commentAccess is a statement that sets one comment of a table the plan changes, the
+// table's own or a column's. On PostgreSQL it is COMMENT ON, a statement of its own, so
+// it is a step of its own rather than an operation of the table's ALTER TABLE. It reads
+// the table and the column it names, so it follows the statement that adds or changes
+// the column, and it writes the comment, so two comments of one object keep the
+// planner's order. Left where the planner put it, a column's comment between two of the
+// table's column changes splits the ALTER TABLE the community binary writes as one.
+func (how arrangement) commentAccess(alter *ast.AlterTableNode) (access, bool) {
+	if !how.movesComments || len(alter.Operations) != 1 {
+		return access{}, false
+	}
+	comment, ok := alter.Operations[0].(*ast.SetCommentOperation)
+	if !ok {
+		return access{}, false
+	}
+	var use access
+	use.read(tableResource(alter.Name))
+	if comment.Column != "" {
+		use.read(columnResource(alter.Name, comment.Column))
+	}
+	use.write(commentResource(alter.Name, comment.Column))
+	return use, true
 }
 
 // tableOf names the table a statement other than an ALTER TABLE is on.

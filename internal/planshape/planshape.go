@@ -43,6 +43,11 @@ func Apply(dialect string, nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 	how := arrangementFor(form, facts)
 	how.places = how.forwardPlaces(diff)
 	how.absorbs = how.merge && !foreignKeysDeferred(nodes, tablesCreatedBy(nodes))
+	// A comment is a statement of its own only on PostgreSQL, where it is COMMENT ON;
+	// the MySQL family writes it into the column or the table options. A rollback
+	// keeps its comments where the planner put them, since what it undoes says
+	// nothing about where they go.
+	how.movesComments = form == descriptor.PostgresCatalogForm
 	// Ahead of the respelling, which takes off a name the server gives anyway: the
 	// server gives it only where nothing holds it.
 	nodes = notnullname.Free(arrange(inlineConstraints(nodes), how), diff)

@@ -64,12 +64,48 @@ COMMENT ON COLUMN tasks.search_vector IS 'search:v1';
 );
 COMMENT ON COLUMN tasks.search_vector IS 'search:v2';
 `,
-		wantChange: `-- Set comment to column: "search_vector" on table: "tasks"
-COMMENT ON COLUMN "tasks"."search_vector" IS 'search:v2';
--- Modify "tasks" table
+		wantChange: `-- Modify "tasks" table
 ALTER TABLE "tasks" ALTER COLUMN "search_vector" SET EXPRESSION AS (to_tsvector('english', coalesce(title, '')));
+-- Set comment to column: "search_vector" on table: "tasks"
+COMMENT ON COLUMN "tasks"."search_vector" IS 'search:v2';
 `,
 		wantComments: []string{"", "", "search:v2"},
+	},
+	{
+		// The community binary writes this change as one ALTER TABLE, the index, the
+		// table's comment and then its columns' comments in column order. A column
+		// comment left between two of the table's column changes splits the ALTER
+		// TABLE in two.
+		name: "columns added, dropped and changed beside the comments of the table and a column",
+		initial: `CREATE TABLE tasks (id bigint PRIMARY KEY, title text, old text, body text);
+COMMENT ON TABLE tasks IS 't1';
+COMMENT ON COLUMN tasks.title IS 'v1';
+`,
+		desired: `CREATE TABLE tasks (
+  id bigint PRIMARY KEY,
+  title text NOT NULL,
+  body text,
+  due date,
+  owner text
+);
+COMMENT ON TABLE tasks IS 't2';
+COMMENT ON COLUMN tasks.title IS 'v2';
+COMMENT ON COLUMN tasks.owner IS 'who';
+CREATE INDEX tasks_owner_idx ON tasks (owner);
+`,
+		wantChange: `-- POSTGRES: SET NOT NULL fails if any row of "tasks" holds NULL in "title"; the column declares no default to fill it with.
+-- Modify "tasks" table
+ALTER TABLE "tasks" ALTER COLUMN "title" SET NOT NULL, DROP COLUMN "old", ADD COLUMN "due" date NULL, ADD COLUMN "owner" text NULL;
+-- Create index "tasks_owner_idx" to table: "tasks"
+CREATE INDEX "tasks_owner_idx" ON "tasks" ("owner");
+-- Set comment to table: "tasks"
+COMMENT ON TABLE "tasks" IS 't2';
+-- Set comment to column: "title" on table: "tasks"
+COMMENT ON COLUMN "tasks"."title" IS 'v2';
+-- Set comment to column: "owner" on table: "tasks"
+COMMENT ON COLUMN "tasks"."owner" IS 'who';
+`,
+		wantComments: []string{"", "v2", "", "", "who"},
 	},
 }
 

@@ -908,12 +908,6 @@ func (p *Planner) removeColumns(result []ast.Node, tableDiff *difftypes.TableDif
 	return result, nil
 }
 
-// columnCommentRidesWithTheColumn reports whether this dialect's MODIFY COLUMN
-// carries the comment, so no separate statement is needed.
-//
-// It is a question about the SQL these engines accept, not about Ptah: MySQL
-// and MariaDB have an inline COMMENT clause in a column definition and Oracle
-// does not, and the planners share this algorithm.
 // isMySQLFamily reports whether the target is MySQL or MariaDB, whose MODIFY
 // COLUMN restates the whole column.
 func (p *Planner) isMySQLFamily() bool {
@@ -925,6 +919,13 @@ func (p *Planner) isMySQLFamily() bool {
 	}
 }
 
+// columnCommentRidesWithTheColumn reports whether this dialect writes a column's
+// comment inside the column's definition, in ADD COLUMN and MODIFY COLUMN alike,
+// so no separate statement is needed.
+//
+// It is a question about the SQL these engines accept, not about Ptah: MySQL
+// and MariaDB have an inline COMMENT clause in a column definition, Oracle and
+// SQL Server do not, and the planners share this algorithm.
 func (p *Planner) columnCommentRidesWithTheColumn() bool {
 	switch p.targetDialect() {
 	case platform.MySQL, platform.MariaDB:

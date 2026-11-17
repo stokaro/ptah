@@ -34,7 +34,10 @@ type arrangement struct {
 	// absorbs says a foreign key into a table the plan changes moves into its new table
 	// once what it needs is in place.
 	absorbs bool
-	facts   *planFacts
+	// movesComments says a table's or a column's comment is a statement of its own that
+	// moves to where the community binary writes it; see [arrangement.commentAccess].
+	movesComments bool
+	facts         *planFacts
 	// reorder, when set, changes the order a run's steps depend on each other in.
 	reorder func(run []*step) []*step
 	// places gives the steps of a run the place they want.
@@ -113,6 +116,7 @@ const (
 	partIndexDrops = iota
 	partOperations
 	partIndexes
+	partComments
 )
 
 // arrange writes each run of table statements in the order the community binary
@@ -426,6 +430,13 @@ func (how arrangement) forwardPlace(s *step, created newTables, needed map[*step
 	case *ast.DropIndexNode:
 		own.phase, own.part, own.name = phaseChanged, partIndexDrops, n.Name
 		return own
+	case *ast.AlterTableNode:
+		// A comment, the one ALTER TABLE that is a statement here; see stepsOf. The
+		// community binary writes a table's comments after its new indexes: the table's
+		// own first, then its columns' in the table's column order.
+		own.phase, own.part = phaseChanged, partComments
+		own.class, own.column = commentRank(n, columns[bare(s.table)])
+		return own
 	}
 	if created.exact[tableKey(s.table)] {
 		own.phase = phaseTrailing
@@ -516,6 +527,16 @@ func (how arrangement) operationRank(s *step, positions map[string]int) (class, 
 	default:
 		return 7, 0
 	}
+}
+
+// commentRank is a comment's place among the comments of its table: the table's own,
+// then each column's by position.
+func commentRank(alter *ast.AlterTableNode, positions map[string]int) (class, column int) {
+	comment, _ := alter.Operations[0].(*ast.SetCommentOperation)
+	if comment == nil || comment.Column == "" {
+		return 0, 0
+	}
+	return 1, position(positions, comment.Column)
 }
 
 func position(positions map[string]int, column string) int {

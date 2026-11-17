@@ -150,8 +150,8 @@ func generatedColumnChange() *difftypes.SchemaDiff {
 // TestPlanner_ModifiedGeneratedColumnComment_HappyPath pins the comment of a
 // generated column whose expression changes in the same plan. The expression
 // is a statement of its own, which does not carry the comment, so the comment
-// is planned beside it. A target that cannot change the expression in place
-// still gets the comment.
+// follows it. A target that cannot change the expression in place still gets
+// the comment.
 func TestPlanner_ModifiedGeneratedColumnComment_HappyPath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -162,20 +162,20 @@ func TestPlanner_ModifiedGeneratedColumnComment_HappyPath(t *testing.T) {
 			name: "postgresql 18 changes the expression in place",
 			caps: capability.Postgres18(),
 			want: `-- Add/modify columns for table: tasks
-COMMENT ON COLUMN "tasks"."search_vector" IS 'search:v2';
-
+-- Modify generated column tasks.search_vector: STORED to_tsvector('simple',coalesce(title,'')) -> STORED to_tsvector('english',coalesce(title,''))
 ALTER TABLE "tasks" ALTER COLUMN "search_vector" SET EXPRESSION AS (to_tsvector('english', coalesce(title, '')));
 
--- Modify generated column tasks.search_vector: STORED to_tsvector('simple',coalesce(title,'')) -> STORED to_tsvector('english',coalesce(title,''))
+COMMENT ON COLUMN "tasks"."search_vector" IS 'search:v2';
+
 `,
 		},
 		{
 			name: "postgresql 16 leaves the expression to a person",
 			caps: capability.Postgres16(),
 			want: `-- Add/modify columns for table: tasks
+-- WARNING: Generated column tasks.search_vector changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression, unavailable on this target (PostgreSQL added it in 17); manual migration required.
 COMMENT ON COLUMN "tasks"."search_vector" IS 'search:v2';
 
--- WARNING: Generated column tasks.search_vector changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression, unavailable on this target (PostgreSQL added it in 17); manual migration required.
 `,
 		},
 	}
@@ -192,4 +192,36 @@ COMMENT ON COLUMN "tasks"."search_vector" IS 'search:v2';
 			c.Assert(sql, qt.Equals, test.want)
 		})
 	}
+}
+
+// TestPlanner_ColumnCommentsFollowTheTablesColumnStatements_HappyPath is a table
+// that gains a commented column while one of its columns changes its comment and
+// its nullability. Every comment follows all of the table's column statements,
+// the changed column's first: ahead of the change to its own column it would hold
+// that change behind it, and between two column statements it would split the
+// one ALTER TABLE the exact style writes for the table.
+func TestPlanner_ColumnCommentsFollowTheTablesColumnStatements_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := addedColumnsDiff(commentedNote())
+	diff.TablesModified[0].ColumnsModified = []difftypes.ColumnDiff{{
+		ColumnName:    "title",
+		Changes:       map[string]string{"nullable": "true -> false"},
+		Desired:       schemamodel.Field{StructName: "Task", Name: "title", Type: "text", Comment: "v2"},
+		CommentChange: &difftypes.CommentChange{Current: "v1", Desired: "v2"},
+	}}
+
+	sql := renderStyledPlan(c, planext.StatementStyleAnnotated, diff)
+
+	c.Assert(sql, qt.Equals, `-- Add/modify columns for table: tasks
+ALTER TABLE "tasks" ADD COLUMN "note" text;
+
+-- Modify column tasks.title: nullable: true -> false
+-- POSTGRES: SET NOT NULL fails if any row of "tasks" holds NULL in "title"; the column declares no default to fill it with.
+ALTER TABLE "tasks" ALTER COLUMN "title" SET NOT NULL;
+
+COMMENT ON COLUMN "tasks"."title" IS 'v2';
+
+COMMENT ON COLUMN "tasks"."note" IS 'plain note';
+
+`)
 }

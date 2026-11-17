@@ -1491,6 +1491,11 @@ changes keeps the comment that changes with it. Measured on PostgreSQL 18: the
 diff after the apply is in sync, and `col_description` reads back each comment
 (`integration/column_comment_convergence_e2e_test.go`).
 
+On a table the plan changes, the comments follow the table's one `ALTER TABLE`
+and its new indexes: the table's own comment first, then its columns' in the
+order the table holds them. CE writes them in that order, and a column comment
+between two of the table's column changes would split the `ALTER TABLE` in two.
+
 ### Attributes of the same family that are still dropped
 
 None of these is closed. The reasons differ and are recorded per row, because
