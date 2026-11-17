@@ -16,7 +16,9 @@ import (
 	"ptah.run/core/difftypes"
 	"ptah.run/core/lintext"
 	"ptah.run/core/planext"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
@@ -806,6 +808,19 @@ type replayedComparison struct {
 	diff    *difftypes.SchemaDiff
 }
 
+// readNamesTheDevDatabase reports whether a read of the replayed dev database
+// on dialect names an object's schema with the dev database's name, which
+// [devqualifier.Remove] takes off. That holds where a schema is a database of
+// the server, and for an engine this process does not describe. On a
+// search-path engine a schema is a namespace the target holds under the same
+// name: a realm-scoped read names the current schema on every object (see
+// [readscope.Qualified]), and taking it off a view, a function or a sequence
+// alone writes DROP VIEW "v" beside ALTER TABLE "public"."t".
+func readNamesTheDevDatabase(dialect string) bool {
+	described, _ := platform.Lookup(dialect)
+	return described.Schemas.Selection != descriptor.SchemaSelectionSearchPath
+}
+
 // compareReplayedState reads the state the migration directory just replayed
 // on the dev database and compares the desired state against it.
 //
@@ -858,7 +873,9 @@ func compareReplayedState(
 	if err != nil {
 		return replayedComparison{}, err
 	}
-	devqualifier.Remove(replayed, defaultSchema, readNames)
+	if readNamesTheDevDatabase(replayConn.Info().Dialect) {
+		devqualifier.Remove(replayed, defaultSchema, readNames)
+	}
 	// The extensions the dev database held before the replay are its
 	// environment, not something the directory built; see
 	// [devclean.Baseline.WithoutEnvironment].
