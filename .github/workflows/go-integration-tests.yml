@@ -146,6 +146,12 @@ jobs:
     # it, and the limits here are sized for that slower run. A hung test fails
     # its package at the contour's --timeout, which sits below this limit, so a
     # hang ends with the package's goroutine dump rather than a canceled job.
+    # Measured on the race run 44080683951: the race detector adds about 13% to
+    # the contour's test binaries, its largest one (providercli) ran 22 minutes
+    # against the 40-minute --timeout, and the parts balanced on the timings of
+    # a run without it come to at most 21 minutes of tests, beside 7 to 9
+    # minutes of setup and listing. Balanced by test count, its slowest leg
+    # took 39 minutes.
     timeout-minutes: 60
     strategy:
       # Every leg runs to its end. A shard canceled because another failed
@@ -857,8 +863,10 @@ jobs:
 
       # The union of the shards' tests must equal the listing they partitioned,
       # each test must have run once, on its shard, and none may have skipped
-      # or failed. The floor sits below the 3,472 tests listed when it was set
-      # and far above zero, so a listing that stopped matching cannot pass.
+      # or failed. The floor is far above zero and below what the contour
+      # lists: it exists so that a listing that stopped matching most of the
+      # tests cannot pass, and it moves by hand when the contour shrinks below
+      # it.
       - name: Prove the shards ran the contour exactly once
         run: |
           go run ./internal/cmd/testcontour verify \
@@ -869,19 +877,30 @@ jobs:
             --summary "$GITHUB_STEP_SUMMARY"
 
       # The measurement balances the next run's shards; the plan job reads it
-      # from the newest master run that kept it.
+      # from the newest master run that kept it. Only a contour that passed
+      # keeps one: verify writes no timings for a refused contour, and this
+      # step runs only after verify passed. A refused run measures whatever
+      # went wrong, such as tests that failed in milliseconds against a
+      # database that never started, and balancing on that overloads a shard.
       - name: Keep the measured timings
-        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: integration-timings
           path: ${{ runner.temp }}/integration-timings/timings.json
           retention-days: 30
           overwrite: true
-          if-no-files-found: ignore
+          if-no-files-found: error
 
       # A leg can fail without a test failing: a database that never came up,
       # or a smoke suite. The verdict covers those too.
+      #
+      # This step is required beside verify, not a second opinion on it. A
+      # re-run reads every artifact the run holds, and a shard re-run that
+      # dies before its upload leaves the report of its earlier attempt in
+      # place, which verify judges like any other. Refusing a report from an
+      # earlier attempt would not close it: the shards a partial re-run leaves
+      # alone send theirs from that earlier attempt too, and they are right.
+      # Only the legs' own results say which attempt each leg's report is.
       - name: Require every leg to have succeeded
         if: ${{ !cancelled() }}
         env:
