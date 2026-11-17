@@ -92,7 +92,9 @@ node npm/scripts/publish.mjs --staged ./npm-staged
 The publisher checks a published version's tarball integrity before skipping
 it, so the command can resume after a partial upload. A prerelease version is
 published under the `next` dist-tag, so `latest` stays on the newest release.
-`--dry-run` after the directory runs every check and uploads nothing; the
+`--dry-run` after the directory checks every staged manifest, runs npm's own
+publish checks on the two CLI packages, and uploads nothing. The platform
+packages carry the same version, so npm decides their tag the same way. The
 release check runs it on the snapshot packages, whose version is a prerelease. It publishes the six
 binary packages before the CLI package. Do not reuse a Ptah version tag to
 repair a different npm tarball.

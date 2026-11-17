@@ -77,7 +77,12 @@ function main() {
       if (pkg.name !== name || pkg.version !== root.version || version !== root.version) {
         throw new Error(`Platform package ${name} does not match @stokaro/ptah@${root.version}`);
       }
-      publish(directory, packed, dryRun);
+      // A dry run leaves the platform packages to the run that uploads them.
+      // They carry the CLI package's version, so npm decides their tag the
+      // same way, and packing their binaries twice costs minutes.
+      if (!dryRun) {
+        publish(directory, packed, false);
+      }
     }
     publish(join(staged, 'ptah'), packed, dryRun);
     const compat = manifest(join(staged, 'ptah-compat'));
