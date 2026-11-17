@@ -21,15 +21,17 @@ const builtInNameViews = "tables:\n  items:\n    columns:\n      id: {type: INTE
 	"views:\n  recent:\n    body: \"SELECT id FROM items\"\n"
 
 // builtInNameViewsCLI is the CLI over the common-objects program serving the
-// built-in engine name postgres, with builtInNameViews as its schema file.
+// built-in engine name postgres, with builtInNameViews as its schema file and
+// environment added to the program's.
 // The provider owns its session, so the host holds no database/sql handle to
 // it, although the built-in descriptor of postgres asks the server to spell
 // a declared view body.
-func builtInNameViewsCLI(c *qt.C) providerCLI {
+func builtInNameViewsCLI(c *qt.C, environment ...string) providerCLI {
 	c.Helper()
 	spec := fixtureReleaseSpec(c, "common-objects", testutils.FixtureRelease{})
 	spec.ProviderID = builtInNameProviderID
 	spec.Environment = append(spec.Environment, "FIXTURE_DEV_ENGINE=postgres", "FIXTURE_DEV_PROVIDER_ID="+builtInNameProviderID)
+	spec.Environment = append(spec.Environment, environment...)
 	f := newProviderCLI(c, spec)
 	spec.Environment = append(slices.Clone(spec.Environment), "PTAH_FIXTURE_PID_FILE="+f.pidPath)
 	manifest, err := json.Marshal(providerconfig.Configuration{FormatVersion: providerconfig.FormatVersion,

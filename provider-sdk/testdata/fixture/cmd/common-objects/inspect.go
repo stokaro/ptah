@@ -14,7 +14,9 @@ import (
 
 // Inspect reports the tables as the base fixture does, and, to a host that
 // lists the common-object wire, the database's views and the roles, grants
-// and comments the program keeps. Every kind it carries is read completely.
+// and comments the program keeps, and to one that lists common access the
+// owner FIXTURE_VIEW_OWNER names for each view. Every kind it carries is read
+// completely.
 // A comment whose object the read does not hold is left out, since the base
 // executor drops a table without telling the file.
 func (p *commonObjects) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
@@ -23,7 +25,11 @@ func (p *commonObjects) Inspect(ctx context.Context, request *protocol.InspectRe
 		return snapshot, err
 	}
 	observed := &protocol.ObservedCommonObjects{}
+	owners := viewOwner() != "" && slices.Contains(provider.HostFeatures(ctx), provider.CommonAccessFeature)
 	for _, kind := range commonKinds() {
+		if kind == protocol.CommonObjectSupport_OBJECT_OWNER && !owners {
+			continue
+		}
 		observed.Coverage = append(observed.Coverage, &protocol.CommonObjectCoverage{Kind: kind, Knowledge: &protocol.ModelKnowledge{State: protocol.ModelKnowledge_COMPLETE}})
 	}
 	err = p.WithSession(ctx, request.GetSessionId(), "", func(access backend.Access) error {
@@ -36,6 +42,13 @@ func (p *commonObjects) Inspect(ctx context.Context, request *protocol.InspectRe
 			return err
 		}
 		observed.Views = views
+		if owners {
+			for _, view := range views {
+				observed.ObjectOwners = append(observed.ObjectOwners, &protocol.ObjectOwner{
+					Object: &protocol.Reference{Engine: servedEngine(), Kind: "view", Name: view.GetIdentity().GetName()}, Owner: viewOwner(),
+				})
+			}
+		}
 		for _, view := range held.MatViews {
 			observed.Views = append(observed.Views, &protocol.ObservedView{Identity: &protocol.Reference{Engine: servedEngine(), Kind: "materialized_view", Name: view.Name},
 				Body: foldSpaces(view.Body)})

@@ -207,16 +207,23 @@ func (h heldOwners) compare(changes map[string]string, kind objectowner.Kind, sc
 }
 
 // CurrentOwners is the owner database reports for each view and materialized
-// view, in the order it reports them, for [difftypes.SchemaDiff.CurrentOwners].
-// An object of the schema the read names objects in is qualified by it.
-func CurrentOwners(database *catalog.Database) []difftypes.OwnerRef {
+// view of a kind whose owner target manages ([objectowner.Manages]), in the
+// order it reports them, for [difftypes.SchemaDiff.CurrentOwners]. An object
+// of the schema the read names objects in is qualified by it.
+//
+// Only a target that manages an owner has a plan that gives one back, so the
+// owners of any other target stay out of the diff. On a provider target they
+// would reach a projection that refuses every field it has no wire form for,
+// and refuse each plan made from a read that reports a view's owner.
+func CurrentOwners(database *catalog.Database, target string) []difftypes.OwnerRef {
 	if database == nil {
 		return nil
 	}
+	managed := slices.DeleteFunc(objectowner.Kinds(), func(kind objectowner.Kind) bool { return !objectowner.Manages(target, kind) })
 	var owners []difftypes.OwnerRef
 	for _, row := range database.ObjectOwners {
 		kind, ok := objectowner.KindOfCatalog(row.Kind)
-		if !ok || row.Owner == "" {
+		if !ok || row.Owner == "" || !slices.Contains(managed, kind) {
 			continue
 		}
 		owners = append(owners, difftypes.OwnerRef{Kind: string(kind), Name: catalog.QualifyTableName(row.Schema, row.Name), Owner: row.Owner})

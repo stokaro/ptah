@@ -1,7 +1,8 @@
 // Package main serves the fixture with the common-object wire of contract
 // 25.3: views, roles and groups, grants and comments, with
 // FIXTURE_MATERIALIZED_VIEWS=true materialized views, and with
-// FIXTURE_VIEW_QUERIES=exact or context its own comparison of view queries.
+// FIXTURE_VIEW_QUERIES=exact or context its own comparison of view queries,
+// and with FIXTURE_VIEW_OWNER the owner of every view.
 // FIXTURE_DEV_ENGINE serves the engine under another name, as the provider
 // FIXTURE_DEV_PROVIDER_ID names when it is set, as the devdb program does.
 //
@@ -37,8 +38,17 @@ func commonKinds() []protocol.CommonObjectSupport_Kind {
 	if materializedViews() {
 		kinds = append(kinds, protocol.CommonObjectSupport_MATERIALIZED_VIEW)
 	}
+	if viewOwner() != "" {
+		kinds = append(kinds, protocol.CommonObjectSupport_OBJECT_OWNER)
+	}
 	return kinds
 }
+
+// viewOwner is FIXTURE_VIEW_OWNER, the role the program reports as the owner
+// of every view it reads, as a server that records who created an object
+// does. With it the program negotiates common access and reads the owners
+// completely; without it the program reports no owner.
+func viewOwner() string { return os.Getenv("FIXTURE_VIEW_OWNER") }
 
 // servedEngine is the engine the program serves: fixture, or the name
 // FIXTURE_DEV_ENGINE gives, such as postgres for a provider that serves an
@@ -65,6 +75,9 @@ func main() {
 	description := backend.Description()
 	description.SemanticIdentity += "-common-objects"
 	added := []string{provider.CommonObjectsFeature, provider.LocksFeature}
+	if viewOwner() != "" {
+		added = append(added, provider.CommonAccessFeature)
+	}
 	description.Features = append(description.Features, added...)
 	engine := description.Engines[0]
 	engine.Features = append(engine.Features, added...)
