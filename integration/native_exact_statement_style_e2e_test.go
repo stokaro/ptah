@@ -244,8 +244,10 @@ func plannedFiles(c *qt.C, dir string) string {
 // nativePlanningVerbs are the native verbs that show or write a plan, each asking
 // through its own planning call. qualifier is what the verb writes in front of
 // the name of an object in the target's current schema on a URL that pins no
-// search_path: a verb that places the desired schema's names writes the schema,
-// and one that compares the source as written writes nothing.
+// search_path. A verb that shows or runs the target's plan places the desired
+// schema's names and writes the schema. `migrations generate` and `migrations
+// plan`, which shows the file it writes, compare the source as written and write
+// nothing.
 var nativePlanningVerbs = []struct {
 	name      string
 	qualifier string
@@ -260,7 +262,7 @@ var nativePlanningVerbs = []struct {
 	{name: "schema diff", qualifier: `"public".`, args: func(target, schema string) []string {
 		return []string{"schema", "diff", "--from", target, "--to", schema, "--schemas", "public"}
 	}},
-	{name: "schema compare", args: func(target, schema string) []string {
+	{name: "schema compare", qualifier: `"public".`, args: func(target, schema string) []string {
 		return []string{"schema", "compare", "--db-url", target, "--schema-file", schema, "--schemas", "public"}
 	}},
 	{name: "migrations plan", args: func(target, schema string) []string {
