@@ -197,6 +197,31 @@ func TestPlan_HappyPathWeighsAnUnmeasuredTestAtTheMedian(t *testing.T) {
 	c.Assert(partition.Weighting, qt.Equals, "timings from fixture run (3 of 4 listed tests measured)")
 }
 
+// TestPlan_HappyPathKeepsAOneTestPackageWhole gives a package of one test more
+// weight than a shard's share. Splitting it would make a unit of that same
+// test run through a -run filter, so the package stays whole and runs in the
+// one go test invocation its part gives every whole package.
+func TestPlan_HappyPathKeepsAOneTestPackageWhole(t *testing.T) {
+	c := qt.New(t)
+	tests := []shard.Test{
+		{Package: safety, Name: "TestS1"},
+		{Package: providercli, Name: "TestP1"},
+		{Package: providercli, Name: "TestP2"},
+	}
+	timings := shard.Timings{Packages: map[string]shard.PackageTiming{
+		safety:      {ElapsedMS: 9000, Tests: map[string]int64{"TestS1": 9000}},
+		providercli: {ElapsedMS: 2000, Tests: map[string]int64{"TestP1": 1000, "TestP2": 1000}},
+	}}
+
+	partition, err := shard.Plan(tests, timings, 2)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(partition.Parts, qt.DeepEquals, []shard.Part{
+		{Units: []shard.Unit{{Package: safety, Whole: true, Tests: []string{"TestS1"}}}, WeightMS: 9000},
+		{Units: []shard.Unit{{Package: providercli, Whole: true, Tests: []string{"TestP1", "TestP2"}}}, WeightMS: 2000},
+	})
+}
+
 // TestPlan_HappyPathNamesWhatBalancedIt reads the weighting a run log
 // prints. A timing report that holds no package says why it holds none, and
 // one that measures other tests is named as such: both balance by count.
