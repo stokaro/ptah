@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/internal/definedtypetest"
 	"ptah.run/internal/schemaprep"
 )
@@ -321,4 +322,45 @@ func TestPlaceUnqualified_PlacesADeclaredRoutineWithItsArguments(t *testing.T) {
 	c.Assert(placed.Triggers[0].Table, qt.Equals, "app.docs")
 	c.Assert(placed.Triggers[0].ExecuteFunction, qt.Equals, "app.touch")
 	c.Assert(placed.Grants[0].OnRoutine, qt.Equals, "app.touch(integer)")
+}
+
+// A partition of a declared table names its parent in the placed schema, so
+// its CREATE TABLE ... PARTITION OF names the schema the parent is created in.
+// A parent the database does not declare, and one written with a schema, keep
+// the name they were written with, and the database placed from is left as it
+// was.
+func TestPlaceUnqualified_PlacesTheParentOfAPartition(t *testing.T) {
+	c := qt.New(t)
+	member := func(parentSchema, parent string) schemaext.Facets {
+		return must.Must(schemaext.NewFacets(&pgtable.DesiredPartitionMember{PartitionMember: pgtable.PartitionMember{
+			ParentSchema: parentSchema, Parent: parent, Bound: "FOR VALUES FROM (1) TO (2)",
+		}}))
+	}
+	database := &schemamodel.Database{Tables: []schemamodel.Table{
+		{Name: "events"},
+		{Name: "events_1", Facets: member("", "events")},
+		{Name: "managed_1", Facets: member("", "managed")},
+		{Name: "away_1", Facets: member("other", "events")},
+	}}
+
+	placed, err := schemaprep.PlaceUnqualified(database, "app", platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(partitionParents(c, placed.Tables[1:]), qt.DeepEquals, []string{"app.events", ".managed", "other.events"})
+	c.Assert(partitionParents(c, database.Tables[1:]), qt.DeepEquals, []string{".events", ".managed", "other.events"})
+}
+
+// partitionParents is schema.name of the parent each of tables names as a
+// partition.
+func partitionParents(c *qt.C, tables []schemamodel.Table) []string {
+	c.Helper()
+	parents := make([]string, 0, len(tables))
+	for _, table := range tables {
+		value, ok, err := table.Facets.Get(pgtable.PartitionMemberKind)
+		c.Assert(err, qt.IsNil)
+		c.Assert(ok, qt.IsTrue, qt.Commentf("table %s", table.Name))
+		schema, name := value.(schemaext.TableParent).ParentTable()
+		parents = append(parents, schema+"."+name)
+	}
+	return parents
 }

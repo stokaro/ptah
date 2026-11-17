@@ -36,6 +36,17 @@ type TableParent interface {
 	ParentTable() (schema, name string)
 }
 
+// PlacedTableParent is implemented by a [TableParent] that can name its parent
+// in a schema the source left out. A host that places every name written
+// without a schema in one schema places the parent there too, so the statement
+// that creates the table names the parent's schema as it names the table's.
+type PlacedTableParent interface {
+	TableParent
+	// WithParentSchema returns an independent copy of the value naming its
+	// parent in schema.
+	WithParentSchema(schema string) Value
+}
+
 // ParentTableOf names the table a value in facets requires, and reports false
 // when no value does. Values are asked in kind order and the first one answers.
 func ParentTableOf(facets Facets) (schema, name string, found bool) {

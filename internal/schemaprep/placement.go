@@ -35,13 +35,13 @@ import (
 // placed when it names one of those objects the database declares without a
 // schema: the tables of columns, indexes, constraints, triggers, row-level
 // security records, grants and declared rows, the tables a foreign key or a
-// relation embedding references, the function a trigger executes, the
-// sequence or routine a grant names, the dependency maps and the
-// self-referencing foreign keys. A table's DependsOn is matched by its bare
-// name, so it needs no schema. A reference to
-// an object the database does not declare, such as a built-in trigger function
-// or a table another tool manages, keeps the name it was written with and is
-// resolved where the session finds it. Bodies, expressions and defaults are
+// relation embedding references, the parent a partition names, the function a
+// trigger executes, the sequence or routine a grant names, the dependency maps
+// and the self-referencing foreign keys. A table's DependsOn is matched by its
+// bare name, so it needs no schema. A reference to an object the database does
+// not declare, such as a built-in trigger function or a table another tool
+// manages, keeps the name it was written with and is resolved where the
+// session finds it. Bodies, expressions and defaults are
 // SQL text and keep the names they were written with, and so does the table of
 // a sequence's OWNED BY, which the comparison reads as the server prints it.
 func PlaceUnqualified(database *schemamodel.Database, schema, targetPlatform string) (*schemamodel.Database, error) {
@@ -62,12 +62,10 @@ func PlaceUnqualified(database *schemamodel.Database, schema, targetPlatform str
 	sequence := func(name string) string { return declared.place(name, schema, declared.sequences) }
 	anyDeclared := func(name string) string { return declared.place(name, schema, declared.relations, declared.functions) }
 
-	placed.Tables = mapSlice(database.Tables, func(table schemamodel.Table) schemamodel.Table {
-		if strings.TrimSpace(table.Schema) == "" {
-			table.Schema = schema
-		}
-		return table
-	})
+	placed.Tables, err = placedTables(database.Tables, schema, declared)
+	if err != nil {
+		return nil, err
+	}
 	placed.Sequences = mapSlice(database.Sequences, func(sequence schemamodel.Sequence) schemamodel.Sequence {
 		if strings.TrimSpace(sequence.Schema) == "" && unqualified(sequence.Name) {
 			sequence.Schema = schema
@@ -142,6 +140,53 @@ func PlaceUnqualified(database *schemamodel.Database, schema, targetPlatform str
 	placed.FunctionDependencies = placedDependencies(database.FunctionDependencies, anyDeclared)
 	placed.SelfReferencingForeignKeys = placedSelfReferences(database.SelfReferencingForeignKeys, relation)
 	return QualifyDeclaredUserTypes(&placed, targetPlatform), nil
+}
+
+// placedTables is tables with each one written without a schema placed in
+// schema, and the parent each one names without a schema placed there too when
+// the database declares that parent without a schema; see
+// [schemaext.PlacedTableParent]. A partition is created in the placed schema,
+// and its statement names the parent's.
+func placedTables(tables []schemamodel.Table, schema string, declared declaredNames) ([]schemamodel.Table, error) {
+	if tables == nil {
+		return nil, nil
+	}
+	placed := make([]schemamodel.Table, len(tables))
+	for i, table := range tables {
+		if strings.TrimSpace(table.Schema) == "" {
+			table.Schema = schema
+		}
+		facets, err := placedTableParent(table.Facets, schema, declared)
+		if err != nil {
+			return nil, fmt.Errorf("place the parent of table %q in %q: %w", table.Name, schema, err)
+		}
+		table.Facets = facets
+		placed[i] = table
+	}
+	return placed, nil
+}
+
+// placedTableParent is facets with the parent a value names without a schema
+// placed in schema, when the database declares that parent without a schema.
+func placedTableParent(facets schemaext.Facets, schema string, declared declaredNames) (schemaext.Facets, error) {
+	values, err := facets.Values()
+	if err != nil {
+		return schemaext.Facets{}, err
+	}
+	for _, value := range values {
+		parent, ok := value.(schemaext.PlacedTableParent)
+		if !ok {
+			continue
+		}
+		parentSchema, name := parent.ParentTable()
+		if strings.TrimSpace(parentSchema) != "" || !declared.has(name, declared.relations) {
+			continue
+		}
+		if facets, err = facets.Replace(parent.WithParentSchema(schema)); err != nil {
+			return schemaext.Facets{}, err
+		}
+	}
+	return facets, nil
 }
 
 // placedSelfReferences is the self-referencing foreign keys of a database,

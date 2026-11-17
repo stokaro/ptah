@@ -78,6 +78,16 @@ func (p *DesiredPartitionMember) ParentTable() (schema, name string) {
 	return p.ParentSchema, p.Parent
 }
 
+// WithParentSchema returns a copy of the declaration naming its parent in
+// schema; see [schemaext.PlacedTableParent].
+func (p *DesiredPartitionMember) WithParentSchema(schema string) schemaext.Value {
+	placed, _ := p.Clone().(*DesiredPartitionMember)
+	if placed != nil {
+		placed.ParentSchema = schema
+	}
+	return placed
+}
+
 // Clone returns an independent declaration, preserving a typed nil receiver.
 func (p *DesiredPartitionMember) Clone() schemaext.Value {
 	if p == nil {
