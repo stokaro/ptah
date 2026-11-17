@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/embedpg"
 	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
 )
 
 // theSecret is the source text this test plants and then goes looking for.
@@ -55,8 +56,7 @@ func TestInferencePlan_AnswersWithoutTheSourceContentLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	db, table := seedSecretSource(c, ctx, dbURL)
-	defer db.Close()
+	_, table := seedSecretSource(c, ctx, dbURL)
 	specPath, root := writeInferenceSpec(c, table)
 
 	session := liveInferenceSession(c, dbURL, root)
@@ -86,7 +86,6 @@ func TestInferenceStatus_AnswersWithoutTheCursorLive(t *testing.T) {
 	defer cancel()
 
 	db, table := seedSecretSource(c, ctx, dbURL)
-	defer db.Close()
 	runID := seedRun(c, ctx, db, table)
 
 	session := liveInferenceSession(c, dbURL, c.TempDir())
@@ -175,6 +174,12 @@ func seedRun(c *qt.C, ctx context.Context, db *sql.DB, table string) string {
 	c.Helper()
 	store := embedpg.NewStore(db)
 	c.Assert(store.EnsureSchema(ctx, must.Must(builtin.New()), capability.ForDialect(embedpg.Dialect)), qt.IsNil)
+	c.Cleanup(func() {
+		for _, table := range embedstore.Objects() {
+			_, err := db.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+table.Name+" CASCADE")
+			c.Check(err, qt.IsNil)
+		}
+	})
 
 	runID := fmt.Sprintf("agent-run-%d", time.Now().UnixNano())
 	c.Assert(store.CreateRun(ctx, embedrun.Run{
@@ -189,11 +194,15 @@ func seedRun(c *qt.C, ctx context.Context, db *sql.DB, table string) string {
 }
 
 // seedSecretSource creates a table holding one row of distinctive text and one
-// vector, and returns the open database and the table's name.
+// vector, and returns the open database and the table's name. The database is
+// closed when the test ends, after the cleanups that drop what the test
+// created: a deferred close runs first, and the drops would then fail on a
+// closed pool and leave the tables on the shared server.
 func seedSecretSource(c *qt.C, ctx context.Context, dbURL string) (*sql.DB, string) {
 	c.Helper()
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
 	c.Assert(db.PingContext(ctx), qt.IsNil)
 
 	table := fmt.Sprintf("agent_secret_%d", time.Now().UnixNano())

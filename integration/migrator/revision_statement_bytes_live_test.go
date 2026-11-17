@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -50,7 +51,7 @@ func statementBytesConnection(t *testing.T, dbURL string, names statementBytesNa
 }
 
 func dropStatementBytesObjects(conn *dbschema.DatabaseConnection, names statementBytesNames) {
-	for _, table := range []string{names.revisions, names.payloads, names.absent} {
+	for _, table := range append(revisiontable.Configured("", names.revisions), names.payloads, names.absent) {
 		_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+table)
 	}
 }

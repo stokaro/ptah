@@ -340,11 +340,11 @@ func assertIssue124State(
 func cleanupIssue124(t *testing.T, conn *dbschema.DatabaseConnection, names issue124TestNames) {
 	t.Helper()
 
-	for _, statement := range []string{
-		fmt.Sprintf("DROP TABLE IF EXISTS %s", names.migrationsTable),
+	for _, statement := range append(
+		dropRevisionTableStatements(names.migrationsTable),
 		fmt.Sprintf("DROP TABLE IF EXISTS %s", names.logTable),
 		fmt.Sprintf("DROP TABLE IF EXISTS %s", names.itemsTable),
-	} {
+	) {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
 }

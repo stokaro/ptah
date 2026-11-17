@@ -76,7 +76,8 @@ func TestMigrationsUpFailureRecordOfAStatementE2E(t *testing.T) {
 			c := qt.New(t)
 			f := newSharedFailureTarget(c, test.engine)
 			accounts, planned, revisions := f.table("accounts"), f.table("planned"), f.table("revisions")
-			f.dropAfterwards(c, accounts, planned, revisions, revisions+"_log")
+			f.dropAfterwards(c, accounts, planned)
+			f.dropRecordsAfterwards(c, revisions)
 			f.exec(c, strings.ReplaceAll(uniqueTableDDL, "{t}", accounts),
 				fmt.Sprintf("INSERT INTO %s (id, email) VALUES (1, '%s')", accounts, failureRowValue))
 			dir := writeMigrations(c, test.header+

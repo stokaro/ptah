@@ -264,10 +264,14 @@ func runRevisionCompletionScenario(
 ) {
 	c := qt.New(t)
 	ctx := context.Background()
+	// Closed through cleanups registered before the one that drops the
+	// objects, so the drop runs first: a deferred close runs when this
+	// function returns, before any cleanup, and the drop would then fail on a
+	// closed connection and leave every table on the shared server.
 	conn := target.connect(t)
-	defer dbschema.CloseAndWarn(conn)
+	t.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 	faultConn, closeFaultConn := target.faultConn(t, conn)
-	defer closeFaultConn()
+	t.Cleanup(closeFaultConn)
 
 	names := newRevisionCompletionNames(target.name)
 	target.dropObjects(faultConn, names)
@@ -642,6 +646,9 @@ func dropRevisionCompletionObjects(templates ...string) func(*dbschema.DatabaseC
 				context.Background(),
 				fmt.Sprintf(template, names.revisions, names.body, names.fault),
 			)
+		}
+		for _, statement := range dropRevisionTableStatements(names.revisions) {
+			_, _ = conn.ExecContext(context.Background(), statement)
 		}
 	}
 }

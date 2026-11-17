@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -58,7 +59,7 @@ func TestSetRevisionToZeroClearsEveryRevisionLive(t *testing.T) {
 			widgets := fmt.Sprintf("ptah_3455_widgets_%d", suffix)
 			gadgets := fmt.Sprintf("ptah_3455_gadgets_%d", suffix)
 			m := newSetZeroMigrator(c, conn, widgets, gadgets, test.format, revisionsTable)
-			defer dropSetZeroTables(conn, revisionsTable, widgets, gadgets)
+			defer dropSetZeroTables(conn, append(revisiontable.Configured("", revisionsTable), widgets, gadgets)...)
 
 			c.Assert(m.MigrateUp(ctx), qt.IsNil)
 			c.Assert(setZeroRevisionCount(c, conn, revisionsTable), qt.Equals, 2)

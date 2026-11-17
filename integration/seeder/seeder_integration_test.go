@@ -3,6 +3,7 @@
 package seeder_test
 
 import (
+	"context"
 	"testing"
 	"testing/fstest"
 
@@ -10,6 +11,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/seeder"
 )
 
@@ -17,12 +19,18 @@ func TestApply_Integration(t *testing.T) {
 	c := qt.New(t)
 	conn, err := dbschema.ConnectToDatabase(t.Context(), requireSeederDatabaseURL(t))
 	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-	_, err = conn.ExecContext(t.Context(), "DROP TABLE IF EXISTS schema_seeds")
-	c.Assert(err, qt.IsNil)
-	_, err = conn.ExecContext(t.Context(), "DROP TABLE IF EXISTS seed_countries")
-	c.Assert(err, qt.IsNil)
+	// The server is shared: the tables are dropped before the test, so an earlier
+	// run cannot decide this one, and after it, so this run decides no later one.
+	drop := func() {
+		for _, table := range []string{revisiontable.Seeds, "seed_countries"} {
+			_, err := conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS "+table)
+			c.Check(err, qt.IsNil)
+		}
+	}
+	drop()
+	c.Cleanup(drop)
 	_, err = conn.ExecContext(t.Context(), "CREATE TABLE seed_countries (code VARCHAR(8) PRIMARY KEY, name VARCHAR(255) NOT NULL)")
 	c.Assert(err, qt.IsNil)
 

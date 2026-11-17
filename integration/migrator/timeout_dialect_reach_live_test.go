@@ -11,6 +11,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -37,12 +38,14 @@ func TestMigrateUp_CockroachDBHonorsPerMigrationTimeouts(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = conn.Close() }()
 
-	_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS schema_migrations")
-	_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS ptah_crdb_timeout_items")
-	defer func() {
-		_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS schema_migrations")
-		_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS ptah_crdb_timeout_items")
-	}()
+	drop := func() {
+		for _, statement := range append(dropRevisionTableStatements(revisiontable.Ptah),
+			"DROP TABLE IF EXISTS ptah_crdb_timeout_items") {
+			_, _ = conn.ExecContext(context.Background(), statement)
+		}
+	}
+	drop()
+	defer drop()
 
 	fsys := fstest.MapFS{
 		"0000000001_create_items.up.sql": &fstest.MapFile{

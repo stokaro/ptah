@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/migration/migrator"
 )
 
@@ -437,7 +438,9 @@ func openRetryInvalidIndexDB(c *qt.C, dsn string) *sql.DB {
 func seedRetryInvalidIndexTable(c *qt.C, db *sql.DB, emailExpr string) {
 	c.Helper()
 	cleanup := func() {
-		for _, table := range []string{retryInvalidIndexTable, retryInvalidIndexMarker, retryInvalidIndexTracker} {
+		tables := append([]string{retryInvalidIndexTable, retryInvalidIndexMarker},
+			revisiontable.Configured("", retryInvalidIndexTracker)...)
+		for _, table := range tables {
 			_, err := db.Exec("DROP TABLE IF EXISTS " + table + " CASCADE")
 			c.Check(err, qt.IsNil)
 		}
@@ -464,7 +467,7 @@ func seedRetryInvalidIndexTable(c *qt.C, db *sql.DB, emailExpr string) {
 func seedRetryPartitionedTable(c *qt.C, db *sql.DB) {
 	c.Helper()
 	cleanup := func() {
-		for _, table := range []string{retryPartitionedTable, retryInvalidIndexTracker} {
+		for _, table := range append([]string{retryPartitionedTable}, revisiontable.Configured("", retryInvalidIndexTracker)...) {
 			_, err := db.Exec("DROP TABLE IF EXISTS " + table + " CASCADE")
 			c.Check(err, qt.IsNil)
 		}

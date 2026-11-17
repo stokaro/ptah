@@ -2007,12 +2007,12 @@ func postgresFamilyAtlasURL(t *testing.T, engine dbtarget.Engine, dialect string
 func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
 
-	for _, statement := range []string{
+	statements := []string{
 		"DROP TABLE IF EXISTS ptah_issue_273_audit",
 		"DROP TABLE IF EXISTS ptah_issue_273_users",
 		"DROP TABLE IF EXISTS ptah_issue_273_teams",
-		"DROP TABLE IF EXISTS schema_migrations_issue_273",
-	} {
+	}
+	for _, statement := range append(statements, dropRevisionTableStatements("schema_migrations_issue_273")...) {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
 }
@@ -2020,12 +2020,12 @@ func cleanupIssue273(t *testing.T, conn *dbschema.DatabaseConnection) {
 func cleanupIssue299(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
 
-	for _, statement := range []string{
+	statements := []string{
 		"DROP TABLE IF EXISTS ptah_issue_299_users_dev",
 		"DROP TABLE IF EXISTS ptah_issue_299_prod",
 		"DROP TABLE IF EXISTS ptah_issue_299_dev",
-		"DROP TABLE IF EXISTS schema_migrations_issue_299",
-	} {
+	}
+	for _, statement := range append(statements, dropRevisionTableStatements("schema_migrations_issue_299")...) {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
 }
@@ -2045,10 +2045,10 @@ func cleanupIssue275(t *testing.T, conn *dbschema.DatabaseConnection) {
 func cleanupIssue290(t *testing.T, conn *dbschema.DatabaseConnection) {
 	t.Helper()
 
-	for _, statement := range []string{
+	statements := []string{
 		"DROP TABLE IF EXISTS ptah_issue_290_widgets",
-		"DROP TABLE IF EXISTS schema_migrations_issue_290",
-	} {
+	}
+	for _, statement := range append(statements, dropRevisionTableStatements("schema_migrations_issue_290")...) {
 		_, _ = conn.ExecContext(context.Background(), statement)
 	}
 }
