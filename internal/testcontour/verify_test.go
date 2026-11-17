@@ -101,21 +101,45 @@ func TestVerify_FailurePathKeepsNoTimingsOfARefusedContour(t *testing.T) {
 }
 
 // TestRun_HappyPathBalancesByCountWhenTheTimingsCannotBeRead hands a shard a
-// timings file that does not exist. The run goes on, balanced by test count,
-// and says so on standard error and in the partition it records.
+// timings file it cannot use: one that does not exist, and one that is not a
+// timings report. The run goes on, balanced by test count, and says which on
+// standard error and in the partition it records.
 func TestRun_HappyPathBalancesByCountWhenTheTimingsCannotBeRead(t *testing.T) {
-	c := qt.New(t)
-	reports := c.TempDir()
+	tests := []struct {
+		name          string
+		timings       string
+		wantStderr    string
+		wantWeighting string
+	}{
+		{
+			name:          "absent",
+			timings:       filepath.Join("testdata", "timings", "absent.json"),
+			wantStderr:    "testcontour: no contour timings, balancing by test count: ",
+			wantWeighting: "test count (no readable timings)",
+		},
+		{
+			name:          "not a timings report",
+			timings:       filepath.Join("testdata", "timings", "garbage.json"),
+			wantStderr:    "testcontour: unreadable contour timings, balancing by test count: ",
+			wantWeighting: "test count (unreadable timings)",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reports := c.TempDir()
 
-	stderr := writeFixtureShard(c, reports, 1, filepath.Join(c.TempDir(), "absent.json"))
+			stderr := writeFixtureShard(c, reports, 1, test.timings)
 
-	c.Assert(stderr, qt.Contains, "testcontour: no contour timings, balancing by test count: ")
-	file, err := os.Open(filepath.Join(reports, "integration-contour-1", shard.ManifestFile))
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() { _ = file.Close() })
-	manifest, err := shard.ReadManifest(file)
-	c.Assert(err, qt.IsNil)
-	c.Assert(manifest.Partition.Weighting, qt.Equals, "test count (no readable timings)")
+			c.Assert(stderr, qt.Contains, test.wantStderr)
+			file, err := os.Open(filepath.Join(reports, "integration-contour-1", shard.ManifestFile))
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(func() { _ = file.Close() })
+			manifest, err := shard.ReadManifest(file)
+			c.Assert(err, qt.IsNil)
+			c.Assert(manifest.Partition.Weighting, qt.Equals, test.wantWeighting)
+		})
+	}
 }
 
 // TestRun_FailurePathRefusesTimingsForTheWholeContour gives a run of the whole
