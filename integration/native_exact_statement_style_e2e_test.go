@@ -429,8 +429,8 @@ func TestMigrationsDownE2E_ADerivedRollbackThatRebuildsAnEnumLeavesItsDropWithou
 		"--revision-format", "atlas", "--shadow-db", dev, "--target", "20200101000000", "--plan", "--dry-run", "--confirm")
 
 	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old"`)
-	c.Assert(run.Stdout, qt.Contains, `DROP INDEX "i"`)
+	c.Assert(run.Stdout, qt.Contains, `ALTER TYPE "public"."e" RENAME TO "e__ptah_old"`)
+	c.Assert(run.Stdout, qt.Contains, `DROP INDEX "public"."i"`)
 	c.Assert(run.Stdout, qt.Not(qt.Contains), "IF EXISTS")
 }
 

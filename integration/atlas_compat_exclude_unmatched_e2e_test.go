@@ -195,7 +195,7 @@ func TestAtlasCompatExcludeProtectsATypeObjectE2E(t *testing.T) {
 	c.Assert(plan, qt.Not(qt.Contains), `"intrange"`)
 	// The control: an object no selector named is still planned for removal, so
 	// the assertions above measure the exclusion rather than an empty plan.
-	c.Assert(plan, qt.Contains, `DROP TYPE "mood"`)
+	c.Assert(plan, qt.Contains, `DROP TYPE "public"."mood"`)
 }
 
 // excludeSchemaSeed adds a second schema holding objects of its own, so a
@@ -261,7 +261,7 @@ func TestAtlasCompatExcludeSchemaSelectorE2E(t *testing.T) {
 	// Controls in the same run: objects no selector named are still planned for
 	// removal, so the assertions above measure the exclusion rather than an
 	// empty plan.
-	c.Assert(plan, qt.Contains, `DROP TABLE "users"`)
+	c.Assert(plan, qt.Contains, `DROP TABLE "public"."users"`)
 	c.Assert(plan, qt.Contains, `"mood"`)
 
 	// The negative direction, in the same scope: a selector naming no schema and

@@ -191,8 +191,8 @@ func TestCompatMigrateDownE2E_ADerivedRollbackThatRebuildsAnEnumLeavesItsDropWit
 		"--dev-url", dev, "--to-version", "20200101000000", "--plan", "--dry-run")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old"`)
-	c.Assert(out, qt.Contains, `DROP INDEX "i"`)
+	c.Assert(out, qt.Contains, `ALTER TYPE "public"."e" RENAME TO "e__ptah_old"`)
+	c.Assert(out, qt.Contains, `DROP INDEX "public"."i"`)
 	c.Assert(out, qt.Not(qt.Contains), "IF EXISTS")
 }
 
