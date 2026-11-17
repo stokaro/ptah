@@ -763,12 +763,15 @@ func runSchemaApplyOnLockedSession(
 	}
 	// Every check a real run makes ahead of its prompt sits above this exit, so a
 	// dry run refuses what the real run refuses, in the same words and under the
-	// same outcome. A statement the writer would refuse is asked here: a real run
-	// asks as it sends.
+	// same outcome. A statement the writer would refuse, or one that gives an
+	// object to a role the server cannot take it, is asked here on a real run
+	// too: asked only as the statement is sent, the refusal follows the prompt
+	// and the apply log's started entry, and --keep-log records a run that sent
+	// nothing. The run asks again as it sends.
+	if err := plan.CheckStatements(ctx, statements); err != nil {
+		return "", fmt.Errorf("apply schema changes: %w", err)
+	}
 	if opts.dryRun {
-		if err := plan.CheckStatements(ctx, statements); err != nil {
-			return "", fmt.Errorf("apply schema changes: %w", err)
-		}
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}
 
@@ -921,11 +924,12 @@ func runSchemaApplyPlanFileOnLockedSession(
 	if err := mysqldefiner.Check(ctx, conn, "", plan.StatementSQL()); err != nil {
 		return "", err
 	}
-	// As on a computed plan: the checks of a real run sit above this exit.
+	// As on a computed plan: the checks of a real run sit above this exit, and
+	// the statement checks are asked here on a real run too.
+	if err := atlasschema.CheckApplyStatements(ctx, conn, plan.StatementSQL()); err != nil {
+		return "", fmt.Errorf("apply schema changes: %w", err)
+	}
 	if opts.dryRun {
-		if err := atlasschema.CheckApplyStatements(ctx, conn, plan.StatementSQL()); err != nil {
-			return "", fmt.Errorf("apply schema changes: %w", err)
-		}
 		return atlasschema.ApplyOutcomeDryRun, nil
 	}
 	ok, err := confirmSchemaApply(cmd, opts, run.human, savedPlanRating(ctx, opts, conn, plan))

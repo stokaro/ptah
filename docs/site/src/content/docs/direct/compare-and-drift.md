@@ -181,15 +181,15 @@ Findings:
 - columns_added: 1 (warning)
 ```
 
-Once the database gains the column — through a migration or a direct apply —
-the check passes at either threshold, as the next section shows.
+Once the database gains the column, the check passes at either threshold.
 
 These flags shape the check:
 
 - `--exclude` and `--include` select what both sides hold, on `schema compare` too.
   See [Selecting what a comparison holds](../../reference/native-commands/#selecting-what-a-comparison-holds).
 - `--ignore tables=audit_log` excludes a table from the check, with its declared
-  reference rows.
+  reference rows. A PostgreSQL table also matches by the name a finding gives
+  it, as `public.notes` ([PostgreSQL](../../databases/postgresql/#connecting)).
 - `--ignore-extension` names a database extension the comparison leaves alone; see
   [below](#an-extension-the-schema-does-not-describe).
 - `--format` selects `text`, `json` (the findings, the
