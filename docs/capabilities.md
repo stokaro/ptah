@@ -861,8 +861,11 @@ added the statement stays in the sentence as the reason the capability is
 absent here.
 
 The expression is one change of the column. Its other changes in the same
-plan, such as a `NOT NULL` it gains or a new name for that constraint, are
-planned whether or not the target can change the expression in place.
+plan, such as a `NOT NULL` it gains, a new name for that constraint or a new
+type, are planned whether or not the target can change the expression in place.
+CockroachDB and YugabyteDB take the `SET NOT NULL` on a stored generated column
+beside the warning; neither keeps a `NOT NULL` constraint's name, so a named one
+is refused there before the plan.
 
 `--server-version 17` still emits the `ALTER`, so pinning selects a plan rather
 than degrading every one. `ForDialect("mysql")`

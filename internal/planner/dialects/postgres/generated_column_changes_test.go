@@ -1,6 +1,7 @@
 package postgres_test
 
 import (
+	"cmp"
 	"maps"
 	"testing"
 
@@ -16,16 +17,17 @@ import (
 	"ptah.run/internal/planner/dialects/postgres"
 )
 
-// generatedCodeChange is a stored generated column of tasks whose expression
-// changes from upper(title) to lower(title), beside the other changes given.
-func generatedCodeChange(changes map[string]string, name *difftypes.NotNullConstraintNameChange) *difftypes.SchemaDiff {
+// generatedCodeChange is a stored generated column of tasks, declared with typ
+// or text when typ is empty, whose expression changes from upper(title) to
+// lower(title), beside the other changes given.
+func generatedCodeChange(typ string, changes map[string]string, name *difftypes.NotNullConstraintNameChange) *difftypes.SchemaDiff {
 	all := map[string]string{"generated": "STORED upper(title) -> STORED lower(title)"}
 	maps.Copy(all, changes)
 	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "tasks", ColumnsModified: []difftypes.ColumnDiff{{
 		ColumnName: "code",
 		Changes:    all,
 		Desired: schemamodel.Field{
-			StructName: "Task", Name: "code", Type: "text",
+			StructName: "Task", Name: "code", Type: cmp.Or(typ, "text"),
 			GeneratedExpression: "lower(title)", GeneratedKind: "STORED",
 		},
 		NotNullConstraintNameChange: name,
@@ -35,7 +37,7 @@ func generatedCodeChange(changes map[string]string, name *difftypes.NotNullConst
 // TestPlanner_AGeneratedColumnsOtherChanges_HappyPath pins the changes of a
 // generated column whose expression changes in the same plan. The expression
 // is a statement of its own, which carries no other change, so the column's
-// NOT NULL and its name are planned beside it. Without them the plan applies
+// NOT NULL, its name and its type are planned beside it. Without them the plan applies
 // cleanly, and the next comparison plans them on their own: the schema takes
 // two migrations to converge. A target that cannot change the expression in
 // place still gets them.
@@ -43,6 +45,7 @@ func TestPlanner_AGeneratedColumnsOtherChanges_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		caps    capability.Capabilities
+		typ     string
 		changes map[string]string
 		rename  *difftypes.NotNullConstraintNameChange
 		want    string
@@ -74,6 +77,20 @@ ALTER TABLE "tasks" RENAME CONSTRAINT "old_nn" TO "code_nn";
 `,
 		},
 		{
+			name:    "the column takes another type",
+			caps:    capability.Postgres18(),
+			typ:     "varchar(20)",
+			changes: map[string]string{"type": "text -> varchar(20)"},
+			want: `-- Add/modify columns for table: tasks
+-- Modify generated column tasks.code: STORED upper(title) -> STORED lower(title)
+ALTER TABLE "tasks" ALTER COLUMN "code" SET EXPRESSION AS (lower(title));
+
+-- Modify column tasks.code: type: text -> varchar(20)
+ALTER TABLE "tasks" ALTER COLUMN "code" TYPE varchar(20);
+
+`,
+		},
+		{
 			name:    "a target that cannot change the expression",
 			caps:    capability.Postgres16(),
 			changes: map[string]string{"nullable": "true -> false"},
@@ -91,7 +108,7 @@ ALTER TABLE "tasks" ALTER COLUMN "code" SET NOT NULL;
 			c := qt.New(t)
 			planner := postgres.NewWithCapabilities(test.caps).WithStatementStyle(planext.StatementStyleExact)
 
-			nodes, err := planner.GenerateMigrationAST(c.Context(), must.Must(builtin.New()), generatedCodeChange(test.changes, test.rename))
+			nodes, err := planner.GenerateMigrationAST(c.Context(), must.Must(builtin.New()), generatedCodeChange(test.typ, test.changes, test.rename))
 			c.Assert(err, qt.IsNil)
 			sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, test.caps, nodes...)
 
@@ -101,13 +118,13 @@ ALTER TABLE "tasks" ALTER COLUMN "code" SET NOT NULL;
 	}
 }
 
-// TestPlanner_AGeneratedColumnsChangesLeaveTheDiffAsItWas plans the change and
+// TestPlanner_AGeneratedColumnsChangesLeaveTheDiffAsItWas_HappyPath plans the change and
 // reads the diff back. The rollback of a migration is planned from the same
 // diff, so a plan that took the expression change out of it would leave the
 // rollback without the expression.
-func TestPlanner_AGeneratedColumnsChangesLeaveTheDiffAsItWas(t *testing.T) {
+func TestPlanner_AGeneratedColumnsChangesLeaveTheDiffAsItWas_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	diff := generatedCodeChange(map[string]string{"nullable": "true -> false"}, nil)
+	diff := generatedCodeChange("text", map[string]string{"nullable": "true -> false"}, nil)
 
 	_, err := postgres.NewWithCapabilities(capability.Postgres18()).GenerateMigrationAST(c.Context(), must.Must(builtin.New()), diff)
 
