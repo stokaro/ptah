@@ -21,7 +21,9 @@ type addedColumnOrderEngine struct {
 	target  func(c *qt.C) string
 	columns string
 	// wantChange is the file CE v1.3.0 writes for the change, measured with
-	// `migrate diff` against each engine.
+	// `migrate diff` against each engine. On SQLite CE quotes an identifier
+	// with backticks where Ptah writes double quotes, a spelling divergence
+	// stokaro/ptah#1235 records; the statements and their order are CE's.
 	wantChange string
 }
 
@@ -56,6 +58,18 @@ ALTER TABLE "t" ADD COLUMN "z" integer NULL, ADD COLUMN "b" integer NULL, ADD CO
 		columns: "SELECT GROUP_CONCAT(column_name ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 't'",
 		wantChange: "-- Modify \"t\" table\n" +
 			"ALTER TABLE `t` ADD COLUMN `z` int NULL, ADD COLUMN `b` int NULL, ADD COLUMN `m` int NULL;\n",
+	},
+	{
+		name:    "sqlite",
+		target:  sqliteScratchURL,
+		columns: "SELECT group_concat(name, ',') FROM (SELECT name FROM pragma_table_info('t') ORDER BY cid)",
+		wantChange: `-- Add column "z" to table: "t"
+ALTER TABLE "t" ADD COLUMN "z" int NULL;
+-- Add column "b" to table: "t"
+ALTER TABLE "t" ADD COLUMN "b" int NULL;
+-- Add column "m" to table: "t"
+ALTER TABLE "t" ADD COLUMN "m" int NULL;
+`,
 	},
 }
 
@@ -118,6 +132,35 @@ func TestSchemaApplyAddsColumnsInTheDeclaredOrderE2E(t *testing.T) {
 			settled := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", file, "--dry-run")
 			c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
 			c.Assert(settled.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+		})
+	}
+}
+
+// TestMigrationsDownRestoresRemovedColumnsWhereTheTableHeldThemE2E writes the
+// migration that drops three columns, held out of name order, with the native
+// `migrations generate`, runs it up and down, and reads the columns back in
+// position after each run. The down file adds the columns back in the order the
+// table held them, so the table holds them where it did before the migration.
+func TestMigrationsDownRestoresRemovedColumnsWhereTheTableHeldThemE2E(t *testing.T) {
+	for _, test := range addedColumnOrderEngines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := test.target(c)
+			created := runPtahIn(c, "schema", "apply", "--db-url", target,
+				"--schema-file", writeDeclaredSchemaFile(c, "schema.sql", addedColumnOrderDesired), "--auto-approve")
+			c.Assert(created.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", created.Stdout, created.Stderr))
+			dir := filepath.Join(c.TempDir(), "migrations")
+			generated := runPtahIn(c, "migrations", "generate", "--db-url", target,
+				"--schema-file", writeDeclaredSchemaFile(c, "schema.sql", addedColumnOrderInitial), "--migrations-dir", dir, "--name", "drop")
+			c.Assert(generated.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", generated.Stdout, generated.Stderr))
+			up := runPtahIn(c, "migrations", "up", "--db-url", target, "--migrations-dir", dir, "--allow-destructive")
+			c.Assert(up.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", up.Stdout, up.Stderr))
+			c.Assert(heldColumns(c, target, test.columns), qt.Equals, "a")
+
+			down := runPtahIn(c, "migrations", "down", "--db-url", target, "--migrations-dir", dir, "--target", "0", "--confirm")
+
+			c.Assert(down.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", down.Stdout, down.Stderr))
+			c.Assert(heldColumns(c, target, test.columns), qt.Equals, "a,z,b,m")
 		})
 	}
 }

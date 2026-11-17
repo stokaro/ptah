@@ -1,6 +1,7 @@
 package compare
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"regexp"
@@ -185,18 +186,21 @@ func tableColumnsWithSemantics(
 	// declaration gives them: it is the order a table created from it holds
 	// its columns in, and the order the community binary adds them in, so a
 	// table that gains its columns holds them as one created from scratch does.
-	added := make(map[string]bool, len(genFields))
+	// No two declared fields share an identity here: the comparison refuses
+	// such a declaration before it reaches the columns.
 	for _, field := range genFields {
 		identity := semantics.ColumnIdentityKey(field.Name)
-		if _, exists := dbColumns[identity]; exists || added[identity] {
-			continue
+		if _, exists := dbColumns[identity]; !exists {
+			tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, genColumns[identity].Clone())
 		}
-		added[identity] = true
-		tableDiff.ColumnsAdded = append(tableDiff.ColumnsAdded, genColumns[identity].Clone())
 	}
 
-	for identity, column := range dbColumns {
-		if _, exists := genColumns[identity]; !exists {
+	// The removed ones keep the order the table holds them in: the rollback
+	// adds them back in this order, and a table rolled back then holds its
+	// columns where it held them. Name breaks a tie, for a read that reports
+	// no position.
+	for _, column := range heldColumnOrder(dbTable.Columns) {
+		if _, exists := genColumns[semantics.ColumnIdentityKey(column.Name)]; !exists {
 			tableDiff.ColumnsRemoved = append(tableDiff.ColumnsRemoved, removedColumn(column, spellings.ColumnRules, spellings.OwnerColumns.Defaults[columnsemantics.Column{Schema: dbTable.Schema, Table: dbTable.Name, Name: column.Name}]))
 		}
 	}
@@ -243,7 +247,6 @@ func tableColumnsWithSemantics(
 	}
 
 	// Sort for consistent output
-	sortColumns(tableDiff.ColumnsRemoved)
 	sort.Slice(tableDiff.ColumnsModified, func(i, j int) bool {
 		return tableDiff.ColumnsModified[i].ColumnName < tableDiff.ColumnsModified[j].ColumnName
 	})
@@ -1891,8 +1894,14 @@ func removedColumn(reported catalog.Column, rules schemacomparison.Columns, defa
 }
 
 // sortColumns orders by the key the name list was sorted on.
-func sortColumns(columns difftypes.ColumnChanges) {
-	sort.Slice(columns, func(i, j int) bool { return columns[i].Name < columns[j].Name })
+// heldColumnOrder is columns in the order the table holds them, by position
+// and then by name.
+func heldColumnOrder(columns []catalog.Column) []catalog.Column {
+	held := slices.Clone(columns)
+	slices.SortStableFunc(held, func(a, b catalog.Column) int {
+		return cmp.Or(cmp.Compare(a.OrdinalPosition, b.OrdinalPosition), strings.Compare(a.Name, b.Name))
+	})
+	return held
 }
 
 // gainedKeyNames answers the name each column of tableDiff that gains its own
