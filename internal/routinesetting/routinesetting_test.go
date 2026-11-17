@@ -63,6 +63,18 @@ func TestComparable_ReadsADeclarationAndACatalogRowAlike(t *testing.T) {
 		{name: "a search path with a quoted name", declared: `search_path="My Schema",public`, read: "search_path='My Schema', 'public'"},
 		{name: "a bare word the server folds", declared: "enable_seqscan=OFF", read: "enable_seqscan='off'"},
 		{name: "a number with an exponent the server keeps", declared: "app.scale=1E+03", read: "app.scale='1E+03'"},
+		// An integer that fits in 32 bits is stored as its value, measured on
+		// PostgreSQL 18.6 with CREATE FUNCTION ... SET.
+		{name: "an integer with leading zeros", declared: "rv.a=002", read: "rv.a='2'"},
+		{name: "an integer with a plus sign", declared: "rv.b=+5", read: "rv.b='5'"},
+		{name: "negative zero", declared: "rv.c=-0", read: "rv.c='0'"},
+		{name: "a sign apart from its integer", declared: "rv.c=- 5", read: "rv.c='-5'"},
+		{name: "a hexadecimal integer", declared: "rv.c=0x1F", read: "rv.c='31'"},
+		{name: "an integer with a digit separator", declared: "rv.c=1_000", read: "rv.c='1000'"},
+		{name: "an integer beyond 32 bits keeps its digits", declared: "rv.f=+002147483648", read: "rv.f='002147483648'"},
+		{name: "a negative integer beyond 32 bits", declared: "rv.f=-2147483648", read: "rv.f='-2147483648'"},
+		{name: "a fraction with a plus sign", declared: "rv.d=+1.5", read: "rv.d='1.5'"},
+		{name: "a fraction keeps its zeros", declared: "rv.d=0.50", read: "rv.d='0.50'"},
 		{name: "a name in another case", declared: "datestyle=ISO,MDY", read: "DateStyle='iso, mdy'"},
 		{name: "a value with a space", declared: "application_name='it''s me'", read: "application_name='it''s me'"},
 		{name: "a quoted name", declared: `"TimeZone"='UTC'`, read: "TimeZone='UTC'"},
@@ -93,6 +105,9 @@ func TestComparable_TellsTwoValuesApart(t *testing.T) {
 	}{
 		{name: "two sizes", left: "work_mem='8MB'", right: "work_mem='16MB'"},
 		{name: "a number is not folded", left: "app.scale=1E+03", right: "app.scale='1e+03'"},
+		{name: "an integer beyond 32 bits is not read as its value", left: "rv.f=002147483648", right: "rv.f='2147483648'"},
+		{name: "a fraction is not read as its value", left: "rv.d=0.50", right: "rv.d='0.5'"},
+		{name: "a literal keeps its leading zeros", left: "rv.a='002'", right: "rv.a='2'"},
 		{name: "a bare word and a literal in upper case", left: "search_path=B", right: "search_path='B'"},
 		{name: "two search paths", left: "search_path='a', 'b'", right: "search_path='b', 'a'"},
 		{name: "two settings", left: "work_mem='8MB'", right: "maintenance_work_mem='8MB'"},
@@ -223,6 +238,11 @@ func TestToCatalog_SpellsADeclarationAsTheServerStoresIt(t *testing.T) {
 	}{
 		{name: "a literal", declared: "work_mem='8MB'", want: "work_mem=8MB"},
 		{name: "a number as written", declared: "app.scale=1E+03", want: "app.scale=1E+03"},
+		{name: "an integer with leading zeros", declared: "rv.a=002", want: "rv.a=2"},
+		{name: "an integer with a plus sign", declared: "rv.b=+5", want: "rv.b=5"},
+		{name: "negative zero", declared: "rv.c=-0", want: "rv.c=0"},
+		{name: "an integer beyond 32 bits", declared: "rv.f=+002147483648", want: "rv.f=002147483648"},
+		{name: "a word that starts with a digit", declared: "work_mem=8MB", want: "work_mem=8MB"},
 		{name: "a quoted name", declared: `"TimeZone"='UTC'`, want: "TimeZone=UTC"},
 		{name: "a bare search path", declared: "search_path=MySchema,pg_catalog", want: "search_path=myschema, pg_catalog"},
 		{name: "a search path of literals", declared: "search_path='$user', 'Public'", want: `search_path="$user", "Public"`},
@@ -323,4 +343,33 @@ func TestFromCatalog_KeepsAListTheServerCouldNotHaveKept(t *testing.T) {
 	got := routinesetting.FromCatalog(`search_path="a"b`)
 
 	c.Assert(got, qt.Equals, `search_path='"a"b'`)
+}
+
+// TestStoredInteger pins the server's spelling of an integer constant,
+// measured on PostgreSQL 18.6: its value where the magnitude fits in 32 bits,
+// and the constant as written where it does not, the sign applied after.
+func TestStoredInteger(t *testing.T) {
+	tests := []struct {
+		name, sign, literal, want string
+	}{
+		{name: "leading zeros", literal: "002", want: "2"},
+		{name: "negative leading zeros", sign: "-", literal: "005", want: "-5"},
+		{name: "negative zero", sign: "-", literal: "0", want: "0"},
+		{name: "the largest 32-bit integer", literal: "02147483647", want: "2147483647"},
+		{name: "beyond 32 bits", literal: "002147483648", want: "002147483648"},
+		{name: "the smallest 32-bit integer is read as a number", sign: "-", literal: "2147483648", want: "-2147483648"},
+		{name: "hexadecimal", literal: "0x1F", want: "31"},
+		{name: "octal", literal: "0o17", want: "15"},
+		{name: "binary", sign: "-", literal: "0b101", want: "-5"},
+		{name: "digit separators", literal: "1_000", want: "1000"},
+		{name: "hexadecimal beyond 32 bits", literal: "0x1FFFFFFFF", want: "0x1FFFFFFFF"},
+		{name: "beyond 64 bits", literal: "99999999999999999999", want: "99999999999999999999"},
+		{name: "not an integer", literal: "1__0", want: "1__0"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(routinesetting.StoredInteger(test.sign, test.literal), qt.Equals, test.want)
+		})
+	}
 }

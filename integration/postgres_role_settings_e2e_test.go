@@ -289,13 +289,16 @@ func TestPostgresRoleSettingsLive_UnmodeledRowsAreReported(t *testing.T) {
 // TestPostgresRoleSettingsLive_NumbersAreHeldAsTheServerStoresThem declares
 // numbers in spellings the server does not keep. Each is written in the form
 // the server stores, so the first apply converges: an integer that fits in 32
-// bits is its value, and any other number keeps its digits without a plus
-// sign. Without that, +5000 against the stored 5000 plans on every run.
+// bits is its value, and any other number, an integer beyond 32 bits
+// included, keeps its digits without a plus sign. Without that, +5000 against
+// the stored 5000 plans on every run.
 func TestPostgresRoleSettingsLive_NumbersAreHeldAsTheServerStoresThem(t *testing.T) {
 	c := qt.New(t)
 	role := uniqueRole("m5973_numbers")
 	server := newRoleSettingsServer(c, role)
-	schema := roleSettingsYAML(c, role, `statement_timeout = +5000; lock_timeout = 002; app.offset = -005; app.ratio = +0.50; app.scale = 1E+03`, "work_mem")
+	schema := roleSettingsYAML(c, role,
+		`statement_timeout = +5000; lock_timeout = 002; app.offset = -005; app.ratio = +0.50; app.scale = 1E+03; app.big = +002147483648`,
+		"work_mem")
 
 	planned, err := runPtahNativeWithError("schema", "apply", "--schema-file", schema, "--db-url", server.target, "--auto-approve")
 	c.Assert(err, qt.IsNil, qt.Commentf("apply:\n%s", planned))
@@ -304,7 +307,7 @@ func TestPostgresRoleSettingsLive_NumbersAreHeldAsTheServerStoresThem(t *testing
 	c.Assert(err, qt.IsNil, qt.Commentf("dry run:\n%s", again))
 	c.Assert(planned, qt.Contains, `ALTER ROLE "`+role+`" SET "statement_timeout" = 5000;`)
 	c.Assert(server.storedSettings(c, role), qt.DeepEquals,
-		[]string{`app.offset=-5`, `app.ratio=0.50`, `app.scale=1E+03`, `lock_timeout=2`, `statement_timeout=5000`})
+		[]string{`app.big=002147483648`, `app.offset=-5`, `app.ratio=0.50`, `app.scale=1E+03`, `lock_timeout=2`, `statement_timeout=5000`})
 	c.Assert(again, qt.Contains, synced)
 }
 

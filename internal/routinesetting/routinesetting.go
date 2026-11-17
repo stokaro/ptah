@@ -23,7 +23,10 @@ package routinesetting
 
 import (
 	"fmt"
+	"math"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/internal/sqlident"
@@ -39,8 +42,9 @@ import (
 // these are the ones that stored `"A", b`, each element quoted as a name.
 // DateStyle, createrole_self_grant, restrict_nonsystem_relation_kind,
 // wal_consistency_checking and, once plpgsql is loaded, plpgsql.extra_errors
-// and plpgsql.extra_warnings take a list too but store `A, b`, the elements as
-// written, which reads back as one literal; the rest refuse a list. To extend it for a new release, run the same statement over that
+// and plpgsql.extra_warnings take a list too but store `A, b`, the elements
+// as written, which reads back as one literal; the rest refuse a list. To
+// extend the set for a new release, run the same statement over that
 // release's pg_settings and add each name that stores the quoted form.
 var listSettings = map[string]bool{
 	"search_path":               true,
@@ -322,7 +326,8 @@ func catalogListElements(value string) ([]string, bool) {
 
 // valueParts reads a value written in SQL into the parts the server stores: a
 // literal's contents, a quoted name's contents, a bare word folded to lower
-// case and a number as written, one part per comma-separated element.
+// case and a number as the server stores it, one part per comma-separated
+// element.
 func valueParts(value string) []string {
 	var parts []string
 	for rest := strings.TrimSpace(value); rest != ""; {
@@ -357,13 +362,90 @@ func valueParts(value string) []string {
 
 // foldBare is an unquoted part of a value as the server keeps it. A word is
 // an identifier, which the server folds to lower case: OFF is off. A number
-// is a constant the server keeps as written, so 1E+03 stays 1E+03 rather than
-// comparing equal to 1e+03, which the server keeps apart from it.
+// is stored as [storedNumber] says, and is never folded: 1E+03 and 1e+03 are
+// two values to the server. Anything else that starts like a number, such as
+// 8MB, which the server refuses unquoted, is kept as written.
 func foldBare(part string) string {
+	if stored, ok := storedNumber(part); ok {
+		return stored
+	}
 	if part != "" && (part[0] == '+' || part[0] == '-' || part[0] == '.' || (part[0] >= '0' && part[0] <= '9')) {
 		return part
 	}
 	return strings.ToLower(part)
+}
+
+// The numeric constants of PostgreSQL's lexer, without a sign: an integer in
+// decimal, hexadecimal, octal or binary, and a decimal number with a point or
+// an exponent, each with an underscore allowed between two digits.
+var (
+	integerConstant = regexp.MustCompile(`^(?:[0-9](?:_?[0-9])*|0[xX](?:_?[0-9a-fA-F])+|0[oO](?:_?[0-7])+|0[bB](?:_?[01])+)$`)
+	decimalConstant = regexp.MustCompile(
+		`^(?:[0-9](?:_?[0-9])*(?:\.(?:[0-9](?:_?[0-9])*)?)?|\.[0-9](?:_?[0-9])*)(?:[eE][-+]?[0-9](?:_?[0-9])*)?$`)
+)
+
+// storedNumber is part, a sign and a numeric constant, in the spelling the
+// server stores in a setting's value, and false when part is not one. The
+// grammar takes the sign apart from the constant, so blanks between them are
+// allowed and a plus sign is dropped: + 1.5 is stored as 1.5 and - 5 as -5.
+// An integer is stored as [StoredInteger] says; any other number keeps its
+// digits as written, so 0.50, .5 and 1E+03 stay as they are.
+func storedNumber(part string) (string, bool) {
+	sign, constant := "", part
+	if strings.HasPrefix(constant, "+") || strings.HasPrefix(constant, "-") {
+		if constant[0] == '-' {
+			sign = "-"
+		}
+		constant = strings.TrimLeft(constant[1:], " \t\r\n")
+	}
+	switch {
+	case integerConstant.MatchString(constant):
+		return StoredInteger(sign, constant), true
+	case decimalConstant.MatchString(constant):
+		return sign + constant, true
+	}
+	return "", false
+}
+
+// StoredInteger is the spelling PostgreSQL stores in a setting's value for an
+// integer constant, written as sign, "" or "-", and literal, the constant
+// without its sign. Measured on PostgreSQL 18.6, for role and routine
+// settings alike: a constant whose magnitude fits in 32 bits is read as an
+// integer and stored as its value, so 002 is 2, -005 is -5, -0 is 0 and 0x1F
+// is 31. A larger one is read as a decimal number and keeps its digits as
+// written, so 002147483648 and -2147483648 stay as they are. The sign is
+// applied after the constant is read, which is why -2147483648 is the larger
+// kind.
+func StoredInteger(sign, literal string) string {
+	magnitude, ok := integerMagnitude(literal)
+	if !ok || magnitude > math.MaxInt32 {
+		return sign + literal
+	}
+	if sign == "-" {
+		return strconv.FormatInt(-int64(magnitude), 10)
+	}
+	return strconv.FormatUint(magnitude, 10)
+}
+
+// integerMagnitude is the value of literal, an integer constant without a
+// sign, and false when it is not one or does not fit in 64 bits.
+func integerMagnitude(literal string) (uint64, bool) {
+	if !integerConstant.MatchString(literal) {
+		return 0, false
+	}
+	base, digits := 10, literal
+	if len(literal) > 2 && literal[0] == '0' {
+		switch literal[1] {
+		case 'x', 'X':
+			base, digits = 16, literal[2:]
+		case 'o', 'O':
+			base, digits = 8, literal[2:]
+		case 'b', 'B':
+			base, digits = 2, literal[2:]
+		}
+	}
+	magnitude, err := strconv.ParseUint(strings.ReplaceAll(digits, "_", ""), base, 64)
+	return magnitude, err == nil
 }
 
 // cutQuoted reads the part of text quoted by quote, which text starts with,

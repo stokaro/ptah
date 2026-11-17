@@ -1086,6 +1086,14 @@ declaration spells it, so it is recognized only when the read spells the table
 the same way. The folding also makes `x.items` and `x_items` one segment, so
 `ptah_trigger_x__items_t` is read as the function of trigger `t` on `items`.
 
+A routine's `SET` clauses compare by what the server stores in
+`pg_proc.proconfig`. An unquoted integer whose magnitude fits in 32 bits is
+stored as its value, so `SET app.retries = 002` compares equal to the stored
+`2`, `+5` to `5`, `0x1F` to `31` and `1_000` to `1000`. Any other number keeps
+its digits without a plus sign: `0.50`, `1E+03` and `002147483648` stay as
+written, and `+1.5` is `1.5`. A quoted value is a string and is compared as
+written.
+
 A trigger that runs a function declared on its own is read with the function's
 name, and with its schema when that is not the schema the read resolves names
 in: `EXECUTE FUNCTION "audit"."set_updated_at"('updated_at')`. A rehearsal

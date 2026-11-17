@@ -2,9 +2,7 @@ package pgrole
 
 import (
 	"fmt"
-	"math"
 	"slices"
-	"strconv"
 	"strings"
 
 	"ptah.run/core/schemaext"
@@ -212,26 +210,15 @@ func number(text string) (element, rest string, err error) {
 	}
 	// The spelling the server stores, measured on PostgreSQL 18.6: a number
 	// keeps its digits as written, without a plus sign, so +1.5 is 1.5 while
-	// 0.50, 1e3 and 1E+03 stay as they are; an integer is read by
-	// [storedInteger]. A declaration is held in this spelling, so it compares
-	// equal to what the server keeps from the statement Ptah writes for it.
+	// 0.50, 1e3 and 1E+03 stay as they are; an integer is stored as
+	// [routinesetting.StoredInteger] says, the rule routine settings compare
+	// by. A declaration is held in this spelling, so it compares equal to what
+	// the server keeps from the statement Ptah writes for it.
 	element = sign + text[start:i]
 	if integer {
-		element = storedInteger(sign, text[start:i])
+		element = routinesetting.StoredInteger(sign, text[start:i])
 	}
 	return element, text[i:], nil
-}
-
-// storedInteger is the spelling the server stores for an integer: its value
-// where it fits in 32 bits, which is how the server reads it, so 002 is 2,
-// -005 is -5 and -0 is 0, and the digits as written otherwise, so 03000000000
-// stays as it is.
-func storedInteger(sign, digits string) string {
-	value, err := strconv.ParseInt(sign+digits, 10, 64)
-	if err != nil || value > math.MaxInt32 || value < -math.MaxInt32 {
-		return sign + digits
-	}
-	return strconv.FormatInt(value, 10)
 }
 
 // trailingWord refuses the word that follows the number text[start:end]. A
