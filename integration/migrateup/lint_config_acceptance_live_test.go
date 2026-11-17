@@ -141,12 +141,7 @@ func requireLintGatePostgresURL(t *testing.T) string {
 // that reads the whole public schema finds there.
 func dropLintGatePostgresTables(c *qt.C, conn *dbschema.DatabaseConnection, tableName, revisionTable string) {
 	c.Helper()
-	names := []string{
-		tableName,
-		revisionTable,
-		revisionTable + revisiontable.LogSuffix,
-		revisionTable + revisiontable.RepeatableSuffix,
-	}
+	names := append([]string{tableName}, revisiontable.Configured("", revisionTable)...)
 	for _, name := range names {
 		statement, err := builtin.RenderSQL(platform.Postgres, ast.NewDropTable(name).SetIfExists().SetCascade())
 		c.Assert(err, qt.IsNil)
