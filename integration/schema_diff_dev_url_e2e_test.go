@@ -151,7 +151,7 @@ func TestNativeSchemaDiffWithoutDevURLE2E(t *testing.T) {
 
 	out := runPtahNative(c, "schema", "diff", "--from", fx.target, "--to", fx.sqlFile)
 
-	c.Assert(out, qt.Contains, `CREATE TABLE "gadgets"`)
+	c.Assert(out, qt.Contains, `CREATE TABLE "public"."gadgets"`)
 }
 
 // TestCompatSchemaApplyHCLDirectoryWithoutDevURLE2E: a directory of HCL files

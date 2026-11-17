@@ -250,13 +250,13 @@ func TestPartitionOfRoundTripE2E(t *testing.T) {
 
 			added := roundTripDocument + "CREATE TABLE events_2027 PARTITION OF events FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');\n"
 			out := dev.apply(c, added, "archive")
-			c.Assert(out, qt.Contains, `CREATE TABLE "events_2027" PARTITION OF "events" FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');`)
+			c.Assert(out, qt.Contains, `CREATE TABLE "public"."events_2027" PARTITION OF "public"."events" FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');`)
 			want["public.events_2027"] = "public.events FOR VALUES FROM ('2027-01-01 00:00:00+00') TO ('2028-01-01 00:00:00+00')"
 			c.Assert(dev.partitions(c), qt.DeepEquals, want)
 			dev.assertSynced(c, added, "archive")
 
 			out = dev.apply(c, roundTripDocument, "archive")
-			c.Assert(out, qt.Contains, `DROP TABLE "events_2027";`)
+			c.Assert(out, qt.Contains, `DROP TABLE "public"."events_2027";`)
 			delete(want, "public.events_2027")
 			c.Assert(dev.partitions(c), qt.DeepEquals, want)
 			dev.assertSynced(c, roundTripDocument, "archive")
@@ -281,7 +281,7 @@ func TestPartitionDropWithRowsIsDestructiveE2E(t *testing.T) {
 	plan, err := ptah("schema", "plan", "--db-url", dev.url, "--schema-file", path, "--schemas", "public", "--dry-run")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", plan))
 	c.Assert(plan, qt.Contains, `"destructive": true`)
-	c.Assert(plan, qt.Contains, `"sql": "DROP TABLE \"events_2026\""`)
+	c.Assert(plan, qt.Contains, `"sql": "DROP TABLE \"public\".\"events_2026\""`)
 	c.Assert(plan, qt.Contains, `"reason": "DROP TABLE removes the table and all rows"`)
 
 	declined, err := ptah("schema", "apply", "--db-url", dev.url, "--schema-file", path, "--schemas", "public")
@@ -346,8 +346,8 @@ func TestPartitionChildrenConvergeE2E(t *testing.T) {
 	grown := strings.Replace(childrenDocument, "    happened_at timestamptz NOT NULL,\n", "    happened_at timestamptz NOT NULL,\n    note text,\n", 1) +
 		"CREATE INDEX idx_events_note ON events (note);\nALTER TABLE events ADD CONSTRAINT note_short CHECK (length(note) < 99);\n"
 	out := dev.apply(c, grown)
-	c.Assert(out, qt.Contains, `ALTER TABLE "events" ADD COLUMN "note" text;`)
-	c.Assert(out, qt.Not(qt.Contains), `ALTER TABLE "events_2026" ADD COLUMN`)
+	c.Assert(out, qt.Contains, `ALTER TABLE "public"."events" ADD COLUMN "note" text;`)
+	c.Assert(out, qt.Not(qt.Contains), `ALTER TABLE "public"."events_2026" ADD COLUMN`)
 	c.Assert(dev.count(c, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'events_2026' AND column_name = 'note'"), qt.Equals, 1)
 	dev.assertSynced(c, grown)
 
@@ -357,9 +357,9 @@ func TestPartitionChildrenConvergeE2E(t *testing.T) {
 		"CREATE TRIGGER events_2026_row BEFORE UPDATE ON events_2026 FOR EACH ROW EXECUTE FUNCTION touch();\n", "",
 	).Replace(grown)
 	out = dev.apply(c, shrunk)
-	c.Assert(out, qt.Contains, `ALTER TABLE "events_2026" DROP CONSTRAINT "label_short";`)
-	c.Assert(out, qt.Contains, `DROP INDEX "idx_events_2026_label";`)
-	c.Assert(out, qt.Contains, `DROP TRIGGER "events_2026_row" ON "events_2026";`)
+	c.Assert(out, qt.Contains, `ALTER TABLE "public"."events_2026" DROP CONSTRAINT "label_short";`)
+	c.Assert(out, qt.Contains, `DROP INDEX "public"."idx_events_2026_label";`)
+	c.Assert(out, qt.Contains, `DROP TRIGGER "events_2026_row" ON "public"."events_2026";`)
 	c.Assert(out, qt.Not(qt.Contains), `DROP TRIGGER "events_row"`)
 	dev.assertSynced(c, shrunk)
 }
@@ -388,7 +388,7 @@ CREATE TRIGGER events_row BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION 
 
 	out := dev.apply(c, parent)
 
-	c.Assert(out, qt.Contains, `DROP TABLE "events_2026";`)
+	c.Assert(out, qt.Contains, `DROP TABLE "public"."events_2026";`)
 	c.Assert(out, qt.Not(qt.Contains), `DROP TRIGGER`)
 	c.Assert(out, qt.Not(qt.Contains), `DROP CONSTRAINT`)
 	c.Assert(out, qt.Not(qt.Contains), `DROP INDEX`)
@@ -420,16 +420,16 @@ func TestPartitionMovesE2E(t *testing.T) {
 			want          map[string]string
 		}{
 			{name: "another bound", desired: parent + other + plain + "CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');\n",
-				statements: []string{`ALTER TABLE "events" DETACH PARTITION "e1";`, `ALTER TABLE "events" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');`},
+				statements: []string{`ALTER TABLE "public"."events" DETACH PARTITION "public"."e1";`, `ALTER TABLE "public"."events" ATTACH PARTITION "public"."e1" FOR VALUES FROM ('2026-01-01') TO ('2028-01-01');`},
 				want:       map[string]string{"public.e1": "public.events FOR VALUES FROM ('2026-01-01') TO ('2028-01-01')"}},
 			{name: "another parent", desired: parent + other + plain + "CREATE TABLE e1 PARTITION OF other FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');\n",
-				statements: []string{`ALTER TABLE "events" DETACH PARTITION "e1";`, `ALTER TABLE "other" ATTACH PARTITION "e1" FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');`},
+				statements: []string{`ALTER TABLE "public"."events" DETACH PARTITION "public"."e1";`, `ALTER TABLE "public"."other" ATTACH PARTITION "public"."e1" FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');`},
 				want:       map[string]string{"public.e1": "public.other FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')"}},
 			{name: "a partition declared as a table", desired: parent + other + plain + "CREATE TABLE e1 (id bigint NOT NULL, day date NOT NULL);\n",
-				statements: []string{`ALTER TABLE "events" DETACH PARTITION "e1";`},
+				statements: []string{`ALTER TABLE "public"."events" DETACH PARTITION "public"."e1";`},
 				want:       make(map[string]string)},
 			{name: "a table declared as a partition", desired: parent + other + partition + "CREATE TABLE plain PARTITION OF events FOR VALUES FROM ('2030-01-01') TO ('2031-01-01');\n",
-				statements: []string{`ALTER TABLE "events" ATTACH PARTITION "plain" FOR VALUES FROM ('2030-01-01') TO ('2031-01-01');`},
+				statements: []string{`ALTER TABLE "public"."events" ATTACH PARTITION "public"."plain" FOR VALUES FROM ('2030-01-01') TO ('2031-01-01');`},
 				want: map[string]string{"public.e1": "public.events FOR VALUES FROM ('2026-01-01') TO ('2027-01-01')",
 					"public.plain": "public.events FOR VALUES FROM ('2030-01-01') TO ('2031-01-01')"}},
 		} {
@@ -753,7 +753,7 @@ CREATE TABLE events_2026 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO (
 	c.Assert(migrations, qt.HasLen, 1)
 	body, err := os.ReadFile(migrations[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(body), qt.Contains, `CREATE TABLE "events_2026" PARTITION OF "events" FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');`)
+	c.Assert(string(body), qt.Contains, `CREATE TABLE "public"."events_2026" PARTITION OF "public"."events" FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');`)
 
 	out, err = compat("schema", "apply", "-u", target.url, "--to", "file://"+filepath.ToSlash(path), "--dev-url", dev.url, "--auto-approve")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))

@@ -242,18 +242,22 @@ func plannedFiles(c *qt.C, dir string) string {
 }
 
 // nativePlanningVerbs are the native verbs that show or write a plan, each asking
-// through its own planning call.
+// through its own planning call. qualifier is what the verb writes in front of
+// the name of an object in the target's current schema on a URL that pins no
+// search_path: a verb that places the desired schema's names writes the schema,
+// and one that compares the source as written writes nothing.
 var nativePlanningVerbs = []struct {
-	name string
-	args func(target, schema string) []string
+	name      string
+	qualifier string
+	args      func(target, schema string) []string
 }{
-	{name: "schema apply --dry-run", args: func(target, schema string) []string {
+	{name: "schema apply --dry-run", qualifier: `"public".`, args: func(target, schema string) []string {
 		return []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--dry-run"}
 	}},
-	{name: "schema plan", args: func(target, schema string) []string {
+	{name: "schema plan", qualifier: `"public".`, args: func(target, schema string) []string {
 		return []string{"schema", "plan", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--output", "plan.json"}
 	}},
-	{name: "schema diff", args: func(target, schema string) []string {
+	{name: "schema diff", qualifier: `"public".`, args: func(target, schema string) []string {
 		return []string{"schema", "diff", "--from", target, "--to", schema, "--schemas", "public"}
 	}},
 	{name: "schema compare", args: func(target, schema string) []string {
@@ -332,10 +336,10 @@ func TestNativePlanningVerbsE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard(t 
 
 			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
 			planned := run.Stdout + plannedFiles(c, dir)
-			c.Assert(planned, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old";`)
-			c.Assert(planned, qt.Contains, `DROP VIEW "v";`)
-			c.Assert(planned, qt.Contains, `DROP INDEX "i";`)
-			c.Assert(planned, qt.Contains, `ALTER TABLE "t" DROP CONSTRAINT "t_a_check";`)
+			c.Assert(planned, qt.Contains, `ALTER TYPE `+test.qualifier+`"e" RENAME TO "e__ptah_old";`)
+			c.Assert(planned, qt.Contains, `DROP VIEW `+test.qualifier+`"v";`)
+			c.Assert(planned, qt.Contains, `DROP INDEX `+test.qualifier+`"i";`)
+			c.Assert(planned, qt.Contains, `ALTER TABLE `+test.qualifier+`"t" DROP CONSTRAINT "t_a_check";`)
 			c.Assert(planned, qt.Not(qt.Contains), "IF EXISTS")
 		})
 	}
@@ -425,8 +429,8 @@ func TestMigrationsDownE2E_ADerivedRollbackThatRebuildsAnEnumLeavesItsDropWithou
 		"--revision-format", "atlas", "--shadow-db", dev, "--target", "20200101000000", "--plan", "--dry-run", "--confirm")
 
 	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old"`)
-	c.Assert(run.Stdout, qt.Contains, `DROP INDEX "i"`)
+	c.Assert(run.Stdout, qt.Contains, `ALTER TYPE "public"."e" RENAME TO "e__ptah_old"`)
+	c.Assert(run.Stdout, qt.Contains, `DROP INDEX "public"."i"`)
 	c.Assert(run.Stdout, qt.Not(qt.Contains), "IF EXISTS")
 }
 

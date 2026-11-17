@@ -115,7 +115,7 @@ func TestSchemaApplyExclusionDropE2E_AnUndeclaredReaderKeepsTheConstraint(t *tes
 		"CREATE TABLE t (id bigint PRIMARY KEY, b int);\n")
 
 	c.Assert(run.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, "ALTER TABLE \"t\" DROP CONSTRAINT \"t_ex\";\nALTER TABLE \"t\" DROP COLUMN \"r\";")
+	c.Assert(run.Stdout, qt.Contains, "ALTER TABLE \"public\".\"t\" DROP CONSTRAINT \"t_ex\";\nALTER TABLE \"public\".\"t\" DROP COLUMN \"r\";")
 	c.Assert(run.Stderr, qt.Contains, "cannot drop column r of table t because other objects depend on it")
 	c.Assert(exclusionDropConstraints(c, target), qt.DeepEquals, []string{"t_ex", "t_pkey"})
 }

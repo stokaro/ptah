@@ -79,11 +79,16 @@ func migrateDiffRealmRoot(c *qt.C, schema string) string {
 	return root
 }
 
-// migrateDiffRealmNotes is the migration that creates notes, with extra
-// between its body column and its primary key.
-func migrateDiffRealmNotes(extra string) string {
+// realmDiffNotes is how a migration written on a realm dev URL names notes.
+const realmDiffNotes = `"public"."notes"`
+
+// migrateDiffRealmNotes is the migration that creates notes, spelled table,
+// with extra between its body column and its primary key. A realm dev URL
+// writes the table qualified, as the pinned community binary does; a URL that
+// pins search_path writes it bare.
+func migrateDiffRealmNotes(table, extra string) string {
 	return "-- Create \"notes\" table\n" +
-		"CREATE TABLE \"notes\" (\n" +
+		"CREATE TABLE " + table + " (\n" +
 		"  \"id\" bigint NOT NULL,\n" +
 		"  \"body\" text NOT NULL,\n" +
 		extra +
@@ -121,30 +126,30 @@ func TestAtlasCompatMigrateDiffCountsExcludesFromARealmDevURL_HappyPathE2E(t *te
 	}{
 		{
 			name: "realm URL, nothing excluded",
-			want: migrateDiffRealmNotes(`  "search_vector" text NULL,`+"\n") +
+			want: migrateDiffRealmNotes(realmDiffNotes, `  "search_vector" text NULL,`+"\n") +
 				"-- Create index \"notes_body_idx\" to table: \"notes\"\n" +
-				"CREATE INDEX \"notes_body_idx\" ON \"notes\" (\"body\");\n",
+				"CREATE INDEX \"notes_body_idx\" ON \"public\".\"notes\" (\"body\");\n",
 		},
 		{
 			name: "realm URL, the variable",
 			env:  []string{migrateDiffExcludeEnvVar + "=" + migrateDiffRealmSelectors},
-			want: migrateDiffRealmNotes(""),
+			want: migrateDiffRealmNotes(realmDiffNotes, ""),
 		},
 		{
 			name: "realm URL, the env list",
 			args: []string{"--env", "local"},
-			want: migrateDiffRealmNotes(""),
+			want: migrateDiffRealmNotes(realmDiffNotes, ""),
 		},
 		{
 			name: "realm URL, the bound spelling",
 			env:  []string{migrateDiffExcludeEnvVar + "=notes.search_vector,notes.notes_body_idx"},
-			want: migrateDiffRealmNotes(""),
+			want: migrateDiffRealmNotes(realmDiffNotes, ""),
 		},
 		{
 			name:  "bound URL, the bound spelling",
 			query: url.Values{"search_path": {"public"}},
 			env:   []string{migrateDiffExcludeEnvVar + "=notes.search_vector,notes.notes_body_idx"},
-			want:  migrateDiffRealmNotes(""),
+			want:  migrateDiffRealmNotes(`"notes"`, ""),
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -215,7 +220,7 @@ func TestAtlasCompatMigrateDiffReplayWithoutExclude_HappyPathE2E(t *testing.T) {
 
 	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
 	c.Assert(migrateDiffRealmFile(c, root), qt.Equals, "-- Modify \"notes\" table\n"+
-		"ALTER TABLE \"notes\" DROP COLUMN \"search_vector\";\n")
+		"ALTER TABLE "+realmDiffNotes+" DROP COLUMN \"search_vector\";\n")
 }
 
 // TestAtlasCompatMigrateDiffRefusesARealmPatternOnABoundDevURL_FailurePathE2E

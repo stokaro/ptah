@@ -70,7 +70,8 @@ sequence "s" {
 
 	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `CREATE SEQUENCE IF NOT EXISTS app.s`)
-	c.Assert(sql, qt.Contains, `OWNED BY orders.id`)
+	// The owner is a table in the sequence's schema, so it renders there.
+	c.Assert(sql, qt.Contains, `OWNED BY app.orders.id`)
 }
 
 func TestParseSequenceTwoLabelSchema(t *testing.T) {

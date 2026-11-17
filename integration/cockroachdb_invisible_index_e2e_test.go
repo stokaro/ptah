@@ -100,13 +100,13 @@ func TestSchemaApplyKeepsCockroachDBIndexVisibilityE2E(t *testing.T) {
 			name:    "an index hides in place",
 			from:    cockroachVisibilitySchema("", ""),
 			to:      cockroachVisibilitySchema("", " NOT VISIBLE"),
-			planned: `ALTER INDEX "ic"@"k_b" NOT VISIBLE;`,
+			planned: `ALTER INDEX "public"."ic"@"k_b" NOT VISIBLE;`,
 		},
 		{
 			name:    "an index shows in place",
 			from:    cockroachVisibilitySchema(" NOT VISIBLE", " NOT VISIBLE"),
 			to:      cockroachVisibilitySchema("", " NOT VISIBLE"),
-			planned: `ALTER INDEX "ic"@"k_a" VISIBLE;`,
+			planned: `ALTER INDEX "public"."ic"@"k_a" VISIBLE;`,
 		},
 	} {
 		t.Run(direction.name, func(t *testing.T) {

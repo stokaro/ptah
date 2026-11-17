@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
+	"ptah.run/internal/clirun"
 )
 
 // writeEnumRebuildSchema writes the declaration that makes the plan rebuild the enum
@@ -26,6 +27,11 @@ func writeEnumRebuildSchema(c *qt.C, desired string) string {
 // verbs write; see
 // TestNativePlanningVerbsE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard. Ptah has
 // one statement style for both surfaces, and the rebuild is Ptah's own statement.
+// The URLs name no schema, so every statement names one, a drop of an object read
+// from the target as well. Measured with the pinned community binary v1.3.0 on
+// PostgreSQL 18, `schema diff` of this pair writes `DROP INDEX "public"."i"` and
+// `ALTER TABLE "public"."t" DROP CONSTRAINT "t_a_check"`, and keeps its
+// `-- Drop index "i" from table: "t"` header bare.
 func TestCompatPlanningVerbsE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard(t *testing.T) {
 	tests := []struct {
 		name string
@@ -50,11 +56,51 @@ func TestCompatPlanningVerbsE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard(t 
 			out, err := runCompatVerb(test.args(target, writeEnumRebuildSchema(c, enumRebuildDesired), dev)...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			c.Assert(out, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old";`)
-			c.Assert(out, qt.Contains, `DROP VIEW "v";`)
-			c.Assert(out, qt.Contains, `DROP INDEX "i";`)
-			c.Assert(out, qt.Contains, `ALTER TABLE "t" DROP CONSTRAINT "t_a_check";`)
+			c.Assert(out, qt.Contains, `ALTER TYPE "public"."e" RENAME TO "e__ptah_old";`)
+			c.Assert(out, qt.Contains, `DROP VIEW "public"."v";`)
+			c.Assert(out, qt.Contains, `DROP INDEX "public"."i";`)
+			c.Assert(out, qt.Contains, `ALTER TABLE "public"."t" DROP CONSTRAINT "t_a_check";`)
 			c.Assert(out, qt.Not(qt.Contains), "IF EXISTS")
+		})
+	}
+}
+
+// TestPlanningVerbsE2E_ASchemaScopedURLNamesTheDropsBare is the control for the
+// realm plans above. A URL that names its schema with search_path resolves a
+// bare name there, and the plan writes every statement bare. Measured with the
+// pinned community binary v1.3.0 on PostgreSQL 18, `schema diff` of this pair
+// under search_path=public writes `DROP INDEX "i"` and `ALTER TABLE "t" DROP
+// CONSTRAINT "t_a_check"`.
+func TestPlanningVerbsE2E_ASchemaScopedURLNamesTheDropsBare(t *testing.T) {
+	tests := []struct {
+		name   string
+		target clirun.Target
+		args   func(target, schema, dev string) []string
+	}{
+		{name: "ptah-compat schema diff", target: clirun.Compat, args: func(target, schema, dev string) []string {
+			return []string{"schema", "diff", "--from", target, "--to", "file://" + filepath.ToSlash(schema), "--dev-url", dev}
+		}},
+		{name: "ptah schema apply --dry-run", target: clirun.Ptah, args: func(target, schema, _ string) []string {
+			return []string{"schema", "apply", "--db-url", target, "--schema-file", schema, "--dry-run"}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := withDevSearchPath(c, databaseBuiltFrom(c, enumRebuildBuilt), "public")
+			dev, _ := scratchReplayDatabase(c)
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(enumRebuildDesired), 0o600), qt.IsNil)
+
+			run := clirun.Run(c, test.target, clirun.Options{Dir: c.TempDir()},
+				test.args(target, schema, withDevSearchPath(c, dev, "public"))...)
+
+			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
+			c.Assert(run.Stdout, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old";`)
+			c.Assert(run.Stdout, qt.Contains, `DROP VIEW "v";`)
+			c.Assert(run.Stdout, qt.Contains, `DROP INDEX "i";`)
+			c.Assert(run.Stdout, qt.Contains, `ALTER TABLE "t" DROP CONSTRAINT "t_a_check";`)
+			c.Assert(run.Stdout, qt.Not(qt.Contains), `"public".`)
 		})
 	}
 }
@@ -82,9 +128,9 @@ func TestCompatMigrateDiffE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard(t *t
 			desired: enumRebuildDesired,
 			reads:   "*_change.sql",
 			want: []string{
-				`DROP VIEW "v";`,
-				`DROP INDEX "i";`,
-				`ALTER TABLE "t" DROP CONSTRAINT "t_a_check";`,
+				`DROP VIEW "public"."v";`,
+				`DROP INDEX "public"."i";`,
+				`ALTER TABLE "public"."t" DROP CONSTRAINT "t_a_check";`,
 			},
 		},
 		{
@@ -95,9 +141,9 @@ func TestCompatMigrateDiffE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard(t *t
 			desired:  enumRebuildDesired,
 			reads:    "V*__change.sql",
 			want: []string{
-				`DROP VIEW "v";`,
-				`DROP INDEX "i";`,
-				`ALTER TABLE "t" DROP CONSTRAINT "t_a_check";`,
+				`DROP VIEW "public"."v";`,
+				`DROP INDEX "public"."i";`,
+				`ALTER TABLE "public"."t" DROP CONSTRAINT "t_a_check";`,
 			},
 		},
 		{
@@ -107,7 +153,7 @@ func TestCompatMigrateDiffE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard(t *t
 			built:    enumValueAddedBuilt,
 			desired:  enumValueAddedDesired,
 			reads:    "*.down.sql",
-			want:     []string{`DROP INDEX "i";`},
+			want:     []string{`DROP INDEX "public"."i";`},
 		},
 	}
 	for _, test := range tests {
@@ -125,7 +171,7 @@ func TestCompatMigrateDiffE2E_AnEnumRebuildLeavesTheOtherDropsWithoutAGuard(t *t
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 			written := filesMatching(c, dir, test.reads)
-			c.Assert(written, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old";`, qt.Commentf("%s", out))
+			c.Assert(written, qt.Contains, `ALTER TYPE "public"."e" RENAME TO "e__ptah_old";`, qt.Commentf("%s", out))
 			for _, want := range test.want {
 				c.Assert(written, qt.Contains, want)
 			}
@@ -145,8 +191,8 @@ func TestCompatMigrateDownE2E_ADerivedRollbackThatRebuildsAnEnumLeavesItsDropWit
 		"--dev-url", dev, "--to-version", "20200101000000", "--plan", "--dry-run")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, `ALTER TYPE "e" RENAME TO "e__ptah_old"`)
-	c.Assert(out, qt.Contains, `DROP INDEX "i"`)
+	c.Assert(out, qt.Contains, `ALTER TYPE "public"."e" RENAME TO "e__ptah_old"`)
+	c.Assert(out, qt.Contains, `DROP INDEX "public"."i"`)
 	c.Assert(out, qt.Not(qt.Contains), "IF EXISTS")
 }
 

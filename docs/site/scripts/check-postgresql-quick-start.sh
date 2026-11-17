@@ -76,7 +76,7 @@ CREATE TABLE users (
 SQL
 
 printf 'check-postgresql-quick-start: step 3, the plan for an empty database\n'
-expect 'CREATE TABLE "users" (' "$("$ptah" schema apply --schema-file schema.sql --db-url "$url" --dry-run 2>&1)"
+expect 'CREATE TABLE "public"."users" (' "$("$ptah" schema apply --schema-file schema.sql --db-url "$url" --dry-run 2>&1)"
 
 printf 'check-postgresql-quick-start: step 4, applying it\n'
 expect 'Schema apply completed successfully.' \
@@ -97,7 +97,7 @@ printf 'check-postgresql-quick-start: step 6, asking for a column\n'
 drift_output=$("$ptah" schema drift --schema-file schema.sql --db-url "$url" 2>&1 || true)
 expect 'Schema drift detected (highest severity: warning).' "$drift_output"
 expect '- columns_added: 1 (warning)' "$drift_output"
-expect 'ALTER TABLE "users" ADD COLUMN "created_at" TIMESTAMPTZ;' \
+expect 'ALTER TABLE "public"."users" ADD COLUMN "created_at" TIMESTAMPTZ;' \
 	"$("$ptah" schema apply --schema-file schema.sql --db-url "$url" --dry-run 2>&1)"
 
 printf 'check-postgresql-quick-start: step 7, applying the reviewed change\n'

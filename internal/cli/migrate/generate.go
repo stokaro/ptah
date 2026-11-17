@@ -20,6 +20,7 @@ import (
 	"ptah.run/engine"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -34,6 +35,7 @@ import (
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/sqlitevirtual"
@@ -439,7 +441,13 @@ func planGeneratedMigrationByReplay(
 					if err != nil {
 						return err
 					}
-					replayOpts.Generated = desired
+					// A name the desired schema writes without a schema is placed
+					// where the dev database resolves it, and the migration names
+					// that schema, as `ptah-compat migrate diff` writes it.
+					replayOpts.Generated, err = atlasschema.PlaceUnqualifiedNames(replayConn.Info(), desired)
+					if err != nil {
+						return err
+					}
 					replayOpts.ShadowGenerated, err = opts.loadShadowDesired(replayConn.Info().Dialect, replayConn.Info().URL)
 					if err != nil {
 						return err
@@ -448,7 +456,10 @@ func planGeneratedMigrationByReplay(
 					replayOpts.CompareOptions = replayedCompareOptions(generateOpts.CompareOptions)
 					replayOpts.PriorMigrationsFS = priorMigrations
 					var planErr error
-					plan, planErr = generator.PlanMigration(lockedCtx, replayOpts)
+					// The replayed directory is read with the schema of every
+					// object on a realm-scoped dev URL, so a drop names its
+					// schema as a placed creation does; see [readscope.Qualified].
+					plan, planErr = generator.PlanMigration(readscope.Qualified(lockedCtx), replayOpts)
 					return planErr
 				},
 			)

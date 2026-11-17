@@ -171,6 +171,11 @@ type ApplyOptions struct {
 	// the schema again on its dev database, which holds none of the target's
 	// rows, and runs the target plan's data statements instead.
 	withoutData bool
+	// naming is where a desired name written without a schema is placed; see
+	// [namingFor]. Unresolved, it is decided from the connection and DevURL.
+	// A comparison on the dev database carries the target's, so both place a
+	// name in the same schema.
+	naming desiredNaming
 }
 
 type ApplyPlan struct {
@@ -431,6 +436,9 @@ type applyComputation struct {
 	// reads them again, so a row that moved after planning makes the plan stale
 	// the way a moved column does.
 	rowSets []PlanRowSet
+	// naming is where the comparison placed a desired name written without a
+	// schema. A saved plan records its schema.
+	naming desiredNaming
 }
 
 // PreflightApplyTarget validates the target state before an apply lock is
@@ -492,6 +500,44 @@ func preflightApplyReadScope(
 	return schemascope.ReadNames(ctx, conn.Info(), nil, conn)
 }
 
+// placedDesired is the desired schema of an apply with each name it writes
+// without a schema placed where the run reads it; see [namingFor].
+type placedDesired struct {
+	database *schemamodel.Database
+	// naming is what the names were placed by.
+	naming desiredNaming
+	// unqualified holds the tables and sequences the source named without a
+	// schema, which [refuseUnqualifiedMoves] reads.
+	unqualified unqualifiedNames
+}
+
+// loadPlacedDesiredApplySchema loads the desired schema of an apply and places
+// its names; see [placedDesired].
+func loadPlacedDesiredApplySchema(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts ApplyOptions,
+) (placedDesired, error) {
+	naming := opts.naming
+	if !naming.resolved {
+		var err error
+		naming, err = resolveDesiredNaming(ctx, conn.Info(), opts.DevURL)
+		if err != nil {
+			return placedDesired{}, err
+		}
+	}
+	desired, err := loadAndValidateDesiredApplySchema(ctx, conn, opts)
+	if err != nil {
+		return placedDesired{}, err
+	}
+	unqualified := unqualifiedNamesOf(desired)
+	desired, err = naming.place(desired, conn.Info().Dialect)
+	if err != nil {
+		return placedDesired{}, err
+	}
+	return placedDesired{database: desired, naming: naming, unqualified: unqualified}, nil
+}
+
 func computeApplyPlan(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -503,7 +549,10 @@ func computeApplyPlan(
 	if err := validateApplyPlanningInputs(conn, opts); err != nil {
 		return applyComputation{}, err
 	}
-	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
+	// Every statement of a realm-scoped plan names its schema, a drop or an
+	// alter of an object read from the target as well as a creation the
+	// desired schema places; see [namingFor].
+	ctx = readscope.Qualified(readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...))
 	allowUnmatched, err := resolveApplyAllowUnmatched(opts)
 	if err != nil {
 		return applyComputation{}, err
@@ -517,10 +566,11 @@ func computeApplyPlan(
 		RealmRelativePatterns: ConnectionIsRealmScoped(conn.Info()),
 		Selections:            opts.Runtime.Selections(),
 	}
-	desired, err := loadAndValidateDesiredApplySchema(ctx, conn, opts)
+	placed, err := loadPlacedDesiredApplySchema(ctx, conn, opts)
 	if err != nil {
 		return applyComputation{}, err
 	}
+	desired := placed.database
 	read, err := applyCurrentState(ctx, conn, opts.Schemas, desired)
 	if err != nil {
 		return applyComputation{}, err
@@ -554,6 +604,7 @@ func computeApplyPlan(
 		desired:          desired,
 		readScope:        read.readScope,
 		schemasBeyondURL: read.schemasBeyondURL,
+		naming:           placed.naming,
 	}
 	info := conn.Info()
 	// The comparison is told what the diff policy will do to its answer; see
@@ -574,7 +625,7 @@ func computeApplyPlan(
 	unmodelednote.Report(ctx, opts.Diagnostics, "the database", current)
 	computation.undecided = undecided
 	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, info.Dialect)
-	if err := reviewApplyDiff(info, desired, diff, omitted, opts); err != nil {
+	if err := reviewApplyDiff(info, desired, diff, omitted, opts, placed); err != nil {
 		return applyComputation{}, err
 	}
 	if diff.HasChanges() {
@@ -636,10 +687,11 @@ func reviewApplyDiff(
 	diff *difftypes.SchemaDiff,
 	omitted []diffpolicy.SkippedChange,
 	opts ApplyOptions,
+	placed placedDesired,
 ) error {
 	// After the policy, as the warning below: a drop the plan will not run
 	// loses no rows.
-	if err := refuseUnqualifiedTableMoves(info, diff); err != nil {
+	if err := refuseUnqualifiedMoves(info, placed.naming, placed.unqualified, diff); err != nil {
 		return err
 	}
 	// After the policy, which deletes the table drops a configuration skips:
@@ -1166,6 +1218,11 @@ func PrepareApply(
 		RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
 		Vars:                     opts.Vars,
 	}
+	naming, err := resolveDesiredNaming(ctx, conn.Info(), opts.DevURL)
+	if err != nil {
+		return ApplyRuntimePlan{}, err
+	}
+	planning.naming = naming
 	computation, err := computeApplyPlan(ctx, conn, planning)
 	if err != nil {
 		return ApplyRuntimePlan{}, err

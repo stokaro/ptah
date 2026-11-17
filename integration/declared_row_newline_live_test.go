@@ -39,7 +39,7 @@ func TestDeclaredRowNewlineIsOneStatementLive(t *testing.T) {
 		Runtime: must.Must(builtin.New())})
 	c.Assert(err, qt.IsNil)
 	c.Assert(declaredPlanSQL(plan), qt.DeepEquals, []string{
-		"INSERT INTO \"notices\" (\"body\", \"code\") VALUES ('first line\nsecond line', 'one');",
+		"INSERT INTO \"public\".\"notices\" (\"body\", \"code\") VALUES ('first line\nsecond line', 'one');",
 	})
 }
 

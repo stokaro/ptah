@@ -998,6 +998,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 			transactions:        plan.OwnerTransactions(),
 			desired:             desired,
 			exclude:             plan.Exclude,
+			placedSchema:        plan.PlacedSchema,
 			txMode:              txMode,
 			devURL:              opts.devURL,
 			targetURL:           opts.url,
@@ -1030,7 +1031,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 		// The semantic end-state verification mirrors Atlas: always on whenever a
 		// desired state is available, with no flag to disable it.
 		if desired != nil {
-			if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan.Exclude, opts.runtime); err != nil {
+			if err := atlasschema.VerifyAppliedPlanState(cmd.Context(), conn, desired, plan, opts.devURL, opts.runtime); err != nil {
 				return "", err
 			}
 		}
@@ -1059,6 +1060,8 @@ type rehearsePlanParams struct {
 	transactions [][]plangraph.Transaction
 	desired      *schemamodel.Database
 	exclude      []string
+	// placedSchema is the plan's [atlasschema.PlanFile.PlacedSchema].
+	placedSchema string
 	txMode       migrator.MigrationTxMode
 	// devURL is the operator-supplied dev database, empty when none was given.
 	devURL string
@@ -1198,6 +1201,7 @@ func rehearseAtlasSchemaApplyPlan(
 		TargetURL:           params.targetURL,
 		DesiredURLs:         params.desiredURLs,
 		Exclude:             params.exclude,
+		PlacedSchema:        params.placedSchema,
 		TxMode:              params.txMode,
 		OwnerTransactions:   params.transactions,
 		DevServerDisposable: params.devServerDisposable,

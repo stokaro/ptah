@@ -126,6 +126,14 @@ type PlanFile struct {
 	// named, since the source fingerprint then differs because the read does,
 	// not because the database changed; see [PlanScope].
 	Scope *PlanScope `json:"scope,omitempty"`
+	// PlacedSchema is the schema the plan placed every name the desired schema
+	// writes without a schema in, empty when it placed none; see [namingFor].
+	// The rehearsal and the end-state verification of the plan place the
+	// desired schema's names there too, rather than deciding again from the dev
+	// database the apply names: a plan computed against one dev database and
+	// applied with another, or with none, otherwise compares its own result
+	// with names placed elsewhere and reports it as drift.
+	PlacedSchema string `json:"placed_schema,omitempty"`
 	// ManagedRows names the declared row sets the plan read, and RowsFingerprint
 	// is the digest of the rows they held. FromFingerprint describes structure
 	// alone, and a row that moved after planning left it unchanged, so a plan
@@ -407,6 +415,7 @@ func PreparePlanFileReportingUndecided(
 		Schemas:          scope.schemas,
 		SchemasBeyondURL: scope.schemasBeyondURL,
 		Scope:            new(planScopeOf(conn.Info())),
+		PlacedSchema:     computation.naming.schema,
 		ManagedRows:      computation.rowSets,
 		RowsFingerprint:  rowsFingerprint,
 		Destructive:      destructive,
@@ -535,7 +544,9 @@ func planTargetState(ctx context.Context,
 	exclude []string,
 	runtime selectext.Runtime,
 ) (*catalog.Database, error) {
-	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(runtime.Selections(), exclude, nil)...)
+	// Read as computeApplyPlan read it, with every schema named, or the
+	// fingerprint of an unchanged database would differ.
+	ctx = readscope.Qualified(readscope.Without(ctx, atlasfilter.KindsLeftOut(runtime.Selections(), exclude, nil)...))
 	names := schemascope.Union(scope.schemas, nil)
 	if len(names) == 0 {
 		urlScope, err := schemascope.ReadNames(ctx, conn.Info(), nil, conn)

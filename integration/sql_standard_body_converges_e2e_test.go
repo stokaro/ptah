@@ -118,7 +118,7 @@ CREATE TABLE u (id bigint PRIMARY KEY);
 CREATE FUNCTION cnt(b text DEFAULT 'X', n numeric(10,2) = 1.5) RETURNS bigint LANGUAGE sql STABLE BEGIN ATOMIC SELECT count(*) FROM u; END;
 CREATE VIEW uses_cnt AS SELECT cnt() AS c;
 `,
-			replaces: `CREATE OR REPLACE FUNCTION "cnt"`},
+			replaces: `CREATE OR REPLACE FUNCTION "public"."cnt"`},
 		{name: "a body that selects every column of a table that gains one",
 			before: `CREATE TABLE t (id bigint PRIMARY KEY, a int);
 CREATE FUNCTION rows_t() RETURNS json LANGUAGE sql STABLE BEGIN ATOMIC SELECT json_agg(s) FROM (SELECT * FROM t) s; END;
@@ -126,7 +126,7 @@ CREATE FUNCTION rows_t() RETURNS json LANGUAGE sql STABLE BEGIN ATOMIC SELECT js
 			after: `CREATE TABLE t (id bigint PRIMARY KEY, a int, b text DEFAULT 'new');
 CREATE FUNCTION rows_t() RETURNS json LANGUAGE sql STABLE BEGIN ATOMIC SELECT json_agg(s) FROM (SELECT * FROM t) s; END;
 `,
-			replaces: `CREATE OR REPLACE FUNCTION "rows_t"`},
+			replaces: `CREATE OR REPLACE FUNCTION "public"."rows_t"`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

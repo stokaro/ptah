@@ -280,6 +280,11 @@ const (
 	postgresColumnC      = "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 't' AND column_name = 'c'"
 	postgresIndexTA      = "SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname = 't_a'"
 	postgresLegacyStatus = "SELECT count(*) FROM pg_type WHERE typname = 'legacy_status'"
+
+	// A realm-scoped PostgreSQL plan names the schema of every object, and so
+	// does the note on what it leaves out.
+	postgresSkippedColumnB = "SKIP: DROP COLUMN of public.t.b omitted by diff policy (skip: drop_column)"
+	postgresSkippedIndexTA = "SKIP: DROP INDEX of public.t.t_a omitted by diff policy (skip: drop_index)"
 )
 
 // TestSchemaApplyHonorsDiffSkipOnPostgreSQLE2E is the same project on
@@ -301,10 +306,10 @@ func TestSchemaApplyHonorsDiffSkipOnPostgreSQLE2E(t *testing.T) {
 
 		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 		c.Assert(stdout, qt.Equals, "Planned schema changes:\n"+
-			"-- "+skippedColumnB+"\n"+
-			"-- "+skippedIndexTA+"\n"+
-			"-- SKIP: DROP TYPE of legacy_status omitted by diff policy (skip: drop_enum)\n"+
-			"ALTER TABLE \"t\" ADD COLUMN \"c\" TEXT;\n"+
+			"-- "+postgresSkippedColumnB+"\n"+
+			"-- "+postgresSkippedIndexTA+"\n"+
+			"-- SKIP: DROP TYPE of public.legacy_status omitted by diff policy (skip: drop_enum)\n"+
+			"ALTER TABLE \"public\".\"t\" ADD COLUMN \"c\" TEXT;\n"+
 			"Auto-approval enabled; applying schema changes.\n"+
 			"Schema apply completed successfully.\n")
 		c.Assert(countIn(c, url, postgresColumnB), qt.Equals, 1)
@@ -327,8 +332,8 @@ func TestSchemaApplyHonorsDiffSkipOnPostgreSQLE2E(t *testing.T) {
 		stdout, stderr, err := runCLIProcess(ctx, dir, binaries.compat, "schema", "apply", "--env", "local", "--auto-approve")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-		c.Assert(stdout, qt.Contains, "-- "+skippedColumnB+"\n")
-		c.Assert(stdout, qt.Contains, "-- "+skippedIndexTA+"\n")
+		c.Assert(stdout, qt.Contains, "-- "+postgresSkippedColumnB+"\n")
+		c.Assert(stdout, qt.Contains, "-- "+postgresSkippedIndexTA+"\n")
 		c.Assert(countIn(c, url, postgresColumnB), qt.Equals, 1)
 		c.Assert(countIn(c, url, postgresColumnC), qt.Equals, 1)
 		c.Assert(countIn(c, url, postgresIndexTA), qt.Equals, 1)

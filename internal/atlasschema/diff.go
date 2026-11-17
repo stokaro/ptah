@@ -178,7 +178,10 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 	opts.ImplicitExclude = implicitOnly(opts.Exclude, opts.ImplicitExclude)
-	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), slices.Concat(opts.Exclude, opts.ImplicitExclude), opts.Include)...)
+	// A database a realm-scoped URL names is read with the schema of every
+	// object, so the plan names it, as `schema apply` writes it; see
+	// [readscope.Qualified].
+	ctx = readscope.Qualified(readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), slices.Concat(opts.Exclude, opts.ImplicitExclude), opts.Include)...))
 	prepared, err := prepareDiffSources(ctx, opts)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
@@ -479,6 +482,37 @@ func replaysCurrent(conn *dbschema.DatabaseConnection, fromState atlassource.Sta
 	return conn != nil && fromState.Kind != atlassource.KindDatabase
 }
 
+// scopedDiffSides prepares the two resolved sides for scoping: each side's
+// view bodies are rebased on the other's database, both are narrowed on a dev
+// server, the one-database rule reads the narrowed sides, and the --to
+// document's unqualified names are placed; see [placeDiffDocument].
+func scopedDiffSides(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	fromState, toState atlassource.State,
+	dialect string,
+	sides devServerSides,
+	devURL string,
+) (from, to atlassource.State, err error) {
+	fromState = rebaseDevViewBodies(fromState, toState, dialect)
+	toState = rebaseDevViewBodies(toState, fromState, dialect)
+	// The dev-server scope comes first: it refuses what CE refuses on a dev
+	// server, in CE's words, and narrows a one-schema document to the one
+	// database. The one-database rule then reads the narrowed sides.
+	fromState, toState, err = scopeOnDevServer(fromState, toState, sides)
+	if err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	if err := validateResolvedDiffScope(fromState, toState, dialect); err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	toState, err = placeDiffDocument(ctx, conn, toState, devURL)
+	if err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	return fromState, toState, nil
+}
+
 // diffResolvedStates is the part of a schema diff that runs once both sides
 // are resolved: scoping, the refusals, the comparison and the plan.
 //
@@ -496,16 +530,8 @@ func diffResolvedStates(
 	sides devServerSides,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
-	fromState = rebaseDevViewBodies(fromState, toState, dialect)
-	toState = rebaseDevViewBodies(toState, fromState, dialect)
-	// The dev-server scope comes first: it refuses what CE refuses on a dev
-	// server, in CE's words, and narrows a one-schema document to the one
-	// database. The one-database rule then reads the narrowed sides.
-	fromState, toState, err := scopeOnDevServer(fromState, toState, sides)
+	fromState, toState, err := scopedDiffSides(ctx, conn, fromState, toState, dialect, sides, opts.DevURL)
 	if err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
-	}
-	if err := validateResolvedDiffScope(fromState, toState, dialect); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 
@@ -1334,6 +1360,32 @@ func scopeDiffState(
 		selection:    databaseReports.Selection,
 		selectionErr: databaseErr,
 	}
+}
+
+// placeDiffDocument places the names a --to document writes without a schema
+// where `schema apply` places them against the --from database; see
+// [namingFor]. conn is the connection --from was read on, nil when --from is not
+// a database, and then nothing is placed: the comparison holds no connection
+// whose names the document's could be read against. A --to database is read
+// with its own names and is left as it is.
+func placeDiffDocument(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	toState atlassource.State,
+	devURL string,
+) (atlassource.State, error) {
+	if conn == nil || toState.DB != nil || toState.Schema == nil {
+		return toState, nil
+	}
+	naming, err := resolveDesiredNaming(ctx, conn.Info(), devURL)
+	if err != nil {
+		return atlassource.State{}, err
+	}
+	toState.Schema, err = naming.place(toState.Schema, conn.Info().Dialect)
+	if err != nil {
+		return atlassource.State{}, err
+	}
+	return toState, nil
 }
 
 // diffPatternScope resolves both halves of an exclude pattern's scope for one

@@ -61,5 +61,5 @@ func TestCompatSchemaDiffRenamesANotNullE2E(t *testing.T) {
 		"--dev-url", postgresUniqueEngine.emptyDB(c))
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, `ALTER TABLE "c" RENAME CONSTRAINT "nn" TO "nn2";`)
+	c.Assert(out, qt.Contains, `ALTER TABLE "public"."c" RENAME CONSTRAINT "nn" TO "nn2";`)
 }

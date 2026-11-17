@@ -229,49 +229,6 @@ func TestSchemaApplyRehearsesOnADevDatabaseOfAnotherCurrentSchema_HappyPathE2E(t
 	}
 }
 
-// TestSchemaApplyRefusesToMoveAnUnqualifiedTableOnARealmTarget_FailurePathE2E
-// applies `CREATE TABLE notes` to the target that holds public.notes. The
-// connection resolves the name to the role's schema, so the plan would create
-// the table there and drop public.notes with its row; the pinned community
-// binary v1.3.0, whose dev database resolves it to public, plans nothing for
-// the table. The apply is refused on both surfaces, with and without a dev
-// database, and the row is read back to show nothing was dropped.
-func TestSchemaApplyRefusesToMoveAnUnqualifiedTableOnARealmTarget_FailurePathE2E(t *testing.T) {
-	for _, test := range []struct {
-		name     string
-		target   clirun.Target
-		args     func(realmCurrentSchemaFixture, clirun.Target) []string
-		wantExit int
-		prefix   string
-	}{
-		{name: "ptah-compat", target: clirun.Compat, args: realmCurrentSchemaFixture.applyArgs, wantExit: 1, prefix: "Error: "},
-		{name: "ptah", target: clirun.Ptah, args: realmCurrentSchemaFixture.applyArgs, wantExit: 2, prefix: "error: "},
-		{
-			name:     "ptah without a dev database",
-			target:   clirun.Ptah,
-			args:     realmCurrentSchemaFixture.applyArgsWithoutDev,
-			wantExit: 2,
-			prefix:   "error: ",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			fixture := newRealmCurrentSchemaFixture(c, realmNotes)
-			root := realmCurrentSchemaRoot(c, "CREATE TABLE notes (id bigint PRIMARY KEY, body text NOT NULL);\n")
-
-			result := clirun.Run(c, test.target, clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()},
-				test.args(fixture, test.target)...)
-
-			c.Assert(result.ExitCode, qt.Equals, test.wantExit, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
-			c.Assert(result.Stderr, qt.Contains, test.prefix+`the desired schema names table "notes" without a schema, `+
-				`which this connection resolves to its current schema "`+fixture.role+`", and the plan would create it there `+
-				`and drop "public"."notes" with its rows; write the table as "public"."notes", or pin search_path in the URL`)
-			c.Assert(fixture.columns(c), qt.DeepEquals, []string{"public.id", "public.body"})
-			c.Assert(fixture.rows(c), qt.DeepEquals, []string{"kept"})
-		})
-	}
-}
-
 // TestSchemaApplyRefusesADevURLBoundToAnotherSchema_FailurePathE2E keeps the
 // refusal where a rehearsal would resolve names elsewhere: both URLs pin a
 // schema, and they pin different ones. A URL that pins a schema claims that
@@ -337,17 +294,19 @@ func realmCurrentSchemaNames(c *qt.C, db *sql.DB, query string) []string {
 // TestSchemaApplyRehearsesASavedPlanOnADevDatabaseOfAnotherCurrentSchema_HappyPathE2E
 // saves a plan with `schema plan` and applies it with `schema apply --plan`,
 // which replays the plan on the dev database and compares the state it reaches
-// with the desired one before the target is touched. The plan alters
-// public.notes, outside the target's current schema, so the replay needs
-// public.notes in its baseline; the target also holds items in its current
-// schema, which the desired state names without a schema, so the comparison
-// has to read the dev database as the target names it. The target is read
-// back, and the dev database is read back to show the rehearsal handed it
-// back as it was.
+// with the desired one before the target is touched, and compares the target
+// with it again after. The plan alters public.notes, outside the target's
+// current schema, so the replay needs public.notes in its baseline; the target
+// also holds items in its current schema, which the replay builds where the
+// target has it. The desired schema names a new table without a schema, which
+// the plan creates in public, where the dev database resolves it, so both
+// comparisons have to place the name there too. The target is read back, and
+// the dev database is read back to show the rehearsal handed it back as it was.
 func TestSchemaApplyRehearsesASavedPlanOnADevDatabaseOfAnotherCurrentSchema_HappyPathE2E(t *testing.T) {
 	c := qt.New(t)
 	fixture := newRealmCurrentSchemaFixture(c, realmNotes, "CREATE TABLE items (id bigint PRIMARY KEY)")
-	root := realmCurrentSchemaRoot(c, "CREATE TABLE items (id bigint PRIMARY KEY);\n"+
+	root := realmCurrentSchemaRoot(c, "CREATE TABLE "+quoteE2EIdent(fixture.role)+".items (id bigint PRIMARY KEY);\n"+
+		"CREATE TABLE fresh (id bigint PRIMARY KEY);\n"+
 		`CREATE TABLE "public"."notes" (id bigint PRIMARY KEY, body text NOT NULL, title text);`+"\n")
 	options := clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()}
 
@@ -360,6 +319,6 @@ func TestSchemaApplyRehearsesASavedPlanOnADevDatabaseOfAnotherCurrentSchema_Happ
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	c.Assert(fixture.columns(c), qt.DeepEquals, []string{"public.id", "public.body", "public.title"})
 	c.Assert(fixture.rows(c), qt.DeepEquals, []string{"kept"})
-	c.Assert(fixture.tables(c), qt.DeepEquals, []string{fixture.role + ".items", "public.notes"})
+	c.Assert(fixture.tables(c), qt.DeepEquals, []string{fixture.role + ".items", "public.fresh", "public.notes"})
 	c.Assert(fixture.devSchemas(c), qt.DeepEquals, []string{"public"})
 }
