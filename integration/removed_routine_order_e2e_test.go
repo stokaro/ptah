@@ -95,12 +95,12 @@ func TestSchemaApplyRemovedRoutinesE2E_AnUndeclaredReaderStopsTheDrop(t *testing
 	}{
 		{
 			name: "a caller and its callee", built: removedRoutineChain,
-			plan:    "DROP FUNCTION \"b_fn\"();\nDROP FUNCTION \"a_fn\"();",
+			plan:    "DROP FUNCTION \"public\".\"b_fn\"();\nDROP FUNCTION \"public\".\"a_fn\"();",
 			refusal: "cannot drop function a_fn() because other objects depend on it",
 		},
 		{
 			name: "two functions that call each other", built: removedRoutineCycle,
-			plan:    "DROP FUNCTION \"a_fn\"(), \"b_fn\"();",
+			plan:    "DROP FUNCTION \"public\".\"a_fn\"(), \"public\".\"b_fn\"();",
 			refusal: "cannot drop desired object(s) because other objects depend on them",
 		},
 	}
@@ -161,7 +161,7 @@ func TestSchemaApplyRemovedRoutinesE2E_OnCockroachDBABodyHoldsItsCallee(t *testi
 			run := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--auto-approve")
 
 			c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", run.Stdout, run.Stderr))
-			c.Assert(run.Stdout, qt.Contains, "DROP FUNCTION \"b_fn\"();\nDROP FUNCTION \"a_fn\"();")
+			c.Assert(run.Stdout, qt.Contains, "DROP FUNCTION \"public\".\"b_fn\"();\nDROP FUNCTION \"public\".\"a_fn\"();")
 			c.Assert(readInt(c, target, "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'public'"), qt.Equals, 0)
 			again := runPtahIn(c, "schema", "apply", "--db-url", target, "--schema-file", schema, "--schemas", "public", "--auto-approve")
 			c.Assert(again.Stdout, qt.Contains, "Schema is synced")

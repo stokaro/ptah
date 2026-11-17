@@ -199,7 +199,7 @@ func TestMigrationsDeclaredSerialE2E_TheRollbackRestoresThePlainColumn(t *testin
 // what the community binary does not write: the NULL fill and the statement that moves
 // the sequence past the rows.
 func TestMigrateDiffDeclaredSerialE2E(t *testing.T) {
-	const creates = `CREATE SEQUENCE "parent_c_seq" AS integer`
+	const creates = `CREATE SEQUENCE "public"."parent_c_seq" AS integer`
 	tests := []struct {
 		name       string
 		policy     atlascompatpolicy.Policy
@@ -225,7 +225,7 @@ func TestMigrateDiffDeclaredSerialE2E(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", plan))
 			c.Assert(plan, qt.Contains, creates)
-			c.Assert(plan, qt.Contains, `ALTER SEQUENCE "parent_c_seq" OWNED BY "parent"."c"`)
+			c.Assert(plan, qt.Contains, `ALTER SEQUENCE "public"."parent_c_seq" OWNED BY "public"."parent"."c"`)
 			c.Assert(plan, qt.Not(qt.Contains), "DROP NOT NULL")
 			c.Assert(strings.Contains(plan, "setval"), qt.Equals, test.wantSetval)
 		})

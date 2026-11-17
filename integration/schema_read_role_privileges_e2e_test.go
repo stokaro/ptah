@@ -156,20 +156,20 @@ func TestSchemaDiffAnswersTheSameForEveryConnectingRoleE2E(t *testing.T) {
 	wantLeftToRight := runPtahNative(c, "schema", "diff", "--from", left, "--to", right)
 	wantRightToLeft := runPtahNative(c, "schema", "diff", "--from", right, "--to", left)
 	for _, statement := range []string{
-		`DROP TABLE "only_here"`,
+		`DROP TABLE "public"."only_here"`,
 		`DROP COLUMN "extra"`,
 		`ADD CONSTRAINT "child_amount_check"`,
 		`ADD CONSTRAINT "child_parent_fk"`,
-		fmt.Sprintf(`GRANT UPDATE ON TABLE "child" TO %q`, roles.grantee),
+		fmt.Sprintf(`GRANT UPDATE ON TABLE "public"."child" TO %q`, roles.grantee),
 	} {
 		c.Assert(wantLeftToRight, qt.Contains, statement)
 	}
 	for _, statement := range []string{
-		`CREATE TABLE "only_here"`,
+		`CREATE TABLE "public"."only_here"`,
 		`ADD COLUMN "extra"`,
 		`DROP CONSTRAINT "child_amount_check"`,
 		`DROP CONSTRAINT "child_parent_fk"`,
-		fmt.Sprintf(`REVOKE UPDATE ON TABLE "child" FROM %q`, roles.grantee),
+		fmt.Sprintf(`REVOKE UPDATE ON TABLE "public"."child" FROM %q`, roles.grantee),
 	} {
 		c.Assert(wantRightToLeft, qt.Contains, statement)
 	}

@@ -80,7 +80,7 @@ func TestSchemaDiffLeavesTheServerToNameAKeyColumn(t *testing.T) {
 		{
 			name: "ptah",
 			run:  runPtah,
-			want: `CREATE TABLE "t" (
+			want: `CREATE TABLE "public"."t" (
   "id" integer PRIMARY KEY NOT NULL,
   "v" text
 );
@@ -90,7 +90,7 @@ func TestSchemaDiffLeavesTheServerToNameAKeyColumn(t *testing.T) {
 			name: "ptah-compat",
 			run:  runCompat,
 			want: `-- Create "t" table
-CREATE TABLE "t" (
+CREATE TABLE "public"."t" (
   "id" integer NOT NULL,
   "v" text NULL,
   PRIMARY KEY ("id")
@@ -101,7 +101,7 @@ CREATE TABLE "t" (
 			name: "ptah-compat strict",
 			run:  runStrictCompat,
 			want: `-- Create "t" table
-CREATE TABLE "t" (
+CREATE TABLE "public"."t" (
   "id" integer NOT NULL,
   "v" text NULL,
   PRIMARY KEY ("id")

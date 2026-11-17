@@ -179,19 +179,19 @@ func TestSchemaApplyRemovedRoutineCallersE2E_FailurePath(t *testing.T) {
 		{
 			name:    "a table's default calls its own reader",
 			built:   removedCallerReader + "ALTER TABLE gone ADD COLUMN n bigint DEFAULT a_fn();\n",
-			refusal: "table gone calls routine a_fn, which depends on table gone",
+			refusal: "table public.gone calls routine public.a_fn, which depends on table public.gone",
 		},
 		{
 			name: "a removed domain calls the reader",
 			built: "CREATE FUNCTION a_fn(int) RETURNS boolean LANGUAGE SQL RETURN (SELECT count(*) FROM gone) >= $1;\n" +
 				"CREATE DOMAIN d AS int CHECK (a_fn(VALUE));\n",
-			refusal: "domain d calls routine a_fn, which depends on table gone",
+			refusal: "domain public.d calls routine public.a_fn, which depends on table public.gone",
 		},
 		{
 			name: "a removed table's default calls the reader of a removed view",
 			built: "CREATE VIEW gv AS SELECT id FROM gone;\nCREATE FUNCTION a_fn() RETURNS bigint LANGUAGE SQL RETURN (SELECT count(*) FROM gv);\n" +
 				"CREATE TABLE zzz (id bigint PRIMARY KEY, n bigint DEFAULT a_fn());\n",
-			refusal: "table zzz calls routine a_fn, which depends on view gv",
+			refusal: "table public.zzz calls routine public.a_fn, which depends on view public.gv",
 		},
 	}
 	for _, test := range tests {

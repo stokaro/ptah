@@ -135,7 +135,7 @@ func TestSchemaApplyGainsNotNullOnAGeneratedColumnItCannotRecomputeE2E(t *testin
 
 			c.Assert(changed.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", changed.Stdout, changed.Stderr))
 			c.Assert(changed.Stdout, qt.Contains, "manual migration required")
-			c.Assert(changed.Stdout, qt.Contains, `ALTER TABLE "tasks" ALTER COLUMN "code" SET NOT NULL;`)
+			c.Assert(changed.Stdout, qt.Contains, `ALTER TABLE "public"."tasks" ALTER COLUMN "code" SET NOT NULL;`)
 			c.Assert(heldColumns(c, target, heldGeneratedColumnNullability), qt.Equals, "NO:upper(title)")
 		})
 	}

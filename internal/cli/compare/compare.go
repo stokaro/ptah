@@ -35,6 +35,7 @@ import (
 	"ptah.run/internal/genexprprobe"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/providerurl"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/sqlitevirtual"
@@ -228,6 +229,14 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	// Placed and read as `schema apply` places and reads them, so the
+	// comparison shows the statements apply runs; see
+	// [atlasschema.PlaceUnqualifiedNames] and [readscope.Qualified].
+	result, err = atlasschema.PlaceUnqualifiedNames(conn.Info(), result)
+	if err != nil {
+		return err
+	}
+	ctx = readscope.Qualified(ctx)
 
 	schemas, err := schemascope.ComparisonReadNames(ctx, conn.Info(), requested, conn, result)
 	if err != nil {

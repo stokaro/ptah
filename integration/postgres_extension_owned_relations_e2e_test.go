@@ -70,7 +70,7 @@ func TestSchemaApplyLeavesAnExtensionsRelationsToTheExtensionE2E(t *testing.T) {
 			"--db-url", url, "--schema-file", "schema.sql", "--auto-approve")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-		c.Assert(stdout, qt.Contains, "DROP VIEW \"mine\";\n")
+		c.Assert(stdout, qt.Contains, "DROP VIEW \"public\".\"mine\";\n")
 	})
 
 	// The extension's script grants this one, so the read reports it even though

@@ -29,40 +29,40 @@ const (
 var typeHoldersRows = []struct{ name, built, plan string }{
 	{
 		name: "a removed table's column", built: "CREATE TABLE holder (id bigint PRIMARY KEY, w wrap);\n",
-		plan: "DROP TABLE \"holder\";\nDROP TYPE \"wrap\";\nDROP TABLE IF EXISTS \"gone\";",
+		plan: "DROP TABLE \"public\".\"holder\";\nDROP TYPE \"public\".\"wrap\";\nDROP TABLE IF EXISTS \"public\".\"gone\";",
 	},
 	{
 		name: "an array column", built: "CREATE TABLE holder (id bigint PRIMARY KEY, w wrap[]);\n",
-		plan: "DROP TABLE \"holder\";\nDROP TYPE \"wrap\";\nDROP TABLE IF EXISTS \"gone\";",
+		plan: "DROP TABLE \"public\".\"holder\";\nDROP TYPE \"public\".\"wrap\";\nDROP TABLE IF EXISTS \"public\".\"gone\";",
 	},
 	{
 		name: "a type over the type", built: "CREATE TYPE outer_t AS (w wrap);\nCREATE TABLE holder (id bigint PRIMARY KEY, w outer_t);\n",
-		plan: "DROP TABLE \"holder\";\nDROP TYPE \"outer_t\";\nDROP TYPE \"wrap\";\nDROP TABLE IF EXISTS \"gone\";",
+		plan: "DROP TABLE \"public\".\"holder\";\nDROP TYPE \"public\".\"outer_t\";\nDROP TYPE \"public\".\"wrap\";\nDROP TABLE IF EXISTS \"public\".\"gone\";",
 	},
 	{
 		name: "a domain over the type", built: "CREATE DOMAIN dw AS wrap;\nCREATE TABLE holder (id bigint PRIMARY KEY, w dw);\n",
-		plan: "DROP TABLE \"holder\";\nDROP DOMAIN \"dw\";\nDROP TYPE \"wrap\";\nDROP TABLE IF EXISTS \"gone\";",
+		plan: "DROP TABLE \"public\".\"holder\";\nDROP DOMAIN \"public\".\"dw\";\nDROP TYPE \"public\".\"wrap\";\nDROP TABLE IF EXISTS \"public\".\"gone\";",
 	},
 	{
 		name: "a removed view over the table that holds it", built: "CREATE TABLE holder (id bigint PRIMARY KEY, w wrap);\nCREATE VIEW hv AS SELECT id FROM holder;\n",
-		plan: "DROP VIEW \"hv\";\nDROP TABLE \"holder\";\nDROP TYPE \"wrap\";\nDROP TABLE IF EXISTS \"gone\";",
+		plan: "DROP VIEW \"public\".\"hv\";\nDROP TABLE \"public\".\"holder\";\nDROP TYPE \"public\".\"wrap\";\nDROP TABLE IF EXISTS \"public\".\"gone\";",
 	},
 	{
 		name: "a foreign key from the table that holds it", built: "CREATE TABLE holder (id bigint PRIMARY KEY, g bigint REFERENCES gone (id), w wrap);\n",
-		plan: "DROP TABLE \"holder\";\nDROP TYPE \"wrap\";\nDROP TABLE IF EXISTS \"gone\";",
+		plan: "DROP TABLE \"public\".\"holder\";\nDROP TYPE \"public\".\"wrap\";\nDROP TABLE IF EXISTS \"public\".\"gone\";",
 	},
 	{
 		name: "a routine that takes it", built: "CREATE FUNCTION f(x wrap) RETURNS int LANGUAGE SQL RETURN 1;\n",
-		plan: "DROP FUNCTION \"f\"(x wrap);\nDROP TYPE \"wrap\";\nDROP TABLE IF EXISTS \"gone\";",
+		plan: "DROP FUNCTION \"public\".\"f\"(x wrap);\nDROP TYPE \"public\".\"wrap\";\nDROP TABLE IF EXISTS \"public\".\"gone\";",
 	},
 	{
 		name: "a routine that returns it", built: "CREATE FUNCTION f() RETURNS wrap LANGUAGE SQL RETURN NULL::wrap;\n",
-		plan: "DROP FUNCTION \"f\"();\nDROP TYPE \"wrap\";\nDROP TABLE IF EXISTS \"gone\";",
+		plan: "DROP FUNCTION \"public\".\"f\"();\nDROP TYPE \"public\".\"wrap\";\nDROP TABLE IF EXISTS \"public\".\"gone\";",
 	},
 	{
 		name: "a caller of a routine that takes it", built: "CREATE FUNCTION f(x wrap) RETURNS int LANGUAGE SQL RETURN 1;\n" +
 			"CREATE FUNCTION g() RETURNS int LANGUAGE SQL RETURN f(NULL::wrap);\n",
-		plan: "DROP FUNCTION \"g\"();\nDROP FUNCTION \"f\"(x wrap);\nDROP TYPE \"wrap\";\nDROP TABLE IF EXISTS \"gone\";",
+		plan: "DROP FUNCTION \"public\".\"g\"();\nDROP FUNCTION \"public\".\"f\"(x wrap);\nDROP TYPE \"public\".\"wrap\";\nDROP TABLE IF EXISTS \"public\".\"gone\";",
 	},
 }
 

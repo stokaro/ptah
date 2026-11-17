@@ -60,7 +60,7 @@ func TestSchemaApplyReportsAnOwnersUnmanagedPrivilegesE2E(t *testing.T) {
 			roles := newConnectingRoles(c)
 			database := ownedPublicDatabase(c, roles, ownerDiagnosticsTable+test.state)
 			file := writeOwnerSchema(c, roles, test.schema)
-			line := "UNMANAGED: table t: owner " + roles.owner + " lacks INSERT, UPDATE, which PostgreSQL gives an owner by default; " +
+			line := "UNMANAGED: table public.t: owner " + roles.owner + " lacks INSERT, UPDATE, which PostgreSQL gives an owner by default; " +
 				"the schema does not manage them, so nothing is planned"
 
 			planned := runPtahNative(c, "schema", "apply", "--db-url", database, "--schema-file", file, "--dry-run")

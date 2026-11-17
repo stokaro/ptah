@@ -384,7 +384,7 @@ func TestDeclaredEmptySchemaIsRehearsedE2E(t *testing.T) {
 				"CREATE SCHEMA es_app", "COMMENT ON SCHEMA es_app IS 'application'", "GRANT USAGE ON SCHEMA es_app TO PUBLIC",
 				"CREATE TABLE docs (id integer PRIMARY KEY)",
 			},
-			wantOut: `DROP TABLE "docs"`,
+			wantOut: `DROP TABLE "public"."docs"`,
 		},
 	}
 	for _, surface := range devSchemaStateSurfaces {

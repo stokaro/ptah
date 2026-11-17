@@ -328,10 +328,16 @@ func typesOverRemovedRows(diff *difftypes.SchemaDiff) []string {
 
 // typeReaderName is the name a definition spells typ with.
 func typeReaderName(typ removedTypeReader) string {
-	if typ.id.Schema.Source == "" {
-		return typ.id.Name.Source
+	return sourceName(typ.id)
+}
+
+// sourceName is id as the read spelled it, with its schema when the read named
+// one, as a refusal names a removed table.
+func sourceName(id objectidentity.ID) string {
+	if id.Schema.Source == "" {
+		return id.Name.Source
 	}
-	return typ.id.Schema.Source + "." + typ.id.Name.Source
+	return id.Schema.Source + "." + id.Name.Source
 }
 
 // tableHoldsType reports whether a column of removal has the type name, in any
@@ -611,7 +617,7 @@ func removedDomainCalling(diff *difftypes.SchemaDiff, routine difftypes.RoutineC
 			slices.ContainsFunc(before.Checks, func(check pgtype.DomainCheck) bool {
 				return deporder.ReferencesIdentifier(check.Expression, name)
 			}) {
-			return record.Subject.Name.Source, true
+			return sourceName(record.Subject), true
 		}
 	}
 	return "", false

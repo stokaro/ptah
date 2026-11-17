@@ -66,15 +66,15 @@ func TestSchemaDiffLeavesAnOwnerWhoseACLWasWrittenE2E(t *testing.T) {
 			name:   "a table",
 			create: `CREATE TABLE t (id int PRIMARY KEY);`,
 			grant:  `GRANT SELECT ON t TO {grantee};`,
-			want:   `GRANT SELECT ON TABLE "t" TO GRANTEE;`,
-			revoke: `REVOKE SELECT ON TABLE "t" FROM GRANTEE;`,
+			want:   `GRANT SELECT ON TABLE "public"."t" TO GRANTEE;`,
+			revoke: `REVOKE SELECT ON TABLE "public"."t" FROM GRANTEE;`,
 		},
 		{
 			name:   "a sequence",
 			create: `CREATE SEQUENCE t;`,
 			grant:  `GRANT USAGE ON SEQUENCE t TO {grantee};`,
-			want:   `GRANT USAGE ON SEQUENCE "t" TO GRANTEE;`,
-			revoke: `REVOKE USAGE ON SEQUENCE "t" FROM GRANTEE;`,
+			want:   `GRANT USAGE ON SEQUENCE "public"."t" TO GRANTEE;`,
+			revoke: `REVOKE USAGE ON SEQUENCE "public"."t" FROM GRANTEE;`,
 		},
 		{
 			name:   "a schema",
@@ -138,29 +138,29 @@ func TestSchemaDiffShowsWhatAnOwnerRevokedFromItselfE2E(t *testing.T) {
 		{
 			name:    "one privilege",
 			revoke:  `REVOKE SELECT ON t FROM {owner};`,
-			toLost:  `REVOKE SELECT ON TABLE "t" FROM OWNER;`,
-			toHeld:  `GRANT SELECT ON TABLE "t" TO OWNER;`,
+			toLost:  `REVOKE SELECT ON TABLE "public"."t" FROM OWNER;`,
+			toHeld:  `GRANT SELECT ON TABLE "public"."t" TO OWNER;`,
 			lostACL: `{owner=awdDxtm/owner}`,
 		},
 		{
 			name:   "every privilege",
 			revoke: `REVOKE ALL ON t FROM {owner};`,
-			toLost: `REVOKE DELETE ON TABLE "t" FROM OWNER;
-REVOKE INSERT ON TABLE "t" FROM OWNER;
-REVOKE MAINTAIN ON TABLE "t" FROM OWNER;
-REVOKE REFERENCES ON TABLE "t" FROM OWNER;
-REVOKE SELECT ON TABLE "t" FROM OWNER;
-REVOKE TRIGGER ON TABLE "t" FROM OWNER;
-REVOKE TRUNCATE ON TABLE "t" FROM OWNER;
-REVOKE UPDATE ON TABLE "t" FROM OWNER;`,
-			toHeld: `GRANT DELETE ON TABLE "t" TO OWNER;
-GRANT INSERT ON TABLE "t" TO OWNER;
-GRANT MAINTAIN ON TABLE "t" TO OWNER;
-GRANT REFERENCES ON TABLE "t" TO OWNER;
-GRANT SELECT ON TABLE "t" TO OWNER;
-GRANT TRIGGER ON TABLE "t" TO OWNER;
-GRANT TRUNCATE ON TABLE "t" TO OWNER;
-GRANT UPDATE ON TABLE "t" TO OWNER;`,
+			toLost: `REVOKE DELETE ON TABLE "public"."t" FROM OWNER;
+REVOKE INSERT ON TABLE "public"."t" FROM OWNER;
+REVOKE MAINTAIN ON TABLE "public"."t" FROM OWNER;
+REVOKE REFERENCES ON TABLE "public"."t" FROM OWNER;
+REVOKE SELECT ON TABLE "public"."t" FROM OWNER;
+REVOKE TRIGGER ON TABLE "public"."t" FROM OWNER;
+REVOKE TRUNCATE ON TABLE "public"."t" FROM OWNER;
+REVOKE UPDATE ON TABLE "public"."t" FROM OWNER;`,
+			toHeld: `GRANT DELETE ON TABLE "public"."t" TO OWNER;
+GRANT INSERT ON TABLE "public"."t" TO OWNER;
+GRANT MAINTAIN ON TABLE "public"."t" TO OWNER;
+GRANT REFERENCES ON TABLE "public"."t" TO OWNER;
+GRANT SELECT ON TABLE "public"."t" TO OWNER;
+GRANT TRIGGER ON TABLE "public"."t" TO OWNER;
+GRANT TRUNCATE ON TABLE "public"."t" TO OWNER;
+GRANT UPDATE ON TABLE "public"."t" TO OWNER;`,
 			lostACL: `{}`,
 		},
 	}
@@ -192,7 +192,8 @@ GRANT UPDATE ON TABLE "t" TO OWNER;`,
 }
 
 // TestSchemaDiffRebuildGivesAViewItsGrantsAndNotItsOwnersE2E is a view the plan drops
-// and creates again. The plan gives back what somebody granted on it. What its owner
+// and creates again. The plan gives back what somebody granted on it and gives the
+// view back to the owner it held, and it grants that owner nothing. What the owner
 // held by default is what the owner of the new view holds, so a read that takes the
 // owner's entry for grants adds a GRANT for each privilege, and only where the ACL was
 // written.
@@ -211,8 +212,9 @@ func TestSchemaDiffRebuildGivesAViewItsGrantsAndNotItsOwnersE2E(t *testing.T) {
 	got := runPtahNative(c, "schema", "diff", "--from", database, "--to", "file://"+declaration)
 
 	c.Assert(got, qt.Contains, `DROP VIEW "public"."v";`)
+	c.Assert(got, qt.Contains, fmt.Sprintf(`ALTER VIEW "public"."v" OWNER TO %q;`, roles.owner))
 	c.Assert(got, qt.Contains, fmt.Sprintf(`GRANT SELECT ON TABLE "public"."v" TO %q;`, roles.grantee))
-	c.Assert(got, qt.Not(qt.Contains), roles.owner)
+	c.Assert(got, qt.Not(qt.Matches), grantsToOwner(roles))
 }
 
 // ownerFixtureFile is a schema in one file format: the fixture's two roles, its table

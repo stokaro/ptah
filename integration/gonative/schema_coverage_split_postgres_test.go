@@ -57,8 +57,8 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
 	wantRecord := suppressedBlocks(coverage.Extension, coverage.Policy, coverage.Sequence)
-	dropPolicy, dropTable := `DROP POLICY "p" ON "guarded"`, `DROP TABLE "guarded"`
-	dropSequence, dropExtension := `DROP SEQUENCE "order_seq"`, `DROP EXTENSION "pgcrypto"`
+	dropPolicy, dropTable := `DROP POLICY "p" ON "public"."guarded"`, `DROP TABLE "public"."guarded"`
+	dropSequence, dropExtension := `DROP SEQUENCE "public"."order_seq"`, `DROP EXTENSION "pgcrypto"`
 
 	modes := []struct {
 		name  string

@@ -377,5 +377,5 @@ func TestRemovedRoutineCallers_ADomainThatCallsTheReaderIsRefused(t *testing.T) 
 	err := removedRoutineRefusal(c, held, declared)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `(?s)unsupported feature: domain d calls routine public\.reader, which depends on table public\.archive, .*`)
+	c.Assert(err, qt.ErrorMatches, `(?s)unsupported feature: domain public\.d calls routine public\.reader, which depends on table public\.archive, .*`)
 }

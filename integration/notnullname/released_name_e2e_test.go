@@ -76,18 +76,18 @@ func TestSchemaDiffLeavesAMergedReleaseAsItIs(t *testing.T) {
 			name:  "forward",
 			left:  before,
 			right: after,
-			want: `-- POSTGRES: ADD COLUMN "b" fails if "t" holds any row; the column is NOT NULL and declares no default to fill it with.
+			want: `-- POSTGRES: ADD COLUMN "b" fails if "public"."t" holds any row; the column is NOT NULL and declares no default to fill it with.
 -- Modify "t" table
-ALTER TABLE "t" ALTER COLUMN "a" DROP NOT NULL, ADD COLUMN "b" text CONSTRAINT "t_a_not_null" NOT NULL;
+ALTER TABLE "public"."t" ALTER COLUMN "a" DROP NOT NULL, ADD COLUMN "b" text CONSTRAINT "t_a_not_null" NOT NULL;
 `,
 		},
 		{
 			name:  "back",
 			left:  after,
 			right: before,
-			want: `-- POSTGRES: SET NOT NULL fails if any row of "t" holds NULL in "a"; the column declares no default to fill it with.
+			want: `-- POSTGRES: SET NOT NULL fails if any row of "public"."t" holds NULL in "a"; the column declares no default to fill it with.
 -- Modify "t" table
-ALTER TABLE "t" DROP COLUMN "b", ALTER COLUMN "a" SET NOT NULL;
+ALTER TABLE "public"."t" DROP COLUMN "b", ALTER COLUMN "a" SET NOT NULL;
 `,
 		},
 	}
