@@ -16,7 +16,16 @@ function manifest(directory) {
   return JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'));
 }
 
-function publish(directory, packed) {
+// distTag is the dist-tag a version is published under, or undefined for the
+// default. A publish that names no tag moves `latest`, and npm refuses one for
+// a prerelease, so a prerelease goes out as `next` and `latest` stays on the
+// newest release. A release keeps the default, which also keeps npm's refusal
+// of a version lower than the one `latest` names.
+function distTag(version) {
+  return /^\d+\.\d+\.\d+-/.test(version) ? 'next' : undefined;
+}
+
+function publish(directory, packed, dryRun) {
   const pkg = manifest(directory);
   const packedResult = npm(['pack', directory, '--json', '--pack-destination', packed]);
   if (packedResult.status !== 0) {
@@ -35,15 +44,24 @@ function publish(directory, packed) {
     throw new Error(`Could not check ${pkg.name}@${pkg.version}: ${published.stderr}`);
   }
 
-  const result = npm(['publish', join(packed, tarball.filename), '--access=public'], { stdio: 'inherit' });
+  const args = ['publish', join(packed, tarball.filename), '--access=public'];
+  const tag = distTag(pkg.version);
+  if (tag) {
+    args.push(`--tag=${tag}`);
+  }
+  if (dryRun) {
+    args.push('--dry-run');
+  }
+  const result = npm(args, { stdio: 'inherit' });
   if (result.status !== 0) {
     throw new Error(`Could not publish ${pkg.name}@${pkg.version}`);
   }
 }
 
 function main() {
-  if (process.argv.length !== 4 || process.argv[2] !== '--staged') {
-    throw new Error('Usage: publish.mjs --staged DIR');
+  const dryRun = process.argv[4] === '--dry-run';
+  if (process.argv.length !== (dryRun ? 5 : 4) || process.argv[2] !== '--staged') {
+    throw new Error('Usage: publish.mjs --staged DIR [--dry-run]');
   }
   const staged = resolve(process.argv[3]);
   const root = manifest(join(staged, 'ptah'));
@@ -59,14 +77,19 @@ function main() {
       if (pkg.name !== name || pkg.version !== root.version || version !== root.version) {
         throw new Error(`Platform package ${name} does not match @stokaro/ptah@${root.version}`);
       }
-      publish(directory, packed);
+      // A dry run leaves the platform packages to the run that uploads them.
+      // They carry the CLI package's version, so npm decides their tag the
+      // same way, and packing their binaries twice costs minutes.
+      if (!dryRun) {
+        publish(directory, packed, false);
+      }
     }
-    publish(join(staged, 'ptah'), packed);
+    publish(join(staged, 'ptah'), packed, dryRun);
     const compat = manifest(join(staged, 'ptah-compat'));
     if (compat.name !== '@stokaro/ptah-compat' || compat.version !== root.version || compat.dependencies?.['@stokaro/ptah'] !== root.version) {
       throw new Error('Compatibility package does not match @stokaro/ptah');
     }
-    publish(join(staged, 'ptah-compat'), packed);
+    publish(join(staged, 'ptah-compat'), packed, dryRun);
   } finally {
     rmSync(packed, { recursive: true, force: true });
   }

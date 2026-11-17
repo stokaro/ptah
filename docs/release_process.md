@@ -90,7 +90,12 @@ node npm/scripts/publish.mjs --staged ./npm-staged
 ```
 
 The publisher checks a published version's tarball integrity before skipping
-it, so the command can resume after a partial upload. It publishes the six
+it, so the command can resume after a partial upload. A prerelease version is
+published under the `next` dist-tag, so `latest` stays on the newest release.
+`--dry-run` after the directory checks every staged manifest, runs npm's own
+publish checks on the two CLI packages, and uploads nothing. The platform
+packages carry the same version, so npm decides their tag the same way. The
+release check runs it on the snapshot packages, whose version is a prerelease. It publishes the six
 binary packages before the CLI package. Do not reuse a Ptah version tag to
 repair a different npm tarball.
 
@@ -120,6 +125,13 @@ that job stays skipped and npm is not a release channel.
    git tag -a v0.1.2 -m "Release v0.1.2"
    git push origin v0.1.2
    ```
+
+   A tag with a prerelease part, such as `v0.2.0-rc.1`, publishes a release
+   candidate under its own version and moves nothing that names the newest
+   release. GitHub marks it a prerelease, the images carry the version tag
+   and not `latest`, the Homebrew cask is not uploaded, and npm takes it
+   under the `next` dist-tag. The documentation site builds no version for
+   it.
 
 4. Wait for the `Release` workflow to finish. Its changelog runs from the
    nearest earlier `v*` tag, which the workflow passes to GoReleaser as

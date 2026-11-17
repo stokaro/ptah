@@ -115,6 +115,9 @@ jobs:
           set -euo pipefail
           version="$(jq -r .version dist/metadata.json)"
           node npm/scripts/stage.mjs --version "$version" --assets dist --output dist/npm
+          # The snapshot version is a prerelease, so this dry run takes the
+          # path a prerelease tag takes, which npm refuses without a dist-tag.
+          node npm/scripts/publish.mjs --staged dist/npm --dry-run
           root_tarball="$(npm pack dist/npm/ptah --pack-destination dist/npm --silent)"
           compat_tarball="$(npm pack dist/npm/ptah-compat --pack-destination dist/npm --silent)"
           platform_tarball="$(npm pack dist/npm/ptah-linux-x64 --pack-destination dist/npm --silent)"
