@@ -395,8 +395,11 @@ case. The run then prints the notes and does not report the schema as synced:
 No statements planned, but the plan holds the notes above, so the schema is not synced.
 ```
 
-The exit code is 0, as for a synced schema. A script that has to tell the two
-apart reads `annotations` in the [JSON document](#read-the-result-in-a-script).
+The exit code is 0, as for a synced schema: `schema apply` does not use exit
+code 1 (see [Exit codes](../../reference/exit-codes/)). A pipeline that must
+fail when the schema did not converge runs `ptah schema compare --exit-code` or
+`ptah schema drift` after the apply; both exit 1 here. A script can also read
+`annotations` in the [JSON document](#read-the-result-in-a-script).
 
 ## Read the result in a script
 
