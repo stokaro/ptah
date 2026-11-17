@@ -456,7 +456,8 @@ procedures accept argument lists with optional argument names, or a bare name
 when the document declares one overload. Triggers, policies, and constraints
 are named `ON` their table. An index is named in the schema of its table, and a
 bare name is an index of the default schema, so `COMMENT ON INDEX app.notes_idx`
-and `COMMENT ON INDEX notes_idx` name two indexes. CockroachDB names an index
+and `COMMENT ON INDEX notes_idx` name two indexes. A `SET search_path` in the
+file does not change which schema a bare name means. CockroachDB names an index
 within its table, and two tables of one schema may each have an index of one
 name. `COMMENT ON INDEX notes@notes_idx` names the index of one table there.
 
