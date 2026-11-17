@@ -1516,7 +1516,8 @@ Ownership is explicit:
   no `GRANT` for it. Declare the role in the schema, or create it on the server.
   A plan that gives a view to a role the server does not hold, and that no
   earlier statement of the plan creates, is refused before any statement is
-  sent. The refusal names the statement and the role, where the server would
+  sent. `CREATE ROLE`, `CREATE USER` and `CREATE GROUP` each create the role,
+  whatever options follow the name. The refusal names the statement and the role, where the server would
   answer with SQLSTATE 42704 partway through the plan.
 
 The plan check rates an `OWNER TO` a warning, as it rates a `REVOKE`: the role
@@ -1540,10 +1541,47 @@ role, says when the role owns the view now, and ends with what to do: the
 `GRANT` that lets the plan run, such as
 `GRANT "reporting" TO "app" WITH SET TRUE` or
 `GRANT CREATE ON SCHEMA "public" TO "reporting"`, or an owner to declare
-instead. The `CREATE` question is asked about a view the server holds. For a
-new view the server answers as the statement runs: PostgreSQL refuses it with
-SQLSTATE 42501, the plan rolls back, and Ptah reports the code with the
-statement. YugabyteDB is not asked, and answers the same way.
+instead.
+
+The statements of the plan before an `OWNER TO` change the answer:
+
+- A `GRANT` of a role to the connected role, or to a role it may give an
+  object to, lets it give an object to the granted role and to the roles that
+  role holds on the server.
+- On PostgreSQL 16 and later, a grant `WITH SET FALSE` does not count. Neither
+  does a grant that states no `SET` option after an earlier grant of the same
+  membership stated `FALSE`. The grantor is not read, so this also applies when
+  the two grants name different grantors with `GRANTED BY`, where the server
+  would accept the plan.
+- A `REVOKE` of a role, whichever option it names, and a `DROP ROLE` of it stop
+  every earlier grant of that role from counting. One `REVOKE` or `DROP ROLE`
+  anywhere before the `OWNER TO` also stops every chain through the memberships
+  the server holds from counting, for the whole plan. `REVOKE ADMIN OPTION FOR`
+  and `REVOKE INHERIT OPTION FOR` leave `SET` in place, so a plan that holds
+  one can be refused where the server would accept it.
+- `ALTER ROLE ... RENAME TO` removes the old name: an `OWNER TO` that names it
+  afterward is refused as naming a role the server does not hold. The new name
+  counts as a role the plan creates.
+- A plan that holds a statement Ptah does not read for its effect on roles
+  counts none of its grants. Such statements include `DO`, `CALL`, `SELECT` and
+  other statements that may call a function, `ALTER ROLE` other than a rename,
+  `DROP OWNED`, `REASSIGN OWNED`, `CREATE EXTENSION`, and a `SET` or `RESET`
+  of `role`, of `session_authorization`, or of any setting outside a short list
+  of harmless ones such as `search_path` and `lock_timeout`. Schema statements
+  on tables, views, indexes, schemas, sequences, types, routines, triggers and
+  policies, and `COMMENT`, are read as leaving memberships alone. That includes
+  one that calls a function while it executes, through a column default, an
+  index expression, a `CHECK` or `CREATE TABLE ... AS SELECT`.
+- A grant of a role the server does not hold gains nothing. A `GRANT` the
+  server itself refuses, such as one by a role without `ADMIN` on the role, is
+  left to the server, which refuses it as it runs. So is a statement that takes
+  away a membership the server holds now, such as a `REVOKE` inside a `DO`
+  block.
+
+The `CREATE` question is asked about a view the server holds. For a new view
+the server answers as the statement runs: PostgreSQL refuses it with SQLSTATE
+42501, the plan rolls back, and Ptah reports the code with the statement.
+YugabyteDB is not asked, and answers the same way.
 
 Under `--json` the refusals Ptah issues before it sends a statement, and the
 refusal of a role the server does not hold, are `outcome: refused` with their

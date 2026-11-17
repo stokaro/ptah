@@ -126,3 +126,17 @@ func TestRelation_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestHeldRoles_HappyPath pins the question about the roles a role holds the
+// privilege on: the role and the privilege go to the server as given, and the
+// answer is the roles it reports, sorted.
+func TestHeldRoles_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	server := &ownerTransferServer{}
+
+	got, err := server.open(c, "postgres").HeldRoles(c.Context(), "rv_g", "SET")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, []string{"rv_a", "rv_b"})
+	c.Assert(server.asked, qt.DeepEquals, []string{"rv_g"})
+}

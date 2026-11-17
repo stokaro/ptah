@@ -70,6 +70,38 @@ func (w *PostgreSQLWriter) OwnerTransfers(ctx context.Context) (objectowner.Tran
 	return answer, nil
 }
 
+// HeldRoles returns the roles role holds privilege on, SET or MEMBER as
+// [PostgreSQLWriter.OwnerTransfers] answers it, through the memberships the
+// server holds, role itself included, as the server stores their names. It
+// answers what role would let a connection give an object to once a plan
+// grants role to that connection. A role the server does not hold answers no
+// roles rather than an error: the server refuses a GRANT of it as the
+// statement runs. PostgreSQL 18 and CockroachDB 26.4 both answer the query.
+func (w *PostgreSQLWriter) HeldRoles(ctx context.Context, role, privilege string) ([]string, error) {
+	if w.db == nil {
+		return nil, fmt.Errorf("no database connection")
+	}
+	rows, err := w.db.QueryContext(ctx, `SELECT r.rolname FROM pg_catalog.pg_roles g
+		JOIN pg_catalog.pg_roles r ON pg_catalog.pg_has_role(g.oid, r.oid, $2::text) WHERE g.rolname = $1::text`, role, privilege)
+	if err != nil {
+		return nil, fmt.Errorf("read the roles %q holds: %w", role, err)
+	}
+	defer rows.Close()
+	held := make([]string, 0)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("read the roles %q holds: %w", role, err)
+		}
+		held = append(held, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read the roles %q holds: %w", role, err)
+	}
+	slices.Sort(held)
+	return held, nil
+}
+
 // Relation returns what the server holds of the table, view or materialized
 // view a statement names as written: its owner, its schema, and whether role
 // holds CREATE on that schema, which ALTER ... OWNER TO requires of the new
