@@ -348,9 +348,9 @@ func (s *viewStates) follow(node ast.Node, statement statementOf) (Effect, bool)
 // statement first, then a COMMENT ON VIEW when it carries a comment and an
 // ALTER VIEW ... OWNER TO when it carries an owner (see [createStatements]);
 // neither changes an option, so neither has an effect. A dialect that writes
-// the comment inside the CREATE renders the node as one statement.
+// the comment as a comment line renders it as no statement at all.
 func (s *viewStates) create(node *ast.CreateViewNode, statement statementOf) (Effect, bool) {
-	if statement.of != 1 && statement.of != createStatements(node) {
+	if statement.of > createStatements(node) {
 		s.forget(node.Name)
 		return Effect{}, false
 	}
@@ -606,14 +606,13 @@ func sqlSecurity(held viewHeld) (any, bool) {
 	return mode, true
 }
 
-// alterStatements is how many statements an option change renders: one ALTER
-// VIEW ... SET when it sets an option, and one ALTER VIEW ... RESET when it
-// resets one.
-// createStatements is how many statements a CREATE VIEW node renders: the
+// createStatements is the most statements a CREATE VIEW node renders: the
 // CREATE, a COMMENT ON VIEW for a comment, and an ALTER VIEW ... OWNER TO for
-// an owner. Counted without the owner, a view the plan gives an owner, a
-// declared one or the one a rebuild gives back, would read as a statement
-// this package cannot follow, and its CREATE would carry no effect.
+// an owner. A target that cannot hold a view comment writes it as a comment
+// line, which is no statement, so a node may render fewer. Without the owner
+// term, the CREATE of a view the plan gives an owner, a declared one or the
+// one a rebuild gives back, reads as a node this package cannot follow and
+// carries no effect.
 func createStatements(node *ast.CreateViewNode) int {
 	statements := 1
 	if node.Comment != "" {
@@ -625,6 +624,9 @@ func createStatements(node *ast.CreateViewNode) int {
 	return statements
 }
 
+// alterStatements is how many statements an option change renders: one ALTER
+// VIEW ... SET when it sets an option, and one ALTER VIEW ... RESET when it
+// resets one.
 func alterStatements(node *ast.AlterViewOptionsNode) int {
 	statements := 0
 	if len(node.Set) > 0 {
