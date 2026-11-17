@@ -1693,7 +1693,8 @@ binary's order:
 1. The tables the plan changes, by name, a table after the one whose change it needs.
    Each is its index drops, its `ALTER TABLE` and its new indexes. On PostgreSQL its
    comments follow: the table's own, then its columns' in the order the table holds
-   them. A new index keeps its comment right after its `CREATE INDEX`.
+   them, then those of the indexes it keeps, then those of its new indexes, each
+   group by index name.
 2. The new tables with their indexes. A table comes after the new tables its foreign
    keys need, and by name among the ones that need the same number. On PostgreSQL a
    table's comments follow its indexes: the table's own and its columns', as on a

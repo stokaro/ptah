@@ -42,7 +42,8 @@ func Apply(dialect string, nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 	facts.readPlan(nodes)
 	how := arrangementFor(form, facts)
 	how.places = how.forwardPlaces(diff)
-	how.absorbs = how.merge && !foreignKeysDeferred(nodes, tablesCreatedBy(nodes))
+	how.created = tablesCreatedBy(nodes)
+	how.absorbs = how.merge && !foreignKeysDeferred(nodes, how.created)
 	// A comment is a statement of its own only on PostgreSQL, where it is COMMENT ON;
 	// the MySQL family writes it into the column or the table options. A rollback
 	// keeps its comments where the planner put them, since what it undoes says

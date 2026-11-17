@@ -31,11 +31,11 @@ func createdTableCommentsAfterIndexes(nodes []ast.Node) []ast.Node {
 	for at, node := range nodes {
 		switch n := node.(type) {
 		case *ast.CreateTableNode:
-			if table := tables[tableKey(n.Name)]; table != nil && table.created == at {
+			if table := tables[tableKey(n.Name)]; table != nil {
 				node = table.takeOwnComments(n)
 			}
 		case *ast.IndexNode:
-			if table := tables[tableKey(n.Table)]; table != nil && table.created < at {
+			if table := tables[tableKey(n.Table)]; table != nil {
 				node = table.takeIndexComment(n)
 			}
 		}
@@ -50,8 +50,6 @@ func createdTableCommentsAfterIndexes(nodes []ast.Node) []ast.Node {
 // createdComments is where the comments of one table nodes create are written, and
 // the statements that set them.
 type createdComments struct {
-	// created is the position of the table's CREATE TABLE in nodes.
-	created int
 	// anchor is the position the comments follow: the table's last index, or its
 	// CREATE TABLE when nodes create no index for it.
 	anchor int
@@ -63,14 +61,14 @@ type createdComments struct {
 }
 
 // commentAnchors is, for each table nodes create, where its comments go. A plan
-// creates a table once, so the name is the key, and each anchor is a statement of
-// one table only.
+// creates a table once and each of its indexes after it, so the name is the key, an
+// index of the key is the table's, and each anchor is a statement of one table only.
 func commentAnchors(nodes []ast.Node) map[string]*createdComments {
 	tables := make(map[string]*createdComments)
 	for at, node := range nodes {
 		switch n := node.(type) {
 		case *ast.CreateTableNode:
-			tables[tableKey(n.Name)] = &createdComments{created: at, anchor: at}
+			tables[tableKey(n.Name)] = &createdComments{anchor: at}
 		case *ast.IndexNode:
 			if table := tables[tableKey(n.Table)]; table != nil {
 				table.anchor = at

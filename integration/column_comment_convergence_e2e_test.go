@@ -171,6 +171,42 @@ COMMENT ON INDEX "public"."tasks_title_idx" IS 'by title';
 		wantComments: []string{"", "what", "who"},
 	},
 	{
+		// On a table the plan changes, the community binary writes the comments of
+		// the indexes after the table's and its columns': those of the indexes the
+		// table keeps first, then those of its new indexes, each set by name.
+		name: "a table changed with new commented indexes and a kept index's comment changed",
+		initial: `CREATE TABLE tasks (id bigint PRIMARY KEY, title text, owner text);
+COMMENT ON COLUMN tasks.title IS 'what';
+CREATE INDEX tasks_owner_idx ON tasks (owner);
+COMMENT ON INDEX tasks_owner_idx IS 'by owner';
+`,
+		desired: `CREATE TABLE tasks (id bigint PRIMARY KEY, title text, owner text, due date);
+COMMENT ON COLUMN tasks.title IS 'what now';
+CREATE INDEX tasks_owner_idx ON tasks (owner);
+COMMENT ON INDEX tasks_owner_idx IS 'by person';
+CREATE INDEX tasks_title_idx ON tasks (title);
+CREATE INDEX tasks_due_idx ON tasks (due);
+COMMENT ON INDEX tasks_title_idx IS 'by title';
+COMMENT ON INDEX tasks_due_idx IS 'by due';
+`,
+		wantChange: `-- Modify "tasks" table
+ALTER TABLE "public"."tasks" ADD COLUMN "due" date NULL;
+-- Create index "tasks_due_idx" to table: "tasks"
+CREATE INDEX "tasks_due_idx" ON "public"."tasks" ("due");
+-- Create index "tasks_title_idx" to table: "tasks"
+CREATE INDEX "tasks_title_idx" ON "public"."tasks" ("title");
+-- Set comment to column: "title" on table: "tasks"
+COMMENT ON COLUMN "public"."tasks"."title" IS 'what now';
+-- Set comment to index: "tasks_owner_idx" on table: "tasks"
+COMMENT ON INDEX "public"."tasks_owner_idx" IS 'by person';
+-- Set comment to index: "tasks_due_idx" on table: "tasks"
+COMMENT ON INDEX "public"."tasks_due_idx" IS 'by due';
+-- Set comment to index: "tasks_title_idx" on table: "tasks"
+COMMENT ON INDEX "public"."tasks_title_idx" IS 'by title';
+`,
+		wantComments: []string{"", "what now", "", ""},
+	},
+	{
 		// The index waits for the view, and the comments follow the index.
 		name:    "a table created with comments and an index that waits for a view",
 		initial: "CREATE TABLE other (id bigint PRIMARY KEY);\n",

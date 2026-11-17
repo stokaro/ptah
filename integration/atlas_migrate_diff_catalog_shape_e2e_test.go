@@ -177,7 +177,9 @@ ALTER TABLE z1 ADD CONSTRAINT z1_other_fk FOREIGN KEY (other) REFERENCES z2 (id)
 // binary and whose rollback does not, deliberately. The binary writes the rollback as the
 // forward file backwards, `DROP COLUMN "d", ... DROP CONSTRAINT "ck"`, and PostgreSQL 18
 // answers `constraint "ck" of relation "t" does not exist`: dropping a column takes the
-// check over it. This binary drops the check first.
+// check over it. This binary drops the check first. In the rows with comments the binary's
+// rollback also clears, with `IS ”`, the comment of each table, column and index it then
+// drops, and this binary drops them without.
 var catalogForwardBytesCases = []struct {
 	name  string
 	steps []string
@@ -193,6 +195,21 @@ var catalogForwardBytesCases = []struct {
 			"COMMENT ON TABLE t IS 'tt';\nCOMMENT ON COLUMN t.a IS 'aa';\n" +
 			"CREATE INDEX t_a ON t (a);\nCREATE INDEX t_b ON t (b);\n" +
 			"COMMENT ON INDEX t_a IS 'ia';\nCOMMENT ON INDEX t_b IS 'ib';\n",
+	}},
+	{name: "a changed table with new commented indexes and changed comments", steps: []string{
+		"CREATE TABLE t (id int PRIMARY KEY, a int, b int, c int, e int);\n" +
+			"COMMENT ON TABLE t IS 'tt';\nCOMMENT ON COLUMN t.a IS 'old';\n" +
+			"CREATE INDEX t_z ON t (b);\nCREATE INDEX t_e ON t (e);\n" +
+			"COMMENT ON INDEX t_z IS 'z1';\nCOMMENT ON INDEX t_e IS 'e1';\n" +
+			"CREATE TABLE u (id int PRIMARY KEY, x int);\n",
+		"CREATE TABLE t (id int PRIMARY KEY, a int, b int, c int, e int, d int);\n" +
+			"COMMENT ON TABLE t IS 'tt2';\nCOMMENT ON COLUMN t.a IS 'new';\nCOMMENT ON COLUMN t.d IS 'dd';\n" +
+			"CREATE INDEX t_z ON t (b);\nCREATE INDEX t_e ON t (e);\n" +
+			"COMMENT ON INDEX t_z IS 'z2';\nCOMMENT ON INDEX t_e IS 'e2';\n" +
+			"CREATE INDEX t_c ON t (c);\nCREATE INDEX t_n ON t (b, c);\nCREATE INDEX t_a ON t (a);\n" +
+			"COMMENT ON INDEX t_c IS 'ic';\nCOMMENT ON INDEX t_a IS 'ia';\n" +
+			"CREATE TABLE u (id int PRIMARY KEY, x int, y int);\n" +
+			"CREATE INDEX u_x ON u (x);\nCOMMENT ON INDEX u_x IS 'ux';\n",
 	}},
 }
 
