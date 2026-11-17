@@ -297,7 +297,7 @@ func TestSchemaCompareAnswersTheSameForEveryConnectingRoleE2E(t *testing.T) {
 	database := scratchOwnedDatabase(c, roles, differingLeftSQL)
 	declaration := writeDeclaration(c, declaredSharedTableSQL)
 	want := withoutConnectionLine(c, runPtahNative(c, "schema", "compare", "--db-url", database, "--schema-file", declaration))
-	c.Assert(want, qt.Contains, "tables_removed (3): child, only_here, parent")
+	c.Assert(want, qt.Contains, "tables_removed (3): public.child, public.only_here, public.parent")
 
 	for _, row := range roles.rows() {
 		t.Run(row.name, func(t *testing.T) {

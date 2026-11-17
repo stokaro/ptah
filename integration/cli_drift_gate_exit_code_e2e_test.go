@@ -111,7 +111,7 @@ func TestSchemaCompareExitCodeE2E(t *testing.T) {
 			name:       "a column the database does not carry",
 			prepare:    `CREATE TABLE gates (id SERIAL PRIMARY KEY, name TEXT NOT NULL)`,
 			wantExit:   1,
-			wantStdout: "tables_modified (1): gates",
+			wantStdout: "tables_modified (1): public.gates",
 		},
 		{
 			name:       "the database has caught up with the declaration",

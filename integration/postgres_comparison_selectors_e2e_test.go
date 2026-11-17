@@ -38,8 +38,8 @@ const (
 	historyNoDrift   = "No schema drift detected.\n"
 	historyNoDiffs   = "No schema differences detected.\n"
 	historyFindings  = "- constraints_removed: 1 (destructive)\n- tables_removed: 2 (destructive)\n"
-	historyDropOne   = `DROP TABLE "databasechangelog";`
-	historyDropTwo   = `DROP TABLE "databasechangeloglock";`
+	historyDropOne   = `DROP TABLE "public"."databasechangelog";`
+	historyDropTwo   = `DROP TABLE "public"."databasechangeloglock";`
 )
 
 // historyTables are the tables Liquibase creates at its default settings.
