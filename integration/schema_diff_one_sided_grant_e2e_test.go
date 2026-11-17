@@ -57,8 +57,8 @@ func TestSchemaDiffReportsAGrantOnlyOneSideHoldsE2E(t *testing.T) {
 		{
 			name:   "a view grant",
 			extra:  `GRANT SELECT ON v TO {grantee};`,
-			revoke: `REVOKE SELECT ON TABLE "v" FROM GRANTEE;`,
-			grant:  `GRANT SELECT ON TABLE "v" TO GRANTEE;`,
+			revoke: `REVOKE SELECT ON TABLE "public"."v" FROM GRANTEE;`,
+			grant:  `GRANT SELECT ON TABLE "public"."v" TO GRANTEE;`,
 		},
 		{
 			name:   "a column grant",

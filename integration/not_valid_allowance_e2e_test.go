@@ -98,7 +98,7 @@ func TestNotValidAllowanceKeepsAnUnvalidatedKeyE2E(t *testing.T) {
 
 	native, compat := diffBothBinaries(c, url, desiredDir(c, ""))
 	c.Assert(native, qt.Contains, `ALTER TABLE "public"."items" VALIDATE CONSTRAINT "items_owner_fk"`)
-	c.Assert(compat, qt.Contains, `ALTER TABLE "public"."items" VALIDATE CONSTRAINT "items_owner_fk"`)
+	c.Assert(compat, qt.Contains, `ALTER TABLE "items" VALIDATE CONSTRAINT "items_owner_fk"`)
 
 	native, compat = diffBothBinaries(c, url, withDirective(c, desiredDir(c, "")))
 	c.Assert(native, qt.Contains, "Schemas are synced")
