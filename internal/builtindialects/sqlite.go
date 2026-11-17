@@ -224,14 +224,16 @@ func sqliteRevisionTable() descriptor.RevisionTable {
 		CreateTags:     createTags,
 		CreateLog:      createLog,
 		CreateApplyLog: createApplyLog,
-		FirstRow:       "limit",
-		Update:         updateRevision,
-		Respell:        respellRevision(),
-		UpsertTag:      upsertTagOnConflict,
-		VersionCast:    "BIGINT",
-		VersionLiteral: "standard",
-		DerivedTableAs: " AS",
-		TimeAsText:     true,
+		// Measured in process by the migrator's repeatable tests.
+		CreateRepeatables: createRepeatables,
+		FirstRow:          "limit",
+		Update:            updateRevision,
+		Respell:           respellRevision(),
+		UpsertTag:         upsertTagOnConflict,
+		VersionCast:       "BIGINT",
+		VersionLiteral:    "standard",
+		DerivedTableAs:    " AS",
+		TimeAsText:        true,
 	}
 }
 

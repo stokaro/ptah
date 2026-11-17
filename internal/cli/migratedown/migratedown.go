@@ -371,7 +371,9 @@ func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings
 	if err != nil {
 		return parsedRollbackSettings{}, err
 	}
-	var providerOptions []migrator.FSProviderOption
+	// The rollback reads the repeatable migrations only to refuse a database
+	// that records one of them; it never runs one.
+	providerOptions := []migrator.FSProviderOption{migrator.WithRepeatableMigrations()}
 	if values.runner.TransactionOwner() == lintext.TransactionOwnerFile {
 		providerOptions = append(providerOptions, migrator.WithOwnTransactions())
 	}

@@ -38,6 +38,7 @@ func TestIsNative(t *testing.T) {
 	}{
 		{name: "schema_migrations", want: true},
 		{name: "schema_migrations_log", want: true},
+		{name: "schema_migrations_repeatable", want: true},
 		{name: "ptah_migration_tags", want: true},
 		{name: "ptah_schema_apply_log", want: true},
 		{name: "atlas_schema_revisions", want: false},
@@ -60,6 +61,7 @@ func TestIsDefault(t *testing.T) {
 	}{
 		{name: "schema_migrations", want: true},
 		{name: "schema_migrations_log", want: true},
+		{name: "schema_migrations_repeatable", want: true},
 		{name: "atlas_schema_revisions", want: true},
 		{name: "ptah_migration_tags", want: true},
 		{name: "ptah_schema_apply_log", want: true},
@@ -83,9 +85,15 @@ func TestConfigured(t *testing.T) {
 		table  string
 		want   []string
 	}{
-		{name: "native default", format: "ptah", want: []string{"schema_migrations", "schema_migrations_log", "ptah_migration_tags"}},
-		{name: "empty format is native", format: "", want: []string{"schema_migrations", "schema_migrations_log", "ptah_migration_tags"}},
-		{name: "native custom table", format: "ptah", table: "custom_revs", want: []string{"custom_revs", "custom_revs_log", "ptah_migration_tags"}},
+		{name: "native default", format: "ptah", want: []string{
+			"schema_migrations", "schema_migrations_log", "schema_migrations_repeatable", "ptah_migration_tags",
+		}},
+		{name: "empty format is native", format: "", want: []string{
+			"schema_migrations", "schema_migrations_log", "schema_migrations_repeatable", "ptah_migration_tags",
+		}},
+		{name: "native custom table", format: "ptah", table: "custom_revs", want: []string{
+			"custom_revs", "custom_revs_log", "custom_revs_repeatable", "ptah_migration_tags",
+		}},
 		{name: "atlas default", format: "atlas", want: []string{"atlas_schema_revisions", "ptah_migration_tags"}},
 		{name: "atlas custom table", format: "atlas", table: "revs", want: []string{"revs", "ptah_migration_tags"}},
 		{name: "format spelling", format: " Atlas ", table: " revs ", want: []string{"revs", "ptah_migration_tags"}},

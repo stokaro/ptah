@@ -28,6 +28,14 @@ Where:
 - `description` is a snake_case description of the migration
 - Each migration must have both `.up.sql` and `.down.sql` files
 
+A provider built with `WithRepeatableMigrations()` also loads repeatable
+migrations, `R__<identity>.sql`: one file with no version and no down half,
+which `MigrateUpWithOptions` runs after the versioned migrations and again
+whenever its content changes. The record of each sits in a table beside the
+revision table, `<revision table>_repeatable`. They run on PostgreSQL and
+SQLite; the user guide is
+[Repeatable migrations](../../docs/site/src/content/docs/versioned/repeatable.md).
+
 ### Filesystem Requirements
 
 `NewFSMigrator` and `NewFSMigrationProvider` take an `fs.FS` whose root holds the migration files. Preparing that filesystem is the caller's job:
@@ -437,6 +445,7 @@ reconciliation that needs two or more row updates before changing either row.
 - **`WithAtlasRevisionVersionComparator(compare)`**: Supplies the source format's relationship between a retired exact identity and the selected target during metadata-only set operations; each `AtlasRevisionOrderIdentity` carries the exact key, Atlas row type, operator marker, and provider-owned repeatable role, and an unavailable comparison fails closed before metadata changes
 - **`WithAtlasRevisionTypes(types)`**: Preserves source-format Atlas revision metadata, such as the surviving Flyway baseline marker, across filename conversion
 - **`WithAtlasRepeatableVersions(versions)`**: Preserves the repeatable role for converted numeric Atlas filenames without inferring it from an empty revision identity
+- **`WithRepeatableMigrations()`**: Loads `R__<identity>.sql` repeatable migrations from a directory read in the Ptah format; an up run executes the new and changed ones after the versioned migrations, under the same lock, and status reports each in `MigrationStatus.Repeatables`
 - **`WithStatementInterceptor(interceptor)`**: Lets an external executor take over selected statements
 - **`WithStatementValidator(validator)`**: Validates every statement of every migration a run selected before the run executes its first statement
 - **`WithStatementObserver(observer)`**: Reports each statement after successful execution without replacing the execution path

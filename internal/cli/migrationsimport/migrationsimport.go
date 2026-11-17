@@ -30,6 +30,7 @@ type options struct {
 	dialect       string
 	serverVersion string
 	liquibaseDBMS string
+	repeatables   string
 }
 
 // NewMigrationsImportCommand returns the migrations import command.
@@ -105,6 +106,9 @@ for each file they leave behind.`,
 	flags.BoolVar(&opts.allowPartial, "allow-partial", false, "Import and write ptah.sum even though some source files were not converted")
 	flags.StringVar(&opts.dialect, "dialect", "", "Target dialect Liquibase typed changes such as createTable are rendered for (Liquibase sources only)")
 	flags.StringVar(&opts.liquibaseDBMS, "liquibase-dbms", "", "Liquibase's name for the database the history ran on, such as postgresql; changesets and changes whose dbms does not select it are left out (Liquibase sources only)")
+	flags.StringVar(&opts.repeatables, "repeatables", string(importer.RepeatablesOnce),
+		"What a source repeatable migration becomes: once, a one-time migration run after the versioned ones, "+
+			"or on-change, a Ptah repeatable migration that runs again whenever its content changes")
 	serverversion.Register(flags, &opts.serverVersion)
 	cmd.SetFlagErrorFunc(cmdutil.FlagErrorFunc)
 	return cmd
@@ -158,6 +162,7 @@ func runImport(cmd *cobra.Command, opts *options) error {
 	result, err := importer.Import(cmd.Context(), source, parser, opts.migrationsDir, importer.Options{
 		DryRun:       opts.dryRun,
 		AllowPartial: opts.allowPartial,
+		Repeatables:  importer.RepeatableImport(opts.repeatables),
 	})
 	if err != nil {
 		if partial, ok := errors.AsType[*importer.PartialImportError](err); ok {

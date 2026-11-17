@@ -353,6 +353,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options, document *statusDoc
 		migrationsFS,
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: atlasEnv}),
+		migrator.WithRepeatableMigrations(),
 	)
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
@@ -462,6 +463,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	emit.Printf("Applied Migrations: %d\n", len(status.AppliedMigrations))
 	emit.Printf("Pending Migrations: %d\n", len(status.PendingMigrations))
 	emit.Printf("Out-of-order Migrations: %d\n", len(status.OutOfOrderMigrations))
+	writeRepeatables(emit, status.Repeatables)
 
 	if status.DirtyRevision != nil {
 		emit.Println("Status: ❌ Dirty migration state detected")
@@ -484,6 +486,21 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			Dialect:         conn.Info().Dialect,
 			OwnTransactions: mig.RevisionBodyOpensOwnTransactions(*status.DirtyRevision),
 		}))
+		return nil
+	}
+
+	if dirty := dirtyRepeatables(status.Repeatables); len(dirty) > 0 {
+		emit.Println("Status: ❌ Repeatable migration did not finish")
+		for _, record := range dirty {
+			emit.Printf("Dirty Repeatable: identity=%s state=%s attempted=%s no_transaction=%t\n",
+				record.Identity, record.State, record.AttemptChecksum, record.NoTransaction)
+			if record.Error != "" {
+				emit.Printf("Error: %s\n", record.Error)
+			}
+		}
+		emit.Println("\nAn up run refuses while a repeatable migration's last attempt has no successful " +
+			"outcome. Fix the cause, then run 'ptah migrations up --allow-dirty', which runs it again " +
+			"from its first statement. When it ran without a transaction, check what it left behind first.")
 		return nil
 	}
 
@@ -532,7 +549,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			}
 		}
 
-		emit.Println("\nRun 'ptah migrations up' to apply pending migrations.")
+		emit.Println("\nRun 'ptah migrations up' to apply pending migrations and run new or changed repeatable migrations.")
 	} else {
 		emit.Println("Status: ✅ Database is up to date")
 	}
@@ -552,6 +569,31 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	}
 
 	return nil
+}
+
+// writeRepeatables prints the directory's repeatable migrations, one line
+// each, in the order an up run executes them. A directory without repeatable
+// migrations prints nothing.
+func writeRepeatables(emit cliobs.Emitter, records []migrator.RepeatableRecord) {
+	if len(records) == 0 {
+		return
+	}
+	emit.Printf("Repeatable Migrations: %d\n", len(records))
+	for _, record := range records {
+		emit.Printf("  %s %s %s\n", record.Identity, record.State, record.Checksum)
+	}
+}
+
+// dirtyRepeatables returns the records whose last attempt failed or recorded
+// no outcome.
+func dirtyRepeatables(records []migrator.RepeatableRecord) []migrator.RepeatableRecord {
+	var dirty []migrator.RepeatableRecord
+	for _, record := range records {
+		if record.State == migrator.RepeatableStateFailed || record.State == migrator.RepeatableStateRunning {
+			dirty = append(dirty, record)
+		}
+	}
+	return dirty
 }
 
 // warnFloor passes the migrator's warnings and errors to the command's handler

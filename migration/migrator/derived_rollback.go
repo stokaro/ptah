@@ -107,6 +107,9 @@ func (m *Migrator) migrateDownDerivedLocked(ctx context.Context, rollback Derive
 	if !slices.Equal(above, derived) {
 		return &StaleDerivedRollbackError{TargetVersion: rollback.TargetVersion, Derived: derived, Applied: above}
 	}
+	if err := m.repeatableRollbackRefusal(ctx); err != nil {
+		return err
+	}
 	boundary := m.derivedRollbackBoundary(rollback.TargetVersion)
 	if err := m.checkRevisionSet(ctx, boundary); err != nil {
 		return fmt.Errorf("move the revision boundary to version %d: %w", boundary, err)

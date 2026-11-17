@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -25,6 +26,18 @@ import (
 // selection does, under the lock the run then mutates behind.
 type expectedSequence struct {
 	Migrations []expectedMigration `json:"migrations"`
+	// Repeatables is the approved repeatable work, in the order the run
+	// executes it. An absent list approves none, so a run that would execute
+	// a repeatable migration the caller did not see is refused like one that
+	// selects an extra version.
+	Repeatables []expectedRepeatable `json:"repeatables,omitempty"`
+}
+
+// expectedRepeatable is one approved repeatable migration: its identity and
+// the digest of the content the caller saw.
+type expectedRepeatable struct {
+	Identity string `json:"identity"`
+	Checksum string `json:"checksum"`
 }
 
 // expectedMigration is one approved migration, named the way the revision
@@ -42,6 +55,7 @@ type SequenceMismatchError struct {
 	Selected []string
 }
 
+// Error names both lists and says nothing ran.
 func (e *SequenceMismatchError) Error() string {
 	return fmt.Sprintf(
 		"the migrations selected under the migration lock are [%s], and the approved sequence is [%s]: "+
@@ -79,7 +93,30 @@ func loadExpectedSequence(path string) (*expectedSequence, error) {
 				expectSequenceFlag, index, migration.Version)
 		}
 	}
+	for index, repeatable := range sequence.Repeatables {
+		if repeatable.Identity == "" || repeatable.Checksum == "" {
+			return nil, fmt.Errorf("parse --%s: repeatable %d needs both an identity and a checksum",
+				expectSequenceFlag, index)
+		}
+	}
 	return &sequence, nil
+}
+
+// RepeatableSequenceMismatchError reports repeatable work under the lock that
+// is not the approved work: another identity, another order, or content whose
+// digest is not the one the caller saw.
+type RepeatableSequenceMismatchError struct {
+	Expected []string
+	Selected []string
+}
+
+// Error names both lists, each entry as identity@checksum, and says nothing
+// ran.
+func (e *RepeatableSequenceMismatchError) Error() string {
+	return fmt.Sprintf(
+		"the repeatable migrations selected under the migration lock are [%s], and the approved repeatables are "+
+			"[%s]: the directory or the record moved after the sequence was approved, so nothing was run",
+		strings.Join(e.Selected, " "), strings.Join(e.Expected, " "))
 }
 
 // check compares the selection with the approved sequence, element by element
@@ -98,13 +135,19 @@ func (e *expectedSequence) check(plan migrator.MigrationPlan) error {
 		}
 		selected = append(selected, identity(version, key))
 	}
-	if len(expected) != len(selected) {
+	if !slices.Equal(expected, selected) {
 		return &SequenceMismatchError{Expected: expected, Selected: selected}
 	}
-	for index := range expected {
-		if expected[index] != selected[index] {
-			return &SequenceMismatchError{Expected: expected, Selected: selected}
-		}
+	expectedRepeatables := make([]string, 0, len(e.Repeatables))
+	for _, repeatable := range e.Repeatables {
+		expectedRepeatables = append(expectedRepeatables, repeatable.Identity+"@"+repeatable.Checksum)
+	}
+	selectedRepeatables := make([]string, 0, len(plan.Repeatables))
+	for _, work := range plan.Repeatables {
+		selectedRepeatables = append(selectedRepeatables, work.Identity+"@"+work.Checksum)
+	}
+	if !slices.Equal(expectedRepeatables, selectedRepeatables) {
+		return &RepeatableSequenceMismatchError{Expected: expectedRepeatables, Selected: selectedRepeatables}
 	}
 	return nil
 }

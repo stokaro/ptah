@@ -197,12 +197,15 @@ still needs a baseline step.
 
 ### After importing from Flyway, a repeatable migration no longer re-runs when I edit the file. Why? {#flyway-repeatable}
 
-Import converts it to an ordinary one-time migration on a reserved slot ordered
-after every versioned file, because the native format has no reapply semantics to
-convert it into. Make later changes as new migrations, or move that object to a
-desired-schema workflow.
+By default, import converts it to an ordinary one-time migration on a reserved
+slot ordered after every versioned file. Import with `--repeatables on-change`
+to write a Ptah repeatable migration instead, which `ptah migrations up` runs
+again whenever its content changes. A directory already imported the default
+way keeps its meaning: carry later changes as new migrations, or import again
+into a new directory.
 
-- [Import from another tool](../versioned/import/#a-repeatable-becomes-a-one-time-migration)
+- [Import from another tool](../versioned/import/#what-a-repeatable-becomes)
+- [Repeatable migrations](../versioned/repeatable/)
 
 ### My Liquibase changelog was rejected on import. What is supported? {#liquibase-changelog-format}
 

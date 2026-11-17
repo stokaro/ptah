@@ -85,6 +85,7 @@ pending. Each step is covered in depth on its own page:
 | --- | --- |
 | Write a migration by hand, or plan and write one from schema differences | [Generate migrations](../generate/) |
 | Apply pending migrations and inspect state | [Apply migrations](../apply/) |
+| Keep a view or a routine in one file that runs again when it changes | [Repeatable migrations](../repeatable/) |
 | Roll back to an earlier version | [Roll back migrations](../rollback/) |
 | Hash the directory, validate it, and assert preconditions | [Integrity and safety](../integrity-and-safety/) |
 | Lint the SQL and gate destructive changes | [Lint and gate unsafe SQL](../lint/) |
@@ -98,7 +99,9 @@ pending. Each step is covered in depth on its own page:
 A migration directory holds one `*.up.sql`/`*.down.sql` pair per version plus
 the `ptah.sum` integrity file, and each target database records its applied
 versions in a revision table (`schema_migrations` by default). Pending work
-is the set of directory versions not yet in that table. The full model —
+is the set of directory versions not yet in that table. A directory may also
+hold [repeatable migrations](../repeatable/), `R__<identity>.sql`, which have
+no version and run again when their content changes. The full model —
 file layout, version ordering, integrity files, checkpoint markers, and the
 native and Atlas directory formats — is on
 [The migration directory](../../concepts/migration-directory/).

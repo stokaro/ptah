@@ -46,6 +46,12 @@ ptah.sum
   [Checkpoints](../../versioned/checkpoints/). Atlas-format directories mark
   checkpoints with a first-line `-- atlas:checkpoint` file directive instead,
   which Ptah honors with the same bootstrap-or-skip semantics.
+- **A repeatable migration** is a single file, `R__<identity>.sql`, with no
+  version and no down half. `ptah migrations up` runs it after the versioned
+  migrations and again whenever its content changes, and records it in a table
+  of its own beside the revision table — see
+  [Repeatable migrations](../../versioned/repeatable/). Only the native format
+  has them; an Atlas directory reads the same name as a one-time version.
 
 Applied versions are recorded in a **revision table** in the target database
 (`schema_migrations` by default). Pending work is the set of directory

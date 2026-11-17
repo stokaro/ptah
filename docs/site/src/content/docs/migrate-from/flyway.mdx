@@ -1,11 +1,11 @@
 ---
 title: "Migrate from Flyway"
-description: Convert a Flyway directory, and learn what a repeatable migration becomes when the destination has no reapply.
+description: Convert a Flyway directory, and choose what a repeatable migration becomes, a one-time migration or a Ptah repeatable migration.
 type: tutorial
 audience:
   - new-user
 readerQuestion: How do I convert my Flyway migrations to Ptah, and what happens to my repeatable scripts?
-goal: Convert a Flyway directory and see what a repeatable migration costs afterwards.
+goal: Convert a Flyway directory and see what each conversion of a repeatable migration means afterwards.
 sourceOfTruth:
   - internal/cli/migrations
   - migration/importer
@@ -24,14 +24,15 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 Flyway names a file by what it is: `V` for a versioned migration, `U` for its
 undo script, `R` for a repeatable that re-runs whenever its body changes. The
-first two convert cleanly. The third cannot, because Ptah's format has no
-reapply semantics to convert it into, and this page is mostly about what that
-means for you.
+first two convert cleanly. The third converts in one of two ways. By default
+it becomes a one-time migration, which changes what editing it means. With
+`--repeatables on-change` it becomes a Ptah repeatable migration, which keeps
+the Flyway contract. This page runs both.
 
 ## What you need
 
 - A `ptah` binary on your `PATH`. [Install Ptah](../../start/install/) if necessary.
-- A terminal and about eight minutes.
+- A terminal and about ten minutes.
 
 No database server, Docker, or Go toolchain is required.
 
@@ -123,7 +124,9 @@ which is exactly what Ptah's down file is, so this one converts without losing
 anything.
 
 **`R__` became version 3, ordered after every versioned migration.** That is
-the conversion that changes meaning, and the rest of this page is about it.
+the default conversion, and the one that changes meaning. The next sections show
+what it costs, and [Keep the repeatable](#keep-the-repeatable) runs the other
+conversion.
 
 ## Apply the result
 
@@ -258,10 +261,114 @@ migration on its own cannot run, because the refusal precedes every migration
 in the directory.
 
 That new migration each time the definition changes is what replaces the
-repeatable, and it is how every other object in a versioned directory is
-already handled. If the object is one you would rather declare than migrate, a
-view is also something [direct schema changes](../../direct/overview/) converge
-for you.
+repeatable in a directory imported this way. If the object is one you would
+rather declare than migrate, a view is also something
+[direct schema changes](../../direct/overview/) converge for you.
+
+## Keep the repeatable
+
+Import the same source again with `--repeatables on-change`, into a directory
+of its own:
+
+```console
+ptah migrations import --source-dir ./legacy --migrations-dir ./migrations-on-change --repeatables on-change
+```
+
+Expected output on standard output:
+
+```text
+Wrote 5 migration file(s) to ./migrations-on-change
+Wrote ./migrations-on-change/ptah.sum
+  0000000001_v1_create_users.up.sql
+  0000000001_v1_create_users.down.sql
+  0000000002_v1_1_add_email_index.up.sql
+  0000000002_v1_1_add_email_index.down.sql
+  R__user_count_view.sql
+```
+
+The repeatable is now `R__user_count_view.sql`: one file with no version and no
+down file. Apply the directory to a database of its own:
+
+```console
+ptah migrations up --db-url sqlite://on-change.db --migrations-dir ./migrations-on-change
+```
+
+Expected output includes, on standard output:
+
+```text
+Database is now at version: 2
+Ran 1 repeatable migrations:
+```
+
+### Edit it and redeploy
+
+Change the view the way you would have in Flyway. The file now runs again
+against a database that already holds the view, so it drops the view first:
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cat > migrations-on-change/R__user_count_view.sql <<'SQL'
+DROP VIEW IF EXISTS user_count;
+CREATE VIEW user_count AS SELECT COUNT(*) AS total, MIN(id) AS first_id FROM users;
+SQL
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+@'
+DROP VIEW IF EXISTS user_count;
+CREATE VIEW user_count AS SELECT COUNT(*) AS total, MIN(id) AS first_id FROM users;
+'@ | Set-Content migrations-on-change/R__user_count_view.sql
+```
+
+</TabItem>
+</Tabs>
+
+The file changed, so seal the directory again:
+
+```console
+ptah migrations hash --dir ./migrations-on-change
+```
+
+Expected output on standard output:
+
+```text
+Wrote ./migrations-on-change/ptah.sum
+5 migration file(s) hashed
+```
+
+Redeploy:
+
+```console
+ptah migrations up --db-url sqlite://on-change.db --migrations-dir ./migrations-on-change
+```
+
+Expected output includes, on standard output:
+
+```text
+Ran 1 repeatable migrations:
+```
+
+The run executed the edited view and recorded the digest of the new content,
+so the next run has nothing to do:
+
+```console
+ptah migrations status --db-url sqlite://on-change.db --migrations-dir ./migrations-on-change
+```
+
+Expected output includes, on standard output:
+
+```text
+Repeatable Migrations: 1
+Status: ✅ Database is up to date
+```
+
+[Repeatable migrations](../../versioned/repeatable/) covers the order they run
+in, what happens when one fails, and what they refuse.
 
 ## Clean up
 

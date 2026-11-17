@@ -245,7 +245,27 @@ type Options struct {
 	// that survived, so the truncated directory validates clean and nothing
 	// downstream can establish that SQL was lost (stokaro/ptah#2231).
 	AllowPartial bool
+	// Repeatables chooses what a source repeatable migration becomes. The
+	// zero value is [RepeatablesOnce].
+	Repeatables RepeatableImport
 }
+
+// RepeatableImport is what an import makes of a source repeatable migration,
+// such as a Flyway R__<description>.sql file.
+type RepeatableImport string
+
+const (
+	// RepeatablesOnce imports a source repeatable migration as a one-time
+	// Ptah migration named repeatable_<name>, ordered after every versioned
+	// one. It runs once; a later change to the source is a new migration.
+	RepeatablesOnce RepeatableImport = "once"
+	// RepeatablesOnChange imports a source repeatable migration as a Ptah
+	// repeatable migration, R__<identity>.sql, which a native up run executes
+	// again whenever its content changes. The identity is the source name
+	// with every character outside ASCII letters, digits, underscores and
+	// hyphens replaced by an underscore.
+	RepeatablesOnChange RepeatableImport = "on-change"
+)
 
 // Import parses sourceFS, normalizes the result, and emits Ptah migration files
 // into outDir. When parser is nil the source tool is auto-detected. An import
