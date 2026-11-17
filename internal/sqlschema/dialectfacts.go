@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/platform/identifier"
 )
 
 // readingFacts is what a source dialect's descriptor says about reading a
@@ -40,6 +41,10 @@ type readingFacts struct {
 	// column of a serial type draws from a sequence it owns; see
 	// [Document.foldColumnSequences].
 	serialOwnsSequence bool
+	// indexNamesPerTable reports that an index name is unique within its
+	// table rather than its schema, so two tables of a schema may each have an
+	// index of one name; see [indexCommentTarget].
+	indexNamesPerTable bool
 }
 
 // readingFactsCache keeps each dialect name's facts once read. A read asks
@@ -83,6 +88,7 @@ func factsOf(sourcePlatform string) readingFacts {
 		grammarDrops:        described.Grammar.Forms.Drops,
 		routines:            described.Grammar.Routines.Body,
 		serialOwnsSequence:  described.Comparison.SerialOwnsSequence,
+		indexNamesPerTable:  identifier.IndexNamespace(described.Identifiers.IndexNamespace) == identifier.IndexNamespaceTable,
 	}
 	readingFactsCache.Store(sourcePlatform, facts)
 	return facts

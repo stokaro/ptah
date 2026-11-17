@@ -454,7 +454,11 @@ views, materialized views, sequences, domains, composite types, ranges, enums,
 extensions, functions, procedures, triggers, and policies. Functions and
 procedures accept argument lists with optional argument names, or a bare name
 when the document declares one overload. Triggers, policies, and constraints
-are named `ON` their table.
+are named `ON` their table. An index is named in the schema of its table, and a
+bare name is an index of the default schema, so `COMMENT ON INDEX app.notes_idx`
+and `COMMENT ON INDEX notes_idx` name two indexes. CockroachDB names an index
+within its table, and two tables of one schema may each have an index of one
+name. `COMMENT ON INDEX notes@notes_idx` names the index of one table there.
 
 `IS NULL` clears a declared object's comment; `'NULL'` sets the text `NULL`.
 
@@ -465,6 +469,8 @@ from:
   policy of another table;
 - a routine named by its name alone when the document declares more than one
   overload of it, or a function named as a procedure;
+- on CockroachDB, an index named without its table when more than one table of
+  the schema has an index of that name, which the server refuses as ambiguous;
 - a comment on a domain's constraint (`ON DOMAIN`) or on any other kind of
   object, such as a foreign table or a cast.
 
