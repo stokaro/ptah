@@ -77,12 +77,12 @@ CREATE UNIQUE INDEX ux ON c (x);`,
 		diff: map[string][]string{
 			"MySQL":      {"MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `ux`"},
 			"MariaDB":    {"MODIFY COLUMN `x` int NULL UNIQUE", "DROP INDEX `ux`"},
-			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP INDEX "ux"`},
+			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP INDEX "public"."ux"`},
 		},
 		apply: map[string][]string{
 			"MySQL":      {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `ux`"},
 			"MariaDB":    {"MODIFY COLUMN `x` int UNIQUE", "DROP INDEX `ux`"},
-			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP INDEX "ux"`},
+			"PostgreSQL": {`ADD CONSTRAINT "c_x_key" UNIQUE ("x")`, `DROP INDEX "public"."ux"`},
 		},
 	},
 	{

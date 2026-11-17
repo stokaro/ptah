@@ -385,6 +385,19 @@ Expected output on standard output:
 Schema is synced, no changes to be made.
 ```
 
+A plan can hold notes and no statement, where the declaration changes
+something the target cannot change in place. A generated column whose
+expression changes on a server without `ALTER COLUMN ... SET EXPRESSION` is one
+case. The run then prints the notes and does not report the schema as synced:
+
+```text
+-- WARNING: Generated column tasks.code changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression, unavailable on this target (PostgreSQL added it in 17); manual migration required.
+No statements planned, but the plan holds the notes above, so the schema is not synced.
+```
+
+The exit code is 0, as for a synced schema. A script that has to tell the two
+apart reads `annotations` in the [JSON document](#read-the-result-in-a-script).
+
 ## Read the result in a script
 
 `--json` on `ptah schema plan` and `ptah schema apply` prints one JSON document
@@ -494,7 +507,7 @@ Against a database whose password the URL gets wrong, the plan reports:
 previewed document includes `plan_digest`, and a saved file includes `plan_path`.
 `no-changes` means no statement was planned, and a plan with notes alone can
 still be saved. The database matches the desired schema unless `undecided` is
-present.
+present or the plan holds notes.
 `failed` means the plan could not be computed or saved, for a reason that has
 no refusal code. Two plans against an unchanged database print the same bytes.
 
@@ -529,7 +542,7 @@ the saved SQL plan format.
 | Outcome | Meaning |
 | --- | --- |
 | `applied` | Every operation ran |
-| `no-changes` | No operation was planned. The database matches the desired schema unless `undecided` is present |
+| `no-changes` | No operation was planned. The database matches the desired schema unless `undecided` is present or `annotations` holds notes |
 | `dry-run` | Nothing ran, and the checks ahead of the prompt passed |
 | `canceled` | The confirmation prompt was declined |
 | `refused` | Nothing reached the database, for the reason `refusal` names |

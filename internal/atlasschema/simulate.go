@@ -112,7 +112,9 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	if err := schemaext.RequireRuntime(ctx, p.runtime); err != nil {
 		return err
 	}
-	ctx = rolepassword.With(ctx, p.passwords)
+	// The dev database and the target are read as the plan read the target;
+	// see [readscope.Qualified].
+	ctx = readscope.Qualified(rolepassword.With(ctx, p.passwords))
 	if strings.TrimSpace(opts.DevURL) == "" {
 		return nil
 	}
@@ -152,6 +154,9 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	// handed back with nothing the rehearsal put in it, whether the rehearsal
 	// succeeded or failed.
 	defer discardDevRehearsalArtifacts(ctx, dev.conn, dev.baseline)
+	if err := checkDevNaming(p.rehearsal.planning.naming, p.conn.Info(), dev.conn.Info()); err != nil {
+		return err
+	}
 
 	return rehearseStatementsOnDev(ctx, p.conn, dev.conn, dev.baseline, p.current, p.seed.target(ctx, p.conn), p.txMode, statements, p.runtime)
 }
@@ -567,23 +572,24 @@ func checkNativeSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) er
 // unqualified names as the target does, and the reads the rehearsal makes of
 // it.
 //
-// A plan names an object of the target's current schema without a schema, and
-// so does the baseline rendered from the target's read. On a realm-scoped pair
-// whose current schemas differ, the dev session would create each one in its
-// own current schema: measured on PostgreSQL 18, a role `rebase` resolves to
-// `rebase` in a target that holds that schema and to `public` in a dev
-// database that does not. The session's search path is set to the target's, so
-// the dev database builds the target's state under the target's names, and
-// the plan runs against it as it will run on the target. A pair that resolves
-// alike comes back as it is.
+// The plan and the baseline rendered from the target's read name the schema
+// of every object (see [namingFor] and [readscope.Qualified]), but their SQL
+// text, a view's body or a column default, names a relation as its author
+// wrote it. On a realm-scoped pair whose current schemas differ, the dev
+// session would resolve each such name in its own current schema: measured on
+// PostgreSQL 18, a role `rebase` resolves to `rebase` in a target that holds
+// that schema and to `public` in a dev database that does not. The session's
+// search path is set to the target's, so the dev database builds the target's
+// state under the target's names, and the plan runs against it as it will run
+// on the target. A pair that resolves alike comes back as it is.
 //
 // The target holds the schema its session resolves to, since current_schema()
 // names only a schema that exists, and the dev database is given it as well.
-// A comparison need not read that schema -- one the desired state declares
+// A comparison need not read that schema -- one the desired schema declares
 // nothing in is left out -- and without it a search path naming it resolves
-// on the dev database to the next schema: the plan's unqualified CREATE TABLE
-// would be rehearsed in `public` and run on the target in `rebase`. The dev
-// database claimed every schema, so the cleanup drops it with the rest.
+// on the dev database to the next schema: a view's body naming `notes` would
+// read `public.notes` where the target reads `rebase.notes`. The dev database
+// claimed every schema, so the cleanup drops it with the rest.
 func resolveNamesAsTarget(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,

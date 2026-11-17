@@ -76,6 +76,16 @@ func captureApplyPlan(
 	names := atlaschange.For(info.Dialect).Forward(rendered.Request.Nodes)
 	named := -1
 	var indexes []int
+	next := 0
+	// placeAnnotations moves the rendered annotations positioned up to unit
+	// last into the plan, in their order, before a note the loop adds there.
+	placeAnnotations := func(last int) {
+		for ; next < len(annotations) && annotations[next].Before <= last; next++ {
+			annotation := annotations[next]
+			annotation.Before = positions[annotation.Before]
+			plan.annotations = append(plan.annotations, annotation)
+		}
+	}
 	for i, unit := range units {
 		positions[i] = len(plan.units)
 		if !rendered.Result.ExecutableUnits && strings.TrimSpace(sqlutil.StripCommentsForDialect(unit.Fragment.SQL, rendered.Dialect)) == "" {
@@ -84,7 +94,17 @@ func captureApplyPlan(
 			// SQL unit before it, which is where a skipped object's note lands.
 			if last := len(plan.units) - 1; last >= 0 && plan.units[last].Native == nil {
 				plan.units[last].SQL += "\n" + unit.Fragment.SQL
+				continue
 			}
+			// With no SQL unit before it, the note is all the plan says about
+			// a difference it plans no statement for, such as a generated
+			// column whose expression the target cannot change. Dropped, the
+			// plan reads as empty and apply reports the schema synced.
+			placeAnnotations(i)
+			plan.annotations = append(plan.annotations, renderer.Annotation{
+				Before: len(plan.units),
+				Text:   commentProse(unit.Fragment.SQL),
+			})
 			continue
 		}
 		plan.units = append(plan.units, unit.Fragment)
@@ -100,10 +120,7 @@ func captureApplyPlan(
 		plan.texts = nil
 	}
 	positions[len(units)] = len(plan.units)
-	for _, annotation := range annotations {
-		annotation.Before = positions[annotation.Before]
-		plan.annotations = append(plan.annotations, annotation)
-	}
+	placeAnnotations(len(units))
 	plan.transactions, err = txrequire.OwnerRequirements(rendered.Request.Nodes, indexes)
 	if err != nil {
 		return ApplyPlan{}, err
@@ -122,6 +139,22 @@ func captureApplyPlan(
 	}
 	plan.effects = describeUnits(effects, plan.provider, rendered.Request.Nodes, indexes)
 	return plan, nil
+}
+
+// commentProse is the text of a comment-only SQL unit as an annotation holds
+// it: each line comment loses its marker and the space after it, so writing the
+// annotation back as SQL comments gives the lines the planner wrote. A line
+// that is not a line comment, such as a block comment, is kept as it reads.
+func commentProse(sql string) string {
+	var lines []string
+	for line := range strings.SplitSeq(strings.TrimSpace(sql), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "--"); ok {
+			line = strings.TrimPrefix(rest, " ")
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // describeUnits is [planeffect.Describe] of the captured units, where units

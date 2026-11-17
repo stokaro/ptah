@@ -706,7 +706,7 @@ func runSchemaApplyOnLockedSession(
 	run.evidence.Annotations = plan.Annotations()
 	if !plan.HasChanges() {
 		atlasschema.WriteUnitReports(run.human, nil, plan.Annotations())
-		printNothingPlanned(run.human, run.evidence.Undecided)
+		printNothingPlanned(run.human, run.evidence.Undecided, len(plan.Annotations()))
 		return atlasschema.ApplyOutcomeNoChanges, nil
 	}
 
@@ -1013,12 +1013,21 @@ func editSchemaApplySQL(ctx context.Context, sqlText string) (string, error) {
 }
 
 // printNothingPlanned says that no statement was planned. It says the schema is
-// synced only when the comparison withheld nothing: with an undecided object,
-// the read did not look at something the desired schema declares, and "synced"
-// would claim a check that did not run. The warnings above it say what and why.
-func printNothingPlanned(out io.Writer, undecided schemadiff.Diagnostics) {
+// synced only when the comparison withheld nothing and the plan holds no note:
+// with an undecided object, the read did not look at something the desired
+// schema declares, and "synced" would claim a check that did not run. A note is
+// what the planner writes about a difference it plans no statement for, such
+// as a change the target cannot make, so the schema did not converge either.
+// The lines above it say what and why.
+func printNothingPlanned(out io.Writer, undecided schemadiff.Diagnostics, notes int) {
+	if notes > 0 {
+		fmt.Fprintln(out, "No statements planned, but the plan holds the notes above, so the schema is not synced.")
+	}
 	if !undecided.Empty() {
 		fmt.Fprintf(out, "No changes planned, but %s.\n", undecidednote.Summary(undecided))
+		return
+	}
+	if notes > 0 {
 		return
 	}
 	fmt.Fprintln(out, "Schema is synced, no changes to be made.")

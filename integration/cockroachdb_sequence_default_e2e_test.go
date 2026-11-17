@@ -34,7 +34,7 @@ func TestSchemaApplyCockroachDBSequenceDefaultE2E_Converges(t *testing.T) {
 			name:       "a default moved to a new sequence",
 			built:      "CREATE SEQUENCE s;\nCREATE TABLE t (id INT8 PRIMARY KEY, n INT8 DEFAULT nextval('s'));\n",
 			desired:    "CREATE SEQUENCE s2;\nCREATE TABLE t (id INT8 PRIMARY KEY, n INT8 DEFAULT nextval('s2'));\n",
-			plansFirst: `DROP SEQUENCE "s"`,
+			plansFirst: `DROP SEQUENCE "public"."s"`,
 			reads:      "nextval('public.s2'::REGCLASS)",
 		},
 		{

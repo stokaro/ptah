@@ -36,7 +36,7 @@ var addedColumnOrderEngines = []addedColumnOrderEngine{
 		},
 		columns: "SELECT string_agg(column_name, ',' ORDER BY ordinal_position) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 't'",
 		wantChange: `-- Modify "t" table
-ALTER TABLE "t" ADD COLUMN "z" integer NULL, ADD COLUMN "b" integer NULL, ADD COLUMN "m" integer NULL;
+ALTER TABLE "public"."t" ADD COLUMN "z" integer NULL, ADD COLUMN "b" integer NULL, ADD COLUMN "m" integer NULL;
 `,
 	},
 	{

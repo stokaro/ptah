@@ -30,6 +30,7 @@ import (
 	"ptah.run/internal/pgdefaultacl"
 	"ptah.run/internal/pgindexstorage"
 	"ptah.run/internal/pgreservedrole"
+	"ptah.run/internal/readscope"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/rolescope"
 	"ptah.run/internal/routineargs"
@@ -50,6 +51,12 @@ type Reader struct {
 	schemas []string
 	scoped  bool
 	caps    capability.Capabilities
+	// realm records that the connection describes every schema of its
+	// database; see [Reader.SetRealmScoped].
+	realm bool
+	// qualified is set on a read that names the schema of every object it
+	// reports, r.schema included; see [readscope.Qualified].
+	qualified bool
 
 	// dialect is the normalized name of the product on the other end of db.
 	// This reader serves four of them over one wire protocol, and capabilities
@@ -116,6 +123,15 @@ func NewPostgreSQLWireReaderWithCapabilities(
 	}
 }
 
+// SetRealmScoped records whether the connection describes every schema of its
+// database, as a URL that pins no search_path does. A read over such a
+// connection names the schema of every object it reports when the run asks
+// for it with [readscope.Qualified]; a reader of a connection limited to one
+// schema leaves the objects of that schema unqualified whatever the run asks.
+func (r *Reader) SetRealmScoped(realm bool) {
+	r.realm = realm
+}
+
 // SetSchemas restricts schema introspection to the provided allow-list.
 func (r *Reader) SetSchemas(schemas []string) {
 	r.schemas = normalizeSchemas(schemas, r.schema)
@@ -149,8 +165,13 @@ func normalizeSchemas(schemas []string, fallback string) []string {
 	return []string{fallback}
 }
 
+// outputSchema is the schema the read records for an object of schemaName.
+// An object of r.schema, the schema an unqualified name resolves to, records
+// none, and so does every object of a read that describes r.schema alone. A
+// qualified read records the schema of every object; see
+// [readscope.Qualified].
 func (r *Reader) outputSchema(schemaName string) string {
-	if r.scoped && schemaName != r.schema {
+	if r.qualified || (r.scoped && schemaName != r.schema) {
 		return schemaName
 	}
 	return ""
@@ -166,11 +187,29 @@ func (r *Reader) outputSchema(schemaName string) string {
 // `crm.customers` would name a `customers` the description does not hold, and
 // every command that renders the read would refuse it as unknown
 // (stokaro/ptah#3906).
+//
+// A qualified read records the schema of r.schema too, as outputSchema does.
 func (r *Reader) referencedSchema(schemaName string) string {
-	if schemaName != r.schema {
+	if r.qualified || schemaName != r.schema {
 		return schemaName
 	}
 	return ""
+}
+
+// qualifiedReader is r for a read that names the schema of every object; see
+// [readscope.Qualified]. It is a reader of its own, since r may be shared
+// between reads that ask differently.
+func (r *Reader) qualifiedReader() *Reader {
+	return &Reader{
+		db:        r.db,
+		schema:    r.schema,
+		schemas:   slices.Clone(r.schemas),
+		scoped:    r.scoped,
+		caps:      r.caps,
+		dialect:   r.dialect,
+		realm:     r.realm,
+		qualified: true,
+	}
 }
 
 // ReadSchema is [Reader.ReadSchemaContext] under context.Background(), the
@@ -180,8 +219,19 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 	return r.ReadSchemaContext(context.Background())
 }
 
-// ReadSchemaContext reads the complete database schema
+// ReadSchemaContext reads the complete database schema. On a realm-scoped
+// connection, a ctx carrying [readscope.Qualified] names the schema of every
+// object, the current schema's included.
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
+	if r.realm && readscope.IsQualified(ctx) && !r.qualified {
+		return r.qualifiedReader().readSchema(ctx)
+	}
+	return r.readSchema(ctx)
+}
+
+// readSchema reads the complete database schema, naming each object as
+// [Reader.outputSchema] says.
+func (r *Reader) readSchema(ctx context.Context) (*catalog.Database, error) {
 	schema := &catalog.Database{}
 
 	schemas, err := r.readSchemas(ctx)
@@ -1018,8 +1068,11 @@ func (r *Reader) cockroachSequenceDefault(columnDefault *string) *string {
 	if parts == nil {
 		return columnDefault
 	}
+	// The schema the connection resolves a name to is left out, as PostgreSQL
+	// prints it, on a qualified read as well: this is the default's text, not
+	// a name the read records.
 	name := parts[2]
-	if parts[1] != "" && r.referencedSchema(parts[1]) != "" {
+	if parts[1] != "" && parts[1] != r.schema {
 		name = parts[1] + "." + name
 	}
 	return new("nextval('" + name + "'::regclass)")

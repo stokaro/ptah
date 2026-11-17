@@ -635,8 +635,8 @@ had left out:
 ```console
 $ ptah-compat schema inspect --url "$PG_URL" > schema.hcl
 $ ptah-compat schema apply --url "$PG_URL" --to file://schema.hcl --dev-url "$DEV_URL" --dry-run
-DROP POLICY "p" ON "guarded";
-DROP SEQUENCE "order_seq";
+DROP POLICY "p" ON "public"."guarded";
+DROP SEQUENCE "public"."order_seq";
 DROP EXTENSION "pgcrypto";
 ```
 
@@ -714,8 +714,8 @@ wrote yourself has no coverage header and is fully authoritative, so a
 ```console
 $ grep -v 'ptah:not-described' schema.hcl > desired.hcl
 $ ptah-compat schema apply --url "$PG_URL" --to file://desired.hcl --dev-url "$DEV_URL" --dry-run
-DROP POLICY "p" ON "guarded";
-DROP SEQUENCE "order_seq";
+DROP POLICY "p" ON "public"."guarded";
+DROP SEQUENCE "public"."order_seq";
 DROP EXTENSION "pgcrypto";
 ```
 

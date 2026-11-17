@@ -17,13 +17,15 @@ import (
 )
 
 // TestPrintNothingPlanned says "synced" only when the comparison withheld
-// nothing (stokaro/ptah#3844).
+// nothing (stokaro/ptah#3844) and the plan holds no note about a difference it
+// plans no statement for (stokaro/ptah#6160).
 func TestPrintNothingPlanned(t *testing.T) {
 	withheld := coverage.Refused(coverage.Role)
 	withheld.Name = "reporter"
 	tests := []struct {
 		name      string
 		undecided schemadiff.Diagnostics
+		notes     int
 		want      string
 	}{
 		{
@@ -35,6 +37,18 @@ func TestPrintNothingPlanned(t *testing.T) {
 			undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}},
 			want:      "No changes planned, but 1 declared object could not be decided.\n",
 		},
+		{
+			name:  "a note the plan holds",
+			notes: 1,
+			want:  "No statements planned, but the plan holds the notes above, so the schema is not synced.\n",
+		},
+		{
+			name:      "a note and a declared role withheld",
+			undecided: schemadiff.Diagnostics{Common: []coverage.Object{withheld}},
+			notes:     2,
+			want: "No statements planned, but the plan holds the notes above, so the schema is not synced.\n" +
+				"No changes planned, but 1 declared object could not be decided.\n",
+		},
 	}
 
 	for _, test := range tests {
@@ -42,7 +56,7 @@ func TestPrintNothingPlanned(t *testing.T) {
 			c := qt.New(t)
 			var out bytes.Buffer
 
-			printNothingPlanned(&out, test.undecided)
+			printNothingPlanned(&out, test.undecided, test.notes)
 
 			c.Assert(out.String(), qt.Equals, test.want)
 		})

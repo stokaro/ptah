@@ -22,6 +22,11 @@ import (
 // identity clause; the name is [pgname.Sequence] of the bare table and column
 // names. A sequence a column draws from through an ordinary nextval default is
 // declared on its own and is not this column's.
+//
+// The name is the one PostgreSQL gives a sequence it names itself. It is not
+// the sequence's name when an identity column names the sequence with
+// SEQUENCE NAME in its options, or when PostgreSQL numbers the name because a
+// relation already holds it.
 func Declared(table string, field schemamodel.Field) (string, bool) {
 	if !createsSequence(field) {
 		return "", false

@@ -56,7 +56,7 @@ func TestParseSequenceOwnedByReadsBothSpellings_HappyPath(t *testing.T) {
 			c.Assert(db.Sequences, qt.HasLen, 1)
 			c.Assert(db.Sequences[0].OwnedBy, qt.Equals, "rooms.id")
 			sql := strings.Join(renderStatements(c, db, "postgres"), "\n")
-			c.Assert(sql, qt.Contains, `OWNED BY "rooms"."id"`)
+			c.Assert(sql, qt.Contains, `OWNED BY "public"."rooms"."id"`)
 			c.Assert(sql, qt.Not(qt.Contains), `"table"."rooms"`)
 		})
 	}
