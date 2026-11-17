@@ -1275,7 +1275,10 @@ type SchemaDiff struct {
 	// off the wire. A view without a declared owner is unmanaged, and nothing
 	// plans a change of its owner; a plan that drops such a view and creates it
 	// again reads its owner here, because the CREATE gives the view to the
-	// role that runs it. A comparison with no read leaves it empty.
+	// role that runs it. A comparison with no read leaves it empty, and so
+	// does one whose target does not manage the owner of that kind of object
+	// ([ptah.run/core/platform/descriptor.StatementForms.ManagedOwners]),
+	// since no plan for that target gives an owner back.
 	//
 	// A reversal runs against the same database and carries the same owners.
 	CurrentOwners []OwnerRef `json:"-"`

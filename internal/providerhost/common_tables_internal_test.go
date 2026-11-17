@@ -164,6 +164,25 @@ func TestCommonTablePlannerIgnoresTheConnectedAccount(t *testing.T) {
 	}
 }
 
+// TestCommonTablePlannerCurrentOwners_FailurePath plans a diff that carries
+// the owners a read reported. The wire has no form for an owner a plan gives
+// back, so the planner refuses it rather than plan a rebuild that hands a view
+// to the role that runs it. The comparison fills the field only for a target
+// whose descriptor manages owners, so a provider of an engine Ptah does not
+// build in never reaches this refusal; one that serves a built-in name whose
+// descriptor manages them is refused here until the wire carries owners.
+func TestCommonTablePlannerCurrentOwners_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	selected, runtime, diff := commonTableCoverageFixture(c)
+	diff.CurrentOwners = []difftypes.OwnerRef{{Kind: "VIEW", Name: "recent", Owner: "app"}}
+
+	nodes, err := selected.registration().Planner(planext.Options{}).GenerateMigrationAST(c.Context(), runtime, diff)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `.*the provider serves engine ".*", whose views .* does not support SchemaDiff\.CurrentOwners; serve an engine name of the provider's own`)
+	c.Assert(nodes, qt.HasLen, 0)
+}
+
 func TestUnknownAccessDoesNotEnableCommonMutations(t *testing.T) {
 	for _, test := range []struct {
 		name   string

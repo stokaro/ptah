@@ -1155,7 +1155,11 @@ Native `ptah migrations up` has no adoption gate, so nothing refuses a database
 it did not create; running it against one fails on the first object that
 already exists. `ptah migrations baseline` is the native way to adopt an
 existing database, and `--shadow-db` verifies that the baselined history
-reproduces the schema it was pointed at.
+reproduces the schema it was pointed at. Without `--shadow-db` it compares the
+Go entities with the database as `ptah schema compare` does. On a PostgreSQL
+URL that pins no `search_path`, a table the entities name without a schema
+matches only a table in the connection's current schema, where the migrations
+would create it.
 
 ## Migrations on YDB
 

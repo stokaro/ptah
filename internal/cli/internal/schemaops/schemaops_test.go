@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemasource"
+	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/envbool/envbooltest"
@@ -141,6 +142,36 @@ func TestFilterGeneratedTables_RemovesSchemaQualifiedTableScopedObjects(t *testi
 	c.Assert(filtered.SelfReferencingForeignKeys, qt.DeepEquals, map[string][]schemamodel.SelfReferencingFK{
 		"billing.invoices": {{FieldName: "parent_id"}},
 	})
+}
+
+// TestFilterGeneratedTables_RemovesAPlacedTableNamedByItsSchema places a
+// table the desired schema writes without a schema as a comparison on a
+// realm-scoped PostgreSQL URL places it, in the connection's current schema,
+// and ignores it as public.notes. The table, and the index and the row-level
+// security switch that name it, go. The control filters the same schema
+// unplaced and keeps all three: an entry that names a schema matches no bare
+// name, which is why [schemaops.Compare] places names before it filters.
+func TestFilterGeneratedTables_RemovesAPlacedTableNamedByItsSchema(t *testing.T) {
+	c := qt.New(t)
+	info := catalog.ServerInfo{Dialect: "postgres", URL: "postgres://u@localhost:5432/app", Schema: "public"}
+	desired := &schemamodel.Database{
+		Tables:           []schemamodel.Table{{Name: "notes"}},
+		Indexes:          []schemamodel.Index{{Name: "idx_notes_body", TableName: "notes", Fields: []string{"body"}}},
+		RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "notes"}},
+	}
+
+	placed, err := atlasschema.PlaceUnqualifiedNames(info, desired)
+	c.Assert(err, qt.IsNil)
+	filtered := schemaops.FilterGeneratedTables(placed, []string{"public.notes"})
+	unplaced := schemaops.FilterGeneratedTables(desired, []string{"public.notes"})
+
+	c.Assert(placed.Tables, qt.DeepEquals, []schemamodel.Table{{Schema: "public", Name: "notes"}})
+	c.Assert(filtered.Tables, qt.HasLen, 0)
+	c.Assert(filtered.Indexes, qt.HasLen, 0)
+	c.Assert(filtered.RLSEnabledTables, qt.HasLen, 0)
+	c.Assert(unplaced.Tables, qt.DeepEquals, desired.Tables)
+	c.Assert(unplaced.Indexes, qt.DeepEquals, desired.Indexes)
+	c.Assert(unplaced.RLSEnabledTables, qt.DeepEquals, desired.RLSEnabledTables)
 }
 
 func TestFilterDatabaseTables_RemovesOnlyIgnoredTableEnums(t *testing.T) {
