@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,13 +19,15 @@ import (
 	"ptah.run/internal/vulnerability"
 )
 
-// reviewedPage names four IDs. The snapshot pins one and excludes another, so
-// CVE-2026-00001 and CVE-2026-00004 are on the page without being pinned: a
-// review that compared against the pinned set would report them as changed.
-var reviewedPage = []byte("CVE-2026-00001\nCVE-2026-00002\nCVE-2026-00003\nCVE-2026-00004\n")
+// reviewedPage names four IDs, newest first as the vendor page does. The
+// snapshot pins one and excludes another, so CVE-2026-00001 and CVE-2026-00004
+// are on the page without being pinned: a review that compared against the
+// pinned set would report them as changed.
+var reviewedPage = []byte("CVE-2026-00004\nCVE-2026-00003\nCVE-2026-00002\nCVE-2026-00001\n")
 
-// changedPage drops CVE-2026-00001 and adds CVE-2027-00005, named twice.
-var changedPage = []byte("CVE-2026-00002\nCVE-2026-00003\nCVE-2026-00004\nCVE-2027-00005\nCVE-2027-00005\n")
+// changedPage drops CVE-2026-00001 and adds CVE-2027-00005, named twice and
+// not next to itself, so only a sorted reading removes the repeat.
+var changedPage = []byte("CVE-2027-00005\nCVE-2026-00004\nCVE-2027-00005\nCVE-2026-00003\nCVE-2026-00002\n")
 
 var reviewPath = filepath.Join("internal", "vulnerability", "review", "mariadb.json")
 
@@ -117,12 +120,12 @@ func TestReconcileVersioned_FailurePath(t *testing.T) {
 		name:      "recorded IDs omit one the reviewed page names",
 		sourceIDs: []string{"CVE-2026-00001", "CVE-2026-00002", "CVE-2026-00003"},
 		source:    reviewedPage,
-		wantErr:   `source_cve_ids differ from the reviewed source: 1 not recorded, 0 recorded but absent`,
+		wantErr:   `source_cve_ids differ from the reviewed source: not recorded CVE-2026-00004; recorded but absent none`,
 	}, {
 		name:      "recorded IDs name one the reviewed page does not",
 		sourceIDs: []string{"CVE-2026-00001", "CVE-2026-00002", "CVE-2026-00003", "CVE-2026-00004", "CVE-2026-00009"},
 		source:    reviewedPage,
-		wantErr:   `source_cve_ids differ from the reviewed source: 0 not recorded, 1 recorded but absent`,
+		wantErr:   `source_cve_ids differ from the reviewed source: not recorded none; recorded but absent CVE-2026-00009`,
 	}}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -144,7 +147,11 @@ func TestBuildReview_FailurePath(t *testing.T) {
 	c.Assert(got, qt.DeepEquals, review{})
 }
 
-func TestBundledVersionedSnapshotsMatchTheirReviewedSources(t *testing.T) {
+// TestBundledVersionedSnapshotsRecordSourceCVEIDs checks only that each
+// bundled snapshot carries a list to diff against. Whether the list matches
+// its page needs the page, so the daily source check is what catches a stale
+// list.
+func TestBundledVersionedSnapshotsRecordSourceCVEIDs(t *testing.T) {
 	for _, product := range []string{"mariadb", "clickhouse"} {
 		t.Run(product, func(t *testing.T) {
 			c := qt.New(t)
@@ -154,6 +161,48 @@ func TestBundledVersionedSnapshotsMatchTheirReviewedSources(t *testing.T) {
 			c.Assert(current.SourceCVEIDs, qt.Not(qt.HasLen), 0)
 		})
 	}
+}
+
+type readResult struct {
+	source []byte
+	err    error
+}
+
+func TestRefreshAll_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	reads := map[string]readResult{"postgresql": {source: []byte("pg")}, "mariadb": {source: []byte("maria")}}
+	var applied []string
+	err := refreshAll([]string{"postgresql", "mariadb"},
+		func(product string) ([]byte, error) { return reads[product].source, reads[product].err },
+		func(product string, source []byte) error {
+			applied = append(applied, product+"="+string(source))
+			return nil
+		},
+	)
+	c.Assert(err, qt.IsNil)
+	c.Assert(applied, qt.DeepEquals, []string{"postgresql=pg", "mariadb=maria"})
+}
+
+func TestRefreshAll_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	errOffline := errors.New("source unreachable")
+	errStale := errors.New("source_cve_ids are stale")
+	reads := map[string]readResult{
+		"postgresql": {err: errOffline}, "mariadb": {source: []byte("maria")}, "clickhouse": {source: []byte("ch")},
+	}
+	applyErrors := map[string]error{"mariadb": errStale}
+	var applied []string
+	err := refreshAll([]string{"postgresql", "mariadb", "clickhouse"},
+		func(product string) ([]byte, error) { return reads[product].source, reads[product].err },
+		func(product string, source []byte) error {
+			applied = append(applied, product+"="+string(source))
+			return applyErrors[product]
+		},
+	)
+	c.Assert(err, qt.ErrorMatches, "postgresql: source unreachable\nmariadb: source_cve_ids are stale")
+	c.Assert(err, qt.ErrorIs, errOffline)
+	c.Assert(err, qt.ErrorIs, errStale)
+	c.Assert(applied, qt.DeepEquals, []string{"mariadb=maria", "clickhouse=ch"})
 }
 
 func TestRecentSourceNeedsPastRetrievalWithinRefreshInterval(t *testing.T) {
