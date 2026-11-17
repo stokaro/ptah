@@ -78,7 +78,7 @@ func TestSchemaDiffAcceptsAMaterializedViewWithoutTheAttribute(t *testing.T) {
 	out, err := atlastest.RunCompatCommand(
 		t,
 		"schema", "diff",
-		"--dev-url", "postgres://localhost/dev",
+		"--dev-url", "postgres://localhost/dev?search_path=public",
 		"--from", "file://"+from,
 		"--to", "file://"+to,
 	)

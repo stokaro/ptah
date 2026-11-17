@@ -79,7 +79,7 @@ func TestSchemaDiffServerVersionSelectsThePlan(t *testing.T) {
 			fromPath := writeSchemaSQLFile(c, dir, "from.sql", generatedFrom)
 			toPath := writeSchemaSQLFile(c, dir, "to.sql", generatedTo)
 
-			args := []string{"diff", "--from", fromPath, "--to", toPath, "--dev-url", "postgres://host/db"}
+			args := []string{"diff", "--from", fromPath, "--to", toPath, "--dev-url", "postgres://host/db?search_path=public"}
 			args = append(args, serverVersionArgs(tt.serverVersion)...)
 
 			out, err := runSchema("", args...)

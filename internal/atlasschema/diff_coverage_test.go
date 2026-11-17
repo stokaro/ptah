@@ -163,7 +163,7 @@ func coverageDiffOptions(c *qt.C, from, to string, diagnostics *bytes.Buffer) at
 	return atlasschema.DiffOptions{
 		FromURLs:    []string{"file://" + fromPath},
 		ToURLs:      []string{"file://" + toPath},
-		DevURL:      "postgres://localhost/dev",
+		DevURL:      "postgres://localhost/dev?search_path=public",
 		Diagnostics: diagnostics,
 		Runtime:     must.Must(builtin.New())}
 }

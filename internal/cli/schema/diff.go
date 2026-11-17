@@ -74,7 +74,9 @@ sides carry the server's spelling of every expression. The dev database is
 reset for that, as it is for a replay, and a --dev-url that names the --from or
 --to database is refused. On MySQL and MariaDB a file that names one database is
 created inside the dev database under its name, and a file naming two is
-refused. This makes
+refused. When both sides are schema files, a PostgreSQL-family --dev-url that
+pins no search_path is connected to learn the schema it resolves a name
+written without one to, and every statement names that schema. This makes
 CI checks like "do these two schema files differ?" or "does this migration
 directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison
@@ -98,7 +100,8 @@ refused.`,
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.fromURLs, diffFromFlag, nil, "Current schema state: file path, database URL, or migration directory (repeatable)")
 	flags.StringArrayVar(&opts.toURLs, diffToFlag, nil, "Desired schema state: file path, database URL, or migration directory (repeatable)")
-	flags.StringVar(&opts.devURL, diffDevURLFlag, "", "Dev database URL used to choose the SQL dialect, replay migration-directory sources, and materialize a --from schema file compared with a database or directory")
+	flags.StringVar(&opts.devURL, diffDevURLFlag, "", "Dev database URL used to choose the SQL dialect, replay migration-directory sources, "+
+		"materialize a --from schema file compared with a database or directory, and place the unqualified names of two schema files")
 	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
 	flags.StringArrayVar(&opts.include, diffIncludeFlag, nil, "Schema objects to include in diffing (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, diffExcludeFlag, nil, "Schema objects to exclude from diffing (Atlas-style selectors)")

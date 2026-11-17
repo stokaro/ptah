@@ -40,7 +40,7 @@ table "users" {
 	report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"file://" + to},
-		DevURL:   "postgres://localhost/dev",
+		DevURL:   "postgres://localhost/dev?search_path=public",
 		Runtime:  must.Must(builtin.New())})
 
 	c.Assert(err, qt.IsNil)
@@ -82,7 +82,7 @@ table "audit_logs" {
 	report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + from},
 		ToURLs:   []string{"file://" + to},
-		DevURL:   "postgres://localhost/dev",
+		DevURL:   "postgres://localhost/dev?search_path=public",
 		Exclude:  []string{"audit_logs"},
 		Runtime:  must.Must(builtin.New())})
 
