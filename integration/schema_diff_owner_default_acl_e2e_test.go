@@ -192,7 +192,8 @@ GRANT UPDATE ON TABLE "public"."t" TO OWNER;`,
 }
 
 // TestSchemaDiffRebuildGivesAViewItsGrantsAndNotItsOwnersE2E is a view the plan drops
-// and creates again. The plan gives back what somebody granted on it. What its owner
+// and creates again. The plan gives back what somebody granted on it and gives the
+// view back to the owner it held, and it grants that owner nothing. What the owner
 // held by default is what the owner of the new view holds, so a read that takes the
 // owner's entry for grants adds a GRANT for each privilege, and only where the ACL was
 // written.
@@ -211,8 +212,9 @@ func TestSchemaDiffRebuildGivesAViewItsGrantsAndNotItsOwnersE2E(t *testing.T) {
 	got := runPtahNative(c, "schema", "diff", "--from", database, "--to", "file://"+declaration)
 
 	c.Assert(got, qt.Contains, `DROP VIEW "public"."v";`)
+	c.Assert(got, qt.Contains, fmt.Sprintf(`ALTER VIEW "public"."v" OWNER TO %q;`, roles.owner))
 	c.Assert(got, qt.Contains, fmt.Sprintf(`GRANT SELECT ON TABLE "public"."v" TO %q;`, roles.grantee))
-	c.Assert(got, qt.Not(qt.Contains), roles.owner)
+	c.Assert(got, qt.Not(qt.Matches), grantsToOwner(roles))
 }
 
 // ownerFixtureFile is a schema in one file format: the fixture's two roles, its table
