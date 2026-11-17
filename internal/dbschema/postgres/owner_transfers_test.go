@@ -14,14 +14,14 @@ import (
 )
 
 // ownerTransferServer answers the questions an owner transfer check asks: the
-// connected role app, a superuser where superuser says so, with the privilege
-// the server's version calls for, and the roles rv_b and rv_a, unsorted, as
-// the ones app lacks it on. It records the privilege each role read asked
+// connected role app, a superuser where superuser says so, on a server whose
+// server_version_num is version, and the roles rv_b and rv_a, unsorted, as
+// the ones app lacks the privilege on. It records the privilege each role read asked
 // about, and answers the relation named "public"."v" as owned by rv_a in
 // schema public, where rv_a holds CREATE and no other role does, and no other
 // relation.
 type ownerTransferServer struct {
-	version   string
+	version   int64
 	superuser bool
 	asked     []string
 	looked    [][2]string
@@ -32,7 +32,7 @@ func (s *ownerTransferServer) open(c *qt.C, dialect string) *postgres.PostgreSQL
 	db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
 		case strings.Contains(query, "server_version_num"):
-			return dbtest.QueryResult{Columns: []string{"rolname", "rolsuper", "privilege"}, Rows: [][]driver.Value{{"app", s.superuser, s.version}}}, nil
+			return dbtest.QueryResult{Columns: []string{"rolname", "rolsuper", "version"}, Rows: [][]driver.Value{{"app", s.superuser, s.version}}}, nil
 		case strings.Contains(query, "pg_has_role"):
 			s.asked = append(s.asked, args[0].Value.(string))
 			return dbtest.QueryResult{Columns: []string{"rolname"}, Rows: [][]driver.Value{{"rv_b"}, {"rv_a"}}}, nil
@@ -51,33 +51,37 @@ func (s *ownerTransferServer) open(c *qt.C, dialect string) *postgres.PostgreSQL
 }
 
 // TestOwnerTransfers_HappyPath pins the server's answer about the roles a
-// connection may give an object to: SET where the server's version calls for
-// it and membership before that, the roles the connection lacks it on,
-// sorted, the connected role, and whether it is exempt from the schema check,
-// which a PostgreSQL superuser is and a CockroachDB admin is not. CockroachDB
+// connection may give an object to: SET from PostgreSQL 16.0, whose
+// server_version_num is 160000, and membership before that; the roles the
+// connection lacks it on, sorted; the connected role; and whether it is
+// exempt from the schema check, which a PostgreSQL superuser is and a
+// CockroachDB admin is not. CockroachDB
 // reports a version that calls for SET and rejects SET as a privilege name,
 // so it is asked about membership whatever the version says. YugabyteDB,
 // whose requirement is not measured, and a writer built without a dialect ask
 // nothing.
 func TestOwnerTransfers_HappyPath(t *testing.T) {
 	tests := []struct {
-		name, dialect, version string
-		superuser              bool
-		wantAsked              []string
-		want                   objectowner.Transfers
+		name, dialect string
+		version       int64
+		superuser     bool
+		wantAsked     []string
+		want          objectowner.Transfers
 	}{
-		{name: "PostgreSQL 16 and later", dialect: "postgres", version: "SET", wantAsked: []string{"SET"},
+		{name: "PostgreSQL 16.0", dialect: "postgres", version: 160000, wantAsked: []string{"SET"},
 			want: objectowner.Transfers{Connected: "app", Privilege: "SET", Refused: []string{"rv_a", "rv_b"}}},
-		{name: "PostgreSQL before 16", dialect: "postgres", version: "MEMBER", wantAsked: []string{"MEMBER"},
+		{name: "PostgreSQL 18", dialect: "postgres", version: 180001, wantAsked: []string{"SET"},
+			want: objectowner.Transfers{Connected: "app", Privilege: "SET", Refused: []string{"rv_a", "rv_b"}}},
+		{name: "the last PostgreSQL 15 release", dialect: "postgres", version: 150099, wantAsked: []string{"MEMBER"},
 			want: objectowner.Transfers{Connected: "app", Privilege: "MEMBER", Refused: []string{"rv_a", "rv_b"}}},
-		{name: "CockroachDB", dialect: "cockroachdb", version: "SET", wantAsked: []string{"MEMBER"},
+		{name: "CockroachDB", dialect: "cockroachdb", version: 180000, wantAsked: []string{"MEMBER"},
 			want: objectowner.Transfers{Connected: "app", Privilege: "MEMBER", Refused: []string{"rv_a", "rv_b"}}},
-		{name: "a CockroachDB admin", dialect: "cockroachdb", version: "SET", superuser: true, wantAsked: []string{"MEMBER"},
+		{name: "a CockroachDB admin", dialect: "cockroachdb", version: 180000, superuser: true, wantAsked: []string{"MEMBER"},
 			want: objectowner.Transfers{Connected: "app", Privilege: "MEMBER", Refused: []string{"rv_a", "rv_b"}}},
-		{name: "a superuser", dialect: "postgres", version: "SET", superuser: true, wantAsked: []string{"SET"},
+		{name: "a superuser", dialect: "postgres", version: 180001, superuser: true, wantAsked: []string{"SET"},
 			want: objectowner.Transfers{Connected: "app", SchemaExempt: true, Privilege: "SET", Refused: []string{"rv_a", "rv_b"}}},
-		{name: "YugabyteDB", dialect: "yugabytedb", version: "MEMBER"},
-		{name: "no dialect", dialect: "", version: "SET"},
+		{name: "YugabyteDB", dialect: "yugabytedb", version: 110009},
+		{name: "no dialect", dialect: "", version: 180001},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

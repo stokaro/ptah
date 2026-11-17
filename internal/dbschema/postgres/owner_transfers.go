@@ -11,6 +11,10 @@ import (
 	"ptah.run/internal/objectowner"
 )
 
+// firstVersionCheckingSet is the server_version_num of PostgreSQL 16.0, the
+// first release that checks SET rather than membership on the new owner.
+const firstVersionCheckingSet = 160000
+
 // OwnerTransfers asks the server which roles this connection may not give an
 // object to with ALTER ... OWNER TO. The server checks a role privilege on the
 // new owner: SET on PostgreSQL 16 and later, membership before 16. CockroachDB
@@ -33,16 +37,17 @@ func (w *PostgreSQLWriter) OwnerTransfers(ctx context.Context) (objectowner.Tran
 	}
 	var answer objectowner.Transfers
 	var superuser bool
-	err := w.db.QueryRowContext(ctx, `SELECT rolname, rolsuper,
-			CASE WHEN current_setting('server_version_num')::integer >= 160000 THEN 'SET' ELSE 'MEMBER' END
+	var version int
+	err := w.db.QueryRowContext(ctx, `SELECT rolname, rolsuper, current_setting('server_version_num')::integer
 		FROM pg_catalog.pg_roles WHERE rolname = current_user`,
-	).Scan(&answer.Connected, &superuser, &answer.Privilege)
+	).Scan(&answer.Connected, &superuser, &version)
 	if err != nil {
 		return objectowner.Transfers{}, fmt.Errorf("read the privilege an owner change requires: %w", err)
 	}
 	answer.SchemaExempt = superuser && w.dialect == platform.Postgres
-	if w.dialect == platform.CockroachDB {
-		answer.Privilege = "MEMBER"
+	answer.Privilege = "MEMBER"
+	if w.dialect == platform.Postgres && version >= firstVersionCheckingSet {
+		answer.Privilege = "SET"
 	}
 	rows, err := w.db.QueryContext(ctx, `SELECT rolname FROM pg_catalog.pg_roles WHERE NOT pg_has_role(current_user, oid, $1::text)`,
 		answer.Privilege)
