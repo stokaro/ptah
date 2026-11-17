@@ -197,14 +197,14 @@ func tableCommentTarget(databases []*schemamodel.Database, qualified, sourcePlat
 // (SQLSTATE 42P08), and a read refuses them too.
 func indexCommentTarget(databases []*schemamodel.Database, written, sourcePlatform string) (*string, bool) {
 	schema, name := normalizeSQLTableIdentifier(sourcePlatform, written)
-	reaches := func(owner *schemamodel.Table) bool { return sameSchema(sourcePlatform, schema, owner.Schema) }
+	reaches := func(holder indexRelation) bool { return sameSchema(sourcePlatform, schema, holder.schema) }
 	if tableName, indexName, onTable := cutIndexTable(sourcePlatform, written); onTable {
-		table := resolveTable(databases, normalizeSQLTableReference(sourcePlatform, tableName), sourcePlatform)
-		if table == nil {
+		named, found := indexHolder(databases, schemamodel.Index{TableName: normalizeSQLTableReference(sourcePlatform, tableName)}, sourcePlatform)
+		if !found {
 			return new(string), false
 		}
 		name = normalizeSQLIdentifier(sourcePlatform, indexName)
-		reaches = func(owner *schemamodel.Table) bool { return owner.QualifiedName() == table.QualifiedName() }
+		reaches = func(holder indexRelation) bool { return holder.qualified == named.qualified }
 	}
 	var targets []*string
 	for _, database := range databases {
@@ -213,7 +213,7 @@ func indexCommentTarget(databases []*schemamodel.Database, written, sourcePlatfo
 			if index.Name != name {
 				continue
 			}
-			if owner := indexOwner(databases, *index, sourcePlatform); owner != nil && reaches(owner) {
+			if holder, found := indexHolder(databases, *index, sourcePlatform); found && reaches(holder) {
 				targets = append(targets, &index.Comment)
 			}
 		}
@@ -226,6 +226,38 @@ func indexCommentTarget(databases []*schemamodel.Database, written, sourcePlatfo
 	default:
 		return &ambiguousIndex, false
 	}
+}
+
+// indexRelation is the table or materialized view an index belongs to: its
+// name as the reader stores it, schema included, and its schema, empty for the
+// default.
+type indexRelation struct {
+	qualified, schema string
+}
+
+// indexHolder answers the relation index belongs to: a table, found by the
+// rule [indexOwner] gives, or a materialized view, which PostgreSQL indexes as
+// it indexes a table. An index whose table names neither answers false.
+func indexHolder(databases []*schemamodel.Database, index schemamodel.Index, sourcePlatform string) (indexRelation, bool) {
+	if table := indexOwner(databases, index, sourcePlatform); table != nil {
+		return indexRelation{qualified: table.QualifiedName(), schema: table.Schema}, true
+	}
+	if index.TableName == "" {
+		return indexRelation{}, false
+	}
+	var views, names []string
+	for _, database := range databases {
+		for _, view := range database.MaterializedViews {
+			views = append(views, view.Name)
+			names = append(names, unqualified(view.Name, sourcePlatform))
+		}
+	}
+	at := resolveDeclaredName(sourcePlatform, unqualified(normalizeSQLTableReference("", index.TableName), sourcePlatform), names)
+	if at < 0 {
+		return indexRelation{}, false
+	}
+	schema, view := normalizeSQLTableIdentifier("", views[at])
+	return indexRelation{qualified: schemamodel.QualifyTableName(schema, view), schema: schema}, true
 }
 
 // cutIndexTable splits the name of an index written with its table,
