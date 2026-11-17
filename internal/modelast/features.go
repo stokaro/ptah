@@ -73,6 +73,11 @@ func validateFacetLowering(database *schemamodel.Database, dialect string) error
 		function := &database.Functions[i]
 		owners[&function.Facets] = routineidentity.Subject(builder, function.Kind, function.Name, function.Parameters)
 	}
+	// A role's settings travel on its CREATE ROLE node, after which its
+	// owner's renderer writes them.
+	for i := range database.Roles {
+		owners[&database.Roles[i].Facets] = builder.Role(database.Roles[i].Name)
+	}
 	// A column's settings are lowered with the column definition that holds
 	// them, so a field is an owner where it belongs to a declared table.
 	tables := make(map[string]*schemamodel.Table, len(database.Tables))

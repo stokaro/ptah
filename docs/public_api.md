@@ -124,6 +124,8 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mysql/mysqlsource`
 - `ptah.run/dialect/postgres/pglint`
 - `ptah.run/dialect/postgres/pgproject`
+- `ptah.run/dialect/postgres/pgrole`
+- `ptah.run/dialect/postgres/pgrolerender`
 - `ptah.run/dialect/postgres/pgroutine`
 - `ptah.run/dialect/postgres/pgtable`
 - `ptah.run/dialect/postgres/pgtableprobe`
@@ -604,6 +606,30 @@ provide versioned data contracts for conversion, comparison and reversal.
 read inspects. An unknown overload stays undecided. Function identity includes
 its input signature throughout source export and comparison. These properties
 are absent from common function structs; callers use the owner facet.
+
+`dialect/postgres/pgrole` owns the configuration defaults a PostgreSQL role
+holds in every database. `DesiredSettings` and `ObservedSettings` attach to a
+role's facets through `WithSettings` and `WithObservedSettings`; the common
+role and AST structs carry no setting field. A declared `Setting` holds a value
+written in SQL, as `ParseValue` returns it, or an explicit `Reset`; an observed
+one holds the text `pg_db_role_setting.setconfig` keeps. `ParseName` and
+`ParseValue` refuse text a statement could not carry, every error wrapping
+`schemaext.ErrInvalidValue`.
+
+`Matches` compares a declared value with a stored
+one the way the server stores it. `Changes` compares only the settings a
+declaration names: a value is set where the role holds another or none, a reset
+is planned only for a setting the role holds, and a setting nobody declared is
+never in the result.
+
+`SettingsService` converts, compares, plans and reverses
+batches without database access, on PostgreSQL alone; a role created or
+dropped by the same plan carries its settings in its own statements, so the
+comparison plans nothing for it. `AlterSettings` renders `ALTER ROLE ... SET`
+and `RESET` in the change's name order, names quoted. `SettingsCodecs`,
+`SettingsChangeCodec` and `OperationCodec` define versioned data contracts.
+`dialect/postgres/pgrolerender` registers the operation's renderer and lowers a
+new role's declared values into the statements after its `CREATE ROLE`.
 
 `dialect/postgres/pgtable` owns table persistence. `DesiredPersistence` and
 `ObservedPersistence` attach to table facets; common table and AST structs carry
@@ -3537,12 +3563,16 @@ claim.
 
 An earlier statement sets `Value.DescribedBy` to the one-based index
 of that later claim in the owner's request. The later value must supply
-objects, replacements or table facets, and cannot defer to another claim.
+objects, replacements, table facets or role facets, and cannot defer to another
+claim.
 This keeps each operation visible to lint while validating that the combined
 model is present.
 
 `Value.TableReferences` requires a table at the statement's own position,
-even when a later claim supplies the combined facets. `Value.UnmodeledReason`
+even when a later claim supplies the combined facets. `Value.RoleFacets` and
+`Value.RoleReferences` do the same for a role the load declares, read as
+`CREATE ROLE` reads its name, such as the settings `ALTER ROLE r SET` gives r;
+an undeclared role is refused with an error wrapping `sqlext.ErrUndeclared`. `Value.UnmodeledReason`
 refuses a statement as a desired-schema declaration while retaining its payload
 for syntax-only readers.
 

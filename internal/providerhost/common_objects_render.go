@@ -103,6 +103,9 @@ func (t *target) principalOperation(node ast.Node) (*protocol.CommonObjectChange
 	engine := t.engine.GetId()
 	switch typed := node.(type) {
 	case *ast.CreateRoleNode:
+		if !typed.Facets.IsZero() {
+			return nil, nil, unsupported(fmt.Sprintf("settings of role %q", typed.Name))
+		}
 		role := &protocol.SQLRole{Name: typed.Name, Login: typed.Login, Superuser: typed.Superuser, CreateDb: typed.CreateDB, CreateRole: typed.CreateRole,
 			Inherit: typed.Inherit, Replication: typed.Replication, Comment: typed.Comment, Group: typed.Group, PasswordDeclared: typed.Password != ""}
 		object := &protocol.Reference{Engine: engine, Kind: principalKinds[typed.Group], Name: typed.Name}

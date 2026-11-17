@@ -1881,7 +1881,15 @@ func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName str
 	if err != nil {
 		return err
 	}
+	// Owners add attributes to the role directive, such as the PostgreSQL
+	// owner's settings; without this call they would pass validation and
+	// reach no role.
+	facets, err := s.annotations.DecodeAttributes("ptah:schema:role", kv)
+	if err != nil {
+		return ownerAttributeError(ctx, err)
+	}
 	s.roles = append(s.roles, schemamodel.Role{
+		Facets:      facets,
 		StructName:  structName,
 		Name:        kv["name"],
 		Login:       kv["login"] == "true",

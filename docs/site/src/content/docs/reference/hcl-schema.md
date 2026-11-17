@@ -447,8 +447,8 @@ function "local_zone" {
 }
 ```
 
-`search_path`, `temp_tablespaces`, `local_preload_libraries` and
-`session_preload_libraries` hold lists of names and follow the server's rules for a
+`search_path`, `temp_tablespaces`, `local_preload_libraries`,
+`session_preload_libraries` and `output_plugin_libraries` hold lists of names and follow the server's rules for a
 list. A bare name is read in lower case. A name that keeps its case or holds a
 comma goes in double quotes, so `search_path = "a, b"` names two schemas and
 `search_path = "\"a, b\""` names one. A list the server cannot read is refused, and

@@ -751,7 +751,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		r.w.WriteLine(statement)
 	}
 
-	return r.renderTableFacets(following)
+	return r.renderFacetStatements(following)
 }
 
 // renderTableComments writes the comments a table and its columns carry.
@@ -3575,6 +3575,10 @@ func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 			return err
 		}
 	}
+	settings, err := r.lowerRoleFacets(node)
+	if err != nil {
+		return err
+	}
 
 	// Build CREATE ROLE statement
 	var parts []string
@@ -3638,7 +3642,7 @@ func (r *Renderer) renderCreateRole(node *ast.CreateRoleNode) error {
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	r.writeCreatedObjectComment(ast.CommentedRole, r.escapeIdentifier(node.Name), node.Name, node.Comment)
 
-	return nil
+	return r.renderFacetStatements(settings)
 }
 
 // renderDropRole renders a DROP ROLE statement for PostgreSQL

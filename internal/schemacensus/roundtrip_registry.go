@@ -59,6 +59,8 @@ const (
 		"other state may, so no single change of the state is valid. The value beside it is reached"
 	exemptCoupledSetting = "a setting's state changes only with its value: an explicit one carries a value and no " +
 		"other state may, so no single change of the state is valid. The value beside it is reached"
+	exemptCoupledRoleReset = "a role setting's reset changes only with its value: a reset carries no value and a setting " +
+		"without one is refused, so no single change of the flag is valid. The value beside it is reached"
 	exemptCoupledRoleSelection = "TO ALL changes only with its exceptions: exceptions stand only beside TO ALL, and the " +
 		"fixture that sets it names one. The selection's names and exceptions are reached"
 	exemptCoupledPredicateType = "the fixture's other predicate is a BLOCK for every operation, and a second BLOCK beside " +
@@ -163,6 +165,10 @@ func alternates() map[string][]any {
 		// Another mode is valid only without an OFFSET; the AFTER fixture
 		// changes to EVERY.
 		"chschema.Schedule.Mode": {"EVERY"},
+		// A role setting's value is SQL the owner reads, so a suffix makes it
+		// text no statement may carry; another value of each setting is a
+		// change it can plan.
+		"pgrole.Setting.Value": {"'$user', app", "'45s'"},
 		// Constraint contexts reject unknown kinds. A different common kind
 		// lets the probe measure comparison rather than input validation.
 		"schemamodel.Constraint.Type": {"UNIQUE"},
@@ -431,6 +437,7 @@ var roundTripExemptions = []Unreached{
 	{Field: "chschema.GranularitySetting.State", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptCoupledGranularity},
 	{Field: "chschema.RoleSelection.All", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptCoupledRoleSelection},
 	{Field: "chschema.Setting.State", Dialects: []string{"clickhouse"}, Directions: nil, Reason: exemptCoupledSetting},
+	{Field: "pgrole.Setting.Reset", Dialects: []string{"postgres"}, Reason: exemptCoupledRoleReset},
 	{Field: "coverage.Object.Kind", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},
 	{Field: "coverage.Object.Name", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},
 	{Field: "coverage.Object.Provenance", Dialects: nil, Directions: nil, Reason: exemptNotDescribed},

@@ -2860,6 +2860,11 @@ type CreateRoleNode struct {
 	// CREATE GROUP, a principal that never logs in and is the only kind with
 	// members. A target without capability.GroupPrincipals refuses it.
 	Group bool
+	// Facets carries settings interpreted by the selected feature owner, such
+	// as the PostgreSQL configuration defaults the role declares. An owner
+	// renders the statements they need after the CREATE ROLE; a target whose
+	// owners render none refuses them.
+	Facets schemaext.Facets
 }
 
 // NewCreateRole creates a new CREATE ROLE node with the specified name.

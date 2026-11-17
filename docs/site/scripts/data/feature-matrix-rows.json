@@ -1387,6 +1387,15 @@
   },
   {
     "area": "Schema object kinds",
+    "feature": "PostgreSQL role configuration settings",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "unknown",
+    "note": "`ALTER ROLE ... SET` defaults a declaration names, from Go, YAML or SQL; unnamed settings stay. IN DATABASE, ALL and FROM CURRENT are refused. HCL has no spelling.",
+    "evidence": "dialect/postgres/pgrole (model, comparison, ALTER ROLE rendering), internal/pgrolesource (Go annotations, YAML and SQL), internal/dbschema/postgres/role_settings.go (pg_db_role_setting read; per-database and every-role rows reported as left out). integration/postgres_role_settings_e2e_test.go measures store, change, explicit reset, convergence, a fresh login's SHOW, an unmanaged setting surviving, the server's spelling planning once, the refused forms and a permission failure on PostgreSQL 18.6. Atlas: the public HCL reference for the PostgreSQL role block lists no settings attribute, and the community binary has no roles; whether the paid edition manages role defaults another way is not established (stokaro/ptah#5973)."
+  },
+  {
+    "area": "Schema object kinds",
     "feature": "Domains, composite types, and range types",
     "ptah": "yes",
     "atlas_oss": "no",

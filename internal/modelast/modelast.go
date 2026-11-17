@@ -1491,6 +1491,7 @@ func FromRole(role schemamodel.Role) *ast.CreateRoleNode {
 		SetReplication(role.Replication).
 		SetComment(role.Comment).
 		SetGroup(role.Group)
+	roleNode.Facets = role.Facets
 
 	return roleNode
 }

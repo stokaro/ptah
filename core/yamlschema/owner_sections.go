@@ -30,6 +30,7 @@ var entryKeys = sync.OnceValue(func() map[string][]string {
 		yamlext.EntryColumn:           yamlKeys(reflect.TypeFor[fieldSpec]()),
 		yamlext.EntryFunction:         yamlKeys(reflect.TypeFor[functionSpec]()),
 		yamlext.EntryMaterializedView: yamlKeys(reflect.TypeFor[matViewSpec]()),
+		yamlext.EntryRole:             yamlKeys(reflect.TypeFor[roleSpec]()),
 	}
 })
 

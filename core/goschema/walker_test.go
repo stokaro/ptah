@@ -1717,7 +1717,7 @@ func TestParseFS_ConflictingDuplicateSchemaObjectsFail(t *testing.T) {
 			name:    "role attributes",
 			sourceA: `//ptah:schema:role name="app_user" inherit="true"`,
 			sourceB: `//ptah:schema:role name="app_user" login="true" inherit="true"`,
-			err:     `conflicting role "app_user" definitions`,
+			err:     `conflicting role "app_user" definitions on structs FirstHost and SecondHost`,
 		},
 		{
 			name:    "schema comment",

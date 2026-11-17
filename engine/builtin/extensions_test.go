@@ -25,6 +25,7 @@ import (
 	"ptah.run/dialect/mssql/mssqlproperty"
 	"ptah.run/dialect/mssql/mssqlschema"
 	"ptah.run/dialect/mysql/mysqlast"
+	"ptah.run/dialect/postgres/pgrole"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/timescaledb/tsast"
 	"ptah.run/dialect/timescaledb/tsdiff"
@@ -123,8 +124,17 @@ func allExtensionFixtures() []extensionFixture {
 		hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
 		defaultPrivilegeFixture(), pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
 		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture(),
-		oraTypeCreateDomainFixture(), oraTypeReplaceObjectTypeFixture(), oraTypeDropFixture(),
+		oraTypeCreateDomainFixture(), oraTypeReplaceObjectTypeFixture(), oraTypeDropFixture(), roleSettingsFixture(),
 	}
+}
+
+// roleSettingsFixture sets one setting of a quoted role and resets another,
+// so the fixture renders both statements a role settings change can need.
+func roleSettingsFixture() extensionFixture {
+	return extensionFixture{payload: &pgrole.AlterSettings{Role: `App "Reader"`, Change: pgrole.SettingsChange{Settings: []pgrole.SettingChange{
+		{Name: "app.tenant", Before: new("acme")},
+		{Name: "statement_timeout", Before: new("1min"), After: new("'30s'")},
+	}}}, wantSQL: "ALTER ROLE \"App \"\"Reader\"\"\" RESET \"app\".\"tenant\";\nALTER ROLE \"App \"\"Reader\"\"\" SET \"statement_timeout\" = '30s';\n"}
 }
 
 // oraTypeCreateDomainFixture creates an Oracle domain with every clause.

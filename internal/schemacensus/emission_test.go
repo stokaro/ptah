@@ -129,8 +129,9 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		// A rule about objects nobody has created yet. It creates none itself,
 		// so the guard has no name to count.
 		"ALTER DEFAULT PRIVILEGES",
-		// Alterations of an object something else created: a sequence, a
-		// table.
+		// Alterations of an object something else created: a role, a
+		// sequence, a table.
+		"ALTER ROLE \"APP_READER\"",
 		"ALTER SEQUENCE \"PUBLIC\".\"ORDER_SEQ\"",
 		"ALTER TABLE \"T\"",
 		"ALTER TABLE `B`",

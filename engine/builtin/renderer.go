@@ -405,7 +405,9 @@ func prepareNode(
 		return prepareIndexNode(dialect, caps, typed)
 	case *ast.CreateMaterializedViewNode:
 		return prepareCreateMaterializedViewNode(dialect, typed)
-	case *ast.CreateRoleNode, *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
+	case *ast.CreateRoleNode:
+		return prepareCreateRoleNode(dialect, caps, typed)
+	case *ast.DropRoleNode, *ast.GrantPrivilegeNode, *ast.RevokePrivilegeNode:
 		return node, refuseAccessNode(dialect, caps, node)
 	default:
 		return prepareStandaloneFragment(dialect, caps, node)
@@ -534,6 +536,27 @@ func privilegeTargetOf(node ast.Node) privilegeTarget {
 	}
 	grant, _ := node.(*ast.GrantPrivilegeNode)
 	return privilegeTarget{grant.ObjectType, grant.ObjectName, "GRANT", " to " + grant.Role}
+}
+
+// prepareCreateRoleNode refuses a role the target cannot create, then the
+// facets no owner of the target renders.
+func prepareCreateRoleNode(dialect string, caps capability.Capabilities, node *ast.CreateRoleNode) (ast.Node, error) {
+	if node == nil {
+		return nil, nilNodeError(dialect, "create role")
+	}
+	if err := refuseAccessNode(dialect, caps, node); err != nil {
+		return node, err
+	}
+	if node.Facets.IsZero() {
+		return node, nil
+	}
+	facets, err := prepareRoleFacets(dialect, node.Facets)
+	if err != nil {
+		return nil, err
+	}
+	cloned := *node
+	cloned.Facets = facets
+	return &cloned, nil
 }
 
 func prepareCreateMaterializedViewNode(

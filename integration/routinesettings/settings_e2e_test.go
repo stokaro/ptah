@@ -226,6 +226,23 @@ func TestRoutineSettingsPlanComparesWhatTheServerStoresE2E(t *testing.T) {
 			live: "SET work_mem = '8MB' SET search_path = public", declared: "SET work_mem = '8MB'",
 			outcome: changes, stored: `pinned: work_mem=8MB`,
 		},
+		// The server stores an integer whose magnitude fits in 32 bits as its
+		// value, and keeps any other number's digits without a plus sign.
+		{
+			name:     "integers the server stores as their values",
+			live:     `SET "rv.a" = 2 SET "rv.b" = 5 SET "rv.c" = 0 SET "rv.d" = 31 SET "rv.e" = 1000`,
+			declared: `SET "rv.a" = 002 SET "rv.b" = +5 SET "rv.c" = -0 SET "rv.d" = 0x1F SET "rv.e" = 1_000`,
+			outcome:  noChanges,
+			stored:   `pinned: rv.a=2 | rv.b=5 | rv.c=0 | rv.d=31 | rv.e=1000`,
+		},
+		{
+			name: "numbers in spellings the server rewrites",
+			live: `SET "rv.a" = 3`,
+			declared: `SET "rv.a" = 002 SET "rv.b" = +5 SET "rv.c" = -0 SET "rv.f" = +002147483648 ` +
+				`SET "rv.g" = 1E+03 SET "rv.h" = 0.50 SET "rv.i" = +1.5`,
+			outcome: changes,
+			stored:  `pinned: rv.a=2 | rv.b=5 | rv.c=0 | rv.f=002147483648 | rv.g=1E+03 | rv.h=0.50 | rv.i=1.5`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

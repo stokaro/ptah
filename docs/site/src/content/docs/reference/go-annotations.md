@@ -897,7 +897,14 @@ Declares a database role.
 | `name` | No | Role name. |
 | `password` | No | Role password, a password hash, or `$PTAH_SECRET_<NAME>` to read it from that variable. Ptah never prints it; statements name the variable it is read from. See [Role passwords](../../databases/postgresql/#role-passwords). |
 | `replication` | No | Allows replication. `true`/`false`. |
+| `reset_settings` | No | Comma-separated settings to take away with `ALTER ROLE ... RESET`, such as `work_mem, app.tenant`. PostgreSQL only. |
+| `settings` | No | Configuration defaults the role logs in with, `name = value` separated by semicolons, each value written in SQL: `statement_timeout = '30s'; search_path = '$user', public`. PostgreSQL only. |
 | `superuser` | No | Creates the role as SUPERUSER. `true`/`false`. |
+
+`settings` and `reset_settings` manage only the settings they name: a setting
+the role holds and neither attribute names stays as the server holds it. A
+value with a unit is a string literal, `'30s'`. See
+[Role settings](../../databases/postgresql/#role-settings).
 
 Most of these attributes are PostgreSQL-family notions. A ClickHouse role
 carries none of them — `system.roles` is `(name, id, storage)` — so declaring

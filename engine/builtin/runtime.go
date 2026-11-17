@@ -118,7 +118,7 @@ func New(additional ...engine.Provider) (*engine.Runtime, error) {
 		providers = append(providers, provider)
 	}
 	providers = append(providers,
-		pgdefaultprivilegeprovider.Provider(), timescaleProvider(), postgresRoutineProvider(), postgresTableProvider(),
+		pgdefaultprivilegeprovider.Provider(), timescaleProvider(), postgresRoutineProvider(), postgresRoleProvider(), postgresTableProvider(),
 		pgpolicyProvider(), pgextensionProvider(), pgtypeProvider(), mssqlProvider(), mssqlPropertyProvider(), synonymProvider(),
 		oratypeProvider(),
 	)

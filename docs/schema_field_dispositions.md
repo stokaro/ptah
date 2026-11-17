@@ -79,12 +79,12 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-487 fields are reachable from the desired schema, and each one carries
+491 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 390 | reaches rendered SQL on at least one target |
+| `ddl` | 394 | reaches rendered SQL on at least one target |
 | `comparison` | 36 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
@@ -182,7 +182,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-51 exemptions, each with the reason it is right.
+52 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -200,6 +200,7 @@ migration nobody asked for.
 | `chschema.GranularitySetting.State` | `clickhouse` | both | a granularity's state changes only with its value: an explicit one carries a value and no other state may, so no single change of the state is valid. The value beside it is reached |
 | `chschema.RoleSelection.All` | `clickhouse` | both | TO ALL changes only with its exceptions: exceptions stand only beside TO ALL, and the fixture that sets it names one. The selection's names and exceptions are reached |
 | `chschema.Setting.State` | `clickhouse` | both | a setting's state changes only with its value: an explicit one carries a value and no other state may, so no single change of the state is valid. The value beside it is reached |
+| `pgrole.Setting.Reset` | `postgres` | both | a role setting's reset changes only with its value: a reset carries no value and a setting without one is refused, so no single change of the flag is valid. The value beside it is reached |
 | `coverage.Object.Kind` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
 | `coverage.Object.Name` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
 | `coverage.Object.Provenance` | any | both | records what a description does not describe, which turns an absence on one side into no conclusion. A schema compared with its own conversion holds the same objects on both sides, so no change of it can plan something; migration/schemadiff's coverage tests compare it with a read that disagrees |
@@ -391,6 +392,10 @@ migration nobody asked for.
 | `pgpolicy.NormalizedPolicy.WithCheck` | `comparison` | the server's spelling of a declared WITH CHECK expression, compared with the catalog's and never rendered |
 | `pgpolicy.RoleSelector.Keyword` | `ddl` | — |
 | `pgpolicy.RoleSelector.Name` | `ddl` | — |
+| `pgrole.DesiredSettings.Settings` | `ddl` | — |
+| `pgrole.Setting.Name` | `ddl` | — |
+| `pgrole.Setting.Reset` | `ddl` | — |
+| `pgrole.Setting.Value` | `ddl` | — |
 | `pgroutine.DesiredProperties.Leakproof` | `ddl` | — |
 | `pgroutine.DesiredProperties.Parallel` | `ddl` | — |
 | `pgroutine.DesiredProperties.Strict` | `ddl` | — |

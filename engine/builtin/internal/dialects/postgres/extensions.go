@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/sqlident"
 )
 
 // Owners is what a target's feature owners contribute to rendering it: the
@@ -48,6 +49,10 @@ type Owners struct {
 	// and returns the owned statements that follow it, with the facets it left
 	// for the statement itself. Nil leaves every facet on the statement.
 	LowerTableFacets func(table string, facets schemaext.Facets) ([]ast.ExtensionPayload, schemaext.Facets, error)
+	// LowerRoleFacets takes the role settings a CREATE ROLE cannot carry and
+	// returns the owned statements that follow it, with the facets it left.
+	// Nil lowers none, so a CREATE ROLE carrying a facet is refused.
+	LowerRoleFacets func(role string, facets schemaext.Facets) ([]ast.ExtensionPayload, schemaext.Facets, error)
 }
 
 // WithOwners sets what the target's feature owners render and returns the
@@ -148,9 +153,33 @@ func (r *Renderer) lowerTableFacets(node *ast.CreateTableNode) ([]ast.ExtensionP
 	return r.owners.LowerTableFacets(node.Name, node.Facets)
 }
 
-// renderTableFacets writes the statements that give a new table the owner
-// settings its CREATE TABLE cannot carry, after the table and its comments.
-func (r *Renderer) renderTableFacets(payloads []ast.ExtensionPayload) error {
+// lowerRoleFacets returns the statements that give a new role the owner
+// settings its CREATE ROLE cannot carry. A facet no owner lowers is refused
+// rather than dropped, so the role is never created without a setting it
+// declared.
+func (r *Renderer) lowerRoleFacets(node *ast.CreateRoleNode) ([]ast.ExtensionPayload, error) {
+	if node.Facets.IsZero() {
+		return nil, nil
+	}
+	rest := node.Facets
+	var payloads []ast.ExtensionPayload
+	if r.owners.LowerRoleFacets != nil {
+		var err error
+		if payloads, rest, err = r.owners.LowerRoleFacets(sqlident.UnquoteDoubleQuoted(node.Name), node.Facets); err != nil {
+			return nil, err
+		}
+	}
+	if kinds := rest.Kinds(); len(kinds) > 0 {
+		return nil, &ptaherr.CapabilityError{Dialect: r.dialect, Feature: string(kinds[0]), Err: ptaherr.ErrUnsupportedFeature,
+			Message: fmt.Sprintf("%s: role %q declares feature facet %q, which this target does not render", r.dialect, node.Name, kinds[0])}
+	}
+	return payloads, nil
+}
+
+// renderFacetStatements writes the statements that give a new table or role
+// the owner settings its CREATE statement cannot carry, after the statement
+// and its comment.
+func (r *Renderer) renderFacetStatements(payloads []ast.ExtensionPayload) error {
 	for _, payload := range payloads {
 		if err := r.renderOwnedPayload(ast.StatementExtension, payload); err != nil {
 			return err

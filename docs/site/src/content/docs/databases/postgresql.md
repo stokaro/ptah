@@ -1086,6 +1086,14 @@ declaration spells it, so it is recognized only when the read spells the table
 the same way. The folding also makes `x.items` and `x_items` one segment, so
 `ptah_trigger_x__items_t` is read as the function of trigger `t` on `items`.
 
+A routine's `SET` clauses compare by what the server stores in
+`pg_proc.proconfig`. An unquoted integer whose magnitude fits in 32 bits is
+stored as its value, so `SET app.retries = 002` compares equal to the stored
+`2`, `+5` to `5`, `0x1F` to `31` and `1_000` to `1000`. Any other number keeps
+its digits without a plus sign: `0.50`, `1E+03` and `002147483648` stay as
+written, and `+1.5` is `1.5`. A quoted value is a string and is compared as
+written.
+
 A trigger that runs a function declared on its own is read with the function's
 name, and with its schema when that is not the schema the read resolves names
 in: `EXECUTE FUNCTION "audit"."set_updated_at"('updated_at')`. A rehearsal
@@ -1710,6 +1718,102 @@ For function or procedure lists, name the argument types of each routine so
 its overload is unambiguous. Role creation inside a `DO` block is not a
 schema declaration; declare roles with `CREATE ROLE`, or create them in your
 versioned migrations before a grant uses them.
+
+### Role settings
+
+A role's configuration defaults are what `ALTER ROLE app SET
+statement_timeout = '30s'` stores: values every new session of the role starts
+with. Ptah manages the defaults a role holds in every database, the rows of
+`pg_db_role_setting` whose `setdatabase` is 0. Only PostgreSQL takes them;
+every other target, CockroachDB and YugabyteDB included, refuses a declared
+setting.
+
+| Source | A value | An explicit reset |
+| --- | --- | --- |
+| Go annotation | `settings="statement_timeout = '30s'; search_path = '$user', public"` | `reset_settings="work_mem, app.tenant"` |
+| YAML role entry | `settings:` with the same text | `reset_settings:` with the same text |
+| SQL | `ALTER ROLE app SET statement_timeout = '30s';` | `ALTER ROLE app RESET work_mem;` |
+| Atlas HCL | none | none |
+
+A value is written in SQL, as it stands after the equals sign of `SET`: a
+string literal in single quotes, a number, a bare word, an identifier in double
+quotes, or a list of them separated by commas. A value with a unit is a string,
+`'30s'`; PostgreSQL refuses `30s` without quotes, and so does Ptah. A string
+literal that holds a backslash is refused, because a server with
+`standard_conforming_strings` off reads the backslash as an escape. In SQL,
+`SET name TO value` is the same statement, `SET name TO DEFAULT` is a reset,
+`ALTER USER` is `ALTER ROLE`, and later statements about a setting replace
+earlier ones, as they do on the server.
+
+A role may be declared more than once: on two Go structs, under two YAML keys,
+or in two schema files read together. The declarations must agree on every
+attribute and every setting, and then they are one role. They are compared
+whole rather than merged, so a declaration that names no settings disagrees
+with one that names some. Declarations that disagree are refused, naming the role and, where they are known, the two
+structs or YAML keys. A SQL file refuses a second `CREATE ROLE` of one name.
+One HCL document that repeats a `role` block is read at exit 0 and keeps the
+first block, for parity with the Atlas community binary;
+`PTAH_HCL_STRICT_REDECLARATIONS=1` refuses the repeat.
+
+Names compare without regard to case, as the server looks them up, and a
+custom name such as `app.tenant` is accepted. In the statement Ptah writes, an
+unquoted part is in lower case and a part in double quotes keeps its case:
+`"App"."Tenant"` is written as `"App"."Tenant"` and stored as `App.Tenant`.
+
+A number is held in the spelling the server stores. The plus sign is dropped.
+An integer that fits in 32 bits is written as its value, so `+5000` is `5000`,
+`002` is `2` and `-005` is `-5`. Any other number keeps its digits, so `0.50`,
+`1E+03` and `03000000000` stay as written. A number written that way compares
+equal on the first apply rather than planning on every run. A number in
+another radix (`0x1F`) or with digit separators (`1_000`) is refused; write it
+in decimal digits.
+
+A declaration manages only the settings it names. A setting the role holds and
+the declaration leaves out stays as it is, whoever set it; a reset is the only
+way to take one away, and Ptah never writes `RESET ALL`. A role that names no
+setting manages none.
+
+The comparison reads the declared value the way the server stores it, so
+`search_path = '$user', public` matches the stored `"$user", public`. The server
+keeps the spelling a statement gives it: a declared `'30s'` against a stored
+`30000` plans one `ALTER ROLE`, and the next comparison finds the role in sync.
+A new role is created with `CREATE ROLE` and then given its values with
+`ALTER ROLE ... SET`; a reset asks nothing of a new role.
+
+A setting takes effect at login. A session that is already open keeps the
+values it started with, and `SET ROLE` loads none of them, so only a new
+connection authenticated as the role sees a change.
+
+These forms are refused while the schema is read, by name, rather than read as
+something else:
+
+- `ALTER ROLE app IN DATABASE app SET ...`, a default for one database;
+- `ALTER ROLE ALL SET ...`, a default for every role;
+- `ALTER ROLE app SET name FROM CURRENT`, which stores the value of whatever
+  session runs it;
+- `ALTER ROLE app RESET ALL`, which takes away settings the schema does not
+  name;
+- `CURRENT_USER`, `CURRENT_ROLE` and `SESSION_USER` in place of the role's name.
+
+A database read names the defaults it does not model instead of dropping them:
+one stored for a role in the database read (`ALTER ROLE ... IN DATABASE`), one
+stored for every role in it (`ALTER DATABASE ... SET`), and one stored for every
+role in every database (`ALTER ROLE ALL SET`). Each appears in the warning a plan
+or an apply prints, and nothing is planned for it:
+
+```text
+warning: 2 objects were left out: role setting "lock_timeout for every role in database app" in the database (ALTER DATABASE SET and ALTER ROLE ALL IN DATABASE store a default for every role in one database, which Ptah does not model); role setting "work_mem for role app in database app" in the database (ALTER ROLE IN DATABASE stores a default for one database; Ptah models the defaults a role holds in every database); PTAH_LOG_LEVEL=debug lists them
+```
+
+A parameter only a superuser may set, such as `log_statement`, fails at apply
+for a role that is not one, with the server's `permission denied to set
+parameter "log_statement"` and the statement that failed. The apply runs in a
+transaction, so nothing it planned is left behind.
+
+An Atlas HCL `role` block has no attribute for settings. A `settings` attribute
+there is refused as an unknown role attribute, a role read from HCL leaves its
+settings unmanaged, and an HCL export of a role that holds settings warns that
+it leaves them out.
 
 ### Revoking privileges nobody granted
 
