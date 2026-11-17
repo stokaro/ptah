@@ -272,6 +272,38 @@ func TestPlaceUnqualified_PlacesTheSequenceOfADeclaredColumn(t *testing.T) {
 	})
 }
 
+// A grant keeps its name on a sequence no placed column is known to create:
+// the one a column of another table would create under this table's name, the
+// one of a table declared in a schema of its own, and the one an identity
+// column names in its options.
+func TestPlaceUnqualified_LeavesASequenceNoPlacedColumnIsKnownToCreate(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Account", Name: "accounts"},
+			{StructName: "Bin", Name: "bins"},
+			{StructName: "Ledger", Name: "ledgers", Schema: "billing"},
+			{StructName: "Note", Name: "notes"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Account", Name: "id", Type: "SERIAL"},
+			{StructName: "Bin", Name: "label", Type: "text"},
+			{StructName: "Ledger", Name: "id", Type: "SERIAL"},
+			{StructName: "Note", Name: "id", Type: "bigint", IdentityGeneration: "BY DEFAULT", IdentityOptions: "START WITH 10 sequence  name note_ids"},
+		},
+		Grants: []schemamodel.Grant{
+			{OnSequence: "bins_id_seq"}, {OnSequence: "ledgers_id_seq"}, {OnSequence: "notes_id_seq"},
+		},
+	}
+
+	placed, err := schemaprep.PlaceUnqualified(database, "app", platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(placed.Grants, qt.DeepEquals, []schemamodel.Grant{
+		{OnSequence: "bins_id_seq"}, {OnSequence: "ledgers_id_seq"}, {OnSequence: "notes_id_seq"},
+	})
+}
+
 // A declared routine a grant names with its argument types is placed with
 // them, and the trigger running it names it in the placed schema.
 func TestPlaceUnqualified_PlacesADeclaredRoutineWithItsArguments(t *testing.T) {

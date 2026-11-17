@@ -345,13 +345,13 @@ func newRealmGrantee(c *qt.C) string {
 	c.Helper()
 	admin, err := sql.Open("pgx", dbtarget.URL(c, dbtarget.PostgreSQL))
 	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(admin.Close(), qt.IsNil) })
 	role := fmt.Sprintf("ptah_realm_grantee_%d", time.Now().UnixNano())
 	_, err = admin.ExecContext(c.Context(), "CREATE ROLE "+role)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		_, dropErr := admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+role)
 		c.Check(dropErr, qt.IsNil)
-		c.Check(admin.Close(), qt.IsNil)
 	})
 	return role
 }

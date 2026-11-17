@@ -3,6 +3,7 @@ package schemaprep
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"strings"
 
 	"ptah.run/core/objectidentity"
@@ -232,6 +233,16 @@ func placedName(name, schema string) string {
 }
 
 // unqualified reports whether name is one name with no schema in front of it.
+// sequenceNameOption finds the SEQUENCE NAME option in an identity column's
+// options.
+var sequenceNameOption = regexp.MustCompile(`(?i)\bSEQUENCE\s+NAME\b`)
+
+// namesItsSequence reports whether field is an identity column whose options
+// name the sequence it creates.
+func namesItsSequence(field schemamodel.Field) bool {
+	return sequenceNameOption.MatchString(field.IdentityOptions)
+}
+
 func unqualified(name string) bool {
 	ref, ok := tableref.Parse(name)
 	return ok && !ref.Qualified
@@ -268,9 +279,13 @@ func declaredUnqualified(database *schemamodel.Database, semantics identifier.Se
 		}
 		add(names.relations, table.Name)
 		// A serial or identity column creates its sequence beside the table,
-		// so a grant on that sequence names a declared object too.
+		// so a grant on that sequence names a declared object too. An identity
+		// column that names its sequence is left out: the name it gives is in
+		// options this reads no further, and the name PostgreSQL would
+		// otherwise give is not the sequence's, so claiming it could place a
+		// grant on another object.
 		for _, field := range database.Fields {
-			if field.StructName != table.StructName {
+			if field.StructName != table.StructName || namesItsSequence(field) {
 				continue
 			}
 			if sequence, ok := columnsequence.Declared(table.Name, field); ok {
