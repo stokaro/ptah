@@ -962,3 +962,11 @@ v0.25.0 ptah.run/core/platform/descriptor
 # sections that hold lists already are; nothing in Ptah compares it by value.
 # Pre-v1, so no compatibility is owed.
 v0.28.0 ptah.run/core/platform/descriptor
+
+# A role declaration carries the settings its feature owner interprets
+# (CreateRoleNode.Facets), such as the PostgreSQL configuration defaults that
+# ALTER ROLE ... SET stores. The map-backed field makes CreateRoleNode no
+# longer comparable with ==, as the other AST nodes that carry facets already
+# are; nothing in Ptah compares it by value. Pre-v1, so no compatibility is
+# owed.
+v0.29.5 ptah.run/core/ast
