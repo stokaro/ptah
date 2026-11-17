@@ -98,7 +98,7 @@ func TestRead_CommentOnIndex_HappyPath(t *testing.T) {
 			dialect: "postgres",
 			file: "CREATE TABLE orders (amount int);\nCREATE MATERIALIZED VIEW public.order_totals AS SELECT sum(amount) AS total FROM orders;\n" +
 				"CREATE UNIQUE INDEX order_totals_total ON order_totals (total);\nCOMMENT ON INDEX order_totals_total IS 'one row';",
-			want: map[string]string{"order_totals@order_totals_total": "one row"},
+			want: map[string]string{"public.order_totals@order_totals_total": "one row"},
 		},
 		{
 			name:    "an index of a materialized view in another schema",

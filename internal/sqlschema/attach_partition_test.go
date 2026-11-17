@@ -162,6 +162,20 @@ func TestReadWith_AttachPartition_FailurePath(t *testing.T) {
 			wantErr: `the schema model has no place for this statement: CREATE INDEX p_note ON ONLY p: partition c attaches no copy of the index, so the server leaves it invalid; .*`,
 		},
 		{
+			// ALTER action ATTACH PARTITION cannot be performed on relation "mv_a".
+			name: "a parent index of a materialized view",
+			source: parent + "CREATE TABLE c PARTITION OF p DEFAULT;\nCREATE INDEX c_note ON c (note);\n" +
+				"CREATE MATERIALIZED VIEW mv AS SELECT note FROM p;\nCREATE INDEX mv_note ON mv (note);\nALTER INDEX mv_note ATTACH PARTITION c_note;",
+			wantErr: `line 6, column 1: ALTER INDEX mv_note ATTACH PARTITION c_note: mv_note is an index of materialized view mv, which has no partitions`,
+		},
+		{
+			// Index "mv_note" is not an index on any partition of table "p".
+			name: "an index copy of a materialized view",
+			source: parent + "CREATE INDEX p_note ON p (note);\n" +
+				"CREATE MATERIALIZED VIEW mv AS SELECT note FROM p;\nCREATE INDEX mv_note ON mv (note);\nALTER INDEX p_note ATTACH PARTITION mv_note;",
+			wantErr: `line 5, column 1: ALTER INDEX p_note ATTACH PARTITION mv_note: mv_note is an index of materialized view mv, not of a partition of p`,
+		},
+		{
 			name:    "an index copy nothing declares",
 			source:  parent + "CREATE INDEX p_note ON p (note);\nALTER INDEX p_note ATTACH PARTITION c_note;",
 			wantErr: `line 3, column 1: ALTER INDEX p_note ATTACH PARTITION c_note names an index this schema does not declare`,

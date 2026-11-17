@@ -316,7 +316,9 @@ func Finalize(r *Database) {
 
 // NormalizeTableScopedNames resolves the names an index or constraint carries
 // against the table that owns it, so two objects that name one table by
-// different spellings resolve to the same owner.
+// different spellings resolve to the same owner. An index whose table name is
+// exactly the name a materialized view is declared under belongs to that view
+// and keeps the name.
 //
 // It is exported because the split put the parser in another package and the
 // parser runs it as the last step of building a database: a description whose
@@ -337,8 +339,18 @@ func NormalizeTableScopedNames(r *Database) {
 			constraint.ForeignTable = resolveReferenceTableName(r.Tables, *table, constraint.ForeignTable)
 		}
 	}
+	views := make(map[string]bool, len(r.MaterializedViews))
+	for _, view := range r.MaterializedViews {
+		views[view.Name] = true
+	}
 	for i := range r.Indexes {
 		index := &r.Indexes[i]
+		// An index that names a materialized view by the name the view is
+		// declared under is the view's. Resolved against the tables, a bare
+		// name reaches a table of that name in any schema.
+		if views[strings.TrimSpace(index.TableName)] {
+			continue
+		}
 		if table := resolveTableReference(r.Tables, index.StructName, index.TableName); table != nil {
 			index.TableName = table.QualifiedName()
 		}
