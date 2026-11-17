@@ -1,0 +1,35 @@
+{
+  "source": "fixture run",
+  "packages": {
+    "ptah.run/integration": {
+      "elapsed_ms": 210000,
+      "tests_ms": {
+        "TestR1": 60000,
+        "TestR2": 50000,
+        "TestR3": 40000,
+        "TestR4": 30000,
+        "TestR5": 20000,
+        "TestR6": 10000
+      }
+    },
+    "ptah.run/integration/providercli": {
+      "elapsed_ms": 75000,
+      "tests_ms": {
+        "TestP1": 40000,
+        "TestP2": 30000
+      }
+    },
+    "ptah.run/integration/safety": {
+      "elapsed_ms": 35000,
+      "tests_ms": {
+        "TestS1": 35000
+      }
+    },
+    "ptah.run/integration/atlascmd": {
+      "elapsed_ms": 25000,
+      "tests_ms": {
+        "TestA1": 25000
+      }
+    }
+  }
+}

@@ -84,15 +84,23 @@ go run ./internal/cmd/testcontour \
   --timeout 75m
 ```
 
-A push or a pull request runs this command. The nightly `complete integration
-contour` job in `atlas-reference.yml` adds `--race`. A failed scheduled run of
-that workflow comments on the open issue titled `Nightly run of "Atlas CE
-reference" failed`, or opens one when none is open.
+A push or a pull request runs the same contour split across parallel shards,
+each started as `--shard I --shards N`. Each shard lists every test with `go
+test -list`, partitions the listing the way every other shard does, and runs
+its own part; it balances the parts with the timings the newest master run
+measured, and by test count when there are none. The `integration-tests` job
+then runs `testcontour verify` over every shard's report and fails unless the
+shards together ran each listed test exactly once, with none skipped or failed.
+The nightly `complete integration contour` job in `atlas-reference.yml` adds
+`--race`. A failed scheduled run of that workflow comments on the open issue
+titled `Nightly run of "Atlas CE reference" failed`, or opens one when none is
+open.
 
 Do not run selected test names or individual packages as a CI substitute for
-this contour. An integration test is never white-box: integration tests use
-`package *_test`; tests that need package-private access are unit tests, not
-integration tests.
+this contour: only `testcontour` partitions it, because only its partition is
+checked against the whole listing. An integration test is never white-box:
+integration tests use `package *_test`; tests that need package-private access
+are unit tests, not integration tests.
 
 Each URL must identify an administrative connection intended for tests. The
 success-path tests create a separate temporary database and drop it during

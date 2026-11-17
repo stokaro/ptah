@@ -70,26 +70,83 @@ jobs:
             printf -- "- because: %s\n" "$SCOPE_REASON"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  integration-tests:
-    name: integration-tests
-    needs: scope
+  # The contour is split across parallel runners, and testcontour owns the
+  # split: each shard lists every test of every tagged package, partitions the
+  # listing and runs its own part, and the integration-tests job below proves
+  # from the shards' reports that the parts add up to the listing. Nothing else
+  # may select integration tests -- no build tag, package selector or name
+  # pattern here -- because only a selection the gate can check against the
+  # whole listing keeps a skipped or dropped test from reading as green.
+  plan:
+    name: plan the contour
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The timings come from another run's artifact.
+      actions: read
+    outputs:
+      legs: ${{ steps.legs.outputs.legs }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/fetch-integration-timings.sh
+          sparse-checkout-cone-mode: false
+
+      # The newest master run's measurement balances the shards. It decides
+      # only where a test runs, never whether it does, so a run without one
+      # balances by test count. The plan job fetches it once and hands every
+      # shard the same file: shards that fetched for themselves could read two
+      # different master runs and compute two different partitions.
+      - name: Fetch the timings of the newest master run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/fetch-integration-timings.sh "$RUNNER_TEMP/integration-weights/timings.json"
+
+      - name: Hand every shard the same timings
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-weights
+          path: ${{ runner.temp }}/integration-weights/timings.json
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: error
+
+      # The shard count is written once, here. Each shard reads its position
+      # and the count from the matrix, and the gate reads the count back from
+      # the shards' manifests. The smoke suites through ./integration-test are
+      # one more leg beside the shards, so they start the same databases and
+      # sit on no shard's critical path.
+      - name: Lay out the shards
+        id: legs
+        run: |
+          shards=8
+          legs=$(jq -cn --argjson shards "$shards" \
+            '[range(1; $shards + 1) | {kind: "contour", shard: ., shards: $shards}] + [{kind: "smoke"}]')
+          echo "legs=$legs" >> "$GITHUB_OUTPUT"
+          echo "contour legs: $legs"
+
+  contour:
+    name: ${{ matrix.kind == 'smoke' && 'smoke suites' || format('contour shard {0} of {1}', matrix.shard, matrix.shards) }}
+    needs: [scope, plan]
     # Skipped rather than absent: the check is still listed on the
     # pull request, and the scope job above says why it was skipped.
     if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The whole contour runs in one job, because testcontour fails on a skip
-    # and no package selector may narrow it. A push or a pull request runs it
-    # without the race detector. The nightly `complete integration contour` in
-    # atlas-reference.yml asks for the detector, and the limits here are sized
-    # for that slower run. The total budget also covers database setup, race
-    # builds, and the following smoke suites. The packages run one at a time,
-    # and the contour step alone measured 78 and 112 minutes on two neighboring
-    # master commits, so 120 cut passing runs off. A hung test still fails its
-    # package at the contour's --timeout, which sits above the root package: it
-    # ran past 45 minutes under the race detector with 26 of its 1195 tests left
-    # to start.
-    timeout-minutes: 180
-    
+    # A push or a pull request runs the contour without the race detector. The
+    # nightly `complete integration contour` in atlas-reference.yml asks for
+    # it, and the limits here are sized for that slower run. A hung test fails
+    # its package at the contour's --timeout, which sits below this limit, so a
+    # hang ends with the package's goroutine dump rather than a canceled job.
+    timeout-minutes: 60
+    strategy:
+      # Every leg runs to its end. A shard canceled because another failed
+      # sends no report, and the gate could then say only that its tests are
+      # unaccounted for, not how they fared.
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.legs) }}
+
     services:
       postgres:
         image: postgres:18
@@ -549,7 +606,15 @@ jobs:
       - name: Build pinned Atlas CE reference
         run: scripts/build-atlas-ce-reference.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
 
+      - name: Download the contour timings
+        if: matrix.kind == 'contour'
+        uses: actions/download-artifact@v8
+        with:
+          name: integration-weights
+          path: ${{ runner.temp }}/integration-weights
+
       - name: Run tagged integration package contour
+        if: matrix.kind == 'contour'
         env:
           PTAH_ATLAS_REFERENCE: "${{ runner.temp }}/ptah-atlas-ce/atlas"
           PTAH_ATLAS_FUZZ_N: "200"
@@ -638,23 +703,43 @@ jobs:
           go run ./internal/cmd/testcontour \
             --tags integration \
             --race=${{ inputs.race == true }} \
-            --timeout 75m
+            --timeout 40m \
+            --shard ${{ matrix.shard }} \
+            --shards ${{ matrix.shards }} \
+            --timings "$RUNNER_TEMP/integration-weights/timings.json" \
+            --report-dir "$RUNNER_TEMP/integration-contour"
+
+      # always(), not !cancelled(): a shard that ran out of time is canceled,
+      # and its partial report still says which of its tests finished.
+      - name: Upload the shard report
+        if: always() && matrix.kind == 'contour'
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-contour-${{ matrix.shard }}
+          path: ${{ runner.temp }}/integration-contour
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: ignore
 
       - name: Build integration test binary
+        if: matrix.kind == 'smoke'
         run: |
           go build -race=${{ inputs.race == true }} -o ./integration-test ./cmd/integration-test
 
       - name: Test integration binary help
+        if: matrix.kind == 'smoke'
         run: |
           ./integration-test --help
 
       - name: Run basic smoke test
+        if: matrix.kind == 'smoke'
         env:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
           ./integration-test --scenarios=apply_incremental_migrations,check_current_version --databases=postgres --report=stdout,txt,json,html --output=./reports
 
       - name: Run all databases comprehensive test
+        if: matrix.kind == 'smoke'
         env:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
@@ -668,6 +753,7 @@ jobs:
           ./integration-test --databases=postgres,mysql,mariadb,clickhouse,cockroachdb,yugabytedb --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Run distributed SQL live smoke tests
+        if: matrix.kind == 'smoke'
         env:
           COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
@@ -676,6 +762,7 @@ jobs:
           ./integration-test --databases=yugabytedb --scenarios=dynamic_yugabytedb_common_subset --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Run SQL Server live smoke tests
+        if: matrix.kind == 'smoke'
         env:
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
@@ -683,17 +770,91 @@ jobs:
 
       - name: Upload integration test reports
         uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && matrix.kind == 'smoke'
         with:
           name: ptah-integration-test-reports
           path: |
             reports/
           retention-days: 7
 
+  # The contour's verdict, under the name the single unsharded job carried. It
+  # runs whenever the shards were due, on every event, and is the one place that
+  # judges the contour as a whole: every shard's tests can pass while the
+  # shards together still miss one.
+  contour-gate:
+    name: integration-tests
+    needs: [scope, plan, contour]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.code == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      # A failed download leaves fewer reports, never more, and the next step
+      # refuses a contour with a shard missing. So the download may fail and
+      # leave the verdict to the step that names what is missing.
+      - name: Download every shard report
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: integration-contour-*
+          path: ${{ runner.temp }}/integration-contour
+
+      # The union of the shards' tests must equal the listing they partitioned,
+      # each test must have run once, on its shard, and none may have skipped
+      # or failed. The floor sits below the 3,472 tests listed when it was set
+      # and far above zero, so a listing that stopped matching cannot pass.
+      - name: Prove the shards ran the contour exactly once
+        run: |
+          go run ./internal/cmd/testcontour verify \
+            --reports "$RUNNER_TEMP/integration-contour" \
+            --floor 3000 \
+            --timings-out "$RUNNER_TEMP/integration-timings/timings.json" \
+            --source "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      # The measurement balances the next run's shards; the plan job reads it
+      # from the newest master run that kept it.
+      - name: Keep the measured timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-timings
+          path: ${{ runner.temp }}/integration-timings/timings.json
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: ignore
+
+      # A leg can fail without a test failing: a database that never came up,
+      # or a smoke suite. The verdict covers those too.
+      - name: Require every leg to have succeeded
+        if: ${{ !cancelled() }}
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          CONTOUR_RESULT: ${{ needs.contour.result }}
+        run: |
+          status=0
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "the plan job concluded $PLAN_RESULT" >&2
+            status=1
+          fi
+          if [ "$CONTOUR_RESULT" != success ]; then
+            echo "a contour shard or the smoke suites concluded $CONTOUR_RESULT" >&2
+            status=1
+          fi
+          exit "$status"
+
   integration-gate:
     name: Integration gate
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-    needs: [scope, integration-tests]
+    needs: [scope, contour-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -702,7 +863,7 @@ jobs:
         env:
           SCOPE_RESULT: ${{ needs.scope.result }}
           CODE_SCOPE: ${{ needs.scope.outputs.code }}
-          INTEGRATION_RESULT: ${{ needs.integration-tests.result }}
+          INTEGRATION_RESULT: ${{ needs.contour-gate.result }}
         run: |
           scripts/check-ci-scope-gate.sh --selftest
           scripts/check-ci-scope-gate.sh \
