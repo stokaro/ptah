@@ -79,6 +79,10 @@ jobs:
   # whole listing keeps a skipped or dropped test from reading as green.
   plan:
     name: plan the contour
+    needs: [scope]
+    # Skipped with the contour it plans, so a pull request the contour cannot
+    # affect shows no planning job that could go red.
+    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -127,7 +131,11 @@ jobs:
           echo "contour legs: $legs"
 
   contour:
-    name: ${{ matrix.kind == 'smoke' && 'smoke suites' || format('contour shard {0} of {1}', matrix.shard, matrix.shards) }}
+    # The name is fixed rather than built from the matrix: a skipped job is
+    # never expanded, and its check would show the expression itself. GitHub
+    # adds each leg's matrix values to the name, as in "integration leg
+    # (contour, 3, 8)" and "integration leg (smoke)".
+    name: integration leg
     needs: [scope, plan]
     # Skipped rather than absent: the check is still listed on the
     # pull request, and the scope job above says why it was skipped.
@@ -577,6 +585,7 @@ jobs:
           done
 
       - name: Install Graphviz
+        if: matrix.kind == 'contour'
         # Measured: this step hung for 4h08m on 2026-08-19, retrying
         # azure.archive.ubuntu.com forever, on master and two branches at
         # once. apt has no business taking ten minutes, and the job ceiling
@@ -587,6 +596,7 @@ jobs:
           sudo apt-get install --yes graphviz
 
       - name: Create Atlas oracle development databases
+        if: matrix.kind == 'contour'
         run: |
           PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
             -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_oracle_dev'
@@ -606,6 +616,7 @@ jobs:
       # to the file and the pooler reloads it. The last line proves the alias
       # reaches ptah_aliased before any test relies on it.
       - name: Serve a PostgreSQL database under a second name
+        if: matrix.kind == 'contour'
         run: |
           PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
             -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_aliased'
@@ -633,12 +644,14 @@ jobs:
       # than trusted. Measured: a matching stamp beside a corrupted binary
       # rebuilds.
       - name: Cache the pinned Atlas CE reference
+        if: matrix.kind == 'contour'
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/ptah-atlas-ce
           key: atlas-ce-${{ runner.os }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('scripts/atlas-ce-reference.lock', 'scripts/build-atlas-ce-reference.sh', 'scripts/lib/atlas-ce-reference.sh') }}
 
       - name: Build pinned Atlas CE reference
+        if: matrix.kind == 'contour'
         run: scripts/build-atlas-ce-reference.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
 
       - name: Download the contour timings
