@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/sqliterebuild"
@@ -19,57 +21,123 @@ type repeatableState struct {
 }
 
 // readRepeatableState reads the repeatable migrations of the provider and
-// their record. It returns nil when the provider holds none, so a directory
-// without repeatable migrations sends no query about them.
+// every row of their record, including rows no file of the directory carries
+// any more. It returns nil when the provider does not load repeatable
+// migrations, and when it holds none and the target keeps no record of any,
+// which is every engine that cannot run them.
 func (m *Migrator) readRepeatableState(ctx context.Context) (*repeatableState, error) {
-	repeatables := m.providerRepeatables()
-	if len(repeatables) == 0 {
+	source, ok := m.migrationProvider.(repeatableSource)
+	if !ok || !source.loadsRepeatableMigrations() {
 		return nil, nil
 	}
-	if err := m.refuseRepeatablesHere(); err != nil {
-		return nil, err
+	repeatables := source.repeatableMigrations()
+	if refusal := m.refuseRepeatablesHere(); refusal != nil {
+		if len(repeatables) > 0 {
+			return nil, refusal
+		}
+		return nil, nil
 	}
 	rows, err := m.readRepeatableRows(ctx)
 	if err != nil {
 		return nil, err
 	}
+	if len(repeatables) == 0 && len(rows) == 0 {
+		return nil, nil
+	}
 	return &repeatableState{repeatables: repeatables, rows: rows}, nil
 }
 
 // refuseRepeatablesHere refuses a migrator that cannot keep the record a
-// repeatable migration needs.
+// repeatable migration needs. Where it refuses, no record can exist either, so
+// a reader of the record takes the refusal as "nothing recorded".
 //
 // The Atlas-compatible revision format is refused for the reason the operation
 // log is off under it: that contract defines the revision table and nothing
 // beside it. An engine is refused when its descriptor states no record table,
-// which is how an engine on which the path is not measured leaves it out.
+// which is how an engine on which the path is not measured leaves it out. A
+// connection through a provider session is refused because the record is a
+// table read and written with SQL, which such a session does not expose; a
+// history store that fails to open is that kind of connection too.
 func (m *Migrator) refuseRepeatablesHere() error {
+	if store, err := m.conn.HistoryStore(); err != nil || store != nil {
+		return &RepeatableMigrationsUnsupportedError{
+			Dialect: m.connectionDialect(),
+			Reason: "this connection reaches the database through a provider rather than a database/sql driver, " +
+				"and the record of repeatable migrations is a table Ptah reads and writes with SQL",
+		}
+	}
 	if m.revisionTableFormat.isAtlas() {
 		return &RepeatableMigrationsUnsupportedError{
 			Reason: "the Atlas-compatible revision format defines no table to record them in; " +
 				"use the native revision format",
 		}
 	}
-	dialect := m.connectionDialect()
 	if m.revisionTable().CreateRepeatables == "" {
 		return &RepeatableMigrationsUnsupportedError{
-			Dialect: dialect,
-			Reason:  fmt.Sprintf("Ptah runs repeatable migrations on PostgreSQL and SQLite, and this database is %s", dialect),
+			Dialect: m.connectionDialect(),
+			Reason:  "Ptah runs repeatable migrations on PostgreSQL and SQLite only",
 		}
 	}
 	return nil
 }
 
-// records is the status of every repeatable migration, in execution order.
+// records is the status of every repeatable migration, in execution order,
+// followed by the orphaned records in identity order.
 func (s *repeatableState) records() []RepeatableRecord {
 	if s == nil {
 		return nil
 	}
-	records := make([]RepeatableRecord, 0, len(s.repeatables))
+	records := make([]RepeatableRecord, 0, len(s.rows)+len(s.repeatables))
 	for _, repeatable := range s.repeatables {
 		records = append(records, s.record(repeatable))
 	}
+	for _, identity := range s.orphans() {
+		records = append(records, orphanedRecord(s.rows[identity]))
+	}
 	return records
+}
+
+// orphans are the identities the record holds and no file of the directory
+// carries, in identity order.
+func (s *repeatableState) orphans() []string {
+	var orphans []string
+	for identity := range s.rows {
+		if s.repeatable(identity) == nil {
+			orphans = append(orphans, identity)
+		}
+	}
+	slices.Sort(orphans)
+	return orphans
+}
+
+// orphanedRecord is the status of a row no file carries. A finished attempt
+// reads as orphaned; an unfinished one keeps its state, because it is the one
+// that stops a run.
+func orphanedRecord(row repeatableRow) RepeatableRecord {
+	record := RepeatableRecord{Identity: row.identity, Orphaned: true}
+	record.fill(row)
+	record.State = row.state
+	if row.state == RepeatableStateApplied {
+		record.State = RepeatableStateOrphaned
+	}
+	return record
+}
+
+// fill copies what a row says of the last attempt into the record.
+func (r *RepeatableRecord) fill(row repeatableRow) {
+	r.AppliedChecksum = row.checksum
+	r.AttemptChecksum = row.attemptChecksum
+	r.AttemptOrder = row.attemptOrder
+	r.NoTransaction = !row.transactional
+	r.Error = row.errorText
+	if !row.attemptedAt.IsZero() {
+		attemptedAt := row.attemptedAt.UTC()
+		r.AttemptedAt = &attemptedAt
+	}
+	if !row.appliedAt.IsZero() {
+		appliedAt := row.appliedAt.UTC()
+		r.AppliedAt = &appliedAt
+	}
 }
 
 // record is the status of one repeatable migration.
@@ -84,19 +152,7 @@ func (s *repeatableState) record(repeatable *repeatableMigration) RepeatableReco
 	if !ok {
 		return record
 	}
-	record.AppliedChecksum = row.checksum
-	record.AttemptChecksum = row.attemptChecksum
-	record.AttemptOrder = row.attemptOrder
-	record.NoTransaction = !row.transactional
-	record.Error = row.errorText
-	if !row.attemptedAt.IsZero() {
-		attemptedAt := row.attemptedAt.UTC()
-		record.AttemptedAt = &attemptedAt
-	}
-	if !row.appliedAt.IsZero() {
-		appliedAt := row.appliedAt.UTC()
-		record.AppliedAt = &appliedAt
-	}
+	record.fill(row)
 	switch {
 	case row.state != RepeatableStateApplied:
 		record.State = row.state
@@ -120,12 +176,15 @@ func (s *repeatableState) dirty() []RepeatableRecord {
 }
 
 // work is what an up run executes, in order: every new and changed repeatable
-// migration, and, when the run asked to retry dirty work, every dirty one.
+// migration, and, when the run asked to retry dirty work, every dirty one that
+// still has a file.
 func (s *repeatableState) work(retryDirty bool) []RepeatableWork {
 	var work []RepeatableWork
 	for _, record := range s.records() {
 		reason := ""
 		switch {
+		case record.Orphaned:
+			// No file carries it, so there is nothing to run.
 		case record.State == RepeatableStatePending:
 			reason = RepeatableReasonNew
 		case record.State == RepeatableStateChanged:
@@ -181,7 +240,7 @@ func (m *Migrator) planRepeatables(
 	if err != nil || state == nil {
 		return nil, nil, err
 	}
-	if err := state.refuseDirtyRepeatables(opts); err != nil {
+	if err := state.refuseDirtyRepeatables(opts, m.repeatableTable()); err != nil {
 		return nil, nil, err
 	}
 	work := state.work(opts.AllowDirty)
@@ -191,17 +250,43 @@ func (m *Migrator) planRepeatables(
 	if err := m.refuseRepeatablesWhatFilesRefuse(state, work); err != nil {
 		return nil, nil, err
 	}
+	if err := m.refuseUnaddressableRepeatableRecord(work); err != nil {
+		return nil, nil, err
+	}
+	for _, identity := range state.orphans() {
+		m.logger.Warn("A repeatable migration record has no file in the directory, and the run leaves it alone",
+			"identity", identity, "table", m.repeatableTable())
+	}
 	return state, work, nil
 }
 
-// refuseDirtyRepeatables refuses a run over a dirty repeatable migration
-// unless it asked to retry dirty work.
-func (s *repeatableState) refuseDirtyRepeatables(opts MigrateUpOptions) error {
-	if opts.AllowDirty {
+// refuseUnaddressableRepeatableRecord refuses, before anything runs, a run
+// with repeatable work whose record would be created under a name the target
+// truncates. The table does not exist yet, so the check is on the name alone,
+// and a dry run makes it as an apply does.
+func (m *Migrator) refuseUnaddressableRepeatableRecord(work []RepeatableWork) error {
+	if len(work) == 0 {
 		return nil
 	}
-	if dirty := s.dirty(); len(dirty) > 0 {
-		return &DirtyRepeatableError{Records: dirty}
+	return m.refuseTruncatedIdentifier(
+		m.repeatableTableName(),
+		"the repeatable migration record for migrations table "+strconv.Quote(m.migrationsTableName()),
+		"shorten the migrations table name",
+	)
+}
+
+// refuseDirtyRepeatables refuses a run over a dirty repeatable migration
+// unless it asked to retry dirty work, and over a dirty record no file
+// carries in any case, since there is nothing to retry.
+func (s *repeatableState) refuseDirtyRepeatables(opts MigrateUpOptions, table string) error {
+	var blocking []RepeatableRecord
+	for _, record := range s.dirty() {
+		if record.Orphaned || !opts.AllowDirty {
+			blocking = append(blocking, record)
+		}
+	}
+	if len(blocking) > 0 {
+		return &DirtyRepeatableError{Records: blocking, Table: table}
 	}
 	return nil
 }
@@ -292,8 +377,20 @@ func (m *Migrator) repeatableRunsInTransaction(repeatable *repeatableMigration) 
 	}
 }
 
+// createRepeatableRecord creates the record of a run with repeatable work
+// before the run's first versioned statement, so a target that refuses the
+// table, for a missing privilege or a foreign table created in the meantime,
+// refuses it before anything else changed. A dry run creates nothing.
+func (m *Migrator) createRepeatableRecord(ctx context.Context, work []RepeatableWork) error {
+	if len(work) == 0 || m.conn.Writer().IsDryRun() {
+		return nil
+	}
+	return m.ensureRepeatableTable(ctx)
+}
+
 // applyRepeatables executes the selected repeatable work in order, stopping
-// at the first failure. A dry run executes nothing and records nothing.
+// at the first failure, into the record [Migrator.createRepeatableRecord]
+// created. A dry run executes nothing and records nothing.
 func (m *Migrator) applyRepeatables(ctx context.Context, state *repeatableState, work []RepeatableWork) error {
 	if len(work) == 0 {
 		return nil
@@ -304,9 +401,6 @@ func (m *Migrator) applyRepeatables(ctx context.Context, state *repeatableState,
 				"identity", item.Identity, "checksum", item.Checksum, "reason", item.Reason)
 		}
 		return nil
-	}
-	if err := m.ensureRepeatableTable(ctx); err != nil {
-		return err
 	}
 	return m.withRunSession(ctx, func(scoped *Migrator) error {
 		for index, item := range work {
@@ -465,21 +559,23 @@ func (m *Migrator) repeatableFailed(
 	return result
 }
 
-// repeatableRollbackRefusal refuses a rollback over a database that records
-// any repeatable migration of this directory, before anything changes.
+// repeatableRollbackRefusal refuses a rollback over a database whose record
+// holds any row, before anything changes. It reads the record whatever the
+// directory and the provider hold: a deleted or renamed file leaves its
+// objects behind, and a rollback past them would leave a row that says
+// applied over a schema that no longer has them.
 func (m *Migrator) repeatableRollbackRefusal(ctx context.Context) error {
-	state, err := m.readRepeatableState(ctx)
-	if err != nil || state == nil {
-		return err
-	}
-	var recorded []string
-	for _, repeatable := range state.repeatables {
-		if _, ok := state.rows[repeatable.identity]; ok {
-			recorded = append(recorded, repeatable.identity)
-		}
-	}
-	if len(recorded) == 0 {
+	if m.refuseRepeatablesHere() != nil {
 		return nil
 	}
+	rows, err := m.readRepeatableRows(ctx)
+	if err != nil || len(rows) == 0 {
+		return err
+	}
+	recorded := make([]string, 0, len(rows))
+	for identity := range rows {
+		recorded = append(recorded, identity)
+	}
+	slices.Sort(recorded)
 	return &RepeatableRollbackError{Identities: recorded, Table: m.repeatableTable()}
 }

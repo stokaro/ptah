@@ -500,7 +500,9 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 		}
 		emit.Println("\nAn up run refuses while a repeatable migration's last attempt has no successful " +
 			"outcome. Fix the cause, then run 'ptah migrations up --allow-dirty', which runs it again " +
-			"from its first statement. When it ran without a transaction, check what it left behind first.")
+			"from its first statement. When it ran without a transaction, check what it left behind first. " +
+			"A record whose file is no longer in the directory cannot run again: check what it left behind, " +
+			"then delete its row from the record table, the migrations table name followed by _repeatable.")
 		return nil
 	}
 
@@ -572,14 +574,19 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 }
 
 // writeRepeatables prints the directory's repeatable migrations, one line
-// each, in the order an up run executes them. A directory without repeatable
-// migrations prints nothing.
+// each, in the order an up run executes them, and then the records no file of
+// the directory carries, with the digest that last applied. A directory and a
+// database without repeatable migrations print nothing.
 func writeRepeatables(emit cliobs.Emitter, records []migrator.RepeatableRecord) {
 	if len(records) == 0 {
 		return
 	}
 	emit.Printf("Repeatable Migrations: %d\n", len(records))
 	for _, record := range records {
+		if record.Orphaned {
+			emit.Printf("  %s %s %s (no file in the directory)\n", record.Identity, record.State, record.AppliedChecksum)
+			continue
+		}
 		emit.Printf("  %s %s %s\n", record.Identity, record.State, record.Checksum)
 	}
 }

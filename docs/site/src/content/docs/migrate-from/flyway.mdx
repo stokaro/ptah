@@ -287,7 +287,9 @@ Wrote ./migrations-on-change/ptah.sum
 ```
 
 The repeatable is now `R__user_count_view.sql`: one file with no version and no
-down file. Apply the directory to a database of its own:
+down file. Only PostgreSQL and SQLite run a repeatable migration; against
+another engine `ptah migrations up` refuses the directory, so import with the
+default there. Apply the directory to a database of its own:
 
 ```console
 ptah migrations up --db-url sqlite://on-change.db --migrations-dir ./migrations-on-change

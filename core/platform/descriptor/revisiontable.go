@@ -44,7 +44,8 @@ type RevisionTable struct {
 	// one row per identity with the digest of the content that last applied
 	// and the outcome of the last attempt. Empty means the migrator runs no
 	// repeatable migration on the engine and refuses a directory that holds
-	// one.
+	// one. The template takes {table} and {engine}; the migrator fills in
+	// nothing for {object}.
 	CreateRepeatables string `json:"create_repeatables,omitempty"`
 	// LogInsertPrefix is the SQL before INTO when the migrator appends an
 	// operation log entry. Empty uses INSERT. An engine can use this prefix to

@@ -96,10 +96,11 @@ type MigrationStatus struct {
 	// make a missing file the intended shape.
 	MissingMigrations []MigrationRecord `json:"missing_migrations,omitempty"`
 	// Repeatables is every repeatable migration the directory holds, in the
-	// order an up run executes them, with what the database records for each.
-	// It is empty for a directory without repeatable migrations and for a
-	// migrator whose provider does not load them; see
-	// [WithRepeatableMigrations].
+	// order an up run executes them, with what the database records for each,
+	// followed by the records no file of the directory carries, in identity
+	// order (see [RepeatableRecord.Orphaned]). It is empty when neither the
+	// directory nor the database holds any, and for a migrator whose provider
+	// does not load them; see [WithRepeatableMigrations].
 	Repeatables []RepeatableRecord `json:"repeatables,omitempty"`
 	// CheckpointVersion is the checkpoint that covers the migrations below it:
 	// the one a fresh database bootstraps from, or the newest one this database
@@ -1973,12 +1974,13 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		)
 	}
 
+	if err := m.createRepeatableRecord(ctx, repeatableWork); err != nil {
+		return err
+	}
+
 	m.logger.Info("Migrating up", "currentVersion", currentVersion, "totalMigrations", len(migrations))
-	checksDeferred, err := m.applyUpMigrations(ctx, migrationsToApply)
+	checksDeferred, err := m.applyUpBatch(ctx, opts, migrationsToApply)
 	if err != nil {
-		if opts.DiscardRolledBackFailure {
-			return errors.Join(err, m.discardRolledBackFailure(ctx, err))
-		}
 		return err
 	}
 	notifyChecksDeferredObserver(ctx, opts.ChecksDeferredObserver, checksDeferred)
@@ -1993,6 +1995,16 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 
 	m.logger.Info("All migrations applied successfully")
 	return nil
+}
+
+// applyUpBatch applies the selected versioned migrations. A failure the run
+// rolled back is discarded from the revision table when opts asks for that.
+func (m *Migrator) applyUpBatch(ctx context.Context, opts MigrateUpOptions, migrations []*Migration) ([]int64, error) {
+	checksDeferred, err := m.applyUpMigrations(ctx, migrations)
+	if err != nil && opts.DiscardRolledBackFailure {
+		return checksDeferred, errors.Join(err, m.discardRolledBackFailure(ctx, err))
+	}
+	return checksDeferred, err
 }
 
 // upStartVersionKey is the key of the version an up run starts from: the

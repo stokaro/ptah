@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strconv"
 	"time"
 
 	"ptah.run/core/sqlutil"
@@ -37,27 +36,23 @@ func (m *Migrator) repeatableTable() string {
 	return m.qualifiedMetadataTable(m.repeatableTableName())
 }
 
-// repeatableObjectName is the record's name as SQL Server's OBJECT_ID takes
-// it, built the way [Migrator.migrationLogObjectName] builds the log's.
-func (m *Migrator) repeatableObjectName() string {
-	table := m.quoteIdentifier(m.repeatableTableName())
-	if schema := m.metadataTableSchemaName(); schema != "" {
-		return m.quoteIdentifier(schema) + "." + table
-	}
-	return table
-}
-
 // readRepeatableRows reads the record, keyed by identity. A database that has
 // no record yet has no rows: the table is created by the first run that has
-// repeatable work, so a status or a dry run never creates it.
+// repeatable work, so a status or a dry run never creates it. A record table
+// another role owns is refused before it is read, as the revision table is,
+// because a SELECT on it can run what its owner attached to it.
 func (m *Migrator) readRepeatableRows(ctx context.Context) (map[string]repeatableRow, error) {
 	rows := make(map[string]repeatableRow)
-	exists, err := m.metadataTableExists(ctx, m.repeatableTableName())
+	name := m.repeatableTableName()
+	exists, err := m.metadataTableExists(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read the repeatable migration record: %w", err)
 	}
 	if !exists {
 		return rows, nil
+	}
+	if err := m.refuseForeignMetadataTable(ctx, name); err != nil {
+		return nil, err
 	}
 	query := "SELECT identity, checksum, state, attempt_checksum, attempt_order, transactional, " +
 		"attempted_at, applied_at, error FROM " + m.repeatableTable()
@@ -98,31 +93,26 @@ func (m *Migrator) scanRepeatableRow(scanner rowScanner) (repeatableRow, error) 
 	return row, nil
 }
 
-// ensureRepeatableTable creates the record when it is absent, under the same
-// refusals the revision table's own creation makes: a name the target would
-// truncate, and a table somebody else owns, before and after the create.
+// ensureRepeatableTable creates the record when it is absent. The checks that
+// need no write ran when the run was planned: the name the target would
+// truncate ([Migrator.refuseUnaddressableRepeatableRecord]) and an existing
+// table somebody else owns ([Migrator.readRepeatableRows]). The ownership
+// check runs again after the create, which is what catches a table created
+// under the name in between.
+//
+// The template takes {table} and {engine}. No engine that declares one names
+// {object}, so the migrator fills in nothing for it.
 func (m *Migrator) ensureRepeatableTable(ctx context.Context) error {
-	name := m.repeatableTableName()
-	if err := m.refuseTruncatedIdentifier(
-		name,
-		"the repeatable migration record for migrations table "+strconv.Quote(m.migrationsTableName()),
-		"shorten the migrations table name",
-	); err != nil {
-		return err
-	}
-	if err := m.refuseForeignMetadataTable(ctx, name); err != nil {
-		return err
-	}
 	ddl := expandTableStatement(
 		m.revisionTable().CreateRepeatables,
 		m.repeatableTable(),
-		sqlStringLiteral(m.repeatableObjectName()),
+		"",
 		revisionEngineClauseFor(m.connectionDialect(), m.migrationsEngine),
 	)
 	if _, err := m.conn.ExecContext(ctx, ddl); err != nil {
 		return fmt.Errorf("failed to create the repeatable migration record: %w", err)
 	}
-	return m.refuseForeignMetadataTable(ctx, name)
+	return m.refuseForeignMetadataTable(ctx, m.repeatableTableName())
 }
 
 // markRepeatableAttempt records that an attempt is about to run, before any

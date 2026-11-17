@@ -39,6 +39,9 @@ func TestParseRepeatableFileName_HappyPath(t *testing.T) {
 	}
 }
 
+// repeatableRemedy is how every refusal of a misspelled repeatable name ends.
+const repeatableRemedy = `; a repeatable migration is named R__<identity>\.sql with an identity of 1 to 255 ASCII letters, digits, underscores or hyphens; rename the file, or move it out of the migration directory`
+
 func TestParseRepeatableFileName_FailurePath(t *testing.T) {
 	t.Run("names that do not claim to be repeatable", func(t *testing.T) {
 		for _, filename := range []string{"0000000001_init.up.sql", "R_view.sql", "R__view.txt", "r__view.sql"} {
@@ -56,11 +59,11 @@ func TestParseRepeatableFileName_FailurePath(t *testing.T) {
 		filename string
 		wantErr  string
 	}{
-		{name: "extension in upper case", filename: "R__view.SQL", wantErr: `repeatable migration file "R__view.SQL": spell the extension .sql`},
-		{name: "direction suffix", filename: "R__view.up.sql", wantErr: `repeatable migration file "R__view.up.sql": the name after R__ takes .*`},
-		{name: "empty identity", filename: "R__.sql", wantErr: `repeatable migration file "R__.sql": the name after R__ takes .*`},
-		{name: "space", filename: "R__user names.sql", wantErr: `repeatable migration file "R__user names.sql": the name after R__ takes .*`},
-		{name: "too long", filename: "R__" + strings.Repeat("a", 256) + ".sql", wantErr: `repeatable migration file .*: the identity is longer than 255 characters`},
+		{name: "extension in upper case", filename: "R__view.SQL", wantErr: `repeatable migration file "R__view.SQL": the extension is spelled \.sql in lower case` + repeatableRemedy},
+		{name: "direction suffix", filename: "R__view.up.sql", wantErr: `repeatable migration file "R__view.up.sql": the identity after R__ takes only .*` + repeatableRemedy},
+		{name: "empty identity", filename: "R__.sql", wantErr: `repeatable migration file "R__.sql": the identity after R__ takes only .*` + repeatableRemedy},
+		{name: "space", filename: "R__user names.sql", wantErr: `repeatable migration file "R__user names.sql": the identity after R__ takes only .*` + repeatableRemedy},
+		{name: "too long", filename: "R__" + strings.Repeat("a", 256) + ".sql", wantErr: `repeatable migration file .*: the identity is longer than 255 characters` + repeatableRemedy},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -143,7 +146,12 @@ func TestDiscoverRepeatables_FailurePath(t *testing.T) {
 		{
 			name:    "misspelled repeatable name",
 			fsys:    repeatableFS("0000000001_init.up.sql", "R__views.up.sql"),
-			wantErr: `repeatable migration file "R__views.up.sql": .*`,
+			wantErr: `repeatable migration file "R__views.up.sql": .*` + repeatableRemedy,
+		},
+		{
+			name:    "misspelled repeatable name in a subdirectory",
+			fsys:    repeatableFS("0000000001_init.up.sql", "views/R__active.v2.sql"),
+			wantErr: `repeatable migration file "views/R__active\.v2\.sql": .*` + repeatableRemedy,
 		},
 	}
 	for _, tc := range tests {
@@ -171,4 +179,19 @@ func TestDiscover_LeavesRepeatablesOut(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(files, qt.HasLen, 0)
 	})
+}
+
+// A caller that reads only versioned work is refused over a misspelled
+// repeatable name too: a file that claims the prefix and is silently left out
+// would be a repeatable migration that never runs. The refusal names the file
+// and the valid form.
+func TestDiscover_RefusesAMisspelledRepeatable(t *testing.T) {
+	for _, format := range []migrationfile.DirFormat{migrationfile.DirFormatPtah, migrationfile.DirFormatAuto} {
+		t.Run(string(format), func(t *testing.T) {
+			c := qt.New(t)
+			files, err := migrationfile.Discover(repeatableFS("0000000001_init.up.sql", "R__views.up.sql"), format)
+			c.Assert(err, qt.ErrorMatches, `repeatable migration file "R__views.up.sql": .*`+repeatableRemedy)
+			c.Assert(files, qt.IsNil)
+		})
+	}
 }

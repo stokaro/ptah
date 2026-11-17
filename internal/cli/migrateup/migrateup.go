@@ -908,21 +908,33 @@ func (r *planReport) write() {
 }
 
 // writeRepeatableStatus prints the repeatable migrations that are not applied
-// as they stand, one line each, in the order an up run executes them. A
-// directory without repeatable migrations prints nothing.
+// as they stand, one line each, in the order an up run executes them, and the
+// records no file of the directory carries, which the run leaves alone. A
+// directory and a database without repeatable migrations print nothing.
 func writeRepeatableStatus(emit cliobs.Emitter, records []migrator.RepeatableRecord) {
-	if len(records) == 0 {
-		return
-	}
-	var waiting []migrator.RepeatableRecord
+	var files, waiting, orphaned []migrator.RepeatableRecord
 	for _, record := range records {
-		if record.State != migrator.RepeatableStateApplied {
+		switch {
+		case record.Orphaned:
+			orphaned = append(orphaned, record)
+		case record.State == migrator.RepeatableStateApplied:
+			files = append(files, record)
+		default:
+			files = append(files, record)
 			waiting = append(waiting, record)
 		}
 	}
-	emit.Printf("Repeatable migrations: %d, not applied as they stand: %d\n", len(records), len(waiting))
+	if len(files) > 0 {
+		emit.Printf("Repeatable migrations: %d, not applied as they stand: %d\n", len(files), len(waiting))
+	}
 	for _, record := range waiting {
 		emit.Printf("  %s %s %s\n", record.Identity, record.State, record.Checksum)
+	}
+	if len(orphaned) > 0 {
+		emit.Printf("Repeatable migration records with no file in the directory: %d\n", len(orphaned))
+	}
+	for _, record := range orphaned {
+		emit.Printf("  %s %s %s\n", record.Identity, record.State, record.AppliedChecksum)
 	}
 }
 

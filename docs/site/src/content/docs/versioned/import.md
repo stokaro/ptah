@@ -139,7 +139,9 @@ chooses what the import writes for it:
   `R__report.v2.sql` becomes `R__report_v2.sql`; two descriptions that land on
   one identity are refused. Ptah runs repeatable migrations in byte order of
   their identities, which can differ from Flyway's order for descriptions that
-  differ in punctuation or letter case.
+  differ in punctuation or letter case. Only PostgreSQL and SQLite run
+  repeatable migrations: against another engine `ptah migrations up` refuses the
+  directory, so import with the default there.
 - `--repeatables once`, the default, writes a one-time migration ordered after
   every versioned file, named `repeatable_<name>`. A directory imported this
   way keeps that meaning: importing again with `on-change` is a different

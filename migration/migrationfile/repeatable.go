@@ -55,23 +55,39 @@ const maxRepeatableIdentityLength = 255
 // rather than ignored. The identity takes ASCII letters, digits, underscores
 // and hyphens, at most 255 of them.
 func ParseRepeatableFileName(filename string) (*RepeatableFile, error) {
+	return parseRepeatableFileName(filename, filename)
+}
+
+// repeatableNameRemedy is what every refusal of a misspelled repeatable name
+// ends with: the valid form, and the two ways out for a file that is not
+// meant to be one.
+var repeatableNameRemedy = fmt.Sprintf(
+	"a repeatable migration is named %s<identity>.sql with an identity of 1 to %d ASCII letters, digits, "+
+		"underscores or hyphens; rename the file, or move it out of the migration directory",
+	RepeatableFilePrefix, maxRepeatableIdentityLength)
+
+// parseRepeatableFileName parses the base name filename and names the file as
+// display in a refusal, which is its path inside the directory when the walk
+// found it.
+func parseRepeatableFileName(filename, display string) (*RepeatableFile, error) {
 	rest, ok := strings.CutPrefix(filename, RepeatableFilePrefix)
 	if !ok || !strings.EqualFold(path.Ext(filename), ".sql") {
-		return nil, fmt.Errorf("%q: %w", filename, ErrNotRepeatableFileName)
+		return nil, fmt.Errorf("%q: %w", display, ErrNotRepeatableFileName)
 	}
 	identity, ok := strings.CutSuffix(rest, ".sql")
 	if !ok {
-		return nil, fmt.Errorf("repeatable migration file %q: spell the extension .sql", filename)
+		return nil, fmt.Errorf("repeatable migration file %q: the extension is spelled .sql in lower case; %s",
+			display, repeatableNameRemedy)
 	}
 	if !repeatableIdentityRe.MatchString(identity) {
 		return nil, fmt.Errorf(
-			"repeatable migration file %q: the name after %s takes ASCII letters, digits, underscores and hyphens, "+
-				"and a repeatable migration has no direction suffix",
-			filename, RepeatableFilePrefix)
+			"repeatable migration file %q: the identity after %s takes only ASCII letters, digits, underscores and "+
+				"hyphens, and a repeatable migration has no direction suffix; %s",
+			display, RepeatableFilePrefix, repeatableNameRemedy)
 	}
 	if len(identity) > maxRepeatableIdentityLength {
-		return nil, fmt.Errorf("repeatable migration file %q: the identity is longer than %d characters",
-			filename, maxRepeatableIdentityLength)
+		return nil, fmt.Errorf("repeatable migration file %q: the identity is longer than %d characters; %s",
+			display, maxRepeatableIdentityLength, repeatableNameRemedy)
 	}
 	return &RepeatableFile{Identity: identity}, nil
 }
@@ -108,7 +124,7 @@ func collectRepeatables(sqlFiles []string) ([]RepeatableFile, error) {
 	var repeatables []RepeatableFile
 	folded := make(map[string]string)
 	for _, p := range sqlFiles {
-		parsed, err := ParseRepeatableFileName(path.Base(p))
+		parsed, err := parseRepeatableFileName(path.Base(p), p)
 		if errors.Is(err, ErrNotRepeatableFileName) {
 			continue
 		}

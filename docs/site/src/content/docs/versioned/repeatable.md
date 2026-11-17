@@ -46,8 +46,8 @@ case are refused, because a case-insensitive filesystem cannot hold both. The
 file may sit in a subdirectory; its identity is still the file name alone.
 
 The database records the migration under its identity, so renaming the file
-makes a new repeatable migration. The record of the old name stays and is
-ignored.
+makes a new repeatable migration, which the next up run executes. The record of
+the old name stays; see [Remove or rename one](#remove-or-rename-one).
 
 A repeatable migration has no down file and takes no `-- +ptah check`
 directive. It does take `-- +ptah no_transaction` and the timeout directives a
@@ -121,10 +121,12 @@ Repeatable Migrations: 1
 ```
 
 The states are `pending` (no record), `changed` (the file no longer hashes to
-the applied digest), `applied`, `failed` and `running`. With `--json`, the
-status document carries them under `repeatables`, each with `identity`,
-`path`, `checksum`, `applied_checksum`, `state`, and what the last attempt
-recorded.
+the applied digest), `applied`, `failed`, `running`, and `orphaned` for a
+record whose file is no longer in the directory. With `--json`, the status
+document carries them under `repeatables`, each with `identity`, `path`,
+`checksum`, `applied_checksum`, `state`, `orphaned`, and what the last attempt
+recorded. An orphaned record is listed with `(no file in the directory)` and is
+not a pending change.
 
 `ptah migrations up --dry-run` selects under the migration lock as a real run
 does, prints the repeatable work it would run, and runs and records nothing:
@@ -162,9 +164,29 @@ digest that attempt executed, its position in that run, whether it ran in a
 transaction, the run identifier, when it started, when content last applied,
 and the error of a failed attempt.
 
-The first run that has repeatable work creates the table. A status or a dry run
-never does. Schema comparisons and generation leave it out, as they leave out
-the revision table.
+The first run that has repeatable work creates the table, before its first
+versioned migration runs, so a database that refuses the table, for example for
+a missing `CREATE` privilege, refuses it before anything changed. A status or a
+dry run never creates it. Two refusals come before anything runs, on a dry run
+as on an apply: a migrations table name that leaves the record over the
+engine's identifier limit (63 bytes on PostgreSQL), and a record table that
+another role owns, which is refused before it is read, as the revision table
+is. A dry run cannot predict a missing privilege, because it creates nothing.
+
+Schema comparisons and generation leave the table out, as they leave out the
+revision table.
+
+The record says what ran, not what the database holds now. A view dropped by
+hand, outside a migration, leaves its row `applied`, and the next run does
+nothing for it. To run the file again, delete its row, and the next up run
+executes it as new:
+
+```sql
+DELETE FROM schema_migrations_repeatable WHERE identity = 'account_names';
+```
+
+Any edit of the file works too, since the run compares digests; a comment line
+is enough, followed by `ptah migrations hash`.
 
 ## When one fails
 
@@ -193,6 +215,31 @@ ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations --allo
 `--allow-dirty` runs the repeatable migration again from its first statement.
 When it ran without a transaction, check what it left behind before the retry.
 
+A failed or running record whose file is no longer in the directory cannot run
+again, so it blocks every up run, `--allow-dirty` included. Check what it left
+behind, then delete its row as [below](#remove-or-rename-one) shows.
+
+## Remove or rename one
+
+Deleting a repeatable migration's file does not undo it: the view or function
+it created stays, and so does its row, which status lists as `orphaned`. An up
+run leaves an orphaned record alone and logs a warning naming it. A rollback is
+refused while the record holds any row, orphaned rows included, because rolling
+back under an object the record still claims leaves a row that says `applied`
+over a schema without the object.
+
+To remove one for good, drop what it created in a new versioned migration, then
+delete its row from the record table:
+
+```sql
+DELETE FROM schema_migrations_repeatable WHERE identity = 'account_names';
+```
+
+A rename is a removal and an addition. The next up run executes the file under
+its new identity, so its body must run against a database where the old one
+already did, and the row of the old identity stays orphaned until it is
+deleted.
+
 ## What a repeatable migration refuses
 
 A repeatable migration is written against the latest schema, so Ptah never runs
@@ -203,10 +250,10 @@ script. Each refusal below comes before anything changes:
   `--limit` that would leave a versioned migration unapplied is refused while
   repeatable work is pending, with the work named. Without pending repeatable
   work, a bounded run behaves as before.
-- **A rollback.** `ptah migrations down` refuses a database that records any
-  repeatable migration of the directory. Drop what the repeatable migrations
-  created, delete their rows from the record table, and then roll back, or roll
-  forward with a new migration instead.
+- **A rollback.** `ptah migrations down` refuses a database whose record holds
+  any row, including the row of a file that was deleted or renamed. Drop what
+  the repeatable migrations created, delete their rows from the record table,
+  and then roll back, or roll forward with a new migration instead.
 - **A drift check.** `--check-drift` replays the versioned history on the
   shadow database, which does not create what repeatable migrations create, so
   it is refused over a directory that holds one.
@@ -215,14 +262,18 @@ script. Each refusal below comes before anything changes:
 - **A runner that opens its own transactions.** Under
   `migration.runner: golang-migrate` a repeatable migration would run in a
   transaction Ptah opens, so the run is refused.
-- **An engine other than PostgreSQL or SQLite.**
+- **An engine other than PostgreSQL or SQLite**, and a connection through a
+  provider rather than a built-in driver, which does not expose the SQL the
+  record is kept with.
 
 ## Importing from Flyway
 
 Flyway's `R__<description>.sql` is a repeatable migration. `ptah migrations
 import --repeatables on-change` writes it as a Ptah repeatable migration with
-the same body and no down file. The default, `--repeatables once`, writes it as
-a one-time migration ordered after the versioned ones, which does not run again
+the same body and no down file. Only PostgreSQL and SQLite run the result;
+against another engine `ptah migrations up` refuses the directory, so import
+with the default there. The default, `--repeatables once`, writes it as a
+one-time migration ordered after the versioned ones, which does not run again
 when its body changes. See [Import from another tool](../import/).
 
 ## The compatibility surface
@@ -236,7 +287,8 @@ migrations; stokaro/ptah#6152 records the gap.
   record table keeps the last attempt of each repeatable migration.
 - `ptah migrations lint` and the destructive gate of `ptah migrations up` read
   versioned files only.
-- There is no repair verb for a repeatable migration. A record row can be
-  deleted by hand, which makes the next run treat the file as new.
+- There is no repair verb for a repeatable migration. A record row is deleted
+  with SQL, as [Remove or rename one](#remove-or-rename-one) shows, which makes
+  the next run treat a file of that identity as new.
 
 stokaro/ptah#6153 records these.

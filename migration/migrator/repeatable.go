@@ -42,6 +42,13 @@ const (
 	// transaction it took no effect; without one, some of its statements may
 	// have.
 	RepeatableStateFailed = "failed"
+	// RepeatableStateOrphaned is a record whose identity no file of the
+	// directory carries any more, because the file was deleted or renamed,
+	// and whose last attempt applied. An up run leaves it alone, and a
+	// rollback is refused while it exists. A record without a file whose last
+	// attempt did not finish keeps the state [RepeatableStateFailed] or
+	// [RepeatableStateRunning] instead.
+	RepeatableStateOrphaned = "orphaned"
 )
 
 // Reasons a [RepeatableWork] gives for running a repeatable migration.
@@ -75,15 +82,21 @@ type RepeatableWork struct {
 	Reason string `json:"reason"`
 }
 
-// RepeatableRecord is one repeatable migration of the directory, with what
-// the database records for it.
+// RepeatableRecord is one repeatable migration of the directory, or one
+// record of the database that no file of the directory carries, with what the
+// database records for it.
 type RepeatableRecord struct {
 	// Identity names the repeatable migration, as its file name spells it.
 	Identity string `json:"identity"`
-	// Path is the file's slash-separated path in the migration directory.
+	// Path is the file's slash-separated path in the migration directory,
+	// empty for an orphaned record.
 	Path string `json:"path"`
-	// Checksum is the h1 digest of the file as it is now.
+	// Checksum is the h1 digest of the file as it is now, empty for an
+	// orphaned record.
 	Checksum string `json:"checksum"`
+	// Orphaned reports a record whose identity no file of the directory
+	// carries: the file was deleted or renamed after it ran.
+	Orphaned bool `json:"orphaned,omitempty"`
 	// AppliedChecksum is the digest of the content that last applied, empty
 	// when none has.
 	AppliedChecksum string `json:"applied_checksum,omitempty"`
@@ -107,8 +120,15 @@ type RepeatableRecord struct {
 }
 
 // dirty reports whether the record's last attempt has no successful outcome.
+// A state this build does not know counts as dirty, so it blocks a run rather
+// than being read as finished.
 func (r RepeatableRecord) dirty() bool {
-	return r.State != RepeatableStatePending && r.State != RepeatableStateChanged && r.State != RepeatableStateApplied
+	switch r.State {
+	case RepeatableStatePending, RepeatableStateChanged, RepeatableStateApplied, RepeatableStateOrphaned:
+		return false
+	default:
+		return true
+	}
 }
 
 // WithRepeatableMigrations makes the provider load the repeatable migrations
@@ -140,7 +160,17 @@ type repeatableMigration struct {
 // repeatableSource is implemented by a provider that holds repeatable
 // migrations.
 type repeatableSource interface {
+	// loadsRepeatableMigrations reports whether the provider reads repeatable
+	// migrations at all, which is what lets a record without a file be told
+	// apart from a record of a file the provider did not look for.
+	loadsRepeatableMigrations() bool
 	repeatableMigrations() []*repeatableMigration
+}
+
+// loadsRepeatableMigrations reports whether [WithRepeatableMigrations] was
+// given.
+func (p *FSMigrationProvider) loadsRepeatableMigrations() bool {
+	return p.loadsRepeatables
 }
 
 // repeatableMigrations returns the repeatable migrations the provider loaded,
@@ -213,31 +243,40 @@ type RepeatableMigrationsUnsupportedError struct {
 	Reason string
 }
 
-// Error names what stands in the way.
+// Error names the dialect, when the engine is what stands in the way, and the
+// reason.
 func (e *RepeatableMigrationsUnsupportedError) Error() string {
+	if e.Dialect != "" {
+		return "this directory holds repeatable migrations, which this run cannot execute on " + e.Dialect + ": " + e.Reason
+	}
 	return "this directory holds repeatable migrations, which this run cannot execute: " + e.Reason
 }
 
 // DirtyRepeatableError reports repeatable migrations whose last attempt
 // failed or has no outcome. An up run refuses before it changes anything while
 // one exists, as it does over a dirty revision; [MigrateUpOptions.AllowDirty]
-// runs them again instead.
+// runs them again instead. A dirty record that no file of the directory
+// carries is refused under AllowDirty too, because there is nothing to run
+// again.
 type DirtyRepeatableError struct {
 	// Records are the dirty repeatable migrations, in identity order.
 	Records []RepeatableRecord
+	// Table is the quoted name of the table that records them.
+	Table string
 }
 
 // Error names each dirty repeatable migration and what its record says.
 func (e *DirtyRepeatableError) Error() string {
 	parts := make([]string, 0, len(e.Records))
 	for _, record := range e.Records {
-		parts = append(parts, describeDirtyRepeatable(record))
+		parts = append(parts, describeDirtyRepeatable(record, e.Table))
 	}
 	return "repeatable migrations did not finish: " + strings.Join(parts, "; ")
 }
 
-// describeDirtyRepeatable is one dirty record as a sentence.
-func describeDirtyRepeatable(record RepeatableRecord) string {
+// describeDirtyRepeatable is one dirty record as a sentence. table is where
+// the row of an orphaned record is deleted.
+func describeDirtyRepeatable(record RepeatableRecord, table string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s (%s) ", record.Identity, record.AttemptChecksum)
 	switch record.State {
@@ -250,6 +289,10 @@ func describeDirtyRepeatable(record RepeatableRecord) string {
 	}
 	if record.NoTransaction {
 		b.WriteString(", and it ran without a transaction, so part of it may have taken effect")
+	}
+	if record.Orphaned {
+		fmt.Fprintf(&b, "; no file of the directory carries it, so it cannot run again: check what it left behind, "+
+			"then delete its row from %s", table)
 	}
 	return b.String()
 }
@@ -282,11 +325,12 @@ func (e *RepeatableBoundError) Error() string {
 }
 
 // RepeatableRollbackError reports a rollback of a database that records
-// repeatable migrations of this directory. A repeatable migration has no
-// rollback, and its current definition was written against the latest
-// schema, so the rollback is refused before it changes anything.
+// repeatable migrations, whether or not the directory still holds their files.
+// A repeatable migration has no rollback, and its definition was written
+// against the latest schema, so the rollback is refused before it changes
+// anything.
 type RepeatableRollbackError struct {
-	// Identities are the recorded repeatable migrations, in identity order.
+	// Identities are every identity the record holds, in identity order.
 	Identities []string
 	// Table is the quoted name of the table that records them.
 	Table string

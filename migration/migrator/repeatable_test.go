@@ -287,6 +287,62 @@ func TestRepeatableMigrations_HappyPath(t *testing.T) {
 		c.Assert(result.PlannedRepeatables, qt.DeepEquals, plan.Repeatables)
 		c.Assert(result.AppliedRepeatables, qt.DeepEquals, []string{"user_names"})
 	})
+
+	t.Run("the record of a deleted file is reported as orphaned, and an up run leaves it alone", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		_, err := runRepeatableUp(c, dbPath, repeatableFiles(map[string]string{"R__user_names.sql": repeatableViewUp}),
+			migrator.MigrateUpOptions{})
+		c.Assert(err, qt.IsNil)
+		deleted := repeatableFiles(nil)
+
+		plan, err := runRepeatableUp(c, dbPath, deleted, migrator.MigrateUpOptions{})
+		c.Assert(err, qt.IsNil)
+		c.Assert(plan.Repeatables, qt.HasLen, 0)
+		c.Assert(repeatableAudit(c, dbPath), qt.DeepEquals, []string{"user_names"})
+		status := repeatableStatus(c, dbPath, deleted)
+		c.Assert(status.HasPendingChanges, qt.IsFalse)
+		c.Assert(status.Repeatables, qt.HasLen, 1)
+		c.Assert(status.Repeatables[0].Identity, qt.Equals, "user_names")
+		c.Assert(status.Repeatables[0].State, qt.Equals, migrator.RepeatableStateOrphaned)
+		c.Assert(status.Repeatables[0].Orphaned, qt.IsTrue)
+		c.Assert(status.Repeatables[0].Path, qt.Equals, "")
+		c.Assert(status.Repeatables[0].AppliedChecksum, qt.Equals, h1(repeatableViewUp))
+	})
+
+	t.Run("a renamed file runs under its new identity and leaves the old record orphaned", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		_, err := runRepeatableUp(c, dbPath, repeatableFiles(map[string]string{"R__user_names.sql": repeatableViewUp}),
+			migrator.MigrateUpOptions{})
+		c.Assert(err, qt.IsNil)
+		renamed := repeatableFiles(map[string]string{"R__names.sql": repeatableViewUp})
+
+		plan, err := runRepeatableUp(c, dbPath, renamed, migrator.MigrateUpOptions{})
+		c.Assert(err, qt.IsNil)
+		c.Assert(plan.Repeatables, qt.HasLen, 1)
+		c.Assert(plan.Repeatables[0].Identity, qt.Equals, "names")
+		c.Assert(plan.Repeatables[0].Reason, qt.Equals, migrator.RepeatableReasonNew)
+		c.Assert(repeatableAudit(c, dbPath), qt.DeepEquals, []string{"user_names", "user_names"})
+		records := repeatableStatus(c, dbPath, renamed).Repeatables
+		c.Assert(records, qt.HasLen, 2)
+		c.Assert(records[0].Identity, qt.Equals, "names")
+		c.Assert(records[0].State, qt.Equals, migrator.RepeatableStateApplied)
+		c.Assert(records[1].Identity, qt.Equals, "user_names")
+		c.Assert(records[1].State, qt.Equals, migrator.RepeatableStateOrphaned)
+	})
+
+	t.Run("a statement that cannot run in a transaction runs in a file marked no_transaction", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		fsys := repeatableFiles(map[string]string{"R__vacuum.sql": "-- +ptah no_transaction\nVACUUM;\n"})
+
+		_, err := runRepeatableUp(c, dbPath, fsys, migrator.MigrateUpOptions{})
+		c.Assert(err, qt.IsNil)
+		record := repeatableStatus(c, dbPath, fsys).Repeatables[0]
+		c.Assert(record.State, qt.Equals, migrator.RepeatableStateApplied)
+		c.Assert(record.NoTransaction, qt.IsTrue)
+	})
 }
 
 func TestRepeatableMigrations_FailurePath(t *testing.T) {
@@ -410,4 +466,92 @@ func TestRepeatableMigrations_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorAs, new(*migrator.ChecksumMismatchError))
 		c.Assert(repeatableAudit(c, dbPath), qt.DeepEquals, []string{"user_names"})
 	})
+
+	t.Run("a rollback is refused while the record holds a row no file carries", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		_, err := runRepeatableUp(c, dbPath, repeatableFiles(map[string]string{"R__user_names.sql": repeatableViewUp}),
+			migrator.MigrateUpOptions{})
+		c.Assert(err, qt.IsNil)
+
+		_, mig := openRepeatableMigrator(c, dbPath, repeatableFiles(nil))
+		err = mig.MigrateDownTo(c.Context(), 0)
+		c.Assert(err, qt.ErrorAs, new(*migrator.RepeatableRollbackError))
+		c.Assert(err, qt.ErrorMatches, `cannot roll back: this database records repeatable migrations user_names, .*`)
+		c.Assert(repeatableTableCount(c, dbPath, "users"), qt.Equals, 1)
+	})
+
+	t.Run("a rollback through a provider that does not load repeatable migrations is refused too", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		_, err := runRepeatableUp(c, dbPath, repeatableFiles(map[string]string{"R__user_names.sql": repeatableViewUp}),
+			migrator.MigrateUpOptions{})
+		c.Assert(err, qt.IsNil)
+		conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
+		c.Assert(err, qt.IsNil)
+		c.Cleanup(func() { _ = conn.Close() })
+		mig, err := migrator.NewFSMigrator(conn, repeatableFiles(nil))
+		c.Assert(err, qt.IsNil)
+
+		err = mig.MigrateDownTo(c.Context(), 0)
+		c.Assert(err, qt.ErrorAs, new(*migrator.RepeatableRollbackError))
+		c.Assert(repeatableTableCount(c, dbPath, "users"), qt.Equals, 1)
+	})
+
+	t.Run("a dirty record no file carries blocks every up run, a retry included", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		_, err := runRepeatableUp(c, dbPath, repeatableFiles(map[string]string{"R__user_names.sql": repeatableFailingUp}),
+			migrator.MigrateUpOptions{})
+		c.Assert(err, qt.ErrorAs, new(*migrator.RepeatableMigrationError))
+		deleted := repeatableFiles(map[string]string{"R__other.sql": repeatableAuditUp})
+
+		_, err = runRepeatableUp(c, dbPath, deleted, migrator.MigrateUpOptions{AllowDirty: true})
+		c.Assert(err, qt.ErrorAs, new(*migrator.DirtyRepeatableError))
+		c.Assert(err, qt.ErrorMatches,
+			`(?s)repeatable migrations did not finish: user_names .*no file of the directory carries it, so it cannot run again.*"schema_migrations_repeatable".*`)
+		c.Assert(repeatableAudit(c, dbPath), qt.HasLen, 0)
+		status := repeatableStatus(c, dbPath, deleted)
+		c.Assert(status.HasPendingChanges, qt.IsTrue)
+		c.Assert(status.Repeatables[1].State, qt.Equals, migrator.RepeatableStateFailed)
+		c.Assert(status.Repeatables[1].Orphaned, qt.IsTrue)
+	})
+
+	t.Run("a statement that cannot run in a transaction is refused before any migration runs", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+
+		_, err := runRepeatableUp(c, dbPath, repeatableFiles(map[string]string{"R__vacuum.sql": "VACUUM;\n"}),
+			migrator.MigrateUpOptions{})
+		c.Assert(err, qt.ErrorMatches, `(?s).*R__vacuum.sql cannot run inside a transaction: .*VACUUM.*`)
+		c.Assert(repeatableTableCount(c, dbPath, "users"), qt.Equals, 0)
+		c.Assert(repeatableTableCount(c, dbPath, "schema_migrations_repeatable"), qt.Equals, 0)
+	})
+}
+
+// The engine refusal names the engine, since the remedy depends on it; a
+// refusal for another reason has no engine to name.
+func TestRepeatableMigrationsUnsupportedError_Error(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *migrator.RepeatableMigrationsUnsupportedError
+		want string
+	}{
+		{
+			name: "engine",
+			err:  &migrator.RepeatableMigrationsUnsupportedError{Dialect: "mysql", Reason: "Ptah runs repeatable migrations on PostgreSQL and SQLite only"},
+			want: "this directory holds repeatable migrations, which this run cannot execute on mysql: Ptah runs repeatable migrations on PostgreSQL and SQLite only",
+		},
+		{
+			name: "another reason",
+			err:  &migrator.RepeatableMigrationsUnsupportedError{Reason: "the Atlas-compatible revision format keeps no record of them"},
+			want: "this directory holds repeatable migrations, which this run cannot execute: the Atlas-compatible revision format keeps no record of them",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(tc.err.Error(), qt.Equals, tc.want)
+		})
+	}
 }

@@ -36,6 +36,20 @@ func TestMigrateStatusRepeatables_HappyPath(t *testing.T) {
 		c.Assert(out, qt.Contains, "Repeatable Migrations: 1\n  widget_ids applied h1:")
 		c.Assert(out, qt.Contains, "Status: ✅ Database is up to date")
 	})
+
+	t.Run("the record of a deleted file is listed as orphaned and is not a pending change", func(t *testing.T) {
+		c := qt.New(t)
+		dir := writeRepeatableStatusDirectory(c, statusRepeatableView)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		applyStatusMigrations(c, dir, dbPath)
+		c.Assert(os.Remove(filepath.Join(dir, "R__widget_ids.sql")), qt.IsNil)
+
+		out, err := runStatus(c, "--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--exit-code")
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(out, qt.Contains, "Repeatable Migrations: 1\n  widget_ids orphaned h1:")
+		c.Assert(out, qt.Contains, " (no file in the directory)\n")
+		c.Assert(out, qt.Contains, "Status: ✅ Database is up to date")
+	})
 }
 
 func TestMigrateStatusRepeatables_FailurePath(t *testing.T) {

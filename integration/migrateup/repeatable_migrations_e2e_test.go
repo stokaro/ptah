@@ -262,6 +262,32 @@ func TestRepeatableMigrationsE2E_HappyPath(t *testing.T) {
 		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
 		c.Assert(r.status(c).Repeatables[0].State, qt.Equals, migrator.RepeatableStateApplied)
 	})
+
+	t.Run("a renamed repeatable runs under its new identity and the old record is reported as orphaned", func(t *testing.T) {
+		c := qt.New(t)
+		r := newRepeatableE2ETarget(c)
+		result, _ := r.up(c)
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(os.Rename(filepath.Join(r.dir, "R__account_names.sql"), filepath.Join(r.dir, "R__account_names_v2.sql")), qt.IsNil)
+
+		result, document := r.up(c)
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(document.AppliedRepeatables, qt.DeepEquals, []string{"account_names_v2"})
+		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1", "v1"})
+		records := r.status(c).Repeatables
+		c.Assert(records, qt.HasLen, 2)
+		c.Assert(records[0].Identity, qt.Equals, "account_names_v2")
+		c.Assert(records[0].State, qt.Equals, migrator.RepeatableStateApplied)
+		c.Assert(records[1].Identity, qt.Equals, "account_names")
+		c.Assert(records[1].State, qt.Equals, migrator.RepeatableStateOrphaned)
+		c.Assert(records[1].Orphaned, qt.IsTrue)
+
+		result = r.ptah(c, "migrations", "down", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
+		c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
+		c.Assert(result.Stderr, qt.Matches,
+			`(?s).*cannot roll back: this database records repeatable migrations account_names, account_names_v2,.*`)
+		c.Assert(userTables(c, r.conn), qt.Contains, "accounts")
+	})
 }
 
 func TestRepeatableMigrationsE2E_FailurePath(t *testing.T) {
@@ -343,6 +369,26 @@ func TestRepeatableMigrationsE2E_FailurePath(t *testing.T) {
 		c.Assert(result.Stderr, qt.Matches, `(?s).*cannot roll back: this database records repeatable migrations account_names.*`)
 		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name"})
 		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
+	})
+
+	t.Run("a rollback after the repeatable file was deleted is refused, and the record stays", func(t *testing.T) {
+		c := qt.New(t)
+		r := newRepeatableE2ETarget(c)
+		result, _ := r.up(c)
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(os.Remove(filepath.Join(r.dir, "R__account_names.sql")), qt.IsNil)
+		result = r.ptah(c, "migrations", "hash", "--dir", r.dir)
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+
+		result = r.ptah(c, "migrations", "down", "--db-url", r.url, "--migrations-dir", r.dir, "--confirm")
+		c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
+		c.Assert(result.Stderr, qt.Matches,
+			`(?s).*cannot roll back: this database records repeatable migrations account_names, .*"schema_migrations_repeatable".*`)
+		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name"})
+		c.Assert(userTables(c, r.conn), qt.Contains, "accounts")
+		records := r.status(c).Repeatables
+		c.Assert(records, qt.HasLen, 1)
+		c.Assert(records[0].State, qt.Equals, migrator.RepeatableStateOrphaned)
 	})
 }
 
