@@ -112,6 +112,8 @@ const createApplyLog = `CREATE TABLE IF NOT EXISTS {table} (
 // until one has; the attempt columns describe the last attempt, whichever way
 // it went. An engine states it only where the migrator's repeatable path is
 // measured, so leaving it out is what refuses the path elsewhere.
+// integration/migrator/repeatable_engines_live_test.go runs that path on every
+// server engine that states one.
 const createRepeatables = `CREATE TABLE IF NOT EXISTS {table} (
     identity VARCHAR(255) NOT NULL PRIMARY KEY,
     checksum VARCHAR(64) NOT NULL DEFAULT '',
@@ -187,31 +189,22 @@ func postgresFamilyRevisionTable() descriptor.RevisionTable {
     version BIGINT NOT NULL,
     recorded_at TIMESTAMPTZ NOT NULL
 )`,
-		CreateLog:      createLog,
-		CreateApplyLog: createApplyLog,
-		CreateSchema:   createSchema,
-		FirstRow:       "limit",
-		RowLock:        "for-update",
-		Update:         updateRevision,
-		Respell:        respellRevision(),
-		Conflict:       conflictOnConflict,
-		ConflictAtlas:  conflictOnConflictAtlas,
-		UpsertTag:      upsertTagOnConflict,
-		VersionCast:    "BIGINT",
-		VersionLiteral: "dollar",
-		DerivedTableAs: " AS",
-		AtlasSchema:    "search-path",
+		CreateLog:         createLog,
+		CreateApplyLog:    createApplyLog,
+		CreateRepeatables: createRepeatables,
+		CreateSchema:      createSchema,
+		FirstRow:          "limit",
+		RowLock:           "for-update",
+		Update:            updateRevision,
+		Respell:           respellRevision(),
+		Conflict:          conflictOnConflict,
+		ConflictAtlas:     conflictOnConflictAtlas,
+		UpsertTag:         upsertTagOnConflict,
+		VersionCast:       "BIGINT",
+		VersionLiteral:    "dollar",
+		DerivedTableAs:    " AS",
+		AtlasSchema:       "search-path",
 	}
-}
-
-// postgresRevisionTable is the PostgreSQL family's tables with the record of
-// repeatable migrations, which the repeatable live tests measure on PostgreSQL.
-// CockroachDB and YugabyteDB share every other statement and leave it out until
-// a test runs the path against them.
-func postgresRevisionTable() descriptor.RevisionTable {
-	table := postgresFamilyRevisionTable()
-	table.CreateRepeatables = createRepeatables
-	return table
 }
 
 // GenericRevisionTable is what the migrator writes for an engine whose

@@ -13,11 +13,13 @@ import (
 // that keep a repeatable migration record. The migrator runs repeatable
 // migrations only where a descriptor states the table and refuses a directory
 // holding one everywhere else, so a descriptor that gains the statement is an
-// engine the repeatable tests have to reach: SQLite in process, PostgreSQL in
-// the integration contour.
+// engine the repeatable tests have to reach: SQLite in process, and every
+// server engine in integration/migrator/repeatable_engines_live_test.go.
 func TestDescriptors_StateTheRepeatableRecordWhereItIsMeasured(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(enginesWithRepeatableRecord(), qt.DeepEquals, []string{platform.Postgres, platform.SQLite})
+	c.Assert(enginesWithRepeatableRecord(), qt.DeepEquals, []string{
+		platform.Postgres, platform.MySQL, platform.MariaDB, platform.SQLite, platform.CockroachDB, platform.YugabyteDB,
+	})
 }
 
 // enginesWithRepeatableRecord names the descriptors that state the record, in

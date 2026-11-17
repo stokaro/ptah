@@ -63,8 +63,8 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
   `repeatable_<desc>`) by default, and a later source change becomes a new Ptah
   migration rather than a re-run. With `--repeatables on-change` it is imported
   as a Ptah repeatable migration, `R__<identity>.sql`, which `ptah migrations up`
-  runs again whenever its content changes. Only PostgreSQL and SQLite run
-  repeatable migrations; against another engine `up` refuses the directory.
+  runs again whenever its content changes. On an engine that does not run
+  repeatable migrations, `up` refuses the directory.
 - **Liquibase specifics.** All four serializations are read, and a changelog
   construct that cannot become a migration file is refused by name. See
   [Liquibase specifics](#liquibase-specifics) below.

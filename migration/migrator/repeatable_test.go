@@ -540,8 +540,8 @@ func TestRepeatableMigrationsUnsupportedError_Error(t *testing.T) {
 	}{
 		{
 			name: "engine",
-			err:  &migrator.RepeatableMigrationsUnsupportedError{Dialect: "mysql", Reason: "Ptah runs repeatable migrations on PostgreSQL and SQLite only"},
-			want: "this directory holds repeatable migrations, which this run cannot execute on mysql: Ptah runs repeatable migrations on PostgreSQL and SQLite only",
+			err:  &migrator.RepeatableMigrationsUnsupportedError{Dialect: "sqlserver", Reason: "Ptah keeps no record of repeatable migrations on this engine"},
+			want: "this directory holds repeatable migrations, which this run cannot execute on sqlserver: Ptah keeps no record of repeatable migrations on this engine",
 		},
 		{
 			name: "another reason",
