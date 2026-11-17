@@ -149,22 +149,34 @@ func TestRead_MaterializedViewIndex_FailurePath(t *testing.T) {
 			wantErr: `line 4, column 1: ALTER INDEX mv_a RENAME TO mv: the schema already holds a relation named mv`,
 		},
 		{
+			// relation "mv_a" already exists.
+			name:    "ALTER INDEX RENAME TO, a table's index onto the view's index",
+			sql:     viewIndexFixture + "CREATE INDEX o_a ON o (a);\nALTER INDEX o_a RENAME TO mv_a;",
+			wantErr: `line 5, column 1: ALTER INDEX o_a RENAME TO mv_a: the schema already holds a relation named mv_a`,
+		},
+		{
+			// relation "o_a" already exists.
+			name:    "ALTER INDEX RENAME TO, the view's index onto a table's index",
+			sql:     viewIndexFixture + "CREATE INDEX o_a ON o (a);\nALTER INDEX mv_a RENAME TO o_a;",
+			wantErr: `line 5, column 1: ALTER INDEX mv_a RENAME TO o_a: the schema already holds a relation named o_a`,
+		},
+		{
 			// relation "t" does not exist.
 			name:    "CREATE INDEX on a bare name only another schema's table carries",
 			sql:     "CREATE SCHEMA s2;\nCREATE TABLE s2.t (a int);\nCREATE INDEX t_a ON t (a);",
-			wantErr: `line 3, column 1: CREATE INDEX t_a ON t names a relation its schema does not declare; s2.t is in another schema`,
+			wantErr: `line 3, column 1: the schema model has no place for this statement: CREATE INDEX t_a ON t names a relation its schema does not declare; s2.t is in another schema`,
 		},
 		{
 			// relation "smv" does not exist.
 			name:    "CREATE INDEX on a bare name only another schema's view carries",
 			sql:     "CREATE SCHEMA s2;\nCREATE TABLE o (a int);\nCREATE MATERIALIZED VIEW s2.smv AS SELECT a FROM o;\nCREATE INDEX smv_a ON smv (a);",
-			wantErr: `line 4, column 1: CREATE INDEX smv_a ON smv names a relation its schema does not declare; s2.smv is in another schema`,
+			wantErr: `line 4, column 1: the schema model has no place for this statement: CREATE INDEX smv_a ON smv names a relation its schema does not declare; s2.smv is in another schema`,
 		},
 		{
 			// relation "s3.t" does not exist.
 			name:    "CREATE INDEX on a schema that does not hold the table",
 			sql:     "CREATE SCHEMA s2;\nCREATE SCHEMA s3;\nCREATE TABLE s2.t (a int);\nCREATE INDEX t_a ON s3.t (a);",
-			wantErr: `line 4, column 1: CREATE INDEX t_a ON s3.t names a relation its schema does not declare; s2.t is in another schema`,
+			wantErr: `line 4, column 1: the schema model has no place for this statement: CREATE INDEX t_a ON s3.t names a relation its schema does not declare; s2.t is in another schema`,
 		},
 	}
 	for _, test := range tests {
@@ -180,15 +192,17 @@ func TestRead_MaterializedViewIndex_FailurePath(t *testing.T) {
 	}
 }
 
-// A refusal of CREATE INDEX on a relation its schema does not hold is a
-// refusal of an undeclared object, which a load that read other sources beside
-// the document says may be theirs.
+// A refusal of CREATE INDEX on a relation its schema does not hold is the
+// refusal ALTER TABLE gives a table the schema does not declare: a statement
+// the schema model has no place for, and one about an undeclared object, which
+// a load that read other sources beside the document says may be theirs.
 func TestRead_CreateIndexOnAnotherSchemasRelationIsUndeclared(t *testing.T) {
 	c := qt.New(t)
 
 	_, _, err := sqlschema.Read([]byte("CREATE SCHEMA s2;\nCREATE TABLE s2.t (a int);\nCREATE INDEX t_a ON t (a);"), "postgres")
 
 	c.Assert(err, qt.ErrorIs, sqlext.ErrUndeclared)
+	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 }
 
 // readViewIndexOnto reads first, then second onto what first declared, as two
@@ -230,6 +244,74 @@ func TestReadOnto_MaterializedViewIndex_HappyPath(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(readViewIndexOnto(c, first, test.second), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A bare name in CREATE INDEX ... ON is a relation of the default schema on
+// every engine that has one: dbo on SQL Server and main on SQLite, so a table
+// declared with that schema is found by its bare name.
+func TestRead_CreateIndexByEngine_HappyPath(t *testing.T) {
+	tests := []struct {
+		dialect string
+		sql     string
+		want    map[string]string
+	}{
+		{dialect: "sqlserver", sql: "CREATE TABLE dbo.t (a int);\nCREATE INDEX i ON t (a);", want: map[string]string{"i": "dbo.t"}},
+		{dialect: "sqlite", sql: "CREATE TABLE main.t (a integer);\nCREATE INDEX i ON t (a);", want: map[string]string{"i": "main.t"}},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, _, err := sqlschema.Read([]byte(test.sql), test.dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(indexTablesOf(database), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// A name only a relation of another schema carries is refused on every
+// engine. On MySQL and MariaDB a bare name is in the database the connection
+// selects, which the file does not name, so app.t is not t there, as it is not
+// to ALTER TABLE.
+func TestRead_CreateIndexByEngine_FailurePath(t *testing.T) {
+	tests := []struct {
+		dialect string
+		sql     string
+		wantErr string
+	}{
+		{
+			dialect: "mysql",
+			sql:     "CREATE TABLE app.t (a int);\nCREATE INDEX i ON t (a);",
+			wantErr: `line 2, column 1: the schema model has no place for this statement: CREATE INDEX i ON t names a relation its schema does not declare; app.t is in another schema`,
+		},
+		{
+			dialect: "mariadb",
+			sql:     "CREATE TABLE app.t (a int);\nCREATE INDEX i ON t (a);",
+			wantErr: `line 2, column 1: the schema model has no place for this statement: CREATE INDEX i ON t names a relation its schema does not declare; app.t is in another schema`,
+		},
+		{
+			dialect: "sqlserver",
+			sql:     "CREATE TABLE s2.t (a int);\nCREATE INDEX i ON t (a);",
+			wantErr: `line 2, column 1: the schema model has no place for this statement: CREATE INDEX i ON t names a relation its schema does not declare; s2.t is in another schema`,
+		},
+		{
+			dialect: "cockroachdb",
+			sql:     "CREATE TABLE s2.t (a int);\nCREATE INDEX i ON t (a);",
+			wantErr: `line 2, column 1: the schema model has no place for this statement: CREATE INDEX i ON t names a relation its schema does not declare; s2.t is in another schema`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			database, statements, err := sqlschema.Read([]byte(test.sql), test.dialect)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(database.Indexes, qt.HasLen, 0)
+			c.Assert(statements, qt.IsNil)
 		})
 	}
 }

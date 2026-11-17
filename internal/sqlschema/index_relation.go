@@ -29,9 +29,6 @@ func indexHolder(databases []*schemamodel.Database, index schemamodel.Index, sou
 	if table := indexOwner(databases, index, sourcePlatform); table != nil {
 		return indexRelation{qualified: table.QualifiedName(), schema: table.Schema, table: table}, true
 	}
-	if index.TableName == "" {
-		return indexRelation{}, false
-	}
 	var views, names []string
 	for _, database := range databases {
 		for _, view := range database.MaterializedViews {

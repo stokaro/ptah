@@ -312,9 +312,14 @@ written without a schema in that schema, so a file read for such a run spells
 each table one way.
 
 `CREATE INDEX ... ON` finds a table or a materialized view by the same rule, in
-the schema the name spells. A name that only a relation of another schema
-carries is refused, as PostgreSQL refuses `CREATE INDEX ON items` beside only
-`app.items` with `relation "items" does not exist`.
+the schema the name spells. A bare name means the default schema: `public` on
+PostgreSQL, YugabyteDB and CockroachDB, `dbo` on SQL Server, and `main` on
+SQLite. On MySQL and MariaDB it means the database the connection selects,
+which the file does not name, so `app.items` and `items` are two tables there,
+as they are to `ALTER TABLE`. A name that only a relation of another schema or
+database carries is refused on every engine. PostgreSQL refuses
+`CREATE INDEX ON items` beside only `app.items` with
+`relation "items" does not exist`.
 
 `DROP TABLE`, `DROP INDEX`, `DROP VIEW` and `DROP MATERIALIZED VIEW` remove the
 object and what the server drops with it. A drop the server refuses is refused:

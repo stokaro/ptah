@@ -29,8 +29,8 @@ func appendIndex(database *schemamodel.Database, document *Document, node *ast.I
 	if holder, found := indexHolder(databases, index, sourcePlatform); found {
 		index.TableName = holder.qualified
 	} else if other, held := relationElsewhere(databases, index.TableName, sourcePlatform); held {
-		return undeclared(fmt.Errorf("CREATE INDEX %s ON %s names a relation its schema does not declare; %s is in another schema",
-			node.Name, node.Table, other))
+		return undeclared(fmt.Errorf("%w: CREATE INDEX %s ON %s names a relation its schema does not declare; %s is in another schema",
+			ErrUnmodeledStatement, node.Name, node.Table, other))
 	}
 	database.Indexes = append(database.Indexes, index)
 	if node.Only {
