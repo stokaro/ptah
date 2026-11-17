@@ -1323,6 +1323,36 @@ func TestStrictCompatSchemaInspectOmitsPostgresSystemBaselines(t *testing.T) {
 	c.Assert(stderr, qt.Not(qt.Contains), "Error:")
 }
 
+// TestStrictCompatSchemaInspectOmitsPublications inspects a database that
+// holds a publication, as a Supabase dev image or a Debezium source does. The
+// pinned community binary v1.3.0 inspects it and describes no publication, so
+// strict mode does the same, with nothing on stderr. The control is the
+// default compatibility surface, which keeps the publication.
+func TestStrictCompatSchemaInspectOmitsPublications(t *testing.T) {
+	c := qt.New(t)
+	dbURL := createDisposableDatabase(
+		c,
+		dbtarget.URL(t, dbtarget.PostgreSQL),
+		fmt.Sprintf("ptah_strict_publication_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000),
+	)
+	seedDatabase(c, dbURL,
+		"CREATE TABLE orders (id integer PRIMARY KEY)",
+		"CREATE PUBLICATION supabase_realtime FOR TABLE orders",
+	)
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat")
+	args := []string{"schema", "inspect", "--url", dbURL}
+
+	strictOut, strictErr, strictCode := runAtlasBinary(compat, []string{"PTAH_ATLAS_STRICT_COMPAT=1"}, args...)
+	fullOut, fullErr, fullCode := runAtlasBinary(compat, []string{"PTAH_ATLAS_INSPECT_ALL_BLOCKS=1"}, args...)
+
+	c.Assert(strictCode, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", strictOut, strictErr))
+	c.Assert(strictOut, qt.Contains, `table "orders"`)
+	c.Assert(strictOut, qt.Not(qt.Contains), "supabase_realtime")
+	c.Assert(strictErr, qt.Equals, "")
+	c.Assert(fullCode, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", fullOut, fullErr))
+	c.Assert(fullOut, qt.Contains, `publication "supabase_realtime"`)
+}
+
 func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t *testing.T) {
 	c := qt.New(t)
 	dbURL := createDisposableDatabase(
@@ -1919,4 +1949,29 @@ func runAtlasBinary(binary string, additions []string, args ...string) (stdout, 
 		return stdoutBuffer.String(), stderrBuffer.String(), exitErr.ExitCode()
 	}
 	return stdoutBuffer.String(), stderrBuffer.String(), -1
+}
+
+// TestStrictCompatSchemaDiffPlansNoInspectedPublication diffs two databases
+// that differ only by a publication, the one holding it on the desired side.
+// The pinned community binary v1.3.0 describes no publication when it
+// inspects, so it reports the two in sync, and strict mode does the same. The
+// control is the default compatibility surface, which plans the publication.
+func TestStrictCompatSchemaDiffPlansNoInspectedPublication(t *testing.T) {
+	c := qt.New(t)
+	server := dbtarget.URL(t, dbtarget.PostgreSQL)
+	suffix := fmt.Sprintf("%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
+	fromURL := createDisposableDatabase(c, server, "ptah_strict_pubdiff_from_"+suffix)
+	toURL := createDisposableDatabase(c, server, "ptah_strict_pubdiff_to_"+suffix)
+	seedDatabase(c, fromURL, "CREATE TABLE orders (id integer PRIMARY KEY)")
+	seedDatabase(c, toURL, "CREATE TABLE orders (id integer PRIMARY KEY)", "CREATE PUBLICATION feed FOR TABLE orders")
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat")
+	args := []string{"schema", "diff", "--from", fromURL, "--to", toURL}
+
+	strictOut, strictErr, strictCode := runAtlasBinary(compat, []string{"PTAH_ATLAS_STRICT_COMPAT=1"}, args...)
+	fullOut, fullErr, fullCode := runAtlasBinary(compat, nil, args...)
+
+	c.Assert(strictCode, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", strictOut, strictErr))
+	c.Assert(strictOut, qt.Contains, "Schemas are synced, no changes to be made.")
+	c.Assert(fullCode, qt.Equals, 0, qt.Commentf("stdout=%q stderr=%q", fullOut, fullErr))
+	c.Assert(fullOut, qt.Contains, `CREATE PUBLICATION "feed" FOR TABLE ONLY "public"."orders";`)
 }

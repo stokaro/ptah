@@ -36,16 +36,19 @@ const (
 	View Kind = descriptor.OwnerKindView
 	// MaterializedView is a materialized view.
 	MaterializedView Kind = descriptor.OwnerKindMaterializedView
+	// Publication is a PostgreSQL logical replication publication, which
+	// belongs to the database rather than to a schema.
+	Publication Kind = descriptor.OwnerKindPublication
 )
 
 // Kinds returns every kind a declaration may name the owner of, in the order
 // a report lists them.
 func Kinds() []Kind {
-	return []Kind{View, MaterializedView}
+	return []Kind{View, MaterializedView, Publication}
 }
 
 // Label is the kind in lower case, as a message and a catalog row name it:
-// "view" or "materialized view".
+// "view", "materialized view" or "publication".
 func (k Kind) Label() string {
 	return strings.ToLower(string(k))
 }
@@ -95,19 +98,25 @@ func ValidateDeclared(target string, database *schemamodel.Database) error {
 		return nil
 	}
 	for _, view := range database.Views {
-		if err := validateDeclared(target, View, view.Name, view.Owner); err != nil {
+		if err := ValidateDeclaredOwner(target, View, view.Name, view.Owner); err != nil {
 			return err
 		}
 	}
 	for _, view := range database.MaterializedViews {
-		if err := validateDeclared(target, MaterializedView, view.Name, view.Owner); err != nil {
+		if err := ValidateDeclaredOwner(target, MaterializedView, view.Name, view.Owner); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateDeclared(target string, kind Kind, name, owner string) error {
+// ValidateDeclaredOwner is [ValidateDeclared] for one object of kind named
+// name whose declaration names owner: nil for an empty owner, the refusal of
+// [ValidateRole] for a role no declaration can name, and a
+// *ptaherr.CapabilityError wrapping ptaherr.ErrUnsupportedFeature where target
+// does not manage the owner of kind. A feature owner whose object joins the
+// model, as a publication does, checks its declared owner here.
+func ValidateDeclaredOwner(target string, kind Kind, name, owner string) error {
 	if owner == "" {
 		return nil
 	}

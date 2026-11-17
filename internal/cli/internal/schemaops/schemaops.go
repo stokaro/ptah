@@ -33,6 +33,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/unmodelednote"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -133,11 +134,14 @@ type CompareResult struct {
 // NotCompared returns what the read recorded of a kind the comparison does not
 // read: the objects a report of no differences says nothing about. A result with
 // no read has none.
+//
+// The publications the read found are among them while the desired schema
+// declares none; see [unmodelednote.NotCompared].
 func (r *CompareResult) NotCompared() []catalog.UnmodeledObject {
 	if r.Database == nil {
 		return nil
 	}
-	return r.Database.UnmodeledObjects
+	return unmodelednote.NotCompared(r.Generated, r.Database)
 }
 
 // Native URL names come from the frozen connection selection. The connector

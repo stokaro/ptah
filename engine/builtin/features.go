@@ -28,9 +28,11 @@ import (
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/feature/pgpolicy/policyrender"
+	"ptah.run/feature/pgpublication"
 	"ptah.run/feature/pgtype"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/pgpolicyprovider"
+	"ptah.run/internal/pgpublicationprovider"
 )
 
 // This is built-in composition. Feature-specific shape and support decisions
@@ -172,6 +174,14 @@ func validatePostgresFamilyObject(dialect string, object schemaext.Object) error
 		}
 	case *pgdefaultprivilege.Desired:
 		if _, err := pgdefaultprivilege.DesiredObject(object.Ref, *value); err != nil {
+			return err
+		}
+	case *pgpublication.DesiredPublication:
+		if !slices.Contains(pgpublicationprovider.Targets(), platform.NormalizeDialect(dialect)) {
+			return fmt.Errorf("%w: PostgreSQL publication %q on target %q: Ptah models a publication on PostgreSQL alone",
+				ptaherr.ErrUnsupportedFeature, pgpublication.Name(object.Ref), dialect)
+		}
+		if _, err := pgpublication.DesiredObject(object.Ref, *value); err != nil {
 			return err
 		}
 	case *pgextension.DesiredExtension:

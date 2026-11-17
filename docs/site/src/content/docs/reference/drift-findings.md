@@ -28,7 +28,9 @@ a report whose `drift` is true has at least one finding.
 
 An object of a kind Ptah does not model is not a difference and has no category.
 The report names it under `not_compared`. PostgreSQL lists aggregates,
-collations, event triggers, foreign tables, and publications by name there.
+collations, event triggers, and foreign tables by name there. It lists
+publications there too while the desired schema declares none, because Ptah
+compares publications only from the first one the desired schema declares.
 MySQL and MariaDB list events; see [Events](../../databases/mysql/#events).
 A provider that cannot list a kind reports the whole kind without a name,
 such as Spanner change streams.

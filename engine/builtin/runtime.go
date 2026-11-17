@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/oracledata"
 	"ptah.run/internal/oracleroutine"
 	"ptah.run/internal/pgdefaultprivilegeprovider"
+	"ptah.run/internal/pgpublicationprovider"
 	"ptah.run/internal/postgrescomparison"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/sqlservercomparison"
@@ -120,7 +121,7 @@ func New(additional ...engine.Provider) (*engine.Runtime, error) {
 	providers = append(providers,
 		pgdefaultprivilegeprovider.Provider(), timescaleProvider(), postgresRoutineProvider(), postgresRoleProvider(), postgresTableProvider(),
 		pgpolicyProvider(), pgextensionProvider(), pgtypeProvider(), mssqlProvider(), mssqlPropertyProvider(), synonymProvider(),
-		oratypeProvider(),
+		oratypeProvider(), pgpublicationprovider.Provider(),
 	)
 	return assembleSchemaServices(providers, additional)
 }

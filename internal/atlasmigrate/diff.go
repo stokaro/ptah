@@ -876,10 +876,10 @@ func compareReplayedState(
 	if readNamesTheDevDatabase(replayConn.Info().Dialect) {
 		devqualifier.Remove(replayed, defaultSchema, readNames)
 	}
-	// The extensions the dev database held before the replay are its
-	// environment, not something the directory built; see
+	// The extensions and publications the dev database held before the
+	// replay are its environment, not something the directory built; see
 	// [devclean.Baseline.WithoutEnvironment].
-	replayed = baseline.WithoutEnvironment(replayed, devclean.DeclaredExtensions(desired))
+	replayed = baseline.WithoutEnvironment(replayed, devclean.DeclaredEnvironment(desired))
 	// A dev database a docker block provisioned holds its starting point too,
 	// which the directory did not create either.
 	desiredCatalog, err := goschematodb.ToDBSchema(ctx, desired, replayConn.Info().Dialect, selected)

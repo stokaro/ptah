@@ -2233,8 +2233,10 @@ func rejectProtectedPostgresDatabase(
 	return protected.refusal(database, server)
 }
 
-// databaseScopedArtifactsQuery lists the database-scoped objects a realm
-// cleanup cannot remove, by kind and name, sorted. An object an extension owns
+// databaseScopedArtifactsQuery lists the database-scoped objects that dropping
+// a schema does not remove, by kind and name, sorted. A realm cleanup drops
+// the publications among them that the run created and refuses any other; see
+// [settleDatabaseScopedArtifacts]. An object an extension owns
 // is not counted, since dropping the extension removes it, and neither is one
 // the server made at initdb: an OID below 16384, PostgreSQL's
 // FirstNormalObjectId, is assigned only while initdb builds the template, and
@@ -2369,6 +2371,21 @@ func (w *PostgreSQLWriter) DatabaseScopedArtifacts(ctx context.Context) ([]dbres
 	return readDatabaseScopedArtifacts(ctx, w.db)
 }
 
+// ReadsDatabaseScopedArtifacts reports whether the server answers the query
+// [PostgreSQLWriter.DatabaseScopedArtifacts] runs. Where it does not, the list
+// is empty however many publications the database holds, and no cleanup reads
+// them; see [PostgreSQLWriter.readsDatabaseArtifacts].
+func (w *PostgreSQLWriter) ReadsDatabaseScopedArtifacts(ctx context.Context) (bool, error) {
+	if w.db == nil {
+		return false, fmt.Errorf("no database connection")
+	}
+	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
+	if err != nil {
+		return false, err
+	}
+	return w.readsDatabaseArtifacts(capabilities), nil
+}
+
 // readsDatabaseArtifacts reports whether the server answers
 // [databaseScopedArtifactsQuery]. The version string alone cannot say: Cloud
 // Spanner's PostgreSQL interface reports `PostgreSQL 14.1` and has neither
@@ -2400,26 +2417,82 @@ func readDatabaseScopedArtifacts(ctx context.Context, q cleanupConn) ([]dbreset.
 	return artifacts, nil
 }
 
-// rejectPostgresDatabaseScopedArtifacts refuses a realm cleanup while the
-// database holds a database-scoped object the cleanup cannot remove and kept
-// does not name. One kept names was there when the dev database was claimed,
-// so it is the dev database's environment rather than the run's: the
-// community binary v1.3.0 uses such a database and leaves it, and the
-// Supabase image ships six event triggers and a publication
-// (stokaro/ptah#4055). One the run created is still refused, since the
-// cleanup cannot take it away.
-func rejectPostgresDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx, kept []dbreset.Object) error {
+// settleDatabaseScopedArtifacts refuses a realm cleanup while the database
+// holds a database-scoped object the cleanup cannot remove and kept does not
+// name, and then drops each publication the run created. An object kept names
+// was there when the dev database was claimed, so it is the dev database's
+// environment rather than the run's: the community binary v1.3.0 uses such a
+// database and leaves it, and the Supabase image ships six event triggers and
+// a publication (stokaro/ptah#4055). One the run created is refused, since the
+// cleanup cannot take it away, except a publication, which it can: see
+// [dropPublicationsOutside]. A publication is the run's only where the claim
+// listed the database's objects; a kept set that recorded none cannot tell
+// the run's publication from a Supabase or Debezium one, so every publication
+// it does not name is refused. The refusal comes first, so a refused cleanup
+// changes nothing.
+func settleDatabaseScopedArtifacts(ctx context.Context, tx *sql.Tx, kept dbreset.Kept) error {
 	artifacts, err := readDatabaseScopedArtifacts(ctx, tx)
 	if err != nil {
 		return err
 	}
 	for _, artifact := range artifacts {
-		if !slices.Contains(kept, artifact) {
+		droppable := artifact.Kind == "publication" && kept.ArtifactsRecorded
+		if !droppable && !slices.Contains(kept.Artifacts, artifact) {
 			return fmt.Errorf(
 				"refusing to clean PostgreSQL database realm with unsupported database-scoped %s %q",
 				artifact.Kind,
 				artifact.Name,
 			)
+		}
+	}
+	if !kept.ArtifactsRecorded {
+		return nil
+	}
+	return dropPublicationsOutside(ctx, tx, artifacts, kept.Artifacts)
+}
+
+// DropPublicationsAddedSince drops each publication the database holds that
+// kept does not name. It is the part of a cleanup of the one schema a URL pinned
+// that reaches past the schema, as [PostgreSQLWriter.DropSchemasAddedSince]
+// is: kept is what the claim found, and a publication missing from it is the
+// run's. It drops none where kept recorded no claim, and none on a server
+// whose cleanup does not read the database-scoped objects.
+func (w *PostgreSQLWriter) DropPublicationsAddedSince(ctx context.Context, kept dbreset.Kept) error {
+	if w.dryRun || !kept.ArtifactsRecorded {
+		return nil
+	}
+	if w.db == nil {
+		return fmt.Errorf("no database connection")
+	}
+	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
+	if err != nil {
+		return err
+	}
+	if !w.readsDatabaseArtifacts(capabilities) {
+		return nil
+	}
+	artifacts, err := readDatabaseScopedArtifacts(ctx, w.db)
+	if err != nil {
+		return err
+	}
+	return dropPublicationsOutside(ctx, w.db, artifacts, kept.Artifacts)
+}
+
+// dropPublicationsOutside drops each publication of artifacts that kept does
+// not name. One kept names was there when the dev database was claimed and
+// stays, as every other object of the dev database's environment does. Any
+// other is the run's: the replay of a desired schema that declares a
+// publication creates it, and left in place it fails the next replay's
+// CREATE PUBLICATION with `publication "p" already exists`. No object depends
+// on a publication, so the drop takes nothing else with it, and a table the
+// publication names stays.
+func dropPublicationsOutside(ctx context.Context, q cleanupConn, artifacts, kept []dbreset.Object) error {
+	for _, artifact := range artifacts {
+		if artifact.Kind != "publication" || slices.Contains(kept, artifact) {
+			continue
+		}
+		if _, err := q.ExecContext(ctx, "DROP PUBLICATION "+quoteIdent(artifact.Name)); err != nil {
+			return fmt.Errorf("drop publication %q, which the run created: %w", artifact.Name, err)
 		}
 	}
 	return nil
@@ -2651,7 +2724,7 @@ func (w *PostgreSQLWriter) planDatabaseRealmCleanup(
 		return postgresDatabaseCleanupPlan{}, err
 	}
 	if w.readsDatabaseArtifacts(capabilities) {
-		if err := rejectPostgresDatabaseScopedArtifacts(ctx, tx, kept.Artifacts); err != nil {
+		if err := settleDatabaseScopedArtifacts(ctx, tx, kept); err != nil {
 			return postgresDatabaseCleanupPlan{}, err
 		}
 	}

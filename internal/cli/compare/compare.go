@@ -302,7 +302,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}
-	writeComparison(cmd.Context(), out, cmd.ErrOrStderr(), diff, undecided, dbSchema.UnmodeledObjects, statements, info.Dialect)
+	writeComparison(cmd.Context(), out, cmd.ErrOrStderr(), diff, undecided, unmodelednote.NotCompared(result, dbSchema), statements, info.Dialect)
 
 	if opts.exitOnDiff {
 		return nonEmptyDiffExitCode(diff, undecided)

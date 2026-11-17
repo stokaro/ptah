@@ -145,6 +145,11 @@ type GenerateMigrationOptions struct {
 	// so the plan does not drop it, and keeps one it declares, so the two
 	// match. Nil compares every extension the database holds.
 	EnvironmentExtensions []string
+	// EnvironmentPublications names publications the database held before the
+	// current state was built, as EnvironmentExtensions names extensions, and
+	// is read the same way. Nil compares every publication the database
+	// holds.
+	EnvironmentPublications []string
 	// CheckDestructive refuses to generate destructive up migrations unless
 	// AllowDestructive is set.
 	CheckDestructive bool
@@ -518,7 +523,8 @@ func readPlanTarget(
 	if err != nil {
 		return nil, fmt.Errorf("error reading database schema: %w", err)
 	}
-	dbSchema = devclean.WithoutKeptExtensions(dbSchema, opts.EnvironmentExtensions, devclean.DeclaredExtensions(desired))
+	dbSchema = devclean.WithoutKept(dbSchema, devclean.Environment{Extensions: opts.EnvironmentExtensions, Publications: opts.EnvironmentPublications},
+		devclean.DeclaredEnvironment(desired))
 	return revisiontable.Without(dbSchema, opts.RevisionTables), nil
 }
 

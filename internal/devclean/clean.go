@@ -10,8 +10,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
-	"ptah.run/feature/pgextension"
 	"ptah.run/internal/dbreset"
+	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/migrateclean"
 	"ptah.run/internal/pgsnapshot"
@@ -139,6 +139,10 @@ type Baseline struct {
 	defaultPrivileges dbreset.DefaultPrivileges
 	// artifacts are the database-scoped objects the database held; see above.
 	artifacts []dbreset.Object
+	// artifactsRecorded reports that the claim listed the database-scoped
+	// objects, so a reset of the one schema a URL pinned can tell a
+	// publication the run created from one the database held; see [Reset].
+	artifactsRecorded bool
 	// schemaStates are the owner, access list and comment of the schemas a
 	// realm cleanup keeps, as the claim found them; see above.
 	schemaStates []dbreset.SchemaState
@@ -165,11 +169,6 @@ type Baseline struct {
 // creates outlives it.
 func (b Baseline) RolesAtClaim() []string {
 	return slices.Clone(b.roles)
-}
-
-// Extensions returns the extension names the baseline keeps, sorted.
-func (b Baseline) Extensions() []string {
-	return slices.Clone(b.extensions)
 }
 
 // StartingPoint returns the starting point of a dev database an atlas.hcl
@@ -208,8 +207,18 @@ type startingPointRecorder interface {
 	CaptureStartingPoint(context.Context) (*pgsnapshot.Snapshot, error)
 }
 
+// artifactLister is a writer that lists the database-scoped objects of its
+// database, and says whether its server answers the list at all: one that does
+// not lists none, and its cleanups cannot tell a publication the run created.
 type artifactLister interface {
 	DatabaseScopedArtifacts(context.Context) ([]dbreset.Object, error)
+	ReadsDatabaseScopedArtifacts(context.Context) (bool, error)
+}
+
+// addedPublicationDropper is a writer that drops the publications its database
+// holds beside the ones a claim found.
+type addedPublicationDropper interface {
+	DropPublicationsAddedSince(context.Context, dbreset.Kept) error
 }
 
 type defaultPrivilegeReader interface {
@@ -301,17 +310,53 @@ func Claim(ctx context.Context, conn *dbschema.DatabaseConnection) (Baseline, er
 		}
 		baseline.defaultPrivileges = defaults
 	}
-	if lister, ok := writer.(artifactLister); ok {
-		artifacts, err := lister.DatabaseScopedArtifacts(ctx)
-		if err != nil {
-			return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
-		}
-		baseline.artifacts = artifacts
+	if err := baseline.recordArtifacts(ctx, writer); err != nil {
+		return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
 	}
 	if err := baseline.recordSchemas(ctx, conn, writer); err != nil {
 		return Baseline{}, fmt.Errorf("capture dev database baseline: %w", err)
 	}
 	return baseline, nil
+}
+
+// recordArtifacts records the database-scoped objects the database holds,
+// through a writer that lists them, and whether the list is a record at all:
+// a server that cannot answer it lists none however many it holds, and its
+// resets cannot tell a publication the run created; see [Baseline.Publications].
+func (b *Baseline) recordArtifacts(ctx context.Context, writer catalog.SchemaWriter) error {
+	lister, ok := writer.(artifactLister)
+	if !ok {
+		return nil
+	}
+	artifacts, err := lister.DatabaseScopedArtifacts(ctx)
+	if err != nil {
+		return err
+	}
+	recorded, err := lister.ReadsDatabaseScopedArtifacts(ctx)
+	if err != nil {
+		return err
+	}
+	b.artifacts, b.artifactsRecorded = artifacts, recorded
+	return nil
+}
+
+// Publications is what every reset of the run does with the dev database's
+// publications, for [ReplayGuard.WithPublications]. A reset drops each
+// publication the claim did not find once the claim listed them, whether it
+// empties the realm, returns to a starting point or empties the one schema a
+// URL pinned, and keeps the ones the claim found as it finds them. A claim
+// that could not list them drops none.
+func (b Baseline) Publications() replay.PublicationScope {
+	if !b.artifactsRecorded {
+		return replay.PublicationScope{}
+	}
+	scope := replay.PublicationScope{Dropped: true}
+	for _, artifact := range b.artifacts {
+		if artifact.Kind == "publication" {
+			scope.Kept = append(scope.Kept, artifact.Name)
+		}
+	}
+	return scope
 }
 
 // ReturnsSchemaState reports whether every reset of the run returns the schemas
@@ -414,6 +459,9 @@ func (b Baseline) resetSchema(ctx context.Context, writer catalog.SchemaWriter) 
 		if err := b.dropAddedSchemas(ctx, writer); err != nil {
 			return err
 		}
+		if err := b.dropAddedPublications(ctx, writer); err != nil {
+			return err
+		}
 		return b.dropAddedRoles(ctx, writer)
 	}
 	if len(b.extensions) > 0 || len(b.defaultPrivileges.Rows) > 0 {
@@ -487,6 +535,21 @@ func (b Baseline) dropAddedSchemas(ctx context.Context, writer catalog.SchemaWri
 	return dropper.DropSchemasAddedSince(ctx, b.kept())
 }
 
+// dropAddedPublications drops the publications the database holds that the
+// claim did not find, on a writer that can; see [Reset]. A publication belongs
+// to the database rather than to the schema the URL pinned, so emptying the
+// schema leaves it, and the next replay of the same declaration fails on its
+// CREATE PUBLICATION. A database that returns to a starting point has been
+// returned whole already, and a claim that did not list the database's
+// objects cannot tell which publications are the run's, so neither drops any.
+func (b Baseline) dropAddedPublications(ctx context.Context, writer catalog.SchemaWriter) error {
+	dropper, ok := writer.(addedPublicationDropper)
+	if !ok || !b.artifactsRecorded || b.startingPoint != nil {
+		return nil
+	}
+	return dropper.DropPublicationsAddedSince(ctx, b.kept())
+}
+
 // dropAddedRoles drops the roles the server holds that it did not hold at the
 // claim, once the reset has dropped the objects whose privileges name them;
 // see [Baseline]. A baseline that holds no roles drops none.
@@ -508,39 +571,9 @@ func (b Baseline) kept() dbreset.Kept {
 		Schemas:           b.schemas,
 		DefaultPrivileges: b.defaultPrivileges,
 		Artifacts:         b.artifacts,
+		ArtifactsRecorded: b.artifactsRecorded,
 		Server:            b.server,
 		StartingPoint:     b.startingPoint,
 		SchemaStates:      b.schemaStates,
 	}
-}
-
-// WithoutEnvironment returns current, a read of a dev database the caller
-// claimed with this baseline, without the baseline's extensions the other side
-// of the comparison does not declare. declared names the extensions that side
-// holds.
-//
-// The baseline's extensions are the dev database's environment, which every
-// reset keeps: the dev database held them before the run, and the run did not
-// create them. Left in, they are a difference from any desired schema that
-// does not name them, and a migration planned against the replay drops each
-// one. The next replay then executes that drop on the dev database, and no
-// reset can put the extension back (stokaro/ptah#4070). One the other side
-// declares is left in, and matches.
-//
-// current is not changed; the result shares everything but its extensions. A nil current, or a baseline that keeps no
-// extension, comes back as it is.
-func (b Baseline) WithoutEnvironment(current *catalog.Database, declared map[string]bool) *catalog.Database {
-	return WithoutKeptExtensions(current, b.extensions, declared)
-}
-
-// WithoutKeptExtensions is [Baseline.WithoutEnvironment] for a caller that
-// holds the kept extensions as a list.
-func WithoutKeptExtensions(current *catalog.Database, kept []string, declared map[string]bool) *catalog.Database {
-	if current == nil || len(kept) == 0 {
-		return current
-	}
-	environment := func(name string) bool { return slices.Contains(kept, name) && !declared[name] }
-	filtered := *current
-	filtered.FeatureObjects = pgextension.Select(current.FeatureObjects, func(name string) bool { return !environment(name) })
-	return &filtered
 }

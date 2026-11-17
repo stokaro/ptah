@@ -21,11 +21,37 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/feature/pgpublication"
 	"ptah.run/internal/rundiag"
 )
+
+// NotCompared returns the objects of current that a comparison against desired
+// does not compare: the ones the read recorded of a kind Ptah does not model,
+// and the publications the read found while desired declares none. Ptah
+// manages publications only from the first one the desired schema declares
+// ([pgpublication.Managed]), so until then the comparison leaves every one
+// alone, and a report that said nothing of them would read as one that
+// covered them. A nil current has none, and a nil desired adds no
+// publication.
+func NotCompared(desired *schemamodel.Database, current *catalog.Database) []catalog.UnmodeledObject {
+	if current == nil {
+		return nil
+	}
+	objects := current.UnmodeledObjects
+	if desired == nil || pgpublication.Managed(desired.FeatureObjects) {
+		return objects
+	}
+	for _, name := range pgpublication.Names(current.FeatureObjects) {
+		objects = append(slices.Clip(objects), catalog.UnmodeledObject{Kind: "publication", Name: name,
+			Reason: "the desired schema declares no publication, and Ptah compares publications only once it declares one"})
+	}
+	return objects
+}
 
 // Summary says what a comparison left out, as a clause a sentence can carry: "1
 // event was not compared", "2 events were not compared", or "events were not

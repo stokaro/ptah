@@ -467,7 +467,8 @@ func rehearseStatementsOnDev(
 	if err := checkPlanStatements(statements, devConn.Info().Dialect); err != nil {
 		return err
 	}
-	guard := devclean.NewDevReplayGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState())
+	guard := devclean.NewDevReplayGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState()).
+		WithPublications(baseline.Publications)
 	if err := guardPlanRehearsal(statements, guard, devConn.Info()); err != nil {
 		return err
 	}
@@ -735,8 +736,9 @@ func recreateCurrentSchema(
 		return baselineStatements(ctx, devConn, state, devCurrent, target, baseline, runtime)
 	}
 	dev := baselineDev{
-		info:     devConn.Info(),
-		guard:    devclean.NewBaselineGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState()),
+		info: devConn.Info(),
+		guard: devclean.NewBaselineGuardFor(devConn).WithSchemaStateReturned(baseline.ReturnsSchemaState()).
+			WithPublications(baseline.Publications),
 		executor: devConn.Writer(),
 		read: func(ctx context.Context) (*catalog.Database, error) {
 			return reads.settled(readscope.Authored(ctx), devConn)
@@ -941,7 +943,7 @@ func baselineStatements(
 	if moved {
 		target = devclean.WithoutUnreadObjects(target, devCurrent)
 	}
-	devCurrent = baseline.WithoutEnvironment(devCurrent, devclean.ReadExtensions(state))
+	devCurrent = baseline.WithoutEnvironment(devCurrent, devclean.ReadEnvironment(state))
 	devCurrent, err = baseline.WithoutStartingPoint(ctx, devCurrent, state, defaultSchemaOf(info), runtime.Selections())
 	if err != nil {
 		return nil, err

@@ -22,9 +22,12 @@ import (
 //   - ALTER SYSTEM, LOAD and the cluster control functions: server
 //     configuration that outlives the statement and applies to the run's own
 //     later work;
-//   - EVENT TRIGGER, CAST, LANGUAGE, TRANSFORM, TEXT SEARCH, ACCESS METHOD and
-//     PUBLICATION: objects the realm cleanup does not remove, and which change
-//     how the SQL the run executes afterwards is parsed or run;
+//   - EVENT TRIGGER, CAST, LANGUAGE, TRANSFORM, TEXT SEARCH and ACCESS
+//     METHOD, and PUBLICATION outside PostgreSQL: objects the realm cleanup
+//     does not remove, several of which change how the SQL the run executes
+//     afterwards is parsed or run. A PostgreSQL publication is accepted
+//     where every cleanup drops the ones the run created, except a change to
+//     or the drop of one the claim found; see confinedPublicationDDL;
 //   - FOREIGN DATA WRAPPER, SERVER, USER MAPPING, SUBSCRIPTION, IMPORT FOREIGN
 //     SCHEMA, dblink and an external COPY: they reach past the container;
 //   - session and transaction control and a mutation of a protected namespace,

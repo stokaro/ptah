@@ -698,7 +698,6 @@ func TestWriterDropDatabaseRealm_RejectsDatabaseScopedArtifactBeforeMutation(t *
 		kind string
 		item string
 	}{
-		{name: "publication", kind: "publication", item: "events_publication"},
 		{name: "subscription", kind: "subscription", item: "events_subscription"},
 		{name: "logical replication slot", kind: "logical replication slot", item: "events_slot"},
 		{name: "event trigger", kind: "event trigger", item: "audit_ddl"},
@@ -730,6 +729,68 @@ func TestWriterDropDatabaseRealm_RejectsDatabaseScopedArtifactBeforeMutation(t *
 			c.Assert(db.RollbackCount(), qt.Equals, 1)
 		})
 	}
+}
+
+// TestWriterDropDatabaseRealmKeeping_DropsThePublicationsTheRunCreated pins
+// that a realm cleanup whose claim listed the database's objects drops a
+// publication the claim did not find, before it changes anything else, and
+// keeps the one the claim found.
+func TestWriterDropDatabaseRealmKeeping_DropsThePublicationsTheRunCreated(t *testing.T) {
+	c := qt.New(t)
+	var execQueries []string
+	queryHandler := newPostgresRealmMetadataQuery()
+	queryHandler.databaseArtifacts = [][]driver.Value{{"publication", "Events Feed"}, {"publication", "supabase_realtime"}}
+	db := dbtest.OpenWithExec(t, queryHandler.query, func(query string, _ []driver.NamedValue) (driver.Result, error) {
+		execQueries = append(execQueries, query)
+		return driver.RowsAffected(0), nil
+	})
+	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+	err := writer.DropDatabaseRealmKeeping(t.Context(), dbreset.Kept{
+		ArtifactsRecorded: true,
+		Artifacts:         []dbreset.Object{{Kind: "publication", Name: "supabase_realtime"}},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(execQueries[0], qt.Equals, `DROP PUBLICATION "Events Feed"`)
+	c.Assert(strings.Join(execQueries, "\n"), qt.Not(qt.Contains), "supabase_realtime")
+	c.Assert(db.CommitCount(), qt.Equals, 1)
+}
+
+// TestWriterDropDatabaseRealm_RefusesBeforeDroppingAPublication pins that a
+// realm cleanup refusing another artifact the run created drops no
+// publication first.
+func TestWriterDropDatabaseRealm_RefusesBeforeDroppingAPublication(t *testing.T) {
+	c := qt.New(t)
+	queryHandler := newPostgresRealmMetadataQuery()
+	queryHandler.databaseArtifacts = [][]driver.Value{{"publication", "events_publication"}, {"subscription", "events_subscription"}}
+	db := dbtest.OpenWithExec(t, queryHandler.query, nil)
+	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+	err := writer.DropDatabaseRealmKeeping(t.Context(), dbreset.Kept{ArtifactsRecorded: true})
+
+	c.Assert(err, qt.ErrorMatches,
+		`refusing to clean PostgreSQL database realm with unsupported database-scoped subscription "events_subscription"`)
+	c.Assert(db.ExecCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
+}
+
+// TestWriterDropDatabaseRealm_RefusesAPublicationWithoutAClaim pins that a
+// realm cleanup with no claim behind it refuses a publication rather than drop
+// it: nothing says the run created it, and it may be the dev database's own.
+func TestWriterDropDatabaseRealm_RefusesAPublicationWithoutAClaim(t *testing.T) {
+	c := qt.New(t)
+	queryHandler := newPostgresRealmMetadataQuery()
+	queryHandler.databaseArtifacts = [][]driver.Value{{"publication", "supabase_realtime"}}
+	db := dbtest.OpenWithExec(t, queryHandler.query, nil)
+	writer := postgres.NewPostgreSQLWriter(db.SQL, "public")
+
+	err := writer.DropDatabaseRealm(t.Context())
+
+	c.Assert(err, qt.ErrorMatches,
+		`refusing to clean PostgreSQL database realm with unsupported database-scoped publication "supabase_realtime"`)
+	c.Assert(db.ExecCount(), qt.Equals, 0)
+	c.Assert(db.RollbackCount(), qt.Equals, 1)
 }
 
 func TestWriterDropDatabaseRealm_FailsClosedWithoutDatabaseArtifactVisibility(t *testing.T) {

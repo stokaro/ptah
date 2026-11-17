@@ -127,6 +127,8 @@ func RoundTripUnmeasured() []UnmeasuredEntry {
 	const noServerSpelling = "no census fixture declares a server's spelling; a connected comparison attaches one"
 	const providerOnly = "every built-in target refuses it by capability, so no pair is in scope; the YDB " +
 		"provider, which the census does not run, plans it"
+	const publicationFilter = "only a declaration kept from a read carries one, and a plan that would write one " +
+		"is refused, so no census fixture declares it"
 	return []UnmeasuredEntry{
 		{Field: "pgtable.DesiredPartition.Normalized", Reason: noServerSpelling},
 		{Field: "pgtable.DesiredPartitionMember.Normalized", Reason: noServerSpelling},
@@ -142,6 +144,8 @@ func RoundTripUnmeasured() []UnmeasuredEntry {
 		{Field: "pgtype.DesiredDomain.Normalized", Reason: noServerSpelling},
 		{Field: "pgtype.NormalizedDomain.Check", Reason: noServerSpelling},
 		{Field: "pgtype.NormalizedDomain.Default", Reason: noServerSpelling},
+		{Field: "pgpublication.Member.Columns", Reason: publicationFilter},
+		{Field: "pgpublication.Member.RowFilter", Reason: publicationFilter},
 		{Field: "schemamodel.Database.Facets", Reason: unknownFacet},
 		{Field: "schemamodel.Enum.Facets", Reason: unknownFacet},
 		{Field: "schemamodel.Field.UniqueExpr", Reason: "every target refuses it: uniqueness over an expression is not implemented"},
@@ -465,6 +469,7 @@ var roundTripExemptions = []Unreached{
 	{Field: "schemamodel.Function.Body", Dialects: []string{"mariadb", "mysql"}, Directions: []Direction{FromCatalog}, Reason: exemptForeignDefiner},
 	{Field: "schemamodel.MaterializedView.Owner", Dialects: viewOwnerDialects, Directions: []Direction{FromCatalog}, Reason: exemptObservedOwner},
 	{Field: "schemamodel.View.Owner", Dialects: viewOwnerDialects, Directions: []Direction{FromCatalog}, Reason: exemptObservedOwner},
+	{Field: "pgpublication.DesiredPublication.Owner", Dialects: []string{"postgres"}, Directions: []Direction{FromCatalog}, Reason: exemptObservedOwner},
 	{Field: "schemamodel.Index.Operator", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachOperatorClass},
 	{Field: "schemamodel.Index.StorageParams", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachIndexStorage},
 	{Field: "schemamodel.IndexPart.NullsOrder", Dialects: []string{"cockroachdb"}, Directions: nil, Reason: exemptCockroachNullsOrder},

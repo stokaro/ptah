@@ -19,6 +19,7 @@ import (
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgpublication"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/envbool/envbooltest"
@@ -366,6 +367,8 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		{name: "roles", database: &schemamodel.Database{Roles: []schemamodel.Role{{}}}},
 		{name: "grants", database: &schemamodel.Database{Grants: []schemamodel.Grant{{}}}},
 		{name: "default privileges", database: defaultPrivilegeSchema()},
+		{name: "publications", database: &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+			must.Must(pgpublication.DesiredObject(pgpublication.Ref("orders"), pgpublication.DesiredPublication{}))))}},
 		{name: "managed data", database: &schemamodel.Database{ManagedData: []schemamodel.ManagedData{{}}}},
 		{name: "API export metadata", database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", APIName: "Account"}}}},
 		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Facets: must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{}))}}}},
@@ -1107,4 +1110,59 @@ func defaultPrivilegeSchema() *schemamodel.Database {
 	ref := must.Must(pgdefaultprivilege.Ref(pgdefaultprivilege.Identity{Grantor: "app_owner", Schema: "app", ObjectType: "TABLES", Grantee: "app_reader"}, identifier.ForDialect("postgres")))
 	object := must.Must(pgdefaultprivilege.DesiredObject(ref, pgdefaultprivilege.Desired{Privileges: []pgdefaultprivilege.Grant{{Privilege: "SELECT"}}}))
 	return &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(object))}
+}
+
+// inspectedPublications is a PostgreSQL read that holds the publications
+// names, as the Supabase image's supabase_realtime or a Debezium publication
+// would be read.
+func inspectedPublications(c *qt.C, names ...string) *catalog.Database {
+	c.Helper()
+	objects := make([]schemaext.Object, 0, len(names))
+	for _, name := range names {
+		objects = append(objects, must.Must(pgpublication.ObservedObject(pgpublication.Ref(name), pgpublication.ObservedPublication{
+			Publish: pgpublication.PublishOperations(), Owner: "postgres",
+		})))
+	}
+	return &catalog.Database{FeatureObjects: must.Must(schemaext.NewObjects(objects...)),
+		FeatureCoverage: must.Must(pgpublication.CompleteCoverage(schemaext.Observed))}
+}
+
+// TestStrictCEInspectedPublication_HappyPath pins the read side: the pinned
+// Community Edition inspector reads a database that holds a publication and
+// describes none, so strict mode leaves the publication out of what it
+// inspects rather than refusing the database. A prepared inspection is a copy
+// and the caller's catalog read keeps it; the model a validated read hands to
+// planning loses it, so a live database on the desired side plans none.
+func TestStrictCEInspectedPublication_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	read := inspectedPublications(c, "supabase_realtime", "dbz_publication")
+	model := &schemamodel.Database{FeatureObjects: read.FeatureObjects}
+
+	prepared, err := atlascompatpolicy.StrictCE().PrepareInspectedSchema(t.Context(), read, "postgres", runtime)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(pgpublication.Names(prepared.FeatureObjects), qt.HasLen, 0)
+	c.Assert(pgpublication.Names(read.FeatureObjects), qt.DeepEquals, []string{"dbz_publication", "supabase_realtime"})
+	c.Assert(atlascompatpolicy.StrictCE().ValidateSchemaCleanSnapshot(model), qt.IsNil)
+	c.Assert(pgpublication.Names(model.FeatureObjects), qt.HasLen, 2)
+	c.Assert(atlascompatpolicy.StrictCE().ValidateInspectedSchema(model), qt.IsNil)
+	c.Assert(pgpublication.Names(model.FeatureObjects), qt.HasLen, 0)
+}
+
+// TestStrictCEInspectedPublication_FailurePath is the control for the test
+// above: the same publication declared in a desired schema is still refused,
+// since the pinned Community Edition plans nothing for it, and a read that
+// holds a publication beside a view is refused for the view.
+func TestStrictCEInspectedPublication_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	declared := &schemamodel.Database{FeatureObjects: must.Must(schemaext.NewObjects(
+		must.Must(pgpublication.DesiredObject(pgpublication.Ref("supabase_realtime"), pgpublication.DesiredPublication{}))))}
+	inspected := &schemamodel.Database{FeatureObjects: inspectedPublications(c, "supabase_realtime").FeatureObjects,
+		Views: []schemamodel.View{{Name: "active_users"}}}
+
+	c.Assert(atlascompatpolicy.StrictCE().ValidateDesiredSchema(declared), qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support desired schema publications`)
+	c.Assert(atlascompatpolicy.StrictCE().ValidateInspectedSchema(inspected), qt.ErrorMatches,
+		`Atlas Community Edition strict compatibility does not support inspected schema views`)
 }

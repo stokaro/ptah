@@ -67,6 +67,24 @@ type Scope struct {
 	// cannot remove, and a TEMP object outside a session scope. It never widens
 	// the scope itself: what the run cleans is the realm's, above.
 	TrustedSQL bool
+	// Publications is what every cleanup of the run does with the dev
+	// database's publications; see [PublicationScope]. The zero value is a
+	// cleanup that drops none, and a guard then refuses publication DDL.
+	Publications PublicationScope
+}
+
+// PublicationScope is what the cleanups of a run do with the publications of
+// its dev database. A publication belongs to the whole database rather than to
+// a schema, so emptying the schemas leaves it, and only a cleanup that tells
+// the run's publications from the dev database's own can take one away.
+type PublicationScope struct {
+	// Dropped reports that every cleanup of the run drops each publication the
+	// claim did not find, because the claim listed them.
+	Dropped bool
+	// Kept names the publications the claim found. They are the dev database's
+	// own, such as Supabase's supabase_realtime, and outlive the run, so a
+	// change to one or its drop would outlive it too.
+	Kept []string
 }
 
 // Guard refuses a statement whose effects cannot be confined to a scope, or,

@@ -43,6 +43,7 @@ var extensionOwners = map[schemaext.Kind][]string{
 	"ptah.run/pgpolicy/policy-comment-operation":              postgresFamilyStatements,
 	"ptah.run/pgpolicy/policy-operation":                      postgresFamilyStatements,
 	"ptah.run/pgpolicy/table-state-operation":                 postgresFamilyStatements,
+	"ptah.run/pgpublication/publication-operation":            {"postgres/statement"},
 	"ptah.run/pgtype/alter-composite":                         postgresFamilyStatements,
 	"ptah.run/pgtype/alter-domain":                            postgresFamilyStatements,
 	"ptah.run/pgtype/comment":                                 postgresFamilyStatements,

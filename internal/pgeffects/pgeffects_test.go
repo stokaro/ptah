@@ -102,6 +102,8 @@ func TestStatement_ReadsColumnDropsRoutinesAndRoles(t *testing.T) {
 		{name: "a role created", node: &ast.CreateRoleNode{Name: "reader"}, want: []plangraph.Effect{effect(builder.Role("reader"), plangraph.Create)}},
 		{name: "a role changed", node: &ast.AlterRoleNode{Name: "reader"}, want: []plangraph.Effect{effect(builder.Role("reader"), plangraph.Alter)}},
 		{name: "a role dropped", node: &ast.DropRoleNode{Name: "reader"}, want: []plangraph.Effect{effect(builder.Role("reader"), plangraph.Drop)}},
+		{name: "a schema created", node: &ast.CreateSchemaNode{Name: "Audit", IfNotExists: true},
+			want: []plangraph.Effect{effect(objectidentity.ID{Kind: objectidentity.KindSchema, Name: builder.TableParts("", "Audit").Name}, plangraph.Create)}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

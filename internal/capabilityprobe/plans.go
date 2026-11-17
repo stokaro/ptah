@@ -24,7 +24,7 @@ func planFor(dialect string) (plan, bool) {
 	withKeys := withInvisibleIndexes(withEnforcementAndMatch(withDeferrableKeys(withComments, normalized), normalized), normalized)
 	withTypes := withTypeKeys(withSchemaChanges(withKeys, normalized), normalized)
 	withFamilies := withViewOptionKeys(withViewKeys(withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized)), normalized), normalized)
-	withColumnFamilies := withColumnFamilyKeys(withFamilies, normalized)
+	withColumnFamilies := withPublicationKeys(withColumnFamilyKeys(withFamilies, normalized))
 	withChangefeeds := withTopicKeys(withAccessKeys(withChangefeedKeys(withColumnFamilies, normalized)), normalized)
 	withObjects := withCoordinationNodes(withReplicationKeys(withChangefeeds, normalized))
 	withTableSettings := withTableSettingKeys(withObjects, normalized)

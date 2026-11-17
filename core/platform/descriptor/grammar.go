@@ -455,13 +455,16 @@ const (
 	OwnerKindView = "VIEW"
 	// OwnerKindMaterializedView is ALTER MATERIALIZED VIEW ... OWNER TO.
 	OwnerKindMaterializedView = "MATERIALIZED VIEW"
+	// OwnerKindPublication is ALTER PUBLICATION ... OWNER TO, of a logical
+	// replication publication, which has no schema.
+	OwnerKindPublication = "PUBLICATION"
 )
 
 // OwnerKinds returns the values an entry of [StatementForms.OwnerTo] may be.
 func OwnerKinds() []string {
 	return []string{
 		OwnerKindTable, OwnerKindSchema, OwnerKindType, OwnerKindDomain, OwnerKindFunction,
-		OwnerKindProcedure, OwnerKindSequence, OwnerKindView, OwnerKindMaterializedView,
+		OwnerKindProcedure, OwnerKindSequence, OwnerKindView, OwnerKindMaterializedView, OwnerKindPublication,
 	}
 }
 

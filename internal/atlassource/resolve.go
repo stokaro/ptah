@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +28,7 @@ import (
 	"ptah.run/core/yamlext"
 	"ptah.run/dbschema"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgpublication"
 	"ptah.run/internal/atlasregistry"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
@@ -215,12 +216,12 @@ type State struct {
 	// to that server pairs names by these rather than by the dialect's
 	// offline ones.
 	IdentifierSemantics *identifier.Semantics
-	// EnvironmentExtensions are the extensions the dev database held before a
-	// migration directory was replayed there or a declaration was created
-	// there, and empty for every other source. They are the dev database's,
-	// not the source's: a comparison leaves them out with
+	// Environment is what the dev database held of its extensions and
+	// publications before a migration directory was replayed there or a
+	// declaration was created there, and empty for every other source. It is
+	// the dev database's, not the source's: a comparison leaves it out with
 	// [State.WithoutEnvironment].
-	EnvironmentExtensions []string
+	Environment devclean.Environment
 	// EnvironmentState is the starting point of a dev database an atlas.hcl
 	// docker block provisioned, when the state was read from one, and nil
 	// otherwise. Like the extensions, it is the dev database's and not the
@@ -235,12 +236,10 @@ type State struct {
 	Address string
 }
 
-// ExtensionNames is the set of extensions the state holds, in the common
-// model and as the extension owner's objects.
-func (s State) ExtensionNames() map[string]bool {
-	names := devclean.ReadExtensions(s.DB)
-	maps.Copy(names, devclean.DeclaredExtensions(s.Schema))
-	return names
+// Holds is what the state holds of a dev database's environment: its
+// extensions and publications, in the read and in the declaration.
+func (s State) Holds() devclean.Environment {
+	return devclean.ReadEnvironment(s.DB).Union(devclean.DeclaredEnvironment(s.Schema))
 }
 
 // StateRuntime converts a state in both directions for [State.WithoutStartingPoint]:
@@ -291,20 +290,21 @@ func (s State) WithoutStartingPoint(ctx context.Context, other State, dialect st
 }
 
 // WithoutEnvironment returns the state with its dev database's environment
-// left out of what a comparison reads: the [State.EnvironmentExtensions] the
+// left out of what a comparison reads: the part of [State.Environment] the
 // other side of the comparison does not hold, which declared names. A state
 // read from no dev database comes back as it is. See
 // [devclean.Baseline.WithoutEnvironment].
-func (s State) WithoutEnvironment(declared map[string]bool) State {
-	filtered := devclean.WithoutKeptExtensions(s.DB, s.EnvironmentExtensions, declared)
+func (s State) WithoutEnvironment(declared devclean.Environment) State {
+	filtered := devclean.WithoutKept(s.DB, s.Environment, declared)
 	if filtered == s.DB {
 		return s
 	}
 	s.DB = filtered
 	if s.Schema != nil {
-		kept := devclean.ReadExtensions(filtered)
+		kept := devclean.ReadEnvironment(filtered)
 		schema := *s.Schema
-		schema.FeatureObjects = pgextension.Select(s.Schema.FeatureObjects, func(name string) bool { return kept[name] })
+		schema.FeatureObjects = pgextension.Select(s.Schema.FeatureObjects, func(name string) bool { return slices.Contains(kept.Extensions, name) })
+		schema.FeatureObjects = pgpublication.Select(schema.FeatureObjects, func(name string) bool { return slices.Contains(kept.Publications, name) })
 		s.Schema = &schema
 	}
 	return s
@@ -661,7 +661,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions, finis
 			if err != nil {
 				return err
 			}
-			state.EnvironmentExtensions = baseline.Extensions()
+			state.Environment = baseline.Environment()
 			state.EnvironmentState = baseline.StartingPoint()
 			// Finished here rather than after the replay returns, because the
 			// replay's cleanup drops the schema this session holds, and a

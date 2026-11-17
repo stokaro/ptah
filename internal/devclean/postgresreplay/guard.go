@@ -19,6 +19,7 @@ func validatePostgresReplayStatement(dialect string, tokens []lexer.Token, scope
 		dialect:       dialect,
 		sessionTables: scope.Session && dialect == platform.Postgres,
 		trustedSQL:    scope.TrustedSQL,
+		publications:  scope.Publications,
 	}
 
 	first := replay.NormalizedIdentifier(tokens[0])
@@ -76,6 +77,8 @@ type protection struct {
 	// trustedSQL is [replay.Scope.TrustedSQL]: it lifts an external COPY, whose
 	// only reason to be refused is that it reaches past the server.
 	trustedSQL bool
+	// publications is [replay.Scope.Publications]; see confinedPublicationDDL.
+	publications replay.PublicationScope
 }
 
 func (p protection) protectedPostgresMutationNamespace(tokens []lexer.Token) string {

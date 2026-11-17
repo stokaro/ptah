@@ -58,8 +58,9 @@ func TestPostgresNullsDistinctClauseArrivesIn15(t *testing.T) {
 // 14 cannot take Postgres13 either: CREATE OR REPLACE TRIGGER and SP-GiST
 // INCLUDE columns both arrived in 14, and Postgres13 is the preset that lacks
 // them. So the new preset has to differ from Postgres16 in exactly the clauses
-// PostgreSQL 15 added -- NULLS [NOT] DISTINCT and the ON DELETE column list
-// (stokaro/ptah#3562) -- which this asserts by construction rather than by
+// PostgreSQL 15 added -- NULLS [NOT] DISTINCT, the ON DELETE column list
+// (stokaro/ptah#3562) and a publication FOR TABLES IN SCHEMA
+// (stokaro/ptah#5974) -- which this asserts by construction rather than by
 // counting differences: the equality is the whole claim, and it fails on a
 // preset that took away anything else.
 func TestPostgres14IsPostgres16WithoutThePostgres15Grammar(t *testing.T) {
@@ -70,7 +71,8 @@ func TestPostgres14IsPostgres16WithoutThePostgres15Grammar(t *testing.T) {
 	c.Assert(fourteen, qt.DeepEquals,
 		capability.Postgres16().
 			With(capability.UniqueNullsDistinctClause, false).
-			With(capability.ForeignKeyDeleteColumnList, false),
+			With(capability.ForeignKeyDeleteColumnList, false).
+			With(capability.PublicationSchemas, false),
 	)
 	c.Assert(fourteen.Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(fourteen.Has(capability.IndexIncludeSPGiST), qt.IsTrue)

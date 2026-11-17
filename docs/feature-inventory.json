@@ -1474,6 +1474,48 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-feature-pgpublication",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpublication",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgpublication-publicationcompare",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpublication/publicationcompare",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgpublication-publicationconvert",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpublication/publicationconvert",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgpublication-publicationplan",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpublication/publicationplan",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgpublication-publicationrender",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpublication/publicationrender",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgpublication-publicationreport",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpublication/publicationreport",
+      "claimed_by": null
+    },
+    {
+      "id": "gopkg-feature-pgpublication-publicationreverse",
+      "kind": "public-package",
+      "surface": "ptah.run/feature/pgpublication/publicationreverse",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-feature-pgtype",
       "kind": "public-package",
       "surface": "ptah.run/feature/pgtype",

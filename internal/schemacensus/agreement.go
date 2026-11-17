@@ -16,6 +16,7 @@ import (
 	"ptah.run/feature/oratype"
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
+	"ptah.run/feature/pgpublication"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/capabilityprobe"
 	"ptah.run/internal/planstyle"
@@ -240,6 +241,15 @@ func emptyPostgresFeatureCoverage() (schemaext.Coverage, error) {
 		return schemaext.Coverage{}, err
 	}
 	if coverage, err = coverage.Combine(defaults); err != nil {
+		return schemaext.Coverage{}, err
+	}
+	// A whole read describes the publications too, and an empty database
+	// has none.
+	publications, err := pgpublication.CompleteCoverage(schemaext.Observed)
+	if err != nil {
+		return schemaext.Coverage{}, err
+	}
+	if coverage, err = coverage.Combine(publications); err != nil {
 		return schemaext.Coverage{}, err
 	}
 

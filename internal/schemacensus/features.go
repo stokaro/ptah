@@ -20,6 +20,7 @@ import (
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgpublication"
 	"ptah.run/feature/pgtype"
 	"ptah.run/feature/synonym"
 )
@@ -51,6 +52,7 @@ func featureCodecs() []schemaext.OwnedCodec {
 		{owner: mssqlproperty.Owner, codecs: mssqlproperty.Codecs()},
 		{owner: synonym.Owner, codecs: synonym.Codecs()},
 		{owner: pgpolicy.Owner, codecs: pgpolicy.Codecs()},
+		{owner: pgpublication.Owner, codecs: pgpublication.Codecs()},
 		{owner: pgdefaultprivilege.Owner, codecs: pgdefaultprivilege.Codecs()},
 		{owner: pgextension.Owner, codecs: pgextension.Codecs()},
 		{owner: pgtype.Owner, codecs: pgtype.Codecs()},

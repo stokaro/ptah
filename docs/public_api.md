@@ -169,6 +169,13 @@ These packages are intended for application and tool embedders:
 - `ptah.run/feature/pgpolicy/policyreport`
 - `ptah.run/feature/pgpolicy/policyrender`
 - `ptah.run/feature/pgpolicy/policyreverse`
+- `ptah.run/feature/pgpublication`
+- `ptah.run/feature/pgpublication/publicationcompare`
+- `ptah.run/feature/pgpublication/publicationconvert`
+- `ptah.run/feature/pgpublication/publicationplan`
+- `ptah.run/feature/pgpublication/publicationrender`
+- `ptah.run/feature/pgpublication/publicationreport`
+- `ptah.run/feature/pgpublication/publicationreverse`
 - `ptah.run/feature/pgtype`
 - `ptah.run/feature/pgtype/typecompare`
 - `ptah.run/feature/pgtype/typeconvert`
@@ -3043,6 +3050,75 @@ plan installed, installs again what it dropped, and moves an extension and its
 comment back; a version stays where the forward plan put it, and the reversal
 says so in a limitation. `feature/pgextension/extensionreport` counts
 extensions under the `extensions` metric.
+
+`feature/pgpublication` owns the PostgreSQL logical replication publication
+model. A publication is a database-wide feature object of `PublicationKind`,
+identified by its exact name through `Ref`; it lives in no schema and on no
+table. `DesiredPublication` declares one of four membership forms: no members,
+the tables it names (`Member`, a schema and a table), the schemas whose every
+table it publishes, and `AllTables`. The forms stay apart because a table
+created later joins a schema-wide or database-wide publication and no other.
+A nil `Publish` publishes the four operations and an empty one publishes none;
+`EffectivePublish` and `EffectiveGeneratedColumns` give the set and the setting
+the server applies. An empty `Owner` leaves the owner unmanaged.
+`ObservedPublication` holds what the catalog reports, a member's row filter and
+column list included, which `FilterWords` spells.
+
+`Change` holds both operands and what the comparison established: `Rebuild`
+for a change to or from FOR ALL TABLES, which ALTER PUBLICATION cannot make,
+the tables and schemas added and dropped otherwise, `Refiltered` for a member
+whose row filter or column list differs, `Options`, and the declared `Owner`.
+`Operation` is the payload of CREATE PUBLICATION, ALTER PUBLICATION ... ADD,
+DROP and SET, ALTER PUBLICATION ... SET (options), ALTER PUBLICATION ... OWNER
+TO and DROP PUBLICATION; every table is written with ONLY. The codecs refuse
+unknown, null, empty and case-variant keys, and a refused value is a
+`schemaext.InvalidModelError`. `Selections` names publications in a command's
+scope by name alone, under the selector type `publication`; a selection of
+schemas or tables names none.
+
+`feature/pgpublication/publicationrender` renders the payloads on PostgreSQL
+and refuses every other target, the rest of the PostgreSQL family included.
+TABLES IN SCHEMA needs `capability.PublicationSchemas`, and
+publish_generated_columns needs `capability.PublicationGeneratedColumns`;
+`RefuseUnsupported` is the refusal a renderer and a planner share.
+
+The builtin runtime selects the owner on PostgreSQL. The SQL and HCL sources hand a
+publication declaration to the owner, and the PostgreSQL reader hands it the
+publications of a read that covers every schema the database describes. A read
+narrowed to some of them reports none and leaves the comparison undecided. The
+SQL source reads a migration's ALTER PUBLICATION and DROP PUBLICATION as the
+`Operation` each performs; a schema document refuses a DROP and an ALTER of a
+publication it does not declare, and refuses a row filter, a column list and
+TABLES IN SCHEMA CURRENT_SCHEMA by name.
+
+`feature/pgpublication/publicationcompare` compares publications by name.
+`Qualify` places a declared table that names no schema in `DefaultSchema`.
+Membership is compared in its own form, the publish set and both settings as
+the server applies them, and the owner only where the declaration names one.
+A desired schema that declares no publication drops none: publications are
+managed from the first one it declares, so one a replication consumer or an
+image created stays until then. A publication the run excludes is never
+planned, one the desired source could not describe is not dropped, and one
+the read could not establish is not created but reported undecided.
+
+`feature/pgpublication/publicationconvert` projects a declaration to the
+observation it predicts and an observation to the declaration that keeps it.
+`feature/pgpublication/publicationplan` plans every change in
+`featureplan.PhaseDependent`, after the tables, schemas and roles a migration
+creates and before the ones it drops, and orders a step after the host step
+that creates what it reads. Within one change the steps run drop, create, add
+members, drop members, options, owner. A rebuild is behavioral, and a
+`Refiltered` member is refused. A whole-schema render creates a publication
+after its tables and schemas. `feature/pgpublication/publicationreverse`
+reverses a change member by member and option by option, and creates a dropped
+publication again with the members, options and owner it had.
+`feature/pgpublication/publicationreport` counts publications under the
+`publications` metric.
+
+`migration/generator.GenerateMigrationOptions.EnvironmentPublications` names
+the publications the database held before the current state was built, as
+`EnvironmentExtensions` names extensions; nil compares every publication the
+database holds.
 
 `feature/pgtype` owns the PostgreSQL user-defined types other than enums:
 domains (`DomainKind`), composite types (`CompositeKind`) and range types

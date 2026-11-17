@@ -163,6 +163,8 @@ func corpus() []Fixture {
 		{Name: "pgpolicy-policy-declared", Schema: tableDeclaredPolicyFixture()},
 		{Name: "pgpolicy-table-state", Schema: tableRowSecurityFixture()},
 		{Name: "pgextension-extension", Schema: ownedExtensionFixture()},
+		{Name: "pgpublication-publication", Schema: ownedPublicationFixture()},
+		{Name: "pgpublication-all-tables", Schema: allTablesPublicationFixture()},
 		{Name: "pgtype-types", Schema: ownedTypeFixture()},
 		{Name: "oratype-types", Schema: ownedOracleTypeFixture()},
 		{Name: "extended-property", Schema: extendedPropertyFixture()},
