@@ -15,6 +15,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/exeext"
+	"ptah.run/internal/revisiontable"
 )
 
 // TestSchemaApplyLeavesTheSeedLedgerOnSQLiteE2E seeds a SQLite database and
@@ -59,8 +60,10 @@ func assertPlanLeavesTheSeedLedger(c *qt.C, repoRoot, dbURL string) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 	table := fmt.Sprintf("seed_ledger_e2e_%d", time.Now().UnixNano()%1_000_000_000)
+	// schema apply records itself in the apply log, so the log is one of the
+	// tables this test creates.
 	dropTables := func() {
-		for _, name := range []string{table, "schema_seeds"} {
+		for _, name := range []string{table, "schema_seeds", revisiontable.ApplyLog} {
 			_, dropErr := conn.ExecContext(context.WithoutCancel(ctx), "DROP TABLE IF EXISTS "+name)
 			c.Check(dropErr, qt.IsNil)
 		}

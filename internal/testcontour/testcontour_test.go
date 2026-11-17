@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/testcontour"
+	"ptah.run/internal/testcontour/shard"
 )
 
 func TestRun_HappyPath(t *testing.T) {
@@ -460,4 +461,129 @@ func TestRun_FailurePathValidatesConfiguration(t *testing.T) {
 			`integration contour package must be \./integration/\.\.\., got \./integration/fixture`,
 		)
 	})
+}
+
+const shardedFixture = "ptah.run/internal/testcontour/testdata/sharded/"
+
+// runFixtureShard runs one part of the two-shard contour over
+// testdata/sharded and returns what it reported.
+func runFixtureShard(c *qt.C, index int) (shard.Report, string) {
+	c.Helper()
+	var manifest, events, stderr bytes.Buffer
+	err := testcontour.Run(context.Background(), testcontour.Config{
+		Package:  "./testdata/sharded/...",
+		Tags:     []string{"testcontour_fixture"},
+		Timeout:  time.Minute,
+		Shard:    index,
+		Shards:   2,
+		Report:   &events,
+		Manifest: &manifest,
+		Stderr:   &stderr,
+	})
+	c.Assert(err, qt.IsNil)
+	decoded, err := shard.ReadManifest(&manifest)
+	c.Assert(err, qt.IsNil)
+	return shard.Report{Manifest: decoded, Events: &events}, stderr.String()
+}
+
+// TestRun_HappyPathShardsAddUpToTheContour runs both parts of a two-shard
+// contour and hands their reports to the gate. The heavy package outweighs
+// half of the contour and is split by name, so shard 1 runs two of its tests
+// through a -run filter and shard 2 runs the third beside the whole light
+// package: the gate passes only if the filters selected exactly those.
+func TestRun_HappyPathShardsAddUpToTheContour(t *testing.T) {
+	c := qt.New(t)
+	first, firstLog := runFixtureShard(c, 1)
+	second, secondLog := runFixtureShard(c, 2)
+
+	c.Assert(first.Manifest.Partition.Parts, qt.DeepEquals, []shard.Part{
+		{Units: []shard.Unit{{Package: shardedFixture + "heavy", Tests: []string{"TestHeavyOne", "TestHeavyTwo"}}}, WeightMS: 2000},
+		{
+			Units: []shard.Unit{
+				{Package: shardedFixture + "heavy", Tests: []string{"TestHeavyThree"}},
+				{Package: shardedFixture + "light", Whole: true, Tests: []string{"TestLight"}},
+			},
+			WeightMS: 2000,
+		},
+	})
+	c.Assert(firstLog, qt.Contains, "testcontour: shard 1 of 2 runs 2 of 4 tests in 1 go test invocations")
+	c.Assert(secondLog, qt.Contains, "testcontour: shard 2 of 2 runs 2 of 4 tests in 2 go test invocations")
+
+	result, err := shard.Verify([]shard.Report{first, second}, 4)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Passed, qt.Equals, 4)
+}
+
+func TestRun_FailurePathRefusesAShardThatNamesNoPart(t *testing.T) {
+	tests := []struct {
+		name    string
+		shard   int
+		shards  int
+		wantErr string
+	}{
+		{name: "beyond the count", shard: 3, shards: 2, wantErr: `shard 3 of 2 does not name a part of the contour`},
+		{name: "no count", shard: 1, wantErr: `shard 1 of 0 does not name a part of the contour`},
+		{name: "no shard", shards: 2, wantErr: `shard 0 of 2 does not name a part of the contour`},
+		{name: "negative", shard: -1, shards: 2, wantErr: `shard -1 of 2 does not name a part of the contour`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := testcontour.Run(context.Background(), testcontour.Config{
+				Package: "./testdata/sharded/...",
+				Tags:    []string{"testcontour_fixture"},
+				Timeout: time.Minute,
+				Shard:   tc.shard,
+				Shards:  tc.shards,
+			})
+			c.Assert(err, qt.ErrorMatches, tc.wantErr)
+		})
+	}
+}
+
+func TestRun_FailurePathRefusesAManifestForTheWholeContour(t *testing.T) {
+	c := qt.New(t)
+	err := testcontour.Run(context.Background(), testcontour.Config{
+		Package:  "./testdata/sharded/...",
+		Tags:     []string{"testcontour_fixture"},
+		Timeout:  time.Minute,
+		Manifest: new(bytes.Buffer),
+	})
+	c.Assert(err, qt.ErrorMatches, `a shard manifest is written only by a sharded run`)
+}
+
+// TestRun_FailurePathRefusesToShardABenchmark lists a package holding a
+// benchmark. A part selects tests by name, so a benchmark, fuzz target or
+// example would be left out of every part; the listing refuses it instead.
+func TestRun_FailurePathRefusesToShardABenchmark(t *testing.T) {
+	c := qt.New(t)
+	var manifest bytes.Buffer
+	err := testcontour.Run(context.Background(), testcontour.Config{
+		Package:  "./testdata/benchmark",
+		Tags:     []string{"testcontour_fixture"},
+		Timeout:  time.Minute,
+		Shard:    1,
+		Shards:   1,
+		Manifest: &manifest,
+	})
+	c.Assert(err, qt.ErrorMatches, `test contour \./testdata/benchmark runs tests only, and lists ptah\.run/internal/testcontour/testdata/benchmark:BenchmarkNeverRuns`)
+	c.Assert(manifest.String(), qt.Equals, "")
+}
+
+// TestRun_FailurePathRefusesAListingTheSourceDoesNotDeclare runs a package
+// whose TestMain prints a test-shaped line while go test lists its tests. The
+// listing then names a test no source file declares, and the run refuses to
+// partition it rather than hand a shard a test that does not exist.
+func TestRun_FailurePathRefusesAListingTheSourceDoesNotDeclare(t *testing.T) {
+	c := qt.New(t)
+	err := testcontour.Run(context.Background(), testcontour.Config{
+		Package: "./testdata/listnoise",
+		Tags:    []string{"testcontour_fixture"},
+		Timeout: time.Minute,
+		Shard:   1,
+		Shards:  1,
+	})
+	c.Assert(err, qt.ErrorMatches, `go test -list and the declared test functions disagree; `+
+		`declared but not listed: \[\]; `+
+		`listed but not declared: \[ptah\.run/internal/testcontour/testdata/listnoise:TestPrintedByTestMain\]`)
 }

@@ -1,5 +1,10 @@
 // Package testcontour runs build-tagged integration packages and rejects
 // skipped or incomplete tests.
+//
+// A run covers the whole contour, or one part of it when Config names a shard:
+// the runner then lists every test with go test -list, partitions the listing
+// with package shard, writes a manifest of the partition and runs only its
+// part. The gate that proves the parts add up to the contour is shard.Verify.
 package testcontour
 
 import (
@@ -14,7 +19,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +28,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"ptah.run/internal/testcontour/shard"
 )
 
 // Config describes one integration package contour invocation.
@@ -35,6 +41,19 @@ type Config struct {
 	Dir     string
 	Stdout  io.Writer
 	Stderr  io.Writer
+
+	// Shards splits the contour into that many parts, and Shard selects the
+	// part this run executes, counted from 1. Both zero run the whole contour.
+	Shard  int
+	Shards int
+	// Timings balances the partition of a sharded run; see shard.Plan. It
+	// changes which part a test lands in, never whether it runs.
+	Timings shard.Timings
+	// Report, when set, receives the raw go test -json stream.
+	Report io.Writer
+	// Manifest, when set, receives the sharded run's shard.Manifest as JSON
+	// before any test runs. A run of the whole contour writes none.
+	Manifest io.Writer
 }
 
 type testEvent struct {
@@ -43,6 +62,11 @@ type testEvent struct {
 	Test    string
 	Output  string
 }
+
+// maxRunPattern bounds one -run argument. Linux refuses a single argument
+// above 128 KiB and Windows a whole command line above 32 KiB, so a part that
+// selects many tests of one package runs it more than once instead.
+const maxRunPattern = 24 << 10
 
 type packageFiles struct {
 	ImportPath   string
@@ -93,7 +117,7 @@ func Run(ctx context.Context, config Config) error {
 	}
 	var expected []testID
 	if slices.Contains(config.Tags, "integration") {
-		expected, err = validateIntegrationPackages(config, packages)
+		expected, err = validateIntegrationPackages(ctx, config, packages)
 		if err != nil {
 			return err
 		}
@@ -103,7 +127,137 @@ func Run(ctx context.Context, config Config) error {
 			return err
 		}
 	}
-	return run(ctx, config, expected)
+	if config.Shards == 0 {
+		return run(ctx, config, config.Package, expected, [][]string{{config.Package}})
+	}
+	return runShard(ctx, config, expected)
+}
+
+// runShard lists the contour, partitions it and runs the part config.Shard
+// names. The listing has to agree with the test functions the source declares,
+// so a parse of go test -list output that lost a name cannot shrink the
+// contour every shard partitions.
+func runShard(ctx context.Context, config Config, declared []testID) error {
+	listed, err := listTests(ctx, config)
+	if err != nil {
+		return err
+	}
+	if err := compareListing(listed, declared); err != nil {
+		return err
+	}
+	partition, err := shard.Plan(listed, config.Timings, config.Shards)
+	if err != nil {
+		return fmt.Errorf("partition test contour %s: %w", config.Package, err)
+	}
+	if config.Manifest != nil {
+		manifest := shard.Manifest{Shard: config.Shard, Shards: config.Shards, Partition: partition}
+		if err := json.NewEncoder(config.Manifest).Encode(manifest); err != nil {
+			return fmt.Errorf("write shard manifest: %w", err)
+		}
+	}
+
+	part := partition.Parts[config.Shard-1]
+	var assigned []testID
+	for _, test := range part.Tests() {
+		assigned = append(assigned, testID{Package: test.Package, Name: test.Name})
+	}
+	invocations := part.Invocations(listed, maxRunPattern)
+	_, _ = fmt.Fprintf(
+		config.Stderr,
+		"testcontour: shard %d of %d runs %d of %d tests in %d go test invocations, planned at %s; partition %s, balanced by %s\n",
+		config.Shard, config.Shards, len(assigned), len(listed), len(invocations),
+		time.Duration(part.WeightMS)*time.Millisecond, partition.Digest, partition.Weighting,
+	)
+	label := fmt.Sprintf("%s shard %d of %d", config.Package, config.Shard, config.Shards)
+	return run(ctx, config, label, assigned, invocations)
+}
+
+// listTests asks the test binaries which tests they hold. It refuses a
+// benchmark, fuzz target or example: the contour runs tests, and a part that
+// selects tests by name would leave the others behind.
+func listTests(ctx context.Context, config Config) ([]shard.Test, error) {
+	args := []string{"test", "-list", ".", "-json"}
+	if config.Race {
+		args = append(args, "-race")
+	}
+	args = append(args, "-tags="+strings.Join(config.Tags, ","), config.Package)
+	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.Dir = config.Dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("list tests of %s: %w: %s", config.Package, err, strings.TrimSpace(stderr.String()))
+	}
+
+	var listed []shard.Test
+	var refused []string
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for {
+		var event testEvent
+		if err := decoder.Decode(&event); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("decode test listing of %s: %w", config.Package, err)
+		}
+		if event.Action != "output" || event.Test != "" || event.Package == "" {
+			continue
+		}
+		name := strings.TrimRight(event.Output, "\r\n")
+		switch {
+		case isTestName(name) && isIdentifier(name):
+			listed = append(listed, shard.Test{Package: event.Package, Name: name})
+		case isIdentifier(name) && (isFunctionName(name, "Benchmark") ||
+			isFunctionName(name, "Fuzz") || isFunctionName(name, "Example")):
+			refused = append(refused, event.Package+":"+name)
+		}
+	}
+	if len(refused) != 0 {
+		return nil, fmt.Errorf("test contour %s runs tests only, and lists %s", config.Package, strings.Join(refused, ", "))
+	}
+	return listed, nil
+}
+
+func compareListing(listed []shard.Test, declared []testID) error {
+	inListing := make(map[testID]bool, len(listed))
+	for _, test := range listed {
+		inListing[testID{Package: test.Package, Name: test.Name}] = true
+	}
+	inSource := make(map[testID]bool, len(declared))
+	var unlisted []testID
+	for _, id := range declared {
+		inSource[id] = true
+		if !inListing[id] {
+			unlisted = append(unlisted, id)
+		}
+	}
+	var undeclared []testID
+	for id := range inListing {
+		if !inSource[id] {
+			undeclared = append(undeclared, id)
+		}
+	}
+	sortTestIDs(undeclared)
+	if len(unlisted) == 0 && len(undeclared) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"go test -list and the declared test functions disagree; declared but not listed: [%s]; listed but not declared: [%s]",
+		formatTestIDs(unlisted), formatTestIDs(undeclared),
+	)
+}
+
+func isIdentifier(name string) bool {
+	if name == "" {
+		return false
+	}
+	for index, character := range name {
+		if character != '_' && !unicode.IsLetter(character) && (index == 0 || !unicode.IsDigit(character)) {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeConfig(config Config) (Config, error) {
@@ -127,6 +281,13 @@ func normalizeConfig(config Config) (Config, error) {
 			completeIntegrationPattern,
 			config.Package,
 		)
+	}
+	if config.Shard < 0 || config.Shards < 0 || (config.Shards == 0) != (config.Shard == 0) ||
+		config.Shard > config.Shards {
+		return Config{}, fmt.Errorf("shard %d of %d does not name a part of the contour", config.Shard, config.Shards)
+	}
+	if config.Manifest != nil && config.Shards == 0 {
+		return Config{}, errors.New("a shard manifest is written only by a sharded run")
 	}
 	if config.Stdout == nil {
 		config.Stdout = io.Discard
@@ -158,7 +319,7 @@ func validBuildTag(tag string) bool {
 	return true
 }
 
-func validateIntegrationPackages(config Config, packages []packageFiles) ([]testID, error) {
+func validateIntegrationPackages(ctx context.Context, config Config, packages []packageFiles) ([]testID, error) {
 	expected := make([]testID, 0)
 	for _, files := range packages {
 		if len(files.TestGoFiles) != 0 {
@@ -192,7 +353,7 @@ func validateIntegrationPackages(config Config, packages []packageFiles) ([]test
 			return nil, fmt.Errorf("integration package %s declares no top-level tests", files.ImportPath)
 		}
 	}
-	if err := validateCompleteIntegrationSelection(config, packages); err != nil {
+	if err := validateCompleteIntegrationSelection(ctx, config, packages); err != nil {
 		return nil, err
 	}
 	sort.Slice(expected, func(left, right int) bool {
@@ -218,24 +379,38 @@ func declaredPackageTests(packages []packageFiles) ([]testID, error) {
 	return expected, nil
 }
 
-func validateCompleteIntegrationSelection(config Config, packages []packageFiles) error {
+// validateCompleteIntegrationSelection checks that go list selected every test
+// file under the integration tree. The files come from git, never from a walk
+// of the directory, which would also descend into a checkout parked below it.
+func validateCompleteIntegrationSelection(ctx context.Context, config Config, packages []packageFiles) error {
 	selected := make(map[string]struct{})
 	for _, files := range packages {
 		for _, name := range files.XTestGoFiles {
 			selected[filepath.Clean(filepath.Join(files.Dir, name))] = struct{}{}
 		}
 	}
-	integrationRoot, err := filepath.Abs(filepath.Join(config.Dir, "integration"))
+	dir, err := filepath.Abs(config.Dir)
 	if err != nil {
 		return fmt.Errorf("resolve complete integration root: %w", err)
 	}
-	return filepath.WalkDir(integrationRoot, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return fmt.Errorf("walk complete integration contour: %w", walkErr)
+	// Without --full-name the paths are relative to config.Dir, the base go
+	// list reports package directories against.
+	listCommand := exec.CommandContext(
+		ctx,
+		"git",
+		"-c", "core.quotePath=false",
+		"ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "integration/",
+	)
+	listCommand.Dir = config.Dir
+	output, err := listCommand.Output()
+	if err != nil {
+		return fmt.Errorf("list integration test files: %w", err)
+	}
+	for rawPath := range bytes.SplitSeq(output, []byte{0}) {
+		if !bytes.HasSuffix(rawPath, []byte("_test.go")) {
+			continue
 		}
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "_test.go") {
-			return nil
-		}
+		path := filepath.Join(dir, filepath.FromSlash(string(rawPath)))
 		policy, err := integrationTagPolicy(path)
 		if err != nil {
 			return err
@@ -255,8 +430,8 @@ func validateCompleteIntegrationSelection(config Config, packages []packageFiles
 				path,
 			)
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 func listPackages(ctx context.Context, config Config, pattern string) ([]packageFiles, error) {
@@ -506,7 +681,12 @@ func declaredTests(path, importPath string) ([]testID, error) {
 }
 
 func isTestName(name string) bool {
-	const prefix = "Test"
+	return isFunctionName(name, "Test")
+}
+
+// isFunctionName reports whether name is one go test registers under prefix:
+// the prefix alone, or the prefix followed by anything but a lower-case letter.
+func isFunctionName(name, prefix string) bool {
 	if !strings.HasPrefix(name, prefix) {
 		return false
 	}
@@ -517,7 +697,59 @@ func isTestName(name string) bool {
 	return !unicode.IsLower(character)
 }
 
-func run(ctx context.Context, config Config, expected []testID) error {
+// run executes each invocation in turn, so a part that needs several go test
+// commands still runs all of them, and judges the tests they report against
+// expected. label names the contour in errors.
+func run(ctx context.Context, config Config, label string, expected []testID, invocations [][]string) error {
+	states := make(map[testID]testState, len(expected))
+	assigned := make(map[testID]bool, len(expected))
+	for _, id := range expected {
+		states[id] = testState{}
+		assigned[id] = true
+	}
+	skips := make([]testID, 0)
+	var failures []error
+	for _, packages := range invocations {
+		if err := invoke(ctx, config, label, packages, states, &skips); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	if len(failures) != 0 {
+		return errors.Join(failures...)
+	}
+	if len(states) == 0 {
+		return fmt.Errorf("test contour %s ran no tests", label)
+	}
+	if len(skips) != 0 {
+		return fmt.Errorf("test contour %s skipped %s", label, formatTestIDs(skips))
+	}
+	missing := missingResults(states)
+	if len(missing) != 0 {
+		return fmt.Errorf("test contour %s produced no complete result for %s", label, formatTestIDs(missing))
+	}
+	var unassigned []testID
+	for id := range states {
+		if !strings.Contains(id.Name, "/") && !assigned[id] {
+			unassigned = append(unassigned, id)
+		}
+	}
+	if len(unassigned) != 0 {
+		sortTestIDs(unassigned)
+		return fmt.Errorf("test contour %s ran tests it was not given: %s", label, formatTestIDs(unassigned))
+	}
+	return nil
+}
+
+// invoke runs one go test command over the arguments that select its
+// packages and tests, copying the event stream to config.Report.
+func invoke(
+	ctx context.Context,
+	config Config,
+	label string,
+	selection []string,
+	states map[testID]testState,
+	skips *[]testID,
+) error {
 	args := []string{
 		"test",
 		"-json",
@@ -531,8 +763,8 @@ func run(ctx context.Context, config Config, expected []testID) error {
 		args,
 		"-tags="+strings.Join(config.Tags, ","),
 		"-timeout="+config.Timeout.String(),
-		config.Package,
 	)
+	args = append(args, selection...)
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = config.Dir
 	cmd.Stderr = config.Stderr
@@ -541,31 +773,19 @@ func run(ctx context.Context, config Config, expected []testID) error {
 		return fmt.Errorf("capture test contour output: %w", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start test contour %s: %w", config.Package, err)
+		return fmt.Errorf("start test contour %s: %w", label, err)
 	}
-
-	states := make(map[testID]testState, len(expected))
-	for _, id := range expected {
-		states[id] = testState{}
+	var events io.Reader = stdout
+	if config.Report != nil {
+		events = io.TeeReader(stdout, config.Report)
 	}
-	skips := make([]testID, 0)
-	decodeErr := decodeEvents(stdout, config.Stdout, states, &skips)
+	decodeErr := decodeEvents(events, config.Stdout, states, skips)
 	waitErr := cmd.Wait()
 	if decodeErr != nil {
 		return decodeErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("test contour %s failed: %w", config.Package, waitErr)
-	}
-	if len(states) == 0 {
-		return fmt.Errorf("test contour %s ran no tests", config.Package)
-	}
-	if len(skips) != 0 {
-		return fmt.Errorf("test contour %s skipped %s", config.Package, formatTestIDs(skips))
-	}
-	missing := missingResults(states)
-	if len(missing) != 0 {
-		return fmt.Errorf("test contour %s produced no complete result for %s", config.Package, formatTestIDs(missing))
+		return fmt.Errorf("test contour %s failed: %w", label, waitErr)
 	}
 	return nil
 }
@@ -621,13 +841,17 @@ func missingResults(states map[testID]testState) []testID {
 			missing = append(missing, id)
 		}
 	}
-	sort.Slice(missing, func(left, right int) bool {
-		if missing[left].Package == missing[right].Package {
-			return missing[left].Name < missing[right].Name
-		}
-		return missing[left].Package < missing[right].Package
-	})
+	sortTestIDs(missing)
 	return missing
+}
+
+func sortTestIDs(ids []testID) {
+	sort.Slice(ids, func(left, right int) bool {
+		if ids[left].Package == ids[right].Package {
+			return ids[left].Name < ids[right].Name
+		}
+		return ids[left].Package < ids[right].Package
+	})
 }
 
 func formatTestIDs(ids []testID) string {

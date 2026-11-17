@@ -230,10 +230,12 @@ jobs:
     name: complete integration contour
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     # Reusable workflows may preserve or reduce caller permissions, but cannot
-    # add scopes that the calling job did not grant.
+    # add scopes that the calling job did not grant. The contour's plan job
+    # reads the timings artifact of the newest master run, which needs actions.
     permissions:
       contents: read
       pull-requests: read
+      actions: read
     uses: ./.github/workflows/go-integration-tests.yml
     # The one run of the whole contour under the race detector. A push or a pull
     # request leaves the detector out to keep the contour short.

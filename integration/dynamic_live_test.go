@@ -3,9 +3,13 @@
 package integration_test
 
 import (
+	"context"
+	"database/sql"
 	"embed"
+	"fmt"
 	"io/fs"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
@@ -68,7 +72,7 @@ func TestVersionedEntityManager(t *testing.T) {
 func TestDynamicScenariosWithRealDatabase(t *testing.T) {
 	c := qt.New(t)
 	runner := ptahintegration.NewTestRunner(testFixtures)
-	runner.AddDatabase("dynamic", requireDynamicDatabaseURL(t))
+	runner.AddDatabase("dynamic", scenarioDatabase(c, "ptah_dynamic_scenarios"))
 	runner.AddScenario(requireDynamicScenario(t, "dynamic_basic_evolution"))
 	runner.AddScenario(requireDynamicScenario(t, "dynamic_idempotency"))
 	c.Assert(runner.RunAll(t.Context()), qt.IsNil)
@@ -95,31 +99,26 @@ func enumNames(schema *schemamodel.Database) map[string]bool {
 	return names
 }
 
-// requireDynamicDatabaseURL returns an address for any engine the dynamic
-// scenarios can run against, preferring PostgreSQL, and skips when neither is
-// configured.
+// scenarioDatabase creates an empty PostgreSQL database for a harness run and
+// drops it when the test ends, returning its address.
 //
-// It uses dbtarget.Lookup rather than dbtarget.URL because the first engine
-// being unconfigured is not a reason to skip: the second may still be. A
-// lookup that errors is not a miss — it means the variable was set and holds
-// another engine's address, and reporting coverage nobody configured is the
-// failure this package exists to stop, so it fails the test.
-func requireDynamicDatabaseURL(t *testing.T) string {
-	c := qt.New(t)
-	t.Helper()
-	for _, engine := range []dbtarget.Engine{dbtarget.PostgreSQL, dbtarget.MySQL} {
-		address, err := dbtarget.Lookup(engine)
-		c.Assert(err, qt.IsNil)
-		if address != "" {
-			return address
-		}
-	}
-	t.Skipf(
-		"dbtarget: set %s or %s to run the dynamic scenarios against a live database",
-		dbtarget.PostgreSQL,
-		dbtarget.MySQL,
-	)
-	return ""
+// The harness empties its database before each scenario and leaves the last
+// scenario's tables and revision rows in place, which suits the Docker suite:
+// that suite owns its server, and the state left behind is what a reader of a
+// failed run inspects. Given the contour's shared database instead, the run
+// drops every table the tests before it left there, and leaves its own tables
+// and a schema_migrations row for the next test that uses the default revision
+// table. That next test then refuses migration 1 on a checksum it never wrote.
+func scenarioDatabase(c *qt.C, prefix string) string {
+	c.Helper()
+	serverURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	admin, err := sql.Open("pgx", serverURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Assert(admin.Close(), qt.IsNil) })
+	name := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	createE2EDatabase(c, c.Context(), admin, name)
+	c.Cleanup(func() { dropE2EDatabase(c, context.Background(), admin, name) })
+	return replaceDatabaseName(c, serverURL, name)
 }
 
 func requireDynamicScenario(t *testing.T, name string) ptahintegration.TestScenario {

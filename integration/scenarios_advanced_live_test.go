@@ -24,7 +24,7 @@ func TestAdvancedScenariosWithRealDatabase(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			runner := ptahintegration.NewTestRunner(testFixtures)
-			runner.AddDatabase("advanced", requireDynamicDatabaseURL(t))
+			runner.AddDatabase("advanced", scenarioDatabase(c, "ptah_advanced_scenarios"))
 			runner.AddScenario(requireAdvancedScenario(t, test.name))
 			c.Assert(runner.RunAll(t.Context()), qt.IsNil)
 			report := runner.GetReport()

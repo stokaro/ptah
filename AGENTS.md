@@ -580,9 +580,13 @@ pull request for that line.
   behind a package boundary with a black-box unit test, or add the real public
   boundary. Never export a test-only accessor or use white-box access as an
   integration shortcut.
-- `internal/testcontour` refuses tagged tests elsewhere, and CI's `go run
-  ./internal/cmd/testcontour --tags integration` fails on any skip. Never
-  select integration tests by build tag, package or name pattern.
+- `internal/testcontour` refuses tagged tests elsewhere and fails on any skip.
+  CI splits the contour across shards, and `testcontour` alone decides the
+  split: each shard lists every test with `go test -list`, partitions the
+  listing and runs its part, and the `integration-tests` job (`testcontour
+  verify`) proves from the shards' reports that their union is the listing,
+  above a floor, with every test run once and none skipped or failed. Nothing
+  else selects integration tests: no build tag, package or name pattern.
 - **A live test asks for an engine, never for a variable**: `dbtarget.URL(c,
   dbtarget.PostgreSQL)` for the address ptah connects with,
   `dbtarget.DriverDSN(c, dbtarget.MySQL)` for a raw driver. They differ:

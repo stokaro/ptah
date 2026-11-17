@@ -70,26 +70,83 @@ jobs:
             printf -- "- because: %s\n" "$SCOPE_REASON"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  integration-tests:
-    name: integration-tests
-    needs: scope
+  # The contour is split across parallel runners, and testcontour owns the
+  # split: each shard lists every test of every tagged package, partitions the
+  # listing and runs its own part, and the integration-tests job below proves
+  # from the shards' reports that the parts add up to the listing. Nothing else
+  # may select integration tests -- no build tag, package selector or name
+  # pattern here -- because only a selection the gate can check against the
+  # whole listing keeps a skipped or dropped test from reading as green.
+  plan:
+    name: plan the contour
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The timings come from another run's artifact.
+      actions: read
+    outputs:
+      legs: ${{ steps.legs.outputs.legs }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/fetch-integration-timings.sh
+          sparse-checkout-cone-mode: false
+
+      # The newest master run's measurement balances the shards. It decides
+      # only where a test runs, never whether it does, so a run without one
+      # balances by test count. The plan job fetches it once and hands every
+      # shard the same file: shards that fetched for themselves could read two
+      # different master runs and compute two different partitions.
+      - name: Fetch the timings of the newest master run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/fetch-integration-timings.sh "$RUNNER_TEMP/integration-weights/timings.json"
+
+      - name: Hand every shard the same timings
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-weights
+          path: ${{ runner.temp }}/integration-weights/timings.json
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: error
+
+      # The shard count is written once, here. Each shard reads its position
+      # and the count from the matrix, and the gate reads the count back from
+      # the shards' manifests. The smoke suites through ./integration-test are
+      # one more leg beside the shards, so they start the same databases and
+      # sit on no shard's critical path.
+      - name: Lay out the shards
+        id: legs
+        run: |
+          shards=8
+          legs=$(jq -cn --argjson shards "$shards" \
+            '[range(1; $shards + 1) | {kind: "contour", shard: ., shards: $shards}] + [{kind: "smoke"}]')
+          echo "legs=$legs" >> "$GITHUB_OUTPUT"
+          echo "contour legs: $legs"
+
+  contour:
+    name: ${{ matrix.kind == 'smoke' && 'smoke suites' || format('contour shard {0} of {1}', matrix.shard, matrix.shards) }}
+    needs: [scope, plan]
     # Skipped rather than absent: the check is still listed on the
     # pull request, and the scope job above says why it was skipped.
     if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
-    # The whole contour runs in one job, because testcontour fails on a skip
-    # and no package selector may narrow it. A push or a pull request runs it
-    # without the race detector. The nightly `complete integration contour` in
-    # atlas-reference.yml asks for the detector, and the limits here are sized
-    # for that slower run. The total budget also covers database setup, race
-    # builds, and the following smoke suites. The packages run one at a time,
-    # and the contour step alone measured 78 and 112 minutes on two neighboring
-    # master commits, so 120 cut passing runs off. A hung test still fails its
-    # package at the contour's --timeout, which sits above the root package: it
-    # ran past 45 minutes under the race detector with 26 of its 1195 tests left
-    # to start.
-    timeout-minutes: 180
-    
+    # A push or a pull request runs the contour without the race detector. The
+    # nightly `complete integration contour` in atlas-reference.yml asks for
+    # it, and the limits here are sized for that slower run. A hung test fails
+    # its package at the contour's --timeout, which sits below this limit, so a
+    # hang ends with the package's goroutine dump rather than a canceled job.
+    timeout-minutes: 60
+    strategy:
+      # Every leg runs to its end. A shard canceled because another failed
+      # sends no report, and the gate could then say only that its tests are
+      # unaccounted for, not how they fared.
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.legs) }}
+
     services:
       postgres:
         image: postgres:18
@@ -549,7 +606,15 @@ jobs:
       - name: Build pinned Atlas CE reference
         run: scripts/build-atlas-ce-reference.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
 
+      - name: Download the contour timings
+        if: matrix.kind == 'contour'
+        uses: actions/download-artifact@v8
+        with:
+          name: integration-weights
+          path: ${{ runner.temp }}/integration-weights
+
       - name: Run tagged integration package contour
+        if: matrix.kind == 'contour'
         env:
           PTAH_ATLAS_REFERENCE: "${{ runner.temp }}/ptah-atlas-ce/atlas"
           PTAH_ATLAS_FUZZ_N: "200"
@@ -638,23 +703,105 @@ jobs:
           go run ./internal/cmd/testcontour \
             --tags integration \
             --race=${{ inputs.race == true }} \
-            --timeout 75m
+            --timeout 40m \
+            --shard ${{ matrix.shard }} \
+            --shards ${{ matrix.shards }} \
+            --timings "$RUNNER_TEMP/integration-weights/timings.json" \
+            --report-dir "$RUNNER_TEMP/integration-contour"
+
+      # always(), not !cancelled(): a shard that ran out of time is canceled,
+      # and its partial report still says which of its tests finished.
+      - name: Upload the shard report
+        if: always() && matrix.kind == 'contour'
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-contour-${{ matrix.shard }}
+          path: ${{ runner.temp }}/integration-contour
+          retention-days: 7
+          overwrite: true
+          if-no-files-found: ignore
+
+      - name: SCRATCH list what the contour left in the shared databases
+        if: ${{ !cancelled() && matrix.kind == 'contour' }}
+        env:
+          PGPASSWORD: ptah_password
+          SQLSERVER_ID: ${{ job.services.sqlserver.id }}
+          ORACLE_ID: ${{ job.services.oracle.id }}
+        run: |
+          section() { echo "== LEFTOVER $1"; }
+          pg_tables="select table_catalog||'.'||table_schema||'.'||table_name from information_schema.tables where table_schema not in ('pg_catalog','information_schema') and table_schema not like '\_timescaledb%' and table_schema not like 'timescaledb\_%' order by 1"
+          for db in ptah_test ptah_aliased ptah_oracle_dev ptah_oracle_realmdev; do
+            section "postgres $db tables"
+            psql -h localhost -p 5432 -U ptah_user -d "$db" -Atc "$pg_tables" || echo "query failed"
+          done
+          section "postgres databases"
+          psql -h localhost -p 5432 -U ptah_user -d postgres -Atc "select datname from pg_database where not datistemplate order by 1" || echo "query failed"
+          section "postgres roles"
+          psql -h localhost -p 5432 -U ptah_user -d postgres -Atc "select rolname from pg_roles where rolname !~ '^pg_' order by 1" || echo "query failed"
+          section "timescaledb ptah_test tables"
+          psql -h localhost -p 5435 -U ptah_user -d ptah_test -Atc "$pg_tables" || echo "query failed"
+          section "timescaledb databases"
+          psql -h localhost -p 5435 -U ptah_user -d postgres -Atc "select datname from pg_database where not datistemplate order by 1" || echo "query failed"
+          my_tables="select concat(table_schema,'.',table_name) from information_schema.tables where table_schema not in ('mysql','information_schema','performance_schema','sys') order by 1"
+          my_users="select concat(user,'@',host) from mysql.user where user not in ('root','mysql.sys','mysql.session','mysql.infoschema','mariadb.sys','healthcheck','ptah_user','') order by 1"
+          for port in 3306 3307 3316 3317; do
+            section "mysql-family $port tables"
+            mysql -h 127.0.0.1 -P "$port" -uroot -proot_password -N -e "$my_tables" 2>&1 || echo "query failed"
+            section "mysql-family $port users"
+            mysql -h 127.0.0.1 -P "$port" -uroot -proot_password -N -e "$my_users" 2>&1 || echo "query failed"
+          done
+          for port in 8123 8124; do
+            section "clickhouse $port tables"
+            curl -sS "http://127.0.0.1:$port/" --user ptah_user:ptah_password --data-binary "SELECT database || '.' || name FROM system.tables WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') ORDER BY 1" || echo "query failed"
+            section "clickhouse $port users and roles"
+            curl -sS "http://127.0.0.1:$port/" --user ptah_user:ptah_password --data-binary "SELECT 'user ' || name FROM system.users WHERE name NOT IN ('default', 'ptah_user') UNION ALL SELECT 'role ' || name FROM system.roles ORDER BY 1" || echo "query failed"
+          done
+          section "sqlserver databases and master tables"
+          docker exec "$SQLSERVER_ID" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'P@ssw0rd-ptah-2026' -No -h -1 -W \
+            -Q "SET NOCOUNT ON; SELECT 'database ' + name FROM sys.databases WHERE database_id > 4; SELECT 'table ' + s.name + '.' + t.name FROM master.sys.tables t JOIN master.sys.schemas s ON s.schema_id = t.schema_id WHERE t.is_ms_shipped = 0; SELECT 'login ' + name FROM sys.server_principals WHERE type IN ('S', 'U') AND name NOT LIKE '##%' AND name NOT IN ('sa', 'NT AUTHORITY\SYSTEM')" || echo "query failed"
+          section "cockroachdb tables and databases"
+          docker exec ptah-cockroachdb /cockroach/cockroach sql --insecure --host=127.0.0.1:26257 --format=tsv \
+            -e "select table_catalog||'.'||table_schema||'.'||table_name from defaultdb.information_schema.tables where table_schema not in ('pg_catalog','information_schema','crdb_internal','pg_extension') order by 1" \
+            -e "select database_name from [show databases] order by 1" \
+            -e "select username from [show roles] order by 1" || echo "query failed"
+          section "yugabytedb tables, databases and roles"
+          docker exec -i ptah-yugabytedb bash -lc 'ip=$(hostname -i); ip=${ip%% *}; exec bin/ysqlsh -h "$ip" -p 5433 -U yugabyte -d yugabyte -At' <<'SQL' || echo "query failed"
+          select 'table ' || table_schema || '.' || table_name from information_schema.tables where table_schema not in ('pg_catalog', 'information_schema') order by 1;
+          select 'database ' || datname from pg_database where not datistemplate order by 1;
+          select 'role ' || rolname from pg_roles where rolname !~ '^(pg_|yb_)' order by 1;
+          SQL
+          section "oracle ptah objects"
+          docker exec -i "$ORACLE_ID" sqlplus -s ptah/ptah_password@localhost/FREEPDB1 <<'SQL' || echo "query failed"
+          set heading off feedback off pagesize 0 linesize 200
+          select object_type || ' ' || object_name from user_objects where object_name not like 'SYS\_%' escape '\' order by 1;
+          exit
+          SQL
+          section "oracle users"
+          docker exec -i "$ORACLE_ID" sqlplus -s system/ptah_password@localhost/FREEPDB1 <<'SQL' || echo "query failed"
+          set heading off feedback off pagesize 0 linesize 200
+          select username from all_users where oracle_maintained = 'N' order by 1;
+          exit
+          SQL
 
       - name: Build integration test binary
+        if: matrix.kind == 'smoke'
         run: |
           go build -race=${{ inputs.race == true }} -o ./integration-test ./cmd/integration-test
 
       - name: Test integration binary help
+        if: matrix.kind == 'smoke'
         run: |
           ./integration-test --help
 
       - name: Run basic smoke test
+        if: matrix.kind == 'smoke'
         env:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
         run: |
           ./integration-test --scenarios=apply_incremental_migrations,check_current_version --databases=postgres --report=stdout,txt,json,html --output=./reports
 
       - name: Run all databases comprehensive test
+        if: matrix.kind == 'smoke'
         env:
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           MYSQL_URL: "mysql://ptah_user:ptah_password@tcp(127.0.0.1:3306)/ptah_test"
@@ -668,6 +815,7 @@ jobs:
           ./integration-test --databases=postgres,mysql,mariadb,clickhouse,cockroachdb,yugabytedb --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Run distributed SQL live smoke tests
+        if: matrix.kind == 'smoke'
         env:
           COCKROACHDB_URL: "cockroachdb://root@localhost:26257/defaultdb?sslmode=disable"
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
@@ -676,6 +824,7 @@ jobs:
           ./integration-test --databases=yugabytedb --scenarios=dynamic_yugabytedb_common_subset --report=stdout,txt,json,html --verbose --output=./reports
 
       - name: Run SQL Server live smoke tests
+        if: matrix.kind == 'smoke'
         env:
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
         run: |
@@ -683,17 +832,91 @@ jobs:
 
       - name: Upload integration test reports
         uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && matrix.kind == 'smoke'
         with:
           name: ptah-integration-test-reports
           path: |
             reports/
           retention-days: 7
 
+  # The contour's verdict, under the name the single unsharded job carried. It
+  # runs whenever the shards were due, on every event, and is the one place that
+  # judges the contour as a whole: every shard's tests can pass while the
+  # shards together still miss one.
+  contour-gate:
+    name: integration-tests
+    needs: [scope, plan, contour]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.code == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      # A failed download leaves fewer reports, never more, and the next step
+      # refuses a contour with a shard missing. So the download may fail and
+      # leave the verdict to the step that names what is missing.
+      - name: Download every shard report
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: integration-contour-*
+          path: ${{ runner.temp }}/integration-contour
+
+      # The union of the shards' tests must equal the listing they partitioned,
+      # each test must have run once, on its shard, and none may have skipped
+      # or failed. The floor sits below the 3,472 tests listed when it was set
+      # and far above zero, so a listing that stopped matching cannot pass.
+      - name: Prove the shards ran the contour exactly once
+        run: |
+          go run ./internal/cmd/testcontour verify \
+            --reports "$RUNNER_TEMP/integration-contour" \
+            --floor 3000 \
+            --timings-out "$RUNNER_TEMP/integration-timings/timings.json" \
+            --source "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      # The measurement balances the next run's shards; the plan job reads it
+      # from the newest master run that kept it.
+      - name: Keep the measured timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-timings
+          path: ${{ runner.temp }}/integration-timings/timings.json
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: ignore
+
+      # A leg can fail without a test failing: a database that never came up,
+      # or a smoke suite. The verdict covers those too.
+      - name: Require every leg to have succeeded
+        if: ${{ !cancelled() }}
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          CONTOUR_RESULT: ${{ needs.contour.result }}
+        run: |
+          status=0
+          if [ "$PLAN_RESULT" != success ]; then
+            echo "the plan job concluded $PLAN_RESULT" >&2
+            status=1
+          fi
+          if [ "$CONTOUR_RESULT" != success ]; then
+            echo "a contour shard or the smoke suites concluded $CONTOUR_RESULT" >&2
+            status=1
+          fi
+          exit "$status"
+
   integration-gate:
     name: Integration gate
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-    needs: [scope, integration-tests]
+    needs: [scope, contour-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -702,7 +925,7 @@ jobs:
         env:
           SCOPE_RESULT: ${{ needs.scope.result }}
           CODE_SCOPE: ${{ needs.scope.outputs.code }}
-          INTEGRATION_RESULT: ${{ needs.integration-tests.result }}
+          INTEGRATION_RESULT: ${{ needs.contour-gate.result }}
         run: |
           scripts/check-ci-scope-gate.sh --selftest
           scripts/check-ci-scope-gate.sh \
