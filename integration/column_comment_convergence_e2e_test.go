@@ -109,6 +109,28 @@ COMMENT ON COLUMN "tasks"."owner" IS 'who';
 		wantComments: []string{"", "v2", "", "", "who"},
 	},
 	{
+		// The comments of added columns follow the order the declaration
+		// gives the columns, not their names, as the community binary writes
+		// them.
+		name:    "columns added out of name order with comments",
+		initial: "CREATE TABLE tasks (id bigint PRIMARY KEY);\n",
+		desired: `CREATE TABLE tasks (id bigint PRIMARY KEY, z text, b text, m text);
+COMMENT ON COLUMN tasks.z IS 'zz';
+COMMENT ON COLUMN tasks.b IS 'bb';
+COMMENT ON COLUMN tasks.m IS 'mm';
+`,
+		wantChange: `-- Modify "tasks" table
+ALTER TABLE "tasks" ADD COLUMN "z" text NULL, ADD COLUMN "b" text NULL, ADD COLUMN "m" text NULL;
+-- Set comment to column: "z" on table: "tasks"
+COMMENT ON COLUMN "tasks"."z" IS 'zz';
+-- Set comment to column: "b" on table: "tasks"
+COMMENT ON COLUMN "tasks"."b" IS 'bb';
+-- Set comment to column: "m" on table: "tasks"
+COMMENT ON COLUMN "tasks"."m" IS 'mm';
+`,
+		wantComments: []string{"", "zz", "bb", "mm"},
+	},
+	{
 		// The community binary writes a created table's comments after its
 		// indexes too, the table's own first.
 		name:    "a table created with comments and an index",
