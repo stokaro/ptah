@@ -426,7 +426,7 @@ func documentCapabilities(
 		}
 		return devCaps, nil
 	case asksDevServer:
-		return devServerVersion(ctx, dialect, opts.DevURL, opts.ConnectTimeout), nil
+		return devServerVersion(ctx, dialect, opts.DevURL, opts.ConnectTimeout, opts.Diagnostics), nil
 	}
 	return capability.Capabilities{}, nil
 }
@@ -436,8 +436,15 @@ func documentCapabilities(
 // or nil where the dialect default stands. A URL that cannot be opened within
 // devVersionTimeout answers nil, so the comparison runs as it does with no dev
 // database, and a declaration the default cannot plan is refused by name
-// there.
-func devServerVersion(ctx context.Context, dialect, devURL string, timeout time.Duration) capability.Capabilities {
+// there. That fallback is noted on diagnostics, when it is not nil, so an
+// operator whose project-wide dev server is down learns the plan was not made
+// for it; the run's outcome does not change.
+func devServerVersion(
+	ctx context.Context,
+	dialect, devURL string,
+	timeout time.Duration,
+	diagnostics io.Writer,
+) capability.Capabilities {
 	if timeout <= 0 || timeout > devVersionTimeout {
 		timeout = devVersionTimeout
 	}
@@ -445,6 +452,11 @@ func devServerVersion(ctx context.Context, dialect, devURL string, timeout time.
 	if err != nil {
 		slog.Debug("could not open the dev URL for its server version; planning for the dialect default",
 			"dialect", dialect, "error", err)
+		if diagnostics != nil {
+			fmt.Fprintf(diagnostics,
+				"note: the dev database named in the project file did not answer; planning for the %s default capabilities\n",
+				dialect)
+		}
 		return capability.Capabilities{}
 	}
 	return caps

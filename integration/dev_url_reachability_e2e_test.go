@@ -325,6 +325,23 @@ func TestDevURLInTheProjectFileIsNotOpenedByANativeCommandThatDoesNotUseItE2E(t 
 	}
 }
 
+// TestDevURLInTheProjectFileThatDoesNotAnswerIsNotedByADiffOfTwoDocumentsE2E
+// is native `schema diff` of two schema files with closedDevURL as the project
+// file's `dev:` key. Two documents are planned for the dev server's version,
+// so the diff asks it, and when it does not answer the diff plans for the
+// dialect default, says so on stderr, and still succeeds.
+func TestDevURLInTheProjectFileThatDoesNotAnswerIsNotedByADiffOfTwoDocumentsE2E(t *testing.T) {
+	c := qt.New(t)
+	f := newDevReachFixture(c)
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "ptah.yaml"), []byte("dev: "+strconv.Quote(closedDevURL)+"\n"), 0o600), qt.IsNil)
+	got := runFormatTemplateVerb(c, clirun.Build(c, clirun.Ptah), dir, nil, nativeDevReachRows[0].args(f)...)
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stderr, qt.Contains,
+		"note: the dev database named in the project file did not answer; planning for the postgres default capabilities\n")
+	c.Assert(got.Stdout, qt.Contains, "ADD COLUMN")
+}
+
 // TestDevURLOfSchemaInspectOfADatabaseIsNeverOpenedE2E is `schema inspect` of
 // a database given the closed dev URL as a flag, on both binaries: it reads
 // the database and succeeds.
@@ -359,6 +376,21 @@ var compatProjectDevRows = []devReachRow{
 	},
 }
 
+// compatOnlyProjectDevRows are compatProjectDevRows for verbs the community
+// version does not have, so they have no reference run. `migrate down` is
+// forwarded to native `migrations down`, which opens a dev URL on a run that
+// rolls nothing back only when the URL was given for the run. The env `dev`
+// is forwarded as that flag, so it counts, and the run fails on it as the
+// Atlas CLI would.
+var compatOnlyProjectDevRows = []devReachRow{
+	{
+		name: "migrate down with nothing to roll back", binary: clirun.Compat, refusedCode: 1,
+		args: func(f devReachFixture) []string {
+			return []string{"migrate", "down", "--env", "local", "--dir", "file://" + f.dir}
+		},
+	},
+}
+
 // assertProjectDevURLRefused runs row in a directory whose atlas.hcl names
 // the target and the closed dev URL, and checks that the run fails on the dev
 // URL before it writes a plan.
@@ -379,7 +411,7 @@ func assertProjectDevURLRefused(c *qt.C, binary string, f devReachFixture, row d
 // file names, on a run that needs nothing from it.
 func TestCompatDevURLInTheProjectFileNothingAnswersOnIsRefusedE2E(t *testing.T) {
 	f := newDevReachFixture(qt.New(t))
-	for _, row := range compatProjectDevRows {
+	for _, row := range slices.Concat(compatProjectDevRows, compatOnlyProjectDevRows) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 			got := assertProjectDevURLRefused(c, clirun.Build(c, row.binary), f, row)
