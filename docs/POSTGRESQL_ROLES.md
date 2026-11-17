@@ -40,6 +40,14 @@ The following attributes are supported for PostgreSQL roles:
 - `inherit`: Whether the role inherits privileges from granted roles (default: `true`)
 - `replication`: Whether the role can initiate streaming replication (default: `false`)
 - `comment`: Optional comment describing the role
+- `settings`: Configuration defaults the role logs in with, `name = value`
+  separated by semicolons, each value written in SQL:
+  `settings="statement_timeout = '30s'; search_path = '$user', public"`
+- `reset_settings`: Settings to take away from the role, separated by commas:
+  `reset_settings="work_mem, app.tenant"`
+
+See [Role Settings](#role-settings) for what Ptah manages and what it leaves
+alone.
 
 ## Grant Definition
 
@@ -205,6 +213,39 @@ ALTER ROLE api_user NOLOGIN;
 -- Update password: the statement names the variable it is read from
 ALTER ROLE app_user PASSWORD $PTAH_SECRET_PASSWORD_APP_USER;
 ```
+
+### Role Settings
+
+A role's settings are the defaults `ALTER ROLE ... SET` stores for it in every
+database. Ptah manages only the settings a declaration names: a value plans
+`ALTER ROLE ... SET` when the server holds another one or none, a name in
+`reset_settings` plans `ALTER ROLE ... RESET` when the server holds it, and a
+setting the declaration leaves out is never touched. Ptah never writes
+`RESET ALL`.
+
+```go
+//ptah:schema:role name="app_reader" login="true" settings="statement_timeout = '30s'; search_path = '$user', public" reset_settings="work_mem"
+type AppReader struct{}
+```
+
+```sql
+ALTER ROLE "app_reader" SET "search_path" = '$user', public;
+ALTER ROLE "app_reader" SET "statement_timeout" = '30s';
+```
+
+A SQL schema file declares the same settings with `ALTER ROLE app_reader SET
+statement_timeout = '30s';` and `ALTER ROLE app_reader RESET work_mem;`, and a
+YAML role entry with the `settings` and `reset_settings` keys. Atlas HCL has no
+attribute for them, so a role read from HCL leaves its settings unmanaged.
+
+A setting takes effect when a session logs in as the role. Open sessions keep
+the values they started with, and `SET ROLE` loads none of them. `ALTER ROLE
+... IN DATABASE`, `ALTER ROLE ALL`, `SET ... FROM CURRENT` and `RESET ALL` are
+refused when the schema is read. A default the server stores for one database
+or for every role is reported as left out when the database is read, and
+nothing is planned for it. The
+[PostgreSQL page](site/src/content/docs/databases/postgresql.md#role-settings)
+has the details.
 
 ### GRANT and REVOKE Statements
 

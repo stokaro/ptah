@@ -558,18 +558,8 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 	if value.Declined {
 		return checkDeclined(extension, claim, value)
 	}
-	var tableFacets, roleFacets schemaext.Facets
-	if value.TableFacets != nil {
-		tableFacets = value.TableFacets.Facets
-	}
-	if value.RoleFacets != nil {
-		roleFacets = value.RoleFacets.Facets
-	}
-	for _, kind := range slices.Concat(value.Facets.Kinds(), tableFacets.Kinds(), roleFacets.Kinds()) {
-		if !slices.Contains(extension.Facets, kind) {
-			return fmt.Errorf("%w: SQL parser of %s answered a facet of kind %q, which its extension does not declare",
-				schemaext.ErrInvalidValue, extension.Owner, kind)
-		}
+	if err := checkFacetKinds(extension, value); err != nil {
+		return err
 	}
 	if claim.Site != Statement {
 		if value.Statement != nil || value.Table != nil || value.TableFacets != nil || value.RoleFacets != nil ||
@@ -597,6 +587,25 @@ func checkValue(extension Extension, claim Claim, value Value) error {
 	return nil
 }
 
+// checkFacetKinds refuses a facet, of the claim's element or of the table or
+// role a statement gives facets, whose kind the extension does not declare.
+func checkFacetKinds(extension Extension, value Value) error {
+	var tableFacets, roleFacets schemaext.Facets
+	if value.TableFacets != nil {
+		tableFacets = value.TableFacets.Facets
+	}
+	if value.RoleFacets != nil {
+		roleFacets = value.RoleFacets.Facets
+	}
+	for _, kind := range slices.Concat(value.Facets.Kinds(), tableFacets.Kinds(), roleFacets.Kinds()) {
+		if !slices.Contains(extension.Facets, kind) {
+			return fmt.Errorf("%w: SQL parser of %s answered a facet of kind %q, which its extension does not declare",
+				schemaext.ErrInvalidValue, extension.Owner, kind)
+		}
+	}
+	return nil
+}
+
 // checkDeclined refuses a decline of a claim other than a statement, which
 // the frontend could not read again by itself, and a decline that carries a
 // value besides.
@@ -618,41 +627,61 @@ func checkDeclined(extension Extension, claim Claim, value Value) error {
 // objects, another table's facets or a role's facets beside it, and table or
 // role facets that name no table or role or contain no facets.
 func checkStatementValue(extension Extension, claim Claim, value Value) error {
-	var problem string
-	switch {
-	case value.Constraint != nil:
-		problem = "an inline constraint at a statement"
-	case value.Statement == nil && value.Table == nil:
-		problem = "no statement"
-	case value.Statement != nil && value.Table != nil:
-		problem = "both a statement and a table"
-	case value.Table != nil && strings.TrimSpace(value.Table.Name) == "":
-		problem = "a table without a name"
-	case value.Table != nil && (len(value.Objects) > 0 || len(value.Replaces) > 0):
-		problem = "a table and objects beside it"
-	case value.Table != nil && value.TableFacets != nil:
-		problem = "a table and another table's facets"
-	case value.Table != nil && value.RoleFacets != nil:
-		problem = "a table and a role's facets"
-	case value.Table != nil && (hasStatementRequirements(value)):
-		problem = "a table and statement requirements"
-	case slices.ContainsFunc(value.TableReferences, func(name string) bool { return strings.TrimSpace(name) == "" }):
-		problem = "a blank table reference"
-	case slices.ContainsFunc(value.RoleReferences, func(name string) bool { return strings.TrimSpace(name) == "" }):
-		problem = "a blank role reference"
-	case value.TableFacets != nil && strings.TrimSpace(value.TableFacets.Name) == "":
-		problem = "table facets without a table name"
-	case value.TableFacets != nil && value.TableFacets.Facets.IsZero():
-		problem = "table facets without a facet"
-	case value.RoleFacets != nil && strings.TrimSpace(value.RoleFacets.Name) == "":
-		problem = "role facets without a role name"
-	case value.RoleFacets != nil && value.RoleFacets.Facets.IsZero():
-		problem = "role facets without a facet"
-	default:
+	problem := statementProblem(value)
+	if problem == "" {
+		problem = referenceProblem(value)
+	}
+	if problem == "" {
 		return nil
 	}
 	return fmt.Errorf("%w: SQL parser of %s answered its statement claim %q with %s",
 		schemaext.ErrInvalidValue, extension.Owner, claim.Pattern, problem)
+}
+
+// statementProblem names what is wrong with what a statement's value
+// declares, or returns the empty string.
+func statementProblem(value Value) string {
+	switch {
+	case value.Constraint != nil:
+		return "an inline constraint at a statement"
+	case value.Statement == nil && value.Table == nil:
+		return "no statement"
+	case value.Statement != nil && value.Table != nil:
+		return "both a statement and a table"
+	case value.Table != nil && strings.TrimSpace(value.Table.Name) == "":
+		return "a table without a name"
+	case value.Table != nil && (len(value.Objects) > 0 || len(value.Replaces) > 0):
+		return "a table and objects beside it"
+	case value.Table != nil && value.TableFacets != nil:
+		return "a table and another table's facets"
+	case value.Table != nil && value.RoleFacets != nil:
+		return "a table and a role's facets"
+	case value.Table != nil && hasStatementRequirements(value):
+		return "a table and statement requirements"
+	}
+	return ""
+}
+
+// referenceProblem names a blank table or role reference, or table or role
+// facets that name no table or role or contain no facet, or returns the empty
+// string.
+func referenceProblem(value Value) string {
+	blank := func(name string) bool { return strings.TrimSpace(name) == "" }
+	switch {
+	case slices.ContainsFunc(value.TableReferences, blank):
+		return "a blank table reference"
+	case slices.ContainsFunc(value.RoleReferences, blank):
+		return "a blank role reference"
+	case value.TableFacets != nil && blank(value.TableFacets.Name):
+		return "table facets without a table name"
+	case value.TableFacets != nil && value.TableFacets.Facets.IsZero():
+		return "table facets without a facet"
+	case value.RoleFacets != nil && blank(value.RoleFacets.Name):
+		return "role facets without a role name"
+	case value.RoleFacets != nil && value.RoleFacets.Facets.IsZero():
+		return "role facets without a facet"
+	}
+	return ""
 }
 
 // Coverage combines the claims of the extensions that read documents of

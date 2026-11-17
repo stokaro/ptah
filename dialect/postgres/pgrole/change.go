@@ -169,7 +169,7 @@ const settingsChangeDefinition = `{"type":"object","required":["settings"],"addi
 // compared: a value the role does not hold, or holds in another value ([Matches]),
 // is set, and a reset is planned only for a setting the role holds. A setting
 // the role holds and the declaration does not name is left alone.
-func Changes(declared []Setting, observed []Setting) *SettingsChange {
+func Changes(declared, observed []Setting) *SettingsChange {
 	held := make(map[string]Setting, len(observed))
 	for _, setting := range observed {
 		held[Key(setting.Name)] = setting

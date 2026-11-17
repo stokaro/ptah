@@ -1711,6 +1711,79 @@ its overload is unambiguous. Role creation inside a `DO` block is not a
 schema declaration; declare roles with `CREATE ROLE`, or create them in your
 versioned migrations before a grant uses them.
 
+### Role settings
+
+A role's configuration defaults are what `ALTER ROLE app SET
+statement_timeout = '30s'` stores: values every new session of the role starts
+with. Ptah manages the defaults a role holds in every database, the rows of
+`pg_db_role_setting` whose `setdatabase` is 0. Only PostgreSQL takes them;
+every other target, CockroachDB and YugabyteDB included, refuses a declared
+setting.
+
+| Source | A value | An explicit reset |
+| --- | --- | --- |
+| Go annotation | `settings="statement_timeout = '30s'; search_path = '$user', public"` | `reset_settings="work_mem, app.tenant"` |
+| YAML role entry | `settings:` with the same text | `reset_settings:` with the same text |
+| SQL | `ALTER ROLE app SET statement_timeout = '30s';` | `ALTER ROLE app RESET work_mem;` |
+| Atlas HCL | none | none |
+
+A value is written in SQL, as it stands after the equals sign of `SET`: a
+string literal in single quotes, a number, a bare word, an identifier in double
+quotes, or a list of them separated by commas. A value with a unit is a string,
+`'30s'`; PostgreSQL refuses `30s` without quotes, and so does Ptah. In SQL,
+`SET name TO value` is the same statement, `SET name TO DEFAULT` is a reset,
+`ALTER USER` is `ALTER ROLE`, and later statements about a setting replace
+earlier ones, as they do on the server. A name is matched without regard to
+case, a custom name such as `app.tenant` is accepted, and a part in double
+quotes keeps its case.
+
+A declaration manages only the settings it names. A setting the role holds and
+the declaration leaves out stays as it is, whoever set it; a reset is the only
+way to take one away, and Ptah never writes `RESET ALL`. A role that names no
+setting manages none.
+
+The comparison reads the declared value the way the server stores it, so
+`search_path = '$user', public` matches the stored `"$user", public`. The server
+keeps the spelling a statement gives it: a declared `'30s'` against a stored
+`30000` plans one `ALTER ROLE`, and the next comparison finds the role in sync.
+A new role is created with `CREATE ROLE` and then given its values with
+`ALTER ROLE ... SET`; a reset asks nothing of a new role.
+
+A setting takes effect at login. A session that is already open keeps the
+values it started with, and `SET ROLE` loads none of them, so only a new
+connection authenticated as the role sees a change.
+
+These forms are refused while the schema is read, by name, rather than read as
+something else:
+
+- `ALTER ROLE app IN DATABASE app SET ...`, a default for one database;
+- `ALTER ROLE ALL SET ...`, a default for every role;
+- `ALTER ROLE app SET name FROM CURRENT`, which stores the value of whatever
+  session runs it;
+- `ALTER ROLE app RESET ALL`, which takes away settings the schema does not
+  name;
+- `CURRENT_USER`, `CURRENT_ROLE` and `SESSION_USER` in place of the role's name.
+
+A database read names the defaults it does not model instead of dropping them:
+one stored for a role in the database read (`ALTER ROLE ... IN DATABASE`), one
+stored for every role in it (`ALTER DATABASE ... SET`), and one stored for every
+role in every database (`ALTER ROLE ALL SET`). Each appears in the warning a plan
+or an apply prints, and nothing is planned for it:
+
+```text
+warning: 2 objects were left out: role setting "lock_timeout for every role in database app" in the database (a default ALTER DATABASE ... SET stores for every role in one database, which Ptah does not model); role setting "work_mem for role app in database app" in the database (a default ALTER ROLE ... IN DATABASE stores for one database; Ptah models a role's defaults in every database); PTAH_LOG_LEVEL=debug lists them
+```
+
+A parameter only a superuser may set, such as `log_statement`, fails at apply
+for a role that is not one, with the server's `permission denied to set
+parameter "log_statement"` and the statement that failed. The apply runs in a
+transaction, so nothing it planned is left behind.
+
+An Atlas HCL `role` block has no attribute for settings. A `settings` attribute
+there is refused as an unknown role attribute, a role read from HCL leaves its
+settings unmanaged, and an HCL export of a role that holds settings warns that
+it leaves them out.
+
 ### Revoking privileges nobody granted
 
 PostgreSQL gives some privileges without a `GRANT`: every role can execute a

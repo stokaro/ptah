@@ -66,7 +66,7 @@ func convertSettings(from schemaext.Representation, value schemaext.Value) (sche
 			if err := ValidateDesiredSettings(s); err != nil {
 				return nil, err
 			}
-			observed := &ObservedSettings{Settings: []Setting{}}
+			observed := &ObservedSettings{Settings: make([]Setting, 0, len(s.Settings))}
 			for _, setting := range s.Settings {
 				if !setting.Reset {
 					observed.Settings = append(observed.Settings, Setting{Name: setting.Name, Value: StoredValue(setting.Name, setting.Value)})

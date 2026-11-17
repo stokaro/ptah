@@ -164,7 +164,7 @@ func readStatement(claim sqlext.Claim) (roleStatement, error) {
 	case role.Type == lexer.TokenIdentifier && isRoleKeyword(role.Value):
 		return roleStatement{}, t.refuse(fmt.Sprintf("ALTER %s %s names the role of the session that runs it; name the role",
 			head, strings.ToUpper(role.Value)))
-	case role.Type != lexer.TokenIdentifier && !(role.Type == lexer.TokenString && strings.HasPrefix(role.Value, `"`)):
+	case role.Type != lexer.TokenIdentifier && (role.Type != lexer.TokenString || !strings.HasPrefix(role.Value, `"`)):
 		return roleStatement{}, t.refuse(fmt.Sprintf("ALTER %s expects a role name", head))
 	}
 	t.pos++

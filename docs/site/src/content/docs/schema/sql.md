@@ -499,6 +499,24 @@ Both table flags are compared and planned in both directions. See
 `IS NULL` clears it. The declaration must precede the comment, including across
 SQL files.
 
+## Role settings
+
+A PostgreSQL schema file gives a role its configuration defaults with the
+statements that set them:
+
+```sql
+CREATE ROLE app_reader LOGIN;
+ALTER ROLE app_reader SET statement_timeout = '30s';
+ALTER ROLE app_reader SET search_path TO "$user", public;
+ALTER ROLE app_reader RESET work_mem;
+```
+
+`RESET` and `SET ... TO DEFAULT` take a setting away; a setting the file does
+not name is left as the server holds it. Statements about one setting fold in
+file order, and each needs its role declared before it. `ALTER ROLE ... IN
+DATABASE`, `ALTER ROLE ALL`, `SET ... FROM CURRENT` and `RESET ALL` are refused.
+See [Role settings](../../databases/postgresql/#role-settings).
+
 ## Declare a partition
 
 On PostgreSQL and YugabyteDB, `CREATE TABLE ... PARTITION OF` declares a partition of

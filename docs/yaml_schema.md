@@ -461,8 +461,13 @@ rendered for MySQL/MariaDB with dialect-specific trigger bodies.
   is refused on any other target; scoped to SQL Server or ClickHouse it is
   that target's policy. A scope naming both families is refused.
 - `roles`: `name`, `login`, `password`, `superuser`, `create_db`,
-  `create_role`, `inherit`, `replication`, `comment`, and on YDB `group` and
-  `member_of`
+  `create_role`, `inherit`, `replication`, `comment`, on PostgreSQL `settings`
+  and `reset_settings`, and on YDB `group` and `member_of`. `settings` holds
+  `name = value` pairs separated by semicolons, each value written in SQL, such
+  as `"statement_timeout = '30s'; search_path = '$user', public"`;
+  `reset_settings` names settings to take away, separated by commas. A setting
+  neither key names is left as the server holds it. See
+  [Role settings](site/src/content/docs/databases/postgresql.md#role-settings).
 - `grants`: `role`, `privilege` or `privileges`, `on_table`, `on_schema`,
   `on_sequence`, `on_function`, `on_procedure`, `on_database` (YDB),
   `on_topic`, `on_coordination_node`, `on_secret`,

@@ -61,17 +61,21 @@ func (*DesiredSettings) Kind() schemaext.Kind { return SettingsKind }
 func (*ObservedSettings) Kind() schemaext.Kind { return SettingsKind }
 
 // Clone returns an independent declaration. A nil receiver remains typed nil.
-func (s *DesiredSettings) Clone() schemaext.Value {
+func (s *DesiredSettings) Clone() schemaext.Value { return s.clone() }
+
+// Clone returns an independent observation. A nil receiver remains typed nil.
+func (s *ObservedSettings) Clone() schemaext.Value { return s.clone() }
+
+func (s *DesiredSettings) clone() *DesiredSettings {
 	if s == nil {
-		return (*DesiredSettings)(nil)
+		return nil
 	}
 	return &DesiredSettings{Settings: slices.Clone(s.Settings)}
 }
 
-// Clone returns an independent observation. A nil receiver remains typed nil.
-func (s *ObservedSettings) Clone() schemaext.Value {
+func (s *ObservedSettings) clone() *ObservedSettings {
 	if s == nil {
-		return (*ObservedSettings)(nil)
+		return nil
 	}
 	return &ObservedSettings{Settings: slices.Clone(s.Settings)}
 }
@@ -278,10 +282,10 @@ func SettingsCodecs() []schemaext.Codec {
 	return []schemaext.Codec{
 		schemaext.ModelCodec[*DesiredSettings]{Prototype: &DesiredSettings{}, Representation: schemaext.Desired, Version: 1,
 			Definition: json.RawMessage(settingsDefinition), Shape: settingsShape, Validate: ValidateDesiredSettings,
-			Clone: func(s *DesiredSettings) *DesiredSettings { return s.Clone().(*DesiredSettings) }}.Codec(),
+			Clone: (*DesiredSettings).clone}.Codec(),
 		schemaext.ModelCodec[*ObservedSettings]{Prototype: &ObservedSettings{}, Representation: schemaext.Observed, Version: 1,
 			Definition: json.RawMessage(settingsDefinition), Shape: settingsShape, Validate: ValidateObservedSettings,
-			Clone: func(s *ObservedSettings) *ObservedSettings { return s.Clone().(*ObservedSettings) }}.Codec(),
+			Clone: (*ObservedSettings).clone}.Codec(),
 	}
 }
 

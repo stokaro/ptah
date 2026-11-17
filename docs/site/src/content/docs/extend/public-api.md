@@ -73,6 +73,8 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/postgres/pgtableprobe` | Connected partition-key normalization in rolled-back probe transactions. |
 | `dialect/postgres/pgtablerender` | PostgreSQL table persistence prefixes and ALTER statements. |
 | `dialect/postgres/pgproject` | PostgreSQL constraint backing-index and column effects. |
+| `dialect/postgres/pgrole` | PostgreSQL role configuration settings: the declared and observed facets, their comparison and the `ALTER ROLE ... SET` and `RESET` operation. |
+| `dialect/postgres/pgrolerender` | The renderer of role settings, and the statements that give a new role its declared values. |
 | `dialect/clickhouse/chprepare` | ClickHouse key membership, retained settings, and CREATE defaults. |
 | `dialect/clickhouse/chprobe` | Server-normalized row policy filters. |
 | `dialect/clickhouse/chresolve` | Storage-setting resolution with retained intent and property origins. |

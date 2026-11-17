@@ -32,7 +32,8 @@ type Setting struct {
 // the server reads it, and a quoted part keeps its case and loses its quotes.
 // It refuses an empty name, an empty part and text that is not a name.
 func ParseName(written string) (string, error) {
-	rest := strings.TrimSpace(written)
+	trimmed := strings.TrimSpace(written)
+	rest := trimmed
 	if rest == "" {
 		return "", fmt.Errorf("%w: a role setting needs a parameter name", schemaext.ErrInvalidValue)
 	}
@@ -40,7 +41,7 @@ func ParseName(written string) (string, error) {
 	for {
 		part, remainder, err := namePart(rest)
 		if err != nil {
-			return "", fmt.Errorf("%w: role setting name %q: %s", schemaext.ErrInvalidValue, written, err.Error())
+			return "", fmt.Errorf("%w: role setting name %q: %s", schemaext.ErrInvalidValue, trimmed, err.Error())
 		}
 		parts = append(parts, part)
 		remainder = strings.TrimSpace(remainder)
@@ -48,7 +49,7 @@ func ParseName(written string) (string, error) {
 			return strings.Join(parts, "."), nil
 		}
 		if remainder[0] != '.' {
-			return "", fmt.Errorf("%w: role setting name %q is not one name", schemaext.ErrInvalidValue, written)
+			return "", fmt.Errorf("%w: role setting name %q is not one name", schemaext.ErrInvalidValue, trimmed)
 		}
 		rest = strings.TrimSpace(remainder[1:])
 	}
@@ -184,32 +185,15 @@ func number(text string) (element, rest string, err error) {
 		}
 	}
 	start := i
-	for i < len(text) && text[i] >= '0' && text[i] <= '9' {
-		i++
-	}
+	i = digitsEnd(text, i)
 	if i < len(text) && text[i] == '.' {
-		i++
-		for i < len(text) && text[i] >= '0' && text[i] <= '9' {
-			i++
-		}
+		i = digitsEnd(text, i+1)
 	}
 	digits := strings.Trim(text[start:i], ".")
 	if digits == "" {
 		return "", "", fmt.Errorf("a sign or a point without a number")
 	}
-	if i < len(text) && (text[i] == 'e' || text[i] == 'E') {
-		j := i + 1
-		if j < len(text) && (text[j] == '+' || text[j] == '-') {
-			j++
-		}
-		k := j
-		for k < len(text) && text[k] >= '0' && text[k] <= '9' {
-			k++
-		}
-		if k > j {
-			i = k
-		}
-	}
+	i = exponentEnd(text, i)
 	if i < len(text) && isWordByte(text[i], false) {
 		end := i
 		for end < len(text) && isWordByte(text[end], false) {
@@ -219,6 +203,31 @@ func number(text string) (element, rest string, err error) {
 	}
 	b.WriteString(text[start:i])
 	return b.String(), text[i:], nil
+}
+
+// digitsEnd returns the index of the first byte at or after i that is not a
+// decimal digit.
+func digitsEnd(text string, i int) int {
+	for i < len(text) && text[i] >= '0' && text[i] <= '9' {
+		i++
+	}
+	return i
+}
+
+// exponentEnd returns where an exponent that starts at i ends, or i itself
+// when no exponent with digits stands there.
+func exponentEnd(text string, i int) int {
+	if i >= len(text) || (text[i] != 'e' && text[i] != 'E') {
+		return i
+	}
+	j := i + 1
+	if j < len(text) && (text[j] == '+' || text[j] == '-') {
+		j++
+	}
+	if k := digitsEnd(text, j); k > j {
+		return k
+	}
+	return i
 }
 
 // isWordByte reports whether c may stand in an unquoted identifier, at its
