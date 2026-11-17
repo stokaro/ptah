@@ -164,15 +164,4 @@ func TestMigrateUpRepeatables_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `(?s).*cannot run up to target version 1: .*repeatable migrations audit are pending.*`)
 		c.Assert(seqRevisions(c, dbPath), qt.HasLen, 0)
 	})
-
-	t.Run("a drift check is refused over a directory with repeatable migrations", func(t *testing.T) {
-		c := qt.New(t)
-		dir := writeRepeatableDirectory(c, cliRepeatableBody)
-		dbPath := filepath.Join(c.TempDir(), "app.db")
-		shadow := "sqlite://" + filepath.Join(c.TempDir(), "shadow.db")
-
-		_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--check-drift", "--shadow-db", shadow)
-		c.Assert(err, qt.ErrorMatches, `(?s).*--check-drift replays the versioned history on the shadow database, .*`)
-		c.Assert(countRevisionTables(c, dbPath), qt.Equals, 0)
-	})
 }

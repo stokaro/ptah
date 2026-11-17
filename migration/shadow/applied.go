@@ -39,6 +39,11 @@ type AppliedVerifyOptions struct {
 	// history that applied nothing, and the target is then compared with an
 	// empty database.
 	Migrations []*migrator.Migration
+	// Repeatables are the repeatable migrations the target's record holds as
+	// applied, as [migrator.AppliedHistory] holds them. The replay runs them
+	// after Migrations, in order, and drops the record it kept of them before
+	// the comparison.
+	Repeatables []migrator.AppliedRepeatable
 	// Dialect is the target dialect the shadow database must match. The two
 	// spellings are compared normalized, so an alias matches its canonical
 	// name.
@@ -106,6 +111,10 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 	if err := validateAppliedOptions(ctx, opts); err != nil {
 		return AppliedResult{}, err
 	}
+	replay, err := migrator.AppliedHistory{Migrations: opts.Migrations, Repeatables: opts.Repeatables}.ReplayProvider()
+	if err != nil {
+		return AppliedResult{}, appliedError("configuration", "replay_error", "assemble the applied migrations", err)
+	}
 	connectCtx, cancelConnect := connectContext(ctx, opts.ConnectTimeout)
 	shadowConn, err := dbschema.ConnectToDatabase(connectCtx, opts.ShadowDatabaseURL)
 	cancelConnect()
@@ -147,18 +156,8 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 		return AppliedResult{}, appliedErrorWithDisplayMessage("reset-schemas", "schema_reset_error", err.Error(), err)
 	}
 
-	mig := migrator.NewMigrator(shadowConn, migrator.NewRegisteredMigrationProvider(opts.Migrations...))
-	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
-	if err := mig.MigrateUp(ctx); err != nil {
-		if description := shadowdb.DescribeReplayError(err); description != "" {
-			return AppliedResult{}, appliedErrorWithDisplayMessage("replay", "replay_error", description, err)
-		}
-		return AppliedResult{}, appliedError("replay", "replay_error", "replay the applied migrations", err)
-	}
-	if err := shadowdb.DropMigrationMetadata(
-		ctx, shadowConn, mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier(),
-	); err != nil {
-		return AppliedResult{}, appliedErrorWithDisplayMessage("drop-metadata", "drop_metadata_error", err.Error(), err)
+	if err := replayApplied(ctx, shadowConn, lease, replay); err != nil {
+		return AppliedResult{}, err
 	}
 
 	shadowSchema, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), shadowConn, opts.Schemas)
@@ -214,6 +213,31 @@ func VerifyApplied(ctx context.Context, opts AppliedVerifyOptions) (result Appli
 	}
 	result.Undecided = undecidedMismatches(undecided)
 	return result, nil
+}
+
+// replayApplied runs the replay on the shadow database and drops the
+// bookkeeping it wrote: the revision table, its log and the record of
+// repeatable migrations. The lease drops them too if the replay stops
+// halfway.
+func replayApplied(
+	ctx context.Context,
+	shadowConn *dbschema.DatabaseConnection,
+	lease *shadowdb.Lease,
+	replay migrator.MigrationProvider,
+) error {
+	mig := migrator.NewMigrator(shadowConn, replay)
+	metadata := []string{mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier(), mig.RepeatableTableIdentifier()}
+	lease.DropsMetadata(metadata...)
+	if err := mig.MigrateUp(ctx); err != nil {
+		if description := shadowdb.DescribeReplayError(err); description != "" {
+			return appliedErrorWithDisplayMessage("replay", "replay_error", description, err)
+		}
+		return appliedError("replay", "replay_error", "replay the applied migrations", err)
+	}
+	if err := shadowdb.DropMigrationMetadata(ctx, shadowConn, metadata...); err != nil {
+		return appliedErrorWithDisplayMessage("drop-metadata", "drop_metadata_error", err.Error(), err)
+	}
+	return nil
 }
 
 func appliedError(stage, kind, message string, err error) error {
