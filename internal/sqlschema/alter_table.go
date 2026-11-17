@@ -185,14 +185,37 @@ func (t alterTarget) reachesTable(name string) bool {
 	return table != nil && table.QualifiedName() == t.qualified
 }
 
-// ownsIndex reports whether index belongs to the table. Every index the reader
-// records names its table; one that does not is matched by the struct name an
-// ALTER TABLE ... ADD INDEX gives it, or by its bare table name.
+// ownsIndex reports whether index belongs to the table; see [indexOwner].
 func (t alterTarget) ownsIndex(index schemamodel.Index) bool {
-	if index.TableName != "" {
-		return t.reachesTable(index.TableName)
+	owner := indexOwner(t.databases, index, t.sourcePlatform)
+	return owner != nil && owner.QualifiedName() == t.qualified
+}
+
+// indexOwner returns the table index belongs to, looking in each database in
+// order, or nil. Every index the reader records names its table, and belongs
+// to the table that name reaches by the rule [findAlterTarget] uses; one that
+// does not is matched by the struct name an ALTER TABLE ... ADD INDEX gives
+// it, or by its bare table name.
+//
+// It is the one answer to whose index this is, for a statement that names the
+// table, which asks whether the table owns the index, and for one that names
+// only the index, which asks for its table.
+func indexOwner(databases []*schemamodel.Database, index schemamodel.Index, sourcePlatform string) *schemamodel.Table {
+	name := index.TableName
+	if name == "" {
+		for _, database := range databases {
+			for i := range database.Tables {
+				if index.StructName != "" && database.Tables[i].StructName == index.StructName {
+					return &database.Tables[i]
+				}
+			}
+		}
+		name = index.StructName
 	}
-	return index.StructName == t.structName || t.reachesTable(index.StructName)
+	if name == "" {
+		return nil
+	}
+	return resolveTable(databases, normalizeSQLTableReference("", name), sourcePlatform)
 }
 
 // isPrimaryKeyColumn reports whether the column belongs to the table's primary
