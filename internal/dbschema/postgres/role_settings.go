@@ -58,12 +58,14 @@ func (r *Reader) readRoleSettings(ctx context.Context, database *catalog.Databas
 		if err := rows.Scan(&role, &inDatabase, &databaseName, &config); err != nil {
 			return fmt.Errorf("read role settings: %w", err)
 		}
+		// A row of a role the read did not find is skipped before it is
+		// parsed, so a value this reader cannot parse there fails nothing.
+		if _, found := roles[role]; role != "" && !found {
+			continue
+		}
 		settings, err := parseRoleConfig(config)
 		if err != nil {
 			return fmt.Errorf("read role settings of %q: %w", role, err)
-		}
-		if _, managed := roles[role]; role != "" && !managed {
-			continue
 		}
 		if role != "" && !inDatabase {
 			held[role] = append(held[role], settings...)
@@ -115,13 +117,13 @@ func unmodeledRoleSettings(role, databaseName string, settings []pgrole.Setting)
 		switch {
 		case role == "" && databaseName == "":
 			object.Name = setting.Name + " for every role"
-			object.Reason = "Ptah does not model a default stored for every role (ALTER ROLE ALL SET)"
+			object.Reason = "ALTER ROLE ALL SET stores a default for every role, which Ptah does not model"
 		case role == "":
 			object.Name = setting.Name + " for every role in database " + databaseName
-			object.Reason = "Ptah does not model a default stored for a database (ALTER DATABASE SET, ALTER ROLE ALL IN DATABASE)"
+			object.Reason = "ALTER DATABASE SET and ALTER ROLE ALL IN DATABASE store a default for every role in one database, which Ptah does not model"
 		default:
 			object.Name = setting.Name + " for role " + role + " in database " + databaseName
-			object.Reason = "Ptah models the defaults a role holds in every database, not in one (ALTER ROLE ... IN DATABASE)"
+			object.Reason = "ALTER ROLE IN DATABASE stores a default for one database; Ptah models the defaults a role holds in every database"
 		}
 		objects = append(objects, object)
 	}

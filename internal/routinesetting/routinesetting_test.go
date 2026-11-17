@@ -30,6 +30,7 @@ func TestSplit_SpellsACatalogValueInSQL(t *testing.T) {
 		{name: "a search path with quoted names", catalog: `search_path=a, "B", "$user", "with space", "say ""hi"""`,
 			want: []string{`search_path='a', 'B', '$user', 'with space', 'say "hi"'`}},
 		{name: "an empty search path", catalog: `search_path=""`, want: []string{"search_path=''"}},
+		{name: "a library list", catalog: `output_plugin_libraries="A", b`, want: []string{"output_plugin_libraries='A', 'b'"}},
 		{name: "two entries", catalog: "work_mem=8MB\nsearch_path=pg_catalog", want: []string{"work_mem='8MB'", "search_path='pg_catalog'"}},
 		{name: "nothing", catalog: "", want: nil},
 	}
@@ -61,6 +62,7 @@ func TestComparable_ReadsADeclarationAndACatalogRowAlike(t *testing.T) {
 		{name: "a search path of literals", declared: "search_path='a', 'B'", read: "search_path='a', 'B'"},
 		{name: "a search path with a quoted name", declared: `search_path="My Schema",public`, read: "search_path='My Schema', 'public'"},
 		{name: "a bare word the server folds", declared: "enable_seqscan=OFF", read: "enable_seqscan='off'"},
+		{name: "a number with an exponent the server keeps", declared: "app.scale=1E+03", read: "app.scale='1E+03'"},
 		{name: "a name in another case", declared: "datestyle=ISO,MDY", read: "DateStyle='iso, mdy'"},
 		{name: "a value with a space", declared: "application_name='it''s me'", read: "application_name='it''s me'"},
 		{name: "a quoted name", declared: `"TimeZone"='UTC'`, read: "TimeZone='UTC'"},
@@ -90,6 +92,7 @@ func TestComparable_TellsTwoValuesApart(t *testing.T) {
 		right string
 	}{
 		{name: "two sizes", left: "work_mem='8MB'", right: "work_mem='16MB'"},
+		{name: "a number is not folded", left: "app.scale=1E+03", right: "app.scale='1e+03'"},
 		{name: "a bare word and a literal in upper case", left: "search_path=B", right: "search_path='B'"},
 		{name: "two search paths", left: "search_path='a', 'b'", right: "search_path='b', 'a'"},
 		{name: "two settings", left: "work_mem='8MB'", right: "maintenance_work_mem='8MB'"},
@@ -219,6 +222,7 @@ func TestToCatalog_SpellsADeclarationAsTheServerStoresIt(t *testing.T) {
 		want     string
 	}{
 		{name: "a literal", declared: "work_mem='8MB'", want: "work_mem=8MB"},
+		{name: "a number as written", declared: "app.scale=1E+03", want: "app.scale=1E+03"},
 		{name: "a quoted name", declared: `"TimeZone"='UTC'`, want: "TimeZone=UTC"},
 		{name: "a bare search path", declared: "search_path=MySchema,pg_catalog", want: "search_path=myschema, pg_catalog"},
 		{name: "a search path of literals", declared: "search_path='$user', 'Public'", want: `search_path="$user", "Public"`},

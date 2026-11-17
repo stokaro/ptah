@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -270,14 +271,155 @@ func TestPostgresRoleSettingsLive_UnmodeledRowsAreReported(t *testing.T) {
 	out, err = runPtahNativeWithError("schema", "apply", "--schema-file", schema, "--db-url", server.target, "--auto-approve")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("apply:\n%s", out))
-	c.Assert(out, qt.Contains, `role setting "work_mem for role `+role+` in database `+database+`" in the database`)
+	// The shipped binary gathers the two into one summary line at the end of
+	// the run and a command run in this process writes one line each, so the
+	// assertion is on what both say: each object and why it is left out.
 	c.Assert(out, qt.Contains, `role setting "lock_timeout for every role in database `+database+`" in the database`)
+	c.Assert(out, qt.Contains, "ALTER DATABASE SET and ALTER ROLE ALL IN DATABASE store a default for every role in one database, which Ptah does not model")
+	c.Assert(out, qt.Contains, `role setting "work_mem for role `+role+` in database `+database+`" in the database`)
+	c.Assert(out, qt.Contains, "ALTER ROLE IN DATABASE stores a default for one database; Ptah models the defaults a role holds in every database")
 	var kept int
 	c.Assert(server.admin.QueryRowContext(c.Context(), `
 		SELECT count(*) FROM pg_catalog.pg_db_role_setting s JOIN pg_catalog.pg_database d ON d.oid = s.setdatabase
 		WHERE d.datname = $1`, database).Scan(&kept), qt.IsNil)
 	c.Assert(kept, qt.Equals, 2)
 	c.Assert(setting(c, server.login(c, role), "work_mem"), qt.Equals, "8MB")
+}
+
+// TestPostgresRoleSettingsLive_NumbersAreHeldAsTheServerStoresThem declares
+// numbers in spellings the server does not keep. Each is written in the form
+// the server stores, so the first apply converges: an integer that fits in 32
+// bits is its value, and any other number keeps its digits without a plus
+// sign. Without that, +5000 against the stored 5000 plans on every run.
+func TestPostgresRoleSettingsLive_NumbersAreHeldAsTheServerStoresThem(t *testing.T) {
+	c := qt.New(t)
+	role := uniqueRole("m5973_numbers")
+	server := newRoleSettingsServer(c, role)
+	schema := roleSettingsYAML(c, role, `statement_timeout = +5000; lock_timeout = 002; app.offset = -005; app.ratio = +0.50; app.scale = 1E+03`, "work_mem")
+
+	planned, err := runPtahNativeWithError("schema", "apply", "--schema-file", schema, "--db-url", server.target, "--auto-approve")
+	c.Assert(err, qt.IsNil, qt.Commentf("apply:\n%s", planned))
+	again, err := runPtahNativeWithError("schema", "apply", "--schema-file", schema, "--db-url", server.target, "--dry-run")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("dry run:\n%s", again))
+	c.Assert(planned, qt.Contains, `ALTER ROLE "`+role+`" SET "statement_timeout" = 5000;`)
+	c.Assert(server.storedSettings(c, role), qt.DeepEquals,
+		[]string{`app.offset=-5`, `app.ratio=0.50`, `app.scale=1E+03`, `lock_timeout=2`, `statement_timeout=5000`})
+	c.Assert(again, qt.Contains, synced)
+}
+
+// TestPostgresRoleSettingsLive_ASavedPlanAppliesTheChange saves the plan for a
+// settings change and applies it in a later run. Saving changes nothing on the
+// server, and applying the saved plan sets and resets what the declaration
+// names.
+func TestPostgresRoleSettingsLive_ASavedPlanAppliesTheChange(t *testing.T) {
+	c := qt.New(t)
+	role := uniqueRole("m5973_saved")
+	server := newRoleSettingsServer(c, role)
+	first := roleSettingsYAML(c, role, `statement_timeout = '30s'; app.tenant = 'acme'`, "work_mem")
+	out, err := runPtahNativeWithError("schema", "apply", "--schema-file", first, "--db-url", server.target, "--auto-approve")
+	c.Assert(err, qt.IsNil, qt.Commentf("apply:\n%s", out))
+	second := roleSettingsYAML(c, role, `statement_timeout = '45s'`, "app.tenant, work_mem")
+	plan := filepath.Join(c.TempDir(), "settings.plan.json")
+
+	saved, err := runPtahNativeWithError("schema", "plan", "--schema-file", second, "--db-url", server.target, "--output", plan)
+	c.Assert(err, qt.IsNil, qt.Commentf("plan:\n%s", saved))
+	held := server.storedSettings(c, role)
+	applied, err := runPtahNativeWithError("schema", "apply", "--plan", plan, "--db-url", server.target, "--auto-approve")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("apply --plan:\n%s", applied))
+	c.Assert(saved, qt.Contains, `ALTER ROLE "`+role+`" RESET "app"."tenant";`)
+	c.Assert(saved, qt.Contains, `ALTER ROLE "`+role+`" SET "statement_timeout" = '45s';`)
+	c.Assert(held, qt.DeepEquals, []string{`app.tenant=acme`, `statement_timeout=30s`})
+	c.Assert(server.storedSettings(c, role), qt.DeepEquals, []string{`statement_timeout=45s`})
+	again, err := runPtahNativeWithError("schema", "apply", "--schema-file", second, "--db-url", server.target, "--dry-run")
+	c.Assert(err, qt.IsNil, qt.Commentf("dry run:\n%s", again))
+	c.Assert(again, qt.Contains, synced)
+}
+
+// roleSettingsDrift is the part of a drift document that names a role's
+// settings change.
+type roleSettingsDrift struct {
+	Drift bool `json:"drift"`
+	Diff  struct {
+		FeatureChanges []struct {
+			Subject struct {
+				Kind string `json:"kind"`
+				Name struct {
+					Source string `json:"source"`
+				} `json:"name"`
+			} `json:"subject"`
+			Value struct {
+				Kind    string `json:"kind"`
+				Payload struct {
+					Settings []struct {
+						Name   string  `json:"name"`
+						Before *string `json:"before"`
+						After  *string `json:"after"`
+					} `json:"settings"`
+				} `json:"payload"`
+			} `json:"value"`
+		} `json:"feature_changes"`
+	} `json:"diff"`
+}
+
+// TestPostgresRoleSettingsLive_DriftNamesTheSettingsChange changes a declared
+// setting out of band and sets one no declaration names. Drift reports the
+// role's settings change, and its JSON document names the declared setting
+// with the value the role holds and the one the declaration asks for. The
+// setting nobody declared is not drift. The control is the converged role,
+// where drift finds nothing.
+func TestPostgresRoleSettingsLive_DriftNamesTheSettingsChange(t *testing.T) {
+	c := qt.New(t)
+	role := uniqueRole("m5973_drift")
+	server := newRoleSettingsServer(c, role)
+	schema := roleSettingsYAML(c, role, `statement_timeout = '30s'`, "work_mem")
+	out, err := runPtahNativeWithError("schema", "apply", "--schema-file", schema, "--db-url", server.target, "--auto-approve")
+	c.Assert(err, qt.IsNil, qt.Commentf("apply:\n%s", out))
+	converged, err := runPtahNativeWithError("schema", "drift", "--schema-file", schema, "--db-url", server.target)
+	c.Assert(err, qt.IsNil, qt.Commentf("drift:\n%s", converged))
+	_, err = server.admin.ExecContext(c.Context(), `ALTER ROLE `+quoteRole(role)+` SET statement_timeout = '60s'`)
+	c.Assert(err, qt.IsNil)
+	_, err = server.admin.ExecContext(c.Context(), `ALTER ROLE `+quoteRole(role)+` SET lock_timeout = '5s'`)
+	c.Assert(err, qt.IsNil)
+
+	text, textErr := runPtahNativeWithError("schema", "drift", "--schema-file", schema, "--db-url", server.target)
+	document, err := runPtahNativeWithError("schema", "drift", "--schema-file", schema, "--db-url", server.target, "--format", "json", "--exit-code=false")
+
+	c.Assert(textErr, qt.IsNotNil, qt.Commentf("drift:\n%s", text))
+	c.Assert(text, qt.Contains, "- feature_changes:ptah.run/postgres/role-settings-change: 1 (warning)")
+	c.Assert(err, qt.IsNil, qt.Commentf("drift:\n%s", document))
+	var drift roleSettingsDrift
+	c.Assert(json.Unmarshal([]byte(document), &drift), qt.IsNil, qt.Commentf("drift:\n%s", document))
+	c.Assert(drift.Drift, qt.IsTrue)
+	c.Assert(drift.Diff.FeatureChanges, qt.HasLen, 1)
+	change := drift.Diff.FeatureChanges[0]
+	c.Assert([]string{change.Subject.Kind, change.Subject.Name.Source, change.Value.Kind}, qt.DeepEquals,
+		[]string{"role", role, "ptah.run/postgres/role-settings-change"})
+	c.Assert(change.Value.Payload.Settings, qt.HasLen, 1)
+	c.Assert([]any{change.Value.Payload.Settings[0].Name, change.Value.Payload.Settings[0].Before, change.Value.Payload.Settings[0].After},
+		qt.DeepEquals, []any{"statement_timeout", new("60s"), new("'30s'")})
+}
+
+// TestRoleSettingsExportToHCL_WarnsAndLeavesThemOut exports a Go role that
+// declares settings to HCL, which has no attribute for them. The export warns
+// that it leaves the settings out and writes the role without them, so an
+// HCL document never claims a role holds no settings.
+func TestRoleSettingsExportToHCL_WarnsAndLeavesThemOut(t *testing.T) {
+	c := qt.New(t)
+	source := writeSchema(c, "roles.go", "package roles\n\n"+
+		`//ptah:schema:role name="app" login="true" settings="statement_timeout = '30s'" reset_settings="work_mem"`+"\ntype Role struct{}\n")
+	target := filepath.Join(c.TempDir(), "schema.hcl")
+
+	out, err := runPtahNativeWithError("schema", "export", "--to", "hcl", "--root-dir", filepath.Dir(source), "--out", target)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("export:\n%s", out))
+	c.Assert(out, qt.Contains, "feature facet ptah.run/postgres/role-settings is not represented in HCL")
+	c.Assert(out, qt.Contains, "1 export warning(s) reported")
+	written, err := os.ReadFile(target)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(written), qt.Contains, `role "app" {`)
+	c.Assert(string(written), qt.Not(qt.Contains), "statement_timeout")
 }
 
 // TestPostgresRoleSettingsLive_PermissionFailureIsReported applies as a role

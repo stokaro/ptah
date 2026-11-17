@@ -78,6 +78,26 @@ func TestParseValue_HappyPath(t *testing.T) {
 		{name: "default lower", written: "default", form: pgrole.ValueDefault},
 		{name: "quoted default is a value", written: "'DEFAULT'", want: "'DEFAULT'"},
 		{name: "semicolon in a literal", written: "'a;b'", want: "'a;b'"},
+		{name: "backslash in an identifier", written: `"a\b"`, want: `"a\b"`},
+		// What PostgreSQL 18.6 stores for each spelling, read back from
+		// pg_db_role_setting: an integer that fits in 32 bits is its value,
+		// any other number keeps its digits, and a plus sign is dropped.
+		{name: "plus integer", written: "+5000", want: "5000"},
+		{name: "leading zeros", written: "002", want: "2"},
+		{name: "negative leading zeros", written: "-005", want: "-5"},
+		{name: "negative zero", written: "-0", want: "0"},
+		{name: "zeros", written: "00", want: "0"},
+		{name: "largest integer with zeros", written: "02147483647", want: "2147483647"},
+		{name: "beyond 32 bits", written: "03000000000", want: "03000000000"},
+		{name: "negative beyond 32 bits", written: "-02147483648", want: "-02147483648"},
+		{name: "fraction keeps its zeros", written: "0.50", want: "0.50"},
+		{name: "plus fraction", written: "+1.5", want: "1.5"},
+		{name: "plus fraction with zeros", written: "+0.50", want: "0.50"},
+		{name: "exponent as written", written: "1E+03", want: "1E+03"},
+		{name: "leading point", written: ".5", want: ".5"},
+		{name: "trailing point", written: "5.", want: "5."},
+		{name: "negative exponent", written: "-.5e-3", want: "-.5e-3"},
+		{name: "list of numbers", written: "+1, 002", want: "1, 2"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -103,6 +123,9 @@ func TestParseValue_FailurePath(t *testing.T) {
 		{name: "statement after", written: "'a'; DROP ROLE x", want: `.*expected a comma after 'a'`},
 		{name: "default in a list", written: "DEFAULT, public", want: `.*DEFAULT stands alone, never in a list`},
 		{name: "lone sign", written: "-", want: `.*a sign or a point without a number`},
+		{name: "backslash in a literal", written: `'C:\temp'`, want: `.*a backslash in a string literal, which a server with standard_conforming_strings off reads as an escape.*`},
+		{name: "digit separator", written: "1_000", want: `.*1_000 is not a plain decimal number; write the number in decimal digits`},
+		{name: "hexadecimal", written: "0x1F", want: `.*0x1F is not a plain decimal number; write the number in decimal digits`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

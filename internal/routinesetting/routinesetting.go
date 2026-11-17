@@ -33,11 +33,21 @@ import (
 // element of which pg_get_functiondef quotes on its own:
 // `SET search_path TO 'a', 'B', 'pg_catalog'`. Every other setting's value is
 // one literal, `SET "DateStyle" TO 'ISO, MDY'`.
+//
+// The set is measured, on PostgreSQL 18.6: `ALTER ROLE r SET name = 'A', b`
+// was run for every string parameter in pg_settings a session can set, and
+// these are the ones that stored `"A", b`, each element quoted as a name.
+// DateStyle, createrole_self_grant, restrict_nonsystem_relation_kind,
+// wal_consistency_checking and, once plpgsql is loaded, plpgsql.extra_errors
+// and plpgsql.extra_warnings take a list too but store `A, b`, the elements as
+// written, which reads back as one literal; the rest refuse a list. To extend it for a new release, run the same statement over that
+// release's pg_settings and add each name that stores the quoted form.
 var listSettings = map[string]bool{
 	"search_path":               true,
 	"temp_tablespaces":          true,
 	"local_preload_libraries":   true,
 	"session_preload_libraries": true,
+	"output_plugin_libraries":   true,
 }
 
 // Normalize folds one setting onto the spelling a declaration is kept in:
@@ -311,8 +321,8 @@ func catalogListElements(value string) ([]string, bool) {
 }
 
 // valueParts reads a value written in SQL into the parts the server stores: a
-// literal's contents, a quoted name's contents, and a bare word folded to lower
-// case, one part per comma-separated element.
+// literal's contents, a quoted name's contents, a bare word folded to lower
+// case and a number as written, one part per comma-separated element.
 func valueParts(value string) []string {
 	var parts []string
 	for rest := strings.TrimSpace(value); rest != ""; {
@@ -327,7 +337,7 @@ func valueParts(value string) []string {
 			if end < 0 {
 				end = len(rest)
 			}
-			part, rest = strings.ToLower(strings.TrimSpace(rest[:end])), rest[end:]
+			part, rest = foldBare(strings.TrimSpace(rest[:end])), rest[end:]
 		}
 		parts = append(parts, part)
 		rest = strings.TrimSpace(rest)
@@ -343,6 +353,17 @@ func valueParts(value string) []string {
 		rest = strings.TrimSpace(rest[1:])
 	}
 	return parts
+}
+
+// foldBare is an unquoted part of a value as the server keeps it. A word is
+// an identifier, which the server folds to lower case: OFF is off. A number
+// is a constant the server keeps as written, so 1E+03 stays 1E+03 rather than
+// comparing equal to 1e+03, which the server keeps apart from it.
+func foldBare(part string) string {
+	if part != "" && (part[0] == '+' || part[0] == '-' || part[0] == '.' || (part[0] >= '0' && part[0] <= '9')) {
+		return part
+	}
+	return strings.ToLower(part)
 }
 
 // cutQuoted reads the part of text quoted by quote, which text starts with,

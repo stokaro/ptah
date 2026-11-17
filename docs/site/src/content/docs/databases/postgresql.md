@@ -1730,12 +1730,25 @@ setting.
 A value is written in SQL, as it stands after the equals sign of `SET`: a
 string literal in single quotes, a number, a bare word, an identifier in double
 quotes, or a list of them separated by commas. A value with a unit is a string,
-`'30s'`; PostgreSQL refuses `30s` without quotes, and so does Ptah. In SQL,
+`'30s'`; PostgreSQL refuses `30s` without quotes, and so does Ptah. A string
+literal that holds a backslash is refused, because a server with
+`standard_conforming_strings` off reads the backslash as an escape. In SQL,
 `SET name TO value` is the same statement, `SET name TO DEFAULT` is a reset,
 `ALTER USER` is `ALTER ROLE`, and later statements about a setting replace
-earlier ones, as they do on the server. A name is matched without regard to
-case, a custom name such as `app.tenant` is accepted, and a part in double
-quotes keeps its case.
+earlier ones, as they do on the server.
+
+Names compare without regard to case, as the server looks them up, and a
+custom name such as `app.tenant` is accepted. In the statement Ptah writes, an
+unquoted part is in lower case and a part in double quotes keeps its case:
+`"App"."Tenant"` is written as `"App"."Tenant"` and stored as `App.Tenant`.
+
+A number is held in the spelling the server stores. The plus sign is dropped.
+An integer that fits in 32 bits is written as its value, so `+5000` is `5000`,
+`002` is `2` and `-005` is `-5`. Any other number keeps its digits, so `0.50`,
+`1E+03` and `03000000000` stay as written. A number written that way compares
+equal on the first apply rather than planning on every run. A number in
+another radix (`0x1F`) or with digit separators (`1_000`) is refused; write it
+in decimal digits.
 
 A declaration manages only the settings it names. A setting the role holds and
 the declaration leaves out stays as it is, whoever set it; a reset is the only
@@ -1771,7 +1784,7 @@ role in every database (`ALTER ROLE ALL SET`). Each appears in the warning a pla
 or an apply prints, and nothing is planned for it:
 
 ```text
-warning: 2 objects were left out: role setting "lock_timeout for every role in database app" in the database (a default ALTER DATABASE ... SET stores for every role in one database, which Ptah does not model); role setting "work_mem for role app in database app" in the database (a default ALTER ROLE ... IN DATABASE stores for one database; Ptah models a role's defaults in every database); PTAH_LOG_LEVEL=debug lists them
+warning: 2 objects were left out: role setting "lock_timeout for every role in database app" in the database (ALTER DATABASE SET and ALTER ROLE ALL IN DATABASE store a default for every role in one database, which Ptah does not model); role setting "work_mem for role app in database app" in the database (ALTER ROLE IN DATABASE stores a default for one database; Ptah models the defaults a role holds in every database); PTAH_LOG_LEVEL=debug lists them
 ```
 
 A parameter only a superuser may set, such as `log_statement`, fails at apply
