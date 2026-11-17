@@ -45,7 +45,7 @@ type desiredNaming struct {
 // Only a realm-scoped connection on an engine that resolves names along a
 // search path is placed: there one URL describes every schema of the
 // database, and the name could mean any of them. The community binary reads
-// the desired state on its dev database, so an unqualified name lands where
+// the desired schema on its dev database, so an unqualified name lands where
 // that database resolves it, and it writes every statement of the plan
 // qualified. Measured with the pinned community binary v1.3.0 on PostgreSQL 18,
 // role `rebase` whose search_path is the default `"$user", public`, a target
@@ -188,7 +188,7 @@ func unqualifiedNamesOf(desired *schemamodel.Database) unqualifiedNames {
 }
 
 // refuseUnqualifiedMoves refuses a plan that creates a table or a sequence the
-// desired state names without a schema and drops the object of that name the
+// desired schema names without a schema and drops the object of that name the
 // other reading of the name would have kept.
 //
 // An unqualified desired name has two readings on a realm-scoped connection
@@ -201,7 +201,7 @@ func unqualifiedNamesOf(desired *schemamodel.Database) unqualifiedNames {
 //   - With a dev database, the name is placed where the dev database resolves
 //     it, `public`, and the target holds `rebase.notes` in its current schema.
 //     The community binary plans the same move, and drops the whole schema
-//     `rebase` with it, since its desired state does not hold the schema.
+//     `rebase` with it, since its desired schema does not hold the schema.
 //   - Without one, the name is placed in the target's current schema,
 //     `rebase`, and the target holds `public.notes`, where the community
 //     binary, with a dev database created for the run, reads the name.

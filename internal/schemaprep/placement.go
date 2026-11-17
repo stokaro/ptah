@@ -20,7 +20,7 @@ import (
 // schema returns it as it is. It fails only when two feature objects become one
 // identity, one written without a schema and one naming schema.
 //
-// A desired state read offline keeps an unqualified name relative, so the
+// A desired schema read offline keeps an unqualified name relative, so the
 // comparison resolves it in the connection's current schema and the plan writes
 // it without a schema. On a connection that describes every schema of its
 // database, the community binary instead reads the name where its dev database

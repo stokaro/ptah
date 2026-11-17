@@ -40,7 +40,7 @@ func movedNotes(created, dropped string) *difftypes.SchemaDiff {
 	}
 }
 
-// unqualifiedNotes is a desired state that wrote the table notes and the
+// unqualifiedNotes is a desired schema that wrote the table notes and the
 // sequence s1 without a schema.
 var unqualifiedNotes = unqualifiedNames{tables: map[string]bool{"notes": true}, sequences: map[string]bool{"s1": true}}
 

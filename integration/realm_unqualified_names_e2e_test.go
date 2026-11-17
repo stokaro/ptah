@@ -21,7 +21,7 @@ import (
 // The tests in this file run on the realm pair of
 // [newRealmCurrentSchemaFixture]: the target resolves an unqualified name to
 // the role's schema and the dev database resolves it to public. The pinned
-// community binary v1.3.0 reads the desired state on the dev database, so an
+// community binary v1.3.0 reads the desired schema on the dev database, so an
 // unqualified name means public there, and every statement it plans names the
 // schema. Measured on PostgreSQL 18 with that layout: `CREATE TABLE notes`
 // beside an existing public.notes plans nothing for the table, and a new
@@ -170,7 +170,7 @@ func TestSchemaApplyRefusesAnUnqualifiedTableItsTwoReadingsPlaceApart_FailurePat
 // leaves notes alone, where reading the names as the role's schema would create
 // notes there and drop public.notes. The community binary prints the same
 // statements and, in front of them, DROP SCHEMA for the role's schema, which
-// its desired state does not hold; Ptah drops no schema the file leaves out.
+// its desired schema does not hold; Ptah drops no schema the file leaves out.
 func TestSchemaDiffPlacesAnUnqualifiedNameWhereTheDevDatabaseResolvesIt_HappyPathE2E(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -209,7 +209,7 @@ func TestSchemaDiffPlacesAnUnqualifiedNameWhereTheDevDatabaseResolvesIt_HappyPat
 }
 
 // TestMigrateDiffQualifiesAnUnqualifiedName_HappyPathE2E writes a migration
-// for a table the desired state names without a schema, on a dev database
+// for a table the desired schema names without a schema, on a dev database
 // that describes every schema of its database. The file names the schema the
 // dev database resolves the name to, as the community binary's file does, so
 // applying it does not depend on the search path of whoever runs it. A second
@@ -267,7 +267,7 @@ func TestMigrateDiffQualifiesAnUnqualifiedName_HappyPathE2E(t *testing.T) {
 
 // TestSchemaApplyLeavesAnUndeclaredTriggerFunctionWhereTheSessionFindsIt_HappyPathE2E
 // applies a table and a trigger that runs suppress_redundant_updates_trigger,
-// a built-in function the desired state does not declare. The table is placed
+// a built-in function the desired schema does not declare. The table is placed
 // where the dev database resolves its name, and the function is not: it lives
 // in pg_catalog, so a trigger naming it in public would not be created. The
 // trigger is read back running the pg_catalog function, and a second apply

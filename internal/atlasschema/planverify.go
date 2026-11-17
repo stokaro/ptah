@@ -100,7 +100,7 @@ type PlanRehearsalOptions struct {
 	// DevURL names is the run's own; see [SimulateOptions.DevServerDisposable].
 	DevServerDisposable bool
 	// PlacedSchema is the plan's [PlanFile.PlacedSchema]. The comparison of the
-	// rehearsed state places the desired state's unqualified names there. Empty
+	// rehearsed state places the desired schema's unqualified names there. Empty
 	// asks the dev database the rehearsal runs on, which is what a plan that
 	// records no schema, such as an Atlas .plan.hcl document, leaves to decide.
 	PlacedSchema string
@@ -220,7 +220,7 @@ func RehearsePlanStatements(
 // the desired state, reading the dev database as the target names its objects.
 //
 // The rehearsal built the target's state on a dev session that resolves names
-// as the target does; see [resolveNamesAsTarget]. The desired state's own names
+// as the target does; see [resolveNamesAsTarget]. The desired schema's own names
 // are placed in a schema, so they read the same in any session; see
 // [namingFor]. What still depends on the session is SQL text the server prints
 // back, such as a view's body, which names a relation without its schema only
@@ -228,7 +228,7 @@ func RehearsePlanStatements(
 // dev database's own, a view the rehearsal built over a table of the target's
 // current schema reads back naming that schema, where a read of the target
 // names the table bare, and the comparison would report a rehearsal that
-// reached the desired state as drift.
+// reached the desired schema as drift.
 func compareRehearsedState(
 	ctx context.Context,
 	devConn *dbschema.DatabaseConnection,
@@ -257,7 +257,7 @@ func compareRehearsedState(
 // check is always on and has no opt-out flag.
 //
 // The verification compares with the plan's exclude patterns, and places a
-// name the desired state writes without a schema where the plan placed it
+// name the desired schema writes without a schema where the plan placed it
 // ([PlanFile.PlacedSchema]). A plan that records no schema, such as an Atlas
 // .plan.hcl document, places it where devURL, the dev database the apply
 // names, resolves it, or where the target does when devURL is empty; see

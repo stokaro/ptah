@@ -298,7 +298,7 @@ func realmCurrentSchemaNames(c *qt.C, db *sql.DB, query string) []string {
 // with it again after. The plan alters public.notes, outside the target's
 // current schema, so the replay needs public.notes in its baseline; the target
 // also holds items in its current schema, which the replay builds where the
-// target has it. The desired state names a new table without a schema, which
+// target has it. The desired schema names a new table without a schema, which
 // the plan creates in public, where the dev database resolves it, so both
 // comparisons have to place the name there too. The target is read back, and
 // the dev database is read back to show the rehearsal handed it back as it was.

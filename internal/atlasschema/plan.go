@@ -126,10 +126,10 @@ type PlanFile struct {
 	// named, since the source fingerprint then differs because the read does,
 	// not because the database changed; see [PlanScope].
 	Scope *PlanScope `json:"scope,omitempty"`
-	// PlacedSchema is the schema the plan placed every name the desired state
+	// PlacedSchema is the schema the plan placed every name the desired schema
 	// writes without a schema in, empty when it placed none; see [namingFor].
 	// The rehearsal and the end-state verification of the plan place the
-	// desired state's names there too, rather than deciding again from the dev
+	// desired schema's names there too, rather than deciding again from the dev
 	// database the apply names: a plan computed against one dev database and
 	// applied with another, or with none, otherwise compares its own result
 	// with names placed elsewhere and reports it as drift.
