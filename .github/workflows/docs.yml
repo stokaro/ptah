@@ -370,16 +370,16 @@ jobs:
   build:
     name: Build versioned site
     needs: changes
-    outputs:
-      edge-source-commit: ${{ steps.deployment-metadata.outputs.edge-source-commit }}
-      version-slugs: ${{ steps.deployment-metadata.outputs.version-slugs }}
     if: >-
       ( github.event_name == 'pull_request' && needs.changes.outputs.site == 'true' ) ||
       ( github.event_name == 'push' &&
         ( startsWith(github.ref, 'refs/tags/v') ||
           github.ref == 'refs/heads/master' ) )
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Measured on master run 44188060811: the steps this job runs took 8.6
+    # minutes, 8.2 of them building and checking edge. The released tags build
+    # in release-build beside it, so nothing here grows with each release.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -590,16 +590,142 @@ jobs:
             --version edge \
             --source-commit "$edge_source_commit"
 
-      - name: Build each released tag
+      # The released tags build in the release-build job, in parallel with
+      # this one, and pages-site assembles the Pages root from both. This step
+      # hands it edge, under the same push condition as that assembly.
+      - name: Upload the edge site for the Pages assembly
         if: >-
           github.event_name == 'push' &&
           ( startsWith(github.ref, 'refs/tags/v') ||
             ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
+        uses: actions/upload-artifact@v7
+        with:
+          name: ptah-docs-site-edge
+          path: _site
+          # A dotfile in the built site is a published file like any other.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # Every release keeps its published URLs and its version-picker entry, so
+  # every release tag is rebuilt on each deploying run. Built one after another
+  # in one job, each release adds about 20 seconds to it: on master run
+  # 44188060811, 46 tags took 13.4 minutes, and with the edge build that job
+  # came to 23.3 of its 25. The tags are split here into shards of at most
+  # TAGS_PER_SHARD, so a shard's time is bounded by that number and not by how
+  # many releases exist; a new release adds a shard once the last one is full.
+  release-plan:
+    name: Plan the released documentation builds
+    needs: changes
+    if: >-
+      github.event_name == 'push' &&
+      ( startsWith(github.ref, 'refs/tags/v') ||
+        ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tags: ${{ steps.plan.outputs.tags }}
+      shard-count: ${{ steps.plan.outputs.shard-count }}
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+
+      # The tag list is read once, here, and every shard and the assembly read
+      # this output. Shards that listed the tags for themselves could see a tag
+      # pushed between two checkouts and disagree about the partition.
+      - name: Split the release tags into shards
+        id: plan
+        env:
+          TAGS_PER_SHARD: '12'
+        run: |
+          set -euo pipefail
+          node docs/site/scripts/release-doc-tags.mjs --selftest
+          release_tags="$(git tag -l 'v*' | node docs/site/scripts/release-doc-tags.mjs)"
+          tag_count="$(printf '%s\n' "$release_tags" | grep -c .)" || true
+          # An empty list means the listing broke, not that there is nothing
+          # to publish: the site has shipped release documentation since v0.1.0.
+          if [ "$tag_count" -eq 0 ]; then
+            echo "::error::release-doc-tags.mjs returned no release tags"
+            exit 1
+          fi
+          shard_count=$(( (tag_count + TAGS_PER_SHARD - 1) / TAGS_PER_SHARD ))
+          shards="$(jq -cn --argjson count "$shard_count" '[range(1; $count + 1)]')"
+          {
+            echo "tags=$(printf '%s\n' "$release_tags" | paste -sd ' ' -)"
+            echo "shard-count=$shard_count"
+            echo "shards=$shards"
+          } >> "$GITHUB_OUTPUT"
+          echo "$tag_count release tags in $shard_count shards of at most $TAGS_PER_SHARD"
+
+  release-build:
+    # The name is fixed rather than built from the matrix: a skipped job is
+    # never expanded, and its check would show the expression itself. GitHub
+    # adds the shard number to the name.
+    name: Build released documentation
+    needs: [changes, release-plan]
+    if: >-
+      github.event_name == 'push' &&
+      ( startsWith(github.ref, 'refs/tags/v') ||
+        ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
+    runs-on: ubuntu-latest
+    # Measured on master run 44188060811: a tag took 17 to 20 seconds, the
+    # newest ones the longest, so a full shard of 12 is about 4 minutes. The
+    # rest is setup each shard pays for itself: checkout, the provider import
+    # and, before the first tag that takes the release UI overlay, npm ci and
+    # the Playwright browser with its system packages.
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        shard: ${{ fromJSON(needs.release-plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+          cache: 'npm'
+          cache-dependency-path: docs/site/package-lock.json
+
+      # Each tag's import reads its clones from this cache, as it does in the
+      # edge build.
+      - name: Cache the provider repositories
+        uses: actions/cache@v6
+        with:
+          path: docs/site/.cache/provider-docs
+          key: provider-docs-${{ hashFiles('docs/site/scripts/data/provider-docs.json') }}
+          restore-keys: provider-docs-
+
+      - name: Import the provider documentation
+        run: node docs/site/scripts/import-provider-docs.mjs
+
+      - name: Build each released tag in this shard
+        env:
+          RELEASE_TAGS: ${{ needs.release-plan.outputs.tags }}
+          SHARD: ${{ matrix.shard }}
+          SHARD_COUNT: ${{ needs.release-plan.outputs.shard-count }}
         run: |
           set -euo pipefail
           version_action_browser_marker="$RUNNER_TEMP/ptah-version-action-browser-ready"
-          # Every release keeps its published URLs and its version-picker entry.
-          release_tags="$(git tag -l 'v*' | node docs/site/scripts/release-doc-tags.mjs)"
+          # Round robin over the oldest-first list, so the newest and slowest
+          # tags spread across the shards. pages-site checks that the shards
+          # together delivered every tag.
+          release_tags=""
+          index=0
+          for tag in $RELEASE_TAGS; do
+            if [ $(( index % SHARD_COUNT )) -eq $(( SHARD - 1 )) ]; then
+              release_tags="$release_tags $tag"
+            fi
+            index=$(( index + 1 ))
+          done
+          echo "Shard $SHARD of $SHARD_COUNT builds:$release_tags"
           for tag in $release_tags; do
             echo "::group::Building $tag"
             workdir="$(mktemp -d)"
@@ -620,7 +746,7 @@ jobs:
             if [ -f "$workdir/docs/site/package.json" ]; then
               # Capture the complete build/check status without placing the
               # subshell in an `if` condition. Bash suppresses `errexit`
-              # inside such conditions, which previously let an early failed
+              # inside such conditions, which would let an early failed
               # check fall through to a later successful command.
               set +e
               (
@@ -694,6 +820,95 @@ jobs:
             git worktree remove --force "$workdir" || true
             echo "::endgroup::"
           done
+
+      - name: Upload this shard's released documentation
+        uses: actions/upload-artifact@v7
+        with:
+          name: ptah-docs-site-release-${{ matrix.shard }}
+          path: _site
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # The Pages root is assembled from the edge site the build job uploads and
+  # the released tags every release-build shard uploads. Any of them failing
+  # skips this job, and with it the deploy.
+  pages-site:
+    name: Assemble the Pages site
+    needs: [changes, build, release-plan, release-build]
+    outputs:
+      edge-source-commit: ${{ steps.deployment-metadata.outputs.edge-source-commit }}
+      version-slugs: ${{ steps.deployment-metadata.outputs.version-slugs }}
+    if: >-
+      github.event_name == 'push' &&
+      ( startsWith(github.ref, 'refs/tags/v') ||
+        ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
+    runs-on: ubuntu-latest
+    # Measured on master run 44188060811: the assembly steps below took 1.3
+    # minutes, and the Pages artifact they upload is 330 MB, which this job
+    # also downloads in parts.
+    timeout-minutes: 10
+    steps:
+      # The version index dates each release by its tag, so the tags have to
+      # be here.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '26'
+
+      - name: Download the edge site
+        uses: actions/download-artifact@v8
+        with:
+          name: ptah-docs-site-edge
+          path: _site
+
+      - name: Download the released documentation
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ptah-docs-site-release-*
+          merge-multiple: true
+          path: _site
+
+      # The version index lists the directories it finds, so a shard whose
+      # artifact went missing would publish a site without those releases and
+      # nothing else would notice. Compare with the plan in both directions.
+      - name: Every planned release tag was delivered
+        env:
+          RELEASE_TAGS: ${{ needs.release-plan.outputs.tags }}
+        run: |
+          set -euo pipefail
+          problems=0
+          for tag in $RELEASE_TAGS; do
+            if ! git cat-file -e "refs/tags/$tag:docs/site/package.json" 2>/dev/null; then
+              echo "$tag has no docs/site; no shard builds it"
+              continue
+            fi
+            if [ ! -f "_site/$tag/build-info.json" ]; then
+              echo "::error::no shard delivered _site/$tag"
+              problems=1
+            fi
+          done
+          for directory in _site/*/; do
+            name="$(basename "$directory")"
+            if [ "$name" = edge ]; then
+              continue
+            fi
+            case " $RELEASE_TAGS " in
+              *" $name "*) ;;
+              *)
+                echo "::error::_site/$name is not a planned release tag"
+                problems=1
+                ;;
+            esac
+          done
+          if [ ! -f _site/edge/build-info.json ]; then
+            echo "::error::the edge site was not delivered"
+            problems=1
+          fi
+          exit "$problems"
 
       - name: Generate root version index and redirect
         if: >-
@@ -986,7 +1201,7 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    needs: [changes, build]
+    needs: [changes, pages-site]
     if: >-
       github.event_name == 'push' &&
         ( startsWith(github.ref, 'refs/tags/v') ||
@@ -1018,8 +1233,8 @@ jobs:
       - name: Refuse a stale Pages candidate
         id: freshness
         env:
-          CANDIDATE_COMMIT: ${{ needs.build.outputs.edge-source-commit }}
-          CANDIDATE_VERSIONS: ${{ needs.build.outputs.version-slugs }}
+          CANDIDATE_COMMIT: ${{ needs.pages-site.outputs.edge-source-commit }}
+          CANDIDATE_VERSIONS: ${{ needs.pages-site.outputs.version-slugs }}
         run: |
           set -euo pipefail
           git fetch --force --no-tags origin master:refs/remotes/origin/master
@@ -1059,8 +1274,8 @@ jobs:
       - name: Wait for the deployed candidate to become public
         if: steps.freshness.outputs.allowed == 'true'
         env:
-          CANDIDATE_COMMIT: ${{ needs.build.outputs.edge-source-commit }}
-          CANDIDATE_VERSIONS: ${{ needs.build.outputs.version-slugs }}
+          CANDIDATE_COMMIT: ${{ needs.pages-site.outputs.edge-source-commit }}
+          CANDIDATE_VERSIONS: ${{ needs.pages-site.outputs.version-slugs }}
         run: >-
           node docs/site/scripts/check-deployment-candidate.mjs
           --wait-for-deployment

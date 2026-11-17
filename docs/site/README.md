@@ -487,6 +487,14 @@ deployment instead of dropping its pages. `scripts/check-deployment-candidate.mj
 refuses a candidate that removes any served version, so published links and
 search-engine results keep working as new releases are added.
 
+A deploying run builds those tags in parallel shards beside the edge build
+(`release-plan` and `release-build` in `.github/workflows/docs.yml`), so a new
+release adds work to one shard and does not lengthen any job past a shard's
+size. `pages-site` assembles `_site/` from the edge build and every shard, and
+fails when a planned tag did not arrive: the version index lists the
+directories it finds, so a lost shard would otherwise publish a site without
+its releases.
+
 The installers have to answer at the root because the commands published
 before the site had its own address carry no version, and the retired host's
 redirect lands here: `https://docs.ptah.run/install.sh` and
@@ -519,8 +527,8 @@ to still invoke both producers before the upload, and requires the
 documentation and the root to agree in both directions: a published URL nothing
 writes is a 404, and a file nothing documents is unreachable.
 
-`--site <dir>` is the second half, and the build job runs it on the real `_site`
-after assembling it. Everything the gate reads in the tree can be right while
+`--site <dir>` is the second half, and the `pages-site` job runs it on the real
+`_site` after assembling it. Everything the gate reads in the tree can be right while
 the directory about to be uploaded is missing a file.
 
 ### What only a request can see
