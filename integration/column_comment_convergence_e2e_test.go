@@ -120,20 +120,21 @@ COMMENT ON COLUMN tasks.b IS 'bb';
 COMMENT ON COLUMN tasks.m IS 'mm';
 `,
 		wantChange: `-- Modify "tasks" table
-ALTER TABLE "tasks" ADD COLUMN "z" text NULL, ADD COLUMN "b" text NULL, ADD COLUMN "m" text NULL;
+ALTER TABLE "public"."tasks" ADD COLUMN "z" text NULL, ADD COLUMN "b" text NULL, ADD COLUMN "m" text NULL;
 -- Set comment to column: "z" on table: "tasks"
-COMMENT ON COLUMN "tasks"."z" IS 'zz';
+COMMENT ON COLUMN "public"."tasks"."z" IS 'zz';
 -- Set comment to column: "b" on table: "tasks"
-COMMENT ON COLUMN "tasks"."b" IS 'bb';
+COMMENT ON COLUMN "public"."tasks"."b" IS 'bb';
 -- Set comment to column: "m" on table: "tasks"
-COMMENT ON COLUMN "tasks"."m" IS 'mm';
+COMMENT ON COLUMN "public"."tasks"."m" IS 'mm';
 `,
 		wantComments: []string{"", "zz", "bb", "mm"},
 	},
 	{
 		// The community binary writes a created table's comments after its
-		// indexes too, the table's own first.
-		name:    "a table created with comments and an index",
+		// indexes too: the table's own first, then its columns', then its
+		// indexes'.
+		name:    "a table created with comments on itself, its columns and its indexes",
 		initial: "CREATE TABLE other (id bigint PRIMARY KEY);\n",
 		desired: `CREATE TABLE other (id bigint PRIMARY KEY);
 CREATE TABLE tasks (id bigint PRIMARY KEY, title text, owner text);
@@ -141,24 +142,71 @@ COMMENT ON TABLE tasks IS 'work';
 COMMENT ON COLUMN tasks.title IS 'what';
 COMMENT ON COLUMN tasks.owner IS 'who';
 CREATE INDEX tasks_owner_idx ON tasks (owner);
+CREATE INDEX tasks_title_idx ON tasks (title);
+COMMENT ON INDEX tasks_owner_idx IS 'by owner';
+COMMENT ON INDEX tasks_title_idx IS 'by title';
 `,
 		wantChange: `-- Create "tasks" table
-CREATE TABLE "tasks" (
+CREATE TABLE "public"."tasks" (
   "id" bigint NOT NULL,
   "title" text NULL,
   "owner" text NULL,
   PRIMARY KEY ("id")
 );
 -- Create index "tasks_owner_idx" to table: "tasks"
-CREATE INDEX "tasks_owner_idx" ON "tasks" ("owner");
+CREATE INDEX "tasks_owner_idx" ON "public"."tasks" ("owner");
+-- Create index "tasks_title_idx" to table: "tasks"
+CREATE INDEX "tasks_title_idx" ON "public"."tasks" ("title");
 -- Set comment to table: "tasks"
-COMMENT ON TABLE "tasks" IS 'work';
+COMMENT ON TABLE "public"."tasks" IS 'work';
 -- Set comment to column: "title" on table: "tasks"
-COMMENT ON COLUMN "tasks"."title" IS 'what';
+COMMENT ON COLUMN "public"."tasks"."title" IS 'what';
 -- Set comment to column: "owner" on table: "tasks"
-COMMENT ON COLUMN "tasks"."owner" IS 'who';
+COMMENT ON COLUMN "public"."tasks"."owner" IS 'who';
+-- Set comment to index: "tasks_owner_idx" on table: "tasks"
+COMMENT ON INDEX "public"."tasks_owner_idx" IS 'by owner';
+-- Set comment to index: "tasks_title_idx" on table: "tasks"
+COMMENT ON INDEX "public"."tasks_title_idx" IS 'by title';
 `,
 		wantComments: []string{"", "what", "who"},
+	},
+	{
+		// The index waits for the view, and the comments follow the index.
+		name:    "a table created with comments and an index that waits for a view",
+		initial: "CREATE TABLE other (id bigint PRIMARY KEY);\n",
+		desired: `CREATE TABLE other (id bigint PRIMARY KEY);
+CREATE TABLE tasks (id bigint PRIMARY KEY, title text);
+COMMENT ON TABLE tasks IS 'work';
+COMMENT ON COLUMN tasks.title IS 'what';
+CREATE INDEX tasks_title_idx ON tasks (title);
+COMMENT ON INDEX tasks_title_idx IS 'by title';
+CREATE TABLE users (id bigint PRIMARY KEY);
+CREATE VIEW titles AS SELECT id, title FROM tasks;
+`,
+		wantChange: `-- Create "tasks" table
+CREATE TABLE "public"."tasks" (
+  "id" bigint NOT NULL,
+  "title" text NULL,
+  PRIMARY KEY ("id")
+);
+-- Create "users" table
+CREATE TABLE "public"."users" (
+  "id" bigint NOT NULL,
+  PRIMARY KEY ("id")
+);
+-- Create "titles" view
+CREATE VIEW "public"."titles" AS
+SELECT id, title FROM tasks;
+-- Create index "tasks_title_idx" to table: "tasks"
+CREATE INDEX "tasks_title_idx" ON "public"."tasks" ("title");
+-- Set comment to table: "tasks"
+COMMENT ON TABLE "public"."tasks" IS 'work';
+-- Set comment to column: "title" on table: "tasks"
+COMMENT ON COLUMN "public"."tasks"."title" IS 'what';
+-- Set comment to index: "tasks_title_idx" on table: "tasks"
+COMMENT ON INDEX "public"."tasks_title_idx" IS 'by title';
+`,
+		wantComments: []string{"", "what"},
 	},
 }
 
