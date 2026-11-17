@@ -587,6 +587,11 @@ pull request for that line.
   verify`) proves from the shards' reports that their union is the listing,
   above a floor, with every test run once and none skipped or failed. Nothing
   else selects integration tests: no build tag, package or name pattern.
+- **A test removes what it creates in a shared database**, a revision table's
+  `_log` and `_repeatable` companions included (`revisiontable.Configured`
+  names them). A shard runs part of the contour, and the timings move the
+  partition, so a leftover turns a different test red on each run, far from
+  the test that left it.
 - **A live test asks for an engine, never for a variable**: `dbtarget.URL(c,
   dbtarget.PostgreSQL)` for the address ptah connects with,
   `dbtarget.DriverDSN(c, dbtarget.MySQL)` for a raw driver. They differ:
