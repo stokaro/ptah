@@ -454,7 +454,7 @@ func classifyComputedUnits(
 	dialect string,
 ) ([]PlanStatement, bool, error) {
 	if slices.ContainsFunc(computation.units, func(unit renderer.Fragment) bool { return unit.Native != nil }) {
-		statements, destructive, err := classifyPlanUnits(ctx, runtime, computation.units, dialect, computation.owned, computation.columns)
+		statements, destructive, err := classifyPlanUnits(ctx, runtime, computation.units, dialect, computation.owned, computation.columns, computation.restores)
 		if err != nil {
 			return nil, false, fmt.Errorf("assess plan safety: %w", err)
 		}
@@ -464,7 +464,7 @@ func classifyComputedUnits(
 	if err != nil {
 		return nil, false, err
 	}
-	statements, destructive, err := classifyPlanStatements(ctx, runtime, sqlStatements, dialect, computation.owned, computation.columns)
+	statements, destructive, err := classifyPlanStatements(ctx, runtime, sqlStatements, dialect, computation.owned, computation.columns, computation.restores)
 	if err != nil {
 		return nil, false, fmt.Errorf("assess plan safety: %w", err)
 	}
@@ -604,14 +604,17 @@ func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, 
 //
 // columns holds the same way what a column modification established (see
 // [safety.ColumnVerdicts]), and raises a statement without marking it owned: ALTER
-// COLUMN ... TYPE timestamp(0) reads as safe whatever type it replaces. A plan read back
-// from SQL has neither.
+// COLUMN ... TYPE timestamp(0) reads as safe whatever type it replaces. restores
+// holds the same way whether a view node gave the view back to its owner (see
+// [safety.OwnerRestores]): the words of that ALTER ... OWNER TO read as a change of
+// owner. A plan read back from SQL has none of them.
 func classifyPlanStatements(
 	ctx context.Context,
 	runtime safety.Runtime,
 	raw []string,
 	dialect string,
 	owned, columns []safety.StatementAssessment,
+	restores []bool,
 ) (statements []PlanStatement, destructive bool, err error) {
 	// Statements can carry comments and MySQL-family executable comments.
 	// Classify the SQL the plan's dialect may execute, including guarded
@@ -633,6 +636,9 @@ func classifyPlanStatements(
 		}
 		if i < len(columns) {
 			safety.Fold(&assessment, columns[i])
+		}
+		if i < len(restores) && restores[i] {
+			assessment.Reason = safety.RestoredOwnerReason(assessment.Reason)
 		}
 		destructive = destructive || assessment.Severity == safety.Destructive
 		statements = append(statements, PlanStatement{
@@ -723,12 +729,18 @@ func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runt
 	// Keeping positional notes too would duplicate them or attach them to
 	// a different statement after the edit.
 	p.Annotations = nil
-	statements, destructive, err := classifyPlanStatements(ctx, runtime, splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil, nil)
+	statements, destructive, err := classifyPlanStatements(ctx, runtime, splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil, nil, nil)
 	if err != nil {
 		return PlanFile{}, err
 	}
 	if sameStatementSequence(p.Statements, statements, p.Dialect) {
 		for i := range statements {
+			// A kept ALTER ... OWNER TO that gives a view back to its owner
+			// keeps that reason: its words read as a change of owner, and
+			// only the plan knew which it was.
+			if p.Statements[i].Reason == safety.RestoredOwnerReason(statements[i].Reason) {
+				statements[i].Reason = p.Statements[i].Reason
+			}
 			raisePlanStatement(&statements[i], p.Statements[i])
 			// The statements run as they were planned, so each still does what
 			// the plan recorded. After any other edit a statement may run

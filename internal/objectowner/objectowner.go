@@ -216,3 +216,45 @@ func SameRole(dialect, a, b string) bool {
 	}
 	return a == b
 }
+
+// Transfers is a server's answer about which roles one connection may give an
+// object to with ALTER ... OWNER TO, asked before a plan sends a statement.
+type Transfers struct {
+	// Connected is the role the connection runs as.
+	Connected string
+	// SchemaExempt reports that the server lets Connected give an object to
+	// a role that holds no CREATE privilege on the object's schema: a
+	// PostgreSQL superuser. CockroachDB checks that privilege of the new
+	// owner whoever the connection is, a member of admin included.
+	SchemaExempt bool
+	// Privilege is the role privilege the server requires of Connected on
+	// the new owner: SET on PostgreSQL 16 and later, MEMBER on earlier lines
+	// and on CockroachDB. Empty means the server was not asked, and Refused
+	// then says nothing.
+	Privilege string
+	// Refused is the roles Connected does not hold Privilege on, as the
+	// server stores their names, sorted. A superuser holds it on every role.
+	Refused []string
+}
+
+// Refuses reports whether the server answered that the connection may not
+// give an object to role, a name as the server of dialect stores it. A role
+// the server did not report, such as one a plan creates, is not refused.
+func (t Transfers) Refuses(dialect, role string) bool {
+	return t.Privilege != "" && slices.ContainsFunc(t.Refused, func(refused string) bool { return SameRole(dialect, refused, role) })
+}
+
+// Relation is what a server holds of the relation one ownership statement
+// names, asked before a plan runs.
+type Relation struct {
+	// Owner is the role that owns the relation now, as the server stores its
+	// name. It is empty where the server holds no such relation, and the
+	// other fields then say nothing.
+	Owner string
+	// Schema is the schema the relation is in.
+	Schema string
+	// Creates reports that the role the statement names holds CREATE on
+	// Schema, which the server requires of a new owner unless the connection
+	// is exempt; see [Transfers.SchemaExempt].
+	Creates bool
+}

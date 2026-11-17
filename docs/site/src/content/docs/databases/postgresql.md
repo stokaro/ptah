@@ -1514,11 +1514,29 @@ Ownership is explicit:
 
 The plan check rates an `OWNER TO` a warning, as it rates a `REVOKE`: the role
 that owned the view loses an owner's privileges, and the view then reads its
-tables with the new owner's. The server
-decides who may make the change. The connected role has to own the view and be
-able to `SET ROLE` to the new owner, or be a superuser. Otherwise PostgreSQL
-refuses the statement with SQLSTATE 42501, and Ptah reports the code with the
-statement.
+tables with the new owner's.
+
+The server decides who may make the change. The connected role has to own the
+view and be allowed to give an object to the new owner, and the new owner has
+to hold `CREATE` on the view's schema:
+
+| Server | The connected role needs on the new owner | Passes that check without it | The new owner needs `CREATE` on the schema |
+| --- | --- | --- | --- |
+| PostgreSQL 16 and later | the `SET` privilege | a superuser | unless the connected role is a superuser |
+| PostgreSQL before 16 | membership | a superuser | unless the connected role is a superuser |
+| CockroachDB | membership | a member of `admin` | always |
+
+Ptah asks the server both questions before it sends a statement, and refuses
+a plan the server would refuse partway through, after a rebuild had already
+dropped the view. The refusal names the statement, the role and the connected
+role, says when the role owns the view now, and ends with what to do: the
+`GRANT` that lets the plan run, such as
+`GRANT "reporting" TO "app" WITH SET TRUE` or
+`GRANT CREATE ON SCHEMA "public" TO "reporting"`, or an owner to declare
+instead. The `CREATE` question is asked about a view the server holds. For a
+new view the server answers as the statement runs: PostgreSQL refuses it with
+SQLSTATE 42501, the plan rolls back, and Ptah reports the code with the
+statement. YugabyteDB is not asked, and answers the same way.
 
 A rebuild drops a view and creates it again, and the `CREATE` gives the view to
 the role that runs the plan. So the plan gives the view back its owner in the
@@ -1526,8 +1544,12 @@ same migration, right after the `CREATE`: the declared owner, or, for a view
 that declares none, the owner the read reported, unless that is the connected
 role. The end state of a view the schema does not give an owner is the state it
 started in, as its privileges are, so the restore decides nothing about
-ownership. The rollback `ptah migrations generate` writes gives each view the
-owner it had before the migration.
+ownership. The plan check rates the `OWNER TO` that gives the view back a
+warning too, with its own reason: the view reads its tables with the same
+role's privileges as before. A check that has only the SQL text, such as
+`ptah migrations lint` over a migration file, cannot tell the two apart and
+gives the reason of a change of owner. The rollback `ptah migrations generate`
+writes gives each view the owner it had before the migration.
 
 A rehearsal on a dev database runs the same plan, so the dev server needs the
 roles the plan names, and a role belongs to a server rather than to a database.

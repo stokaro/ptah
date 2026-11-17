@@ -237,6 +237,11 @@ func AssessRendered(ctx context.Context, runtime RenderingRuntime, nodes []ast.N
 // operation makes an access claim. Raising never lowers what the node
 // established: a known widening stays a widening.
 //
+// The ALTER ... OWNER TO of a view node that gives the view back to the role
+// that owned it before the drop ([ast.CreateViewNode.OwnerRestored]) carries
+// the reason of an owner given back rather than the reason of a change of
+// owner its words read as; see [RestoredOwnerReason].
+//
 // The plan's statements are read together once each is classified: a drop of
 // a view or a trigger that a later statement creates again is judged as
 // [AssessSQL] judges it, over the node's verdict, unless an owner judged the
@@ -297,6 +302,9 @@ func AssessRenderedWithCapabilities(
 			ownedText := raw && judged != nil
 			if !ownedText && (placement != ast.NoExtension || len(rendered[i]) == 1 || isTypeChangeSQL(statement)) {
 				raiseAssessment(&assessment, nodeAssessment)
+			}
+			if restoresOwner(node) {
+				assessment.Reason = RestoredOwnerReason(assessment.Reason)
 			}
 			if fills {
 				judgeNullFillPair(&assessment, statement, target)
@@ -718,10 +726,7 @@ func assessNode(node ast.Node) StatementAssessment {
 		assessment.Severity = Warning
 		assessment.Reason = revokeReason
 	case *ast.AlterOwnerNode, *ast.CreateViewNode, *ast.CreateMaterializedViewNode:
-		if givesOwnerAway(n) {
-			assessment.Severity = Warning
-			assessment.Reason = ownerReason
-		}
+		assessment = assessOwnerChange(n, assessment)
 	case *ast.RevokeRoleMembershipNode:
 		assessment.Severity = Warning
 		assessment.Reason = revokeMembershipReason
@@ -1045,6 +1050,32 @@ func accessChangeReason(words []string) string {
 		return revokeMembershipReason
 	}
 	return ""
+}
+
+// assessOwnerChange rates a node that gives an object to a role: a change of
+// owner, or a view a rebuild gives back to the role that owned it before the
+// drop. A view node that names no owner keeps assessment as it is.
+func assessOwnerChange(node ast.Node, assessment StatementAssessment) StatementAssessment {
+	switch {
+	case restoresOwner(node):
+		assessment.Severity, assessment.Reason = Warning, restoreOwnerReason
+	case givesOwnerAway(node):
+		assessment.Severity, assessment.Reason = Warning, ownerReason
+	}
+	return assessment
+}
+
+// restoresOwner reports whether node gives a view it creates again back to
+// the role that owned it before the plan dropped it. Nothing changes hands:
+// the role that owned the view owns it again.
+func restoresOwner(node ast.Node) bool {
+	switch n := node.(type) {
+	case *ast.CreateViewNode:
+		return n.Owner != "" && n.OwnerRestored
+	case *ast.CreateMaterializedViewNode:
+		return n.Owner != "" && n.OwnerRestored
+	}
+	return false
 }
 
 // givesOwnerAway reports whether node gives an object to a role: an ALTER ...
@@ -1435,6 +1466,8 @@ const (
 	revokeMembershipReason     = "removing a member from a role takes away the privileges it held through the role"
 	ownerReason                = "OWNER TO gives the object to another role: the role that owned it loses an owner's privileges, " +
 		"and a view then reads its tables with the new owner's privileges"
+	restoreOwnerReason = "OWNER TO gives the view the plan creates again back to the role that owned it before the drop, " +
+		"which the declaration does not name: the view reads its tables with that role's privileges, as it did before"
 )
 
 // rlsForceDirections counts the FORCE changes that turn the flag on and off.

@@ -1735,6 +1735,12 @@ type CreateViewNode struct {
 	// ALTER VIEW ... OWNER TO after the CREATE and its comment; every other
 	// target refuses a view that carries one.
 	Owner string
+	// OwnerRestored reports that Owner is not a declared owner but the role
+	// that owned the view before the plan dropped it, given back so the view
+	// the plan creates again keeps the owner it had. A safety assessment reads
+	// it to tell a restored owner from a change of owner; the statement the
+	// renderer writes is the same.
+	OwnerRestored bool
 }
 
 // NewCreateView starts a CREATE VIEW for a named view.
@@ -1831,6 +1837,10 @@ type CreateMaterializedViewNode struct {
 	// Owner is the role the materialized view is given to after it is
 	// created, on the terms of [CreateViewNode.Owner].
 	Owner string
+	// OwnerRestored reports that Owner is the role that owned the
+	// materialized view before the plan dropped it, on the terms of
+	// [CreateViewNode.OwnerRestored].
+	OwnerRestored bool
 }
 
 // NewCreateMaterializedView starts a CREATE MATERIALIZED VIEW for a named view.
