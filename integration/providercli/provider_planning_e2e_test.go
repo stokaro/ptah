@@ -179,10 +179,10 @@ func TestProviderCommonPlannerDispatchesAndExecutesCompleteGraph(t *testing.T) {
 	nodes, err := planner.GenerateSchemaDiffASTWithOptions(c.Context(), runtime, diff, "fixture", planext.Options{Capabilities: request.Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
+	// The operation forbids a transaction. Whether that leaves the
+	// transactional file depends on facts shared by the whole test process;
+	// see TestProviderCommonPlannerRewritesExactColumnOperand.
 	c.Assert(ast.OwnerTransactions(nodes[1]), qt.DeepEquals, []plangraph.Transaction{plangraph.TransactionForbidden})
-	// The operation forbids a transaction, which leaves the transactional file
-	// only on an engine that has one: its first session stated the facts.
-	c.Assert(planner.RequiresNoTransaction("fixture", nodes), qt.Equals, capability.ForDialect("fixture").Has(capability.TransactionalDDL))
 	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
 	c.Assert(err, qt.IsNil)
 	c.Assert(must.Must(rendered.SQLFragments()), qt.DeepEquals, []string{`CREATE TABLE "common" ("id" INTEGER NOT NULL PRIMARY KEY);`, `CREATE TABLE "planned" ("id" INTEGER NOT NULL PRIMARY KEY);`})
@@ -294,10 +294,13 @@ func TestProviderCommonPlannerRewritesExactColumnOperand(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	c.Assert(ast.OwnerOperations(nodes[0]), qt.HasLen, 1)
+	// The operation forbids a transaction. Whether that leaves the
+	// transactional file follows the facts the planner reads for "fixture",
+	// which the first session of that engine in this process states; every
+	// test here starts a fixture session, so which one came first depends on
+	// the order the tests run in. TestNodeRequiresAutocommit_AProvidersEngine
+	// in internal/txrequire pins the rule against facts it registers itself.
 	c.Assert(ast.OwnerTransactions(nodes[0]), qt.DeepEquals, []plangraph.Transaction{plangraph.TransactionForbidden})
-	// The operation forbids a transaction, which leaves the transactional file
-	// only on an engine that has one: its first session stated the facts.
-	c.Assert(planner.RequiresNoTransaction("fixture", nodes), qt.Equals, capability.ForDialect("fixture").Has(capability.TransactionalDDL))
 	rendered, err := runtime.Render(c.Context(), renderer.Request{Target: "fixture", Capabilities: request.Capabilities, Nodes: nodes})
 	c.Assert(err, qt.IsNil)
 	// The common operand differs from the final declaration. The replacement
