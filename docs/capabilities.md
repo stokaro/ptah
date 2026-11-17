@@ -860,6 +860,10 @@ plan while reporting a version number that explains nothing. The release that
 added the statement stays in the sentence as the reason the capability is
 absent here.
 
+The expression is one change of the column. Its other changes in the same
+plan, such as a `NOT NULL` it gains or a new name for that constraint, are
+planned whether or not the target can change the expression in place.
+
 `--server-version 17` still emits the `ALTER`, so pinning selects a plan rather
 than degrading every one. `ForDialect("mysql")`
 answers `MySQL84()`, which sets `foreign_keys_require_unique_reference`, so a

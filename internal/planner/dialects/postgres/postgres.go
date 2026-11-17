@@ -897,7 +897,11 @@ func (p *Planner) modifyExistingTableColumns(
 				continue
 			}
 			result = p.modifyGeneratedColumnExpression(result, tableDiff.TableName, colDiff, node)
-			continue
+			// The expression is one change of the column. The others, such as
+			// NOT NULL and its name, take the path every column's changes
+			// take: the expression's statement carries none of them, and
+			// without them the next comparison plans them on their own.
+			colDiff = withoutGeneratedChange(colDiff)
 		}
 
 		// A comment is not part of ALTER TABLE on PostgreSQL, so it is emitted
@@ -1289,6 +1293,16 @@ func (p *Planner) modifyGeneratedColumnExpression(
 func isGeneratedColumnChange(colDiff difftypes.ColumnDiff) bool {
 	_, ok := colDiff.Changes["generated"]
 	return ok
+}
+
+// withoutGeneratedChange is colDiff without its expression change, which
+// [Planner.modifyGeneratedColumnExpression] plans. The diff's own map is not
+// changed.
+func withoutGeneratedChange(colDiff difftypes.ColumnDiff) difftypes.ColumnDiff {
+	changes := maps.Clone(colDiff.Changes)
+	delete(changes, "generated")
+	colDiff.Changes = changes
+	return colDiff
 }
 
 // findGeneratedTableByDiffName resolves the declared table a TableDiff names.
