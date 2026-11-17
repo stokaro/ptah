@@ -186,29 +186,47 @@ func TestSchemaDriftInventoryE2E(t *testing.T) {
 	}
 }
 
+// postgresIgnoredTable declares audit_log with a column, an index and a CHECK
+// the database below lacks.
+var postgresIgnoredTable = []string{
+	`CREATE TABLE users (id integer PRIMARY KEY, email text NOT NULL)`,
+	`CREATE TABLE audit_log (id integer PRIMARY KEY, at text, actor text, CONSTRAINT chk_audit_at CHECK (at <> ''))`,
+	`CREATE INDEX idx_audit_log_at ON audit_log (at)`,
+}
+
+// postgresHeldTable is the database postgresIgnoredTable is compared with.
+var postgresHeldTable = []string{
+	`CREATE TABLE users (id integer PRIMARY KEY, email text NOT NULL)`,
+	`CREATE TABLE audit_log (id integer PRIMARY KEY, at text)`,
+}
+
 // TestSchemaDriftInventoryLeavesAnIgnoredTableOutE2E excludes a table both
 // sides hold, with a column, an index and a CHECK only the declaration has.
 // Nothing of it is counted on either side, and the table the run compares
-// still is.
+// still is. The URL pins no schema, so the row that names the table with
+// public, the scratch database's current schema, matches it only because the
+// comparison reads that schema's names with the schema, as `schema apply` does.
 func TestSchemaDriftInventoryLeavesAnIgnoredTableOutE2E(t *testing.T) {
 	tests := []struct {
 		name     string
 		engine   dbtarget.Engine
 		desired  []string
 		database []string
+		ignore   string
 	}{
 		{
-			name:   "PostgreSQL",
-			engine: dbtarget.PostgreSQL,
-			desired: []string{
-				`CREATE TABLE users (id integer PRIMARY KEY, email text NOT NULL)`,
-				`CREATE TABLE audit_log (id integer PRIMARY KEY, at text, actor text, CONSTRAINT chk_audit_at CHECK (at <> ''))`,
-				`CREATE INDEX idx_audit_log_at ON audit_log (at)`,
-			},
-			database: []string{
-				`CREATE TABLE users (id integer PRIMARY KEY, email text NOT NULL)`,
-				`CREATE TABLE audit_log (id integer PRIMARY KEY, at text)`,
-			},
+			name:     "PostgreSQL",
+			engine:   dbtarget.PostgreSQL,
+			desired:  postgresIgnoredTable,
+			database: postgresHeldTable,
+			ignore:   "tables=audit_log",
+		},
+		{
+			name:     "PostgreSQL named by its schema",
+			engine:   dbtarget.PostgreSQL,
+			desired:  postgresIgnoredTable,
+			database: postgresHeldTable,
+			ignore:   "tables=public.audit_log",
 		},
 		{
 			name:   "MySQL",
@@ -222,6 +240,7 @@ func TestSchemaDriftInventoryLeavesAnIgnoredTableOutE2E(t *testing.T) {
 				"CREATE TABLE users (id int PRIMARY KEY, email varchar(255) NOT NULL)",
 				"CREATE TABLE audit_log (id int PRIMARY KEY, at varchar(40))",
 			},
+			ignore: "tables=audit_log",
 		},
 	}
 
@@ -232,7 +251,7 @@ func TestSchemaDriftInventoryLeavesAnIgnoredTableOutE2E(t *testing.T) {
 			schema := writeSchema(c, test.desired)
 
 			report := runDrift(c,
-				"--db-url", url, "--schema-file", schema, "--format", "json", "--ignore", "tables=audit_log")
+				"--db-url", url, "--schema-file", schema, "--format", "json", "--ignore", test.ignore)
 
 			c.Assert(report.Error, qt.IsNil)
 			c.Assert(report.Drift, qt.IsFalse)

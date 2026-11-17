@@ -63,11 +63,14 @@ alter of an object the target holds names its schema too, the current schema
 included: removing the index `i` of `public.t` is `DROP INDEX "public"."i"`. This
 holds for tables, indexes, constraints, sequences, enums, views, functions,
 triggers, grants and the objects a feature owner keeps, such as domains,
-policies and partitions, in `schema plan`, `schema apply`, `schema diff`,
-`schema compare`, `migrate diff`, `migrations generate --replay` and the
-rollback `migrations down` derives. `migrations plan` and `migrations generate`
-without `--replay` compare the names as the source writes them, so the file
-they write keeps a bare name bare.
+policies and partitions.
+
+Names are placed this way in `schema plan`, `schema apply`, `schema diff`,
+`schema compare`, `schema drift`, `schema serve`, `migrate diff`,
+`migrations generate --replay`, the entity check of `migrations baseline` and
+the rollback `migrations down` derives. `migrations plan` and `migrations
+generate` without `--replay` compare the names as the source writes them, so
+the file they write keeps a bare name bare.
 
 The comment `ptah-compat` writes above a statement, such as
 `-- Drop index "i" from table: "t"`, keeps the bare name, as the community
