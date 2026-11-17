@@ -76,7 +76,7 @@ func (p ApplyRuntimePlan) simulateNativeOnDev(ctx context.Context, opts Simulate
 	defer dev.release()
 	defer dbschema.CloseAndWarn(dev.conn)
 	defer discardDevRehearsalArtifacts(ctx, dev.conn, dev.baseline)
-	if err := checkNativeSimulationSchemaScope(dev.conn.Info(), p.conn.Info()); err != nil {
+	if err := checkDevNaming(p.rehearsal.planning.naming, p.conn.Info(), dev.conn.Info()); err != nil {
 		return err
 	}
 
@@ -91,14 +91,10 @@ func (p ApplyRuntimePlan) rehearseNativeOnPreparedDev(
 	baseline devclean.Baseline,
 	assessments safety.Runtime,
 ) error {
-	devConn.SchemaWriter().SetDryRun(false)
-	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
-		return &SimulationError{Stage: "reset", Err: err}
-	}
 	outside := rehearsalOutside{target: p.seed.target(ctx, p.conn), executed: p.plan.executedSQL()}
-	added, err := recreateCurrentSchema(ctx, devConn, p.current, p.conn.Info(), baseline, p.runtime, outside, urlScopedReads)
+	devConn, added, err := rebuildTargetOnDev(ctx, devConn, baseline, p.current, outside, p.conn.Info(), p.runtime)
 	if err != nil {
-		return &SimulationError{Stage: "baseline", Err: err}
+		return err
 	}
 	plan, err := p.planOnDev(ctx, devConn, baseline, assessments)
 	if err != nil {
