@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/dialect/postgres/pgrole"
 )
 
 // ExampleMerge composes one desired state from two sources — here two
@@ -69,6 +70,25 @@ func ExampleMerge_conflict() {
 	// Output:
 	// refused: true
 	// names the table: true
+}
+
+// ExampleValidateRoles checks two sources that each declare the role app.
+// The reader's declaration names a setting and the writer's does not, so they
+// disagree and the error names both structs; once both name it, they are one
+// role.
+func ExampleValidateRoles() {
+	timeout := must.Must(pgrole.WithSettings(schemaext.Facets{}, []pgrole.Setting{{Name: "statement_timeout", Value: "'30s'"}}))
+	reader := schemamodel.Role{StructName: "Reader", Name: "app", Login: true, Facets: timeout}
+	writer := schemamodel.Role{StructName: "Writer", Name: "app", Login: true}
+
+	fmt.Println(schemamodel.ValidateRoles(&schemamodel.Database{Roles: []schemamodel.Role{reader, writer}}))
+
+	writer.Facets = timeout
+	fmt.Println(schemamodel.ValidateRoles(&schemamodel.Database{Roles: []schemamodel.Role{reader, writer}}))
+
+	// Output:
+	// conflicting role "app" definitions on structs Reader and Writer
+	// <nil>
 }
 
 // ExampleFinalize assembles a Database by hand — the way an embedder with its

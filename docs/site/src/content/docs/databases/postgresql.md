@@ -1737,6 +1737,16 @@ literal that holds a backslash is refused, because a server with
 `ALTER USER` is `ALTER ROLE`, and later statements about a setting replace
 earlier ones, as they do on the server.
 
+A role may be declared more than once: on two Go structs, under two YAML keys,
+or in two schema files read together. The declarations must agree on every
+attribute and every setting, and then they are one role. They are compared
+whole rather than merged, so a declaration that names no settings disagrees
+with one that names some. Declarations that disagree are refused, naming the role and, where they are known, the two
+structs or YAML keys. A SQL file refuses a second `CREATE ROLE` of one name.
+One HCL document that repeats a `role` block is read at exit 0 and keeps the
+first block, for parity with the Atlas community binary;
+`PTAH_HCL_STRICT_REDECLARATIONS=1` refuses the repeat.
+
 Names compare without regard to case, as the server looks them up, and a
 custom name such as `app.tenant` is accepted. In the statement Ptah writes, an
 unquoted part is in lower case and a part in double quotes keeps its case:

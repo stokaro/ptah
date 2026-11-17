@@ -541,14 +541,54 @@ func (v compositeDefinitionValidator) rlsEnabledTables() error {
 }
 
 func (v compositeDefinitionValidator) roles() error {
-	return validateNamedDefinitions(
-		v.database.Roles,
-		func(role Role) string { return role.Name },
-		canonicalRoleDefinition,
-		func(role Role, _ string) error {
-			return fmt.Errorf("conflicting role %q definitions", role.Name)
-		},
-	)
+	return ValidateRoles(v.database)
+}
+
+// ValidateRoles refuses two declarations of one role that disagree on any
+// attribute or on any facet, such as the settings a PostgreSQL role logs in
+// with. Declarations that agree are one role, and [Finalize] keeps one of
+// them. The Go struct a declaration is attached to is not an attribute, so
+// two structs may declare one role; Dialects, the targets a declaration is
+// scoped to, is an attribute and is compared.
+//
+// Declarations are compared whole, never merged attribute by attribute: a
+// flag a declaration leaves false cannot be told apart from one it declares
+// false. So a declaration that omits settings the other names disagrees with
+// it, and a role declared in two places names its settings in both.
+//
+// Each declaration is compared with the first of its name, in the order of
+// db.Roles, and the error is for the first declaration that disagrees. It
+// names the role, and the two structs that declare it where both
+// declarations record one. [Merge] runs it; a loader that builds a Database
+// from a source in which one role can be written twice runs it before
+// [Finalize], which folds declarations of one name into the first without
+// comparing them. A nil db is valid.
+func ValidateRoles(db *Database) error {
+	if db == nil {
+		return nil
+	}
+	first := make(map[string]Role, len(db.Roles))
+	for _, role := range db.Roles {
+		previous, seen := first[role.Name]
+		if !seen {
+			first[role.Name] = role
+			continue
+		}
+		if !equivalentDefinitions(canonicalRoleDefinition(previous), canonicalRoleDefinition(role)) {
+			return fmt.Errorf("conflicting role %q definitions%s", role.Name, declaringStructs(previous, role))
+		}
+	}
+	return nil
+}
+
+// declaringStructs names the two structs that declare a role, or nothing where
+// a declaration records none or both name one struct.
+func declaringStructs(first, second Role) string {
+	left, right := unscopedGoTypeIdentity(first.StructName), unscopedGoTypeIdentity(second.StructName)
+	if left == "" || right == "" || left == right {
+		return ""
+	}
+	return fmt.Sprintf(" on structs %s and %s", left, right)
 }
 
 func (v compositeDefinitionValidator) managedData() error {

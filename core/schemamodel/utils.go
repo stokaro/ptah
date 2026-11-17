@@ -301,7 +301,8 @@ func bareTableName(name string) string {
 // Unlike [Merge], Finalize returns no error and validates nothing: two
 // declarations with the same identity are collapsed rather than reported as a
 // conflict. Use [Merge] where a disagreement between sources has to be an
-// error instead of one of them silently winning.
+// error instead of one of them silently winning, and [ValidateRoles] before
+// Finalize where one source can declare a role twice.
 func Finalize(r *Database) {
 	restoreCompositeHelperDefinitions(r)
 	r.Fields = ProcessEmbeddedFields(r.EmbeddedFields, r.Fields)
@@ -1910,7 +1911,11 @@ func newGrantKey(g Grant) grantKey {
 	}
 }
 
-// deduplicateRoles dedups roles by name (roles are global per DB).
+// deduplicateRoles keeps the first declaration of each role name, since a
+// role is one object per database. It compares nothing: a source in which one
+// role can be written twice refuses declarations that disagree through
+// [ValidateRoles] before it gets here, so what it folds is a repeat that
+// agrees.
 func deduplicateRoles(roles []Role) []Role {
 	seen := make(map[string]bool)
 	deduplicated := make([]Role, 0, len(roles))

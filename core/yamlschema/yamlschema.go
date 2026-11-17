@@ -1333,7 +1333,12 @@ func rowSecurityScope(origin string, node yaml.Node) ([]string, error) {
 	return scope, nil
 }
 
+// addRoles reads the role entries. Two entries may name one role, and they
+// are one declaration when they agree; entries that disagree are refused
+// naming both keys, because [schemamodel.Finalize] would keep the first and
+// drop the other's attributes.
 func (d document) addRoles(db *schemamodel.Database, owners yamlext.Set) error {
+	declaredBy := make(map[string]string, len(d.Roles))
 	for _, key := range sortedKeys(d.Roles) {
 		spec := d.Roles[key]
 		attributes, _, err := ownedKeys(owners, yamlext.EntryRole, fmt.Sprintf("role %q", key), spec.Owned)
@@ -1368,6 +1373,14 @@ func (d document) addRoles(db *schemamodel.Database, owners yamlext.Set) error {
 			MemberOf:    memberOf,
 			Facets:      facets,
 		})
+		name := db.Roles[len(db.Roles)-1].Name
+		if first, repeated := declaredBy[name]; repeated {
+			if err := schemamodel.ValidateRoles(db); err != nil {
+				return fmt.Errorf("roles %q and %q: %w", first, key, err)
+			}
+			continue
+		}
+		declaredBy[name] = key
 	}
 	return nil
 }
