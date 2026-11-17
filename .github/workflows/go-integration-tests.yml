@@ -391,14 +391,21 @@ jobs:
       # other service failed to start in them. A job service that does not
       # start fails the job before its first step, and every leg starts one,
       # so nine legs lose about three runs in ten. Here a crash costs another
-      # attempt. Readiness is the published port plus a login, never the
-      # container's state: a running container is not yet a server that
-      # answers on 1433.
+      # attempt. Readiness is a login through the published port: sqlcmd in
+      # the container connects to the host's port 1433 by the bridge gateway,
+      # so the port mapping and the server are measured together. A running
+      # container, or a port the proxy already accepts, is not yet a server
+      # that answers. The deadline includes the image pull, so an attempt
+      # starts only while a minute of it is left.
       - name: Start SQL Server
         run: |
           password='P@ssw0rd-ptah-2026'
           deadline=$((SECONDS + 600))
           for attempt in 1 2 3; do
+            if [ "$((deadline - SECONDS))" -lt 60 ]; then
+              echo "attempt $attempt: less than a minute of the deadline is left"
+              break
+            fi
             docker rm --force ptah-sqlserver >/dev/null 2>&1 || true
             # renovate: datasource=docker depName=mcr.microsoft.com/mssql/server
             docker run --detach --name ptah-sqlserver \
@@ -416,10 +423,10 @@ jobs:
                 echo "attempt $attempt: the container exited"
                 break
               fi
-              if timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/1433' 2>/dev/null &&
-                docker exec ptah-sqlserver sh -c \
-                  'sqlcmd=/opt/mssql-tools18/bin/sqlcmd; [ -x "$sqlcmd" ] || sqlcmd=/opt/mssql-tools/bin/sqlcmd; exec "$sqlcmd" "$@"' \
-                  sh -S localhost -U sa -P "$password" -No -Q 'SELECT 1' >/dev/null 2>&1
+              gateway=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' ptah-sqlserver)
+              if docker exec ptah-sqlserver sh -c \
+                'sqlcmd=/opt/mssql-tools18/bin/sqlcmd; [ -x "$sqlcmd" ] || sqlcmd=/opt/mssql-tools/bin/sqlcmd; exec "$sqlcmd" "$@"' \
+                sh -S "$gateway,1433" -U sa -P "$password" -No -l 5 -Q 'SELECT 1' >/dev/null 2>&1
               then
                 echo "SQL Server answers a login on port 1433, attempt $attempt"
                 exit 0
@@ -430,7 +437,7 @@ jobs:
             docker logs ptah-sqlserver 2>&1 || true
             echo "::endgroup::"
           done
-          echo "::error::SQL Server did not answer a login on port 1433 in 3 attempts"
+          echo "::error::SQL Server did not answer a login on port 1433 within three attempts and ten minutes"
           exit 1
 
       - name: Start distributed SQL databases
