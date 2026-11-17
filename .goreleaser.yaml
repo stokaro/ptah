@@ -155,6 +155,10 @@ release:
   # the way and retries the upload. It costs an extra API call per collision
   # and only on a collision, which is exactly the case that is broken today.
   replace_existing_artifacts: true
+  # A tag with a prerelease part, such as v1.2.3-rc.1, publishes a GitHub
+  # prerelease. GitHub never marks a prerelease as the latest release, so the
+  # install script and `releases/latest` keep naming the newest release.
+  prerelease: auto
 
 # Two registries carry the same images, and GHCR is the documented default.
 #
@@ -203,8 +207,10 @@ dockers_v2:
       # cannot write a manifest list either, so it builds one image per
       # platform and suffixes each tag with it; an unconditional entry here
       # would leave a `latest-amd64` on the machine that ran the snapshot,
-      # naming a release that does not exist. An empty tag is dropped.
-      - "{{ if not .IsSnapshot }}latest{{ end }}"
+      # naming a release that does not exist. A prerelease is not one either:
+      # a reader pulling `latest` gets the newest release, not a candidate for
+      # the next one. An empty tag is dropped.
+      - "{{ if not (or .IsSnapshot .Prerelease) }}latest{{ end }}"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -259,7 +265,11 @@ homebrew_casks:
     # Snapshots are unaffected: `--snapshot` implies `--skip=publish`, so the
     # publish phase -- this upload, and the `.Env.HOMEBREW_TAP_TOKEN` lookup
     # above with it -- does not run at all.
-    skip_upload: false
+    #
+    # `auto` skips the upload for a tag with a prerelease part and for no
+    # other reason. The tap holds one cask, so `brew upgrade` would otherwise
+    # move every reader onto a release candidate.
+    skip_upload: auto
     directory: Casks
     # Not a conflict stanza. Homebrew loads the named cask to evaluate a
     # conflict, and `brew install <tap>/<token>` trusts only the token it was
