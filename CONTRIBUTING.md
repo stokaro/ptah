@@ -61,10 +61,14 @@ current as your last pull.
 
 ### What a pull request says
 
-Match the repository's existing message style; read `git log` before writing.
-The default shape is an imperative subject under about 72 characters, a blank
-line, then a body explaining why the change was made. The diff already shows
-what changed, so spend the body on the reason, the trade-off, or the risk.
+Match the repository's existing title style; read `git log` before writing.
+Use an imperative subject under about 72 characters that names the purpose
+of the complete change.
+
+Use the [PR template](.github/pull_request_template.md) and follow
+[Pull request descriptions](AGENTS.md#pull-request-descriptions).
+Explain the need, resulting behavior, material risks, and observed checks.
+Describe non-obvious decisions without listing edits file by file.
 
 A pull request that adds behavior under the compatibility surface has to say
 which it is, `GENERAL CAPABILITY` or `COMPATIBILITY ADAPTER`. AGENTS.md explains
