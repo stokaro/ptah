@@ -76,7 +76,10 @@ reset for that, as it is for a replay, and a --dev-url that names the --from or
 created inside the dev database under its name, and a file naming two is
 refused. When both sides are schema files, a PostgreSQL-family --dev-url that
 pins no search_path is connected to learn the schema it resolves a name
-written without one to, and every statement names that schema. This makes
+written without one to, and every statement names that schema. A --dev-url is
+opened on every run, whatever the sides are, so one nothing answers on fails
+the run; a docker:// value is read for its server and no container is started
+for two schema files or two databases. This makes
 CI checks like "do these two schema files differ?" or "does this migration
 directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison

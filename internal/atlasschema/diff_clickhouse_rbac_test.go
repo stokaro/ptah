@@ -18,8 +18,10 @@ import (
 // SQLite virtual-table guard already is; these tests pin the ClickHouse RBAC
 // refusals next to it (stokaro/ptah#1025).
 //
-// The dev URL is never connected to. It names the dialect, which is all the
-// refusals need, exactly as the coverage tests in this package use it.
+// The refusals are decided from the two documents, before the dev database is
+// opened, so the dev URL here names the dialect and nothing answers on it. The
+// plan of a grant the seam accepts needs a server, and
+// integration/atlasschema plans it on one.
 
 const clickHouseRBACDiffFrom = `
 schema "shop" {
@@ -103,9 +105,11 @@ permission {
 	c.Assert(err, qt.ErrorMatches, `(?s).*declares privilege "ALL" on shop\.\*.*`)
 }
 
-// TestDiffPlansAClickHouseGrantItAccepts is the control. Without it, a seam
-// that refused every ClickHouse comparison would satisfy both tests above.
-func TestDiffPlansAClickHouseGrantItAccepts(t *testing.T) {
+// TestDiffPassesAClickHouseGrantItAcceptsToTheDevDatabase is the control.
+// Without it, a seam that refused every ClickHouse comparison would satisfy
+// the tests above. The grant passes the seam, so the run goes on to open the
+// dev database, where nothing answers.
+func TestDiffPassesAClickHouseGrantItAcceptsToTheDevDatabase(t *testing.T) {
 	c := qt.New(t)
 
 	report, err := atlasschema.Diff(c.Context(), clickHouseRBACDiffOptions(c,
@@ -120,10 +124,8 @@ permission {
 }
 `))
 
-	c.Assert(err, qt.IsNil)
-	sql, err := report.MarshalSQL()
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "GRANT SELECT ON `shop`.* TO `analyst`")
+	c.Assert(err, qt.ErrorMatches, `connect to --dev-url: .*`)
+	c.Assert(report.Changes, qt.IsNil)
 }
 
 // TestDiffLeavesTheSameDeclarationAloneOnPostgres is the non-interference
@@ -142,7 +144,7 @@ permission {
   for        = schema.shop
 }
 `)
-	options.DevURL = "postgres://localhost/dev?search_path=shop"
+	options.DevURL = "docker://postgres/18/dev?search_path=shop"
 
 	_, err := atlasschema.Diff(c.Context(), options)
 
@@ -158,6 +160,6 @@ func clickHouseRBACDiffOptions(c *qt.C, from, to string) atlasschema.DiffOptions
 	return atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + fromPath},
 		ToURLs:   []string{"file://" + toPath},
-		DevURL:   "clickhouse://localhost/dev",
+		DevURL:   "clickhouse://127.0.0.1:1/dev",
 		Runtime:  must.Must(builtin.New())}
 }

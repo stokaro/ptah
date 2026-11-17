@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devreach"
 	"ptah.run/internal/ociartifact"
 	"ptah.run/internal/pathguard"
 	"ptah.run/internal/schemaartifact"
@@ -212,6 +213,14 @@ func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
 		DevServerDisposable: devServerDisposable,
 	})
 	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	// A database source is read as it is and never needs the dev database,
+	// which is opened all the same, once the read has refused a dev URL of
+	// another dialect: a --dev-url nothing answers on fails the run; see
+	// [devreach]. Ptah-compat's `schema inspect` does not ask: the pinned
+	// community binary v1.3.0 reads a database without opening its dev URL.
+	if _, err := devreach.Server(cmd.Context(), "", inspectDevURLFlag, opts.devURL, locals.connectTimeout); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	fmt.Fprint(cmd.OutOrStdout(), rendered.Rendered)

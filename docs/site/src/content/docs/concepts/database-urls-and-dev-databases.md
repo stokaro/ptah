@@ -91,6 +91,15 @@ validation:
 - Atlas-compatible verbs use it for planning, linting, and rollback
   verification.
 
+A command given a dev or shadow URL connects to it even when the run needs
+nothing from it, such as `schema diff` of two schema files, `schema compare`,
+or a `migrations down` with nothing to roll back. A URL nothing answers on
+fails the run there, as on the Atlas CLI, rather than the first run that
+needs the database. A `docker://` URL in such a run is read for the server
+its tag names, and no container is started. `ptah-compat schema inspect` of a
+database is the exception, as on the Atlas CLI: it reads the database and
+never opens the dev URL.
+
 A dev database must hold nothing the reset would drop when a command starts.
 Ptah refuses a table before anything is dropped, as the Atlas CLI does, and
 any other such object too. Ptah then cleans the

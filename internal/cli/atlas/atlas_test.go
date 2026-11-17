@@ -2144,7 +2144,7 @@ table "users" {
 		"schema", "diff",
 		"-f", "file://" + from,
 		"--to", "file://" + to,
-		"--dev-url", "postgres://localhost/dev?search_path=public",
+		"--dev-url", "docker://postgres/18/dev?search_path=public",
 	})
 
 	err := cmd.Execute()
@@ -2172,7 +2172,7 @@ table "users" {
 		"schema", "diff",
 		"--from", "file://" + path,
 		"--to", "file://" + path,
-		"--dev-url", "postgres://localhost/dev?search_path=public",
+		"--dev-url", "docker://postgres/18/dev?search_path=public",
 	})
 
 	err := cmd.Execute()
@@ -2232,7 +2232,7 @@ table "users" {
 		"schema", "diff",
 		"--from", "file://" + from,
 		"--to", "file://" + to,
-		"--dev-url", "postgres://localhost/dev?search_path=public",
+		"--dev-url", "docker://postgres/18/dev?search_path=public",
 		"--format", `{{ len .Changes }}|{{ printf "%.2s" (.MarshalSQL) }}|{{ sql . "  " }}`,
 	})
 
@@ -2273,7 +2273,7 @@ table "users" {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"schema", "diff", "--from", "file://" + from, "--to", "file://" + to, "--dev-url", "postgres://localhost/dev?search_path=public"})
+	cmd.SetArgs([]string{"schema", "diff", "--from", "file://" + from, "--to", "file://" + to, "--dev-url", "docker://postgres/18/dev?search_path=public"})
 
 	err := cmd.Execute()
 
@@ -2390,7 +2390,7 @@ table "users" {
 }
 
 env "local" {
-  dev = "postgres://localhost/dev?search_path=public"
+  dev = "docker://postgres/18/dev?search_path=public"
   schema {
     src = "file://${var.to_path}"
   }

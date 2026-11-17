@@ -36,6 +36,7 @@ import (
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devreach"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/onlineddl"
 	"ptah.run/internal/preflight"
@@ -389,6 +390,15 @@ func parseRollbackSettings(values rollbackSettingValues) (parsedRollbackSettings
 // Command is the command a run document names.
 const Command = "migrations down"
 
+// shadowDBFlagAsTyped names --shadow-db the way the operator spelled it:
+// ptah-compat's `migrate down` forwards its --dev-url here.
+func shadowDBFlagAsTyped(cmd *cobra.Command) string {
+	if cmdadapter.Forwarded(cmd) {
+		return "dev-url"
+	}
+	return shadowDBFlag
+}
+
 // typedCommand is the command a refusal names: [Command], or the spelling the
 // operator typed on the surface that forwarded to it, such as `migrate down`.
 func typedCommand(cmd *cobra.Command) string {
@@ -607,6 +617,13 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		}
 
 		if status.CurrentVersion <= targetVersion {
+			// Nothing is rolled back, so nothing is verified, and the shadow
+			// database is opened all the same: a --shadow-db nothing answers on
+			// fails this run rather than the next one that has a rollback to
+			// verify. A docker:// URL is parsed and no container is started.
+			if _, err := devreach.Server(cmd.Context(), conn.Info().Dialect, shadowDBFlagAsTyped(cmd), resolvedOpts.shadowDB, settings.connectTimeout); err != nil {
+				return err
+			}
 			report, err = finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{
 				migrator:      mig,
 				runtime:       runtime,

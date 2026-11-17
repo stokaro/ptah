@@ -44,9 +44,9 @@ func TestSchemaDiffServerVersionSelectsThePlan(t *testing.T) {
 		wantAbsent    string
 	}{
 		{
-			// Unpinned is what the command did before the flag existed, and it
-			// is the unsafe direction: newest assumed.
-			name:          "no version plans against the newest preset",
+			// Unpinned, the plan is for the server the dev URL names, which
+			// is PostgreSQL 18 here.
+			name:          "no version plans for the dev server",
 			serverVersion: "",
 			wantContains:  alterExpression,
 			wantAbsent:    manualMigrationOn,
@@ -79,7 +79,9 @@ func TestSchemaDiffServerVersionSelectsThePlan(t *testing.T) {
 			fromPath := writeSchemaSQLFile(c, dir, "from.sql", generatedFrom)
 			toPath := writeSchemaSQLFile(c, dir, "to.sql", generatedTo)
 
-			args := []string{"diff", "--from", fromPath, "--to", toPath, "--dev-url", "postgres://host/db?search_path=public"}
+			// A docker URL is parsed and no container is started, so the run
+			// names its server without one.
+			args := []string{"diff", "--from", fromPath, "--to", toPath, "--dev-url", "docker://postgres/18/db?search_path=public"}
 			args = append(args, serverVersionArgs(tt.serverVersion)...)
 
 			out, err := runSchema("", args...)
@@ -118,21 +120,22 @@ func TestSchemaDiffSaysWhenAVersionCouldNotRefine(t *testing.T) {
 	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE t (a integer PRIMARY KEY);\n")
 	toPath := writeSchemaSQLFile(c, dir, "to.sql", "CREATE TABLE t (a integer PRIMARY KEY, b text);\n")
 
-	// ClickHouse has a ladder now (one step, at 24.11), but 24.3 is not one of
-	// its measured lines, so the value is accepted and buys the arm below the
-	// step rather than a line's own answers. Saying so is the difference
-	// between a flag that did not fully apply and a flag that was ignored; the
-	// diff still comes out (stokaro/ptah#916).
+	// MySQL 8.1 is not one of the measured lines, so the value is accepted
+	// and buys the preset its ladder assigns rather than a line's own
+	// answers. Saying so is the difference between a flag that did not fully
+	// apply and a flag that was ignored; the diff still comes out
+	// (stokaro/ptah#916). The dev URL names a container, which a diff of two
+	// files parses and does not start.
 	out, err := runSchema("", "diff",
 		"--from", fromPath,
 		"--to", toPath,
-		"--dev-url", "clickhouse://host/db",
-		"--server-version", "24.3",
+		"--dev-url", "docker://mysql/8.4/db",
+		"--server-version", "8.1",
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "clickhouse 24.3 is not a measured release line")
-	c.Assert(out, qt.Contains, "ADD COLUMN b")
+	c.Assert(out, qt.Contains, "mysql 8.1 is not a measured release line")
+	c.Assert(out, qt.Contains, "ADD COLUMN `b`")
 }
 
 func TestSchemaDiffUnpinnedVersionIsByteIdenticalToBeforeTheFlag(t *testing.T) {

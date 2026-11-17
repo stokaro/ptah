@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devreach"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/mysqldefiner"
@@ -429,9 +430,15 @@ func withAtlasSchemaApplyPolicy(
 }
 
 // checkAtlasSchemaApplyDevURL refuses a --dev-url naming no driver before
-// anything is contacted.
+// anything is contacted, and then one nothing answers on. The pinned community
+// binary v1.3.0 opens the dev database on every `schema apply` it is given one,
+// whatever --to names, and fails before it plans; see [devreach].
 func checkAtlasSchemaApplyDevURL(ctx context.Context, devURL string) error {
-	return atlasDevURLDriverDiagnostic(ctx, devURL)
+	if err := atlasDevURLDriverDiagnostic(ctx, devURL); err != nil {
+		return err
+	}
+	_, err := devreach.Server(ctx, "", "dev-url", devURL, 0)
+	return err
 }
 
 // classifiedAtlasApplyTo classifies --to for a refusal decided before the dev

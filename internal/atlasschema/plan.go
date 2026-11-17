@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/devreach"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/planeffect"
 	"ptah.run/internal/providerurl"
@@ -314,6 +315,12 @@ func PreparePlanFileReportingUndecided(
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 	if err := providerurl.ValidateDialectMatch(ctx, opts.DevURL, conn.Info().Dialect); err != nil {
+		return PlanFile{}, schemadiff.Diagnostics{}, err
+	}
+	// A saved plan reads the dev URL for its schema and nothing else, and the
+	// URL is still opened, so one nothing answers on fails the run here rather
+	// than the run that applies the plan; see [devreach].
+	if _, err := devreach.Server(ctx, conn.Info().Dialect, "dev-url", opts.DevURL, 0); err != nil {
 		return PlanFile{}, schemadiff.Diagnostics{}, err
 	}
 	// The pair `schema apply` refuses with the same arguments, refused here

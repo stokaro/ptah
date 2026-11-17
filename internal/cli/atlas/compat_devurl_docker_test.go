@@ -55,12 +55,12 @@ import (
 //
 // # schema diff is a partial row on purpose
 //
-// `schema diff` between two local schema FILES never opens a dev database at
-// all: it uses `--dev-url` only to pin the SQL dialect, and it does that
-// identically for `docker://postgres/16/dev` and for a directly connectable
-// `postgres://` URL. Measured after this change, both produce the same
-// statement, and neither starts a container. The pin still refuses an engine
-// Ptah does not start, as the pinned binary does. Its migration-directory source
+// `schema diff` between two local schema FILES plans without a dev database.
+// A `postgres://` dev URL is still opened, so one nothing answers on fails the
+// run as it fails on the pinned binary; a `docker://postgres/16/dev` value is
+// read for the server its tag names and starts no container. Both produce the
+// same statement. The docker URL still refuses an engine Ptah does not start,
+// as the pinned binary does. Its migration-directory source
 // does provision, and that is the row below. The remaining divergence -- the
 // pinned binary normalizes local files through the dev database and so writes
 // `ALTER TABLE "public"."users" ADD COLUMN "email" text NULL` where Ptah writes
