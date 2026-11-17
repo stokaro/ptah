@@ -1976,10 +1976,8 @@ With an `old.hcl` declaring only a `users` table and a `schema.hcl` adding a
 `posts` table, expected output includes:
 
 ```text
-CREATE TABLE "main"."posts" (
-  "id" INTEGER PRIMARY KEY,
-  "user_id" INTEGER NOT NULL
-);
+-- Create "posts" table
+CREATE TABLE "main"."posts" ("id" integer NOT NULL, "user_id" integer NOT NULL, PRIMARY KEY ("id"));
 ```
 
 `--format` accepts Atlas-style Go templates over Ptah's local diff report. The
@@ -1993,6 +1991,15 @@ ptah-compat schema diff \
   --to file://schema.hcl \
   --dev-url "sqlite://dev.db" \
   --format '{{ sql . "  " }}'
+```
+
+```text
+-- Create "posts" table
+CREATE TABLE "main"."posts" (
+  "id" integer NOT NULL,
+  "user_id" integer NOT NULL,
+  PRIMARY KEY ("id")
+);
 ```
 
 Unsupported schemes — `atlas://` registry URLs, `docker://` as a desired
