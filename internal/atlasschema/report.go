@@ -79,7 +79,9 @@ const (
 	ApplyOutcomeApplied ApplyOutcome = "applied"
 	// ApplyOutcomeNoChanges means the comparison planned no statement, so
 	// there was nothing to run. The database matches the desired schema unless
-	// the report's Undecided names objects the read could not check.
+	// the report's Undecided names objects the read could not check, or its
+	// Annotations hold notes the planner wrote about a difference it planned no
+	// statement for.
 	ApplyOutcomeNoChanges ApplyOutcome = "no-changes"
 	// ApplyOutcomeDryRun means the run was asked to change nothing, and did
 	// not, and that the checks a real run makes ahead of its prompt passed. A
