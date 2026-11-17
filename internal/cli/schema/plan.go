@@ -312,7 +312,7 @@ func planSchema(cmd *cobra.Command, opts schemaPlanOptions, human io.Writer) (at
 		return atlasschema.PlanEvidence{}, err
 	}
 	if !plan.HasChanges() && len(plan.Annotations) == 0 {
-		printNothingPlanned(human, undecided)
+		printNothingPlanned(human, undecided, 0)
 		return atlasschema.PlanEvidence{Plan: &plan, Undecided: undecided}, nil
 	}
 	document, err := atlasschema.MarshalPlanFile(plan)

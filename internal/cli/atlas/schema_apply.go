@@ -667,7 +667,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			// made.`, does carry one and already matches (stokaro/ptah#1235 9.4).
 			// The native `ptah schema apply` sentence is untouched: no parity is owed
 			// there and it is not this surface.
-			return "Schema is synced, no changes to be made", nil
+			return nothingPlannedMessage(len(plan.Annotations())), nil
 		}
 
 		if plan.HasNativeUnits() || plan.HasInputReferences() {
@@ -951,7 +951,7 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 
 		if !plan.HasChanges() {
 			atlasschema.WriteUnitReports(cmd.OutOrStdout(), nil, plan.Annotations)
-			return "Schema is synced, no changes to be made", nil
+			return nothingPlannedMessage(len(plan.Annotations)), nil
 		}
 		if plan.HasNative() || plan.HasInputReferences() {
 			return applyAtlasNativePlanFile(cmd, opts, conn, plan, txMode, desired)
@@ -1760,4 +1760,17 @@ func atlasApplySQL(ctx context.Context, plan atlasschema.ApplyRuntimePlan, opts 
 		statements = atlasschema.SplitApplyStatements(sqlText, dialect)
 	}
 	return sqlText, statements, nil
+}
+
+// nothingPlannedMessage is what schema apply says when no statement was
+// planned. A plan that holds notes does not report the schema synced: a note
+// is what the planner writes about a difference it plans no statement for,
+// such as a generated column whose expression the target cannot change, so
+// the schema did not converge. The community binary has no such plan;
+// reporting it synced would hide the difference behind its own warning.
+func nothingPlannedMessage(notes int) string {
+	if notes > 0 {
+		return "No statements planned, but the plan holds the notes above, so the schema is not synced"
+	}
+	return "Schema is synced, no changes to be made"
 }
