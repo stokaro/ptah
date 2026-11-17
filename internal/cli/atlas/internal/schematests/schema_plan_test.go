@@ -62,7 +62,7 @@ func TestSchemaPlanSavesFingerprintedPlanFile(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "Planned schema changes:")
+	c.Assert(out, qt.Contains, "-- Planned Changes:")
 	c.Assert(out, qt.Contains, `CREATE TABLE "orders"`)
 	c.Assert(out, qt.Contains, "Plan saved to file://"+planPath)
 	plan, err := atlasschema.ReadPlanFile(planPath)

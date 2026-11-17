@@ -33,10 +33,14 @@ func TestCockroachDBHashShardedE2E_HappyPath(t *testing.T) {
 	defer cancel()
 	sourceURL, targetURL := newHashShardedDatabases(c, ctx)
 
-	const note = "note: 2 CockroachDB keys and indexes built USING HASH are described without it," +
+	const notePrefix = "note: 2 CockroachDB keys and indexes built USING HASH are described without it," +
 		" because no schema source can declare hash sharding; a description applied to another" +
-		" database builds them unsharded, and a diff between the two reports no difference:" +
-		" events.events_at_idx (8 buckets), orders.orders_pkey (16 buckets).\n"
+		" database builds them unsharded, and a diff between the two reports no difference: "
+	// `db read` names each object as the database it read holds it. The compat
+	// `sql` helper plans the schema it read whole, so it names each object's
+	// schema too, as the plan does.
+	const note = notePrefix + "events.events_at_idx (8 buckets), orders.orders_pkey (16 buckets).\n"
+	const qualifiedNote = notePrefix + "public.events.events_at_idx (8 buckets), public.orders.orders_pkey (16 buckets).\n"
 	read, readErr, err := runPtahSplitStreams(ctx, []string{"db", "read", "--db-url", sourceURL})
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", readErr))
 	c.Assert(read, qt.Not(qt.Contains), "crdb_internal_")
@@ -45,7 +49,7 @@ func TestCockroachDBHashShardedE2E_HappyPath(t *testing.T) {
 	inspected, inspectErr, err := runCompatSQLInspect(ctx, sourceURL)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", inspectErr))
 	c.Assert(inspected, qt.Not(qt.Contains), "crdb_internal_")
-	c.Assert(inspectErr, qt.Contains, note)
+	c.Assert(inspectErr, qt.Contains, qualifiedNote)
 
 	rendered := filepath.Join(c.TempDir(), "rendered.sql")
 	c.Assert(os.WriteFile(rendered, []byte(read), 0o600), qt.IsNil)

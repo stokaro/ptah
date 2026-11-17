@@ -87,6 +87,14 @@ type InspectOptions struct {
 	// `ptah-compat` sets it; native inspection keeps Ptah's generated marker and
 	// native terminal spacing.
 	CompatibilityHCLFraming bool
+	// SQLCreationPlan, when set, makes the `sql` helper write the plan that
+	// creates the inspected schema on a new database of the same server,
+	// planned through this runtime in the statement style and shape `schema
+	// diff` plans in, each statement under the comment naming its change. It
+	// also names the schema of every object a read of the whole database
+	// returns, as that plan names them. Only `ptah-compat` sets it; nil keeps
+	// the rendered schema native inspection writes.
+	SQLCreationPlan CreationPlanRuntime
 	// PrepareSchema applies a caller-selected normalization and validation
 	// policy to the fully introspected schema before any template renders or
 	// file export is published. A returned replacement becomes the exact state
@@ -138,6 +146,12 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	}
 
 	ctx = readscope.Without(ctx, atlasfilter.KindsLeftOut(opts.Runtime.Selections(), opts.Exclude, opts.Include)...)
+	if opts.SQLCreationPlan != nil {
+		// The plan names the schema of every object, as `schema diff` does;
+		// see [readscope.Qualified]. The HCL and JSON documents are the same
+		// either way, since both name each object's schema already.
+		ctx = readscope.Qualified(ctx)
+	}
 	schema, names, err := readInspectSchemaWithNames(ctx, conn, opts.Schemas)
 	if err != nil {
 		return InspectResult{}, fmt.Errorf("read database schema: %w", err)
@@ -295,6 +309,7 @@ func renderInspectSchema(
 			OmitAtlasRefusedBlocks:  opts.OmitAtlasRefusedBlocks,
 			DescribeSchemas:         describesSchemas(info, opts),
 			CompatibilityHCLFraming: opts.CompatibilityHCLFraming,
+			CreationPlan:            creationPlanOf(opts, dbsch, schema, info),
 		},
 		opts.Runtime,
 	)
@@ -312,6 +327,20 @@ func renderInspectSchema(
 		return InspectResult{}, err
 	}
 	return InspectResult{Rendered: output.Text, Schema: dbsch}, nil
+}
+
+// creationPlanOf is the creation plan the `sql` helper writes, or nil where
+// opts asks for the rendered schema.
+func creationPlanOf(
+	opts InspectOptions,
+	desired *schemamodel.Database,
+	read *catalog.Database,
+	info catalog.ServerInfo,
+) func(context.Context) ([]atlasreport.SchemaChange, error) {
+	if opts.SQLCreationPlan == nil {
+		return nil
+	}
+	return inspectCreationPlan(opts.SQLCreationPlan, desired, read, info, describesSchemas(info, opts))
 }
 
 // reportOmittedVirtualTables answers for a SQLite virtual table the rendering

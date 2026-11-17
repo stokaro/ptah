@@ -74,7 +74,7 @@ func TestSchemaApplyAtlasOraclePlanFileAppliesAndVerifies(t *testing.T) {
 	// against --to, the plan's exact SQL applies, and the post-apply
 	// end-state verification passes.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "Planned schema changes:")
+	c.Assert(out, qt.Contains, "-- Planned Changes:")
 	c.Assert(out, qt.Contains, "ALTER TABLE `users` ADD COLUMN `email` text NULL")
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)

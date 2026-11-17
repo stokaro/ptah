@@ -86,7 +86,7 @@ func TestSchemaApplyDryRunPlansOnAReachableDevDatabase(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "Planned schema changes:")
+	c.Assert(out, qt.Contains, "-- Planned Changes:")
 	c.Assert(atlastest.SqliteTableCount(c, dbPath, "rehearsal_users"), qt.Equals, 0)
 }
 

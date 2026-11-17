@@ -1191,7 +1191,7 @@ migration directory.
 | Output | How to request it |
 | --- | --- |
 | HCL | The default, or `--format '{{ hcl . }}'`. |
-| SQL | `--format '{{ sql . }}'`. |
+| SQL | `--format '{{ sql . }}'`: the plan that creates the schema on a new database, as `schema diff` from one writes it. |
 | JSON | `--format '{{ json . }}'`. |
 | Custom templates | `{{ .MarshalHCL }}`, `{{ hcl . }}`, `{{ sql . }}`, `{{ mermaid . }}`. |
 
@@ -1362,7 +1362,7 @@ every `--auto-approve` in the pipeline into a refusal: the run behaves the way
 ```bash
 PTAH_DRY_RUN=1 ptah-compat schema apply -u "$DATABASE_URL" \
   --to file://schema.sql --dev-url "$DEV_URL" --auto-approve
-# Planned schema changes: … (exit 0, nothing executed)
+# -- Planned Changes: … (exit 0, nothing executed)
 ```
 
 The variable does not work in the other direction either. Typing both flags is

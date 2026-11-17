@@ -139,7 +139,7 @@ func TestCompatSchemaApplyLintsThroughTheProvider(t *testing.T) {
 	)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
-	c.Assert(out, qt.Equals, "Planned schema changes:\n-- Drop \"gadgets\" table\nDROP TABLE \"gadgets\";\n", qt.Commentf("%s", stderr))
+	c.Assert(out, qt.Equals, "-- Planned Changes:\n-- Drop \"gadgets\" table\nDROP TABLE \"gadgets\";\n", qt.Commentf("%s", stderr))
 	c.Assert(stderr, qt.Contains, "Error: the planned changes are refused by the atlas.hcl lint policy:\n")
 	c.Assert(stderr, qt.Contains, "\n  - DS101 error: ")
 	c.Assert(stderr, qt.Contains, "\n  - DS107 error: ")
@@ -243,7 +243,7 @@ func TestCompatSchemaPlanLintsAPlanOfTheProvidersDatabase(t *testing.T) {
 
 	out, stderr, code := f.run(f.withManifest(), append([]string{"schema", "plan", "--save", "--output", plan, "--auto-approve"}, transition...)...)
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
-	c.Assert(out, qt.Contains, "Planned schema changes:\n-- Drop \"gadgets\" table\nDROP TABLE \"gadgets\";\n")
+	c.Assert(out, qt.Contains, "-- Planned Changes:\n-- Drop \"gadgets\" table\nDROP TABLE \"gadgets\";\n")
 	f.assertStopped(c)
 
 	out, stderr, code = f.run(f.withManifest(), append([]string{"schema", "plan", "lint", "--file", "file://" + filepath.ToSlash(plan)}, transition...)...)

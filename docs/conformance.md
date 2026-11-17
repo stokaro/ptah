@@ -1393,7 +1393,8 @@ CREATE INDEX i_nullsfst ON t (score NULLS FIRST);
 CREATE INDEX i_siglen   ON t USING gist (tsv tsvector_ops (siglen = 64));
 ```
 
-with `ptah-compat schema inspect --format '{{ sql . }}'` writing the document
+with `ptah-compat schema inspect --format '{{ sql . }}'` writing the plan that
+creates the schema to a document
 and `ptah-compat schema diff --from <that database> --to file://<that document>`
 reading it back, the diff of a schema against its own description planned:
 

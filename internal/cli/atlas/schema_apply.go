@@ -1563,8 +1563,14 @@ func atlasApplyWithoutDevURLAllowed() (bool, error) {
 	return atlasApplyWithoutDevURL.Resolve()
 }
 
+// atlasPlannedChangesHeader opens the plan `schema apply` writes before it
+// asks, and on --dry-run. It is the pinned community binary v1.3.0's line,
+// measured on PostgreSQL 18 and SQLite; native `ptah schema apply` writes its
+// own heading.
+const atlasPlannedChangesHeader = "-- Planned Changes:"
+
 func printAtlasSchemaApplyPlan(out io.Writer, sqlText string) {
-	fmt.Fprintln(out, "Planned schema changes:")
+	fmt.Fprintln(out, atlasPlannedChangesHeader)
 	fmt.Fprintln(out, strings.TrimSpace(sqlText))
 }
 

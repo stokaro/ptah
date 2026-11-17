@@ -277,6 +277,9 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		ValidateRenderedVirtualTables: opts.policy.ValidateRenderedVirtualTables,
 		OmitAtlasRefusedBlocks:        omitRefusedBlocks,
 		CompatibilityHCLFraming:       true,
+		// The `sql` helper writes the plan that creates the schema, as the
+		// community binary's does, rather than the rendered description.
+		SQLCreationPlan: runtime,
 		DevURLDiagnostic: func(devURL string, source atlassource.Set) error {
 			return atlasInspectDevURLDiagnostic(cmd.Context(), devURL, source)
 		},

@@ -1254,7 +1254,7 @@ func TestCompatCommand_SchemaInspectFormatsCustomTemplate(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Equals, "1/2/a-b_c/CREATE")
+	c.Assert(out.String(), qt.Equals, "1/2/a-b_c/-- Cre")
 }
 
 func TestCompatCommand_SchemaInspectRejectsInvalidFormatBeforeConnect(t *testing.T) {
@@ -2647,7 +2647,7 @@ CREATE TABLE users (
 	err := first.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(firstOut.String(), qt.Contains, "Planned schema changes:")
+	c.Assert(firstOut.String(), qt.Contains, "-- Planned Changes:")
 	c.Assert(firstOut.String(), qt.Contains, "CREATE TABLE")
 	c.Assert(firstOut.String(), qt.Contains, "Schema apply completed successfully.")
 	assertSQLiteTableExists(c, dbPath, "users")
@@ -2698,7 +2698,7 @@ CREATE TABLE users (
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
+	c.Assert(out.String(), qt.Contains, "-- Planned Changes:")
 	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
 	assertSQLiteTableMissing(c, dbPath, "users")
 }
@@ -2729,7 +2729,7 @@ CREATE TABLE users (
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
+	c.Assert(out.String(), qt.Contains, "-- Planned Changes:")
 	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
 	assertSQLiteTableMissing(c, dbPath, "users")
 }
@@ -2810,7 +2810,7 @@ func TestNewCompatCommand_SchemaApplyDryRunUsesAtlasRoot(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "Planned schema changes:")
+	c.Assert(out.String(), qt.Contains, "-- Planned Changes:")
 	assertSQLiteTableMissing(c, dbPath, "users")
 }
 

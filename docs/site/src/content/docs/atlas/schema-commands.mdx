@@ -107,7 +107,7 @@ not the helper's bare name, renders HCL, SQL, or JSON:
 | --- | --- |
 | no `--format` | rendered HCL |
 | `--format '{{ hcl . }}'` | rendered HCL |
-| `--format '{{ sql . }}'` | rendered SQL |
+| `--format '{{ sql . }}'` | the plan that creates the schema on a new database, one statement a line under its change comment |
 | `--format '{{ json . }}'` | rendered JSON |
 | `--format hcl` | literal `hcl` (3 bytes, no line feed) |
 | `--format sql` | literal `sql` (3 bytes, no line feed) |
@@ -1325,14 +1325,17 @@ ptah-compat schema apply \
   --dry-run
 ```
 
-Expected output includes:
+Expected output on an empty SQLite target includes the plan under the heading
+the pinned community binary writes:
 
 ```text
-Planned schema changes:
+-- Planned Changes:
+-- Create "users" table
 CREATE TABLE "users" (
-  "id" INTEGER PRIMARY KEY,
-  "email" TEXT NOT NULL UNIQUE,
-  "name" TEXT
+  "id" integer NULL,
+  "email" text NOT NULL UNIQUE,
+  "name" text NULL,
+  PRIMARY KEY ("id")
 );
 ```
 

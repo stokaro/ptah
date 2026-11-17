@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	droppingPlanPrompt = "Planned schema changes:\n-- Drop \"legacy\" table\nDROP TABLE \"legacy\";\n" +
+	droppingPlanPrompt = "-- Planned Changes:\n-- Drop \"legacy\" table\nDROP TABLE \"legacy\";\n" +
 		"Apply these schema changes? Type 'YES' to confirm: Schema apply canceled.\n"
 	droppingPlanRating = "Plan rating: destructive\n" +
 		"Statement 1 of 1, destructive: DROP TABLE removes the table and all rows\n" +
