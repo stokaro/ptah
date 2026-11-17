@@ -562,8 +562,10 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	// must not hold back every other runner of the lock, so the lock is
 	// released before the prompt, and the rollback takes it again and checks
 	// under it that the migrations above the target are still the ones shown.
+	// The run reports once the lock is released, through report.
 	outer := cmd.Context()
 	var confirmed *rollbackRun
+	var report downReport
 	err = mig.HoldMigrationLock(outer, "migrate down", func(ctx context.Context) error {
 		cmd.SetContext(ctx)
 		defer cmd.SetContext(outer)
@@ -594,17 +596,17 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		}
 
 		if status.CurrentVersion <= targetVersion {
-			if err := finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{
-				migrator:       mig,
-				runtime:        runtime,
-				emit:           emit,
-				dialect:        conn.Info().Dialect,
-				currentVersion: status.CurrentVersion,
-				targetVersion:  targetVersion,
-			}); err != nil {
-				return err
-			}
-			return document.Write(migrator.RunEvidence{Plan: &migrator.MigrationPlan{}, After: status, DryRun: opts.dryRun})
+			report, err = finishDownAtOrBelowTarget(cmd.Context(), downNoopInputs{
+				migrator:      mig,
+				runtime:       runtime,
+				emit:          emit,
+				document:      document,
+				dialect:       conn.Info().Dialect,
+				status:        status,
+				targetVersion: targetVersion,
+				dryRun:        opts.dryRun,
+			})
+			return err
 		}
 
 		// Get applied migrations from the database
@@ -661,8 +663,13 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 			confirmed = &run
 			return nil
 		}
-		return runRollback(cmd, run)
+		var runErr error
+		report, runErr = runRollback(cmd, run)
+		return runErr
 	})
+	if report != nil {
+		return report(err)
+	}
 	if err != nil || confirmed == nil {
 		return err
 	}
@@ -679,11 +686,18 @@ func confirmAndRollBack(cmd *cobra.Command, run rollbackRun) error {
 	}
 	run.recheck = true
 	outer := cmd.Context()
-	return run.migrator.HoldMigrationLock(outer, "migrate down", func(ctx context.Context) error {
+	var report downReport
+	err = run.migrator.HoldMigrationLock(outer, "migrate down", func(ctx context.Context) error {
 		cmd.SetContext(ctx)
 		defer cmd.SetContext(outer)
-		return runRollback(cmd, run)
+		var runErr error
+		report, runErr = runRollback(cmd, run)
+		return runErr
 	})
+	if report == nil {
+		return err
+	}
+	return report(err)
 }
 
 // recheckConfirmed reads the applied migrations again and refuses with a
@@ -773,7 +787,8 @@ func newDownMigrator(spec downMigratorSpec) (*migrator.Migrator, error) {
 }
 
 // rollbackRun is what the rollback and its report need once the operator has
-// confirmed it.
+// confirmed it. The report uses document and emit after the migration lock is
+// released.
 type rollbackRun struct {
 	opts     *options
 	resolved options
@@ -800,10 +815,18 @@ type rollbackRun struct {
 	recheck bool
 }
 
-// runRollback rolls back, reads the history it left, and reports both: in the
-// document under --json, and in the closing summary.
-func runRollback(cmd *cobra.Command, r rollbackRun) error {
-	opts, mig, emit := r.opts, r.migrator, r.emit
+// downReport reports a run of migrations down once the migration lock it ran
+// under is released: in the document under --json, and in the closing lines.
+// runErr is the outcome of the run and of the lock together, because a lock
+// lost or not released fails a run whose statements all committed, and a report
+// written while the lock was held could not say so.
+type downReport func(runErr error) error
+
+// runRollback rolls back and reads the history it left, under the migration
+// lock the caller holds. Its error is the rollback's, and the caller passes the
+// lock's outcome of it to the report.
+func runRollback(cmd *cobra.Command, r rollbackRun) (downReport, error) {
+	mig := r.migrator
 	// The plan the migrator selects under its lock is what the document
 	// reports, and none when it selected nothing there. A derived rollback
 	// reports the versions it was derived for until the migrator selects them
@@ -813,13 +836,7 @@ func runRollback(cmd *cobra.Command, r rollbackRun) error {
 	if r.resolved.plan {
 		plan = &migrator.MigrationPlan{Direction: migrator.MigrationDirectionDown, Versions: newestFirst(r.selected)}
 	}
-	preflightHook := capturePlan(&plan, downPreflightHook(cmd, opts, r.runtime, r.conn, r.dbURL, r.resolved, emit))
-
-	// Last on every path from here, so it follows any line that says success.
-	// Under --json the document carries the same report.
-	if !opts.jsonOutput {
-		defer emitLostLogEntries(emit, mig)
-	}
+	preflightHook := capturePlan(&plan, downPreflightHook(cmd, r.opts, r.runtime, r.conn, r.dbURL, r.resolved, r.emit))
 
 	// Run down migrations, once the versions the prompt showed are still the
 	// applied ones: refused here, before the migrator's own checks, a rollback
@@ -843,17 +860,41 @@ func runRollback(cmd *cobra.Command, r rollbackRun) error {
 	if statusErr != nil {
 		finalStatus = nil
 	}
-	if err := r.document.Write(migrator.RunEvidence{Plan: plan, After: finalStatus, Err: runErr, DryRun: opts.dryRun}); err != nil {
+	report := &rollbackReport{run: r, plan: plan, finalStatus: finalStatus, statusErr: statusErr}
+	return report.finish, runErr
+}
+
+// rollbackReport is what a rollback leaves to report once the migration lock
+// it ran under is released.
+type rollbackReport struct {
+	run         rollbackRun
+	plan        *migrator.MigrationPlan
+	finalStatus *migrator.MigrationStatus
+	statusErr   error
+}
+
+// finish is the rollback's [downReport].
+func (rr *rollbackReport) finish(runErr error) error {
+	r := rr.run
+	opts, emit := r.opts, r.emit
+	// Last on every path from here, so it follows any line that says success.
+	// Under --json the document carries the same report.
+	if !opts.jsonOutput {
+		defer emitLostLogEntries(emit, r.migrator)
+	}
+	if err := r.document.Write(migrator.RunEvidence{
+		Plan: rr.plan, After: rr.finalStatus, Err: runErr, DryRun: opts.dryRun,
+	}); err != nil {
 		return errors.Join(runErr, err)
 	}
 	if runErr != nil {
 		return runErr
 	}
-	if statusErr != nil {
-		return fmt.Errorf("error getting final migration status: %w", statusErr)
+	if rr.statusErr != nil {
+		return fmt.Errorf("error getting final migration status: %w", rr.statusErr)
 	}
 
-	emitMigrateDownSummary(emit, opts, r.inputs.targetVersion, r.selected, finalStatus)
+	emitMigrateDownSummary(emit, opts, r.inputs.targetVersion, r.selected, rr.finalStatus)
 
 	return nil
 }
@@ -999,12 +1040,14 @@ func emitRollbackPlan(
 
 // downNoopInputs is what the run with nothing to roll back needs to finish.
 type downNoopInputs struct {
-	migrator       *migrator.Migrator
-	runtime        *cliobs.Runtime
-	emit           cliobs.Emitter
-	dialect        string
-	currentVersion int64
-	targetVersion  int64
+	migrator      *migrator.Migrator
+	runtime       *cliobs.Runtime
+	emit          cliobs.Emitter
+	document      *migraterun.Document
+	dialect       string
+	status        *migrator.MigrationStatus
+	targetVersion int64
+	dryRun        bool
 }
 
 // rollbackStatus reads and prints the migration status a rollback starts
@@ -1046,7 +1089,7 @@ func rollbackStatus(
 }
 
 // finishDownAtOrBelowTarget answers the run whose database is already at or
-// below the version it was asked for.
+// below the version it was asked for, and returns its report.
 //
 // It verifies applied checksums first. The rollback path does that before it
 // rolls anything back, and this is the branch that never reaches it, so an
@@ -1054,14 +1097,24 @@ func rollbackStatus(
 // would otherwise leave here reported as success (stokaro/ptah#3438). The
 // question goes to the migrator rather than to a second reading of the status,
 // so both branches refuse on the same rule.
-func finishDownAtOrBelowTarget(ctx context.Context, in downNoopInputs) error {
+//
+// The report says nothing of its own on a lock lost or not released: the run
+// sent no statement, so the document the command writes for an error before
+// the run is the true one, though it leaves out the status this run read. The
+// no-op observation is not recorded for that run either.
+func finishDownAtOrBelowTarget(ctx context.Context, in downNoopInputs) (downReport, error) {
 	if _, err := in.migrator.VerifyAppliedChecksums(ctx); err != nil &&
 		!in.migrator.AppliesOverMissingMigration(err) {
-		return err
+		return nil, err
 	}
-	observeNoopDown(in.runtime, in.dialect, in.currentVersion, in.targetVersion)
-	in.emit.Printf("✅ Database is already at or below target version %d!\n", in.targetVersion)
-	return nil
+	return func(runErr error) error {
+		if runErr != nil {
+			return runErr
+		}
+		observeNoopDown(in.runtime, in.dialect, in.status.CurrentVersion, in.targetVersion)
+		in.emit.Printf("✅ Database is already at or below target version %d!\n", in.targetVersion)
+		return in.document.Write(migrator.RunEvidence{Plan: &migrator.MigrationPlan{}, After: in.status, DryRun: in.dryRun})
+	}, nil
 }
 
 func observeNoopDown(runtime *cliobs.Runtime, dialect string, currentVersion, targetVersion int64) {
