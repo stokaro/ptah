@@ -1827,7 +1827,8 @@ password in only when it sends the statement:
   declared password and needs no variable;
 - `schema apply --plan`, `migrations up` and a replay read the variable the
   statement names, so export it on the machine that runs them. A variable that
-  is not set refuses the statement before anything is sent, and `schema apply
+  is not set refuses the statement before it is sent. `schema apply` asks
+  before its prompt, so the run sends none of its statements, and `schema apply
   --dry-run` refuses it too. `ptah-compat schema apply --plan --dry-run`
   applies the same check to a saved SQL plan.
 
