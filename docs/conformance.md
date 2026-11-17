@@ -1029,26 +1029,22 @@ Refusing a remote daemon was the alternative. It was rejected on the
 measurement: Atlas CE exits 0 there, so refusing would be `ptah-compat` exiting
 1 where it exits 0 — the same capability gap this work exists to close.
 
-Two retained divergences, both recorded rather than chased:
+One retained divergence, recorded rather than chased:
 
 - **Images.** Atlas CE pulls `postgres:<tag>` but the vendor's own
   `arigaio/mysql:<tag>` and `arigaio/mariadb:<tag>` — measured from its
   `Unable to find image` diagnostics. Ptah uses the official `mysql` and
   `mariadb` images. A run that reaches a database is strictly more than one that
   cannot pull the image, so this falls under rule 2.
-- **`schema diff` between two local schema files.** Neither binary's answer
-  changes with this work, and Ptah still does not normalize local files through
-  the dev database:
 
-  | | Atlas CE v1.3.0 | Ptah |
-  | --- | --- | --- |
-  | `schema diff --from file://schema.sql --to file://schema2.sql --dev-url docker://postgres/16/dev` | `ALTER TABLE "public"."users" ADD COLUMN "email" text NULL;` | `ALTER TABLE "users" ADD COLUMN "email" text;` |
-
-  Ptah uses `--dev-url` on that path only to pin the SQL dialect, and it does so
-  identically for a `docker://` URL and for a directly connectable `postgres://`
-  one — so the value is no longer silently unused in a way that is specific to
-  `docker://`. Normalizing local files through a dev database is a change to the
-  diff engine for every dev URL, not a docker question, and is left open.
+`schema diff` between two local schema files places both files' unqualified
+names in the dev database's current schema when the dev URL pins no
+`search_path`, as Atlas CE v1.3.0 does: `schema diff --from file://schema.sql
+--to file://schema2.sql --dev-url docker://postgres/16/dev` writes
+`"public"."users"` on both binaries. A `docker://` dev URL places the names in
+`public` without starting a container, and a `postgres://` one is connected to
+and asked for its current schema. A dev URL that pins `search_path` leaves the
+names bare on both binaries.
 
 Not yet wired, and named so the gap is not mistaken for coverage:
 `migrate checkpoint`, `migrate down`, `migrate test`, `schema test`,
