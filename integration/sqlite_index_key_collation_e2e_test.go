@@ -128,3 +128,41 @@ func TestSchemaDiffRefusesAForeignKeyOverACollatedKey_FailurePathE2E(t *testing.
 		})
 	}
 }
+
+// TestSchemaDiffReadsACollatedKeyInAnySpelling_HappyPathE2E diffs a database
+// whose index spells the collated key one way against a document that spells
+// it another. sqlite3 3.51.0 reports column code and collation NOCASE in
+// pragma_index_xinfo for every row, and the community binary v1.3.0 reports
+// each pair synced; so does the first run here.
+func TestSchemaDiffReadsACollatedKeyInAnySpelling_HappyPathE2E(t *testing.T) {
+	const parent = `CREATE TABLE parent (id INTEGER PRIMARY KEY, code TEXT NOT NULL, "my code" TEXT);` + "\n"
+	tests := []struct {
+		name     string
+		database string
+		document string
+	}{
+		{name: "a quoted column", database: `("code" COLLATE NOCASE)`, document: "(code COLLATE NOCASE)"},
+		{name: "an ASC", database: "(code COLLATE NOCASE ASC)", document: "(code COLLATE NOCASE)"},
+		{name: "a bracketed column", database: "([code] COLLATE NOCASE)", document: "(code COLLATE NOCASE)"},
+		{name: "a comment", database: "(code COLLATE /*x*/ NOCASE)", document: "(code COLLATE NOCASE)"},
+		{name: "a quoted column that descends", database: `("code" COLLATE NOCASE DESC)`, document: "(code COLLATE NOCASE DESC)"},
+		{name: "a bracketed name with a space", database: "([my code] COLLATE NOCASE)", document: `("my code" COLLATE NOCASE)`},
+		{name: "a document that quotes and comments", database: "(code COLLATE NOCASE)", document: `("code"  COLLATE /*y*/ NOCASE ASC)`},
+	}
+	for _, tt := range tests {
+		for _, run := range documentDiffRuns {
+			t.Run(tt.name+"/"+run.name, func(t *testing.T) {
+				c := qt.New(t)
+				root := c.TempDir()
+				_, url := sqliteCollationDatabase(c, root, parent+"CREATE UNIQUE INDEX pc ON parent "+tt.database+";\n")
+				c.Assert(os.WriteFile(filepath.Join(root, "schema.sql"),
+					[]byte(parent+"CREATE UNIQUE INDEX pc ON parent "+tt.document+";\n"), 0o600), qt.IsNil)
+
+				result := runSQLiteCollationDiff(c, run.target, root, run.env, url, "file://schema.sql")
+
+				c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", result.Stderr))
+				c.Assert(result.Stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
+			})
+		}
+	}
+}

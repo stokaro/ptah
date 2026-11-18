@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/collatedkey"
 	"ptah.run/internal/lexer"
 )
 
@@ -72,12 +73,16 @@ func decomposeIndexKeyElement(column, sourcePlatform string) (part schemamodel.I
 	if len(tokens) == 0 {
 		return schemamodel.IndexPart{}, false, false
 	}
-	// A per-key COLLATE is a suffix this model has no slot for. Leaving the
-	// element opaque keeps it in the text where a reader can still see it,
-	// which is strictly better than dropping it on the way through.
+	// A per-key COLLATE is a suffix this model has no slot for. A column under
+	// one is kept as its text in the spelling collatedkey gives it, which is
+	// the spelling a read of the database gives the same key. Any other
+	// element with a COLLATE stays opaque, which keeps the clause in the text
+	// where a reader can still see it rather than dropping it on the way
+	// through.
 	for _, token := range tokens {
 		if token.MatchIdentifierValue("COLLATE") {
-			return schemamodel.IndexPart{}, false, false
+			key, ok := collatedkey.Read(sourcePlatform, column)
+			return schemamodel.IndexPart{Expr: key.Text, Desc: key.Desc}, false, ok
 		}
 	}
 

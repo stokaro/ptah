@@ -11,8 +11,10 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/sqlite/sqlitetable"
+	"ptah.run/internal/collatedkey"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlident"
@@ -594,7 +596,7 @@ func (r *Reader) buildIndexesForTable(
 		definition := indexDDLByName[entry.name]
 		indexColumns := columnsByIndex[entry.name]
 		columns := indexColumns.names
-		if indexColumns.needsDDLParsing || len(columns) == 0 || slices.ContainsFunc(extractIndexColumns(definition), indexKeyCollates) {
+		if indexColumns.needsDDLParsing || len(columns) == 0 || slices.ContainsFunc(extractIndexColumns(definition), keyCollates) {
 			columns = extractIndexColumns(definition)
 		}
 		constraintName := entry.name
@@ -774,7 +776,13 @@ func sqliteIndexParts(keys []sqliteIndexKey, keyTexts []string) []catalog.IndexP
 	}
 	parts := make([]catalog.IndexPart, len(keys))
 	for position, key := range keys {
-		if key.expression || indexKeyCollates(keyTexts[position]) {
+		if keyCollates(keyTexts[position]) {
+			// splitIndexColumnList has spelled the key without its direction,
+			// so the direction is the catalog's.
+			parts[position] = catalog.IndexPart{Expr: keyTexts[position], Desc: key.desc}
+			continue
+		}
+		if key.expression {
 			// An expression key's text comes from the DDL rather than from the
 			// catalog, and the DDL spells the direction inside it -- the text
 			// for `lower(c) DESC` IS "lower(c) DESC". Setting Desc as well
@@ -1326,6 +1334,10 @@ func splitIndexColumnList(value string) []string {
 		if part == "" {
 			continue
 		}
+		if key, ok := collatedkey.Read(platform.SQLite, part); ok {
+			out = append(out, key.Text)
+			continue
+		}
 		if name, ok := simpleIndexColumnName(part); ok {
 			out = append(out, name)
 			continue
@@ -1356,23 +1368,21 @@ func simpleIndexColumnName(value string) (string, bool) {
 	}
 }
 
-// indexKeyCollates reports that an index key is a column with a COLLATE of its
-// own, `code COLLATE NOCASE`. The key is kept as the text the DDL holds, which
-// is how the SQL frontend holds the same key in a document, so a database and a
-// document with that index compare equal. PRAGMA index_xinfo names the column
-// and reports the collation in coll, but it cannot tell `code COLLATE BINARY`
-// from `code`, and the frontend keeps the first as text too. A key that takes
-// its column's collation carries no COLLATE and stays a column. Read as the
-// column alone, the key compares equal to the column without the collation: a
-// diff sees no change to it, and the referenced-key rule takes the index as a
-// foreign key's parent key, which SQLite refuses with "foreign key mismatch"
-// where the collation is not the column's.
-func indexKeyCollates(key string) bool {
-	if _, ok := leadingIdentifier(key); !ok {
-		return false
-	}
-	fields := strings.Fields(strings.ToUpper(strings.TrimSpace(key[len(consumedIdentifierPrefix(key)):])))
-	return len(fields) > 0 && fields[0] == "COLLATE"
+// keyCollates reports that an index key is a column with a COLLATE of its
+// own, `code COLLATE NOCASE`. The key is kept as its text, in the spelling
+// collatedkey gives it, which is the spelling the SQL frontend gives the same
+// key in a document, so a database and a document with that index compare
+// equal however either quotes, spaces or comments it. PRAGMA index_xinfo names
+// the column and reports the collation in coll, but it cannot tell `code
+// COLLATE BINARY` from `code`, and the frontend keeps the first as text too. A
+// key that takes its column's collation carries no COLLATE and stays a column.
+// Read as the column alone, the key compares equal to the column without the
+// collation: a diff sees no change to it, and the referenced-key rule takes the
+// index as a foreign key's parent key, which SQLite refuses with "foreign key
+// mismatch" where the collation is not the column's.
+func keyCollates(key string) bool {
+	_, ok := collatedkey.Read(platform.SQLite, key)
+	return ok
 }
 
 func inferCheckName(tableName, expr string, fallback int) string {
@@ -1668,6 +1678,12 @@ func consumedIdentifierPrefix(value string) string {
 		}
 	case value[0] == '`':
 		if end := strings.IndexByte(value[1:], '`'); end >= 0 {
+			return value[:end+2]
+		}
+	case value[0] == '[':
+		// A bracketed name runs to its closing bracket, spaces included, as
+		// leadingIdentifier reads it.
+		if end := strings.IndexByte(value[1:], ']'); end >= 0 {
 			return value[:end+2]
 		}
 	}

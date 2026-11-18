@@ -10,13 +10,15 @@ import (
 )
 
 // TestReader_RecordsACollatedKeyAsItsText pins how a key with a COLLATE of its
-// own is read: as the text the index holds, the shape the SQL frontend gives
-// the same key in a document, so the two compare equal. PRAGMA index_xinfo
+// own is read: as its text, in the one spelling the SQL frontend gives the same
+// key in a document, so the two compare equal however the index quotes,
+// spaces or comments the key. PRAGMA index_xinfo
 // names the column of such a key and reports the collation apart, and a read
 // that takes the name alone describes `code COLLATE NOCASE` as `code`: a diff
 // then sees no change of collation, and the key passes for its column as a
 // foreign key's parent key, which SQLite refuses with "foreign key mismatch".
-// Accounts declares email with no collation and status COLLATE NOCASE.
+// Accounts declares email and "my code" with no collation and status COLLATE
+// NOCASE.
 func TestReader_RecordsACollatedKeyAsItsText(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -40,12 +42,32 @@ func TestReader_RecordsACollatedKeyAsItsText(t *testing.T) {
 			parts:   []catalog.IndexPart{{Expr: "email COLLATE BINARY"}},
 		},
 		{
-			// The direction stays inside the text, as it does for an expression
-			// key, since a Desc flag beside it renders DESC twice.
+			// The direction is the catalog's, beside the text, as it is for a
+			// column key.
 			name:    "a quoted collated key that descends",
 			ddl:     `CREATE INDEX accounts_email_idx ON accounts ("email" COLLATE NOCASE DESC)`,
-			columns: []string{`"email" COLLATE NOCASE DESC`},
-			parts:   []catalog.IndexPart{{Expr: `"email" COLLATE NOCASE DESC`}},
+			columns: []string{"email COLLATE NOCASE"},
+			parts:   []catalog.IndexPart{{Expr: "email COLLATE NOCASE", Desc: true}},
+		},
+		{
+			name:    "a bracketed collated key with a comment and an ASC",
+			ddl:     `CREATE INDEX accounts_email_idx ON accounts ([email]  COLLATE /*x*/ NOCASE ASC)`,
+			columns: []string{"email COLLATE NOCASE"},
+			parts:   []catalog.IndexPart{{Expr: "email COLLATE NOCASE"}},
+		},
+		{
+			name:    "a bracketed collated key with a space in its name",
+			ddl:     `CREATE INDEX accounts_code_idx ON accounts ([my code] COLLATE NOCASE)`,
+			columns: []string{`"my code" COLLATE NOCASE`},
+			parts:   []catalog.IndexPart{{Expr: `"my code" COLLATE NOCASE`}},
+		},
+		{
+			// An expression key sends the whole list through the DDL, where a
+			// bracketed name runs to its closing bracket.
+			name:    "a bracketed column with a space in its name beside an expression",
+			ddl:     `CREATE INDEX accounts_code_idx ON accounts ([my code] DESC, lower(email))`,
+			columns: []string{"my code", "lower(email)"},
+			parts:   []catalog.IndexPart{{Name: "my code", Desc: true}, {Expr: "lower(email)"}},
 		},
 		{
 			name:    "a column beside a collated key",
@@ -76,7 +98,8 @@ func TestReader_RecordsACollatedKeyAsItsText(t *testing.T) {
 			execSQL(t, db, `CREATE TABLE accounts (
 				id INTEGER PRIMARY KEY,
 				email TEXT NOT NULL,
-				status TEXT NOT NULL COLLATE NOCASE
+				status TEXT NOT NULL COLLATE NOCASE,
+				"my code" TEXT
 			)`)
 			execSQL(t, db, tt.ddl)
 
