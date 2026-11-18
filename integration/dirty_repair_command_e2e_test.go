@@ -135,3 +135,57 @@ func sqliteRevisionState(c *qt.C, path string) string {
 		qt.IsNil)
 	return state
 }
+
+// TestDirtyRollbackOverAChangedDownFile_FailurePath stops a rollback after the
+// first of two down statements and then gives the down file a statement in
+// between. A resume from statement 2 would run the new statement 2 and drop t2
+// as well, over a count that no longer describes the file, so `repair
+// --resume-from 2` refuses and runs nothing. The refusal, the status hint and
+// the hint `migrations down` adds name the same two commands, and the forced
+// repair the operator runs after restoring t1 is accepted.
+func TestDirtyRollbackOverAChangedDownFile_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	database := filepath.Join(dir, "app.db")
+	migrations := filepath.Join(dir, "migrations")
+	down := filepath.Join(migrations, "000001_a.down.sql")
+	c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "000001_a.up.sql"),
+		[]byte("CREATE TABLE t1 (id int);\nCREATE TABLE t2 (id int);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(down, []byte("-- +ptah no_transaction\nDROP TABLE t1;\nDROP TABLE t_missing;\n"), 0o600),
+		qt.IsNil)
+	ptah := func(args ...string) clirun.Result {
+		return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
+			append(args, "--db-url", "sqlite://app.db", "--migrations-dir", "migrations")...)
+	}
+	up := ptah("migrations", "up")
+	c.Assert(up.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", up.Stderr))
+	stopped := ptah("migrations", "down", "--target", "0", "--confirm")
+	c.Assert(stopped.ExitCode, qt.Equals, 2, qt.Commentf("stderr:\n%s", stopped.Stderr))
+	c.Assert(os.WriteFile(down,
+		[]byte("-- +ptah no_transaction\nDROP TABLE t1;\nCREATE TABLE t_kept (id int);\nDROP TABLE t2;\n"), 0o600),
+		qt.IsNil)
+	const (
+		forced   = "'ptah migrations repair --version 000001 --force'"
+		previous = "'ptah migrations set --version <previous>'"
+	)
+
+	resumed := ptah("migrations", "repair", "--version", "000001", "--resume-from", "2")
+	status := ptah("migrations", "status")
+	again := ptah("migrations", "down", "--target", "0", "--confirm")
+	tables := sqliteTables(c, database)
+	sqliteExec(c, database, "CREATE TABLE t1 (id int)")
+	repaired := ptah("migrations", "repair", "--version", "000001", "--force")
+
+	c.Assert(resumed.ExitCode, qt.Equals, 2)
+	c.Assert(resumed.Stderr, qt.Contains,
+		"migration 000001 cannot resume the rollback: the previous attempt applied 1 of 2 down statements but "+
+			"the down file now has 3; inspect the database, then use "+forced+
+			" if you restored what the rollback reverted, or "+previous+" if you finished the rollback by hand")
+	c.Assert(status.Stdout, qt.Contains, "and its down file now has 3")
+	c.Assert(status.Stdout, qt.Contains, "then run "+forced+" if you restored what the rollback reverted, or "+previous)
+	c.Assert(again.Stderr, qt.Contains, "then run "+forced+" if you restored what the rollback reverted, or "+previous)
+	c.Assert(tables, qt.DeepEquals, []string{"schema_migrations", "schema_migrations_log", "t2"})
+	c.Assert(repaired.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", repaired.Stderr))
+	c.Assert(sqliteRevisionState(c, database), qt.Equals, "applied")
+}

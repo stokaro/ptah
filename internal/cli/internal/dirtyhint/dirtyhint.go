@@ -66,7 +66,7 @@ func Recovery(dirty Revision) string {
 	if revision.Applied == revision.Total {
 		return completedBodyHint(dirty)
 	}
-	if revision.Direction != migrator.MigrationDirectionDown && revision.Applied > 0 && dirty.fileChanged() {
+	if revision.Applied > 0 && dirty.fileChanged() {
 		return changedFileHint(dirty)
 	}
 	if revision.Applied == 0 && ddltx.AllStatementsDurable(ddltx.ClassOf(dirty.Dialect)) {
@@ -128,10 +128,24 @@ func (r Revision) fileChanged() bool {
 // changedFileHint names what ends a run that stopped partway through a body
 // whose statement count changed after it. The statement number the revision
 // records does not index into the file, so a resume from it would run the
-// wrong statements, and `ptah migrations up --allow-dirty` refuses it. The
-// operator reconciles the database and records the result, the command that
-// refusal names.
+// wrong statements, and both resumes refuse it: `ptah migrations up
+// --allow-dirty` for a run, and `ptah migrations repair --resume-from` for a
+// rollback. The operator reconciles the database and records the result, the
+// commands those refusals name.
 func changedFileHint(dirty Revision) string {
+	if dirty.Revision.Direction == migrator.MigrationDirectionDown {
+		return fmt.Sprintf(
+			"This rollback stopped after %d of %d down statements, and its down file now has %d, so the "+
+				"recorded count does not index into it and a resume would run the wrong statements. Inspect the "+
+				"database, then run %s if you restored what the rollback reverted, or %s (version 0 where this "+
+				"is the oldest migration in the directory) if you finished the rollback by hand.",
+			dirty.Revision.Applied,
+			dirty.Revision.Total,
+			*dirty.FileStatements,
+			dirty.reconciled(),
+			repaircommand.SetPrevious,
+		)
+	}
 	return fmt.Sprintf(
 		"This migration stopped after %d of %d statements, and its file now has %d, so the recorded count "+
 			"does not index into it and a resume would run the wrong statements. Inspect the database and "+

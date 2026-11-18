@@ -19,6 +19,12 @@ const (
 	GolangMigrate Runner = " --runner golang-migrate"
 )
 
+// SetPrevious is the command that records a rollback the operator finished by
+// hand, quoted: it moves the revision boundary below the migration. The
+// operator names the version before it, or 0 where it is the oldest migration
+// in the directory.
+const SetPrevious = "'ptah migrations set --version <previous>'"
+
 // Repair returns the repair command for version, quoted, with flags after the
 // version and then runner.
 func Repair(version, flags string, runner Runner) string {

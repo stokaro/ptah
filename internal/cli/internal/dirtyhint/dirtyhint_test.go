@@ -341,3 +341,46 @@ func TestRecoveryReadsTheFileStatementCount(t *testing.T) {
 		})
 	}
 }
+
+// TestRecoveryReadsTheDownFileStatementCount names the forced repair and the
+// set for a rollback that stopped partway through a down file whose statement
+// count changed after it, where the same count keeps the resume.
+func TestRecoveryReadsTheDownFileStatementCount(t *testing.T) {
+	tests := []struct {
+		name  string
+		count *int
+		want  string
+	}{
+		{
+			name:  "the down file has another count",
+			count: new(3),
+			want: "This rollback stopped after 1 of 2 down statements, and its down file now has 3, so the recorded " +
+				"count does not index into it and a resume would run the wrong statements. Inspect the database, " +
+				"then run 'ptah migrations repair --version 1 --force' if you restored what the rollback reverted, " +
+				"or 'ptah migrations set --version <previous>' (version 0 where this is the oldest migration in the " +
+				"directory) if you finished the rollback by hand.",
+		},
+		{
+			name:  "the down file has the recorded count",
+			count: new(2),
+			want: "This rollback stopped after 1 of 2 down statements. Run 'ptah migrations repair --version 1 " +
+				"--resume-from 2' to run the remaining down statements and remove the revision.",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			revision := migrator.MigrationRevision{
+				Version: 1, Applied: 1, Total: 2, Direction: migrator.MigrationDirectionDown,
+			}
+
+			got := dirtyhint.Recovery(dirtyhint.Revision{
+				Revision:       &revision,
+				Dialect:        "postgres",
+				FileStatements: test.count,
+			})
+
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}

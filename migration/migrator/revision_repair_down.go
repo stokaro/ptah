@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/repaircommand"
 )
 
 // repairRolledBackMigration repairs a revision a rollback left dirty.
@@ -43,6 +44,9 @@ func (m *Migrator) repairRolledBackMigration(
 		if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
 			return err
 		}
+		if err := refuseRollbackResumeOverChangedFile(*revision, scoped.migrationStatementCount(migration.DownSQL)); err != nil {
+			return err
+		}
 		if err := scoped.verifyCommittedPrefix(*revision, migration, MigrationDirectionDown, "resume the rollback"); err != nil {
 			return err
 		}
@@ -54,6 +58,32 @@ func (m *Migrator) repairRolledBackMigration(
 		}
 		return scoped.deleteRolledBackRevision(ctx, migration)
 	})
+}
+
+// refuseRollbackResumeOverChangedFile refuses to resume a rollback whose down
+// file holds another number of statements than the rollback recorded. The
+// statement number the revision records indexes into the file as it was, so a
+// resume from it would run the wrong statements of the file as it is; the
+// committed prefix can still match, because it is only the statements before
+// the number. Neither record can be chosen from the row, so the refusal names
+// both, as the hint `ptah migrations status` prints for the row does. A
+// rollback that committed nothing indexes into nothing: a resume from 1 runs
+// the down file as it is, which is how an operator retries a fixed one.
+func refuseRollbackResumeOverChangedFile(revision MigrationRevision, total int) error {
+	if revision.Applied <= 0 || revision.Total == total {
+		return nil
+	}
+	return fmt.Errorf(
+		"migration %s cannot resume the rollback: the previous attempt applied %d of %d down statements but the "+
+			"down file now has %d; inspect the database, then use %s if you restored what the rollback reverted, "+
+			"or %s if you finished the rollback by hand",
+		revision.RevisionVersion(),
+		revision.Applied,
+		revision.Total,
+		total,
+		repaircommand.Reconciled(revision.RevisionVersion(), repaircommand.DefaultRunner),
+		repaircommand.SetPrevious,
+	)
 }
 
 func (m *Migrator) repairRolledBackMigrationWithoutResume(
