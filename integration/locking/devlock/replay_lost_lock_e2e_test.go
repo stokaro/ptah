@@ -43,6 +43,8 @@ func TestMigrationsValidateStopsWhenTheDevLockSessionEndsE2E(t *testing.T) {
 	var database string
 	c.Assert(witness.QueryRowContext(c.Context(), "SELECT current_database()").Scan(&database), qt.IsNil)
 	lockName := "ptah-dev-replay:postgres:" + database
+	// A longer name is digested, and this readable form would name no lock.
+	c.Assert(len(lockName) <= 64, qt.IsTrue, qt.Commentf("lock name %q", lockName))
 	dir := filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(dir, 0o700), qt.IsNil)
 	for name, body := range map[string]string{
