@@ -1605,6 +1605,9 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 	if err != nil {
 		return MigrationStatusSnapshot{}, fmt.Errorf("failed to get migration revisions: %w", err)
 	}
+	if err := m.refuseAtlasRepeatableVersion(revisions); err != nil {
+		return MigrationStatusSnapshot{}, err
+	}
 	appliedMigrations := appliedRevisionVersions(revisions)
 	appliedMigrationKeys := appliedRevisionVersionKeys(revisions)
 	effectiveAppliedMigrations := m.effectiveAppliedVersionsFromRevisions(appliedMigrations, revisions)
@@ -1916,9 +1919,9 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		return fmt.Errorf("target version %d was not found in the migration provider", opts.TargetVersion)
 	}
 
-	revisions, err := m.GetRevisions(ctx)
+	revisions, err := m.upRevisions(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get applied migrations: %w", err)
+		return err
 	}
 	if opts.AllowDirty {
 		if err := m.failIfUnownedDirtyRevision(revisions, migrations); err != nil {

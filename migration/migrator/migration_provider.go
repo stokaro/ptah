@@ -150,6 +150,10 @@ type FSMigrationProvider struct {
 	// repeatables then holds in execution order; see
 	// [WithRepeatableMigrations].
 	loadsRepeatables bool
+	// atlasRepeatables reads R__<identity>.sql in a directory read in the
+	// Atlas format as a repeatable migration rather than as version R; see
+	// [WithAtlasRepeatableMigrations].
+	atlasRepeatables bool
 	repeatables      []*repeatableMigration
 }
 
@@ -287,6 +291,38 @@ func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationP
 	return p, nil
 }
 
+// discoverVersioned reads the directory's versioned files.
+func (p *FSMigrationProvider) discoverVersioned() ([]migrationfile.File, error) {
+	if !p.atlasRepeatables {
+		return migrationfile.Discover(p.fsys, p.format)
+	}
+	if err := p.refuseAtlasRepeatablesFormat(); err != nil {
+		return nil, err
+	}
+	files, _, err := migrationfile.DiscoverAtlasRepeatables(p.fsys)
+	return files, err
+}
+
+// discoverRepeatableFiles reads the directory's repeatable files.
+func (p *FSMigrationProvider) discoverRepeatableFiles() ([]migrationfile.RepeatableFile, error) {
+	if !p.atlasRepeatables {
+		return migrationfile.DiscoverRepeatables(p.fsys, p.format)
+	}
+	_, repeatables, err := migrationfile.DiscoverAtlasRepeatables(p.fsys)
+	return repeatables, err
+}
+
+// refuseAtlasRepeatablesFormat refuses [WithAtlasRepeatableMigrations] over a
+// directory not read in the Atlas format, where R__<identity>.sql already has
+// the reading [WithRepeatableMigrations] gives it or none.
+func (p *FSMigrationProvider) refuseAtlasRepeatablesFormat() error {
+	if p.format == migrationfile.DirFormatAtlas {
+		return nil
+	}
+	return fmt.Errorf("repeatable migrations in the Atlas reading need a directory read in the Atlas format, not %q",
+		p.format)
+}
+
 // DescribesWholeHistory reports that this provider's migrations are the
 // directory's own, which is every migration a database applied from it. It is
 // always true: this provider reads a directory, and the directory is the
@@ -324,7 +360,7 @@ func (p *FSMigrationProvider) atlasVersionSpelling(version int64) (string, bool)
 }
 
 func (p *FSMigrationProvider) load() error {
-	files, err := migrationfile.Discover(p.fsys, p.format)
+	files, err := p.discoverVersioned()
 	if err != nil {
 		return err
 	}

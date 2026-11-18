@@ -54,6 +54,13 @@ type MigrateApplyResultOptions struct {
 	// Their checks are left out of the report, which would otherwise show
 	// them as passed.
 	ChecksNotRun []int64
+	// Repeatables is the repeatable work the run selected and
+	// AppliedRepeatables the identities whose content applied; see
+	// [MigrateApplyRepeatable]. DryRun says the run wrote nothing, so the
+	// default report says a selected one would run.
+	Repeatables        []migrator.RepeatableWork
+	AppliedRepeatables []string
+	DryRun             bool
 }
 
 // MigrateApplySourceFile is a migration file as the operator's directory holds
@@ -115,6 +122,10 @@ type atlasMigrateApplyResult struct {
 	Start   time.Time
 	End     time.Time
 	Error   string `json:"Error,omitempty"`
+	// Repeatables is Ptah's, and present only when the run selected
+	// repeatable work; see [MigrateApplyRepeatable].
+	Repeatables []MigrateApplyRepeatable `json:"Repeatables,omitempty"`
+	dryRun      bool
 }
 
 // atlasMigrateApplyFile is a migration file a report names. A Flyway
@@ -205,6 +216,8 @@ func buildAtlasMigrateApplyResult(opts MigrateApplyResultOptions) (atlasMigrateA
 		Start:                opts.StartedAt,
 		End:                  opts.EndedAt,
 		Error:                opts.ErrorText,
+		Repeatables:          migrateApplyRepeatables(opts.Repeatables, opts.AppliedRepeatables),
+		dryRun:               opts.DryRun,
 	}
 	if opts.Applied {
 		result.Applied = atlasMigrateApplyAppliedFiles(files, migrationsByVersion, opts)
@@ -539,6 +552,9 @@ func (r atlasMigrateApplyResult) MarshalJSON() ([]byte, error) {
 		End     time.Time
 		Error   string `json:"Error,omitempty"`
 		Message string `json:"Message,omitempty"`
+		// Repeatables comes last, after every key the community binary
+		// writes, and only when the run selected repeatable work.
+		Repeatables []MigrateApplyRepeatable `json:"Repeatables,omitempty"`
 	}{
 		atlasMigrateApplyEnv: r.atlasMigrateApplyEnv,
 		Pending:              r.Pending,
@@ -548,6 +564,7 @@ func (r atlasMigrateApplyResult) MarshalJSON() ([]byte, error) {
 		Start:                r.Start,
 		End:                  r.End,
 		Error:                r.Error,
+		Repeatables:          r.Repeatables,
 	}
 	switch {
 	case r.Error != "":

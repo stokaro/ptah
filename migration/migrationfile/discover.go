@@ -30,16 +30,29 @@ import (
 // repeatable migration, which [DiscoverRepeatables] returns and this function
 // leaves out.
 func Discover(fsys fs.FS, format DirFormat) ([]File, error) {
-	discovered, err := discover(fsys, format)
+	discovered, err := discover(fsys, format, rReadAsAtlas)
 	if err != nil {
 		return nil, err
 	}
 	return discovered.files, nil
 }
 
+// rReading is what a walk makes of a file named R__<identity>.sql in a
+// directory read in the Atlas format.
+type rReading uint8
+
+const (
+	// rReadAsAtlas reads it as the Atlas format does: the one-time version R.
+	rReadAsAtlas rReading = iota
+	// rReadAsRepeatable reads it as a repeatable migration, and never as a
+	// version.
+	rReadAsRepeatable
+)
+
 // discovered is what one walk of a migration directory found: the versioned
-// files of the format it resolved to, and the repeatable migrations, which
-// only a directory read in the Ptah format has.
+// files of the format it resolved to, and the repeatable migrations, which a
+// directory read in the Ptah format has, and a directory read in the Atlas
+// format has when [DiscoverAtlasRepeatables] asks for them.
 type discovered struct {
 	files       []File
 	repeatables []RepeatableFile
@@ -65,10 +78,13 @@ func classifySQLFiles(sqlFiles []string, parseAtlas func(string) (*File, error))
 	return ptahFiles, atlasFiles
 }
 
-// discover is the walk behind [Discover] and [DiscoverRepeatables]. One walk
-// answers both, so the versioned files and the repeatable files of a directory
-// are always read under the same format and the same atlas.sum narrowing.
-func discover(fsys fs.FS, format DirFormat) (discovered, error) {
+// discover is the walk behind [Discover], [DiscoverRepeatables] and
+// [DiscoverAtlasRepeatables]. One walk answers both, so the versioned files and
+// the repeatable files of a directory are always read under the same format and
+// the same atlas.sum narrowing. reading says what a file that claims the
+// repeatable prefix is under the Atlas format.
+func discover(fsys fs.FS, format DirFormat, reading rReading) (discovered, error) {
+	atlasRepeatables := reading == rReadAsRepeatable
 	format, err := normalizeDirFormat(format)
 	if err != nil {
 		return discovered{}, err
@@ -126,10 +142,14 @@ func discover(fsys fs.FS, format DirFormat) (discovered, error) {
 	default:
 		parseAtlas = ParseAtlasFileNameForAutoDetection
 	}
-	ptahFiles, atlasFiles := classifySQLFiles(sqlFiles, parseAtlas)
+	versioned := sqlFiles
+	if atlasRepeatables {
+		versioned = withoutRepeatableClaims(sqlFiles)
+	}
+	ptahFiles, atlasFiles := classifySQLFiles(versioned, parseAtlas)
 	files := selectFiles(format, ptahFiles, atlasFiles)
 	var repeatables []RepeatableFile
-	if readsRepeatables(format, ptahFiles) {
+	if atlasRepeatables || readsRepeatables(format, ptahFiles) {
 		repeatables, err = collectRepeatables(sqlFiles)
 		if err != nil {
 			return discovered{}, err

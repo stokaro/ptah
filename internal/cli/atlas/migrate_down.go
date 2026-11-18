@@ -46,7 +46,13 @@ func newAtlasMigrateDownCommand(policy atlascompatpolicy.Policy) *cobra.Command 
 	cmd := newAtlasAdapterCommand("migrate", verb)
 	forward := cmd.RunE
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if atlasArgsHaveHelp(args) || !atlasMigrateDownWantsFormat(verb, args) {
+		if atlasArgsHaveHelp(args) {
+			return forward(cmd, args)
+		}
+		if err := refuseAtlasDownRepeatables(); err != nil {
+			return err
+		}
+		if !atlasMigrateDownWantsFormat(verb, args) {
 			return forward(cmd, args)
 		}
 		return runAtlasMigrateDownFormat(cmd, verb, policy, args)

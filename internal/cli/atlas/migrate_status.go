@@ -55,6 +55,10 @@ func runAtlasMigrateStatus(
 	cmd *cobra.Command,
 	opts atlasMigrateStatusOptions,
 ) (runErr error) {
+	repeatables, err := resolveAtlasRepeatableMigrations()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	formatOutput := cmd.Flags().Changed("format")
 	project, loaded, err := openAtlasProjectForCommand(cmd)
 	if err != nil {
@@ -215,6 +219,7 @@ func runAtlasMigrateStatus(
 		AtlasEnv:         opts.atlasEnv,
 		RevisionsSchema:  revisiontable.Schema(opts.revisionsSchema, opts.url),
 		RevisionVersions: sourceVersions,
+		Repeatables:      atlasReadsRepeatables(repeatables, format),
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, remapAtlasExactIdentityError(err, sourceVersions))
@@ -227,6 +232,7 @@ func runAtlasMigrateStatus(
 		Status:           result.Status,
 		AppliedRevisions: result.AppliedRevisions,
 		RevisionVersions: tokens.revisionVersions(),
+		Repeatables:      atlasReadsRepeatables(repeatables, format),
 	}
 	if formatOutput {
 		if err := atlasreport.WriteMigrateStatusFormat(cmd.OutOrStdout(), opts.format, reportOpts); err != nil {

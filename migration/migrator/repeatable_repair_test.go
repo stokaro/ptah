@@ -180,14 +180,15 @@ func TestRemoveRepeatableRecord_FailurePath(t *testing.T) {
 		c.Assert(repeatableTableCount(c, dbPath, "schema_migrations_repeatable"), qt.Equals, 0)
 	})
 
-	t.Run("the Atlas-compatible revision format keeps no record to remove a row from", func(t *testing.T) {
+	t.Run("the Atlas-compatible revision format reads the record beside atlas_schema_revisions", func(t *testing.T) {
 		c := qt.New(t)
 		_, mig := openRepeatableMigrator(c, filepath.Join(c.TempDir(), "app.db"), repeatableFiles(nil))
 
 		removed, err := mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).RemoveRepeatableRecord(
 			c.Context(), migrator.RemoveRepeatableRecordOptions{Identity: "user_names", Force: true})
 
-		c.Assert(err, qt.ErrorAs, new(*migrator.RepeatableMigrationsUnsupportedError))
+		c.Assert(err, qt.ErrorIs, migrator.ErrRepeatableNotRecorded)
+		c.Assert(err, qt.ErrorMatches, `.*"atlas_schema_revisions_repeatable" has no row for "user_names"`)
 		c.Assert(removed, qt.IsNil)
 	})
 }

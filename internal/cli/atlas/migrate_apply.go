@@ -62,6 +62,8 @@ type atlasMigrateApplyRunOptions struct {
 	// serverDetails is the PTAH_SERVER_DETAILS choice, with the directory it
 	// reads once the run has captured one.
 	serverDetails migraterun.ServerDetails
+	// repeatables is the PTAH_ATLAS_REPEATABLE_MIGRATIONS choice.
+	repeatables bool
 }
 
 type atlasMigrateApplyOperandSource uint8
@@ -173,6 +175,10 @@ func runAtlasMigrateApply(
 	opts atlasMigrateApplyOptions,
 	args []string,
 ) (runErr error) {
+	repeatables, err := resolveAtlasRepeatableMigrations()
+	if err != nil {
+		return err
+	}
 	projects, loaded, err := openAtlasProjectsForCommand(cmd)
 	if err != nil {
 		return err
@@ -202,6 +208,7 @@ func runAtlasMigrateApply(
 		lockRequest:     lockRequest,
 		skipChecks:      skipChecks,
 		serverDetails:   serverDetails,
+		repeatables:     repeatables,
 	}
 
 	targets := projects.projects
@@ -410,6 +417,7 @@ func runAtlasMigrateApplyTarget(
 		// A golang-migrate file runs the way golang-migrate runs it, which
 		// opens no transaction around a file.
 		OwnTransactions: resolvedDirFormat.TransactionOwner() == lintext.TransactionOwnerFile,
+		Repeatables:     atlasReadsRepeatables(runOpts.repeatables, resolvedDirFormat),
 	})
 	if err != nil {
 		return formatOutput, remapAtlasExactIdentityError(err, linearity.sourceVersions)
