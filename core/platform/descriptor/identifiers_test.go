@@ -17,6 +17,31 @@ func spelled(quoting descriptor.Quoting, naming descriptor.ColumnKeyNaming) desc
 	return described
 }
 
+// folded is a descriptor that records an unquoted name in the case fold
+// names.
+func folded(fold string) descriptor.Dialect {
+	described := head("alpha")
+	described.Identifiers.UnquotedFold = fold
+	return described
+}
+
+// TestNewRegistry_UnquotedFold_HappyPath accepts every declared fold and keeps
+// it on the registered descriptor.
+func TestNewRegistry_UnquotedFold_HappyPath(t *testing.T) {
+	for _, fold := range append([]string{""}, descriptor.UnquotedFolds()...) {
+		t.Run(fold, func(t *testing.T) {
+			c := qt.New(t)
+
+			registry, err := descriptor.NewRegistry(folded(fold))
+
+			c.Assert(err, qt.IsNil)
+			got, found := registry.Lookup("alpha")
+			c.Assert(found, qt.IsTrue)
+			c.Assert(got.Identifiers.UnquotedFold, qt.Equals, fold)
+		})
+	}
+}
+
 func TestNewRegistry_IdentifierFields_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -59,6 +84,8 @@ func TestNewRegistry_IdentifierFields_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": an empty keyword`},
 		{name: "an undeclared column key naming", dialect: spelled(descriptor.Quoting{}, "after-table"),
 			wantErr: `invalid dialect descriptor: dialect "alpha": column key naming "after-table" is not one of .*`},
+		{name: "an undeclared unquoted fold", dialect: folded("title"),
+			wantErr: `invalid dialect descriptor: dialect "alpha": unquoted fold "title" is not one of \["upper" "lower"\]`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
