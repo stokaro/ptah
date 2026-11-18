@@ -1,6 +1,8 @@
 package postgres_test
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -125,7 +127,7 @@ FROM (
       AND d.deptype IN ('n', 'a') AND d.classid <> 'pg_attrdef'::regclass
       AND NOT (d.classid = 'pg_class'::regclass AND d.objid = ANY (ARRAY[to_regclass('"public"."prices_search"'), to_regclass('"public"."user_search_index"')]::oid[]))
       AND NOT (d.classid = 'pg_constraint'::regclass AND d.objid IN (
-          SELECT oid FROM pg_constraint WHERE conrelid = '"public"."prices"'::regclass AND conname = ANY (ARRAY['prices_search_present']::text[])))
+          SELECT oid FROM pg_constraint WHERE conrelid = '"public"."prices"'::regclass AND (contype = 'n' OR conname = ANY (ARRAY['prices_search_present']::text[]))))
     UNION ALL
     SELECT 'the privileges or storage options of the column'
     FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid
@@ -133,6 +135,10 @@ FROM (
       AND (a.attacl IS NOT NULL OR EXISTS (SELECT 1 FROM unnest(a.attoptions) o WHERE o NOT LIKE 'pg\_%')
            OR COALESCE(a.attstattarget::int, -1) <> -1
            OR COALESCE(to_jsonb(a) ->> 'attcompression', '') <> '' OR a.attstorage <> t.typstorage)
+    UNION ALL
+    SELECT 'the collation ' || quote_ident(c.collname) || ' of the column'
+    FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid JOIN pg_collation c ON c.oid = a.attcollation
+    WHERE a.attrelid = '"public"."prices"'::regclass AND a.attname = 'search_vector' AND a.attcollation <> t.typcollation
     UNION ALL
     SELECT 'the security label of the column'
     FROM pg_seclabel l JOIN pg_attribute a ON a.attrelid = l.objoid AND a.attnum = l.objsubid
@@ -157,6 +163,77 @@ COMMENT ON CONSTRAINT "prices_search_present" ON "public"."prices" IS 'present';
 `)
 }
 
+// labelsRetype is a diff that changes public.labels.nickname from varchar(40)
+// to varchar(100). The table holds two stored generated columns that read
+// nickname, a NOT NULL and b, an index on (a, b) and a CHECK that a <> b.
+func labelsRetype() *difftypes.SchemaDiff {
+	fields := []schemamodel.Field{
+		{StructName: "Label", Name: "id", Type: "integer", Primary: true},
+		{StructName: "Label", Name: "nickname", Type: "varchar(100)", Nullable: true},
+		{StructName: "Label", Name: "a", Type: "text", GeneratedExpression: "upper(nickname)", GeneratedKind: "STORED"},
+		{StructName: "Label", Name: "b", Type: "text", Nullable: true, GeneratedExpression: "lower(nickname)", GeneratedKind: "STORED"},
+	}
+	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+		TableName: "public.labels",
+		ColumnsModified: []difftypes.ColumnDiff{{
+			ColumnName: "nickname",
+			Changes:    map[string]string{"type": "varchar(40) -> varchar(100)"},
+			Desired:    fields[1],
+		}},
+		Current: schemacapture.TableObservation{
+			Table: catalog.Table{Name: "labels", Schema: "public", Type: "BASE TABLE", Columns: []catalog.Column{
+				{Name: "id", DataType: "integer", UDTName: "int4"},
+				{Name: "nickname", DataType: "character varying", UDTName: "varchar", IsNullable: "YES"},
+				{
+					Name: "a", DataType: "text", UDTName: "text", IsNullable: "NO",
+					GeneratedExpression: new("upper((nickname)::text)"), GeneratedKind: "STORED",
+				},
+				{
+					Name: "b", DataType: "text", UDTName: "text", IsNullable: "YES",
+					GeneratedExpression: new("lower((nickname)::text)"), GeneratedKind: "STORED",
+				},
+			}},
+			Indexes: []catalog.Index{{
+				Name: "labels_ab", TableName: "labels", Schema: "public", Columns: []string{"a", "b"},
+				Definition: "CREATE INDEX labels_ab ON public.labels USING btree (a, b)",
+			}},
+			Constraints: []catalog.Constraint{{
+				Name: "labels_a_b", TableName: "labels", Schema: "public", Type: "CHECK", CheckClause: new("(a <> b)"),
+			}},
+		},
+		Desired: schemacapture.TableDeclaration{Table: schemamodel.Table{StructName: "Label", Name: "public.labels"}, Fields: fields},
+	}}}
+}
+
+// statementsOf keeps the ALTER TABLE and CREATE INDEX lines of sql, the
+// statements whose order the server checks.
+func statementsOf(sql string) []string {
+	return slices.DeleteFunc(strings.Split(sql, "\n"), func(line string) bool {
+		return !strings.HasPrefix(line, "ALTER TABLE ") && !strings.HasPrefix(line, "CREATE INDEX ")
+	})
+}
+
+// An index and a CHECK over two rebuilt generated columns read both, and each
+// drop takes them. The plan adds both columns back before it restates either,
+// and restates each once: the server refuses an index on a column it does not
+// have yet, and a second index under the same name.
+func TestPlanner_GeneratedColumnRebuildOfTwoColumns_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	sql, err := planPrices(c, platform.Postgres, labelsRetype())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statementsOf(sql), qt.DeepEquals, []string{
+		`ALTER TABLE "public"."labels" DROP COLUMN "a";`,
+		`ALTER TABLE "public"."labels" DROP COLUMN "b";`,
+		`ALTER TABLE "public"."labels" ALTER COLUMN "nickname" TYPE varchar(100);`,
+		`ALTER TABLE "public"."labels" ADD COLUMN "a" text NOT NULL GENERATED ALWAYS AS (upper(nickname)) STORED;`,
+		`ALTER TABLE "public"."labels" ADD COLUMN "b" text GENERATED ALWAYS AS (lower(nickname)) STORED;`,
+		`CREATE INDEX labels_ab ON "public"."labels" USING btree (a, b);`,
+		`ALTER TABLE "public"."labels" ADD CONSTRAINT "labels_a_b" CHECK ((a <> b));`,
+	})
+}
+
 // An index whose definition does not have the shape pg_get_indexdef writes is
 // not restated: the guard does not leave it out, so the rebuild is refused
 // naming it rather than dropping it.
@@ -174,7 +251,7 @@ func TestPlanner_GeneratedColumnRebuildOfAnUnreadIndex_HappyPath(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "an index the reader did not describe")
 }
 
-// A rebuild is refused where it cannot put the column back, and on
+// A rebuild is refused where it cannot put the column back as it was, and on
 // CockroachDB, whose catalog cannot tell the guard what the drop takes.
 func TestPlanner_GeneratedColumnRebuild_FailurePath(t *testing.T) {
 	tests := []struct {
@@ -182,6 +259,7 @@ func TestPlanner_GeneratedColumnRebuild_FailurePath(t *testing.T) {
 		dialect string
 		desired []string
 		removed []string
+		collate string
 		want    string
 	}{
 		{
@@ -198,6 +276,13 @@ func TestPlanner_GeneratedColumnRebuild_FailurePath(t *testing.T) {
 			want:    `.*generated column public.prices.search_vector reads column nickname, whose type this plan changes, and the declaration of the table does not hold it, .*`,
 		},
 		{
+			name:    "a collation of its own",
+			dialect: platform.Postgres,
+			desired: []string{"id", "nickname", "search_vector"},
+			collate: "C",
+			want:    `.*generated column public.prices.search_vector reads column nickname, whose type this plan changes, and has the collation C: .*`,
+		},
+		{
 			name:    "CockroachDB",
 			dialect: platform.CockroachDB,
 			desired: []string{"id", "nickname", "search_vector"},
@@ -208,7 +293,10 @@ func TestPlanner_GeneratedColumnRebuild_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planPrices(c, test.dialect, pricesRetype(searchIndexes, nil, test.desired, test.removed))
+			diff := pricesRetype(searchIndexes, nil, test.desired, test.removed)
+			diff.TablesModified[0].Current.Table.Columns[2].Collate = test.collate
+
+			sql, err := planPrices(c, test.dialect, diff)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.want)

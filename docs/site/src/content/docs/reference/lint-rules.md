@@ -152,6 +152,13 @@ leave it alone on both surfaces:
   a column an earlier `ALTER TABLE ... ADD` of the migration added. A column
   added with `IF NOT EXISTS` may have been there already, and a rename may give
   a table or a column a name that held data, so neither is skipped.
+- `DS102` and `BC104` also skip a column the migration drops and adds back to
+  the same table as a generated column, `GENERATED ALWAYS AS (...)`. It holds
+  no value of its own, the server computes every row again on the add, and
+  the column keeps its name. A plan writes this shape to change the type of a
+  column a PostgreSQL generated column reads, and the community binary reports
+  nothing for it. A column added back as an identity column is still a drop,
+  since the add numbers the rows again.
 - `DS101` and `BC103` skip a `DROP TABLE IF EXISTS` of a table the starting
   state does not hold. The summary of `ptah-compat migrate lint` counts no
   schema change for it. A schema the state does not hold, and a qualified name
