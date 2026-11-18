@@ -512,7 +512,23 @@ community binary names the constraint only as an index. It honors
 `public.rooms.room_slot[type=constraint]` while removing nothing, so `schema
 apply` drops the constraint the selector was written to keep. PostgreSQL
 records the constraint in `pg_constraint`, and Ptah honors `[type=constraint]`
-deliberately.
+deliberately. `[type=exclude]`, `[type=check]` and `[type=policy]` name no
+`EXCLUDE` constraint, so `schema apply` refuses each as matching nothing.
+
+A primary key, a `UNIQUE` constraint and a `CHECK` constraint are children of
+their table in the same way: `kinds.kinds_code_key` in either scope, and
+`public.kinds.kinds_code_key` on a URL that names no schema. Each answers
+`[type=constraint]`. A primary key and a `UNIQUE` constraint also answer
+`[type=index]`, since the server enforces each with an index of its name, and
+a `CHECK` constraint answers `[type=check]`. A selector that names the
+constraint keeps its index too. A `UNIQUE` written on a column carries no name
+in the desired schema, and a selector names it by the one the server gives it:
+`kinds_code_key` on PostgreSQL, the column's name on MySQL and MariaDB. The
+pinned community binary honors
+`[type=index]` on a `UNIQUE` constraint and `[type=check]` on a `CHECK`
+constraint. It keeps no constraint under `[type=constraint]` and no primary
+key under any selector; see
+[Compatibility differences](../retained-divergences/#a-constraint-an-exclude-selector-names).
 
 The same pattern is therefore honored on one URL and refused on the other,
 which is what the community binary does with it. Every surface that filters a

@@ -870,8 +870,9 @@ constraints does not turn an existing key into a planned addition.
 
 A selector that names objects does not count, because a read that cannot see a
 trigger cannot say what it is called: `--exclude 'audit_*[type=trigger]'` still needs
-`TRIGGER`. Neither does `--exclude '*[type=foreign_key]'`, since the catalog view that
-hides a foreign key from a MariaDB account hides a primary key with it.
+`TRIGGER`. Neither does `--exclude '*[type=foreign_key]'` or `--exclude '*[type=check]'`,
+since the catalog view that hides a foreign key or a CHECK constraint from a MariaDB
+account hides a primary key with it.
 
 `diff.skip` relieves nothing. It leaves destructive changes out of a plan, and the
 comparison still reads the kind to find what to add.

@@ -439,6 +439,15 @@ the constraint `room_slot` on `rooms`, and `public.rooms.room_slot` names it
 where the run covers every schema. `[type=index]` names it as well, since the
 index that enforces the constraint carries its name.
 
+`--exclude` names a primary key, a `UNIQUE` constraint and a `CHECK` constraint
+through their table in the same way. `--exclude
+'kinds.kinds_code_key[type=constraint]'` keeps the unique constraint
+`kinds_code_key` and the index that enforces it. `[type=index]` names a primary
+key or a `UNIQUE` constraint, whose index carries its name, and `[type=check]`
+names a `CHECK` constraint. A `UNIQUE` written on a column is named by the name
+the server gives it: `kinds_code_key` on PostgreSQL, the column's name on MySQL
+and MariaDB.
+
 `ptah migrations plan` and `ptah migrations generate` take `--exclude` and
 `--include` with the same meaning, the include applied after the exclusion. The
 selection reaches the desired schema, the current state read from the database
