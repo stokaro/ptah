@@ -60,6 +60,13 @@ type Selection struct {
 	// "topic" in `*[type=topic]`. Several models may share a selector type
 	// when its naming, relation behavior, and fields agree. SchemaWide leaves Type empty.
 	Type string
+	// Aliases are further selector types that name an object of Kind, as Type
+	// does: with the same naming, relation behavior and fields. They serve an
+	// object that is also one of a common type under its own name, such as a
+	// PostgreSQL exclusion constraint, which a constraint selector names and
+	// whose enforcing index, of the constraint's name, an index selector names.
+	// SchemaWide takes none.
+	Aliases []string
 	// Naming is how a selector reads the object's name.
 	Naming Naming
 	// Relation marks an object whose name is a relation's name, such as a
@@ -70,6 +77,15 @@ type Selection struct {
 	// keeping it, such as "comment" in `*[type=synonym].comment`. The owner's
 	// [Service] clears them.
 	Fields []string
+}
+
+// Types returns the selector types that name an object of the selection's
+// kind: Type, then each of Aliases. A SchemaWide selection has none.
+func (s Selection) Types() []string {
+	if s.Type == "" {
+		return nil
+	}
+	return append([]string{s.Type}, s.Aliases...)
 }
 
 // ByNameAlone reports whether the selection names an object in schema by its
@@ -178,7 +194,8 @@ func None() Set {
 // NewSet freezes extensions into a set. It refuses an extension without an
 // owner, an invalid model kind, unknown naming, duplicate fields or kinds,
 // conflicting definitions of a shared selector type, or fields without a Service.
-// Named selections require a type. SchemaWide requires Scopes and allows no type,
+// Named selections require a type, and an alias that is empty, repeated, or
+// the selection's own type is refused. SchemaWide requires Scopes and allows no type,
 // relation marker, or field selector. Each owner registers at most one Scopes
 // contribution, which receives all of its schema-wide models in one batch.
 // Additive projections require valid, unique change kinds and a service;
@@ -212,11 +229,12 @@ func NewSet(extensions ...Extension) (Set, error) {
 			}
 			selection.Fields = slices.Clone(selection.Fields)
 			slices.Sort(selection.Fields)
-			if selection.Type != "" {
-				if existing, claimed := types[selection.Type]; claimed && !sameSelector(existing, selection) {
-					return Set{}, fmt.Errorf("%w: selector type %q has conflicting definitions", schemaext.ErrDuplicate, selection.Type)
+			selection.Aliases = slices.Clone(selection.Aliases)
+			for _, selectorType := range selection.Types() {
+				if existing, claimed := types[selectorType]; claimed && !sameSelector(existing, selection) {
+					return Set{}, fmt.Errorf("%w: selector type %q has conflicting definitions", schemaext.ErrDuplicate, selectorType)
 				}
-				types[selection.Type] = selection
+				types[selectorType] = selection
 			}
 			kinds[selection.Kind] = extension.Owner
 			set.selections = append(set.selections, selection)
@@ -238,16 +256,27 @@ func validateSelection(extension Extension, selection Selection) error {
 	switch {
 	case !selection.Kind.Valid() || (selection.Naming != SchemaWide && strings.TrimSpace(selection.Type) == ""):
 		return fmt.Errorf("scope selection of %s names no kind or no selector type", extension.Owner)
-	case selection.Naming == SchemaWide && (selection.Type != "" || selection.Relation || len(selection.Fields) != 0 || extension.Scopes == nil):
-		return fmt.Errorf("scope selection of %s requires a schema-wide service and no selector type, relation or fields", extension.Owner)
+	case selection.Naming == SchemaWide && (selection.Type != "" || len(selection.Aliases) != 0 || selection.Relation || len(selection.Fields) != 0 || extension.Scopes == nil):
+		return fmt.Errorf("scope selection of %s requires a schema-wide service and no selector type, alias, relation or fields", extension.Owner)
 	case selection.Naming != InSchema && selection.Naming != DatabaseWide && selection.Naming != SchemaOrDatabase && selection.Naming != SchemaWide:
 		return fmt.Errorf("scope selection %q of %s has unknown naming %q", selection.Type, extension.Owner, selection.Naming)
 	case len(selection.Fields) > 0 && extension.Service == nil:
 		return fmt.Errorf("scope selection %q of %s names fields without a service to clear them", selection.Type, extension.Owner)
 	}
+	return validateSelectionNames(extension, selection)
+}
+
+// validateSelectionNames refuses a field or an alias that is empty or
+// repeated, and an alias that is the selection's own type.
+func validateSelectionNames(extension Extension, selection Selection) error {
 	for i, field := range selection.Fields {
 		if strings.TrimSpace(field) == "" || slices.Contains(selection.Fields[:i], field) {
 			return fmt.Errorf("scope selection %q of %s names field %q empty or twice", selection.Type, extension.Owner, field)
+		}
+	}
+	for i, alias := range selection.Aliases {
+		if strings.TrimSpace(alias) == "" || alias == selection.Type || slices.Contains(selection.Aliases[:i], alias) {
+			return fmt.Errorf("scope selection %q of %s names alias %q empty, twice or as its own type", selection.Type, extension.Owner, alias)
 		}
 	}
 	return nil
@@ -285,15 +314,17 @@ func (s Set) Selected() bool {
 // Selections returns independent selections, ordered by selector type then kind.
 func (s Set) Selections() []Selection { return cloneSelections(s.selections) }
 
-// ForType returns every model named by a selector type, ordered by kind.
-// The returned slice and fields are independent. An unknown type returns nil.
+// ForType returns every model named by a selector type, as its Type or one of
+// its Aliases, ordered by kind. The returned slice, fields and aliases are
+// independent. An unknown type returns nil.
 func (s Set) ForType(selectorType string) []Selection {
 	var result []Selection
 	for _, selection := range s.selections {
-		if selectorType != "" && selection.Type == selectorType {
+		if selectorType != "" && slices.Contains(selection.Types(), selectorType) {
 			result = append(result, selection)
 		}
 	}
+	slices.SortStableFunc(result, func(a, b Selection) int { return strings.Compare(string(a.Kind), string(b.Kind)) })
 	return cloneSelections(result)
 }
 
@@ -305,6 +336,7 @@ func cloneSelections(selections []Selection) []Selection {
 	result := slices.Clone(selections)
 	for i := range result {
 		result[i].Fields = slices.Clone(result[i].Fields)
+		result[i].Aliases = slices.Clone(result[i].Aliases)
 	}
 	return result
 }

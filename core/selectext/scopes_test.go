@@ -170,6 +170,7 @@ func TestNewSet_RefusesInvalidSchemaWideSelection(t *testing.T) {
 	}{
 		{name: "no service", selection: selectext.Selection{Kind: "example.org/a/x", Naming: selectext.SchemaWide}},
 		{name: "selector type", selection: selectext.Selection{Kind: "example.org/a/x", Naming: selectext.SchemaWide, Type: "acl"}, service: scopeAnswer{}},
+		{name: "alias", selection: selectext.Selection{Kind: "example.org/a/x", Naming: selectext.SchemaWide, Aliases: []string{"acl"}}, service: scopeAnswer{}},
 		{name: "relation", selection: selectext.Selection{Kind: "example.org/a/x", Naming: selectext.SchemaWide, Relation: true}, service: scopeAnswer{}},
 		{name: "field", selection: selectext.Selection{Kind: "example.org/a/x", Naming: selectext.SchemaWide, Fields: []string{"comment"}}, service: scopeAnswer{}},
 	}
@@ -178,7 +179,7 @@ func TestNewSet_RefusesInvalidSchemaWideSelection(t *testing.T) {
 			c := qt.New(t)
 			extension := selectext.Extension{Owner: "example.org/a", Scopes: test.service, Selections: []selectext.Selection{test.selection}}
 			set, err := selectext.NewSet(extension)
-			c.Assert(err, qt.ErrorMatches, "scope selection of example.org/a requires a schema-wide service and no selector type, relation or fields")
+			c.Assert(err, qt.ErrorMatches, "scope selection of example.org/a requires a schema-wide service and no selector type, alias, relation or fields")
 			c.Assert(set.Selected(), qt.IsFalse)
 		})
 	}

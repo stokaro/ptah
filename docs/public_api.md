@@ -1491,9 +1491,16 @@ belongs to that table and is named through it, as an index is: an exclusion
 matches `table.object` and `schema.table.object`, and an include keeps the
 object with its table.
 
+`Selection.Aliases` are further selector types that name an object the way its
+type does, for an object that is also one of a common type under its own name:
+a PostgreSQL exclusion constraint is a `constraint`, and the index that
+enforces it carries its name, so `index` names it too. `Selection.Types`
+returns the type and then its aliases.
+
 `engine.Provider.Selections` registers an `Extension`, and
 `engine.Runtime.Selections` returns the frozen `Set`, ordered by selector type
-then model kind. `Set.ForType` returns every model named by a selector type.
+then model kind. `Set.ForType` returns every model named by a selector type,
+as its type or an alias, ordered by model kind.
 Models may share a type when its naming, relation behavior, and fields agree.
 A selector applies to every matching model; field clearing stays with each
 model's owner. Returned selections and field lists are independent copies.
