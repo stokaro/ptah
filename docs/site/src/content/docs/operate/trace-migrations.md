@@ -131,6 +131,14 @@ ptah.migrate.status           the state after the run
 | `ptah.lock.acquire` | `db.system`, `migration.operation`, `lock.name`, `lock.timeout_ms`, `lock.wait_ms` |
 | `ptah.migrate.status` | `db.system`, `migration.current_version`, `migration.pending_count`, `migration.total_count`, `migration.out_of_order_count` |
 
+In an Atlas directory whose files run under their positions in file-name order,
+a version number is a position, which names no migration outside the run. Each
+version attribute there carries the migration's version key under the same name
+with a `_key` suffix, and the number is not sent: `migration.current_version_key`,
+`migration.target_version_key`, `migration.requested_target_version_key` and
+`migration.version_key`. The metrics carry `migration.version_key` the same
+way. An empty key names no migration.
+
 A span whose operation failed has an error status that carries the error
 message, and an `exception` event. A failed migration marks both its
 `ptah.migrate.apply` span and the `ptah.migrate.up` span above it.

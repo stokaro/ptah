@@ -957,7 +957,7 @@ nightly, from the workflow's Run button, or when somebody comments
 | `sqlserver` | 15.0 (SQL Server 2019) | certified | `SQLServer2022` | version-ladder | `mcr.microsoft.com/mssql/server:2019-latest` | no | yes |
 | `oracle` | 23 | certified | `Oracle23` | version-ladder | `gvenzl/oracle-free:slim` | no | yes |
 | `oracle` | 21 | certified | `Oracle21` | version-ladder | `gvenzl/oracle-xe:21-slim` | no | yes |
-| `cockroachdb` | 26.4 | certified | `CockroachDB263` | version-ladder | `cockroachdb/cockroach:v26.4.0` | no | yes |
+| `cockroachdb` | 26.4 | certified | `CockroachDB263` | version-ladder | `cockroachdb/cockroach:v26.4.1` | no | yes |
 | `cockroachdb` | 26.3 | certified | `CockroachDB263` | version-ladder | `cockroachdb/cockroach:latest-v26.3` | yes | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | version-ladder | `cockroachdb/cockroach:latest-v26.2` | yes | yes |
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | version-ladder | `cockroachdb/cockroach:latest-v25.4` | yes | yes |

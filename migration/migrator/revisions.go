@@ -3063,6 +3063,21 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 	return m.setAtlasRevisionRows(ctx, migrations, version)
 }
 
+// CanSetRevisions reports whether the connection can record a revision set
+// at all. It is false where the revision table is rewritten through mutations
+// rather than updated in a transaction, as on ClickHouse: there
+// [Migrator.SetRevision] refuses every version, and a caller that prepares the
+// table before it sets a revision creates nothing, so a refused set leaves no
+// table a later run would adopt. A provider history store records a set
+// whatever the dialect.
+func (m *Migrator) CanSetRevisions() (bool, error) {
+	store, err := m.conn.HistoryStore()
+	if err != nil {
+		return false, err
+	}
+	return store != nil || !m.revisionsMutate(), nil
+}
+
 // revisionSetStore gives the refusals of a revision set to version that the
 // version and the connection decide, and initializes the revision table. It
 // returns the provider history store the set writes through, or nil for a

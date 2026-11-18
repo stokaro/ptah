@@ -105,6 +105,28 @@ func loadExpectedSequence(path string) (*expectedSequence, error) {
 	return &sequence, nil
 }
 
+// refuseDisagreeingNumbers refuses an entry whose number and decimal key name
+// two different migrations, such as version 99 beside version_key 0001, which
+// names migration 1. The comparison matches on the key alone, so without this
+// the 99 would be accepted and ignored. Where the directory runs its files
+// under their positions (see [migrator.Migrator.KeyedByPosition]) the number
+// beside a key is a position, which an approval written in another run may
+// spell differently, and only the key names the migration. A nil sequence
+// refuses nothing.
+func (e *expectedSequence) refuseDisagreeingNumbers(mig interface{ KeyedByPosition() bool }) error {
+	if e == nil || mig.KeyedByPosition() {
+		return nil
+	}
+	for index, migration := range e.Migrations {
+		number, err := strconv.ParseInt(migration.VersionKey, 10, 64)
+		if migration.Version != 0 && err == nil && number != migration.Version {
+			return fmt.Errorf("parse --%s: migration %d has version %d and version_key %q, which name different migrations",
+				expectSequenceFlag, index, migration.Version, migration.VersionKey)
+		}
+	}
+	return nil
+}
+
 // RepeatableSequenceMismatchError reports repeatable work under the lock that
 // is not the approved work: another identity, another order, or content whose
 // digest is not the one the caller saw.

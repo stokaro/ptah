@@ -43,7 +43,18 @@ type Options struct {
 	Dialect            string
 	CurrentVersion     int64
 	TargetVersion      int64
-	Command            string
+	// CurrentVersionKey and TargetVersionKey name the same migrations by
+	// their version keys; empty names no migration.
+	CurrentVersionKey string
+	TargetVersionKey  string
+	// KeyedByPosition reports that the numeric versions are positions in
+	// file-name order, which move when a file is added before them and name
+	// no migration outside this run. The hooks then receive the keys alone:
+	// PTAH_CURRENT_VERSION_KEY and PTAH_TARGET_VERSION_KEY, the webhook
+	// members current_version_key and target_version_key, and a dump named by
+	// the keys.
+	KeyedByPosition bool
+	Command         string
 	// CommandOrigin names the project file construct that supplied Command,
 	// such as `ptah.yaml migration.pre_up_hook`, so the binary's program
 	// policy can refuse it; empty is a command the operator passed.
@@ -154,12 +165,36 @@ func defaultHTTPClient() *http.Client {
 }
 
 func (o Options) env() []string {
-	return []string{
-		"PTAH_DB_URL=" + o.DatabaseURL,
-		"PTAH_DIALECT=" + o.Dialect,
+	env := []string{"PTAH_DB_URL=" + o.DatabaseURL, "PTAH_DIALECT=" + o.Dialect}
+	if o.KeyedByPosition {
+		return append(env,
+			"PTAH_CURRENT_VERSION_KEY="+o.CurrentVersionKey,
+			"PTAH_TARGET_VERSION_KEY="+o.TargetVersionKey,
+		)
+	}
+	return append(env,
 		fmt.Sprintf("PTAH_CURRENT_VERSION=%d", o.CurrentVersion),
 		fmt.Sprintf("PTAH_TARGET_VERSION=%d", o.TargetVersion),
+	)
+}
+
+// dumpVersions is the part of a dump's file name that names the migrations
+// it sits between: v<current>_to_v<target> for numbers, and
+// <current>_to_<target> for keys, which are spelled as their files spell them
+// and may start with a v of their own. A key comes from a file name, so it is
+// a file name's bytes; an empty key, which names no migration, is spelled
+// none.
+func (o Options) dumpVersions() string {
+	if !o.KeyedByPosition {
+		return fmt.Sprintf("v%d_to_v%d", o.CurrentVersion, o.TargetVersion)
 	}
+	key := func(key string) string {
+		if key == "" {
+			return "none"
+		}
+		return key
+	}
+	return key(o.CurrentVersionKey) + "_to_" + key(o.TargetVersionKey)
 }
 
 func (r Runner) runCommandHook(ctx context.Context, opts Options, env []string) (Result, error) {
@@ -222,9 +257,8 @@ func (r Runner) dumpPath(dir, ext string, opts Options) (string, error) {
 		return "", fmt.Errorf("%s pre-flight backup directory %s: %w", opts.Direction, dir, err)
 	}
 	name := fmt.Sprintf(
-		"ptah_pre_v%d_to_v%d_%s%s",
-		opts.CurrentVersion,
-		opts.TargetVersion,
+		"ptah_pre_%s_%s%s",
+		opts.dumpVersions(),
 		r.Now().UTC().Format("20060102T150405.000000000Z"),
 		ext,
 	)
@@ -239,15 +273,38 @@ type webhookPayload struct {
 	DisplayDatabaseURL string    `json:"database_url,omitempty"`
 }
 
-func (r Runner) runWebhook(ctx context.Context, opts Options) (Result, error) {
-	payload := webhookPayload{
-		Direction:          opts.Direction,
-		Dialect:            opts.Dialect,
-		CurrentVersion:     opts.CurrentVersion,
-		TargetVersion:      opts.TargetVersion,
-		DisplayDatabaseURL: opts.DisplayDatabaseURL,
+// keyedWebhookPayload is the payload where the versions are positions (see
+// [Options.KeyedByPosition]): the same members, with the keys in place of
+// the numbers.
+type keyedWebhookPayload struct {
+	Direction          Direction `json:"direction"`
+	Dialect            string    `json:"dialect"`
+	CurrentVersionKey  string    `json:"current_version_key"`
+	TargetVersionKey   string    `json:"target_version_key"`
+	DisplayDatabaseURL string    `json:"database_url,omitempty"`
+}
+
+func (o Options) webhookPayload() any {
+	if o.KeyedByPosition {
+		return keyedWebhookPayload{
+			Direction:          o.Direction,
+			Dialect:            o.Dialect,
+			CurrentVersionKey:  o.CurrentVersionKey,
+			TargetVersionKey:   o.TargetVersionKey,
+			DisplayDatabaseURL: o.DisplayDatabaseURL,
+		}
 	}
-	body, err := json.Marshal(payload)
+	return webhookPayload{
+		Direction:          o.Direction,
+		Dialect:            o.Dialect,
+		CurrentVersion:     o.CurrentVersion,
+		TargetVersion:      o.TargetVersion,
+		DisplayDatabaseURL: o.DisplayDatabaseURL,
+	}
+}
+
+func (r Runner) runWebhook(ctx context.Context, opts Options) (Result, error) {
+	body, err := json.Marshal(opts.webhookPayload())
 	if err != nil {
 		return Result{}, fmt.Errorf("%s pre-flight webhook payload: %w", opts.Direction, err)
 	}

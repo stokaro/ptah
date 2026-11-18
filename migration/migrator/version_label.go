@@ -56,6 +56,21 @@ func (m *Migrator) KeyedByPosition() bool {
 	return m.hasAtlasPositions()
 }
 
+// VersionAttribute returns the observation attribute that names the migration
+// at version under name, such as migration.current_version: the number, or,
+// where the migrations run under their positions (see
+// [Migrator.KeyedByPosition]), the migration's version key under name with a
+// _key suffix, since a position names no migration outside this migrator.
+// There version 0, which names no migration, is the empty key. The migrator's
+// own spans and metrics name versions through it, so an attribute a caller
+// adds beside them is spelled the same way.
+func (m *Migrator) VersionAttribute(name string, version int64) ObservationAttribute {
+	if m.KeyedByPosition() {
+		return attr(name+"_key", m.planVersionKey(version))
+	}
+	return attr(name, version)
+}
+
 // VersionLabels returns [Migrator.VersionLabel] of each version, in order.
 func (m *Migrator) VersionLabels(versions []int64) []string {
 	labels := make([]string, len(versions))
