@@ -17,8 +17,10 @@ import (
 // versionMembers maps each member that spells migrations by their numeric
 // version to the members that carry the same identity as a key: a revision
 // row names its migration in atlas_version, every other object in the
-// *_key or *_keys member beside the number.
+// *_key or *_keys member beside the number. checkpoint_version has no key
+// member; the checkpoint's own entry in the migrations list names it.
 var versionMembers = map[string][]string{
+	"checkpoint_version":      nil,
 	"version":                 {"version_key", "atlas_version"},
 	"current_version":         {"current_version_key"},
 	"target_version":          {"target_version_key"},
@@ -36,8 +38,9 @@ var versionMembers = map[string][]string{
 // their version, beside the member that carries the same identity as a key,
 // and an empty list, which names nothing in either spelling. Member order and
 // every other byte are kept, so the result reads as the document did with
-// those members removed. A number with no key beside it stays: a current
-// version of 0 is the empty history, which no key spells.
+// those members removed. A number with no key beside it stays, since a
+// current version of 0 is the empty history, which no key spells; the one
+// exception is checkpoint_version, which has no key member at all.
 func Strip(doc []byte) ([]byte, error) {
 	stripped, err := strip(doc)
 	if err != nil {
@@ -162,6 +165,9 @@ func leftOut(name string, values map[string][]byte) bool {
 	}
 	if !numeric(value) {
 		return false
+	}
+	if keys == nil {
+		return true
 	}
 	for _, key := range keys {
 		if _, ok := values[key]; ok {

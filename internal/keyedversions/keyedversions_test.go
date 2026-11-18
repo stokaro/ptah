@@ -36,6 +36,11 @@ func TestStrip_HappyPath(t *testing.T) {
 			want: `{"total_migrations":3}`,
 		},
 		{
+			name: "a checkpoint version, which has no key member",
+			doc:  `{"checkpoint_version":1,"total_migrations":3}`,
+			want: `{"total_migrations":3}`,
+		},
+		{
 			name: "a number with no key stays",
 			doc:  `{"current_version":0,"applied":1}`,
 			want: `{"current_version":0,"applied":1}`,

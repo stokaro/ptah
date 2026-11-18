@@ -540,8 +540,8 @@ added before it, so it names no migration to another process. There the status
 document and the run document leave out every numeric version member:
 `current_version` beside `current_version_key`, `applied_migrations`,
 `pending_migrations` and `out_of_order_migrations` beside their `*_keys` lists,
-`version` beside `version_key` in each entry, and an empty numeric list. The
-members are absent, never `null`, and the key members name each migration by the
+`version` beside `version_key` in each entry, `checkpoint_version`, and an
+empty numeric list. The members are absent, never `null`, and the key members name each migration by the
 version its file spells. A directory of numbered files prints the numbers as
 above.
 
