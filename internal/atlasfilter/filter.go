@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
+	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/tableref"
 )
 
@@ -130,8 +131,12 @@ func excludeDatabase(
 	state.excludeColumnSequences(schema.Tables)
 	filtered.Enums = state.filterEnums(filtered.Enums)
 	filtered.Sequences = state.filterSequences(filtered.Sequences)
-	filtered.Indexes = state.filterIndexes(filtered.Indexes)
-	filtered.Constraints = state.filterConstraints(filtered.Constraints)
+	// Constraints go before indexes: an index leaves with the constraint it
+	// enforces, so the constraints that left have to be known first.
+	var removedConstraints []catalog.Constraint
+	filtered.Constraints, removedConstraints = state.filterConstraints(filtered.Constraints)
+	filtered.Indexes = state.filterIndexes(filtered.Indexes, removedConstraints, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
+	clearRemovedUniqueColumns(filtered.Tables, filtered.Constraints, removedConstraints)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	if err != nil {
 		return nil, ExcludeReport{}, err
@@ -253,8 +258,10 @@ func excludeGenerated(
 	if filtered.FeatureObjects, err = state.clearOwnerFields(filtered.FeatureObjects); err != nil {
 		return nil, ExcludeReport{}, err
 	}
-	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes)
-	filtered.Constraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
+	// The same order as the database side, for the same reason.
+	var removedConstraints []schemamodel.Constraint
+	filtered.Constraints, removedConstraints = state.filterGeneratedConstraints(tableByStruct, filtered.Constraints)
+	filtered.Indexes = state.filterGeneratedIndexes(tableByStruct, filtered.Indexes, removedConstraints)
 	filtered.EmbeddedFields = state.filterGeneratedEmbeddedFields(tableByStruct, filtered.EmbeddedFields)
 	filtered.Enums = state.filterGeneratedEnums(filtered.Enums)
 	filtered.Sequences = state.filterGeneratedSequences(filtered.Sequences)
@@ -1041,28 +1048,97 @@ func (s *exclusionState) noteUnregisteredVirtualTables(tables []catalog.VirtualT
 // already-excluded table still counts as having matched something. The keep
 // decision is unchanged: an index whose table or column left the schema leaves
 // with it either way. Every child filter below is ordered for the same reason.
-func (s *exclusionState) filterIndexes(indexes []catalog.Index) []catalog.Index {
+//
+// An index also leaves with the constraint it enforces: a primary key's, a
+// UNIQUE constraint's, or a feature object's such as a PostgreSQL EXCLUDE
+// constraint, which marks its index ManagedBy. removed holds the constraints
+// this exclusion took out, and excludedFeature reports a feature object it took
+// out. Kept on its own, the index is planned for a DROP INDEX that PostgreSQL
+// refuses with SQLSTATE 2BP01 while the constraint stands, and the selector that
+// protected the constraint fails the run.
+func (s *exclusionState) filterIndexes(
+	indexes []catalog.Index,
+	removed []catalog.Constraint,
+	excludedFeature func(objectidentity.ID) bool,
+) []catalog.Index {
 	return keep(indexes, func(index catalog.Index) bool {
 		named := s.matches("index", s.childNameCandidates(index.Schema, index.TableName, index.Name)...)
 		if s.tableExcluded(index.Schema, index.TableName) || s.anyColumnExcluded(index.Schema, index.TableName, index.Columns) {
+			return false
+		}
+		if index.ManagedBy != (objectidentity.ID{}) && excludedFeature(index.ManagedBy) {
+			return false
+		}
+		if slices.ContainsFunc(removed, func(constraint catalog.Constraint) bool {
+			return indexbacking.Enforces("", constraint, index)
+		}) {
 			return false
 		}
 		return !named
 	})
 }
 
-func (s *exclusionState) filterConstraints(constraints []catalog.Constraint) []catalog.Constraint {
-	return keep(constraints, func(constraint catalog.Constraint) bool {
-		foreignSchema := foreignSchemaOrLocal(constraint)
-		named := s.matchesAny(constraintResourceTypes(constraint), s.childNameCandidates(constraint.Schema, constraint.TableName, constraint.Name)...)
-		if s.tableExcluded(constraint.Schema, constraint.TableName) ||
-			s.tableExcluded(foreignSchema, derefString(constraint.ForeignTable)) ||
-			s.anyColumnExcluded(constraint.Schema, constraint.TableName, constraint.ColumnNamesOrDefault()) ||
-			s.anyColumnExcluded(foreignSchema, derefString(constraint.ForeignTable), constraint.ForeignColumnsOrDefault()) {
-			return false
+// clearRemovedUniqueColumns clears IsUnique, which a reader derives from a
+// UNIQUE constraint on one column, on each column whose constraint the
+// exclusion removed, unless a constraint it kept marks the column too. tables
+// are the exclusion's own copies. Kept beside the removed constraint, the flag
+// is compared alone, and `schema compare` reports `unique: true -> false` on
+// the column on every run, a difference no statement reconciles. The desired
+// side leaves out a column's own UNIQUE the same selector names; see
+// [exclusionState.columnUniqueNameCandidates].
+//
+// A primary key's IsPrimaryKey stays: a declaration's key carries no name a
+// selector could leave it out by, and clearing the flag on this side alone
+// plans an ADD PRIMARY KEY on a table that holds one.
+func clearRemovedUniqueColumns(tables []catalog.Table, kept, removed []catalog.Constraint) {
+	type columnKey struct{ table, column string }
+	unique := func(constraints []catalog.Constraint) map[columnKey]bool {
+		keys := make(map[columnKey]bool)
+		for _, constraint := range constraints {
+			columns := constraint.ColumnNamesOrDefault()
+			if indexbacking.KindOf(constraint.Type) == indexbacking.Unique && len(columns) == 1 {
+				keys[columnKey{constraint.QualifiedTableName(), columns[0]}] = true
+			}
 		}
-		return !named
+		return keys
+	}
+	removedUnique, keptUnique := unique(removed), unique(kept)
+	if len(removedUnique) == 0 {
+		return
+	}
+	for i := range tables {
+		for j := range tables[i].Columns {
+			key := columnKey{tables[i].QualifiedName(), tables[i].Columns[j].Name}
+			if removedUnique[key] && !keptUnique[key] {
+				tables[i].Columns[j].IsUnique = false
+			}
+		}
+	}
+}
+
+// filterConstraints returns the constraints the exclusion keeps, and the ones
+// it removed, whose indexes [exclusionState.filterIndexes] removes with them.
+func (s *exclusionState) filterConstraints(constraints []catalog.Constraint) (kept, removed []catalog.Constraint) {
+	kept = keep(constraints, func(constraint catalog.Constraint) bool {
+		keepConstraint := s.keepConstraint(constraint)
+		if !keepConstraint {
+			removed = append(removed, constraint)
+		}
+		return keepConstraint
 	})
+	return kept, removed
+}
+
+func (s *exclusionState) keepConstraint(constraint catalog.Constraint) bool {
+	foreignSchema := foreignSchemaOrLocal(constraint)
+	named := s.matchesAny(constraintResourceTypes(constraint.Type), s.childNameCandidates(constraint.Schema, constraint.TableName, constraint.Name)...)
+	if s.tableExcluded(constraint.Schema, constraint.TableName) ||
+		s.tableExcluded(foreignSchema, derefString(constraint.ForeignTable)) ||
+		s.anyColumnExcluded(constraint.Schema, constraint.TableName, constraint.ColumnNamesOrDefault()) ||
+		s.anyColumnExcluded(foreignSchema, derefString(constraint.ForeignTable), constraint.ForeignColumnsOrDefault()) {
+		return false
+	}
+	return !named
 }
 
 func (s *exclusionState) filterFunctions(functions []catalog.Function) []catalog.Function {
@@ -1283,9 +1359,26 @@ func (s *exclusionState) filterGeneratedFields(
 		if s.generatedForeignColumnsExcluded(table.Schema, field.Foreign, foreignReferenceColumns(field.Foreign)) {
 			field = stripGeneratedFieldForeignKey(field)
 		}
+		if field.Unique && s.matchesAny(constraintResourceTypes("UNIQUE"), s.columnUniqueNameCandidates(table, field.Name)...) {
+			field.Unique = false
+		}
 		result = append(result, field)
 	}
 	return result
+}
+
+// columnUniqueNameCandidates are the names a selector can name a column's own
+// UNIQUE by. The declaration gives it no name, and the server does:
+// `<table>_<column>_key` on PostgreSQL, the column's name on the MySQL family,
+// the names the comparison pairs it with the server's constraint by. A
+// selector that names it leaves the declaration out, as the database side
+// leaves out the constraint and its index; kept, the comparison plans an ADD
+// CONSTRAINT for a constraint the server holds.
+func (s *exclusionState) columnUniqueNameCandidates(table schemamodel.Table, column string) []string {
+	return append(
+		s.childNameCandidates(table.Schema, table.Name, table.Name+"_"+column+"_key"),
+		s.childNameCandidates(table.Schema, table.Name, column)...,
+	)
 }
 
 func (s *exclusionState) stripGeneratedTableColumnReferences(tables []schemamodel.Table) []schemamodel.Table {
@@ -1300,9 +1393,14 @@ func (s *exclusionState) stripGeneratedTableColumnReferences(tables []schemamode
 	return out
 }
 
+// filterGeneratedIndexes is [exclusionState.filterIndexes] for the desired
+// side. A declared index leaves with a declared UNIQUE constraint of its name
+// on its table, as the index the server builds for that constraint leaves on
+// the database side: removed holds the constraints the exclusion took out.
 func (s *exclusionState) filterGeneratedIndexes(
 	tables map[string]schemamodel.Table,
 	indexes []schemamodel.Index,
+	removed []schemamodel.Constraint,
 ) []schemamodel.Index {
 	return keep(indexes, func(index schemamodel.Index) bool {
 		table, ok := generatedIndexTable(tables, index)
@@ -1314,32 +1412,51 @@ func (s *exclusionState) filterGeneratedIndexes(
 		if s.generatedAnyColumnExcluded(table, generatedIndexColumns(index)) {
 			return false
 		}
+		if index.Unique && slices.ContainsFunc(removed, func(constraint schemamodel.Constraint) bool {
+			owner, ok := generatedConstraintTable(tables, constraint)
+			return ok && indexbacking.KindOf(constraint.Type) == indexbacking.Unique &&
+				constraint.Name == index.Name && owner.Schema == table.Schema && owner.Name == table.Name
+		}) {
+			return false
+		}
 		return !named
 	})
 }
 
+// filterGeneratedConstraints returns the declared constraints the exclusion
+// keeps, and the ones it removed, whose indexes
+// [exclusionState.filterGeneratedIndexes] removes with them.
 func (s *exclusionState) filterGeneratedConstraints(
 	tables map[string]schemamodel.Table,
 	constraints []schemamodel.Constraint,
-) []schemamodel.Constraint {
-	return keep(constraints, func(constraint schemamodel.Constraint) bool {
-		table, ok := generatedConstraintTable(tables, constraint)
-		if !ok {
-			for _, resourceType := range generatedConstraintResourceTypes(constraint) {
-				s.noteGeneratedChild(resourceType, constraint.StructName, constraint.Table, constraint.Name)
-			}
-			return false
+) (kept, removed []schemamodel.Constraint) {
+	kept = keep(constraints, func(constraint schemamodel.Constraint) bool {
+		keepConstraint := s.keepGeneratedConstraint(tables, constraint)
+		if !keepConstraint {
+			removed = append(removed, constraint)
 		}
-		named := s.matchesAny(generatedConstraintResourceTypes(constraint), s.childNameCandidates(table.Schema, table.Name, constraint.Name)...)
-		if s.generatedAnyColumnExcluded(table, generatedConstraintColumns(constraint)) {
-			return false
-		}
-		if s.generatedForeignTableExcluded(table.Schema, constraint.ForeignTable) ||
-			s.generatedForeignColumnsExcluded(table.Schema, constraint.ForeignTable, constraint.ForeignColumnsOrDefault()) {
-			return false
-		}
-		return !named
+		return keepConstraint
 	})
+	return kept, removed
+}
+
+func (s *exclusionState) keepGeneratedConstraint(tables map[string]schemamodel.Table, constraint schemamodel.Constraint) bool {
+	table, ok := generatedConstraintTable(tables, constraint)
+	if !ok {
+		for _, resourceType := range constraintResourceTypes(constraint.Type) {
+			s.noteGeneratedChild(resourceType, constraint.StructName, constraint.Table, constraint.Name)
+		}
+		return false
+	}
+	named := s.matchesAny(constraintResourceTypes(constraint.Type), s.childNameCandidates(table.Schema, table.Name, constraint.Name)...)
+	if s.generatedAnyColumnExcluded(table, generatedConstraintColumns(constraint)) {
+		return false
+	}
+	if s.generatedForeignTableExcluded(table.Schema, constraint.ForeignTable) ||
+		s.generatedForeignColumnsExcluded(table.Schema, constraint.ForeignTable, constraint.ForeignColumnsOrDefault()) {
+		return false
+	}
+	return !named
 }
 
 func (s *exclusionState) filterGeneratedEmbeddedFields(
@@ -2031,18 +2148,33 @@ func tableResourceTypes(table catalog.Table) []string {
 	return types
 }
 
-func constraintResourceTypes(constraint catalog.Constraint) []string {
+// constraintResourceTypes are the selector types that name a constraint of
+// constraintType, on the database side and the desired side alike.
+//
+// Every constraint answers `constraint`. A foreign key also answers
+// `foreign_key` and `foreign-key`, and a CHECK constraint answers `check`, the
+// type the community binary names it by. A primary key and a UNIQUE
+// constraint answer `index` as well: the server enforces each with an index
+// that carries the constraint's name, and the community binary names a UNIQUE
+// constraint as that index. Answering only under `constraint`, the constraint
+// stays in scope when a selector removes its index, and the plan drops the
+// constraint the selector was written to keep.
+//
+// The community binary keeps no constraint under `[type=constraint]`, and no
+// primary key under any selector: it accepts the selector and plans the DROP.
+// Ptah keeps what the selector names, deliberately, and records the
+// divergence on the retained-divergences page.
+func constraintResourceTypes(constraintType string) []string {
 	types := []string{"constraint"}
-	if strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+	switch indexbacking.KindOf(constraintType) {
+	case indexbacking.ForeignKey:
 		types = append(types, "foreign_key", "foreign-key")
-	}
-	return types
-}
-
-func generatedConstraintResourceTypes(constraint schemamodel.Constraint) []string {
-	types := []string{"constraint"}
-	if strings.EqualFold(constraint.Type, "FOREIGN KEY") {
-		types = append(types, "foreign_key", "foreign-key")
+	case indexbacking.PrimaryKey, indexbacking.Unique:
+		types = append(types, "index")
+	case indexbacking.None:
+		if strings.EqualFold(strings.TrimSpace(constraintType), "CHECK") {
+			types = append(types, "check")
+		}
 	}
 	return types
 }

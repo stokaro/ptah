@@ -108,6 +108,14 @@ func TestKindsLeftOut(t *testing.T) {
 			exclude: []string{"*[type=foreign_key]"},
 		},
 		{
+			name:    "a check is not every constraint",
+			exclude: []string{"*[type=check]"},
+		},
+		{
+			name:    "an index is not every constraint",
+			exclude: []string{"*[type=index]"},
+		},
+		{
 			name:    "a field selector leaves the object",
 			exclude: []string{"*[type=table].comment"},
 		},

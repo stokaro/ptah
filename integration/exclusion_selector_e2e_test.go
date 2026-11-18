@@ -95,3 +95,69 @@ func TestExcludeKeepsAnExclusionConstraintE2E(t *testing.T) {
 		})
 	}
 }
+
+// exclusionSelectorBefore is what the read-back answers while neither
+// constraint was dropped.
+const exclusionSelectorBefore = "desks.desk_slot,rooms.room_slot"
+
+// exclusionSelectorRefusedRows name the constraint on rooms under a type that
+// is not one of its own, or include it on its own. Each is refused before the
+// apply changes anything: a selector that names nothing protects nothing, and
+// a constraint rides along with its table. The community binary accepts each
+// of these excludes and drops the constraint; it has no --include.
+var exclusionSelectorRefusedRows = []struct {
+	name  string
+	flags []string
+	// wantErr is the refusal both binaries print.
+	wantErr string
+}{
+	{
+		name:    "an exclude selector",
+		flags:   []string{"--exclude", "public.rooms.room_slot[type=exclude]"},
+		wantErr: `the --exclude selection matched no objects: "public.rooms.room_slot[type=exclude]"`,
+	},
+	{
+		name:    "a check selector",
+		flags:   []string{"--exclude", "public.rooms.room_slot[type=check]"},
+		wantErr: `the --exclude selection matched no objects: "public.rooms.room_slot[type=check]"`,
+	},
+	{
+		name:    "a policy selector",
+		flags:   []string{"--exclude", "public.rooms.room_slot[type=policy]"},
+		wantErr: `the --exclude selection matched no objects: "public.rooms.room_slot[type=policy]"`,
+	},
+	{
+		name:  "an include of the constraint",
+		flags: []string{"--include", "public.rooms.room_slot[type=constraint]"},
+		wantErr: `unsupported Atlas include selector "public.rooms.room_slot[type=constraint]": ` +
+			"constraint resources ride along with their parent and cannot be included on their own",
+	},
+}
+
+// TestExcludeRefusesAnExclusionConstraintSelectorE2E applies each refused
+// selector through both shipped binaries and reads the constraints back:
+// both are still there.
+func TestExcludeRefusesAnExclusionConstraintSelectorE2E(t *testing.T) {
+	for _, row := range exclusionSelectorRefusedRows {
+		t.Run(row.name+"/ptah", func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newExclusionSelectorFixture(c)
+
+			applied := fixture.apply(c, row.flags...)
+
+			c.Assert(applied.ExitCode, qt.Equals, 2, historyComment(applied))
+			c.Assert(applied.Stderr, qt.Contains, row.wantErr)
+			c.Assert(fixture.read(c, exclusionSelectorReadBack), qt.Equals, exclusionSelectorBefore)
+		})
+		t.Run(row.name+"/ptah-compat", func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newExclusionSelectorFixture(c)
+
+			applied := fixture.compatApply(c, row.flags...)
+
+			c.Assert(applied.ExitCode, qt.Equals, 1, historyComment(applied))
+			c.Assert(applied.Stderr, qt.Contains, row.wantErr)
+			c.Assert(fixture.read(c, exclusionSelectorReadBack), qt.Equals, exclusionSelectorBefore)
+		})
+	}
+}

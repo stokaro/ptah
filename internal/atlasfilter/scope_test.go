@@ -106,6 +106,16 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 			wantErr: `unsupported Atlas include selector "\*\[type=index\]": index resources ride along with their parent and cannot be included on their own`,
 		},
 		{
+			name:    "constraint type",
+			values:  []string{"public.kinds.kinds_code_key[type=constraint]"},
+			wantErr: `unsupported Atlas include selector "public\.kinds\.kinds_code_key\[type=constraint\]": constraint resources ride along with their parent and cannot be included on their own`,
+		},
+		{
+			name:    "check type",
+			values:  []string{"public.kinds.code_len[type=check]"},
+			wantErr: `unsupported Atlas include selector "public\.kinds\.code_len\[type=check\]": check resources ride along with their parent and cannot be included on their own`,
+		},
+		{
 			name:    "grant type",
 			values:  []string{"*[type=grant]"},
 			wantErr: `unsupported Atlas include selector "\*\[type=grant\]": grant resources ride along with their parent and cannot be included on their own`,

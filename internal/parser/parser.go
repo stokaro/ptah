@@ -2583,8 +2583,18 @@ func (p *Parser) identityPropertyValue(name string) (string, error) {
 	return sign + value, nil
 }
 
+// handleDefault reads a column's DEFAULT clause.
+//
+// A column has one default, so a second DEFAULT on the same column is
+// refused. The engines do not agree on what it means: PostgreSQL 18 refuses
+// `a int DEFAULT 1 DEFAULT 3` with "multiple default values specified", and
+// SQLite 3 keeps the last one and inserts 3. Read either way, one of the two
+// values the author wrote is lost without a word.
 func (p *Parser) handleDefault(column *ast.ColumnNode) error {
-	// Handle DEFAULT
+	if column.Default != nil {
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"column %s carries a second DEFAULT: a column has one default; remove one of them", column.Name))
+	}
 	p.advance()
 	p.skipWhitespace()
 	defaultValue, err := p.parseDefaultValue()
@@ -3088,12 +3098,21 @@ func (p *Parser) readColumnReferences(_ *ast.CreateTableNode, column *ast.Column
 }
 
 // columnClauseStart reports whether word opens a column constraint or
-// attribute the shared grammar reads: a clause [columnClauseReader] reads, an
-// enforcement clause, or a deferral.
+// attribute: a clause [columnClauseReader] reads, an enforcement clause, a
+// deferral, or MySQL's VISIBLE and INVISIBLE. The shared grammar reads no
+// column visibility and refuses the word where the clause starts, which is
+// where a default written before it has to end: read into `DEFAULT 1 + 2
+// INVISIBLE`, the word would become part of the default and the column would
+// be visible.
 func columnClauseStart(word string) bool {
 	keyword := strings.ToUpper(word)
 	_, known := columnClauseReader(keyword)
-	return known || keyword == "ENFORCED" || keyword == "DEFERRABLE" || keyword == "INITIALLY"
+	switch keyword {
+	case "ENFORCED", "DEFERRABLE", "INITIALLY", "VISIBLE", "INVISIBLE":
+		return true
+	default:
+		return known
+	}
 }
 
 // handleColumnConstraint reads `CONSTRAINT <name> <constraint>` on a column.
@@ -3934,8 +3953,10 @@ func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
 	return &ast.DefaultValue{Expression: group + casts}, nil
 }
 
-// extendDefaultExpression reads the rest of a default that continues with
-// `+` after its first operand, such as `now() + interval '1 day'`.
+// extendDefaultExpression reads the rest of a default that continues with a
+// binary operator after its first operand, such as `now() + interval '1 day'`
+// or `'X-' || gen_random_uuid()::text`. The operators are those of
+// [isDefaultBinaryOperator].
 //
 // The expression ends at a comma or a closing parenthesis outside any group,
 // and at a word that opens a column clause written after a complete operand:
@@ -3944,7 +3965,7 @@ func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
 // operator is an operand, as NULL is in `1 + NULL`.
 func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultValue {
 	p.skipWhitespace()
-	if !p.current.MatchOperatorValue("+") {
+	if !isDefaultBinaryOperator(p.current) {
 		return value
 	}
 
@@ -3994,6 +4015,22 @@ func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultVa
 		p.advance()
 	}
 	return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
+}
+
+// isDefaultBinaryOperator reports whether token is a binary operator a default
+// continues with after its first operand: `+ - * / % ^`, or `|`, which the
+// lexer emits once for each half of `||`. Without it, `DEFAULT 5 - 2` ends
+// after the 5, and the table definition is refused at the `-`.
+func isDefaultBinaryOperator(token lexer.Token) bool {
+	if token.Type != lexer.TokenOperator {
+		return false
+	}
+	switch token.Value {
+	case "+", "-", "*", "/", "%", "^", "|":
+		return true
+	default:
+		return false
+	}
 }
 
 // parseCheckExpression parses a CHECK constraint expression.

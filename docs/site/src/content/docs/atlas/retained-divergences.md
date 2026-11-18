@@ -138,6 +138,7 @@ own measurement conditions.
 | [Exclude field selectors](#exclude-field-selectors) | honors the suffixes it can carry out and refuses the rest | accepts every such suffix and honors none of them |
 | [An exclude selector that matches nothing](#an-exclude-selector-that-matches-nothing) | warns on `schema inspect` and `schema diff`, refuses `schema apply`, and names the flag or the `atlas.hcl` the selector came from | exits `0` and says nothing |
 | [Leading schema type selector](#leading-schema-type-selector) | keeps the literal answer on every schema source | gives source-dependent answers, leaving the named table in a file diff's plan |
+| [A constraint an exclude selector names](#a-constraint-an-exclude-selector-names) | keeps the constraint and its index under `[type=constraint]`, a wildcard, or a pattern read through the table | accepts the selector and drops the constraint |
 | [One version spelled two ways](#one-version-spelled-two-ways) | refuses the directory and names both files | applies both files as two revisions |
 | [A revision spelled apart from its file](#a-revision-spelled-apart-from-its-file) | refuses the history and prints the statements that respell the rows | compares versions as text and leaves a new file unapplied |
 | [A Liquibase rollback written by `migrate diff`](#a-liquibase-rollback-written-by-migrate-diff) | writes `--rollback <SQL>`, which Liquibase runs | writes `--rollback: <SQL>`, which Liquibase reads as a comment |
@@ -155,6 +156,7 @@ own measurement conditions.
 | [A file that controls the transaction it runs in](#a-file-that-controls-the-transaction-it-runs-in) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies the files before it and exits `1` with the engine's error; its dry run exits `0` |
 | [A MySQL file the transaction witness refuses](#a-mysql-file-the-transaction-witness-refuses) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies every file, exit `0` |
 | [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
+| [A column written with two defaults](#a-column-written-with-two-defaults) | refuses the column definition on every engine and names the column | keeps the last default on SQLite, exit `0`, and refuses the file on PostgreSQL |
 | [A finding in a goose or dbmate file](#a-finding-in-a-goose-or-dbmate-file) | places it on the statement's line of the source file, at the statement's offset | places it on line 1, the section directive, at an offset that falls there |
 | [Removing a column-level UNIQUE on SQLite](#removing-a-column-level-unique-on-sqlite) | rebuilds the table, and the plan applies to a database the `--from` document created | plans `DROP INDEX` for an index the database does not hold, and the apply exits `1` |
 | [A COLLATE on a SQLite index key](#a-collate-on-a-sqlite-index-key) | reads the key with its collation, so a change of it is planned | reads the column alone, reports the change as synced, and plans the index without it |
@@ -964,6 +966,71 @@ the schema glob, the final resource type, and the surviving non-table objects.
 
 **Tracking.** [`stokaro/ptah#933`](https://github.com/stokaro/ptah/issues/933)
 
+## A constraint an exclude selector names
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** An exclude selector names a constraint through its
+table, as `table.constraint` or `schema.table.constraint`. The pinned community
+binary v1.3.0 keeps a constraint only under the type it names it by: a
+`UNIQUE` or `EXCLUDE` constraint under `[type=index]`, and a `CHECK` constraint
+under `[type=check]`. Under every other selector that names the constraint, it
+accepts the selector, exits `0` and drops the constraint. `ptah-compat` keeps
+the constraint. The index the server enforces a primary key, `UNIQUE` or
+`EXCLUDE` constraint with leaves the comparison with the constraint, so the plan
+holds no `DROP INDEX` the server refuses with SQLSTATE `2BP01`.
+
+Measured on 2026-11-18 with `schema apply --dry-run` on PostgreSQL 18, on a URL
+that names no schema. The table `kinds` holds the key `kinds_pkey`, the unique
+constraint `kinds_code_key` and the check `code_len`, and the desired schema
+declares only the key, or nothing for the `kinds_pkey` row. The tables `rooms`
+and `desks` each hold an `EXCLUDE` constraint, `room_slot` and `desk_slot`,
+and the desired schema declares neither.
+
+| `--exclude` | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `public.kinds.kinds_code_key[type=index]` | keeps `kinds_code_key` | keeps it |
+| `public.kinds.code_len[type=check]` | keeps `code_len` | keeps it |
+| `public.kinds.kinds_code_key[type=constraint]` | drops `kinds_code_key` | keeps it and its index |
+| `public.kinds.code_len[type=constraint]` | drops `code_len` | keeps it |
+| `public.kinds.kinds_pkey`, untyped or with `[type=index]` or `[type=constraint]` | drops `kinds_pkey` | keeps it and its index |
+| `public.kinds.*[type=index]` | keeps `kinds_code_key` and drops `kinds_pkey` | keeps both |
+| `kinds.kinds_code_key` | drops `kinds_code_key` | keeps it |
+| `*[type=constraint]`, `*[type=check]` or `*[type=index]` | drops every constraint the desired schema leaves out | keeps every constraint the type names |
+| `public.rooms.room_slot[type=constraint]` | drops `room_slot` | keeps it and its index |
+| `rooms.room_slot` | drops `room_slot` | keeps it |
+
+Ptah reads these selectors more widely than the binary, and each wider reading
+subtracts from the plan:
+
+- `[type=constraint]` names every constraint, as PostgreSQL records each one in
+  `pg_constraint`, and `[type=index]` also names a primary key, whose index
+  carries its name.
+- On a URL that names no schema, the binary reads `*` in `*[type=constraint]`
+  as the schema slot, so the selector names no constraint. Ptah reads a
+  wildcard selector of a child type as naming that type in every table.
+- On the same URL, the binary reads `kinds.kinds_code_key` and
+  `rooms.room_slot` as `schema.object`, so neither names a constraint. Ptah
+  also reads a two-part pattern as `table.constraint` in the connection's
+  schema.
+
+A selector is written to keep an object out of the plan, and each of these rows
+on the binary reports success while dropping the object the selector names.
+The drop-in rule allows the difference in this direction: the plan holds fewer
+statements, never more, and nothing the binary refuses succeeds here.
+`PTAH_ATLAS_STRICT_COMPAT=1` keeps the same answers. Strict mode refuses a
+capability the binary lacks; it does not reproduce a defect.
+
+A type that names none of the constraint's types matches nothing:
+`public.rooms.room_slot[type=check]` and `public.kinds.kinds_code_key[type=unique]`
+are accepted by the binary, which then drops the constraint, and refused by
+`schema apply` here; see
+[An exclude selector that matches nothing](#an-exclude-selector-that-matches-nothing).
+
+**Evidence.** `integration/constraint_selector_e2e_test.go`,
+`integration/exclusion_selector_e2e_test.go`,
+`internal/atlasfilter/constraint_selector_test.go`
+
 ## One version spelled two ways
 
 **Type.** Deliberate divergence
@@ -1629,6 +1696,27 @@ own, and the apply refuses the same statement on the same engine, so a lint that
 accepted it would pass a directory Ptah cannot apply.
 
 **Evidence.** `integration/atlas_migrate_lint_replay_failure_e2e_test.go`
+
+## A column written with two defaults
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** A column definition in a SQL schema file that writes
+`DEFAULT` twice is refused, on every engine, before anything is planned:
+`column n carries a second DEFAULT: a column has one default; remove one of
+them`. The pinned community binary v1.3.0 replays the file on the dev database
+and keeps the engine's answer. PostgreSQL refuses `n int DEFAULT 1 DEFAULT 3`
+with `multiple default values specified for column "n"`, and SQLite accepts it
+and keeps the last default, so the binary plans the column with `DEFAULT 3` and
+exits `0`.
+
+A schema file that writes two defaults for one column has lost one of them,
+whichever the engine keeps, and SQLite keeps it without a word. Refusing it on
+every engine says so before a plan does. `PTAH_ATLAS_STRICT_COMPAT=1` keeps the
+refusal: it refuses capabilities the binary lacks, and does not reproduce a
+defect.
+
+**Evidence.** `internal/parser/default_operator_test.go`
 
 ## A finding in a goose or dbmate file
 

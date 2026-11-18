@@ -147,6 +147,36 @@ func NamedAfterConstraint(dialect string, kind Kind) bool {
 	}
 }
 
+// Enforces reports whether index is the backing of constraint on dialect: the
+// index the server built for the constraint, on its table, and drops with it.
+//
+// The evidence is the catalog's. A primary key's index is the one the reader
+// marks primary on the key's table. A UNIQUE constraint's is the unique index
+// of its name on its table, where [NamedAfterConstraint] says the server
+// guarantees that name. A foreign key's backing is matched on its columns by
+// the target's rule, which this package does not hold, so it answers false, as
+// it does for every kind no server backs.
+//
+// An exclusion asks it so that the index leaves with the constraint it names.
+// Kept alone, the index is planned for a DROP INDEX the server refuses while
+// the constraint stands: PostgreSQL answers SQLSTATE 2BP01.
+func Enforces(dialect string, constraint catalog.Constraint, index catalog.Index) bool {
+	if index.QualifiedTableName() != constraint.QualifiedTableName() {
+		return false
+	}
+	kind := KindOf(constraint.Type)
+	switch kind {
+	case PrimaryKey:
+		return index.IsPrimary
+	case Unique:
+		return NamedAfterConstraint(dialect, kind) && index.IsUnique && !index.IsPrimary && index.Name == constraint.Name
+	case ForeignKey, None:
+		return false
+	default:
+		return false
+	}
+}
+
 // Unaddressable reports whether a reported index has no standalone existence:
 // nothing can declare it, so nothing can be compared against a declaration of
 // it, and no description should offer it as an index a reader could remove.

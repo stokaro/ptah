@@ -185,7 +185,7 @@ var includeChildRows = []includeChildRow{
 	},
 	{
 		name:       "check constraint",
-		types:      []string{"constraint"},
+		types:      []string{"check", "constraint"},
 		liveSQL:    "ALTER TABLE public.notes ADD CONSTRAINT notes_id_check CHECK (id > 0);\n",
 		desiredSQL: "ALTER TABLE public.notes ADD CONSTRAINT notes_id_check CHECK (id > 1);\n",
 		liveGo:     notesEntity{tableDirectives: []string{goCheck("id > 0")}},

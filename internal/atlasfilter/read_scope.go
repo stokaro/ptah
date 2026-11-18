@@ -33,9 +33,10 @@ var (
 //
 // Only a selector that names a whole kind counts: `*[type=trigger]` does, and
 // `audit_*[type=trigger]` does not, because a read that cannot see a trigger
-// cannot say what it is called. A foreign key selector does not leave constraints
-// out either: the catalog row that hides a foreign key hides a primary key with
-// it. A malformed selector counts for nothing here; the filter refuses it.
+// cannot say what it is called. A foreign key or check selector does not leave
+// constraints out either: the catalog row that hides a foreign key or a CHECK
+// constraint hides a primary key with it, so `*[type=check]` still needs the
+// read. A malformed selector counts for nothing here; the filter refuses it.
 //
 // `diff.skip` is not a selector and has no say. It leaves destructive changes out
 // of a plan, and the comparison still reads the kind to find what to add.

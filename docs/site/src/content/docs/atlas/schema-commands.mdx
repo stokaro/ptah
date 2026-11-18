@@ -512,7 +512,23 @@ community binary names the constraint only as an index. It honors
 `public.rooms.room_slot[type=constraint]` while removing nothing, so `schema
 apply` drops the constraint the selector was written to keep. PostgreSQL
 records the constraint in `pg_constraint`, and Ptah honors `[type=constraint]`
-deliberately.
+deliberately. `[type=exclude]`, `[type=check]` and `[type=policy]` name no
+`EXCLUDE` constraint, so `schema apply` refuses each as matching nothing.
+
+A primary key, a `UNIQUE` constraint and a `CHECK` constraint are children of
+their table in the same way: `kinds.kinds_code_key` in either scope, and
+`public.kinds.kinds_code_key` on a URL that names no schema. Each answers
+`[type=constraint]`. A primary key and a `UNIQUE` constraint also answer
+`[type=index]`, since the server enforces each with an index of its name, and
+a `CHECK` constraint answers `[type=check]`. A selector that names the
+constraint keeps its index too. A `UNIQUE` written on a column carries no name
+in the desired schema, and a selector names it by the one the server gives it:
+`kinds_code_key` on PostgreSQL, the column's name on MySQL and MariaDB. The
+pinned community binary honors
+`[type=index]` on a `UNIQUE` constraint and `[type=check]` on a `CHECK`
+constraint. It keeps no constraint under `[type=constraint]` and no primary
+key under any selector; see
+[Compatibility differences](../retained-divergences/#a-constraint-an-exclude-selector-names).
 
 The same pattern is therefore honored on one URL and refused on the other,
 which is what the community binary does with it. Every surface that filters a
@@ -1468,12 +1484,17 @@ the run at once, which is how Atlas reads the same values. A value that is not
 a duration, an empty one included, is refused by the flag parser with Atlas's
 `invalid argument "…" for "--lock-timeout" flag` sentence. An elapsed timeout
 fails the apply before the locked target reinspection; a strict target-policy
-refusal happens before the timeout is consulted. PostgreSQL and YugabyteDB 2025.1
-and later (`pg_advisory_lock`),
-MySQL and MariaDB (`GET_LOCK`), and SQL Server (`sp_getapplock`) use real
-database locks. An engine an executable provider serves takes the provider's
-lock where the provider offers one, as the YDB provider takes a semaphore on its
-coordination node `ptah_locks`.
+refusal happens before the timeout is consulted.
+
+PostgreSQL and YugabyteDB 2025.1 and later (`pg_advisory_lock`), MySQL and
+MariaDB (`GET_LOCK`), SQL Server (`sp_getapplock`) and Oracle use real
+database locks. Oracle's is a row lock in the table `ptah_locks`, taken with
+`SELECT ... FOR UPDATE NOWAIT` on a session of its own, because Oracle commits
+every DDL statement and the commit would release it; see
+[the migration lock](../../databases/oracle/#the-migration-lock). An engine an
+executable provider serves takes the provider's lock where the provider offers
+one, as the YDB provider takes a semaphore on its coordination node
+`ptah_locks`.
 
 Every other target has no advisory-lock semantics: the apply proceeds without
 a lock, and an explicitly passed `--lock-timeout` prints a note on stderr. The

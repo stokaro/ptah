@@ -132,3 +132,103 @@ func TestUnaddressable_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestEnforces reads the evidence each constraint kind leaves on its backing
+// index. The rows that answer false hold everything but one piece of it: the
+// table, the primary mark, uniqueness or the name. The fixture table is
+// public.kinds, with the key kinds_pkey and the unique constraint
+// kinds_code_key.
+func TestEnforces(t *testing.T) {
+	primaryKey := catalog.Constraint{Schema: "public", TableName: "kinds", Name: "kinds_pkey", Type: "PRIMARY KEY"}
+	unique := catalog.Constraint{Schema: "public", TableName: "kinds", Name: "kinds_code_key", Type: "UNIQUE"}
+	tests := []struct {
+		name       string
+		dialect    string
+		constraint catalog.Constraint
+		index      catalog.Index
+		want       bool
+	}{
+		{
+			name:       "the index a primary key marks",
+			dialect:    "postgres",
+			constraint: primaryKey,
+			index:      catalog.Index{Schema: "public", TableName: "kinds", Name: "kinds_pkey", IsPrimary: true, IsUnique: true},
+			want:       true,
+		},
+		{
+			name:       "a primary key index of another name",
+			dialect:    "mysql",
+			constraint: catalog.Constraint{Schema: "app", TableName: "kinds", Name: "kinds_pkey", Type: "PRIMARY KEY"},
+			index:      catalog.Index{Schema: "app", TableName: "kinds", Name: "PRIMARY", IsPrimary: true, IsUnique: true},
+			want:       true,
+		},
+		{
+			name:       "a unique index of the constraint's name",
+			dialect:    "postgres",
+			constraint: unique,
+			index:      catalog.Index{Schema: "public", TableName: "kinds", Name: "kinds_code_key", IsUnique: true},
+			want:       true,
+		},
+		{
+			name:       "a unique index on a caller with no dialect",
+			constraint: unique,
+			index:      catalog.Index{Schema: "public", TableName: "kinds", Name: "kinds_code_key", IsUnique: true},
+			want:       true,
+		},
+		{
+			name:       "a primary key and an unmarked index",
+			dialect:    "postgres",
+			constraint: primaryKey,
+			index:      catalog.Index{Schema: "public", TableName: "kinds", Name: "kinds_pkey", IsUnique: true},
+		},
+		{
+			name:       "a primary key and the index of another table",
+			dialect:    "postgres",
+			constraint: primaryKey,
+			index:      catalog.Index{Schema: "public", TableName: "sorts", Name: "sorts_pkey", IsPrimary: true, IsUnique: true},
+		},
+		{
+			name:       "a unique constraint and the index of another name",
+			dialect:    "postgres",
+			constraint: unique,
+			index:      catalog.Index{Schema: "public", TableName: "kinds", Name: "kinds_code_idx", IsUnique: true},
+		},
+		{
+			name:       "a unique constraint and an index that is not unique",
+			dialect:    "postgres",
+			constraint: unique,
+			index:      catalog.Index{Schema: "public", TableName: "kinds", Name: "kinds_code_key"},
+		},
+		{
+			name:       "a unique constraint and the index of its name in another schema",
+			dialect:    "postgres",
+			constraint: unique,
+			index:      catalog.Index{Schema: "app", TableName: "kinds", Name: "kinds_code_key", IsUnique: true},
+		},
+		{
+			name:       "a unique constraint on a server that keeps the index apart",
+			dialect:    "sqlserver",
+			constraint: unique,
+			index:      catalog.Index{Schema: "public", TableName: "kinds", Name: "kinds_code_key", IsUnique: true},
+		},
+		{
+			name:       "a foreign key and the index of its name",
+			dialect:    "mysql",
+			constraint: catalog.Constraint{Schema: "app", TableName: "kinds", Name: "kinds_sort_fk", Type: "FOREIGN KEY"},
+			index:      catalog.Index{Schema: "app", TableName: "kinds", Name: "kinds_sort_fk"},
+		},
+		{
+			name:       "a check constraint",
+			dialect:    "postgres",
+			constraint: catalog.Constraint{Schema: "public", TableName: "kinds", Name: "code_len", Type: "CHECK"},
+			index:      catalog.Index{Schema: "public", TableName: "kinds", Name: "code_len", IsUnique: true},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(indexbacking.Enforces(test.dialect, test.constraint, test.index), qt.Equals, test.want)
+		})
+	}
+}

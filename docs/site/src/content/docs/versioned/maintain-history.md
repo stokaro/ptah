@@ -481,6 +481,10 @@ belongs to "OWNER" and this connection runs as "APP", so the table would be
 "OWNER"'s.
 ```
 
+A command that creates no table is not refused for one that does not exist
+yet: `migrations status` and a dry run report the history as empty, and the
+run that would create the table is refused.
+
 A table kept that way needs no privilege to create it. PostgreSQL,
 CockroachDB, YugabyteDB, MySQL, MariaDB and Oracle check the privilege to
 create a table, or its schema, before they check the name, so a guarded
