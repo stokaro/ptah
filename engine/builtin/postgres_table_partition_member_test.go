@@ -178,7 +178,7 @@ func TestPartitionOf_ForeignKeys_FailurePath(t *testing.T) {
 			want: `.*table "e1" has no local foreign-key column "nope"`},
 		{name: "a reference to columns neither the partition nor its parent keys", constraint: schemamodel.Constraint{Type: "FOREIGN KEY", Name: "holder_event", StructName: "Holder", Table: "holder",
 			Columns: []string{"day"}, ForeignTable: "e1", ForeignColumns: []string{"day"}, ForeignColumn: "day"},
-			want: `.*requires referenced columns day on table "e1" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns, with no WHERE clause and no expression, COLLATE, prefix length or operator class on a key`},
+			want: `.*requires referenced columns day on table "e1" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

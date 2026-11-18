@@ -421,7 +421,7 @@ func TestGetOrderedCreateStatements_MySQL84RejectsNonuniqueReferencedKey(t *test
 	statements, err := builtin.GetOrderedCreateStatements(indexedForeignKeyDatabase(), "mysql")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `mysql requires referenced columns tenant_id, code on table "parents" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns in that order, with no WHERE clause and no expression, COLLATE, prefix length or operator class on a key`)
+	c.Assert(err, qt.ErrorMatches, `mysql requires referenced columns tenant_id, code on table "parents" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns in that order`)
 	c.Assert(statements, qt.IsNil)
 }
 
@@ -727,7 +727,7 @@ func TestGetOrderedCreateStatements_PartialUniqueIndexIsNotReferencedKey_Failure
 	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `postgres requires referenced columns tenant_id, code on table "parents" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns, with no WHERE clause and no expression, COLLATE, prefix length or operator class on a key`)
+	c.Assert(err, qt.ErrorMatches, `postgres requires referenced columns tenant_id, code on table "parents" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns; unique index "idx_parents_tenant_code" has a WHERE clause`)
 	c.Assert(statements, qt.IsNil)
 }
 
@@ -892,8 +892,8 @@ func TestGetOrderedCreateStatements_SQLiteRejectsPartialUniqueIndex_FailurePath(
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, `sqlite requires referenced columns id on table "parents" to be declared unique: `+
-		`a primary key, UNIQUE constraint or unique index must key exactly those columns, `+
-		`with no WHERE clause and no expression, COLLATE, prefix length or operator class on a key`)
+		`a primary key, UNIQUE constraint or unique index must key exactly those columns; `+
+		`unique index "uq_parents_id" has a WHERE clause`)
 	c.Assert(statements, qt.IsNil)
 }
 

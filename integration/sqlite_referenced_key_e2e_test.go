@@ -72,10 +72,12 @@ var sqliteReferencedKeyAccepted = []struct {
 }
 
 // sqliteReferencedKeyRefused are the documents SQLite creates and then
-// refuses the first child row of.
+// refuses the first child row of, each with what the refusal says of the
+// unique index it refuses.
 var sqliteReferencedKeyRefused = []struct {
 	name     string
 	document string
+	refused  string
 }{
 	{
 		name:     "a plain index",
@@ -84,22 +86,24 @@ var sqliteReferencedKeyRefused = []struct {
 	{
 		name:     "a partial unique index",
 		document: "CREATE TABLE parent (id integer PRIMARY KEY, code text NOT NULL);\nCREATE UNIQUE INDEX pc ON parent (code) WHERE code <> '';\n" + sqliteReferencedKeyChild,
+		refused:  `; unique index "pc" has a WHERE clause`,
 	},
 	{
 		name:     "an expression unique index",
 		document: "CREATE TABLE parent (id integer PRIMARY KEY, code text NOT NULL);\nCREATE UNIQUE INDEX pc ON parent (lower(code));\n" + sqliteReferencedKeyChild,
+		refused:  `; unique index "pc" keys lower(code) rather than a column`,
 	},
 	{
 		name:     "a NOCASE unique index over a BINARY column",
 		document: "CREATE TABLE parent (id integer PRIMARY KEY, code text NOT NULL);\nCREATE UNIQUE INDEX pc ON parent (code COLLATE NOCASE);\n" + sqliteReferencedKeyChild,
+		refused:  `; unique index "pc" keys code COLLATE NOCASE rather than a column`,
 	},
 }
 
 // sqliteReferencedKeyRefusal is the line `schema render` writes for
-// sqliteReferencedKeyRefused.
+// sqliteReferencedKeyRefused up to what it says of a refused unique index.
 const sqliteReferencedKeyRefusal = `error: error rendering sqlite schema: sqlite requires referenced columns code on table "parent" to be declared unique: ` +
-	`a primary key, UNIQUE constraint or unique index must key exactly those columns, ` +
-	`with no WHERE clause and no expression, COLLATE, prefix length or operator class on a key`
+	`a primary key, UNIQUE constraint or unique index must key exactly those columns`
 
 // renderSQLiteDocument runs `ptah schema render --dialect sqlite` over
 // document.
@@ -158,7 +162,7 @@ func TestSchemaRenderRefusesAParentKeySQLiteMismatches_FailurePathE2E(t *testing
 			result := renderSQLiteDocument(c, test.document)
 
 			c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
-			c.Assert(result.Stderr, qt.Contains, sqliteReferencedKeyRefusal+"\n")
+			c.Assert(result.Stderr, qt.Contains, sqliteReferencedKeyRefusal+test.refused+"\n")
 			c.Assert(result.Stdout, qt.Equals, "")
 			db := sqliteForeignKeyDatabase(c, test.document+"INSERT INTO parent VALUES (1, 'a');")
 			_, err := db.ExecContext(c.Context(), "INSERT INTO child VALUES (1, 'a')")
@@ -180,7 +184,7 @@ func TestSchemaRenderRefusesACollateKeyItCannotCompare_FailurePathE2E(t *testing
 	result := renderSQLiteDocument(c, document)
 
 	c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
-	c.Assert(result.Stderr, qt.Contains, sqliteReferencedKeyRefusal+"\n")
+	c.Assert(result.Stderr, qt.Contains, sqliteReferencedKeyRefusal+`; unique index "pc" keys code COLLATE NOCASE rather than a column`+"\n")
 	db := sqliteForeignKeyDatabase(c, document+"INSERT INTO parent VALUES (1, 'a');")
 	_, err := db.ExecContext(c.Context(), "INSERT INTO child VALUES (1, 'a')")
 	c.Assert(err, qt.IsNil)

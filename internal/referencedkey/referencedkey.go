@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -47,7 +48,7 @@ func Check(
 		}) {
 			return nil
 		}
-		return uniqueReferenceError(dialect, target, columns)
+		return uniqueReferenceError(database, dialect, target, columns)
 	case caps.Has(capability.ForeignKeysRequireIndexedReference):
 		if !tableHasIndexedKey(database, target, columns) {
 			return indexedReferenceError(dialect, target, columns)
@@ -257,28 +258,129 @@ func indexHasFullColumnPrefix(index schemamodel.Index, columns []string) bool {
 	return true
 }
 
-// uniqueReferenceError names the keys the unique-key policy takes. Where no key
-// covers the columns, PostgreSQL answers CREATE TABLE with 42830, and SQLite
-// takes the table and fails the first write to it with "foreign key mismatch".
-func uniqueReferenceError(dialect string, table schemamodel.Table, columns []string) error {
+// uniqueReferenceError names the keys the unique-key policy takes, and each
+// unique index of table that keys the referenced columns but for a property the
+// policy refuses: a WHERE clause, or a key that is not a bare column. Such an
+// index is named with what it carries, so the message states only conditions
+// the schema holds, and a dialect whose grammar has no prefix length or
+// operator class never names one. Where no key covers the columns, PostgreSQL
+// answers CREATE TABLE with 42830, and SQLite takes the table and fails the
+// first write to it with "foreign key mismatch".
+func uniqueReferenceError(database schemamodel.Database, dialect string, table schemamodel.Table, columns []string) error {
 	order := ""
 	if !matchesKeyInAnyOrder(dialect) {
 		order = " in that order"
+	}
+	var message strings.Builder
+	fmt.Fprintf(&message,
+		"%s requires referenced columns %s on table %q to be declared unique: "+
+			"a primary key, UNIQUE constraint or unique index must key exactly those columns%s",
+		platform.NormalizeDialect(dialect),
+		strings.Join(columns, ", "),
+		table.QualifiedName(),
+		order,
+	)
+	for _, refused := range refusedUniqueIndexes(database, table, columns, referencedKeyMatcher(dialect)) {
+		message.WriteString("; " + refused)
 	}
 	return &ptaherr.CapabilityError{
 		Dialect: dialect,
 		Feature: "foreign key referenced key uniqueness",
 		Err:     ptaherr.ErrUnsupportedFeature,
-		Message: fmt.Sprintf(
-			"%s requires referenced columns %s on table %q to be declared unique: "+
-				"a primary key, UNIQUE constraint or unique index must key exactly those columns%s, "+
-				"with no WHERE clause and no expression, COLLATE, prefix length or operator class on a key",
-			platform.NormalizeDialect(dialect),
-			strings.Join(columns, ", "),
-			table.QualifiedName(),
-			order,
-		),
+		Message: message.String(),
 	}
+}
+
+// refusedUniqueIndexes describes, in declaration order, each unique index of
+// table the unique-key policy refuses although its keys could be the
+// referenced columns: it has as many keys as there are columns, each key is
+// one of the columns or names one in a key that is not a bare column, and the
+// bare ones alone match the columns where no other key stands beside them. An
+// index keying anything else is not described, since nothing about it is near
+// the request.
+func refusedUniqueIndexes(
+	database schemamodel.Database,
+	table schemamodel.Table,
+	columns []string,
+	same func(key, referenced []string) bool,
+) []string {
+	tableColumns := map[string]bool{}
+	for _, field := range allDatabaseFields(database) {
+		if field.StructName == table.StructName {
+			tableColumns[field.Name] = true
+		}
+	}
+	var refused []string
+	indexOwners := schemamodel.ResolveIndexTableNames(database.Indexes, database.Tables)
+	for i, index := range database.Indexes {
+		if !index.Unique || indexOwners[i] != table.QualifiedName() {
+			continue
+		}
+		bare, other, near := indexKeys(index, columns, tableColumns)
+		if !near || len(bare)+len(other) != len(columns) || (len(other) == 0 && !same(bare, columns)) {
+			continue
+		}
+		var reasons []string
+		if strings.TrimSpace(index.Condition) != "" {
+			reasons = append(reasons, "has a WHERE clause")
+		}
+		for _, key := range other {
+			reasons = append(reasons, "keys "+key+" rather than a column")
+		}
+		if len(reasons) > 0 {
+			refused = append(refused, fmt.Sprintf("unique index %q %s", index.Name, strings.Join(reasons, " and ")))
+		}
+	}
+	return refused
+}
+
+// indexKeys splits the keys of index into bare columns and the text of every
+// other key. near is false where a key names no referenced column, or a bare
+// key names a column of table that is not one of columns.
+func indexKeys(index schemamodel.Index, columns []string, tableColumns map[string]bool) (bare, other []string, near bool) {
+	if len(index.Parts) == 0 {
+		for _, field := range index.Fields {
+			switch {
+			case slices.Contains(columns, field):
+				bare = append(bare, field)
+			case tableColumns[field] || !mentionsAny(field, columns):
+				return nil, nil, false
+			default:
+				other = append(other, field)
+			}
+		}
+		return bare, other, true
+	}
+	for _, part := range index.Parts {
+		switch {
+		case strings.TrimSpace(part.Expr) != "":
+			if !mentionsAny(part.Expr, columns) {
+				return nil, nil, false
+			}
+			other = append(other, part.Expr)
+		case !slices.Contains(columns, part.Name):
+			return nil, nil, false
+		case strings.TrimSpace(part.Prefix) != "":
+			other = append(other, part.Name+"("+part.Prefix+")")
+		case strings.TrimSpace(part.Operator) != "":
+			other = append(other, part.Name+" "+part.Operator)
+		default:
+			bare = append(bare, part.Name)
+		}
+	}
+	return bare, other, true
+}
+
+// mentionsAny reports that key text names one of columns as a word of its
+// own, quoted or not: `k COLLATE NOCASE` and `lower("k")` name k, and
+// `lower(kk)` does not.
+func mentionsAny(key string, columns []string) bool {
+	words := strings.FieldsFunc(key, func(r rune) bool {
+		return r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	return slices.ContainsFunc(words, func(word string) bool {
+		return slices.ContainsFunc(columns, func(column string) bool { return strings.EqualFold(word, column) })
+	})
 }
 
 func indexedReferenceError(dialect string, table schemamodel.Table, columns []string) error {
