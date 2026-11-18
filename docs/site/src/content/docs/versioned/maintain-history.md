@@ -470,6 +470,17 @@ the table, which is the arrangement the refusal exists to catch. Where a table
 has to stay owned by another role, `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1`
 accepts it as it stands.
 
+On Oracle a table belongs to the account whose schema holds it, whoever
+creates it. So a metadata table that does not exist yet in a schema another
+account owns is refused too, before Ptah creates it, with the same variable as
+the remedy:
+
+```text
+refusing to create metadata table "OWNER"."schema_migrations": its schema
+belongs to "OWNER" and this connection runs as "APP", so the table would be
+"OWNER"'s.
+```
+
 A table kept that way needs no privilege to create it. PostgreSQL,
 CockroachDB, YugabyteDB, MySQL, MariaDB and Oracle check the privilege to
 create a table, or its schema, before they check the name, so a guarded

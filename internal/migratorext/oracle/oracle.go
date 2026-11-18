@@ -92,6 +92,20 @@ WHERE o.owner = ? AND o.object_name = ?
 FETCH FIRST 1 ROWS ONLY`, []any{table.ConfiguredOrConnectionSchema(), table.Name}
 }
 
+// SchemaOwnerQuery reads ALL_USERS, which lists every account to every
+// account. A schema is an account on Oracle, and everything in it belongs to
+// that account, so a table CREATE ANY TABLE puts in another account's schema
+// is that account's from the moment it exists. The answer about a table not
+// yet created is therefore the same as the one OwnerQuery gives once it is.
+func (catalog) SchemaOwnerQuery(table migratorext.Table) (string, []any) {
+	return `SELECT
+  u.username,
+  SYS_CONTEXT('USERENV', 'CURRENT_USER'),
+  CASE WHEN u.username = SYS_CONTEXT('USERENV', 'CURRENT_USER') THEN 1 ELSE 0 END
+FROM all_users u
+WHERE u.username = ?`, []any{table.ConfiguredOrConnectionSchema()}
+}
+
 type checks struct{}
 
 // Validate refuses an assertion that takes a NEXTVAL, which no transaction
