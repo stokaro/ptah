@@ -127,6 +127,34 @@ func postgresDriverOverrideURL(c *qt.C, rawURL string) string {
 // work saw: here the work only waits for the context, and its cancellation is
 // not reported a second time. The release afterwards gives nothing back,
 // since the server released the lock with the session.
+func TestGuard_ReportsTheEndOfTheLockSessionLive(t *testing.T) {
+	c := qt.New(t)
+	databaseURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	witness, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(witness) })
+	var database string
+	c.Assert(witness.QueryRowContext(c.Context(), "SELECT current_database()").Scan(&database), qt.IsNil)
+	key := pglock.Key("ptah-dev-replay:postgres:" + database)
+
+	lock, err := devlock.Acquire(c.Context(), conn, 0)
+	c.Assert(err, qt.IsNil)
+	guarded, settle := lock.Guard(context.Background())
+	_, err = witness.ExecContext(c.Context(),
+		"SELECT pg_terminate_backend(pid) FROM pg_locks WHERE locktype = 'advisory' AND granted AND objid::bigint = $1", key)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(endedWithin(guarded, 10*time.Second), qt.IsTrue)
+	err = settle(guarded.Err())
+	c.Assert(dblock.IsLost(err), qt.IsTrue, qt.Commentf("error: %v", err))
+	c.Assert(err, qt.ErrorMatches, `dev database lock: advisory lock "ptah-dev-replay:postgres:`+database+`" on postgres `+
+		`was lost while it was held: .*; the work on the dev database stopped there`)
+	c.Assert(lock.Release(), qt.IsNil)
+}
+
 // MySQL takes a GET_LOCK name of at most 64 characters, and a database name
 // may be 64 characters itself. A dev database with a 60-character name locks,
 // a second replay of it is refused while the first holds it, and another one
@@ -181,34 +209,6 @@ func connectDev(c *qt.C, databaseURL string) *dbschema.DatabaseConnection {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 	return conn
-}
-
-func TestGuard_ReportsTheEndOfTheLockSessionLive(t *testing.T) {
-	c := qt.New(t)
-	databaseURL := dbtarget.URL(c, dbtarget.PostgreSQL)
-	conn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-	witness, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
-	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() { dbschema.CloseAndWarn(witness) })
-	var database string
-	c.Assert(witness.QueryRowContext(c.Context(), "SELECT current_database()").Scan(&database), qt.IsNil)
-	key := pglock.Key("ptah-dev-replay:postgres:" + database)
-
-	lock, err := devlock.Acquire(c.Context(), conn, 0)
-	c.Assert(err, qt.IsNil)
-	guarded, settle := lock.Guard(context.Background())
-	_, err = witness.ExecContext(c.Context(),
-		"SELECT pg_terminate_backend(pid) FROM pg_locks WHERE locktype = 'advisory' AND granted AND objid::bigint = $1", key)
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(endedWithin(guarded, 10*time.Second), qt.IsTrue)
-	err = settle(guarded.Err())
-	c.Assert(dblock.IsLost(err), qt.IsTrue, qt.Commentf("error: %v", err))
-	c.Assert(err, qt.ErrorMatches, `dev database lock: advisory lock "ptah-dev-replay:postgres:`+database+`" on postgres `+
-		`was lost while it was held: .*; the work on the dev database stopped there`)
-	c.Assert(lock.Release(), qt.IsNil)
 }
 
 // endedWithin reports whether ctx ends within limit.
