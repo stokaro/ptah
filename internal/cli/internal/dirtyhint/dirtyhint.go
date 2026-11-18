@@ -96,7 +96,7 @@ const runnerFlag = " --runner golang-migrate"
 // repair is the quoted repair command for the revision, with flags after its
 // version.
 func (r Revision) repair(flags string) string {
-	command := fmt.Sprintf("ptah migrations repair --version %d%s", r.Revision.Version, flags)
+	command := fmt.Sprintf("ptah migrations repair --version %s%s", r.Revision.RevisionVersion(), flags)
 	if r.OwnTransactions {
 		command += runnerFlag
 	}

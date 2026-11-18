@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -182,7 +181,10 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	if err != nil {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
-	version, err := baselineVersion(opts.version, provider.Migrations())
+	// The resolver reads the directory alone; it names a version as the
+	// revision table records it and never connects.
+	resolver := migrator.NewMigrator(nil, provider).WithRevisionTableFormat(revisionFormat)
+	version, err := baselineVersion(opts.version, resolver, provider.Migrations())
 	if err != nil {
 		return err
 	}
@@ -268,7 +270,8 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		return err
 	}
 
-	fmt.Printf("Baselined %d migration(s) through version %d in %s\n", len(rows), version, mig.MigrationsTableIdentifier())
+	fmt.Printf("Baselined %d migration(s) through version %s in %s\n",
+		len(rows), resolver.VersionLabel(version), mig.MigrationsTableIdentifier())
 	return nil
 }
 
@@ -364,10 +367,17 @@ func (h verificationErrorHandler) handle(err error) error {
 	return nil
 }
 
-func baselineVersion(value string, migrations []*migrator.Migration) (int64, error) {
+// baselineVersion reads --version as the directory's file names spell it, so
+// --version v1 names v1_x.sql and the order key it runs under is refused (see
+// [migrator.Migrator.ResolveVersion]). Without the flag the baseline is the
+// highest migration.
+func baselineVersion(value string, resolver *migrator.Migrator, migrations []*migrator.Migration) (int64, error) {
 	if value != "" {
-		version, err := strconv.ParseInt(value, 10, 64)
-		if err != nil || version <= 0 {
+		version, err := resolver.ResolveVersion(value)
+		if err != nil {
+			return 0, fmt.Errorf("invalid baseline version %q: %w", value, err)
+		}
+		if version <= 0 {
 			return 0, fmt.Errorf("invalid baseline version %q", value)
 		}
 		return version, nil

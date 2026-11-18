@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -155,6 +156,79 @@ func TestNativeAtlasNumberlessVersionSet_FailurePath(t *testing.T) {
 	c.Assert(got.ExitCode, qt.Equals, 2)
 	c.Assert(got.Stderr, qt.Contains, `invalid migration version "3": no migration file carries version 3: Ptah numbers v1_x.sql after the highest numbered file, so name that file by its version, v1`)
 	c.Assert(sqliteTables(c, filepath.Join(dir, "app.db")), qt.Not(qt.Contains), "atlas_schema_revisions")
+}
+
+// TestNativeAtlasNumberlessVersionBaselineE2E baselines through v1 named by
+// its version, and the summary names it the same way. The Atlas table records
+// the baseline as its one row.
+func TestNativeAtlasNumberlessVersionBaselineE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	nativeAtlasDirectory(c, dir)
+
+	got := nativePtah(c, dir, "migrations", "baseline", "--version", "v1", "--force")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(got.Stdout, qt.Contains, `Baselined 3 migration(s) through version v1 in "atlas_schema_revisions"`)
+	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, []string{"v1"})
+}
+
+// TestNativeAtlasNumberlessVersionBaselineAndRepair_FailurePath refuses
+// --version 3, the order key v1_x.sql runs under, on baseline and repair.
+func TestNativeAtlasNumberlessVersionBaselineAndRepair_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "baseline",
+			args:    []string{"migrations", "baseline", "--version", "3", "--force"},
+			wantErr: `invalid baseline version "3": no migration file carries version 3: Ptah numbers v1_x.sql after the highest numbered file, so name that file by its version, v1`,
+		},
+		{
+			name:    "repair",
+			args:    []string{"migrations", "repair", "--version", "3", "--force"},
+			wantErr: `invalid migration version "3": no migration file carries version 3: Ptah numbers v1_x.sql after the highest numbered file, so name that file by its version, v1`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			nativeAtlasDirectory(c, dir)
+
+			got := nativePtah(c, dir, tt.args...)
+
+			c.Assert(got.ExitCode, qt.Equals, 2)
+			c.Assert(got.Stderr, qt.Contains, tt.wantErr)
+		})
+	}
+}
+
+// TestNativeAtlasNumberlessVersionRepairHintE2E stops v1_x.sql after its first
+// statement, outside a transaction. The status hint names the repair by the
+// version the file spells, and that repair runs.
+func TestNativeAtlasNumberlessVersionRepairHintE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	migrations := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "1_a.sql"), []byte("CREATE TABLE t_a (id int);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "v1_x.sql"),
+		[]byte("-- atlas:txmode none\nCREATE TABLE t_x (id int);\nCREATE TABLE t_x (id int);\n"), 0o600), qt.IsNil)
+	hash := compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables())("migrate", "hash", "--dir", "file://migrations")
+	c.Assert(hash.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", hash.Stderr))
+
+	up := nativePtah(c, dir, "migrations", "up")
+	status := nativePtah(c, dir, "migrations", "status")
+	repair := nativePtah(c, dir, "migrations", "repair", "--version", "v1", "--force")
+
+	c.Assert(up.ExitCode, qt.Not(qt.Equals), 0)
+	c.Assert(status.Stdout, qt.Contains,
+		"Run 'ptah migrations repair --version v1 --resume-from 2' to run the rest")
+	c.Assert(repair.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", repair.Stderr))
+	c.Assert(repair.Stdout, qt.Contains, "Updated migration v1 revision metadata; no migration SQL ran")
 }
 
 // TestNativeAutoFormatOverAnAtlasSumRefusesANumberlessVersion_FailurePath runs

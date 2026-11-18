@@ -1169,10 +1169,12 @@ argument can name an empty version. See
 Native `ptah migrations up --dir-format atlas` runs such a file over the Atlas
 revision table (`--revision-format atlas`). Native output names it by its
 version, so `migrations status` prints `Current Version: v1`,
-`migrations down --target v1` rolls back to it, and
-`migrations set --version v1` records the history through it. A number above
-every numbered file, such as `--target 3` or `--version 3` beside `1_a.sql` and
-`2_b.sql`, is refused, because no file carries it.
+`migrations down --target v1` rolls back to it, and `migrations set`,
+`migrations baseline` and `migrations repair` take `--version v1`. The repair
+hint of a dirty revision names it the same way, and a structured log line
+carries it under the `version` key, which holds a number for a numbered file. A
+number above every numbered file, such as `--target 3` or `--version 3` beside
+`1_a.sql` and `2_b.sql`, is refused, because no file carries it.
 
 Over the Ptah revision table, which records a number, the native commands refuse
 the directory before anything runs or any row is written, `migrations set`

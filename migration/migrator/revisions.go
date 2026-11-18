@@ -1650,22 +1650,22 @@ func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
 		return 0, err
 	}
 	if revision.RollbackLeftUnknown() {
-		return 0, &rollbackLeftUnknownResumeError{version: revision.Version}
+		return 0, &rollbackLeftUnknownResumeError{version: revision.RevisionVersion()}
 	}
 	if revision.Error == unknownStatementOutcomeError {
-		return 0, &unknownOutcomeError{version: revision.Version, statement: revision.Applied + 1}
+		return 0, &unknownOutcomeError{version: revision.RevisionVersion(), statement: revision.Applied + 1}
 	}
 	if revision.Applied <= 0 {
 		return 1, nil
 	}
 	if revision.Total != total {
 		return 0, fmt.Errorf(
-			"migration %d cannot resume automatically: the previous attempt applied %d of %d statements but the file now has %d; inspect the database, then use 'ptah migrations repair --version %d'",
-			revision.Version,
+			"migration %s cannot resume automatically: the previous attempt applied %d of %d statements but the file now has %d; inspect the database, then use 'ptah migrations repair --version %s'",
+			revision.RevisionVersion(),
 			revision.Applied,
 			revision.Total,
 			total,
-			revision.Version,
+			revision.RevisionVersion(),
 		)
 	}
 	return revision.Applied + 1, nil
@@ -3375,7 +3375,7 @@ func (m *Migrator) repairMigrationLocked(ctx context.Context, opts RepairMigrati
 		return fmt.Errorf("migration %d has no revision row; rerun with --force to mark it applied", opts.Version)
 	}
 	if revision != nil && !revision.Dirty && !opts.Force {
-		return fmt.Errorf("migration %d is not dirty; rerun with --force to rewrite it", opts.Version)
+		return fmt.Errorf("migration %s is not dirty; rerun with --force to rewrite it", m.VersionLabel(opts.Version))
 	}
 	direction := repairMigrationDirection(revision)
 	own, err := m.validateRepairMigrationSQL(migration, revision, opts, direction)

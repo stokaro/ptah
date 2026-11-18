@@ -529,27 +529,29 @@ func (e *endOfQueryCommitError) Unwrap() error { return e.err }
 // unknownOutcomeError refuses to resume a migration whose interrupted run left
 // the outcome of statement, a 1-based index, unknown.
 type unknownOutcomeError struct {
-	version   int64
+	// version is the revision's version as its file name spells it.
+	version   string
 	statement int
 }
 
 func (e *unknownOutcomeError) Error() string {
 	return fmt.Sprintf(
-		"migration %d cannot resume automatically: the outcome of statement %d is unknown after an interrupted run; "+
-			"inspect the database, then use 'ptah migrations repair --version %d'",
+		"migration %s cannot resume automatically: the outcome of statement %d is unknown after an interrupted run; "+
+			"inspect the database, then use 'ptah migrations repair --version %s'",
 		e.version, e.statement, e.version)
 }
 
 // rollbackLeftUnknownResumeError refuses to resume a migration whose transaction
 // rolled back and left statements in place that no count describes.
 type rollbackLeftUnknownResumeError struct {
-	version int64
+	// version is the revision's version as its file name spells it.
+	version string
 }
 
 func (e *rollbackLeftUnknownResumeError) Error() string {
 	return fmt.Sprintf(
-		"migration %d cannot resume automatically: the rollback of its transaction left some statements in place and "+
-			"undid others; inspect the database, then use 'ptah migrations repair --version %d'",
+		"migration %s cannot resume automatically: the rollback of its transaction left some statements in place and "+
+			"undid others; inspect the database, then use 'ptah migrations repair --version %s'",
 		e.version, e.version)
 }
 
@@ -576,7 +578,7 @@ func (r ownTransactionRun) describeUnknownOutcome(err error, migration *Migratio
 	closing, inside := r.transactions.Closing(first)
 	if opened, _ := r.transactions.Opening(first); !inside || opened != first {
 		return fmt.Errorf(
-			"migration %d cannot resume automatically: the outcome of statement %d is unknown after an interrupted "+
+			"migration %s cannot resume automatically: the outcome of statement %d is unknown after an interrupted "+
 				"run; inspect the database: if it took effect, %s; if it did not, %s; then record the migration applied",
 			unknown.version, unknown.statement, rest(unknown.statement+1), rest(unknown.statement))
 	}
@@ -586,7 +588,7 @@ func (r ownTransactionRun) describeUnknownOutcome(err error, migration *Migratio
 	}
 	last := min(closing+1, total)
 	return fmt.Errorf(
-		"migration %d cannot resume automatically: statements %d to %d commit together, and whether %s took effect "+
+		"migration %s cannot resume automatically: statements %d to %d commit together, and whether %s took effect "+
 			"is unknown after an interrupted run; inspect the database: if they committed, %s; if they did not, %s; "+
 			"then record the migration applied",
 		unknown.version, first+1, last, commit, rest(last+1), rest(first+1))
