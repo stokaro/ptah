@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -512,7 +513,7 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migratio
 	if err != nil {
 		return 0, err
 	}
-	if dirFormat == migrationfile.DirFormatAtlas && migrationfile.AtlasKeyedByPosition(files) {
+	if keyedByPosition(dirFormat, files) {
 		if err := refuseCheckpointBeforeAFile(files, version); err != nil {
 			return 0, err
 		}
@@ -527,23 +528,62 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migratio
 // timestamped checkpoint before v1_x.sql, so a fresh database would start at
 // the checkpoint and then run a migration it already squashed. A repeatable
 // migration is not squashed into a checkpoint, so its name decides nothing.
+//
+// The refusal names the last file in file-name order, and the smallest change
+// of its leading number that sorts after it. A checkpoint file name starts
+// with the number, so after a name that starts with a letter, or with nothing
+// but nines before its underscore, no number sorts, and the refusal says so.
 func refuseCheckpointBeforeAFile(files []migrationfile.File, version int64) error {
-	prefix := strconv.FormatInt(version, 10) + "_"
+	last := ""
 	for _, file := range files {
-		name := filepath.Base(filepath.FromSlash(file.Path))
-		if !file.Repeatable && name >= prefix {
-			return fmt.Errorf(
-				"a checkpoint at version %d sorts before %s, and this Atlas directory runs its files in file-name order, "+
-					"so the checkpoint would run before a migration it squashes; pass a --%s whose file name sorts last",
-				version, name, versionFlag,
-			)
+		if name := filepath.Base(filepath.FromSlash(file.Path)); !file.Repeatable && name > last {
+			last = name
 		}
 	}
-	return nil
+	if last < strconv.FormatInt(version, 10)+"_" {
+		return nil
+	}
+	advice := "and no number sorts after it, since a checkpoint file name starts with its version"
+	if next, ok := versionAfter(last); ok {
+		advice = fmt.Sprintf("such as %s", next)
+	}
+	return fmt.Errorf(
+		"a checkpoint at version %d sorts before %s, the last file in file-name order, and this Atlas directory runs "+
+			"its files in that order, so the checkpoint would run before a migration it squashes; "+
+			"a checkpoint version must sort after %s, %s",
+		version, last, last, advice,
+	)
+}
+
+// keyedByPosition reports that files, read in dirFormat, run under their
+// positions in file-name order, where a checkpoint's name decides where it
+// runs.
+func keyedByPosition(dirFormat migrationfile.DirFormat, files []migrationfile.File) bool {
+	return dirFormat == migrationfile.DirFormatAtlas && migrationfile.AtlasKeyedByPosition(files)
+}
+
+// versionAfter returns the number closest to the leading digits of name whose
+// checkpoint file name sorts after name: the digits with the rightmost digit
+// below nine raised by one and the rest dropped, as 11 for 10_b.sql and 3 for
+// 29_c.sql. A number never starts with a zero, so after 0012_a.sql it is 1.
+func versionAfter(name string) (string, bool) {
+	digits := name[:len(name)-len(strings.TrimLeft(name, "0123456789"))]
+	for i := len(digits) - 1; i >= 0; i-- {
+		next := digits[:i] + string(digits[i]+1)
+		if digits[i] < '9' && next[0] != '0' {
+			return next, true
+		}
+	}
+	return "", false
 }
 
 // checkpointVersion is the version resolveCheckpointVersion checks, read from
 // the flag or derived from the newest file of files.
+//
+// Where the files run under their positions in file-name order, an explicit
+// version is not compared with the highest number: 10 is the highest number
+// in 1_x, 2_x, 10_x and v1_x, and it is not the last file, which
+// [refuseCheckpointBeforeAFile] names instead.
 func checkpointVersion(explicit, migrationsDir string, dirFormat migrationfile.DirFormat, files []migrationfile.File) (int64, error) {
 	var latest int64
 	for _, file := range files {
@@ -585,7 +625,7 @@ func checkpointVersion(explicit, migrationsDir string, dirFormat migrationfile.D
 	} else if version > maxMigrationVersion {
 		return 0, fmt.Errorf("invalid --%s value %d: exceeds the maximum migration version %d", versionFlag, version, int64(maxMigrationVersion))
 	}
-	if version <= latest {
+	if version <= latest && !keyedByPosition(dirFormat, files) {
 		return 0, fmt.Errorf("invalid --%s value %d: must be above the newest existing migration version %d so the checkpoint covers the whole history", versionFlag, version, latest)
 	}
 	return version, nil
