@@ -393,6 +393,36 @@ func (p *FSMigrationProvider) hasAtlasPositions() bool {
 	return p.atlasPositions
 }
 
+// recordAtlasSumContribution adds what migrationFile contributes to the
+// atlas.sum chain of migration: its bytes, unless the file is excluded from the
+// sum, and whether its up file carries an entry of its own.
+func (p *FSMigrationProvider) recordAtlasSumContribution(
+	migration *Migration,
+	migrationFile migrationfile.File,
+	hashes map[string]string,
+) error {
+	raw, err := fs.ReadFile(p.fsys, migrationFile.Path)
+	if err != nil {
+		return fmt.Errorf("failed to read Atlas checksum source %s: %w", migrationFile.Path, err)
+	}
+	_, hasHashEntry := hashes[migrationFile.Path]
+	migration.atlasSumContributions = append(migration.atlasSumContributions, atlasSumContribution{
+		name:          migrationFile.Path,
+		data:          raw,
+		includeData:   !atlashash.IsSumIgnored(raw),
+		revisionEntry: migrationFile.Direction == "up" && hasHashEntry,
+	})
+	return nil
+}
+
+// convertedLayout reports that the provider reads a layout converted from
+// another tool, whose maps are keyed by the numbers its file names spell,
+// which positions are not.
+func (p *FSMigrationProvider) convertedLayout() bool {
+	return len(p.atlasRevisionVersions) != 0 || len(p.atlasRevisionChecksums) != 0 ||
+		len(p.atlasRevisionTypes) != 0 || len(p.atlasRepeatable) != 0
+}
+
 func (p *FSMigrationProvider) needsAtlasDirFormat() bool {
 	return p.atlasFormatSelected
 }
@@ -506,10 +536,7 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 	}
 	p.atlasFormatSelected = !p.autoReadsTheseFiles()
 	positions := migrationfile.AtlasKeyedByPosition(files)
-	// A converted layout keys its maps by the numbers its file names spell,
-	// which positions are not.
-	if positions && (len(p.atlasRevisionVersions) != 0 || len(p.atlasRevisionChecksums) != 0 ||
-		len(p.atlasRevisionTypes) != 0 || len(p.atlasRepeatable) != 0) {
+	if positions && p.convertedLayout() {
 		return errors.New("a converted migration directory holds an Atlas version that is not a number")
 	}
 	partsByRevision := make(map[string]*atlasParts)
@@ -532,63 +559,34 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 			)
 		}
 		if parts == nil {
-			revisionType := p.atlasRevisionTypes[migrationFile.Version]
-			parts = &atlasParts{
-				migration: &Migration{
-					Version:                    runtimeVersion,
-					Description:                migrationFile.Name,
-					atlasRevisionVersion:       revisionVersion,
-					hasAtlasRevisionVersion:    true,
-					atlasRevisionVersionMapped: mapped,
-					atlasOrderKey:              migrationFile.Path,
-					revisionDescription:        p.atlasRevisionDescription(migrationFile),
-					hasRevisionDescription:     true,
-					atlasRevisionType:          revisionType,
-					atlasRepeatable:            repeatable,
-					atlasNumberless:            positions || migrationFile.Version == 0,
-				},
-			}
+			parts = &atlasParts{migration: &Migration{
+				Version:                    runtimeVersion,
+				Description:                migrationFile.Name,
+				atlasRevisionVersion:       revisionVersion,
+				hasAtlasRevisionVersion:    true,
+				atlasRevisionVersionMapped: mapped,
+				atlasOrderKey:              migrationFile.Path,
+				revisionDescription:        p.atlasRevisionDescription(migrationFile),
+				hasRevisionDescription:     true,
+				atlasRevisionType:          p.atlasRevisionTypes[migrationFile.Version],
+				atlasRepeatable:            repeatable,
+				atlasNumberless:            positions || migrationFile.Version == 0,
+			}}
 			partsByRevision[revisionVersion] = parts
 		}
 		p.recordAtlasHashes(parts.migration, migrationFile, hashes[migrationFile.Path], runtimeVersion)
-		raw, err := fs.ReadFile(p.fsys, migrationFile.Path)
-		if err != nil {
-			return fmt.Errorf("failed to read Atlas checksum source %s: %w", migrationFile.Path, err)
+		if err := p.recordAtlasSumContribution(parts.migration, migrationFile, hashes); err != nil {
+			return err
 		}
-		_, hasHashEntry := hashes[migrationFile.Path]
-		ignored := atlashash.IsSumIgnored(raw)
-		parts.migration.atlasSumContributions = append(
-			parts.migration.atlasSumContributions,
-			atlasSumContribution{
-				name:          migrationFile.Path,
-				data:          raw,
-				includeData:   !ignored,
-				revisionEntry: migrationFile.Direction == "up" && hasHashEntry,
-			},
-		)
 		if err := p.loadAtlasFile(parts, migrationFile); err != nil {
 			return err
 		}
 	}
 
-	migrations := make([]*Migration, 0, len(partsByRevision))
-	for _, parts := range partsByRevision {
-		if !parts.hasUp {
-			return fmt.Errorf("Atlas migration version %s has down migration but no up migration", parts.migration.RevisionVersion())
-		}
-		if !parts.hasDown {
-			parts.migration.downUnavailable = true
-			parts.migration.Down = func(_ context.Context, _ *dbschema.DatabaseConnection) error {
-				return &AtlasDownNotImplementedError{
-					Version:         parts.migration.Version,
-					revisionVersion: parts.migration.RevisionVersion(),
-					Description:     parts.migration.Description,
-				}
-			}
-		}
-		migrations = append(migrations, parts.migration)
+	migrations, err := completeAtlasMigrations(partsByRevision)
+	if err != nil {
+		return err
 	}
-
 	p.migrations = migrations
 	sortMigrations(p.migrations)
 	p.atlasPositions = positions
@@ -603,6 +601,30 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 		p.atlasSpellings[version] = file.RevisionVersion()
 	}
 	return nil
+}
+
+// completeAtlasMigrations returns the migration each revision's files make,
+// refusing a revision with a down file and no up file, and giving one with no
+// down file a rollback that reports it has none.
+func completeAtlasMigrations(partsByRevision map[string]*atlasParts) ([]*Migration, error) {
+	migrations := make([]*Migration, 0, len(partsByRevision))
+	for _, parts := range partsByRevision {
+		if !parts.hasUp {
+			return nil, fmt.Errorf("Atlas migration version %s has down migration but no up migration", parts.migration.RevisionVersion())
+		}
+		if !parts.hasDown {
+			parts.migration.downUnavailable = true
+			parts.migration.Down = func(_ context.Context, _ *dbschema.DatabaseConnection) error {
+				return &AtlasDownNotImplementedError{
+					Version:         parts.migration.Version,
+					revisionVersion: parts.migration.RevisionVersion(),
+					Description:     parts.migration.Description,
+				}
+			}
+		}
+		migrations = append(migrations, parts.migration)
+	}
+	return migrations, nil
 }
 
 // atlasFileIdentity returns the revision identity an Atlas file is recorded

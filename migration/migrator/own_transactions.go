@@ -121,8 +121,14 @@ func (m *Migrator) RecoveryFlags() string {
 }
 
 func (m *Migrator) recoverySelection() repaircommand.Selection {
-	source, ok := m.migrationProvider.(interface{ needsAtlasDirFormat() bool })
-	return repaircommand.SelectionFor(ok && source.needsAtlasDirFormat(), m.revisionTableFormat.isAtlas())
+	var selection repaircommand.Selection
+	if source, ok := m.migrationProvider.(interface{ needsAtlasDirFormat() bool }); ok && source.needsAtlasDirFormat() {
+		selection += repaircommand.AtlasDirectory
+	}
+	if m.revisionTableFormat.isAtlas() {
+		selection += repaircommand.AtlasTable
+	}
+	return selection
 }
 
 // RevisionBodyStatements returns how many statements the body a resume of the

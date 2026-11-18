@@ -28,19 +28,13 @@ const (
 // reads the Ptah revision table, which refuses the directory.
 type Selection string
 
-// SelectionFor returns the selection for a directory whose Atlas files only
-// --dir-format atlas reads when atlasDirectory holds, and for an Atlas
-// revision table when atlasTable holds.
-func SelectionFor(atlasDirectory, atlasTable bool) Selection {
-	var selection Selection
-	if atlasDirectory {
-		selection += " --dir-format atlas"
-	}
-	if atlasTable {
-		selection += " --revision-format atlas"
-	}
-	return selection
-}
+const (
+	// AtlasDirectory selects a directory whose Atlas files only
+	// --dir-format atlas reads. It comes before [AtlasTable] where both apply.
+	AtlasDirectory Selection = " --dir-format atlas"
+	// AtlasTable selects the Atlas revision table.
+	AtlasTable Selection = " --revision-format atlas"
+)
 
 // SetPrevious returns the command that records a rollback the operator
 // finished by hand, quoted: it moves the revision boundary below the

@@ -203,8 +203,8 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 	// its own. Reading the digits alone would record 1.x.sql as 1, a version
 	// Atlas never gives it. The direction suffix of a numbered name, as an
 	// importer writes 1_a.up.sql and 1_a.down.sql, is read as a direction.
-	if token, description, _ := strings.Cut(stem, "_"); mode == atlasParseExplicit && (!ok || !isAtlasNumber(token, versionDigits)) {
-		token, description, _ = strings.Cut(whole, "_")
+	if token, _, _ := strings.Cut(stem, "_"); mode == atlasParseExplicit && (!ok || !isAtlasNumber(token, versionDigits)) {
+		token, description, _ := strings.Cut(whole, "_")
 		return parseAtlasOpaqueVersion(filename, token, description, "up")
 	}
 	if !ok {
