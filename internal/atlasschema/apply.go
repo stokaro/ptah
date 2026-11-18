@@ -581,6 +581,7 @@ func computeApplyPlan(
 		DefaultSchema:         conn.Info().Schema,
 		RealmRelativePatterns: ConnectionIsRealmScoped(conn.Info()),
 		Selections:            opts.Runtime.Selections(),
+		Dialect:               conn.Info().Dialect,
 	}
 	placed, err := loadPlacedDesiredApplySchema(ctx, conn, opts)
 	if err != nil {

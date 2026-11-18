@@ -474,6 +474,7 @@ func scopeInspectSchema(
 		Exclude:               opts.Exclude,
 		DefaultSchema:         info.Schema,
 		RealmRelativePatterns: ConnectionIsRealmScoped(info),
+		Dialect:               info.Dialect,
 	}
 	if opts.Runtime != nil {
 		scope.Selections = opts.Runtime.Selections()

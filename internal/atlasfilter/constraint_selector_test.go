@@ -1,6 +1,7 @@
 package atlasfilter_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -58,7 +59,7 @@ func TestExcludeNamesAConstraintByItsType_HappyPath(t *testing.T) {
 		// constraint it enforces, whichever type named the constraint.
 		want, wantIndexes []string
 		// wantFlags are the primary-key and unique flags of id and code on
-		// the database side. The unique flag leaves with its constraint.
+		// the database side. Each flag leaves with its constraint.
 		wantFlags [2]bool
 	}{
 		{
@@ -73,7 +74,7 @@ func TestExcludeNamesAConstraintByItsType_HappyPath(t *testing.T) {
 			exclude:     "public.kinds.*[type=index]",
 			want:        []string{"code_len"},
 			wantIndexes: make([]string, 0),
-			wantFlags:   [2]bool{true, false},
+			wantFlags:   [2]bool{false, false},
 		},
 		{
 			name:        "a unique constraint as a constraint",
@@ -101,14 +102,14 @@ func TestExcludeNamesAConstraintByItsType_HappyPath(t *testing.T) {
 			exclude:     "public.kinds.kinds_pkey[type=index]",
 			want:        []string{"kinds_code_key", "code_len"},
 			wantIndexes: []string{"kinds_code_key"},
-			wantFlags:   [2]bool{true, true},
+			wantFlags:   [2]bool{false, true},
 		},
 		{
 			name:        "a primary key as a constraint",
 			exclude:     "public.kinds.kinds_pkey[type=constraint]",
 			want:        []string{"kinds_code_key", "code_len"},
 			wantIndexes: []string{"kinds_code_key"},
-			wantFlags:   [2]bool{true, true},
+			wantFlags:   [2]bool{false, true},
 		},
 		{
 			name:        "a check constraint as a check",
@@ -165,6 +166,105 @@ func TestExcludeNamesAConstraintByItsType_HappyPath(t *testing.T) {
 // sides keep all three with their indexes, and the report says the selector
 // matched nothing. `[type=unique]` is no type the community binary names a
 // constraint by either: it accepts the selector and plans the DROP.
+// A declaration's primary key is on its table or its field, not in the
+// constraint list, and it often carries no name. A selector names it by the
+// name it was given, by the name PostgreSQL gives an unnamed key, or by
+// `PRIMARY`, the MySQL family's name for every key. Named, the key leaves the
+// table and its field, and the column stays, NOT NULL where the key made it
+// so: on PostgreSQL and on a dialect nothing describes, and not on SQLite.
+func TestExcludeNamesADeclaredPrimaryKey_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, exclude, dialect string
+		table                  schemamodel.Table
+		primaryField           bool
+		// wantKey is the table's key columns after the exclusion, joined,
+		// and wantPrimary and wantNullable the id field's flags. Every row
+		// declares id without NOT NULL.
+		wantKey                   string
+		wantPrimary, wantNullable bool
+	}{
+		{
+			name: "an unnamed table key by the PostgreSQL name", exclude: "public.kinds.kinds_pkey[type=index]", dialect: "postgres",
+			table: schemamodel.Table{PrimaryKey: []string{"id"}}, primaryField: true,
+		},
+		{
+			name: "an unnamed table key as a constraint", exclude: "public.kinds.kinds_pkey[type=constraint]", dialect: "postgres",
+			table: schemamodel.Table{PrimaryKey: []string{"id"}},
+		},
+		{
+			name: "a named table key by its name", exclude: "kinds.c_pk", dialect: "postgres",
+			table: schemamodel.Table{PrimaryKey: []string{"id"}, PrimaryKeyName: "c_pk"}, primaryField: true,
+		},
+		{
+			name: "a named table key by the MySQL name", exclude: "kinds.PRIMARY[type=index]", dialect: "mysql",
+			table: schemamodel.Table{PrimaryKey: []string{"id"}, PrimaryKeyName: "c_pk"}, primaryField: true,
+		},
+		{
+			name: "a column key by the PostgreSQL name", exclude: "public.kinds.kinds_pkey", dialect: "postgres",
+			primaryField: true,
+		},
+		{
+			name: "a column key on a dialect nothing describes", exclude: "public.kinds.kinds_pkey",
+			primaryField: true,
+		},
+		{
+			name: "a column key on SQLite, where a key column may hold NULL", exclude: "public.kinds.kinds_pkey", dialect: "sqlite",
+			primaryField: true, wantNullable: true,
+		},
+		{
+			name: "another constraint keeps the key", exclude: "public.kinds.kinds_code_key", dialect: "postgres",
+			table:   schemamodel.Table{PrimaryKey: []string{"id"}},
+			wantKey: "id", primaryField: true, wantPrimary: true, wantNullable: true,
+		},
+		{
+			name: "a named key keeps its name from the PostgreSQL default", exclude: "kinds.kinds_pkey", dialect: "postgres",
+			table:   schemamodel.Table{PrimaryKey: []string{"id"}, PrimaryKeyName: "c_pk"},
+			wantKey: "id", primaryField: true, wantPrimary: true, wantNullable: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			table := test.table
+			table.Schema, table.Name, table.StructName = "public", "kinds", "Kinds"
+			desired := &schemamodel.Database{
+				Tables: []schemamodel.Table{table},
+				Fields: []schemamodel.Field{
+					{StructName: "Kinds", Name: "id", Type: "int", Primary: test.primaryField, Nullable: true},
+					{StructName: "Kinds", Name: "code", Type: "text", Unique: true},
+				},
+			}
+			scope := realmScope(test.exclude)
+			scope.Dialect = test.dialect
+
+			declared, _, err := atlasfilter.ExcludeGeneratedScopeReport(desired, scope)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(declared.Tables, qt.HasLen, 1)
+			c.Assert(strings.Join(declared.Tables[0].PrimaryKey, ","), qt.Equals, test.wantKey)
+			c.Assert(declared.Fields, qt.HasLen, 2)
+			c.Assert(declared.Fields[0].Primary, qt.Equals, test.wantPrimary)
+			c.Assert(declared.Fields[0].Nullable, qt.Equals, test.wantNullable)
+		})
+	}
+}
+
+// A selector naming the key of a table that declares none names nothing, and
+// the report says so.
+func TestExcludeNamesADeclaredPrimaryKey_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Schema: "public", Name: "kinds", StructName: "Kinds"}},
+		Fields: []schemamodel.Field{{StructName: "Kinds", Name: "id", Type: "int"}},
+	}
+
+	declared, report, err := atlasfilter.ExcludeGeneratedScopeReport(desired, realmScope("public.kinds.kinds_pkey"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(declared.Fields, qt.HasLen, 1)
+	c.Assert(report.Unmatched, qt.DeepEquals, []string{"public.kinds.kinds_pkey"})
+}
+
 func TestExcludeNamesAConstraintByItsType_FailurePath(t *testing.T) {
 	tests := []struct {
 		name, exclude string

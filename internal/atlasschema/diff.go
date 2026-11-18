@@ -596,6 +596,7 @@ func diffResolvedStates(
 		Exclude:       slices.Concat(opts.Exclude, opts.ImplicitExclude),
 		DefaultSchema: defaultSchema,
 		Selections:    opts.Runtime.Selections(),
+		Dialect:       dialect,
 	}
 	scope.RealmRelativePatterns = realmRelative
 	scope.Bindings, err = scopeBindings(ctx, opts.Runtime, dialect, scope, generatedSide(fromState.Schema), databaseSide(fromState.DB),

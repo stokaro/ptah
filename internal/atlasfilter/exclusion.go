@@ -100,6 +100,8 @@ type Naming struct {
 	// filled and the same pattern has one part too many. It is
 	// [Scope.RealmRelativePatterns] for a caller that holds no Scope.
 	RealmRelative bool
+	// Dialect is [Scope.Dialect] for a caller that holds no Scope.
+	Dialect string
 }
 
 // ConnectionNaming is the Naming of a state read over the connection info
@@ -111,6 +113,7 @@ func ConnectionNaming(info catalog.ServerInfo) Naming {
 	return Naming{
 		DefaultSchema: info.Schema,
 		RealmRelative: schemaselection.Realm(info.Dialect, info.URL, info.Schema),
+		Dialect:       info.Dialect,
 	}
 }
 
@@ -129,7 +132,7 @@ func (e Exclusion) Desired(db *schemamodel.Database, naming Naming) (*schemamode
 	if !e.Excludes() {
 		return db, ExcludeReport{}, nil
 	}
-	return excludeGenerated(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, featureselect.Bindings{})
+	return excludeGenerated(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, naming.Dialect, featureselect.Bindings{})
 }
 
 // Observed returns a copy of db without the objects the selectors name, as

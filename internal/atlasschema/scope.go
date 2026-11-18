@@ -114,6 +114,7 @@ func (s LiveSelection) applyCounted(
 		DefaultSchema:         naming.DefaultSchema,
 		RealmRelativePatterns: naming.RealmRelative,
 		Selections:            runtime.Selections(),
+		Dialect:               dialect,
 	}
 	if !slices.ContainsFunc(s.Schemas, atlasfilter.NamesSelector) &&
 		!slices.ContainsFunc(s.Include, atlasfilter.NamesSelector) &&

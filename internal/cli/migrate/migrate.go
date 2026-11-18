@@ -427,7 +427,7 @@ func readPlanStates(
 	// Native patterns count from the connection's schema on every URL; the
 	// realm-relative count is the Atlas contract `ptah-compat` takes from a URL
 	// that names no schema.
-	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema}
+	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema, Dialect: conn.Info().Dialect}
 	desired, desiredReport, err := exclusion.Desired(desired, naming)
 	if err != nil {
 		// The selectors may come from the project file or PTAH_EXCLUDE as well

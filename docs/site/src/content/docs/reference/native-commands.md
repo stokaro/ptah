@@ -446,7 +446,10 @@ through their table in the same way. `--exclude
 key or a `UNIQUE` constraint, whose index carries its name, and `[type=check]`
 names a `CHECK` constraint. A `UNIQUE` written on a column is named by the name
 the server gives it: `kinds_code_key` on PostgreSQL, the column's name on MySQL
-and MariaDB.
+and MariaDB. So is a primary key declared without a name: `kinds_pkey` on
+PostgreSQL and SQLite, `PRIMARY` on MySQL and MariaDB. Its columns keep the
+`NOT NULL` the key gives them, and `schema compare` reports no difference on
+them.
 
 `ptah migrations plan` and `ptah migrations generate` take `--exclude` and
 `--include` with the same meaning, the include applied after the exclusion. The

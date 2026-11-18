@@ -55,6 +55,12 @@ type Scope struct {
 	// value is refused with [selectext.ErrUnselected], and [selectext.None]
 	// names the common objects alone.
 	Selections selectext.Set
+	// Dialect is the target the projected states describe. An exclusion that
+	// leaves out a declared primary key reads it for whether the key made its
+	// columns NOT NULL, as the comparison does. Empty answers as the
+	// comparison answers for a dialect it does not know: a key column is NOT
+	// NULL.
+	Dialect string
 	// Requirements are the objects a comparison keeps on both of its sides
 	// because a kept object of its desired side requires them, though no
 	// selector names them: the resource pool a kept classifier routes to.

@@ -9,10 +9,12 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
+	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/tableref"
@@ -136,7 +138,7 @@ func excludeDatabase(
 	var removedConstraints []catalog.Constraint
 	filtered.Constraints, removedConstraints = state.filterConstraints(filtered.Constraints)
 	filtered.Indexes = state.filterIndexes(filtered.Indexes, removedConstraints, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
-	clearRemovedUniqueColumns(filtered.Tables, filtered.Constraints, removedConstraints)
+	clearRemovedKeyColumns(filtered.Tables, filtered.Constraints, removedConstraints)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	if err != nil {
 		return nil, ExcludeReport{}, err
@@ -199,7 +201,7 @@ func ExcludeGeneratedReport(
 	patterns []string,
 	defaultSchema string,
 ) (*schemamodel.Database, ExcludeReport, error) {
-	return excludeGenerated(selections, schema, patterns, defaultSchema, defaultSchema, featureselect.Bindings{})
+	return excludeGenerated(selections, schema, patterns, defaultSchema, defaultSchema, "", featureselect.Bindings{})
 }
 
 // ExcludeGeneratedScopeReport is [ExcludeDatabaseScopeReport] for the generated
@@ -208,14 +210,14 @@ func ExcludeGeneratedScopeReport(
 	schema *schemamodel.Database,
 	scope Scope,
 ) (*schemamodel.Database, ExcludeReport, error) {
-	return excludeGenerated(scope.Selections, schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema, scope.Bindings)
+	return excludeGenerated(scope.Selections, schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema, scope.Dialect, scope.Bindings)
 }
 
 func excludeGenerated(
 	selections selectext.Set,
 	schema *schemamodel.Database,
 	patterns []string,
-	patternScope, defaultSchema string,
+	patternScope, defaultSchema, dialect string,
 	bindings featureselect.Bindings,
 ) (*schemamodel.Database, ExcludeReport, error) {
 	if !selections.Selected() {
@@ -231,6 +233,7 @@ func excludeGenerated(
 	}
 
 	state := newExclusionState(filters, defaultSchema, words)
+	state.dialect = dialect
 	filtered := cloneGenerated(schema)
 	// Same ordering rule as the database side, and the same reason both sides
 	// have this pass at all: a schema removed from one side only would come
@@ -239,8 +242,10 @@ func excludeGenerated(
 	filtered.Schemas = state.filterGeneratedSchemas(filtered.Schemas)
 	filtered.Tables = state.filterGeneratedTables(filtered.Tables)
 	filtered.ManagedData = state.filterGeneratedManagedData(filtered.ManagedData)
+	var removedKeys map[string]map[string]bool
+	filtered.Tables, removedKeys = state.excludeGeneratedPrimaryKeys(filtered.Tables, filtered.Fields)
 	tableByStruct := generatedTableByStruct(filtered.Tables)
-	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields)
+	filtered.Fields = state.filterGeneratedFields(tableByStruct, filtered.Fields, removedKeys)
 	state.excludeGeneratedColumnSequences(schema.Tables, schema.Fields)
 	filtered.Tables = state.stripGeneratedTableColumnReferences(filtered.Tables)
 	state.noteOwnedObjectSelectors(filtered.FeatureObjects)
@@ -745,6 +750,10 @@ type exclusionState struct {
 	// vocabulary is the run's owners' selector types and fields.
 	vocabulary vocabulary
 	patterns   []resourcePattern
+	// dialect is the target the state describes, read for what a primary key
+	// implies about its columns; empty answers as the comparison answers for
+	// a dialect it does not know.
+	dialect string
 	// defaultSchema owns objects that carry no schema of their own. It is the
 	// connection's schema for introspected states and the dialect default for
 	// file-backed ones; empty means "no default", which restores the
@@ -1078,39 +1087,50 @@ func (s *exclusionState) filterIndexes(
 	})
 }
 
-// clearRemovedUniqueColumns clears IsUnique, which a reader derives from a
-// UNIQUE constraint on one column, on each column whose constraint the
-// exclusion removed, unless a constraint it kept marks the column too. tables
-// are the exclusion's own copies. Kept beside the removed constraint, the flag
-// is compared alone, and `schema compare` reports `unique: true -> false` on
-// the column on every run, a difference no statement reconciles. The desired
-// side leaves out a column's own UNIQUE the same selector names; see
-// [exclusionState.columnUniqueNameCandidates].
-//
-// A primary key's IsPrimaryKey stays: a declaration's key carries no name a
-// selector could leave it out by, and clearing the flag on this side alone
-// plans an ADD PRIMARY KEY on a table that holds one.
-func clearRemovedUniqueColumns(tables []catalog.Table, kept, removed []catalog.Constraint) {
+// clearRemovedKeyColumns clears the flags a reader derives from a key on each
+// column whose key the exclusion removed, unless a key it kept marks the column
+// too: IsUnique from a UNIQUE constraint on one column, and IsPrimaryKey from
+// the primary key. tables are the exclusion's own copies. Kept beside the
+// removed constraint, a flag is compared alone, and `schema compare` reports
+// `unique: true -> false` or `primary_key: true -> false` on the column on
+// every run, a difference no statement reconciles. The desired side leaves out
+// the key the same selector names; see
+// [exclusionState.columnUniqueNameCandidates] and
+// [exclusionState.excludeGeneratedPrimaryKeys]. Cleared on this side alone,
+// the primary key flag would plan an ADD PRIMARY KEY on a table that holds one.
+func clearRemovedKeyColumns(tables []catalog.Table, kept, removed []catalog.Constraint) {
 	type columnKey struct{ table, column string }
-	unique := func(constraints []catalog.Constraint) map[columnKey]bool {
-		keys := make(map[columnKey]bool)
+	type columnKeys struct{ unique, primary map[columnKey]bool }
+	keys := func(constraints []catalog.Constraint) columnKeys {
+		found := columnKeys{unique: make(map[columnKey]bool), primary: make(map[columnKey]bool)}
 		for _, constraint := range constraints {
 			columns := constraint.ColumnNamesOrDefault()
-			if indexbacking.KindOf(constraint.Type) == indexbacking.Unique && len(columns) == 1 {
-				keys[columnKey{constraint.QualifiedTableName(), columns[0]}] = true
+			switch indexbacking.KindOf(constraint.Type) {
+			case indexbacking.Unique:
+				if len(columns) == 1 {
+					found.unique[columnKey{constraint.QualifiedTableName(), columns[0]}] = true
+				}
+			case indexbacking.PrimaryKey:
+				for _, column := range columns {
+					found.primary[columnKey{constraint.QualifiedTableName(), column}] = true
+				}
+			case indexbacking.ForeignKey, indexbacking.None:
 			}
 		}
-		return keys
+		return found
 	}
-	removedUnique, keptUnique := unique(removed), unique(kept)
-	if len(removedUnique) == 0 {
+	removedKeys, keptKeys := keys(removed), keys(kept)
+	if len(removedKeys.unique) == 0 && len(removedKeys.primary) == 0 {
 		return
 	}
 	for i := range tables {
 		for j := range tables[i].Columns {
 			key := columnKey{tables[i].QualifiedName(), tables[i].Columns[j].Name}
-			if removedUnique[key] && !keptUnique[key] {
+			if removedKeys.unique[key] && !keptKeys.unique[key] {
 				tables[i].Columns[j].IsUnique = false
+			}
+			if removedKeys.primary[key] && !keptKeys.primary[key] {
+				tables[i].Columns[j].IsPrimaryKey = false
 			}
 		}
 	}
@@ -1338,9 +1358,13 @@ func (s *exclusionState) noteGeneratedChild(resourceType, structName, tableName,
 	s.matches(resourceType, s.childNameCandidates(table.Schema, table.Name, childName)...)
 }
 
+// filterGeneratedFields returns the declared fields the exclusion keeps.
+// removedKeys holds, by struct name, the columns of each primary key a
+// selector named; see [exclusionState.leaveKey].
 func (s *exclusionState) filterGeneratedFields(
 	tables map[string]schemamodel.Table,
 	fields []schemamodel.Field,
+	removedKeys map[string]map[string]bool,
 ) []schemamodel.Field {
 	result := make([]schemamodel.Field, 0, len(fields))
 	for _, field := range fields {
@@ -1362,6 +1386,9 @@ func (s *exclusionState) filterGeneratedFields(
 		if field.Unique && s.matchesAny(constraintResourceTypes("UNIQUE"), s.columnUniqueNameCandidates(table, field.Name)...) {
 			field.Unique = false
 		}
+		if removedKeys[field.StructName][field.Name] {
+			field = s.leaveKey(field)
+		}
 		result = append(result, field)
 	}
 	return result
@@ -1379,6 +1406,103 @@ func (s *exclusionState) columnUniqueNameCandidates(table schemamodel.Table, col
 		s.childNameCandidates(table.Schema, table.Name, table.Name+"_"+column+"_key"),
 		s.childNameCandidates(table.Schema, table.Name, column)...,
 	)
+}
+
+// excludeGeneratedPrimaryKeys leaves out the primary key of each table whose
+// key a selector names, as the database side leaves out the server's key and
+// its index, and returns the key's columns by struct name for
+// [exclusionState.filterGeneratedFields] to clear on the fields. Kept, the
+// comparison plans an ADD PRIMARY KEY on a table that holds one.
+//
+// A table declaring no key is not asked, so a selector naming the key of a
+// table without one reports that it named nothing.
+func (s *exclusionState) excludeGeneratedPrimaryKeys(
+	tables []schemamodel.Table,
+	fields []schemamodel.Field,
+) (kept []schemamodel.Table, removedKeys map[string]map[string]bool) {
+	keyColumns := make(map[string]map[string]bool)
+	addKeyColumn := func(structName, column string) {
+		if keyColumns[structName] == nil {
+			keyColumns[structName] = make(map[string]bool)
+		}
+		keyColumns[structName][column] = true
+	}
+	for _, field := range fields {
+		if field.Primary {
+			addKeyColumn(field.StructName, field.Name)
+		}
+	}
+	for _, table := range tables {
+		for _, column := range table.PrimaryKey {
+			addKeyColumn(table.StructName, column)
+		}
+		for _, part := range table.PrimaryKeyParts {
+			addKeyColumn(table.StructName, part.Name)
+		}
+	}
+	kept = slices.Clone(tables)
+	removedKeys = make(map[string]map[string]bool)
+	for i, table := range kept {
+		if len(keyColumns[table.StructName]) == 0 ||
+			!s.matchesAny(constraintResourceTypes("PRIMARY KEY"), s.primaryKeyNameCandidates(table)...) {
+			continue
+		}
+		removedKeys[table.StructName] = keyColumns[table.StructName]
+		kept[i] = withoutPrimaryKey(table)
+	}
+	return kept, removedKeys
+}
+
+// leaveKey returns field as a column of a primary key the exclusion left
+// out: not a key column, and NOT NULL where the key made it so on the target.
+// The server keeps the key and the NOT NULL it holds on the column. A
+// declaration that wrote `id int PRIMARY KEY` left the NOT NULL to the key,
+// and without it the comparison plans DROP NOT NULL, which PostgreSQL refuses
+// while the key stands (SQLSTATE 42P16). SQLite lets a key column hold NULL,
+// so there the column stays as written.
+func (s *exclusionState) leaveKey(field schemamodel.Field) schemamodel.Field {
+	field.Primary = false
+	if !keyComparisons.Get(s.dialect).PrimaryKeyNullable {
+		field.Nullable = false
+	}
+	return field
+}
+
+// keyComparisons holds each descriptor's Comparison, read for whether a key
+// column may hold NULL. The comparison reads the same field for the same
+// question, so an unknown dialect answers here as it does there.
+var keyComparisons = descriptortable.New(func(described descriptor.Dialect) descriptor.Comparison {
+	return described.Comparison
+})
+
+// primaryKeyNameCandidates are the names a selector can name a table's primary
+// key by: the name the declaration gave it, or, for a key it named none, the
+// one PostgreSQL gives it, `<table>_pkey`; and `PRIMARY`, which the MySQL
+// family gives every primary key whatever the declaration called it.
+func (s *exclusionState) primaryKeyNameCandidates(table schemamodel.Table) []string {
+	name := table.PrimaryKeyName
+	if name == "" {
+		name = table.Name + "_pkey"
+	}
+	return append(
+		s.childNameCandidates(table.Schema, table.Name, name),
+		s.childNameCandidates(table.Schema, table.Name, "PRIMARY")...,
+	)
+}
+
+// withoutPrimaryKey returns table with no primary key and none of the settings
+// that describe one.
+func withoutPrimaryKey(table schemamodel.Table) schemamodel.Table {
+	table.PrimaryKey = nil
+	table.PrimaryKeyName = ""
+	table.PrimaryKeyParts = nil
+	table.PrimaryKeyInclude = nil
+	table.PrimaryKeyMethod = ""
+	table.PrimaryKeyFacets = schemaext.Facets{}
+	table.PrimaryKeyComment = ""
+	table.PrimaryKeyDeferrable = false
+	table.PrimaryKeyInitially = ""
+	return table
 }
 
 func (s *exclusionState) stripGeneratedTableColumnReferences(tables []schemamodel.Table) []schemamodel.Table {

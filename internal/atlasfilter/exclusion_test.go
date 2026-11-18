@@ -213,7 +213,8 @@ func TestExclusion_CountsARealmRelativePattern_FailurePath(t *testing.T) {
 // TestConnectionNaming answers the realm question from the URL, the way
 // `schema apply` does: a PostgreSQL URL without search_path describes the
 // realm, one with it is bound, and SQLite has one namespace and is bound on
-// every URL. The connection's schema owns unqualified objects in every row.
+// every URL. The connection's schema owns unqualified objects in every row,
+// and the connection's dialect is the target's.
 func TestConnectionNaming(t *testing.T) {
 	tests := []struct {
 		name string
@@ -223,17 +224,17 @@ func TestConnectionNaming(t *testing.T) {
 		{
 			name: "PostgreSQL without search_path",
 			info: catalog.ServerInfo{Dialect: "postgres", URL: "postgres://localhost/app?sslmode=disable", Schema: "public"},
-			want: atlasfilter.Naming{DefaultSchema: "public", RealmRelative: true},
+			want: atlasfilter.Naming{DefaultSchema: "public", RealmRelative: true, Dialect: "postgres"},
 		},
 		{
 			name: "PostgreSQL with search_path",
 			info: catalog.ServerInfo{Dialect: "postgres", URL: "postgres://localhost/app?search_path=public", Schema: "public"},
-			want: atlasfilter.Naming{DefaultSchema: "public"},
+			want: atlasfilter.Naming{DefaultSchema: "public", Dialect: "postgres"},
 		},
 		{
 			name: "SQLite",
 			info: catalog.ServerInfo{Dialect: "sqlite", URL: "sqlite://file?mode=memory", Schema: "main"},
-			want: atlasfilter.Naming{DefaultSchema: "main"},
+			want: atlasfilter.Naming{DefaultSchema: "main", Dialect: "sqlite"},
 		},
 	}
 

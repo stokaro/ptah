@@ -978,7 +978,9 @@ under `[type=check]`. Under every other selector that names the constraint, it
 accepts the selector, exits `0` and drops the constraint. `ptah-compat` keeps
 the constraint. The index the server enforces a primary key, `UNIQUE` or
 `EXCLUDE` constraint with leaves the comparison with the constraint, so the plan
-holds no `DROP INDEX` the server refuses with SQLSTATE `2BP01`.
+holds no `DROP INDEX` the server refuses with SQLSTATE `2BP01`. The key and
+unique flags a read derives for the constraint's column leave with it too, so
+native `schema compare` reports no difference on the column.
 
 Measured on 2026-11-18 with `schema apply --dry-run` on PostgreSQL 18, on a URL
 that names no schema. The table `kinds` holds the key `kinds_pkey`, the unique

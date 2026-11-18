@@ -599,6 +599,7 @@ func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, 
 ) (*catalog.Database, error) {
 	scope := atlasfilter.Scope{
 		Exclude: exclude, DefaultSchema: info.Schema, RealmRelativePatterns: ConnectionIsRealmScoped(info), Selections: runtime.Selections(),
+		Dialect: info.Dialect,
 	}
 	var err error
 	scope.Bindings, err = scopeBindings(ctx, runtime, info.Dialect, scope, databaseSide(current))
