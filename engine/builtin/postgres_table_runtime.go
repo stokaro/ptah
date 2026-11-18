@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/selectext"
 	"ptah.run/core/yamlext"
 	"ptah.run/dialect/postgres/pgtable"
 	"ptah.run/dialect/postgres/pgtableprobe"
@@ -85,8 +86,18 @@ func registerPartitionMembers(provider *engine.Provider, target string) {
 		Kinds: kinds, OwnerKinds: []objectidentity.Kind{objectidentity.KindTable}, Service: pgtableprobe.PartitionMemberService{}})
 }
 
+// registerExclusions registers the owner of EXCLUDE constraints. A selector
+// names one through its table, as it names a check constraint:
+// `rooms.room_slot` and `public.rooms.room_slot`. PostgreSQL records it in
+// pg_constraint, so `[type=constraint]` names it. The index that enforces it
+// carries its name, and the community binary names it as that index, so
+// `[type=index]` names it too: a selector that removed only the index would
+// leave the constraint to be dropped, and the index with it.
 func registerExclusions(provider *engine.Provider) {
 	service := pgtable.ExclusionService{}
+	provider.Selections = append(provider.Selections, selectext.Extension{Owner: pgtable.Owner, Selections: []selectext.Selection{
+		{Kind: pgtable.ExclusionKind, Type: "constraint", Aliases: []string{"index"}, Naming: selectext.InSchema},
+	}})
 	provider.Codecs = append(provider.Codecs, pgtable.ExclusionCodecs()...)
 	provider.Codecs = append(provider.Codecs, pgtable.ExclusionChangeCodec(), pgtable.ExclusionOperationCodec())
 	for _, target := range pgtable.PersistenceTargets() {

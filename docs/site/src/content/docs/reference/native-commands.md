@@ -429,6 +429,12 @@ as matching nothing. `*[type=policy]`, `public.*[type=policy]` and
 `notes.*[type=policy]` leave out every policy, every policy in `public`, and
 every policy on `notes`.
 
+`--exclude` names a PostgreSQL `EXCLUDE` constraint through its table, as it
+names a check constraint: `--exclude 'rooms.room_slot[type=constraint]'` keeps
+the constraint `room_slot` on `rooms`, and `public.rooms.room_slot` names it
+where the run covers every schema. `[type=index]` names it as well, since the
+index that enforces the constraint carries its name.
+
 `ptah migrations plan` and `ptah migrations generate` take `--exclude` and
 `--include` with the same meaning, the include applied after the exclusion. The
 selection reaches the desired schema, the current state read from the database

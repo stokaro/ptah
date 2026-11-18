@@ -114,6 +114,19 @@ func TestNewSet_FailurePath(t *testing.T) {
 			{Owner: "example.org/a", Selections: []selectext.Selection{selection("example.org/a/x", "gadget")}},
 			{Owner: "example.org/b", Selections: []selectext.Selection{{Kind: "example.org/b/x", Type: "gadget", Naming: selectext.DatabaseWide}}}},
 			wantErr: `duplicate feature identity: selector type "gadget" has conflicting definitions`},
+		{name: "an empty alias", extensions: []selectext.Extension{{Owner: "example.org/a", Selections: []selectext.Selection{
+			{Kind: "example.org/a/x", Type: "gadget", Aliases: []string{" "}, Naming: selectext.InSchema}}}},
+			wantErr: `scope selection "gadget" of example.org/a names alias " " empty, twice or as its own type`},
+		{name: "an alias twice", extensions: []selectext.Extension{{Owner: "example.org/a", Selections: []selectext.Selection{
+			{Kind: "example.org/a/x", Type: "gadget", Aliases: []string{"widget", "widget"}, Naming: selectext.InSchema}}}},
+			wantErr: `scope selection "gadget" of example.org/a names alias "widget" empty, twice or as its own type`},
+		{name: "an alias of its own type", extensions: []selectext.Extension{{Owner: "example.org/a", Selections: []selectext.Selection{
+			{Kind: "example.org/a/x", Type: "gadget", Aliases: []string{"gadget"}, Naming: selectext.InSchema}}}},
+			wantErr: `scope selection "gadget" of example.org/a names alias "gadget" empty, twice or as its own type`},
+		{name: "an alias another selection's type defines otherwise", extensions: []selectext.Extension{
+			{Owner: "example.org/a", Selections: []selectext.Selection{{Kind: "example.org/a/x", Type: "gadget", Aliases: []string{"widget"}, Naming: selectext.InSchema}}},
+			{Owner: "example.org/b", Selections: []selectext.Selection{{Kind: "example.org/b/x", Type: "widget", Naming: selectext.DatabaseWide}}}},
+			wantErr: `duplicate feature identity: selector type "widget" has conflicting definitions`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -241,6 +254,34 @@ func TestSet_SharedSelectorTypesRetainEveryModel(t *testing.T) {
 	selections[0].Fields[0] = "changed"
 	c.Assert(set.ForType("domain")[0].Fields, qt.DeepEquals, []string{"comment"})
 	c.Assert(set.Selections()[1].Fields, qt.DeepEquals, []string{"comment"})
+}
+
+// TestSet_AliasesNameTheModel finds a model by its type and by each alias,
+// orders a shared alias's models by kind, and returns aliases the caller can
+// change without changing the set.
+func TestSet_AliasesNameTheModel(t *testing.T) {
+	c := qt.New(t)
+	aliases := []string{"index"}
+	set, err := selectext.NewSet(
+		selectext.Extension{Owner: "example.org/b", Selections: []selectext.Selection{
+			{Kind: "example.org/b/x", Type: "constraint", Aliases: aliases, Naming: selectext.InSchema}}},
+		selectext.Extension{Owner: "example.org/a", Selections: []selectext.Selection{
+			{Kind: "example.org/a/x", Type: "index", Naming: selectext.InSchema}}},
+	)
+	aliases[0] = "changed"
+
+	c.Assert(err, qt.IsNil)
+	constraint := set.ForType("constraint")
+	c.Assert(constraint, qt.HasLen, 1)
+	c.Assert(constraint[0].Types(), qt.DeepEquals, []string{"constraint", "index"})
+	index := set.ForType("index")
+	c.Assert(index, qt.HasLen, 2)
+	c.Assert(index[0].Kind, qt.Equals, schemaext.Kind("example.org/a/x"))
+	c.Assert(index[1].Kind, qt.Equals, schemaext.Kind("example.org/b/x"))
+	index[1].Aliases[0] = "changed"
+	c.Assert(set.ForType("constraint")[0].Aliases, qt.DeepEquals, []string{"index"})
+	c.Assert(set.ForType("changed"), qt.HasLen, 0)
+	c.Assert(selectext.Selection{Kind: "example.org/a/x", Naming: selectext.SchemaWide}.Types(), qt.IsNil)
 }
 
 // grantReader owns the TOPIC grant type and reads a relative name as the
