@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 
@@ -531,7 +530,7 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migratio
 func refuseCheckpointBeforeAFile(files []migrationfile.File, version int64) error {
 	prefix := strconv.FormatInt(version, 10) + "_"
 	for _, file := range files {
-		name := path.Base(file.Path)
+		name := filepath.Base(filepath.FromSlash(file.Path))
 		if !file.Repeatable && name >= prefix {
 			return fmt.Errorf(
 				"a checkpoint at version %d sorts before %s, and this Atlas directory runs its files in file-name order, "+
