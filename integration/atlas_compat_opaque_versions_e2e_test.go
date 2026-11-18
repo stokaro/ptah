@@ -63,9 +63,11 @@ func TestCompatAtlasRevisionIdentityMatchesTheCommunityBinaryE2E(t *testing.T) {
 }
 
 // TestNativeAtlasRevisionIdentityE2E runs the same history through the native
-// binary over both Atlas formats, which keeps the numeric linearity rule: the
-// pending 1_a.sql is below the applied 10, so it is refused rather than read as
-// applied.
+// binary over both Atlas formats. 1R__rep.sql spells the number 1_a.sql spells,
+// so the three files run under their positions in file-name order: 10_b.sql,
+// 1R__rep.sql, 1_a.sql. The pending 1_a.sql comes after both applied files in
+// that order, so the native linear order applies it, under a row of its own
+// rather than read as applied through the number 1.
 func TestNativeAtlasRevisionIdentityE2E(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
@@ -84,9 +86,8 @@ func TestNativeAtlasRevisionIdentityE2E(t *testing.T) {
 
 	got := native()
 
-	c.Assert(got.ExitCode, qt.Not(qt.Equals), 0)
-	c.Assert(got.Stderr, qt.Contains, "out-of-order pending migrations below current version 10: [1]")
-	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, []string{"10", "1R"})
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, []string{"1", "10", "1R"})
 }
 
 // opaqueVersionCases are files whose Atlas version is not a decimal number

@@ -6,6 +6,8 @@
 // never one the repair refuses.
 package repaircommand
 
+import "strings"
+
 // Runner is the runner flag a command carries, with its leading space, or
 // nothing for the default runner.
 type Runner string
@@ -26,10 +28,26 @@ const (
 const SetPrevious = "'ptah migrations set --version <previous>'"
 
 // Repair returns the repair command for version, quoted, with flags after the
-// version and then runner.
+// version and then runner. A version a shell would split or interpret, such as
+// one holding a space or a semicolon, is written as one shell word in single
+// quotes, so the command between the outer quotes runs as printed.
 func Repair(version, flags string, runner Runner) string {
-	return "'ptah migrations repair --version " + version + flags + string(runner) + "'"
+	return "'ptah migrations repair --version " + shellWord(version) + flags + string(runner) + "'"
 }
+
+// shellWord returns value as one POSIX shell word: as it is when every byte is
+// one no shell treats specially, and otherwise in single quotes, with each
+// single quote it holds ending the quoted part, escaped, and starting the next.
+func shellWord(value string) string {
+	if value != "" && strings.Trim(value, shellSafe) == "" {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}
+
+// shellSafe holds the bytes a POSIX shell reads as themselves anywhere in a
+// word.
+const shellSafe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-+,/:@%"
 
 // Reconciled returns the repair command that records the migration applied
 // once the operator has reconciled the database by hand. It ends every row

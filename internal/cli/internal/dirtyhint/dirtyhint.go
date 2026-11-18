@@ -100,14 +100,14 @@ func Recovery(dirty Revision) string {
 // repair is the quoted repair command for the revision, with flags after its
 // version.
 func (r Revision) repair(flags string) string {
-	return repaircommand.Repair(r.Revision.RevisionVersion(), flags, r.runner())
+	return repaircommand.Repair(r.Revision.VersionLabel(), flags, r.runner())
 }
 
 // reconciled is the quoted repair command that records the revision applied
 // once the operator has reconciled the database, the one the migrator's
 // refusal to resume names for the same row.
 func (r Revision) reconciled() string {
-	return repaircommand.Reconciled(r.Revision.RevisionVersion(), r.runner())
+	return repaircommand.Reconciled(r.Revision.VersionLabel(), r.runner())
 }
 
 // FileStatements reads the field of that name for revision out of mig.

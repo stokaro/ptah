@@ -31,7 +31,7 @@ func TestDirtyRevisionRefusalNamesAnAcceptedRepair_FailurePath(t *testing.T) {
 		twoStatements   = "-- +ptah no_transaction\nCREATE TABLE t1 (id int);\nCREATE TABLE t2 (id int);\n"
 		threeStatements = "-- +ptah no_transaction\nCREATE TABLE t1 (id int);\nCREATE TABLE t2 (id int);\n" +
 			"CREATE TABLE t3 (id int);\n"
-		forced = "'ptah migrations repair --version 000001 --force'"
+		forced = "'ptah migrations repair --version 1 --force'"
 	)
 	tests := []struct {
 		name string
@@ -52,7 +52,7 @@ func TestDirtyRevisionRefusalNamesAnAcceptedRepair_FailurePath(t *testing.T) {
 				"error = 'statement execution outcome is unknown after process interruption' WHERE version = 1",
 			body:      twoStatements,
 			reconcile: "SELECT 1",
-			want: "migration 000001 cannot resume automatically: the outcome of statement 1 is unknown after an " +
+			want: "migration 1 cannot resume automatically: the outcome of statement 1 is unknown after an " +
 				"interrupted run; inspect the database, then use " + forced,
 			status: forced,
 		},
@@ -62,7 +62,7 @@ func TestDirtyRevisionRefusalNamesAnAcceptedRepair_FailurePath(t *testing.T) {
 				"statements in place and undid others' WHERE version = 1",
 			body:      twoStatements,
 			reconcile: "SELECT 1",
-			want: "migration 000001 cannot resume automatically: the rollback of its transaction left some " +
+			want: "migration 1 cannot resume automatically: the rollback of its transaction left some " +
 				"statements in place and undid others; inspect the database, then use " + forced,
 			status: forced,
 		},
@@ -71,7 +71,7 @@ func TestDirtyRevisionRefusalNamesAnAcceptedRepair_FailurePath(t *testing.T) {
 			row:       "SELECT 1",
 			body:      threeStatements,
 			reconcile: "CREATE TABLE t3 (id int)",
-			want: "migration 000001 cannot resume automatically: the previous attempt applied 1 of 2 statements " +
+			want: "migration 1 cannot resume automatically: the previous attempt applied 1 of 2 statements " +
 				"but the file now has 3; inspect the database, then use " + forced,
 			// A resume from statement 2 would index into the changed file.
 			status: forced,
@@ -125,7 +125,7 @@ func TestDirtyOwnTransactionsRefusalNamesTheRunner_FailurePath(t *testing.T) {
 		failing = "BEGIN;\nCREATE TABLE owntx_a (id int);\nCOMMIT;\nINSERT INTO owntx_missing VALUES (1);\n"
 		changed = "BEGIN;\nCREATE TABLE owntx_a (id int);\nCOMMIT;\nCREATE TABLE owntx_missing (id int);\n" +
 			"INSERT INTO owntx_missing VALUES (1);\n"
-		named = "'ptah migrations repair --version 000001 --force --runner golang-migrate'"
+		named = "'ptah migrations repair --version 1 --force --runner golang-migrate'"
 	)
 	c := qt.New(t)
 	dbURL := postgresScratchDevURL(c, "dirty_owntx")
@@ -150,7 +150,7 @@ func TestDirtyOwnTransactionsRefusalNamesTheRunner_FailurePath(t *testing.T) {
 	repaired := ptah("migrations", "repair", "--version", "000001", "--force", "--runner", "golang-migrate")
 
 	c.Assert(refused.ExitCode, qt.Equals, 2)
-	c.Assert(refused.Stderr, qt.Contains, "migration 000001 cannot resume automatically: the previous attempt "+
+	c.Assert(refused.Stderr, qt.Contains, "migration 1 cannot resume automatically: the previous attempt "+
 		"applied 3 of 4 statements but the file now has 5; inspect the database, then use "+named)
 	c.Assert(withoutRunner.ExitCode, qt.Equals, 2)
 	c.Assert(withoutRunner.Stderr, qt.Contains, "is repaired with --runner golang-migrate")
@@ -235,7 +235,7 @@ func TestDirtyRollbackOverAChangedDownFile_FailurePath(t *testing.T) {
 		[]byte("-- +ptah no_transaction\nDROP TABLE t1;\nCREATE TABLE t_kept (id int);\nDROP TABLE t2;\n"), 0o600),
 		qt.IsNil)
 	const (
-		forced   = "'ptah migrations repair --version 000001 --force'"
+		forced   = "'ptah migrations repair --version 1 --force'"
 		previous = "'ptah migrations set --version <previous>'"
 	)
 
@@ -249,7 +249,7 @@ func TestDirtyRollbackOverAChangedDownFile_FailurePath(t *testing.T) {
 
 	c.Assert(resumed.ExitCode, qt.Equals, 2)
 	c.Assert(resumed.Stderr, qt.Contains,
-		"migration 000001 cannot resume the rollback: the previous attempt applied 1 of 2 down statements but "+
+		"migration 1 cannot resume the rollback: the previous attempt applied 1 of 2 down statements but "+
 			"the down file now has 3; inspect the database, then use "+forced+
 			" if you restored what the rollback reverted, or "+previous+" if you finished the rollback by hand")
 	c.Assert(plain.ExitCode, qt.Equals, 2)

@@ -79,11 +79,11 @@ func refuseRollbackResumeOverChangedFile(revision MigrationRevision, total int, 
 		"migration %s cannot resume the rollback: the previous attempt applied %d of %d down statements but the "+
 			"down file now has %d; inspect the database, then use %s if you restored what the rollback reverted, "+
 			"or %s if you finished the rollback by hand",
-		revision.RevisionVersion(),
+		revision.VersionLabel(),
 		revision.Applied,
 		revision.Total,
 		total,
-		repaircommand.Reconciled(revision.RevisionVersion(), runner),
+		repaircommand.Reconciled(revision.VersionLabel(), runner),
 		repaircommand.SetPrevious,
 	)
 }

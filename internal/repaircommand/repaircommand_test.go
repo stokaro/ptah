@@ -24,6 +24,14 @@ func TestRepair_HappyPath(t *testing.T) {
 			name: "own transactions", version: "v1", flags: " --force", runner: repaircommand.GolangMigrate,
 			want: "'ptah migrations repair --version v1 --force --runner golang-migrate'",
 		},
+		{name: "dash", version: "-5", want: "'ptah migrations repair --version -5'"},
+		{
+			name: "space", version: "release candidate", flags: " --force",
+			want: "'ptah migrations repair --version 'release candidate' --force'",
+		},
+		{name: "semicolon", version: "1;rm", want: "'ptah migrations repair --version '1;rm''"},
+		{name: "single quote", version: "it's", want: `'ptah migrations repair --version 'it'\''s''`},
+		{name: "dollar", version: "$HOME", want: "'ptah migrations repair --version '$HOME''"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1457,20 +1457,21 @@ func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error
 	return revisions, nil
 }
 
-// refuseNumberlessVersionsInANumericTable refuses an Atlas directory holding a
-// version that is not a number, such as v1_x.sql, over a revision table that
-// records numbers. Such a file runs under an order key above every number the
-// directory holds, and the key moves when a numbered file is added, so the row
-// a Ptah table keeps for it would name another file the next run.
+// refuseNumberlessVersionsInANumericTable refuses an Atlas directory whose
+// migrations run under their positions in execution order, over a revision
+// table that records numbers. Such a directory holds a version that is not a
+// number, such as v1_x.sql, or a repeatable that spells a numbered file's
+// number. A position moves when a file is added before it, so the row a Ptah
+// table keeps for it would name another file the next run. The refusal names
+// the first file whose version is not a number.
 func (m *Migrator) refuseNumberlessVersionsInANumericTable() error {
-	if m.revisionTableFormat.isAtlas() || m.migrationProvider == nil {
+	if m.revisionTableFormat.isAtlas() || !m.hasAtlasPositions() {
 		return nil
 	}
 	for _, migration := range m.migrationProvider.Migrations() {
-		if !migration.hasAtlasRevisionVersion || migration.atlasRepeatable || migration.atlasRevisionVersionMapped {
-			continue
-		}
-		if strings.Trim(migration.atlasRevisionVersion, "0123456789") == "" && strings.Trim(migration.atlasRevisionVersion, "0") != "" {
+		if _, err := strconv.ParseInt(migration.atlasRevisionVersion, 10, 64); err == nil &&
+			strings.Trim(migration.atlasRevisionVersion, "0123456789") == "" &&
+			strings.Trim(migration.atlasRevisionVersion, "0") != "" {
 			continue
 		}
 		return fmt.Errorf(

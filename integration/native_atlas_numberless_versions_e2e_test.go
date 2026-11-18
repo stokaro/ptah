@@ -34,9 +34,8 @@ func nativePtah(c *qt.C, dir string, args ...string) clirun.Result {
 }
 
 // TestNativeAtlasNumberlessVersionLabelsE2E prints v1, the version v1_x.sql
-// spells, wherever the native commands name it. The file runs under an order
-// key above every number in the directory, 3 here, which no file carries, and
-// which moves to 4 when a 3_c.sql is added.
+// spells, wherever the native commands name it. The three files run under
+// their positions in file-name order, 1, 2 and 3, which name no version.
 func TestNativeAtlasNumberlessVersionLabelsE2E(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
@@ -91,8 +90,8 @@ func TestNativeAtlasNumberlessVersionTargetE2E(t *testing.T) {
 }
 
 // TestNativeAtlasNumberlessVersionTarget_FailurePath refuses --target 3,
-// the order key v1_x.sql runs under, and names the file and its version. A
-// target the directory does not spell is refused too.
+// the position v1_x.sql runs under, since a number names a file here only as
+// its version string, and a target the directory does not spell.
 func TestNativeAtlasNumberlessVersionTarget_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -100,9 +99,9 @@ func TestNativeAtlasNumberlessVersionTarget_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "the order key",
+			name:    "the position",
 			target:  "3",
-			wantErr: `invalid target version "3": no migration file carries version 3: Ptah numbers v1_x.sql after the highest numbered file, so name that file by its version, v1`,
+			wantErr: `invalid target version "3": no migration file carries version "3"`,
 		},
 		{
 			name:    "a version no file spells",
@@ -129,7 +128,7 @@ func TestNativeAtlasNumberlessVersionTarget_FailurePath(t *testing.T) {
 
 // TestNativeAtlasNumberlessVersionPlanWithoutShadow_FailurePath asks for a
 // --plan rollback to v1 with no shadow database. The refusal names the target
-// v1, where v1_x.sql runs under the order key 2 and v2_y.sql under 3.
+// v1, where v1_x.sql runs under the position 2 and v2_y.sql under 3.
 func TestNativeAtlasNumberlessVersionPlanWithoutShadow_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
@@ -146,14 +145,16 @@ func TestNativeAtlasNumberlessVersionPlanWithoutShadow_FailurePath(t *testing.T)
 }
 
 // spelledNumberFiles are versions Atlas reads as text although they read as
-// numbers: 00 and -5 are not decimals above zero. With v1_v.sql they run under
-// the order keys 3, 4 and 5 in file-name order: -5_m.sql, 00_z.sql, v1_v.sql.
+// numbers: 00 and -5 are not decimals above zero. The five run in file-name
+// order: -5_m.sql, 00_z.sql, 1_a.sql, 2_b.sql, v1_v.sql.
 var spelledNumberFiles = []string{"1_a.sql", "2_b.sql", "00_z.sql", "-5_m.sql", "v1_v.sql"}
 
 // TestNativeAtlasSpelledNumberVersionsE2E names 00_z.sql by --version=00 and
-// -5_m.sql by --version=-5 on every native command that takes a version. Read
-// as a number first, 00 is version 0, which a set reads as removing every
-// revision, and -5 is refused as negative before the directory is read.
+// -5_m.sql by --version=-5 on every native command that takes a version, and
+// each acts on the files after it in execution order. Read as a number first,
+// 00 is version 0, which a set reads as removing every revision, and -5 is
+// refused as negative before the directory is read. Ordered by the numbers
+// the names spell, a set to 00 keeps 1_a.sql and 2_b.sql, which run after it.
 func TestNativeAtlasSpelledNumberVersionsE2E(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -165,19 +166,19 @@ func TestNativeAtlasSpelledNumberVersionsE2E(t *testing.T) {
 		{
 			name:     "set to 00 removes what runs after it",
 			args:     []string{"migrations", "set", "--version=00"},
-			wantRows: []string{"-5", "00", "1", "2"},
+			wantRows: []string{"-5", "00"},
 		},
 		{
 			name:     "set to -5 removes what runs after it",
 			args:     []string{"migrations", "set", "--version=-5"},
-			wantRows: []string{"-5", "1", "2"},
+			wantRows: []string{"-5"},
 		},
 		{
-			name: "down to 00 plans the one file after it",
+			name: "down to 00 plans the three files after it",
 			args: []string{"migrations", "down", "--target=00", "--dry-run"},
 			// The files carry no down section, so the plan ends in that refusal.
 			wantExit: 2,
-			wantOut:  "Migrations to roll back: 1\n",
+			wantOut:  "Migrations to roll back: 3\n",
 			wantRows: []string{"-5", "00", "1", "2", "v1"},
 		},
 		{
@@ -213,8 +214,8 @@ func TestNativeAtlasSpelledNumberVersionBaselineE2E(t *testing.T) {
 		wantOut  string
 		wantRows []string
 	}{
-		{version: "00", wantOut: "Baselined 4 migration(s) through version 00", wantRows: []string{"00"}},
-		{version: "-5", wantOut: "Baselined 3 migration(s) through version -5", wantRows: []string{"-5"}},
+		{version: "00", wantOut: "Baselined 2 migration(s) through version 00", wantRows: []string{"00"}},
+		{version: "-5", wantOut: "Baselined 1 migration(s) through version -5", wantRows: []string{"-5"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
@@ -250,7 +251,7 @@ func TestNativeAtlasNumberlessVersionSetE2E(t *testing.T) {
 }
 
 // TestNativeAtlasNumberlessVersionSet_FailurePath refuses --version 3, the
-// order key v1_x.sql runs under, before any row is written.
+// position v1_x.sql runs under, before any row is written.
 func TestNativeAtlasNumberlessVersionSet_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
@@ -259,7 +260,7 @@ func TestNativeAtlasNumberlessVersionSet_FailurePath(t *testing.T) {
 	got := nativePtah(c, dir, "migrations", "set", "--version", "3")
 
 	c.Assert(got.ExitCode, qt.Equals, 2)
-	c.Assert(got.Stderr, qt.Contains, `invalid migration version "3": no migration file carries version 3: Ptah numbers v1_x.sql after the highest numbered file, so name that file by its version, v1`)
+	c.Assert(got.Stderr, qt.Contains, `invalid migration version "3": no migration file carries version "3"`)
 	c.Assert(sqliteTables(c, filepath.Join(dir, "app.db")), qt.Not(qt.Contains), "atlas_schema_revisions")
 }
 
@@ -279,7 +280,7 @@ func TestNativeAtlasNumberlessVersionBaselineE2E(t *testing.T) {
 }
 
 // TestNativeAtlasNumberlessVersionBaselineAndRepair_FailurePath refuses
-// --version 3, the order key v1_x.sql runs under, on baseline and repair.
+// --version 3, the position v1_x.sql runs under, on baseline and repair.
 func TestNativeAtlasNumberlessVersionBaselineAndRepair_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -289,12 +290,12 @@ func TestNativeAtlasNumberlessVersionBaselineAndRepair_FailurePath(t *testing.T)
 		{
 			name:    "baseline",
 			args:    []string{"migrations", "baseline", "--version", "3", "--force"},
-			wantErr: `invalid baseline version "3": no migration file carries version 3: Ptah numbers v1_x.sql after the highest numbered file, so name that file by its version, v1`,
+			wantErr: `invalid baseline version "3": no migration file carries version "3"`,
 		},
 		{
 			name:    "repair",
 			args:    []string{"migrations", "repair", "--version", "3", "--force"},
-			wantErr: `invalid migration version "3": no migration file carries version 3: Ptah numbers v1_x.sql after the highest numbered file, so name that file by its version, v1`,
+			wantErr: `invalid migration version "3": no migration file carries version "3"`,
 		},
 	}
 	for _, tt := range tests {
@@ -337,10 +338,9 @@ func TestNativeAtlasNumberlessVersionRepairHintE2E(t *testing.T) {
 }
 
 // TestNativeAtlasNumberlessVersionApplyFailure_FailurePath names a migration
-// that fails by its version: v1 for v1_x.sql, which runs under the order key 2
-// here, and 1 for 1_a.sql, worded as for any numbered file. The order key
-// appears in no file name, so a message naming it sends the reader to a file
-// that does not exist.
+// that fails by its version: v1 for v1_x.sql, which runs under the position 2
+// here, and 1 for 1_a.sql. The position appears in no file name, so a message
+// naming it sends the reader to a file that does not exist.
 func TestNativeAtlasNumberlessVersionApplyFailure_FailurePath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -384,8 +384,8 @@ func TestNativeAtlasNumberlessVersionApplyFailure_FailurePath(t *testing.T) {
 
 // TestNativeAtlasNumberlessVersionOutOfOrder_FailurePath adds 3_c.sql after
 // v1_x.sql is applied. The file sorts below v1_x.sql, so a linear run refuses
-// it, and the refusal names the current version v1. The order key of v1_x.sql
-// moves from 2 to 4 when 3_c.sql is added, and neither number names a file.
+// it, and the refusal names the current version v1. The position of v1_x.sql
+// moves from 2 to 3 when 3_c.sql is added, and neither number names a file.
 func TestNativeAtlasNumberlessVersionOutOfOrder_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
@@ -414,8 +414,8 @@ func TestNativeAtlasNumberlessVersionOutOfOrder_FailurePath(t *testing.T) {
 // README_x.sql is version README there, which the Ptah table cannot keep.
 // The run refuses before any migration runs, rather than apply 1_a.sql and
 // leave README_x.sql out while the sum covers it. A revision set refuses too:
-// set --version 2 would record README_x.sql under the number 2, which names
-// another file once a numbered file is added.
+// set --version 2 would record README_x.sql under its position, 2, which names
+// another file once a file is added before it.
 func TestNativeAutoFormatOverAnAtlasSumRefusesANumberlessVersion_FailurePath(t *testing.T) {
 	tests := []struct {
 		name string
@@ -423,7 +423,7 @@ func TestNativeAutoFormatOverAnAtlasSumRefusesANumberlessVersion_FailurePath(t *
 	}{
 		{name: "up", args: []string{"up"}},
 		{name: "status", args: []string{"status"}},
-		{name: "set to the order key", args: []string{"set", "--version", "2"}},
+		{name: "set to a position", args: []string{"set", "--version", "2"}},
 		{name: "set to a numbered file", args: []string{"set", "--version", "1"}},
 	}
 	for _, tt := range tests {

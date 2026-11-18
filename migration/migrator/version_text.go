@@ -70,12 +70,25 @@ func (m *Migration) versionText() versionText {
 	return versionText{number: m.Version}
 }
 
+// VersionLabel returns the version a person names the revision by: the
+// version string the row records when it is not a decimal number, such as v1,
+// and the number otherwise, so a row for 001_init.sql reads 1. For a
+// directory whose migrations run under their positions (see
+// [migrationfile.AtlasKeyedByPosition]) it is always the recorded string,
+// since the position names no version.
+func (r MigrationRevision) VersionLabel() string {
+	return r.versionText().String()
+}
+
 // versionText names the revision's version for a message that prints it with
 // %d: the Atlas version the row records when it is not a decimal number, such
 // as v1, and the number otherwise. A decimal spelling such as 001 prints as
 // the number, as it always has.
 func (r MigrationRevision) versionText() versionText {
 	recorded := r.RevisionVersion()
+	if r.positionKeyed {
+		return versionText{number: r.Version, label: recorded}
+	}
 	if _, err := strconv.ParseInt(recorded, 10, 64); err == nil {
 		return versionText{number: r.Version}
 	}

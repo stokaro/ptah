@@ -563,7 +563,8 @@ func (e *endOfQueryCommitError) Unwrap() error { return e.err }
 // unknownOutcomeError refuses to resume a migration whose interrupted run left
 // the outcome of statement, a 1-based index, unknown.
 type unknownOutcomeError struct {
-	// version is the revision's version as its file name spells it.
+	// version is the revision's version as [MigrationRevision.VersionLabel]
+	// names it.
 	version   string
 	statement int
 	// runner is the runner the repair it names needs for the body.
@@ -580,7 +581,8 @@ func (e *unknownOutcomeError) Error() string {
 // rollbackLeftUnknownResumeError refuses to resume a migration whose transaction
 // rolled back and left statements in place that no count describes.
 type rollbackLeftUnknownResumeError struct {
-	// version is the revision's version as its file name spells it.
+	// version is the revision's version as [MigrationRevision.VersionLabel]
+	// names it.
 	version string
 	// runner is the runner the repair it names needs for the body.
 	runner repaircommand.Runner

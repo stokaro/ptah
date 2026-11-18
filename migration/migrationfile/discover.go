@@ -135,6 +135,7 @@ func discover(fsys fs.FS, format DirFormat, reading rReading) (discovered, error
 		}
 	}
 	sortDiscovered(files)
+	assignOrderKeys(files)
 	return discovered{files: files, repeatables: repeatables}, nil
 }
 

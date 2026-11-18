@@ -37,6 +37,14 @@ type File struct {
 	// v1_name.sql or 1.x.sql, leaves it 0 and carries its identity in
 	// [File.RevisionVersion].
 	Version int64
+	// OrderKey is the number the file runs under, which [Discover] fills: the
+	// version for a Ptah file and for an Atlas file whose name spells one,
+	// and above every such number for R__name.sql. Where
+	// [AtlasKeyedByPosition] holds for the directory, every Atlas file runs
+	// under its position in execution order instead. Comparing keys compares
+	// execution order only there; elsewhere Atlas files run in file-name
+	// order, so 10_b.sql runs before 9_a.sql. The name parsers leave it 0.
+	OrderKey int64
 	// Name is the humanized description: underscore (and, in Atlas names,
 	// dot) separators become spaces and words are Title-Cased, so
 	// "create_users_table" reads back as "Create Users Table". The raw

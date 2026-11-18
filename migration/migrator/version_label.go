@@ -39,26 +39,32 @@ func (m *Migrator) VersionLabels(versions []int64) []string {
 // ResolveVersion reads a version a person named, such as the target of a
 // rollback, as the version the migrator runs it under.
 //
-// The version string of an Atlas file whose version is not a decimal number
-// above zero, such as v1, 00 or -5, names that file, and is read first: 00
-// names 00_x.sql, never version 0. Other text is read as a decimal number,
-// which is that number. A canonical decimal above zero is never such a
-// version, so 0, 1 and 01 read as numbers whatever the directory holds. A
-// number is refused when it is negative, and when it reaches the order keys
-// of the files whose version is not a number, since those keys are no file's
-// version. Text that is neither is refused with the text in the error. Over a
-// revision table that records numbers, a directory holding such a file is
+// Over an Atlas revision table the version string of a file names that file,
+// and is read first: 00 names 00_x.sql, never version 0, and 1R names
+// 1R__rep.sql. Where the migrations run under their positions (a directory
+// holding a version that is not a decimal number above zero), a number is
+// such a string like any other, and only 0, the empty history, is read as a
+// number. Otherwise text is read as a decimal number, which is that number, so
+// 1 names 01_a.sql. A number is refused when it is negative, and when it
+// reaches the order key of a repeatable R__x.sql, which runs above every
+// number. Text that names nothing is refused with the text in the error. Over
+// a revision table that records numbers, a directory keyed by position is
 // refused first, as every command that reads the revisions refuses it.
 func (m *Migrator) ResolveVersion(label string) (int64, error) {
 	if err := m.refuseNumberlessVersionsInANumericTable(); err != nil {
 		return 0, err
 	}
-	numberless := m.numberlessMigrations()
-	for _, migration := range numberless {
-		if migration.atlasRevisionVersion == label {
-			return migration.Version, nil
-		}
+	if version, ok := m.atlasIdentityVersion(label); ok {
+		return version, nil
 	}
+	if m.hasAtlasPositions() && m.revisionTableFormat.isAtlas() {
+		// A number names no file here: every key is a position.
+		if label == "0" {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("no migration file carries version %q", label)
+	}
+	numberless := m.numberlessMigrations()
 	if version, err := strconv.ParseInt(label, 10, 64); err == nil {
 		if version < 0 {
 			return 0, fmt.Errorf("no migration file carries version %d: a migration version is not negative", version)
@@ -75,6 +81,22 @@ func (m *Migrator) ResolveVersion(label string) (int64, error) {
 		return version, nil
 	}
 	return 0, fmt.Errorf("no migration file carries version %q", label)
+}
+
+// atlasIdentityVersion returns the order key of the Atlas migration whose
+// version string is label, over an Atlas revision table, which records that
+// string. A repeatable such as 1R is found by its version string too.
+func (m *Migrator) atlasIdentityVersion(label string) (int64, bool) {
+	if m == nil || m.migrationProvider == nil || !m.revisionTableFormat.isAtlas() {
+		return 0, false
+	}
+	for _, migration := range m.migrationProvider.Migrations() {
+		if migration.hasAtlasRevisionVersion && !migration.atlasRevisionVersionMapped &&
+			migration.atlasRevisionVersion == label {
+			return migration.Version, true
+		}
+	}
+	return 0, false
 }
 
 // logVersion is how a log line names version under its "version" key, as

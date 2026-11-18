@@ -77,6 +77,10 @@ type MigrationRevision struct {
 	// the number, and without this the row and its file 001_init.sql would
 	// compare under two keys and the file would read as missing.
 	fileSpelling string
+	// positionKeyed marks a row read for a directory whose migrations run
+	// under their positions, where Version is a position and never a number
+	// the row records.
+	positionKeyed bool
 }
 
 // MarshalJSON preserves the presence of an exact empty Atlas revision
@@ -1011,7 +1015,10 @@ func (m *Migrator) atlasVersionNumberExpression() string {
 	// generated-SQL guard tests can assert every dialect branch without a live
 	// database.
 	fallback := atlasVersionNumberExpressionFor(m.connectionDialect())
-	if m.hasAtlasRevisionVersionMap() {
+	// A version no file of a directory keyed by position carries, such as v1
+	// after its file is removed, has no position, and a strict dialect refuses
+	// the cast of it.
+	if m.hasAtlasRevisionVersionMap() || m.hasAtlasPositions() {
 		fallback = atlasRetiredVersionNumberExpressionFor(m.connectionDialect())
 	}
 	mappings := m.atlasRevisionVersionMappings()
@@ -1388,6 +1395,7 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	text.assignTo(&revision)
 	revision.AtlasVersion = version
 	revision.hasAtlasVersion = true
+	revision.positionKeyed = m.hasAtlasPositions()
 	parsedVersion, err := m.atlasRuntimeVersion(version)
 	if err != nil {
 		return MigrationRevision{}, err
@@ -1425,7 +1433,7 @@ func (m *Migrator) atlasRuntimeVersion(revision string) (int64, error) {
 			return mapping.runtime, nil
 		}
 	}
-	if m.hasAtlasRevisionVersionMap() {
+	if m.hasAtlasRevisionVersionMap() || m.hasAtlasPositions() {
 		// The exact source token remains complete applied-history identity after
 		// its file is removed, but its conversion-time numeric tie slot is not
 		// recoverable from that token alone. Keep it at the history-only zero
@@ -1443,6 +1451,20 @@ func (m *Migrator) hasAtlasRevisionVersionMap() bool {
 		hasAtlasRevisionVersionMap() bool
 	})
 	return ok && source.hasAtlasRevisionVersionMap()
+}
+
+// hasAtlasPositions reports that every migration of the provider runs under
+// its position in execution order, so an order key names no version and a
+// recorded version only its file's position. A row whose file is gone has no
+// position, and reads under the history-only key 0.
+func (m *Migrator) hasAtlasPositions() bool {
+	if m == nil || m.migrationProvider == nil {
+		return false
+	}
+	source, ok := m.migrationProvider.(interface {
+		hasAtlasPositions() bool
+	})
+	return ok && source.hasAtlasPositions()
 }
 
 // atlasVersionSpelling returns the token the provider's Atlas file spells for
@@ -1657,10 +1679,10 @@ func resumeStatementFor(revision MigrationRevision, total int, runner repaircomm
 		return 0, err
 	}
 	if revision.RollbackLeftUnknown() {
-		return 0, &rollbackLeftUnknownResumeError{version: revision.RevisionVersion(), runner: runner}
+		return 0, &rollbackLeftUnknownResumeError{version: revision.VersionLabel(), runner: runner}
 	}
 	if revision.Error == unknownStatementOutcomeError {
-		return 0, &unknownOutcomeError{version: revision.RevisionVersion(), statement: revision.Applied + 1, runner: runner}
+		return 0, &unknownOutcomeError{version: revision.VersionLabel(), statement: revision.Applied + 1, runner: runner}
 	}
 	if revision.Applied <= 0 {
 		return 1, nil
@@ -1668,11 +1690,11 @@ func resumeStatementFor(revision MigrationRevision, total int, runner repaircomm
 	if revision.Total != total {
 		return 0, fmt.Errorf(
 			"migration %s cannot resume automatically: the previous attempt applied %d of %d statements but the file now has %d; inspect the database, then use %s",
-			revision.RevisionVersion(),
+			revision.VersionLabel(),
 			revision.Applied,
 			revision.Total,
 			total,
-			repaircommand.Reconciled(revision.RevisionVersion(), runner),
+			repaircommand.Reconciled(revision.VersionLabel(), runner),
 		)
 	}
 	return revision.Applied + 1, nil
