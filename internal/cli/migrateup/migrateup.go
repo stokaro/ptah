@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -384,6 +385,26 @@ func refuseEmptyToVersion(value string) error {
 	return nil
 }
 
+// refuseToVersionNoFileSpells refuses, before the command connects, a
+// --to-version bound that is not a number over a directory whose every file
+// carries a number. Only a file whose version is not a number, an Atlas file
+// such as v1_x.sql, spells text, so no file of such a directory can carry it.
+// Any other directory, and one that cannot be read here, is answered by
+// [resolveToVersion] through the directory the migrator read.
+func refuseToVersionNoFileSpells(fsys fs.FS, format migrationfile.DirFormat, value string) error {
+	if value == "" {
+		return nil
+	}
+	if _, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return nil
+	}
+	files, err := migrationfile.Discover(fsys, format)
+	if err != nil || slices.ContainsFunc(files, func(file migrationfile.File) bool { return file.Version <= 0 || file.Repeatable }) {
+		return nil
+	}
+	return fmt.Errorf("invalid --%s %q: a migration version is a number", toVersionFlag, value)
+}
+
 // resolveToVersion reads the --to-version bound into the order key the
 // migrator compares with, through the directory the migrator read: 2 names
 // 2_x.sql, and in an Atlas directory keyed by file position that file's
@@ -602,6 +623,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	document.ServerDetails.Options.Source = migrationsFS
 	migrationsDir = source.Display
 	settings.dirFormat = source.DirFormat
+	if err := refuseToVersionNoFileSpells(migrationsFS, settings.dirFormat, resolvedOpts.toVersion); err != nil {
+		return err
+	}
 
 	if err := runIntegrityGate(cmd.Context(), cmd.ErrOrStderr(), emit, runtime, source, settings.dirFormat, integrityPolicy, opts); err != nil {
 		return err
