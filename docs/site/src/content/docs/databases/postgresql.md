@@ -407,7 +407,9 @@ quoted, so a mixed-case name and a schema keep what they name:
 
 In a SQL schema file an unquoted name folds to lower case, as PostgreSQL
 folds it: `COLLATE Ucs_Basic` names `ucs_basic`, and `COLLATE
-app."MixedCase"` names `MixedCase` in the schema `app`.
+app."MixedCase"` names `MixedCase` in the schema `app`. So `COLLATE C` names
+`c`, which PostgreSQL does not ship. The server refuses the statement, and the
+error ends with a hint to write `COLLATE "C"`.
 
 The comparison reads the collation each column declares from
 `pg_attribute.attcollation`. A column whose declared collation differs is
@@ -424,6 +426,10 @@ without a change:
   a collation of that name in any schema, and a name with a schema matches
   only that schema's collation.
 - `COLLATE "pg_catalog"."C"` matches `COLLATE "C"`.
+
+A plan rates a collation change as a warning, including a reset to the type's
+collation. The change rebuilds every index on the column, and it fails where a
+unique key holds values that the new collation finds equal.
 
 A type change on a column with a collation restates the collation, because a
 `TYPE` clause without `COLLATE` gives the column its new type's collation.
@@ -1370,16 +1376,16 @@ A guard runs before the drop. It reads `pg_depend` and refuses the plan,
 naming each object, when something else depends on the column: an index
 outside the selected scope, a key or exclusion constraint, a policy, a
 trigger with a column list, a foreign key from another table, a statistics
-object, a column privilege, a storage option, a collation other than the
-type's own, or a security label. The plan does not restate any of them, so the
-guard refuses a policy or a trigger even where the declaration keeps it
-unchanged. Every statement runs in the apply's transaction, so a later failure
+object, a column privilege, a storage option, or a security label. The plan
+does not restate any of them, so the guard refuses a policy or a trigger even
+where the declaration keeps it unchanged. Every statement runs in the apply's transaction, so a later failure
 undoes the rebuild.
 
 A plan that also removes the generated column, or whose declaration does not
-hold it, is refused before it runs, and so is one where the generated column
-has a collation of its own, which the rebuild does not restate. A change of
-the collation of the column it reads is rebuilt around like a type change.
+hold it, is refused before it runs. The generated column comes back with the
+collation its declaration gives it, so one with a collation of its own keeps
+it. A change of the collation of the column it reads is rebuilt around like a
+type change.
 CockroachDB refuses the same type change, but its catalog does not report what
 depends on a computed column, so Ptah refuses the plan there instead of
 rebuilding.

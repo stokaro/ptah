@@ -195,7 +195,8 @@ func NewPostgreSQLWriterForRunnerWithCapabilities(
 // interpolation. Identifiers (table/column names) cannot be parameterized
 // and must be escaped via quoteIdent before being substituted in. A role's
 // password variable the statement names is written in first, and kept out of
-// the error; see [expandPasswords].
+// the error; see [expandPasswords]. A refusal of a collation whose name an
+// unquoted spelling folded to lower case says how to keep its case.
 func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
@@ -210,7 +211,7 @@ func (w *PostgreSQLWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args 
 		return err
 	}
 	if _, err := w.db.ExecContext(ctx, expanded.text, args...); err != nil {
-		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", expanded.redact(err), sqlExpr)
+		return fmt.Errorf("SQL execution failed: %w\nSQL: %s%s", expanded.redact(err), sqlExpr, collationFoldHint(err))
 	}
 	return nil
 }
@@ -244,7 +245,8 @@ func (w *PostgreSQLWriter) BeginTransaction(ctx context.Context) (catalog.Schema
 	return &postgresTransactionWriter{beginContext: ctx, tx: tx, schema: w.schema}, nil
 }
 
-// ExecuteSQL executes SQL against the transaction.
+// ExecuteSQL executes SQL against the transaction, and says how to keep the
+// case of a collation name the way [PostgreSQLWriter.ExecuteSQL] does.
 func (w *postgresTransactionWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would execute SQL", "sql", sqlExpr, "args", args)
@@ -260,7 +262,7 @@ func (w *postgresTransactionWriter) ExecuteSQL(ctx context.Context, sqlExpr stri
 		return err
 	}
 	if _, err := w.tx.ExecContext(ctx, expanded.text, args...); err != nil {
-		return fmt.Errorf("SQL execution failed: %w\nSQL: %s", expanded.redact(err), sqlExpr)
+		return fmt.Errorf("SQL execution failed: %w\nSQL: %s%s", expanded.redact(err), sqlExpr, collationFoldHint(err))
 	}
 	return nil
 }

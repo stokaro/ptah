@@ -523,6 +523,21 @@ func assessStatement(statement string, keepsNullability bool, pieces []statement
 // safeReason is the reason of a statement nothing marks as risky.
 const safeReason = "does not remove data or tighten constraints"
 
+// collationChangeReason is why a change of a column's collation alone is a
+// warning. A unique key rebuilt under the new collation can find duplicates:
+// MySQL 8.4 answers a MODIFY from utf8mb4_bin to utf8mb4_general_ci on a
+// UNIQUE column holding 'a' and 'A' with Error 1062, and PostgreSQL 18.6
+// answers the change to a case-insensitive collation with `could not create
+// unique index`.
+const collationChangeReason = "the collation change rebuilds every index on the column, changes how its values " +
+	"sort and compare, and fails where a unique key holds values the new collation finds equal"
+
+// setsCollationReason is why a statement that writes a column's collation is a
+// warning where nothing says whether the collation changes: MODIFY COLUMN
+// restates a collation the column keeps.
+const setsCollationReason = "the statement sets a column's collation: a change of it rebuilds every index on " +
+	"the column and fails where a unique key holds values the new collation finds equal"
+
 // HighestAssessment returns the highest severity from statement assessments.
 // Empty or nil assessments answer Safe; severities compare the way [Highest]
 // documents.
@@ -889,7 +904,7 @@ func classifyModifyColumn(op *ast.ModifyColumnOperation) (Severity, string) {
 		return classifyDefaultChange(op.Column)
 	}
 	if op.HasChanged && op.Changed == (ast.ColumnProperties{Collation: true}) {
-		return Warning, "the collation change rebuilds every index on the column and changes how its values sort and compare"
+		return Warning, collationChangeReason
 	}
 	return Warning, "column modification needs manual review"
 }
@@ -1028,6 +1043,9 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 	case addsNotNullConstraint(words):
 		assessment.Severity = Warning
 		assessment.Reason = "ADD CONSTRAINT ... NOT NULL can fail when existing rows contain NULL"
+	case setsColumnCollation(words):
+		assessment.Severity = Warning
+		assessment.Reason = setsCollationReason
 	case !keepsNullability && restatesNotNull(sql):
 		assessment.Severity = Warning
 		assessment.Reason, _ = restatedNotNullReason(sql)
@@ -1042,6 +1060,25 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 		raiseAssessment(&assessment, nextInsertVerdict(statement.Words))
 	}
 	return assessment
+}
+
+// setsColumnCollation reports whether words write the collation of a column
+// that exists: PostgreSQL's ALTER COLUMN ... TYPE ... COLLATE, MySQL's MODIFY
+// or CHANGE with a COLLATE, or MySQL's CONVERT TO CHARACTER SET, which gives
+// every character column of the table a collation. A COLLATE in a CREATE TABLE
+// or in a table's default options changes no column that holds rows.
+func setsColumnCollation(words []string) bool {
+	if !hasWordPrefix(words, "ALTER", "TABLE") {
+		return false
+	}
+	if hasWordSequence(words, "CONVERT", "TO") {
+		return true
+	}
+	if !hasWordSequence(words, "COLLATE") {
+		return false
+	}
+	return hasWordSequence(words, "ALTER", "COLUMN") && hasWordSequence(words, "TYPE") ||
+		hasWordSequence(words, "MODIFY") || hasWordSequence(words, "CHANGE")
 }
 
 // accessChangeReason is why a raw statement that changes who may reach an
