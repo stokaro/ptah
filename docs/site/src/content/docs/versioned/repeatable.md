@@ -140,22 +140,30 @@ not make an identity unique, so two runs that read the same record both run
 the body, and both insert a row for a new file. Run one migrator at a time
 against ClickHouse.
 
-Every change to the record is a mutation. An attempt, a failure and a
-completion are each an `ALTER TABLE ... UPDATE` with `mutations_sync = 1`,
-which rewrites the data parts that hold the row and waits until it has. The
-wait covers only the replica that ran the statement. With a replicated engine
-named through `--migrations-engine`, a run against another replica can read the
-record before the mutation reaches it and execute the body again, so point
-every run at the same replica. A repair removes a row with a lightweight
-`DELETE`, which needs a `MergeTree`-family engine that supports it.
+The attempt of a new file inserts its row with an `INSERT`. The attempt of a
+file the record already holds, a failure and a completion are mutations: each
+is an `ALTER TABLE ... UPDATE` with `mutations_sync = 1`, which rewrites the
+data parts that hold the row and waits until it has. The wait covers only the
+replica that ran the statement. With a replicated engine named through
+`--migrations-engine`, a run against another replica can read the record
+before the mutation reaches it and execute the body again, so point every run
+at the same replica. A repair removes a row with a lightweight `DELETE`, which
+marks the row deleted rather than rewriting its parts, and needs a
+`MergeTree`-family engine that supports it.
 
 The statement that records a body carries the body in its text, because the
 driver writes bound values into the statement, and the server parses no
 statement longer than `max_query_size`, 262144 bytes by default. A file whose
 record would be longer is refused before anything runs, with an error that
-gives the limit and the setting. A backslash or a single quote in the file
-counts twice, because it is escaped. To run a larger file, raise
+gives the limit and the setting. A backslash, a single quote or a NUL byte in
+the file counts twice, because it is escaped. To run a larger file, raise
 `max_query_size` for the migration user, in its settings profile.
+
+The run reads `max_query_size` from `system.settings` before anything runs,
+so the migration user must be able to read that table. On a server whose
+access control requires a grant for system tables, give the migration user
+`SELECT` on `system.settings`; without it, every run with a pending repeatable
+migration fails before it starts.
 
 ## Seal the directory
 
