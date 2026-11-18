@@ -23,6 +23,9 @@ type spelling struct {
 	bare     descriptor.BareNames
 	keywords map[string]bool
 	paths    bool
+	// fold is the descriptor's Identifiers.UnquotedFold: the case the engine
+	// records an unquoted name in, or empty.
+	fold string
 }
 
 // spellings caches the spelling of each dialect name a caller has asked
@@ -52,6 +55,7 @@ func spellingOf(dialect string) spelling {
 		return spelling{}
 	}
 	written := spellingFrom(described.Quoting)
+	written.fold = described.Identifiers.UnquotedFold
 	spellings.Store(dialect, written)
 	return written
 }
@@ -185,6 +189,32 @@ func isPlainIdentifier(name string) bool {
 		return false
 	}
 	return true
+}
+
+// CatalogName returns the name a schema model gives the object dialect's
+// catalog records as stored, so that [Ident] writes it back as that object.
+//
+// It is stored itself unless no unquoted spelling reaches it, and then stored
+// quoted. That happens only on a dialect whose descriptor states an
+// UnquotedFold, for a name [Ident] writes bare and the fold changes. Oracle
+// records an unquoted orders as ORDERS, so a catalog name orders was created
+// quoted: its model name is `"orders"`, and a declared `orders` is the
+// table ORDERS. A name [Ident] quotes anyway, such as a keyword, comes back as
+// it is, because Ident already writes it with the spelling the catalog holds.
+func CatalogName(dialect, stored string) string {
+	written := spellingOf(dialect)
+	if written.fold == "" || written.ident(stored) != stored || foldCase(written.fold, stored) == stored {
+		return stored
+	}
+	return written.quote(stored)
+}
+
+// foldCase folds name to the case fold names, "upper" or "lower".
+func foldCase(fold, name string) string {
+	if fold == "lower" {
+		return strings.ToLower(name)
+	}
+	return strings.ToUpper(name)
 }
 
 // QualifiedIdent returns the spelling that refers to name in dialect, qualified

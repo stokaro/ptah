@@ -103,5 +103,14 @@ func (d Dialect) validateIdentifiers() error {
 	if naming := d.ColumnKeys; naming != "" && !slices.Contains(ColumnKeyNamings(), naming) {
 		return fmt.Errorf("%w: dialect %q: column key naming %q is not one of %q", ErrInvalidDescriptor, d.Name, naming, ColumnKeyNamings())
 	}
+	if fold := d.Identifiers.UnquotedFold; fold != "" && !slices.Contains(UnquotedFolds(), fold) {
+		return fmt.Errorf("%w: dialect %q: unquoted fold %q is not one of %q", ErrInvalidDescriptor, d.Name, fold, UnquotedFolds())
+	}
 	return nil
+}
+
+// UnquotedFolds returns every value [Identifiers.UnquotedFold] may spell
+// besides the empty one.
+func UnquotedFolds() []string {
+	return []string{"upper", "lower"}
 }

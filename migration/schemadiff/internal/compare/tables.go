@@ -2,6 +2,7 @@ package compare
 
 import (
 	"sort"
+	"strings"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
@@ -16,6 +17,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemapreparation"
 	"ptah.run/internal/deporder"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableidentity"
 	"ptah.run/internal/tableref"
 )
@@ -224,7 +226,7 @@ func TablesAndColumnsWithTableContext(
 				continue
 			}
 			diff.TablesRemoved = append(diff.TablesRemoved, difftypes.TableRemoval{
-				Name: tableDiffName(table.Schema, table.Name, dialect), Current: difftypes.TableObservationFor(database, table, dialect, semantics),
+				Name: removedTableName(table.Schema, table.Name, dialect), Current: difftypes.TableObservationFor(database, table, dialect, semantics),
 			})
 		}
 	}
@@ -326,6 +328,39 @@ func tableDiffName(schema, name, dialect string) string {
 		return tableref.CanonicalExact(schema, name)
 	}
 	return catalog.QualifyTableName(schema, name)
+}
+
+// removedTableName is [tableDiffName] for a table the read holds, whose name
+// is the catalog's. On a target that folds unquoted names, a name no unquoted
+// spelling reaches arrives quoted (sqlident.CatalogName), and it keeps its
+// quotes here rather than being quoted a second time as a name that contains
+// quote characters; the schema is spelled the same way, since it is the
+// catalog's too. A DROP then names the table the read found: on Oracle
+// `PTAH."orders"`, where `PTAH.orders` names ORDERS (stokaro/ptah#6243).
+func removedTableName(schema, name, dialect string) string {
+	if comparisonOf(dialect).VerbatimTableNames {
+		return tableref.CanonicalExact(schema, name)
+	}
+	schema = sqlident.CatalogName(dialect, strings.TrimSpace(schema))
+	name = strings.TrimSpace(name)
+	if !spelledQuoted(schema) && !spelledQuoted(name) {
+		return catalog.QualifyTableName(schema, name)
+	}
+	part := func(value string) string {
+		if spelledQuoted(value) {
+			return value
+		}
+		return tableref.Canonical("", value)
+	}
+	if schema == "" {
+		return part(name)
+	}
+	return part(schema) + "." + part(name)
+}
+
+// spelledQuoted reports whether value is a whole double-quoted name.
+func spelledQuoted(value string) bool {
+	return len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"'
 }
 
 // tableCreationSchemaOnly and tableCreationName are the coverage filter's two

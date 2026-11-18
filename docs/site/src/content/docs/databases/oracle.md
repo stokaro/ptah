@@ -53,6 +53,27 @@ A name Oracle refuses bare — a reserved word such as `size`, `comment` or
 `user`, or a name carrying a character outside a plain identifier — is quoted on
 both sides instead, so the two still agree.
 
+A declared name is always a bare name. A declared `orders` means the table
+Oracle stores as `ORDERS`, and there is no syntax to declare a quoted one.
+
+A name read from the catalog is the stored spelling, and two spellings that
+differ only in case are two objects. A table created as `"orders"` is stored
+as `orders`, which is not what any bare name folds to, so Ptah keeps it apart
+from `ORDERS` and writes it quoted wherever a statement names it. A catalog
+name that equals its upper-case fold is written bare:
+
+```sql
+DROP TABLE APP."orders" PURGE;
+DROP TABLE APP.ORDERS PURGE;
+```
+
+A declaration that would replace such an object is refused. If the declaration
+names `orders`, the catalog has no `ORDERS`, and it holds the case-sensitive
+`"orders"`, the plan would drop `"orders"` and create an empty `ORDERS`. Ptah
+stops before planning and names both spellings instead. The same rule holds for
+columns, indexes and constraints. Rename the declaration or the database object
+so that the two names agree.
+
 Two type mappings are worth knowing because Oracle has no direct equivalent:
 `BOOLEAN` becomes `NUMBER(1)`, with `true` and `false` written as `1` and `0`,
 and an enum becomes `VARCHAR2(255)` with a `CHECK` listing its values.

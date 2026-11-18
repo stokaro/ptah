@@ -437,6 +437,13 @@ type Identifiers struct {
 	TableNames string `json:"table_names"`
 	// ColumnNames is how two column names compare.
 	ColumnNames string `json:"column_names"`
+	// UnquotedFold is the case the engine records a name written without
+	// quotes in, "upper" or "lower", on an engine that keeps a quoted name's
+	// spelling exactly. Empty states no fold. Where it is set, a catalog name
+	// that is a plain identifier and not in that case was created quoted, so
+	// no unquoted name reaches it: it compares exactly, and a statement names
+	// it quoted.
+	UnquotedFold string `json:"unquoted_fold,omitempty"`
 }
 
 // Placeholder is how a statement marks a bound parameter.
