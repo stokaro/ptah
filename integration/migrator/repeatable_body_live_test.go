@@ -65,6 +65,15 @@ func (r *repeatableEngineTarget) recordTable() string {
 	return sqlident.Qualified(r.engine.dialect, "", "schema_migrations_repeatable")
 }
 
+// clearBody is the statement that sets every body of the record to NULL.
+func (r *repeatableEngineTarget) clearBody() string {
+	statement := r.engine.clearBody
+	if statement == "" {
+		statement = "UPDATE {table} SET body = NULL"
+	}
+	return strings.ReplaceAll(statement, "{table}", r.recordTable())
+}
+
 // exec runs each statement on the target outside any migration.
 func (r *repeatableEngineTarget) exec(c *qt.C, statements ...string) {
 	c.Helper()
@@ -131,7 +140,7 @@ func TestRepeatableBodyOnEnginesLive_FailurePath(t *testing.T) {
 			r := newRepeatableEngineTarget(c, t, engine)
 			c.Assert(r.up(c, repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": engine.widgetIDs()}),
 				migrator.MigrateUpOptions{}), qt.IsNil)
-			r.exec(c, "UPDATE "+r.recordTable()+" SET body = NULL")
+			r.exec(c, r.clearBody())
 
 			applied, err := r.appliedRepeatables(c, map[string]string{"R__widget_ids.sql": engine.widerIDs()})
 

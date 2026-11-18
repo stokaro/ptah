@@ -1,5 +1,10 @@
 package descriptor
 
+import (
+	"fmt"
+	"strings"
+)
+
 // RevisionTable states how the migrator keeps its own tables on an engine:
 // the revision table in Ptah's layout and in Atlas's, the tag table and the
 // operation log, and the shape of the statements that read and write them.
@@ -88,6 +93,31 @@ type RevisionTable struct {
 	// repeatable record's binary body column, on an engine that stores a
 	// bound empty value as NULL. Empty binds the value.
 	EmptyBinary string `json:"empty_binary,omitempty"`
+	// RepeatableUpdate changes the repeatable record's row of one identity.
+	// It takes {table}, {assignments} and {where}, the condition that selects
+	// the row: the identity, bound after the assignments' values, and any
+	// condition an attempt's claim adds. Empty uses UPDATE {table} SET
+	// {assignments} WHERE {where}; an engine that changes rows through
+	// mutations states its own. A template missing any of the three is
+	// refused with [ErrInvalidDescriptor].
+	RepeatableUpdate string `json:"repeatable_update,omitempty"`
+	// UncountedUpdates reports that an UPDATE reports no count of the rows
+	// it matched, as a ClickHouse mutation does. A repeatable migration's
+	// attempt is then not a claim: the row is updated by its key, and two
+	// runs that read the same record both run the body.
+	UncountedUpdates bool `json:"uncounted_updates,omitempty"`
+	// QuerySizeLimit reads, as one integer, the longest statement text in
+	// bytes that the server parses. It is set where the driver writes bound
+	// values into the statement text, as clickhouse-go does, so the
+	// statement that records a repeatable migration's body is as long as the
+	// body escaped. The migrator refuses, before anything runs, a body whose
+	// statement would be longer. Empty means bound values travel apart from
+	// the text.
+	QuerySizeLimit string `json:"query_size_limit,omitempty"`
+	// QuerySizeSetting names the server setting QuerySizeLimit reads, for
+	// the refusal to name. The two are stated together or not at all; a
+	// descriptor with one of them is refused with [ErrInvalidDescriptor].
+	QuerySizeSetting string `json:"query_size_setting,omitempty"`
 	// RowLock is how a read of every revision locks the rows it read until
 	// its transaction ends: "for-update" (a FOR UPDATE suffix),
 	// "table-hint" (WITH (UPDLOCK, HOLDLOCK) after the table), or empty for
@@ -170,4 +200,28 @@ type RevisionTable struct {
 	// database, "search-path" when the URL pins no search_path, or empty for
 	// never.
 	AtlasSchema string `json:"atlas_schema,omitempty"`
+}
+
+// repeatableUpdatePlaceholders are the placeholders a RepeatableUpdate
+// template must carry: without one, the statement updates another table,
+// sets nothing the attempt wrote, or updates every row.
+var repeatableUpdatePlaceholders = []string{"{table}", "{assignments}", "{where}"}
+
+// validateRevisionTable refuses a revision table whose statements the
+// migrator cannot fill in or whose refusal would name no setting.
+func (d Dialect) validateRevisionTable() error {
+	table := d.RevisionTable
+	if table.RepeatableUpdate != "" {
+		for _, placeholder := range repeatableUpdatePlaceholders {
+			if !strings.Contains(table.RepeatableUpdate, placeholder) {
+				return fmt.Errorf("%w: dialect %q: the repeatable update %q has no %s",
+					ErrInvalidDescriptor, d.Name, table.RepeatableUpdate, placeholder)
+			}
+		}
+	}
+	if (table.QuerySizeLimit == "") != (table.QuerySizeSetting == "") {
+		return fmt.Errorf("%w: dialect %q: a query size limit and the setting it reads are stated together",
+			ErrInvalidDescriptor, d.Name)
+	}
+	return nil
 }

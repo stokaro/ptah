@@ -4,19 +4,25 @@ package migrator_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrator"
 )
 
-// repeatableClaimingEngines report the rows an UPDATE matched, which is what
-// lets the attempt's write decide between two runners that read one record.
-// Every engine of the table does.
-var repeatableClaimingEngines = repeatableEngines
+// repeatableClaimingEngines are the engines of the table whose UPDATE reports
+// the rows it matched, which is what lets the attempt's write decide between
+// two runners that read one record. An engine whose descriptor says its
+// updates count no rows is left out.
+var repeatableClaimingEngines = slices.DeleteFunc(slices.Clone(repeatableEngines), func(engine repeatableEngine) bool {
+	dialect, _ := platform.Lookup(engine.dialect)
+	return dialect.RevisionTable.UncountedUpdates
+})
 
 // interveningRunner stands for a second runner against the same database.
 // The run under test reads the record when it plans, and claims the row when

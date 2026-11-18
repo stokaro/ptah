@@ -23,9 +23,8 @@ has no version, `ptah migrations up` runs it after the versioned migrations, and
 the next run executes it again only when its content changed.
 
 Repeatable migrations run on PostgreSQL, CockroachDB, YugabyteDB, MySQL,
-MariaDB, SQLite, SQL Server and Oracle. ClickHouse refuses a directory that
-holds one, before anything changes, and so does a connection through a
-provider.
+MariaDB, SQLite, SQL Server, Oracle and ClickHouse. A connection through a
+provider refuses a directory that holds one, before anything changes.
 
 ## Write one
 
@@ -103,13 +102,13 @@ That holds on an engine that rolls schema changes back as a unit: PostgreSQL,
 SQLite, SQL Server, and CockroachDB 24 and older. MySQL, MariaDB, Oracle and
 CockroachDB from 25 commit the open transaction before a schema statement, and
 YugabyteDB keeps schema changes through a rollback, so a transaction there
-would not undo a failed body. On those engines every repeatable migration runs
-without a transaction, and its record says `no_transaction=true`. Oracle
-commits each schema statement as it runs, so a failed body there leaves every
-statement that ran before the failing one. A body that changes data only gets
-no transaction either, so write it to converge when it runs again from its
-first statement. A file that asks for a transaction with
-`-- atlas:txmode file` is refused there before anything runs.
+would not undo a failed body, and ClickHouse has no transactions. On those
+engines every repeatable migration runs without a transaction, and its record
+says `no_transaction=true`. Oracle commits each schema statement as it runs, so
+a failed body there leaves every statement that ran before the failing one. A
+body that changes data only gets no transaction either, so write it to converge
+when it runs again from its first statement. A file that asks for a
+transaction with `-- atlas:txmode file` is refused there before anything runs.
 
 What "changed" means is the digest of the file: `h1:` followed by the base64
 SHA-256 of its bytes, the same value `ptah.sum` holds for the file. The run
@@ -119,20 +118,53 @@ transaction the record and the body commit together.
 Two runners against one database take the migration lock in turn. The second
 reads the record after the first released the lock, finds the digest applied,
 and runs nothing. CockroachDB has no session advisory lock, and Ptah takes none
-on Oracle, so it runs every migration on either without one, repeatable
-migrations included: run one migrator at a time against them.
+on Oracle or ClickHouse, so it runs every migration on those engines without
+one, repeatable migrations included: run one migrator at a time against them.
 
 Without the lock, the record still decides which of two runners executes a
-changed repeatable migration. Each run has an ID of its own, and the record
-keeps the ID of the run that last attempted each file. A runner claims the row
-before the body runs by writing its ID over the one it read, and the write
-matches only while the row still holds that ID. A new file is claimed by
-inserting its row, and the record's key refuses the second insert. When a
-claim does not succeed cleanly, the runner reads the row back: its own ID
-means the claim took effect, and another run's ID means it lost. The runner
-that loses refuses with
+changed repeatable migration, on every engine but ClickHouse. Each run has an
+ID of its own, and the record keeps the ID of the run that last attempted each
+file. A runner claims the row before the body runs by writing its ID over the
+one it read, and the write matches only while the row still holds that ID. A
+new file is claimed by inserting its row, and the record's key refuses the
+second insert. When a claim does not succeed cleanly, the runner reads the row
+back: its own ID means the claim took effect, and another run's ID means it
+lost. The runner that loses refuses with
 `another run changed the repeatable migration's record after this run read it`
 before any statement of the body.
+
+### On ClickHouse
+
+Nothing decides between two runs on ClickHouse. An `ALTER TABLE ... UPDATE`
+reports no count of the rows it matched, and the record's `PRIMARY KEY` does
+not make an identity unique, so two runs that read the same record both run
+the body, and both insert a row for a new file. Run one migrator at a time
+against ClickHouse.
+
+The attempt of a new file inserts its row with an `INSERT`. The attempt of a
+file the record already holds, a failure and a completion are mutations: each
+is an `ALTER TABLE ... UPDATE` with `mutations_sync = 1`, which rewrites the
+data parts that hold the row and waits until it has. The wait covers only the
+replica that ran the statement. With a replicated engine named through
+`--migrations-engine`, a run against another replica can read the record
+before the mutation reaches it and execute the body again, so point every run
+at the same replica. A repair removes a row with a lightweight `DELETE`, which
+marks the row deleted rather than rewriting its parts, and needs a
+`MergeTree`-family engine that supports it.
+
+The statement that records a body carries the body in its text, because the
+driver writes bound values into the statement, and the server parses no
+statement longer than `max_query_size`, 262144 bytes by default. A file whose
+record would be longer is refused before anything runs, with an error that
+gives the limit and the setting. A backslash, a single quote or a NUL byte in
+the file counts twice, because it is escaped. To run a larger file, raise
+`max_query_size` for the migration user, in its settings profile.
+
+The run reads `max_query_size` from `system.settings` before anything runs,
+so the migration user must be able to read that table. On a server whose
+access control requires a grant for system tables, give the migration user
+`SELECT` on `system.settings`; without it, every run with a pending repeatable
+migration fails before it starts.
 
 ## Seal the directory
 
@@ -348,9 +380,8 @@ script. Each refusal below comes before anything changes:
 - **A runner that opens its own transactions.** Under
   `migration.runner: golang-migrate` a repeatable migration would run in a
   transaction Ptah opens, so the run is refused.
-- **ClickHouse**, which keeps no record table yet, and a connection through a
-  provider rather than a built-in driver, which does not expose the SQL the
-  record is kept with.
+- **A connection through a provider** rather than a built-in driver, which
+  does not expose the SQL the record is kept with.
 - **A file that asks for a transaction** with `-- atlas:txmode file` on an
   engine that does not roll schema changes back as a unit.
 
@@ -450,8 +481,9 @@ because the community binary has no re-run-on-change semantics.
 
 ## Limits
 
-- ClickHouse and engines reached through a provider do not run repeatable
-  migrations.
+- Engines reached through a provider do not run repeatable migrations.
+- On ClickHouse nothing decides between two concurrent runs, and a file whose
+  record would exceed `max_query_size` is refused.
 - `ptah migrations repair --repeatable` removes a row; nothing marks a
   repeatable migration applied without running it. Removing the row of a file
   still in the directory makes the next run execute it as new.

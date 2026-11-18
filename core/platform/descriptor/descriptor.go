@@ -499,47 +499,28 @@ func (d Dialect) validate() error {
 	if !slices.Contains(Placeholders(), d.Placeholder) {
 		return fmt.Errorf("%w: dialect %q: placeholder %q is not one of %q", ErrInvalidDescriptor, d.Name, d.Placeholder, Placeholders())
 	}
-	if err := d.validateConnection(); err != nil {
-		return err
+	// Each check reads one part of the descriptor; the first refusal stands.
+	checks := []func() error{
+		d.validateConnection,
+		d.validateURLs,
+		d.validateAtlas,
+		d.validateScope,
+		d.validateIdentifiers,
+		d.validateNames,
+		d.validateLexical,
+		d.validateScripts,
+		d.validateReach,
+		d.validateGrammar,
+		d.validateCleanCheck,
+		d.validateSystemSchemas,
+		d.validateMigration,
+		d.validateCleanup,
+		d.validateRevisionTable,
 	}
-	if err := d.validateURLs(); err != nil {
-		return err
-	}
-	if err := d.validateAtlas(); err != nil {
-		return err
-	}
-	if err := d.validateScope(); err != nil {
-		return err
-	}
-	if err := d.validateIdentifiers(); err != nil {
-		return err
-	}
-	if err := d.validateNames(); err != nil {
-		return err
-	}
-	if err := d.validateLexical(); err != nil {
-		return err
-	}
-	if err := d.validateScripts(); err != nil {
-		return err
-	}
-	if err := d.validateReach(); err != nil {
-		return err
-	}
-	if err := d.validateGrammar(); err != nil {
-		return err
-	}
-	if err := d.validateCleanCheck(); err != nil {
-		return err
-	}
-	if err := d.validateSystemSchemas(); err != nil {
-		return err
-	}
-	if err := d.validateMigration(); err != nil {
-		return err
-	}
-	if err := d.validateCleanup(); err != nil {
-		return err
+	for _, check := range checks {
+		if err := check(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
