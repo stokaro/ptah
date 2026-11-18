@@ -18,8 +18,9 @@ import (
 //
 // The identifier semantics of a live read state an UnquotedFold
 // (identifier.ForCatalog) for a target that records a name written without
-// quotes in one case and keeps a quoted name exactly. Oracle is the one: a declared `orders` is rendered bare and stored as ORDERS, while a
-// table someone created as "orders" is stored as orders. The catalog reports
+// quotes in one case and keeps a quoted name exactly. Oracle is the one: a
+// declared `orders` is rendered bare and stored as ORDERS, while a table
+// someone created as "orders" is stored as orders. The catalog reports
 // both as they are stored, and a name in the catalog that is a plain identifier
 // and not in the fold's case was created quoted, so no declared name reaches it.
 //

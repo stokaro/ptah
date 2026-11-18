@@ -53,8 +53,10 @@ A name Oracle refuses bare — a reserved word such as `size`, `comment` or
 `user`, or a name carrying a character outside a plain identifier — is quoted on
 both sides instead, so the two still agree.
 
-A declared name is always a bare name. A declared `orders` means the table
-Oracle stores as `ORDERS`, and there is no syntax to declare a quoted one.
+The case of a declared name carries no meaning. A declared `orders` means the
+table Oracle stores as `ORDERS`, and there is no syntax to declare a name whose
+case Oracle keeps. A reserved word is quoted, as above, and compared the same
+way.
 
 A name read from the catalog is the stored spelling, and two spellings that
 differ only in case are two objects. A table created as `"orders"` is stored
