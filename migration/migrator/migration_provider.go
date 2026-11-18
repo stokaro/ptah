@@ -154,7 +154,11 @@ type FSMigrationProvider struct {
 	// Atlas format as a repeatable migration rather than as version R; see
 	// [WithAtlasRepeatableMigrations].
 	atlasRepeatables bool
-	repeatables      []*repeatableMigration
+	// atlasVerbatimDescriptions records each Atlas file under its
+	// [migrationfile.File.VerbatimDescription]; see
+	// [WithAtlasVerbatimDescriptions].
+	atlasVerbatimDescriptions bool
+	repeatables               []*repeatableMigration
 }
 
 // FSProviderOption configures a FSMigrationProvider before it loads
@@ -225,6 +229,22 @@ func WithAtlasRevisionVersions(versions map[int64]string) FSProviderOption {
 	}
 }
 
+// WithAtlasVerbatimDescriptions records the description of each Atlas file as
+// Atlas itself records it, [migrationfile.File.VerbatimDescription], in place
+// of the [migrationfile.File.RevisionDescription] Ptah records by default. The
+// two differ where a separator follows the version: Atlas describes
+// R__view.sql as "_view" and 1__init.sql as "_init", and Ptah as "view" and
+// "init". The description reaches the revision table, the result of
+// [Migrator.SetAtlasRevision] and the errors that name a revision.
+//
+// A caller reproducing the Atlas CLI selects it so a revision table it writes
+// reads the same to Atlas. Without it the directory keeps Ptah's reading.
+func WithAtlasVerbatimDescriptions() FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.atlasVerbatimDescriptions = true
+	}
+}
+
 // WithAtlasRevisionChecksums supplies the h1 hash the SOURCE directory's
 // atlas.sum recorded for each converted execution-order key, so a revision row
 // carries the checksum the source history uses rather than one recomputed from
@@ -265,6 +285,16 @@ func WithAtlasRepeatableVersions(versions []int64) FSProviderOption {
 			p.atlasRepeatable[version] = true
 		}
 	}
+}
+
+// atlasRevisionDescription is the description migrationFile is recorded under:
+// the Atlas reading when [WithAtlasVerbatimDescriptions] selected it, and
+// Ptah's otherwise.
+func (p *FSMigrationProvider) atlasRevisionDescription(migrationFile migrationfile.File) string {
+	if p.atlasVerbatimDescriptions {
+		return migrationFile.VerbatimDescription
+	}
+	return migrationFile.RevisionDescription
 }
 
 // NewFSMigrationProvider creates a new filesystem-based migration provider.
@@ -472,7 +502,7 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 					hasAtlasRevisionVersion:    true,
 					atlasRevisionVersionMapped: mapped,
 					atlasOrderKey:              migrationFile.Path,
-					revisionDescription:        migrationFile.RevisionDescription,
+					revisionDescription:        p.atlasRevisionDescription(migrationFile),
 					hasRevisionDescription:     true,
 					atlasRevisionType:          revisionType,
 					atlasRepeatable:            repeatable,

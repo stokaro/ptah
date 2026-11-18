@@ -51,9 +51,19 @@ type File struct {
 	Format               DirFormat
 	atlasRevisionVersion string
 	// RevisionDescription is the raw, unnormalized description token an Atlas
-	// file name carries, exactly as the revision table records it. Ptah files
-	// leave it empty.
+	// file name carries, exactly as a revision table Ptah writes records it:
+	// the name after its version and the separators that follow it, so
+	// 1__init.sql and R__view.sql carry "init" and "view". Ptah files leave
+	// it empty.
 	RevisionDescription string
+	// VerbatimDescription is the description Atlas itself records for an
+	// Atlas file name: everything after the first underscore, read without
+	// its .sql and direction suffixes, byte for byte. 1__init.sql carries
+	// "_init", R__view.sql "_view", 1_a.b.sql "a.b", and a name with no
+	// underscore, such as 1.sql, carries "". A migrator records it in place
+	// of RevisionDescription when the caller selects that reading. Ptah
+	// files leave it empty.
+	VerbatimDescription string
 	// Repeatable marks Flyway-style repeatable migrations imported by Atlas.
 	// Atlas records them under an opaque string token such as "R" or "2R".
 	Repeatable bool
@@ -207,6 +217,7 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 		Format:               DirFormatAtlas,
 		atlasRevisionVersion: versionDigits,
 		RevisionDescription:  rawName,
+		VerbatimDescription:  atlasVerbatimDescription(stem),
 	}, nil
 }
 
@@ -223,6 +234,7 @@ func parseAtlasRepeatableStem(stem string) (*File, bool) {
 		Format:               DirFormatAtlas,
 		atlasRevisionVersion: repeatable.revisionVersion,
 		RevisionDescription:  repeatable.rawName,
+		VerbatimDescription:  atlasVerbatimDescription(stem),
 		Repeatable:           true,
 	}, true
 }
@@ -267,6 +279,18 @@ func atlasRepeatable(stem string) (atlasRepeatableParts, bool) {
 	default:
 		return atlasRepeatableParts{}, false
 	}
+}
+
+// atlasVerbatimDescription returns the description the pinned community
+// binary records for a file stem: the text after the first underscore,
+// verbatim, or "" when there is none. It does not trim the underscores that
+// follow, so the second underscore of R__view.sql and 1__init.sql stays in the
+// description. The compatibility surface reads it for the revision table,
+// `migrate apply` and `migrate status`, so a stem has one description on every
+// surface there.
+func atlasVerbatimDescription(stem string) string {
+	_, description, _ := strings.Cut(stem, "_")
+	return description
 }
 
 func titleAtlasName(name string) string {

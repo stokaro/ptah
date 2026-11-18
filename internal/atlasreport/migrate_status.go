@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,22 +27,25 @@ type MigrateStatusOptions struct {
 }
 
 type MigrateStatus struct {
-	Env       atlasEnv                `json:"Env"`
-	Available []MigrateStatusFile     `json:"Available,omitempty"`
-	Applied   []MigrateStatusRevision `json:"Applied,omitempty"`
-	Pending   []MigrateStatusFile     `json:"Pending,omitempty"`
+	Env       atlasEnv            `json:"Env"`
+	Available []MigrateStatusFile `json:"Available,omitempty"`
 	// OutOfOrder lists pending files whose version sorts below a version the
 	// database has already applied. The pinned community binary reports these
 	// separately from Pending and refuses to name a Next Version while any
 	// exist, because "what runs next" has no answer under linear execution.
-	OutOfOrder []MigrateStatusFile `json:"OutOfOrder,omitempty"`
-	Current    string              `json:"Current"`
-	Next       string              `json:"Next,omitempty"`
-	Status     string              `json:"Status,omitempty"`
-	Count      int                 `json:"Count,omitempty"`
-	Total      int                 `json:"Total,omitempty"`
-	Error      string              `json:"Error,omitempty"`
-	SQL        string              `json:"SQL,omitempty"`
+	//
+	// The field order is the binary's: `{{ json . }}` prints OutOfOrder before
+	// Pending, and Pending before Applied.
+	OutOfOrder []MigrateStatusFile     `json:"OutOfOrder,omitempty"`
+	Pending    []MigrateStatusFile     `json:"Pending,omitempty"`
+	Applied    []MigrateStatusRevision `json:"Applied,omitempty"`
+	Current    string                  `json:"Current"`
+	Next       string                  `json:"Next,omitempty"`
+	Status     string                  `json:"Status,omitempty"`
+	Count      int                     `json:"Count,omitempty"`
+	Total      int                     `json:"Total,omitempty"`
+	Error      string                  `json:"Error,omitempty"`
+	SQL        string                  `json:"SQL,omitempty"`
 	// Repeatables is Ptah's, and present only when the directory is read with
 	// repeatable migrations and has or records one; see
 	// [MigrateStatusRepeatable].
@@ -55,9 +59,13 @@ type MigrateStatusFile struct {
 	Type        string `json:"Type,omitempty"`
 }
 
+// MigrateStatusRevision is one row of the revision table. Description is the
+// row's own, read back from the database rather than from the directory, and
+// is present in the JSON even when empty: the pinned community binary prints
+// `"Description":""` for a file such as 1.sql.
 type MigrateStatusRevision struct {
 	Version         string        `json:"Version"`
-	Description     string        `json:"Description,omitempty"`
+	Description     string        `json:"Description"`
 	Type            string        `json:"Type,omitempty"`
 	Applied         int           `json:"Applied"`
 	Total           int           `json:"Total"`
@@ -95,7 +103,7 @@ func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {
 			Dir:    opts.Dir,
 		},
 		Available:  files,
-		Applied:    migrateStatusAppliedRevisions(files, opts.AppliedRevisions),
+		Applied:    migrateStatusAppliedRevisions(opts.AppliedRevisions),
 		Pending:    selectedMigrateStatusFiles(files, opts.Status.PendingMigrations, opts.Status.PendingMigrationKeys, ""),
 		OutOfOrder: selectedMigrateStatusFiles(files, opts.Status.OutOfOrderMigrations, opts.Status.OutOfOrderMigrationKeys, ""),
 		Current: migrateStatusCurrent(
@@ -164,21 +172,17 @@ func migrateStatusOneLine(value string) string {
 	return strings.ReplaceAll(value, "\n", " ")
 }
 
-func migrateStatusAppliedRevisions(
-	files []MigrateStatusFile,
-	revisions []migrator.MigrationRevision,
-) []MigrateStatusRevision {
+// migrateStatusAppliedRevisions lists the revision rows ordered by their
+// version string, byte for byte, which is the order the pinned community
+// binary reads them in. It is not the order they were applied in: after
+// applying 10_b.sql and then 1_a.sql the binary lists 1 before 10, and after
+// 2_c.sql and 20260101000000_ts.sql it lists 1, 10, 2, 20260101000000.
+func migrateStatusAppliedRevisions(revisions []migrator.MigrationRevision) []MigrateStatusRevision {
 	out := make([]MigrateStatusRevision, 0, len(revisions))
-	descriptions := migrateStatusFileDescriptions(files)
 	for _, revision := range revisions {
-		version := revision.RevisionVersion()
-		description := descriptions[version]
-		if description == "" {
-			description = revision.Description
-		}
 		out = append(out, MigrateStatusRevision{
-			Version:         version,
-			Description:     description,
+			Version:         revision.RevisionVersion(),
+			Description:     revision.Description,
 			Type:            revision.AtlasType.String(),
 			Applied:         revision.Applied,
 			Total:           revision.Total,
@@ -189,15 +193,10 @@ func migrateStatusAppliedRevisions(
 			OperatorVersion: revision.OperatorVersion,
 		})
 	}
+	slices.SortStableFunc(out, func(a, b MigrateStatusRevision) int {
+		return strings.Compare(a.Version, b.Version)
+	})
 	return out
-}
-
-func migrateStatusFileDescriptions(files []MigrateStatusFile) map[string]string {
-	descriptions := make(map[string]string, len(files))
-	for _, file := range files {
-		descriptions[file.Version] = file.Description
-	}
-	return descriptions
 }
 
 func migrateStatusFiles(opts MigrateStatusOptions) ([]MigrateStatusFile, error) {
@@ -218,9 +217,17 @@ func migrateStatusFiles(opts MigrateStatusOptions) ([]MigrateStatusFile, error) 
 		files = append(files, MigrateStatusFile{
 			Name:        file.Path,
 			Version:     version,
-			Description: atlasMigrationFileDescription(file.Path),
+			Description: file.VerbatimDescription,
 		})
 	}
+	// Available, and with it Pending and OutOfOrder, lists the files in the
+	// order they execute: by file name, byte for byte, as the migrator orders
+	// an Atlas directory (its atlasOrderKey) and as atlas.sum lists them. So
+	// 10_b.sql comes before 1_a.sql, and R__view.sql after every numbered
+	// file, as the pinned community binary lists them.
+	slices.SortStableFunc(files, func(a, b MigrateStatusFile) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 	return files, nil
 }
 
