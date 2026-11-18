@@ -504,25 +504,53 @@ func rehearseOnPreparedDev(
 	statements []string,
 	runtime engine.SchemaRuntime,
 ) error {
-	devConn.SchemaWriter().SetDryRun(false)
-	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
-		return &SimulationError{Stage: "reset", Err: err}
-	}
-	// After the reset, which empties the schema the dev session resolves names
-	// in: once moved, that is the target's, which the dev database may not
-	// even hold yet.
-	devConn, reads, err := resolveNamesAsTarget(ctx, devConn, target)
+	devConn, added, err := rebuildTargetOnDev(ctx, devConn, baseline, current, outside, target, runtime)
 	if err != nil {
-		return &SimulationError{Stage: "baseline", Err: err}
-	}
-	added, err := recreateCurrentSchema(ctx, devConn, current, target, baseline, runtime, outside, reads)
-	if err != nil {
-		return &SimulationError{Stage: "baseline", Err: err}
+		return err
 	}
 	if err := applyStatements(ctx, devConn, txMode, statements); err != nil {
 		return &SimulationError{Stage: "plan", Err: devseed.WithAdded(withDevRoleHint(err, baseline), added)}
 	}
 	return nil
+}
+
+// rebuildTargetOnDev resets the pinned dev session devConn, moves its name
+// resolution to the target's, and recreates the target's current schema there.
+// It returns the session the rehearsal goes on in and the objects
+// [recreateCurrentSchema] added. A failure is a [SimulationError] of the stage
+// it failed in.
+//
+// Every rehearsal starts here, whether it runs the plan's SQL text or plans a
+// change that holds native operations again: both run against the target's
+// state, and on a realm-scoped pair whose current schemas differ that state is
+// built under the target's names only in the moved session; see
+// [resolveNamesAsTarget]. The plan has to run, or be made again, in that
+// session too, so the caller continues in the returned one.
+func rebuildTargetOnDev(
+	ctx context.Context,
+	devConn *dbschema.DatabaseConnection,
+	baseline devclean.Baseline,
+	current *catalog.Database,
+	outside rehearsalOutside,
+	target catalog.ServerInfo,
+	runtime engine.SchemaRuntime,
+) (*dbschema.DatabaseConnection, []devseed.Object, error) {
+	devConn.SchemaWriter().SetDryRun(false)
+	if err := devclean.Reset(ctx, devConn, baseline); err != nil {
+		return nil, nil, &SimulationError{Stage: "reset", Err: err}
+	}
+	// After the reset, which empties the schema the dev session resolves names
+	// in: once moved, that is the target's, which the dev database may not
+	// even hold yet.
+	moved, reads, err := resolveNamesAsTarget(ctx, devConn, target)
+	if err != nil {
+		return nil, nil, &SimulationError{Stage: "baseline", Err: err}
+	}
+	added, err := recreateCurrentSchema(ctx, moved, current, target, baseline, runtime, outside, reads)
+	if err != nil {
+		return nil, nil, &SimulationError{Stage: "baseline", Err: err}
+	}
+	return moved, added, nil
 }
 
 // withDevRoleHint says, on the refusal of a plan that gives an object to a role
@@ -564,25 +592,6 @@ func checkSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
 	}
 	return fmt.Errorf(
 		"--dev-url schema scope %q does not match --url schema scope %q; point --dev-url at a dev database using the same schema",
-		devInfo.Schema, targetInfo.Schema,
-	)
-}
-
-// checkNativeSimulationSchemaScope refuses a realm-scoped pair whose current
-// schemas differ for a plan that holds native operations or approved inputs.
-// [checkSimulationSchemaScope] lets that pair through because a rehearsal of
-// SQL text moves the dev session's name resolution to the target's; see
-// [resolveNamesAsTarget]. The native rehearsal makes the plan again on the dev
-// database and does not move it, so the dev session would build the target's
-// state under its own current schema and run the plan against that.
-func checkNativeSimulationSchemaScope(devInfo, targetInfo catalog.ServerInfo) error {
-	if !realmPairResolvesApart(devInfo, targetInfo) {
-		return nil
-	}
-	return fmt.Errorf(
-		"--dev-url schema scope %q does not match --url schema scope %q; "+
-			"a plan that holds native operations or approved inputs is rehearsed only where both resolve names alike, "+
-			"so point --dev-url at a dev database using the same schema or set search_path on both URLs",
 		devInfo.Schema, targetInfo.Schema,
 	)
 }

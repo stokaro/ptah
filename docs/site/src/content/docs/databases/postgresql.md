@@ -128,8 +128,9 @@ depend on the session's search path.
 The rehearsal on a dev database of another current schema gives the dev
 database the target's current schema and sets the session's search path to the
 target's, so each statement, its bodies included, resolves its names as it will
-on the target. When either URL pins a `search_path`, the two must name the same
-schema.
+on the target. A plan that holds a provider's native operations or approved
+inputs is planned again in that session before it runs there. When either URL
+pins a `search_path`, the two must name the same schema.
 
 On connection, Ptah reads the server version and selects the matching
 capability preset, so planning adapts to the concrete server — see
