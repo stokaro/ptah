@@ -182,7 +182,7 @@ func (m *Migrator) deleteRolledBackRevision(ctx context.Context, migration *Migr
 	}
 	m.logger.Info(
 		"Completed rollback of migration",
-		"version", migration.Version,
+		"version", m.logVersion(migration.Version),
 		"description", migration.Description,
 	)
 	return nil

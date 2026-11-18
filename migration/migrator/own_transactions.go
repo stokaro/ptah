@@ -288,7 +288,7 @@ func (m *Migrator) applyUpMigrationOwnTransactions(
 		if plan.resumeFrom > 1 {
 			scoped.logger.Info(
 				"Resuming migration after a partially applied attempt",
-				"version", migration.Version,
+				"version", m.logVersion(migration.Version),
 				"resumeFromStatement", plan.resumeFrom,
 			)
 		}
@@ -336,7 +336,7 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 	if err := m.completeMigrationRevision(recordCtx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
 	}
-	m.logger.Info("Applied migration that runs its own transactions", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applied migration that runs its own transactions", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 
@@ -420,7 +420,7 @@ func (m *Migrator) rollbackMigrationOwnTransactionsOnSession(
 	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
-	m.logger.Info("Rolled back migration that runs its own transactions", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Rolled back migration that runs its own transactions", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 

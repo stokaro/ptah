@@ -2501,7 +2501,7 @@ func (m *Migrator) reportBaselineSkippedChecks(migrations []*Migration) {
 	}
 	m.logger.Warn(
 		"Baseline recorded migrations as applied without evaluating their checks",
-		"versions", versions,
+		"versions", m.logVersions(versions),
 	)
 }
 

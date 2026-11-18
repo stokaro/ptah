@@ -2040,7 +2040,7 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		return err
 	}
 
-	m.logger.Info("Migrating up", "currentVersion", currentVersion, "totalMigrations", len(migrations))
+	m.logger.Info("Migrating up", "currentVersion", m.logVersion(currentVersion), "totalMigrations", len(migrations))
 	checksDeferred, err := m.applyUpBatch(ctx, opts, migrationsToApply)
 	if err != nil {
 		return err
@@ -2335,7 +2335,7 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 
 	// Skip if already at or below target version (shouldn't happen)
 	if targetVersion >= currentVersion {
-		m.logger.Info("Already at or below target version", "targetVersion", targetVersion, "currentVersion", currentVersion)
+		m.logger.Info("Already at or below target version", "targetVersion", m.logVersion(targetVersion), "currentVersion", m.logVersion(currentVersion))
 		return nil
 	}
 	if err := m.repeatableRollbackRefusal(ctx); err != nil {
@@ -2380,7 +2380,7 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 		)
 	}
 
-	m.logger.Info("Migrating down", "targetVersion", targetVersion, "currentVersion", currentVersion, "totalMigrations", len(m.migrationProvider.Migrations()))
+	m.logger.Info("Migrating down", "targetVersion", m.logVersion(targetVersion), "currentVersion", m.logVersion(currentVersion), "totalMigrations", len(m.migrationProvider.Migrations()))
 
 	// Rebind once: template + dialect are loop-invariant. Migration version
 	// is bound as a parameter via the dialect-native placeholder.
@@ -2440,7 +2440,7 @@ func (m *Migrator) migrateToLocked(ctx context.Context, targetVersion int64) err
 	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	if targetVersion == currentVersion {
-		m.logger.Info("Already at target version", "version", targetVersion)
+		m.logger.Info("Already at target version", "version", m.logVersion(targetVersion))
 		return nil
 	}
 
@@ -2498,7 +2498,7 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 		)
 	}
 
-	m.logger.Info("Migrating up", "currentVersion", currentVersion, "targetVersion", targetVersion, "totalMigrations", len(migrations))
+	m.logger.Info("Migrating up", "currentVersion", m.logVersion(currentVersion), "targetVersion", m.logVersion(targetVersion), "totalMigrations", len(migrations))
 	if _, err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
 		return err
 	}
@@ -2508,7 +2508,7 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 		}
 	}
 
-	m.logger.Info("Migrated successfully", "targetVersion", targetVersion)
+	m.logger.Info("Migrated successfully", "targetVersion", m.logVersion(targetVersion))
 	return nil
 }
 
@@ -2663,7 +2663,7 @@ func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction 
 			}
 			m.logger.Warn(
 				"Migration directive was not honored because of where it appears in the file",
-				"version", migration.Version,
+				"version", m.logVersion(migration.Version),
 				"direction", string(direction),
 				"file", migrationTxModeSourceName(sourcePath, migration.Description),
 				"line", misplaced.Line,
@@ -3035,7 +3035,7 @@ func (m *Migrator) applyUpMigrationObserved(
 		observer.AddCounter(ctx, "ptah_migrations_applied_total", 1, metricAttrs...)
 	}()
 
-	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applying migration", "version", m.logVersion(migration.Version), "description", migration.Description)
 	own, err := m.ownTransactionMode(migration, txMode, MigrationDirectionUp)
 	if err != nil {
 		return false, err
@@ -3064,7 +3064,7 @@ func (m *Migrator) applyUpMigrationObserved(
 	} else {
 		m.logger.Info(
 			"Skipping pre-migration checks for partially applied migration",
-			"version", migration.Version,
+			"version", m.logVersion(migration.Version),
 			"resumeFromStatement", plan.resumeFrom,
 		)
 	}
@@ -3090,7 +3090,7 @@ func (m *Migrator) applyUpMigrationObserved(
 	if plan.resumeFrom > 1 {
 		m.logger.Info(
 			"Resuming migration after a partially applied attempt",
-			"version", migration.Version,
+			"version", m.logVersion(migration.Version),
 			"resumeFromStatement", plan.resumeFrom,
 		)
 	}
@@ -3148,7 +3148,7 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	startedAt time.Time,
 ) error {
 	scoped := *m
-	m.logger.Info("Applying migration in tx-mode all", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applying migration in tx-mode all", "version", m.logVersion(migration.Version), "description", migration.Description)
 	// Pre-migration checks are rejected under tx-mode all by
 	// validateUpTransactionMode, because a check on the pool connection cannot
 	// observe earlier batched migrations' uncommitted changes and would evaluate
@@ -3173,7 +3173,7 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	if err := scoped.refuseUpCompletionOverUnsafeIndex(ctx, txConn, migration); err != nil {
 		return err
 	}
-	m.logger.Info("Applied migration in tx-mode all", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applied migration in tx-mode all", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 
@@ -3238,7 +3238,7 @@ func (m *Migrator) applyUpMigrationTransactionalWithPlan(
 			if plan.resumeFrom > 1 {
 				scoped.logger.Info(
 					"Resuming migration after a partially applied attempt",
-					"version", migration.Version,
+					"version", m.logVersion(migration.Version),
 					"resumeFromStatement", plan.resumeFrom,
 				)
 			}
@@ -3409,7 +3409,7 @@ func (m *Migrator) applyUpMigrationNoTransaction(
 		if plan.resumeFrom > 1 {
 			scoped.logger.Info(
 				"Resuming migration after a partially applied attempt",
-				"version", migration.Version,
+				"version", m.logVersion(migration.Version),
 				"resumeFromStatement", plan.resumeFrom,
 			)
 		}
@@ -3474,7 +3474,7 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 	if err := m.completeMigrationRevision(recordCtx, migration, startedAt); err != nil {
 		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
 	}
-	m.logger.Info("Applied non-transactional migration", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applied non-transactional migration", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 
@@ -3514,7 +3514,7 @@ func (m *Migrator) reportDeferredDownChecks(versions []int64) {
 	}
 	m.logger.Warn(
 		"Deferred post-migration checks: a dry run does not produce the state they assert on",
-		"versions", versions,
+		"versions", m.logVersions(versions),
 	)
 }
 
@@ -3534,7 +3534,7 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 		observer.AddCounter(ctx, "ptah_migrations_rolled_back_total", 1, metricAttrs...)
 	}()
 
-	m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Rolling back migration", "version", m.logVersion(migration.Version), "description", migration.Description)
 	// A check in the down body runs before the rollback, for the same reason
 	// one in the up body runs before the migration: it is a precondition, and
 	// the statement it guards is about to run. Until this existed the directive
@@ -3717,7 +3717,7 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
 		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
 	}
-	m.logger.Info("Rolled back non-transactional migration", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Rolled back non-transactional migration", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 
@@ -3868,7 +3868,7 @@ func (m *Migrator) migrationsToApply(
 		// pending.
 		if execOrder == ExecOrderLinearSkip && slices.Contains(outOfOrderVersions, migration.Version) {
 			m.logger.Warn("Skipping out-of-order migration",
-				"version", sourceVersionLabel(migration.Version, m.sourceVersions),
+				"version", m.logVersion(migration.Version),
 				"currentVersion", currentLabel,
 			)
 			selection.skipped = append(selection.skipped, migration.Version)

@@ -457,7 +457,7 @@ func (m *Migrator) logEvent(
 	if err := m.ensureMigrationLogTable(ctx); err != nil {
 		if !errors.Is(err, errMigrationLogAlreadyRefused) {
 			m.logger.Warn("Could not create the migration log table",
-				"version", subject.version, "repeatable", subject.repeatable, "error", err)
+				"version", m.logVersion(subject.version), "repeatable", subject.repeatable, "error", err)
 		}
 		m.reportLostLogEntry(lost, err)
 		return
@@ -482,7 +482,7 @@ func (m *Migrator) logEvent(
 	stored, err := m.writeMigrationLogEntry(ctx, entry)
 	if err != nil {
 		m.logger.Warn("Could not append to the migration log",
-			"version", subject.version, "repeatable", subject.repeatable, "operation", operation,
+			"version", m.logVersion(subject.version), "repeatable", subject.repeatable, "operation", operation,
 			"state", string(state), "error", err)
 		m.reportLostLogEntry(lost, err)
 		return
@@ -955,7 +955,7 @@ func (m *Migrator) LogDerivedRollback(ctx context.Context, targetVersion int64) 
 	applied, err := m.GetAppliedMigrations(ctx)
 	if err != nil {
 		m.logger.Warn("Could not read the applied migrations for the log",
-			"targetVersion", targetVersion, "error", err)
+			"targetVersion", m.logVersion(targetVersion), "error", err)
 		m.reportLostLogEntry(MigrationLogLoss{Operation: "down"}, err)
 		return noop
 	}
@@ -963,7 +963,7 @@ func (m *Migrator) LogDerivedRollback(ctx context.Context, targetVersion int64) 
 		migrationsByVersion(m.migrationProvider.Migrations()), applied, targetVersion)
 	if err != nil {
 		m.logger.Warn("Could not name the migrations a derived rollback undoes",
-			"targetVersion", targetVersion, "error", err)
+			"targetVersion", m.logVersion(targetVersion), "error", err)
 		m.reportLostLogEntry(MigrationLogLoss{Operation: "down"}, err)
 		return noop
 	}

@@ -55,6 +55,24 @@ func TestNativeAtlasNumberlessVersionLabelsE2E(t *testing.T) {
 	c.Assert(down.Stderr, qt.Contains, "migration v1 has no Atlas down migration")
 }
 
+// TestNativeAtlasNumberlessVersionLogLinesE2E names v1_x.sql by its version
+// in the structured log lines too. The "version" key carries a string for such
+// a file, as it carries the source tool's token for a converted directory, and
+// a number for a numbered file.
+func TestNativeAtlasNumberlessVersionLogLinesE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	nativeAtlasDirectory(c, dir)
+
+	up := nativePtah(c, dir, "migrations", "up")
+
+	c.Assert(up.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", up.Stderr))
+	c.Assert(up.Stderr, qt.Contains, `msg="Applying migration"`)
+	c.Assert(up.Stderr, qt.Contains, " version=v1 description=X\n")
+	c.Assert(up.Stderr, qt.Contains, " version=2 description=B\n")
+	c.Assert(up.Stderr, qt.Not(qt.Contains), " version=3 ")
+}
+
 // TestNativeAtlasNumberlessVersionTargetE2E rolls back to v1 named by its
 // version: nothing above it is applied, so nothing is rolled back.
 func TestNativeAtlasNumberlessVersionTargetE2E(t *testing.T) {

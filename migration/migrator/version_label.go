@@ -70,6 +70,33 @@ func (m *Migrator) ResolveVersion(label string) (int64, error) {
 	return 0, fmt.Errorf("no migration file carries version %q", label)
 }
 
+// logVersion is how a log line names version under its "version" key, as
+// [sourceVersionLabel] names it: the source tool's token for a directory read
+// through a foreign layout, the version string of an Atlas file whose version
+// carries no number (see [Migrator.VersionLabel]), and the number otherwise.
+// The order key such a file runs under appears in no file name, so a line
+// naming it names nothing anyone can look up.
+func (m *Migrator) logVersion(version int64) any {
+	if source, ok := m.sourceVersions[version]; ok {
+		return source
+	}
+	for _, migration := range m.numberlessMigrations() {
+		if migration.Version == version {
+			return migration.atlasRevisionVersion
+		}
+	}
+	return version
+}
+
+// logVersions names each of versions as [Migrator.logVersion] does.
+func (m *Migrator) logVersions(versions []int64) []any {
+	named := make([]any, len(versions))
+	for i, version := range versions {
+		named[i] = m.logVersion(version)
+	}
+	return named
+}
+
 // numberlessMigrations returns the provider's Atlas migrations whose version
 // carries no number, lowest order key first, over an Atlas revision table,
 // which records that version. A revision table that records numbers records

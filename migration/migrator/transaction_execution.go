@@ -72,6 +72,6 @@ func (m *Migrator) runTransactionalMigration(ctx context.Context, migration *Mig
 		failure := migrationFailureAfterCommit(migration.Version, err, tx)
 		return fail(m.withRollbackSurvivors(ctx, failure, evidence), fmt.Sprintf("failed to commit transaction for migration %d", migration.Version))
 	}
-	m.logger.Info(run.success, "version", migration.Version, "description", migration.Description)
+	m.logger.Info(run.success, "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
