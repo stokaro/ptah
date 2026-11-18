@@ -14,6 +14,12 @@ import (
 // PTAH_FOLD for a bare CREATE and ptah_fold for a quoted one, and the two
 // coexist as separate tables.
 //
+// UnquotedFold states that fold, and it is what keeps the second table apart.
+// A catalog name such as ptah_fold is not what an unquoted name folds to, so
+// it was created quoted: it compares exactly, the renderer writes it quoted,
+// and a declared `ptah_fold`, which means PTAH_FOLD, does not reach it
+// (stokaro/ptah#6243).
+//
 // Index names are schema-scoped, not table-scoped: `DROP INDEX <name>` is the
 // whole statement here, with no ON clause naming a table, so two tables in one
 // schema cannot both carry an index called `idx_name` (stokaro/ptah#1875).
@@ -29,6 +35,7 @@ func oracle() descriptor.Dialect {
 			IndexNames:     "ascii_case_insensitive",
 			TableNames:     "ascii_case_insensitive",
 			ColumnNames:    "ascii_case_insensitive",
+			UnquotedFold:   "upper",
 		},
 		Placeholder: descriptor.PlaceholderColon,
 
