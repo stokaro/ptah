@@ -90,7 +90,9 @@ func RunMigrationPreflight(ctx context.Context, req MigrationPreflightRequest) e
 
 // LockedMigrationPreflightHook adapts configured CLI pre-flight hooks into a
 // migrator hook that receives the migration plan selected under the migration
-// lock.
+// lock. The hooks are told the plan's versions and version keys, and the
+// caller sets [preflight.Options.KeyedByPosition] from the migrator, which is
+// what decides that only the keys leave the process.
 func LockedMigrationPreflightHook(dryRun bool, opts preflight.Options, reporter MigrationPreflightReporter, stdout io.Writer) migrator.PreMigrationHook {
 	if reporter == nil {
 		reporter = stdoutReporter{}
@@ -102,6 +104,8 @@ func LockedMigrationPreflightHook(dryRun bool, opts preflight.Options, reporter 
 		}
 		opts.CurrentVersion = plan.CurrentVersion
 		opts.TargetVersion = plan.TargetVersion
+		opts.CurrentVersionKey = plan.CurrentVersionKey
+		opts.TargetVersionKey = plan.TargetVersionKey
 		if err := RunMigrationPreflight(ctx, MigrationPreflightRequest{
 			DryRun:   dryRun,
 			Hooks:    opts,

@@ -377,6 +377,15 @@ func TestMigrateUpExpectSequenceComparesVersionKeys(t *testing.T) {
 		c.Assert(seqTableExists(c, dbPath, "orders"), qt.IsTrue)
 	})
 
+	t.Run("a number beside a key that names another migration is refused", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "disagreeing.db")
+		err := run(c, writeDirectory(c), dbPath, seqWriteExpectedKeys(c, entry{99, "0001"}, entry{2, "0002"}))
+		c.Assert(err, qt.ErrorMatches,
+			`parse --expect-sequence: migration 0 has version 99 and version_key "0001", which name different migrations`)
+		c.Assert(seqTableExists(c, dbPath, "users"), qt.IsFalse)
+	})
+
 	t.Run("the numbers alone are refused", func(t *testing.T) {
 		c := qt.New(t)
 		dbPath := filepath.Join(c.TempDir(), "unkeyed.db")

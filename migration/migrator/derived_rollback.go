@@ -81,7 +81,7 @@ func (e *StaleDerivedRollbackError) Error() string {
 func (m *Migrator) MigrateDownDerived(ctx context.Context, rollback DerivedRollback, hook PreMigrationHook) (err error) {
 	observer := m.migrationObserver()
 	ctx, span := observer.StartSpan(ctx, "ptah.migrate.down", append(m.operationAttributes(MigrationDirectionDown),
-		attr("migration.requested_target_version", rollback.TargetVersion))...)
+		m.VersionAttribute("migration.requested_target_version", rollback.TargetVersion))...)
 	defer func() { span.End(err) }()
 	ctx = contextWithRootSpan(ctx, span)
 	return m.withMigrationLock(ctx, "migrate down", func(ctx context.Context) error {
@@ -120,12 +120,7 @@ func (m *Migrator) migrateDownDerivedLocked(ctx context.Context, rollback Derive
 	if err := m.checkRevisionSet(ctx, boundary); err != nil {
 		return fmt.Errorf("move the revision boundary to version %d: %w", m.versionText(boundary), err)
 	}
-	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
-		Direction:      MigrationDirectionDown,
-		CurrentVersion: maxAppliedVersion(applied),
-		TargetVersion:  boundary,
-		Versions:       above,
-	}); err != nil {
+	if err := runPreMigrationHook(ctx, hook, m.downPlan(nil, maxAppliedVersion(applied), boundary, above)); err != nil {
 		return err
 	}
 	if m.conn.Writer().IsDryRun() {

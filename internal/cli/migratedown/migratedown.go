@@ -886,7 +886,7 @@ func runRollback(cmd *cobra.Command, r rollbackRun) (downReport, error) {
 	if r.resolved.plan {
 		plan = &migrator.MigrationPlan{Direction: migrator.MigrationDirectionDown, Versions: newestFirst(r.selected)}
 	}
-	preflightHook := capturePlan(&plan, downPreflightHook(cmd, r.opts, r.runtime, r.conn, r.dbURL, r.resolved, r.emit))
+	preflightHook := capturePlan(&plan, downPreflightHook(cmd, r.opts, r.runtime, r.conn, mig.KeyedByPosition(), r.dbURL, r.resolved, r.emit))
 
 	// Run down migrations, once the versions the prompt showed are still the
 	// applied ones: refused here, before the migrator's own checks, a rollback
@@ -1185,19 +1185,19 @@ func finishDownAtOrBelowTarget(ctx context.Context, in downNoopInputs) (downRepo
 		if runErr != nil {
 			return runErr
 		}
-		observeNoopDown(in.runtime, in.dialect, in.status.CurrentVersion, in.targetVersion)
+		observeNoopDown(in.runtime, in.migrator, in.dialect, in.status.CurrentVersion, in.targetVersion)
 		in.emit.Printf("✅ Database is already at or below target version %s!\n", in.migrator.VersionLabel(in.targetVersion))
 		return in.document.Write(migrator.RunEvidence{Plan: &migrator.MigrationPlan{}, After: in.status, DryRun: in.dryRun})
 	}, nil
 }
 
-func observeNoopDown(runtime *cliobs.Runtime, dialect string, currentVersion, targetVersion int64) {
+func observeNoopDown(runtime *cliobs.Runtime, mig *migrator.Migrator, dialect string, currentVersion, targetVersion int64) {
 	cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.down",
 		migrator.ObservationAttribute{Key: "db.system", Value: dialect},
 		migrator.ObservationAttribute{Key: "migration.direction", Value: "down"},
-		migrator.ObservationAttribute{Key: "migration.current_version", Value: currentVersion},
-		migrator.ObservationAttribute{Key: "migration.target_version", Value: currentVersion},
-		migrator.ObservationAttribute{Key: "migration.requested_target_version", Value: targetVersion},
+		mig.VersionAttribute("migration.current_version", currentVersion),
+		mig.VersionAttribute("migration.target_version", currentVersion),
+		mig.VersionAttribute("migration.requested_target_version", targetVersion),
 		migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
 	)
 }
@@ -1636,12 +1636,14 @@ func newDynamicRollback(resolved options, opts *options, conn *dbschema.Database
 }
 
 // downPreflightHook builds the hook that runs inside the migration lock, just
-// before any rollback SQL does.
+// before any rollback SQL does. keyed is the migrator's
+// [migrator.Migrator.KeyedByPosition].
 func downPreflightHook(
 	cmd *cobra.Command,
 	opts *options,
 	runtime *cliobs.Runtime,
 	conn *dbschema.DatabaseConnection,
+	keyed bool,
 	dbURL string,
 	resolved options,
 	emit cliobs.Emitter,
@@ -1651,6 +1653,7 @@ func downPreflightHook(
 		DatabaseURL:        dbURL,
 		DisplayDatabaseURL: dburldisplay.Format(dbURL),
 		Dialect:            conn.Info().Dialect,
+		KeyedByPosition:    keyed,
 		Command:            resolved.preDownHook,
 		CommandOrigin:      resolved.preDownHookOrigin,
 		PostgresDumpDir:    resolved.pgDumpTo,

@@ -21,14 +21,34 @@ func TestStrip_HappyPath(t *testing.T) {
 			want: `{"planned_keys":["00","1"],"outcome":"applied"}`,
 		},
 		{
-			name: "a number beside its key, at depth",
+			name: "applied beside applied_keys",
+			doc:  `{"applied":[1],"applied_keys":["00"]}`,
+			want: `{"applied_keys":["00"]}`,
+		},
+		{
+			name: "rolled_back beside rolled_back_keys",
+			doc:  `{"rolled_back":[2],"rolled_back_keys":["1"]}`,
+			want: `{"rolled_back_keys":["1"]}`,
+		},
+		{
+			name: "replayed beside replayed_keys in the drift check",
+			doc:  `{"drift_check":{"outcome":"clean","replayed":[1],"replayed_keys":["00"]}}`,
+			want: `{"drift_check":{"outcome":"clean","replayed_keys":["00"]}}`,
+		},
+		{
+			name: "the failure and the inputs",
+			doc:  `{"failure":{"version":2,"version_key":"1","statement":1},"inputs":[{"version":2,"version_key":"1"}]}`,
+			want: `{"failure":{"version_key":"1","statement":1},"inputs":[{"version_key":"1"}]}`,
+		},
+		{
+			name: "the status of a run, and its entries",
 			doc:  `{"status":{"current_version":2,"current_version_key":"1","migrations":[{"version":1,"version_key":"00","state":"applied"}]}}`,
 			want: `{"status":{"current_version_key":"1","migrations":[{"version_key":"00","state":"applied"}]}}`,
 		},
 		{
-			name: "a revision row names its migration in atlas_version",
-			doc:  `{"dirty_revision":{"version":3,"atlas_version":"v1","applied":1,"total":2}}`,
-			want: `{"dirty_revision":{"atlas_version":"v1","applied":1,"total":2}}`,
+			name: "a status document, and its revision row named in atlas_version",
+			doc:  `{"current_version":3,"current_version_key":"v1","dirty_revision":{"version":3,"atlas_version":"v1","applied":1,"total":2}}`,
+			want: `{"current_version_key":"v1","dirty_revision":{"atlas_version":"v1","applied":1,"total":2}}`,
 		},
 		{
 			name: "an empty list names nothing in either spelling",
@@ -42,18 +62,28 @@ func TestStrip_HappyPath(t *testing.T) {
 		},
 		{
 			name: "a number with no key stays",
-			doc:  `{"current_version":0,"applied":1}`,
-			want: `{"current_version":0,"applied":1}`,
+			doc:  `{"current_version":0,"applied":[1]}`,
+			want: `{"current_version":0,"applied":[1]}`,
 		},
 		{
 			name: "a member that is not numeric stays",
-			doc:  `{"version":"v1","version_key":"v1"}`,
-			want: `{"version":"v1","version_key":"v1"}`,
+			doc:  `{"failure":{"version":"v1","version_key":"v1"}}`,
+			want: `{"failure":{"version":"v1","version_key":"v1"}}`,
+		},
+		{
+			name: "a version at a path no document gives one stays",
+			doc:  `{"status":{"repeatables":[{"version":1,"version_key":"R"}]},"server_details":{"version":16,"version_key":"x"}}`,
+			want: `{"status":{"repeatables":[{"version":1,"version_key":"R"}]},"server_details":{"version":16,"version_key":"x"}}`,
+		},
+		{
+			name: "a member no document carries stays",
+			doc:  `{"target_version":4,"target_version_key":"v1"}`,
+			want: `{"target_version":4,"target_version_key":"v1"}`,
 		},
 		{
 			name: "a string keeps its bytes",
-			doc:  `{"message":"a < b","version":1,"version_key":"1"}`,
-			want: `{"message":"a < b","version_key":"1"}`,
+			doc:  `{"message":"a \u003c b","planned":[1],"planned_keys":["1"]}`,
+			want: `{"message":"a \u003c b","planned_keys":["1"]}`,
 		},
 	}
 	for _, tt := range tests {

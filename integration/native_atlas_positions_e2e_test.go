@@ -19,7 +19,7 @@ import (
 // under 3 and 3_x.sql under 4.
 var positionFiles = []string{"00_x.sql", "1_x.sql", "2_x.sql", "3_x.sql"}
 
-// mixedPositionFiles run in file-name order, 1_x.sql, 10_x.sql, 2_x.sql and
+// mixedPositionFiles run in file-name order, 10_x.sql, 1_x.sql, 2_x.sql and
 // v1_x.sql, under the positions 1 to 4, because v1 is not a number.
 var mixedPositionFiles = []string{"1_x.sql", "2_x.sql", "10_x.sql", "v1_x.sql"}
 
@@ -171,15 +171,16 @@ func TestNumberedRunDocumentKeepsItsVersionsE2E(t *testing.T) {
 
 // TestNativeAtlasPositionsExpectSequenceE2E approves a run by the version keys
 // the run document prints. The number beside a key takes no part, since it is
-// a position that moves when a file is added before it: 9 is not the position
-// v1_x.sql runs under, and the approval still names it.
+// a position that moves when a file is added before it: 7 and 9 are not the
+// positions 2_x.sql and v1_x.sql run under, and the approval still names them,
+// though 7 and the decimal key 2 spell different numbers.
 func TestNativeAtlasPositionsExpectSequenceE2E(t *testing.T) {
 	tests := []struct {
 		name     string
 		approval string
 	}{
 		{name: "keys alone", approval: `{"migrations":[{"version_key":"2"},{"version_key":"v1"}]}`},
-		{name: "a key beside another number", approval: `{"migrations":[{"version_key":"2"},{"version":9,"version_key":"v1"}]}`},
+		{name: "a key beside another number", approval: `{"migrations":[{"version":7,"version_key":"2"},{"version":9,"version_key":"v1"}]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

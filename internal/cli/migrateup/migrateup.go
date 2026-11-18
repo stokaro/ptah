@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -147,6 +148,8 @@ type deploymentReportPublication struct {
 	finishedAt time.Time
 	dryRun     bool
 	skip       bool
+	// keyed is the migrator's [migrator.Migrator.KeyedByPosition].
+	keyed bool
 }
 
 // This command has no adoption gate, and that is a decision rather than an
@@ -382,6 +385,26 @@ func refuseEmptyToVersion(value string) error {
 	return nil
 }
 
+// refuseToVersionNoFileSpells refuses, before the command connects, a
+// --to-version bound that is not a number over a directory whose every file
+// carries a number. Only a file whose version is not a number, an Atlas file
+// such as v1_x.sql, spells text, so no file of such a directory can carry it.
+// Any other directory, and one that cannot be read here, is answered by
+// [resolveToVersion] through the directory the migrator read.
+func refuseToVersionNoFileSpells(fsys fs.FS, format migrationfile.DirFormat, value string) error {
+	if value == "" {
+		return nil
+	}
+	if _, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return nil
+	}
+	files, err := migrationfile.Discover(fsys, format)
+	if err != nil || slices.ContainsFunc(files, func(file migrationfile.File) bool { return file.Version <= 0 || file.Repeatable }) {
+		return nil
+	}
+	return fmt.Errorf("invalid --%s %q: a migration version is a number", toVersionFlag, value)
+}
+
 // resolveToVersion reads the --to-version bound into the order key the
 // migrator compares with, through the directory the migrator read: 2 names
 // 2_x.sql, and in an Atlas directory keyed by file position that file's
@@ -600,6 +623,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	document.ServerDetails.Options.Source = migrationsFS
 	migrationsDir = source.Display
 	settings.dirFormat = source.DirFormat
+	if err := refuseToVersionNoFileSpells(migrationsFS, settings.dirFormat, resolvedOpts.toVersion); err != nil {
+		return err
+	}
 
 	if err := runIntegrityGate(cmd.Context(), cmd.ErrOrStderr(), emit, runtime, source, settings.dirFormat, integrityPolicy, opts); err != nil {
 		return err
@@ -676,6 +702,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	if err != nil {
 		return err
 	}
+	if err := expected.refuseDisagreeingNumbers(mig); err != nil {
+		return err
+	}
 
 	drift, releaseShadow, err := prepareDriftCheck(cmd, resolvedOpts, projectCfg, dbURL, settings, conn, mig)
 	if err != nil {
@@ -729,8 +758,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 		cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.up",
 			migrator.ObservationAttribute{Key: "db.system", Value: conn.Info().Dialect},
 			migrator.ObservationAttribute{Key: "migration.direction", Value: "up"},
-			migrator.ObservationAttribute{Key: "migration.current_version", Value: status.CurrentVersion},
-			migrator.ObservationAttribute{Key: "migration.target_version", Value: status.CurrentVersion},
+			mig.VersionAttribute("migration.current_version", status.CurrentVersion),
+			mig.VersionAttribute("migration.target_version", status.CurrentVersion),
 			migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
 		)
 		emit.Println("✅ Database is already up to date!")
@@ -740,17 +769,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
 		return mig.OutOfOrderRefusal(status.CurrentVersion, status.OutOfOrderMigrations)
 	}
-	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
-		Direction:          preflight.DirectionUp,
-		DatabaseURL:        dbURL,
-		DisplayDatabaseURL: dburldisplay.Format(dbURL),
-		Dialect:            conn.Info().Dialect,
-		Command:            resolvedOpts.preUpHook,
-		CommandOrigin:      resolvedOpts.preUpHookOrigin,
-		PostgresDumpDir:    resolvedOpts.pgDumpTo,
-		MySQLDumpDir:       resolvedOpts.mySQLDumpTo,
-		WebhookURL:         resolvedOpts.webhook,
-	}, emit, preflightOutput(cmd, opts, runtime))
+	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, upPreflightOptions(resolvedOpts, dbURL, conn, mig),
+		emit, preflightOutput(cmd, opts, runtime))
 	if !opts.allowDestructive {
 		preflightHook = dbcli.CombineMigrationHooks(
 			lockedDestructiveLintHook(lintRuntime, migrationsFS, lintPolicy, lintPathPrefix, generatedColumnsOf(conn)),
@@ -794,6 +814,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 		finishedAt: time.Now(),
 		dryRun:     opts.dryRun,
 		skip:       opts.skipReport,
+		keyed:      mig.KeyedByPosition(),
 	})
 
 	if !opts.jsonOutput {
@@ -1100,6 +1121,23 @@ const Command = "migrations up"
 // preflightOutput is where a pre-flight hook's output goes. It is written for
 // a person, so under --json it joins the rest of that output on standard
 // error, out of the document.
+// upPreflightOptions are the pre-flight hooks resolved configures for a run of
+// mig against conn.
+func upPreflightOptions(resolved options, dbURL string, conn *dbschema.DatabaseConnection, mig *migrator.Migrator) preflight.Options {
+	return preflight.Options{
+		Direction:          preflight.DirectionUp,
+		DatabaseURL:        dbURL,
+		DisplayDatabaseURL: dburldisplay.Format(dbURL),
+		Dialect:            conn.Info().Dialect,
+		KeyedByPosition:    mig.KeyedByPosition(),
+		Command:            resolved.preUpHook,
+		CommandOrigin:      resolved.preUpHookOrigin,
+		PostgresDumpDir:    resolved.pgDumpTo,
+		MySQLDumpDir:       resolved.mySQLDumpTo,
+		WebhookURL:         resolved.webhook,
+	}
+}
+
 func preflightOutput(cmd *cobra.Command, opts *options, runtime *cliobs.Runtime) io.Writer {
 	return cliobs.NewOutputWriter(humanOutput(cmd, opts), runtime, "pre-flight output")
 }
@@ -1329,12 +1367,13 @@ func publishDeploymentReportIfNeeded(
 		emit,
 		publication.source,
 		deploymentreport.SuccessfulOptions{
-			Subject:    publication.source.Descriptor,
-			Dialect:    publication.dialect,
-			Before:     publication.before,
-			After:      publication.after,
-			StartedAt:  publication.startedAt,
-			FinishedAt: publication.finishedAt,
+			Subject:         publication.source.Descriptor,
+			Dialect:         publication.dialect,
+			Before:          publication.before,
+			After:           publication.after,
+			StartedAt:       publication.startedAt,
+			FinishedAt:      publication.finishedAt,
+			KeyedByPosition: publication.keyed,
 		},
 	)
 }
