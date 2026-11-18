@@ -74,10 +74,13 @@ import (
 // YDB's documents never reach the shared grammar, which refuses the YQL
 // lexer before any of the switches is asked, so it states no grammar.
 // noOldSwitch leaves out the fields no switch answered: the parser refused those
-// statements on every engine.
+// statements on every engine, or, for the operator default fields, read them on
+// every engine. internal/parser/default_operator_test.go pins what each engine
+// states for those.
 var noOldSwitch = cmp.Options{
 	cmpopts.IgnoreFields(descriptor.Grammar{}, "Forms"),
-	cmpopts.IgnoreFields(descriptor.ColumnGrammar{}, "EmptyCallFunctions", "EmptyCallRefusal"),
+	cmpopts.IgnoreFields(descriptor.ColumnGrammar{}, "EmptyCallFunctions", "EmptyCallRefusal",
+		"DefaultOperatorRefusal", "DefaultPredicateRefusal", "DefaultDistinctFrom"),
 	cmpopts.IgnoreFields(descriptor.IndexGrammar{}, "Storing", "Nonclustered"),
 	cmpopts.IgnoreFields(descriptor.ConstraintGrammar{}, "TableNotNull"),
 }

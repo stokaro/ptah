@@ -3969,7 +3969,7 @@ func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 		if err != nil {
 			return nil, err
 		}
-		return p.extendDefaultExpression(value), nil
+		return p.extendDefaultExpression(value)
 	}
 
 	var value *ast.DefaultValue
@@ -3990,7 +3990,7 @@ func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return p.extendDefaultExpression(value), nil
+	return p.extendDefaultExpression(value)
 }
 
 // parseParenthesizedDefault reads a default written as a parenthesized
@@ -4027,70 +4027,173 @@ func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
 // and at a word that opens a column clause written after a complete operand:
 // in `DEFAULT (1) + 2 NOT NULL` the NOT NULL is the column's. Read into the
 // default, it would leave the column nullable. A clause word right after an
-// operator is an operand, as NULL is in `1 + NULL`.
+// operator is an operand, as NULL is in `1 + NULL`, and so is one after IS,
+// NOT, AND or OR: in `1 + 2 IS NOT NULL` the NOT NULL is the test's.
 //
-// A version gate after a complete operand ends it too: in `DEFAULT 1 - 2
-// /*!80023 INVISIBLE */` the gate is the column's, and the column reader steps
-// over it as it does after any other default. Read into the default, the gate
-// would make the expression `1 - 2 /*!80023 INVISIBLE */`, which no server
-// reports back, and every comparison would plan the column again.
-func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultValue {
+// A comment separates tokens as whitespace does, and is not kept: a `--`
+// comment kept in the expression would swallow everything a renderer writes
+// after the default on the same line. A run of whitespace and comments is one
+// space.
+//
+// A version gate the dialect executes ends the expression after a complete
+// operand too: in `DEFAULT 1 - 2 /*!80023 INVISIBLE */` the gate is the
+// column's, as INVISIBLE would be without it. A dialect that does not execute
+// the gate reads it as a comment.
+//
+// An engine whose descriptor sets [descriptor.ColumnGrammar.DefaultOperatorRefusal]
+// takes the expression only in parentheses. The default is refused at its
+// first operator once the whole expression is read, so the refusal can show
+// the parenthesized form without the clause or gate after it. One that sets
+// [descriptor.ColumnGrammar.DefaultPredicateRefusal] refuses IS, AND and OR
+// where they continue the expression.
+func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) (*ast.DefaultValue, error) {
 	p.skipWhitespace()
 	if !isDefaultBinaryOperator(p.current) {
-		return value
+		return value, nil
 	}
-
-	var expr strings.Builder
-	if value.Expression != "" {
-		expr.WriteString(value.Expression)
-	} else {
-		expr.WriteString(value.Value)
+	operator := p.current
+	first := value.Expression
+	if first == "" {
+		first = value.Value
 	}
 	// Keep the space written before the `+`, which the skip above or the
 	// cast reader before it stepped over.
 	if p.previous.Type == lexer.TokenWhitespace || p.previous.Type == lexer.TokenComment {
-		expr.WriteString(" ")
+		first += " "
 	}
+	expression, err := p.readDefaultOperands(first)
+	if err != nil {
+		return nil, err
+	}
+	if refusal := p.target.grammar.Columns.DefaultOperatorRefusal; refusal != "" {
+		return nil, ptaherr.At(operator.Start, fmt.Errorf(
+			"%s is an operator expression outside parentheses: write DEFAULT (%s); %s",
+			expression, expression, refusal))
+	}
+	return &ast.DefaultValue{Expression: expression}, nil
+}
 
+// readDefaultOperands reads an operator default from the operator at the
+// cursor to where [Parser.endsDefaultExpression] ends it, and answers the
+// whole expression with read, the text of the first operand, in front.
+func (p *Parser) readDefaultOperands(read string) (string, error) {
+	var expr strings.Builder
+	expr.WriteString(read)
 	depth := 0
 	operand := false
+	space := false
 	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
-		if p.current.Type == lexer.TokenOperator {
-			switch p.current.Value {
-			case "(":
-				depth++
-			case ")":
-				if depth == 0 {
-					return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
-				}
-				depth--
-			case ",":
-				if depth == 0 {
-					return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
-				}
-			}
+		if p.endsDefaultExpression(&depth, operand) {
+			break
 		}
-		if depth == 0 && operand && p.currentIsColumnPart() {
-			return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
+		if depth == 0 && operand && isDefaultPredicateWord(p.current) {
+			if err := p.refuseDefaultPredicate(strings.TrimSpace(expr.String())); err != nil {
+				return "", err
+			}
 		}
 
 		switch p.current.Type {
 		case lexer.TokenWhitespace, lexer.TokenComment:
 			// Space neither completes an operand nor asks for one.
+			space = true
+			p.advance()
+			continue
 		case lexer.TokenOperator:
 			operand = p.current.Value == ")" || p.current.Value == "]"
 		default:
-			operand = true
+			operand = !asksForOperand(p.current)
+		}
+		if space {
+			expr.WriteString(" ")
+			space = false
 		}
 		expr.WriteString(p.current.Value)
 		p.advance()
 	}
-	return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
+	return strings.TrimSpace(expr.String()), nil
+}
+
+// endsDefaultExpression reports whether the token at the cursor ends an
+// operator default: a comma or a closing parenthesis outside any group, or a
+// part of the column after a complete operand. It counts in depth the groups
+// the token opens and closes.
+func (p *Parser) endsDefaultExpression(depth *int, operand bool) bool {
+	if p.current.Type == lexer.TokenOperator {
+		switch p.current.Value {
+		case "(":
+			*depth++
+		case ")":
+			if *depth == 0 {
+				return true
+			}
+			*depth--
+		case ",":
+			if *depth == 0 {
+				return true
+			}
+		}
+	}
+	return *depth == 0 && operand && p.currentIsColumnPart()
+}
+
+// refuseDefaultPredicate refuses the IS, AND or OR at the cursor, which
+// continues the operator default read so far, where the dialect's descriptor
+// says the engine reads no such predicate in a default, and answers nil
+// everywhere else. IS [NOT] DISTINCT FROM passes where the descriptor sets
+// [descriptor.ColumnGrammar.DefaultDistinctFrom].
+func (p *Parser) refuseDefaultPredicate(read string) error {
+	columns := p.target.grammar.Columns
+	if columns.DefaultPredicateRefusal == "" {
+		return nil
+	}
+	if columns.DefaultDistinctFrom && p.current.MatchIdentifierValue("IS") && p.distinctFromFollows() {
+		return nil
+	}
+	return ptaherr.At(p.current.Start, fmt.Errorf(
+		"%s continues with %s outside parentheses: %s",
+		read, strings.ToUpper(p.current.Value), columns.DefaultPredicateRefusal))
+}
+
+// distinctFromFollows reports whether the IS at the cursor opens IS [NOT]
+// DISTINCT FROM, and leaves the parser where it is.
+func (p *Parser) distinctFromFollows() bool {
+	scan := *p.lexer
+	next := nextSignificantToken(&scan)
+	if next.MatchIdentifierValue("NOT") {
+		next = nextSignificantToken(&scan)
+	}
+	return next.MatchIdentifierValue("DISTINCT")
+}
+
+// nextSignificantToken reads the next token from scan that is not whitespace,
+// a comment or a version gate.
+func nextSignificantToken(scan *lexer.Lexer) lexer.Token {
+	for {
+		token := scan.NextToken()
+		switch token.Type {
+		case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenUnknown:
+		default:
+			return token
+		}
+	}
+}
+
+// isDefaultPredicateWord reports whether token is IS, AND or OR, the words
+// that continue an operator default with a predicate.
+func isDefaultPredicateWord(token lexer.Token) bool {
+	return token.MatchIdentifierValue("IS") || token.MatchIdentifierValue("AND") || token.MatchIdentifierValue("OR")
+}
+
+// asksForOperand reports whether token is a word an operand follows in a
+// default: a predicate word of [isDefaultPredicateWord], or NOT. A clause word
+// after one is that operand, as NOT and NULL are in `1 + 2 IS NOT NULL`.
+func asksForOperand(token lexer.Token) bool {
+	return isDefaultPredicateWord(token) || token.MatchIdentifierValue("NOT")
 }
 
 // currentIsColumnPart reports whether the token at the cursor belongs to the
 // column rather than to a default expression that holds a complete operand:
-// a word that opens a column clause, or a version gate.
+// a word that opens a column clause, or a version gate the dialect executes.
 func (p *Parser) currentIsColumnPart() bool {
 	if isVersionGate(p.current) {
 		return true
@@ -4099,11 +4202,11 @@ func (p *Parser) currentIsColumnPart() bool {
 }
 
 // isVersionGate reports whether token is a MySQL `/*!NNNNN ... */` or a MariaDB
-// `/*M!NNNNN ... */` gate. A dialect that executes the gate emits it as one
-// TokenUnknown and any other as a comment, so both types are asked: MySQL
-// reads MariaDB's gate as a comment, and the expression still ends there.
+// `/*M!NNNNN ... */` gate the dialect executes, which the lexer emits as one
+// TokenUnknown. A dialect that does not execute the gate emits a comment, and
+// a comment separates the tokens of a default as whitespace does.
 func isVersionGate(token lexer.Token) bool {
-	if token.Type != lexer.TokenUnknown && token.Type != lexer.TokenComment {
+	if token.Type != lexer.TokenUnknown {
 		return false
 	}
 	_, _, ok := executableCommentBody(token.Value)

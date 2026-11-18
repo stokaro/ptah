@@ -249,6 +249,8 @@ func mysql() descriptor.Dialect {
 		Statements: descriptor.Statements{DropViewIfExistsSkipsOtherKinds: true},
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{
+				DefaultOperatorRefusal: "MySQL 26.10 takes an expression default only in parentheses and answers " +
+					"ERROR 1064 (42000) to an operator outside them",
 				ReferencesRefusal: "MySQL 8.4 builds nothing from the clause, while MySQL 9.7 and 26.7 build a " +
 					"foreign key and its index, and the SQL file is read without the server version, so Ptah " +
 					"refuses the clause rather than guess which schema it declares; write a table-level FOREIGN " +

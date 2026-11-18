@@ -677,6 +677,27 @@ and `DEFAULT 'a\'b'` is an unterminated string — PostgreSQL 18 answers
 it too. Read with `--dialect mysql`, where a backslash escapes, the same bytes
 are a valid default.
 
+**A column default with an operator is read as the engine reads it.**
+PostgreSQL, CockroachDB, YugabyteDB, SQL Server, Oracle and ClickHouse take
+`DEFAULT 5 - 2`, and the default ends where the column's next clause begins.
+MySQL, MariaDB and SQLite take an expression default only in parentheses,
+`DEFAULT (5 - 2)`, and answer a syntax error to an operator outside them,
+`+` included. Read with one of those dialects, the file is refused, and the
+refusal names the parenthesized form:
+
+```text
+schema.sql:3:19: expected default value: 5 - 2 is an operator expression outside parentheses: write DEFAULT (5 - 2); MySQL 26.10 takes an expression default only in parentheses and answers ERROR 1064 (42000) to an operator outside them
+```
+
+A comment inside such a default separates its tokens, as whitespace does, and
+is not kept, so `DEFAULT 5 - 2 -- the answer` on a line of its own still ends
+before the next column. After an operator, PostgreSQL, CockroachDB and
+YugabyteDB read `IS [NOT] DISTINCT FROM` but no other `IS` test, and no `AND`
+or `OR`, unless the whole default is in parentheses; SQL Server reads no
+predicate in a default at all. Ptah refuses those defaults where the server
+does. Oracle and ClickHouse read `DEFAULT 1 + 2 IS NOT NULL` as one
+expression, with the `NOT NULL` belonging to the test.
+
 **A PostgreSQL string constant is read in every spelling the server reads.**
 With `--dialect postgres`, a comment, a column or domain default and an enum
 label may each be written as a dollar-quoted string, an `E'...'` escape string,

@@ -574,6 +574,17 @@ leaves out the ones its schema block states, as the Atlas community binary
 writes them; SQL writes both on every table, and JSON lists both on every
 table.
 
+## A column default with an operator
+
+MySQL and MariaDB take an expression default only in parentheses. MySQL 26.10
+and MariaDB 12.3 answer ERROR 1064 (42000) to `DEFAULT 1 + 2`, `DEFAULT 5 - 2
+NOT NULL`, `DEFAULT 'a' || 'b'` and `DEFAULT (1) + 2`, and take
+`DEFAULT (1 + 2)`. A SQL schema file read with `--dialect mysql` or
+`--dialect mariadb` is refused at the operator, before anything is planned,
+and the refusal names the parenthesized form, `write DEFAULT (1 + 2)`. A
+version gate after the default, such as `/*!80023 INVISIBLE */`, stays the
+column's.
+
 ## Column character set and ON UPDATE
 
 A column's `CHARACTER SET` and its `ON UPDATE` clause, such as

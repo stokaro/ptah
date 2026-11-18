@@ -81,6 +81,22 @@ type ColumnGrammar struct {
 	// names the bare spelling before the sentence. The two fields are set
 	// together or not at all.
 	EmptyCallRefusal string `json:"empty_call_refusal,omitempty"`
+	// DefaultOperatorRefusal says why a default that continues with a binary
+	// operator outside parentheses, such as DEFAULT 5 - 2, is refused, for an
+	// engine that takes an expression default only in parentheses. The parser
+	// writes the parenthesized form, DEFAULT (5 - 2), before the sentence.
+	// Empty reads the operator into the default.
+	DefaultOperatorRefusal string `json:"default_operator_refusal,omitempty"`
+	// DefaultPredicateRefusal says why a default whose operator expression
+	// continues with IS, AND or OR outside parentheses is refused, as in
+	// DEFAULT 1 + 2 IS NOT NULL, for an engine that reads no such predicate
+	// there. Empty reads the predicate into the default, with the NOT and the
+	// NULL after IS as its operands.
+	DefaultPredicateRefusal string `json:"default_predicate_refusal,omitempty"`
+	// DefaultDistinctFrom reports that IS [NOT] DISTINCT FROM continues an
+	// operator default where DefaultPredicateRefusal refuses every other
+	// predicate. It has no effect without DefaultPredicateRefusal.
+	DefaultDistinctFrom bool `json:"default_distinct_from,omitempty"`
 	// SecondCheckRefusal says why a column definition that writes a second
 	// CHECK is refused. Empty reads the second CHECK as the table's.
 	SecondCheckRefusal string `json:"second_check_refusal,omitempty"`
