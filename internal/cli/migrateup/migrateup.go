@@ -769,18 +769,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
 		return mig.OutOfOrderRefusal(status.CurrentVersion, status.OutOfOrderMigrations)
 	}
-	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
-		Direction:          preflight.DirectionUp,
-		DatabaseURL:        dbURL,
-		DisplayDatabaseURL: dburldisplay.Format(dbURL),
-		Dialect:            conn.Info().Dialect,
-		KeyedByPosition:    mig.KeyedByPosition(),
-		Command:            resolvedOpts.preUpHook,
-		CommandOrigin:      resolvedOpts.preUpHookOrigin,
-		PostgresDumpDir:    resolvedOpts.pgDumpTo,
-		MySQLDumpDir:       resolvedOpts.mySQLDumpTo,
-		WebhookURL:         resolvedOpts.webhook,
-	}, emit, preflightOutput(cmd, opts, runtime))
+	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, upPreflightOptions(resolvedOpts, dbURL, conn, mig),
+		emit, preflightOutput(cmd, opts, runtime))
 	if !opts.allowDestructive {
 		preflightHook = dbcli.CombineMigrationHooks(
 			lockedDestructiveLintHook(lintRuntime, migrationsFS, lintPolicy, lintPathPrefix),
@@ -1131,6 +1121,23 @@ const Command = "migrations up"
 // preflightOutput is where a pre-flight hook's output goes. It is written for
 // a person, so under --json it joins the rest of that output on standard
 // error, out of the document.
+// upPreflightOptions are the pre-flight hooks resolved configures for a run of
+// mig against conn.
+func upPreflightOptions(resolved options, dbURL string, conn *dbschema.DatabaseConnection, mig *migrator.Migrator) preflight.Options {
+	return preflight.Options{
+		Direction:          preflight.DirectionUp,
+		DatabaseURL:        dbURL,
+		DisplayDatabaseURL: dburldisplay.Format(dbURL),
+		Dialect:            conn.Info().Dialect,
+		KeyedByPosition:    mig.KeyedByPosition(),
+		Command:            resolved.preUpHook,
+		CommandOrigin:      resolved.preUpHookOrigin,
+		PostgresDumpDir:    resolved.pgDumpTo,
+		MySQLDumpDir:       resolved.mySQLDumpTo,
+		WebhookURL:         resolved.webhook,
+	}
+}
+
 func preflightOutput(cmd *cobra.Command, opts *options, runtime *cliobs.Runtime) io.Writer {
 	return cliobs.NewOutputWriter(humanOutput(cmd, opts), runtime, "pre-flight output")
 }
