@@ -585,6 +585,27 @@ statement writes the declared settings. A database read reports a character
 set for every text column, inherited ones included, and an export writes what
 it read.
 
+## Column collations
+
+A column's `COLLATE` is written on the column, in `CREATE TABLE` and in
+`MODIFY COLUMN`, and compared with the collation the column holds. A read
+reports that collation whether the column declares it or takes it from its
+table, so `COLLATE utf8mb4_unicode_ci` on a column of a table whose default is
+`utf8mb4_unicode_ci` is no change. Names compare ignoring case, and
+`COLLATE 'utf8mb4_bin'` is the same name as `COLLATE utf8mb4_bin`. A changed
+collation is planned as `MODIFY COLUMN`, which restates the column with the
+declared collation and its declared character set.
+
+A column that declares no collation is not compared. The server gives it its
+table's default collation, or the default collation of a character set the
+column names: `CHARACTER SET utf8mb4` in a table whose default is
+`utf8mb4_unicode_ci` gives `utf8mb4_0900_ai_ci` on MySQL 8.4 and
+`utf8mb4_uca1400_ai_ci` on MariaDB 12.3. Ptah cannot tell which collation that
+is without asking the server, so a column that holds a collation the schema
+file does not name keeps it, and no change is planned. The Atlas community
+binary v1.3.0 plans a `MODIFY COLUMN` for such a column. To change it back,
+declare the collation the column should hold.
+
 ## FULLTEXT parser
 
 A FULLTEXT index's parser plugin, such as `ngram`, is an option of the MySQL

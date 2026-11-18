@@ -132,7 +132,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			c.Assert(got.IndexNaming, qt.DeepEquals, test.indexNaming)
 			c.Assert(got.CheckNaming, qt.Equals, test.checkNaming)
 			c.Assert(got.ConstraintNaming, qt.Equals, test.constraintNaming)
-			c.Assert(got.Columns, qt.CmpEquals(cmpopts.IgnoreFields(descriptor.Columns{}, "SerialNotNull", "Collations", "InheritedCollation")), test.columns)
+			c.Assert(got.Columns, qt.CmpEquals(cmpopts.IgnoreFields(descriptor.Columns{}, "SerialNotNull", "Collations", "InheritedCollation", "InheritedCollationVaries")), test.columns)
 			c.Assert(got.Statements, qt.DeepEquals, test.statements)
 			c.Assert(got.TableOptions, qt.DeepEquals, test.tableOptions)
 		})

@@ -139,7 +139,10 @@ func mysql() descriptor.Dialect {
 			MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true, BaseBytes: 61,
 		},
 		CheckNaming: descriptor.CheckNamingTableNumbered,
-		Columns:     descriptor.Columns{NationalCharAsChar: true, NationalCharCharset: "utf8mb3", CheckOwnColumnOnly: true},
+		Columns: descriptor.Columns{
+			NationalCharAsChar: true, NationalCharCharset: "utf8mb3", CheckOwnColumnOnly: true,
+			Collations: true, InheritedCollationVaries: true,
+		},
 
 		// Dev databases.
 		DevRealm: descriptor.DevRealm{

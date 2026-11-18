@@ -111,7 +111,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-64 known gaps: a conversion or the comparison drops each one on the dialects named.
+63 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -132,7 +132,6 @@ migration nobody asked for.
 | `schemamodel.EmbeddedField.Overrides` | `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.EmbeddedField.Type` | `sqlite` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.AutoInc` | `oracle` | both | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Field.Collate` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `sqlite`, `sqlserver`, `yugabytedb` | from-catalog | dbschematogo drops it: the converted-back declaration is the same with and without it |
 | `schemamodel.Field.DefaultSet` | `clickhouse`, `cockroachdb`, `mariadb`, `mysql`, `oracle`, `postgres`, `sqlite`, `sqlserver`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Field.Facets` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |

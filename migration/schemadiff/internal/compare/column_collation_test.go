@@ -70,7 +70,7 @@ func TestColumnsWithDialect_ComparesAPostgreSQLColumnCollation(t *testing.T) {
 // compared, since its renderer writes no COLLATE or its reader has not been
 // measured.
 func TestColumnsWithDialect_LeavesAColumnCollationAloneElsewhere(t *testing.T) {
-	for _, dialect := range []string{"cockroachdb", "yugabytedb", "mysql"} {
+	for _, dialect := range []string{"cockroachdb", "yugabytedb", "sqlserver"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
@@ -118,5 +118,50 @@ func TestColumnsWithDialect_ComparesASQLiteColumnCollation(t *testing.T) {
 
 			c.Assert(diff.Changes["collation"], qt.Equals, test.want)
 		})
+	}
+}
+
+// TestColumnsWithDialect_ComparesAMySQLColumnCollationWhereDeclared pins the
+// MySQL family: a collation the column declares is compared with the one the
+// column holds, which a read reports as EffectiveCollate whether the column
+// declared it or took it from its table, and a column that declares none is
+// not compared.
+func TestColumnsWithDialect_ComparesAMySQLColumnCollationWhereDeclared(t *testing.T) {
+	tests := []struct {
+		name      string
+		declared  string
+		read      string
+		effective string
+		want      string
+	}{
+		{name: "the collation the column declares", declared: "utf8mb4_bin", read: "utf8mb4_bin", effective: "utf8mb4_bin", want: ""},
+		{name: "a name in another case", declared: "UTF8MB4_BIN", read: "utf8mb4_bin", effective: "utf8mb4_bin", want: ""},
+		{name: "the table's default restated", declared: "utf8mb4_unicode_ci", read: "", effective: "utf8mb4_unicode_ci", want: ""},
+		{
+			name: "a collation other than the table's default", declared: "utf8mb4_bin", read: "", effective: "utf8mb4_unicode_ci",
+			want: "utf8mb4_unicode_ci -> utf8mb4_bin",
+		},
+		{name: "another collation", declared: "utf8mb4_unicode_ci", read: "utf8mb4_bin", effective: "utf8mb4_bin", want: "utf8mb4_bin -> utf8mb4_unicode_ci"},
+		{name: "a collation the declaration leaves out", declared: "", read: "utf8mb4_bin", effective: "utf8mb4_bin", want: ""},
+		{name: "a declaration read back without an effective collation", declared: "utf8mb4_bin", read: "utf8mb4_bin", effective: "", want: ""},
+		{name: "a column that holds none", declared: "utf8mb4_bin", read: "", effective: "", want: " -> utf8mb4_bin"},
+	}
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				diff := compare.ColumnsWithDialect(
+					schemamodel.Field{Name: "c", Type: "varchar(20)", Nullable: true, Collate: test.declared},
+					catalog.Column{
+						Name: "c", DataType: "varchar", ColumnType: "varchar(20)", IsNullable: "YES",
+						Collate: test.read, EffectiveCollate: test.effective,
+					},
+					dialect,
+				)
+
+				c.Assert(diff.Changes["collation"], qt.Equals, test.want)
+			})
+		}
 	}
 }

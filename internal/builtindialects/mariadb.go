@@ -126,7 +126,10 @@ func mariaDB() descriptor.Dialect {
 		// `_2` and on, where MySQL cuts it.
 		IndexNaming: descriptor.IndexNaming{MaxBytes: 64, DescendingCovers: true, UniqueIsIndex: true},
 		CheckNaming: descriptor.CheckNamingColumnOrConstraint,
-		Columns:     descriptor.Columns{NationalCharAsChar: true, NationalCharCharset: "utf8mb3"},
+		Columns: descriptor.Columns{
+			NationalCharAsChar: true, NationalCharCharset: "utf8mb3",
+			Collations: true, InheritedCollationVaries: true,
+		},
 
 		// Dev databases. MariaDB has no server UUID; its host name, port and data
 		// directory tell one server from another.
