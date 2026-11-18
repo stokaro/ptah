@@ -323,6 +323,38 @@ func TestParseAtlasFileName_RevisionVersionKeepsTheSpelling(t *testing.T) {
 // TestParseFileName_RevisionVersionIsTheNumber is the control for the test
 // above: a native file pads its version to ten digits by rule, and the native
 // revision table stores the number, so the padding is not part of its identity.
+// TestParseAtlasFileName_RevisionDescriptionIsTheCommunityBinarys pins the
+// description each name records in atlas_schema_revisions, as the pinned
+// community binary v1.3.0 records it after `migrate apply` on SQLite: the text
+// after the first underscore, verbatim, so a second underscore stays.
+func TestParseAtlasFileName_RevisionDescriptionIsTheCommunityBinarys(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "1_init.sql", want: "init"},
+		{name: "1__init.sql", want: "_init"},
+		{name: "1_a_b.sql", want: "a_b"},
+		{name: "20260101000000_x.sql", want: "x"},
+		{name: "1.sql", want: ""},
+		{name: "1_.sql", want: ""},
+		{name: "R__view.sql", want: "_view"},
+		{name: "1R__rep.sql", want: "_rep"},
+		{name: "1_ünï.sql", want: "ünï"},
+		{name: "1_with space.sql", want: "with space"},
+		{name: "1_a.b.sql", want: "a.b"},
+		{name: "01_lead.sql", want: "lead"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := migrationfile.ParseAtlasFileName(tt.name)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.RevisionDescription, qt.Equals, tt.want)
+		})
+	}
+}
+
 func TestParseFileName_RevisionVersionIsTheNumber(t *testing.T) {
 	c := qt.New(t)
 	migrationFile, err := migrationfile.ParseFileName("0000000001_initial.up.sql")

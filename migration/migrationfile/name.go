@@ -50,9 +50,12 @@ type File struct {
 	// [DirFormatAtlas], never [DirFormatAuto].
 	Format               DirFormat
 	atlasRevisionVersion string
-	// RevisionDescription is the raw, unnormalized description token an Atlas
-	// file name carries, exactly as the revision table records it. Ptah files
-	// leave it empty.
+	// RevisionDescription is the description an Atlas file name carries,
+	// exactly as the Atlas revision table records it: everything after the
+	// first underscore of the name, read without its .sql and direction
+	// suffixes, byte for byte. 1__init.sql carries "_init", R__view.sql
+	// "_view", 1_a.b.sql "a.b", and a name with no underscore, such as 1.sql,
+	// carries "". Ptah files leave it empty.
 	RevisionDescription string
 	// Repeatable marks Flyway-style repeatable migrations imported by Atlas.
 	// Atlas records them under an opaque string token such as "R" or "2R".
@@ -206,7 +209,7 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 		Extension:            ".sql",
 		Format:               DirFormatAtlas,
 		atlasRevisionVersion: versionDigits,
-		RevisionDescription:  rawName,
+		RevisionDescription:  atlasRevisionDescription(stem),
 	}, nil
 }
 
@@ -222,7 +225,7 @@ func parseAtlasRepeatableStem(stem string) (*File, bool) {
 		Extension:            ".sql",
 		Format:               DirFormatAtlas,
 		atlasRevisionVersion: repeatable.revisionVersion,
-		RevisionDescription:  repeatable.rawName,
+		RevisionDescription:  atlasRevisionDescription(stem),
 		Repeatable:           true,
 	}, true
 }
@@ -230,7 +233,6 @@ func parseAtlasRepeatableStem(stem string) (*File, bool) {
 type atlasRepeatableParts struct {
 	version         int64
 	revisionVersion string
-	rawName         string
 	name            string
 }
 
@@ -246,7 +248,6 @@ func atlasRepeatable(stem string) (atlasRepeatableParts, bool) {
 		}
 		return atlasRepeatableParts{
 			revisionVersion: "R",
-			rawName:         rawName,
 			name:            titleAtlasName(rawName),
 		}, true
 	case strings.Contains(stem, "R_"):
@@ -261,12 +262,22 @@ func atlasRepeatable(stem string) (atlasRepeatableParts, bool) {
 		return atlasRepeatableParts{
 			version:         version,
 			revisionVersion: prefix + "R",
-			rawName:         rawName,
 			name:            titleAtlasName(rawName),
 		}, true
 	default:
 		return atlasRepeatableParts{}, false
 	}
+}
+
+// atlasRevisionDescription returns the description the pinned community
+// binary records for a file stem: the text after the first underscore,
+// verbatim, or "" when there is none. It does not trim the underscores that
+// follow, so the second underscore of R__view.sql and 1__init.sql stays in the
+// description. The same rule serves the revision table, `migrate apply` and
+// `migrate status`, so a stem has one description on every surface.
+func atlasRevisionDescription(stem string) string {
+	_, description, _ := strings.Cut(stem, "_")
+	return description
 }
 
 func titleAtlasName(name string) string {

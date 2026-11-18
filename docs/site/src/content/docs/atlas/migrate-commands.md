@@ -2944,10 +2944,14 @@ on `migrate lint`, and `default` on `migrate status`.
 - Top level: `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Available`, `.Applied`,
   `.Pending`, `.Current`, `.Next`, and `.Status`.
 - Each available and pending migration file entry: `.Name`, `.Version`, and
-  `.Description`.
+  `.Description`. Files are listed by name, byte for byte, which is the order
+  they run in: `10_b.sql` comes before `1_a.sql`, and `R__view.sql` after the
+  numbered files. `.Description` is the text after the first underscore of the
+  name, verbatim, so `R__view.sql` is `_view` and `1.sql` has none.
 - Each applied revision entry: `.Version`, `.Description`, `.Type`, `.Applied`,
   `.Total`, `.ExecutedAt`, `.ExecutionTime`, `.Error`, `.ErrorStmt`, and
-  `.OperatorVersion`.
+  `.OperatorVersion`. Revisions are listed by version string, so `10` comes
+  before `2`, and `.Description` is the one the revision table holds.
 
 **`ptah-compat migrate down --format`**
 

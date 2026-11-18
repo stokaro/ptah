@@ -142,7 +142,7 @@ func TestAtlasRepeatableMigrations_FailurePath(t *testing.T) {
 		refusal, ok := errors.AsType[*migrator.AtlasRepeatableVersionError](err)
 		c.Assert(ok, qt.IsTrue, qt.Commentf("%v", err))
 		c.Assert(refusal.Identities, qt.DeepEquals, []string{"user_names"})
-		c.Assert(refusal.Description, qt.Equals, "user_names")
+		c.Assert(refusal.Description, qt.Equals, "_user_names")
 		c.Assert(err, qt.ErrorMatches, `the revision table "atlas_schema_revisions" records version R .* delete the row with version 'R' from "atlas_schema_revisions" .*`)
 		c.Assert(repeatableAudit(c, dbPath), qt.DeepEquals, []string{"user_names"})
 		c.Assert(repeatableTableCount(c, dbPath, "atlas_schema_revisions_repeatable"), qt.Equals, 0)
