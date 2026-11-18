@@ -508,6 +508,11 @@ func tableDropBaselineSubjects(file *File) []int {
 // that the starting state shows the table does not have ([skipsColumn]). No
 // deployed version of the application ever read any of them.
 //
+// It also holds a column the file drops and adds back to the table as a
+// generated column ([regeneratedColumns]). Such a column holds no value of its
+// own: the server computes every row again on the add, and the column keeps
+// its name, so the drop loses nothing a reader could have had.
+//
 // A column added with IF NOT EXISTS may have been there already, so it is not
 // one. A statement that renames, a RENAME or a MySQL CHANGE clause, may give a
 // table or a column a name that held data before, so the tables it names stop
@@ -518,6 +523,7 @@ func newColumnDrops(file *File) map[int]map[string]bool {
 		return drops
 	}
 	created := make(map[string]bool)
+	regenerated := regeneratedColumns(file)
 	// added holds, for each folded column name, the tables an earlier ADD
 	// gave it to.
 	added := make(map[string]map[string]bool)
@@ -541,7 +547,8 @@ func newColumnDrops(file *File) map[int]map[string]bool {
 		absent := absentColumnDrops(file, i)
 		for _, subject := range droppedColumnSubjects(stmt.Words, stmt.sourceWords) {
 			column := lintkit.NormalizeIdent(subject.Name)
-			if absent[column] || lintkit.RefersToCreated(created, owner) || lintkit.RefersToCreated(added[column], owner) {
+			if absent[column] || regenerated[i][column] ||
+				lintkit.RefersToCreated(created, owner) || lintkit.RefersToCreated(added[column], owner) {
 				if drops[i] == nil {
 					drops[i] = make(map[string]bool)
 				}
@@ -557,6 +564,64 @@ func newColumnDrops(file *File) map[int]map[string]bool {
 		}
 	}
 	return drops
+}
+
+// regeneratedColumns returns, for each ALTER TABLE statement of file, the
+// folded names of the columns it drops that the same statement or a later one
+// adds back to the same table as a generated column, GENERATED ALWAYS AS
+// (expression). It is the shape of a plan that rebuilds a generated column
+// around a type change of a column it reads, which PostgreSQL refuses while
+// the generated column exists. An identity column, GENERATED ... AS IDENTITY,
+// is not one: its values come from a sequence, and the add numbers the rows
+// again.
+func regeneratedColumns(file *File) map[int]map[string]bool {
+	regenerated := make(map[int]map[string]bool)
+	for i := range file.Statements {
+		stmt := &file.Statements[i]
+		if !lintkit.IsAlterTable(stmt.Words) {
+			continue
+		}
+		owner := lintkit.AlterTableReference(stmt.Words, stmt.sourceWords).Normalized
+		for _, subject := range droppedColumnSubjects(stmt.Words, stmt.sourceWords) {
+			column := lintkit.NormalizeIdent(subject.Name)
+			if owner != "" && addsGeneratedColumnFrom(file, i, owner, column) {
+				if regenerated[i] == nil {
+					regenerated[i] = make(map[string]bool)
+				}
+				regenerated[i][column] = true
+			}
+		}
+	}
+	return regenerated
+}
+
+// addsGeneratedColumnFrom reports whether the statement at index or a later one
+// adds column to the table owner as a generated column.
+func addsGeneratedColumnFrom(file *File, index int, owner, column string) bool {
+	for j := index; j < len(file.Statements); j++ {
+		stmt := &file.Statements[j]
+		if !lintkit.IsAlterTable(stmt.Words) || lintkit.AlterTableReference(stmt.Words, stmt.sourceWords).Normalized != owner {
+			continue
+		}
+		for _, k := range lintkit.ClauseStarts(stmt.Words) {
+			start, end, ok := lintkit.AddColumnClause(stmt.Words, k)
+			if ok && lintkit.NormalizeIdent(stmt.Words[start-1]) == column && generatedExpressionClause(stmt.Words[start:end]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// generatedExpressionClause reports whether a column definition's words carry
+// GENERATED ALWAYS AS followed by a parenthesized expression.
+func generatedExpressionClause(w []string) bool {
+	for i := range w {
+		if i+3 < len(w) && w[i] == "GENERATED" && w[i+1] == "ALWAYS" && w[i+2] == "AS" && w[i+3] == "(" {
+			return true
+		}
+	}
+	return false
 }
 
 // absentColumnDrops returns the folded names of the columns the ALTER TABLE at
