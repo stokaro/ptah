@@ -823,6 +823,7 @@ func projectLiveStates(
 	scope atlasfilter.Scope,
 ) (scopedApplyStates, error) {
 	var err error
+	scope.LiveKeys = atlasfilter.KeysOf(current)
 	scope.Bindings, err = scopeBindings(ctx, runtime, dialect, scope, databaseSide(current), generatedSide(desired))
 	if err != nil {
 		return scopedApplyStates{}, err
@@ -836,6 +837,9 @@ func projectLiveStates(
 	}
 	if scoped.desiredErr != nil && !emptySelection(scoped.desiredErr) {
 		return scopedApplyStates{}, scoped.desiredErr
+	}
+	if err := atlasfilter.RefuseRewritten(scoped.currentReports.Exclude, scoped.desiredReports.Exclude); err != nil {
+		return scopedApplyStates{}, err
 	}
 	return scoped, nil
 }

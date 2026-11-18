@@ -108,6 +108,9 @@ type Naming struct {
 	RealmRelative bool
 	// Dialect is [Scope.Dialect] for a caller that holds no Scope.
 	Dialect string
+	// LiveKeys is [Scope.LiveKeys] for a caller that holds no Scope. Only
+	// [Exclusion.Desired] reads it.
+	LiveKeys LiveKeys
 }
 
 // ConnectionNaming is the Naming of a state read over the connection info
@@ -138,7 +141,7 @@ func (e Exclusion) Desired(db *schemamodel.Database, naming Naming) (*schemamode
 	if !e.Excludes() {
 		return db, ExcludeReport{}, nil
 	}
-	return excludeGenerated(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, naming.Dialect, featureselect.Bindings{})
+	return excludeGenerated(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, naming.Dialect, naming.LiveKeys, featureselect.Bindings{})
 }
 
 // Observed returns a copy of db without the objects the selectors name, as

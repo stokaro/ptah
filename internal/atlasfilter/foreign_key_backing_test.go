@@ -134,11 +134,11 @@ func TestExclusionLeavesOutTheIndexAServerBuiltForAForeignKey_HappyPath(t *testi
 	}
 }
 
-// A selector that leaves every constraint out takes no index with a foreign
-// key. It lets a read go without the privilege to see constraints, and an
-// account that cannot see the key cannot tell which index it stands on, so an
-// account that can answers the same.
-func TestExcludeKeepsTheIndexOfAForeignKeyEveryConstraintSelectorLeavesOut_HappyPath(t *testing.T) {
+// A selector that leaves every constraint out takes the index the server built
+// for each foreign key with the key, as a selector naming the key does: the
+// key stays on the server, and kept alone the index is planned for a DROP
+// INDEX the server refuses while the key stands.
+func TestExcludeLeavesOutTheIndexOfAForeignKeyEveryConstraintSelectorLeavesOut_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	scope := atlasfilter.Scope{
 		Selections: ownerSelections(), Exclude: []string{"*[type=constraint]"}, DefaultSchema: "app",
@@ -149,7 +149,7 @@ func TestExcludeKeepsTheIndexOfAForeignKeyEveryConstraintSelectorLeavesOut_Happy
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(current.Constraints, qt.HasLen, 0)
-	c.Assert(indexNames(current.Indexes), qt.DeepEquals, []string{"kids_parent_fk", "kids_owner_idx"})
+	c.Assert(indexNames(current.Indexes), qt.DeepEquals, []string{"kids_owner_idx"})
 	c.Assert(report.Unmatched, qt.IsNil)
 }
 

@@ -609,6 +609,8 @@ func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, 
 	if scope.ForeignKeyIndexes, err = scopeForeignKeyIndexes(runtime, info.Dialect); err != nil {
 		return nil, err
 	}
+	// The plan was computed with both states, which is where a selector
+	// written for a constraint a rewrite would lose is refused.
 	current, _, err = atlasfilter.ExcludeDatabaseScopeReport(current, scope)
 	return current, err
 }

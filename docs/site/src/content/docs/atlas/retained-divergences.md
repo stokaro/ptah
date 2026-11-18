@@ -1029,6 +1029,16 @@ are accepted by the binary, which then drops the constraint, and refused by
 `schema apply` here; see
 [An exclude selector that matches nothing](#an-exclude-selector-that-matches-nothing).
 
+A primary key declared without a name is named by the server's primary key on
+the same table, whatever the server calls it. With `kinds` holding
+`CONSTRAINT pk_kinds PRIMARY KEY (id)` and a desired schema declaring
+`id int NOT NULL PRIMARY KEY`, `public.kinds.pk_kinds` keeps the key on both
+binaries. `public.kinds.kinds_pkey`, the name PostgreSQL gives a new key, names
+nothing: the binary plans nothing, and `schema apply` here refuses the selector
+as matching nothing. A table renamed from `kinds` to `types` that kept
+`kinds_pkey` answers the same way to `public.types.kinds_pkey` and
+`public.types.types_pkey`.
+
 A foreign key on MySQL and MariaDB stands on an index, and the server builds
 one when no index covers the key's columns. The binary excludes the key under
 `[type=fk]` and keeps the index in the plan: `DROP INDEX`, which MySQL 26.10 and
@@ -1048,6 +1058,16 @@ SQLite removes it only by writing a new table from the declaration, which would
 not hold the `CHECK` the selector keeps. So `ptah-compat` refuses the selector,
 says why, plans nothing and leaves the table as it is. Excluding the whole table
 works on both.
+
+The other selectors over the same table answer as follows:
+
+- `*[type=constraint]` is refused the same way, since every constraint of a
+  SQLite table stays in scope. The binary writes a new table without the
+  `UNIQUE` and the `CHECK`.
+- `*[type=index]` names the index, so it is not refused, and both binaries
+  write the new table.
+- `kinds.*` leaves out every column of the table and its constraints with them,
+  and both binaries plan nothing.
 
 **Evidence.** `integration/constraint_selector_e2e_test.go`,
 `integration/exclusion_selector_e2e_test.go`,

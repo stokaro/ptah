@@ -873,9 +873,13 @@ the account needs no privilege for it:
 MariaDB can hide constraint rows from an account with only `SELECT`. The read
 still gets each primary and unique key from its visible index, and the selector
 leaves that key out as it does for an account that sees the row, so both
-accounts plan the same. The index a server built for a foreign key stays in the
-comparison under this selector for every account, because an account that sees
-no foreign key cannot tell which index one stands on.
+accounts plan the same. The index the server built for a foreign key leaves the
+comparison with its key, so the key keeps its index and no plan drops one the
+server refuses to drop while the key stands. An account that sees no foreign key
+cannot tell that index from one the author declared, so its comparison keeps the
+index and reports it where the desired schema leaves it out. Declare the index
+the key stands on, or give the account the constraint privilege, and both
+accounts plan the same.
 
 A selector that names objects does not count, because a read that cannot see a
 trigger cannot say what it is called: `--exclude 'audit_*[type=trigger]'` still needs

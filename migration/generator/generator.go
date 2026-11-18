@@ -490,7 +490,8 @@ func readExcludedPlanStates(
 	// realm-relative count is the Atlas contract `ptah-compat` takes from a URL
 	// that names no schema.
 	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema, Dialect: conn.Info().Dialect}
-	desired, desiredReport, err := exclusion.Desired(desired, naming)
+	declared := desired
+	desired, _, err := exclusion.Desired(desired, naming)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
 	}
@@ -498,9 +499,19 @@ func readExcludedPlanStates(
 	if err != nil {
 		return nil, nil, err
 	}
+	// The desired side names a declared key by the key the database holds,
+	// which only the read can say; the first pass decided what to read.
+	naming.LiveKeys = atlasfilter.KeysOf(dbSchema)
+	desired, desiredReport, err := exclusion.Desired(declared, naming)
+	if err != nil {
+		return nil, nil, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
+	}
 	dbSchema, observedReport, err := exclusion.Observed(dbSchema, naming)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
+	}
+	if err := atlasfilter.RefuseRewritten(desiredReport, observedReport); err != nil {
+		return nil, nil, err
 	}
 	atlasfilter.ReportUnmatched(opts.Diagnostics, opts.ExcludeSources, desiredReport, observedReport)
 	return desired, dbSchema, nil

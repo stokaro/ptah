@@ -86,6 +86,11 @@ type fixture struct {
 // verb replaces it as the test's account, so it runs with its caller's
 // privileges: a plan refuses to replace a SQL SECURITY DEFINER view another
 // account defined.
+//
+// The foreign key stands on an index the fixture declares. MariaDB shows an
+// account holding only SELECT no foreign key, so that account cannot tell an
+// index the server built for one from a declared index, and keeps it where the
+// administrator's selector leaving out every constraint takes it with the key.
 var (
 	sharedObjects = []string{
 		"CREATE TABLE parent (id INT PRIMARY KEY)",
@@ -95,6 +100,7 @@ var (
 	leftObjects = []string{
 		"CREATE TABLE only_left (id INT PRIMARY KEY)",
 		"CREATE INDEX child_amount_idx ON child (amount)",
+		"CREATE INDEX child_parent_idx ON child (parent_id)",
 		"ALTER TABLE child ADD CONSTRAINT child_parent_fk FOREIGN KEY (parent_id) REFERENCES parent (id)",
 		"ALTER TABLE child ADD CONSTRAINT child_amount_ck CHECK (amount >= 0)",
 		"CREATE OR REPLACE SQL SECURITY INVOKER VIEW v_child AS SELECT id, amount FROM child",

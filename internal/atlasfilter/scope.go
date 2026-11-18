@@ -84,6 +84,10 @@ type Scope struct {
 	// side reports a matching non-extension resource, so an extension-only
 	// include remains authoritative for the identities it selected.
 	ExtensionSupport bool
+	// LiveKeys are the primary keys the database side holds, for the desired
+	// side to name a declared key by; see [LiveKeys]. The zero value names a
+	// declared key by the name the declaration predicts.
+	LiveKeys LiveKeys
 	// DefaultSchema owns unqualified objects ("public" for PostgreSQL, the
 	// database name for MySQL-family targets, "main" for SQLite).
 	DefaultSchema string
