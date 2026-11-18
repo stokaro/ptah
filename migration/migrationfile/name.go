@@ -32,10 +32,19 @@ type File struct {
 	// filesystem root. [Discover] fills it; the name parsers, which see only
 	// a file name, leave it empty.
 	Path string
-	// Version is the numeric version the name carries. An Atlas repeatable
-	// file with no numeric prefix (R__name.sql) leaves it 0 and carries its
-	// identity in [File.RevisionVersion].
+	// Version is the numeric version the name carries. An Atlas file whose
+	// version is not a decimal number above zero, such as R__name.sql,
+	// v1_name.sql or 1.x.sql, leaves it 0 and carries its identity in
+	// [File.RevisionVersion].
 	Version int64
+	// OrderKey is the number the file runs under, which [Discover] fills: the
+	// version for a Ptah file and for an Atlas file whose name spells one,
+	// and above every such number for R__name.sql. Where
+	// [AtlasKeyedByPosition] holds for the directory, every Atlas file runs
+	// under its position in execution order instead. Comparing keys compares
+	// execution order only there; elsewhere Atlas files run in file-name
+	// order, so 10_b.sql runs before 9_a.sql. The name parsers leave it 0.
+	OrderKey int64
 	// Name is the humanized description: underscore (and, in Atlas names,
 	// dot) separators become spaces and words are Title-Cased, so
 	// "create_users_table" reads back as "Create Users Table". The raw
@@ -177,6 +186,7 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 		return migrationFile, nil
 	}
 
+	whole := stem
 	direction := "up"
 	for _, suffix := range []string{".up", ".down"} {
 		if strings.HasSuffix(stem, suffix) {
@@ -187,6 +197,16 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 	}
 
 	versionDigits, rawName, ok := splitAtlasStem(stem)
+	// Atlas reads the version as the text before the first underscore of the
+	// whole name, whatever it holds, so it records 1.x.sql as 1.x, v1_x.sql
+	// as v1 and v1.up.sql as v1.up, and runs v1.down.sql as a migration of
+	// its own. Reading the digits alone would record 1.x.sql as 1, a version
+	// Atlas never gives it. The direction suffix of a numbered name, as an
+	// importer writes 1_a.up.sql and 1_a.down.sql, is read as a direction.
+	if token, _, _ := strings.Cut(stem, "_"); mode == atlasParseExplicit && (!ok || !isAtlasNumber(token, versionDigits)) {
+		token, description, _ := strings.Cut(whole, "_")
+		return parseAtlasOpaqueVersion(filename, token, description, "up")
+	}
 	if !ok {
 		return nil, errors.New("invalid Atlas migration file name format")
 	}
@@ -218,6 +238,55 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 		atlasRevisionVersion: versionDigits,
 		RevisionDescription:  rawName,
 		VerbatimDescription:  atlasVerbatimDescription(stem),
+	}, nil
+}
+
+// isAtlasNumber reports whether the version token of an Atlas name is the
+// decimal number above zero that splitAtlasStem read from it, one an int64
+// holds.
+func isAtlasNumber(token, versionDigits string) bool {
+	if token != versionDigits {
+		return false
+	}
+	version, err := strconv.ParseInt(versionDigits, 10, 64)
+	return err == nil && version > 0
+}
+
+// parseAtlasOpaqueVersion reads an Atlas name whose version is not a decimal
+// number above zero, such as 1.x.sql, v1_x.sql or 00_x.sql. The file carries
+// the version as its revision identity and no number: Version is 0, and a
+// migrator gives it an order key of its own. An empty version, as in _x.sql,
+// is refused, because no command line can name it.
+func parseAtlasOpaqueVersion(filename, token, description, direction string) (*File, error) {
+	if token == "" {
+		return nil, fmt.Errorf("Atlas reads the version of %s as the empty string, which Ptah cannot address", filename)
+	}
+	// The Atlas revision table keeps rows of its own under versions that
+	// start with a dot, such as .atlas_cloud_identifier, and Ptah reads every
+	// such row as one of them. The community binary runs .draft_x.sql and
+	// records .draft; Ptah refuses it rather than run it and then read its
+	// row as table metadata, which reports the file pending forever.
+	if strings.HasPrefix(token, ".") {
+		return nil, fmt.Errorf("Atlas records the version of %s as %q, which starts with a dot as the revision "+
+			"table's own rows do, so Ptah could not tell its row from them; rename the file", filename, token)
+	}
+	// A version spelled as a repeatable one, R or 3R, that the repeatable
+	// grammar refused, as R__.sql or 3R_views.down.sql, stays refused.
+	if digits, ok := strings.CutSuffix(token, "R"); ok && strings.Trim(digits, "0123456789") == "" {
+		return nil, errors.New("invalid Atlas migration file name format")
+	}
+	name := strings.TrimLeft(description, "_")
+	if name == "" {
+		name = token
+	}
+	return &File{
+		Name:                 titleAtlasName(name),
+		Direction:            direction,
+		Extension:            ".sql",
+		Format:               DirFormatAtlas,
+		atlasRevisionVersion: token,
+		RevisionDescription:  strings.TrimLeft(description, "_"),
+		VerbatimDescription:  description,
 	}, nil
 }
 

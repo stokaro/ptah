@@ -258,11 +258,17 @@ type Migrator struct {
 	// atlasStringLinearity decides linearity over an Atlas directory on the
 	// revision strings; see [Migrator.WithAtlasStringLinearity].
 	atlasStringLinearity bool
-	txMode               MigrationTxMode
-	migrationLockName    string
-	migrationLockTimeout time.Duration
-	migrationLockSkipped bool
-	initialized          bool
+	// recordedAtlasIdentities are the versions the Atlas revision table
+	// records that are not numbers and that no file of the directory carries,
+	// such as v1 once v1_x.sql is removed, in text order. Initialize reads
+	// them, and each runs under a key above every key of the directory; see
+	// [Migrator.recordedAtlasIdentityKey].
+	recordedAtlasIdentities []string
+	txMode                  MigrationTxMode
+	migrationLockName       string
+	migrationLockTimeout    time.Duration
+	migrationLockSkipped    bool
+	initialized             bool
 	// initializedDryRun records the writer's dry-run mode at the time
 	// initialized was set, so the memoized state is never reused across a
 	// mode change.
@@ -478,7 +484,7 @@ func (m *Migrator) migrationCheckGroups(
 	}
 	parsed, err := ParseChecks(body, dialect)
 	if err != nil {
-		return nil, fmt.Errorf("migration %d has invalid check directives: %w", migration.Version, err)
+		return nil, fmt.Errorf("migration %d has invalid check directives: %w", m.versionText(migration.Version), err)
 	}
 	for _, phase := range []CheckPhase{CheckPhaseBefore, CheckPhaseAfter} {
 		checks := checksInPhase(parsed, phase)
@@ -554,7 +560,7 @@ func (m *Migrator) runMigrationChecks(
 	if err != nil {
 		return err
 	}
-	return runCheckGroups(ctx, conn, rule, migration.Version, selected)
+	return runCheckGroups(ctx, conn, rule, m.versionText(migration.Version), selected)
 }
 
 // runPostMigrationChecks evaluates a migration's `phase=after` assertions once
@@ -591,9 +597,10 @@ func (m *Migrator) runPostMigrationChecks(
 		if err != nil {
 			return false, err
 		}
-		if err := validateCheckGroups(selected, rule, migration.Version); err != nil {
+		if err := validateCheckGroups(selected, rule, m.versionText(migration.Version)); err != nil {
 			return false, &PostMigrationCheckFailedError{
 				Version: migration.Version, Direction: direction, Err: err,
+				versionLabel: m.versionText(migration.Version).label,
 			}
 		}
 		return true, nil
@@ -601,6 +608,7 @@ func (m *Migrator) runPostMigrationChecks(
 	if err := m.runMigrationChecks(ctx, m.conn, migration, direction, CheckPhaseAfter); err != nil {
 		return false, &PostMigrationCheckFailedError{
 			Version: migration.Version, Direction: direction, Err: err,
+			versionLabel: m.versionText(migration.Version).label,
 		}
 	}
 	return false, nil
@@ -631,7 +639,7 @@ func (m *Migrator) validateDeferredMigrationChecks(ctx context.Context, migratio
 	if err != nil {
 		return false, err
 	}
-	if err := validateCheckGroups(selected, rule, migration.Version); err != nil {
+	if err := validateCheckGroups(selected, rule, m.versionText(migration.Version)); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -701,7 +709,7 @@ func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration, direction Mi
 	if len(groups) > 0 {
 		return fmt.Errorf(
 			"migration %d declares pre-migration checks, which cannot run with tx-mode all: "+
-				"%s", migration.Version, txModeAllExclusionAdvice)
+				"%s", m.versionText(migration.Version), txModeAllExclusionAdvice)
 	}
 	return nil
 }
@@ -821,6 +829,9 @@ func (m *Migrator) WithAtlasRevisionVersionComparator(
 // directory a source tool's tokens order (see [Migrator.WithSourceVersions]),
 // the numeric rule decides. [Migrator.WithExecOrder] decides what happens to
 // an out-of-order migration under either rule.
+//
+// [Migrator.SetRevision] orders versions as text under it too: a set to 2
+// keeps 10, which sorts below 2 as text, and removes v1.
 func (m *Migrator) WithAtlasStringLinearity() *Migrator {
 	tmp := *m
 	tmp.atlasStringLinearity = true
@@ -1459,7 +1470,36 @@ func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error
 	if err := m.refuseRespelledRevisions(revisions); err != nil {
 		return nil, err
 	}
+	if err := m.refuseNumberlessVersionsInANumericTable(); err != nil {
+		return nil, err
+	}
 	return revisions, nil
+}
+
+// refuseNumberlessVersionsInANumericTable refuses an Atlas directory whose
+// migrations run under their positions in execution order, over a revision
+// table that records numbers. Such a directory holds a version that is not a
+// number, such as v1_x.sql, or a repeatable that spells a numbered file's
+// number. A position moves when a file is added before it, so the row a Ptah
+// table keeps for it would name another file the next run. The refusal names
+// the first file whose version is not a number.
+func (m *Migrator) refuseNumberlessVersionsInANumericTable() error {
+	if m.revisionTableFormat.isAtlas() || !m.hasAtlasPositions() {
+		return nil
+	}
+	for _, migration := range m.migrationProvider.Migrations() {
+		if _, err := strconv.ParseInt(migration.atlasRevisionVersion, 10, 64); err == nil &&
+			strings.Trim(migration.atlasRevisionVersion, "0123456789") == "" &&
+			strings.Trim(migration.atlasRevisionVersion, "0") != "" {
+			continue
+		}
+		return fmt.Errorf(
+			"Atlas migration %s has version %q, which a revision table that records numbers cannot keep; "+
+				"use the Atlas revision table (--revision-format atlas)",
+			migration.atlasOrderKey, migration.atlasRevisionVersion,
+		)
+	}
+	return nil
 }
 
 func queryMigrationRows[T any](
@@ -1817,6 +1857,11 @@ func maxRevisionVersion(revisions []MigrationRevision) int64 {
 type migrationIdentitySet struct {
 	versions  map[int64]struct{}
 	exactKeys map[string]struct{}
+	// exact marks a set read from an Atlas revision table, whose rows record
+	// each file's version string. There the string is the identity of a file
+	// that carries one, and the numeric fallback of
+	// [migrationIdentitySet.containsMigration] does not apply to it.
+	exact bool
 }
 
 func newMigrationIdentitySet(versions []int64, revisions []MigrationRevision) migrationIdentitySet {
@@ -1866,6 +1911,11 @@ func (s migrationIdentitySet) containsMigration(migration *Migration) bool {
 		return true
 	}
 	if migration.atlasRevisionVersionMapped {
+		return false
+	}
+	// Without this, 1_a.sql added beside an applied 1R__rep.sql reads as
+	// applied, since both run under the number 1, and it never runs.
+	if s.exact && migration.hasAtlasRevisionVersion {
 		return false
 	}
 	_, ok := s.versions[migration.Version]
@@ -1946,7 +1996,7 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 
 	migrations := m.migrationProvider.Migrations()
 	if opts.TargetVersion > 0 && !hasMigrationVersion(migrations, opts.TargetVersion) {
-		return fmt.Errorf("target version %d was not found in the migration provider", opts.TargetVersion)
+		return fmt.Errorf("target version %d was not found in the migration provider", m.versionText(opts.TargetVersion))
 	}
 
 	revisions, err := m.upRevisions(ctx)
@@ -2012,7 +2062,7 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 		return err
 	}
 
-	m.logger.Info("Migrating up", "currentVersion", currentVersion, "totalMigrations", len(migrations))
+	m.logger.Info("Migrating up", "currentVersion", m.logVersion(currentVersion), "totalMigrations", len(migrations))
 	checksDeferred, err := m.applyUpBatch(ctx, opts, migrationsToApply)
 	if err != nil {
 		return err
@@ -2082,7 +2132,7 @@ func (m *Migrator) selectUpMigrations(
 		return nil, err
 	}
 	selection.apply = limitMigrationsToApply(selection.apply, opts.Amount)
-	if err := refuseUnreachableTargetVersion(opts, currentVersion, selection); err != nil {
+	if err := refuseUnreachableTargetVersion(opts, m.versionText(opts.TargetVersion), m.versionText(currentVersion), selection); err != nil {
 		return nil, err
 	}
 	return selection.apply, nil
@@ -2096,6 +2146,12 @@ type TargetVersionPassedError struct {
 	// CurrentVersion is the highest version the revision table records as
 	// applied.
 	CurrentVersion int64
+	// currentVersionLabel names CurrentVersion as versionLabel names
+	// TargetVersion.
+	currentVersionLabel string
+	// versionLabel names TargetVersion as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 // Error describes the target the run was given and the version the database
@@ -2103,8 +2159,8 @@ type TargetVersionPassedError struct {
 func (e *TargetVersionPassedError) Error() string {
 	return fmt.Sprintf(
 		"cannot migrate up to version %d: the database already records version %d",
-		e.TargetVersion,
-		e.CurrentVersion,
+		versionText{number: e.TargetVersion, label: e.versionLabel},
+		versionText{number: e.CurrentVersion, label: e.currentVersionLabel},
 	)
 }
 
@@ -2118,8 +2174,14 @@ type TargetVersionSkippedError struct {
 	// CurrentVersion is the highest version the revision table records as
 	// applied.
 	CurrentVersion int64
+	// currentVersionLabel names CurrentVersion as versionLabel names
+	// TargetVersion.
+	currentVersionLabel string
 	// ExecOrder is the execution order that passed over the target.
 	ExecOrder ExecOrder
+	// versionLabel names TargetVersion as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 // Error names the execution order that left the target pending, which is what
@@ -2128,9 +2190,9 @@ type TargetVersionSkippedError struct {
 func (e *TargetVersionSkippedError) Error() string {
 	return fmt.Sprintf(
 		"cannot migrate up to version %d: execution order %s leaves it pending because it sorts below the recorded version %d",
-		e.TargetVersion,
+		versionText{number: e.TargetVersion, label: e.versionLabel},
 		e.ExecOrder,
-		e.CurrentVersion,
+		versionText{number: e.CurrentVersion, label: e.currentVersionLabel},
 	)
 }
 
@@ -2144,23 +2206,27 @@ func (e *TargetVersionSkippedError) Error() string {
 // history sits above the bound, and telling an operator the history moved past
 // a version their directory still holds as pending sends them to look at the
 // database instead of at the execution order.
-func refuseUnreachableTargetVersion(opts MigrateUpOptions, currentVersion int64, selection upSelection) error {
+func refuseUnreachableTargetVersion(opts MigrateUpOptions, target, current versionText, selection upSelection) error {
 	if !opts.RefuseTargetVersionAlreadyPassed || opts.TargetVersion <= 0 {
 		return nil
 	}
-	if len(selection.apply) > 0 || currentVersion <= opts.TargetVersion {
+	if len(selection.apply) > 0 || current.number <= opts.TargetVersion {
 		return nil
 	}
 	if slices.Contains(selection.skipped, opts.TargetVersion) {
 		return &TargetVersionSkippedError{
-			TargetVersion:  opts.TargetVersion,
-			CurrentVersion: currentVersion,
-			ExecOrder:      selection.execOrder,
+			TargetVersion:       opts.TargetVersion,
+			versionLabel:        target.label,
+			CurrentVersion:      current.number,
+			currentVersionLabel: current.label,
+			ExecOrder:           selection.execOrder,
 		}
 	}
 	return &TargetVersionPassedError{
-		TargetVersion:  opts.TargetVersion,
-		CurrentVersion: currentVersion,
+		TargetVersion:       opts.TargetVersion,
+		versionLabel:        target.label,
+		CurrentVersion:      current.number,
+		currentVersionLabel: current.label,
 	}
 }
 
@@ -2222,6 +2288,7 @@ func (m *Migrator) effectiveAppliedIdentitySetFromRevisions(
 	revisions []MigrationRevision,
 ) migrationIdentitySet {
 	set := newMigrationIdentitySet(applied, revisions)
+	set.exact = m.revisionTableFormat.isAtlas()
 	boundary := atlasRevisionBoundary(revisions)
 	if boundary == 0 {
 		return set
@@ -2306,7 +2373,7 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 
 	// Skip if already at or below target version (shouldn't happen)
 	if targetVersion >= currentVersion {
-		m.logger.Info("Already at or below target version", "targetVersion", targetVersion, "currentVersion", currentVersion)
+		m.logger.Info("Already at or below target version", "targetVersion", m.logVersion(targetVersion), "currentVersion", m.logVersion(currentVersion))
 		return nil
 	}
 	if err := m.repeatableRollbackRefusal(ctx); err != nil {
@@ -2314,7 +2381,12 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 	}
 
 	if boundary := checkpointRollbackBoundary(m.migrationProvider.Migrations(), appliedMigrations, targetVersion); boundary > 0 {
-		return &CheckpointRollbackError{TargetVersion: targetVersion, CheckpointVersion: boundary}
+		return &CheckpointRollbackError{
+			TargetVersion:     targetVersion,
+			CheckpointVersion: boundary,
+			versionLabel:      m.versionText(targetVersion).label,
+			checkpointLabel:   m.versionText(boundary).label,
+		}
 	}
 
 	migrations := m.migrationProvider.Migrations()
@@ -2351,7 +2423,7 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 		)
 	}
 
-	m.logger.Info("Migrating down", "targetVersion", targetVersion, "currentVersion", currentVersion, "totalMigrations", len(m.migrationProvider.Migrations()))
+	m.logger.Info("Migrating down", "targetVersion", m.logVersion(targetVersion), "currentVersion", m.logVersion(currentVersion), "totalMigrations", len(m.migrationProvider.Migrations()))
 
 	// Rebind once: template + dialect are loop-invariant. Migration version
 	// is bound as a parameter via the dialect-native placeholder.
@@ -2411,7 +2483,7 @@ func (m *Migrator) migrateToLocked(ctx context.Context, targetVersion int64) err
 	currentVersion := maxAppliedVersion(appliedMigrations)
 
 	if targetVersion == currentVersion {
-		m.logger.Info("Already at target version", "version", targetVersion)
+		m.logger.Info("Already at target version", "version", m.logVersion(targetVersion))
 		return nil
 	}
 
@@ -2421,7 +2493,7 @@ func (m *Migrator) migrateToLocked(ctx context.Context, targetVersion int64) err
 	}
 
 	if targetVersion > 0 && !slices.Contains(appliedMigrations, targetVersion) {
-		return fmt.Errorf("target version %d is below current version %d but is not applied", targetVersion, currentVersion)
+		return fmt.Errorf("target version %d is below current version %d but is not applied", m.versionText(targetVersion), m.versionText(currentVersion))
 	}
 
 	// Migrate down to target version
@@ -2469,7 +2541,7 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 		)
 	}
 
-	m.logger.Info("Migrating up", "currentVersion", currentVersion, "targetVersion", targetVersion, "totalMigrations", len(migrations))
+	m.logger.Info("Migrating up", "currentVersion", m.logVersion(currentVersion), "targetVersion", m.logVersion(targetVersion), "totalMigrations", len(migrations))
 	if _, err := m.applyUpMigrations(ctx, migrationsToApply); err != nil {
 		return err
 	}
@@ -2479,7 +2551,7 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 		}
 	}
 
-	m.logger.Info("Migrated successfully", "targetVersion", targetVersion)
+	m.logger.Info("Migrated successfully", "targetVersion", m.logVersion(targetVersion))
 	return nil
 }
 
@@ -2634,7 +2706,7 @@ func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction 
 			}
 			m.logger.Warn(
 				"Migration directive was not honored because of where it appears in the file",
-				"version", migration.Version,
+				"version", m.logVersion(migration.Version),
 				"direction", string(direction),
 				"file", migrationTxModeSourceName(sourcePath, migration.Description),
 				"line", misplaced.Line,
@@ -2789,7 +2861,7 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		if err := m.recordAppliedMigrationOn(ctx, txConn, migration, startedAt[key], plan); err != nil {
 			_ = tx.Rollback()
 			failure := fmt.Errorf(
-				"failed to record migration %d in tx-mode all transaction: %w", migration.Version, err)
+				"failed to record migration %d in tx-mode all transaction: %w", m.versionText(migration.Version), err)
 			m.logBatchOutcome(ctx, started, MigrationLogFailed, failure)
 			return nil, failure
 		}
@@ -2905,7 +2977,7 @@ func (m *Migrator) validateUpTransactionMode(ctx context.Context, migrations []*
 		if !resolvedTimeouts[migration].IsZero() {
 			return fmt.Errorf(
 				"migration %d declares timeouts, which cannot run with tx-mode all: "+
-					"%s", migration.Version, txModeAllExclusionAdvice)
+					"%s", m.versionText(migration.Version), txModeAllExclusionAdvice)
 		}
 		if err := m.rejectChecksUnderTxModeAll(migration, MigrationDirectionUp); err != nil {
 			return err
@@ -2939,7 +3011,7 @@ func (m *Migrator) effectiveUpTimeouts(migration *Migration) (migrationfile.Time
 	if err != nil {
 		return migrationfile.Timeouts{}, fmt.Errorf(
 			"migration %d has invalid timeout directives: %w",
-			migration.Version,
+			m.versionText(migration.Version),
 			err,
 		)
 	}
@@ -2960,7 +3032,7 @@ func (m *Migrator) effectiveDownTimeouts(migration *Migration) (migrationfile.Ti
 	if err != nil {
 		return migrationfile.Timeouts{}, fmt.Errorf(
 			"migration %d has invalid timeout directives: %w",
-			migration.Version,
+			m.versionText(migration.Version),
 			err,
 		)
 	}
@@ -3006,7 +3078,7 @@ func (m *Migrator) applyUpMigrationObserved(
 		observer.AddCounter(ctx, "ptah_migrations_applied_total", 1, metricAttrs...)
 	}()
 
-	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applying migration", "version", m.logVersion(migration.Version), "description", migration.Description)
 	own, err := m.ownTransactionMode(migration, txMode, MigrationDirectionUp)
 	if err != nil {
 		return false, err
@@ -3035,7 +3107,7 @@ func (m *Migrator) applyUpMigrationObserved(
 	} else {
 		m.logger.Info(
 			"Skipping pre-migration checks for partially applied migration",
-			"version", migration.Version,
+			"version", m.logVersion(migration.Version),
 			"resumeFromStatement", plan.resumeFrom,
 		)
 	}
@@ -3056,12 +3128,12 @@ func (m *Migrator) applyUpMigrationObserved(
 		return checksDeferred, m.applyUpMigrationTransactionalWithPlan(ctx, migration, startedAt, plan)
 	}
 	if err := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); err != nil {
-		return false, fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+		return false, fmt.Errorf("failed to record pending migration %d: %w", m.versionText(migration.Version), err)
 	}
 	if plan.resumeFrom > 1 {
 		m.logger.Info(
 			"Resuming migration after a partially applied attempt",
-			"version", migration.Version,
+			"version", m.logVersion(migration.Version),
 			"resumeFromStatement", plan.resumeFrom,
 		)
 	}
@@ -3102,12 +3174,12 @@ func (m *Migrator) runPreMigrationChecks( //revive:disable-line:flag-parameter s
 	if m.deferPreMigrationChecks(observesApplyState) {
 		declaresChecks, err := m.validateDeferredMigrationChecks(ctx, migration)
 		if err != nil {
-			return false, fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
+			return false, fmt.Errorf("pre-migration check failed for migration %d: %w", m.versionText(migration.Version), err)
 		}
 		return declaresChecks, nil
 	}
 	if err := m.runMigrationChecks(ctx, m.conn, migration, MigrationDirectionUp, CheckPhaseBefore); err != nil {
-		return false, fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
+		return false, fmt.Errorf("pre-migration check failed for migration %d: %w", m.versionText(migration.Version), err)
 	}
 	return false, nil
 }
@@ -3119,7 +3191,7 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	startedAt time.Time,
 ) error {
 	scoped := *m
-	m.logger.Info("Applying migration in tx-mode all", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applying migration in tx-mode all", "version", m.logVersion(migration.Version), "description", migration.Description)
 	// Pre-migration checks are rejected under tx-mode all by
 	// validateUpTransactionMode, because a check on the pool connection cannot
 	// observe earlier batched migrations' uncommitted changes and would evaluate
@@ -3130,13 +3202,13 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	}
 	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts, timeoutScopeTransaction)
 	if err != nil {
-		return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to apply timeouts for migration %d: %w", m.versionText(migration.Version), err)
 	}
 	executionCtx := scoped.withPostgresIndexObservation(ctx, txConn)
 	executionCtx = withStatementBound(executionCtx, txConn, timeouts)
 	if err := migration.executeUp(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-		return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to apply migration %d: %w", m.versionText(migration.Version), err)
 	}
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
 		return err
@@ -3144,7 +3216,7 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	if err := scoped.refuseUpCompletionOverUnsafeIndex(ctx, txConn, migration); err != nil {
 		return err
 	}
-	m.logger.Info("Applied migration in tx-mode all", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applied migration in tx-mode all", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 
@@ -3158,7 +3230,7 @@ func (m *Migrator) recordRolledBackBatchFailure(
 	ctx = withMigrationResume(ctx, plan.resumeFrom)
 	if beginErr := m.recordPendingMigrationRevisionOn(ctx, m.conn, migration, startedAt, plan); beginErr != nil {
 		return fmt.Errorf("%w; additionally failed to record pending migration %d after tx-mode all rollback: %w",
-			newFailedMigrationError(migration, failure), migration.Version, beginErr)
+			newFailedMigrationError(migration, failure), m.versionText(migration.Version), beginErr)
 	}
 	return m.failMigrationWithDirtyStateWithMode(
 		ctx,
@@ -3183,10 +3255,10 @@ func (m *Migrator) recordAppliedMigrationOn(
 ) error {
 	plan.recordsAfterBody = true
 	if err := m.recordPendingMigrationRevisionOn(ctx, conn, migration, startedAt, plan); err != nil {
-		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record pending migration %d: %w", m.versionText(migration.Version), err)
 	}
 	if err := m.completeMigrationRevisionOn(ctx, conn, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record migration %d: %w", m.versionText(migration.Version), err)
 	}
 	return nil
 }
@@ -3207,12 +3279,12 @@ func (m *Migrator) applyUpMigrationTransactionalWithPlan(
 		MigrationDirectionUp,
 		func(scoped *Migrator) error {
 			if err := scoped.recordPendingMigrationRevisionOn(ctx, scoped.conn, migration, startedAt, plan); err != nil {
-				return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+				return fmt.Errorf("failed to record pending migration %d: %w", m.versionText(migration.Version), err)
 			}
 			if plan.resumeFrom > 1 {
 				scoped.logger.Info(
 					"Resuming migration after a partially applied attempt",
-					"version", migration.Version,
+					"version", m.logVersion(migration.Version),
 					"resumeFromStatement", plan.resumeFrom,
 				)
 			}
@@ -3258,7 +3330,7 @@ func (m *Migrator) withTransactionalMigrationSession(
 			direction,
 			migrationResumeFrom(ctx),
 		); err != nil {
-			return fmt.Errorf("failed to restore session state for migration %d: %w", migration.Version, err)
+			return fmt.Errorf("failed to restore session state for migration %d: %w", m.versionText(migration.Version), err)
 		}
 		if err := scoped.requireTransactionalTargetEngines(ctx); err != nil {
 			return err
@@ -3373,17 +3445,17 @@ func (m *Migrator) applyUpMigrationNoTransaction(
 			MigrationDirectionUp,
 			plan.resumeFrom,
 		); err != nil {
-			failure := fmt.Errorf("failed to restore session state for migration %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to restore session state for migration %d: %w", m.versionText(migration.Version), err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		if err := scoped.recordPendingMigrationRevisionOn(ctx, scoped.conn, migration, startedAt, plan); err != nil {
-			failure := fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to record pending migration %d: %w", m.versionText(migration.Version), err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		if plan.resumeFrom > 1 {
 			scoped.logger.Info(
 				"Resuming migration after a partially applied attempt",
-				"version", migration.Version,
+				"version", m.logVersion(migration.Version),
 				"resumeFromStatement", plan.resumeFrom,
 			)
 		}
@@ -3410,7 +3482,7 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 			startedAt,
 			err,
 			migration.UpSQL,
-			fmt.Sprintf("failed to apply migration %d", migration.Version),
+			fmt.Sprintf("failed to apply migration %d", m.versionText(migration.Version)),
 			MigrationTxModeNone,
 			MigrationDirectionUp,
 		)
@@ -3438,7 +3510,7 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 			startedAt,
 			completedMigrationIndexObservationError(migration, m.connectionDialect(), MigrationDirectionUp, err),
 			migration.UpSQL,
-			fmt.Sprintf("failed to verify migration %d", migration.Version),
+			fmt.Sprintf("failed to verify migration %d", m.versionText(migration.Version)),
 			MigrationTxModeNone,
 			MigrationDirectionUp,
 		)
@@ -3446,9 +3518,9 @@ func (m *Migrator) applyUpMigrationNoTransactionOnSession(
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
 	if err := m.completeMigrationRevision(recordCtx, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record migration %d: %w", m.versionText(migration.Version), err)
 	}
-	m.logger.Info("Applied non-transactional migration", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applied non-transactional migration", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 
@@ -3488,7 +3560,7 @@ func (m *Migrator) reportDeferredDownChecks(versions []int64) {
 	}
 	m.logger.Warn(
 		"Deferred post-migration checks: a dry run does not produce the state they assert on",
-		"versions", versions,
+		"versions", m.logVersions(versions),
 	)
 }
 
@@ -3508,14 +3580,14 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 		observer.AddCounter(ctx, "ptah_migrations_rolled_back_total", 1, metricAttrs...)
 	}()
 
-	m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Rolling back migration", "version", m.logVersion(migration.Version), "description", migration.Description)
 	// A check in the down body runs before the rollback, for the same reason
 	// one in the up body runs before the migration: it is a precondition, and
 	// the statement it guards is about to run. Until this existed the directive
 	// was parsed by nothing and the rollback simply proceeded
 	// (stokaro/ptah#1715).
 	if err := m.runMigrationChecks(ctx, m.conn, migration, MigrationDirectionDown, CheckPhaseBefore); err != nil {
-		return fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
+		return fmt.Errorf("pre-migration check failed for migration %d: %w", m.versionText(migration.Version), err)
 	}
 	txMode, err := m.resolveDownMigrationTxMode(migration)
 	if err != nil {
@@ -3548,7 +3620,7 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	}
 	if !usesWitness || m.conn.Writer().IsDryRun() {
 		if err := m.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-			return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+			return fmt.Errorf("failed to record pending rollback %d: %w", m.versionText(migration.Version), err)
 		}
 	}
 	return m.rollbackMigrationTransactional(ctx, migration, startedAt, deleteSQL)
@@ -3594,7 +3666,7 @@ func (m *Migrator) rollbackMigrationTransactional(
 			MigrationDirectionDown,
 			func(scoped *Migrator) error {
 				if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-					return fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+					return fmt.Errorf("failed to record pending rollback %d: %w", m.versionText(migration.Version), err)
 				}
 				return scoped.rollbackMigrationTransactionalOnSession(ctx, migration, startedAt, deleteSQL)
 			},
@@ -3642,7 +3714,7 @@ func (m *Migrator) rollbackMigrationNoTransaction(
 			return err
 		}
 		if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-			failure := fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to record pending rollback %d: %w", m.versionText(migration.Version), err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		return scoped.rollbackMigrationNoTransactionOnSession(boundedCtx, migration, startedAt, deleteSQL, restoreTimeouts)
@@ -3667,7 +3739,7 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 			startedAt,
 			err,
 			migration.DownSQL,
-			fmt.Sprintf("failed to revert migration %d", migration.Version),
+			fmt.Sprintf("failed to revert migration %d", m.versionText(migration.Version)),
 			MigrationTxModeNone,
 		)
 		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
@@ -3682,16 +3754,16 @@ func (m *Migrator) rollbackMigrationNoTransactionOnSession(
 			startedAt,
 			completedMigrationIndexObservationError(migration, m.connectionDialect(), MigrationDirectionDown, err),
 			migration.DownSQL,
-			fmt.Sprintf("failed to verify rollback of migration %d", migration.Version),
+			fmt.Sprintf("failed to verify rollback of migration %d", m.versionText(migration.Version)),
 			MigrationTxModeNone,
 		)
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
 	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
-		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record migration reversion %d: %w", m.versionText(migration.Version), err)
 	}
-	m.logger.Info("Rolled back non-transactional migration", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Rolled back non-transactional migration", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 
@@ -3819,6 +3891,7 @@ func (m *Migrator) migrationsToApply(
 
 	if execOrder == ExecOrderLinear && len(outOfOrderVersions) > 0 {
 		err := newOutOfOrderSourceError(currentVersion, outOfOrderVersions, m.sourceVersions)
+		err.labels = m.numberlessLabels()
 		if currentSource, ok := m.retiredCurrentSourceVersion(currentVersion, applied, appliedIdentities); ok {
 			err.currentSourceVersion = currentSource
 			err.currentSourceVersionSet = true
@@ -3842,7 +3915,7 @@ func (m *Migrator) migrationsToApply(
 		// pending.
 		if execOrder == ExecOrderLinearSkip && slices.Contains(outOfOrderVersions, migration.Version) {
 			m.logger.Warn("Skipping out-of-order migration",
-				"version", sourceVersionLabel(migration.Version, m.sourceVersions),
+				"version", m.logVersion(migration.Version),
 				"currentVersion", currentLabel,
 			)
 			selection.skipped = append(selection.skipped, migration.Version)
@@ -4038,13 +4111,19 @@ func (m *Migrator) refuseEmptyRollback(migration *Migration) error {
 	statements := m.migrationStatementCount(migration.DownSQL)
 	declared, err := migrationfile.DeclaresEmptyRollback(migration.DownSQL, m.connectionDialect())
 	if err != nil {
-		return fmt.Errorf("migration %d: %w", migration.Version, err)
+		return fmt.Errorf("migration %d: %w", m.versionText(migration.Version), err)
 	}
 	switch {
 	case statements == 0 && !declared:
-		return &EmptyRollbackError{Version: migration.Version, Description: migration.Description, Path: migration.downSourcePath}
+		return &EmptyRollbackError{
+			Version: migration.Version, Description: migration.Description, Path: migration.downSourcePath,
+			versionLabel: m.versionText(migration.Version).label,
+		}
 	case statements > 0 && declared:
-		return &EmptyRollbackConflictError{Version: migration.Version, Path: migration.downSourcePath, Statements: statements}
+		return &EmptyRollbackConflictError{
+			Version: migration.Version, Path: migration.downSourcePath, Statements: statements,
+			versionLabel: m.versionText(migration.Version).label,
+		}
 	}
 	return nil
 }
@@ -4072,8 +4151,9 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 		}
 		if migration.downUnavailable {
 			return &AtlasDownNotImplementedError{
-				Version:     migration.Version,
-				Description: migration.Description,
+				Version:         migration.Version,
+				revisionVersion: migration.versionText().label,
+				Description:     migration.Description,
 			}
 		}
 		if err := m.refuseEmptyRollback(migration); err != nil {

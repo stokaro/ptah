@@ -40,7 +40,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 		return fmt.Errorf(
 			"migration %d cannot run an opaque %s function in tx-mode file on a MySQL-family database; "+
 				"use a SQL-backed migration or tx-mode none",
-			migration.Version,
+			m.versionText(migration.Version),
 			direction,
 		)
 	}
@@ -54,7 +54,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it references Ptah's migration "+
 					"metadata table %s, which is reserved for transaction-witness bookkeeping; choose another relation name",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 				m.qualifiedMigrationsTable(),
 			)
@@ -63,7 +63,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because MySQL-family executable comments "+
 					"can bypass transaction-witness validation; use ordinary SQL or tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
@@ -72,7 +72,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 				"migration %d cannot run tx-mode file statement %d because changing sql_mode can make "+
 					"the MySQL-family server disagree with Ptah's prevalidated statement boundaries; "+
 					"configure a stable session mode before migration or use tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
@@ -80,7 +80,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it changes the target database; "+
 					"select the database in the connection URL so Ptah can verify its storage engines",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
@@ -88,7 +88,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it changes state outside "+
 					"Ptah's migration transaction; use a session-scoped setting or tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
@@ -96,7 +96,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it writes a file outside "+
 					"Ptah's migration transaction; use tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
@@ -104,7 +104,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because nested or dynamic SQL cannot be "+
 					"tied to Ptah's transaction witness; use direct SQL or tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
@@ -112,7 +112,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it defines an indirect database "+
 					"writer that Ptah cannot validate before execution; use tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
@@ -120,7 +120,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because it controls transaction state; "+
 					"remove the transaction control and let Ptah manage the file transaction",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
@@ -128,7 +128,7 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because CREATE TABLE LIKE inherits "+
 					"a storage engine that Ptah cannot prove is InnoDB; declare the table explicitly or use tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
@@ -140,14 +140,14 @@ func (m *Migrator) validateTransactionalProgressSQL(
 			return fmt.Errorf(
 				"migration %d statement %d selects storage engine DEFAULT, whose effective engine can differ "+
 					"from the verified session default; select InnoDB explicitly or use tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 			)
 		}
 		return fmt.Errorf(
 			"migration %d statement %d selects non-transactional storage engine %s; "+
 				"tx-mode file requires InnoDB on MySQL-family databases",
-			migration.Version,
+			m.versionText(migration.Version),
 			i+1,
 			engine,
 		)
@@ -256,7 +256,7 @@ func (m *Migrator) refuseInterceptedStatements(
 		return fmt.Errorf(
 			"migration %d cannot run a statement interceptor for the %s direction in tx-mode file on a MySQL-family database; "+
 				"an interceptor can execute SQL outside Ptah's transaction witness, so use tx-mode none",
-			migration.Version,
+			m.versionText(migration.Version),
 			direction,
 		)
 	}
@@ -271,7 +271,7 @@ func (m *Migrator) refuseInterceptedStatements(
 		return fmt.Errorf(
 			"migration %d cannot run tx-mode file statement %d because a statement interceptor would execute it "+
 				"outside Ptah's transaction witness on a MySQL-family database; use tx-mode none for this migration",
-			migration.Version,
+			m.versionText(migration.Version),
 			i+1,
 		)
 	}

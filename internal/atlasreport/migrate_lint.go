@@ -45,6 +45,11 @@ type MigrateLintOptions struct {
 	// how the pinned community binary v1.3.0 reports a Liquibase, Flyway or
 	// golang-migrate directory. A key the map lacks is reported as analyzed.
 	Sources map[int64]MigrateLintSource
+	// NameOrder lists the files by file name, byte for byte, as the pinned
+	// community binary v1.3.0 lists an Atlas directory: 10_b.sql before
+	// 9_a.sql, v1_x.sql after both. Without it the files are listed by
+	// version, as a layout converted from a tool that orders by version is.
+	NameOrder bool
 	// Schema carries the dev-database state the analyzed versions start from
 	// and end at, rendered as HCL. The report carries it only when the replay
 	// finished: a run that stopped at an integrity failure or inside the replay
@@ -286,12 +291,12 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 	}
 	names := reportedFileNames(opts.FileNames, opts.Sources)
 	if failure := opts.ReplayFailure; failure != nil {
-		selected, total := migrateLintFiles(*opts.Analysis, names, opts.Sources)
+		selected, total := migrateLintFiles(*opts.Analysis, names, opts.Sources, opts.fileOrder)
 		result.Steps = migrateLintSteps(selected, total, opts.Integrity, failure.Error)
 		result.Files = []MigrateLintFile{{Name: failure.reportedName(names), Error: failure.Error}}
 		return result, nil
 	}
-	files, total := migrateLintFiles(*opts.Analysis, names, opts.Sources)
+	files, total := migrateLintFiles(*opts.Analysis, names, opts.Sources, opts.fileOrder)
 	files = attachMigrateLintFindings(files, sourcedFindings(*opts.Analysis, opts.Sources))
 	result.Steps = migrateLintSteps(files, total, opts.Integrity, opts.Error)
 	result.Files = files
@@ -355,12 +360,10 @@ func migrateLintFiles(
 	analysis migrationlint.Analysis,
 	names map[int64]string,
 	sources map[int64]MigrateLintSource,
+	order func([]migrationlint.File) func(a, b migrationlint.File) int,
 ) (files []MigrateLintFile, total int) {
 	prepared := analysis.Files()
-	maxVersion := migrateLintMaxVersion(prepared)
-	slices.SortStableFunc(prepared, func(a, b migrationlint.File) int {
-		return migrateLintFileOrder(a, b, maxVersion)
-	})
+	slices.SortStableFunc(prepared, order(prepared))
 	files = make([]MigrateLintFile, 0, len(prepared))
 	for _, file := range prepared {
 		if file.Direction != "up" || file.Ignored {
@@ -444,6 +447,16 @@ func migrateLintVersionKey(file migrationlint.File, revisionVersions map[int64]s
 		return "R"
 	}
 	return strconv.FormatInt(file.Version, 10)
+}
+
+// fileOrder returns the order the report lists files in; see
+// [MigrateLintOptions.NameOrder].
+func (opts MigrateLintOptions) fileOrder(files []migrationlint.File) func(a, b migrationlint.File) int {
+	if opts.NameOrder {
+		return func(a, b migrationlint.File) int { return strings.Compare(a.Name, b.Name) }
+	}
+	maxVersion := migrateLintMaxVersion(files)
+	return func(a, b migrationlint.File) int { return migrateLintFileOrder(a, b, maxVersion) }
 }
 
 func migrateLintFileOrder(a, b migrationlint.File, maxVersion int64) int {

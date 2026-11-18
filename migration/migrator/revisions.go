@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/ddltx"
 	"ptah.run/internal/execoutcome"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/revisiontext"
 	"ptah.run/internal/servercode"
@@ -78,6 +79,10 @@ type MigrationRevision struct {
 	// the number, and without this the row and its file 001_init.sql would
 	// compare under two keys and the file would read as missing.
 	fileSpelling string
+	// positionKeyed marks a row read for a directory whose migrations run
+	// under their positions, where Version is a position and never a number
+	// the row records.
+	positionKeyed bool
 }
 
 // MarshalJSON preserves the presence of an exact empty Atlas revision
@@ -201,10 +206,13 @@ type ChecksumMismatchError struct {
 	// use of a feature rather than a sign of tampering. See
 	// [ConvertedFlywayRepeatableVersion].
 	ConvertedRepeatable bool
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *ChecksumMismatchError) Error() string {
-	base := fmt.Sprintf("migration %d checksum mismatch: stored %s, current %s", e.Version, e.Stored, e.Computed)
+	base := fmt.Sprintf("migration %d checksum mismatch: stored %s, current %s", versionText{number: e.Version, label: e.versionLabel}, e.Stored, e.Computed)
 	if !e.ConvertedRepeatable {
 		return base
 	}
@@ -235,6 +243,9 @@ func (e *ChecksumMismatchError) Error() string {
 type RepairNothingAppliedError struct {
 	// Version is the migration the repair named.
 	Version int64
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *RepairNothingAppliedError) Error() string {
@@ -242,7 +253,7 @@ func (e *RepairNothingAppliedError) Error() string {
 		"migration %d recorded no applied statement, so there is nothing to finish: "+
 			"run 'ptah migrations up --allow-dirty' to apply it, or repair with --force to "+
 			"record it applied because you ran it yourself",
-		e.Version)
+		versionText{number: e.Version, label: e.versionLabel})
 }
 
 // MissingMigrationError reports that the database recorded a migration as
@@ -882,6 +893,12 @@ func (m *Migrator) deleteAtlasSetRevisionsAbove(
 		predicate += " AND version <> ?"
 		args = append(args, target.RevisionVersion())
 	}
+	// In text order a version above the boundary as a number may sort below
+	// it as text, as 10 does below 2, so exactRemoved names every row the set
+	// removes and the numeric comparison is left out.
+	if m.setsInTextOrder() && version > 0 {
+		predicate, args = "1 = 0", nil
+	}
 	if len(exactRemoved) > 0 {
 		literals := make([]string, len(exactRemoved))
 		for index, revision := range exactRemoved {
@@ -1000,7 +1017,10 @@ func (m *Migrator) atlasVersionNumberExpression() string {
 	// generated-SQL guard tests can assert every dialect branch without a live
 	// database.
 	fallback := atlasVersionNumberExpressionFor(m.connectionDialect())
-	if m.hasAtlasRevisionVersionMap() {
+	// A version no file of a directory keyed by position carries, such as v1
+	// after its file is removed, has no position, and a strict dialect refuses
+	// the cast of it.
+	if m.hasAtlasRevisionVersionMap() || m.hasAtlasPositions() {
 		fallback = atlasRetiredVersionNumberExpressionFor(m.connectionDialect())
 	}
 	mappings := m.atlasRevisionVersionMappings()
@@ -1056,6 +1076,7 @@ func (m *Migrator) validateAtlasRevisionIdentityCollation(ctx context.Context) e
 		return fmt.Errorf("failed to iterate recorded Atlas revision identities: %w", err)
 	}
 	versions := slices.Sorted(maps.Keys(identities))
+	m.recordRetiredAtlasIdentities(versions, mappings)
 	if len(versions) < 2 {
 		return nil
 	}
@@ -1160,6 +1181,7 @@ func (m *Migrator) atlasRevisionVersionMappings() []atlasRevisionVersionMapping 
 				runtime:  runtime,
 			})
 		}
+		mappings = m.withRecordedAtlasIdentities(mappings)
 		slices.SortFunc(mappings, compareAtlasRevisionVersionMappings)
 		return mappings
 	}
@@ -1172,7 +1194,64 @@ func (m *Migrator) atlasRevisionVersionMappings() []atlasRevisionVersionMapping 
 			})
 		}
 	}
+	return m.withRecordedAtlasIdentities(mappings)
+}
+
+// withRecordedAtlasIdentities adds a mapping for each recorded version no file
+// carries; see [Migrator.recordedAtlasIdentityKey].
+func (m *Migrator) withRecordedAtlasIdentities(mappings []atlasRevisionVersionMapping) []atlasRevisionVersionMapping {
+	for _, identity := range m.recordedAtlasIdentities {
+		key, _ := m.recordedAtlasIdentityKey(identity)
+		mappings = append(mappings, atlasRevisionVersionMapping{revision: identity, runtime: key})
+	}
 	return mappings
+}
+
+// recordRetiredAtlasIdentities keeps the recorded versions that are not
+// numbers and that no file carries, so a row whose file is removed reads
+// without a numeric cast, which a strict dialect refuses for v1, and a set can
+// still remove it. versions is every recorded version, sorted. A converted
+// layout reads such rows under its own history-only key instead.
+func (m *Migrator) recordRetiredAtlasIdentities(versions []string, mappings []atlasRevisionVersionMapping) {
+	m.recordedAtlasIdentities = nil
+	if m.hasAtlasRevisionVersionMap() {
+		return
+	}
+	owned := make(map[string]struct{}, len(mappings))
+	for _, mapping := range mappings {
+		owned[mapping.revision] = struct{}{}
+	}
+	for _, version := range versions {
+		if _, ok := owned[version]; ok || m.isAtlasMetadataRevisionVersion(version) {
+			continue
+		}
+		// Where the directory runs under positions a recorded number is no key
+		// either, so it is kept the same way.
+		if _, err := parseAtlasRevisionVersion(version); err == nil && !m.hasAtlasPositions() {
+			continue
+		}
+		m.recordedAtlasIdentities = append(m.recordedAtlasIdentities, version)
+	}
+}
+
+// recordedAtlasIdentityKey returns the key the recorded version identity runs
+// under when no file carries it: one above every key of the directory, in the
+// text order of such versions. A removed file ran after every file that
+// remains or before some of them; nothing records which, and above every key
+// is where a set to a remaining file removes its row, as the community binary
+// v1.3.0 removes it.
+func (m *Migrator) recordedAtlasIdentityKey(identity string) (int64, bool) {
+	index := slices.Index(m.recordedAtlasIdentities, identity)
+	if index < 0 {
+		return 0, false
+	}
+	var highest int64
+	if m.migrationProvider != nil {
+		for _, migration := range m.migrationProvider.Migrations() {
+			highest = max(highest, migration.Version)
+		}
+	}
+	return highest + int64(index) + 1, true
 }
 
 func compareAtlasRevisionVersionMappings(a, b atlasRevisionVersionMapping) int {
@@ -1377,6 +1456,7 @@ func (m *Migrator) scanAtlasRevisionRow(row rowScanner) (MigrationRevision, erro
 	text.assignTo(&revision)
 	revision.AtlasVersion = version
 	revision.hasAtlasVersion = true
+	revision.positionKeyed = m.hasAtlasPositions()
 	parsedVersion, err := m.atlasRuntimeVersion(version)
 	if err != nil {
 		return MigrationRevision{}, err
@@ -1414,7 +1494,7 @@ func (m *Migrator) atlasRuntimeVersion(revision string) (int64, error) {
 			return mapping.runtime, nil
 		}
 	}
-	if m.hasAtlasRevisionVersionMap() {
+	if m.hasAtlasRevisionVersionMap() || m.hasAtlasPositions() {
 		// The exact source token remains complete applied-history identity after
 		// its file is removed, but its conversion-time numeric tie slot is not
 		// recoverable from that token alone. Keep it at the history-only zero
@@ -1432,6 +1512,20 @@ func (m *Migrator) hasAtlasRevisionVersionMap() bool {
 		hasAtlasRevisionVersionMap() bool
 	})
 	return ok && source.hasAtlasRevisionVersionMap()
+}
+
+// hasAtlasPositions reports that every migration of the provider runs under
+// its position in execution order, so an order key names no version and a
+// recorded version only its file's position. A row whose file is gone has no
+// position, and reads under the history-only key 0.
+func (m *Migrator) hasAtlasPositions() bool {
+	if m == nil || m.migrationProvider == nil {
+		return false
+	}
+	source, ok := m.migrationProvider.(interface {
+		hasAtlasPositions() bool
+	})
+	return ok && source.hasAtlasPositions()
 }
 
 // atlasVersionSpelling returns the token the provider's Atlas file spells for
@@ -1558,18 +1652,18 @@ func (m *Migrator) discardRolledBackFailure(ctx context.Context, failure error) 
 	defer cancelRecord()
 	migration := m.migrationByVersion(version)
 	if migration == nil {
-		return fmt.Errorf("inspect rolled-back migration failure %d: migration is not registered", version)
+		return fmt.Errorf("inspect rolled-back migration failure %d: migration is not registered", m.versionText(version))
 	}
 	revision, err := m.getMigrationRevision(recordCtx, migration)
 	if err != nil {
-		return fmt.Errorf("inspect rolled-back migration failure %d: %w", version, err)
+		return fmt.Errorf("inspect rolled-back migration failure %d: %w", m.versionText(version), err)
 	}
 	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
 		return nil
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, query); err != nil {
-		return fmt.Errorf("discard rolled-back migration failure %d: %w", version, err)
+		return fmt.Errorf("discard rolled-back migration failure %d: %w", m.versionText(version), err)
 	}
 	return nil
 }
@@ -1642,10 +1736,12 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 	if revision.Direction == MigrationDirectionDown {
 		return upRetryPlan{}, fmt.Errorf(
 			"migration %d is dirty from an interrupted rollback; repair the rollback before migrating up",
-			migration.Version,
+			m.versionText(migration.Version),
 		)
 	}
-	resumeFrom, err := resumeStatementFor(*revision, m.migrationStatementCount(migration.UpSQL))
+	resumeFrom, err := resumeStatementFor(
+		*revision, m.migrationStatementCount(migration.UpSQL), m.repairRunner(*revision), m.recoverySelection(),
+	)
 	if err != nil {
 		return upRetryPlan{}, err
 	}
@@ -1679,27 +1775,34 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 // statement whose outcome nothing knows. The zero says only that no checkpoint
 // was written, and on a dialect where each statement commits by itself the
 // statement may well have committed.
-func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
+func resumeStatementFor(
+	revision MigrationRevision,
+	total int,
+	runner repaircommand.Runner,
+	selection repaircommand.Selection,
+) (int, error) {
 	if err := validateRevisionProgress(revision, "resume automatically"); err != nil {
 		return 0, err
 	}
 	if revision.RollbackLeftUnknown() {
-		return 0, &rollbackLeftUnknownResumeError{version: revision.Version}
+		return 0, &rollbackLeftUnknownResumeError{version: revision.VersionLabel(), runner: runner, selection: selection}
 	}
 	if revision.Error == unknownStatementOutcomeError {
-		return 0, &unknownOutcomeError{version: revision.Version, statement: revision.Applied + 1}
+		return 0, &unknownOutcomeError{
+			version: revision.VersionLabel(), statement: revision.Applied + 1, runner: runner, selection: selection,
+		}
 	}
 	if revision.Applied <= 0 {
 		return 1, nil
 	}
 	if revision.Total != total {
 		return 0, fmt.Errorf(
-			"migration %d cannot resume automatically: the previous attempt applied %d of %d statements but the file now has %d; inspect the database, then use 'ptah migrations repair --version %d'",
-			revision.Version,
+			"migration %s cannot resume automatically: the previous attempt applied %d of %d statements but the file now has %d; inspect the database, then use %s",
+			revision.VersionLabel(),
 			revision.Applied,
 			revision.Total,
 			total,
-			revision.Version,
+			repaircommand.Reconciled(revision.VersionLabel(), runner, selection),
 		)
 	}
 	return revision.Applied + 1, nil
@@ -1728,7 +1831,7 @@ func validateNativeRevisionState(revision MigrationRevision, storedState, operat
 	default:
 		return fmt.Errorf(
 			"migration %d cannot %s: revision metadata records non-canonical state=%q; inspect the database before choosing a repair point",
-			revision.Version,
+			revision.versionText(),
 			operation,
 			storedState,
 		)
@@ -1741,7 +1844,7 @@ func validateNativeRevisionState(revision MigrationRevision, storedState, operat
 	}
 	return fmt.Errorf(
 		"migration %d cannot %s: revision metadata records state=%s with applied=%d total=%d; inspect the database before choosing a repair point",
-		revision.Version,
+		revision.versionText(),
 		operation,
 		revision.State,
 		revision.Applied,
@@ -1830,7 +1933,7 @@ func nativeFullChecksumMatches(stored string, migration *Migration, direction Mi
 func committedPrefixVerificationError(revision MigrationRevision, operation, reason string) error {
 	return fmt.Errorf(
 		"migration %d cannot %s: %s after %d of %d statements committed; inspect the database before choosing a repair point",
-		revision.Version,
+		revision.versionText(),
 		operation,
 		reason,
 		revision.Applied,
@@ -2490,7 +2593,7 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if usesTransactionalProgressWitness(m.conn.Info().Dialect, txMode) {
 		revision, err := m.getMigrationRevision(recordCtx, migration)
 		if err != nil {
-			return fmt.Errorf("failed to read migration %d progress witness: %w", migration.Version, err)
+			return fmt.Errorf("failed to read migration %d progress witness: %w", m.versionText(migration.Version), err)
 		}
 		if revision != nil {
 			if preservesProgressWitnessUnknownOutcome(failure, revision, m.connectionDialect()) {
@@ -2752,7 +2855,7 @@ func (m *Migrator) reportBaselineSkippedChecks(migrations []*Migration) {
 	}
 	m.logger.Warn(
 		"Baseline recorded migrations as applied without evaluating their checks",
-		"versions", versions,
+		"versions", m.logVersions(versions),
 	)
 }
 
@@ -2767,7 +2870,7 @@ func (m *Migrator) migrationsForBaseline(version int64) ([]*Migration, error) {
 
 	migrations := m.migrationsAtOrBelow(version)
 	if len(migrations) == 0 {
-		return nil, fmt.Errorf("no migrations found at or below baseline version %d", version)
+		return nil, fmt.Errorf("no migrations found at or below baseline version %d", m.versionText(version))
 	}
 	return migrations, nil
 }
@@ -2788,7 +2891,7 @@ func (m *Migrator) baselineSQLMigrations(ctx context.Context, migrations []*Migr
 	if err != nil {
 		return err
 	}
-	if err := validateBaselineRevisions(revisions, opts); err != nil {
+	if err := validateBaselineRevisions(revisions, opts, m.versionText(opts.Version)); err != nil {
 		return err
 	}
 	return m.baselineMigrations(ctx, migrations)
@@ -2796,7 +2899,7 @@ func (m *Migrator) baselineSQLMigrations(ctx context.Context, migrations []*Migr
 
 // validateBaselineRevisions is shared by SQL and native stores. The caller
 // holds the migration lock; native stores also read through the data transaction.
-func validateBaselineRevisions(revisions []MigrationRevision, opts BaselineOptions) error {
+func validateBaselineRevisions(revisions []MigrationRevision, opts BaselineOptions, baseline versionText) error {
 	for _, revision := range revisions {
 		if revision.Dirty {
 			return &DirtyMigrationError{Revision: revision}
@@ -2807,7 +2910,7 @@ func validateBaselineRevisions(revisions []MigrationRevision, opts BaselineOptio
 	}
 	for _, revision := range revisions {
 		if revision.Version > opts.Version {
-			return fmt.Errorf("schema migrations table contains revisions above baseline version %d; refusing to rewrite migration history", opts.Version)
+			return fmt.Errorf("schema migrations table contains revisions above baseline version %d; refusing to rewrite migration history", baseline)
 		}
 	}
 	return nil
@@ -2846,7 +2949,7 @@ func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschem
 		if !m.forceAppliedReplacesRow() {
 			deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 			if err := conn.Writer().ExecuteSQL(ctx, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
-				return fmt.Errorf("failed to prepare baseline revision %d: %w", migration.Version, err)
+				return fmt.Errorf("failed to prepare baseline revision %d: %w", m.versionText(migration.Version), err)
 			}
 		}
 		if m.revisionTableFormat.isAtlas() {
@@ -2867,7 +2970,7 @@ func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschem
 			0,
 			migrationRevisionHash(migration),
 		); err != nil {
-			return fmt.Errorf("failed to record baseline revision %d: %w", migration.Version, err)
+			return fmt.Errorf("failed to record baseline revision %d: %w", m.versionText(migration.Version), err)
 		}
 	}
 	return nil
@@ -2897,7 +3000,7 @@ func (m *Migrator) writeAtlasBaselineMigrationRow(
 		m.atlasNullJSONValue(),
 		operatorVersion,
 	); err != nil {
-		return fmt.Errorf("failed to record baseline revision %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record baseline revision %d: %w", m.versionText(migration.Version), err)
 	}
 	return nil
 }
@@ -2938,6 +3041,9 @@ func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisio
 		result, err = m.setRevisionLocked(ctx, version)
 		return err
 	})
+	if err == nil && result.CurrentVersion != 0 {
+		result.CurrentRevisionVersion = m.VersionLabel(result.CurrentVersion)
+	}
 	return result, err
 }
 
@@ -2950,7 +3056,7 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 		return AtlasRevisionSetResult{CurrentVersion: version}, nil
 	}
 
-	migrations := m.migrationsAtOrBelow(version)
+	migrations := m.setMigrations(version)
 	if store != nil {
 		return m.setProviderRevisionRows(ctx, store, migrations, version)
 	}
@@ -2964,6 +3070,9 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 func (m *Migrator) revisionSetStore(ctx context.Context, version int64) (dbschema.HistoryStore, error) {
 	if version < 0 {
 		return nil, fmt.Errorf("migration version must not be negative")
+	}
+	if err := m.refuseNumberlessVersionsInANumericTable(); err != nil {
+		return nil, err
 	}
 	// Zero names no migration on purpose: it is the state where none is
 	// applied, and it is the only way to express that a rollback finished by
@@ -3004,7 +3113,7 @@ func (m *Migrator) checkRevisionSet(ctx context.Context, version int64) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = m.planRevisionSet(existing, m.migrationsAtOrBelow(version), version)
+	_, _, err = m.planRevisionSet(existing, m.setMigrations(version), version)
 	return err
 }
 
@@ -3149,8 +3258,8 @@ func (m *Migrator) atlasRevisionSetChanges(
 			Description:     migration.atlasFilenameDescription(),
 		})
 	}
-	sortAtlasRevisionChanges(result.Removed)
-	sortAtlasRevisionChanges(result.Set)
+	sortAtlasRevisionChanges(result.Removed, m.setsInTextOrder())
+	sortAtlasRevisionChanges(result.Set, m.setsInTextOrder())
 	return result
 }
 
@@ -3178,9 +3287,12 @@ func (m *Migrator) persistedRevisionIdentity(migration *Migration) string {
 // without this a summary lists them by storage order and a reader cannot tell
 // how far down the boundary moved. The identity breaks a tie, which is what
 // orders a numbered repeatable against the version it shares a number with.
-func sortAtlasRevisionChanges(changes []AtlasRevisionChange) {
+//
+// In text order the identity alone orders them, as Atlas lists them: 1, 10, 2,
+// v1.
+func sortAtlasRevisionChanges(changes []AtlasRevisionChange, textOrder bool) { //revive:disable-line:flag-parameter the order is the set's, decided once by its caller
 	slices.SortStableFunc(changes, func(a, b AtlasRevisionChange) int {
-		if a.Version != b.Version {
+		if a.Version != b.Version && !textOrder {
 			return cmp.Compare(a.Version, b.Version)
 		}
 		return cmp.Compare(a.RevisionVersion, b.RevisionVersion)
@@ -3217,6 +3329,10 @@ func (m *Migrator) revisionRemovedByAtlasSet(
 	}
 	if version == 0 {
 		return true
+	}
+	// In text order the rows above the boundary are named in exactRemoved.
+	if m.setsInTextOrder() {
+		return false
 	}
 	return revision.Version > version && !boundaryRowKept(target, key) && !slices.Contains(retired, key)
 }
@@ -3278,6 +3394,52 @@ func (m *Migrator) unnumberedRemovedAtlasRevisions(
 // revision is above it. Each caller below says what nil means where it reads
 // it; none of them may index this slice directly, which is what indexing the
 // last element of an empty selection would do.
+// setsInTextOrder reports whether a revision set orders versions as text,
+// byte for byte, as Atlas does: under it 10 sorts between 1 and 2, and v1
+// above every number. A caller selects it with
+// [Migrator.WithAtlasStringLinearity], over an Atlas revision table of a
+// directory no source tool's tokens order.
+func (m *Migrator) setsInTextOrder() bool {
+	return m.atlasStringLinearity && m.revisionTableFormat.isAtlas() && !m.hasAtlasRevisionVersionMap()
+}
+
+// setMigrations returns the migrations a revision set to version records as
+// applied, the boundary last. In text order they are the migrations whose
+// version sorts at or below the boundary's version as text; otherwise they are
+// [Migrator.migrationsAtOrBelow].
+func (m *Migrator) setMigrations(version int64) []*Migration {
+	target := m.migrationByVersion(version)
+	if !m.setsInTextOrder() || version == 0 || target == nil {
+		return m.migrationsAtOrBelow(version)
+	}
+	bound := target.RevisionVersion()
+	var out []*Migration
+	for _, migration := range m.migrationProvider.Migrations() {
+		if migration.RevisionVersion() <= bound {
+			out = append(out, migration)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b *Migration) int { return strings.Compare(a.RevisionVersion(), b.RevisionVersion()) })
+	return out
+}
+
+// textOrderRemoved names the rows a revision set in text order removes: every
+// recorded migration whose version sorts above the boundary's version as text.
+// Atlas metadata rows are never removed.
+func (m *Migrator) textOrderRemoved(existing []MigrationRevision, target *Migration) []string {
+	if !m.setsInTextOrder() || target == nil {
+		return nil
+	}
+	var removed []string
+	for _, revision := range existing {
+		key := revision.RevisionVersion()
+		if key > target.RevisionVersion() && !m.isAtlasMetadataRevisionVersion(key) {
+			removed = append(removed, key)
+		}
+	}
+	return removed
+}
+
 func setBoundary(migrations []*Migration) *Migration {
 	if len(migrations) == 0 {
 		return nil
@@ -3418,7 +3580,7 @@ func (m *Migrator) writeAtlasSetRevisionRows(
 		sqlutil.Rebind(m.conn.Info().Dialect, deleteSQL),
 		deleteArgs...,
 	); err != nil {
-		return fmt.Errorf("failed to remove Atlas revisions above %d: %w", version, err)
+		return fmt.Errorf("failed to remove Atlas revisions above %d: %w", m.versionText(version), err)
 	}
 
 	revisions := newSetRevisionIndex(existing)
@@ -3438,7 +3600,7 @@ func (m *Migrator) writeAtlasSetRevisionRows(
 				revisionType.sqlArg(),
 				revision.RevisionVersion(),
 			); err != nil {
-				return fmt.Errorf("failed to update dirty Atlas revision %d type: %w", revision.Version, err)
+				return fmt.Errorf("failed to update dirty Atlas revision %d type: %w", m.versionText(revision.Version), err)
 			}
 			continue
 		}
@@ -3466,7 +3628,7 @@ func (m *Migrator) writePtahSetRevisionRows(
 		deleteArgs = nil
 	}
 	if _, err := tx.ExecContext(ctx, sqlutil.Rebind(m.conn.Info().Dialect, deleteSQL), deleteArgs...); err != nil {
-		return fmt.Errorf("failed to remove revisions above %d: %w", version, err)
+		return fmt.Errorf("failed to remove revisions above %d: %w", m.versionText(version), err)
 	}
 
 	revisionsByVersion := make(map[int64]MigrationRevision, len(existing))
@@ -3489,7 +3651,7 @@ func (m *Migrator) writePtahSetRevisionRows(
 				migrationRevisionHash(migration),
 				revision.Version,
 			); err != nil {
-				return fmt.Errorf("failed to mark dirty revision %d applied: %w", revision.Version, err)
+				return fmt.Errorf("failed to mark dirty revision %d applied: %w", m.versionText(revision.Version), err)
 			}
 			continue
 		}
@@ -3508,7 +3670,7 @@ func (m *Migrator) writePtahSetRevisionRows(
 			0,
 			migrationRevisionHash(migration),
 		); err != nil {
-			return fmt.Errorf("failed to record manually set revision %d: %w", migration.Version, err)
+			return fmt.Errorf("failed to record manually set revision %d: %w", m.versionText(migration.Version), err)
 		}
 	}
 	return nil
@@ -3556,17 +3718,17 @@ func (m *Migrator) repairMigrationLocked(ctx context.Context, opts RepairMigrati
 	}
 	migration := m.migrationByVersion(opts.Version)
 	if migration == nil {
-		return fmt.Errorf("migration %d not found", opts.Version)
+		return fmt.Errorf("migration %d not found", m.versionText(opts.Version))
 	}
 	revision, err := m.getMigrationRevision(ctx, migration)
 	if err != nil {
 		return err
 	}
 	if revision == nil && !opts.Force {
-		return fmt.Errorf("migration %d has no revision row; rerun with --force to mark it applied", opts.Version)
+		return fmt.Errorf("migration %d has no revision row; rerun with --force to mark it applied", m.versionText(opts.Version))
 	}
 	if revision != nil && !revision.Dirty && !opts.Force {
-		return fmt.Errorf("migration %d is not dirty; rerun with --force to rewrite it", opts.Version)
+		return fmt.Errorf("migration %s is not dirty; rerun with --force to rewrite it", m.VersionLabel(opts.Version))
 	}
 	direction := repairMigrationDirection(revision)
 	own, err := m.validateRepairMigrationSQL(migration, revision, opts, direction)
@@ -3614,7 +3776,7 @@ func (m *Migrator) validateRepairMigrationSQL(
 	}
 	own, err := m.ownTransactionMode(migration, txMode, direction)
 	if err != nil {
-		return ownTransactionRun{}, fmt.Errorf("migration %d cannot be repaired safely: %w", migration.Version, err)
+		return ownTransactionRun{}, fmt.Errorf("migration %d cannot be repaired safely: %w", m.versionText(migration.Version), err)
 	}
 	if !own.blocks.Empty() {
 		if opts.ResumeFrom > 0 {
@@ -3687,13 +3849,13 @@ func (m *Migrator) repairUpMigration(
 	// explicit force for an incomplete body, after the operator has reconciled
 	// its SQL by hand.
 	if revisionProvesNothingRan(revision, m.grammar()) && !opts.Force {
-		return &RepairNothingAppliedError{Version: migration.Version}
+		return &RepairNothingAppliedError{Version: migration.Version, versionLabel: m.versionText(migration.Version).label}
 	}
 	if revision != nil && revision.Dirty && revision.Applied < revision.Total && !opts.Force {
 		if revision.StatementOutcomeUnknown() {
 			return fmt.Errorf(
 				"migration %d has an unknown statement outcome; repair without --resume-from would record unverified SQL as applied without running it: inspect the database and rerun with --force only after reconciling the migration yourself",
-				migration.Version,
+				m.versionText(migration.Version),
 			)
 		}
 		if !own.blocks.Empty() {
@@ -3701,7 +3863,7 @@ func (m *Migrator) repairUpMigration(
 		}
 		return fmt.Errorf(
 			"migration %d recorded %d of %d applied statements; repair without --resume-from would mark the rest applied without running them: rerun with --resume-from %d to run the rest, or with --force only after running them yourself",
-			migration.Version,
+			m.versionText(migration.Version),
 			revision.Applied,
 			revision.Total,
 			revision.Applied+1,
@@ -3788,12 +3950,12 @@ func refuseUnknownStatementOutcomeResume(migration *Migration, revision *Migrati
 		return fmt.Errorf(
 			"migration %d stopped and the rollback of its transaction left some statements in place and undid others; "+
 				"inspect the database before repair and omit --resume-from, because no statement is the place to resume from",
-			migration.Version,
+			migration.versionText(),
 		)
 	}
 	return fmt.Errorf(
 		"migration %d has an unknown statement outcome for %q; inspect the database before repair and omit --resume-from to avoid repeating committed SQL",
-		migration.Version,
+		migration.versionText(),
 		revision.ErrorStatement,
 	)
 }
@@ -3881,16 +4043,16 @@ func (m *Migrator) resumeStatementsOnSession(
 			continue
 		}
 		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
-			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
+			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, m.versionText(migration.Version), event.Index, err)
 		}
 		if err := executeSQLOn(ctx, executionConn, stmt); err != nil {
 			return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 		}
 		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction); err != nil {
-			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
+			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, m.versionText(migration.Version), event.Index, err)
 		}
 		if err := m.observePostgresIndexStatement(ctx, executionConn, stmt); err != nil {
-			return fmt.Errorf("failed to observe resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
+			return fmt.Errorf("failed to observe resumed %s %d at statement %d: %w", operation, m.versionText(migration.Version), event.Index, err)
 		}
 	}
 	return nil
@@ -3912,7 +4074,7 @@ func (m *Migrator) failResumedMigrationDirection(
 			startedAt,
 			execErr,
 			migration.DownSQL,
-			fmt.Sprintf("failed to resume rollback of migration %d", migration.Version),
+			fmt.Sprintf("failed to resume rollback of migration %d", m.versionText(migration.Version)),
 			MigrationTxModeNone,
 		)
 	}
@@ -3922,7 +4084,7 @@ func (m *Migrator) failResumedMigrationDirection(
 		startedAt,
 		execErr,
 		migration.UpSQL,
-		fmt.Sprintf("failed to resume migration %d", migration.Version),
+		fmt.Sprintf("failed to resume migration %d", m.versionText(migration.Version)),
 		MigrationTxModeNone,
 		MigrationDirectionUp,
 	)
@@ -4040,7 +4202,7 @@ func (m *Migrator) writeAtlasManuallySetMigrationRow(
 		m.atlasNullJSONValue(),
 		migration.atlasOperatorVersion(),
 	); err != nil {
-		return fmt.Errorf("failed to record manually set Atlas revision %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record manually set Atlas revision %d: %w", m.versionText(migration.Version), err)
 	}
 	return nil
 }

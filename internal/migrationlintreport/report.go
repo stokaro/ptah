@@ -1036,7 +1036,10 @@ func lintVersions(
 		if err != nil {
 			return lintVersionSelection{}, err
 		}
-		selection, err := latestMigrationSelection(fsys, uint(latest), dirFormat, repeatables)
+		// A layout converted from another tool keeps its version order, which
+		// its file names do not carry.
+		nameOrder := len(opts.RevisionVersions) == 0
+		selection, err := latestMigrationSelection(fsys, uint(latest), dirFormat, repeatables, nameOrder)
 		selection.restricted = true
 		return selection, err
 	}
@@ -1412,6 +1415,7 @@ func latestMigrationSelection(
 	latest uint,
 	dirFormat migrationfile.DirFormat,
 	repeatables map[string]struct{},
+	nameOrder bool,
 ) (lintVersionSelection, error) {
 	unversioned, err := unversionedSQLFiles(fsys, dirFormat, repeatables)
 	if err != nil {
@@ -1424,7 +1428,7 @@ func latestMigrationSelection(
 	if err != nil {
 		return lintVersionSelection{}, err
 	}
-	selection := latestMigrationSelectionFromFiles(files, latest)
+	selection := latestMigrationSelectionFromFiles(files, latest, nameOrder)
 	if len(selection.versionKeys) == 0 && len(files) == 0 {
 		// An empty migration directory selects no versions rather than failing.
 		// The pinned Atlas community binary v1.3.0 exits 0 with no output for
@@ -1444,16 +1448,26 @@ func latestMigrationSelection(
 	return selection, nil
 }
 
-func latestMigrationSelectionFromFiles(files []migrationfile.File, latest uint) lintVersionSelection {
+// latestMigrationSelectionFromFiles selects the last latest versions of files.
+// nameOrder selects the file-name order an Atlas directory runs in; a layout
+// converted from another tool runs in version order instead.
+func latestMigrationSelectionFromFiles(files []migrationfile.File, latest uint, nameOrder bool) lintVersionSelection {
 	candidates := make([]migrationfile.File, 0, len(files))
 	maxVersion := maxMigrationFileVersion(files)
+	atlasOrder := nameOrder && len(files) > 0
 	for _, file := range files {
-		if file.Version <= 0 && !file.Repeatable {
+		atlasOrder = atlasOrder && file.Format == migrationfile.DirFormatAtlas
+		if file.Version <= 0 && !file.Repeatable && file.Format != migrationfile.DirFormatAtlas {
 			continue
 		}
 		candidates = append(candidates, file)
 	}
 	slices.SortStableFunc(candidates, func(a, b migrationfile.File) int {
+		// Atlas orders a directory by file name, so the latest file of
+		// 9_a.sql and 10_b.sql is 9_a.sql, and v1_x.sql comes after 2_b.sql.
+		if atlasOrder {
+			return strings.Compare(a.Path, b.Path)
+		}
 		return cmp.Or(
 			cmp.Compare(migrationFileVersionRank(a, maxVersion), migrationFileVersionRank(b, maxVersion)),
 			strings.Compare(a.Name, b.Name),

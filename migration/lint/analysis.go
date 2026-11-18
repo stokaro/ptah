@@ -186,7 +186,10 @@ type File struct {
 	// are translated back to Source.
 	SQL string
 	// Version is the parsed migration version, or zero when the name is not
-	// recognized.
+	// recognized. In an Atlas directory whose files run under their positions
+	// in execution order ([migrationfile.AtlasKeyedByPosition]), such as one
+	// holding v1_x.sql, it is that position, the key the migrator runs the
+	// file under, and RevisionVersion is the version the name spells.
 	Version int64
 	// RevisionVersion is the revision-table token for parsed migration files.
 	// Atlas repeatables use string keys such as "3R" and "R".
@@ -602,6 +605,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		file.transactionOwner = opts.TransactionOwner
 		files = append(files, file)
 	}
+	keyAtlasFilesByPosition(files, snapshot, dirFormat)
 	split, err := splitFiles(ctx, runtime, opts.Dialect, files)
 	if err != nil {
 		return Analysis{}, err
@@ -662,7 +666,7 @@ func LintFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) ([]F
 func versionDirections(names []string, dirFormat migrationfile.DirFormat) map[int64]map[string]bool {
 	versionDirs := make(map[int64]map[string]bool)
 	for _, name := range names {
-		if parsed, parseErr := parseKnownMigrationName(path.Base(name), dirFormat); parseErr == nil {
+		if parsed, parseErr := parseKnownMigrationName(name, dirFormat); parseErr == nil {
 			if versionDirs[parsed.Version] == nil {
 				versionDirs[parsed.Version] = make(map[string]bool)
 			}
@@ -738,7 +742,7 @@ func filterAtlasTemplateSupportNames(
 
 	filtered := make([]string, 0, len(names))
 	for _, name := range names {
-		if _, err := parseKnownMigrationName(path.Base(name), dirFormat); err == nil {
+		if _, err := parseKnownMigrationName(name, dirFormat); err == nil {
 			filtered = append(filtered, name)
 			continue
 		}
@@ -755,7 +759,7 @@ func hasAtlasTemplateMigration(
 	dirFormat migrationfile.DirFormat,
 ) bool {
 	for _, name := range names {
-		parsed, err := parseKnownMigrationName(path.Base(name), dirFormat)
+		parsed, err := parseKnownMigrationName(name, dirFormat)
 		if err != nil || parsed.Format != migrationfile.DirFormatAtlas {
 			continue
 		}
@@ -803,7 +807,7 @@ func prepareFile(
 	// Atlas version "R".
 	_, ptahRepeatable := repeatables[name]
 	repeatable := ptahRepeatable
-	if parsed, parseErr := parseKnownMigrationName(base, dirFormat); parseErr == nil && !ptahRepeatable {
+	if parsed, parseErr := parseKnownMigrationName(name, dirFormat); parseErr == nil && !ptahRepeatable {
 		direction = parsed.Direction
 		version = parsed.Version
 		revisionVersion = parsed.RevisionVersion()
@@ -1098,5 +1102,28 @@ type Runtime interface {
 func withOwners(files []File, owners sqlext.Set) {
 	for i := range files {
 		files[i].owners = owners
+	}
+}
+
+// keyAtlasFilesByPosition gives each Atlas file of a directory whose files run
+// under their positions the key the migrator runs it under, read with the
+// discovery the migrator reads the directory with. A starting schema the replay
+// reads is keyed by that key, so without it v1_x.sql, whose name spells no
+// number, would ask for no starting schema and report no missing one. A
+// directory discovery refuses keeps the versions the names spell; the
+// migrator refuses it before anything runs.
+func keyAtlasFilesByPosition(files []File, fsys fs.FS, format migrationfile.DirFormat) {
+	discovered, err := migrationfile.Discover(fsys, format)
+	if err != nil || !migrationfile.AtlasKeyedByPosition(discovered) {
+		return
+	}
+	keys := make(map[string]int64, len(discovered))
+	for _, file := range discovered {
+		keys[file.Path] = file.OrderKey
+	}
+	for i := range files {
+		if key, ok := keys[files[i].Name]; ok {
+			files[i].Version = key
+		}
 	}
 }

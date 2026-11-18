@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlashash"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -142,6 +143,9 @@ type FSMigrationProvider struct {
 	// numeric version. A native revision table stores only the number, and
 	// this is how a row read from one finds the key its file compares under.
 	atlasSpellings map[int64]string
+	// atlasPositions reports that the order key of every migration is its
+	// position in execution order; see [atlasNeedsPositions].
+	atlasPositions bool
 	// ownTransactions marks every loaded migration as one of a directory
 	// written for a runner that opens no transaction around a file; see
 	// [WithOwnTransactions].
@@ -380,6 +384,48 @@ func (p *FSMigrationProvider) hasAtlasRevisionVersionMap() bool {
 	return p.atlasRevisionVersions != nil
 }
 
+// hasAtlasPositions reports that every migration runs under its position in
+// execution order rather than under the number its file name spells.
+func (p *FSMigrationProvider) hasAtlasPositions() bool {
+	return p.atlasPositions
+}
+
+// recordAtlasSumContribution adds what migrationFile contributes to the
+// atlas.sum chain of migration: its bytes, unless the file is excluded from the
+// sum, and whether its up file carries an entry of its own.
+func (p *FSMigrationProvider) recordAtlasSumContribution(
+	migration *Migration,
+	migrationFile migrationfile.File,
+	hashes map[string]string,
+) error {
+	raw, err := fs.ReadFile(p.fsys, migrationFile.Path)
+	if err != nil {
+		return fmt.Errorf("failed to read Atlas checksum source %s: %w", migrationFile.Path, err)
+	}
+	_, hasHashEntry := hashes[migrationFile.Path]
+	migration.atlasSumContributions = append(migration.atlasSumContributions, atlasSumContribution{
+		name:          migrationFile.Path,
+		data:          raw,
+		includeData:   !atlashash.IsSumIgnored(raw),
+		revisionEntry: migrationFile.Direction == "up" && hasHashEntry,
+	})
+	return nil
+}
+
+// convertedLayout reports that the provider reads a layout converted from
+// another tool, whose maps are keyed by the numbers its file names spell,
+// which positions are not.
+func (p *FSMigrationProvider) convertedLayout() bool {
+	return len(p.atlasRevisionVersions) != 0 || len(p.atlasRevisionChecksums) != 0 ||
+		len(p.atlasRevisionTypes) != 0 || len(p.atlasRepeatable) != 0
+}
+
+// recoveryReading is how the provider reads the directory, for the flags a
+// recovery command names to read it the same way.
+func (p *FSMigrationProvider) recoveryReading() repaircommand.Reading {
+	return repaircommand.Reading{Dir: p.fsys, DirFormat: p.format, AtlasRepeatables: p.atlasRepeatables}
+}
+
 // atlasVersionSpelling returns the version token an ordinary Atlas file in
 // this directory spells for version, such as 001 for 1. It reports false for
 // a native directory, for a version no file carries, and for a repeatable or
@@ -472,14 +518,17 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 	if err != nil {
 		return err
 	}
-	maxVersion := atlasMaxNumericVersion(files)
+	positions := migrationfile.AtlasKeyedByPosition(files)
+	if positions && p.convertedLayout() {
+		return errors.New("a converted migration directory holds an Atlas version that is not a number")
+	}
 	partsByRevision := make(map[string]*atlasParts)
 	spellings := make(map[int64]migrationfile.File)
 	for i := range files {
 		migrationFile := files[i]
-		runtimeVersion := atlasRuntimeVersion(migrationFile, maxVersion)
+		runtimeVersion := migrationFile.OrderKey
 		revisionVersion, repeatable, mapped := p.atlasFileIdentity(migrationFile)
-		if !repeatable && !mapped {
+		if !repeatable && !mapped && migrationFile.Version > 0 {
 			if err := recordAtlasSpelling(spellings, migrationFile); err != nil {
 				return err
 			}
@@ -493,48 +542,58 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 			)
 		}
 		if parts == nil {
-			revisionType := p.atlasRevisionTypes[migrationFile.Version]
-			parts = &atlasParts{
-				migration: &Migration{
-					Version:                    runtimeVersion,
-					Description:                migrationFile.Name,
-					atlasRevisionVersion:       revisionVersion,
-					hasAtlasRevisionVersion:    true,
-					atlasRevisionVersionMapped: mapped,
-					atlasOrderKey:              migrationFile.Path,
-					revisionDescription:        p.atlasRevisionDescription(migrationFile),
-					hasRevisionDescription:     true,
-					atlasRevisionType:          revisionType,
-					atlasRepeatable:            repeatable,
-				},
-			}
+			parts = &atlasParts{migration: &Migration{
+				Version:                    runtimeVersion,
+				Description:                migrationFile.Name,
+				atlasRevisionVersion:       revisionVersion,
+				hasAtlasRevisionVersion:    true,
+				atlasRevisionVersionMapped: mapped,
+				atlasOrderKey:              migrationFile.Path,
+				revisionDescription:        p.atlasRevisionDescription(migrationFile),
+				hasRevisionDescription:     true,
+				atlasRevisionType:          p.atlasRevisionTypes[migrationFile.Version],
+				atlasRepeatable:            repeatable,
+				atlasNumberless:            positions || migrationFile.Version == 0,
+			}}
 			partsByRevision[revisionVersion] = parts
 		}
 		p.recordAtlasHashes(parts.migration, migrationFile, hashes[migrationFile.Path], runtimeVersion)
-		raw, err := fs.ReadFile(p.fsys, migrationFile.Path)
-		if err != nil {
-			return fmt.Errorf("failed to read Atlas checksum source %s: %w", migrationFile.Path, err)
+		if err := p.recordAtlasSumContribution(parts.migration, migrationFile, hashes); err != nil {
+			return err
 		}
-		_, hasHashEntry := hashes[migrationFile.Path]
-		ignored := atlashash.IsSumIgnored(raw)
-		parts.migration.atlasSumContributions = append(
-			parts.migration.atlasSumContributions,
-			atlasSumContribution{
-				name:          migrationFile.Path,
-				data:          raw,
-				includeData:   !ignored,
-				revisionEntry: migrationFile.Direction == "up" && hasHashEntry,
-			},
-		)
 		if err := p.loadAtlasFile(parts, migrationFile); err != nil {
 			return err
 		}
 	}
 
+	migrations, err := completeAtlasMigrations(partsByRevision)
+	if err != nil {
+		return err
+	}
+	p.migrations = migrations
+	sortMigrations(p.migrations)
+	p.atlasPositions = positions
+	p.atlasSpellings = make(map[int64]string, len(spellings))
+	if positions {
+		// The key is a position, never a number a file spells, and no
+		// revision table that records numbers keeps one; the migrator refuses
+		// that table (refuseNumberlessVersionsInANumericTable).
+		return nil
+	}
+	for version, file := range spellings {
+		p.atlasSpellings[version] = file.RevisionVersion()
+	}
+	return nil
+}
+
+// completeAtlasMigrations returns the migration each revision's files make,
+// refusing a revision with a down file and no up file, and giving one with no
+// down file a rollback that reports it has none.
+func completeAtlasMigrations(partsByRevision map[string]*atlasParts) ([]*Migration, error) {
 	migrations := make([]*Migration, 0, len(partsByRevision))
 	for _, parts := range partsByRevision {
 		if !parts.hasUp {
-			return fmt.Errorf("Atlas migration version %s has down migration but no up migration", parts.migration.RevisionVersion())
+			return nil, fmt.Errorf("Atlas migration version %s has down migration but no up migration", parts.migration.RevisionVersion())
 		}
 		if !parts.hasDown {
 			parts.migration.downUnavailable = true
@@ -548,14 +607,7 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 		}
 		migrations = append(migrations, parts.migration)
 	}
-
-	p.migrations = migrations
-	sortMigrations(p.migrations)
-	p.atlasSpellings = make(map[int64]string, len(spellings))
-	for version, file := range spellings {
-		p.atlasSpellings[version] = file.RevisionVersion()
-	}
-	return nil
+	return migrations, nil
 }
 
 // atlasFileIdentity returns the revision identity an Atlas file is recorded
@@ -565,8 +617,7 @@ func (p *FSMigrationProvider) atlasFileIdentity(
 	migrationFile migrationfile.File,
 ) (revisionVersion string, repeatable, mapped bool) {
 	revisionVersion = migrationFile.RevisionVersion()
-	repeatable = revisionVersion == "R" || strings.HasSuffix(revisionVersion, "R") ||
-		p.atlasRepeatable[migrationFile.Version]
+	repeatable = migrationFile.Repeatable || p.atlasRepeatable[migrationFile.Version]
 	if mappedRevisionVersion, ok := p.atlasRevisionVersions[migrationFile.Version]; ok {
 		return mappedRevisionVersion, repeatable, true
 	}
@@ -594,23 +645,6 @@ func recordAtlasSpelling(spellings map[int64]migrationfile.File, file migrationf
 			"so one version needs one spelling",
 		previous.Path, file.Path, file.Version, previous.RevisionVersion(), file.RevisionVersion(),
 	)
-}
-
-func atlasMaxNumericVersion(files []migrationfile.File) int64 {
-	var maxVersion int64
-	for _, file := range files {
-		if !file.Repeatable && file.Version > maxVersion {
-			maxVersion = file.Version
-		}
-	}
-	return maxVersion
-}
-
-func atlasRuntimeVersion(file migrationfile.File, maxVersion int64) int64 {
-	if !file.Repeatable || file.Version > 0 {
-		return file.Version
-	}
-	return maxVersion + 1
 }
 
 // recordAtlasHashes attaches the two checksums a converted migration can carry.

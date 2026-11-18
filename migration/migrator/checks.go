@@ -172,6 +172,9 @@ type CheckFailedError struct {
 	// Err is set when the assertion query itself failed to execute (as opposed
 	// to running and returning a falsy result).
 	Err error
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *CheckFailedError) Error() string {
@@ -185,10 +188,10 @@ func (e *CheckFailedError) Error() string {
 	}
 	if e.Err != nil {
 		return fmt.Sprintf("%s %s for migration %d could not run: %v (assert: %s)",
-			kind, label, e.Version, e.Err, e.Assert)
+			kind, label, versionText{number: e.Version, label: e.versionLabel}, e.Err, e.Assert)
 	}
 	return fmt.Sprintf("%s %s for migration %d was not satisfied (assert: %s)",
-		kind, label, e.Version, e.Assert)
+		kind, label, versionText{number: e.Version, label: e.versionLabel}, e.Assert)
 }
 
 func (e *CheckFailedError) Unwrap() error {
@@ -216,6 +219,9 @@ type PostMigrationCheckFailedError struct {
 	// their own state.
 	Direction MigrationDirection
 	Err       error
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *PostMigrationCheckFailedError) Error() string {
@@ -223,14 +229,14 @@ func (e *PostMigrationCheckFailedError) Error() string {
 		return fmt.Sprintf(
 			"rollback of migration %d completed and its post-migration check did not hold: %v "+
 				"(the rollback ran, its revision is gone, and nothing was re-applied)",
-			e.Version,
+			versionText{number: e.Version, label: e.versionLabel},
 			e.Err,
 		)
 	}
 	return fmt.Sprintf(
 		"migration %d applied and its post-migration check did not hold: %v "+
 			"(the migration is recorded as applied and nothing was rolled back)",
-		e.Version,
+		versionText{number: e.Version, label: e.versionLabel},
 		e.Err,
 	)
 }
@@ -248,13 +254,16 @@ type CheckGroupFailedError struct {
 	Version    int64
 	Name       string
 	Assertions int
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *CheckGroupFailedError) Error() string {
 	return fmt.Sprintf(
 		"pre-migration check group %s for migration %d was not satisfied: none of %d assertions passed",
 		e.Name,
-		e.Version,
+		versionText{number: e.Version, label: e.versionLabel},
 		e.Assertions,
 	)
 }
@@ -270,7 +279,7 @@ func runCheckGroups(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	rule assertionRule,
-	version int64,
+	version versionText,
 	groups []checkGroup,
 ) error {
 	if len(groups) == 0 {
@@ -291,7 +300,7 @@ func runCheckGroup(
 	ctx context.Context,
 	queryer dbschema.IsolatedQueryer,
 	rule assertionRule,
-	version int64,
+	version versionText,
 	group checkGroup,
 ) error {
 	onePassed := false
@@ -299,7 +308,8 @@ func runCheckGroup(
 		result, err := runCheckAssertion(ctx, queryer, rule, check.Assert)
 		if err != nil {
 			return &CheckFailedError{
-				Version: version, Name: check.Name, Assert: check.Assert, Phase: check.Phase, Err: err,
+				Version: version.number, Name: check.Name, Assert: check.Assert, Phase: check.Phase, Err: err,
+				versionLabel: version.label,
 			}
 		}
 		if assertionPassed(result) {
@@ -308,7 +318,8 @@ func runCheckGroup(
 		}
 		if group.mode == checkGroupAll {
 			return &CheckFailedError{
-				Version: version, Name: check.Name, Assert: check.Assert, Phase: check.Phase,
+				Version: version.number, Name: check.Name, Assert: check.Assert, Phase: check.Phase,
+				versionLabel: version.label,
 			}
 		}
 	}
@@ -317,9 +328,10 @@ func runCheckGroup(
 			return nil
 		}
 		return &CheckGroupFailedError{
-			Version:    version,
-			Name:       group.name,
-			Assertions: len(group.checks),
+			Version:      version.number,
+			versionLabel: version.label,
+			Name:         group.name,
+			Assertions:   len(group.checks),
 		}
 	}
 	return nil
@@ -479,16 +491,17 @@ func validateEffectiveCheckAssertion(effective, dialect string) error {
 // evaluation path would report it. A dry run that defers a check still runs
 // this, so an assertion that is malformed or write-shaped is reported whatever
 // state the database is in — that verdict never depended on state.
-func validateCheckGroups(groups []checkGroup, rule assertionRule, version int64) error {
+func validateCheckGroups(groups []checkGroup, rule assertionRule, version versionText) error {
 	for _, group := range groups {
 		for _, check := range group.checks {
 			if err := rule(check.Assert); err != nil {
 				return &CheckFailedError{
-					Version: version,
-					Name:    check.Name,
-					Assert:  check.Assert,
-					Phase:   check.Phase,
-					Err:     err,
+					Version:      version.number,
+					versionLabel: version.label,
+					Name:         check.Name,
+					Assert:       check.Assert,
+					Phase:        check.Phase,
+					Err:          err,
 				}
 			}
 		}

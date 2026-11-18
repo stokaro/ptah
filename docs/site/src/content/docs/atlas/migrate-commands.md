@@ -1111,7 +1111,7 @@ statements rather than being skipped.
 
 ### Deliberate divergences
 
-Three behaviors differ from Atlas on purpose. All three are cases where matching
+Four behaviors differ from Atlas on purpose. All four are cases where matching
 would mean reproducing a defect, so Ptah is stricter — never looser — than Atlas.
 
 #### A Goose directive with the wrong case
@@ -1147,6 +1147,56 @@ Atlas applies the first and then panics. Ptah refuses the directory before
 anything runs. With `PTAH_ATLAS_REPEATABLE_MIGRATIONS` set, `ptah-compat` reads
 `R__<identity>.sql` as a [repeatable migration](../../versioned/repeatable/)
 instead, which runs again when its body changes.
+
+#### An Atlas file whose version is not a number
+
+For example `1.x.sql`, `v1_x.sql`, `x_y.sql` or `00_x.sql`.
+
+Both binaries read the version as the text before the first underscore of the
+name (`1.x`, `v1`, `x`, `00`), run and list the files in file-name order, and
+record that text in the revision table. `migrate status` reports as current the
+highest applied version as text, so `v1` is current beside `1`, and a `2_b.sql`
+added after `v1_x.sql` ran is out of order. `migrate set` orders the versions as
+text too, which is not always file-name order: `10` sorts between `1` and `2`,
+so `migrate set 2` keeps `10_c.sql` applied and removes `v1_x.sql`.
+
+A name with no underscore keeps its direction suffix in the version: Atlas
+records `v1.up.sql` as `v1.up`, and runs `v2.down.sql` as a migration of its
+own, version `v2.down`. Ptah reads them the same way.
+
+The divergences are a name that starts with an underscore, such as `_x.sql`,
+whose version is empty, and a name that starts with a dot, such as
+`.draft_x.sql`, whose version `.draft` looks like a row the revision table keeps
+for itself. Atlas runs both. Ptah refuses the directory before anything runs,
+because no `--to-version`, `--baseline` or `migrate set` argument can name an
+empty version, and because it reads every row whose version starts with a dot
+as the table's own, so the file would run and stay pending. See
+[A file whose Atlas version is empty](../retained-divergences/#a-file-whose-atlas-version-is-empty).
+
+Native `ptah migrations up --dir-format atlas` runs such a file over the Atlas
+revision table (`--revision-format atlas`). Native output names it by its
+version, so `migrations status` prints `Current Version: v1`,
+`migrations down --target v1` rolls back to it, and `migrations set`,
+`migrations baseline` and `migrations repair` take `--version v1`. The repair
+hint of a dirty revision names it the same way, and a structured log line
+carries it under the `version` key, which holds a number for a numbered file.
+
+In such a directory a number is a version like any other: `--version 00` names
+`00_x.sql` and `--version -5` names `-5_x.sql`. A number no file carries, such
+as `--target 3` or `--version 3` beside `1_a.sql`, `2_b.sql` and `v1_x.sql`, is
+refused, and `0` names the empty history. The repair hint carries
+`--revision-format atlas`, and `--dir-format atlas` where the default would read
+other files, so the command it prints runs as printed.
+
+Over the Ptah revision table, which records a number, the native commands refuse
+the directory before anything runs or any row is written, `migrations set`
+included. Ptah runs such a directory under each file's position in file-name
+order, so a file added before another moves its position, and the row would
+then name another file. The refusal names the file and points at `--revision-format atlas`. It
+applies to the native defaults too (`--dir-format auto`,
+`--revision-format ptah`) on a directory that holds an `atlas.sum`: the sum
+makes it an Atlas directory, and the sum covers the file, so leaving the file
+out would apply the rest and report success.
 
 Ptah refuses only exact near-miss spellings of the four section directives.
 Prose that merely begins with one (`-- +goose up to date`) and unrecognized
@@ -2673,6 +2723,12 @@ names spell it: in an Atlas-format directory that includes a version that is
 not a number, so `migrate set R` sets the history through `R__view.sql`. A
 version no file holds, `0` included, is refused as the pinned binary refuses
 it, with `migration with version "0" not found`.
+
+In an Atlas-format directory both binaries order the versions as text, byte for
+byte, so "through the target" and "above the target" follow that order. With
+`1_a.sql`, `2_b.sql`, `10_c.sql` and `v1_x.sql`, `migrate set v1` lists the rows
+it sets as `1`, `10`, `2`, `v1`, and `migrate set 2` then keeps `10` and removes
+`v1` alone. The native `ptah migrations set` keeps the numeric order.
 
 ### Which verbs enforce `atlas.sum`
 

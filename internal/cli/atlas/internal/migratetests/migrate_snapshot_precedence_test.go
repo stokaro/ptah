@@ -68,7 +68,11 @@ func TestMigrateApplyRefusesTheDirectoryBeforeTheBaseline(t *testing.T) {
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }
 
-func TestMigrateApplyValidatesToVersionBeforeCapturingNativeDirectory(t *testing.T) {
+// TestMigrateApplyReadsToVersionAfterCapturingNativeDirectory reads
+// --to-version after the directory, as it reads --baseline: in a native Atlas
+// directory a version is a string a file carries, so invalid can name
+// invalid_x.sql and only the directory can refuse it.
+func TestMigrateApplyReadsToVersionAfterCapturingNativeDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "ATLAS.SUM"), []byte("metadata\n"), 0o600), qt.IsNil)
@@ -86,7 +90,7 @@ func TestMigrateApplyValidatesToVersionBeforeCapturingNativeDirectory(t *testing
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `--to-version "invalid" is not a valid migration version: .*`)
+	c.Assert(err, qt.ErrorMatches, `.*capture migration directory: migration metadata file "ATLAS.SUM" must use canonical name "atlas.sum"`)
 	_, statErr := os.Stat(dbPath)
 	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
 }

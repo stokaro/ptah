@@ -123,7 +123,7 @@ func (m *Migrator) restoreSessionPrefix(
 		); err != nil {
 			return fmt.Errorf(
 				"migration %d cannot resolve the PostgreSQL index target recorded by statement %d: %w",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 				err,
 			)
@@ -135,7 +135,7 @@ func (m *Migrator) restoreSessionPrefix(
 			if err := executeSQLOn(ctx, executionConn, statement); err != nil {
 				return fmt.Errorf(
 					"migration %d cannot restore session state from committed statement %d before resume: %w",
-					migration.Version,
+					m.versionText(migration.Version),
 					i+1,
 					err,
 				)
@@ -151,7 +151,7 @@ func (m *Migrator) restoreSessionPrefix(
 				"migration %d cannot reconstruct session state after committed statement %d because %q may depend "+
 					"on session-local state that cannot be restored safely; inspect the database and choose an explicit "+
 					"metadata repair instead of replaying migration SQL",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 				statement,
 			)
@@ -266,7 +266,7 @@ func (m *Migrator) validateNoTransactionSQL(migration *Migration, direction Migr
 		return fmt.Errorf(
 			"migration %d cannot run %s statement %d without a transaction because %q controls transaction state; "+
 				"remove the transaction control and let Ptah checkpoint each statement independently",
-			migration.Version,
+			m.versionText(migration.Version),
 			direction,
 			i+1,
 			statement,

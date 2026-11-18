@@ -451,13 +451,16 @@ type EmptyRollbackError struct {
 	// Path names the down file. It is empty for a migration built in code with
 	// [CreateMigrationFromSQL] that has no description.
 	Path string
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *EmptyRollbackError) Error() string {
 	return fmt.Sprintf(
 		"migration %d has a down file with no statements (%s), so a rollback would change nothing and still move the version; "+
 			"write the rollback, or state that it has none with `-- +ptah %s` at the top of the down file",
-		e.Version, cmp.Or(e.Path, e.Description), migrationfile.DirectiveEmptyRollback,
+		versionText{number: e.Version, label: e.versionLabel}, cmp.Or(e.Path, e.Description), migrationfile.DirectiveEmptyRollback,
 	)
 }
 
@@ -471,12 +474,15 @@ type EmptyRollbackConflictError struct {
 	Path string
 	// Statements counts the statements the down file holds.
 	Statements int
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *EmptyRollbackConflictError) Error() string {
 	return fmt.Sprintf(
 		"migration %d: %s states `-- +ptah %s` and holds %d statement(s); remove the directive or the statements",
-		e.Version, e.Path, migrationfile.DirectiveEmptyRollback, e.Statements,
+		versionText{number: e.Version, label: e.versionLabel}, e.Path, migrationfile.DirectiveEmptyRollback, e.Statements,
 	)
 }
 
@@ -490,7 +496,10 @@ type atlasSQLMigrationFile struct {
 // embedded down.sql section. Ptah does not yet synthesize Atlas dynamic down
 // plans from the current database state and a dev database.
 type AtlasDownNotImplementedError struct {
-	Version         int64
+	Version int64
+	// revisionVersion is the version the message names, and empty where the
+	// message names the number. The refusal before a rollback runs sets it
+	// only for an Atlas file whose version is not a number.
 	revisionVersion string
 	Description     string
 }
@@ -512,12 +521,19 @@ func (e *AtlasDownNotImplementedError) Error() string {
 type CheckpointRollbackError struct {
 	TargetVersion     int64
 	CheckpointVersion int64
+	// versionLabel names TargetVersion as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
+	// checkpointLabel names CheckpointVersion as versionLabel names
+	// TargetVersion.
+	checkpointLabel string
 }
 
 func (e *CheckpointRollbackError) Error() string {
+	checkpoint := versionText{number: e.CheckpointVersion, label: e.checkpointLabel}
 	return fmt.Sprintf(
 		"cannot roll back to version %d: it is below checkpoint %d, whose squashed history cannot be reconstructed; roll back to version %d (the checkpoint) or to 0 (drop everything) instead",
-		e.TargetVersion, e.CheckpointVersion, e.CheckpointVersion,
+		versionText{number: e.TargetVersion, label: e.versionLabel}, checkpoint, checkpoint,
 	)
 }
 
@@ -691,21 +707,25 @@ type Migration struct {
 	atlasRevisionVersionMapped bool
 	atlasRevisionType          AtlasRevisionType
 	atlasRepeatable            bool
-	atlasOrderKey              string
-	atlasSumContributions      []atlasSumContribution
-	revisionDescription        string
-	hasRevisionDescription     bool
-	Up                         MigrationFunc
-	Down                       MigrationFunc
-	UpSQL                      string
-	DownSQL                    string
-	UpTimeouts                 migrationfile.Timeouts
-	DownTimeouts               migrationfile.Timeouts
-	upParsedTimeouts           migrationfile.Timeouts
-	downParsedTimeouts         migrationfile.Timeouts
-	upTimeoutsFromSQL          bool
-	downTimeoutsFromSQL        bool
-	downUnavailable            bool
+	// atlasNumberless marks an Atlas file whose version carries no number,
+	// such as v1_x.sql or R__view.sql: Version is an order key the provider
+	// gave it, which no file name spells.
+	atlasNumberless        bool
+	atlasOrderKey          string
+	atlasSumContributions  []atlasSumContribution
+	revisionDescription    string
+	hasRevisionDescription bool
+	Up                     MigrationFunc
+	Down                   MigrationFunc
+	UpSQL                  string
+	DownSQL                string
+	UpTimeouts             migrationfile.Timeouts
+	DownTimeouts           migrationfile.Timeouts
+	upParsedTimeouts       migrationfile.Timeouts
+	downParsedTimeouts     migrationfile.Timeouts
+	upTimeoutsFromSQL      bool
+	downTimeoutsFromSQL    bool
+	downUnavailable        bool
 	// UpTxMode is the up file's explicit transaction mode. The zero value uses
 	// the migrator's global mode. File and none override global file or none;
 	// any explicit file mode conflicts with global all.
@@ -977,7 +997,7 @@ func (m *Migration) replayOwnTransactions(
 		return txMode.Err
 	}
 	if txMode.Source != 0 && txMode.Mode == migrationfile.FileTxModeFile {
-		return fmt.Errorf("migration %d asks for a transaction around the file and opens its own", m.Version)
+		return fmt.Errorf("migration %d asks for a transaction around the file and opens its own", m.versionText())
 	}
 	var session *ownTransactionSession
 	blocks, statements, err := m.bodyOwnTransactions(conn, MigrationDirectionUp)
@@ -1002,7 +1022,7 @@ func (m *Migration) replayOwnTransactions(
 	rollbackCtx, release := context.WithTimeout(context.WithoutCancel(ctx), ownTransactionRollbackTimeout)
 	defer release()
 	if rollbackErr := executeSQLOn(rollbackCtx, conn, "ROLLBACK"); rollbackErr != nil {
-		return errors.Join(err, fmt.Errorf("failed to roll back migration %d: %w", m.Version, rollbackErr))
+		return errors.Join(err, fmt.Errorf("failed to roll back migration %d: %w", m.versionText(), rollbackErr))
 	}
 	return err
 }
@@ -1047,16 +1067,16 @@ func (m *Migration) replayInExecutionMode(
 	}
 	tx, err := sqliterebuild.BeginTransactionForSQL(ctx, conn, m.UpSQL)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction for migration %d: %w", m.Version, err)
+		return fmt.Errorf("failed to begin transaction for migration %d: %w", m.versionText(), err)
 	}
 	if err := up(ctx, conn.WithExecutor(tx)); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			return errors.Join(err, fmt.Errorf("failed to roll back migration %d: %w", m.Version, rollbackErr))
+			return errors.Join(err, fmt.Errorf("failed to roll back migration %d: %w", m.versionText(), rollbackErr))
 		}
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit migration %d: %w", m.Version, err)
+		return fmt.Errorf("failed to commit migration %d: %w", m.versionText(), err)
 	}
 	return nil
 }
@@ -1066,9 +1086,9 @@ func (m *Migration) executeUp(ctx context.Context, conn *dbschema.DatabaseConnec
 		return m.upTxModeErr
 	}
 	if m.upSQLFunc != nil {
-		return onlineAlterRefusal(m.Version, m.upSQLFunc(ctx, conn, mode))
+		return onlineAlterRefusal(m.versionText(), m.upSQLFunc(ctx, conn, mode))
 	}
-	return onlineAlterRefusal(m.Version, m.Up(ctx, conn))
+	return onlineAlterRefusal(m.versionText(), m.Up(ctx, conn))
 }
 
 func (m *Migration) executeDown(ctx context.Context, conn *dbschema.DatabaseConnection, mode migrationExecutionMode) error {
@@ -1076,9 +1096,9 @@ func (m *Migration) executeDown(ctx context.Context, conn *dbschema.DatabaseConn
 		return m.downTxModeErr
 	}
 	if m.downSQLFunc != nil {
-		return onlineAlterRefusal(m.Version, m.downSQLFunc(ctx, conn, mode))
+		return onlineAlterRefusal(m.versionText(), m.downSQLFunc(ctx, conn, mode))
 	}
-	return onlineAlterRefusal(m.Version, m.Down(ctx, conn))
+	return onlineAlterRefusal(m.versionText(), m.Down(ctx, conn))
 }
 
 // refuseInsideTransaction is the check that refuses the file of direction

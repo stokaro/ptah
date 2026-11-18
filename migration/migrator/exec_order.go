@@ -205,15 +205,23 @@ type OutOfOrderError struct {
 	SourceVersions          map[int64]string
 	currentSourceVersion    string
 	currentSourceVersionSet bool
+	// labels holds the version string of each Atlas file whose version is not
+	// a number, by the order key it runs under, as [Migrator.VersionLabel]
+	// names it. A version it does not hold prints as its number.
+	labels map[int64]string
 }
 
 func (e *OutOfOrderError) Error() string {
 	const escape = "(use --exec-order=non-linear to apply or --exec-order=linear-skip to ignore)"
 	if len(e.SourceVersions) == 0 {
+		listed := make([]string, 0, len(e.Versions))
+		for _, version := range e.Versions {
+			listed = append(listed, e.label(version).String())
+		}
 		return fmt.Sprintf(
 			"out-of-order pending migrations below current version %d: %v %s",
-			e.CurrentVersion,
-			e.Versions,
+			e.label(e.CurrentVersion),
+			listed,
 			escape,
 		)
 	}
@@ -237,6 +245,11 @@ func (e *OutOfOrderError) Error() string {
 	)
 }
 
+// label names version as the file that carries it spells it.
+func (e *OutOfOrderError) label(version int64) versionText {
+	return versionText{number: version, label: e.labels[version]}
+}
+
 func (e *OutOfOrderError) describe(version int64) string {
 	source, ok := e.SourceVersions[version]
 	if !ok {
@@ -252,6 +265,17 @@ func newOutOfOrderError(currentVersion int64, versions []int64) *OutOfOrderError
 		CurrentVersion: currentVersion,
 		Versions:       slices.Clone(versions),
 	}
+}
+
+// OutOfOrderRefusal returns the [*OutOfOrderError] a linear run reports for
+// the pending versions that sort below currentVersion. Its message names an
+// Atlas file whose version is not a number by that version, such as v1, as
+// [Migrator.VersionLabel] does, and every other version by its number. The
+// error holds a copy of versions.
+func (m *Migrator) OutOfOrderRefusal(currentVersion int64, versions []int64) *OutOfOrderError {
+	err := newOutOfOrderError(currentVersion, versions)
+	err.labels = m.numberlessLabels()
+	return err
 }
 
 // newOutOfOrderSourceError builds the same error for a directory read through a

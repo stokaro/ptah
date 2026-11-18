@@ -11,7 +11,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -370,24 +369,41 @@ func parseMigrationSettings(opts options) (parsedMigrationSettings, error) {
 	}, nil
 }
 
-// parseToVersion reads the --to-version bound into the migrator's operand.
-//
-// An unset flag answers zero, which the migrator reads as "latest". A typed
-// zero is refused instead of being folded into that: `--to-version 0` names no
-// migration, and reading it as "apply everything" is the guess the bound exists
-// to remove.
-func parseToVersion(value string) (int64, error) {
+// refuseEmptyToVersion refuses a --to-version bound that names the empty
+// history before the command connects. `--to-version 0` names no migration,
+// and reading it as "apply everything" is the guess the bound exists to
+// remove. Only the literal 0 and a negative number are refused here: 00 is the
+// version string of 00_x.sql in an Atlas directory, so whether other text
+// names a migration is the directory's answer, read by [resolveToVersion].
+func refuseEmptyToVersion(value string) error {
+	if version, err := strconv.ParseInt(value, 10, 64); err == nil && (version < 0 || value == "0") {
+		return toVersionNamesNoMigration(value)
+	}
+	return nil
+}
+
+// resolveToVersion reads the --to-version bound into the order key the
+// migrator compares with, through the directory the migrator read: 2 names
+// 2_x.sql, and in an Atlas directory keyed by file position that file's
+// position, never the second file. An unset flag answers zero, which the
+// migrator reads as "latest", and text that resolves to the empty history is
+// refused rather than folded into that.
+func resolveToVersion(mig *migrator.Migrator, value string) (int64, error) {
 	if value == "" {
 		return 0, nil
 	}
-	version, err := strconv.ParseInt(value, 10, 64)
+	version, err := mig.ResolveVersion(value)
 	if err != nil {
-		return 0, fmt.Errorf("invalid --%s %q: a migration version is a number", toVersionFlag, value)
+		return 0, fmt.Errorf("invalid --%s %q: %w", toVersionFlag, value, err)
 	}
 	if version <= 0 {
-		return 0, fmt.Errorf("invalid --%s %q: a migration version is greater than zero", toVersionFlag, value)
+		return 0, toVersionNamesNoMigration(value)
 	}
 	return version, nil
+}
+
+func toVersionNamesNoMigration(value string) error {
+	return fmt.Errorf("invalid --%s %q: a migration version is greater than zero", toVersionFlag, value)
 }
 
 // resolveProjectOptions merges the project config under the flags. The run's
@@ -569,8 +585,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	if err != nil {
 		return err
 	}
-	toVersion, err := parseToVersion(resolvedOpts.toVersion)
-	if err != nil {
+	if err := refuseEmptyToVersion(resolvedOpts.toVersion); err != nil {
 		return err
 	}
 	source, err := migrationsource.Resolve(cmd.Context(), migrationsDir, migrationsource.Options{
@@ -657,6 +672,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 		return err
 	}
 	document.Migrator = mig
+	toVersion, err := resolveToVersion(mig, resolvedOpts.toVersion)
+	if err != nil {
+		return err
+	}
 
 	drift, releaseShadow, err := prepareDriftCheck(cmd, resolvedOpts, projectCfg, dbURL, settings, conn, mig)
 	if err != nil {
@@ -672,6 +691,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	report := &planReport{
 		emit:      emit,
 		opts:      opts,
+		mig:       mig,
 		settings:  settings,
 		status:    status,
 		onlineCfg: onlineCfg,
@@ -718,10 +738,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 
 	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
-		return &migrator.OutOfOrderError{
-			CurrentVersion: status.CurrentVersion,
-			Versions:       slices.Clone(status.OutOfOrderMigrations),
-		}
+		return mig.OutOfOrderRefusal(status.CurrentVersion, status.OutOfOrderMigrations)
 	}
 	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
 		Direction:          preflight.DirectionUp,
@@ -780,7 +797,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	})
 
 	if !opts.jsonOutput {
-		emitMigrateUpSummary(emit, opts, outcome)
+		emitMigrateUpSummary(emit, opts, mig, outcome)
 		emitMigrateUpDeferredChecks(emit, checksDeferred)
 	}
 	return nil
@@ -850,8 +867,11 @@ func connectTarget(
 // it is connected, which directory it read, and what that directory holds
 // against the recorded history.
 type planReport struct {
-	emit      cliobs.Emitter
-	opts      *options
+	emit cliobs.Emitter
+	opts *options
+	// mig names each version as a person reads it: an Atlas file whose
+	// version is not a number runs under an order key no file name spells.
+	mig       *migrator.Migrator
 	settings  parsedMigrationSettings
 	status    *migrator.MigrationStatus
 	onlineCfg projectconfig.OnlineDDLConfig
@@ -893,16 +913,16 @@ func (r *planReport) write() {
 	if r.onlineCfg.Enabled() {
 		r.emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", r.onlineCfg.Tool, r.onlineCfg.ThresholdRows)
 	}
-	r.emit.Printf("Current version: %d\n", r.status.CurrentVersion)
+	r.emit.Printf("Current version: %s\n", r.mig.VersionLabel(r.status.CurrentVersion))
 	r.emit.Printf("Total migrations: %d\n", r.status.TotalMigrations)
 	r.emit.Printf("Pending migrations: %d\n", len(r.status.PendingMigrations))
 	if len(r.status.OutOfOrderMigrations) > 0 {
-		r.emit.Printf("Out-of-order migrations: %v\n", r.status.OutOfOrderMigrations)
+		r.emit.Printf("Out-of-order migrations: %v\n", r.mig.VersionLabels(r.status.OutOfOrderMigrations))
 	}
 	if r.opts.verbose {
-		r.emit.Printf("Pending migration versions: %v\n", r.status.PendingMigrations)
+		r.emit.Printf("Pending migration versions: %v\n", r.mig.VersionLabels(r.status.PendingMigrations))
 		if len(r.status.OutOfOrderMigrations) > 0 {
-			r.emit.Printf("Out-of-order migration versions: %v\n", r.status.OutOfOrderMigrations)
+			r.emit.Printf("Out-of-order migration versions: %v\n", r.mig.VersionLabels(r.status.OutOfOrderMigrations))
 		}
 	}
 	writeRepeatableStatus(r.emit, r.status.Repeatables)
@@ -1231,7 +1251,7 @@ func emitMigrateUpDeferredChecks(emit cliobs.Emitter, versions []int64) {
 // the count the same way they narrow the work. Recomputing it from the pending
 // list read before the lock would name migrations the run had already decided
 // to leave alone.
-func emitMigrateUpSummary(emit cliobs.Emitter, opts *options, outcome migrateUpOutcome) {
+func emitMigrateUpSummary(emit cliobs.Emitter, opts *options, mig *migrator.Migrator, outcome migrateUpOutcome) {
 	emit.Println()
 	if opts.dryRun {
 		emit.Println("✅ Dry run completed successfully!")
@@ -1243,7 +1263,7 @@ func emitMigrateUpSummary(emit cliobs.Emitter, opts *options, outcome migrateUpO
 		return
 	}
 	emit.Println("✅ Migrations completed successfully!")
-	emit.Printf("Database is now at version: %d\n", outcome.status.CurrentVersion)
+	emit.Printf("Database is now at version: %s\n", mig.VersionLabel(outcome.status.CurrentVersion))
 	if repeatables := outcome.selectedRepeatables(); len(repeatables) > 0 {
 		emit.Printf("Ran %d repeatable migrations:\n", len(repeatables))
 		writeRepeatableWork(emit, repeatables)

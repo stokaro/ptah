@@ -36,7 +36,7 @@ func (m *Migrator) runTransactionalMigration(ctx context.Context, migration *Mig
 	body := m.bodyConnection()
 	tx, err := sqliterebuild.BeginTransactionForSQL(ctx, body, sqlText)
 	if err != nil {
-		return fail(err, fmt.Sprintf("failed to begin transaction for migration %d", migration.Version))
+		return fail(err, fmt.Sprintf("failed to begin transaction for migration %d", m.versionText(migration.Version)))
 	}
 	txConn := body.WithExecutor(tx)
 	rollback := func(err error, prefix string, stage bodyStage) error {
@@ -46,23 +46,23 @@ func (m *Migrator) runTransactionalMigration(ctx context.Context, migration *Mig
 	}
 	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, run.timeouts, timeoutScopeTransaction)
 	if err != nil {
-		return rollback(err, fmt.Sprintf("failed to apply timeouts for migration %d", migration.Version), bodyNotStarted)
+		return rollback(err, fmt.Sprintf("failed to apply timeouts for migration %d", m.versionText(migration.Version)), bodyNotStarted)
 	}
 	executionCtx := scoped.withTransactionalProgressRecorder(ctx, txConn, migration, startedAt, run.direction)
 	executionCtx = scoped.withPostgresIndexObservation(executionCtx, txConn)
 	executionCtx = withStatementBound(executionCtx, txConn, run.timeouts)
 	if err := run.execute(executionCtx, txConn, migrationExecutionTransactional); err != nil {
 		err = m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, err)
-		return rollback(err, fmt.Sprintf("%s %d", run.bodyFailure, migration.Version), bodyStopped)
+		return rollback(err, fmt.Sprintf("%s %d", run.bodyFailure, m.versionText(migration.Version)), bodyStopped)
 	}
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
 		return rollback(err, "", bodyFinished)
 	}
 	if err := run.verify(&scoped, ctx, txConn, migration); err != nil {
-		return rollback(err, fmt.Sprintf("%s %d", run.verifyFailure, migration.Version), bodyFinished)
+		return rollback(err, fmt.Sprintf("%s %d", run.verifyFailure, m.versionText(migration.Version)), bodyFinished)
 	}
 	if err := run.record(ctx, txConn); err != nil {
-		return rollback(err, fmt.Sprintf("%s %d", run.recordFailure, migration.Version), bodyFinished)
+		return rollback(err, fmt.Sprintf("%s %d", run.recordFailure, m.versionText(migration.Version)), bodyFinished)
 	}
 	// Read ahead of the commit: a failed commit ends the transaction, and the
 	// session then reads the same as one the server ended before a schema
@@ -70,8 +70,8 @@ func (m *Migrator) runTransactionalMigration(ctx context.Context, migration *Mig
 	evidence := m.rollbackEvidence(ctx, body, nil, sqlText, bodyFinished)
 	if err := m.commitMigrationTransaction(tx, sqlText); err != nil {
 		failure := migrationFailureAfterCommit(migration.Version, err, tx)
-		return fail(m.withRollbackSurvivors(ctx, failure, evidence), fmt.Sprintf("failed to commit transaction for migration %d", migration.Version))
+		return fail(m.withRollbackSurvivors(ctx, failure, evidence), fmt.Sprintf("failed to commit transaction for migration %d", m.versionText(migration.Version)))
 	}
-	m.logger.Info(run.success, "version", migration.Version, "description", migration.Description)
+	m.logger.Info(run.success, "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }

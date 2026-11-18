@@ -683,13 +683,14 @@ func resolveAtlasMigrateApplyNumericVersions(
 	opts atlasMigrateApplyOptions,
 	runOpts *atlasMigrateApplyRunOptions,
 ) error {
-	// Native Atlas and every numeric-prefix foreign layout validate
-	// --to-version before touching the directory. Flyway is the exception
-	// because the opaque token can only be resolved from the captured source
-	// itself. --baseline names a file in every layout, so
+	// Every numeric-prefix foreign layout validates --to-version before
+	// touching the directory. Flyway and native Atlas are the exceptions:
+	// a version there is a string a file carries, such as v1 or -5, so the
+	// operand can only be resolved from the captured source itself.
+	// --baseline names a file in every layout, so
 	// [resolveAtlasMigrateApplyDirVersions] resolves it against the converted
 	// directory.
-	if format == atlasmigrateimport.FormatFlyway {
+	if format == atlasmigrateimport.FormatFlyway || atlasmigrate.ReadsNativeAtlasDir(format) {
 		return nil
 	}
 	var err error
@@ -715,6 +716,9 @@ func resolveAtlasMigrateApplyDirVersions(
 	opts atlasMigrateApplyOptions,
 	runOpts *atlasMigrateApplyRunOptions,
 ) (flywayVersionTokens, error) {
+	if atlasmigrate.ReadsNativeAtlasDir(format) {
+		return flywayVersionTokens{}, resolveNativeAtlasApplyVersions(converted, format, opts, runOpts)
+	}
 	if format != atlasmigrateimport.FormatFlyway {
 		var err error
 		runOpts.baselineVersion, err = atlasmigrate.ResolveApplyBaseline(converted, opts.baseline)
@@ -747,6 +751,41 @@ func resolveAtlasMigrateApplyDirVersions(
 		return flywayVersionTokens{}, err
 	}
 	return versionTokens, nil
+}
+
+// resolveNativeAtlasApplyVersions resolves --baseline and --to-version
+// against the versions a native Atlas directory carries. --baseline matches a
+// version byte for byte, as [atlasmigrate.ResolveApplyBaseline] does.
+// --to-version reads a version a file carries, such as v1, as the order key the
+// file runs under; where the directory runs under positions a number is no
+// key, and elsewhere a number is the version it spells.
+func resolveNativeAtlasApplyVersions(
+	fsys fs.FS,
+	format atlasmigrateimport.Format,
+	opts atlasMigrateApplyOptions,
+	runOpts *atlasMigrateApplyRunOptions,
+) error {
+	var err error
+	runOpts.baselineVersion, err = atlasmigrate.ResolveApplyBaseline(fsys, opts.baseline)
+	if err != nil {
+		return err
+	}
+	if opts.toVersion == "" {
+		return nil
+	}
+	identities, err := atlasOpaqueVersions(fsys, format)
+	if err != nil {
+		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+	if version, ok := identities.keys[opts.toVersion]; ok {
+		runOpts.toVersion = version
+		return nil
+	}
+	if identities.positions {
+		return fmt.Errorf("target version %q was not found in the migration provider", opts.toVersion)
+	}
+	runOpts.toVersion, err = atlasmigrate.ParseMigrationVersionFlag("to-version", opts.toVersion)
+	return err
 }
 
 func resolveAtlasMigrateApplyVersion(

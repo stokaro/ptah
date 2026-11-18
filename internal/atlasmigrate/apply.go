@@ -480,8 +480,10 @@ func ParseApplyAmount(args []string) (uint64, error) {
 }
 
 // ResolveApplyBaseline resolves the `--baseline` operand of `migrate apply`
-// against fsys, a directory in the Atlas layout, to the version the migrator
-// records. An empty operand selects no baseline and resolves to 0.
+// against fsys, a directory in the Atlas layout, to the order key the migrator
+// runs the file under ([migrationfile.File.OrderKey]), so a version that is not
+// a number, such as the v1 of v1_x.sql, names its file too. An empty operand
+// selects no baseline and resolves to 0.
 //
 // The operand names a file by the version its name spells, byte for byte, as
 // the pinned community binary v1.3.0 matches it, measured on SQLite: on a
@@ -499,8 +501,8 @@ func ResolveApplyBaseline(fsys fs.FS, value string) (int64, error) {
 		return 0, fmt.Errorf("discover Atlas migration files: %w", err)
 	}
 	for _, file := range discovered {
-		if file.Direction == "up" && file.Version > 0 && file.RevisionVersion() == value {
-			return file.Version, nil
+		if file.Direction == "up" && file.RevisionVersion() == value {
+			return file.OrderKey, nil
 		}
 	}
 	return 0, fmt.Errorf("baseline version %q not found", value)

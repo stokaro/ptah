@@ -176,6 +176,10 @@ rather than a person.
 | `ptah viz` | Renders diagrams from a desired schema; no database is opened | — |
 <!-- END GENERATED NATIVE COMMANDS -->
 
+`ptah migrations ls --dir-format atlas` lists the files in file-name order, the
+order Atlas reads an Atlas directory in, so `10_b.sql` comes before `9_a.sql`.
+A Ptah-format directory lists in version order.
+
 ## Sources and output formats
 
 An index cell above says what the verb does to the databases it is given; on a
