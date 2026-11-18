@@ -140,6 +140,67 @@ func TestParse_DefaultOperatorEndsAtAComma_HappyPath(t *testing.T) {
 	})
 }
 
+// A version gate written after an operator default is the column's, as it is
+// after a plain one: the expression ends before it, and the column reader steps
+// over it and reads what follows. A gate where the operator still needs an
+// operand is that operand, and stays in the expression.
+func TestParse_DefaultOperatorEndsAtAVersionGate_HappyPath(t *testing.T) {
+	rows := []struct {
+		name, dialect, column string
+		wantExpression        string
+		wantNullable          bool
+	}{
+		{
+			name: "MySQL gate after an addition", dialect: "mysql",
+			column: "n int DEFAULT 1 + 2 /*!80023 INVISIBLE */", wantExpression: "1 + 2", wantNullable: true,
+		},
+		{
+			name: "MySQL gate after a subtraction", dialect: "mysql",
+			column: "n int DEFAULT 1 - 2 /*!80023 INVISIBLE */", wantExpression: "1 - 2", wantNullable: true,
+		},
+		{
+			name: "MySQL gate after a subtraction, then NOT NULL", dialect: "mysql",
+			column: "n int DEFAULT 1 - 2 /*!80023 INVISIBLE */ NOT NULL", wantExpression: "1 - 2",
+		},
+		{
+			name: "MariaDB gate after an addition", dialect: "mariadb",
+			column: "n int DEFAULT 1 + 2 /*M!100301 INVISIBLE */", wantExpression: "1 + 2", wantNullable: true,
+		},
+		{
+			name: "MariaDB gate after a subtraction", dialect: "mariadb",
+			column: "n int DEFAULT 1 - 2 /*M!100301 INVISIBLE */", wantExpression: "1 - 2", wantNullable: true,
+		},
+		{
+			name: "MariaDB gate read as MySQL, where it is a comment", dialect: "mysql",
+			column: "n int DEFAULT 1 - 2 /*M!100301 INVISIBLE */", wantExpression: "1 - 2", wantNullable: true,
+		},
+		{
+			name: "a gate after an operator is its operand", dialect: "mysql",
+			column: "n int DEFAULT 1 + /*!80000 2 */", wantExpression: "1 + /*!80000 2 */", wantNullable: true,
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(
+				"CREATE TABLE t (id int PRIMARY KEY, "+row.column+", m int);",
+				parser.WithDialect(row.dialect),
+				parser.WithSQL(builtintest.Runtime().SQL()),
+			).Parse()
+
+			c.Assert(err, qt.IsNil)
+			table, ok := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(ok, qt.IsTrue, qt.Commentf("got %T", statements.Statements[0]))
+			c.Assert(table.Columns, qt.HasLen, 3)
+			c.Assert(table.Columns[1].Default, qt.IsNotNil)
+			c.Assert(table.Columns[1].Default.Expression, qt.Equals, row.wantExpression)
+			c.Assert(table.Columns[1].Nullable, qt.Equals, row.wantNullable)
+			c.Assert(table.Columns[2].Name, qt.Equals, "m")
+		})
+	}
+}
+
 // ALTER COLUMN ... SET DEFAULT reads the same operator defaults, and the
 // default ends at the comma before the next action or at the semicolon.
 func TestParse_AlterColumnSetDefaultOperators_HappyPath(t *testing.T) {
