@@ -62,8 +62,10 @@ func TestCompatWholeInspectPlanCreatesTheDatabaseObjectsE2E(t *testing.T) {
 }
 
 // TestReferenceScopedInspectPlanE2E takes the measurement against the pinned
-// community binary, which plans no extension on any read and says nothing:
-// it writes CREATE SCHEMA without IF NOT EXISTS, and no note.
+// community binary, which plans no extension on any read and names nothing it
+// leaves out: it writes CREATE SCHEMA without IF NOT EXISTS, and no note. Its
+// stderr is not asserted empty, because a community build prints an edition
+// notice there.
 func TestReferenceScopedInspectPlanE2E(t *testing.T) {
 	c := qt.New(t)
 
@@ -74,7 +76,7 @@ func TestReferenceScopedInspectPlanE2E(t *testing.T) {
 		"CREATE SCHEMA \"app\";\n"+
 		"-- Create \"users\" table\n"+
 		"CREATE TABLE \"app\".\"users\" (\"id\" integer NOT NULL, \"name\" text NOT NULL, PRIMARY KEY (\"id\"));\n")
-	c.Assert(got.Stderr, qt.Equals, "")
+	c.Assert(got.Stderr, qt.Not(qt.Contains), "pgcrypto")
 }
 
 // TestCompatScopedInspectPlanNotesOnceE2E is a template that calls the helper
