@@ -307,6 +307,28 @@ BEGIN
         PRIMARY KEY (run_id, seq)
     )
 END`,
+		// The record of repeatable migrations. identity is quoted because
+		// IDENTITY is reserved in T-SQL, and binary-collated, as the version
+		// column is, so a row matches the file whose identity it spells byte
+		// for byte: under the default case-insensitive collation an orphaned
+		// row named Widget would answer the UPDATE of a new file named widget.
+		// body is VARBINARY(MAX): the bytes the digest covers, of any length.
+		CreateRepeatables: `IF OBJECT_ID({object}, N'U') IS NULL
+BEGIN
+    CREATE TABLE {table} (
+        [identity] NVARCHAR(255) COLLATE Latin1_General_100_BIN2 NOT NULL PRIMARY KEY,
+        checksum NVARCHAR(64) NOT NULL DEFAULT '',
+        state NVARCHAR(32) NOT NULL,
+        attempt_checksum NVARCHAR(64) NOT NULL,
+        attempt_order INT NOT NULL,
+        transactional INT NOT NULL,
+        run_id NVARCHAR(64) NOT NULL,
+        attempted_at DATETIME2 NOT NULL,
+        applied_at DATETIME2 NULL,
+        error NVARCHAR(MAX) NULL,
+        body VARBINARY(MAX) NULL
+    )
+END`,
 		CreateSchema:       "IF SCHEMA_ID({schema_object}) IS NULL EXEC(N'CREATE SCHEMA {schema_escaped}')",
 		QualifiedByDefault: true,
 		AddedColumns: map[string]string{

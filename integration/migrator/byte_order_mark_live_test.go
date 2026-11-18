@@ -24,15 +24,17 @@ const byteOrderMark = "\xEF\xBB\xBF"
 
 // byteOrderMarkRepeatable is a repeatable body that starts with a byte order
 // mark, kept apart so the record can be compared with the bytes.
-const byteOrderMarkRepeatable = byteOrderMark + repeatableEnginesView
+func byteOrderMarkRepeatable(engine repeatableEngine) string {
+	return byteOrderMark + engine.widgetIDs()
+}
 
 // byteOrderMarkMigrations is a versioned migration and a repeatable migration,
 // each starting with a byte order mark, plus extra files.
-func byteOrderMarkMigrations(extra map[string]string) fstest.MapFS {
+func byteOrderMarkMigrations(engine repeatableEngine, extra map[string]string) fstest.MapFS {
 	fsys := fstest.MapFS{
 		"0000000001_widgets.up.sql":   &fstest.MapFile{Data: []byte(byteOrderMark + repeatableEnginesTable)},
 		"0000000001_widgets.down.sql": &fstest.MapFile{Data: []byte(byteOrderMark + "DROP TABLE widgets;\n")},
-		"R__widget_ids.sql":           &fstest.MapFile{Data: []byte(byteOrderMarkRepeatable)},
+		"R__widget_ids.sql":           &fstest.MapFile{Data: []byte(byteOrderMarkRepeatable(engine))},
 	}
 	for name, body := range extra {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
@@ -86,15 +88,15 @@ func TestByteOrderMarkOnEnginesLive_HappyPath(t *testing.T) {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
-			fsys := byteOrderMarkMigrations(nil)
+			fsys := byteOrderMarkMigrations(engine, nil)
 
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
 
 			c.Assert(r.columns(c, "widgets"), qt.Equals, 1)
 			c.Assert(r.columns(c, "widget_ids"), qt.Equals, 1)
-			c.Assert(r.body(c, "widget_ids"), qt.DeepEquals, keptBody{Body: byteOrderMarkRepeatable, Kept: true})
+			c.Assert(r.body(c, "widget_ids"), qt.DeepEquals, keptBody{Body: byteOrderMarkRepeatable(engine), Kept: true})
 			record := r.record(c, fsys, "widget_ids")
-			c.Assert(record.AppliedChecksum, qt.Equals, repeatableDigest(byteOrderMarkRepeatable))
+			c.Assert(record.AppliedChecksum, qt.Equals, repeatableDigest(byteOrderMarkRepeatable(engine)))
 			c.Assert(r.revisionChecksum(c, 1), qt.Equals, sha256Hex(repeatableEnginesTable))
 		})
 	}
@@ -170,7 +172,7 @@ func TestByteOrderMarkOnEnginesLive_FailurePath(t *testing.T) {
 		t.Run(engine.name+": a mark in the middle of a file reaches the server", func(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
-			fsys := byteOrderMarkMigrations(map[string]string{
+			fsys := byteOrderMarkMigrations(engine, map[string]string{
 				"0000000002_gadgets.up.sql":   "CREATE TABLE gadgets (id INTEGER PRIMARY KEY);\n" + byteOrderMark + "CREATE TABLE gizmos (id INTEGER PRIMARY KEY);\n",
 				"0000000002_gadgets.down.sql": "DROP TABLE gadgets;\n",
 			})

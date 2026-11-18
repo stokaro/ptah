@@ -384,24 +384,30 @@ func driftedManagedData(summary *datamigrate.Summary) *datamigrate.Summary {
 // Under --format json the failure is a document on standard output, where the
 // report would have been, and the command's error line goes to standard error
 // the way every other verb prints it. A reader tells the two documents apart
-// by the error object, which a report never carries. The text and workflow
-// formats print the failure on standard error and nothing else.
+// by the error object, which a report never carries. The workflow format
+// prints the failure on standard error as a workflow command, and the text
+// format prints the error line every other native verb prints, through
+// [cmdutil.Fail].
 func fail(cmd *cobra.Command, format string, err error) error {
-	if format == formatJSON {
+	switch format {
+	case formatJSON:
 		if writeErr := writeFailure(cmd.OutOrStdout(), err); writeErr != nil {
 			return errors.Join(err, writeErr)
 		}
 		return err
+	case formatGitHubActions:
+		report := driftReport{
+			Failed:           true,
+			FailureThreshold: severityAll,
+			HighestSeverity:  safety.Safe,
+			Error:            err.Error(),
+		}
+		// An error report carries no diff, so it needs no feature codecs.
+		_ = writeReport(context.Background(), cmd.ErrOrStderr(), format, report, schemaext.Registry{})
+		return exitcode.New(2, err)
+	default:
+		return cmdutil.Fail(cmd, err)
 	}
-	report := driftReport{
-		Failed:           true,
-		FailureThreshold: severityAll,
-		HighestSeverity:  safety.Safe,
-		Error:            err.Error(),
-	}
-	// An error report carries no diff, so it needs no feature codecs.
-	_ = writeReport(context.Background(), cmd.ErrOrStderr(), format, report, schemaext.Registry{})
-	return exitcode.New(2, err)
 }
 
 // NewFailureDocument is what `schema drift --format json` prints when it
@@ -489,10 +495,6 @@ func writeReport(ctx context.Context, w io.Writer, format string, report driftRe
 }
 
 func writeTextReport(w io.Writer, report driftReport) error {
-	if report.Error != "" {
-		_, err := fmt.Fprintf(w, "Error: %s\n", report.Error)
-		return err
-	}
 	if _, err := fmt.Fprintln(w, textHeadline(report)); err != nil {
 		return err
 	}

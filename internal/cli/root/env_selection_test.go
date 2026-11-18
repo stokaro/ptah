@@ -130,7 +130,7 @@ func TestNativeCommandsSelectNoEnvWithoutEnvFlag_FailurePath(t *testing.T) {
 		{
 			name:       "schema drift",
 			args:       []string{"schema", "drift"},
-			wantStderr: "Error: database URL is required" + hint,
+			wantStderr: "error: database URL is required" + hint,
 		},
 		{
 			name:       "schema diff of two schema files",

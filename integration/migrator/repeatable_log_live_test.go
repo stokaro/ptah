@@ -58,14 +58,14 @@ func TestRepeatableMigrationLogOnEnginesLive_HappyPath(t *testing.T) {
 			r := newRepeatableEngineTarget(c, t, engine)
 			fsys := repeatableEngineMigrations(map[string]string{"R__partial.sql": repeatableEnginesFailing})
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.ErrorAs, new(*migrator.RepeatableMigrationError))
-			writeRepeatable(fsys, "R__partial.sql", repeatableEnginesFixed)
+			writeRepeatable(fsys, "R__partial.sql", engine.fixed)
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
 
 			read := r.log(c)
 
 			c.Assert(read, qt.HasLen, 3)
 			c.Assert(read[:2], qt.DeepEquals, []repeatableLogAttempt{
-				{Repeatable: "partial", Checksum: repeatableDigest(repeatableEnginesFixed), Outcome: migrator.MigrationLogApplied},
+				{Repeatable: "partial", Checksum: repeatableDigest(engine.fixed), Outcome: migrator.MigrationLogApplied},
 				{
 					Repeatable: "partial", Checksum: repeatableDigest(repeatableEnginesFailing),
 					Outcome: migrator.MigrationLogFailed, Failed: true,

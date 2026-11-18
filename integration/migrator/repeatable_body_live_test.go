@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrator"
 )
 
@@ -22,16 +23,22 @@ import (
 // mark at the start of a file is the file's encoding, which the migrator
 // removes before the SQL runs while the record keeps it; the comment keeps it
 // in text a server reads.
-var repeatableBodyFixtures = []struct {
+func repeatableBodyFixtures(engine repeatableEngine) []repeatableBodyFixture {
+	view := engine.widgetIDs()
+	return []repeatableBodyFixture{
+		{name: "longer than a BLOB", body: "-- " + strings.Repeat("é", 40000) + "\n" + view},
+		{
+			name: "CRLF and byte order mark bytes",
+			body: "-- widget ids \xEF\xBB\xBF\r\n" + strings.ReplaceAll(view, "\n", "\r\n"),
+		},
+		{name: "no_transaction", body: "-- +ptah no_transaction\n" + view},
+		{name: "empty", body: ""},
+	}
+}
+
+// repeatableBodyFixture is one file content whose bytes the record keeps.
+type repeatableBodyFixture struct {
 	name, body string
-}{
-	{name: "longer than a BLOB", body: "-- " + strings.Repeat("é", 40000) + "\n" + repeatableEnginesView},
-	{
-		name: "CRLF and byte order mark bytes",
-		body: "-- widget ids \xEF\xBB\xBF\r\n" + strings.ReplaceAll(repeatableEnginesView, "\n", "\r\n"),
-	},
-	{name: "no_transaction", body: "-- +ptah no_transaction\n" + repeatableEnginesView},
-	{name: "empty", body: ""},
 }
 
 // keptBody is what the target's record keeps for identity: the bytes, and
@@ -46,7 +53,8 @@ func (r *repeatableEngineTarget) body(c *qt.C, identity string) keptBody {
 	var body []byte
 	var kept int
 	query := sqlutil.Rebind(r.engine.dialect,
-		"SELECT body, CASE WHEN body IS NULL THEN 0 ELSE 1 END FROM schema_migrations_repeatable WHERE identity = ?")
+		"SELECT body, CASE WHEN body IS NULL THEN 0 ELSE 1 END FROM schema_migrations_repeatable WHERE "+
+			sqlident.Quote(r.engine.dialect, "identity")+" = ?")
 	c.Assert(r.conn.QueryRowContext(context.Background(), query, identity).Scan(&body, &kept), qt.IsNil)
 	return keptBody{Body: string(body), Kept: kept == 1}
 }
@@ -72,14 +80,14 @@ func (r *repeatableEngineTarget) appliedRepeatables(c *qt.C, fsys map[string]str
 // ran.
 func TestRepeatableBodyOnEnginesLive_HappyPath(t *testing.T) {
 	for _, engine := range repeatableEngines {
-		for _, fixture := range repeatableBodyFixtures {
+		for _, fixture := range repeatableBodyFixtures(engine) {
 			t.Run(engine.name+": "+fixture.name, func(t *testing.T) {
 				c := qt.New(t)
 				r := newRepeatableEngineTarget(c, t, engine)
 				c.Assert(r.up(c, repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": fixture.body}),
 					migrator.MigrateUpOptions{}), qt.IsNil)
 
-				applied, err := r.appliedRepeatables(c, map[string]string{"R__widget_ids.sql": repeatableEnginesWider})
+				applied, err := r.appliedRepeatables(c, map[string]string{"R__widget_ids.sql": engine.widerIDs()})
 
 				c.Assert(err, qt.IsNil)
 				c.Assert(r.body(c, "widget_ids"), qt.DeepEquals, keptBody{Body: fixture.body, Kept: true})
@@ -98,7 +106,7 @@ func TestRepeatableBodyOnEnginesLive_FailurePath(t *testing.T) {
 		t.Run(engine.name+": a failed attempt leaves the body and the digest that applied", func(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
-			fsys := repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": repeatableEnginesView})
+			fsys := repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": engine.widgetIDs()})
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
 			writeRepeatable(fsys, "R__widget_ids.sql", repeatableEnginesFailing)
 
@@ -107,19 +115,19 @@ func TestRepeatableBodyOnEnginesLive_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorAs, new(*migrator.RepeatableMigrationError))
 			record := r.record(c, fsys, "widget_ids")
 			c.Assert(record.State, qt.Equals, migrator.RepeatableStateFailed)
-			c.Assert(record.AppliedChecksum, qt.Equals, repeatableDigest(repeatableEnginesView))
+			c.Assert(record.AppliedChecksum, qt.Equals, repeatableDigest(engine.widgetIDs()))
 			c.Assert(record.AttemptChecksum, qt.Equals, repeatableDigest(repeatableEnginesFailing))
-			c.Assert(r.body(c, "widget_ids"), qt.DeepEquals, keptBody{Body: repeatableEnginesView, Kept: true})
+			c.Assert(r.body(c, "widget_ids"), qt.DeepEquals, keptBody{Body: engine.widgetIDs(), Kept: true})
 		})
 
 		t.Run(engine.name+": a changed file whose record keeps no body cannot be replayed", func(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
-			c.Assert(r.up(c, repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": repeatableEnginesView}),
+			c.Assert(r.up(c, repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": engine.widgetIDs()}),
 				migrator.MigrateUpOptions{}), qt.IsNil)
 			r.exec(c, "UPDATE schema_migrations_repeatable SET body = NULL")
 
-			applied, err := r.appliedRepeatables(c, map[string]string{"R__widget_ids.sql": repeatableEnginesWider})
+			applied, err := r.appliedRepeatables(c, map[string]string{"R__widget_ids.sql": engine.widerIDs()})
 
 			var unreplayable *migrator.UnreplayableHistoryError
 			c.Assert(err, qt.ErrorAs, &unreplayable)
