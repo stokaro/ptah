@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlashash"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/migration/migrationfile"
 )
 
@@ -145,10 +146,6 @@ type FSMigrationProvider struct {
 	// atlasPositions reports that the order key of every migration is its
 	// position in execution order; see [atlasNeedsPositions].
 	atlasPositions bool
-	// atlasFormatSelected reports that the directory was read as Atlas files
-	// that the default directory format would not read, so a command that
-	// reads the same files has to name --dir-format atlas.
-	atlasFormatSelected bool
 	// ownTransactions marks every loaded migration as one of a directory
 	// written for a runner that opens no transaction around a file; see
 	// [WithOwnTransactions].
@@ -423,23 +420,10 @@ func (p *FSMigrationProvider) convertedLayout() bool {
 		len(p.atlasRevisionTypes) != 0 || len(p.atlasRepeatable) != 0
 }
 
-func (p *FSMigrationProvider) needsAtlasDirFormat() bool {
-	return p.atlasFormatSelected
-}
-
-// autoReadsTheseFiles reports that the default directory format reads the
-// directory as the Atlas files this provider read: Atlas repeatables are read
-// only under the Atlas format, and the default reads Ptah files where the
-// directory holds any.
-func (p *FSMigrationProvider) autoReadsTheseFiles() bool {
-	if p.format != migrationfile.DirFormatAtlas {
-		return true
-	}
-	if p.atlasRepeatables {
-		return false
-	}
-	files, err := migrationfile.Discover(p.fsys, migrationfile.DirFormatAuto)
-	return err == nil && len(files) > 0 && files[0].Format == migrationfile.DirFormatAtlas
+// recoveryReading is how the provider reads the directory, for the flags a
+// recovery command names to read it the same way.
+func (p *FSMigrationProvider) recoveryReading() repaircommand.Reading {
+	return repaircommand.Reading{Dir: p.fsys, DirFormat: p.format, AtlasRepeatables: p.atlasRepeatables}
 }
 
 // atlasVersionSpelling returns the version token an ordinary Atlas file in
@@ -534,7 +518,6 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 	if err != nil {
 		return err
 	}
-	p.atlasFormatSelected = !p.autoReadsTheseFiles()
 	positions := migrationfile.AtlasKeyedByPosition(files)
 	if positions && p.convertedLayout() {
 		return errors.New("a converted migration directory holds an Atlas version that is not a number")

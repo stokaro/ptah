@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/keyedversions"
 	"ptah.run/internal/migrationintegrity"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -386,7 +387,12 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options, document *statusDoc
 		if err := document.writeStatus(mig, status); err != nil {
 			return err
 		}
-	} else if err := outputHuman(emit, status, conn, mig, opts.verbose); err != nil {
+	} else if err := outputHuman(emit, status, conn, humanStatusSource{
+		migrator: mig,
+		// The flags a recovery command needs to read what this command read:
+		// the inputs the migrator above was built from.
+		selection: dirtyhint.Selection(migrationsFS, dirFormat, revisionFormat),
+	}, opts.verbose); err != nil {
 		return err
 	}
 
@@ -463,7 +469,15 @@ func outputJSON(w io.Writer, status *migrator.MigrationStatus) error {
 	return encoder.Encode(status)
 }
 
-func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, mig *migrator.Migrator, verbose bool) error { //revive:disable-line:flag-parameter output mode is caller-owned command state
+// humanStatusSource is the migrator a status was read with, and the flags a
+// command it names carries to read the same directory and revision table.
+type humanStatusSource struct {
+	migrator  *migrator.Migrator
+	selection repaircommand.Selection
+}
+
+func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, source humanStatusSource, verbose bool) error { //revive:disable-line:flag-parameter output mode is caller-owned command state
+	mig := source.migrator
 	emit.Println("=== MIGRATION STATUS ===")
 	emit.Printf("Database: %s\n", dburldisplay.Format("***"))
 	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
@@ -498,7 +512,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			Dialect:         conn.Info().Dialect,
 			OwnTransactions: mig.RevisionBodyOpensOwnTransactions(*status.DirtyRevision),
 			FileStatements:  dirtyhint.FileStatements(mig, *status.DirtyRevision),
-			RecoveryFlags:   mig.RecoveryFlags(),
+			Selection:       source.selection,
 		}))
 		return nil
 	}

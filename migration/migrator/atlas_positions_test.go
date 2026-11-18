@@ -102,46 +102,71 @@ func TestAtlasPositions_SetReadsExecutionOrder(t *testing.T) {
 	}
 }
 
-// TestMigratorRecoveryFlags names the flags a recovery command needs to read
-// the same directory and revision table: --dir-format atlas only where the
-// default directory format reads other files, here the Ptah pair beside
-// v1_x.sql, and --revision-format atlas for an Atlas revision table.
-func TestMigratorRecoveryFlags(t *testing.T) {
-	ptahPair := map[string]string{
-		"0000000001_a.up.sql":   "CREATE TABLE a (id int);\n",
-		"0000000001_a.down.sql": "DROP TABLE a;\n",
-		"v1_x.sql":              "CREATE TABLE v (id int);\n",
+// TestAtlasPositions_UpAndDownFilesShareAPosition runs 1_a.up.sql and
+// 1_a.down.sql as one migration in a directory keyed by position, which
+// 00_z.sql makes it: the migration runs under the position both files carry,
+// up applies 00_z.sql and the two pairs under the rows 00, 1 and 2, and a
+// rollback to 1 runs 2_b.down.sql alone. Given positions of their own, the
+// halves of a pair leave a gap in the keys, and the migration runs under the
+// key of its down file while a reader of the directory, such as ptah-compat
+// migrate set, keys it by its up file.
+func TestAtlasPositions_UpAndDownFilesShareAPosition(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(c.TempDir(), "app.db")
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	fsys := atlasSQLFiles(map[string]string{
+		"00_z.sql":     "CREATE TABLE z (id int);\n",
+		"1_a.up.sql":   "CREATE TABLE a (id int);\n",
+		"1_a.down.sql": "DROP TABLE a;\n",
+		"2_b.up.sql":   "CREATE TABLE b (id int);\n",
+		"2_b.down.sql": "DROP TABLE b;\n",
+	})
+	mig, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
+	c.Assert(err, qt.IsNil)
+	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
+	c.Assert(atlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"00", "1", "2"})
+	keys := make(map[string]int64)
+	for _, label := range []string{"00", "1", "2"} {
+		key, err := mig.ResolveVersion(label)
+		c.Assert(err, qt.IsNil)
+		keys[label] = key
 	}
-	atlasOnly := map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"}
-	tests := []struct {
-		name   string
-		files  map[string]string
-		format migrationfile.DirFormat
-		table  migrator.RevisionTableFormat
-		want   string
-	}{
-		{name: "defaults", files: atlasOnly, format: migrationfile.DirFormatAuto, table: migrator.RevisionTableFormatPtah},
-		{
-			name: "atlas files the default reads", files: atlasOnly, format: migrationfile.DirFormatAtlas,
-			table: migrator.RevisionTableFormatAtlas, want: " --revision-format atlas",
-		},
-		{
-			name: "atlas files only the flag reads", files: ptahPair, format: migrationfile.DirFormatAtlas,
-			table: migrator.RevisionTableFormatAtlas, want: " --dir-format atlas --revision-format atlas",
-		},
+	c.Assert(keys, qt.DeepEquals, map[string]int64{"00": 1, "1": 2, "2": 3})
+	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
+	c.Assert(err, qt.IsNil)
+	fileKeys := make(map[string]int64, len(files))
+	for _, file := range files {
+		fileKeys[file.Path] = file.OrderKey
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TempDir(), "app.db"))
-			c.Assert(err, qt.IsNil)
-			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
-			mig, err := migrator.NewFSMigrator(conn, atlasSQLFiles(tt.files), migrator.WithMigrationDirFormat(tt.format))
-			c.Assert(err, qt.IsNil)
+	c.Assert(fileKeys, qt.DeepEquals, map[string]int64{
+		"00_z.sql": keys["00"], "1_a.down.sql": keys["1"], "1_a.up.sql": keys["1"],
+		"2_b.down.sql": keys["2"], "2_b.up.sql": keys["2"],
+	})
 
-			got := mig.WithRevisionTableFormat(tt.table).RecoveryFlags()
+	err = mig.MigrateDownTo(c.Context(), keys["1"])
 
-			c.Assert(got, qt.Equals, tt.want)
-		})
+	c.Assert(err, qt.IsNil)
+	c.Assert(atlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"00", "1"})
+	c.Assert(sqliteTableNames(c, conn), qt.DeepEquals, []string{"a", "z"})
+}
+
+// sqliteTableNames is the user tables of the database conn opens, by name,
+// leaving out the revision table.
+func sqliteTableNames(c *qt.C, conn *dbschema.DatabaseConnection) []string {
+	c.Helper()
+	rows, err := conn.QueryContext(c.Context(),
+		"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'atlas_%' ORDER BY name")
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(rows.Close(), qt.IsNil) }()
+	names := make([]string, 0)
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		names = append(names, name)
 	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return names
 }

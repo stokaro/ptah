@@ -6,7 +6,12 @@
 // never one the repair refuses.
 package repaircommand
 
-import "strings"
+import (
+	"io/fs"
+	"strings"
+
+	"ptah.run/migration/migrationfile"
+)
 
 // Runner is the runner flag a command carries, with its leading space, or
 // nothing for the default runner.
@@ -35,6 +40,60 @@ const (
 	// AtlasTable selects the Atlas revision table.
 	AtlasTable Selection = " --revision-format atlas"
 )
+
+// Reading is how a command reads the migration directory and the revision
+// table: what it hands the migrator it builds.
+type Reading struct {
+	// Dir is the migration directory, and nil for a provider that reads none.
+	Dir fs.FS
+	// DirFormat is the directory format the command selected.
+	DirFormat migrationfile.DirFormat
+	// AtlasRepeatables reports that R__<identity>.sql files of an Atlas
+	// directory are read as repeatable migrations, which only the Atlas format
+	// reads.
+	AtlasRepeatables bool
+	// AtlasTable reports that the command keeps an Atlas revision table.
+	AtlasTable bool
+}
+
+// SelectionFor returns the flags a command that reads the directory and the
+// table as reading does carries: [AtlasDirectory] when it reads Atlas files the
+// default directory format would not read, and [AtlasTable] for an Atlas
+// revision table. It is empty where the defaults read both, so a command names
+// no flag it does not need. The migrator's refusals and the hints of the
+// commands that print a revision read it here, so a refusal and a hint name
+// the same command for the same row.
+func SelectionFor(reading Reading) Selection {
+	var selection Selection
+	if needsAtlasDirectory(reading) {
+		selection += AtlasDirectory
+	}
+	if reading.AtlasTable {
+		selection += AtlasTable
+	}
+	return selection
+}
+
+// needsAtlasDirectory reports that reading reads Atlas files the default
+// directory format reads differently: Atlas repeatables are read only under
+// the Atlas format, and the default reads Ptah files where the directory holds
+// any. A directory with no Atlas file needs no flag, since there is nothing
+// the flag would select.
+func needsAtlasDirectory(reading Reading) bool {
+	if reading.Dir == nil || reading.DirFormat != migrationfile.DirFormatAtlas {
+		return false
+	}
+	if reading.AtlasRepeatables {
+		versioned, _, err := migrationfile.DiscoverAtlasRepeatables(reading.Dir)
+		return err == nil && len(versioned) > 0
+	}
+	versioned, err := migrationfile.Discover(reading.Dir, migrationfile.DirFormatAtlas)
+	if err != nil || len(versioned) == 0 {
+		return false
+	}
+	auto, err := migrationfile.Discover(reading.Dir, migrationfile.DirFormatAuto)
+	return err != nil || len(auto) == 0 || auto[0].Format != migrationfile.DirFormatAtlas
+}
 
 // SetPrevious returns the command that records a rollback the operator
 // finished by hand, quoted: it moves the revision boundary below the

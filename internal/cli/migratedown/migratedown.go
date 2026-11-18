@@ -39,6 +39,7 @@ import (
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/onlineddl"
 	"ptah.run/internal/preflight"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/shadow"
@@ -625,7 +626,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		emit.Printf("Target version: %s\n", mig.VersionLabel(targetVersion))
 		emit.Println()
 
-		status, err := rollbackStatus(cmd.Context(), mig, emit, conn.Info().Dialect)
+		status, err := rollbackStatus(cmd.Context(), mig, emit, rollbackHint{dialect: conn.Info().Dialect, selection: dirtyhint.Selection(migrationsFS, dirFormat, revisionFormat)})
 		if err != nil {
 			return err
 		}
@@ -1126,7 +1127,7 @@ func rollbackStatus(
 	ctx context.Context,
 	mig *migrator.Migrator,
 	emit cliobs.Emitter,
-	dialect string,
+	hint rollbackHint,
 ) (*migrator.MigrationStatus, error) {
 	status, err := mig.GetMigrationStatus(ctx)
 	if err != nil {
@@ -1145,11 +1146,20 @@ func rollbackStatus(
 	}
 	return nil, fmt.Errorf("error running down migrations: %w\n%s", err, dirtyhint.Recovery(dirtyhint.Revision{
 		Revision:        &dirty.Revision,
-		Dialect:         dialect,
+		Dialect:         hint.dialect,
 		OwnTransactions: mig.RevisionBodyOpensOwnTransactions(dirty.Revision),
 		FileStatements:  dirtyhint.FileStatements(mig, dirty.Revision),
-		RecoveryFlags:   mig.RecoveryFlags(),
+		Selection:       hint.selection,
 	}))
+}
+
+// rollbackHint is what the refusal of a dirty revision names beside the
+// revision: the dialect of the database, and the flags a recovery command
+// carries to read the directory and the revision table the rollback reads,
+// from the inputs its migrator was built from.
+type rollbackHint struct {
+	dialect   string
+	selection repaircommand.Selection
 }
 
 // finishDownAtOrBelowTarget answers the run whose database is already at or

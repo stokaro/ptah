@@ -6,9 +6,11 @@ package dirtyhint
 
 import (
 	"fmt"
+	"io/fs"
 
 	"ptah.run/internal/ddltx"
 	"ptah.run/internal/repaircommand"
+	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
 
@@ -30,10 +32,11 @@ type Revision struct {
 	// or nil when the directory holds no file for the revision. A count other
 	// than the revision's Total means the file changed after the run.
 	FileStatements *int
-	// RecoveryFlags is what [migrator.Migrator.RecoveryFlags] returns for the
-	// migrator that read the revision. Every command the hint names carries
-	// it, so it reads the same directory and revision table.
-	RecoveryFlags string
+	// Selection is what [repaircommand.SelectionFor] returns for the inputs
+	// the migrator that read the revision was built from. Every command the
+	// hint names carries it, so it reads the same directory and revision
+	// table.
+	Selection repaircommand.Selection
 }
 
 // Recovery names the command that ends this particular dirty state, one that
@@ -104,25 +107,32 @@ func Recovery(dirty Revision) string {
 // repair is the quoted repair command for the revision, with flags after its
 // version.
 func (r Revision) repair(flags string) string {
-	return repaircommand.Repair(r.Revision.VersionLabel(), flags, r.runner(), r.selection())
+	return repaircommand.Repair(r.Revision.VersionLabel(), flags, r.runner(), r.Selection)
 }
 
 // reconciled is the quoted repair command that records the revision applied
 // once the operator has reconciled the database, the one the migrator's
 // refusal to resume names for the same row.
 func (r Revision) reconciled() string {
-	return repaircommand.Reconciled(r.Revision.VersionLabel(), r.runner(), r.selection())
+	return repaircommand.Reconciled(r.Revision.VersionLabel(), r.runner(), r.Selection)
 }
 
 // setPrevious is the quoted command that moves the revision boundary below the
 // migration after the operator finished a rollback by hand.
 func (r Revision) setPrevious() string {
-	return repaircommand.SetPrevious(r.selection())
+	return repaircommand.SetPrevious(r.Selection)
 }
 
-// selection is the flags every command the hint names carries last.
-func (r Revision) selection() repaircommand.Selection {
-	return repaircommand.Selection(r.RecoveryFlags)
+// Selection is the field of that name for a migrator built over dir, read in
+// dirFormat, that keeps its revisions in revisionFormat: the inputs the
+// command handed [migrator.NewFSMigrator] and
+// [migrator.Migrator.WithRevisionTableFormat].
+func Selection(dir fs.FS, dirFormat migrationfile.DirFormat, revisionFormat migrator.RevisionTableFormat) repaircommand.Selection {
+	return repaircommand.SelectionFor(repaircommand.Reading{
+		Dir:        dir,
+		DirFormat:  dirFormat,
+		AtlasTable: revisionFormat == migrator.RevisionTableFormatAtlas,
+	})
 }
 
 // FileStatements reads the field of that name for revision out of mig.
@@ -183,7 +193,7 @@ func (r Revision) runner() repaircommand.Runner {
 // retry is the quoted command that applies the migration again from where its
 // revision says it stopped.
 func (r Revision) retry() string {
-	return "'ptah migrations up --allow-dirty" + string(r.runner()) + string(r.selection()) + "'"
+	return "'ptah migrations up --allow-dirty" + string(r.runner()) + string(r.Selection) + "'"
 }
 
 // partialRollbackHint names what ends a rollback that stopped before its

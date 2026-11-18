@@ -108,27 +108,19 @@ func (m *Migrator) repairRunner(revision MigrationRevision) repaircommand.Runner
 	return repaircommand.DefaultRunner
 }
 
-// RecoveryFlags returns the flags a recovery command this migrator names
-// carries so that it reads the same directory and revision table, each with
-// its leading space: --dir-format atlas when the migrator reads Atlas files
-// the default directory format would not read, and --revision-format atlas
-// when it keeps an Atlas revision table. It is empty where the defaults read
-// both, so a command names no flag it does not need. The refusals of
-// [Migrator.RepairMigration] and [Migrator.MigrateUp] name their commands with
-// these flags, and so does the hint `ptah migrations status` prints.
-func (m *Migrator) RecoveryFlags() string {
-	return string(m.recoverySelection())
-}
-
+// recoverySelection is the flags a recovery command this migrator names
+// carries so that it reads the same directory and revision table. The
+// refusals of [Migrator.RepairMigration] and [Migrator.MigrateUp] name their
+// commands with it, and the commands that print a revision's hint read the
+// same [repaircommand.SelectionFor] over the inputs they built the migrator
+// from.
 func (m *Migrator) recoverySelection() repaircommand.Selection {
-	var selection repaircommand.Selection
-	if source, ok := m.migrationProvider.(interface{ needsAtlasDirFormat() bool }); ok && source.needsAtlasDirFormat() {
-		selection += repaircommand.AtlasDirectory
+	var reading repaircommand.Reading
+	if source, ok := m.migrationProvider.(interface{ recoveryReading() repaircommand.Reading }); ok {
+		reading = source.recoveryReading()
 	}
-	if m.revisionTableFormat.isAtlas() {
-		selection += repaircommand.AtlasTable
-	}
-	return selection
+	reading.AtlasTable = m.revisionTableFormat.isAtlas()
+	return repaircommand.SelectionFor(reading)
 }
 
 // RevisionBodyStatements returns how many statements the body a resume of the
@@ -629,7 +621,9 @@ func (e *rollbackLeftUnknownResumeError) Error() string {
 // and the step whose outcome is unknown is the commit, which decides every
 // statement of the transaction together: an operator who repaired to the
 // statement the refusal named would run the rest of the transaction twice.
-// The advice names no command, because the directory's runner has its own.
+// The statements left over are run by hand, and the advice ends with the
+// repair that records the migration applied, the one the hint `ptah
+// migrations status` prints names for the same row.
 func (r ownTransactionRun) describeUnknownOutcome(err error, migration *Migration, total int) error {
 	unknown, ok := errors.AsType[*unknownOutcomeError](err)
 	if !ok || !migration.ownTransactions || unknown.statement < 1 {
@@ -641,13 +635,15 @@ func (r ownTransactionRun) describeUnknownOutcome(err error, migration *Migratio
 		}
 		return fmt.Sprintf("run statements %d to %d by hand", from, total)
 	}
+	record := repaircommand.Reconciled(unknown.version, unknown.runner, unknown.selection)
 	first := unknown.statement - 1
 	closing, inside := r.transactions.Closing(first)
 	if opened, _ := r.transactions.Opening(first); !inside || opened != first {
 		return fmt.Errorf(
 			"migration %s cannot resume automatically: the outcome of statement %d is unknown after an interrupted "+
-				"run; inspect the database: if it took effect, %s; if it did not, %s; then record the migration applied",
-			unknown.version, unknown.statement, rest(unknown.statement+1), rest(unknown.statement))
+				"run; inspect the database: if it took effect, %s; if it did not, %s; then record the migration applied "+
+				"with %s",
+			unknown.version, unknown.statement, rest(unknown.statement+1), rest(unknown.statement), record)
 	}
 	commit := fmt.Sprintf("the COMMIT at statement %d", closing+1)
 	if closing >= total {
@@ -657,8 +653,8 @@ func (r ownTransactionRun) describeUnknownOutcome(err error, migration *Migratio
 	return fmt.Errorf(
 		"migration %s cannot resume automatically: statements %d to %d commit together, and whether %s took effect "+
 			"is unknown after an interrupted run; inspect the database: if they committed, %s; if they did not, %s; "+
-			"then record the migration applied",
-		unknown.version, first+1, last, commit, rest(last+1), rest(first+1))
+			"then record the migration applied with %s",
+		unknown.version, first+1, last, commit, rest(last+1), rest(first+1), record)
 }
 
 // committedProgressFailure is a failure with how many of the body's
