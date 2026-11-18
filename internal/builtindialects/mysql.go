@@ -396,7 +396,6 @@ func mysqlFamilyRevisionTable(logInsertPrefix string) descriptor.RevisionTable {
 		CreateLog:         createLog,
 		CreateApplyLog:    mysqlCreateApplyLog,
 		CreateRepeatables: mysqlCreateRepeatables,
-		AddedColumns:      map[string]string{repeatableBodyColumn: "LONGBLOB NULL"},
 		LogInsertPrefix:   logInsertPrefix,
 		CreateSchema:      createSchema,
 		EngineClause:      " ENGINE=InnoDB",

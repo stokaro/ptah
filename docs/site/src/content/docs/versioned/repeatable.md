@@ -204,10 +204,12 @@ in the binary `body` column. The digest and the body are written in the
 attempt's own transaction when it runs in one, so the row and the work commit
 together.
 
-A record table created without `body` gets the column from the next run that
-has repeatable work, and the row of each repeatable migration that run executes
-gets its body. A status or a dry run never adds it, and reads the rows of such
-a table as rows that keep no body.
+The record stores each repeatable file verbatim, in the clear, and Ptah puts no
+limit on its size. The row stays after the file is deleted, until `ptah
+migrations repair --repeatable` removes it. `ptah migrations status` reads the
+row, and `ptah migrations up --check-drift` reads the body to replay it. Anyone
+who can read the record can read every repeatable migration that applied, so a
+repeatable file must not hold secrets.
 
 The first run that has repeatable work creates the table, before its first
 versioned migration runs, so a database that refuses the table, for example for

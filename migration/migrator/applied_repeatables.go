@@ -26,9 +26,12 @@ func (m *Migrator) appliedRepeatables(ctx context.Context) ([]AppliedRepeatable,
 		return nil, fmt.Errorf("read the applied repeatable migrations: %w", err)
 	}
 	reader, _ := m.migrationProvider.(recordedRepeatableSource)
+	recorded := recordedBodies{reader: reader, read: func(identity string) ([]byte, error) {
+		return m.readRepeatableBody(ctx, identity)
+	}}
 	var applied []AppliedRepeatable
 	for _, record := range state.records() {
-		content, err := state.appliedContent(record, reader)
+		content, err := state.appliedContent(record, recorded)
 		if err != nil {
 			return nil, err
 		}
@@ -46,11 +49,18 @@ func (m *Migrator) appliedRepeatables(ctx context.Context) ([]AppliedRepeatable,
 	return applied, nil
 }
 
+// recordedBodies reads the bodies a record keeps, and the provider turns one
+// into a repeatable migration as it would a file.
+type recordedBodies struct {
+	reader recordedRepeatableSource
+	read   func(identity string) ([]byte, error)
+}
+
 // appliedContent is the content of record in effect in the database, nil
 // when none is.
 func (s *repeatableState) appliedContent(
 	record RepeatableRecord,
-	reader recordedRepeatableSource,
+	recorded recordedBodies,
 ) (*repeatableMigration, error) {
 	switch {
 	case record.State == RepeatableStatePending:
@@ -61,7 +71,7 @@ func (s *repeatableState) appliedContent(
 		if record.AppliedChecksum == "" {
 			return nil, nil
 		}
-		return s.recordedContent(record, reader, UnreplayableDirty,
+		return s.recordedContent(record, recorded, UnreplayableDirty,
 			fmt.Sprintf("its last attempt is %s and rolled back, leaving the content that applied before it", record.State))
 	case record.dirty():
 		return nil, &UnreplayableHistoryError{
@@ -70,10 +80,10 @@ func (s *repeatableState) appliedContent(
 				"so what it left in the database is unknown", record.State),
 		}
 	case record.Orphaned:
-		return s.recordedContent(record, reader, UnreplayableMissingFile,
+		return s.recordedContent(record, recorded, UnreplayableMissingFile,
 			"the database records it as applied and the migration directory has no file for it")
 	default:
-		return s.recordedContent(record, reader, UnreplayableChanged,
+		return s.recordedContent(record, recorded, UnreplayableChanged,
 			fmt.Sprintf("%s changed after it applied", record.Path))
 	}
 }
@@ -83,7 +93,7 @@ func (s *repeatableState) appliedContent(
 // detail describe the record for the refusal a missing or damaged body gives.
 func (s *repeatableState) recordedContent(
 	record RepeatableRecord,
-	reader recordedRepeatableSource,
+	recorded recordedBodies,
 	reason, detail string,
 ) (*repeatableMigration, error) {
 	if file := s.repeatable(record.Identity); file != nil && file.checksum == record.AppliedChecksum {
@@ -92,16 +102,20 @@ func (s *repeatableState) recordedContent(
 	refuse := func(problem string) error {
 		return &UnreplayableHistoryError{Reason: reason, Repeatable: record.Identity, Detail: detail + ", and " + problem}
 	}
-	body := s.rows[record.Identity].body
-	switch {
-	case body == nil:
+	if !s.rows[record.Identity].hasBody {
 		return nil, refuse("its record keeps no body for the content that applied")
-	case repeatableChecksum(body) != record.AppliedChecksum:
-		return nil, refuse("the body its record keeps does not hash to the digest recorded as applied")
-	case reader == nil:
+	}
+	if recorded.reader == nil {
 		return nil, refuse("the migration provider cannot read the body its record keeps")
 	}
-	return reader.repeatableFromRecord(record.Identity, record.Path, body)
+	body, err := recorded.read(record.Identity)
+	if err != nil {
+		return nil, err
+	}
+	if repeatableChecksum(body) != record.AppliedChecksum {
+		return nil, refuse("the body its record keeps does not hash to the digest recorded as applied")
+	}
+	return recorded.reader.repeatableFromRecord(record.Identity, record.Path, body)
 }
 
 // ReplayProvider returns a provider holding what a replay of the history

@@ -5,6 +5,8 @@ package migrateup_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -121,6 +123,26 @@ func TestRepeatableMigrationsDriftE2E_HappyPath(t *testing.T) {
 		c.Assert(r.versions(c), qt.DeepEquals, []int64{1, 2})
 		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1", "v2"})
 		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name", "id"})
+		c.Assert(relations(c), qt.Equals, 0)
+	})
+
+	// The record keeps the body of a file that was deleted after it applied,
+	// so the check replays what the database ran; the run neither runs nor
+	// removes the repeatable migration.
+	t.Run("the file is gone", func(t *testing.T) {
+		c := qt.New(t)
+		r := appliedForDrift(c)
+		c.Assert(os.Remove(filepath.Join(r.dir, "R__account_names.sql")), qt.IsNil)
+		shadow, relations := newRepeatableShadow(c)
+
+		result, document := r.up(c, "--check-drift", "--shadow-db", shadow)
+
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(document.DriftCheck.Outcome, qt.Equals, migrator.DriftClean)
+		c.Assert(document.DriftCheck.ReplayedRepeatables, qt.DeepEquals, []string{"account_names"})
+		c.Assert(r.versions(c), qt.DeepEquals, []int64{1, 2})
+		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
+		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name"})
 		c.Assert(relations(c), qt.Equals, 0)
 	})
 

@@ -140,11 +140,6 @@ const createRepeatables = createRepeatablesColumns + `    body BYTEA NULL
 const sqliteCreateRepeatables = createRepeatablesColumns + `    body BLOB NULL
 ){engine}`
 
-// repeatableBodyColumn names the record's body column in AddedColumns. The
-// migrator adds the column to a record created without it, as BYTEA unless the
-// engine states its own binary type there.
-const repeatableBodyColumn = "body"
-
 // respellRevision gives a revision row its file's version spelling in place.
 func respellRevision() []string {
 	return []string{"UPDATE {table} SET version = '{file}' WHERE version = '{recorded}'"}

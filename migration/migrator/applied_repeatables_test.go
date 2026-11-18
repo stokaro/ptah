@@ -172,6 +172,15 @@ func TestAppliedHistoryRecordedRepeatables_HappyPath(t *testing.T) {
 			want:    []appliedRepeatableShape{{Identity: "user_names", Path: "R__user_names.sql", Checksum: h1(repeatableViewUp)}},
 			columns: []string{"name"},
 		},
+		// An empty body is kept as an empty value, not as no body, so it
+		// replays as the empty content that applied.
+		{
+			name:    "an empty file that changed after it applied replays the empty body",
+			applied: []map[string]string{{"R__user_names.sql": ""}},
+			reader:  map[string]string{"R__user_names.sql": repeatableViewUp},
+			want:    []appliedRepeatableShape{{Identity: "user_names", Path: "R__user_names.sql", Checksum: h1("")}},
+			columns: make([]string, 0),
+		},
 		{
 			name:    "a first attempt that failed in a transaction leaves nothing to replay",
 			applied: []map[string]string{{"R__user_names.sql": repeatableFailingUp}},
@@ -217,32 +226,6 @@ func TestAppliedHistoryRecordedRepeatables_HappyPath(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		shadowPath, _ := replayInto(c, history)
 		c.Assert(repeatableAudit(c, shadowPath), qt.DeepEquals, []string{"a_first", "b_second", "user_names"})
-	})
-
-	// A record created without the body column reads as one that keeps no
-	// body, and the next run that executes repeatable work adds the column
-	// and fills it.
-	t.Run("a record created without the body column gets it from the next run", func(t *testing.T) {
-		c := qt.New(t)
-		dbPath := filepath.Join(c.TempDir(), "app.db")
-		_, err := runRepeatableUp(c, dbPath, repeatableFiles(map[string]string{"R__user_names.sql": repeatableViewUp}),
-			migrator.MigrateUpOptions{})
-		c.Assert(err, qt.IsNil)
-		execOn(c, dbPath, "ALTER TABLE schema_migrations_repeatable DROP COLUMN body")
-		changed := repeatableFiles(map[string]string{"R__user_names.sql": repeatableViewChangedUp})
-		c.Assert(repeatableStatus(c, dbPath, changed).Repeatables[0].State, qt.Equals, migrator.RepeatableStateChanged)
-
-		_, err = runRepeatableUp(c, dbPath, changed, migrator.MigrateUpOptions{})
-		c.Assert(err, qt.IsNil)
-		_, mig := openRepeatableMigrator(c, dbPath, repeatableFiles(map[string]string{"R__user_names.sql": repeatableViewUp}))
-		history, err := mig.AppliedHistory(c.Context())
-
-		c.Assert(err, qt.IsNil)
-		c.Assert(appliedRepeatableShapes(history.Repeatables), qt.DeepEquals, []appliedRepeatableShape{
-			{Identity: "user_names", Path: "R__user_names.sql", Checksum: h1(repeatableViewChangedUp)},
-		})
-		shadowPath, _ := replayInto(c, history)
-		c.Assert(viewColumns(c, shadowPath), qt.DeepEquals, []string{"id", "name"})
 	})
 }
 

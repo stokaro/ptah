@@ -22,17 +22,11 @@ type repeatableRow struct {
 	attemptedAt     time.Time
 	appliedAt       time.Time
 	errorText       string
-	// body is the content that last applied, nil where the record keeps none.
-	body []byte
+	// hasBody reports that the record keeps the content that last applied. The
+	// bytes are read only where a replay needs them, by
+	// [Migrator.readRepeatableBody].
+	hasBody bool
 }
-
-// repeatableBodyColumn is the record's column holding the content that last
-// applied, and repeatableBodyDefinition the definition it is added with to a
-// record created without it, where the engine's descriptor states none.
-const (
-	repeatableBodyColumn     = "body"
-	repeatableBodyDefinition = "BYTEA NULL"
-)
 
 // repeatableTableName is the bare name of the record, derived from the
 // revision table's as the operation log's is, so an operator who renamed or
@@ -64,18 +58,10 @@ func (m *Migrator) readRepeatableRows(ctx context.Context) (map[string]repeatabl
 	if err := m.refuseForeignMetadataTable(ctx, name); err != nil {
 		return nil, err
 	}
-	// A record created without the body column reads as one that keeps no
-	// body. Reading never adds it, so a status or a dry run changes nothing.
-	withBody, err := m.metadataColumnExists(ctx, name, repeatableBodyColumn)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read the repeatable migration record: %w", err)
-	}
-	body := "NULL"
-	if withBody {
-		body = repeatableBodyColumn
-	}
+	// A status reads every row and needs no body, so the query asks only
+	// whether one is kept. An empty body is kept too: it is not NULL.
 	query := "SELECT identity, checksum, state, attempt_checksum, attempt_order, transactional, " +
-		"attempted_at, applied_at, error, " + body + " FROM " + m.repeatableTable()
+		"attempted_at, applied_at, error, CASE WHEN body IS NULL THEN 0 ELSE 1 END FROM " + m.repeatableTable()
 	read, err := queryMigrationRowsFrom(ctx, m.conn, query, m.scanRepeatableRow,
 		"failed to read the repeatable migration record",
 		"failed to scan the repeatable migration record",
@@ -95,13 +81,15 @@ func (m *Migrator) scanRepeatableRow(scanner rowScanner) (repeatableRow, error) 
 	var transactional int64
 	var attemptedAt, appliedAt any
 	var errorText sql.NullString
+	var hasBody int64
 	if err := scanner.Scan(
 		&row.identity, &row.checksum, &row.state, &row.attemptChecksum, &row.attemptOrder, &transactional,
-		&attemptedAt, &appliedAt, &errorText, &row.body,
+		&attemptedAt, &appliedAt, &errorText, &hasBody,
 	); err != nil {
 		return repeatableRow{}, err
 	}
 	row.transactional = transactional != 0
+	row.hasBody = hasBody != 0
 	row.errorText = errorText.String
 	var err error
 	if row.attemptedAt, err = m.parseStoredTime("attempted_at", attemptedAt); err != nil {
@@ -132,14 +120,20 @@ func (m *Migrator) ensureRepeatableTable(ctx context.Context) error {
 	if _, err := m.conn.ExecContext(ctx, ddl); err != nil {
 		return fmt.Errorf("failed to create the repeatable migration record: %w", err)
 	}
-	if err := m.refuseForeignMetadataTable(ctx, m.repeatableTableName()); err != nil {
-		return err
+	return m.refuseForeignMetadataTable(ctx, m.repeatableTableName())
+}
+
+// readRepeatableBody reads the content the record keeps for identity, which
+// only a replay of a record whose file no longer hashes to it needs. Whether
+// a body is kept is the row's hasBody, never these bytes, so an empty body
+// reads as kept whatever slice the driver returns for it.
+func (m *Migrator) readRepeatableBody(ctx context.Context, identity string) ([]byte, error) {
+	query := sqlutil.Rebind(m.connectionDialect(), "SELECT body FROM "+m.repeatableTable()+" WHERE identity = ?")
+	var body []byte
+	if err := m.conn.QueryRowContext(ctx, query, identity).Scan(&body); err != nil {
+		return nil, fmt.Errorf("failed to read the body of repeatable migration %s: %w", identity, err)
 	}
-	err := m.ensureMetadataColumn(ctx, m.repeatableTableName(), repeatableBodyColumn, repeatableBodyDefinition)
-	if err != nil {
-		return fmt.Errorf("failed to add column %s to the repeatable migration record: %w", repeatableBodyColumn, err)
-	}
-	return nil
+	return body, nil
 }
 
 // markRepeatableAttempt records that an attempt is about to run, before any
@@ -174,8 +168,8 @@ func (m *Migrator) completeRepeatableOn(
 	conn *dbschema.DatabaseConnection,
 	repeatable *repeatableMigration,
 ) error {
-	query := "UPDATE " + m.repeatableTable() + " SET state = ?, checksum = ?, " + repeatableBodyColumn +
-		" = ?, applied_at = ?, error = NULL WHERE identity = ?"
+	query := "UPDATE " + m.repeatableTable() + " SET state = ?, checksum = ?, body = ?, applied_at = ?, error = NULL " +
+		"WHERE identity = ?"
 	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), query),
 		RepeatableStateApplied, repeatable.checksum, repeatable.body, nativeRevisionTimestamp(time.Now()),
 		repeatable.identity)
