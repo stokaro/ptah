@@ -2198,6 +2198,10 @@
               "description": "Comma-separated table-level check expressions.",
               "type": "string"
             },
+            "collate": {
+              "description": "MySQL/MariaDB table default collation.",
+              "type": "string"
+            },
             "column_shards": {
               "description": "Attribute of ptah:schema:table, read by provider github.com/stokaro/ptah-ydb-plugin.",
               "type": "string"

@@ -277,6 +277,7 @@ func convertTablesAndFields(
 			Name:       dbTable.Name,
 			Schema:     dbTable.Schema,
 			Comment:    dbTable.Comment,
+			Collate:    dbTable.Collate,
 			PrimaryKey: primaryKey.columns,
 			// The payload rides with the key it belongs to. Nothing else can
 			// carry it: convertConstraint refuses a PRIMARY KEY outright so the

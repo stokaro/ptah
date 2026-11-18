@@ -3,6 +3,8 @@ package mysqlsource
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 
 	"ptah.run/core/annotation"
@@ -23,11 +25,13 @@ type annotationEncoder struct{}
 //   - an index's and a PRIMARY KEY constraint's block-size hint as
 //     key_block_size, and a primary key's, which the table directive
 //     declares, as primary_key_block_size;
-//   - an index's FULLTEXT parser as the platform property parser, and a
+//   - an index's FULLTEXT parser as the platform property parser, a
 //     column's character set and ON UPDATE expression as the platform
-//     properties charset and on_update, once for each target the setting is
-//     bound to, and for every MySQL-family target when it is bound to none.
-//     The parser follows the index's other platform properties.
+//     properties charset and on_update, and a table's options as the
+//     platform properties engine, auto_increment and charset, once for each
+//     target the setting is bound to, and for every MySQL-family target when
+//     it is bound to none. The parser follows the index's other platform
+//     properties.
 //
 // A hint of zero is the engine's default, and no attribute states it. A
 // setting on a declaration that has no spelling for it, such as a hint on a
@@ -79,8 +83,12 @@ func slotAttributes(slot annotation.SlotFacets) ([]annotation.SlotAttributes, er
 		return []annotation.SlotAttributes{{Slot: slot.Slot, Attributes: size},
 			{Slot: slot.Slot, Position: annotation.AfterProperties, Attributes: parser}}, err
 	case tableDirective:
-		// Only the table's primary key holds a hint here: acceptedKinds
-		// refused one of the table itself.
+		// The table's primary key holds a hint and the table its options:
+		// acceptedKinds refused anything else on either.
+		if !slot.Slot.PrimaryKey {
+			properties, err := tableOptionProperties(slot.Facets)
+			return []annotation.SlotAttributes{{Slot: slot.Slot, Attributes: properties}}, err
+		}
 		size, err := blockSizeAttributes(PrimaryKeyBlockSizeAttribute, slot.Facets)
 		return []annotation.SlotAttributes{{Slot: slot.Slot, Attributes: size}}, err
 	default:
@@ -96,6 +104,8 @@ func slotAttributes(slot annotation.SlotFacets) ([]annotation.SlotAttributes, er
 // hint on the unique index it is, so a unique index declares it.
 func acceptedKinds(slot annotation.Slot) map[schemaext.Kind]bool {
 	switch {
+	case slot.Directive == tableDirective && !slot.PrimaryKey:
+		return map[schemaext.Kind]bool{mysqlschema.TableKind: true}
 	case slot.Directive == fieldDirective:
 		return map[schemaext.Kind]bool{mysqlschema.ColumnSettingsKind: true}
 	case slot.Directive == indexDirective:
@@ -132,6 +142,42 @@ func columnProperties(facets schemaext.Facets) ([]annotation.EncodedAttribute, e
 		}
 		if settings.OnUpdate != "" {
 			attributes = append(attributes, annotation.EncodedAttribute{Name: prefix + OnUpdateProperty, Value: settings.OnUpdate})
+		}
+	}
+	return attributes, nil
+}
+
+// tableOptionProperties writes a table's options as the platform properties
+// the owner decodes, once for each target they are bound to. A read binds the
+// character set it observes to both MySQL and MariaDB, which one target's
+// property encoding cannot write.
+func tableOptionProperties(facets schemaext.Facets) ([]annotation.EncodedAttribute, error) {
+	value, found, err := facets.Get(mysqlschema.TableKind)
+	if err != nil || !found {
+		return nil, err
+	}
+	var options *mysqlschema.DesiredTable
+	switch typed := value.(type) {
+	case *mysqlschema.DesiredTable:
+		options = typed
+	case *mysqlschema.ObservedTable:
+		if typed != nil {
+			options = typed.Desired()
+		}
+	}
+	if options == nil {
+		return nil, fmt.Errorf("%w: facet %q has unexpected type %T", schemaext.ErrInvalidValue, mysqlschema.TableKind, value)
+	}
+	if err := mysqlschema.ValidateDesiredTable(options); err != nil {
+		return nil, err
+	}
+	properties := tableProperties(options)
+	var attributes []annotation.EncodedAttribute
+	for _, target := range targetsOf(facets, mysqlschema.TableKind) {
+		for _, key := range slices.Sorted(maps.Keys(properties)) {
+			if *properties[key] != "" {
+				attributes = append(attributes, annotation.EncodedAttribute{Name: "platform." + target + "." + key, Value: *properties[key]})
+			}
 		}
 	}
 	return attributes, nil
