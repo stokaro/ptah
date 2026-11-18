@@ -98,3 +98,27 @@ func TestLockTableIsBookkeepingOnOracleLive(t *testing.T) {
 	c.Assert(names, qt.HasLen, 0)
 	c.Assert(up, qt.Equals, "")
 }
+
+// Only the lock's own spelling of ptah_locks is bookkeeping on Oracle. The
+// lock creates the table unquoted, so the catalog holds PTAH_LOCKS; a quoted
+// "ptah_locks" beside it is another table, the user's, which the reader
+// reports. Left out by a comparison without regard to case, it would be
+// invisible to diff and apply.
+func TestQuotedLockTableNamesakesAreTheUsersOnOracleLive(t *testing.T) {
+	c := qt.New(t)
+	r := newRepeatableEngineTarget(c, t, repeatableOracle)
+	lock, err := dblock.Acquire(context.Background(), r.conn, "ptah_migrate", time.Second)
+	c.Assert(err, qt.IsNil)
+	c.Assert(lock.Release(context.Background()), qt.IsNil)
+	_, err = r.conn.ExecContext(context.Background(), `CREATE TABLE "ptah_locks" (name VARCHAR2(100) PRIMARY KEY)`)
+	c.Assert(err, qt.IsNil)
+
+	schema, err := r.conn.Reader().ReadSchemaContext(context.Background())
+	c.Assert(err, qt.IsNil)
+	names := make([]string, 0, len(schema.Tables))
+	for _, table := range schema.Tables {
+		names = append(names, table.Name)
+	}
+
+	c.Assert(names, qt.DeepEquals, []string{"ptah_locks"})
+}

@@ -202,11 +202,18 @@ func Configured(format, table string) []string {
 //
 // A nil schema yields an empty one, and schema itself is not changed.
 func Without(schema *catalog.Database, names []string) *catalog.Database {
+	return WithoutTables(schema, func(table string) bool {
+		return slices.ContainsFunc(names, func(name string) bool { return strings.EqualFold(name, table) })
+	})
+}
+
+// WithoutTables is [Without] for the tables named answers true for, given each
+// table's name as the catalog spells it. It is for a caller that knows that
+// spelling exactly, where a comparison without regard to case would also
+// remove a quoted table that differs from it only in case.
+func WithoutTables(schema *catalog.Database, named func(table string) bool) *catalog.Database {
 	if schema == nil {
 		return &catalog.Database{}
-	}
-	named := func(table string) bool {
-		return slices.ContainsFunc(names, func(name string) bool { return strings.EqualFold(name, table) })
 	}
 	out := *schema
 	out.FeatureObjects, out.FeatureCoverage = featureselect.Tables(schema.FeatureObjects, schema.FeatureCoverage, func(_, table string) bool {
