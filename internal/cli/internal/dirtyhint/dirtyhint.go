@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"ptah.run/internal/ddltx"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/migration/migrator"
 )
 
@@ -76,7 +77,7 @@ func Recovery(dirty Revision) string {
 			revision.Applied,
 			revision.Total,
 			dirty.retry(),
-			dirty.repair(" --force"),
+			dirty.reconciled(),
 		)
 	}
 	return fmt.Sprintf(
@@ -88,29 +89,31 @@ func Recovery(dirty Revision) string {
 	)
 }
 
-// runnerFlag is what every command a hint names for a body that opens its own
-// transactions carries, because only that runner reads such a body with its
-// transactions.
-const runnerFlag = " --runner golang-migrate"
-
 // repair is the quoted repair command for the revision, with flags after its
 // version.
 func (r Revision) repair(flags string) string {
-	command := fmt.Sprintf("ptah migrations repair --version %s%s", r.Revision.RevisionVersion(), flags)
+	return repaircommand.Repair(r.Revision.RevisionVersion(), flags, r.runner())
+}
+
+// reconciled is the quoted repair command that records the revision applied
+// once the operator has reconciled the database, the one the migrator's
+// refusal to resume names for the same row.
+func (r Revision) reconciled() string {
+	return repaircommand.Reconciled(r.Revision.RevisionVersion(), r.runner())
+}
+
+// runner is the runner every command a hint names for the revision carries.
+func (r Revision) runner() repaircommand.Runner {
 	if r.OwnTransactions {
-		command += runnerFlag
+		return repaircommand.GolangMigrate
 	}
-	return "'" + command + "'"
+	return repaircommand.DefaultRunner
 }
 
 // retry is the quoted command that applies the migration again from where its
 // revision says it stopped.
 func (r Revision) retry() string {
-	command := "ptah migrations up --allow-dirty"
-	if r.OwnTransactions {
-		command += runnerFlag
-	}
-	return "'" + command + "'"
+	return "'ptah migrations up --allow-dirty" + string(r.runner()) + "'"
 }
 
 // partialRollbackHint names what ends a rollback that stopped before its
@@ -138,7 +141,7 @@ func partialRollbackHint(dirty Revision) string {
 				"the directory), or restore what it reverted and run %s to record the migration applied.",
 			revision.Applied,
 			revision.Total,
-			dirty.repair(" --force"),
+			dirty.reconciled(),
 		)
 	}
 	return fmt.Sprintf(
@@ -190,7 +193,7 @@ func uncheckpointedHint(dirty Revision) string {
 				"where this is the oldest migration in the directory) to move the boundary back -- "+
 				"or, if you restore what it reverted instead, %s to record the migration applied.",
 			dirty.Dialect,
-			dirty.repair(" --force"),
+			dirty.reconciled(),
 		)
 	}
 	return fmt.Sprintf(
@@ -199,7 +202,7 @@ func uncheckpointedHint(dirty Revision) string {
 			"missing, then run %s to record it applied. "+
 			"%s is safe only once you have confirmed no statement of it ran.",
 		dirty.Dialect,
-		dirty.repair(" --force"),
+		dirty.reconciled(),
 		dirty.retry(),
 	)
 }
@@ -215,14 +218,14 @@ func rollbackLeftUnknownHint(dirty Revision) string {
 				"record the migration applied if you restored what the rollback reverted, or 'ptah migrations set "+
 				"--version <previous>' (version 0 where this is the oldest migration in the directory) if you "+
 				"finished the rollback by hand.",
-			dirty.repair(" --force"),
+			dirty.reconciled(),
 		)
 	}
 	return fmt.Sprintf(
 		"The migration stopped, and the rollback of its transaction left some statements in place and undid "+
 			"others. Inspect the database and apply what is missing, then run %s "+
 			"to record the migration applied -- rerunning it could repeat a statement that stayed.",
-		dirty.repair(" --force"),
+		dirty.reconciled(),
 	)
 }
 
@@ -244,7 +247,7 @@ func unknownStatementOutcomeHint(dirty Revision) string {
 				"directory) if you finished the rollback by hand.",
 			revision.Applied+1,
 			revision.Total,
-			dirty.repair(" --force"),
+			dirty.reconciled(),
 		)
 	}
 	return fmt.Sprintf(
@@ -254,6 +257,6 @@ func unknownStatementOutcomeHint(dirty Revision) string {
 			"applied -- rerunning it could repeat the statement that committed.",
 		revision.Applied+1,
 		revision.Total,
-		dirty.repair(" --force"),
+		dirty.reconciled(),
 	)
 }

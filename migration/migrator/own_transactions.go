@@ -12,6 +12,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/filetx"
 	"ptah.run/internal/migratorext/builtin"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrationfile"
 )
@@ -537,8 +538,8 @@ type unknownOutcomeError struct {
 func (e *unknownOutcomeError) Error() string {
 	return fmt.Sprintf(
 		"migration %s cannot resume automatically: the outcome of statement %d is unknown after an interrupted run; "+
-			"inspect the database, then use 'ptah migrations repair --version %s'",
-		e.version, e.statement, e.version)
+			"inspect the database, then use %s",
+		e.version, e.statement, repaircommand.Reconciled(e.version, repaircommand.DefaultRunner))
 }
 
 // rollbackLeftUnknownResumeError refuses to resume a migration whose transaction
@@ -551,8 +552,8 @@ type rollbackLeftUnknownResumeError struct {
 func (e *rollbackLeftUnknownResumeError) Error() string {
 	return fmt.Sprintf(
 		"migration %s cannot resume automatically: the rollback of its transaction left some statements in place and "+
-			"undid others; inspect the database, then use 'ptah migrations repair --version %s'",
-		e.version, e.version)
+			"undid others; inspect the database, then use %s",
+		e.version, repaircommand.Reconciled(e.version, repaircommand.DefaultRunner))
 }
 
 // describeUnknownOutcome rewrites a refusal to resume after an unknown outcome

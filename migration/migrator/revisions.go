@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/ddltx"
 	"ptah.run/internal/execoutcome"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/revisiontext"
 )
@@ -1666,12 +1667,12 @@ func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
 	}
 	if revision.Total != total {
 		return 0, fmt.Errorf(
-			"migration %s cannot resume automatically: the previous attempt applied %d of %d statements but the file now has %d; inspect the database, then use 'ptah migrations repair --version %s'",
+			"migration %s cannot resume automatically: the previous attempt applied %d of %d statements but the file now has %d; inspect the database, then use %s",
 			revision.RevisionVersion(),
 			revision.Applied,
 			revision.Total,
 			total,
-			revision.RevisionVersion(),
+			repaircommand.Reconciled(revision.RevisionVersion(), repaircommand.DefaultRunner),
 		)
 	}
 	return revision.Applied + 1, nil
