@@ -121,6 +121,10 @@ func sqlite() descriptor.Dialect {
 			RowidTables:                    true,
 			TypeAffinity:                   true,
 			NoTableComments:                true,
+			// A column key under a COLLATE of its own reads one way however the
+			// name and the collation are quoted, as sqlite3 3.51.0 reports one
+			// column and one collation in pragma_index_xinfo for each spelling.
+			CollatedKeysRespelled: true,
 		},
 
 		// SQLite has no enum type, so an enum column is TEXT with a CHECK.

@@ -192,6 +192,16 @@ type Comparison struct {
 	// such as in another case, is dropped and created under the declared
 	// spelling rather than kept.
 	RespelledIndexReplaced bool `json:"respelled_index_replaced,omitempty"`
+	// CollatedKeysRespelled reports that an index key written as a column and
+	// a COLLATE, `code COLLATE NOCASE`, is that column under that collation,
+	// and that a double-quoted, a bracketed, a backquoted and a bare name are
+	// one identifier there, as is each spelling of the collation's name. A
+	// document and a catalog then compare such a key in one spelling, so
+	// `("code" COLLATE "NOCASE" ASC)` and `([code] COLLATE /*x*/ NOCASE)` are
+	// one key, as SQLite reads them. MySQL reads a double-quoted word as a
+	// string unless ANSI_QUOTES is set, and SQL Server and ClickHouse key no
+	// column under a collation of its own, so the fact is not theirs.
+	CollatedKeysRespelled bool `json:"collated_keys_respelled,omitempty"`
 }
 
 // TimePrecision states that a comparison reads the precision of a temporal column,

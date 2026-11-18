@@ -149,6 +149,8 @@ func TestSchemaDiffReadsACollatedKeyInAnySpelling_HappyPathE2E(t *testing.T) {
 		{name: "a quoted column that descends", database: `("code" COLLATE NOCASE DESC)`, document: "(code COLLATE NOCASE DESC)"},
 		{name: "a bracketed name with a space", database: "([my code] COLLATE NOCASE)", document: `("my code" COLLATE NOCASE)`},
 		{name: "a document that quotes and comments", database: "(code COLLATE NOCASE)", document: `("code"  COLLATE /*y*/ NOCASE ASC)`},
+		{name: "a document that quotes the collation", database: "(code COLLATE NOCASE)", document: `(code COLLATE "NOCASE")`},
+		{name: "a database that brackets the collation", database: "(code COLLATE [NOCASE])", document: "(code COLLATE NOCASE)"},
 	}
 	for _, tt := range tests {
 		for _, run := range documentDiffRuns {
