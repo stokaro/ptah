@@ -19,6 +19,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
 	"ptah.run/internal/referencedkey"
+	"ptah.run/internal/sqlident"
 )
 
 // Problem is one structural fault found in a desired schema.
@@ -210,13 +211,22 @@ func CollectIndexProblems(database *schemamodel.Database, dialect string) []Prob
 				Message: fmt.Sprintf(
 					"names table %q, which no declaration defines",
 					declaredOwner(index, owner),
-				),
+				) + sqlident.NamesakeHint(dialect, "table", declaredOwner(index, owner), tableNames(database.Tables)),
 			})
 			continue
 		}
 		problems = append(problems, missingIndexColumns(index, position, owner, columns, dialect)...)
 	}
 	return problems
+}
+
+// tableNames lists the name of every table, as the model spells it.
+func tableNames(tables []schemamodel.Table) []string {
+	names := make([]string, 0, len(tables))
+	for _, table := range tables {
+		names = append(names, table.Name)
+	}
+	return names
 }
 
 // missingIndexColumns reports every column an index names that its table does
@@ -239,7 +249,8 @@ func missingIndexColumns(
 			Dialect: dialect,
 			Kind:    "index",
 			Object:  indexName(index, position),
-			Message: fmt.Sprintf("names column %q, which table %q does not declare", column, owner),
+			Message: fmt.Sprintf("names column %q, which table %q does not declare", column, owner) +
+				sqlident.NamesakeHint(dialect, "column", column, columns),
 		})
 	}
 	return problems

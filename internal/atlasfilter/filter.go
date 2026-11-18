@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/indexbacking"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
 
@@ -1939,8 +1940,7 @@ func keep[T any](values []T, keepValue func(T) bool) []T {
 }
 
 func tableChildNameCandidates(schema, table, child string) []string {
-	table = strings.TrimSpace(table)
-	child = strings.TrimSpace(child)
+	schema, table, child = storedSpelling(schema), storedSpelling(strings.TrimSpace(table)), storedSpelling(strings.TrimSpace(child))
 	if table == "" || child == "" {
 		return nil
 	}
@@ -1952,7 +1952,7 @@ func tableChildNameCandidates(schema, table, child string) []string {
 }
 
 func qualifiedNameCandidates(schema, name string) []string {
-	name = strings.TrimSpace(name)
+	schema, name = storedSpelling(schema), storedSpelling(strings.TrimSpace(name))
 	if name == "" {
 		return nil
 	}
@@ -1961,6 +1961,23 @@ func qualifiedNameCandidates(schema, name string) []string {
 		return []string{name}
 	}
 	return []string{name, qualified}
+}
+
+// storedSpelling is the name a catalog stores for a name part a schema model
+// spells with its quotes. On an engine whose descriptor states an
+// UnquotedFold, a schema converted from a read, or declared quoted in a SQL
+// file, names the table stored as orders `"orders"`, while the read reports
+// orders. The candidates a selector is matched against are built from the
+// stored name on both sides, so orders leaves the same table from each; built
+// from the spelling, the converted side offers `"orders"` and
+// `APP."""orders"""`, the selector leaves only the read's table, and a diff of
+// the database against itself plans the excluded one. A part that is not
+// wholly quoted, which is every name a read reports, is returned as it is.
+func storedSpelling(part string) string {
+	for len(part) >= 2 && part[0] == '"' && part[len(part)-1] == '"' {
+		part = sqlident.UnquoteDoubleQuoted(part)
+	}
+	return part
 }
 
 func extensionNameCandidates(schema, name string) []string {

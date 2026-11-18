@@ -8,6 +8,7 @@
 package sqlident
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
@@ -29,6 +30,9 @@ type spelling struct {
 	// bareChars is the descriptor's Identifiers.BareChars: what an unquoted
 	// name may hold besides letters, digits and underscores.
 	bareChars string
+	// letterFirst is the descriptor's Identifiers.LetterFirst: an unquoted
+	// name starts with a letter rather than a letter or an underscore.
+	letterFirst bool
 }
 
 // spellings caches the spelling of each dialect name a caller has asked
@@ -60,6 +64,7 @@ func spellingOf(dialect string) spelling {
 	written := spellingFrom(described.Quoting)
 	written.fold = described.Identifiers.UnquotedFold
 	written.bareChars = described.Identifiers.BareChars
+	written.letterFirst = described.Identifiers.LetterFirst
 	spellings.Store(dialect, written)
 	return written
 }
@@ -157,8 +162,10 @@ func (w spelling) ident(name string) string {
 //
 // "Plain" is the conservative intersection: an ASCII letter or underscore
 // followed by ASCII letters, digits or underscores, and the characters the
-// descriptor's Identifiers.BareChars lists, such as Oracle's $ and #. Anything
-// else, including the empty string, is quoted. SQLite keywords are also quoted because their
+// descriptor's Identifiers.BareChars lists, such as Oracle's $ and #. Where
+// the descriptor sets Identifiers.LetterFirst, as Oracle's does, the first
+// character is a letter. Anything else, including the empty string, is
+// quoted. SQLite keywords are also quoted because their
 // bare forms are parsed as syntax in the virtual-table module position.
 //
 // A dialect whose descriptor writes no name bare, as YDB's does, is always
@@ -173,7 +180,7 @@ func (w spelling) bareOrQuoted(name string) string {
 	if w.bare == descriptor.BareNever {
 		return w.quote(name)
 	}
-	if !isPlainIdentifier(name, w.bareChars) || w.keywords[strings.ToUpper(name)] {
+	if !isPlainIdentifier(name, w.bareChars) || (w.letterFirst && name[0] == '_') || w.keywords[strings.ToUpper(name)] {
 		return w.quote(name)
 	}
 	return name
@@ -212,6 +219,37 @@ func CatalogName(dialect, stored string) string {
 		return stored
 	}
 	return written.quote(stored)
+}
+
+// NamesakeHint explains a reference that reached nothing when the schema
+// declares a quoted namesake of it. On a dialect whose descriptor states an
+// UnquotedFold, `"customers"` and customers are different objects, so a file
+// that declares the table quoted and references it bare names a table it does
+// not declare. The result is a clause to append to the refusal, beginning with
+// "; ", naming the quoted declaration and how to write the reference; it is
+// empty on a dialect without a fold, for a reference that is itself quoted, and
+// when no declaration differs from the reference only in case. noun is the
+// kind of object, such as "table" or "column".
+func NamesakeHint(dialect, noun, reference string, declared []string) string {
+	if spellingOf(dialect).fold == "" {
+		return ""
+	}
+	parts := SplitQualified(strings.TrimSpace(reference))
+	leaf := strings.TrimSpace(parts[len(parts)-1])
+	if leaf == "" || strings.HasPrefix(leaf, `"`) {
+		return ""
+	}
+	for _, name := range declared {
+		name = strings.TrimSpace(name)
+		if len(name) < 2 || name[0] != '"' || name[len(name)-1] != '"' {
+			continue
+		}
+		if strings.EqualFold(UnquoteDoubleQuoted(name), leaf) {
+			return fmt.Sprintf("; the schema declares the %s %s quoted, which %s keeps apart from the bare %s: write %s to name it",
+				noun, name, dialect, leaf, name)
+		}
+	}
+	return ""
 }
 
 // foldCase folds name to the case fold names, "upper" or "lower".

@@ -25,6 +25,7 @@ import (
 	"ptah.run/internal/deporder"
 	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
 
@@ -444,7 +445,7 @@ func synthesizedFieldCheck(desired *schemamodel.Database, name string) (schemamo
 		}
 		synthesized := field.CheckName
 		if synthesized == "" {
-			synthesized = table + "_" + field.Name + "_check"
+			synthesized = table + "_" + sqlident.UnquoteDoubleQuoted(field.Name) + "_check"
 		}
 		if synthesized != name {
 			continue
