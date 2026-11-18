@@ -113,10 +113,16 @@ and exits `0`, so a hook can read the status alone. Cancellation or failure to
 perform validation returns an error instead of schema findings. Those errors
 exit `2`; they do not establish whether the schema is valid.
 
-`schema plan` and `schema drift` check index owners before comparing a desired
-schema with a database. An index whose table no declaration defines gets the
-same diagnostic as `schema validate`, and those commands exit `2` without a plan
-or drift report.
+`schema plan`, `schema apply`, `schema compare` and `schema drift` check every
+index before comparing a desired schema with a database. An index whose table
+no declaration defines, or that names a column its table does not declare, gets
+the diagnostic `schema validate` prints, and those commands exit `2` without a
+plan, comparison or drift report. On a PostgreSQL URL that pins no
+`search_path`, they first place a table the schema names without a schema in
+the connection's current schema
+([PostgreSQL](../../databases/postgresql/#connecting)), so the line names the
+table with that schema, as `table "public.orders"`. `schema validate` connects
+to no database, so it names the table as the source writes it.
 
 ## Validate against every dialect you ship to
 

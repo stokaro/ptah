@@ -540,6 +540,15 @@ func loadPlacedDesiredApplySchema(
 	if err != nil {
 		return placedDesired{}, err
 	}
+	// Checked on the placed schema, so an index fault names its table as the
+	// plan writes it and as `schema drift` and `schema compare` name it.
+	problems, err := schemavalidate.CollectTargetIndexProblems(opts.Runtime, desired, conn.Info().Dialect)
+	if err != nil {
+		return placedDesired{}, err
+	}
+	if len(problems) != 0 {
+		return placedDesired{}, &planrefusal.DeclarationError{Err: errors.New(problems[0].String())}
+	}
 	return placedDesired{database: desired, naming: naming, unqualified: unqualified}, nil
 }
 
@@ -1144,17 +1153,6 @@ func loadAndValidateDesiredApplySchema(
 		desired.Schemas,
 	); err != nil {
 		return nil, fmt.Errorf("validate --to schema: %w", err)
-	}
-	selected, err := opts.Runtime.ResolveTarget(conn.Info().Dialect)
-	if err != nil {
-		return nil, err
-	}
-	scoped, err := schemamodel.ScopeToTarget(desired, selected)
-	if err != nil {
-		return nil, err
-	}
-	if problems := schemavalidate.CollectIndexProblems(scoped, selected.Name()); len(problems) != 0 {
-		return nil, &planrefusal.DeclarationError{Err: errors.New(problems[0].String())}
 	}
 	return desired, nil
 }

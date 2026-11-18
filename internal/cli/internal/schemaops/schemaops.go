@@ -252,15 +252,11 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	if err := schemascope.RefuseOutsideTargetDatabase(info, desired); err != nil {
 		return nil, err
 	}
-	selected, err := opts.Runtime.ResolveTarget(info.Dialect)
+	problems, err := schemavalidate.CollectTargetIndexProblems(opts.Runtime, desired, info.Dialect)
 	if err != nil {
 		return nil, err
 	}
-	scoped, err := schemamodel.ScopeToTarget(desired, selected)
-	if err != nil {
-		return nil, err
-	}
-	if problems := schemavalidate.CollectIndexProblems(scoped, selected.Name()); len(problems) != 0 {
+	if len(problems) != 0 {
 		return nil, errors.New(problems[0].String())
 	}
 	compareOpts := config.DefaultCompareOptions()

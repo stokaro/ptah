@@ -120,6 +120,24 @@ func CollectWithOptions(
 	return problems, nil
 }
 
+// CollectTargetIndexProblems is [CollectIndexProblems] over database scoped to
+// the target resolver selects for dialect, as a command that compares database
+// with a live target reads it. The commands call it after they place the names
+// database writes without a schema, so a problem names its table as the
+// comparison reads it: on a realm-scoped PostgreSQL URL, by the connection's
+// current schema. A nil database has no problems.
+func CollectTargetIndexProblems(resolver schemaext.TargetResolver, database *schemamodel.Database, dialect string) ([]Problem, error) {
+	selected, err := resolver.ResolveTarget(dialect)
+	if err != nil {
+		return nil, err
+	}
+	scoped, err := schemamodel.ScopeToTarget(database, selected)
+	if err != nil || scoped == nil {
+		return nil, err
+	}
+	return CollectIndexProblems(scoped, selected.Name()), nil
+}
+
 // CollectIndexProblems checks every index against the relation it belongs to.
 //
 // Validation and the command-line comparisons share this check. An index whose

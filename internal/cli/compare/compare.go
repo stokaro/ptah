@@ -39,6 +39,7 @@ import (
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemaload"
 	"ptah.run/internal/schemascope"
+	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/undecidednote"
 	"ptah.run/internal/unmodelednote"
@@ -259,6 +260,16 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	}
 	if err := schemascope.RefuseOutsideTargetDatabase(info, result); err != nil {
 		return err
+	}
+	// Refused as `schema drift` and `schema apply` refuse it: the server would
+	// refuse the CREATE INDEX the comparison plans. Checked on the placed
+	// schema, so the fault names its table as the comparison reads it.
+	problems, err := schemavalidate.CollectTargetIndexProblems(runtime, result, info.Dialect)
+	if err != nil {
+		return err
+	}
+	if len(problems) != 0 {
+		return errors.New(problems[0].String())
 	}
 	compareOpts, err := resolveGeneratedExpressions(ctx, runtime, opts, connectTimeout, info, result)
 	if err != nil {
