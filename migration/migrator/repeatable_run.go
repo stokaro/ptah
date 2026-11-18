@@ -254,6 +254,9 @@ func (m *Migrator) planRepeatables(
 	if err := m.refuseUnaddressableRepeatableRecord(work); err != nil {
 		return nil, nil, err
 	}
+	if err := m.refuseRepeatablesOverQuerySize(ctx, state, work); err != nil {
+		return nil, nil, err
+	}
 	for _, identity := range state.orphans() {
 		m.logger.Warn("A repeatable migration record has no file in the directory, and the run leaves it alone",
 			"identity", identity, "table", m.repeatableTable())

@@ -146,6 +146,14 @@ record before the mutation reaches it and execute the body again, so point
 every run at the same replica. A repair removes a row with a lightweight
 `DELETE`, which needs a `MergeTree`-family engine that supports it.
 
+The statement that records a body carries the body in its text, because the
+driver writes bound values into the statement, and the server parses no
+statement longer than `max_query_size`, 262144 bytes by default. A file whose
+record would be longer is refused before anything runs, with an error that
+gives the limit and the setting. A backslash or a single quote in the file
+counts twice, because it is escaped. To run a larger file, raise
+`max_query_size` for the migration user, in its settings profile.
+
 ## Seal the directory
 
 `ptah migrations hash` covers repeatable migrations, so `ptah.sum` holds an
@@ -385,7 +393,8 @@ migrations; stokaro/ptah#6152 records the gap.
 ## Limits
 
 - Engines reached through a provider do not run repeatable migrations.
-- On ClickHouse nothing decides between two concurrent runs.
+- On ClickHouse nothing decides between two concurrent runs, and a file whose
+  record would exceed `max_query_size` is refused.
 - `ptah migrations repair --repeatable` removes a row; nothing marks a
   repeatable migration applied without running it. Removing the row of a file
   still in the directory makes the next run execute it as new.

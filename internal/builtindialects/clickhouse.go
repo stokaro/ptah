@@ -250,12 +250,15 @@ SETTINGS mutations_sync = 1`,
 		// The record of repeatable migrations is the shared one, under the
 		// engine clause. Its rows change through mutations, which the run
 		// waits for on this replica, as the revision table's do. A mutation
-		// reports no rows, so an attempt is no claim. A repair deletes the
-		// row with DELETE FROM, which ClickHouse runs as a lightweight
-		// delete.
+		// reports no rows, so an attempt is no claim. The driver writes
+		// bound values into the statement, so the body's length is bounded
+		// by max_query_size. A repair deletes the row with DELETE FROM,
+		// which ClickHouse runs as a lightweight delete.
 		CreateRepeatables: createRepeatables,
 		RepeatableUpdate:  "ALTER TABLE {table} UPDATE {assignments} WHERE {where} SETTINGS mutations_sync = 1",
 		UncountedUpdates:  true,
+		QuerySizeLimit:    "SELECT toInt64(value) FROM system.settings WHERE name = 'max_query_size'",
+		QuerySizeSetting:  "max_query_size",
 		UpsertTag:         "INSERT INTO {table} (tag, version, recorded_at, deleted) VALUES (?, ?, now64(9), 0)",
 		TagServerTime:     true,
 		TagReadSuffix:     " FINAL",

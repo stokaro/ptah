@@ -283,6 +283,13 @@ func (m *Migrator) completeRepeatableOn(
 	conn *dbschema.DatabaseConnection,
 	repeatable *repeatableMigration,
 ) error {
+	query, args := m.repeatableCompletion(repeatable)
+	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), query), args...)
+}
+
+// repeatableCompletion is the statement that records the attempt's content
+// as applied, and the values it binds.
+func (m *Migrator) repeatableCompletion(repeatable *repeatableMigration) (string, []any) {
 	assignments := "state = ?, checksum = ?, body = ?, applied_at = ?, error = NULL"
 	args := []any{
 		RepeatableStateApplied, repeatable.checksum, repeatable.body, nativeRevisionTimestamp(time.Now()),
@@ -294,7 +301,67 @@ func (m *Migrator) completeRepeatableOn(
 		assignments = "state = ?, checksum = ?, body = " + empty + ", applied_at = ?, error = NULL"
 		args = slices.Delete(args, 2, 3)
 	}
-	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), m.repeatableUpdate(assignments, "")), args...)
+	return m.repeatableUpdate(assignments, ""), args
+}
+
+// refuseRepeatablesOverQuerySize refuses, before anything runs, a repeatable
+// migration whose body the record cannot store on an engine whose driver
+// writes bound values into the statement text. Without the refusal the body
+// runs, the server refuses the statement that records it, and the row stays
+// running; a retry runs the body again and fails the same way.
+//
+// The limit is the session's, read from the server, so a limit raised for the
+// migration user is the one compared.
+func (m *Migrator) refuseRepeatablesOverQuerySize(
+	ctx context.Context,
+	state *repeatableState,
+	work []RepeatableWork,
+) error {
+	table := m.revisionTable()
+	if table.QuerySizeLimit == "" || len(work) == 0 {
+		return nil
+	}
+	var limit int64
+	if err := m.conn.QueryRowContext(ctx, table.QuerySizeLimit).Scan(&limit); err != nil {
+		return fmt.Errorf("failed to read the server's %s: %w", table.QuerySizeSetting, err)
+	}
+	for _, item := range work {
+		repeatable := state.repeatable(item.Identity)
+		length := inlinedStatementLength(m.repeatableCompletion(repeatable))
+		if int64(length) > limit {
+			return &RepeatableStatementTooLongError{
+				Path: repeatable.path, Length: length, Limit: limit, Setting: table.QuerySizeSetting,
+			}
+		}
+	}
+	return nil
+}
+
+// inlinedStatementLength is the length in bytes, at least, of query once a
+// driver has written each bound value into its text the way clickhouse-go
+// does: a string or byte slice as a quoted literal whose backslashes, quotes
+// and NUL bytes are escaped with a backslash, NULL for a nil byte slice, and a
+// timestamp as a call no longer than 64 bytes.
+func inlinedStatementLength(query string, args []any) int {
+	length := len(query)
+	for _, arg := range args {
+		switch value := arg.(type) {
+		case []byte:
+			length += inlinedLiteralLength(string(value))
+		case string:
+			length += inlinedLiteralLength(value)
+		case time.Time:
+			length += 64
+		default:
+			length += len(fmt.Sprint(value))
+		}
+	}
+	return length
+}
+
+// inlinedLiteralLength is the length of value as a quoted, escaped literal.
+func inlinedLiteralLength(value string) int {
+	return len(value) + 2 + strings.Count(value, `\`) + strings.Count(value, "'") + strings.Count(value, "\x00")
 }
 
 // failRepeatable records that the attempt's body failed. It runs on a context

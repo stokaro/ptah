@@ -100,6 +100,17 @@ type RevisionTable struct {
 	// attempt is then not a claim: the row is updated by its key, and two
 	// runs that read the same record both run the body.
 	UncountedUpdates bool `json:"uncounted_updates,omitempty"`
+	// QuerySizeLimit reads, as one integer, the longest statement text in
+	// bytes that the server parses. It is set where the driver writes bound
+	// values into the statement text, as clickhouse-go does, so the
+	// statement that records a repeatable migration's body is as long as the
+	// body escaped. The migrator refuses, before anything runs, a body whose
+	// statement would be longer. Empty means bound values travel apart from
+	// the text.
+	QuerySizeLimit string `json:"query_size_limit,omitempty"`
+	// QuerySizeSetting names the server setting QuerySizeLimit reads, for
+	// the refusal to name.
+	QuerySizeSetting string `json:"query_size_setting,omitempty"`
 	// RowLock is how a read of every revision locks the rows it read until
 	// its transaction ends: "for-update" (a FOR UPDATE suffix),
 	// "table-hint" (WITH (UPDLOCK, HOLDLOCK) after the table), or empty for
