@@ -486,6 +486,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			Revision:        status.DirtyRevision,
 			Dialect:         conn.Info().Dialect,
 			OwnTransactions: mig.RevisionBodyOpensOwnTransactions(*status.DirtyRevision),
+			FileStatements:  dirtyhint.FileStatements(mig, *status.DirtyRevision),
 		}))
 		return nil
 	}

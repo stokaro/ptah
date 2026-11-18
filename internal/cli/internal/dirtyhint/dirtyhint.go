@@ -25,6 +25,11 @@ type Revision struct {
 	// command that runs such a body, or repairs it over committed progress,
 	// needs that runner, and none resumes it from a statement.
 	OwnTransactions bool
+	// FileStatements is how many statements the body a resume would index into
+	// holds in the directory now ([migrator.Migrator.RevisionBodyStatements]),
+	// or nil when the directory holds no file for the revision. A count other
+	// than the revision's Total means the file changed after the run.
+	FileStatements *int
 }
 
 // Recovery names the command that ends this particular dirty state, one that
@@ -60,6 +65,9 @@ func Recovery(dirty Revision) string {
 	}
 	if revision.Applied == revision.Total {
 		return completedBodyHint(dirty)
+	}
+	if revision.Direction != migrator.MigrationDirectionDown && revision.Applied > 0 && dirty.fileChanged() {
+		return changedFileHint(dirty)
 	}
 	if revision.Applied == 0 && ddltx.AllStatementsDurable(ddltx.ClassOf(dirty.Dialect)) {
 		return uncheckpointedHint(dirty)
@@ -100,6 +108,39 @@ func (r Revision) repair(flags string) string {
 // refusal to resume names for the same row.
 func (r Revision) reconciled() string {
 	return repaircommand.Reconciled(r.Revision.RevisionVersion(), r.runner())
+}
+
+// FileStatements reads the field of that name for revision out of mig.
+func FileStatements(mig *migrator.Migrator, revision migrator.MigrationRevision) *int {
+	count, ok := mig.RevisionBodyStatements(revision)
+	if !ok {
+		return nil
+	}
+	return &count
+}
+
+// fileChanged reports that the directory holds a file for the revision whose
+// statement count differs from the count the revision recorded.
+func (r Revision) fileChanged() bool {
+	return r.FileStatements != nil && *r.FileStatements != r.Revision.Total
+}
+
+// changedFileHint names what ends a run that stopped partway through a body
+// whose statement count changed after it. The statement number the revision
+// records does not index into the file, so a resume from it would run the
+// wrong statements, and `ptah migrations up --allow-dirty` refuses it. The
+// operator reconciles the database and records the result, the command that
+// refusal names.
+func changedFileHint(dirty Revision) string {
+	return fmt.Sprintf(
+		"This migration stopped after %d of %d statements, and its file now has %d, so the recorded count "+
+			"does not index into it and a resume would run the wrong statements. Inspect the database and "+
+			"apply what is missing, then run %s to record the migration applied.",
+		dirty.Revision.Applied,
+		dirty.Revision.Total,
+		*dirty.FileStatements,
+		dirty.reconciled(),
+	)
 }
 
 // runner is the runner every command a hint names for the revision carries.

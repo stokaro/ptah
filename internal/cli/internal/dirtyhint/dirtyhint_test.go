@@ -302,3 +302,42 @@ func TestRecovery(t *testing.T) {
 		})
 	}
 }
+
+// TestRecoveryReadsTheFileStatementCount names the forced repair for a run that
+// stopped partway through a file whose statement count changed after it: a
+// resume from the recorded statement would index into the changed file. The
+// same count, and no file at all, keep the resume.
+func TestRecoveryReadsTheFileStatementCount(t *testing.T) {
+	resume := "This migration stopped after 1 of 2 statements. Run 'ptah migrations repair --version 1 " +
+		"--resume-from 2' to run the rest, or repair with --force once you have run them yourself."
+	tests := []struct {
+		name  string
+		count *int
+		want  string
+	}{
+		{
+			name:  "the file has another count",
+			count: new(3),
+			want: "This migration stopped after 1 of 2 statements, and its file now has 3, so the recorded count " +
+				"does not index into it and a resume would run the wrong statements. Inspect the database and " +
+				"apply what is missing, then run 'ptah migrations repair --version 1 --force' to record the " +
+				"migration applied.",
+		},
+		{name: "the file has the recorded count", count: new(2), want: resume},
+		{name: "no file", want: resume},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			revision := migrator.MigrationRevision{Version: 1, Applied: 1, Total: 2, Direction: migrator.MigrationDirectionUp}
+
+			got := dirtyhint.Recovery(dirtyhint.Revision{
+				Revision:       &revision,
+				Dialect:        "postgres",
+				FileStatements: test.count,
+			})
+
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}

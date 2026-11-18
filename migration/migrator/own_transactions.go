@@ -96,6 +96,27 @@ func (m *Migrator) RevisionBodyOpensOwnTransactions(revision MigrationRevision) 
 	return migration.runnerReadsOwnTransactions(m.conn, repairMigrationDirection(&revision))
 }
 
+// RevisionBodyStatements returns how many statements the body a resume of the
+// dirty revision would index into holds in the directory now: the down file of
+// the revision's migration when a rollback left the revision, and the up file
+// otherwise. It counts as the resume counts. ok is false when the migrator
+// holds no migration of the revision's version.
+//
+// A count that differs from the revision's Total means the file changed after
+// the run, so the statement number the revision records does not index into
+// it, and `ptah migrations up --allow-dirty` refuses to resume.
+func (m *Migrator) RevisionBodyStatements(revision MigrationRevision) (count int, ok bool) {
+	migration := m.migrationByVersion(revision.Version)
+	if migration == nil {
+		return 0, false
+	}
+	body := migration.UpSQL
+	if repairMigrationDirection(&revision) == MigrationDirectionDown {
+		body = migration.DownSQL
+	}
+	return m.migrationStatementCount(body), true
+}
+
 // runnerReadsOwnTransactions reports whether the body of direction would run
 // with transactions of its own if its directory were loaded with
 // [WithOwnTransactions]: the reading [Migration.bodyOwnTransactions] makes

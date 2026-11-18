@@ -127,6 +127,24 @@ func TestNativeAtlasNumberlessVersionTarget_FailurePath(t *testing.T) {
 	}
 }
 
+// TestNativeAtlasNumberlessVersionPlanWithoutShadow_FailurePath asks for a
+// --plan rollback to v1 with no shadow database. The refusal names the target
+// v1, where v1_x.sql runs under the order key 2 and v2_y.sql under 3.
+func TestNativeAtlasNumberlessVersionPlanWithoutShadow_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	writeVersionOrderFiles(c, dir, compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables()),
+		[]string{"1_a.sql", "v1_x.sql", "v2_y.sql"})
+	up := nativePtah(c, dir, "migrations", "up")
+	c.Assert(up.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", up.Stderr))
+
+	got := nativePtah(c, dir, "migrations", "down", "--target", "v1", "--plan")
+
+	c.Assert(got.ExitCode, qt.Not(qt.Equals), 0)
+	c.Assert(got.Stderr, qt.Contains, "--plan requires --shadow-db: the schema at version v1 has to be built somewhere")
+	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, []string{"1", "v1", "v2"})
+}
+
 // TestNativeAtlasNumberlessVersionSetE2E sets the revision to v1 named by its
 // version, and the summary and the dry run name it the same way.
 func TestNativeAtlasNumberlessVersionSetE2E(t *testing.T) {

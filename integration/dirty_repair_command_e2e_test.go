@@ -42,7 +42,8 @@ func TestDirtyRevisionRefusalNamesAnAcceptedRepair_FailurePath(t *testing.T) {
 		// reconcile is what the operator runs by hand before the repair.
 		reconcile string
 		want      string
-		// status is the command `ptah migrations status` names for the row.
+		// status is the command `ptah migrations status` names for the row, the
+		// one the refusal names.
 		status string
 	}{
 		{
@@ -72,8 +73,8 @@ func TestDirtyRevisionRefusalNamesAnAcceptedRepair_FailurePath(t *testing.T) {
 			reconcile: "CREATE TABLE t3 (id int)",
 			want: "migration 000001 cannot resume automatically: the previous attempt applied 1 of 2 statements " +
 				"but the file now has 3; inspect the database, then use " + forced,
-			// The hint reads the row alone and cannot see the file changed.
-			status: "'ptah migrations repair --version 000001 --resume-from 2'",
+			// A resume from statement 2 would index into the changed file.
+			status: forced,
 		},
 	}
 	for _, tt := range tests {

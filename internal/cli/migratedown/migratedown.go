@@ -684,8 +684,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		}
 
 		inputs := rollbackInputs{
-			migrationsFS: migrationsFS, targetVersion: targetVersion, dirFormat: dirFormat,
-			atlasEnv: resolvedOpts.atlasEnv, connectTimeout: settings.connectTimeout,
+			migrationsFS: migrationsFS, targetVersion: targetVersion, targetLabel: mig.VersionLabel(targetVersion),
+			dirFormat: dirFormat,
+			atlasEnv:  resolvedOpts.atlasEnv, connectTimeout: settings.connectTimeout,
 			migrationsTable: migrationsTable, providerOptions: settings.providerOptions,
 		}
 		derived, err := planRollback(cmd, resolvedOpts, newDynamicRollback(resolvedOpts, opts, conn, inputs), emit)
@@ -1151,6 +1152,7 @@ func rollbackStatus(
 		Revision:        &dirty.Revision,
 		Dialect:         dialect,
 		OwnTransactions: mig.RevisionBodyOpensOwnTransactions(dirty.Revision),
+		FileStatements:  dirtyhint.FileStatements(mig, dirty.Revision),
 	}))
 }
 
@@ -1406,11 +1408,13 @@ func downOnlineDDLInterceptor(
 
 // dynamicRollback carries what a --plan rollback needs.
 type dynamicRollback struct {
-	runtime        engine.SchemaRuntime
-	conn           *dbschema.DatabaseConnection
-	devURL         string
-	migrationsFS   fs.FS
-	targetVersion  int64
+	runtime       engine.SchemaRuntime
+	conn          *dbschema.DatabaseConnection
+	devURL        string
+	migrationsFS  fs.FS
+	targetVersion int64
+	// targetLabel names targetVersion as [migrator.Migrator.VersionLabel] does.
+	targetLabel    string
 	dirFormat      migrationfile.DirFormat
 	atlasEnv       string
 	connectTimeout time.Duration
@@ -1457,9 +1461,9 @@ func planRollback(cmd *cobra.Command, resolved options, r dynamicRollback, emit 
 // prompt still costs the replay that built the target schema there.
 func deriveRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) ([]string, error) {
 	if strings.TrimSpace(r.devURL) == "" {
-		return nil, fmt.Errorf("--%s requires --%s: the schema at version %d has to be built somewhere "+
+		return nil, fmt.Errorf("--%s requires --%s: the schema at version %s has to be built somewhere "+
 			"before it can be compared against the live database",
-			planFlag, shadowDBFlag, r.targetVersion)
+			planFlag, shadowDBFlag, r.targetLabel)
 	}
 	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), r.devURL, devdocker.Options{})
 	if err != nil {
@@ -1583,6 +1587,7 @@ func executeRollback(cmd *cobra.Command, r rollbackExecution) error {
 type rollbackInputs struct {
 	migrationsFS    fs.FS
 	targetVersion   int64
+	targetLabel     string
 	dirFormat       migrationfile.DirFormat
 	atlasEnv        string
 	connectTimeout  time.Duration
@@ -1611,6 +1616,7 @@ func newDynamicRollback(resolved options, opts *options, conn *dbschema.Database
 		devURL:                resolved.shadowDB,
 		migrationsFS:          in.migrationsFS,
 		targetVersion:         in.targetVersion,
+		targetLabel:           in.targetLabel,
 		dirFormat:             in.dirFormat,
 		atlasEnv:              in.atlasEnv,
 		connectTimeout:        in.connectTimeout,
