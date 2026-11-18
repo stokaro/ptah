@@ -133,6 +133,24 @@ func (m *Migrator) qualifiedMetadataTable(table string) string {
 	return sqlident.Qualified(m.connectionDialect(), m.metadataTableSchemaName(), table)
 }
 
+// metadataObjectName is a metadata table's name as SQL Server's OBJECT_ID
+// probe takes it, for the existence guard in the table's DDL. The revision
+// table, the log and the repeatable record all read it, so each guard and the
+// CREATE TABLE it protects name one table.
+//
+// table is the bare name, suffix included, and the schema is applied after.
+// Appending a suffix to the already-qualified name would make the guard probe
+// `[dbo].[schema_migrations]_log` while the DDL creates
+// `[dbo].[schema_migrations_log]`, so the guard would never find the table it
+// created and every later initialization would try to create it again.
+func (m *Migrator) metadataObjectName(table string) string {
+	quoted := m.quoteIdentifier(table)
+	if schema := m.metadataTableSchemaName(); schema != "" {
+		return m.quoteIdentifier(schema) + "." + quoted
+	}
+	return quoted
+}
+
 // ErrUnaddressableMetadataTable is returned when the log table's derived name
 // is longer than the target accepts.
 var ErrUnaddressableMetadataTable = errors.New("metadata table name exceeds the identifier limit")
