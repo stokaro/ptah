@@ -354,3 +354,29 @@ func TestSQLLint_ReadsAPostgreSQLRoutineBody(t *testing.T) {
 		"SQL003:procedure p builds SQL at run time with EXECUTE",
 	})
 }
+
+// A byte order mark at the start of a file or of stdin is the encoding, as it
+// is to the migrator, which removes it and runs the SQL after it. Without
+// the removal the lexer reads the mark as an operator and reports SQL001.
+func TestSQLLint_ByteOrderMarkIsNotSQL(t *testing.T) {
+	const body = "\xEF\xBB\xBFCREATE TABLE users (id BIGINT PRIMARY KEY, email TEXT NOT NULL);"
+	t.Run("file", func(t *testing.T) {
+		c := qt.New(t)
+		path := writeSQLFile(c, t.TempDir(), "schema.sql", body)
+
+		stdout, stderr, err := execute("lint", "--dialect", "postgres", path)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(stderr, qt.Equals, "")
+		c.Assert(stdout, qt.Contains, "No SQL lint findings.")
+	})
+	t.Run("stdin", func(t *testing.T) {
+		c := qt.New(t)
+
+		stdout, stderr, err := executeWithStdin(body, "lint", "--dialect", "postgres", "--stdin")
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(stderr, qt.Equals, "")
+		c.Assert(stdout, qt.Contains, "No SQL lint findings.")
+	})
+}

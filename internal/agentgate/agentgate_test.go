@@ -104,6 +104,23 @@ func TestRun_MigrationsHappyPath(t *testing.T) {
 	c.Assert(resultFor(c, report, agentgate.GateMigrationSQL).OK, qt.IsTrue)
 }
 
+// A migration file that starts with a byte order mark passes the SQL gate, as
+// `migrations up` runs it: the mark is the file's encoding, not SQL.
+func TestRun_MigrationsWithAByteOrderMarkHappyPath(t *testing.T) {
+	c := qt.New(t)
+	scope := scopeFor(c, agentpolicy.ClassMigrations, map[string]string{
+		"1700000000_init.up.sql":   "\xEF\xBB\xBFCREATE TABLE users (id BIGINT PRIMARY KEY);\n",
+		"1700000000_init.down.sql": "\xEF\xBB\xBFDROP TABLE users;\n",
+	})
+	hashMigrations(c, scope)
+
+	report, err := runner(c).Run(context.Background(), scope)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(resultFor(c, report, agentgate.GateMigrationSQL).Diagnostics, qt.HasLen, 0)
+	c.Assert(resultFor(c, report, agentgate.GateMigrationSQL).OK, qt.IsTrue)
+}
+
 func TestRun_MigrationsCatchAnEditThatTheChecksumDoesNotCover(t *testing.T) {
 	// This is the property the whole write path depends on: a file changed
 	// without its checksum is a directory every executing Ptah verb refuses, so
