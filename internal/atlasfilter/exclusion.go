@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
@@ -32,6 +33,10 @@ import (
 type Exclusion struct {
 	selections selectext.Set
 	patterns   []string
+	// comparison serves the target's comparison rules, when the runtime
+	// NewExclusion took serves them: the database side reads the rule for the
+	// index a server builds for a foreign key from them.
+	comparison schemacomparison.Runtime
 }
 
 // NewExclusion returns the exclusion patterns select under the scope
@@ -57,7 +62,8 @@ func NewExclusion(runtime any, patterns []string) (Exclusion, error) {
 	if err := ValidateExcludeSelectors(patterns, selections); err != nil {
 		return Exclusion{}, err
 	}
-	return Exclusion{selections: selections, patterns: slices.Clone(patterns)}, nil
+	comparison, _ := runtime.(schemacomparison.Runtime)
+	return Exclusion{selections: selections, patterns: slices.Clone(patterns), comparison: comparison}, nil
 }
 
 // NamesSelector reports whether one value of a selector flag or list holds at
@@ -141,7 +147,15 @@ func (e Exclusion) Observed(db *catalog.Database, naming Naming) (*catalog.Datab
 	if !e.Excludes() {
 		return db, ExcludeReport{}, nil
 	}
-	return excludeDatabase(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, featureselect.Bindings{})
+	target := databaseTarget{dialect: naming.Dialect}
+	if e.comparison != nil && naming.Dialect != "" {
+		rules, err := e.comparison.ComparisonRules(naming.Dialect)
+		if err != nil {
+			return nil, ExcludeReport{}, fmt.Errorf("read the comparison rules of %s: %w", naming.Dialect, err)
+		}
+		target.foreignKeyIndexes = rules.ForeignKeyIndexes
+	}
+	return excludeDatabase(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, target, featureselect.Bindings{})
 }
 
 // ReportUnmatched writes one warning to w naming the selectors that matched

@@ -827,6 +827,9 @@ func projectLiveStates(
 	if err != nil {
 		return scopedApplyStates{}, err
 	}
+	if scope.ForeignKeyIndexes, err = scopeForeignKeyIndexes(runtime, dialect); err != nil {
+		return scopedApplyStates{}, err
+	}
 	scoped := scopeApplyStates(current, desired, scope)
 	if scoped.currentErr != nil && !emptySelection(scoped.currentErr) {
 		return scopedApplyStates{}, scoped.currentErr

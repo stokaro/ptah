@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
@@ -61,6 +62,12 @@ type Scope struct {
 	// comparison answers for a dialect it does not know: a key column is NOT
 	// NULL.
 	Dialect string
+	// ForeignKeyIndexes is the target's rule for the index its server built
+	// for a foreign key, which the database side leaves out with a foreign
+	// key the exclusion leaves out. Kept, the index is planned for a DROP
+	// INDEX the server refuses while the key stands: MySQL and MariaDB
+	// answer ERROR 1553. Nil is a target whose server builds no such index.
+	ForeignKeyIndexes schemacomparison.ForeignKeyIndexes
 	// Requirements are the objects a comparison keeps on both of its sides
 	// because a kept object of its desired side requires them, though no
 	// selector names them: the resource pool a kept classifier routes to.

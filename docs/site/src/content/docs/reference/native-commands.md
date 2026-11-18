@@ -451,6 +451,13 @@ PostgreSQL and SQLite, `PRIMARY` on MySQL and MariaDB. Its columns keep the
 `NOT NULL` the key gives them, and `schema compare` reports no difference on
 them.
 
+On MySQL and MariaDB, `--exclude 'kids.kids_parent_fk[type=foreign_key]'`
+also leaves out the index the server built for the foreign key, under the key's
+name or, for a key written without one, under its first column's. An index
+the author declared stays in the comparison even where the key stands on it:
+a desired schema that leaves it out plans `DROP INDEX`, and the server refuses
+that with `ERROR 1553` while the key needs the index.
+
 `ptah migrations plan` and `ptah migrations generate` take `--exclude` and
 `--include` with the same meaning, the include applied after the exclusion. The
 selection reaches the desired schema, the current state read from the database

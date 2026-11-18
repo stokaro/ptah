@@ -604,6 +604,9 @@ func diffResolvedStates(
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
+	if scope.ForeignKeyIndexes, err = scopeForeignKeyIndexes(opts.Runtime, dialect); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
 	fromSide, toSide := scopeDiffStates(ctx, fromState, toState, scope, dialect, opts.Runtime)
 	if fromSide.err != nil {
 		return atlasreport.SchemaDiff{}, nil, fromSide.err

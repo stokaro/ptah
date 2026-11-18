@@ -1029,9 +1029,19 @@ are accepted by the binary, which then drops the constraint, and refused by
 `schema apply` here; see
 [An exclude selector that matches nothing](#an-exclude-selector-that-matches-nothing).
 
+A foreign key on MySQL and MariaDB stands on an index, and the server builds
+one when no index covers the key's columns. The binary excludes the key under
+`[type=fk]` and keeps the index in the plan: `DROP INDEX`, which MySQL 26.10 and
+MariaDB 12.3 refuse with `ERROR 1553` while the key stands, so the apply fails.
+Ptah names the key under `[type=foreign_key]` and leaves the index the server
+built out with it, so the plan is synced. An index the author declared stays in
+the plan on both binaries, and the server refuses its removal the same way.
+
 **Evidence.** `integration/constraint_selector_e2e_test.go`,
 `integration/exclusion_selector_e2e_test.go`,
-`internal/atlasfilter/constraint_selector_test.go`
+`integration/foreign_key_selector_e2e_test.go`,
+`internal/atlasfilter/constraint_selector_test.go`,
+`internal/atlasfilter/foreign_key_backing_test.go`
 
 ## One version spelled two ways
 

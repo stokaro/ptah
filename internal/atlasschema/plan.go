@@ -606,6 +606,9 @@ func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, 
 	if err != nil {
 		return nil, err
 	}
+	if scope.ForeignKeyIndexes, err = scopeForeignKeyIndexes(runtime, info.Dialect); err != nil {
+		return nil, err
+	}
 	current, _, err = atlasfilter.ExcludeDatabaseScopeReport(current, scope)
 	return current, err
 }

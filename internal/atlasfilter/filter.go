@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
@@ -72,7 +73,7 @@ func ExcludeDatabaseReport(
 	patterns []string,
 	defaultSchema string,
 ) (*catalog.Database, ExcludeReport, error) {
-	return excludeDatabase(selections, schema, patterns, defaultSchema, defaultSchema, featureselect.Bindings{})
+	return excludeDatabase(selections, schema, patterns, defaultSchema, defaultSchema, databaseTarget{}, featureselect.Bindings{})
 }
 
 // ExcludeDatabaseScopeReport is [ExcludeDatabaseReport] for a caller holding
@@ -87,7 +88,16 @@ func ExcludeDatabaseScopeReport(
 	schema *catalog.Database,
 	scope Scope,
 ) (*catalog.Database, ExcludeReport, error) {
-	return excludeDatabase(scope.Selections, schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema, scope.Bindings)
+	return excludeDatabase(scope.Selections, schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema,
+		databaseTarget{dialect: scope.Dialect, foreignKeyIndexes: scope.ForeignKeyIndexes}, scope.Bindings)
+}
+
+// databaseTarget is what the database side of an exclusion reads about the
+// target its state was read from. The zero value is a target nothing describes,
+// whose server builds no index for a foreign key.
+type databaseTarget struct {
+	dialect           string
+	foreignKeyIndexes schemacomparison.ForeignKeyIndexes
 }
 
 func excludeDatabase(
@@ -95,6 +105,7 @@ func excludeDatabase(
 	schema *catalog.Database,
 	patterns []string,
 	patternScope, defaultSchema string,
+	target databaseTarget,
 	bindings featureselect.Bindings,
 ) (*catalog.Database, ExcludeReport, error) {
 	if !selections.Selected() {
@@ -138,6 +149,7 @@ func excludeDatabase(
 	var removedConstraints []catalog.Constraint
 	filtered.Constraints, removedConstraints = state.filterConstraints(filtered.Constraints)
 	filtered.Indexes = state.filterIndexes(filtered.Indexes, removedConstraints, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
+	filtered.Indexes = withoutForeignKeyBackingIndexes(filtered.Indexes, schema, removedConstraints, target)
 	clearRemovedKeyColumns(filtered.Tables, filtered.Constraints, removedConstraints)
 	filtered.FeatureObjects, filtered.FeatureCoverage, err = state.filterExtensionFeatures(filtered.FeatureObjects, filtered.FeatureCoverage)
 	if err != nil {
@@ -1084,6 +1096,42 @@ func (s *exclusionState) filterIndexes(
 			return false
 		}
 		return !named
+	})
+}
+
+// withoutForeignKeyBackingIndexes returns indexes without the index the server
+// built for each foreign key in removed, by the target's rule. schema is the
+// whole read, so the rule sees every index that could back the key, kept or
+// not. The rule claims only the index the server built: an index the author
+// declared stays, even where the key stands on it, because the declaration
+// owns it and a declaration that leaves it out asks for its removal. The
+// server refuses that removal while the key needs the index, and the refusal
+// is the answer the author gets.
+func withoutForeignKeyBackingIndexes(
+	indexes []catalog.Index,
+	schema *catalog.Database,
+	removed []catalog.Constraint,
+	target databaseTarget,
+) []catalog.Index {
+	if target.foreignKeyIndexes == nil {
+		return indexes
+	}
+	semantics := identifier.ForDialect(target.dialect)
+	type indexKey struct{ table, name string }
+	backing := make(map[indexKey]bool)
+	for _, constraint := range removed {
+		if indexbacking.KindOf(constraint.Type) != indexbacking.ForeignKey {
+			continue
+		}
+		for _, index := range target.foreignKeyIndexes.BackingIndexes(schema, constraint, semantics) {
+			backing[indexKey{index.QualifiedTableName(), index.Name}] = true
+		}
+	}
+	if len(backing) == 0 {
+		return indexes
+	}
+	return keep(indexes, func(index catalog.Index) bool {
+		return !backing[indexKey{index.QualifiedTableName(), index.Name}]
 	})
 }
 
