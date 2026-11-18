@@ -45,7 +45,9 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 		// declared is the desired schema file.
 		declared string
 		// planned is a statement the plan prints, with ACCOUNT standing for the
-		// account's name.
+		// account's name. The drop of a folded namesake is matched from its
+		// name on: the plan's existence guards compare names without case, so
+		// that drop may carry IF EXISTS.
 		planned []string
 		// objects is every table, view, sequence and trigger the account holds
 		// after the apply, as type and stored name.
@@ -106,7 +108,7 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 				`CREATE VIEW v1 AS SELECT id FROM keep_me`,
 			},
 			declared: "CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY);\n",
-			planned:  []string{`DROP VIEW ACCOUNT."v1";`, `DROP VIEW ACCOUNT.V1;`},
+			planned:  []string{`DROP VIEW ACCOUNT."v1";`, `ACCOUNT.V1;`},
 			objects:  []string{"TABLE KEEP_ME"},
 			columns:  []string{"KEEP_ME.ID"},
 		},
