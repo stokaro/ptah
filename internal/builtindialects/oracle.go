@@ -320,7 +320,7 @@ END;`,
     PRAGMA EXCEPTION_INIT(already_exists, -955);
 BEGIN
     EXECUTE IMMEDIATE 'CREATE TABLE {table_escaped} (
-    identity VARCHAR2(255) NOT NULL PRIMARY KEY,
+    identity VARCHAR2(255 CHAR) NOT NULL PRIMARY KEY,
     checksum VARCHAR2(64) NULL,
     state VARCHAR2(32) NOT NULL,
     attempt_checksum VARCHAR2(64) NOT NULL,

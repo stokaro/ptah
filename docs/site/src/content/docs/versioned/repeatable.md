@@ -103,9 +103,11 @@ SQLite, SQL Server, and CockroachDB 24 and older. MySQL, MariaDB, Oracle and
 CockroachDB from 25 commit the open transaction before a schema statement, and
 YugabyteDB keeps schema changes through a rollback, so a transaction there
 would not undo a failed body. On those engines every repeatable migration runs
-without a transaction, and its record says `no_transaction=true`. A body that
-changes data only gets no transaction either, so write it to converge when it
-runs again from its first statement. A file that asks for a transaction with
+without a transaction, and its record says `no_transaction=true`. Oracle
+commits each schema statement as it runs, so a failed body there leaves every
+statement that ran before the failing one. A body that changes data only gets
+no transaction either, so write it to converge when it runs again from its
+first statement. A file that asks for a transaction with
 `-- atlas:txmode file` is refused there before anything runs.
 
 What "changed" means is the digest of the file: `h1:` followed by the base64
@@ -118,6 +120,14 @@ reads the record after the first released the lock, finds the digest applied,
 and runs nothing. CockroachDB has no session advisory lock, and Ptah takes none
 on Oracle, so it runs every migration on either without one, repeatable
 migrations included: run one migrator at a time against them.
+
+Without the lock, the record still decides which of two runners executes a
+changed repeatable migration. Each runner claims the row before the body runs,
+and the claim matches only a row that still holds the state, the applied digest
+and the run that this runner read. The runner that loses the claim refuses with
+`another run changed the repeatable migration's record after this run read it`
+before any statement of the body. A new file is claimed by inserting its row,
+and the record's key refuses the second insert.
 
 ## Seal the directory
 

@@ -421,8 +421,10 @@ func (m *Migrator) applyRepeatables(ctx context.Context, state *repeatableState,
 	}
 	return m.withRunSession(ctx, func(scoped *Migrator) error {
 		for index, item := range work {
-			_, recorded := state.rows[item.Identity]
-			attempt := repeatableAttempt{repeatable: state.repeatable(item.Identity), order: index + 1, recorded: recorded}
+			read, recorded := state.rows[item.Identity]
+			attempt := repeatableAttempt{
+				repeatable: state.repeatable(item.Identity), order: index + 1, read: read, recorded: recorded,
+			}
 			if err := scoped.applyRepeatable(ctx, attempt); err != nil {
 				return err
 			}
@@ -438,6 +440,9 @@ type repeatableAttempt struct {
 	order int
 	// transactional reports that the body runs in a transaction of its own.
 	transactional bool
+	// read is the identity's row as the run read the record, the state the
+	// attempt's claim expects to find. It is the zero row when none was read.
+	read repeatableRow
 	// recorded reports that the record table already holds a row for the
 	// identity, which the attempt then updates rather than inserts.
 	recorded bool
@@ -470,7 +475,7 @@ func (m *Migrator) applyRepeatable(ctx context.Context, attempt repeatableAttemp
 	m.logger.Info("Applying repeatable migration", "identity", repeatable.identity, "checksum", repeatable.checksum)
 	m.logRepeatableEvent(ctx, repeatable, MigrationLogStarted, nil)
 	if err := m.markRepeatableAttempt(ctx, attempt); err != nil {
-		err = fmt.Errorf("failed to record the attempt of repeatable migration %s: %w", repeatable.identity, err)
+		err = fmt.Errorf("failed to claim repeatable migration %s for this run: %w", repeatable.identity, err)
 		m.logRepeatableEvent(ctx, repeatable, MigrationLogFailed, err)
 		return err
 	}
