@@ -45,6 +45,9 @@ func TestCodecs_HappyPath(t *testing.T) {
 				Checks: []pgtype.DomainCheck{{Name: "qty_check", Expression: "(VALUE = 7)"}}, Comment: "quantity"},
 			wire: `{"base_type":"integer","not_null":true,"default":"7","check":"(VALUE = 7)",` +
 				`"checks":[{"name":"qty_check","expression":"(VALUE = 7)"}],"comment":"quantity"}`},
+		{name: "an observed domain with a collation", representation: schemaext.Observed,
+			value: &pgtype.ObservedDomain{BaseType: "text", Collation: "C"},
+			wire:  `{"base_type":"text","collation":"C"}`},
 		{name: "a composite type", representation: schemaext.Desired,
 			value: &pgtype.DesiredComposite{Attributes: []pgtype.Attribute{{Name: "city", Type: "text"}, {Name: "n", Type: "numeric(10,2)"}},
 				StructName: "Addr"},

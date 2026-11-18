@@ -90,11 +90,30 @@ import (
 // expression on a change that would otherwise be in place is still left to
 // DS103, since only the expression decides.
 //
-// The rules read the column's current type, collation and nullability, and
-// the indexes on it, from the schema state the version starts from
-// ([lintext.BaselineColumn.ColumnType] as the report composes it from the
-// catalog, [lintext.BaselineColumn.Collation], [lintext.BaselineColumn.NotNull]
-// and [lintext.BaselineIndex]); without that state PG301 leaves DS103 to
+// A change into or out of a domain reads the domain from the baseline, and
+// was measured the same way on PostgreSQL 17.11, dd a domain over text with
+// no collation, dc one with C, dchk one with a CHECK and dnn one with a NOT
+// NULL:
+//
+//	ALTER COLUMN ... TYPE, no COLLATE clause       table      index on the column
+//	text -> dd, dchk restated                      kept       kept
+//	dd -> text                                     kept       kept
+//	text COLLATE "C" -> dd                         kept       rebuilt
+//	text -> dc, dd -> dc, dc -> text               kept       rebuilt
+//	text -> dchk, text -> dnn                      rewritten  rebuilt
+//
+// A change between a domain and the type it is built on, or between two
+// domains over one type, keeps every stored byte, so only the collation
+// decides; a change into a domain with a NOT NULL or a CHECK rewrites the
+// table, since every stored value is tested against it. A domain the
+// baseline does not hold is compared by name alone.
+//
+// The rules read the column's current type, collation and nullability, the
+// indexes on it and the domains it names, from the schema state the version
+// starts from ([lintext.BaselineColumn.ColumnType] as the report composes it
+// from the catalog, [lintext.BaselineColumn.Collation],
+// [lintext.BaselineColumn.NotNull], [lintext.BaselineIndex] and
+// [lintext.BaselineObject]); without that state PG301 leaves DS103 to
 // report the statement, PG304 leaves PG104, and migration lint names them as
 // inputs the run did not supply.
 
@@ -124,34 +143,99 @@ func pgCollationName(word string) string {
 	return strings.ToLower(word)
 }
 
-// pgCollationChange compares the collation a column has with the one the
-// clause leaves it with. A clause that names a collation gives the column
-// that one, and "default" names the database default. One that names none
-// gives the column the default collation of its new type: C for name, the
-// database default for every other type pgtype knows. A type it does not
-// know reaches here only restated, since pgtype.Compare finds no outcome
-// between two types where one is unknown, so the column keeps the collation
-// it has unless it names one of its own. A column that does differs from its
-// type's default, since a column that restates the default reads as one that
-// takes it, so the clause changes it. The two spellings returned are for the
+// pgCollationTarget is what decides the collation an ALTER COLUMN ... TYPE
+// leaves a column with: the column, the type the clause names, and, where
+// that type is a domain the baseline holds, the domain.
+type pgCollationTarget struct {
+	column   lintext.BaselineColumn
+	updated  pgtype.Type
+	domain   lintext.BaselineObject
+	isDomain bool
+}
+
+// change compares the collation the column has with the one the clause
+// leaves it with. A clause that names a collation gives the column that one,
+// and "default" names the database default. One that names none gives the
+// column the default collation of its new type: a domain's own, C for name,
+// the database default for every other type pgtype knows. Any other type
+// reaches here only restated, since pgtype.Compare finds no outcome between
+// two types where one is unknown, so the column keeps the collation it has
+// unless it names one of its own. A column that does differs from its type's
+// default, since a column that restates the default reads as one that takes
+// it, so the clause changes it. The two spellings returned are for the
 // message.
-func pgCollationChange(column lintext.BaselineColumn, updated pgtype.Type, clause string, named bool) (from, to string, changed bool) {
+func (t pgCollationTarget) change(clause string, named bool) (from, to string, changed bool) {
 	target := clause
 	switch {
 	case named && clause == "default":
 		target = ""
 	case named:
-	case updated.Known:
-		target = pgKnownTypeCollation(updated)
-	case !column.OwnCollation:
+	case t.isDomain:
+		target = t.domain.Collation
+	case t.updated.Known:
+		target = pgKnownTypeCollation(t.updated)
+	case !t.column.OwnCollation:
 		return "", "", false
 	default:
-		return pgCollationLabel(column.Collation), "the default collation of " + updated.Spell(), true
+		return pgCollationLabel(t.column.Collation), "the default collation of " + t.updated.Spell(), true
 	}
-	if column.Collation == target {
+	if t.column.Collation == target {
 		return "", "", false
 	}
-	return pgCollationLabel(column.Collation), pgCollationLabel(target), true
+	return pgCollationLabel(t.column.Collation), pgCollationLabel(target), true
+}
+
+// pgDomainOf returns the domain t names, where the baseline holds one by
+// that name. An array of a domain is left to the comparison of the names.
+func pgDomainOf(baseline lintkit.State, t pgtype.Type) (lintext.BaselineObject, bool) {
+	if t.Known || t.Array {
+		return lintext.BaselineObject{}, false
+	}
+	object, ok := baseline.Object(lintext.BaselineType, lintkit.NormalizeIdent(t.Base))
+	if !ok || !object.Domain {
+		return lintext.BaselineObject{}, false
+	}
+	return object, true
+}
+
+// pgDomainBase is t, or the base type of the domain t names where the
+// baseline holds it, which is what PostgreSQL converts a stored value
+// between.
+func pgDomainBase(baseline lintkit.State, t pgtype.Type) pgtype.Type {
+	domain, ok := pgDomainOf(baseline, t)
+	if !ok {
+		return t
+	}
+	base, ok := pgtype.ParseSpelling(domain.BaseType)
+	if !ok {
+		return t
+	}
+	return base
+}
+
+// pgDomainTransition compares old with updated, reading a domain either side
+// names as its base type. A change to another type that ends in a domain
+// holding a NOT NULL or a CHECK rewrites the table, since PostgreSQL tests
+// every stored value against the domain. A change between a domain and the
+// type it is built on, or between two domains over one type, keeps every
+// stored byte and is a catalog edit.
+func pgDomainTransition(baseline lintkit.State, old, updated pgtype.Type) pgtype.Transition {
+	_, oldIsDomain := pgDomainOf(baseline, old)
+	domain, isDomain := pgDomainOf(baseline, updated)
+	if (!oldIsDomain && !isDomain) || old.SameAs(updated) {
+		return pgtype.Compare(old, updated)
+	}
+	if isDomain && domain.Constrained {
+		return pgtype.Transition{Outcome: pgtype.Rewrite, Why: fmt.Sprintf(
+			"changes the type from %s to the domain %s, whose NOT NULL or CHECK every stored value is tested against",
+			old.Spell(), updated.Spell())}
+	}
+	transition := pgtype.Compare(pgDomainBase(baseline, old), pgDomainBase(baseline, updated))
+	if transition.Outcome == pgtype.Unchanged {
+		return pgtype.Transition{Outcome: pgtype.InPlace, Why: fmt.Sprintf(
+			"changes the type from %s to %s over the same base type", old.Spell(), updated.Spell())}
+	}
+	return transition
 }
 
 // pgKnownTypeCollation is the default collation of a type pgtype knows: C for
@@ -225,15 +309,17 @@ func resolvePGTypeChanges(file *lintkit.File) []resolvedPGTypeChange {
 		if !ok {
 			continue
 		}
+		domain, isDomain := pgDomainOf(file.Baseline, updated)
 		change := resolvedPGTypeChange{
 			site:       site,
 			old:        old,
 			updated:    updated,
-			transition: pgtype.Compare(old, updated),
+			transition: pgDomainTransition(file.Baseline, old, updated),
 		}
 		if change.transition.Outcome == pgtype.Unchanged || change.transition.Outcome == pgtype.InPlace {
 			clause, named := pgClauseCollation(stmt.Words, stmt.SourceWords, site.TypeStart, site.TypeEnd)
-			if from, to, changed := pgCollationChange(column, updated, clause, named); changed {
+			target := pgCollationTarget{column: column, updated: updated, domain: domain, isDomain: isDomain}
+			if from, to, changed := target.change(clause, named); changed {
 				change.transition = pgCollationTransition(from, to,
 					file.Baseline.ColumnIndexes(site.Table.Normalized, lintkit.NormalizeIdent(site.Column)))
 			}

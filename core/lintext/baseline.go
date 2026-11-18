@@ -93,6 +93,15 @@ type BaselineObject struct {
 	// order.
 	Enum   bool     `json:"enum,omitempty"`
 	Values []string `json:"values,omitempty"`
+	// Domain reports a domain. BaseType is its base type as the server spells
+	// it, and Collation the collation a column of it takes when it names
+	// none, empty for the database default and for a base type with no
+	// collation. Constrained reports a NOT NULL or a CHECK, which PostgreSQL
+	// tests every stored value against when a column changes to the domain.
+	Domain      bool   `json:"domain,omitempty"`
+	BaseType    string `json:"base_type,omitempty"`
+	Collation   string `json:"collation,omitempty"`
+	Constrained bool   `json:"constrained,omitempty"`
 }
 
 // BaselineSubject names the statements of one file that one rule would judge
@@ -167,8 +176,8 @@ type BaselineColumn struct {
 	// executable provider reports carries the collation it observed as its
 	// own, so it reads as one whenever it has a collation. The PostgreSQL
 	// rules read it: an ALTER COLUMN ... TYPE that names no COLLATE gives the
-	// column its type's default, and for a domain, whose default the baseline
-	// does not carry, a column that names none keeps the collation it has.
+	// column its type's default, and for a type the baseline holds no
+	// collation for, a column that names none keeps the collation it has.
 	OwnCollation bool `json:"own_collation,omitempty"`
 	// TablePartitioned reports that the owning table is a PostgreSQL
 	// declaratively partitioned table (relkind 'p'): a parent, or a partition

@@ -1423,6 +1423,8 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 			t.typnotnull AS not_null,
 			COALESCE(t.typdefault, '') AS default_value,
 			` + r.domainCheckExpr() + `,
+			COALESCE((SELECT c.collname FROM pg_collation c
+				WHERE c.oid = t.typcollation AND c.collname <> 'default'), '') AS collation_name,
 			` + r.typeCommentExpr() + `
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
@@ -1441,7 +1443,7 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 		var domain pgtype.ObservedDomain
 		var rawSchema, name string
 		if err := rows.Scan(
-			&rawSchema, &name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check, &domain.Comment,
+			&rawSchema, &name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check, &domain.Collation, &domain.Comment,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan domain for schema %s: %w", schemaName, err)
 		}

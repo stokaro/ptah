@@ -100,7 +100,7 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			change: "ALTER TABLE notes ALTER COLUMN body TYPE dc;\n",
 			want: []string{
 				"] PG301: ",
-				`changes the collation from "POSIX" to the default collation of dc`,
+				`changes the collation from "POSIX" to "C"`,
 				"rebuilds every index on the column (notes_body)",
 			},
 		},
@@ -131,6 +131,41 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 				`changes the collation from "C" to the database default`,
 				"rebuilds every index on the column (notes_body)",
 			},
+		},
+		{
+			name:   "a C column changed to a domain with no collation rebuilds the index",
+			base:   "CREATE DOMAIN dd AS text;\nCREATE TABLE notes (id int, body text COLLATE \"C\");\nCREATE INDEX notes_body ON notes (body);\n",
+			change: "ALTER TABLE notes ALTER COLUMN body TYPE dd;\n",
+			want: []string{
+				"] PG301: ",
+				`TYPE dd changes the collation from "C" to the database default`,
+				"rebuilds every index on the column (notes_body)",
+			},
+		},
+		{
+			name:   "a default-collated column changed to a domain with C rebuilds the index",
+			base:   "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
+			change: "ALTER TABLE notes ALTER COLUMN body TYPE dc;\n",
+			want: []string{
+				"] PG301: ",
+				`TYPE dc changes the collation from the database default to "C"`,
+				"rebuilds every index on the column (notes_body)",
+			},
+		},
+		{
+			name:   "a column changed to a domain with a CHECK rewrites the table",
+			base:   "CREATE DOMAIN dchk AS text CHECK (VALUE <> '');\nCREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
+			change: "ALTER TABLE notes ALTER COLUMN body TYPE dchk;\n",
+			want: []string{
+				"] PG301: ",
+				"changes the type from text to the domain dchk",
+			},
+		},
+		{
+			name:    "control: a default-collated column changed to a domain with no collation keeps the index",
+			base:    "CREATE DOMAIN dd AS text;\nCREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
+			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dd;\n",
+			wantNot: []string{"] PG301: "},
 		},
 		{
 			name:   "a unique index rebuilt under a new name over a dropped index's columns",

@@ -63,6 +63,10 @@ type ObservedDomain struct {
 	// constraint by its name, which a declaration cannot supply. It is empty
 	// where the domain has none and where the read could not enumerate them.
 	Checks []DomainCheck `json:"checks,omitempty"`
+	// Collation is the collation a column of the domain takes when it names
+	// none: the one the domain declares, or its base type's. It is empty for
+	// the database default and for a base type with no collation.
+	Collation string `json:"collation,omitempty"`
 	// Comment is the domain's comment, empty for none.
 	Comment string `json:"comment,omitempty"`
 }
@@ -142,7 +146,7 @@ func (v *ObservedDomain) Equal(other schemaext.Value) bool {
 		return ok && v == nil && w == nil
 	}
 	return v.BaseType == w.BaseType && v.NotNull == w.NotNull && v.Default == w.Default && v.Check == w.Check &&
-		slices.Equal(v.Checks, w.Checks) && v.Comment == w.Comment
+		slices.Equal(v.Checks, w.Checks) && v.Collation == w.Collation && v.Comment == w.Comment
 }
 
 func equalNormalized(a, b *NormalizedDomain) bool {
@@ -221,7 +225,9 @@ func ValidateObservedDomain(v *ObservedDomain) error {
 	if strings.TrimSpace(v.BaseType) == "" {
 		return modelError(DomainKind, schemaext.Observed, fmt.Errorf("%w: a domain observation requires a base type", schemaext.ErrInvalidValue))
 	}
-	if err := validTexts("domain", "base type", v.BaseType, "default", v.Default, "check", v.Check, "comment", v.Comment); err != nil {
+	if err := validTexts("domain", "base type", v.BaseType, "default", v.Default, "check", v.Check,
+		"collation", v.Collation, "comment", v.Comment,
+	); err != nil {
 		return modelError(DomainKind, schemaext.Observed, err)
 	}
 	for _, check := range v.Checks {
