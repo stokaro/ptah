@@ -19,7 +19,7 @@ func TestDescriptors_StateTheRepeatableRecordWhereItIsMeasured(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(enginesWithRepeatableRecord(), qt.DeepEquals, []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.CockroachDB,
-		platform.YugabyteDB,
+		platform.YugabyteDB, platform.Oracle,
 	})
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -54,7 +55,8 @@ func (r *repeatableEngineTarget) count(c *qt.C, query string) int {
 func (r *repeatableEngineTarget) revisionChecksum(c *qt.C, version int64) string {
 	c.Helper()
 	var checksum string
-	query := sqlutil.Rebind(r.engine.dialect, "SELECT checksum FROM schema_migrations WHERE version = ?")
+	query := sqlutil.Rebind(r.engine.dialect,
+		"SELECT checksum FROM "+sqlident.Qualified(r.engine.dialect, "", "schema_migrations")+" WHERE version = ?")
 	c.Assert(r.conn.QueryRowContext(context.Background(), query, version).Scan(&checksum), qt.IsNil)
 	return checksum
 }

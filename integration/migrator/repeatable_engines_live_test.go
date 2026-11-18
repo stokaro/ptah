@@ -51,6 +51,10 @@ type repeatableEngine struct {
 	replaceView string
 	// fixed creates partial_marker unless it exists.
 	fixed string
+	// catalogColumns counts the columns of the relation its parameter names,
+	// where information_schema does not exist. Empty reads
+	// information_schema.columns in schema.
+	catalogColumns string
 }
 
 // view is a view over widgets with the given select list, in the engine's
@@ -93,6 +97,15 @@ var (
 	}
 	// repeatableSQLServer has no CREATE OR REPLACE VIEW and no CREATE TABLE
 	// IF NOT EXISTS, so its fixtures say both its own way.
+	// repeatableOracle commits its own DDL, so every repeatable migration runs
+	// without a transaction, and Ptah takes no migration lock there. A schema
+	// is an account on Oracle, so the scratch database is one.
+	repeatableOracle = repeatableEngine{
+		name: "oracle", engine: dbtarget.Oracle, dialect: "oracle", admin: dbtarget.OracleAdmin,
+		family: "oracle", noTransaction: true, keepsPartial: true,
+		replaceView: repeatableReplaceView, fixed: repeatableEnginesFixed,
+		catalogColumns: "SELECT count(*) FROM user_tab_columns WHERE table_name = UPPER(?)",
+	}
 	repeatableSQLServer = repeatableEngine{
 		name: "sqlserver", engine: dbtarget.SQLServer, dialect: "sqlserver", admin: dbtarget.SQLServer,
 		family: "sqlserver", schema: "SCHEMA_NAME()", replaceView: "CREATE OR ALTER VIEW",
@@ -103,7 +116,7 @@ var (
 	// migrations.
 	repeatableEngines = []repeatableEngine{
 		repeatablePostgres, repeatableCockroachDB, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB,
-		repeatableSQLServer,
+		repeatableSQLServer, repeatableOracle,
 	}
 	// repeatableLockingEngines take the migration lock. CockroachDB has no
 	// session advisory lock, and Ptah runs every migration there without one.
@@ -114,7 +127,7 @@ var (
 	repeatableMySQLFamilyEngines = []repeatableEngine{repeatableMySQL, repeatableMariaDB}
 	// repeatableNonAtomicEngines do not roll schema changes back as a unit.
 	repeatableNonAtomicEngines = []repeatableEngine{
-		repeatableCockroachDB, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB,
+		repeatableCockroachDB, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB, repeatableOracle,
 	}
 )
 
@@ -172,6 +185,9 @@ func repeatableScratchDatabaseURL(c *qt.C, t *testing.T, engine repeatableEngine
 	if engine.family == "sqlserver" {
 		return sqlServerScratchDatabaseURL(c, engine.admin, "ptah_rt_repeatable")
 	}
+	if engine.family == "oracle" {
+		return oracleScratchAccountURL(c, engine.admin, "ptah_rt_repeatable")
+	}
 	adminURL := dbtarget.URL(c, engine.admin)
 	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
 	c.Assert(err, qt.IsNil)
@@ -215,6 +231,36 @@ func sqlServerScratchDatabaseURL(c *qt.C, adminEngine dbtarget.Engine, prefix st
 	query := parsed.Query()
 	query.Set("database", database)
 	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+// oracleScratchAccountURL creates an Oracle account of its own for one test,
+// with the privileges a migration needs, and drops it with everything it owns
+// when the test ends.
+func oracleScratchAccountURL(c *qt.C, adminEngine dbtarget.Engine, prefix string) string {
+	c.Helper()
+	adminURL := dbtarget.URL(c, adminEngine)
+	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(admin) })
+	account := fmt.Sprintf("%s_%d_%d", prefix, os.Getpid(), time.Now().UnixNano()%1_000_000_000)
+	c.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		_, dropErr := admin.ExecContext(ctx, "DROP USER "+account+" CASCADE")
+		c.Check(dropErr, qt.IsNil)
+	})
+	for _, statement := range []string{
+		"CREATE USER " + account + " IDENTIFIED BY ptah_password",
+		"ALTER USER " + account + " QUOTA UNLIMITED ON USERS",
+		"GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW TO " + account,
+	} {
+		_, err := admin.ExecContext(context.Background(), statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
+	}
+	parsed, err := url.Parse(adminURL)
+	c.Assert(err, qt.IsNil)
+	parsed.User = url.UserPassword(account, "ptah_password")
 	return parsed.String()
 }
 
@@ -268,8 +314,12 @@ func (r *repeatableEngineTarget) record(c *qt.C, fsys fstest.MapFS, identity str
 // zero for a relation that does not exist.
 func (r *repeatableEngineTarget) columns(c *qt.C, relation string) int {
 	c.Helper()
-	query := sqlutil.Rebind(r.engine.dialect, "SELECT count(*) FROM information_schema.columns "+
-		"WHERE table_schema = "+r.engine.schema+" AND table_name = ?")
+	query := "SELECT count(*) FROM information_schema.columns WHERE table_schema = " + r.engine.schema +
+		" AND table_name = ?"
+	if r.engine.catalogColumns != "" {
+		query = r.engine.catalogColumns
+	}
+	query = sqlutil.Rebind(r.engine.dialect, query)
 	var count int
 	c.Assert(r.conn.QueryRowContext(context.Background(), query, relation).Scan(&count), qt.IsNil)
 	return count

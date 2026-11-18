@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ptah.run/core/sqlutil"
@@ -678,12 +679,32 @@ func (m *Migrator) nextMigrationLogSeq() int64 {
 
 // newMigrationLogRunID returns an identifier for one invocation.
 //
-// It is the process id and the start time rather than a random value: the two
-// together are unique enough to group one run's entries, and they say
-// something a reader can use when a log and a process list have to be lined
-// up.
+// It is the process id, the start time and a count rather than a random
+// value: they say something a reader can use when a log and a process list
+// have to be lined up. The ID has to be unique, because it groups one run's
+// entries and it is what decides a repeatable migration's claim between two
+// runs. The count is what keeps two migrators built in one process within one
+// clock tick apart: the wall clock of many platforms ticks in microseconds or
+// coarser, and without it most IDs taken back to back are equal.
 func newMigrationLogRunID() string {
-	return strconv.Itoa(os.Getpid()) + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	return processRunIDs.next()
+}
+
+// processRunIDs names every run this process starts.
+var processRunIDs = runIDSource{pid: os.Getpid(), now: time.Now}
+
+// runIDSource names runs as pid-time-count, the time in nanoseconds and the
+// count of runs the source has named, both in base 36.
+type runIDSource struct {
+	pid  int
+	now  func() time.Time
+	runs atomic.Uint64
+}
+
+// next names one more run. It is safe for concurrent use.
+func (s *runIDSource) next() string {
+	return strconv.Itoa(s.pid) + "-" + strconv.FormatInt(s.now().UnixNano(), 36) + "-" +
+		strconv.FormatUint(s.runs.Add(1), 36)
 }
 
 // resolveActor reads the actor a run records, with the provenance that says
