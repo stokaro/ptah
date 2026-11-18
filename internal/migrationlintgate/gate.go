@@ -77,6 +77,11 @@ type Policy struct {
 type Pending struct {
 	Versions    []int64
 	Repeatables []string
+	// GeneratedAtStart is the generated columns the target reports before the
+	// first pending version runs, under that version
+	// ([lint.Options.GeneratedAtStart]). Empty leaves every drop of a column
+	// the migration adds back as generated reported.
+	GeneratedAtStart []lintext.BaselineColumn
 }
 
 // ServerVersionNote is what the policy's declared server version resolved to
@@ -210,6 +215,7 @@ func AnalyzeWithPolicy(
 	pathPrefix string,
 ) ([]lint.Finding, error) {
 	options := policy.options(pathPrefix)
+	options.GeneratedAtStart = pending.GeneratedAtStart
 	options.Selection = lint.VersionSelection{
 		Versions:    pending.Versions,
 		Repeatables: pending.Repeatables,

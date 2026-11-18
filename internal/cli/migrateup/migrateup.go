@@ -753,7 +753,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}, emit, preflightOutput(cmd, opts, runtime))
 	if !opts.allowDestructive {
 		preflightHook = dbcli.CombineMigrationHooks(
-			lockedDestructiveLintHook(lintRuntime, migrationsFS, lintPolicy, lintPathPrefix),
+			lockedDestructiveLintHook(lintRuntime, migrationsFS, lintPolicy, lintPathPrefix, generatedColumnsOf(conn)),
 			preflightHook,
 		)
 	}
@@ -1388,16 +1388,62 @@ func pendingWork(plan migrator.MigrationPlan) migrationlintgate.Pending {
 	return pending
 }
 
+// generatedColumnsOf reads the generated columns of the database conn reaches,
+// as the state the first pending version starts from, or is nil where the
+// gate has no use for them. Only a PostgreSQL plan rebuilds a generated
+// column around a type change, so only there does the gate ask.
+func generatedColumnsOf(conn *dbschema.DatabaseConnection) func(context.Context, int64) ([]lintext.BaselineColumn, error) {
+	if conn.Info().Dialect != platform.Postgres {
+		return nil
+	}
+	return func(ctx context.Context, version int64) ([]lintext.BaselineColumn, error) {
+		schema, err := conn.Reader().ReadSchemaContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		var columns []lintext.BaselineColumn
+		for _, table := range schema.Tables {
+			for _, column := range table.Columns {
+				if column.GeneratedExpression != nil && strings.TrimSpace(*column.GeneratedExpression) != "" {
+					columns = append(columns, lintext.BaselineColumn{
+						Version: version, Schema: table.Schema, Table: table.Name, Name: column.Name, Generated: true,
+					})
+				}
+			}
+		}
+		return columns, nil
+	}
+}
+
+// lockedDestructiveLintHook refuses a plan whose pending migrations carry a
+// blocking data-safety finding. The gate reads no starting state, so where it
+// would refuse it reads the target's generated columns, if generated asks for
+// them, and judges again: a generated column a migration drops and adds back
+// as generated loses no value a client wrote, and only the target can say the
+// column was generated. The read happens on the refusing path alone, so a
+// clean plan costs no schema read.
 func lockedDestructiveLintHook(
 	runtime lint.Runtime,
 	fsys fs.FS,
 	policy migrationlintgate.Policy,
 	pathPrefix string,
+	generated func(context.Context, int64) ([]lintext.BaselineColumn, error),
 ) migrator.PreMigrationHook {
 	return func(ctx context.Context, plan migrator.MigrationPlan) error {
-		findings, err := migrationlintgate.AnalyzeWithPolicy(ctx, runtime, fsys, pendingWork(plan), policy, pathPrefix)
+		pending := pendingWork(plan)
+		findings, err := migrationlintgate.AnalyzeWithPolicy(ctx, runtime, fsys, pending, policy, pathPrefix)
 		if err != nil {
 			return fmt.Errorf("error checking pending migration safety: %w", err)
+		}
+		if len(findings) > 0 && generated != nil && len(pending.Versions) > 0 {
+			pending.GeneratedAtStart, err = generated(ctx, pending.Versions[0])
+			if err != nil {
+				return fmt.Errorf("error reading the generated columns of the target: %w", err)
+			}
+			findings, err = migrationlintgate.AnalyzeWithPolicy(ctx, runtime, fsys, pending, policy, pathPrefix)
+			if err != nil {
+				return fmt.Errorf("error checking pending migration safety: %w", err)
+			}
 		}
 		if len(findings) > 0 {
 			return fmt.Errorf(

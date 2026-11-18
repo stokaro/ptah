@@ -189,6 +189,12 @@ type BaselineColumn struct {
 	NotNull bool `json:"not_null,omitempty"`
 	// HasDefault reports whether the column carries a DEFAULT expression.
 	HasDefault bool `json:"has_default,omitempty"`
+	// Generated reports a generated column, whose value the server computes
+	// from an expression over the row rather than storing what a client
+	// wrote. The drop rules read it: a generated column dropped and added
+	// back as generated loses no value a client wrote. False where the host
+	// does not report it, which leaves such a drop reported.
+	Generated bool `json:"generated,omitempty"`
 	// Default is the column's DEFAULT expression as the host read it, which
 	// on the PostgreSQL family is the server's own spelling, such as
 	// `nextval('s'::regclass)`. The server writes a sequence such a constant

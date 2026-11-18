@@ -1346,10 +1346,14 @@ The rebuild has these limits:
   appends it.
 - `--qualifier` refuses the plan. The guard and the restated indexes and
   constraints are raw SQL, which the qualifier does not rewrite.
+- A NOT NULL with a name of its own, `CONSTRAINT price_nn NOT NULL`, comes
+  back under the default name.
 - A migration that holds the rebuild lints without a destructive change: the
-  drop rules `DS102` and `BC104` skip a column the file adds back as a
-  generated column, so `ptah migrations up` applies it without
-  `--allow-destructive`. The lint still warns that the type change may
+  drop rules `DS102` and `BC104` skip a generated column the file adds back as
+  generated, where the starting state shows it generated, so `ptah migrations
+  up` applies it without `--allow-destructive`. Under `ptah-compat migrate
+  lint`, a dev database bound to one schema is what lets the lint match the
+  qualified names the file writes. The lint still warns that the type change may
   rewrite the table (`DS103`), that the add computes every row (`PG309`) and
   that each `CREATE INDEX` blocks writes (`PG101`), because each one does.
 

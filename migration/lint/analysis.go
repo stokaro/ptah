@@ -298,6 +298,9 @@ type File struct {
 	// baseline is the schema state this file's version starts from, when the
 	// caller supplied one. Rules read it for facts the statement cannot carry.
 	baseline lintkit.State
+	// generatedAtStart is the generated columns a live database reports for
+	// this file's version, read where baseline is unread.
+	generatedAtStart lintkit.State
 	// dependents is what reads each column in that same starting state.
 	dependents baselineDependents
 	// split reports a file whose SQL is split into statements: an up or a
@@ -574,6 +577,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		Reads:       opts.BaselineRead,
 	})
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
+	generatedAtStart := lintkit.NewStates(lintext.Baseline{Columns: opts.GeneratedAtStart})
 	registered := registeredCodes(rules)
 	// Validated above, so a second compile cannot fail here.
 	naming, _ := compileNamingConfig(opts.Naming)
@@ -603,6 +607,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 			return Analysis{}, err
 		}
 		file.transactionOwner = opts.TransactionOwner
+		file.generatedAtStart = generatedAtStart[file.Version]
 		files = append(files, file)
 	}
 	keyAtlasFilesByPosition(files, snapshot, dirFormat)
