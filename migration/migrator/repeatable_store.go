@@ -41,16 +41,6 @@ func (m *Migrator) repeatableTable() string {
 	return m.qualifiedMetadataTable(m.repeatableTableName())
 }
 
-// repeatableObjectName is the record's name as SQL Server's OBJECT_ID probe
-// takes it, built as [Migrator.migrationLogObjectName] builds the log's.
-func (m *Migrator) repeatableObjectName() string {
-	table := m.quoteIdentifier(m.repeatableTableName())
-	if schema := m.metadataTableSchemaName(); schema != "" {
-		return m.quoteIdentifier(schema) + "." + table
-	}
-	return table
-}
-
 // repeatableIdentity is the record's key column as every statement names it.
 // IDENTITY is a reserved word in T-SQL, where the bare name is a syntax error,
 // so the name is spelled the way [sqlident.Ident] spells a column the record's
@@ -134,7 +124,7 @@ func (m *Migrator) ensureRepeatableTable(ctx context.Context) error {
 	ddl := expandTableStatement(
 		m.revisionTable().CreateRepeatables,
 		m.repeatableTable(),
-		sqlStringLiteral(m.repeatableObjectName()),
+		sqlStringLiteral(m.metadataObjectName(m.repeatableTableName())),
 		revisionEngineClauseFor(m.connectionDialect(), m.migrationsEngine),
 	)
 	if _, err := m.conn.ExecContext(ctx, ddl); err != nil {

@@ -308,10 +308,11 @@ BEGIN
     )
 END`,
 		// The record of repeatable migrations. identity is quoted because
-		// IDENTITY is reserved in T-SQL, and binary-collated so two identities
-		// that differ only in letter case stay two rows, as they are to the
-		// directory and on every other engine. body is VARBINARY(MAX): the
-		// bytes the digest covers, of any length.
+		// IDENTITY is reserved in T-SQL, and binary-collated, as the version
+		// column is, so a row matches the file whose identity it spells byte
+		// for byte: under the default case-insensitive collation an orphaned
+		// row named Widget would answer the UPDATE of a new file named widget.
+		// body is VARBINARY(MAX): the bytes the digest covers, of any length.
 		CreateRepeatables: `IF OBJECT_ID({object}, N'U') IS NULL
 BEGIN
     CREATE TABLE {table} (

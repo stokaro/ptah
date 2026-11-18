@@ -1080,7 +1080,7 @@ func (m *Migrator) createMigrationsTableSQL() string {
 	return ptahRevisionsTableDDL(
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
-		sqlStringLiteral(m.metadataObjectName()),
+		sqlStringLiteral(m.metadataObjectName(m.migrationsTableName())),
 		m.migrationsEngine,
 	)
 }
@@ -1389,13 +1389,6 @@ func (m *Migrator) migrationsTableName() string {
 		return m.defaultMigrationsTable()
 	}
 	return m.migrationsTable
-}
-
-func (m *Migrator) metadataObjectName() string {
-	if schema := m.metadataTableSchemaName(); schema != "" {
-		return m.quoteIdentifier(schema) + "." + m.quoteIdentifier(m.migrationsTableName())
-	}
-	return m.quoteIdentifier(m.migrationsTableName())
 }
 
 // GetCurrentVersion returns the current migration version from the database

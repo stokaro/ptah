@@ -99,10 +99,10 @@ says `-- +ptah no_transaction` or the run uses `--tx-mode none`. Under
 and each repeatable migration then runs in its own.
 
 That holds on an engine that rolls schema changes back as a unit: PostgreSQL,
-SQLite, SQL Server, and CockroachDB 24 and older. MySQL, MariaDB and CockroachDB from 25
-commit the open transaction before a schema statement, and YugabyteDB keeps
-schema changes through a rollback, so a transaction there would not undo a
-failed body. On those engines every repeatable migration runs without a
+SQLite, SQL Server, and CockroachDB 24 and older. MySQL, MariaDB and
+CockroachDB from 25 commit the open transaction before a schema statement, and
+YugabyteDB keeps schema changes through a rollback, so a transaction there
+would not undo a failed body. On those engines every repeatable migration runs without a
 transaction, and its record says `no_transaction=true`. A body that changes
 data only gets no transaction either, so write it to converge when it runs
 again from its first statement. A file that asks for a transaction with
