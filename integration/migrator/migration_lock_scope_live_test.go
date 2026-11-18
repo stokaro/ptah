@@ -4,13 +4,13 @@ package migrator_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/dblock"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
 )
@@ -34,19 +34,14 @@ func newLockScopeTarget(c *qt.C) lockScopeTarget {
 	login := oracleAccount(c, admin, fmt.Sprintf("ptah_ls_a_%d", stamp), fmt.Sprintf("GRANT CREATE SESSION, CREATE TABLE TO ptah_ls_a_%d", stamp))
 	for _, statement := range []string{
 		`CREATE TABLE "` + owner + `".ptah_locks (name VARCHAR2(1000) PRIMARY KEY)`,
-		`INSERT INTO "` + owner + `".ptah_locks (name) VALUES ('ptah_migrate')`,
-		"COMMIT",
 		`GRANT SELECT, INSERT ON "` + owner + `".ptah_locks TO ` + login,
 	} {
 		_, err := admin.ExecContext(context.Background(), statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("statement: %s", statement))
 	}
-	holder, err := admin.BeginTx(context.Background(), &sql.TxOptions{})
+	held, err := dblock.AcquireInSchema(context.Background(), admin, "ptah_migrate", owner, dblock.NoWait)
 	c.Assert(err, qt.IsNil)
-	c.Cleanup(func() { _ = holder.Rollback() })
-	_, err = holder.ExecContext(context.Background(),
-		`SELECT name FROM "`+owner+`".ptah_locks WHERE name = 'ptah_migrate' FOR UPDATE`)
-	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(held.Release(context.Background()), qt.IsNil) })
 	app, err := migrator.NewFSMigrator(connectOracleLock(c, oracleAccountURL(c, adminURL, login)), oracleWidgets())
 	c.Assert(err, qt.IsNil)
 	return lockScopeTarget{app: app.WithMigrationLockTimeout(500 * time.Millisecond), owner: owner, login: login}
