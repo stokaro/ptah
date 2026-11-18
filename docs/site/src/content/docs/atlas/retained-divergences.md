@@ -396,8 +396,9 @@ the usual way a directory without zero-padded versions grows.
 
 **Current boundary.** Both binaries read the version of an Atlas file as the
 text before the first underscore of its name, whatever it holds: `1.x.sql` is
-version `1.x`, `v1_x.sql` is `v1`, `00_x.sql` is `00`. Both run the files in
-file-name order and record that text in the revision table. The one name they
+version `1.x`, `v1_x.sql` is `v1`, `00_x.sql` is `00`. Both run and list the
+files in file-name order, order the versions as text on `migrate set`, and
+record that text in the revision table. The one name they
 part on is a file whose name starts with an underscore, such as `_x.sql`, whose
 version is the empty string. `ptah-compat` refuses the directory before
 anything runs and names the file.
