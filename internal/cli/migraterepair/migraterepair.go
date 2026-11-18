@@ -3,7 +3,6 @@
 package migraterepair
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -289,6 +288,9 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("invalid migration version %q: %w", target.version, err)
 	}
+	if version == 0 {
+		return fmt.Errorf("invalid migration version %q: version 0 names no migration", target.version)
+	}
 	err = mig.RepairMigration(ctx, migrator.RepairMigrationOptions{
 		Version:    version,
 		Force:      opts.force,
@@ -362,12 +364,9 @@ func parseRepairTarget(opts *options) (repairTarget, error) {
 	case opts.version == "":
 		return repairTarget{}, fmt.Errorf("migration version is required, or --repeatable for a repeatable migration's record")
 	}
-	// Text that is not a number names an Atlas file whose version is not one,
-	// such as v1; a number has to name a migration.
-	version, err := strconv.ParseInt(opts.version, 10, 64)
-	if errors.Is(err, strconv.ErrRange) || (err == nil && version <= 0) {
-		return repairTarget{}, fmt.Errorf("invalid migration version %q", opts.version)
-	}
+	// The text goes to the migrator once the directory is read: -5 or 00 can
+	// be the version of an Atlas file, so only the directory can say a text
+	// names nothing.
 	resumeFrom, err := parseResumeFrom(opts.resumeFrom)
 	if err != nil {
 		return repairTarget{}, err

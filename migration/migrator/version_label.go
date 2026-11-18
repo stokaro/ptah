@@ -39,18 +39,30 @@ func (m *Migrator) VersionLabels(versions []int64) []string {
 // ResolveVersion reads a version a person named, such as the target of a
 // rollback, as the version the migrator runs it under.
 //
-// A decimal number is that number. It is refused when it reaches the order
-// keys of the Atlas files whose version is not a number, since those keys are
-// no file's version. Any other text is the version string of such a file, and
-// the error names the text when no file carries it. Over a revision table that
-// records numbers, a directory holding such a file is refused first, as every
-// command that reads the revisions refuses it.
+// The version string of an Atlas file whose version is not a decimal number
+// above zero, such as v1, 00 or -5, names that file, and is read first: 00
+// names 00_x.sql, never version 0. Other text is read as a decimal number,
+// which is that number. A canonical decimal above zero is never such a
+// version, so 0, 1 and 01 read as numbers whatever the directory holds. A
+// number is refused when it is negative, and when it reaches the order keys
+// of the files whose version is not a number, since those keys are no file's
+// version. Text that is neither is refused with the text in the error. Over a
+// revision table that records numbers, a directory holding such a file is
+// refused first, as every command that reads the revisions refuses it.
 func (m *Migrator) ResolveVersion(label string) (int64, error) {
 	if err := m.refuseNumberlessVersionsInANumericTable(); err != nil {
 		return 0, err
 	}
 	numberless := m.numberlessMigrations()
+	for _, migration := range numberless {
+		if migration.atlasRevisionVersion == label {
+			return migration.Version, nil
+		}
+	}
 	if version, err := strconv.ParseInt(label, 10, 64); err == nil {
+		if version < 0 {
+			return 0, fmt.Errorf("no migration file carries version %d: a migration version is not negative", version)
+		}
 		for _, migration := range numberless {
 			if version >= migration.Version {
 				return 0, fmt.Errorf(
@@ -61,11 +73,6 @@ func (m *Migrator) ResolveVersion(label string) (int64, error) {
 			}
 		}
 		return version, nil
-	}
-	for _, migration := range numberless {
-		if migration.atlasRevisionVersion == label {
-			return migration.Version, nil
-		}
 	}
 	return 0, fmt.Errorf("no migration file carries version %q", label)
 }

@@ -4,7 +4,6 @@
 package migrateset
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -228,21 +227,14 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 	return nil
 }
 
-// parseSetVersion refuses a --version no directory can name before the command
-// connects: an empty one, a number out of range and a negative number. Any
-// other text names an Atlas file whose version is not a number, such as v1,
-// and the migrator resolves it once it has read the directory.
+// parseSetVersion refuses an empty --version before the command connects. Any
+// other text goes to [migrator.Migrator.ResolveVersion] once the directory is
+// read, because -5 or 00 can be the version of an Atlas file, so only the
+// directory can say a text names nothing.
 func parseSetVersion(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return "", fmt.Errorf("--%s is required", versionFlag)
-	}
-	version, err := strconv.ParseInt(trimmed, 10, 64)
-	if errors.Is(err, strconv.ErrRange) {
-		return "", fmt.Errorf("--%s %q is not a valid migration version: %w", versionFlag, value, err)
-	}
-	if version < 0 {
-		return "", fmt.Errorf("--%s must not be negative", versionFlag)
 	}
 	return trimmed, nil
 }

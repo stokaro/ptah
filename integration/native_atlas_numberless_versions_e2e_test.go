@@ -145,6 +145,93 @@ func TestNativeAtlasNumberlessVersionPlanWithoutShadow_FailurePath(t *testing.T)
 	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, []string{"1", "v1", "v2"})
 }
 
+// spelledNumberFiles are versions Atlas reads as text although they read as
+// numbers: 00 and -5 are not decimals above zero. With v1_v.sql they run under
+// the order keys 3, 4 and 5 in file-name order: -5_m.sql, 00_z.sql, v1_v.sql.
+var spelledNumberFiles = []string{"1_a.sql", "2_b.sql", "00_z.sql", "-5_m.sql", "v1_v.sql"}
+
+// TestNativeAtlasSpelledNumberVersionsE2E names 00_z.sql by --version=00 and
+// -5_m.sql by --version=-5 on every native command that takes a version. Read
+// as a number first, 00 is version 0, which a set reads as removing every
+// revision, and -5 is refused as negative before the directory is read.
+func TestNativeAtlasSpelledNumberVersionsE2E(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantExit int
+		wantOut  string
+		wantRows []string
+	}{
+		{
+			name:     "set to 00 removes what runs after it",
+			args:     []string{"migrations", "set", "--version=00"},
+			wantRows: []string{"-5", "00", "1", "2"},
+		},
+		{
+			name:     "set to -5 removes what runs after it",
+			args:     []string{"migrations", "set", "--version=-5"},
+			wantRows: []string{"-5", "1", "2"},
+		},
+		{
+			name: "down to 00 plans the one file after it",
+			args: []string{"migrations", "down", "--target=00", "--dry-run"},
+			// The files carry no down section, so the plan ends in that refusal.
+			wantExit: 2,
+			wantOut:  "Migrations to roll back: 1\n",
+			wantRows: []string{"-5", "00", "1", "2", "v1"},
+		},
+		{
+			name:     "repair 00",
+			args:     []string{"migrations", "repair", "--version=00", "--force"},
+			wantOut:  "Updated migration 00 revision metadata; no migration SQL ran\n",
+			wantRows: []string{"-5", "00", "1", "2", "v1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			writeVersionOrderFiles(c, dir, compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables()),
+				spelledNumberFiles)
+			up := nativePtah(c, dir, "migrations", "up")
+			c.Assert(up.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", up.Stderr))
+
+			got := nativePtah(c, dir, tt.args...)
+
+			c.Assert(got.ExitCode, qt.Equals, tt.wantExit, qt.Commentf("stderr:\n%s", got.Stderr))
+			c.Assert(got.Stdout, qt.Contains, tt.wantOut)
+			c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, tt.wantRows)
+		})
+	}
+}
+
+// TestNativeAtlasSpelledNumberVersionBaselineE2E baselines a fresh database
+// through 00 and through -5. The Atlas baseline records only the boundary.
+func TestNativeAtlasSpelledNumberVersionBaselineE2E(t *testing.T) {
+	tests := []struct {
+		version  string
+		wantOut  string
+		wantRows []string
+	}{
+		{version: "00", wantOut: "Baselined 4 migration(s) through version 00", wantRows: []string{"00"}},
+		{version: "-5", wantOut: "Baselined 3 migration(s) through version -5", wantRows: []string{"-5"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			writeVersionOrderFiles(c, dir, compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables()),
+				spelledNumberFiles)
+
+			got := nativePtah(c, dir, "migrations", "baseline", "--version="+tt.version)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+			c.Assert(got.Stdout, qt.Contains, tt.wantOut)
+			c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, tt.wantRows)
+		})
+	}
+}
+
 // TestNativeAtlasNumberlessVersionSetE2E sets the revision to v1 named by its
 // version, and the summary and the dry run name it the same way.
 func TestNativeAtlasNumberlessVersionSetE2E(t *testing.T) {

@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -970,17 +969,13 @@ func humanOutput(cmd *cobra.Command, opts *options) io.Writer {
 	return cmd.OutOrStdout()
 }
 
-// refuseMalformedTarget refuses a --target no directory can name before the
-// command connects: an empty one, a number out of range and a negative number.
-// Any other text names an Atlas file whose version is not a number, such as v1,
-// and the migrator resolves it once it has read the directory.
+// refuseMalformedTarget refuses an empty --target before the command connects.
+// Any other text goes to [migrator.Migrator.ResolveVersion] once the directory
+// is read, because -5 or 00 can be the version of an Atlas file, so only the
+// directory can say a text names nothing.
 func refuseMalformedTarget(value string) error {
-	version, err := strconv.ParseInt(value, 10, 64)
-	if err != nil && (value == "" || errors.Is(err, strconv.ErrRange)) {
-		return fmt.Errorf("invalid target version %q: %w", value, err)
-	}
-	if version < 0 {
-		return fmt.Errorf("target version must be >= 0")
+	if value == "" {
+		return fmt.Errorf("invalid target version %q: the target is empty", value)
 	}
 	return nil
 }
