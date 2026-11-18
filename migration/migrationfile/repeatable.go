@@ -111,15 +111,58 @@ func RepeatableFileName(identity string) string {
 // repeatable name and two identities that differ only in letter case, which a
 // case-insensitive filesystem or collation could not tell apart.
 func DiscoverRepeatables(fsys fs.FS, format DirFormat) ([]RepeatableFile, error) {
-	discovered, err := discover(fsys, format)
+	discovered, err := discover(fsys, format, rReadAsAtlas)
 	if err != nil {
 		return nil, err
 	}
 	return discovered.repeatables, nil
 }
 
+// DiscoverAtlasRepeatables walks fsys as a directory in the Atlas format and
+// returns its versioned files, as [Discover] orders them, and its repeatable
+// migrations, as [DiscoverRepeatables] orders them. A file named
+// R__<identity>.sql is a repeatable migration here, where the Atlas format
+// reads it as the one-time version R, so it is in the second result and never
+// in the first.
+//
+// The walk is the Atlas one: atlas.sum narrows the candidates to top-level
+// files, so a repeatable file in a subdirectory is not read, and the versioned
+// files are parsed with the Atlas grammar. A name that claims the prefix and
+// breaks the identity is refused, as [DiscoverRepeatables] refuses it, rather
+// than read as a version or left out. Other names that start with R, such as
+// 1R_name.sql, keep their Atlas reading.
+func DiscoverAtlasRepeatables(fsys fs.FS) ([]File, []RepeatableFile, error) {
+	discovered, err := discover(fsys, DirFormatAtlas, rReadAsRepeatable)
+	if err != nil {
+		return nil, nil, err
+	}
+	return discovered.files, discovered.repeatables, nil
+}
+
+// claimsRepeatableName reports whether the base name of p claims to be a
+// repeatable migration: it starts with [RepeatableFilePrefix] and ends in
+// .sql in any letter case. A claim is parsed as a repeatable name, and a
+// misspelled one is refused rather than read as anything else.
+func claimsRepeatableName(p string) bool {
+	_, err := parseRepeatableFileName(path.Base(p), p)
+	return !errors.Is(err, ErrNotRepeatableFileName)
+}
+
+// withoutRepeatableClaims returns the paths whose names do not claim to be a
+// repeatable migration, in their order.
+func withoutRepeatableClaims(paths []string) []string {
+	kept := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if !claimsRepeatableName(p) {
+			kept = append(kept, p)
+		}
+	}
+	return kept
+}
+
 // collectRepeatables parses the candidate files that claim the repeatable
-// prefix. It is called only for a directory read in the Ptah format.
+// prefix. It is called for a directory read in the Ptah format, and for one
+// [DiscoverAtlasRepeatables] reads.
 func collectRepeatables(sqlFiles []string) ([]RepeatableFile, error) {
 	var repeatables []RepeatableFile
 	folded := make(map[string]string)

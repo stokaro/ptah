@@ -62,6 +62,7 @@ community CLI does on the same input.
 | [`PTAH_HCL_MERGE_REDECLARATIONS`](#ptah_hcl_merge_redeclarations) | Merge repeated blocks again |
 | [`PTAH_HCL_STRICT_REDECLARATIONS`](#ptah_hcl_strict_redeclarations) | Refuse four more repeated block kinds |
 | [`PTAH_HCL_SCHEMA_SCOPED_ENUMS`](#ptah_hcl_schema_scoped_enums) | Key `enum` blocks by qualified name |
+| [`PTAH_ATLAS_REPEATABLE_MIGRATIONS`](#ptah_atlas_repeatable_migrations) | Run `R__<identity>.sql` again whenever it changes |
 
 ## `PTAH_ATLAS_INSPECT_ALL_BLOCKS`
 
@@ -344,6 +345,21 @@ setting under which `ptah-compat schema inspect` of a database holding one enum
 name in two schemas can be applied again: the document names both, and reading
 it back re-renders it byte for byte. The community CLI has no such setting and
 refuses the document its own inspect writes for that database.
+
+## `PTAH_ATLAS_REPEATABLE_MIGRATIONS`
+
+By default, `ptah-compat migrate apply` reads `R__<name>.sql` in an Atlas
+directory as the one-time version `R`, as the community CLI does: it runs once,
+and an edit after it applied changes nothing. Set it to `1` and `migrate apply`
+and `migrate status` read the file as a
+[repeatable migration](../../versioned/repeatable/#the-compatibility-surface),
+which runs after the versioned files and again whenever its content changes.
+`atlas.sum` is the same either way. Unset over a database whose record of
+repeatable migrations holds a row, `migrate apply` and `migrate status` refuse
+and say to set it. While it is set, `migrate down` refuses a directory that
+holds an `R__` file, and `migrate diff` and `migrate lint` say on stderr that
+they read such a file as the version `R`. The community CLI has no
+re-run-on-change semantics, so strict mode refuses the enabled value.
 
 ## One shape has no Atlas-readable form at all
 

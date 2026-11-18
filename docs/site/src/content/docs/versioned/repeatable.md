@@ -67,8 +67,9 @@ CREATE OR REPLACE VIEW account_names AS SELECT id, name FROM accounts;
 `--dir-format auto` reads the Ptah format only when the directory also holds a
 Ptah versioned file. A directory of repeatable migrations alone needs
 `--dir-format ptah`. A directory read in the Atlas format has no repeatable
-migrations: Atlas reads `R__<name>.sql` as the one-time version `R`, and that
-reading is kept.
+migrations on the native surface: Atlas reads `R__<name>.sql` as the one-time
+version `R`, and that reading is kept. `ptah-compat` reads it as a repeatable
+migration when asked; see [The compatibility surface](#the-compatibility-surface).
 
 ## What an up run does
 
@@ -330,8 +331,6 @@ script. Each refusal below comes before anything changes:
   an attempt that ran outside a transaction did not finish, or when the record
   keeps no body that hashes to the digest it applied. Run without
   `--check-drift` to apply the change.
-- **The Atlas-compatible revision format.** `--revision-format atlas` defines
-  the revision table and nothing beside it.
 - **A runner that opens its own transactions.** Under
   `migration.runner: golang-migrate` a repeatable migration would run in a
   transaction Ptah opens, so the run is refused.
@@ -353,8 +352,87 @@ when its body changes. See [Import from another tool](../import/).
 
 ## The compatibility surface
 
-`ptah-compat` keeps the Atlas reading of `R__` and does not run repeatable
-migrations; stokaro/ptah#6152 records the gap.
+By default `ptah-compat` keeps the Atlas reading: `R__view.sql` is the version
+`R`, it runs once, and an edit of it after it applied changes nothing. Because
+`R` sorts after every number, a versioned file added after it is refused as
+added out of order, on `ptah-compat` and on the community binary alike.
+
+Set `PTAH_ATLAS_REPEATABLE_MIGRATIONS=1` and `ptah-compat migrate apply` and
+`ptah-compat migrate status` read a top-level `R__<identity>.sql` of a
+directory in the Atlas layout as a repeatable migration, with everything this
+page describes: it runs after the versioned files, again when its content
+changes, and is refused where a native run refuses it. The other files keep
+their Atlas reading, `1R_name.sql` included. A directory in another layout,
+such as `?format=flyway`, is converted before it runs and is not affected.
+
+```bash
+PTAH_ATLAS_REPEATABLE_MIGRATIONS=1 ptah-compat migrate apply --url "$DATABASE_URL" --dir file://migrations
+```
+
+The variable does not change `atlas.sum`. The community binary hashes every
+top-level `.sql` file, `R__` files included, and `ptah-compat migrate hash`
+writes the same file whatever the variable says, so `migrate validate` agrees
+with the community binary. Editing a repeatable migration needs `migrate hash`,
+as editing any file does.
+
+The revision table records the versioned files only. The record is
+`atlas_schema_revisions_repeatable`, beside `atlas_schema_revisions` and in the
+same schema (`atlas_schema_revisions` on PostgreSQL unless `--revisions-schema`
+moves it). Native `ptah migrations up --revision-format atlas` keeps its record
+in the same place, `<revision table>_repeatable`.
+
+Both reports keep the Atlas-shaped part as the community binary prints it, and
+add the repeatable work after it, only when there is some:
+
+```text
+No migration files to execute
+
+Repeatable Migrations: 1
+  view changed h1:mtlKrBRtAni0Nb+vm02kPCGLe/temD10FQ2BpKKS0OY= applied
+```
+
+`migrate status` lists each repeatable migration with its state, as
+`ptah migrations status` does, and a new or changed one makes the status
+`PENDING`. Under `--format '{{ json . }}'` both documents carry the list under
+`Repeatables`, after every key the community binary writes, and leave the key
+out when the list is empty.
+
+A database where the Atlas reading already applied the file holds the revision
+row `R`. Read as a repeatable migration, the file has no record there and would
+run again, so `migrate apply` and `migrate status` refuse the database before
+anything runs and name the revision table as the database resolves it. Delete
+the row, check that the body runs again against the database, and apply. On
+PostgreSQL the table is in the schema `atlas_schema_revisions` unless
+`--revisions-schema` or a `search_path` in the URL moves it:
+
+```sql
+DELETE FROM atlas_schema_revisions.atlas_schema_revisions WHERE version = 'R';
+```
+
+On MySQL, MariaDB and SQLite the table is in the database the URL connects to,
+and the bare name reaches it:
+
+```sql
+DELETE FROM atlas_schema_revisions WHERE version = 'R';
+```
+
+On any other target, copy the name from the refusal.
+
+The opposite direction is refused too. With the variable unset, the Atlas
+reading would run each recorded `R__` file once more as the version `R`, so
+`migrate apply` and `migrate status` refuse a database whose record holds a row
+and say to set the variable. A database with no record costs one catalog lookup
+and reports as it does without this feature.
+
+`migrate down` reads an `R__` file as the version `R` either way. While the
+variable is set it refuses a directory that holds one, before connecting, and
+with or without the variable it refuses a database whose record holds a row, as
+`ptah migrations down` does. A directory with no `R__` file over a database with
+no record rolls back with the variable set. `migrate diff` and `migrate lint` keep the
+Atlas reading and analyze the file as the version `R`; when the variable is set
+and the directory holds an `R__` file, each prints one line on stderr that says
+so. `PTAH_ATLAS_STRICT_COMPAT=1` refuses the variable when it is enabled,
+because the community binary has no re-run-on-change semantics.
 
 ## Limits
 

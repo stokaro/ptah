@@ -441,6 +441,12 @@ fields and what is taken out of them. The variable reads like every other
 boolean `PTAH_*` variable, changes no exit code, and is refused when set to true
 under `PTAH_ATLAS_STRICT_COMPAT=1`.
 
+[`PTAH_ATLAS_REPEATABLE_MIGRATIONS=1`](../extension-variables/#ptah_atlas_repeatable_migrations)
+runs `R__<identity>.sql` as a repeatable migration, again whenever it changes,
+where the default runs it once as the version `R`. Unset over a database whose
+record of repeatable migrations holds a row, the verb refuses before anything
+runs. `PTAH_ATLAS_STRICT_COMPAT=1` refuses the enabled value.
+
 Native twin: [`ptah migrations up`](../native-commands/).
 
 ### `ptah-compat migrate status`
@@ -474,6 +480,12 @@ Migration Status: PENDING
 not yet recorded. A half-applied migration annotates the first three lines
 (`(1 statements applied)`, `(1 statements left)`, `(last one partially)`) and
 adds a `Last migration attempt had errors:` block naming the failing statement.
+
+Under [`PTAH_ATLAS_REPEATABLE_MIGRATIONS=1`](../extension-variables/#ptah_atlas_repeatable_migrations)
+the report adds a `Repeatable Migrations` block after the Atlas-shaped part, and
+a JSON template a `Repeatables` key, only when there is repeatable work. Unset over a
+database whose record of repeatable migrations holds a row, the verb refuses.
+`PTAH_ATLAS_STRICT_COMPAT=1` refuses the enabled value.
 
 Native twin: [`ptah migrations status`](../native-commands/), which keeps its
 own block — only the compatibility surface is a contract with an existing
@@ -823,6 +835,12 @@ back carry — the `-- +ptah check` directives that abort a rollback when their
 assertion does not hold. It means on this verb exactly what it means on
 `migrate apply`, including through `PTAH_SKIP_CHECKS`. `PTAH_SERVER_DETAILS`
 shows what the server said about a failed down statement, as on `migrate apply`.
+
+A database whose record of repeatable migrations holds a row is refused, as
+`ptah migrations down` refuses it. While
+[`PTAH_ATLAS_REPEATABLE_MIGRATIONS`](../extension-variables/#ptah_atlas_repeatable_migrations)
+is set, a directory that holds an `R__` file is refused too, before connecting.
+`PTAH_ATLAS_STRICT_COMPAT=1` refuses the enabled value.
 
 `--plan` derives the rollback from the schema difference instead of running the
 down bodies, which is what makes a migration with **no** down body revertible:

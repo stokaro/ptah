@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
 
@@ -20,6 +19,10 @@ type MigrateStatusOptions struct {
 	Status           *migrator.MigrationStatus
 	AppliedRevisions []migrator.MigrationRevision
 	RevisionVersions map[int64]string
+	// Repeatables reads the directory's R__<identity>.sql files as repeatable
+	// migrations, as the run that produced Status read them: they leave
+	// `Available`, and Status.Repeatables fills `Repeatables`.
+	Repeatables bool
 }
 
 type MigrateStatus struct {
@@ -39,6 +42,10 @@ type MigrateStatus struct {
 	Total      int                 `json:"Total,omitempty"`
 	Error      string              `json:"Error,omitempty"`
 	SQL        string              `json:"SQL,omitempty"`
+	// Repeatables is Ptah's, and present only when the directory is read with
+	// repeatable migrations and has or records one; see
+	// [MigrateStatusRepeatable].
+	Repeatables []MigrateStatusRepeatable `json:"Repeatables,omitempty"`
 }
 
 type MigrateStatusFile struct {
@@ -77,7 +84,7 @@ func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {
 	if opts.Status == nil {
 		return MigrateStatus{}, fmt.Errorf("migrate status format requires migration status")
 	}
-	files, err := migrateStatusFiles(opts.FS, opts.RevisionVersions)
+	files, err := migrateStatusFiles(opts)
 	if err != nil {
 		return MigrateStatus{}, err
 	}
@@ -98,6 +105,9 @@ func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {
 		),
 		Next:   migrateStatusNext(opts.Status.PendingMigrations, opts.Status.PendingMigrationKeys),
 		Status: migrateStatusLabel(opts.Status),
+	}
+	if opts.Repeatables {
+		result.Repeatables = migrateStatusRepeatables(opts.Status.Repeatables)
 	}
 	applyMigrateStatusPartial(&result, opts.Status.DirtyRevision, opts.AppliedRevisions)
 	return result, nil
@@ -190,8 +200,9 @@ func migrateStatusFileDescriptions(files []MigrateStatusFile) map[string]string 
 	return descriptions
 }
 
-func migrateStatusFiles(fsys fs.FS, revisionVersions map[int64]string) ([]MigrateStatusFile, error) {
-	discovered, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
+func migrateStatusFiles(opts MigrateStatusOptions) ([]MigrateStatusFile, error) {
+	revisionVersions := opts.RevisionVersions
+	discovered, err := opts.atlasFiles()
 	if err != nil {
 		return nil, fmt.Errorf("discover Atlas migration files: %w", err)
 	}
