@@ -676,6 +676,9 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	if err != nil {
 		return err
 	}
+	if err := expected.refuseDisagreeingNumbers(mig); err != nil {
+		return err
+	}
 
 	drift, releaseShadow, err := prepareDriftCheck(cmd, resolvedOpts, projectCfg, dbURL, settings, conn, mig)
 	if err != nil {

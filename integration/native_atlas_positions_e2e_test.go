@@ -171,15 +171,16 @@ func TestNumberedRunDocumentKeepsItsVersionsE2E(t *testing.T) {
 
 // TestNativeAtlasPositionsExpectSequenceE2E approves a run by the version keys
 // the run document prints. The number beside a key takes no part, since it is
-// a position that moves when a file is added before it: 9 is not the position
-// v1_x.sql runs under, and the approval still names it.
+// a position that moves when a file is added before it: 7 and 9 are not the
+// positions 2_x.sql and v1_x.sql run under, and the approval still names them,
+// though 7 and the decimal key 2 spell different numbers.
 func TestNativeAtlasPositionsExpectSequenceE2E(t *testing.T) {
 	tests := []struct {
 		name     string
 		approval string
 	}{
 		{name: "keys alone", approval: `{"migrations":[{"version_key":"2"},{"version_key":"v1"}]}`},
-		{name: "a key beside another number", approval: `{"migrations":[{"version_key":"2"},{"version":9,"version_key":"v1"}]}`},
+		{name: "a key beside another number", approval: `{"migrations":[{"version":7,"version_key":"2"},{"version":9,"version_key":"v1"}]}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
