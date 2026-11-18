@@ -1160,10 +1160,17 @@ added after `v1_x.sql` ran is out of order. `migrate set` orders the versions as
 text too, which is not always file-name order: `10` sorts between `1` and `2`,
 so `migrate set 2` keeps `10_c.sql` applied and removes `v1_x.sql`.
 
-The divergence is a name that starts with an underscore, such as `_x.sql`,
-whose version is empty. Atlas runs it. Ptah refuses the directory before
-anything runs, because no `--to-version`, `--baseline` or `migrate set`
-argument can name an empty version. See
+A name with no underscore keeps its direction suffix in the version: Atlas
+records `v1.up.sql` as `v1.up`, and runs `v2.down.sql` as a migration of its
+own, version `v2.down`. Ptah reads them the same way.
+
+The divergences are a name that starts with an underscore, such as `_x.sql`,
+whose version is empty, and a name that starts with a dot, such as
+`.draft_x.sql`, whose version `.draft` looks like a row the revision table keeps
+for itself. Atlas runs both. Ptah refuses the directory before anything runs,
+because no `--to-version`, `--baseline` or `migrate set` argument can name an
+empty version, and because it reads every row whose version starts with a dot
+as the table's own, so the file would run and stay pending. See
 [A file whose Atlas version is empty](../retained-divergences/#a-file-whose-atlas-version-is-empty).
 
 Native `ptah migrations up --dir-format atlas` runs such a file over the Atlas
@@ -1172,15 +1179,20 @@ version, so `migrations status` prints `Current Version: v1`,
 `migrations down --target v1` rolls back to it, and `migrations set`,
 `migrations baseline` and `migrations repair` take `--version v1`. The repair
 hint of a dirty revision names it the same way, and a structured log line
-carries it under the `version` key, which holds a number for a numbered file. A
-number above every numbered file, such as `--target 3` or `--version 3` beside
-`1_a.sql` and `2_b.sql`, is refused, because no file carries it.
+carries it under the `version` key, which holds a number for a numbered file.
+
+In such a directory a number is a version like any other: `--version 00` names
+`00_x.sql` and `--version -5` names `-5_x.sql`. A number no file carries, such
+as `--target 3` or `--version 3` beside `1_a.sql`, `2_b.sql` and `v1_x.sql`, is
+refused, and `0` names the empty history. The repair hint carries
+`--revision-format atlas`, and `--dir-format atlas` where the default would read
+other files, so the command it prints runs as printed.
 
 Over the Ptah revision table, which records a number, the native commands refuse
 the directory before anything runs or any row is written, `migrations set`
-included. Ptah numbers such a file after the highest numbered file, so the
-number changes when you add a numbered file, and the row would then name another
-file. The refusal names the file and points at `--revision-format atlas`. It
+included. Ptah runs such a directory under each file's position in file-name
+order, so a file added before another moves its position, and the row would
+then name another file. The refusal names the file and points at `--revision-format atlas`. It
 applies to the native defaults too (`--dir-format auto`,
 `--revision-format ptah`) on a directory that holds an `atlas.sum`: the sum
 makes it an Atlas directory, and the sum covers the file, so leaving the file

@@ -121,7 +121,7 @@ own measurement conditions.
 | [An edited already-applied migration file](#an-edited-already-applied-migration-file) | compares each applied migration against the checksum recorded when it ran, and refuses on a mismatch | records the same value and never compares it |
 | [A prefix migration inserted below the oldest applied revision](#a-prefix-migration-inserted-below-the-oldest-applied-revision) | refuses at the default `--exec-order linear` with the binary's own out-of-order line | exits `0` with `No migration files to execute`, saying nothing about the file it passed over |
 | [A file numbered above the current version that sorts below it as text](#a-file-numbered-above-the-current-version-that-sorts-below-it-as-text) | reports it as out of order and refuses it at the default `--exec-order linear` | reports `OK` and exits `0` with `No migration files to execute` under every `--exec-order`; the file never runs |
-| [A file whose Atlas version is empty](#a-file-whose-atlas-version-is-empty) | refuses the directory before anything runs and names the file | runs `_x.sql` and records the version `""` |
+| [A file whose Atlas version is empty](#a-file-whose-atlas-version-is-empty) | refuses the directory before anything runs and names the file, and does the same for a version that starts with a dot | runs `_x.sql` and records the version `""`, and runs `.draft_x.sql` as `.draft` |
 | [A file `--exec-order linear-skip` leaves pending](#a-file---exec-order-linear-skip-leaves-pending) | writes one warning per skipped file on stderr | skips it without a word |
 | [A dirty revision left by a non-transactional body](#a-dirty-revision-left-by-a-non-transactional-body) | discards the revision row only where it observed the rollback, so `--tx-mode none` needs `--allow-dirty` | keeps the row in both cases and resumes from it |
 | [A project migration directory outside its root](#a-project-migration-directory-outside-its-root) | confines a project `migration.dir` to the directory holding `atlas.hcl` | writes the migration and `atlas.sum` wherever the project file points |
@@ -415,6 +415,13 @@ No command line can name the empty version: `--to-version`, `--baseline` and
 `migrate set` each read an empty argument as no version. A file that a person
 can run but never address is a file `migrate set` cannot move past and
 `migrate down` cannot select, so `ptah-compat` asks for a name instead.
+
+A version that starts with a dot is refused the same way. The revision table
+keeps rows of its own under such versions, such as `.atlas_cloud_identifier`,
+and Ptah reads every one of them as the table's own. On the pinned community
+binary v1.3.0, measured on SQLite, `.draft_x.sql` runs, is recorded as
+`.draft` and counts as executed. Ptah would run it and then report it pending,
+so it refuses the directory and names the file.
 
 ## A file `--exec-order linear-skip` leaves pending
 
