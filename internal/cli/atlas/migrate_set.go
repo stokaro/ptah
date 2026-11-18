@@ -299,12 +299,14 @@ func prepareAtlasMigrateSet(
 // stokaro/ptah#1206 stays green by construction.
 //
 // A native Atlas directory also has versions that are not numbers, such as the
-// R of R__view.sql. opaque maps each to the order key it runs under, so
-// `migrate set R` sets what the pinned community binary v1.3.0 sets there. An
-// operand that is neither one of those nor a positive number names no file
-// either, and the binary answers `migration with version "nope" not found` and
-// `migration with version "0" not found` for it on such a directory.
-func resolveAtlasMigrateSetVersion(tokens flywayVersionTokens, opaque map[string]int64, value string) (int64, error) {
+// R of R__view.sql or the 00 of 00_x.sql. opaque maps each to the order key it
+// runs under, so `migrate set R` sets what the pinned community binary v1.3.0
+// sets there. Where the directory runs under positions a number is no key, so
+// only a version a file carries resolves. An operand that is neither one of
+// those nor a positive number names no file either, and the binary answers
+// `migration with version "nope" not found` and `migration with version "0"
+// not found` for it on such a directory.
+func resolveAtlasMigrateSetVersion(tokens flywayVersionTokens, opaque atlasIdentities, value string) (int64, error) {
 	if tokens.translates() {
 		version, ok := tokens.resolve(value)
 		if !ok {
@@ -312,8 +314,11 @@ func resolveAtlasMigrateSetVersion(tokens flywayVersionTokens, opaque map[string
 		}
 		return version, nil
 	}
-	if version, ok := opaque[value]; ok {
+	if version, ok := opaque.keys[value]; ok {
 		return version, nil
+	}
+	if opaque.positions {
+		return 0, fmt.Errorf("migration with version %q not found", value)
 	}
 	version, err := atlasmigrate.ParseMigrationVersionFlag("version", value)
 	if err != nil || version == 0 {
@@ -322,32 +327,42 @@ func resolveAtlasMigrateSetVersion(tokens flywayVersionTokens, opaque map[string
 	return version, nil
 }
 
-// atlasOpaqueVersions maps each version of a native Atlas directory that is not
-// a decimal number, such as R or 1R, to the order key the migrator runs it
-// under. Other layouts address their versions through [flywayVersionTokens]
-// or by number, and get an empty map.
-func atlasOpaqueVersions(fsys fs.FS, format atlasmigrateimport.Format) (map[string]int64, error) {
+// atlasIdentities maps versions of a native Atlas directory to the order keys
+// the migrator runs them under.
+type atlasIdentities struct {
+	// keys holds each version whose order key is not the number it spells,
+	// such as R, 1R or 00, and every version where positions holds.
+	keys map[string]int64
+	// positions reports that every order key is a position in execution
+	// order ([migrationfile.AtlasKeyedByPosition]), so a number names no key.
+	positions bool
+}
+
+// atlasOpaqueVersions reads the versions of a native Atlas directory with the
+// classification the migrator reads them with: the order key discovery gives
+// each file. Other layouts address their versions through
+// [flywayVersionTokens] or by number, and get no keys.
+func atlasOpaqueVersions(fsys fs.FS, format atlasmigrateimport.Format) (atlasIdentities, error) {
 	if !atlasmigrate.ReadsNativeAtlasDir(format) {
-		return nil, nil
+		return atlasIdentities{}, nil
 	}
-	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
+	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAtlas)
 	if err != nil {
-		return nil, err
+		return atlasIdentities{}, err
 	}
-	opaque := make(map[string]int64)
-	for _, migration := range provider.Migrations() {
-		token := migration.RevisionVersion()
-		if _, err := strconv.ParseInt(token, 10, 64); err != nil {
-			opaque[token] = migration.Version
+	identities := atlasIdentities{keys: make(map[string]int64), positions: migrationfile.AtlasKeyedByPosition(files)}
+	for _, file := range files {
+		if version := file.RevisionVersion(); identities.positions || version != strconv.FormatInt(file.OrderKey, 10) {
+			identities.keys[version] = file.OrderKey
 		}
 	}
-	return opaque, nil
+	return identities, nil
 }
 
 // opaqueByVersion inverts [atlasOpaqueVersions] for rendering.
-func opaqueByVersion(opaque map[string]int64) map[int64]string {
-	versions := make(map[int64]string, len(opaque))
-	for token, version := range opaque {
+func opaqueByVersion(opaque atlasIdentities) map[int64]string {
+	versions := make(map[int64]string, len(opaque.keys))
+	for token, version := range opaque.keys {
 		versions[version] = token
 	}
 	return versions

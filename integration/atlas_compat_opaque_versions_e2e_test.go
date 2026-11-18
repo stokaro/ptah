@@ -225,3 +225,94 @@ func sqliteTables(c *qt.C, path string) []string {
 	c.Assert(rows.Err(), qt.IsNil)
 	return tables
 }
+
+// TestCompatAtlasOpaqueVersionOperandsE2E addresses files by versions that are
+// not numbers, over 00_z.sql, 1_a.sql, 2_b.sql and v1_x.sql, which run under
+// their positions in file-name order. migrate set 00 records 00_z.sql alone;
+// read as the number 0 it removes every row. --baseline v1 and --to-version v1
+// name v1_x.sql, which a number cannot name.
+func TestCompatAtlasOpaqueVersionOperandsE2E(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{name: "set 00", args: []string{"migrate", "set", "00"}, want: []string{"00"}},
+		{name: "baseline v1", args: []string{"migrate", "apply", "--baseline", "v1"}, want: []string{"v1"}},
+		{name: "baseline 1", args: []string{"migrate", "apply", "--baseline", "1"}, want: []string{"1", "2", "v1"}},
+		{name: "to-version v1", args: []string{"migrate", "apply", "--to-version", "v1"}, want: []string{"00", "1", "2", "v1"}},
+		{name: "to-version 1", args: []string{"migrate", "apply", "--to-version", "1"}, want: []string{"00", "1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			run := compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables())
+			writeVersionOrderFiles(c, dir, run, []string{"00_z.sql", "1_a.sql", "2_b.sql", "v1_x.sql"})
+
+			got := run(append(slices.Clone(tt.args), versionOrderTarget...)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+			c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+// TestCompatAtlasOpaqueVersionOperandsMatchTheCommunityBinaryE2E holds migrate
+// set and --baseline, which the pinned community binary v1.3.0 has, to it on
+// the same directory. It has no --to-version.
+func TestCompatAtlasOpaqueVersionOperandsMatchTheCommunityBinaryE2E(t *testing.T) {
+	reference := atlasReferenceBinary(t)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "set 00", args: []string{"migrate", "set", "00"}},
+		{name: "set v1", args: []string{"migrate", "set", "v1"}},
+		{name: "baseline v1", args: []string{"migrate", "apply", "--baseline", "v1"}},
+		{name: "baseline 00", args: []string{"migrate", "apply", "--baseline", "00"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			communityDir, compatDir := c.TempDir(), c.TempDir()
+			community := referenceVersionOrderRunner(c, communityDir, reference, environmentWithoutPtahVariables())
+			compat := compatVersionOrderRunner(c, compatDir, environmentWithoutPtahVariables())
+			files := []string{"00_z.sql", "1_a.sql", "2_b.sql", "v1_x.sql"}
+			writeVersionOrderFiles(c, communityDir, community, files)
+			writeVersionOrderFiles(c, compatDir, compat, files)
+			args := append(slices.Clone(tt.args), versionOrderTarget...)
+
+			communityRun, compatRun := community(args...), compat(args...)
+
+			c.Assert(compatRun.ExitCode, qt.Equals, communityRun.ExitCode,
+				qt.Commentf("compat stderr:\n%s\ncommunity stderr:\n%s", compatRun.Stderr, communityRun.Stderr))
+			c.Assert(firstLine(compatRun.Stderr), qt.Equals, firstLine(communityRun.Stderr))
+			c.Assert(revisionTableVersions(c, filepath.Join(compatDir, "app.db")), qt.DeepEquals,
+				revisionTableVersions(c, filepath.Join(communityDir, "app.db")))
+		})
+	}
+}
+
+// TestCompatAtlasOpaqueVersionOperandNamingNoFile_FailurePath refuses migrate
+// set 3 over the same directory, as the pinned community binary v1.3.0 does:
+// the four files run under the positions 1 to 4, and no file carries the
+// version 3.
+func TestCompatAtlasOpaqueVersionOperandNamingNoFile_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	reference := atlasReferenceBinary(t)
+	communityDir, compatDir := c.TempDir(), c.TempDir()
+	community := referenceVersionOrderRunner(c, communityDir, reference, environmentWithoutPtahVariables())
+	compat := compatVersionOrderRunner(c, compatDir, environmentWithoutPtahVariables())
+	files := []string{"00_z.sql", "1_a.sql", "2_b.sql", "v1_x.sql"}
+	writeVersionOrderFiles(c, communityDir, community, files)
+	writeVersionOrderFiles(c, compatDir, compat, files)
+	args := append([]string{"migrate", "set", "3"}, versionOrderTarget...)
+
+	communityRun, compatRun := community(args...), compat(args...)
+
+	c.Assert(compatRun.ExitCode, qt.Equals, 1)
+	c.Assert(communityRun.ExitCode, qt.Equals, 1)
+	c.Assert(firstLine(compatRun.Stderr), qt.Equals, `Error: migration with version "3" not found`)
+	c.Assert(firstLine(communityRun.Stderr), qt.Equals, firstLine(compatRun.Stderr))
+}
