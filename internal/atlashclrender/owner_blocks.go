@@ -196,9 +196,11 @@ func (r *renderer) writeOwnerSchema(block hclext.EncodedBlock, schema string) {
 // ownerValue writes an encoded value: a string quoted, a bool and digits
 // bare, SQL text as an sql() call it never evaluates, a reference to a table
 // as the reference this document resolves, local column references, and a
-// list of roles element by element. A role the document declares is a
-// reference and any other element is written
-// as a string. Set.Encode admits no other value.
+// list of roles and tables element by element. A role the document declares
+// is a reference, a table is a reference qualified by its schema, which a
+// list element is read back by without resolving it against the document's
+// tables, and any other element is written as a string. Set.Encode admits no
+// other value.
 func (r *renderer) ownerValue(value hclext.Value) string {
 	switch value.Kind {
 	case hclext.TextList:
@@ -226,6 +228,10 @@ func (r *renderer) ownerValue(value hclext.Value) string {
 		for _, element := range value.References {
 			if element.Kind == "column" {
 				elements = append(elements, columnRef(element.Name))
+				continue
+			}
+			if element.Kind == blockTable {
+				elements = append(elements, objectRef(blockTable, schemamodel.QualifyTableName(element.Schema, element.Name)))
 				continue
 			}
 			if element.Kind == "" {

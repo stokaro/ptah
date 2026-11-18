@@ -89,7 +89,9 @@ materialized view, sequence, and row-level security policy, then verifies both
 PostgreSQL and YugabyteDB keep the database-scoped publications,
 subscriptions, logical replication slots, event triggers, and non-extension
 foreign-data objects a dev database held when the command started, and reject
-one the run created before dev-database cleanup. PostgreSQL additionally
+one the run created before dev-database cleanup. PostgreSQL drops a
+publication the run created instead, since Ptah manages publications there and
+not on YugabyteDB. PostgreSQL additionally
 removes database large objects inside the cleanup transaction; YugabyteDB does
 not support that catalog write path.
 

@@ -436,7 +436,8 @@ func planGeneratedMigrationByReplay(
 				opts.dirFormat,
 				func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
 					replayOpts := generateOpts
-					replayOpts.EnvironmentExtensions = baseline.Extensions()
+					environment := baseline.Environment()
+					replayOpts.EnvironmentExtensions, replayOpts.EnvironmentPublications = environment.Extensions, environment.Publications
 					desired, err := opts.loadDesired(replayConn.Info().Dialect, replayConn.Info().URL)
 					if err != nil {
 						return err

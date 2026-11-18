@@ -47,10 +47,13 @@ import (
 //   - TABLESPACE, which configures where the server stores what the run
 //     creates, as a server the run owns keeps it refused;
 //   - EVENT TRIGGER, CAST, LANGUAGE, TRANSFORM, TEXT SEARCH, ACCESS METHOD,
-//     PUBLICATION, SUBSCRIPTION, FOREIGN DATA WRAPPER, SERVER and USER
-//     MAPPING, a large object and a replication slot or origin: objects of the
-//     dev database the realm cleanup cannot remove, and refuses once the run
-//     created one, several of which also change how the run's later SQL runs;
+//     SUBSCRIPTION, FOREIGN DATA WRAPPER, SERVER and USER MAPPING, a
+//     publication outside PostgreSQL, a large object and a replication slot or
+//     origin: objects of the dev database the realm cleanup cannot remove, and
+//     refuses once the run created one, several of which also change how the
+//     run's later SQL runs. A PostgreSQL publication is accepted where every
+//     cleanup drops the ones the run created, except a change to or the drop
+//     of one the claim found; see confinedPublicationDDL;
 //   - a privilege on, or a comment on, a tablespace, a foreign server or a
 //     large object, and ALTER EXTENSION and ALTER SCHEMA metadata: state the
 //     reset does not return;

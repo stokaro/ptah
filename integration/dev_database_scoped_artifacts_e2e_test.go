@@ -147,3 +147,62 @@ func TestDevDatabaseArtifactsE2E_ARunCannotAddOne(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s).*EVENT TRIGGER.*`, qt.Commentf("%s", output))
 	c.Assert(heldDatabaseArtifacts(c, db), qt.DeepEquals, wantArtifacts)
 }
+
+// writeArtifactsMigration writes a migration directory holding one file of
+// migration and its hash, and returns the directory's URL.
+func writeArtifactsMigration(c *qt.C, migration string) string {
+	c.Helper()
+	dir := filepath.Join(c.TempDir(), "migrations")
+	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "20260101000000_feed.sql"), []byte(migration), 0o600), qt.IsNil)
+	dirURL := "file://" + filepath.ToSlash(dir)
+	output, err := runCompatVerb("migrate", "hash", "--dir", dirURL)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+	return dirURL
+}
+
+// keptPublicationMembers lists the tables the dev database's own publication
+// realtime_pub publishes.
+func keptPublicationMembers(c *qt.C, db *sql.DB) []string {
+	c.Helper()
+	return queryStrings(c, db, `SELECT r.prrelid::regclass::text FROM pg_publication_rel r
+		JOIN pg_publication p ON p.oid = r.prpubid WHERE p.pubname = 'realtime_pub' ORDER BY 1`)
+}
+
+// TestDevDatabaseArtifactsE2E_ARunKeepsItsPublicationToItself replays a
+// migration that creates a publication of its own, changes it and adds a
+// member. The claim listed the dev database's publications, so the cleanup
+// drops the run's, and the dev database holds what it held.
+func TestDevDatabaseArtifactsE2E_ARunKeepsItsPublicationToItself(t *testing.T) {
+	c := qt.New(t)
+	dev, db := artifactsDev(c)
+	dir := writeArtifactsMigration(c, `CREATE TABLE public.orders (id bigint PRIMARY KEY);
+CREATE PUBLICATION run_feed;
+ALTER PUBLICATION run_feed ADD TABLE ONLY public.orders;
+`)
+
+	output, err := runCompatVerb("migrate", "validate", "--dir", dir, "--dev-url", dev)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+	c.Assert(heldDatabaseArtifacts(c, db), qt.DeepEquals, wantArtifacts)
+	c.Assert(keptPublicationMembers(c, db), qt.HasLen, 0)
+}
+
+// TestDevDatabaseArtifactsE2E_ARunCannotChangeAKeptPublication is the
+// control: a migration that adds a table to the dev database's own
+// publication is refused before it runs, since the cleanup keeps that
+// publication as it finds it and the member would outlive the run.
+func TestDevDatabaseArtifactsE2E_ARunCannotChangeAKeptPublication(t *testing.T) {
+	c := qt.New(t)
+	dev, db := artifactsDev(c)
+	dir := writeArtifactsMigration(c, `CREATE TABLE public.orders (id bigint PRIMARY KEY);
+ALTER PUBLICATION realtime_pub ADD TABLE ONLY public.orders;
+`)
+
+	output, err := runCompatVerb("migrate", "validate", "--dir", dir, "--dev-url", dev)
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*ALTER PUBLICATION of the dev database's own publication "realtime_pub".*`,
+		qt.Commentf("%s", output))
+	c.Assert(heldDatabaseArtifacts(c, db), qt.DeepEquals, wantArtifacts)
+	c.Assert(keptPublicationMembers(c, db), qt.HasLen, 0)
+}

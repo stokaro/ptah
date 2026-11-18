@@ -36,9 +36,11 @@ func postgresStatementForms() descriptor.StatementForms {
 		OwnerTo: []string{
 			descriptor.OwnerKindTable, descriptor.OwnerKindSchema, descriptor.OwnerKindType, descriptor.OwnerKindDomain,
 			descriptor.OwnerKindFunction, descriptor.OwnerKindProcedure, descriptor.OwnerKindSequence,
-			descriptor.OwnerKindView, descriptor.OwnerKindMaterializedView,
+			descriptor.OwnerKindView, descriptor.OwnerKindMaterializedView, descriptor.OwnerKindPublication,
 		},
-		ManagedOwners: viewOwnerKinds(),
+		// A publication's owner is managed on PostgreSQL alone, the one target
+		// whose publications Ptah models.
+		ManagedOwners: append(viewOwnerKinds(), descriptor.OwnerKindPublication),
 	}
 }
 

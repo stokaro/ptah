@@ -36,8 +36,8 @@ func Sequence(builder objectidentity.Builder, nodes []ast.Node) [][]plangraph.Ef
 
 // Statement describes the objects one statement creates, changes or drops,
 // read on its own: tables, the columns and named constraints an ALTER TABLE adds
-// or drops, views and
-// materialized views, functions and procedures, and roles. Any other statement
+// or drops, views and materialized views, functions and procedures, roles, and
+// the schema a CREATE SCHEMA creates. Any other statement
 // keeps an unknown footprint, and the result is nil; so does an object with no
 // name, which names nothing an owner could order itself against.
 //
@@ -102,9 +102,19 @@ func statement(builder objectidentity.Builder, node ast.Node) []plangraph.Effect
 		return []plangraph.Effect{{Subject: relation(builder, objectidentity.KindView, typed.Name), Action: action}}
 	case *ast.CreateMaterializedViewNode:
 		return []plangraph.Effect{{Subject: relation(builder, objectidentity.KindMatView, typed.Name), Action: plangraph.Create}}
+	case *ast.CreateSchemaNode:
+		return []plangraph.Effect{{Subject: Schema(builder, typed.Name), Action: plangraph.Create}}
 	default:
 		return nil
 	}
+}
+
+// Schema is the identity of the schema name, compared as the engine compares
+// the schema part of a table's name. An owner that reads a schema, such as a
+// publication of every table in it, reads this identity, so that the read
+// matches the CREATE SCHEMA [Statement] describes.
+func Schema(builder objectidentity.Builder, name string) objectidentity.ID {
+	return objectidentity.ID{Kind: objectidentity.KindSchema, Name: builder.TableParts("", name).Name}
 }
 
 // TypeReads returns a read of each of types that a statement uses as it

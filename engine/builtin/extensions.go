@@ -19,6 +19,7 @@ import (
 	"ptah.run/feature/pgdefaultprivilege/privilegerender"
 	"ptah.run/feature/pgextension/extensionrender"
 	"ptah.run/feature/pgpolicy/policyrender"
+	"ptah.run/feature/pgpublication/publicationrender"
 	"ptah.run/feature/pgtype/typerender"
 )
 
@@ -41,7 +42,7 @@ var (
 // composes, including access control, extensions and user types, followed by
 // the target's own.
 func postgresFamilyHandlers(own ...renderer.ExtensionHandler) []renderer.ExtensionHandler {
-	return slices.Concat(tsrender.Handlers(), policyrender.Handlers(), extensionrender.Handlers(), typerender.Handlers(), privilegerender.Handlers(), own)
+	return slices.Concat(tsrender.Handlers(), policyrender.Handlers(), extensionrender.Handlers(), typerender.Handlers(), privilegerender.Handlers(), publicationrender.Handlers(), own)
 }
 
 // lowerPostgresFamilyFacets lowers the table facets of the owners every

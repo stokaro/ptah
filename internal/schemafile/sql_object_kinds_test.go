@@ -128,8 +128,8 @@ func TestLoadAll_SQLSchemaFileStillRefusesStatementsOutsideTheGrammar(t *testing
 		wantError: `unsupported SQL statement: DEFINITELY`,
 	}, {
 		name:      "unmodelled create target",
-		statement: `CREATE PUBLICATION p FOR ALL TABLES;`,
-		wantError: `unsupported CREATE target: PUBLICATION`,
+		statement: `CREATE SUBSCRIPTION s CONNECTION 'host=elsewhere' PUBLICATION p;`,
+		wantError: `unsupported CREATE target: SUBSCRIPTION`,
 	}, {
 		name:      "alter table operation that is not row level security",
 		statement: `ALTER TABLE t1 ENABLE TRIGGER tg1;`,

@@ -230,17 +230,24 @@ provider runs the cases in a dev realm in that database.
   Publications, subscriptions, logical replication slots, event triggers, and
   non-extension foreign-data wrappers, servers, or user mappings the dev
   database held when the command started are its environment, as under Atlas:
-  the realm cleanup leaves them and checks they are still there. PostgreSQL
-  and YugabyteDB reject one the run created before DDL, since the cleanup
-  cannot remove it. Ptah lists them from catalogs and views any role may
-  read, user mappings from `pg_user_mappings`, so the check runs the same
-  for an ordinary role that owns the dev database as for a superuser. An
-  object the server created when it built the
-  database template is not counted: YugabyteDB 2026.1.2 puts the foreign
-  server `yb_global_views_server` into every database, and the cleanup leaves
-  it, and the extensions it depends on, in place. PostgreSQL also removes and
-  verifies database large objects transactionally. YugabyteDB does not run
-  that PostgreSQL-specific large-object operation.
+  the realm cleanup leaves them and checks they are still there. PostgreSQL and
+  YugabyteDB reject one the run created before DDL, since the cleanup cannot
+  remove it. A PostgreSQL publication is the exception: replaying a desired
+  schema that declares one creates it, so the cleanup drops each publication
+  the dev database did not hold when the command started, after the check that
+  refuses the rest. A replay may create, change and drop its own publications.
+  It may not change or drop one the dev database held, such as
+  `supabase_realtime`, since the cleanup keeps that publication as it finds it.
+  Where the server cannot list its publications when the command starts, every
+  publication statement is refused. Ptah lists them from catalogs and views any
+  role may read, user mappings from `pg_user_mappings`, so the check runs the
+  same for an ordinary role that owns the dev database as for a superuser. An
+  object the server created when it built the database template is not counted:
+  YugabyteDB 2026.1.2 puts the foreign server `yb_global_views_server` into
+  every database, and the cleanup leaves it, and the extensions it depends on,
+  in place. PostgreSQL also removes and verifies database large objects
+  transactionally. YugabyteDB does not run that PostgreSQL-specific
+  large-object operation.
 - **A docker block's starting point is kept whole.** A PostgreSQL dev
   database an `atlas.hcl`
   [`docker` block](../../atlas/project-config/#docker-dev-database-block)
@@ -538,12 +545,12 @@ A refusal that protects the run itself stays under trust. That covers a
 statement that changes the replay session, the identity it runs as or its
 transaction; a write to a system catalog such as `pg_catalog`; server
 configuration such as `ALTER SYSTEM`, `SET GLOBAL` or `RECONFIGURE`; an object
-the dev database cleanup cannot remove, such as an event trigger, a publication
-or a SQL Server ledger table; a MySQL event or a SQL Server DDL trigger, which
-would run on their own during the rest of the command; and a MySQL executable
-comment, which hides SQL from the guard. SQLite keeps `ATTACH`,
-`load_extension` and a pragma that changes state refused. The YDB provider
-guards its own dev databases and does not read the declaration.
+the dev database cleanup cannot remove, such as an event trigger, a YugabyteDB
+publication or a SQL Server ledger table; a MySQL event or a SQL Server DDL
+trigger, which would run on their own during the rest of the command; and a
+MySQL executable comment, which hides SQL from the guard. SQLite keeps
+`ATTACH`, `load_extension` and a pragma that changes state refused. The YDB
+provider guards its own dev databases and does not read the declaration.
 
 Trust covers the SQL a run executes on its dev database: a migration directory
 it replays, a desired schema file it loads there, and the baseline and plan a

@@ -85,12 +85,12 @@ func TestLintSource_UnsupportedStatementLocationSkipsLeadingComments(t *testing.
 func TestLintSource_UnsupportedParserErrorIsExplicit(t *testing.T) {
 	c := qt.New(t)
 
-	// CREATE POLICY stood here while the parser refused it; it parses now
-	// (issue #932), so the unsupported-statement path needs a statement the
-	// grammar still has no rule for.
+	// The unsupported-statement path needs a statement the grammar has no
+	// rule for, and a subscription is one: it connects to another server, so
+	// no desired schema declares it.
 	findings, err := LintSource(t.Context(), Source{
-		Name: "publication.sql",
-		SQL:  "CREATE PUBLICATION p FOR ALL TABLES;",
+		Name: "subscription.sql",
+		SQL:  "CREATE SUBSCRIPTION s CONNECTION 'host=elsewhere' PUBLICATION p;",
 	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 
 	c.Assert(err, qt.IsNil)
@@ -210,7 +210,7 @@ func TestLintSource_UnsupportedStatementDoesNotMaskLaterDDL(t *testing.T) {
 
 	findings, err := LintSource(t.Context(), Source{
 		Name: "mixed.sql",
-		SQL: `CREATE PUBLICATION p FOR ALL TABLES;
+		SQL: `CREATE SUBSCRIPTION s CONNECTION 'host=elsewhere' PUBLICATION p;
 CREATE TABLE audit_log (message TEXT NOT NULL);`,
 	}, Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres})
 

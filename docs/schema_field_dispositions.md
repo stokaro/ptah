@@ -79,13 +79,13 @@ fails, so repairing one of the fields below fails the build until its entry is
 reclassified in the same change.
 
 <!-- BEGIN GENERATED FIELD DISPOSITIONS -->
-493 fields are reachable from the desired schema, and each one carries
+504 fields are reachable from the desired schema, and each one carries
 exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 396 | reaches rendered SQL on at least one target |
-| `comparison` | 36 | read when two schemas are compared, and written into no statement |
+| `ddl` | 405 | reaches rendered SQL on at least one target |
+| `comparison` | 38 | read when two schemas are compared, and written into no statement |
 | `planning` | 6 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 21 | identifies the source text the declaration was read from |
@@ -182,7 +182,7 @@ migration nobody asked for.
 
 ### Compared fields that do not reach a plan by design
 
-54 exemptions, each with the reason it is right.
+55 exemptions, each with the reason it is right.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
@@ -223,6 +223,7 @@ migration nobody asked for.
 | `schemamodel.Function.Body` | `mariadb`, `mysql` | from-catalog | a routine that states no security mode is a definer routine here, a definer routine is replaced only beside a recorded definer and connected account, and a description converted from a catalog records neither, so the comparison refuses the replacement and names the routine |
 | `schemamodel.MaterializedView.Owner` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the owner a read reports is an observation, never a declaration, so the converted-back declaration leaves the owner unmanaged and a change of it plans nothing |
 | `schemamodel.View.Owner` | `cockroachdb`, `postgres`, `yugabytedb` | from-catalog | the owner a read reports is an observation, never a declaration, so the converted-back declaration leaves the owner unmanaged and a change of it plans nothing |
+| `pgpublication.DesiredPublication.Owner` | `postgres` | from-catalog | the owner a read reports is an observation, never a declaration, so the converted-back declaration leaves the owner unmanaged and a change of it plans nothing |
 | `schemamodel.Index.Operator` | `cockroachdb` | both | CockroachDB reports no operator class: on v26.3.2 pg_index.indclass is 0 for every key and pg_opclass is empty, also for an index built with gin_trgm_ops |
 | `schemamodel.Index.StorageParams` | `cockroachdb` | both | CockroachDB accepts WITH (fillfactor = 70) on CREATE INDEX and stores nothing: pg_class.reloptions stays empty on v26.3.2 |
 | `schemamodel.IndexPart.NullsOrder` | `cockroachdb` | both | CockroachDB has no NULLS FIRST or NULLS LAST in an index key (v26.3.2 answers `unimplemented: this syntax`) and orders NULLs by the key's direction, which the comparison reads |
@@ -243,7 +244,7 @@ migration nobody asked for.
 
 ### Compared fields the round trip cannot ask about
 
-26, besides the ones only a recorded loss hides.
+28, besides the ones only a recorded loss hides.
 
 | Field | Why |
 | --- | --- |
@@ -261,6 +262,8 @@ migration nobody asked for.
 | `pgtype.DesiredDomain.Normalized` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `pgtype.NormalizedDomain.Check` | no census fixture declares a server's spelling; a connected comparison attaches one |
 | `pgtype.NormalizedDomain.Default` | no census fixture declares a server's spelling; a connected comparison attaches one |
+| `pgpublication.Member.Columns` | only a declaration kept from a read carries one, and a plan that would write one is refused, so no census fixture declares it |
+| `pgpublication.Member.RowFilter` | only a declaration kept from a read carries one, and a plan that would write one is refused, so no census fixture declares it |
 | `schemamodel.Database.Facets` | declared only by the census's unknown-facet fixture, which every target refuses |
 | `schemamodel.Enum.Facets` | declared only by the census's unknown-facet fixture, which every target refuses |
 | `schemamodel.Field.UniqueExpr` | every target refuses it: uniqueness over an expression is not implemented |
@@ -394,6 +397,17 @@ migration nobody asked for.
 | `pgpolicy.NormalizedPolicy.WithCheck` | `comparison` | the server's spelling of a declared WITH CHECK expression, compared with the catalog's and never rendered |
 | `pgpolicy.RoleSelector.Keyword` | `ddl` | — |
 | `pgpolicy.RoleSelector.Name` | `ddl` | — |
+| `pgpublication.DesiredPublication.AllTables` | `ddl` | — |
+| `pgpublication.DesiredPublication.GeneratedColumns` | `ddl` | — |
+| `pgpublication.DesiredPublication.Owner` | `ddl` | — |
+| `pgpublication.DesiredPublication.Publish` | `ddl` | — |
+| `pgpublication.DesiredPublication.Schemas` | `ddl` | — |
+| `pgpublication.DesiredPublication.Tables` | `ddl` | — |
+| `pgpublication.DesiredPublication.ViaPartitionRoot` | `ddl` | — |
+| `pgpublication.Member.Columns` | `comparison` | a column list a read reported, kept on a declaration made from the read so the comparison agrees with it; no source parses one and a plan that would write one is refused |
+| `pgpublication.Member.RowFilter` | `comparison` | a row filter a read reported, kept on a declaration made from the read so the comparison agrees with it; no source parses one and a plan that would write one is refused |
+| `pgpublication.Member.Schema` | `ddl` | — |
+| `pgpublication.Member.Table` | `ddl` | — |
 | `pgrole.DesiredSettings.Settings` | `ddl` | — |
 | `pgrole.Setting.Name` | `ddl` | — |
 | `pgrole.Setting.Reset` | `ddl` | — |

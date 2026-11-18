@@ -97,7 +97,7 @@ func TestClaim_FailurePath(t *testing.T) {
 	baseline, err := devclean.Claim(c.Context(), conn)
 
 	c.Assert(err, qt.ErrorMatches, devNotClean)
-	c.Assert(baseline.Extensions(), qt.HasLen, 0)
+	c.Assert(baseline.Environment(), qt.DeepEquals, devclean.Environment{})
 	var rows int
 	c.Assert(conn.QueryRowContext(c.Context(), "SELECT count(*) FROM keep_me").Scan(&rows), qt.IsNil)
 	c.Assert(rows, qt.Equals, 1)

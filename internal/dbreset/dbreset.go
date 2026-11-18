@@ -99,11 +99,18 @@ type DefaultPrivileges struct {
 // owner, access list and comment the schemas such a reset creates again or
 // empties where they stand held at the claim. The reset returns each schema to
 // its state rather than to what the run left on it.
+//
+// ArtifactsRecorded reports that the claim listed the database-scoped objects,
+// so that one Artifacts does not name is the run's. Only then may a cleanup
+// drop a publication: a zero Kept says nothing about who created one, so a
+// realm cleanup refuses every publication it finds, and a cleanup of a pinned
+// schema drops none.
 type Kept struct {
 	Extensions        []string
 	Schemas           []string
 	DefaultPrivileges DefaultPrivileges
 	Artifacts         []Object
+	ArtifactsRecorded bool
 	Server            Server
 	StartingPoint     *pgsnapshot.Snapshot
 	SchemaStates      []SchemaState

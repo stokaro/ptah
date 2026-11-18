@@ -1405,6 +1405,15 @@
   },
   {
     "area": "Schema object kinds",
+    "feature": "PostgreSQL logical replication publications",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "unknown",
+    "note": "SQL CREATE PUBLICATION or an HCL publication block, compared by name from the first one declared. Members change in place; row filters and column lists are read and never written.",
+    "evidence": "feature/pgpublication (model, comparison, plan, render, reversal), internal/pgpublicationsource (SQL and HCL), internal/dbschema/postgres/publications.go (the reader, whole-database reads only), internal/dbschema/postgres/writer.go (a dev database cleanup drops the publications the run created). integration/postgres_publication_e2e_test.go measures on PostgreSQL 18.6 and 16.16: every membership form, publish set, publish_via_partition_root and a declared owner applied and read back, a second apply synced, ALTER PUBLICATION keeping the oid for a member or option change and a rebuild for FOR ALL TABLES, a publication left alone while none is declared and named as not compared by drift, a narrowed read planning nothing, an inspect round trip in SQL and HCL, and a dev database replayed twice; integration/dbschema/postgres/writer_live_test.go measures the realm cleanup. Atlas: with CREATE PUBLICATION in the desired SQL, the community binary v1.3.0 plans nothing for it and its inspect describes no publication; whether the paid edition manages publications is not established."
+  },
+  {
+    "area": "Schema object kinds",
     "feature": "Domains, composite types, and range types",
     "ptah": "yes",
     "atlas_oss": "no",

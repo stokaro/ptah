@@ -215,6 +215,10 @@ The annotation grammar covers, per object family:
   sequences.
 - **Security**: roles, grants, and row-level security policies.
 
+Logical replication publications have no annotation. A SQL or HCL schema
+declares them; see
+[Logical replication publications](#logical-replication-publications).
+
 Several of these are features Atlas keeps out of its open-source core; Ptah
 provides them as open, local, no-account capabilities. The sections below
 summarize behavior that affects how you plan changes.
@@ -2621,6 +2625,90 @@ extension an earlier file declared only with `IF NOT EXISTS` and the same
 definition, `IF NOT EXISTS` included; any other second declaration is refused.
 `COMMENT ON EXTENSION` in a later file sets the comment of the extension an
 earlier file created.
+
+## Logical replication publications
+
+A publication names the rows a logical replication consumer receives. Ptah
+manages publications on PostgreSQL, from a SQL schema written the way `pg_dump`
+writes one, or from an HCL `publication` block:
+
+```sql
+CREATE PUBLICATION orders_feed FOR TABLE orders, audit.events
+  WITH (publish = 'insert, update');
+ALTER PUBLICATION orders_feed OWNER TO replicator;
+CREATE PUBLICATION audit_feed FOR TABLES IN SCHEMA audit;
+CREATE PUBLICATION everything FOR ALL TABLES;
+```
+
+```hcl
+publication "orders_feed" {
+  tables  = [table.public.orders, table.audit.events]
+  publish = ["insert", "update"]
+  owner   = role.replicator
+}
+```
+
+A publication is identified by its exact name. A table that names no schema is
+in the default schema. The publish set, `publish_via_partition_root` and
+`publish_generated_columns` are compared as the server applies them, so a
+declaration with no `publish` matches a publication that publishes all four
+operations. The owner is compared only when the declaration names one.
+
+Ptah manages the publications of a database from the first one the desired
+schema declares. Until then it leaves every publication alone, so one that
+Debezium created for itself, or the `supabase_realtime` publication of a
+Supabase image, survives an apply. `schema drift` and `schema compare` list
+those publications as not compared. Once the schema declares one, a publication
+it leaves out is dropped. `ptah-compat` reads publications from the same SQL
+and HCL. Under `PTAH_ATLAS_STRICT_COMPAT=1` it refuses a desired schema that
+declares one, because the Atlas Community Edition does not manage publications.
+
+A change of members is made in place with `ALTER PUBLICATION ... ADD TABLE`,
+`DROP TABLE`, `ADD TABLES IN SCHEMA` and `DROP TABLES IN SCHEMA`, and a change
+of options with `ALTER PUBLICATION ... SET`. A subscriber keeps its
+publication. A change to or from `FOR ALL TABLES` cannot be made that way, so
+Ptah drops the publication and creates it again, and it comes back as a new
+object with a new OID. When the apply runs in a transaction, both statements
+commit together, so no committed state lacks the publication. Under
+`--tx-mode none`, or in a migration file that carries `-- atlas:txmode none`,
+each statement commits alone, and a failure between them leaves no
+publication. The plan rates that step as behavioral.
+Every table is written with `ONLY`, so an inheritance child does not join a
+publication that did not name it.
+
+A publication belongs to the database, not to a schema. Ptah reads
+publications only when the read covers every schema the database holds. A read
+narrowed by `--schemas`, or by a URL that pins `search_path`, reports none and
+plans nothing for them, and `schema apply` says the schema is not shown to be
+synced.
+
+Some forms are refused rather than changed silently:
+
+- a row filter (`WHERE`) or a column list in the desired schema, because Ptah
+  does not write them;
+- a declared member that the server holds with a row filter or a column list,
+  since publishing the whole table would publish more than the publication
+  does;
+- `TABLES IN SCHEMA CURRENT_SCHEMA`, whose schema depends on the session;
+- `TABLES IN SCHEMA` before PostgreSQL 15 and `publish_generated_columns`
+  before PostgreSQL 18, which those servers do not have.
+
+A desired schema cannot declare a row filter or a column list. Manage a
+publication that uses one by hand, or leave it to a desired schema that
+declares no publication.
+
+PostgreSQL decides who may create a publication and who may own one. A new
+owner needs `CREATE` on the database. Only a superuser may create a `FOR ALL
+TABLES` or `TABLES IN SCHEMA` publication, and a role that is not a superuser
+cannot give one of those an owner that is not a superuser. The server refuses
+such a statement, and when the apply runs in a transaction, the refusal rolls
+it back. Ptah creates no subscription and no replication slot. YugabyteDB and
+CockroachDB publications are not modeled.
+
+A dev database replays a desired schema that declares a publication, which
+creates the publication there. The dev database cleanup drops each publication
+the dev database did not hold when the command started, so the next replay
+starts clean.
 
 ## Standalone sequences
 

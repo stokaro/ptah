@@ -3,6 +3,7 @@ package devclean
 import (
 	"ptah.run/catalog"
 	"ptah.run/dbschema"
+	"ptah.run/internal/devclean/replay"
 )
 
 // BaselineGuard holds the baseline a plan rehearsal writes, to recreate the
@@ -34,9 +35,9 @@ func NewBaselineGuardFor(conn *dbschema.DatabaseConnection) *BaselineGuard {
 }
 
 func newBaselineGuard(guard *ReplayGuard) *BaselineGuard {
-	replay := *guard
-	replay.baseline = true
-	return &BaselineGuard{replay: &replay}
+	baseline := *guard
+	baseline.baseline = true
+	return &BaselineGuard{replay: &baseline}
 }
 
 // WithSchemaStateReturned returns a copy of the guard for a dev database whose
@@ -54,6 +55,13 @@ func newBaselineGuard(guard *ReplayGuard) *BaselineGuard {
 // [ReplayGuard.WithSchemaCommentReturned].
 func (g *BaselineGuard) WithSchemaStateReturned(returned bool) *BaselineGuard {
 	return &BaselineGuard{replay: g.replay.WithSchemaStateReturned(returned)}
+}
+
+// WithPublications returns a copy of the guard for a dev database whose
+// cleanups do with its publications what publications answers; see
+// [ReplayGuard.WithPublications].
+func (g *BaselineGuard) WithPublications(publications func() replay.PublicationScope) *BaselineGuard {
+	return &BaselineGuard{replay: g.replay.WithPublications(publications)}
 }
 
 // ValidateStatement refuses a baseline statement whose effects cannot be

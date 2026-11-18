@@ -26,6 +26,7 @@ import (
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgpublication"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/convert/dbschematogo"
@@ -116,10 +117,16 @@ func (p Policy) ValidateDesiredSchema(database *schemamodel.Database) error {
 // inspector does not describe. It closes live-database and migration-replay
 // paths that do not pass through desired-schema loading, while full mode keeps
 // Ptah's richer inspection output unchanged.
+//
+// In strict mode it also leaves the publications out of database, which is
+// the run's own read of a database or a replayed directory. The pinned
+// inspector describes none, so a live database or a migration directory on
+// the desired side plans no publication, as the community binary plans none.
 func (p Policy) ValidateInspectedSchema(database *schemamodel.Database) error {
 	if !p.strictCE || database == nil {
 		return nil
 	}
+	database.FeatureObjects = withoutInspectedPublications(database.FeatureObjects)
 	// plpgsql is installed by PostgreSQL itself in pg_catalog. The live reader
 	// reports every database extension, but that system extension is not user
 	// schema content and the pinned Community Edition inspector does not expose
@@ -159,7 +166,9 @@ func isPLpgSQL(name string) bool {
 
 func dbSchemaWithoutInspectedPostgresBaselines(current *catalog.Database) *catalog.Database {
 	inspected := *current
-	inspected.FeatureObjects = pgextension.Select(current.FeatureObjects, func(name string) bool { return !isPLpgSQL(name) })
+	inspected.FeatureObjects = withoutInspectedPublications(
+		pgextension.Select(current.FeatureObjects, func(name string) bool { return !isPLpgSQL(name) }),
+	)
 	inspected.Grants = slices.DeleteFunc(
 		slices.Clone(current.Grants),
 		func(grant catalog.Grant) bool {
@@ -180,7 +189,9 @@ func dbSchemaWithoutInspectedPostgresBaselines(current *catalog.Database) *catal
 
 func schemaWithoutInspectedPostgresBaselines(database *schemamodel.Database) schemamodel.Database {
 	inspected := *database
-	inspected.FeatureObjects = pgextension.Select(database.FeatureObjects, func(name string) bool { return !isPLpgSQL(name) })
+	inspected.FeatureObjects = withoutInspectedPublications(
+		pgextension.Select(database.FeatureObjects, func(name string) bool { return !isPLpgSQL(name) }),
+	)
 	// PostgreSQL creates public with PUBLIC USAGE on current releases. The
 	// ordinary reader preserves that baseline because full inspection must be
 	// able to round-trip the server state. It is not authored Pro-only content,
@@ -199,6 +210,18 @@ func schemaWithoutInspectedPostgresBaselines(database *schemamodel.Database) sch
 	// function is therefore a statement an author issued, and dropping one
 	// would hide authored content from the strict refusal.
 	return inspected
+}
+
+// withoutInspectedPublications leaves out the publications an inspection read.
+// The pinned Community Edition inspector reads a PostgreSQL database that
+// holds a publication and describes none, measured on v1.3.0 against
+// PostgreSQL 18, so strict mode inspects the same database rather than
+// refusing it. A Supabase dev image ships supabase_realtime, and Debezium
+// creates its own publication, so a refusal here would reject the databases
+// those tools run on. A declared publication stays refused through
+// [Policy.ValidateDesiredSchema], since CE plans nothing for it.
+func withoutInspectedPublications(objects schemaext.Objects) schemaext.Objects {
+	return pgpublication.Select(objects, func(string) bool { return false })
 }
 
 func isPostgresPublicUsageBaseline(grant schemamodel.Grant) bool {
@@ -709,6 +732,10 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "grants", present: len(database.Grants) > 0},
 		{name: "revoked grants", present: len(database.RevokedGrants) > 0},
 		{name: "default privileges", present: hasDefaultPrivileges(database)},
+		// Measured on v1.3.0 against PostgreSQL 18: a desired SQL file's
+		// CREATE PUBLICATION plans nothing and stays on the dev database, and
+		// an inspection describes no publication.
+		{name: "publications", present: len(pgpublication.Names(database.FeatureObjects)) > 0},
 		{name: "managed data", present: len(database.ManagedData) > 0},
 		// These attributes are Ptah HCL extensions. The default compatibility
 		// profile keeps them so an Atlas Pro migration path does not discard a

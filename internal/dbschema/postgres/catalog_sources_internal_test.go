@@ -69,7 +69,11 @@ func TestReadSchemaContext_AsksInformationSchemaNothing(t *testing.T) {
 			c.Assert(asked, qt.Any(qt.Contains), "tc.constraint_name")
 			c.Assert(asked, qt.Any(qt.Contains), "pg_get_viewdef")
 			c.Assert(asked, qt.Any(qt.Contains), "AS with_option")
-			c.Assert(asked, qt.Not(qt.Any(qt.Contains)), "information_schema")
+			// A read through the schema names one of its views, qualified. The
+			// predicate that leaves the server's schemas out of a realm names
+			// the schema too, as a string it compares against, which reads
+			// nothing from it.
+			c.Assert(asked, qt.Not(qt.Any(qt.Contains)), "information_schema.")
 		})
 	}
 }

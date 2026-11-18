@@ -1149,6 +1149,19 @@ const (
 	// (stokaro/ptah#3853).
 	NotEnforcedForeignKeys Capability = "not_enforced_foreign_keys"
 
+	// PublicationSchemas marks support for a logical replication publication
+	// that publishes every table of a schema, CREATE PUBLICATION ... FOR
+	// TABLES IN SCHEMA, which PostgreSQL grew in 15. PostgreSQL 13 and 14
+	// answer a syntax error at or near "TABLES", and YugabyteDB 2026.1 refuses
+	// the clause. CockroachDB has no publication.
+	PublicationSchemas Capability = "publication_schemas"
+
+	// PublicationGeneratedColumns marks support for the publication setting
+	// publish_generated_columns, which PostgreSQL grew in 18 and records in
+	// pg_publication.pubgencols. PostgreSQL 17 answers `unrecognized
+	// publication parameter`, and publishes no generated column.
+	PublicationGeneratedColumns Capability = "publication_generated_columns"
+
 	// ForeignKeyMatchFull marks support for MATCH FULL on a foreign key, which
 	// refuses a row whose key is partly NULL. It is decided by what the server
 	// records rather than by what it accepts, because two engines accept the
@@ -2197,6 +2210,12 @@ var registry = map[Capability]spec{
 	NotEnforcedForeignKeys: {
 		doc: "foreign keys declared NOT ENFORCED, kept and not checked (PostgreSQL 18+)",
 	},
+	PublicationSchemas: {
+		doc: "a logical replication publication FOR TABLES IN SCHEMA, publishing every table of a schema (PostgreSQL 15+)",
+	},
+	PublicationGeneratedColumns: {
+		doc: "the publication setting publish_generated_columns (PostgreSQL 18+)",
+	},
 	ForeignKeyMatchFull: {
 		doc: "MATCH FULL on a foreign key, recorded by the server (the PostgreSQL family and MySQL; MariaDB and SQLite drop it)",
 	},
@@ -2697,6 +2716,8 @@ func buildMySQL84() Capabilities {
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               true,
 		NotEnforcedForeignKeys:          false,
+		PublicationSchemas:              false,
+		PublicationGeneratedColumns:     false,
 		ForeignKeyMatchFull:             true,
 		ForeignKeyMatchPartial:          true,
 		UniqueConstraints:               true,
@@ -3002,6 +3023,8 @@ func buildMariaDB1011() Capabilities {
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               false,
 		NotEnforcedForeignKeys:          false,
+		PublicationSchemas:              false,
+		PublicationGeneratedColumns:     false,
 		ForeignKeyMatchFull:             false,
 		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
@@ -3223,6 +3246,8 @@ func buildPostgres16() Capabilities {
 		DeferrableKeys:                  true,
 		NotEnforcedChecks:               false,
 		NotEnforcedForeignKeys:          false,
+		PublicationSchemas:              true,
+		PublicationGeneratedColumns:     false,
 		ForeignKeyMatchFull:             true,
 		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
@@ -3353,7 +3378,11 @@ func buildPostgres18() Capabilities {
 		// Measured: 18.6 records conenforced false, and 17.11 answers a
 		// syntax error at or near "ENFORCED" (stokaro/ptah#3853).
 		With(NotEnforcedChecks, true).
-		With(NotEnforcedForeignKeys, true)
+		With(NotEnforcedForeignKeys, true).
+		// PostgreSQL 18 grew publish_generated_columns. Measured: 18.4
+		// records pubgencols, and 17 answers `unrecognized publication
+		// parameter: "publish_generated_columns"`.
+		With(PublicationGeneratedColumns, true)
 }
 
 // Postgres14 is the preset for the PostgreSQL 14 line.
@@ -3377,7 +3406,9 @@ func buildPostgres14() Capabilities {
 		With(UniqueNullsDistinctClause, false).
 		// PostgreSQL grew the ON DELETE SET NULL (columns) list in 15 as well.
 		// Measured on 14.24: syntax error at or near "(" (stokaro/ptah#3562).
-		With(ForeignKeyDeleteColumnList, false)
+		With(ForeignKeyDeleteColumnList, false).
+		// PostgreSQL grew FOR TABLES IN SCHEMA on a publication in 15.
+		With(PublicationSchemas, false)
 }
 
 // Postgres13 is the preset for PostgreSQL 12–13: unlike Postgres16 it lacks
@@ -3395,7 +3426,8 @@ func buildPostgres13() Capabilities {
 		With(UniqueNullsDistinctClause, false).
 		With(ForeignKeyDeleteColumnList, false).
 		With(CreateOrReplaceTrigger, false).
-		With(IndexIncludeSPGiST, false)
+		With(IndexIncludeSPGiST, false).
+		With(PublicationSchemas, false)
 }
 
 // ClickHouse24 is the preset for the ClickHouse 24.x line. It is deliberately
@@ -3586,6 +3618,8 @@ func buildClickHouse24() Capabilities {
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               false,
 		NotEnforcedForeignKeys:          false,
+		PublicationSchemas:              false,
+		PublicationGeneratedColumns:     false,
 		ForeignKeyMatchFull:             false,
 		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               false,
@@ -3823,6 +3857,8 @@ func buildSQLite3() Capabilities {
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               false,
 		NotEnforcedForeignKeys:          false,
+		PublicationSchemas:              false,
+		PublicationGeneratedColumns:     false,
 		ForeignKeyMatchFull:             false,
 		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
@@ -4151,6 +4187,8 @@ func buildSQLServer2022() Capabilities {
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               false,
 		NotEnforcedForeignKeys:          false,
+		PublicationSchemas:              false,
+		PublicationGeneratedColumns:     false,
 		ForeignKeyMatchFull:             false,
 		ForeignKeyMatchPartial:          false,
 		UniqueConstraints:               true,
@@ -4366,7 +4404,9 @@ func buildCockroachDB23() Capabilities {
 		// security_barrier, and every line answers a syntax error to a
 		// materialized view's WITH clause. CockroachDB26 has the first.
 		With(ViewOptions, false).
-		With(MaterializedViewOptions, false)
+		With(MaterializedViewOptions, false).
+		// CockroachDB has no logical replication publication.
+		With(PublicationSchemas, false)
 }
 
 // CockroachDB25 is the preset measured on CockroachDB 25.4. The line refuses
@@ -4520,7 +4560,10 @@ func buildYugabyteDB25() Capabilities {
 		// supported yet` for a table-level or added key. A foreign key defers.
 		With(DeferrableKeys, false).
 		With(DropIndexConcurrently, false).
-		With(IndexIncludeSPGiST, false)
+		With(IndexIncludeSPGiST, false).
+		// YugabyteDB 2026.1 creates a publication of tables and refuses
+		// FOR TABLES IN SCHEMA.
+		With(PublicationSchemas, false)
 }
 
 // YugabyteDB24 is the preset for the 2024 LTS line, which is where YugabyteDB's
@@ -4773,29 +4816,31 @@ func buildOracle23() Capabilities {
 		// DEFERRABLE INITIALLY DEFERRED is ACCEPTED on a PRIMARY KEY and a
 		// UNIQUE, in CREATE TABLE and ALTER TABLE ... ADD, and read back from
 		// user_constraints.
-		DeferrableKeys:             true,
-		NotEnforcedChecks:          false,
-		NotEnforcedForeignKeys:     false,
-		ForeignKeyMatchFull:        false,
-		ForeignKeyMatchPartial:     false,
-		UniqueConstraints:          true,
-		UniqueNullsDistinctClause:  false,
-		ForeignKeyDeleteColumnList: false,
-		AlterTableAlgorithmLock:    false,
-		AddConstraintNotValid:      false,
-		InvisibleIndexes:           false,
-		PrimaryKeyRequired:         false,
-		PrimaryKeyAlterable:        true,
-		AlterColumnType:            true,
-		AlterColumnSetNotNull:      true,
-		AlterColumnDropNotNull:     true,
-		AlterColumnDefault:         true,
-		AddColumnWithDefault:       true,
-		ExpressionDefaults:         true,
-		CheckConstraints:           true,
-		CreateIndexStatement:       true,
-		IndexCoveringColumns:       false,
-		UniqueIndexOnExistingTable: true,
+		DeferrableKeys:              true,
+		NotEnforcedChecks:           false,
+		NotEnforcedForeignKeys:      false,
+		PublicationSchemas:          false,
+		PublicationGeneratedColumns: false,
+		ForeignKeyMatchFull:         false,
+		ForeignKeyMatchPartial:      false,
+		UniqueConstraints:           true,
+		UniqueNullsDistinctClause:   false,
+		ForeignKeyDeleteColumnList:  false,
+		AlterTableAlgorithmLock:     false,
+		AddConstraintNotValid:       false,
+		InvisibleIndexes:            false,
+		PrimaryKeyRequired:          false,
+		PrimaryKeyAlterable:         true,
+		AlterColumnType:             true,
+		AlterColumnSetNotNull:       true,
+		AlterColumnDropNotNull:      true,
+		AlterColumnDefault:          true,
+		AddColumnWithDefault:        true,
+		ExpressionDefaults:          true,
+		CheckConstraints:            true,
+		CreateIndexStatement:        true,
+		IndexCoveringColumns:        false,
+		UniqueIndexOnExistingTable:  true,
 		// DECIMAL(p,s) is NUMBER(p,s) and SMALLINT defaults exist; SERIAL does
 		// not (an identity column is GENERATED ... AS IDENTITY), and none of
 		// YDB's own types do.

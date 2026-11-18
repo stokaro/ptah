@@ -16,6 +16,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbanswer"
 	"ptah.run/internal/devclean"
+	"ptah.run/internal/devclean/replay"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/migrationsnapshot"
@@ -306,7 +307,7 @@ func replayOnLockedConnection(
 		// outside a transaction of its own and rolls a failed one back on this
 		// pinned session, which it then cleans.
 		guard := devclean.NewDevReplayGuardFor(replayConn).WithSessionScope().WithOwnTransactions().
-			WithSchemaCommentReturned(claim.returnsSchemaState)
+			WithSchemaCommentReturned(claim.returnsSchemaState).WithPublications(claim.publications)
 		if hooks.ownTransactions {
 			guard = guard.WithUnwrappedTransactions()
 		}
@@ -352,6 +353,11 @@ type replayClaim struct {
 // returnsSchemaState is [devclean.Baseline.ReturnsSchemaState] for the claim.
 func (c *replayClaim) returnsSchemaState() bool {
 	return c.baseline.ReturnsSchemaState()
+}
+
+// publications is [devclean.Baseline.Publications] for the claim.
+func (c *replayClaim) publications() replay.PublicationScope {
+	return c.baseline.Publications()
 }
 
 func replayMigrations(

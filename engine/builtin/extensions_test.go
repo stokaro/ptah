@@ -36,6 +36,7 @@ import (
 	"ptah.run/feature/pgdefaultprivilege"
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgpolicy"
+	"ptah.run/feature/pgpublication"
 	"ptah.run/feature/pgtype"
 	"ptah.run/feature/synonym"
 	"ptah.run/internal/astrouteguard"
@@ -122,7 +123,7 @@ func partitionMoveFixture() extensionFixture {
 func allExtensionFixtures() []extensionFixture {
 	return []extensionFixture{exclusionFixture(), {payload: &pgtable.ReplaceDeleteColumns{Name: "fk_parent", Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"}, OnDelete: "SET NULL", DeleteColumns: []string{"parent_id"}}}, {payload: &pgtable.AlterPersistence{Change: pgtable.PersistenceChange{After: &pgtable.DesiredPersistence{Unlogged: true}}}}, partitionMoveFixture(), mysqlReplaceIndexFixture(), clickhouseTTLFixture(), clickhouseIndexFixture(), clickhouseDropIndexFixture(), clickhouseRefreshFixture(), clickhouseRowPolicyFixture(), clickhouseRowPolicyCommandFixture(), cockroachDBRowTTLFixture(),
 		hypertableFixture(), continuousAggregateFixture(), policyFixture(), policyCommentFixture(), tableStateFixture(), securityPolicyFixture(), extendedPropertyFixture(), synonymFixture(),
-		defaultPrivilegeFixture(), pgExtensionFixture(), pgExtensionCommentFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
+		defaultPrivilegeFixture(), pgExtensionFixture(), pgExtensionCommentFixture(), pgPublicationFixture(), pgTypeCreateDomainFixture(), pgTypeAlterDomainFixture(), pgTypeCreateCompositeFixture(),
 		pgTypeAlterCompositeFixture(), pgTypeCreateRangeFixture(), pgTypeDropFixture(), pgTypeCommentFixture(),
 		oraTypeCreateDomainFixture(), oraTypeReplaceObjectTypeFixture(), oraTypeDropFixture(), roleSettingsFixture(),
 	}
@@ -210,6 +211,12 @@ func tableStateFixture() extensionFixture {
 func pgExtensionFixture() extensionFixture {
 	return extensionFixture{payload: &pgextension.Operation{Name: "postgis", Action: pgextension.Create, Version: "3.0", IfNotExists: true},
 		wantSQL: "CREATE EXTENSION IF NOT EXISTS \"postgis\" VERSION '3.0';\n"}
+}
+
+func pgPublicationFixture() extensionFixture {
+	return extensionFixture{payload: &pgpublication.Operation{Name: "Orders Feed", Action: pgpublication.Create,
+		Tables: []pgpublication.Member{{Schema: "public", Table: "orders"}}, Publish: []string{"insert"}},
+		wantSQL: "CREATE PUBLICATION \"Orders Feed\" FOR TABLE ONLY \"public\".\"orders\" WITH (publish = 'insert');\n"}
 }
 
 func pgExtensionCommentFixture() extensionFixture {

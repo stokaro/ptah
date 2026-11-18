@@ -112,6 +112,12 @@ before output or mutation. A Pro-only object stops the operation; the result
 cannot silently describe less than the database contains. Cleanup validates the
 writer's full destruction inventory, including dependent objects.
 
+A PostgreSQL publication is the exception. Atlas CE v1.3.0 reads a database
+that holds one, such as a Supabase or Debezium database, and describes none. So
+strict mode leaves an inspected publication out of `schema inspect` output and
+plans none for a database or a migration directory on the desired side. A
+publication declared in a desired schema is still refused.
+
 ## Plans strict mode writes as Atlas CE does
 
 Strict mode also changes what a plan writes where the default surface writes

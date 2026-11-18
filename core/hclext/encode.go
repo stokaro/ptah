@@ -724,7 +724,7 @@ func checkUnlabeled(extension Extension, block EncodedBlock) error {
 
 // writable reports whether the writer can write value: a string, a bool,
 // decimal digits, SQL text, a table or local column reference, or a list of
-// local columns, roles and names of no kind. The writer quotes any SQL text inside its sql() call. A
+// local columns, roles, tables and names of no kind. The writer quotes any SQL text inside its sql() call. A
 // [Text] and a [TypeName] are what the reader reads, and an owner writes a
 // type as SQL.
 func writable(value Value) bool {
@@ -737,7 +737,8 @@ func writable(value Value) bool {
 		return value.Reference != nil && value.Reference.Name != "" && (value.Reference.Kind == "table" || ((value.Reference.Kind == "column" || value.Reference.Kind == "role") && value.Reference.Schema == ""))
 	case Refs:
 		return !slices.ContainsFunc(value.References, func(element Reference) bool {
-			return element.Name == "" || (element.Kind != "" && element.Kind != "role" && element.Kind != "column") || (element.Kind == "column" && element.Schema != "")
+			return element.Name == "" || (element.Kind != "" && element.Kind != "role" && element.Kind != "column" && element.Kind != "table") ||
+				(element.Kind == "column" && element.Schema != "")
 		})
 	default:
 		return false

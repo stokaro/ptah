@@ -143,7 +143,7 @@ func (p ApplyRuntimePlan) planOnDev(
 	}
 	computation.dataStatements = slices.Clone(p.rehearsal.data)
 	plan := computation.executionPlan()
-	if err := guardRehearsedUnits(plan.units, devclean.NewDevReplayGuardFor(devConn), devConn); err != nil {
+	if err := guardRehearsedUnits(plan.units, devclean.NewDevReplayGuardFor(devConn).WithPublications(baseline.Publications), devConn); err != nil {
 		return ApplyPlan{}, err
 	}
 	return plan, nil

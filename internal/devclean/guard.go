@@ -46,6 +46,10 @@ type ReplayGuard struct {
 	// schemaStateReturned is [replay.Scope.SchemaStateReturned]; see
 	// [ReplayGuard.WithSchemaStateReturned].
 	schemaStateReturned bool
+	// publications answers [replay.Scope.Publications] when a statement is
+	// validated; see [ReplayGuard.WithPublications]. Nil is a cleanup that
+	// drops no publication.
+	publications func() replay.PublicationScope
 	// session is set only by a caller that discards its pinned replay session.
 	session bool
 	// ownTransactions is set only by a caller that replays an existing history
@@ -280,6 +284,22 @@ func (g *ReplayGuard) WithSchemaStateReturned(returned bool) *ReplayGuard {
 	return &guard
 }
 
+// WithPublications returns a copy of the guard for a run whose cleanups do with
+// the dev database's publications what publications answers, as
+// [Baseline.Publications] does for a claim. A replay can build its guard
+// before it claims the database, so publications is asked when a statement is
+// validated.
+//
+// On PostgreSQL the copy accepts the publication DDL of a run whose every
+// cleanup drops the publications the run created, and refuses a change to or
+// the drop of one the claim found. A guard without it refuses every
+// publication statement, since nothing would take a publication away.
+func (g *ReplayGuard) WithPublications(publications func() replay.PublicationScope) *ReplayGuard {
+	guard := *g
+	guard.publications = publications
+	return &guard
+}
+
 // WithSchemaCommentReturned returns a copy of the guard for a migration replay on
 // a dev database whose every reset may return the schemas it keeps to what the
 // claim recorded. A replay builds its guard before it claims the database, so
@@ -348,6 +368,9 @@ func (g *ReplayGuard) validate(stmt string, realm ReplayRealm, trusted bool) err
 	scope.SchemaStateReturned = g.schemaStateReturned
 	scope.SchemaCommentReturned = g.schemaCommentReturned != nil && g.schemaCommentReturned()
 	scope.TrustedSQL = trusted
+	if g.publications != nil {
+		scope.Publications = g.publications()
+	}
 	return g.guard.Validate(stmt, scope)
 }
 

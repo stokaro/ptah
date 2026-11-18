@@ -161,6 +161,13 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `feature/pgpolicy/policyreport` | Inventory counts of PostgreSQL row-security policies and switches. |
 | `feature/pgpolicy/policyrender` | Rendering of the PostgreSQL row-security operations. |
 | `feature/pgpolicy/policyreverse` | Reversal of PostgreSQL row-security changes. |
+| `feature/pgpublication` | PostgreSQL logical replication publication models, changes, operations and codecs. |
+| `feature/pgpublication/publicationcompare` | Comparison of PostgreSQL publications. |
+| `feature/pgpublication/publicationconvert` | Projection of PostgreSQL publications between representations. |
+| `feature/pgpublication/publicationplan` | Planning of PostgreSQL publication changes into ordered operations. |
+| `feature/pgpublication/publicationrender` | Rendering of the PostgreSQL publication operations. |
+| `feature/pgpublication/publicationreport` | Inventory counts of PostgreSQL publications. |
+| `feature/pgpublication/publicationreverse` | Reversal of PostgreSQL publication changes. |
 | `feature/pgtype` | PostgreSQL domain, composite type and range type models, changes, operations and codecs. |
 | `feature/pgtype/typecompare` | Comparison of PostgreSQL domains, composite types and range types. |
 | `feature/pgtype/typeconvert` | Projection of PostgreSQL user types between representations. |

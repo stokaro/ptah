@@ -61,8 +61,6 @@ func (r *Reader) readUnmodeledInSchema(ctx context.Context, database *catalog.Da
 func (r *Reader) readUnmodeledInDatabase(ctx context.Context, database *catalog.Database) error {
 	const query = `
 		SELECT 'event trigger' AS kind, evtname AS name FROM pg_catalog.pg_event_trigger
-		UNION ALL
-		SELECT 'publication', pubname FROM pg_catalog.pg_publication
 		ORDER BY kind, name`
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {

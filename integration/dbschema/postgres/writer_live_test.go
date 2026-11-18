@@ -324,47 +324,146 @@ func TestWriterDropDatabaseRealm_LivePostgresCleansLargeObjects(t *testing.T) {
 	c.Assert(objectCount, qt.Equals, 0)
 }
 
+// TestWriterDropDatabaseRealm_LivePostgresRejectsPublication cleans a realm
+// with no claim behind it. Nothing recorded which publications were there
+// before the run, so a publication may be a Supabase or Debezium one that the
+// dev database came with, and the cleanup refuses rather than drop it.
 func TestWriterDropDatabaseRealm_LivePostgresRejectsPublication(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
-
-	liveDatabase := newPostgresWriterLiveDatabase(
-		c,
-		ctx,
-		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
-	)
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
-
 	_, err := db.ExecContext(ctx, `
 		CREATE TABLE public.ptah_published_events (id bigint PRIMARY KEY);
-		CREATE PUBLICATION ptah_events_publication
-			FOR TABLE public.ptah_published_events;
+		CREATE PUBLICATION ptah_events_publication FOR TABLE public.ptah_published_events;
 	`)
 	c.Assert(err, qt.IsNil)
 
-	writer := postgres.NewPostgreSQLWriter(db, "public")
-	err = writer.DropDatabaseRealm(ctx)
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealm(ctx)
 
-	c.Assert(
-		err,
-		qt.ErrorMatches,
-		`refusing to clean PostgreSQL database realm with unsupported database-scoped `+
-			`publication "ptah_events_publication"`,
-	)
-	c.Assert(
-		postgresWriterLiveObjectCount(c, ctx, db, "public", "ptah_published_events"),
-		qt.Equals,
-		1,
-	)
-	var publicationCount int
-	err = db.QueryRowContext(
-		ctx,
-		"SELECT COUNT(*) FROM pg_publication WHERE pubname = 'ptah_events_publication'",
-	).Scan(&publicationCount)
+	c.Assert(err, qt.ErrorMatches,
+		`refusing to clean PostgreSQL database realm with unsupported database-scoped publication "ptah_events_publication"`)
+	c.Assert(postgresWriterLiveObjectCount(c, ctx, db, "public", "ptah_published_events"), qt.Equals, 1)
+	c.Assert(postgresWriterLivePublicationCount(c, ctx, db, "ptah_events_publication"), qt.Equals, 1)
+}
+
+// TestWriterDropDatabaseRealm_LivePostgresDropsAPublicationTheRunCreated
+// cleans a realm whose claim listed the database's objects. Dropping the schema
+// leaves a publication in place, since it belongs to the database, and a
+// replay that declares it again would fail with `publication ... already
+// exists`. So the cleanup drops the publication the claim did not find, keeps
+// the one it found, and the table goes with the schema.
+func TestWriterDropDatabaseRealm_LivePostgresDropsAPublicationTheRunCreated(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE public.ptah_published_events (id bigint PRIMARY KEY);
+		CREATE PUBLICATION ptah_their_publication;
+		CREATE PUBLICATION ptah_events_publication FOR TABLE public.ptah_published_events;
+	`)
 	c.Assert(err, qt.IsNil)
-	c.Assert(publicationCount, qt.Equals, 1)
+	kept := dbreset.Kept{ArtifactsRecorded: true, Artifacts: []dbreset.Object{{Kind: "publication", Name: "ptah_their_publication"}}}
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx, kept)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLiveObjectCount(c, ctx, db, "public", "ptah_published_events"), qt.Equals, 0)
+	c.Assert(postgresWriterLivePublicationCount(c, ctx, db, "ptah_events_publication"), qt.Equals, 0)
+	c.Assert(postgresWriterLivePublicationCount(c, ctx, db, "ptah_their_publication"), qt.Equals, 1)
+}
+
+// TestWriterDropDatabaseRealm_LivePostgresRefusesBeforeItDropsAPublication is
+// the control: a realm whose claim found nothing, and that holds an event
+// trigger the run created beside a publication, is refused, since no cleanup
+// can take the trigger away. The refusal comes before any drop, so the
+// publication and the table stay. The trigger goes with the scratch database.
+func TestWriterDropDatabaseRealm_LivePostgresRefusesBeforeItDropsAPublication(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE public.ptah_published_events (id bigint PRIMARY KEY);
+		CREATE PUBLICATION ptah_events_publication FOR TABLE public.ptah_published_events;
+		CREATE FUNCTION public.ptah_note_ddl() RETURNS event_trigger LANGUAGE plpgsql AS $$ BEGIN END $$;
+		CREATE EVENT TRIGGER ptah_note_ddl ON ddl_command_end EXECUTE FUNCTION public.ptah_note_ddl();
+	`)
+	c.Assert(err, qt.IsNil)
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropDatabaseRealmKeeping(ctx, dbreset.Kept{ArtifactsRecorded: true})
+
+	c.Assert(err, qt.ErrorMatches,
+		`refusing to clean PostgreSQL database realm with unsupported database-scoped event trigger "ptah_note_ddl"`)
+	c.Assert(postgresWriterLiveObjectCount(c, ctx, db, "public", "ptah_published_events"), qt.Equals, 1)
+	c.Assert(postgresWriterLivePublicationCount(c, ctx, db, "ptah_events_publication"), qt.Equals, 1)
+}
+
+// TestWriterDropPublicationsAddedSince_LivePostgres cleans the publications of
+// a dev database whose URL pins one schema. Emptying that schema leaves every
+// publication, so the cleanup drops the ones the claim did not find and keeps
+// the one it found, which is the dev database's own.
+func TestWriterDropPublicationsAddedSince_LivePostgres(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE public.ptah_published_events (id bigint PRIMARY KEY);
+		CREATE PUBLICATION ptah_their_publication;
+		CREATE PUBLICATION ptah_run_publication FOR TABLE public.ptah_published_events;
+	`)
+	c.Assert(err, qt.IsNil)
+	kept := dbreset.Kept{ArtifactsRecorded: true, Artifacts: []dbreset.Object{{Kind: "publication", Name: "ptah_their_publication"}}}
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropPublicationsAddedSince(ctx, kept)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLivePublicationCount(c, ctx, db, "ptah_their_publication"), qt.Equals, 1)
+	c.Assert(postgresWriterLivePublicationCount(c, ctx, db, "ptah_run_publication"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveObjectCount(c, ctx, db, "public", "ptah_published_events"), qt.Equals, 1)
+}
+
+// TestWriterDropPublicationsAddedSince_LivePostgresWithoutAClaim is the
+// control for the test above: a zero kept set recorded no claim, so it cannot
+// tell which publications are the run's, and the cleanup drops none of them.
+func TestWriterDropPublicationsAddedSince_LivePostgresWithoutAClaim(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	liveDatabase := newPostgresWriterLiveDatabase(c, ctx, requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL))
+	defer liveDatabase.cleanup()
+	db := liveDatabase.db
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE public.ptah_published_events (id bigint PRIMARY KEY);
+		CREATE PUBLICATION supabase_realtime;
+		CREATE PUBLICATION ptah_run_publication FOR TABLE public.ptah_published_events;
+	`)
+	c.Assert(err, qt.IsNil)
+
+	err = postgres.NewPostgreSQLWriter(db, "public").DropPublicationsAddedSince(ctx, dbreset.Kept{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(postgresWriterLivePublicationCount(c, ctx, db, "supabase_realtime"), qt.Equals, 1)
+	c.Assert(postgresWriterLivePublicationCount(c, ctx, db, "ptah_run_publication"), qt.Equals, 1)
+}
+
+// postgresWriterLivePublicationCount is how many publications of db are named
+// name.
+func postgresWriterLivePublicationCount(c *qt.C, ctx context.Context, db *sql.DB, name string) int {
+	c.Helper()
+	var count int
+	c.Assert(db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pg_publication WHERE pubname = $1", name).Scan(&count), qt.IsNil)
+	return count
 }
 
 func TestWriterDropDatabaseRealm_LivePostgresRollsBackOnTemporaryPolicyDependency(

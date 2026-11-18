@@ -492,7 +492,7 @@ func inspectOnDev(
 				// A directory cannot say which extensions it means, since one
 				// it creates IF NOT EXISTS is a no-op beside a kept one, so the
 				// dev database's own are left out of what the directory built.
-				schema = baseline.WithoutEnvironment(schema, nil)
+				schema = baseline.WithoutEnvironment(schema, devclean.Environment{})
 				rendered, err = renderInspectStartingPoint(ctx, schema, nil, replayConn.Info(), baseline, validatedOpts)
 				return err
 			},
@@ -516,7 +516,7 @@ func inspectOnDev(
 				if err != nil {
 					return err
 				}
-				schema = baseline.WithoutEnvironment(schema, devclean.DeclaredExtensions(desired))
+				schema = baseline.WithoutEnvironment(schema, devclean.DeclaredEnvironment(desired))
 				declared, err := goschematodb.ToDBSchema(ctx, desired, materializedConn.Info().Dialect, opts.Runtime)
 				if err != nil {
 					return err

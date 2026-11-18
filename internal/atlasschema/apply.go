@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/internal/dbreset"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/dispatchwitness"
@@ -580,7 +581,7 @@ func computeApplyPlan(
 	if err != nil {
 		return applyComputation{}, err
 	}
-	current := opts.baseline.WithoutEnvironment(read.current, devclean.DeclaredExtensions(desired))
+	current := opts.baseline.WithoutEnvironment(read.current, devclean.DeclaredEnvironment(desired))
 	declared, err := goschematodb.ToDBSchema(ctx, desired, conn.Info().Dialect, opts.Runtime)
 	if err != nil {
 		return applyComputation{}, err
@@ -1048,15 +1049,15 @@ func loadDesiredApplySchema(
 	if err := refuseServerScopeMismatch(connectionSide(conn.Info()), stateSide(state)); err != nil {
 		return nil, err
 	}
-	if len(state.EnvironmentExtensions) > 0 {
-		installed, err := installedExtensionNames(ctx, conn)
+	if !state.Environment.IsZero() {
+		held, err := targetEnvironment(ctx, conn)
 		if err != nil {
 			return nil, err
 		}
 		// A directory replayed on the dev database reads back that
-		// database's own extensions too. One the target lacks is not the
-		// directory's to create there.
-		state = state.WithoutEnvironment(installed)
+		// database's own extensions and publications too. One the target
+		// lacks is not the directory's to create there.
+		state = state.WithoutEnvironment(held)
 	}
 	if state.EnvironmentState != nil {
 		// So is a docker block's starting point: what the target holds of it
@@ -1090,20 +1091,33 @@ type extensionInstaller interface {
 
 // installedExtensionNames is the set of extensions conn's database holds, or
 // none on a dialect without extensions.
-func installedExtensionNames(ctx context.Context, conn *dbschema.DatabaseConnection) (map[string]bool, error) {
-	names := make(map[string]bool)
-	lister, ok := conn.SchemaWriter().(extensionInstaller)
-	if !ok {
-		return names, nil
+func targetEnvironment(ctx context.Context, conn *dbschema.DatabaseConnection) (devclean.Environment, error) {
+	var held devclean.Environment
+	if lister, ok := conn.SchemaWriter().(extensionInstaller); ok {
+		installed, err := lister.InstalledExtensions(ctx)
+		if err != nil {
+			return devclean.Environment{}, fmt.Errorf("read the target's extensions: %w", err)
+		}
+		held.Extensions = installed
 	}
-	installed, err := lister.InstalledExtensions(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("read the target's extensions: %w", err)
+	if lister, ok := conn.SchemaWriter().(artifactLister); ok {
+		artifacts, err := lister.DatabaseScopedArtifacts(ctx)
+		if err != nil {
+			return devclean.Environment{}, fmt.Errorf("read the target's publications: %w", err)
+		}
+		for _, artifact := range artifacts {
+			if artifact.Kind == "publication" {
+				held.Publications = append(held.Publications, artifact.Name)
+			}
+		}
 	}
-	for _, name := range installed {
-		names[name] = true
-	}
-	return names, nil
+	return held, nil
+}
+
+// artifactLister is a writer that lists the database-scoped objects its
+// database holds, publications among them.
+type artifactLister interface {
+	DatabaseScopedArtifacts(context.Context) ([]dbreset.Object, error)
 }
 
 // localApplySources is the desired state of the LocalFilesOnly path, as

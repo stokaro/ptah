@@ -316,7 +316,7 @@ func (r *Reader) readSchema(ctx context.Context) (*catalog.Database, error) {
 	if err := r.leaveOutExtensionOwnedRelations(ctx, schema); err != nil {
 		return nil, err
 	}
-	if err := r.readUnmodeledObjects(ctx, schema); err != nil {
+	if err := r.readPublicationsAndUnmodeled(ctx, schema); err != nil {
 		return nil, err
 	}
 
@@ -327,6 +327,16 @@ func (r *Reader) readSchema(ctx context.Context) (*catalog.Database, error) {
 	r.enhanceTablesWithIndexes(schema.Tables, schema.Indexes)
 
 	return schema, nil
+}
+
+// readPublicationsAndUnmodeled reads the publications, which belong to the
+// whole database rather than to a schema, and then the objects of the kinds
+// Ptah does not model.
+func (r *Reader) readPublicationsAndUnmodeled(ctx context.Context, schema *catalog.Database) error {
+	if err := r.readPublicationObjects(ctx, schema); err != nil {
+		return err
+	}
+	return r.readUnmodeledObjects(ctx, schema)
 }
 
 // readSchemas reports the schemas this read covered.

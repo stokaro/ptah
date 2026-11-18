@@ -177,7 +177,9 @@ type driftReport struct {
 	// model, such as a MySQL event, and the kinds the read could not list. No
 	// schema source can declare one and no comparison reads one, so they are not
 	// findings: Drift and Failed say nothing about them, and the exit code does
-	// not move. It is here because a false Drift would otherwise read as a
+	// not move. A PostgreSQL publication is among them while the desired schema
+	// declares no publication, since the comparison then leaves every one
+	// alone. It is here because a false Drift would otherwise read as a
 	// comparison that covered them. It is absent when the read found none.
 	NotCompared []catalog.UnmodeledObject `json:"not_compared,omitempty"`
 	// ManagedData names the declared reference tables whose live rows differ,

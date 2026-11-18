@@ -130,8 +130,10 @@ func TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown(t *testing.T) {
 		// so the guard has no name to count.
 		"ALTER DEFAULT PRIVILEGES",
 		// Alterations of an object something else created: a materialized
-		// view and a view given to their owners, a role, a sequence, a table.
+		// view, a publication and a view given to their owners, a role, a
+		// sequence, a table.
 		"ALTER MATERIALIZED VIEW",
+		"ALTER PUBLICATION \"FEED\"",
 		"ALTER ROLE \"APP_READER\"",
 		"ALTER SEQUENCE \"PUBLIC\".\"ORDER_SEQ\"",
 		"ALTER TABLE \"T\"",

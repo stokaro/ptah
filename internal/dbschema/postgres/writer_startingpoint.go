@@ -28,8 +28,9 @@ func (w *PostgreSQLWriter) CaptureStartingPoint(ctx context.Context) (*pgsnapsho
 // returnToStartingPoint returns the database to kept.StartingPoint in one
 // transaction, and refuses to commit a database that does not match it.
 //
-// It refuses a database-scoped object the run created, as every realm cleanup
-// does, a starting-point object the run dropped, which no statement can
+// It drops a publication the run created and refuses any other
+// database-scoped object the run created, as every realm cleanup does, a
+// starting-point object the run dropped, which no statement can
 // create again, and a setting the run changed that no statement restores,
 // such as a column's type: committed, the next run would start from a
 // different state without saying so. The checks on the starting point run
@@ -48,7 +49,7 @@ func (w *PostgreSQLWriter) returnToStartingPoint(ctx context.Context, kept dbres
 		return err
 	}
 	if w.readsDatabaseArtifacts(capabilities) {
-		if err := rejectPostgresDatabaseScopedArtifacts(ctx, tx, kept.Artifacts); err != nil {
+		if err := settleDatabaseScopedArtifacts(ctx, tx, kept); err != nil {
 			return err
 		}
 	}
