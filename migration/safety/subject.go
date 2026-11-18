@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform"
 	"ptah.run/internal/lintscan"
 )
 
@@ -237,39 +238,149 @@ func statementSubject(statement, target string) string {
 		return ""
 	}
 	words := subjectWords{upper: split[0].Words, source: split[0].SourceWords}
-	if len(words.upper) == 0 {
-		return ""
+	return words.objectNames(words.subject())
+}
+
+// StatementTarget is what one statement does and the objects it does it to,
+// read from the statement's leading words.
+type StatementTarget struct {
+	// Action is the statement's words before the name of the object it acts
+	// on, uppercased, modifiers included: `CREATE TABLE`, `CREATE UNIQUE INDEX
+	// CONCURRENTLY`, `DROP VIEW IF EXISTS`, `INSERT INTO`. Where the words give
+	// no such name, as for `DO` or `GRANT`, it is the first word alone.
+	Action string
+	// Objects are the names the statement acts on, in the order it lists them,
+	// each split into its parts without quotes: `app`.`notes` is {"app",
+	// "notes"}, and a quoted "app.notes" is the one part "app.notes". It is
+	// empty where Action is the first word alone.
+	Objects [][]string
+	// Clause is the head of each clause after the object's name in an ALTER
+	// statement, joined with ", ": at most [clauseHeadWords] words of each,
+	// stopping before the first word that is not a name or a keyword, such as
+	// a literal, a parenthesis or a comma: `ADD COLUMN body TEXT`, `DROP COLUMN
+	// x`, `ALTER COLUMN x SET`. A bare word is uppercased and a quoted name is
+	// written without its quotes. A double-quoted word stops the head on an
+	// engine that reads it as a string, as MySQL does. It is empty for every
+	// other statement.
+	Clause string
+}
+
+// clauseHeadWords is how many words of an ALTER's clause [StatementTarget]
+// reads: enough for the operation, the name it changes and one word more, and
+// few enough that the value in `ADD x text DEFAULT value` is not reached.
+const clauseHeadWords = 4
+
+// StatementTargets reads each statement of sql in order, the way the
+// assessment's Subject is read; see [StatementTarget]. A statement with no
+// words is skipped, so sql with no statement has none. target selects the
+// lexer; an engine without a registered descriptor is read with the default
+// lexer and is not refused, where [AssessSQL] returns
+// [ptah.run/core/ptaherr.ErrUnsupportedDialect]. Unlike Subject, which is
+// empty for text that holds several statements, each statement is read.
+//
+// It reads no value: a literal stops the read of a clause, and the words
+// after the object's name are read only in an ALTER.
+func StatementTargets(sql, target string) []StatementTarget {
+	split := lintscan.Split(sql, lintscan.ForDialect(target))
+	described, _ := platform.Lookup(target)
+	targets := make([]StatementTarget, 0, len(split))
+	for _, statement := range split {
+		words := subjectWords{
+			upper:               statement.Words,
+			source:              statement.SourceWords,
+			doubleQuotedStrings: described.Comparison.DoubleQuotedStrings,
+		}
+		if len(words.upper) == 0 {
+			continue
+		}
+		name := words.subject()
+		objects, next, ok := words.objectList(name)
+		if !ok {
+			targets = append(targets, StatementTarget{Action: words.upper[0]})
+			continue
+		}
+		read := StatementTarget{Action: strings.Join(words.upper[:name], " "), Objects: objects}
+		if words.upper[0] == "ALTER" {
+			read.Clause = words.clauseHeads(next)
+		}
+		targets = append(targets, read)
+	}
+	return targets
+}
+
+// clauseHeads reads the head of each clause from index on, a clause ending at
+// a comma outside parentheses; see [StatementTarget.Clause].
+func (w subjectWords) clauseHeads(index int) string {
+	var heads []string
+	for index < len(w.upper) {
+		heads = append(heads, w.clauseHead(index))
+		depth := 0
+		for ; index < len(w.upper) && (depth > 0 || w.upper[index] != ","); index++ {
+			switch w.upper[index] {
+			case "(":
+				depth++
+			case ")":
+				depth--
+			}
+		}
+		index++
+	}
+	return strings.Join(heads, ", ")
+}
+
+// clauseHead reads the head of the clause at index.
+func (w subjectWords) clauseHead(index int) string {
+	var head []string
+	for ; index < len(w.upper) && len(head) < clauseHeadWords; index++ {
+		word, source := w.upper[index], w.source[index]
+		if !identifierPart(word) || w.doubleQuotedStrings && source[0] == '"' {
+			break
+		}
+		if source[0] == '"' || source[0] == '`' {
+			word = source[1 : len(source)-1]
+		}
+		head = append(head, word)
+	}
+	return strings.Join(head, " ")
+}
+
+// subject returns the index of the object's name in a statement's words, as
+// [statementSubject] and [StatementTargets] read it, and -1 when the words name
+// no object they read.
+func (w subjectWords) subject() int {
+	if len(w.upper) == 0 {
+		return -1
 	}
 	at := 1
-	switch words.upper[0] {
+	switch w.upper[0] {
 	case "CREATE":
-		at = words.skip(at, "OR", "REPLACE")
-		at = words.skip(at, "OR", "ALTER")
-		return words.objectNames(words.kind(at))
+		at = w.skip(at, "OR", "REPLACE")
+		at = w.skip(at, "OR", "ALTER")
+		return w.kind(at)
 	case "ALTER", "DROP":
-		return words.objectNames(words.kind(at))
+		return w.kind(at)
 	case "COMMENT":
-		if !words.at(at, "ON") {
-			return ""
+		if !w.at(at, "ON") {
+			return -1
 		}
-		return words.objectNames(words.kind(at + 1))
+		return w.kind(at + 1)
 	case "INSERT", "UPSERT", "REPLACE":
-		return words.objectNames(words.skip(words.pastAny(at, insertModifiers), "INTO"))
+		return w.skip(w.pastAny(at, insertModifiers), "INTO")
 	case "UPDATE":
-		return words.objectNames(words.skip(words.pastAny(at, updateModifiers), "ONLY"))
+		return w.skip(w.pastAny(at, updateModifiers), "ONLY")
 	case "TRUNCATE":
-		return words.objectNames(words.skip(words.skip(at, "TABLE"), "ONLY"))
+		return w.skip(w.skip(at, "TABLE"), "ONLY")
 	case "DELETE":
-		return words.objectNames(words.skip(words.skip(words.pastAny(at, deleteModifiers), "FROM"), "ONLY"))
+		return w.skip(w.skip(w.pastAny(at, deleteModifiers), "FROM"), "ONLY")
 	case "REFRESH":
-		if !words.at(at, "MATERIALIZED") || !words.at(at+1, "VIEW") {
-			return ""
+		if !w.at(at, "MATERIALIZED") || !w.at(at+1, "VIEW") {
+			return -1
 		}
-		return words.objectNames(words.skip(at+2, "CONCURRENTLY"))
+		return w.skip(at+2, "CONCURRENTLY")
 	case "PRAGMA":
-		return words.objectNames(at)
+		return at
 	}
-	return ""
+	return -1
 }
 
 // subjectKinds are the kinds of object a CREATE, an ALTER, a DROP or a
@@ -319,6 +430,9 @@ var nameModifiers = [][]string{{"IF", "NOT", "EXISTS"}, {"IF", "EXISTS"}, {"CONC
 type subjectWords struct {
 	upper  []string
 	source []string
+	// doubleQuotedStrings reports that the engine reads a double-quoted word
+	// as a string rather than a name, so a clause head stops at one.
+	doubleQuotedStrings bool
 }
 
 func (w subjectWords) at(index int, word string) bool {
@@ -378,35 +492,50 @@ func (w subjectWords) pastNameModifiers(index int) int {
 // index, joined with ", ", and returns "" when the words there are not one.
 // SQL Server's `TOP (n)` stands where a name would and is not read as one.
 func (w subjectWords) objectNames(index int) string {
-	if index < 0 || w.at(index, "TOP") {
+	objects, _, ok := w.objectList(index)
+	if !ok {
 		return ""
 	}
-	var names []string
+	names := make([]string, 0, len(objects))
+	for _, parts := range objects {
+		names = append(names, strings.Join(parts, "."))
+	}
+	return strings.Join(names, ", ")
+}
+
+// objectList reads the comma-separated list of possibly qualified names at
+// index, each as its parts, and the index past the list. It reports false
+// when the words there are not one; see [subjectWords.objectNames].
+func (w subjectWords) objectList(index int) ([][]string, int, bool) {
+	if index < 0 || w.at(index, "TOP") {
+		return nil, index, false
+	}
+	var objects [][]string
 	for {
-		name, next, ok := w.objectName(index)
+		parts, next, ok := w.objectName(index)
 		if !ok {
-			return ""
+			return nil, index, false
 		}
-		names = append(names, name)
+		objects = append(objects, parts)
 		if !w.at(next, ",") {
-			return strings.Join(names, ", ")
+			return objects, next, true
 		}
 		index = next + 1
 	}
 }
 
-// objectName reads the possibly qualified name at index, and the index past
-// it.
-func (w subjectWords) objectName(index int) (string, int, bool) {
+// objectName reads the possibly qualified name at index, as its parts, and
+// the index past it.
+func (w subjectWords) objectName(index int) ([]string, int, bool) {
 	var parts []string
 	for {
 		part, next, ok := w.namePart(index)
 		if !ok {
-			return "", index, false
+			return nil, index, false
 		}
 		parts = append(parts, part)
 		if !w.at(next, ".") {
-			return strings.Join(parts, "."), next, true
+			return parts, next, true
 		}
 		index = next + 1
 	}

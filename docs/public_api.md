@@ -1159,6 +1159,16 @@ judges them, the most severe impact wins, and a statement an owner declined is
 `Destructive`. Every other statement is read by its words. This changes the Go
 API; pre-v1, so no compatibility is owed.
 
+Each assessment `AssessSQL` returns names its statement's object in `Subject`,
+read from the statement's leading words, and is empty for text that holds
+several statements. `migration/safety.StatementTargets` reads each statement
+of a text the same way into a `StatementTarget`: the uppercased words before the
+object's name with their modifiers (`CREATE UNIQUE INDEX CONCURRENTLY`), the
+name's parts without quotes, and for an ALTER the head of each clause after the
+name (`ADD COLUMN body TEXT`). It stops a clause before a literal, so it reads
+no value. An engine with no descriptor is read with the default lexer rather
+than refused, where `AssessSQL` returns `ErrUnsupportedDialect`.
+
 All `migration/planner.GenerateSchemaDiff*` functions and `Planner.GenerateMigrationAST`
 require the caller's context and selected runtime. AST planning consumes
 `featureplan.Runtime`. SQL planning consumes `planner.Runtime`, which adds
