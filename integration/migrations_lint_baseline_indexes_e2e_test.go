@@ -79,6 +79,95 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			wantNot: []string{"] PG301: "},
 		},
 		{
+			// The column inherits C from its domain, so it declares no collation
+			// and the restatement compares against the one it has.
+			name:    "control: a domain's collation restated on an indexed column changes nothing",
+			base:    "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc);\nCREATE INDEX notes_body ON notes (body);\n",
+			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dc COLLATE \"C\";\n",
+			wantNot: []string{"] PG301: "},
+		},
+		{
+			// A clause that names no COLLATE gives the column its type's default,
+			// which for dc is C, the collation the column has.
+			name:    "control: a domain column takes the domain's collation when the clause names none",
+			base:    "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc);\nCREATE INDEX notes_body ON notes (body);\n",
+			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dc;\n",
+			wantNot: []string{"] PG301: "},
+		},
+		{
+			name:   "a domain column's own collation is reset when the clause names none",
+			base:   "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc COLLATE \"POSIX\");\nCREATE INDEX notes_body ON notes (body);\n",
+			change: "ALTER TABLE notes ALTER COLUMN body TYPE dc;\n",
+			want: []string{
+				"] PG301: ",
+				`changes the collation from "POSIX" to "C"`,
+				"rebuilds every index on the column (notes_body)",
+			},
+		},
+		{
+			name:    "control: a name column keeps C when the clause names none",
+			base:    "CREATE TABLE notes (id int, body name);\nCREATE INDEX notes_body ON notes (body);\n",
+			change:  "ALTER TABLE notes ALTER COLUMN body TYPE name;\n",
+			wantNot: []string{"] PG301: "},
+		},
+		{
+			name:    "control: a name[] column keeps C when the clause names none",
+			base:    "CREATE TABLE notes (id int, body name[]);\nCREATE INDEX notes_body ON notes (body);\n",
+			change:  "ALTER TABLE notes ALTER COLUMN body TYPE name[];\n",
+			wantNot: []string{"] PG301: "},
+		},
+		{
+			name:    "control: a dc[] column keeps the domain's collation when the clause names none",
+			base:    "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc[]);\nCREATE INDEX notes_body ON notes (body);\n",
+			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dc[];\n",
+			wantNot: []string{"] PG301: "},
+		},
+		{
+			name:   "default named on a domain column that takes the domain's C rebuilds the index",
+			base:   "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc);\nCREATE INDEX notes_body ON notes (body);\n",
+			change: "ALTER TABLE notes ALTER COLUMN body TYPE dc COLLATE \"default\";\n",
+			want: []string{
+				"] PG301: ",
+				`changes the collation from "C" to the database default`,
+				"rebuilds every index on the column (notes_body)",
+			},
+		},
+		{
+			name:   "a C column changed to a domain with no collation rebuilds the index",
+			base:   "CREATE DOMAIN dd AS text;\nCREATE TABLE notes (id int, body text COLLATE \"C\");\nCREATE INDEX notes_body ON notes (body);\n",
+			change: "ALTER TABLE notes ALTER COLUMN body TYPE dd;\n",
+			want: []string{
+				"] PG301: ",
+				`TYPE dd changes the collation from "C" to the database default`,
+				"rebuilds every index on the column (notes_body)",
+			},
+		},
+		{
+			name:   "a default-collated column changed to a domain with C rebuilds the index",
+			base:   "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
+			change: "ALTER TABLE notes ALTER COLUMN body TYPE dc;\n",
+			want: []string{
+				"] PG301: ",
+				`TYPE dc changes the collation from the database default to "C"`,
+				"rebuilds every index on the column (notes_body)",
+			},
+		},
+		{
+			name:   "a column changed to a domain with a CHECK rewrites the table",
+			base:   "CREATE DOMAIN dchk AS text CHECK (VALUE <> '');\nCREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
+			change: "ALTER TABLE notes ALTER COLUMN body TYPE dchk;\n",
+			want: []string{
+				"] PG301: ",
+				"changes the type from text to the domain dchk",
+			},
+		},
+		{
+			name:    "control: a default-collated column changed to a domain with no collation keeps the index",
+			base:    "CREATE DOMAIN dd AS text;\nCREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
+			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dd;\n",
+			wantNot: []string{"] PG301: "},
+		},
+		{
 			name:   "a unique index rebuilt under a new name over a dropped index's columns",
 			base:   "CREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body_idx ON notes (body);\n",
 			change: "DROP INDEX notes_body_idx;\nCREATE UNIQUE INDEX notes_body_uq ON notes (body);\n",
@@ -131,6 +220,57 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			for _, wantNot := range test.wantNot {
 				c.Assert(report, qt.Not(qt.Contains), wantNot)
 			}
+		})
+	}
+}
+
+// TestNativeMigrationsLintReadsAnInheritedCollationFromTheDevDatabaseE2E
+// changes the collation of a column that takes its table's. The column
+// declares none, so the read reports no collation for it, and the lint
+// compares against the one it has rather than against none: without that
+// the change reads as a column gaining a collation, which costs nothing.
+func TestNativeMigrationsLintReadsAnInheritedCollationFromTheDevDatabaseE2E(t *testing.T) {
+	c := qt.New(t)
+	ptahBinary := filepath.Join(c.TempDir(), "ptah")
+	buildPtah(c, t.Context(), e2eRepoRoot(t), ptahBinary)
+	const base = "CREATE TABLE notes (id int, body varchar(20), KEY notes_body (body)) " +
+		"DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n"
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+		change string
+		want   string
+	}{
+		{
+			name:   "MySQL copies the table",
+			engine: dbtarget.MySQLAdmin,
+			change: "ALTER TABLE notes MODIFY body varchar(20) COLLATE utf8mb4_bin;\n",
+			want:   "[warning] MY130: MODIFY COLUMN notes.body changes the collation of varchar(20) from utf8mb4_unicode_ci to utf8mb4_bin on a column a key covers",
+		},
+		{
+			name:   "MariaDB changes it in place",
+			engine: dbtarget.MariaDBAdmin,
+			change: "ALTER TABLE notes MODIFY body varchar(20) COLLATE utf8mb4_bin;\n",
+			want:   "[info] MY130P: MODIFY COLUMN notes.body changes the collation of varchar(20) from utf8mb4_unicode_ci to utf8mb4_bin, which MariaDB applies in place",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+			defer cancel()
+			scratch := newMySQLFamilyScratch(c, test.engine)
+			_, dev := scratch.database(c, "lint_coll")
+			dir := c.TempDir()
+			writeLintE2EFile(c, dir, "1.sql", base)
+			writeLintE2EFile(c, dir, "2.sql", test.change)
+
+			stdout, stderr, err := runLintE2EBinary(ctx, ptahBinary,
+				"migrations", "lint", "--dir", dir, "--dir-format", "atlas", "--dev-url", dev,
+				"--latest", "1", "--fail-on", "none")
+
+			c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout+stderr, qt.Contains, test.want)
 		})
 	}
 }

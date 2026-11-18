@@ -108,6 +108,9 @@ func (m *Migrator) migrationTagsTableExists(ctx context.Context) (bool, error) {
 // movable pointers, and refusing to move one would leave an operator who
 // re-tagged a directory unable to say so here.
 func (m *Migrator) RecordMigrationTag(ctx context.Context, tag string, version int64) error {
+	if err := m.refuseTagsUnderPositions(); err != nil {
+		return err
+	}
 	normalized, err := normalizeMigrationTag(tag)
 	if err != nil {
 		return err
@@ -146,6 +149,27 @@ func (m *Migrator) upsertMigrationTagSQL() string {
 // caller that could not tell the two apart would revert everything when it
 // meant to report a typo.
 func (m *Migrator) ResolveMigrationTag(ctx context.Context, tag string) (int64, error) {
+	if err := m.refuseTagsUnderPositions(); err != nil {
+		return 0, err
+	}
+	return m.resolveMigrationTag(ctx, tag)
+}
+
+// refuseTagsUnderPositions refuses to record or resolve a tag where the
+// migrations run under their positions (see [Migrator.KeyedByPosition]). A tag
+// records a number, and there a number is a position, which moves when a file
+// is added before it: the tag would name another migration after the next
+// file, and a rollback to it would stop there.
+func (m *Migrator) refuseTagsUnderPositions() error {
+	if !m.hasAtlasPositions() {
+		return nil
+	}
+	return errors.New("a migration tag records a version number, and this Atlas directory runs its files " +
+		"under their positions in file-name order, which move when a file is added before them; " +
+		"name the version the file spells instead")
+}
+
+func (m *Migrator) resolveMigrationTag(ctx context.Context, tag string) (int64, error) {
 	normalized, err := normalizeMigrationTag(tag)
 	if err != nil {
 		return 0, err
@@ -248,7 +272,7 @@ func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error {
 		return fmt.Errorf("%w: %q", ErrMigrationTagNotFound, normalized)
 	}
 	if statement := m.revisionTable().TagTombstone; statement != "" {
-		if _, err := m.ResolveMigrationTag(ctx, normalized); err != nil {
+		if _, err := m.resolveMigrationTag(ctx, normalized); err != nil {
 			return err
 		}
 		statement = strings.ReplaceAll(statement, "{table}", m.qualifiedMigrationTagsTable())

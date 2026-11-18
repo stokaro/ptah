@@ -308,7 +308,12 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 				OBJECT_DEFINITION(c.default_object_id),
 				cc.definition,
 				cc.is_persisted,
-				ep.value
+				ep.value,
+				-- A column that names no COLLATE takes the database default,
+				-- and so does one that restates it; the catalog keeps the
+				-- same name for both.
+				c.collation_name,
+				CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS NVARCHAR(128))
 		FROM sys.columns AS c
 		JOIN sys.tables AS t ON t.object_id = c.object_id
 		JOIN sys.schemas AS s ON s.schema_id = t.schema_id
@@ -342,6 +347,8 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 			generatedExpression   sql.NullString
 			generatedPersisted    sql.NullBool
 			comment               sql.NullString
+			collation             sql.NullString
+			databaseCollation     sql.NullString
 			column                catalog.Column
 		)
 		if err := rows.Scan(
@@ -361,8 +368,13 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 			&generatedExpression,
 			&generatedPersisted,
 			&comment,
+			&collation,
+			&databaseCollation,
 		); err != nil {
 			return nil, err
+		}
+		if collation.Valid && !strings.EqualFold(collation.String, databaseCollation.String) {
+			column.Collate, column.EffectiveCollate = collation.String, collation.String
 		}
 		column.DataType = strings.ToUpper(typeName)
 		// The catalog answers with SQL Server's own type name, and the portable

@@ -98,12 +98,12 @@ func (m *Migrator) refuseTimeoutsTheTargetCannotCarry(migration *Migration, time
 	info := m.conn.Info()
 	if ownerBoundsStatements(m.conn) {
 		if err := refuseLockTimeoutForOwner(info.Dialect, timeouts); err != nil {
-			return fmt.Errorf("migration %d declares timeouts: %w", migration.Version, err)
+			return fmt.Errorf("migration %d declares timeouts: %w", m.versionText(migration.Version), err)
 		}
 		return nil
 	}
 	if _, _, err := timeoutStatements(info.Dialect, info.Capabilities, timeouts, timeoutScopeSession); err != nil {
-		return fmt.Errorf("migration %d declares timeouts: %w", migration.Version, err)
+		return fmt.Errorf("migration %d declares timeouts: %w", m.versionText(migration.Version), err)
 	}
 	return nil
 }
@@ -164,7 +164,7 @@ func (m *Migrator) applySessionTimeouts(
 ) (context.Context, restoreTimeoutsFunc, error) {
 	restore, err := m.applyTimeoutsWithRestore(ctx, m.noTransactionConnection(), timeouts, timeoutScopeSession)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
+		return nil, nil, fmt.Errorf("failed to apply timeouts for migration %d: %w", m.versionText(migration.Version), err)
 	}
 	return withStatementBound(ctx, m.noTransactionConnection(), timeouts), restore, nil
 }
@@ -178,7 +178,7 @@ func (m *Migrator) restoreTimeouts(ctx context.Context, version int64, restore r
 		return nil
 	}
 	if err := restore(ctx); err != nil {
-		return fmt.Errorf("failed to restore timeouts for migration %d: %w", version, err)
+		return fmt.Errorf("failed to restore timeouts for migration %d: %w", m.versionText(version), err)
 	}
 	return nil
 }
@@ -188,7 +188,7 @@ func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int6
 		return failure
 	}
 	if err := restore(ctx); err != nil {
-		return fmt.Errorf("failed to restore timeouts after migration %d failed: %w (original error: %w)", version, err, failure)
+		return fmt.Errorf("failed to restore timeouts after migration %d failed: %w (original error: %w)", m.versionText(version), err, failure)
 	}
 	return failure
 }

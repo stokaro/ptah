@@ -176,6 +176,10 @@ rather than a person.
 | `ptah viz` | Renders diagrams from a desired schema; no database is opened | — |
 <!-- END GENERATED NATIVE COMMANDS -->
 
+`ptah migrations ls --dir-format atlas` lists the files in file-name order, the
+order Atlas reads an Atlas directory in, so `10_b.sql` comes before `9_a.sql`.
+A Ptah-format directory lists in version order.
+
 ## Sources and output formats
 
 An index cell above says what the verb does to the databases it is given; on a
@@ -428,6 +432,12 @@ name, such as `public.notes_owner[type=policy]`, names no policy and is reported
 as matching nothing. `*[type=policy]`, `public.*[type=policy]` and
 `notes.*[type=policy]` leave out every policy, every policy in `public`, and
 every policy on `notes`.
+
+`--exclude` names a PostgreSQL `EXCLUDE` constraint through its table, as it
+names a check constraint: `--exclude 'rooms.room_slot[type=constraint]'` keeps
+the constraint `room_slot` on `rooms`, and `public.rooms.room_slot` names it
+where the run covers every schema. `[type=index]` names it as well, since the
+index that enforces the constraint carries its name.
 
 `ptah migrations plan` and `ptah migrations generate` take `--exclude` and
 `--include` with the same meaning, the include applied after the exclusion. The

@@ -21,7 +21,7 @@ const (
 		`"base_type":` + textDefinition + `,"not_null":{"const":true},"default":` + textDefinition + `,` +
 		`"check":` + textDefinition + `,"checks":{"type":"array","minItems":1,"items":{"type":"object","required":["name","expression"],` +
 		`"additionalProperties":false,"properties":{"name":` + textDefinition + `,"expression":` + textDefinition + `}}},` +
-		`"comment":` + textDefinition + `}}`
+		`"collation":` + textDefinition + `,"comment":` + textDefinition + `}}`
 	desiredCompositeDefinition = `{"type":"object","required":["attributes"],"additionalProperties":false,"properties":{` +
 		`"attributes":` + attributesDefinition + `,"comment":` + textDefinition + `,"struct_name":` + textDefinition + `}}`
 	observedCompositeDefinition = `{"type":"object","required":["attributes"],"additionalProperties":false,"properties":{` +
@@ -46,9 +46,9 @@ var (
 	normalizedDomainShape = schemaext.ObjectShape{Name: "normalized domain",
 		Allowed: []string{"check", "default"}, NonEmpty: []string{"check", "default"}}
 	observedDomainShape = schemaext.ObjectShape{Name: "domain",
-		Allowed:  []string{"base_type", "not_null", "default", "check", "checks", "comment"},
+		Allowed:  []string{"base_type", "not_null", "default", "check", "checks", "collation", "comment"},
 		Required: []string{"base_type"},
-		NonEmpty: []string{"base_type", "not_null", "default", "check", "checks", "comment"}}
+		NonEmpty: []string{"base_type", "not_null", "default", "check", "checks", "collation", "comment"}}
 	domainCheckShape = schemaext.ObjectShape{Name: "domain check",
 		Allowed: []string{"name", "expression"}, Required: []string{"name", "expression"}}
 	desiredCompositeShape = schemaext.ObjectShape{Name: "composite type",

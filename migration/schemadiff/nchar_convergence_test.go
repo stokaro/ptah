@@ -38,7 +38,7 @@ func TestCompareNCharDeclaration_UsesTheCatalogForm(t *testing.T) {
 			c.Assert(current.Tables[0].Columns, qt.HasLen, 1)
 			column := &current.Tables[0].Columns[0]
 			column.DataType, column.ColumnType = test.held, test.held
-			column.IsNullable, column.Collate = "YES", test.collation
+			column.IsNullable, column.EffectiveCollate = "YES", test.collation
 			diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), &declared, current,
 				catalog.ServerInfo{Dialect: test.dialect}, nil, runtime)
 			c.Assert(err, qt.IsNil)

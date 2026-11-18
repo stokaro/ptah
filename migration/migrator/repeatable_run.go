@@ -314,7 +314,10 @@ func (m *Migrator) refuseBoundedRepeatables(
 		(len(selected) > 0 && maxMigrationVersion(selected) >= maxMigrationVersion(unbounded.apply)) {
 		return nil
 	}
-	return &RepeatableBoundError{TargetVersion: opts.TargetVersion, Amount: opts.Amount, Work: work}
+	return &RepeatableBoundError{
+		TargetVersion: opts.TargetVersion, Amount: opts.Amount, Work: work,
+		versionLabel: m.versionText(opts.TargetVersion).label,
+	}
 }
 
 // refuseRepeatablesWhatFilesRefuse asks every selected repeatable migration,

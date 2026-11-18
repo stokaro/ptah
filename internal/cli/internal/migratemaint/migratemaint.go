@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 
 	"github.com/spf13/pflag"
@@ -130,5 +131,28 @@ func (o *Options) Guard(ctx context.Context, w io.Writer, version int64, format 
 	if err != nil {
 		return fmt.Errorf("error reading applied migrations: %w", err)
 	}
-	return migrateops.EnsureNotApplied(applied, version)
+	appliedVersions, err := appliedFileVersions(o.MigrationsDir, format, applied)
+	if err != nil {
+		return err
+	}
+	return migrateops.EnsureNotApplied(appliedVersions, version)
+}
+
+// appliedFileVersions returns the versions the files spell of the applied
+// order keys. The migrator reports order keys, which are positions in an Atlas
+// directory whose files run under their positions, and --version names the
+// number a file spells: 2 names 2_x.sql, which runs under 3 after 00_x.sql and
+// 1_x.sql, never the file that runs under 2.
+func appliedFileVersions(dir string, format migrationfile.DirFormat, applied []int64) ([]int64, error) {
+	files, err := migrationfile.Discover(os.DirFS(dir), format)
+	if err != nil {
+		return nil, fmt.Errorf("error reading migrations: %w", err)
+	}
+	versions := make([]int64, 0, len(applied))
+	for _, file := range files {
+		if !file.Repeatable && slices.Contains(applied, file.OrderKey) {
+			versions = append(versions, file.Version)
+		}
+	}
+	return versions, nil
 }

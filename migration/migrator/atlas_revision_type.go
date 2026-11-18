@@ -43,11 +43,17 @@ type AtlasRevisionChange struct {
 }
 
 // AtlasRevisionSetResult describes the migrations changed by SetAtlasRevision.
-// Set and Removed are ordered by ascending version.
+// Set and Removed are ordered by ascending version, compared as text under
+// [Migrator.WithAtlasStringLinearity].
 type AtlasRevisionSetResult struct {
 	CurrentVersion int64
-	Set            []AtlasRevisionChange
-	Removed        []AtlasRevisionChange
+	// CurrentRevisionVersion names CurrentVersion as the boundary's file name
+	// spells it (see [Migrator.VersionLabel]): v1 for v1_x.sql, whose
+	// CurrentVersion is an order key no file carries. It is empty when
+	// CurrentVersion is 0.
+	CurrentRevisionVersion string
+	Set                    []AtlasRevisionChange
+	Removed                []AtlasRevisionChange
 }
 
 const (

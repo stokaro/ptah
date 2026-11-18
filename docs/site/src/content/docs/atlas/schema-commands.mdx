@@ -502,6 +502,18 @@ schema, so it names none and is reported as matching nothing. The pinned
 community binary reads no policies: it accepts each of these selectors and
 removes nothing.
 
+A PostgreSQL `EXCLUDE` constraint is a child of its table too, and is named as
+a check constraint is: `rooms.room_slot` in either scope, and
+`public.rooms.room_slot` on a URL that names no schema, untyped or with
+`[type=constraint]` or `[type=index]`. Either type keeps the constraint and the
+index it owns, since that index carries the constraint's name. The pinned
+community binary names the constraint only as an index. It honors
+`public.rooms.room_slot[type=index]` and the untyped selector, and it accepts
+`public.rooms.room_slot[type=constraint]` while removing nothing, so `schema
+apply` drops the constraint the selector was written to keep. PostgreSQL
+records the constraint in `pg_constraint`, and Ptah honors `[type=constraint]`
+deliberately.
+
 The same pattern is therefore honored on one URL and refused on the other,
 which is what the community binary does with it. Every surface that filters a
 live connection asks the URL the same question, so `schema inspect`,

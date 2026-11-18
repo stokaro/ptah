@@ -792,7 +792,9 @@ func atlasSchemaInspectTable(
 func atlasSchemaInspectColumn(column catalog.Column) atlasSchemaInspectJSONColumn {
 	columnType := atlasSchemaInspectColumnType(column)
 	// The character set is the MySQL owner's observation; the document
-	// carries it as the column's charset attribute.
+	// carries it as the column's charset attribute. The collation is the one
+	// the column compares with, inherited ones included, which is what the
+	// pinned community binary prints there on MySQL, MariaDB and PostgreSQL.
 	settings, _, _ := mysqlschema.Settings(column.Facets)
 	return atlasSchemaInspectJSONColumn{
 		Name: column.Name,
@@ -800,7 +802,7 @@ func atlasSchemaInspectColumn(column catalog.Column) atlasSchemaInspectJSONColum
 		Null: strings.EqualFold(column.IsNullable, "YES"),
 		atlasSchemaInspectJSONAttrs: atlasSchemaInspectJSONAttrs{
 			Charset: settings.Charset,
-			Collate: column.Collate,
+			Collate: column.EffectiveCollate,
 		},
 	}
 }

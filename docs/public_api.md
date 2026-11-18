@@ -28,6 +28,15 @@ the object's ACL is NULL or spells it out. `Grant.OwnerDefault` and
 `Grant.OwnerRevoked` name those rows: no statement wrote them, so code that walks the
 grants as what somebody granted leaves them out.
 
+A read reports a column's collation twice. `catalog.Column.Collate` (JSON
+`collate`) is the collation the column declares, empty where it takes the one it
+inherits: its table's on MySQL and MariaDB, its type's on PostgreSQL and
+CockroachDB, the database's on SQL Server, and `BINARY` on SQLite.
+`catalog.Column.EffectiveCollate` (JSON `effective_collate`) is the collation
+the column compares with, declared or inherited, and is what every output
+written from a read prints. A description that is not a read, such as a schema
+file or a provider's answer, sets both to the collation it names.
+
 ## Stable Embedder API
 
 These packages are intended for application and tool embedders:
@@ -1482,9 +1491,16 @@ belongs to that table and is named through it, as an index is: an exclusion
 matches `table.object` and `schema.table.object`, and an include keeps the
 object with its table.
 
+`Selection.Aliases` are further selector types that name an object the way its
+type does, for an object that is also one of a common type under its own name:
+a PostgreSQL exclusion constraint is a `constraint`, and the index that
+enforces it carries its name, so `index` names it too. `Selection.Types`
+returns the type and then its aliases.
+
 `engine.Provider.Selections` registers an `Extension`, and
 `engine.Runtime.Selections` returns the frozen `Set`, ordered by selector type
-then model kind. `Set.ForType` returns every model named by a selector type.
+then model kind. `Set.ForType` returns every model named by a selector type,
+as its type or an alias, ordered by model kind.
 Models may share a type when its naming, relation behavior, and fields agree.
 A selector applies to every matching model; field clearing stays with each
 model's owner. Returned selections and field lists are independent copies.

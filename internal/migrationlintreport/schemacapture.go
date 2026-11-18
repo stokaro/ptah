@@ -1,11 +1,9 @@
 package migrationlintreport
 
 import (
-	"cmp"
 	"context"
 	"io"
 	"strconv"
-	"strings"
 
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
@@ -28,9 +26,12 @@ import (
 type schemaCapture struct {
 	devURL  string
 	runtime Runtime
-	// baseVersionKey is the first analyzed migration's revision-table token.
-	// Current is read immediately before it runs.
-	baseVersionKey string
+	// selected holds the revision-table token of every analyzed up migration.
+	// Current is read immediately before the first of them runs, in the order
+	// the replay runs them, which is the order the report lists them in.
+	selected map[string]struct{}
+	// observed reports that Current has been read.
+	observed bool
 	// hasBase is false when the run analyzes no version at all -- an empty
 	// directory, or one where the selector matched nothing. Current is then the
 	// same state as Desired, which is what the pinned community binary v1.3.0
@@ -44,35 +45,30 @@ type schemaCapture struct {
 
 func newSchemaCapture(analysis lint.Analysis, devURL string, runtime Runtime) *schemaCapture {
 	capture := &schemaCapture{devURL: devURL, runtime: runtime}
-	capture.baseVersionKey, capture.hasBase = firstAnalyzedVersionKey(analysis)
+	capture.selected = analyzedVersionKeys(analysis)
+	capture.hasBase = len(capture.selected) > 0
 	if scope := schemaselection.FromURL(devURL).Scope; scope != "" {
 		capture.schemas = []string{scope}
 	}
 	return capture
 }
 
-// firstAnalyzedVersionKey returns the first key among the up-migration files
-// the analysis selected. The predicate is the one
-// [ptah.run/internal/atlasreport] uses to decide which files the report
-// lists, so the schema pair spans exactly the versions the report names.
-func firstAnalyzedVersionKey(analysis lint.Analysis) (string, bool) {
-	files := analysis.Files()
-	maxVersion := lintMaxVersion(files)
-	var first lint.File
-	found := false
-	for _, file := range files {
+// analyzedVersionKeys returns the keys of the up-migration files the analysis
+// selected. The predicate is the one [ptah.run/internal/atlasreport] uses to
+// decide which files the report lists, so the schema pair spans exactly the
+// versions the report names. The first of them is the one the replay reaches
+// first: an Atlas directory runs and is listed by file name, so of 9_a.sql and
+// 11_c.sql the replay reaches 11_c.sql first, after 10_b.sql, and a first file
+// chosen by number would read Current after 11_c.sql had run.
+func analyzedVersionKeys(analysis lint.Analysis) map[string]struct{} {
+	keys := make(map[string]struct{})
+	for _, file := range analysis.Files() {
 		if file.Direction != "up" || file.Ignored || !file.Selected {
 			continue
 		}
-		if !found || lintFileOrder(file, first, maxVersion) < 0 {
-			first = file
-			found = true
-		}
+		keys[lintRevisionVersionKey(file)] = struct{}{}
 	}
-	if !found {
-		return "", false
-	}
-	return lintRevisionVersionKey(first), true
+	return keys
 }
 
 // observeMigration records the state the first analyzed migration starts from.
@@ -81,7 +77,10 @@ func (c *schemaCapture) observeMigration(
 	migration *migrator.Migration,
 	conn *dbschema.DatabaseConnection,
 ) error {
-	if c == nil || !c.hasBase || migration == nil || migration.RevisionVersion() != c.baseVersionKey {
+	if c == nil || c.observed || migration == nil {
+		return nil
+	}
+	if _, ok := c.selected[migration.RevisionVersion()]; !ok {
 		return nil
 	}
 	rendered, err := c.render(ctx, conn)
@@ -89,6 +88,7 @@ func (c *schemaCapture) observeMigration(
 		return err
 	}
 	c.current = rendered
+	c.observed = true
 	return nil
 }
 
@@ -135,13 +135,6 @@ func (c *schemaCapture) render(
 	return result.Rendered, nil
 }
 
-func lintFileOrder(a, b lint.File, maxVersion int64) int {
-	return cmp.Or(
-		cmp.Compare(lintVersionRank(a, maxVersion), lintVersionRank(b, maxVersion)),
-		strings.Compare(a.Name, b.Name),
-	)
-}
-
 func lintRevisionVersionKey(file lint.File) string {
 	if file.RevisionVersion != "" {
 		return file.RevisionVersion
@@ -153,21 +146,4 @@ func lintRevisionVersionKey(file lint.File) string {
 		return "R"
 	}
 	return strconv.FormatInt(file.Version, 10)
-}
-
-func lintMaxVersion(files []lint.File) int64 {
-	var maxVersion int64
-	for _, file := range files {
-		if file.Version > maxVersion {
-			maxVersion = file.Version
-		}
-	}
-	return maxVersion
-}
-
-func lintVersionRank(file lint.File, maxVersion int64) int64 {
-	if file.Repeatable && file.Version == 0 {
-		return maxVersion + 1
-	}
-	return file.Version
 }

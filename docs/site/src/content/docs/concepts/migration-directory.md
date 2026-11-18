@@ -89,11 +89,22 @@ on the same directories through its `migrate ...` commands; see the
 
 An Atlas file keeps its version as the file name spells it. `001_init.sql` is
 recorded as `001` in an Atlas revision table, which is what Atlas writes, and
-Atlas compares versions as text. The number decides the order migrations run
-in. A native revision table stores the number, and each row is matched to the
-file that carries it. A directory that spells one number two ways, such as
-`1_a.sql` beside `001_b.sql`, is refused: the two files would tie in numeric
-order. See
+Atlas compares versions as text. The files of an Atlas directory run in
+file-name order, compared byte for byte, so `10_b.sql` runs before `9_a.sql`.
+Name the files so that this order is the order you want, for example with a
+fixed-width number or a timestamp.
+
+A version does not have to be a number: `v1_x.sql` is version `v1`. A
+directory that holds such a version runs over the Atlas revision table
+(`--revision-format atlas`), which records the version as text. A native
+revision table stores numbers, and each row is matched to the file that
+carries the number, so it refuses that directory. Commands name such a file by
+the version it spells, `--to-version v1` and `--version 00` included. A
+migration tag records a number, so `--to-tag` is refused over such a directory,
+and `ptah migrations checkpoint` refuses a version whose file name would sort
+before an existing file, since the checkpoint would then run before a migration
+it squashes. A directory that spells one number two ways, such as `1_a.sql` beside `001_b.sql`, is refused: the two
+files would tie in numeric order. See
 [Compatibility differences](../../atlas/retained-divergences/#one-version-spelled-two-ways).
 
 ## Stable local snapshots

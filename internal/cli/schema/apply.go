@@ -646,9 +646,10 @@ func applySchema(
 	// context that ends when the lock is lost. Where the lock lives on that
 	// session (PostgreSQL, MySQL, MariaDB, SQL Server), losing the session
 	// loses both, and the DDL fails with it. A YDB lock is a semaphore held by
-	// a coordination session of its own, so losing it ends the context: the
-	// statement running then is canceled, no later one starts, and the apply
-	// fails with the loss.
+	// a coordination session of its own, and an Oracle lock is a row lock held
+	// by a pool session of its own, since the DDL commits and a commit gives a
+	// row lock back. Losing either ends the context: the statement running
+	// then is canceled, no later one starts, and the apply fails with the loss.
 	var outcome atlasschema.ApplyOutcome
 	runErr, releaseErr := lockSession(
 		cmd.Context(),

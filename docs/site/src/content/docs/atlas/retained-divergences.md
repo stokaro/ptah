@@ -121,6 +121,8 @@ own measurement conditions.
 | [An edited already-applied migration file](#an-edited-already-applied-migration-file) | compares each applied migration against the checksum recorded when it ran, and refuses on a mismatch | records the same value and never compares it |
 | [A prefix migration inserted below the oldest applied revision](#a-prefix-migration-inserted-below-the-oldest-applied-revision) | refuses at the default `--exec-order linear` with the binary's own out-of-order line | exits `0` with `No migration files to execute`, saying nothing about the file it passed over |
 | [A file numbered above the current version that sorts below it as text](#a-file-numbered-above-the-current-version-that-sorts-below-it-as-text) | reports it as out of order and refuses it at the default `--exec-order linear` | reports `OK` and exits `0` with `No migration files to execute` under every `--exec-order`; the file never runs |
+| [A file whose Atlas version is empty](#a-file-whose-atlas-version-is-empty) | refuses the directory before anything runs and names the file, and does the same for a version that starts with a dot | runs `_x.sql` and records the version `""`, and runs `.draft_x.sql` as `.draft` |
+| [`migrate set` past a file that sorts above the target](#migrate-set-past-a-file-that-sorts-above-the-target) | records every file whose version is at or below the target as text | stops at the first file in file-name order whose version sorts above the target, so `migrate set 1` beside `10_c.sql` exits `0` and records nothing |
 | [A file `--exec-order linear-skip` leaves pending](#a-file---exec-order-linear-skip-leaves-pending) | writes one warning per skipped file on stderr | skips it without a word |
 | [A dirty revision left by a non-transactional body](#a-dirty-revision-left-by-a-non-transactional-body) | discards the revision row only where it observed the rollback, so `--tx-mode none` needs `--allow-dirty` | keeps the row in both cases and resumes from it |
 | [A project migration directory outside its root](#a-project-migration-directory-outside-its-root) | confines a project `migration.dir` to the directory holding `atlas.hcl` | writes the migration and `atlas.sum` wherever the project file points |
@@ -156,6 +158,7 @@ own measurement conditions.
 | [A finding in a goose or dbmate file](#a-finding-in-a-goose-or-dbmate-file) | places it on the statement's line of the source file, at the statement's offset | places it on line 1, the section directive, at an offset that falls there |
 | [Removing a column-level UNIQUE on SQLite](#removing-a-column-level-unique-on-sqlite) | rebuilds the table, and the plan applies to a database the `--from` document created | plans `DROP INDEX` for an index the database does not hold, and the apply exits `1` |
 | [A COLLATE on a SQLite index key](#a-collate-on-a-sqlite-index-key) | reads the key with its collation, so a change of it is planned | reads the column alone, reports the change as synced, and plans the index without it |
+| [A COLLATE on a SQLite column](#a-collate-on-a-sqlite-column) | `schema inspect` writes the collation a column declares, in the HCL and the JSON document | writes none, so the document describes a column that compares as BINARY |
 
 ## A `--config` selection naming more than one file
 
@@ -368,7 +371,7 @@ conditions, because `10_b.sql` sorts before `9_a.sql` and `10` sorts below
 `--exec-order linear`. The other two orders treat it as they treat any
 out-of-order file.
 
-Measured on SQLite on 2026-11-18, with `9_a.sql` applied, then `10_b.sql`
+Measured on SQLite, with `9_a.sql` applied, then `10_b.sql`
 added and the directory rehashed:
 
 | step | pinned community binary v1.3.0 | `ptah-compat` |
@@ -390,6 +393,68 @@ own line for an out-of-order file, and the page it links describes both ways
 forward. A file whose number is above the current version reads as new to a
 person, which is why the case is easy to meet: going from `9_` to `10_` is
 the usual way a directory without zero-padded versions grows.
+
+## A file whose Atlas version is empty
+
+**Type.** Deliberate divergence
+
+**Current boundary.** Both binaries read the version of an Atlas file as the
+text before the first underscore of its name, whatever it holds: `1.x.sql` is
+version `1.x`, `v1_x.sql` is `v1`, `00_x.sql` is `00`. Both run and list the
+files in file-name order, order the versions as text on `migrate set`, and
+record that text in the revision table. The one name they
+part on is a file whose name starts with an underscore, such as `_x.sql`, whose
+version is the empty string. `ptah-compat` refuses the directory before
+anything runs and names the file.
+
+Measured on SQLite, with `1_a.sql` and `_x.sql` in one
+directory:
+
+| step | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply` | exit `0`, runs both, records `""` and `1` | exit `1`, `Atlas migration files Ptah cannot run: _x.sql (version "")` |
+| `migrate status` after `2_b.sql` is added | `Current Version: 1`, `2_b.sql` out of order | the same refusal |
+
+No command line can name the empty version: `--to-version`, `--baseline` and
+`migrate set` each read an empty argument as no version. A file that a person
+can run but never address is a file `migrate set` cannot move past and
+`migrate down` cannot select, so `ptah-compat` asks for a name instead.
+
+A version that starts with a dot is refused the same way. The revision table
+keeps rows of its own under such versions, such as `.atlas_cloud_identifier`,
+and Ptah reads every one of them as the table's own. On the pinned community
+binary v1.3.0, measured on SQLite, `.draft_x.sql` runs, is recorded as
+`.draft` and counts as executed. Ptah would run it and then report it pending,
+so it refuses the directory and names the file.
+
+## `migrate set` past a file that sorts above the target
+
+**Type.** Deliberate divergence
+
+**Current boundary.** Both binaries order the versions of `migrate set` as
+text. They part where a file whose version sorts above the target comes first
+in file-name order. The underscore after a version sorts after digits and
+capital letters, so `10_c.sql` and `1R__rep.sql` come before `1_a.sql`, and
+`20_c.sql` before `2_b.sql`. The pinned community binary v1.3.0 stops at the
+first such file and records only the files before it. `ptah-compat` records
+every file whose version is at or below the target.
+
+Measured on SQLite, over an empty database and a directory hashed by the
+binary:
+
+| directory | command | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- | --- |
+| `1_a.sql`, `10_c.sql`, `2_b.sql`, `v1_x.sql` | `migrate set 1` | exit `0`, no output, no row | exit `0`, records `1` |
+| `1_a.sql`, `1R__rep.sql` | `migrate set 1` | exit `0`, no output, no row | exit `0`, records `1` |
+| `1_a.sql`, `10_c.sql`, `2_b.sql` | `migrate set 1` | exit `0`, no output, no row | exit `0`, records `1` |
+| `1_a.sql`, `2_b.sql`, `20_c.sql` | `migrate set 2` | exit `0`, `Current version is 1 (1 set)`, records `1` | exit `0`, records `1` and `2` |
+
+The binary drops the version the operator named and still exits `0`, so with
+no row recorded `1_a.sql` stays pending. Where no such
+file comes first, as for `set 2` over the first directory, both record the same
+rows.
+
+**Evidence.** `integration/atlas_compat_opaque_versions_e2e_test.go`
 
 ## A file `--exec-order linear-skip` leaves pending
 
@@ -1648,6 +1713,33 @@ the parent key's index does not use the column's collation. `ptah-compat`
 refuses that key on the database as it refuses it in a `--to` document.
 
 **Evidence.** `integration/sqlite_index_key_collation_e2e_test.go`
+
+## A COLLATE on a SQLite column
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** `ptah-compat schema inspect` writes the collation a
+SQLite column declares, `b TEXT COLLATE NOCASE`, as `collate = "NOCASE"` in
+the HCL document and `"collate":"NOCASE"` in the JSON one. A column that
+declares none, or declares `BINARY`, the collation it takes without one, is
+written without it. The pinned community binary v1.3.0 writes no column
+collation for SQLite at all. Measured on 2026-11-18 on a database holding
+`t (a TEXT, b TEXT COLLATE NOCASE, c TEXT COLLATE BINARY, d TEXT DEFAULT 'x'
+COLLATE RTRIM)`:
+
+| Format | Binary | `ptah-compat` |
+| --- | --- | --- |
+| HCL | no `collate` on any column | `collate = "NOCASE"` on `b`, `collate = "RTRIM"` on `d` |
+| `{{ json . }}` | no `collate` on any column | `"collate":"NOCASE"` on `b`, `"collate":"RTRIM"` on `d` |
+| `{{ sql . }}` | no `COLLATE` | no `COLLATE` |
+
+A document without the collation describes `b` as a column that compares as
+`BINARY`, so an apply of it builds a column that sorts and compares
+differently, and nothing says so. The binary reads the HCL document Ptah
+writes, `collate` included. The SQL format matches the binary because Ptah's
+SQLite renderer writes no column `COLLATE` yet.
+
+**Evidence.** `internal/dbschema/sqlite/column_collation_test.go`
 
 ## Not on this page
 

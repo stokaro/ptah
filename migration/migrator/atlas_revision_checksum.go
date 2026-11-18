@@ -200,6 +200,7 @@ func (m *Migrator) classifyAppliedChecksums(
 			Computed:            migrationRevisionHash(migration),
 			Description:         migration.Description,
 			ConvertedRepeatable: migration.Version == ConvertedFlywayRepeatableVersion,
+			versionLabel:        m.versionText(migration.Version).label,
 		})
 	}
 	if len(classified.mismatches) > 0 {

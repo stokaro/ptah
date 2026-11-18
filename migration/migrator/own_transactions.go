@@ -12,6 +12,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/filetx"
 	"ptah.run/internal/migratorext/builtin"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/migrationfile"
 )
@@ -95,6 +96,54 @@ func (m *Migrator) RevisionBodyOpensOwnTransactions(revision MigrationRevision) 
 	return migration.runnerReadsOwnTransactions(m.conn, repairMigrationDirection(&revision))
 }
 
+// repairRunner is the runner a repair of revision needs, read with the
+// predicate the hint `ptah migrations status` prints reads
+// ([Migrator.RevisionBodyOpensOwnTransactions]), so a refusal names the
+// command that hint names. A repair of such a body without that runner is
+// refused.
+func (m *Migrator) repairRunner(revision MigrationRevision) repaircommand.Runner {
+	if m.RevisionBodyOpensOwnTransactions(revision) {
+		return repaircommand.GolangMigrate
+	}
+	return repaircommand.DefaultRunner
+}
+
+// recoverySelection is the flags a recovery command this migrator names
+// carries so that it reads the same directory and revision table. The
+// refusals of [Migrator.RepairMigration] and [Migrator.MigrateUp] name their
+// commands with it, and the commands that print a revision's hint read the
+// same [repaircommand.SelectionFor] over the inputs they built the migrator
+// from.
+func (m *Migrator) recoverySelection() repaircommand.Selection {
+	var reading repaircommand.Reading
+	if source, ok := m.migrationProvider.(interface{ recoveryReading() repaircommand.Reading }); ok {
+		reading = source.recoveryReading()
+	}
+	reading.AtlasTable = m.revisionTableFormat.isAtlas()
+	return repaircommand.SelectionFor(reading)
+}
+
+// RevisionBodyStatements returns how many statements the body a resume of the
+// dirty revision would index into holds in the directory now: the down file of
+// the revision's migration when a rollback left the revision, and the up file
+// otherwise. It counts as the resume counts. ok is false when the migrator
+// holds no migration of the revision's version.
+//
+// A count that differs from the revision's Total means the file changed after
+// the run, so the statement number the revision records does not index into
+// it, and `ptah migrations up --allow-dirty` refuses to resume.
+func (m *Migrator) RevisionBodyStatements(revision MigrationRevision) (count int, ok bool) {
+	migration := m.migrationByVersion(revision.Version)
+	if migration == nil {
+		return 0, false
+	}
+	body := migration.UpSQL
+	if repairMigrationDirection(&revision) == MigrationDirectionDown {
+		body = migration.DownSQL
+	}
+	return m.migrationStatementCount(body), true
+}
+
 // runnerReadsOwnTransactions reports whether the body of direction would run
 // with transactions of its own if its directory were loaded with
 // [WithOwnTransactions]: the reading [Migration.bodyOwnTransactions] makes
@@ -122,7 +171,7 @@ func (m *Migration) readOwnTransactions(
 	if err == nil {
 		return blocks, statements, nil
 	}
-	subject := fmt.Sprintf("migration %d", m.Version)
+	subject := fmt.Sprintf("migration %d", m.versionText())
 	if direction == MigrationDirectionDown {
 		subject = "rollback of " + subject
 	}
@@ -189,7 +238,7 @@ func (m *Migrator) validateOwnTransactions(migrations []*Migration, direction Mi
 		if direction == MigrationDirectionUp && m.txMode == MigrationTxModeAll {
 			return fmt.Errorf(
 				"migration %d opens and closes its own transaction, which tx-mode all would nest in the one transaction "+
-					"it runs every migration in; apply the directory with tx-mode file", migration.Version)
+					"it runs every migration in; apply the directory with tx-mode file", m.versionText(migration.Version))
 		}
 		txMode := migration.parsedTxModeForDialect(direction, m.connectionDialect())
 		if txMode.Source != 0 && txMode.Mode == migrationfile.FileTxModeFile {
@@ -197,7 +246,7 @@ func (m *Migrator) validateOwnTransactions(migrations []*Migration, direction Mi
 			if direction == MigrationDirectionDown {
 				file = "its down file"
 			}
-			return fmt.Errorf("migration %d asks for a transaction around %s and opens its own", migration.Version, file)
+			return fmt.Errorf("migration %d asks for a transaction around %s and opens its own", m.versionText(migration.Version), file)
 		}
 	}
 	return nil
@@ -278,17 +327,17 @@ func (m *Migrator) applyUpMigrationOwnTransactions(
 			return err
 		}
 		if err := scoped.restoreSessionPrefix(ctx, migration, MigrationDirectionUp, plan.resumeFrom, run); err != nil {
-			failure := fmt.Errorf("failed to restore session state for migration %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to restore session state for migration %d: %w", m.versionText(migration.Version), err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		if err := scoped.recordPendingMigrationRevisionOn(ctx, scoped.conn, migration, startedAt, plan); err != nil {
-			failure := fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to record pending migration %d: %w", m.versionText(migration.Version), err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		if plan.resumeFrom > 1 {
 			scoped.logger.Info(
 				"Resuming migration after a partially applied attempt",
-				"version", migration.Version,
+				"version", m.logVersion(migration.Version),
 				"resumeFromStatement", plan.resumeFrom,
 			)
 		}
@@ -319,7 +368,7 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 	}
 	if err != nil {
 		failure := m.ownTransactionFailure(ctx, migration.Version, err, run.transactions)
-		failure = fail(failure, fmt.Sprintf("failed to apply migration %d", migration.Version))
+		failure = fail(failure, fmt.Sprintf("failed to apply migration %d", m.versionText(migration.Version)))
 		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 	}
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
@@ -328,15 +377,15 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 	if err := m.refuseUpCompletionOverUnsafeIndex(ctx, executionConn, migration); err != nil {
 		return fail(
 			completedMigrationIndexObservationError(migration, m.connectionDialect(), MigrationDirectionUp, err),
-			fmt.Sprintf("failed to verify migration %d", migration.Version),
+			fmt.Sprintf("failed to verify migration %d", m.versionText(migration.Version)),
 		)
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
 	if err := m.completeMigrationRevision(recordCtx, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record migration %d: %w", m.versionText(migration.Version), err)
 	}
-	m.logger.Info("Applied migration that runs its own transactions", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Applied migration that runs its own transactions", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 
@@ -373,7 +422,7 @@ func (m *Migrator) rollbackMigrationOwnTransactions(
 			return err
 		}
 		if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-			failure := fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to record pending rollback %d: %w", m.versionText(migration.Version), err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		return scoped.rollbackMigrationOwnTransactionsOnSession(boundedCtx, migration, startedAt, deleteSQL, restoreTimeouts, run)
@@ -403,7 +452,7 @@ func (m *Migrator) rollbackMigrationOwnTransactionsOnSession(
 	}
 	if err != nil {
 		failure := m.ownTransactionFailure(ctx, migration.Version, err, run.transactions)
-		failure = fail(failure, fmt.Sprintf("failed to revert migration %d", migration.Version))
+		failure = fail(failure, fmt.Sprintf("failed to revert migration %d", m.versionText(migration.Version)))
 		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 	}
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
@@ -412,15 +461,15 @@ func (m *Migrator) rollbackMigrationOwnTransactionsOnSession(
 	if err := m.refuseRollbackCompletionOverUnsafeIndexOn(ctx, executionConn, migration); err != nil {
 		return fail(
 			completedMigrationIndexObservationError(migration, m.connectionDialect(), MigrationDirectionDown, err),
-			fmt.Sprintf("failed to verify rollback of migration %d", migration.Version),
+			fmt.Sprintf("failed to verify rollback of migration %d", m.versionText(migration.Version)),
 		)
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
 	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
-		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record migration reversion %d: %w", m.versionText(migration.Version), err)
 	}
-	m.logger.Info("Rolled back migration that runs its own transactions", "version", migration.Version, "description", migration.Description)
+	m.logger.Info("Rolled back migration that runs its own transactions", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
 }
 
@@ -529,28 +578,40 @@ func (e *endOfQueryCommitError) Unwrap() error { return e.err }
 // unknownOutcomeError refuses to resume a migration whose interrupted run left
 // the outcome of statement, a 1-based index, unknown.
 type unknownOutcomeError struct {
-	version   int64
+	// version is the revision's version as [MigrationRevision.VersionLabel]
+	// names it.
+	version   string
 	statement int
+	// runner is the runner the repair it names needs for the body.
+	runner repaircommand.Runner
+	// selection makes the repair it names read this directory and table.
+	selection repaircommand.Selection
 }
 
 func (e *unknownOutcomeError) Error() string {
 	return fmt.Sprintf(
-		"migration %d cannot resume automatically: the outcome of statement %d is unknown after an interrupted run; "+
-			"inspect the database, then use 'ptah migrations repair --version %d'",
-		e.version, e.statement, e.version)
+		"migration %s cannot resume automatically: the outcome of statement %d is unknown after an interrupted run; "+
+			"inspect the database, then use %s",
+		e.version, e.statement, repaircommand.Reconciled(e.version, e.runner, e.selection))
 }
 
 // rollbackLeftUnknownResumeError refuses to resume a migration whose transaction
 // rolled back and left statements in place that no count describes.
 type rollbackLeftUnknownResumeError struct {
-	version int64
+	// version is the revision's version as [MigrationRevision.VersionLabel]
+	// names it.
+	version string
+	// runner is the runner the repair it names needs for the body.
+	runner repaircommand.Runner
+	// selection makes the repair it names read this directory and table.
+	selection repaircommand.Selection
 }
 
 func (e *rollbackLeftUnknownResumeError) Error() string {
 	return fmt.Sprintf(
-		"migration %d cannot resume automatically: the rollback of its transaction left some statements in place and "+
-			"undid others; inspect the database, then use 'ptah migrations repair --version %d'",
-		e.version, e.version)
+		"migration %s cannot resume automatically: the rollback of its transaction left some statements in place and "+
+			"undid others; inspect the database, then use %s",
+		e.version, repaircommand.Reconciled(e.version, e.runner, e.selection))
 }
 
 // describeUnknownOutcome rewrites a refusal to resume after an unknown outcome
@@ -560,7 +621,9 @@ func (e *rollbackLeftUnknownResumeError) Error() string {
 // and the step whose outcome is unknown is the commit, which decides every
 // statement of the transaction together: an operator who repaired to the
 // statement the refusal named would run the rest of the transaction twice.
-// The advice names no command, because the directory's runner has its own.
+// The statements left over are run by hand, and the advice ends with the
+// repair that records the migration applied, the one the hint `ptah
+// migrations status` prints names for the same row.
 func (r ownTransactionRun) describeUnknownOutcome(err error, migration *Migration, total int) error {
 	unknown, ok := errors.AsType[*unknownOutcomeError](err)
 	if !ok || !migration.ownTransactions || unknown.statement < 1 {
@@ -572,13 +635,15 @@ func (r ownTransactionRun) describeUnknownOutcome(err error, migration *Migratio
 		}
 		return fmt.Sprintf("run statements %d to %d by hand", from, total)
 	}
+	record := repaircommand.Reconciled(unknown.version, unknown.runner, unknown.selection)
 	first := unknown.statement - 1
 	closing, inside := r.transactions.Closing(first)
 	if opened, _ := r.transactions.Opening(first); !inside || opened != first {
 		return fmt.Errorf(
-			"migration %d cannot resume automatically: the outcome of statement %d is unknown after an interrupted "+
-				"run; inspect the database: if it took effect, %s; if it did not, %s; then record the migration applied",
-			unknown.version, unknown.statement, rest(unknown.statement+1), rest(unknown.statement))
+			"migration %s cannot resume automatically: the outcome of statement %d is unknown after an interrupted "+
+				"run; inspect the database: if it took effect, %s; if it did not, %s; then record the migration applied "+
+				"with %s",
+			unknown.version, unknown.statement, rest(unknown.statement+1), rest(unknown.statement), record)
 	}
 	commit := fmt.Sprintf("the COMMIT at statement %d", closing+1)
 	if closing >= total {
@@ -586,10 +651,10 @@ func (r ownTransactionRun) describeUnknownOutcome(err error, migration *Migratio
 	}
 	last := min(closing+1, total)
 	return fmt.Errorf(
-		"migration %d cannot resume automatically: statements %d to %d commit together, and whether %s took effect "+
+		"migration %s cannot resume automatically: statements %d to %d commit together, and whether %s took effect "+
 			"is unknown after an interrupted run; inspect the database: if they committed, %s; if they did not, %s; "+
-			"then record the migration applied",
-		unknown.version, first+1, last, commit, rest(last+1), rest(first+1))
+			"then record the migration applied with %s",
+		unknown.version, first+1, last, commit, rest(last+1), rest(first+1), record)
 }
 
 // committedProgressFailure is a failure with how many of the body's
@@ -712,5 +777,5 @@ func (m *Migrator) rollBackOwnTransaction(ctx context.Context, version int64) er
 	if err == nil || errors.Is(err, sql.ErrConnDone) || errors.Is(err, driver.ErrBadConn) {
 		return nil
 	}
-	return fmt.Errorf("failed to roll back migration %d: %w", version, err)
+	return fmt.Errorf("failed to roll back migration %d: %w", m.versionText(version), err)
 }

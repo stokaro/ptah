@@ -141,7 +141,7 @@ func (m *Migrator) checkAssertionRule(ctx context.Context, conn *dbschema.Databa
 	assertions := m.checkAssertions(migration, direction)
 	split, err := splitter.SplitMigration(ctx, migrationSQLForDirection(migration, direction), assertions)
 	if err != nil {
-		return nil, fmt.Errorf("ask the provider to judge the check assertions of migration %d: %w", migration.Version, err)
+		return nil, fmt.Errorf("ask the provider to judge the check assertions of migration %d: %w", m.versionText(migration.Version), err)
 	}
 	verdicts := make(map[string]migrationsplit.Verdict, len(assertions))
 	for i, assertion := range assertions {

@@ -49,7 +49,7 @@ func migrationSourceName(migration *Migration, direction MigrationDirection) str
 		path = migration.downSourcePath
 	}
 	if path == "" {
-		return fmt.Sprintf("migration %d", migration.Version)
+		return fmt.Sprintf("migration %d", migration.versionText())
 	}
 	return filepath.Base(path)
 }

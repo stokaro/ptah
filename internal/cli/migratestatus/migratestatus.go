@@ -26,7 +26,9 @@ import (
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/keyedversions"
 	"ptah.run/internal/migrationintegrity"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -116,11 +118,21 @@ type statusDocument struct {
 	written bool
 }
 
-// writeStatus writes status as the run's document.
-func (d *statusDocument) writeStatus(status *migrator.MigrationStatus) error {
+// writeStatus writes status as the run's document. Where mig runs its
+// migrations under their positions, the numeric versions are left out and the
+// version keys name each migration, since a position names none outside this
+// run.
+func (d *statusDocument) writeStatus(mig *migrator.Migrator, status *migrator.MigrationStatus) error {
 	d.written = true
 	document := *status
 	document.Command = Command
+	if mig.KeyedByPosition() {
+		encoded, err := json.Marshal(&document)
+		if err != nil {
+			return fmt.Errorf("write the JSON result: %w", err)
+		}
+		return keyedversions.WriteIndented(d.out, encoded)
+	}
 	return outputJSON(d.out, &document)
 }
 
@@ -372,10 +384,15 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options, document *statusDoc
 	}
 
 	if opts.jsonOutput {
-		if err := document.writeStatus(status); err != nil {
+		if err := document.writeStatus(mig, status); err != nil {
 			return err
 		}
-	} else if err := outputHuman(emit, status, conn, mig, opts.verbose); err != nil {
+	} else if err := outputHuman(emit, status, conn, humanStatusSource{
+		migrator: mig,
+		// The flags a recovery command needs to read what this command read:
+		// the inputs the migrator above was built from.
+		selection: dirtyhint.Selection(migrationsFS, dirFormat, revisionFormat),
+	}, opts.verbose); err != nil {
 		return err
 	}
 
@@ -452,14 +469,22 @@ func outputJSON(w io.Writer, status *migrator.MigrationStatus) error {
 	return encoder.Encode(status)
 }
 
-func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, mig *migrator.Migrator, verbose bool) error { //revive:disable-line:flag-parameter output mode is caller-owned command state
+// humanStatusSource is the migrator a status was read with, and the flags a
+// command it names carries to read the same directory and revision table.
+type humanStatusSource struct {
+	migrator  *migrator.Migrator
+	selection repaircommand.Selection
+}
+
+func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, source humanStatusSource, verbose bool) error { //revive:disable-line:flag-parameter output mode is caller-owned command state
+	mig := source.migrator
 	emit.Println("=== MIGRATION STATUS ===")
 	emit.Printf("Database: %s\n", dburldisplay.Format("***"))
 	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
 	emit.Printf("Schema: %s\n", conn.Info().Schema)
 	emit.Println()
 
-	emit.Printf("Current Version: %d\n", status.CurrentVersion)
+	emit.Printf("Current Version: %s\n", mig.VersionLabel(status.CurrentVersion))
 	emit.Printf("Total Migrations: %d\n", status.TotalMigrations)
 	emit.Printf("Applied Migrations: %d\n", len(status.AppliedMigrations))
 	emit.Printf("Pending Migrations: %d\n", len(status.PendingMigrations))
@@ -469,8 +494,8 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	if status.DirtyRevision != nil {
 		emit.Println("Status: ❌ Dirty migration state detected")
 		emit.Printf(
-			"Dirty Migration: version=%d state=%s direction=%s applied=%d/%d\n",
-			status.DirtyRevision.Version,
+			"Dirty Migration: version=%s state=%s direction=%s applied=%d/%d\n",
+			mig.VersionLabel(status.DirtyRevision.Version),
 			status.DirtyRevision.State,
 			status.DirtyRevision.Direction,
 			status.DirtyRevision.Applied,
@@ -486,6 +511,8 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			Revision:        status.DirtyRevision,
 			Dialect:         conn.Info().Dialect,
 			OwnTransactions: mig.RevisionBodyOpensOwnTransactions(*status.DirtyRevision),
+			FileStatements:  dirtyhint.FileStatements(mig, *status.DirtyRevision),
+			Selection:       source.selection,
 		}))
 		return nil
 	}
@@ -507,8 +534,8 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 		emit.Println("Status: ❌ Applied migration with no file")
 		for _, record := range status.MissingMigrations {
 			emit.Printf(
-				"Missing Migration: version=%d description=%s recorded=%s\n",
-				record.Version, record.Description, record.AppliedChecksum,
+				"Missing Migration: version=%s description=%s recorded=%s\n",
+				mig.VersionLabel(record.Version), record.Description, record.AppliedChecksum,
 			)
 		}
 		emit.Println("\nThe database recorded these as applied and this directory has no file " +
@@ -538,13 +565,13 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 		if verbose && len(status.PendingMigrations) > 0 {
 			emit.Println("\nPending migration versions:")
 			for _, version := range status.PendingMigrations {
-				emit.Printf("  - %d\n", version)
+				emit.Printf("  - %s\n", mig.VersionLabel(version))
 			}
 		}
 		if verbose && len(status.OutOfOrderMigrations) > 0 {
 			emit.Println("\nOut-of-order migration versions:")
 			for _, version := range status.OutOfOrderMigrations {
-				emit.Printf("  - %d\n", version)
+				emit.Printf("  - %s\n", mig.VersionLabel(version))
 			}
 		}
 
@@ -562,7 +589,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			emit.Printf("Applied migrations: %d\n", len(status.AppliedMigrations))
 
 			if len(status.PendingMigrations) > 0 {
-				emit.Printf("Next migration to apply: %d\n", status.PendingMigrations[0])
+				emit.Printf("Next migration to apply: %s\n", mig.VersionLabel(status.PendingMigrations[0]))
 			}
 		}
 	}

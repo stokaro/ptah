@@ -441,7 +441,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 		if table.Facets, err = mysqlschema.WithObservedTable(table.Facets, table.Charset); err != nil {
 			return nil, fmt.Errorf("table %s: %w", table.Name, err)
 		}
-		table.Columns = columnsByTable[table.Name]
+		table.Columns = inheritTableCollation(columnsByTable[table.Name], table.Collate)
 		tables = append(tables, table)
 	}
 	if err := rows.Err(); err != nil {
@@ -449,6 +449,25 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 	}
 
 	return tables, nil
+}
+
+// inheritTableCollation leaves a column's Collate empty where it is the
+// table's default collation. A character column the author gave no COLLATE
+// takes that default, and so does one that restated it: COLUMNS reports the
+// table's collation for both, and nothing in information_schema tells them
+// apart. EffectiveCollate keeps the name either way.
+//
+// The comparison runs here rather than in a join of COLUMNS with TABLES,
+// because information_schema compares table names case-insensitively on
+// MariaDB: `users` and `Users` in one database would each take both tables'
+// columns.
+func inheritTableCollation(columns []catalog.Column, tableCollation string) []catalog.Column {
+	for i := range columns {
+		if strings.EqualFold(columns[i].Collate, tableCollation) {
+			columns[i].Collate = ""
+		}
+	}
+	return columns
 }
 
 // charsetOfCollation names the character set a collation belongs to.
@@ -585,7 +604,7 @@ func applyMySQLColumnMetadata(
 		settings.Charset = strings.TrimSpace(charset.String)
 	}
 	if collate.Valid {
-		col.Collate = collate.String
+		col.Collate, col.EffectiveCollate = collate.String, collate.String
 	}
 	if extra.Valid {
 		extraValue := strings.ToLower(extra.String)

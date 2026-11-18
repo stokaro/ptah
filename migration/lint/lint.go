@@ -64,6 +64,7 @@
 package lint
 
 import (
+	"fmt"
 	"path"
 	"regexp"
 	"slices"
@@ -410,17 +411,27 @@ type Options struct {
 	Target Target
 }
 
+// parseKnownMigrationName reads the migration a directory entry names. The
+// name is the path inside the directory; the parsers read its base.
 func parseKnownMigrationName(name string, dirFormat migrationfile.DirFormat) (*migrationfile.File, error) {
+	base := path.Base(name)
 	switch dirFormat {
 	case migrationfile.DirFormatPtah:
-		return migrationfile.ParseFileName(name)
+		return migrationfile.ParseFileName(base)
 	case migrationfile.DirFormatAtlas:
-		return migrationfile.ParseAtlasFileName(name)
+		parsed, err := migrationfile.ParseAtlasFileName(base)
+		// Atlas reads the top level of a directory alone, so a nested file
+		// whose name carries no number, such as a template under shared/, is
+		// no migration there.
+		if err == nil && base != name && parsed.Version == 0 && !parsed.Repeatable {
+			return nil, fmt.Errorf("%s is not an Atlas migration file", name)
+		}
+		return parsed, err
 	}
-	if parsed, err := migrationfile.ParseFileName(name); err == nil {
+	if parsed, err := migrationfile.ParseFileName(base); err == nil {
 		return parsed, nil
 	}
-	return migrationfile.ParseAtlasFileNameForAutoDetection(name)
+	return migrationfile.ParseAtlasFileNameForAutoDetection(base)
 }
 
 // runRules applies every enabled rule to one prepared file.

@@ -284,7 +284,8 @@ func TestMigrationsSetToZeroDryRunChangesNothing(t *testing.T) {
 }
 
 // Zero is the floor, not the removal of the floor: a negative version names no
-// state at all and still stops before the database is touched.
+// state at all and stops before the revision table is touched. The migrator
+// reads it once the directory is read, since -1 can be an Atlas file's version.
 func TestMigrationsSetRejectsNegativeVersion(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := writePtahMigrations(t)
@@ -292,7 +293,9 @@ func TestMigrationsSetRejectsNegativeVersion(t *testing.T) {
 
 	out, err := runSet("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--version=-1")
 
-	c.Assert(err, qt.ErrorMatches, "--version must not be negative", qt.Commentf("%s", out))
+	c.Assert(err, qt.ErrorMatches,
+		`invalid migration version "-1": no migration file carries version -1: a migration version is not negative`,
+		qt.Commentf("%s", out))
 	assertNoRevisionTable(c, dbPath)
 }
 

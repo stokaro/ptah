@@ -86,7 +86,7 @@ func migrateApplyFileNames(fsys fs.FS, sources map[int64]MigrateApplySourceFile)
 	names := make(map[int64]string, len(discovered))
 	for _, file := range discovered {
 		if file.Direction == "up" {
-			names[file.Version] = file.Path
+			names[file.OrderKey] = file.Path
 		}
 	}
 	for version, source := range sources {

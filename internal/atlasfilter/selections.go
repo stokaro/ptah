@@ -23,8 +23,8 @@ type vocabulary struct {
 func (v vocabulary) includeSelectable() map[string]struct{} {
 	selectable := maps.Clone(includeSelectableTypes)
 	for _, selection := range v.selections.Selections() {
-		if selection.Type != "" {
-			selectable[selection.Type] = struct{}{}
+		for _, selectorType := range selection.Types() {
+			selectable[selectorType] = struct{}{}
 		}
 	}
 	return selectable
@@ -71,7 +71,7 @@ func (s *exclusionState) filterOwnerFeatures(objects schemaext.Objects, coverage
 			continue
 		}
 		objects, coverage = selectNamedFeatures(objects, coverage, selection.Kind, func(ref objectidentity.ID, schema, name string) bool {
-			named := s.matches(selection.Type, s.ownerNameCandidates(selection, ref)...)
+			named := s.matchesAny(selection.Types(), s.ownerNameCandidates(selection, ref)...)
 			switch {
 			case featureselect.OfTable(ref):
 				return !named && !s.schemaExcluded(schema)
@@ -132,7 +132,7 @@ func (s *exclusionState) noteOwnedObjectSelectors(objects schemaext.Objects) {
 		for _, ref := range objects.Refs() {
 			if ref.Kind == objectidentity.Kind(selection.Kind) && featureselect.OfTable(ref) &&
 				s.tableExcluded(ref.Schema.Authored(), ref.Parent.Source) {
-				s.matches(selection.Type, s.ownerNameCandidates(selection, ref)...)
+				s.matchesAny(selection.Types(), s.ownerNameCandidates(selection, ref)...)
 			}
 		}
 	}
@@ -152,7 +152,7 @@ func (s *exclusionState) clearOwnerFields(objects schemaext.Objects) (schemaext.
 			}
 			names := s.ownerNameCandidates(selection, ref)
 			for _, field := range selection.Fields {
-				if s.matchesField(selection.Type, field, names...) {
+				if s.matchesAnyField(selection.Types(), field, names...) {
 					clears = append(clears, selectext.Clear{Object: ref, Field: field})
 				}
 			}
@@ -210,9 +210,9 @@ func (s *scopeSelection) selectOwnerFeatures(
 				// would leave it out of a table the selection keeps.
 				return true
 			case selection.ByNameAlone(schema):
-				return s.selectedNames(typeList(selection.Type), name)
+				return s.selectedNames(selection.Types(), name)
 			default:
-				return s.selected(typeList(selection.Type), schema, name)
+				return s.selected(selection.Types(), schema, name)
 			}
 		})
 	}

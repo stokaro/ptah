@@ -965,11 +965,24 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			numeric_precision,
 			numeric_scale,
 			datetime_precision,
-			-- The collation the column was declared with, empty for one that
-			-- takes the database default. A migration linter compares it with
-			-- an ALTER COLUMN ... TYPE ... COLLATE clause: a restated collation
-			-- is a no-op and a changed one rebuilds every index on the column,
-			-- and only this value tells the two apart (stokaro/ptah#2957).
+			-- The collation the column declares, empty for one it takes from
+			-- its type: the database default for text, C for name, and a
+			-- domain's own collation for a column of that domain, citext's
+			-- included. attcollation equals typcollation exactly when the
+			-- column inherits; a column declared COLLATE "default" on a domain
+			-- that carries another one declares "default", which
+			-- information_schema hides. CockroachDB fills both the same way.
+			-- A zero attcollation is a type with no collation.
+			CASE
+				WHEN a.attcollation <> 0 AND a.attcollation = coltype.typcollation THEN ''
+				ELSE COALESCE(col.collation_name, attcoll.collname, '')
+			END AS declared_collation,
+			-- The collation the column compares with, declared or inherited,
+			-- empty for the database default. A migration linter compares it
+			-- with an ALTER COLUMN ... TYPE ... COLLATE clause: a restated
+			-- collation is a no-op and a changed one rebuilds every index on
+			-- the column, and only this value tells the two apart
+			-- (stokaro/ptah#2957).
 			COALESCE(col.collation_name, '') AS collation_name,
 			ordinal_position,
 			` + r.generatedKindExpr() + `,
@@ -990,6 +1003,8 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			AND a.attname = col.column_name
 			AND NOT a.attisdropped
 		LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+		LEFT JOIN pg_type coltype ON coltype.oid = a.atttypid
+		LEFT JOIN pg_collation attcoll ON attcoll.oid = a.attcollation
 		WHERE col.table_schema = $1
 		AND col.table_name NOT IN (` + revisiontable.NativeSQLNames + `)
 		` + r.hiddenColumnFilter() + `
@@ -1024,6 +1039,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			&col.NumericScale,
 			&col.DatetimePrecision,
 			&col.Collate,
+			&col.EffectiveCollate,
 			&col.OrdinalPosition,
 			&generatedKind,
 			&generatedExpression,
@@ -1407,6 +1423,8 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 			t.typnotnull AS not_null,
 			COALESCE(t.typdefault, '') AS default_value,
 			` + r.domainCheckExpr() + `,
+			COALESCE((SELECT c.collname FROM pg_collation c
+				WHERE c.oid = t.typcollation AND c.collname <> 'default'), '') AS collation_name,
 			` + r.typeCommentExpr() + `
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
@@ -1425,7 +1443,7 @@ func (r *Reader) readDomainsForSchema(ctx context.Context, schemaName string) ([
 		var domain pgtype.ObservedDomain
 		var rawSchema, name string
 		if err := rows.Scan(
-			&rawSchema, &name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check, &domain.Comment,
+			&rawSchema, &name, &domain.BaseType, &domain.NotNull, &domain.Default, &domain.Check, &domain.Collation, &domain.Comment,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan domain for schema %s: %w", schemaName, err)
 		}

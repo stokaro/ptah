@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/keyedversions"
 	"ptah.run/internal/migrationfailure"
 	"ptah.run/migration/migrator"
 )
@@ -145,10 +146,27 @@ func (d *Document) Write(evidence migrator.RunEvidence) error {
 	if d.Migrator != nil && !evidence.NotStarted {
 		evidence.MigrationLog = d.Migrator.MigrationLogReport()
 	}
+	written := document{RunResult: migrator.NewRunResult(evidence), ServerDetails: d.ServerDetails.details(evidence.Err)}
+	if d.Migrator != nil && d.Migrator.KeyedByPosition() {
+		return writeKeyedByPosition(d.Out, written)
+	}
 	encoder := json.NewEncoder(d.Out)
 	encoder.SetIndent("", "  ")
-	written := document{RunResult: migrator.NewRunResult(evidence), ServerDetails: d.ServerDetails.details(evidence.Err)}
 	if err := encoder.Encode(written); err != nil {
+		return fmt.Errorf("error writing migration run result: %w", err)
+	}
+	return nil
+}
+
+// writeKeyedByPosition writes the document of a run whose migrations run under
+// their positions, with the numeric versions left out: a position names no
+// migration in another process, and the version keys name each one.
+func writeKeyedByPosition(w io.Writer, written document) error {
+	encoded, err := json.Marshal(written)
+	if err != nil {
+		return fmt.Errorf("error writing migration run result: %w", err)
+	}
+	if err := keyedversions.WriteIndented(w, encoded); err != nil {
 		return fmt.Errorf("error writing migration run result: %w", err)
 	}
 	return nil

@@ -163,7 +163,7 @@ func (m *Migrator) appliedHistory(revisions []MigrationRevision) (AppliedHistory
 	for _, version := range applied {
 		key := keys[version]
 		if key == "" {
-			key = fmt.Sprintf("%d", version)
+			key = fmt.Sprintf("%d", m.versionText(version))
 		}
 		migration, ok := byVersion[version]
 		if !ok {

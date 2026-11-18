@@ -10,7 +10,6 @@ import (
 	"io"
 	"io/fs"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +39,7 @@ import (
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/onlineddl"
 	"ptah.run/internal/preflight"
+	"ptah.run/internal/repaircommand"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 	"ptah.run/migration/shadow"
@@ -484,12 +484,8 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	if migrationsDir == "" {
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
 	}
-	targetVersion, err := strconv.ParseInt(targetVersionValue, 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid target version %q: %w", targetVersionValue, err)
-	}
-	if targetVersion < 0 {
-		return fmt.Errorf("target version must be >= 0")
+	if err := refuseMalformedTarget(targetVersionValue); err != nil {
+		return err
 	}
 
 	dirFormat, err := migrationfile.ParseDirFormat(resolvedOpts.dirFormat)
@@ -578,6 +574,10 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		return err
 	}
 	document.Migrator = mig
+	targetVersion, err := mig.ResolveVersion(targetVersionValue)
+	if err != nil {
+		return fmt.Errorf("invalid target version %q: %w", targetVersionValue, err)
+	}
 
 	// Before the lock, so a run that waits for it has said which lock it waits
 	// for.
@@ -623,10 +623,10 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 				return err
 			}
 		}
-		emit.Printf("Target version: %d\n", targetVersion)
+		emit.Printf("Target version: %s\n", mig.VersionLabel(targetVersion))
 		emit.Println()
 
-		status, err := rollbackStatus(cmd.Context(), mig, emit, conn.Info().Dialect)
+		status, err := rollbackStatus(cmd.Context(), mig, emit, rollbackHint{dialect: conn.Info().Dialect, selection: dirtyhint.Selection(migrationsFS, dirFormat, revisionFormat)})
 		if err != nil {
 			return err
 		}
@@ -657,7 +657,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		// Calculate which migrations will be rolled back
 		migrationsToRollback := versionsAboveTarget(appliedMigrations, targetVersion)
 
-		emitRollbackPlan(emit, opts, status.CurrentVersion, targetVersion, migrationsToRollback)
+		emitRollbackPlan(emit, opts, mig, status.CurrentVersion, targetVersion, migrationsToRollback)
 
 		// --plan takes the dev database for itself: it builds the target schema
 		// there to derive the plan from. Verifying a file-based rollback on it
@@ -684,8 +684,9 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		}
 
 		inputs := rollbackInputs{
-			migrationsFS: migrationsFS, targetVersion: targetVersion, dirFormat: dirFormat,
-			atlasEnv: resolvedOpts.atlasEnv, connectTimeout: settings.connectTimeout,
+			migrationsFS: migrationsFS, targetVersion: targetVersion, targetLabel: mig.VersionLabel(targetVersion),
+			dirFormat: dirFormat,
+			atlasEnv:  resolvedOpts.atlasEnv, connectTimeout: settings.connectTimeout,
 			migrationsTable: migrationsTable, providerOptions: settings.providerOptions,
 		}
 		derived, err := planRollback(cmd, resolvedOpts, newDynamicRollback(resolvedOpts, opts, conn, inputs), emit)
@@ -719,7 +720,11 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 // then takes the lock again and rolls back what run selected, rechecking under
 // the lock that it is still what the prompt showed.
 func confirmAndRollBack(cmd *cobra.Command, run rollbackRun) error {
-	ok, err := confirmRollbackPrompt(cmd, run.opts, run.currentVersion, run.inputs.targetVersion, run.selected)
+	ok, err := confirmRollbackPrompt(cmd, run.opts, rollbackSpan{
+		current: run.migrator.VersionLabel(run.currentVersion),
+		target:  run.migrator.VersionLabel(run.inputs.targetVersion),
+		rolled:  run.migrator.VersionLabels(run.selected),
+	})
 	if err != nil || !ok {
 		return err
 	}
@@ -751,7 +756,11 @@ func recheckConfirmed(ctx context.Context, mig *migrator.Migrator, target int64,
 	}
 	now := newestFirst(versionsAboveTarget(applied, target))
 	if want := newestFirst(confirmed); !slices.Equal(now, want) {
-		return &confirmedRollbackChangedError{target: target, confirmed: want, applied: now}
+		return &confirmedRollbackChangedError{
+			target:    mig.VersionLabel(target),
+			confirmed: mig.VersionLabels(want),
+			applied:   mig.VersionLabels(now),
+		}
 	}
 	return nil
 }
@@ -760,13 +769,15 @@ func recheckConfirmed(ctx context.Context, mig *migrator.Migrator, target int64,
 // target changed between the confirmation prompt and the rollback. It is
 // returned before any statement runs.
 type confirmedRollbackChangedError struct {
-	target             int64
-	confirmed, applied []int64
+	// The versions are named as [migrator.Migrator.VersionLabel] names them,
+	// as the confirmation prompt printed them.
+	target             string
+	confirmed, applied []string
 }
 
 func (e *confirmedRollbackChangedError) Error() string {
-	return fmt.Sprintf("the rollback to version %d was confirmed for the applied migrations %v, "+
-		"and the migrations applied above version %d are now %v; nothing was rolled back. "+
+	return fmt.Sprintf("the rollback to version %s was confirmed for the applied migrations %v, "+
+		"and the migrations applied above version %s are now %v; nothing was rolled back. "+
 		"Run migrations down again to confirm the rollback of the database as it is now",
 		e.target, e.confirmed, e.target, e.applied)
 }
@@ -933,7 +944,7 @@ func (rr *rollbackReport) finish(runErr error) error {
 		return fmt.Errorf("error getting final migration status: %w", rr.statusErr)
 	}
 
-	emitMigrateDownSummary(emit, opts, r.inputs.targetVersion, r.selected, rr.finalStatus)
+	emitMigrateDownSummary(emit, opts, r.migrator, r.inputs.targetVersion, r.selected, rr.finalStatus)
 
 	return nil
 }
@@ -959,10 +970,22 @@ func humanOutput(cmd *cobra.Command, opts *options) io.Writer {
 	return cmd.OutOrStdout()
 }
 
+// refuseMalformedTarget refuses an empty --target before the command connects.
+// Any other text goes to [migrator.Migrator.ResolveVersion] once the directory
+// is read, because -5 or 00 can be the version of an Atlas file, so only the
+// directory can say a text names nothing.
+func refuseMalformedTarget(value string) error {
+	if value == "" {
+		return fmt.Errorf("invalid target version %q: the target is empty", value)
+	}
+	return nil
+}
+
 // emitMigrateDownSummary says how the rollback ended.
 func emitMigrateDownSummary(
 	emit cliobs.Emitter,
 	opts *options,
+	mig *migrator.Migrator,
 	targetVersion int64,
 	migrationsToRollback []int64,
 	finalStatus *migrator.MigrationStatus,
@@ -970,14 +993,14 @@ func emitMigrateDownSummary(
 	emit.Println()
 	if opts.dryRun {
 		emit.Println("✅ Dry run completed successfully!")
-		emit.Printf("Would have rolled back to version: %d\n", targetVersion)
+		emit.Printf("Would have rolled back to version: %s\n", mig.VersionLabel(targetVersion))
 		if len(migrationsToRollback) > 0 {
-			emit.Printf("Would have rolled back these migrations: %v\n", migrationsToRollback)
+			emit.Printf("Would have rolled back these migrations: %v\n", mig.VersionLabels(migrationsToRollback))
 		}
 		return
 	}
 	emit.Println("✅ Migration rollback completed successfully!")
-	emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
+	emit.Printf("Database is now at version: %s\n", mig.VersionLabel(finalStatus.CurrentVersion))
 }
 
 // emitLostLogEntries tells a person that the migration log did not get
@@ -1064,14 +1087,15 @@ func versionsAboveTarget(appliedMigrations []int64, targetVersion int64) []int64
 func emitRollbackPlan(
 	emit cliobs.Emitter,
 	opts *options,
+	mig *migrator.Migrator,
 	currentVersion, targetVersion int64,
 	versions []int64,
 ) {
 	emit.Printf("Migrations to roll back: %d\n", len(versions))
 	if opts.verbose {
-		emit.Printf("Will roll back from version %d to %d\n", currentVersion, targetVersion)
+		emit.Printf("Will roll back from version %s to %s\n", mig.VersionLabel(currentVersion), mig.VersionLabel(targetVersion))
 		if len(versions) > 0 {
-			emit.Printf("Specific migrations to rollback: %v\n", versions)
+			emit.Printf("Specific migrations to rollback: %v\n", mig.VersionLabels(versions))
 		}
 	}
 	emit.Println()
@@ -1103,13 +1127,13 @@ func rollbackStatus(
 	ctx context.Context,
 	mig *migrator.Migrator,
 	emit cliobs.Emitter,
-	dialect string,
+	hint rollbackHint,
 ) (*migrator.MigrationStatus, error) {
 	status, err := mig.GetMigrationStatus(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error getting migration status: %w", err)
 	}
-	emit.Printf("Current version: %d\n", status.CurrentVersion)
+	emit.Printf("Current version: %s\n", mig.VersionLabel(status.CurrentVersion))
 	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
 
 	err = mig.RefuseDirtyRevision(ctx)
@@ -1122,9 +1146,20 @@ func rollbackStatus(
 	}
 	return nil, fmt.Errorf("error running down migrations: %w\n%s", err, dirtyhint.Recovery(dirtyhint.Revision{
 		Revision:        &dirty.Revision,
-		Dialect:         dialect,
+		Dialect:         hint.dialect,
 		OwnTransactions: mig.RevisionBodyOpensOwnTransactions(dirty.Revision),
+		FileStatements:  dirtyhint.FileStatements(mig, dirty.Revision),
+		Selection:       hint.selection,
 	}))
+}
+
+// rollbackHint is what the refusal of a dirty revision names beside the
+// revision: the dialect of the database, and the flags a recovery command
+// carries to read the directory and the revision table the rollback reads,
+// from the inputs its migrator was built from.
+type rollbackHint struct {
+	dialect   string
+	selection repaircommand.Selection
 }
 
 // finishDownAtOrBelowTarget answers the run whose database is already at or
@@ -1151,7 +1186,7 @@ func finishDownAtOrBelowTarget(ctx context.Context, in downNoopInputs) (downRepo
 			return runErr
 		}
 		observeNoopDown(in.runtime, in.dialect, in.status.CurrentVersion, in.targetVersion)
-		in.emit.Printf("✅ Database is already at or below target version %d!\n", in.targetVersion)
+		in.emit.Printf("✅ Database is already at or below target version %s!\n", in.migrator.VersionLabel(in.targetVersion))
 		return in.document.Write(migrator.RunEvidence{Plan: &migrator.MigrationPlan{}, After: in.status, DryRun: in.dryRun})
 	}, nil
 }
@@ -1244,23 +1279,31 @@ func startObservability(cmd *cobra.Command, opts *options) (*cliobs.Runtime, err
 
 // confirmRollbackPrompt routes the confirmation prompt to stdout, or to stderr
 // under JSON log format where stdout carries structured output.
-func confirmRollbackPrompt(cmd *cobra.Command, opts *options, currentVersion, targetVersion int64, migrationsToRollback []int64) (bool, error) {
+// rollbackSpan is what a rollback covers, in the versions a person names:
+// [migrator.Migrator.VersionLabel] of the current version, the target and
+// each migration it rolls back.
+type rollbackSpan struct {
+	current, target string
+	rolled          []string
+}
+
+func confirmRollbackPrompt(cmd *cobra.Command, opts *options, span rollbackSpan) (bool, error) {
 	promptWriter := cmd.OutOrStdout()
 	if opts.logFormat == "json" || opts.jsonOutput {
 		promptWriter = cmd.ErrOrStderr()
 	}
-	return confirmRollback(opts, promptWriter, cmd.InOrStdin(), currentVersion, targetVersion, migrationsToRollback)
+	return confirmRollback(opts, promptWriter, cmd.InOrStdin(), span)
 }
 
-func confirmRollback(opts *options, prompt io.Writer, input io.Reader, currentVersion, targetVersion int64, migrationsToRollback []int64) (bool, error) {
+func confirmRollback(opts *options, prompt io.Writer, input io.Reader, span rollbackSpan) (bool, error) {
 	if !rollbackPrompts(opts) {
 		return true, nil
 	}
 
 	fmt.Fprintln(prompt, "⚠️  WARNING: Rolling back migrations can result in data loss!")
-	fmt.Fprintf(prompt, "This will roll back the database from version %d to version %d.\n", currentVersion, targetVersion)
-	if len(migrationsToRollback) > 0 {
-		fmt.Fprintf(prompt, "The following %d migration(s) will be rolled back: %v\n", len(migrationsToRollback), migrationsToRollback)
+	fmt.Fprintf(prompt, "This will roll back the database from version %s to version %s.\n", span.current, span.target)
+	if len(span.rolled) > 0 {
+		fmt.Fprintf(prompt, "The following %d migration(s) will be rolled back: %v\n", len(span.rolled), span.rolled)
 	}
 	fmt.Fprint(prompt, "Are you sure you want to continue? Type 'YES' to confirm: ")
 
@@ -1371,11 +1414,13 @@ func downOnlineDDLInterceptor(
 
 // dynamicRollback carries what a --plan rollback needs.
 type dynamicRollback struct {
-	runtime        engine.SchemaRuntime
-	conn           *dbschema.DatabaseConnection
-	devURL         string
-	migrationsFS   fs.FS
-	targetVersion  int64
+	runtime       engine.SchemaRuntime
+	conn          *dbschema.DatabaseConnection
+	devURL        string
+	migrationsFS  fs.FS
+	targetVersion int64
+	// targetLabel names targetVersion as [migrator.Migrator.VersionLabel] does.
+	targetLabel    string
 	dirFormat      migrationfile.DirFormat
 	atlasEnv       string
 	connectTimeout time.Duration
@@ -1422,9 +1467,9 @@ func planRollback(cmd *cobra.Command, resolved options, r dynamicRollback, emit 
 // prompt still costs the replay that built the target schema there.
 func deriveRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) ([]string, error) {
 	if strings.TrimSpace(r.devURL) == "" {
-		return nil, fmt.Errorf("--%s requires --%s: the schema at version %d has to be built somewhere "+
+		return nil, fmt.Errorf("--%s requires --%s: the schema at version %s has to be built somewhere "+
 			"before it can be compared against the live database",
-			planFlag, shadowDBFlag, r.targetVersion)
+			planFlag, shadowDBFlag, r.targetLabel)
 	}
 	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), r.devURL, devdocker.Options{})
 	if err != nil {
@@ -1548,6 +1593,7 @@ func executeRollback(cmd *cobra.Command, r rollbackExecution) error {
 type rollbackInputs struct {
 	migrationsFS    fs.FS
 	targetVersion   int64
+	targetLabel     string
 	dirFormat       migrationfile.DirFormat
 	atlasEnv        string
 	connectTimeout  time.Duration
@@ -1576,6 +1622,7 @@ func newDynamicRollback(resolved options, opts *options, conn *dbschema.Database
 		devURL:                resolved.shadowDB,
 		migrationsFS:          in.migrationsFS,
 		targetVersion:         in.targetVersion,
+		targetLabel:           in.targetLabel,
 		dirFormat:             in.dirFormat,
 		atlasEnv:              in.atlasEnv,
 		connectTimeout:        in.connectTimeout,

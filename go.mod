@@ -95,7 +95,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20261023060817-a45b7c86333f // indirect
-	github.com/charmbracelet/x/ansi v0.11.9 // indirect
+	github.com/charmbracelet/x/ansi v0.11.10 // indirect
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
 	github.com/charmbracelet/x/exp/slice v0.1.0 // indirect
 	github.com/charmbracelet/x/exp/strings v0.1.0 // indirect
@@ -190,7 +190,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261116203732-fd2c7689a808 // indirect
 	google.golang.org/grpc v1.86.0-dev // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	modernc.org/libc v1.82.0 // indirect
+	modernc.org/libc v1.82.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.13.0 // indirect
 )

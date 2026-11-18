@@ -284,7 +284,13 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	if target.repeatable != "" {
 		return removeRepeatableRecord(cmd, mig, target.repeatable, opts.force)
 	}
-	version := target.version
+	version, err := mig.ResolveVersion(target.version)
+	if err != nil {
+		return fmt.Errorf("invalid migration version %q: %w", target.version, err)
+	}
+	if version == 0 {
+		return fmt.Errorf("invalid migration version %q: version 0 names no migration", target.version)
+	}
 	err = mig.RepairMigration(ctx, migrator.RepairMigrationOptions{
 		Version:    version,
 		Force:      opts.force,
@@ -295,9 +301,9 @@ func migrateRepairCommand(cmd *cobra.Command, opts *options) error {
 	}
 
 	if resumeFrom == 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "Updated migration %d revision metadata; no migration SQL ran\n", version)
+		fmt.Fprintf(cmd.OutOrStdout(), "Updated migration %s revision metadata; no migration SQL ran\n", mig.VersionLabel(version))
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "Repaired migration %d\n", version)
+		fmt.Fprintf(cmd.OutOrStdout(), "Repaired migration %s\n", mig.VersionLabel(version))
 	}
 	return nil
 }
@@ -331,7 +337,9 @@ func settleRepeatableSelection(cmd *cobra.Command, opts *options) error {
 // repairTarget is what one invocation repairs: the revision of a versioned
 // migration, or the record row of a repeatable one.
 type repairTarget struct {
-	version    int64
+	// version is --version as written; the migrator resolves it once it has
+	// read the directory, so v1 names v1_x.sql.
+	version    string
 	resumeFrom int
 	repeatable string
 }
@@ -356,15 +364,14 @@ func parseRepairTarget(opts *options) (repairTarget, error) {
 	case opts.version == "":
 		return repairTarget{}, fmt.Errorf("migration version is required, or --repeatable for a repeatable migration's record")
 	}
-	version, err := strconv.ParseInt(opts.version, 10, 64)
-	if err != nil || version <= 0 {
-		return repairTarget{}, fmt.Errorf("invalid migration version %q", opts.version)
-	}
+	// The text goes to the migrator once the directory is read: -5 or 00 can
+	// be the version of an Atlas file, so only the directory can say a text
+	// names nothing.
 	resumeFrom, err := parseResumeFrom(opts.resumeFrom)
 	if err != nil {
 		return repairTarget{}, err
 	}
-	return repairTarget{version: version, resumeFrom: resumeFrom}, nil
+	return repairTarget{version: opts.version, resumeFrom: resumeFrom}, nil
 }
 
 // removeRepeatableRecord deletes the record row of identity and says what the

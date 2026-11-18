@@ -3880,6 +3880,14 @@ func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
 func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	p.skipWhitespace()
 
+	if p.current.MatchOperatorValue("(") {
+		value, err := p.parseParenthesizedDefault()
+		if err != nil {
+			return nil, err
+		}
+		return p.extendDefaultExpression(value), nil
+	}
+
 	var value *ast.DefaultValue
 	var err error
 	switch p.current.Type {
@@ -3901,6 +3909,39 @@ func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	return p.extendDefaultExpression(value), nil
 }
 
+// parseParenthesizedDefault reads a default written as a parenthesized
+// expression, and the casts after it, as written.
+//
+// It is the form pg_get_expr prints for an operator expression,
+// ('X-'::text || (gen_random_uuid())::text), and so the form pg_dump writes.
+// A cast written on a default is printed after a group: now()::date reads
+// back as (now())::date. An empty group is refused at its opening
+// parenthesis, as PostgreSQL refuses DEFAULT () with a syntax error.
+func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
+	start := p.current.Start
+	body, err := p.collectParenthesizedBody("DEFAULT expression")
+	if err != nil {
+		return nil, err
+	}
+	if body == "" {
+		return nil, ptaherr.At(start, fmt.Errorf("empty DEFAULT expression"))
+	}
+	group := p.input[start:p.previous.End]
+	casts, err := p.parsePostgresCasts()
+	if err != nil {
+		return nil, err
+	}
+	return &ast.DefaultValue{Expression: group + casts}, nil
+}
+
+// extendDefaultExpression reads the rest of a default that continues with
+// `+` after its first operand, such as `now() + interval '1 day'`.
+//
+// The expression ends at a comma or a closing parenthesis outside any group,
+// and at a word that opens a column clause written after a complete operand:
+// in `DEFAULT (1) + 2 NOT NULL` the NOT NULL is the column's. Read into the
+// default, it would leave the column nullable. A clause word right after an
+// operator is an operand, as NULL is in `1 + NULL`.
 func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultValue {
 	p.skipWhitespace()
 	if !p.current.MatchOperatorValue("+") {
@@ -3913,8 +3954,14 @@ func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultVa
 	} else {
 		expr.WriteString(value.Value)
 	}
+	// Keep the space written before the `+`, which the skip above or the
+	// cast reader before it stepped over.
+	if p.previous.Type == lexer.TokenWhitespace || p.previous.Type == lexer.TokenComment {
+		expr.WriteString(" ")
+	}
 
 	depth := 0
+	operand := false
 	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
 		if p.current.Type == lexer.TokenOperator {
 			switch p.current.Value {
@@ -3931,7 +3978,18 @@ func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultVa
 				}
 			}
 		}
+		if depth == 0 && operand && p.current.Type == lexer.TokenIdentifier && columnClauseStart(p.current.Value) {
+			return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
+		}
 
+		switch p.current.Type {
+		case lexer.TokenWhitespace, lexer.TokenComment:
+			// Space neither completes an operand nor asks for one.
+		case lexer.TokenOperator:
+			operand = p.current.Value == ")" || p.current.Value == "]"
+		default:
+			operand = true
+		}
 		expr.WriteString(p.current.Value)
 		p.advance()
 	}

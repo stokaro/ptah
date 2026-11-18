@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/sqlutil"
+	"ptah.run/internal/repaircommand"
 )
 
 // repairRolledBackMigration repairs a revision a rollback left dirty.
@@ -43,6 +44,12 @@ func (m *Migrator) repairRolledBackMigration(
 		if err := refuseUnknownStatementOutcomeResume(migration, revision); err != nil {
 			return err
 		}
+		if err := refuseRollbackResumeOverChangedFile(
+			*revision, scoped.migrationStatementCount(migration.DownSQL), scoped.repairRunner(*revision),
+			scoped.recoverySelection(),
+		); err != nil {
+			return err
+		}
 		if err := scoped.verifyCommittedPrefix(*revision, migration, MigrationDirectionDown, "resume the rollback"); err != nil {
 			return err
 		}
@@ -56,6 +63,37 @@ func (m *Migrator) repairRolledBackMigration(
 	})
 }
 
+// refuseRollbackResumeOverChangedFile refuses to resume a rollback whose down
+// file holds another number of statements than the rollback recorded. The
+// statement number the revision records indexes into the file as it was, so a
+// resume from it would run the wrong statements of the file as it is; the
+// committed prefix can still match, because it is only the statements before
+// the number. Neither record can be chosen from the row, so the refusal names
+// both, as the hint `ptah migrations status` prints for the row does. A
+// rollback that committed nothing indexes into nothing: a resume from 1 runs
+// the down file as it is, which is how an operator retries a fixed one.
+func refuseRollbackResumeOverChangedFile(
+	revision MigrationRevision,
+	total int,
+	runner repaircommand.Runner,
+	selection repaircommand.Selection,
+) error {
+	if revision.Applied <= 0 || revision.Total == total {
+		return nil
+	}
+	return fmt.Errorf(
+		"migration %s cannot resume the rollback: the previous attempt applied %d of %d down statements but the "+
+			"down file now has %d; inspect the database, then use %s if you restored what the rollback reverted, "+
+			"or %s if you finished the rollback by hand",
+		revision.VersionLabel(),
+		revision.Applied,
+		revision.Total,
+		total,
+		repaircommand.Reconciled(revision.VersionLabel(), runner, selection),
+		repaircommand.SetPrevious(selection),
+	)
+}
+
 func (m *Migrator) repairRolledBackMigrationWithoutResume(
 	ctx context.Context,
 	migration *Migration,
@@ -67,7 +105,10 @@ func (m *Migrator) repairRolledBackMigrationWithoutResume(
 		return m.finalizeCompletedRollback(ctx, migration, revision, own)
 	}
 	if !opts.Force && rollbackChangedSchema(revision) {
-		return rollbackRepairNeedsDirectionError(migration, revision, own)
+		return rollbackRepairNeedsDirectionError(
+			migration, revision, own, m.migrationStatementCount(migration.DownSQL), m.repairRunner(*revision),
+			m.recoverySelection(),
+		)
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
 		return err
@@ -128,6 +169,9 @@ func rollbackRepairNeedsDirectionError(
 	migration *Migration,
 	revision *MigrationRevision,
 	own ownTransactionRun,
+	total int,
+	runner repaircommand.Runner,
+	selection repaircommand.Selection,
 ) error {
 	const endings = "--force to record it applied if the schema it reverted was restored, " +
 		"or run \"ptah migrations set --version <previous>\" if the rollback was finished by hand " +
@@ -136,25 +180,30 @@ func rollbackRepairNeedsDirectionError(
 		return fmt.Errorf(
 			"migration %d stopped while rolling back and the rollback of its transaction left some statements in place "+
 				"and undid others; inspect the database, then rerun with "+endings,
-			migration.Version,
+			migration.versionText(),
 		)
 	}
 	if revision.Error == unknownStatementOutcomeError {
 		return fmt.Errorf(
 			"migration %d stopped while rolling back and the outcome of %q is unknown after an interruption; "+
 				"inspect the database, then rerun with "+endings,
-			migration.Version,
+			migration.versionText(),
 			revision.ErrorStatement,
 		)
 	}
 	if !own.blocks.Empty() {
 		return ownTransactionsDownRepairError(migration, revision)
 	}
+	// The resume this refusal would name refuses a down file whose count
+	// changed, so the refusal names what that one names.
+	if err := refuseRollbackResumeOverChangedFile(*revision, total, runner, selection); err != nil {
+		return err
+	}
 	return fmt.Errorf(
 		"migration %d stopped while rolling back: %d of %d down statements committed; "+
 			"rerun with --resume-from %d to run the remaining down statements and remove the revision, with "+
 			endings,
-		migration.Version,
+		migration.versionText(),
 		revision.Applied,
 		revision.Total,
 		revision.Applied+1,
@@ -178,11 +227,11 @@ func (m *Migrator) deleteRolledBackRevision(ctx context.Context, migration *Migr
 	defer cancelRecord()
 	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
-		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record migration reversion %d: %w", m.versionText(migration.Version), err)
 	}
 	m.logger.Info(
 		"Completed rollback of migration",
-		"version", migration.Version,
+		"version", m.logVersion(migration.Version),
 		"description", migration.Description,
 	)
 	return nil
@@ -221,7 +270,7 @@ func (m *Migrator) refuseUpResumeOverRecordedRollback(
 			"the row predates directional rollback recording, and --resume-from would replay the up body over a "+
 			"schema a rollback already changed; finish the rollback manually, "+
 			"or rerun with --force to replay the up body anyway",
-		migration.Version,
+		m.versionText(migration.Version),
 		revision.Total,
 		downCount,
 		upCount,

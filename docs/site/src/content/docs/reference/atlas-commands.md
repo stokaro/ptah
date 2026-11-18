@@ -817,7 +817,11 @@ interactive confirmation.
 
 `--to-tag` rolls back to the version a tag names. Tags are recorded with `ptah
 migrations tag` and live in the database beside the revisions, so resolving one
-contacts nothing:
+contacts nothing. A tag records a number, so a directory whose files run under
+their positions in file-name order, because a version such as `00` or `v1` is
+not a decimal number above zero, refuses `--to-tag`: there a number is a
+position, which moves when a file is added before it. Name the version the file
+spells with `--to-version` instead:
 
 ```bash
 ptah migrations tag release-v1 --db-url "$DATABASE_URL" --version 20260801000001
@@ -1461,11 +1465,15 @@ before target inspection and planning, held through simulation, confirmation,
 and execution, and released on every exit path. It is a duration that defaults
 to `10s`; zero or a negative value tries the lock once without waiting, as on
 Atlas, and a value that is not a duration is refused by the flag parser. An
-elapsed timeout fails before the target is inspected. PostgreSQL, YugabyteDB,
-MySQL, MariaDB, and SQL Server take a real lock, and so does an engine whose
-executable provider offers a lock service; every other target proceeds
-unlocked with a stderr note. The native `ptah schema apply` refuses a typed
-`--lock-timeout` on those targets rather than noting it — see
+elapsed timeout fails before the target is inspected.
+
+PostgreSQL, YugabyteDB, MySQL, MariaDB, SQL Server, and Oracle take a real
+lock, and so does an engine whose executable provider offers a lock service;
+every other target proceeds unlocked with a stderr note. On Oracle the lock is
+a row lock that Ptah keeps on a session of its own; see
+[the Oracle page](../../databases/oracle/#the-migration-lock). On a target
+that takes no lock, the native `ptah schema apply` refuses a typed
+`--lock-timeout` rather than noting it — see
 [Apply a desired schema](../../direct/apply/).
 
 **`--lock-name`** replaces the lock name for the run (`ptah_schema_apply` by

@@ -27,7 +27,8 @@ Ptah contains a comprehensive token-to-AST parsing logic for the Ptah schema man
   - NOT NULL / NULL
   - UNIQUE
   - AUTO_INCREMENT / AUTOINCREMENT
-  - DEFAULT (literals and function calls)
+  - DEFAULT (literals, function calls, and parenthesized expressions with the
+    casts after them, the form `pg_get_expr` prints)
   - CHECK (expression)
   - REFERENCES (foreign keys with ON DELETE/UPDATE actions)
 - Table-level constraints:

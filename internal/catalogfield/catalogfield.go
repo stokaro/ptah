@@ -78,6 +78,12 @@ type Options struct {
 // ([schemacomparison.Columns.DefaultValue]) is carried as that value: on YDB
 // every stored default is a value, reported as a typed YQL literal (`5t`,
 // `'x'u`, `Timestamp('...')`).
+//
+// The field's Collate is the column's effective collation, inherited or
+// declared, which is how every output written from a read describes the
+// column: a MySQL render names no table collation, so a column written
+// without the collation it inherits changes collation when the output is
+// replayed on another server.
 func Field(column catalog.Column, opts Options) schemamodel.Field {
 	field := schemamodel.Field{
 		Facets:             column.Facets,
@@ -94,7 +100,7 @@ func Field(column catalog.Column, opts Options) schemamodel.Field {
 		Primary:               column.IsPrimaryKey && !opts.CoveredByTablePrimaryKey,
 		AutoInc:               column.IsAutoIncrement,
 		Unique:                column.IsUnique,
-		Collate:               column.Collate,
+		Collate:               column.EffectiveCollate,
 		GeneratedKind:         column.GeneratedKind,
 		IdentityGeneration:    column.IdentityGeneration,
 		IdentityStart:         column.IdentityStart,

@@ -84,11 +84,11 @@ func (m *Migrator) resolveUpMigrationTxMode(migration *Migration) (MigrationTxMo
 	if m.txMode == MigrationTxModeAll && fileMode.Mode != migrationfile.FileTxModeUnspecified &&
 		fileMode.Source != migrationfile.FileTxModeSourceAtlas {
 		if fileMode.Source == migrationfile.FileTxModeSourcePtah && fileMode.Mode == migrationfile.FileTxModeNone {
-			return "", fmt.Errorf("migration %d is marked no_transaction and cannot run with tx-mode all", migration.Version)
+			return "", fmt.Errorf("migration %d is marked no_transaction and cannot run with tx-mode all", m.versionText(migration.Version))
 		}
 		return "", fmt.Errorf(
 			"migration %d selects txmode %q and cannot run with tx-mode all",
-			migration.Version,
+			m.versionText(migration.Version),
 			fileMode.Mode,
 		)
 	}

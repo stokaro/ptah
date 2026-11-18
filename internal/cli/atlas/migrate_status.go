@@ -234,6 +234,7 @@ func runAtlasMigrateStatus(
 		AppliedRevisions: result.AppliedRevisions,
 		RevisionVersions: tokens.revisionVersions(),
 		Repeatables:      atlasReadsRepeatables(repeatables, format),
+		StringOrder:      atlasmigrate.ReadsNativeAtlasDir(format),
 	}
 	if formatOutput {
 		if err := atlasreport.WriteMigrateStatusFormat(cmd.OutOrStdout(), opts.format, reportOpts); err != nil {

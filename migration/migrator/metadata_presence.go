@@ -300,7 +300,7 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because relation %s has indirect behavior "+
 					"that Ptah cannot tie to the transaction witness; use direct InnoDB tables or tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 				relation,
 			)
@@ -309,7 +309,7 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because routine %s can execute SQL outside "+
 					"Ptah's transaction witness; use direct SQL or tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 				routine,
 			)
@@ -318,7 +318,7 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because relation %s has indirect behavior "+
 					"that Ptah cannot tie to the transaction witness; use direct InnoDB tables or tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 				relation,
 			)
@@ -327,7 +327,7 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 			return fmt.Errorf(
 				"migration %d cannot run tx-mode file statement %d because routine %s can execute SQL outside "+
 					"Ptah's transaction witness; use direct SQL or tx-mode none",
-				migration.Version,
+				m.versionText(migration.Version),
 				i+1,
 				routine,
 			)
