@@ -165,9 +165,15 @@ END;`,
 
 		// Grammar: how the shared DDL parser reads the engine's DDL.
 		// Oracle reserves INDEX in a table body (ORA-03050), has domains, and
-		// has a MODIFY that changes only the attributes it states.
+		// has a MODIFY that changes only the attributes it states. A default
+		// calls the current-time keywords, SYSDATE, SYSTIMESTAMP, USER and UID
+		// without parentheses, and answers ORA-03077 to CURRENT_DATE().
 		Grammar: descriptor.Grammar{
-			Columns:    descriptor.ColumnGrammar{TimestampLocalTimeZone: true},
+			Columns: descriptor.ColumnGrammar{
+				TimestampLocalTimeZone: true,
+				CurrentTimeKeywords:    true,
+				NiladicFunctions:       []string{"SYSDATE", "SYSTIMESTAMP", "USER", "UID"},
+			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 			Statements: descriptor.StatementGrammar{UserTypes: true},

@@ -18,6 +18,7 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 		Columns: descriptor.ColumnGrammar{
 			TimestampLocalTimeZone: true,
 			CurrentTimeKeywords:    true,
+			NiladicFunctions:       []string{"SYSDATE", "USER"},
 			SecondCheckRefusal:     "alpha takes one CHECK on a column",
 			ReferencesRefusal:      "what alpha builds depends on its release",
 			Constraint: descriptor.ColumnConstraint{
@@ -180,6 +181,21 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			name:    "two forms of one statement",
 			dialect: with(func(g *descriptor.Grammar) { g.Forms.Operations = []string{"LOCK <name>", "LOCK TABLE <name>"} }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: two statement forms open with LOCK`,
+		},
+		{
+			name:    "a niladic function in lower case",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.NiladicFunctions = []string{"sysdate"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: niladic function "sysdate" is not one upper-case word`,
+		},
+		{
+			name:    "a niladic function of two words",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.NiladicFunctions = []string{"SYS DATE"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: niladic function "SYS DATE" is not one upper-case word`,
+		},
+		{
+			name:    "a niladic function stated twice",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.NiladicFunctions = []string{"USER", "USER"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: niladic function "USER" is written twice`,
 		},
 		{
 			name:    "an undeclared column constraint kind",

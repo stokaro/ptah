@@ -3801,6 +3801,10 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	if p.isNiladicCurrentTimeKeyword(upperValue) {
 		return &ast.DefaultValue{Expression: value}, nil
 	}
+	// Read as a value, Oracle's SYSDATE would render as the string 'SYSDATE'.
+	if slices.Contains(p.target.grammar.Columns.NiladicFunctions, upperValue) {
+		return &ast.DefaultValue{Expression: value}, nil
+	}
 
 	// Handle MySQL/PostgreSQL functions that can be used without parentheses
 	if upperValue == "CURRENT_TIMESTAMP" || upperValue == "NOW" || upperValue == "CURRENT_DATE" || upperValue == "CURRENT_TIME" {

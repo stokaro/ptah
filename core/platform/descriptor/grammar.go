@@ -64,6 +64,12 @@ type ColumnGrammar struct {
 	// written. Without it a default of CURRENT_TIMESTAMP, CURRENT_DATE or
 	// CURRENT_TIME is read as a call, with `()` after it.
 	CurrentTimeKeywords bool `json:"current_time_keywords,omitempty"`
+	// NiladicFunctions names the functions, beside the current-time
+	// keywords, that a default calls without parentheses, in upper case:
+	// Oracle's SYSDATE, SYSTIMESTAMP, USER and UID. A default of one is kept
+	// as the expression written. Without its name, the word is read as a
+	// literal value, which a renderer writes as a string.
+	NiladicFunctions []string `json:"niladic_functions,omitempty"`
 	// SecondCheckRefusal says why a column definition that writes a second
 	// CHECK is refused. Empty reads the second CHECK as the table's.
 	SecondCheckRefusal string `json:"second_check_refusal,omitempty"`
@@ -566,8 +572,12 @@ func (d Dialect) validateGrammar() error {
 	return nil
 }
 
-// validateColumnGrammar checks the column constraint kinds.
+// validateColumnGrammar checks the niladic function names and the column
+// constraint kinds.
 func validateColumnGrammar(grammar Grammar) error {
+	if err := validateNiladicFunctions(grammar.Columns.NiladicFunctions); err != nil {
+		return err
+	}
 	constraint := grammar.Columns.Constraint
 	columnKinds := []string{ConstraintKindCheck, ConstraintKindReferences}
 	switch {
@@ -693,6 +703,22 @@ func validateStatementForms(grammar Grammar) error {
 			return fmt.Errorf("two statement forms open with %s", terms[0].Word)
 		}
 		openings = append(openings, terms[0].Word)
+	}
+	return nil
+}
+
+// validateNiladicFunctions refuses a niladic function name that is not one
+// upper-case word, which the parser could never match, and one written twice.
+func validateNiladicFunctions(names []string) error {
+	for i, name := range names {
+		if name == "" || name != strings.ToUpper(name) || strings.IndexFunc(name, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+		}) >= 0 {
+			return fmt.Errorf("niladic function %q is not one upper-case word", name)
+		}
+		if slices.Contains(names[:i], name) {
+			return fmt.Errorf("niladic function %q is written twice", name)
+		}
 	}
 	return nil
 }

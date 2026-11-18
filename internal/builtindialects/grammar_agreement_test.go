@@ -211,7 +211,11 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		},
 	},
 	platform.Oracle: {
-		Columns:    descriptor.ColumnGrammar{TimestampLocalTimeZone: true},
+		Columns: descriptor.ColumnGrammar{
+			TimestampLocalTimeZone: true,
+			CurrentTimeKeywords:    true,
+			NiladicFunctions:       []string{"SYSDATE", "SYSTIMESTAMP", "USER", "UID"},
+		},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 		Statements: descriptor.StatementGrammar{UserTypes: true},
