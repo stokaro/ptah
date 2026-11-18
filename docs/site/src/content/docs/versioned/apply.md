@@ -225,6 +225,12 @@ writes:
   `another run recorded this migration after this run read the revision table`
   before any statement of the body. Any other failure of the INSERT is reported
   as the server gave it.
+- Under `--tx-mode all` the revision rows are written inside the run's
+  transaction, each after its migration's body, so that INSERT fails after the
+  body ran. The run stops with `a revision row for this migration appeared
+  after this run read the revision table, and the tx-mode all transaction rolls
+  back`, and the rollback takes every body of the run with it, since `--tx-mode
+  all` runs only where schema changes roll back.
 - A retry with `--allow-dirty` rewrites the dirty row only while the row is as
   the retry read it: in Ptah's layout while its state, applied count and
   checksum are unchanged, and in the Atlas layout, which has no state column,

@@ -3148,6 +3148,8 @@ func (m *Migrator) recordRolledBackBatchFailure(
 	)
 }
 
+// recordAppliedMigrationOn writes migration's revision row on conn after its
+// body ran, as tx-mode all does inside the batch transaction.
 func (m *Migrator) recordAppliedMigrationOn(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -3155,6 +3157,7 @@ func (m *Migrator) recordAppliedMigrationOn(
 	startedAt time.Time,
 	plan upRetryPlan,
 ) error {
+	plan.recordsAfterBody = true
 	if err := m.recordPendingMigrationRevisionOn(ctx, conn, migration, startedAt, plan); err != nil {
 		return fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
 	}

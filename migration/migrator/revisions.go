@@ -1605,6 +1605,12 @@ type upRetryPlan struct {
 	// resumeFrom is the 1-based index of the first statement this attempt runs.
 	// Everything below it was committed by the earlier attempt.
 	resumeFrom int
+	// recordsAfterBody says the revision row is written after the body, as
+	// tx-mode all writes it inside the batch transaction. A row another run
+	// wrote is then not [ErrRevisionClaimLost], which promises that no statement
+	// of the body ran, but [errBatchClaimLost] (see
+	// [Migrator.settleRevisionInsert]).
+	recordsAfterBody bool
 }
 
 // planUpRetry reads the revision row for migration, if any, and decides whether
@@ -1856,11 +1862,24 @@ func (m *Migrator) recordPendingMigrationRevisionOn(
 // layout, and the applied count and the recorded error in the Atlas layout.
 // The run stops before any statement of the body.
 //
+// Under tx-mode all the revision rows are written inside the batch
+// transaction, each after its migration's body, so this error is not returned
+// there. A row another run inserted fails that INSERT, the run reports that
+// the row appeared after its read, and the transaction rolls back, the bodies
+// of the batch with it: tx-mode all runs only on an engine whose schema
+// changes are transactional.
+//
 // The migration lock is what serializes two runs. This check only stops a run
 // whose read is stale by the time it writes, such as one run with
 // [Migrator.WithoutMigrationLock]. Two retries that both read a row another
 // run has not changed yet both pass it.
 var ErrRevisionClaimLost = errors.New("another run recorded this migration after this run read the revision table")
+
+// errBatchClaimLost is [ErrRevisionClaimLost] for a revision row written
+// after the body, inside tx-mode all's batch transaction, which the caller
+// rolls back.
+var errBatchClaimLost = errors.New("a revision row for this migration appeared after this run read the revision table, " +
+	"and the tx-mode all transaction rolls back")
 
 // restartMigrationRevisionOn rewrites an existing revision row back to pending
 // for a fresh attempt, recording the progress before plan's first statement as
@@ -2062,6 +2081,13 @@ func (m *Migrator) beginMigrationRevisionOn(
 // deadlock; an error the server did not answer, such as a lost connection,
 // which may follow an INSERT that took effect; and a duplicate key whose row
 // cannot be read, as on a transaction the refusal aborted.
+//
+// An INSERT after the body (plan.recordsAfterBody) runs inside tx-mode all's
+// batch transaction, and its duplicate key is [errBatchClaimLost] without a
+// read. On SQL Server and SQLite a read through conn goes to the pool, not to
+// the transaction: it waits for the locks the transaction holds on SQL Server,
+// and for the only connection of an in-memory SQLite pool, which the
+// transaction holds, so it would never return.
 func (m *Migrator) settleRevisionInsert(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -2071,6 +2097,9 @@ func (m *Migrator) settleRevisionInsert(
 ) error {
 	if !plan.readNoRow || !servercode.UniqueViolation(insertErr) {
 		return insertErr
+	}
+	if plan.recordsAfterBody {
+		return fmt.Errorf("%w: %w", errBatchClaimLost, insertErr)
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.getRevisionSQL())
 	revision, err := m.scanRevisionRow(conn.QueryRowContext(ctx, query, m.migrationRevisionVersionArg(migration)))
