@@ -316,3 +316,24 @@ func TestCompatAtlasOpaqueVersionOperandNamingNoFile_FailurePath(t *testing.T) {
 	c.Assert(firstLine(compatRun.Stderr), qt.Equals, `Error: migration with version "3" not found`)
 	c.Assert(firstLine(communityRun.Stderr), qt.Equals, firstLine(compatRun.Stderr))
 }
+
+// TestCompatAtlasLintSchemaStartsAtTheFirstListedFileE2E lints the last two
+// of 9_a.sql, 10_b.sql and 11_c.sql. An Atlas directory runs and is listed by
+// file name, so the two are 11_c.sql and 9_a.sql, and .Schema.Current is the
+// schema 11_c.sql starts from: 10_b.sql has run and 11_c.sql has not, as on
+// the pinned community binary v1.3.0. Read before 9_a.sql, the first by
+// number, it would hold t_11_c too.
+func TestCompatAtlasLintSchemaStartsAtTheFirstListedFileE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	run := compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables())
+	writeVersionOrderFiles(c, dir, run, []string{"9_a.sql", "10_b.sql", "11_c.sql"})
+
+	got := run("migrate", "lint", "--dir", "file://migrations", "--dev-url", "sqlite://file?mode=memory",
+		"--latest", "2", "--format", "{{ range .Files }}{{ .Name }} {{ end }}|{{ .Schema.Current }}")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(got.Stdout, qt.Matches, `(?s)11_c\.sql 9_a\.sql \|.*table "t_10_b".*`)
+	c.Assert(got.Stdout, qt.Not(qt.Contains), `table "t_11_c"`)
+	c.Assert(got.Stdout, qt.Not(qt.Contains), `table "t_9_a"`)
+}
