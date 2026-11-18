@@ -1,6 +1,7 @@
 package migrator
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dblock"
+	lockbuiltin "ptah.run/internal/dblockext/builtin"
 )
 
 const migrationAdvisoryLockName = "ptah_migrate"
@@ -93,7 +95,10 @@ func (m *Migrator) MigrationLockSkipped() bool {
 // fn receives the context to run with. An operation of this migrator, or of a
 // copy of it with the same lock name, called with that context runs under the
 // held lock and takes no second one; the same operation called with another
-// context waits for the lock this call holds. The lock is acquired and
+// context waits for the lock this call holds. On an engine whose lock keeps a
+// table, Oracle's, the copy needs the same migrations schema too, an unnamed
+// one being the session's current schema: a copy configured for another
+// schema takes that schema's lock. The lock is acquired and
 // released, and a lost lock is reported, as for [Migrator.MigrateUp]. A
 // dry-run writer and [Migrator.WithoutMigrationLock] take no lock, and fn runs
 // at once.
@@ -107,9 +112,9 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 	}
 
 	dialect := m.conn.Info().Dialect
-	lockName := m.effectiveMigrationLockName()
-	if holder, ok := ctx.Value(migrationLockHolderKey{}).(migrationLockHolder); ok &&
-		holder.conn == m.conn && holder.name == lockName {
+	held := migrationLockHolder{conn: m.conn, name: m.effectiveMigrationLockName(), scope: m.migrationLockScope()}
+	lockName := held.name
+	if holder, ok := ctx.Value(migrationLockHolderKey{}).(migrationLockHolder); ok && holder == held {
 		return fn(ctx)
 	}
 	startedAt := time.Now()
@@ -137,7 +142,7 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 
 	guarded, stopGuard := lock.Guard(ctx)
 	runCtx := withHeldMigrationLock(guarded, lock)
-	runCtx = context.WithValue(runCtx, migrationLockHolderKey{}, migrationLockHolder{conn: m.conn, name: lockName})
+	runCtx = context.WithValue(runCtx, migrationLockHolderKey{}, held)
 	if service, err := m.conn.SessionLocker(); err == nil && service != nil {
 		runCtx = withMigrationLockSession(runCtx, m.conn)
 	}
@@ -195,10 +200,11 @@ func withHeldMigrationLock(ctx context.Context, lock heldLock) context.Context {
 type migrationLockHolderKey struct{}
 
 // migrationLockHolder names a held migration lock: the connection it was
-// taken through and its name.
+// taken through, its name, and its scope (see [Migrator.migrationLockScope]).
 type migrationLockHolder struct {
-	conn *dbschema.DatabaseConnection
-	name string
+	conn  *dbschema.DatabaseConnection
+	name  string
+	scope string
 }
 
 // migrationLockSessionKey stores the connection whose own session holds the
@@ -261,6 +267,19 @@ func acquireMigrationLock(
 // unconfigured revision table lives, when none is configured.
 func (m *Migrator) migrationLockSchema() string {
 	return strings.TrimSpace(m.migrationsSchema)
+}
+
+// migrationLockScope is the schema that is part of the migration lock's
+// identity. A lock that keeps a table, as Oracle's does, is a row of the table
+// in migrationLockSchema, so a lock of the same name in another schema is
+// another lock; an unnamed schema is the session's current one, so naming that
+// schema takes the same lock. A lock that keeps no table, such as PostgreSQL's
+// advisory lock, is one lock whatever the schema, and its scope is empty.
+func (m *Migrator) migrationLockScope() string {
+	if len(lockbuiltin.Tables(m.conn.Info().Dialect)) == 0 {
+		return ""
+	}
+	return cmp.Or(m.migrationLockSchema(), m.conn.Info().Schema)
 }
 
 func (m *Migrator) effectiveMigrationLockName() string {
