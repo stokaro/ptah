@@ -77,8 +77,8 @@ func TestCanonical_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			declared, declaredRead := precedence.Canonical(test.declared, precedence.MySQL, mysqlLexing)
-			stored, storedRead := precedence.Canonical(test.stored, precedence.MySQL, mysqlLexing)
+			declared, declaredRead := precedence.Canonical(test.declared, precedence.MySQLOperators, mysqlLexing)
+			stored, storedRead := precedence.Canonical(test.stored, precedence.MySQLOperators, mysqlLexing)
 
 			c.Assert(declaredRead, qt.IsTrue)
 			c.Assert(storedRead, qt.IsTrue)
@@ -114,8 +114,8 @@ func TestCanonical_DifferentGroupingsDiffer(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			left, leftRead := precedence.Canonical(test.left, precedence.MySQL, mysqlLexing)
-			right, rightRead := precedence.Canonical(test.right, precedence.MySQL, mysqlLexing)
+			left, leftRead := precedence.Canonical(test.left, precedence.MySQLOperators, mysqlLexing)
+			right, rightRead := precedence.Canonical(test.right, precedence.MySQLOperators, mysqlLexing)
 
 			c.Assert(leftRead, qt.IsTrue)
 			c.Assert(rightRead, qt.IsTrue)
@@ -135,30 +135,30 @@ func TestCanonical_FailurePath(t *testing.T) {
 	}{
 		{name: "an unknown scheme", expression: "1 + 2", scheme: "postgres"},
 		{name: "no scheme", expression: "1 + 2", scheme: ""},
-		{name: "NOT", expression: "NOT 1 + 1", scheme: precedence.MySQL},
-		{name: "NOT before a parenthesis", expression: "NOT (1) + 1", scheme: precedence.MySQL},
-		{name: "IS NULL", expression: "a IS NULL", scheme: precedence.MySQL},
-		{name: "IN", expression: "a IN (1, 2)", scheme: precedence.MySQL},
-		{name: "an INTERVAL without a unit", expression: "now() + INTERVAL 1", scheme: precedence.MySQL},
-		{name: "an INTERVAL with an unknown unit", expression: "now() + INTERVAL 1 FORTNIGHT", scheme: precedence.MySQL},
-		{name: "the INTERVAL function", expression: "INTERVAL(1, 2, 3)", scheme: precedence.MySQL},
-		{name: "a niladic keyword the table does not read", expression: "CURRENT_USER", scheme: precedence.MySQL},
-		{name: "a character set introducer", expression: `concat(_utf8mb4\'a\',_utf8mb4\'b\')`, scheme: precedence.MySQL},
-		{name: "a qualified name", expression: "t.a + 1", scheme: precedence.MySQL},
-		{name: "|| reads by SQL mode", expression: "1 || 2", scheme: precedence.MySQL},
-		{name: "&&", expression: "1 && 2", scheme: precedence.MySQL},
-		{name: "adjacent strings", expression: "'a' 'b'", scheme: precedence.MySQL},
-		{name: "an exponent", expression: "1e3", scheme: precedence.MySQL},
-		{name: "a quoted function name", expression: "`f`(1)", scheme: precedence.MySQL},
-		{name: "another introducer", expression: "concat(_latin1'a')", scheme: precedence.MySQL},
-		{name: "an introducer apart from its string", expression: "concat(_utf8mb4 'a')", scheme: precedence.MySQL},
-		{name: "an unclosed string", expression: "'a", scheme: precedence.MySQL},
-		{name: "a function named MOD", expression: "MOD(7, 4)", scheme: precedence.MySQL},
-		{name: "an unclosed group", expression: "(1 + 2", scheme: precedence.MySQL},
-		{name: "a missing operand", expression: "1 +", scheme: precedence.MySQL},
-		{name: "a row", expression: "(1, 2)", scheme: precedence.MySQL},
-		{name: "an executable comment", expression: "1 /*!80000 + 2 */", scheme: precedence.MySQL},
-		{name: "empty", expression: " ", scheme: precedence.MySQL},
+		{name: "NOT", expression: "NOT 1 + 1", scheme: precedence.MySQLOperators},
+		{name: "NOT before a parenthesis", expression: "NOT (1) + 1", scheme: precedence.MySQLOperators},
+		{name: "IS NULL", expression: "a IS NULL", scheme: precedence.MySQLOperators},
+		{name: "IN", expression: "a IN (1, 2)", scheme: precedence.MySQLOperators},
+		{name: "an INTERVAL without a unit", expression: "now() + INTERVAL 1", scheme: precedence.MySQLOperators},
+		{name: "an INTERVAL with an unknown unit", expression: "now() + INTERVAL 1 FORTNIGHT", scheme: precedence.MySQLOperators},
+		{name: "the INTERVAL function", expression: "INTERVAL(1, 2, 3)", scheme: precedence.MySQLOperators},
+		{name: "a niladic keyword the table does not read", expression: "CURRENT_USER", scheme: precedence.MySQLOperators},
+		{name: "a character set introducer", expression: `concat(_utf8mb4\'a\',_utf8mb4\'b\')`, scheme: precedence.MySQLOperators},
+		{name: "a qualified name", expression: "t.a + 1", scheme: precedence.MySQLOperators},
+		{name: "|| reads by SQL mode", expression: "1 || 2", scheme: precedence.MySQLOperators},
+		{name: "&&", expression: "1 && 2", scheme: precedence.MySQLOperators},
+		{name: "adjacent strings", expression: "'a' 'b'", scheme: precedence.MySQLOperators},
+		{name: "an exponent", expression: "1e3", scheme: precedence.MySQLOperators},
+		{name: "a quoted function name", expression: "`f`(1)", scheme: precedence.MySQLOperators},
+		{name: "another introducer", expression: "concat(_latin1'a')", scheme: precedence.MySQLOperators},
+		{name: "an introducer apart from its string", expression: "concat(_utf8mb4 'a')", scheme: precedence.MySQLOperators},
+		{name: "an unclosed string", expression: "'a", scheme: precedence.MySQLOperators},
+		{name: "a function named MOD", expression: "MOD(7, 4)", scheme: precedence.MySQLOperators},
+		{name: "an unclosed group", expression: "(1 + 2", scheme: precedence.MySQLOperators},
+		{name: "a missing operand", expression: "1 +", scheme: precedence.MySQLOperators},
+		{name: "a row", expression: "(1, 2)", scheme: precedence.MySQLOperators},
+		{name: "an executable comment", expression: "1 /*!80000 + 2 */", scheme: precedence.MySQLOperators},
+		{name: "empty", expression: " ", scheme: precedence.MySQLOperators},
 	}
 
 	for _, test := range tests {

@@ -16,10 +16,11 @@ import (
 	"ptah.run/internal/lexer"
 )
 
-// MySQL names the operator precedence MySQL and MariaDB group an expression
-// by, as section 15.4.1 of the MySQL manual and MariaDB's Operator Precedence
-// page list it.
-const MySQL = "mysql"
+// MySQLOperators names the operator table MySQL and MariaDB group an
+// expression by, as section 15.4.1 of the MySQL manual and MariaDB's Operator
+// Precedence page list it. A descriptor selects it by this name, so an engine
+// that shares the table names it without an edit here.
+const MySQLOperators = "mysql-operators"
 
 // Canonical returns expression printed as the operations it groups under
 // scheme, and true. The text is a comparison key, not SQL to run: it keeps a
@@ -97,7 +98,7 @@ type table struct {
 }
 
 var schemes = map[string]*table{
-	MySQL: {
+	MySQLOperators: {
 		binary: map[string]int{
 			"OR":  1,
 			"XOR": 2,

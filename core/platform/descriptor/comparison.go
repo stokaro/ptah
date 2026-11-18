@@ -134,11 +134,11 @@ type Comparison struct {
 	// Function names are compared without regard to case.
 	TemporalDefaultFunctions bool `json:"temporal_default_functions,omitempty"`
 	// OperatorPrecedence names the operator precedence the engine groups an
-	// expression by: "mysql" (internal/precedence's table, which MySQL and
-	// MariaDB share), or empty for none. A declared and a stored expression
-	// default are compared as the operations that precedence groups, each
-	// spelled one way, so a parenthesis it makes redundant or a synonym the
-	// server writes is no difference: MySQL stores (2 * 3 + 1) as
+	// expression by: "mysql-operators" (internal/precedence's table, which
+	// MySQL and MariaDB share), or empty for none. A declared and a stored
+	// expression default are compared as the operations that precedence
+	// groups, each spelled one way, so a parenthesis it makes redundant or a
+	// synonym the server writes is no difference: MySQL stores (2 * 3 + 1) as
 	// ((2 * 3) + 1), and (1 + 2) * 3 still differs from 1 + 2 * 3. Empty
 	// compares the text.
 	OperatorPrecedence string `json:"operator_precedence,omitempty"`
