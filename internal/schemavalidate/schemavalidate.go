@@ -122,10 +122,16 @@ func CollectWithOptions(
 
 // CollectTargetIndexProblems is [CollectIndexProblems] over database scoped to
 // the target resolver selects for dialect, as a command that compares database
-// with a live target reads it. The commands call it after they place the names
-// database writes without a schema, so a problem names its table as the
-// comparison reads it: on a realm-scoped PostgreSQL URL, by the connection's
-// current schema. A nil database has no problems.
+// with a live target reads it. A nil database has no problems.
+//
+// The commands call it after they place the names database writes without a
+// schema, so a problem names its table as the comparison reads it: on a
+// realm-scoped PostgreSQL URL, by the connection's current schema. They call
+// it ahead of --exclude and --include, so a selection does not hide a fault in
+// the document, which `schema validate` reports whatever a run selects.
+// `schema apply` converts the whole desired schema before it selects, and that
+// conversion refuses an index without an owner as an invalid projection, so a
+// check after the selection would reach apply too late to name the fault.
 func CollectTargetIndexProblems(resolver schemaext.TargetResolver, database *schemamodel.Database, dialect string) ([]Problem, error) {
 	selected, err := resolver.ResolveTarget(dialect)
 	if err != nil {

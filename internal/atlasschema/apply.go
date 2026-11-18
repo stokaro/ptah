@@ -540,8 +540,9 @@ func loadPlacedDesiredApplySchema(
 	if err != nil {
 		return placedDesired{}, err
 	}
-	// Checked on the placed schema, so an index fault names its table as the
-	// plan writes it and as `schema drift` and `schema compare` name it.
+	// Checked on the placed schema, so a fault names its table as the plan
+	// writes it, and ahead of the selection, as every comparing command checks
+	// it; see [schemavalidate.CollectTargetIndexProblems].
 	problems, err := schemavalidate.CollectTargetIndexProblems(opts.Runtime, desired, conn.Info().Dialect)
 	if err != nil {
 		return placedDesired{}, err

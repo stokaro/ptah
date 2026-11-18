@@ -43,6 +43,7 @@ import (
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/tableref"
@@ -508,11 +509,14 @@ func replaysCurrent(conn *dbschema.DatabaseConnection, fromState atlassource.Sta
 
 // scopedDiffSides prepares the two resolved sides for scoping: each side's
 // view bodies are rebased on the other's database, both are narrowed on a dev
-// server, the one-database rule reads the narrowed sides, and the documents'
-// unqualified names are placed; see [placeDiffDocuments].
+// server, the one-database rule reads the narrowed sides, the documents'
+// unqualified names are placed, and the indexes of a --to document are
+// checked on the placed names; see [placeDiffDocuments] and
+// [refuseDocumentIndexProblems].
 func scopedDiffSides(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	resolver schemaext.TargetResolver,
 	fromState, toState atlassource.State,
 	dialect string,
 	sides devServerSides,
@@ -530,7 +534,33 @@ func scopedDiffSides(
 	if err := validateResolvedDiffScope(fromState, toState, dialect); err != nil {
 		return atlassource.State{}, atlassource.State{}, err
 	}
-	return placeDiffDocuments(ctx, conn, fromState, toState, dialect, devURL)
+	fromState, toState, err = placeDiffDocuments(ctx, conn, fromState, toState, dialect, devURL)
+	if err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	if err := refuseDocumentIndexProblems(resolver, toState, dialect); err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	return fromState, toState, nil
+}
+
+// refuseDocumentIndexProblems refuses a --to document with an index its server
+// would refuse, as `schema apply` refuses its desired schema: on the placed
+// names and ahead of the selection, so the comparison plans no CREATE INDEX
+// the server refuses; see [schemavalidate.CollectTargetIndexProblems]. A --to
+// database holds only indexes its server accepted.
+func refuseDocumentIndexProblems(resolver schemaext.TargetResolver, to atlassource.State, dialect string) error {
+	if to.DB != nil {
+		return nil
+	}
+	problems, err := schemavalidate.CollectTargetIndexProblems(resolver, to.Schema, dialect)
+	if err != nil {
+		return err
+	}
+	if len(problems) != 0 {
+		return errors.New(problems[0].String())
+	}
+	return nil
 }
 
 // diffResolvedStates is the part of a schema diff that runs once both sides
@@ -550,7 +580,7 @@ func diffResolvedStates(
 	sides devServerSides,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
-	fromState, toState, err := scopedDiffSides(ctx, conn, fromState, toState, dialect, sides, opts.DevURL)
+	fromState, toState, err := scopedDiffSides(ctx, conn, opts.Runtime, fromState, toState, dialect, sides, opts.DevURL)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}

@@ -241,6 +241,16 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	// Refused as `schema apply` refuses it, on the placed schema and ahead of
+	// the selection: the server would refuse the CREATE INDEX the comparison
+	// plans. See [schemavalidate.CollectTargetIndexProblems].
+	problems, err := schemavalidate.CollectTargetIndexProblems(runtime, result, conn.Info().Dialect)
+	if err != nil {
+		return err
+	}
+	if len(problems) != 0 {
+		return errors.New(problems[0].String())
+	}
 	ctx = readscope.Qualified(ctx)
 
 	schemas, err := schemascope.ComparisonReadNames(ctx, conn.Info(), requested, conn, result)
@@ -260,16 +270,6 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	}
 	if err := schemascope.RefuseOutsideTargetDatabase(info, result); err != nil {
 		return err
-	}
-	// Refused as `schema drift` and `schema apply` refuse it: the server would
-	// refuse the CREATE INDEX the comparison plans. Checked on the placed
-	// schema, so the fault names its table as the comparison reads it.
-	problems, err := schemavalidate.CollectTargetIndexProblems(runtime, result, info.Dialect)
-	if err != nil {
-		return err
-	}
-	if len(problems) != 0 {
-		return errors.New(problems[0].String())
 	}
 	compareOpts, err := resolveGeneratedExpressions(ctx, runtime, opts, connectTimeout, info, result)
 	if err != nil {
