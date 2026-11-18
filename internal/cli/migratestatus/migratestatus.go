@@ -487,6 +487,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			Dialect:         conn.Info().Dialect,
 			OwnTransactions: mig.RevisionBodyOpensOwnTransactions(*status.DirtyRevision),
 			FileStatements:  dirtyhint.FileStatements(mig, *status.DirtyRevision),
+			RecoveryFlags:   mig.RecoveryFlags(),
 		}))
 		return nil
 	}
@@ -508,8 +509,8 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 		emit.Println("Status: ❌ Applied migration with no file")
 		for _, record := range status.MissingMigrations {
 			emit.Printf(
-				"Missing Migration: version=%d description=%s recorded=%s\n",
-				record.Version, record.Description, record.AppliedChecksum,
+				"Missing Migration: version=%s description=%s recorded=%s\n",
+				mig.VersionLabel(record.Version), record.Description, record.AppliedChecksum,
 			)
 		}
 		emit.Println("\nThe database recorded these as applied and this directory has no file " +

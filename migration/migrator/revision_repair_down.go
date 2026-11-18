@@ -46,6 +46,7 @@ func (m *Migrator) repairRolledBackMigration(
 		}
 		if err := refuseRollbackResumeOverChangedFile(
 			*revision, scoped.migrationStatementCount(migration.DownSQL), scoped.repairRunner(*revision),
+			scoped.recoverySelection(),
 		); err != nil {
 			return err
 		}
@@ -71,7 +72,12 @@ func (m *Migrator) repairRolledBackMigration(
 // both, as the hint `ptah migrations status` prints for the row does. A
 // rollback that committed nothing indexes into nothing: a resume from 1 runs
 // the down file as it is, which is how an operator retries a fixed one.
-func refuseRollbackResumeOverChangedFile(revision MigrationRevision, total int, runner repaircommand.Runner) error {
+func refuseRollbackResumeOverChangedFile(
+	revision MigrationRevision,
+	total int,
+	runner repaircommand.Runner,
+	selection repaircommand.Selection,
+) error {
 	if revision.Applied <= 0 || revision.Total == total {
 		return nil
 	}
@@ -83,8 +89,8 @@ func refuseRollbackResumeOverChangedFile(revision MigrationRevision, total int, 
 		revision.Applied,
 		revision.Total,
 		total,
-		repaircommand.Reconciled(revision.VersionLabel(), runner),
-		repaircommand.SetPrevious,
+		repaircommand.Reconciled(revision.VersionLabel(), runner, selection),
+		repaircommand.SetPrevious(selection),
 	)
 }
 
@@ -101,6 +107,7 @@ func (m *Migrator) repairRolledBackMigrationWithoutResume(
 	if !opts.Force && rollbackChangedSchema(revision) {
 		return rollbackRepairNeedsDirectionError(
 			migration, revision, own, m.migrationStatementCount(migration.DownSQL), m.repairRunner(*revision),
+			m.recoverySelection(),
 		)
 	}
 	if err := m.refuseRepairOverUnsafeIndex(ctx, migration); err != nil {
@@ -164,6 +171,7 @@ func rollbackRepairNeedsDirectionError(
 	own ownTransactionRun,
 	total int,
 	runner repaircommand.Runner,
+	selection repaircommand.Selection,
 ) error {
 	const endings = "--force to record it applied if the schema it reverted was restored, " +
 		"or run \"ptah migrations set --version <previous>\" if the rollback was finished by hand " +
@@ -188,7 +196,7 @@ func rollbackRepairNeedsDirectionError(
 	}
 	// The resume this refusal would name refuses a down file whose count
 	// changed, so the refusal names what that one names.
-	if err := refuseRollbackResumeOverChangedFile(*revision, total, runner); err != nil {
+	if err := refuseRollbackResumeOverChangedFile(*revision, total, runner, selection); err != nil {
 		return err
 	}
 	return fmt.Errorf(

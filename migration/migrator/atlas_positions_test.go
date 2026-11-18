@@ -101,3 +101,47 @@ func TestAtlasPositions_SetReadsExecutionOrder(t *testing.T) {
 		})
 	}
 }
+
+// TestMigratorRecoveryFlags names the flags a recovery command needs to read
+// the same directory and revision table: --dir-format atlas only where the
+// default directory format reads other files, here the Ptah pair beside
+// v1_x.sql, and --revision-format atlas for an Atlas revision table.
+func TestMigratorRecoveryFlags(t *testing.T) {
+	ptahPair := map[string]string{
+		"0000000001_a.up.sql":   "CREATE TABLE a (id int);\n",
+		"0000000001_a.down.sql": "DROP TABLE a;\n",
+		"v1_x.sql":              "CREATE TABLE v (id int);\n",
+	}
+	atlasOnly := map[string]string{"1_a.sql": "CREATE TABLE a (id int);\n"}
+	tests := []struct {
+		name   string
+		files  map[string]string
+		format migrationfile.DirFormat
+		table  migrator.RevisionTableFormat
+		want   string
+	}{
+		{name: "defaults", files: atlasOnly, format: migrationfile.DirFormatAuto, table: migrator.RevisionTableFormatPtah},
+		{
+			name: "atlas files the default reads", files: atlasOnly, format: migrationfile.DirFormatAtlas,
+			table: migrator.RevisionTableFormatAtlas, want: " --revision-format atlas",
+		},
+		{
+			name: "atlas files only the flag reads", files: ptahPair, format: migrationfile.DirFormatAtlas,
+			table: migrator.RevisionTableFormatAtlas, want: " --dir-format atlas --revision-format atlas",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TempDir(), "app.db"))
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+			mig, err := migrator.NewFSMigrator(conn, atlasSQLFiles(tt.files), migrator.WithMigrationDirFormat(tt.format))
+			c.Assert(err, qt.IsNil)
+
+			got := mig.WithRevisionTableFormat(tt.table).RecoveryFlags()
+
+			c.Assert(got, qt.Equals, tt.want)
+		})
+	}
+}

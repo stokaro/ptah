@@ -13,6 +13,7 @@ func TestRepair_HappyPath(t *testing.T) {
 		name           string
 		version, flags string
 		runner         repaircommand.Runner
+		selection      repaircommand.Selection
 		want           string
 	}{
 		{name: "plain", version: "2", want: "'ptah migrations repair --version 2'"},
@@ -32,19 +33,48 @@ func TestRepair_HappyPath(t *testing.T) {
 		{name: "semicolon", version: "1;rm", want: "'ptah migrations repair --version '1;rm''"},
 		{name: "single quote", version: "it's", want: `'ptah migrations repair --version 'it'\''s''`},
 		{name: "dollar", version: "$HOME", want: "'ptah migrations repair --version '$HOME''"},
+		{
+			name: "atlas selection", version: "v1", flags: " --force", runner: repaircommand.GolangMigrate,
+			selection: repaircommand.SelectionFor(true, true),
+			want: "'ptah migrations repair --version v1 --force --runner golang-migrate " +
+				"--dir-format atlas --revision-format atlas'",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(repaircommand.Repair(tt.version, tt.flags, tt.runner), qt.Equals, tt.want)
+			c.Assert(repaircommand.Repair(tt.version, tt.flags, tt.runner, tt.selection), qt.Equals, tt.want)
 		})
 	}
 }
 
 func TestReconciled_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	c.Assert(repaircommand.Reconciled("2", repaircommand.DefaultRunner), qt.Equals,
+	c.Assert(repaircommand.Reconciled("2", repaircommand.DefaultRunner, ""), qt.Equals,
 		"'ptah migrations repair --version 2 --force'")
-	c.Assert(repaircommand.Reconciled("2", repaircommand.GolangMigrate), qt.Equals,
+	c.Assert(repaircommand.Reconciled("2", repaircommand.GolangMigrate, ""), qt.Equals,
 		"'ptah migrations repair --version 2 --force --runner golang-migrate'")
+}
+
+// TestSelectionFor_HappyPath names each flag only where its value differs from
+// the default the command reads.
+func TestSelectionFor_HappyPath(t *testing.T) {
+	tests := []struct {
+		name                       string
+		atlasDirectory, atlasTable bool
+		want                       repaircommand.Selection
+	}{
+		{name: "defaults", want: ""},
+		{name: "directory", atlasDirectory: true, want: " --dir-format atlas"},
+		{name: "table", atlasTable: true, want: " --revision-format atlas"},
+		{name: "both", atlasDirectory: true, atlasTable: true, want: " --dir-format atlas --revision-format atlas"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(repaircommand.SelectionFor(tt.atlasDirectory, tt.atlasTable), qt.Equals, tt.want)
+			c.Assert(repaircommand.SetPrevious(tt.want), qt.Equals,
+				"'ptah migrations set --version <previous>"+string(tt.want)+"'")
+		})
+	}
 }

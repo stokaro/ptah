@@ -108,6 +108,23 @@ func (m *Migrator) repairRunner(revision MigrationRevision) repaircommand.Runner
 	return repaircommand.DefaultRunner
 }
 
+// RecoveryFlags returns the flags a recovery command this migrator names
+// carries so that it reads the same directory and revision table, each with
+// its leading space: --dir-format atlas when the migrator reads Atlas files
+// the default directory format would not read, and --revision-format atlas
+// when it keeps an Atlas revision table. It is empty where the defaults read
+// both, so a command names no flag it does not need. The refusals of
+// [Migrator.RepairMigration] and [Migrator.MigrateUp] name their commands with
+// these flags, and so does the hint `ptah migrations status` prints.
+func (m *Migrator) RecoveryFlags() string {
+	return string(m.recoverySelection())
+}
+
+func (m *Migrator) recoverySelection() repaircommand.Selection {
+	source, ok := m.migrationProvider.(interface{ needsAtlasDirFormat() bool })
+	return repaircommand.SelectionFor(ok && source.needsAtlasDirFormat(), m.revisionTableFormat.isAtlas())
+}
+
 // RevisionBodyStatements returns how many statements the body a resume of the
 // dirty revision would index into holds in the directory now: the down file of
 // the revision's migration when a rollback left the revision, and the up file
@@ -569,13 +586,15 @@ type unknownOutcomeError struct {
 	statement int
 	// runner is the runner the repair it names needs for the body.
 	runner repaircommand.Runner
+	// selection makes the repair it names read this directory and table.
+	selection repaircommand.Selection
 }
 
 func (e *unknownOutcomeError) Error() string {
 	return fmt.Sprintf(
 		"migration %s cannot resume automatically: the outcome of statement %d is unknown after an interrupted run; "+
 			"inspect the database, then use %s",
-		e.version, e.statement, repaircommand.Reconciled(e.version, e.runner))
+		e.version, e.statement, repaircommand.Reconciled(e.version, e.runner, e.selection))
 }
 
 // rollbackLeftUnknownResumeError refuses to resume a migration whose transaction
@@ -586,13 +605,15 @@ type rollbackLeftUnknownResumeError struct {
 	version string
 	// runner is the runner the repair it names needs for the body.
 	runner repaircommand.Runner
+	// selection makes the repair it names read this directory and table.
+	selection repaircommand.Selection
 }
 
 func (e *rollbackLeftUnknownResumeError) Error() string {
 	return fmt.Sprintf(
 		"migration %s cannot resume automatically: the rollback of its transaction left some statements in place and "+
 			"undid others; inspect the database, then use %s",
-		e.version, repaircommand.Reconciled(e.version, e.runner))
+		e.version, repaircommand.Reconciled(e.version, e.runner, e.selection))
 }
 
 // describeUnknownOutcome rewrites a refusal to resume after an unknown outcome

@@ -1074,6 +1074,7 @@ func (m *Migrator) validateAtlasRevisionIdentityCollation(ctx context.Context) e
 		return fmt.Errorf("failed to iterate recorded Atlas revision identities: %w", err)
 	}
 	versions := slices.Sorted(maps.Keys(identities))
+	m.recordRetiredAtlasIdentities(versions, mappings)
 	if len(versions) < 2 {
 		return nil
 	}
@@ -1178,6 +1179,7 @@ func (m *Migrator) atlasRevisionVersionMappings() []atlasRevisionVersionMapping 
 				runtime:  runtime,
 			})
 		}
+		mappings = m.withRecordedAtlasIdentities(mappings)
 		slices.SortFunc(mappings, compareAtlasRevisionVersionMappings)
 		return mappings
 	}
@@ -1190,7 +1192,64 @@ func (m *Migrator) atlasRevisionVersionMappings() []atlasRevisionVersionMapping 
 			})
 		}
 	}
+	return m.withRecordedAtlasIdentities(mappings)
+}
+
+// withRecordedAtlasIdentities adds a mapping for each recorded version no file
+// carries; see [Migrator.recordedAtlasIdentityKey].
+func (m *Migrator) withRecordedAtlasIdentities(mappings []atlasRevisionVersionMapping) []atlasRevisionVersionMapping {
+	for _, identity := range m.recordedAtlasIdentities {
+		key, _ := m.recordedAtlasIdentityKey(identity)
+		mappings = append(mappings, atlasRevisionVersionMapping{revision: identity, runtime: key})
+	}
 	return mappings
+}
+
+// recordRetiredAtlasIdentities keeps the recorded versions that are not
+// numbers and that no file carries, so a row whose file is removed reads
+// without a numeric cast, which a strict dialect refuses for v1, and a set can
+// still remove it. versions is every recorded version, sorted. A converted
+// layout reads such rows under its own history-only key instead.
+func (m *Migrator) recordRetiredAtlasIdentities(versions []string, mappings []atlasRevisionVersionMapping) {
+	m.recordedAtlasIdentities = nil
+	if m.hasAtlasRevisionVersionMap() {
+		return
+	}
+	owned := make(map[string]struct{}, len(mappings))
+	for _, mapping := range mappings {
+		owned[mapping.revision] = struct{}{}
+	}
+	for _, version := range versions {
+		if _, ok := owned[version]; ok || m.isAtlasMetadataRevisionVersion(version) {
+			continue
+		}
+		// Where the directory runs under positions a recorded number is no key
+		// either, so it is kept the same way.
+		if _, err := parseAtlasRevisionVersion(version); err == nil && !m.hasAtlasPositions() {
+			continue
+		}
+		m.recordedAtlasIdentities = append(m.recordedAtlasIdentities, version)
+	}
+}
+
+// recordedAtlasIdentityKey returns the key the recorded version identity runs
+// under when no file carries it: one above every key of the directory, in the
+// text order of such versions. A removed file ran after every file that
+// remains or before some of them; nothing records which, and above every key
+// is where a set to a remaining file removes its row, as the community binary
+// v1.3.0 removes it.
+func (m *Migrator) recordedAtlasIdentityKey(identity string) (int64, bool) {
+	index := slices.Index(m.recordedAtlasIdentities, identity)
+	if index < 0 {
+		return 0, false
+	}
+	var highest int64
+	if m.migrationProvider != nil {
+		for _, migration := range m.migrationProvider.Migrations() {
+			highest = max(highest, migration.Version)
+		}
+	}
+	return highest + int64(index) + 1, true
 }
 
 func compareAtlasRevisionVersionMappings(a, b atlasRevisionVersionMapping) int {
@@ -1647,7 +1706,9 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 			m.versionText(migration.Version),
 		)
 	}
-	resumeFrom, err := resumeStatementFor(*revision, m.migrationStatementCount(migration.UpSQL), m.repairRunner(*revision))
+	resumeFrom, err := resumeStatementFor(
+		*revision, m.migrationStatementCount(migration.UpSQL), m.repairRunner(*revision), m.recoverySelection(),
+	)
 	if err != nil {
 		return upRetryPlan{}, err
 	}
@@ -1674,15 +1735,22 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 // statement whose outcome nothing knows. The zero says only that no checkpoint
 // was written, and on a dialect where each statement commits by itself the
 // statement may well have committed.
-func resumeStatementFor(revision MigrationRevision, total int, runner repaircommand.Runner) (int, error) {
+func resumeStatementFor(
+	revision MigrationRevision,
+	total int,
+	runner repaircommand.Runner,
+	selection repaircommand.Selection,
+) (int, error) {
 	if err := validateRevisionProgress(revision, "resume automatically"); err != nil {
 		return 0, err
 	}
 	if revision.RollbackLeftUnknown() {
-		return 0, &rollbackLeftUnknownResumeError{version: revision.VersionLabel(), runner: runner}
+		return 0, &rollbackLeftUnknownResumeError{version: revision.VersionLabel(), runner: runner, selection: selection}
 	}
 	if revision.Error == unknownStatementOutcomeError {
-		return 0, &unknownOutcomeError{version: revision.VersionLabel(), statement: revision.Applied + 1, runner: runner}
+		return 0, &unknownOutcomeError{
+			version: revision.VersionLabel(), statement: revision.Applied + 1, runner: runner, selection: selection,
+		}
 	}
 	if revision.Applied <= 0 {
 		return 1, nil
@@ -1694,7 +1762,7 @@ func resumeStatementFor(revision MigrationRevision, total int, runner repaircomm
 			revision.Applied,
 			revision.Total,
 			total,
-			repaircommand.Reconciled(revision.VersionLabel(), runner),
+			repaircommand.Reconciled(revision.VersionLabel(), runner, selection),
 		)
 	}
 	return revision.Applied + 1, nil

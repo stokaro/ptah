@@ -258,11 +258,17 @@ type Migrator struct {
 	// atlasStringLinearity decides linearity over an Atlas directory on the
 	// revision strings; see [Migrator.WithAtlasStringLinearity].
 	atlasStringLinearity bool
-	txMode               MigrationTxMode
-	migrationLockName    string
-	migrationLockTimeout time.Duration
-	migrationLockSkipped bool
-	initialized          bool
+	// recordedAtlasIdentities are the versions the Atlas revision table
+	// records that are not numbers and that no file of the directory carries,
+	// such as v1 once v1_x.sql is removed, in text order. Initialize reads
+	// them, and each runs under a key above every key of the directory; see
+	// [Migrator.recordedAtlasIdentityKey].
+	recordedAtlasIdentities []string
+	txMode                  MigrationTxMode
+	migrationLockName       string
+	migrationLockTimeout    time.Duration
+	migrationLockSkipped    bool
+	initialized             bool
 	// initializedDryRun records the writer's dry-run mode at the time
 	// initialized was set, so the memoized state is never reused across a
 	// mode change.

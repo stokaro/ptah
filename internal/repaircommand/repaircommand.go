@@ -21,18 +21,42 @@ const (
 	GolangMigrate Runner = " --runner golang-migrate"
 )
 
-// SetPrevious is the command that records a rollback the operator finished by
-// hand, quoted: it moves the revision boundary below the migration. The
-// operator names the version before it, or 0 where it is the oldest migration
-// in the directory.
-const SetPrevious = "'ptah migrations set --version <previous>'"
+// Selection is the flags that make a command read the migration directory and
+// the revision table the command that names it reads, each with its leading
+// space, or nothing where the defaults read them. Every command a refusal or a
+// hint names carries it last: a repair of v1 without --revision-format atlas
+// reads the Ptah revision table, which refuses the directory.
+type Selection string
+
+// SelectionFor returns the selection for a directory whose Atlas files only
+// --dir-format atlas reads when atlasDirectory holds, and for an Atlas
+// revision table when atlasTable holds.
+func SelectionFor(atlasDirectory, atlasTable bool) Selection {
+	var selection Selection
+	if atlasDirectory {
+		selection += " --dir-format atlas"
+	}
+	if atlasTable {
+		selection += " --revision-format atlas"
+	}
+	return selection
+}
+
+// SetPrevious returns the command that records a rollback the operator
+// finished by hand, quoted: it moves the revision boundary below the
+// migration. The operator names the version before it, or 0 where it is the
+// oldest migration in the directory.
+func SetPrevious(selection Selection) string {
+	return "'ptah migrations set --version <previous>" + string(selection) + "'"
+}
 
 // Repair returns the repair command for version, quoted, with flags after the
-// version and then runner. A version a shell would split or interpret, such as
-// one holding a space or a semicolon, is written as one shell word in single
-// quotes, so the command between the outer quotes runs as printed.
-func Repair(version, flags string, runner Runner) string {
-	return "'ptah migrations repair --version " + shellWord(version) + flags + string(runner) + "'"
+// version, then runner and then selection. A version a shell would split or
+// interpret, such as one holding a space or a semicolon, is written as one
+// shell word in single quotes, so the command between the outer quotes runs
+// as printed.
+func Repair(version, flags string, runner Runner, selection Selection) string {
+	return "'ptah migrations repair --version " + shellWord(version) + flags + string(runner) + string(selection) + "'"
 }
 
 // shellWord returns value as one POSIX shell word: as it is when every byte is
@@ -56,6 +80,6 @@ const shellSafe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345678
 // in place and undid others, and a body whose statement count changed after
 // the run. A plain repair refuses each of them, because it cannot show the
 // rest of the body ran, so the command carries --force.
-func Reconciled(version string, runner Runner) string {
-	return Repair(version, " --force", runner)
+func Reconciled(version string, runner Runner, selection Selection) string {
+	return Repair(version, " --force", runner, selection)
 }

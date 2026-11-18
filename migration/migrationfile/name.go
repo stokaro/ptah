@@ -186,6 +186,7 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 		return migrationFile, nil
 	}
 
+	whole := stem
 	direction := "up"
 	for _, suffix := range []string{".up", ".down"} {
 		if strings.HasSuffix(stem, suffix) {
@@ -196,12 +197,15 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 	}
 
 	versionDigits, rawName, ok := splitAtlasStem(stem)
-	// Atlas reads the version as the text before the first underscore,
-	// whatever it holds, so it records 1.x.sql as 1.x and v1_x.sql as v1.
-	// Reading the digits alone would record 1.x.sql as 1, a version Atlas
-	// never gives it.
+	// Atlas reads the version as the text before the first underscore of the
+	// whole name, whatever it holds, so it records 1.x.sql as 1.x, v1_x.sql
+	// as v1 and v1.up.sql as v1.up, and runs v1.down.sql as a migration of
+	// its own. Reading the digits alone would record 1.x.sql as 1, a version
+	// Atlas never gives it. The direction suffix of a numbered name, as an
+	// importer writes 1_a.up.sql and 1_a.down.sql, is read as a direction.
 	if token, description, _ := strings.Cut(stem, "_"); mode == atlasParseExplicit && (!ok || !isAtlasNumber(token, versionDigits)) {
-		return parseAtlasOpaqueVersion(filename, token, description, direction)
+		token, description, _ = strings.Cut(whole, "_")
+		return parseAtlasOpaqueVersion(filename, token, description, "up")
 	}
 	if !ok {
 		return nil, errors.New("invalid Atlas migration file name format")
@@ -256,6 +260,15 @@ func isAtlasNumber(token, versionDigits string) bool {
 func parseAtlasOpaqueVersion(filename, token, description, direction string) (*File, error) {
 	if token == "" {
 		return nil, fmt.Errorf("Atlas reads the version of %s as the empty string, which Ptah cannot address", filename)
+	}
+	// The Atlas revision table keeps rows of its own under versions that
+	// start with a dot, such as .atlas_cloud_identifier, and Ptah reads every
+	// such row as one of them. The community binary runs .draft_x.sql and
+	// records .draft; Ptah refuses it rather than run it and then read its
+	// row as table metadata, which reports the file pending forever.
+	if strings.HasPrefix(token, ".") {
+		return nil, fmt.Errorf("Atlas records the version of %s as %q, which starts with a dot as the revision "+
+			"table's own rows do, so Ptah could not tell its row from them; rename the file", filename, token)
 	}
 	// A version spelled as a repeatable one, R or 3R, that the repeatable
 	// grammar refused, as R__.sql or 3R_views.down.sql, stays refused.

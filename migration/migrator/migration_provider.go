@@ -145,6 +145,10 @@ type FSMigrationProvider struct {
 	// atlasPositions reports that the order key of every migration is its
 	// position in execution order; see [atlasNeedsPositions].
 	atlasPositions bool
+	// atlasFormatSelected reports that the directory was read as Atlas files
+	// that the default directory format would not read, so a command that
+	// reads the same files has to name --dir-format atlas.
+	atlasFormatSelected bool
 	// ownTransactions marks every loaded migration as one of a directory
 	// written for a runner that opens no transaction around a file; see
 	// [WithOwnTransactions].
@@ -389,6 +393,25 @@ func (p *FSMigrationProvider) hasAtlasPositions() bool {
 	return p.atlasPositions
 }
 
+func (p *FSMigrationProvider) needsAtlasDirFormat() bool {
+	return p.atlasFormatSelected
+}
+
+// autoReadsTheseFiles reports that the default directory format reads the
+// directory as the Atlas files this provider read: Atlas repeatables are read
+// only under the Atlas format, and the default reads Ptah files where the
+// directory holds any.
+func (p *FSMigrationProvider) autoReadsTheseFiles() bool {
+	if p.format != migrationfile.DirFormatAtlas {
+		return true
+	}
+	if p.atlasRepeatables {
+		return false
+	}
+	files, err := migrationfile.Discover(p.fsys, migrationfile.DirFormatAuto)
+	return err == nil && len(files) > 0 && files[0].Format == migrationfile.DirFormatAtlas
+}
+
 // atlasVersionSpelling returns the version token an ordinary Atlas file in
 // this directory spells for version, such as 001 for 1. It reports false for
 // a native directory, for a version no file carries, and for a repeatable or
@@ -481,6 +504,7 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 	if err != nil {
 		return err
 	}
+	p.atlasFormatSelected = !p.autoReadsTheseFiles()
 	positions := migrationfile.AtlasKeyedByPosition(files)
 	// A converted layout keys its maps by the numbers its file names spell,
 	// which positions are not.

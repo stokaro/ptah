@@ -30,6 +30,10 @@ type Revision struct {
 	// or nil when the directory holds no file for the revision. A count other
 	// than the revision's Total means the file changed after the run.
 	FileStatements *int
+	// RecoveryFlags is what [migrator.Migrator.RecoveryFlags] returns for the
+	// migrator that read the revision. Every command the hint names carries
+	// it, so it reads the same directory and revision table.
+	RecoveryFlags string
 }
 
 // Recovery names the command that ends this particular dirty state, one that
@@ -100,14 +104,25 @@ func Recovery(dirty Revision) string {
 // repair is the quoted repair command for the revision, with flags after its
 // version.
 func (r Revision) repair(flags string) string {
-	return repaircommand.Repair(r.Revision.VersionLabel(), flags, r.runner())
+	return repaircommand.Repair(r.Revision.VersionLabel(), flags, r.runner(), r.selection())
 }
 
 // reconciled is the quoted repair command that records the revision applied
 // once the operator has reconciled the database, the one the migrator's
 // refusal to resume names for the same row.
 func (r Revision) reconciled() string {
-	return repaircommand.Reconciled(r.Revision.VersionLabel(), r.runner())
+	return repaircommand.Reconciled(r.Revision.VersionLabel(), r.runner(), r.selection())
+}
+
+// setPrevious is the quoted command that moves the revision boundary below the
+// migration after the operator finished a rollback by hand.
+func (r Revision) setPrevious() string {
+	return repaircommand.SetPrevious(r.selection())
+}
+
+// selection is the flags every command the hint names carries last.
+func (r Revision) selection() repaircommand.Selection {
+	return repaircommand.Selection(r.RecoveryFlags)
 }
 
 // FileStatements reads the field of that name for revision out of mig.
@@ -143,7 +158,7 @@ func changedFileHint(dirty Revision) string {
 			dirty.Revision.Total,
 			*dirty.FileStatements,
 			dirty.reconciled(),
-			repaircommand.SetPrevious,
+			dirty.setPrevious(),
 		)
 	}
 	return fmt.Sprintf(
@@ -168,7 +183,7 @@ func (r Revision) runner() repaircommand.Runner {
 // retry is the quoted command that applies the migration again from where its
 // revision says it stopped.
 func (r Revision) retry() string {
-	return "'ptah migrations up --allow-dirty" + string(r.runner()) + "'"
+	return "'ptah migrations up --allow-dirty" + string(r.runner()) + string(r.selection()) + "'"
 }
 
 // partialRollbackHint names what ends a rollback that stopped before its
@@ -192,10 +207,11 @@ func partialRollbackHint(dirty Revision) string {
 		return fmt.Sprintf(
 			"This rollback committed %d of %d down statements, in transactions its file opens itself, and "+
 				"a resume would run the rest of the file outside them. Finish the rollback by hand and run "+
-				"'ptah migrations set --version <previous>' (version 0 where this is the oldest migration in "+
+				"%s (version 0 where this is the oldest migration in "+
 				"the directory), or restore what it reverted and run %s to record the migration applied.",
 			revision.Applied,
 			revision.Total,
+			dirty.setPrevious(),
 			dirty.reconciled(),
 		)
 	}
@@ -244,10 +260,11 @@ func uncheckpointedHint(dirty Revision) string {
 		return fmt.Sprintf(
 			"On %s a statement commits on its own, so nothing records how far this rollback got: "+
 				"it may have run in full, in part, or not at all. Inspect the database and finish "+
-				"the rollback by hand, then run 'ptah migrations set --version <previous>' (version 0 "+
+				"the rollback by hand, then run %s (version 0 "+
 				"where this is the oldest migration in the directory) to move the boundary back -- "+
 				"or, if you restore what it reverted instead, %s to record the migration applied.",
 			dirty.Dialect,
+			dirty.setPrevious(),
 			dirty.reconciled(),
 		)
 	}
@@ -270,10 +287,11 @@ func rollbackLeftUnknownHint(dirty Revision) string {
 		return fmt.Sprintf(
 			"The rollback stopped, and the rollback of its transaction left some statements in place and "+
 				"undid others. Inspect the database, then run %s to "+
-				"record the migration applied if you restored what the rollback reverted, or 'ptah migrations set "+
-				"--version <previous>' (version 0 where this is the oldest migration in the directory) if you "+
+				"record the migration applied if you restored what the rollback reverted, or %s "+
+				"(version 0 where this is the oldest migration in the directory) if you "+
 				"finished the rollback by hand.",
 			dirty.reconciled(),
+			dirty.setPrevious(),
 		)
 	}
 	return fmt.Sprintf(
@@ -297,12 +315,13 @@ func unknownStatementOutcomeHint(dirty Revision) string {
 			"The rollback was interrupted while down statement %d of %d was executing, so whether "+
 				"it committed was never recorded, and nothing after it ran. Inspect the database, "+
 				"then run %s to record the migration "+
-				"applied if you restored what the rollback reverted, or 'ptah migrations set "+
-				"--version <previous>' (version 0 where this is the oldest migration in the "+
+				"applied if you restored what the rollback reverted, or %s "+
+				"(version 0 where this is the oldest migration in the "+
 				"directory) if you finished the rollback by hand.",
 			revision.Applied+1,
 			revision.Total,
 			dirty.reconciled(),
+			dirty.setPrevious(),
 		)
 	}
 	return fmt.Sprintf(

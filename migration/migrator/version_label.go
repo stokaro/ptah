@@ -19,12 +19,30 @@ import (
 // numbers, the one such file the table accepts, an Atlas repeatable, is
 // recorded under its key, so there the key is its name.
 func (m *Migrator) VersionLabel(version int64) string {
-	for _, migration := range m.numberlessMigrations() {
-		if migration.Version == version {
-			return migration.atlasRevisionVersion
-		}
+	if label, ok := m.versionLabel(version); ok {
+		return label
 	}
 	return strconv.FormatInt(version, 10)
+}
+
+// versionLabel returns the version string version runs under when that is not
+// the number: the version of an Atlas file whose version is not a number, or
+// of a recorded row no file carries (see [Migrator.recordedAtlasIdentityKey]).
+func (m *Migrator) versionLabel(version int64) (string, bool) {
+	for _, migration := range m.numberlessMigrations() {
+		if migration.Version == version {
+			return migration.atlasRevisionVersion, true
+		}
+	}
+	if m == nil {
+		return "", false
+	}
+	for _, identity := range m.recordedAtlasIdentities {
+		if key, _ := m.recordedAtlasIdentityKey(identity); key == version {
+			return identity, true
+		}
+	}
+	return "", false
 }
 
 // VersionLabels returns [Migrator.VersionLabel] of each version, in order.
@@ -109,10 +127,8 @@ func (m *Migrator) logVersion(version int64) any {
 	if source, ok := m.sourceVersions[version]; ok {
 		return source
 	}
-	for _, migration := range m.numberlessMigrations() {
-		if migration.Version == version {
-			return migration.atlasRevisionVersion
-		}
+	if label, ok := m.versionLabel(version); ok {
+		return label
 	}
 	return version
 }

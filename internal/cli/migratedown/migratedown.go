@@ -1148,6 +1148,7 @@ func rollbackStatus(
 		Dialect:         dialect,
 		OwnTransactions: mig.RevisionBodyOpensOwnTransactions(dirty.Revision),
 		FileStatements:  dirtyhint.FileStatements(mig, dirty.Revision),
+		RecoveryFlags:   mig.RecoveryFlags(),
 	}))
 }
 

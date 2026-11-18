@@ -5,6 +5,8 @@ package integration_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -314,7 +316,11 @@ func TestNativeAtlasNumberlessVersionBaselineAndRepair_FailurePath(t *testing.T)
 
 // TestNativeAtlasNumberlessVersionRepairHintE2E stops v1_x.sql after its first
 // statement, outside a transaction. The status hint names the repair by the
-// version the file spells, and that repair runs.
+// version the file spells, with the flag that selects the Atlas revision
+// table, and the repair it names runs as printed: without --revision-format
+// atlas it reads the Ptah revision table, which refuses the directory. The
+// directory carries atlas.sum, so the default directory format reads it as
+// Atlas files and the hint names no --dir-format.
 func TestNativeAtlasNumberlessVersionRepairHintE2E(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
@@ -322,19 +328,23 @@ func TestNativeAtlasNumberlessVersionRepairHintE2E(t *testing.T) {
 	c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(migrations, "1_a.sql"), []byte("CREATE TABLE t_a (id int);\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(migrations, "v1_x.sql"),
-		[]byte("-- atlas:txmode none\nCREATE TABLE t_x (id int);\nCREATE TABLE t_x (id int);\n"), 0o600), qt.IsNil)
+		[]byte("-- atlas:txmode none\nCREATE TABLE t_x (id int);\nINSERT INTO t_fix (id) VALUES (1);\n"), 0o600), qt.IsNil)
 	hash := compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables())("migrate", "hash", "--dir", "file://migrations")
 	c.Assert(hash.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", hash.Stderr))
 
 	up := nativePtah(c, dir, "migrations", "up")
 	status := nativePtah(c, dir, "migrations", "status")
-	repair := nativePtah(c, dir, "migrations", "repair", "--version", "v1", "--force")
+	sqliteExec(c, filepath.Join(dir, "app.db"), "CREATE TABLE t_fix (id int)")
+	printed := regexp.MustCompile(`'ptah (migrations repair [^']*)'`).FindStringSubmatch(status.Stdout)
+	c.Assert(printed, qt.HasLen, 2, qt.Commentf("stdout:\n%s", status.Stdout))
+	repair := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
+		append(strings.Fields(printed[1]), "--db-url", "sqlite://app.db", "--migrations-dir", "migrations")...)
 
 	c.Assert(up.ExitCode, qt.Not(qt.Equals), 0)
-	c.Assert(status.Stdout, qt.Contains,
-		"Run 'ptah migrations repair --version v1 --resume-from 2' to run the rest")
+	c.Assert(printed[1], qt.Equals,
+		"migrations repair --version v1 --resume-from 2 --revision-format atlas")
 	c.Assert(repair.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", repair.Stderr))
-	c.Assert(repair.Stdout, qt.Contains, "Updated migration v1 revision metadata; no migration SQL ran")
+	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, []string{"1", "v1"})
 }
 
 // TestNativeAtlasNumberlessVersionApplyFailure_FailurePath names a migration
@@ -441,4 +451,34 @@ func TestNativeAutoFormatOverAnAtlasSumRefusesANumberlessVersion_FailurePath(t *
 			c.Assert(sqliteTables(c, filepath.Join(dir, "app.db")), qt.Not(qt.Contains), "t_1_a")
 		})
 	}
+}
+
+// TestAtlasRemovedNumberlessFileStaysReadableE2E applies 1_a.sql and
+// v1_x.sql, removes v1_x.sql and rehashes. The row v1 names no file, and
+// status and a set to 1 read it without a numeric cast of v1, which a strict
+// dialect refuses: status names v1 as the current version, and the set removes
+// the row, as the pinned community binary v1.3.0 does on the same history.
+func TestAtlasRemovedNumberlessFileStaysReadableE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	compat := compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables())
+	nativeAtlasDirectory(c, dir)
+	c.Assert(os.Remove(filepath.Join(dir, "migrations", "2_b.sql")), qt.IsNil)
+	writeVersionOrderFiles(c, dir, compat, nil)
+	up := nativePtah(c, dir, "migrations", "up")
+	c.Assert(up.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", up.Stderr))
+	c.Assert(os.Remove(filepath.Join(dir, "migrations", "v1_x.sql")), qt.IsNil)
+	writeVersionOrderFiles(c, dir, compat, nil)
+
+	compatStatus := compat(append([]string{"migrate", "status"}, versionOrderTarget...)...)
+	nativeStatus := nativePtah(c, dir, "migrations", "status")
+	set := compat(append([]string{"migrate", "set", "1"}, versionOrderTarget...)...)
+
+	c.Assert(compatStatus.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", compatStatus.Stderr))
+	c.Assert(compatStatus.Stdout, qt.Contains, "  -- Current Version: v1\n")
+	c.Assert(nativeStatus.Stdout, qt.Contains, "Current Version: v1\n")
+	c.Assert(nativeStatus.Stdout, qt.Contains, "Missing Migration: version=v1 description=x ")
+	c.Assert(set.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", set.Stderr))
+	c.Assert(set.Stdout, qt.Equals, "Current version is 1 (1 removed):\n\n  - v1 (x)\n\n")
+	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, []string{"1"})
 }

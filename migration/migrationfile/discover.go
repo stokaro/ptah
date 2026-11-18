@@ -218,6 +218,9 @@ func refuseUnreadAtlasFiles(sqlFiles []string, atlasFiles []File) error {
 			continue
 		}
 		version, _, _ := strings.Cut(strings.TrimSuffix(path.Base(p), ".sql"), "_")
+		if _, err := ParseAtlasFileName(p); err != nil && strings.HasPrefix(version, ".") {
+			return err
+		}
 		unread = append(unread, fmt.Sprintf("%s (version %q)", p, version))
 	}
 	if len(unread) == 0 {

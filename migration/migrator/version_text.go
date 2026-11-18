@@ -38,12 +38,8 @@ func (v versionText) Format(f fmt.State, verb rune) {
 // versionText names version as [Migrator.VersionLabel] does, for a message
 // that prints it with %d.
 func (m *Migrator) versionText(version int64) versionText {
-	for _, migration := range m.numberlessMigrations() {
-		if migration.Version == version {
-			return versionText{number: version, label: migration.atlasRevisionVersion}
-		}
-	}
-	return versionText{number: version}
+	label, _ := m.versionLabel(version)
+	return versionText{number: version, label: label}
 }
 
 // numberlessLabels returns the version string of each Atlas file whose
