@@ -143,6 +143,7 @@ func runAtlasMigrateSet(
 		Dir:                       source.Display,
 		FS:                        migrationFS,
 		AtlasEnv:                  opts.atlasEnv,
+		MigrationsEngine:          migrationsEngineFromEnv(),
 		RevisionsSchema:           revisiontable.Schema(opts.revisionsSchema, opts.url),
 		RevisionVersions:          sourceVersions,
 		RevisionTypes:             linearity.revisionTypes,
