@@ -6,6 +6,7 @@ package migrateup
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"slices"
 	"testing"
@@ -311,4 +312,63 @@ func TestLockedDestructiveLintHookReadsTheTargetsGeneratedColumns_FailurePath(t 
 
 	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 DS102.*")
 	c.Assert(target.asked, qt.DeepEquals, []int64{2})
+}
+
+// storedThenRegeneratedFS makes total of orders a stored column in version 1,
+// and drops it and adds it back as generated in version 2.
+var storedThenRegeneratedFS = fstest.MapFS{
+	"0000000001_stored.up.sql": {
+		Data: []byte("ALTER TABLE orders ALTER COLUMN total DROP EXPRESSION;\n"),
+	},
+	"0000000002_total.up.sql": {
+		Data: []byte("ALTER TABLE orders DROP COLUMN total;\n" +
+			"ALTER TABLE orders ADD COLUMN total numeric GENERATED ALWAYS AS (price * qty) STORED;\n"),
+	},
+}
+
+// The target's columns are the state of the first pending version only: an
+// earlier pending version may change a column, as version 1 here makes total
+// stored, so version 2 is judged without them and refused.
+func TestLockedDestructiveLintHookReadsTheTargetsGeneratedColumnsForTheFirstVersion_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), storedThenRegeneratedFS, "postgres")
+	c.Assert(err, qt.IsNil)
+	target := &targetColumns{generated: true}
+	hook := lockedDestructiveLintHook(builtintest.Runtime(), storedThenRegeneratedFS, policy, "", target.read)
+
+	err = hook(context.Background(), migrator.MigrationPlan{Versions: []int64{1, 2}})
+
+	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 DS102.*")
+	c.Assert(target.asked, qt.DeepEquals, []int64{1})
+}
+
+// errTargetRead is the failure a target read reports.
+var errTargetRead = errors.New("connection reset")
+
+// A failed read of the target refuses the plan, naming the read, rather than
+// judging without it or letting the plan through.
+func TestLockedDestructiveLintHookRefusesWhenTheTargetReadFails_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), regeneratedTotalFS, "postgres")
+	c.Assert(err, qt.IsNil)
+	failing := func(context.Context, int64) ([]lintext.BaselineColumn, error) { return nil, errTargetRead }
+	hook := lockedDestructiveLintHook(builtintest.Runtime(), regeneratedTotalFS, policy, "", failing)
+
+	err = hook(context.Background(), migrator.MigrationPlan{Versions: []int64{2}})
+
+	c.Assert(err, qt.ErrorIs, errTargetRead)
+	c.Assert(err, qt.ErrorMatches, "error reading the generated columns of the target: connection reset")
+}
+
+// Where the target is not PostgreSQL the hook reads nothing, and the drop of a
+// column added back as generated stays refused.
+func TestLockedDestructiveLintHookWithoutATargetRead_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), regeneratedTotalFS, "postgres")
+	c.Assert(err, qt.IsNil)
+	hook := lockedDestructiveLintHook(builtintest.Runtime(), regeneratedTotalFS, policy, "", nil)
+
+	err = hook(context.Background(), migrator.MigrationPlan{Versions: []int64{2}})
+
+	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 DS102.*")
 }

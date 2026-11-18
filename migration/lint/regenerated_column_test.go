@@ -106,6 +106,17 @@ var regeneratedColumnRows = []struct {
 		want:     []string{"0000000002_change.up.sql:2:%s"},
 	},
 	{
+		name:     "a generated column after a read-only call in another schema",
+		second:   "SELECT evil.count(id) FROM accounts;\n" + dropCode + addCodeGenerated,
+		baseline: accountsCode(true),
+		want:     []string{"0000000002_change.up.sql:2:%s"},
+	},
+	{
+		name:     "a generated column after a read-only call in pg_catalog",
+		second:   "SELECT pg_catalog.count(id) FROM pg_catalog.pg_class;\n" + dropCode + addCodeGenerated,
+		baseline: accountsCode(true),
+	},
+	{
 		name:   "no starting state",
 		second: dropCode + addCodeGenerated,
 		want:   []string{"0000000002_change.up.sql:1:%s"},

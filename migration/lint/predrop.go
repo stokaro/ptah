@@ -576,12 +576,13 @@ func newColumnDrops(file *File) map[int]map[string]bool {
 //
 // Only the starting state can say the dropped column is generated
 // ([generatedAtStart]): the dev database replay's, or for a run with none the
-// generated columns a live database reports ([Options.GeneratedAtStart]). The same statements over a column that stores what
-// clients wrote turn it into a computed one and delete every value, so without
-// a state that shows it, or with a statement before the drop that may have
-// changed it, the drop stays a drop. An identity column, GENERATED ... AS
-// IDENTITY, is not added back as generated: its values come from a sequence,
-// and the add numbers the rows again.
+// generated columns a live database reports ([Options.GeneratedAtStart]).
+// The same statements over a column that stores what clients wrote turn it
+// into a computed one and delete every value, so without a state that shows
+// it, or with a statement before the drop that may have changed it, the drop
+// stays a drop. An identity column, GENERATED ... AS IDENTITY, is not added
+// back as generated: its values come from a sequence, and the add numbers the
+// rows again.
 //
 // The Atlas profile counts an add in the drop's own statement only. The
 // community binary reads a drop and an add of one column in one ALTER TABLE as
@@ -699,10 +700,16 @@ var readOnlyCalls = map[string]bool{
 }
 
 // callsOnlyReadOnly reports whether every identifier in w that an opening
-// parenthesis follows is in [readOnlyCalls].
+// parenthesis follows is in [readOnlyCalls], called by its bare name or as a
+// member of pg_catalog. A name qualified by any other schema may be a
+// function of the same name that changes the table.
 func callsOnlyReadOnly(w []string) bool {
 	for i := 0; i+1 < len(w); i++ {
-		if w[i+1] == "(" && lintkit.IdentLike(w[i]) && !readOnlyCalls[strings.ToLower(w[i])] {
+		if w[i+1] != "(" || !lintkit.IdentLike(w[i]) {
+			continue
+		}
+		qualified := i >= 2 && w[i-1] == "."
+		if !readOnlyCalls[strings.ToLower(w[i])] || qualified && !strings.EqualFold(w[i-2], "pg_catalog") {
 			return false
 		}
 	}
