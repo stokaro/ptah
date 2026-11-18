@@ -123,12 +123,16 @@ for the schema a new database already holds. The plan also keeps what that
 binary leaves out of its own: extensions, standalone sequences, row-level
 security policies and SQLite virtual tables.
 
-A read scoped with `--schema` holds the database's extensions as well, since an
-extension belongs to the database, not to a schema. The plan creates each one
-where it is installed: `--schema app` on a database with `pgcrypto` in `public`
-writes `CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "public"`, where
-the community binary writes no extension. Native
-`ptah schema inspect --format sql` writes the rendered schema instead.
+A read scoped to some schemas, by `--schema` or by a URL that names one, plans
+what those schemas hold. What belongs to the database rather than to a schema is
+left out: an extension installed in a schema outside the scope, and a grant on
+the database itself. One note on standard error names each of them. So
+`--schema app` on a database with `pgcrypto` in `public` writes no
+`CREATE EXTENSION`, as the community binary writes none, and the note names
+`pgcrypto`. An extension installed in a scoped schema is created with it, and a
+read of the whole database plans every extension and every grant on the
+database. Native `ptah schema inspect --format sql` writes the rendered schema
+instead.
 
 ## How to read green and red checks
 
