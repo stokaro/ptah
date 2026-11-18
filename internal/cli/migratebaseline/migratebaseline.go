@@ -420,9 +420,12 @@ func printDryRun(
 	if lockName.Explicit() {
 		fmt.Printf("Migration lock: %s\n", lockName.Value)
 	}
-	fmt.Printf("Baseline version: %d\n", version)
+	// The versions the files spell, as the run that writes the rows names
+	// them: in an Atlas directory keyed by file position the order key is a
+	// position, and 00_x.sql runs under 1.
+	fmt.Printf("Baseline version: %s\n", mig.VersionLabel(version))
 	fmt.Println("Rows:")
 	for _, migration := range rows {
-		fmt.Printf("- version=%d description=%q\n", migration.Version, migration.Description)
+		fmt.Printf("- version=%s description=%q\n", mig.VersionLabel(migration.Version), migration.Description)
 	}
 }

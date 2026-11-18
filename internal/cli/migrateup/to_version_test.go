@@ -236,7 +236,7 @@ func TestMigrateUpToVersion_FailurePath(t *testing.T) {
 
 		out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--to-version", "v2")
 
-		c.Assert(err, qt.ErrorMatches, `invalid --to-version "v2": a migration version is a number`, qt.Commentf("%s", out))
+		c.Assert(err, qt.ErrorMatches, `invalid --to-version "v2": no migration file carries version "v2"`, qt.Commentf("%s", out))
 		c.Assert(countRevisionTables(c, dbPath), qt.Equals, 0)
 	})
 

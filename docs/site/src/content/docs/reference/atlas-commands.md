@@ -817,7 +817,11 @@ interactive confirmation.
 
 `--to-tag` rolls back to the version a tag names. Tags are recorded with `ptah
 migrations tag` and live in the database beside the revisions, so resolving one
-contacts nothing:
+contacts nothing. A tag records a number, so a directory whose files run under
+their positions in file-name order, because a version such as `00` or `v1` is
+not a decimal number above zero, refuses `--to-tag`: there a number is a
+position, which moves when a file is added before it. Name the version the file
+spells with `--to-version` instead:
 
 ```bash
 ptah migrations tag release-v1 --db-url "$DATABASE_URL" --version 20260801000001

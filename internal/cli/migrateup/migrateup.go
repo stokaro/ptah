@@ -369,24 +369,41 @@ func parseMigrationSettings(opts options) (parsedMigrationSettings, error) {
 	}, nil
 }
 
-// parseToVersion reads the --to-version bound into the migrator's operand.
-//
-// An unset flag answers zero, which the migrator reads as "latest". A typed
-// zero is refused instead of being folded into that: `--to-version 0` names no
-// migration, and reading it as "apply everything" is the guess the bound exists
-// to remove.
-func parseToVersion(value string) (int64, error) {
+// refuseEmptyToVersion refuses a --to-version bound that names the empty
+// history before the command connects. `--to-version 0` names no migration,
+// and reading it as "apply everything" is the guess the bound exists to
+// remove. Only the literal 0 and a negative number are refused here: 00 is the
+// version string of 00_x.sql in an Atlas directory, so whether other text
+// names a migration is the directory's answer, read by [resolveToVersion].
+func refuseEmptyToVersion(value string) error {
+	if version, err := strconv.ParseInt(value, 10, 64); err == nil && (version < 0 || value == "0") {
+		return toVersionNamesNoMigration(value)
+	}
+	return nil
+}
+
+// resolveToVersion reads the --to-version bound into the order key the
+// migrator compares with, through the directory the migrator read: 2 names
+// 2_x.sql, and in an Atlas directory keyed by file position that file's
+// position, never the second file. An unset flag answers zero, which the
+// migrator reads as "latest", and text that resolves to the empty history is
+// refused rather than folded into that.
+func resolveToVersion(mig *migrator.Migrator, value string) (int64, error) {
 	if value == "" {
 		return 0, nil
 	}
-	version, err := strconv.ParseInt(value, 10, 64)
+	version, err := mig.ResolveVersion(value)
 	if err != nil {
-		return 0, fmt.Errorf("invalid --%s %q: a migration version is a number", toVersionFlag, value)
+		return 0, fmt.Errorf("invalid --%s %q: %w", toVersionFlag, value, err)
 	}
 	if version <= 0 {
-		return 0, fmt.Errorf("invalid --%s %q: a migration version is greater than zero", toVersionFlag, value)
+		return 0, toVersionNamesNoMigration(value)
 	}
 	return version, nil
+}
+
+func toVersionNamesNoMigration(value string) error {
+	return fmt.Errorf("invalid --%s %q: a migration version is greater than zero", toVersionFlag, value)
 }
 
 // resolveProjectOptions merges the project config under the flags. The run's
@@ -568,8 +585,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	if err != nil {
 		return err
 	}
-	toVersion, err := parseToVersion(resolvedOpts.toVersion)
-	if err != nil {
+	if err := refuseEmptyToVersion(resolvedOpts.toVersion); err != nil {
 		return err
 	}
 	source, err := migrationsource.Resolve(cmd.Context(), migrationsDir, migrationsource.Options{
@@ -656,6 +672,10 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 		return err
 	}
 	document.Migrator = mig
+	toVersion, err := resolveToVersion(mig, resolvedOpts.toVersion)
+	if err != nil {
+		return err
+	}
 
 	drift, releaseShadow, err := prepareDriftCheck(cmd, resolvedOpts, projectCfg, dbURL, settings, conn, mig)
 	if err != nil {
