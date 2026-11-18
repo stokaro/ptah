@@ -82,6 +82,7 @@ speaks contract 25.43. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.42.0` | 25.43 |
 | `provider-sdk/v0.41.0` | 25.42 |
 | `provider-sdk/v0.40.0` | 25.41 |
 | `provider-sdk/v0.39.0` | 25.41 |
