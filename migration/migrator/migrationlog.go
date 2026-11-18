@@ -347,22 +347,6 @@ func (m *Migrator) MigrationLogTableIdentifier() string {
 	return m.migrationLogTable()
 }
 
-// migrationLogObjectName is the name SQL Server's OBJECT_ID probe takes.
-//
-// The suffix goes on the bare table name and the schema is applied after, the
-// same way [Migrator.migrationLogTable] builds the identifier. Appending to
-// the already-qualified name would make the guard probe
-// `[dbo].[schema_migrations]_log` while the DDL creates
-// `[dbo].[schema_migrations_log]`, so the guard would never find the table it
-// created and every later initialization would try to create it again.
-func (m *Migrator) migrationLogObjectName() string {
-	table := m.quoteIdentifier(m.migrationsTableName() + migrationLogTableSuffix)
-	if schema := m.metadataTableSchemaName(); schema != "" {
-		return m.quoteIdentifier(schema) + "." + table
-	}
-	return table
-}
-
 // ptahMigrationLogDDL is the log table, in the spelling the engine's revision
 // table states.
 func ptahMigrationLogDDL(dialect, qualifiedTable, objectLiteral, engine string) string {
@@ -379,7 +363,7 @@ func (m *Migrator) createMigrationLogTableSQL() string {
 	return ptahMigrationLogDDL(
 		m.connectionDialect(),
 		m.migrationLogTable(),
-		sqlStringLiteral(m.migrationLogObjectName()),
+		sqlStringLiteral(m.metadataObjectName(m.migrationsTableName()+migrationLogTableSuffix)),
 		m.migrationsEngine,
 	)
 }
