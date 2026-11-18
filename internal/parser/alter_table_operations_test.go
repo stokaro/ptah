@@ -158,6 +158,7 @@ func TestParse_AlterColumnSetDefault(t *testing.T) {
 		{name: "a string", sql: "ALTER TABLE t ALTER COLUMN a SET DEFAULT 'x';", wantValue: "'x'"},
 		{name: "a function", sql: "ALTER TABLE t ALTER COLUMN a SET DEFAULT now();", wantExpression: "now()"},
 		{name: "a function with arguments", sql: "ALTER TABLE t ALTER COLUMN a SET DEFAULT nextval('s'::regclass);", wantExpression: "nextval('s'::regclass)"},
+		{name: "a parenthesized expression", sql: "ALTER TABLE t ALTER COLUMN a SET DEFAULT ('X-'::text || (gen_random_uuid())::text);", wantExpression: "('X-'::text || (gen_random_uuid())::text)"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

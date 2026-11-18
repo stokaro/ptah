@@ -3880,6 +3880,18 @@ func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
 func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	p.skipWhitespace()
 
+	if p.current.MatchOperatorValue("(") {
+		start := p.current.Start
+		body, err := p.collectParenthesizedBody("DEFAULT expression")
+		if err != nil {
+			return nil, err
+		}
+		if body == "" {
+			return nil, ptaherr.At(start, fmt.Errorf("empty DEFAULT expression"))
+		}
+		return p.extendDefaultExpression(&ast.DefaultValue{Expression: p.input[start:p.previous.End]}), nil
+	}
+
 	var value *ast.DefaultValue
 	var err error
 	switch p.current.Type {
