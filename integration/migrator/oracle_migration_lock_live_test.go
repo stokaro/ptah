@@ -104,8 +104,11 @@ const lockWaiters = `SELECT COUNT(DISTINCT s.sid) FROM v$session s JOIN v$sql q 
 WHERE s.username = :1 AND q.sql_text LIKE 'SELECT name FROM ptah_locks%'`
 
 // blockedSessions counts the sessions of the account that wait for a row
-// another transaction holds.
-const blockedSessions = `SELECT COUNT(*) FROM v$session WHERE username = :1 AND blocking_session IS NOT NULL`
+// another transaction holds. The event is what says so: Oracle sets
+// blocking_session for other waits too, and a commit waiting for the log
+// writer ("log file sync") names LGWR there. Counting that wait lets a test
+// release the row before the run has reached the statement that waits for it.
+const blockedSessions = `SELECT COUNT(*) FROM v$session WHERE username = :1 AND event = 'enq: TX - row lock contention'`
 
 // oracleRevisionTable is the migrator's revision table as a statement names
 // it: the migrator quotes the name, which keeps it lower case.
