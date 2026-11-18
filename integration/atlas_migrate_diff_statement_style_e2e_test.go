@@ -287,20 +287,45 @@ type migrationPair struct {
 	Up, Down string
 }
 
+// readMigrationPairs reads the golang-migrate files in dir, each up file
+// beside the down file of the same step name. The pair is found by its name
+// after the version rather than by the up file's version, because the
+// community binary stamps each file of a pair with the clock it reads when it
+// names that file: a step that runs across a second boundary writes
+// 20261118140451_s1.up.sql beside 20261118140452_s1.down.sql.
 func readMigrationPairs(c *qt.C, dir string) []migrationPair {
 	c.Helper()
 	ups, err := filepath.Glob(filepath.Join(dir, "*.up.sql"))
 	c.Assert(err, qt.IsNil)
+	downs, err := filepath.Glob(filepath.Join(dir, "*.down.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(downs, qt.HasLen, len(ups))
+	downOf := make(map[string]string, len(downs))
+	for _, down := range downs {
+		downOf[migrationStepName(c, down, ".down.sql")] = down
+	}
+	c.Assert(downOf, qt.HasLen, len(downs))
 	slices.Sort(ups)
 	pairs := make([]migrationPair, 0, len(ups))
 	for _, up := range ups {
 		upSQL, err := os.ReadFile(up)
 		c.Assert(err, qt.IsNil)
-		downSQL, err := os.ReadFile(strings.TrimSuffix(up, ".up.sql") + ".down.sql")
+		down, found := downOf[migrationStepName(c, up, ".up.sql")]
+		c.Assert(found, qt.IsTrue, qt.Commentf("no down file for %s", up))
+		downSQL, err := os.ReadFile(down)
 		c.Assert(err, qt.IsNil)
 		pairs = append(pairs, migrationPair{Up: string(upSQL), Down: string(downSQL)})
 	}
 	return pairs
+}
+
+// migrationStepName is the name a golang-migrate file carries after its
+// version and before suffix.
+func migrationStepName(c *qt.C, path, suffix string) string {
+	c.Helper()
+	_, name, found := strings.Cut(strings.TrimSuffix(filepath.Base(path), suffix), "_")
+	c.Assert(found, qt.IsTrue, qt.Commentf("%s has no version", path))
+	return name
 }
 
 // wantPairs is the files steps are expected to write, the first step's
