@@ -164,8 +164,15 @@ type rowLock struct{}
 // lock name without its row has never been taken in this schema, so there is
 // nobody to wait for, and the preview goes on holding nothing.
 //
-// The timeout bounds the creation of the row too, which can wait for another
-// session's lock on the table.
+// The row's creation runs under the timeout's context too, but nothing on the
+// server bounds it. Oracle has no wait bound for an INSERT, which meets
+// another session's uncommitted INSERT of the same name by waiting for that
+// session's transaction to end, and an ended context does not end the call:
+// measured on 23.26 through go-ora, a request under NoWait whose caller
+// context ends after 30 seconds is still waiting after three minutes, with
+// DISABLE_OOB=ON and without it. Ptah's own sessions commit the row in the
+// call that inserts it, so only a session outside Ptah holding an uncommitted
+// INSERT into the lock table makes a first acquisition wait.
 func (rowLock) Acquire(ctx context.Context, session dblockext.Session, request dblockext.Request) error {
 	lockCtx := ctx
 	var cancel context.CancelFunc

@@ -344,19 +344,35 @@ in another account's schema need only `SELECT`, `INSERT`, `UPDATE` and
 `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1`, as described in
 [Maintain migration history](../../versioned/maintain-history/).
 
-Do not name a table of your own `ptah_locks` on Oracle. Schema reads leave that
-name out, as they leave out the revision table, so `schema diff` and `schema
-apply` never see the table, the lock fails when its columns are not the ones
-Ptah creates, and `db drop-all` drops it with the rest.
+Do not name a table of your own `ptah_locks` on Oracle. Schema reads leave out
+the table as the lock creates it, unquoted, which Oracle stores as
+`PTAH_LOCKS`, as they leave out the revision table. So `schema diff` and
+`schema apply` never see a table of that name, the lock fails when its columns
+are not the ones Ptah creates, and `db drop-all` drops it with the rest.
 
 The rows are never deleted, and a row holds no state of its own: only the lock
 on it does, and the lock ends with the session's transaction. A run that
 crashes leaves its row behind, unlocked once the server ends the session, and
 the next run takes the lock. The lock session runs nothing but pings and the
-lock statement, so it is idle when its client dies, and the server notices at
-once: one second after the client of an idle holder was killed with `SIGKILL`,
-another session locked the row. A held row cannot outlive the session that
-holds it.
+lock statement, so it is idle when its client dies. When the client's host
+closes the connection, the server notices at once: one second after the client
+of an idle holder was killed with `SIGKILL` on its own host, another session
+locked the row.
+
+A host that fails, or a network partition, closes nothing, and the session
+keeps the row until the server's dead connection detection notices, which
+`SQLNET.EXPIRE_TIME` in the server's `sqlnet.ora` configures. A waiting run
+waits without end unless `--migration-lock-timeout` bounds it, so set one where
+a run must not wait that long. A held row cannot outlive the session that holds
+it.
+
+The first time a lock name is taken, Ptah inserts its row, and Oracle makes
+that INSERT wait for another session's uncommitted INSERT of the same name.
+Neither `--migration-lock-timeout` nor a run that does not wait ends that wait:
+Oracle bounds no INSERT, and a canceled call does not stop the server's wait.
+Ptah's own runs commit the row in the call that inserts it, so only a session
+outside Ptah that inserts into `ptah_locks` without committing can hold a run
+there.
 
 Oracle commits every schema statement, and a commit gives a row lock back. So
 the lock lives on a database session of its own that runs nothing else, and
