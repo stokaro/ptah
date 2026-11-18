@@ -304,3 +304,23 @@ func TestPlanner_GeneratedColumnRebuild_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// A collation change is made by the TYPE clause too, and PostgreSQL refuses it
+// alike while a generated column reads the column ("cannot alter type of a
+// column used by a generated column"), so the plan rebuilds the generated
+// column around it.
+func TestPlanner_GeneratedColumnRebuildAroundACollationChange_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := pricesRetype(nil, nil, []string{"id", "nickname", "search_vector"}, nil)
+	modified := &diff.TablesModified[0].ColumnsModified[0]
+	modified.Changes = map[string]string{"collation": " -> C"}
+	modified.Desired.Type, modified.Desired.Collate = "varchar(40)", "C"
+
+	sql, err := planPrices(c, platform.Postgres, diff)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "-- Rebuild generated column public.prices.search_vector around the type change of nickname\n")
+	c.Assert(sql, qt.Contains, "ALTER TABLE \"public\".\"prices\" DROP COLUMN \"search_vector\";\n")
+	c.Assert(sql, qt.Contains, "ALTER TABLE \"public\".\"prices\" ALTER COLUMN \"nickname\" TYPE varchar(40) COLLATE \"C\";\n")
+	c.Assert(strings.Index(sql, "DROP COLUMN \"search_vector\"") < strings.Index(sql, "COLLATE \"C\""), qt.IsTrue)
+}

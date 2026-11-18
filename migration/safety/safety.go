@@ -888,6 +888,9 @@ func classifyModifyColumn(op *ast.ModifyColumnOperation) (Severity, string) {
 	if op.HasChanged && op.Changed.Default && !op.Changed.Type && !op.Changed.Nullability {
 		return classifyDefaultChange(op.Column)
 	}
+	if op.HasChanged && op.Changed == (ast.ColumnProperties{Collation: true}) {
+		return Warning, "the collation change rebuilds every index on the column and changes how its values sort and compare"
+	}
 	return Warning, "column modification needs manual review"
 }
 

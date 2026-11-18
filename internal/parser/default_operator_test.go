@@ -45,7 +45,7 @@ var defaultOperatorRows = []struct {
 	},
 	{
 		name: "concatenation, then COLLATE", column: `s text DEFAULT 'a' || 'b' COLLATE "C"`,
-		wantExpression: "'a' || 'b'", wantNullable: true, wantCollate: `"C"`,
+		wantExpression: "'a' || 'b'", wantNullable: true, wantCollate: "C",
 	},
 	{
 		name: "modulo, then CHECK", column: "n int DEFAULT 5 % 2 CHECK (n >= 0)",

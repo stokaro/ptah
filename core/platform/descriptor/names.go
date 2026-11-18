@@ -152,6 +152,11 @@ type Columns struct {
 	// changes its type, nullability and collation and keeps the rest of the
 	// column as it was.
 	AlterColumnKeepsRest bool `json:"alter_column_keeps_rest,omitempty"`
+	// Collations reports that a column's own collation is written on the
+	// column and compared with the one the catalog reports the column
+	// declaring. A column that declares none takes its type's collation, so
+	// one the catalog reports declaring a collation is changed back.
+	Collations bool `json:"collations,omitempty"`
 }
 
 // Statements states how a server reads statements a schema file writes about

@@ -694,6 +694,30 @@ func (r *Reader) columnCommentExpr() string {
 	return "COALESCE(col_description(cls.oid, a.attnum), '') AS column_comment"
 }
 
+// declaredCollationExpr projects the collation a column declares, empty for one
+// it takes from its type. attcollation equals typcollation exactly when the
+// column inherits.
+//
+// On a target whose descriptor states Columns.Collations the comparison reads
+// the value, so it is the spelling [pgcollation.Name.Model] writes: the name
+// for a collation of pg_catalog, and the schema and the name, each quoted, for
+// one of another schema, since two schemas may each hold a collation of one
+// name. Every other target keeps the bare name information_schema reports.
+func (r *Reader) declaredCollationExpr() string {
+	inherited := `WHEN a.attcollation <> 0 AND a.attcollation = coltype.typcollation THEN ''`
+	bare := `COALESCE(col.collation_name, attcoll.collname, '')`
+	described, _ := platform.Lookup(r.dialect)
+	if !described.Columns.Collations {
+		return "CASE " + inherited + " ELSE " + bare + " END"
+	}
+	quoted := func(name string) string { return `'"' || replace(` + name + `, '"', '""') || '"'` }
+	return "CASE " + inherited +
+		` WHEN attcollns.nspname IS NOT NULL AND attcollns.nspname <> 'pg_catalog' THEN ` +
+		quoted("attcollns.nspname") + ` || '.' || ` + quoted("attcoll.collname") +
+		` WHEN strpos(` + bare + `, '"') > 0 THEN ` + quoted(bare) +
+		" ELSE " + bare + " END"
+}
+
 // notNullConstraintNameExpr reads the name PostgreSQL 18 keeps for a column's
 // NOT NULL.
 //
@@ -973,10 +997,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			-- that carries another one declares "default", which
 			-- information_schema hides. CockroachDB fills both the same way.
 			-- A zero attcollation is a type with no collation.
-			CASE
-				WHEN a.attcollation <> 0 AND a.attcollation = coltype.typcollation THEN ''
-				ELSE COALESCE(col.collation_name, attcoll.collname, '')
-			END AS declared_collation,
+			` + r.declaredCollationExpr() + ` AS declared_collation,
 			-- The collation the column compares with, declared or inherited,
 			-- empty for the database default. A migration linter compares it
 			-- with an ALTER COLUMN ... TYPE ... COLLATE clause: a restated
@@ -1005,6 +1026,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 		LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
 		LEFT JOIN pg_type coltype ON coltype.oid = a.atttypid
 		LEFT JOIN pg_collation attcoll ON attcoll.oid = a.attcollation
+		LEFT JOIN pg_namespace attcollns ON attcollns.oid = attcoll.collnamespace
 		WHERE col.table_schema = $1
 		AND col.table_name NOT IN (` + revisiontable.NativeSQLNames + `)
 		` + r.hiddenColumnFilter() + `

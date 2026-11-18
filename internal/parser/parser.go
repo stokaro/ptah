@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/nullsdistinct"
+	"ptah.run/internal/pgcollation"
 	routinebuiltin "ptah.run/internal/routineext/builtin"
 	"ptah.run/internal/routineext/compound"
 	"ptah.run/internal/sourcepos"
@@ -2929,6 +2930,9 @@ func (p *Parser) handleCollate(column *ast.ColumnNode) error {
 	p.advance()
 	p.skipWhitespace()
 
+	if p.target.collations {
+		return p.readCollationName(column)
+	}
 	var collation string
 	switch p.current.Type {
 	case lexer.TokenString:
@@ -2945,6 +2949,25 @@ func (p *Parser) handleCollate(column *ast.ColumnNode) error {
 
 	column.Collate = collation
 
+	return nil
+}
+
+// readCollationName reads the collation a column names on a dialect whose
+// descriptor states Columns.Collations, as the server reads it: a name or a
+// schema and a name, each an identifier, an unquoted one folded to lower case.
+// A string constant names no collation there; PostgreSQL 17 answers `COLLATE
+// 'C'` with a syntax error.
+func (p *Parser) readCollationName(column *ast.ColumnNode) error {
+	start := p.current.Start
+	parts, err := p.parseIdentifierParts("collation name")
+	if err != nil {
+		return err
+	}
+	name, err := pgcollation.FromWritten(parts...)
+	if err != nil {
+		return ptaherr.At(start, err)
+	}
+	column.Collate = name.Model()
 	return nil
 }
 

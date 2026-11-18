@@ -46,6 +46,8 @@ func collationsOf(c *qt.C, schema *catalog.Database, table string) map[string]co
 // keeps in pg_attribute.attcollation beside pg_type.typcollation. Only
 // COLLATE "default" restates the database default: a collation built from
 // the database's own locale is another catalog row, so naming it declares.
+// A declared collation outside pg_catalog is read with its schema, each part
+// quoted, since another schema may hold a collation of the same name.
 func TestPostgresLiveColumnCollation_ReportsOnlyADeclaredCollation(t *testing.T) {
 	c := qt.New(t)
 	conn, schemaName := newFormsSchema(c)
@@ -91,7 +93,10 @@ CREATE TABLE "%[1]s".t (
 		"counted":          {},
 		"named":            {Effective: "C"},
 		"named_restated":   {Effective: "C"},
-		"same_as_default":  {Declared: "same_as_default", Effective: "same_as_default"},
+		"same_as_default": {
+			Declared:  fmt.Sprintf(`"%s"."same_as_default"`, schemaName),
+			Effective: "same_as_default",
+		},
 	})
 }
 
