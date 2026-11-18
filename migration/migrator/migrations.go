@@ -691,21 +691,25 @@ type Migration struct {
 	atlasRevisionVersionMapped bool
 	atlasRevisionType          AtlasRevisionType
 	atlasRepeatable            bool
-	atlasOrderKey              string
-	atlasSumContributions      []atlasSumContribution
-	revisionDescription        string
-	hasRevisionDescription     bool
-	Up                         MigrationFunc
-	Down                       MigrationFunc
-	UpSQL                      string
-	DownSQL                    string
-	UpTimeouts                 migrationfile.Timeouts
-	DownTimeouts               migrationfile.Timeouts
-	upParsedTimeouts           migrationfile.Timeouts
-	downParsedTimeouts         migrationfile.Timeouts
-	upTimeoutsFromSQL          bool
-	downTimeoutsFromSQL        bool
-	downUnavailable            bool
+	// atlasNumberless marks an Atlas file whose version carries no number,
+	// such as v1_x.sql or R__view.sql: Version is an order key the provider
+	// gave it, which no file name spells.
+	atlasNumberless        bool
+	atlasOrderKey          string
+	atlasSumContributions  []atlasSumContribution
+	revisionDescription    string
+	hasRevisionDescription bool
+	Up                     MigrationFunc
+	Down                   MigrationFunc
+	UpSQL                  string
+	DownSQL                string
+	UpTimeouts             migrationfile.Timeouts
+	DownTimeouts           migrationfile.Timeouts
+	upParsedTimeouts       migrationfile.Timeouts
+	downParsedTimeouts     migrationfile.Timeouts
+	upTimeoutsFromSQL      bool
+	downTimeoutsFromSQL    bool
+	downUnavailable        bool
 	// UpTxMode is the up file's explicit transaction mode. The zero value uses
 	// the migrator's global mode. File and none override global file or none;
 	// any explicit file mode conflicts with global all.

@@ -672,6 +672,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	report := &planReport{
 		emit:      emit,
 		opts:      opts,
+		mig:       mig,
 		settings:  settings,
 		status:    status,
 		onlineCfg: onlineCfg,
@@ -780,7 +781,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	})
 
 	if !opts.jsonOutput {
-		emitMigrateUpSummary(emit, opts, outcome)
+		emitMigrateUpSummary(emit, opts, mig, outcome)
 		emitMigrateUpDeferredChecks(emit, checksDeferred)
 	}
 	return nil
@@ -850,8 +851,11 @@ func connectTarget(
 // it is connected, which directory it read, and what that directory holds
 // against the recorded history.
 type planReport struct {
-	emit      cliobs.Emitter
-	opts      *options
+	emit cliobs.Emitter
+	opts *options
+	// mig names each version as a person reads it: an Atlas file whose
+	// version is not a number runs under an order key no file name spells.
+	mig       *migrator.Migrator
 	settings  parsedMigrationSettings
 	status    *migrator.MigrationStatus
 	onlineCfg projectconfig.OnlineDDLConfig
@@ -893,16 +897,16 @@ func (r *planReport) write() {
 	if r.onlineCfg.Enabled() {
 		r.emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", r.onlineCfg.Tool, r.onlineCfg.ThresholdRows)
 	}
-	r.emit.Printf("Current version: %d\n", r.status.CurrentVersion)
+	r.emit.Printf("Current version: %s\n", r.mig.VersionLabel(r.status.CurrentVersion))
 	r.emit.Printf("Total migrations: %d\n", r.status.TotalMigrations)
 	r.emit.Printf("Pending migrations: %d\n", len(r.status.PendingMigrations))
 	if len(r.status.OutOfOrderMigrations) > 0 {
-		r.emit.Printf("Out-of-order migrations: %v\n", r.status.OutOfOrderMigrations)
+		r.emit.Printf("Out-of-order migrations: %v\n", r.mig.VersionLabels(r.status.OutOfOrderMigrations))
 	}
 	if r.opts.verbose {
-		r.emit.Printf("Pending migration versions: %v\n", r.status.PendingMigrations)
+		r.emit.Printf("Pending migration versions: %v\n", r.mig.VersionLabels(r.status.PendingMigrations))
 		if len(r.status.OutOfOrderMigrations) > 0 {
-			r.emit.Printf("Out-of-order migration versions: %v\n", r.status.OutOfOrderMigrations)
+			r.emit.Printf("Out-of-order migration versions: %v\n", r.mig.VersionLabels(r.status.OutOfOrderMigrations))
 		}
 	}
 	writeRepeatableStatus(r.emit, r.status.Repeatables)
@@ -1231,7 +1235,7 @@ func emitMigrateUpDeferredChecks(emit cliobs.Emitter, versions []int64) {
 // the count the same way they narrow the work. Recomputing it from the pending
 // list read before the lock would name migrations the run had already decided
 // to leave alone.
-func emitMigrateUpSummary(emit cliobs.Emitter, opts *options, outcome migrateUpOutcome) {
+func emitMigrateUpSummary(emit cliobs.Emitter, opts *options, mig *migrator.Migrator, outcome migrateUpOutcome) {
 	emit.Println()
 	if opts.dryRun {
 		emit.Println("✅ Dry run completed successfully!")
@@ -1243,7 +1247,7 @@ func emitMigrateUpSummary(emit cliobs.Emitter, opts *options, outcome migrateUpO
 		return
 	}
 	emit.Println("✅ Migrations completed successfully!")
-	emit.Printf("Database is now at version: %d\n", outcome.status.CurrentVersion)
+	emit.Printf("Database is now at version: %s\n", mig.VersionLabel(outcome.status.CurrentVersion))
 	if repeatables := outcome.selectedRepeatables(); len(repeatables) > 0 {
 		emit.Printf("Ran %d repeatable migrations:\n", len(repeatables))
 		writeRepeatableWork(emit, repeatables)

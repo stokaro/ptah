@@ -459,7 +459,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	emit.Printf("Schema: %s\n", conn.Info().Schema)
 	emit.Println()
 
-	emit.Printf("Current Version: %d\n", status.CurrentVersion)
+	emit.Printf("Current Version: %s\n", mig.VersionLabel(status.CurrentVersion))
 	emit.Printf("Total Migrations: %d\n", status.TotalMigrations)
 	emit.Printf("Applied Migrations: %d\n", len(status.AppliedMigrations))
 	emit.Printf("Pending Migrations: %d\n", len(status.PendingMigrations))
@@ -469,8 +469,8 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 	if status.DirtyRevision != nil {
 		emit.Println("Status: ❌ Dirty migration state detected")
 		emit.Printf(
-			"Dirty Migration: version=%d state=%s direction=%s applied=%d/%d\n",
-			status.DirtyRevision.Version,
+			"Dirty Migration: version=%s state=%s direction=%s applied=%d/%d\n",
+			mig.VersionLabel(status.DirtyRevision.Version),
 			status.DirtyRevision.State,
 			status.DirtyRevision.Direction,
 			status.DirtyRevision.Applied,
@@ -538,13 +538,13 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 		if verbose && len(status.PendingMigrations) > 0 {
 			emit.Println("\nPending migration versions:")
 			for _, version := range status.PendingMigrations {
-				emit.Printf("  - %d\n", version)
+				emit.Printf("  - %s\n", mig.VersionLabel(version))
 			}
 		}
 		if verbose && len(status.OutOfOrderMigrations) > 0 {
 			emit.Println("\nOut-of-order migration versions:")
 			for _, version := range status.OutOfOrderMigrations {
-				emit.Printf("  - %d\n", version)
+				emit.Printf("  - %s\n", mig.VersionLabel(version))
 			}
 		}
 
@@ -562,7 +562,7 @@ func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *db
 			emit.Printf("Applied migrations: %d\n", len(status.AppliedMigrations))
 
 			if len(status.PendingMigrations) > 0 {
-				emit.Printf("Next migration to apply: %d\n", status.PendingMigrations[0])
+				emit.Printf("Next migration to apply: %s\n", mig.VersionLabel(status.PendingMigrations[0]))
 			}
 		}
 	}

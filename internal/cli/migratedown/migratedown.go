@@ -484,12 +484,8 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 	if migrationsDir == "" {
 		return dbcli.MissingProjectValue(projectCfg, fmt.Errorf("migrations directory is required"))
 	}
-	targetVersion, err := strconv.ParseInt(targetVersionValue, 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid target version %q: %w", targetVersionValue, err)
-	}
-	if targetVersion < 0 {
-		return fmt.Errorf("target version must be >= 0")
+	if err := refuseMalformedTarget(targetVersionValue); err != nil {
+		return err
 	}
 
 	dirFormat, err := migrationfile.ParseDirFormat(resolvedOpts.dirFormat)
@@ -578,6 +574,10 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		return err
 	}
 	document.Migrator = mig
+	targetVersion, err := mig.ResolveVersion(targetVersionValue)
+	if err != nil {
+		return fmt.Errorf("invalid target version %q: %w", targetVersionValue, err)
+	}
 
 	// Before the lock, so a run that waits for it has said which lock it waits
 	// for.
@@ -623,7 +623,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 				return err
 			}
 		}
-		emit.Printf("Target version: %d\n", targetVersion)
+		emit.Printf("Target version: %s\n", mig.VersionLabel(targetVersion))
 		emit.Println()
 
 		status, err := rollbackStatus(cmd.Context(), mig, emit, conn.Info().Dialect)
@@ -657,7 +657,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 		// Calculate which migrations will be rolled back
 		migrationsToRollback := versionsAboveTarget(appliedMigrations, targetVersion)
 
-		emitRollbackPlan(emit, opts, status.CurrentVersion, targetVersion, migrationsToRollback)
+		emitRollbackPlan(emit, opts, mig, status.CurrentVersion, targetVersion, migrationsToRollback)
 
 		// --plan takes the dev database for itself: it builds the target schema
 		// there to derive the plan from. Verifying a file-based rollback on it
@@ -719,7 +719,11 @@ func migrateDownCommand(cmd *cobra.Command, opts *options, document *migraterun.
 // then takes the lock again and rolls back what run selected, rechecking under
 // the lock that it is still what the prompt showed.
 func confirmAndRollBack(cmd *cobra.Command, run rollbackRun) error {
-	ok, err := confirmRollbackPrompt(cmd, run.opts, run.currentVersion, run.inputs.targetVersion, run.selected)
+	ok, err := confirmRollbackPrompt(cmd, run.opts, rollbackSpan{
+		current: run.migrator.VersionLabel(run.currentVersion),
+		target:  run.migrator.VersionLabel(run.inputs.targetVersion),
+		rolled:  run.migrator.VersionLabels(run.selected),
+	})
 	if err != nil || !ok {
 		return err
 	}
@@ -933,7 +937,7 @@ func (rr *rollbackReport) finish(runErr error) error {
 		return fmt.Errorf("error getting final migration status: %w", rr.statusErr)
 	}
 
-	emitMigrateDownSummary(emit, opts, r.inputs.targetVersion, r.selected, rr.finalStatus)
+	emitMigrateDownSummary(emit, opts, r.migrator, r.inputs.targetVersion, r.selected, rr.finalStatus)
 
 	return nil
 }
@@ -959,10 +963,26 @@ func humanOutput(cmd *cobra.Command, opts *options) io.Writer {
 	return cmd.OutOrStdout()
 }
 
+// refuseMalformedTarget refuses a --target no directory can name before the
+// command connects: an empty one, a number out of range and a negative number.
+// Any other text names an Atlas file whose version is not a number, such as v1,
+// and the migrator resolves it once it has read the directory.
+func refuseMalformedTarget(value string) error {
+	version, err := strconv.ParseInt(value, 10, 64)
+	if err != nil && (value == "" || errors.Is(err, strconv.ErrRange)) {
+		return fmt.Errorf("invalid target version %q: %w", value, err)
+	}
+	if version < 0 {
+		return fmt.Errorf("target version must be >= 0")
+	}
+	return nil
+}
+
 // emitMigrateDownSummary says how the rollback ended.
 func emitMigrateDownSummary(
 	emit cliobs.Emitter,
 	opts *options,
+	mig *migrator.Migrator,
 	targetVersion int64,
 	migrationsToRollback []int64,
 	finalStatus *migrator.MigrationStatus,
@@ -970,14 +990,14 @@ func emitMigrateDownSummary(
 	emit.Println()
 	if opts.dryRun {
 		emit.Println("✅ Dry run completed successfully!")
-		emit.Printf("Would have rolled back to version: %d\n", targetVersion)
+		emit.Printf("Would have rolled back to version: %s\n", mig.VersionLabel(targetVersion))
 		if len(migrationsToRollback) > 0 {
-			emit.Printf("Would have rolled back these migrations: %v\n", migrationsToRollback)
+			emit.Printf("Would have rolled back these migrations: %v\n", mig.VersionLabels(migrationsToRollback))
 		}
 		return
 	}
 	emit.Println("✅ Migration rollback completed successfully!")
-	emit.Printf("Database is now at version: %d\n", finalStatus.CurrentVersion)
+	emit.Printf("Database is now at version: %s\n", mig.VersionLabel(finalStatus.CurrentVersion))
 }
 
 // emitLostLogEntries tells a person that the migration log did not get
@@ -1064,14 +1084,15 @@ func versionsAboveTarget(appliedMigrations []int64, targetVersion int64) []int64
 func emitRollbackPlan(
 	emit cliobs.Emitter,
 	opts *options,
+	mig *migrator.Migrator,
 	currentVersion, targetVersion int64,
 	versions []int64,
 ) {
 	emit.Printf("Migrations to roll back: %d\n", len(versions))
 	if opts.verbose {
-		emit.Printf("Will roll back from version %d to %d\n", currentVersion, targetVersion)
+		emit.Printf("Will roll back from version %s to %s\n", mig.VersionLabel(currentVersion), mig.VersionLabel(targetVersion))
 		if len(versions) > 0 {
-			emit.Printf("Specific migrations to rollback: %v\n", versions)
+			emit.Printf("Specific migrations to rollback: %v\n", mig.VersionLabels(versions))
 		}
 	}
 	emit.Println()
@@ -1109,7 +1130,7 @@ func rollbackStatus(
 	if err != nil {
 		return nil, fmt.Errorf("error getting migration status: %w", err)
 	}
-	emit.Printf("Current version: %d\n", status.CurrentVersion)
+	emit.Printf("Current version: %s\n", mig.VersionLabel(status.CurrentVersion))
 	emit.Printf("Total migrations: %d\n", status.TotalMigrations)
 
 	err = mig.RefuseDirtyRevision(ctx)
@@ -1151,7 +1172,7 @@ func finishDownAtOrBelowTarget(ctx context.Context, in downNoopInputs) (downRepo
 			return runErr
 		}
 		observeNoopDown(in.runtime, in.dialect, in.status.CurrentVersion, in.targetVersion)
-		in.emit.Printf("✅ Database is already at or below target version %d!\n", in.targetVersion)
+		in.emit.Printf("✅ Database is already at or below target version %s!\n", in.migrator.VersionLabel(in.targetVersion))
 		return in.document.Write(migrator.RunEvidence{Plan: &migrator.MigrationPlan{}, After: in.status, DryRun: in.dryRun})
 	}, nil
 }
@@ -1244,23 +1265,31 @@ func startObservability(cmd *cobra.Command, opts *options) (*cliobs.Runtime, err
 
 // confirmRollbackPrompt routes the confirmation prompt to stdout, or to stderr
 // under JSON log format where stdout carries structured output.
-func confirmRollbackPrompt(cmd *cobra.Command, opts *options, currentVersion, targetVersion int64, migrationsToRollback []int64) (bool, error) {
+// rollbackSpan is what a rollback covers, in the versions a person names:
+// [migrator.Migrator.VersionLabel] of the current version, the target and
+// each migration it rolls back.
+type rollbackSpan struct {
+	current, target string
+	rolled          []string
+}
+
+func confirmRollbackPrompt(cmd *cobra.Command, opts *options, span rollbackSpan) (bool, error) {
 	promptWriter := cmd.OutOrStdout()
 	if opts.logFormat == "json" || opts.jsonOutput {
 		promptWriter = cmd.ErrOrStderr()
 	}
-	return confirmRollback(opts, promptWriter, cmd.InOrStdin(), currentVersion, targetVersion, migrationsToRollback)
+	return confirmRollback(opts, promptWriter, cmd.InOrStdin(), span)
 }
 
-func confirmRollback(opts *options, prompt io.Writer, input io.Reader, currentVersion, targetVersion int64, migrationsToRollback []int64) (bool, error) {
+func confirmRollback(opts *options, prompt io.Writer, input io.Reader, span rollbackSpan) (bool, error) {
 	if !rollbackPrompts(opts) {
 		return true, nil
 	}
 
 	fmt.Fprintln(prompt, "⚠️  WARNING: Rolling back migrations can result in data loss!")
-	fmt.Fprintf(prompt, "This will roll back the database from version %d to version %d.\n", currentVersion, targetVersion)
-	if len(migrationsToRollback) > 0 {
-		fmt.Fprintf(prompt, "The following %d migration(s) will be rolled back: %v\n", len(migrationsToRollback), migrationsToRollback)
+	fmt.Fprintf(prompt, "This will roll back the database from version %s to version %s.\n", span.current, span.target)
+	if len(span.rolled) > 0 {
+		fmt.Fprintf(prompt, "The following %d migration(s) will be rolled back: %v\n", len(span.rolled), span.rolled)
 	}
 	fmt.Fprint(prompt, "Are you sure you want to continue? Type 'YES' to confirm: ")
 

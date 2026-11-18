@@ -506,6 +506,7 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 					hasRevisionDescription:     true,
 					atlasRevisionType:          revisionType,
 					atlasRepeatable:            repeatable,
+					atlasNumberless:            migrationFile.Version == 0,
 				},
 			}
 			partsByRevision[revisionVersion] = parts

@@ -4095,8 +4095,9 @@ func (m *Migrator) validateDownMigrations(ctx context.Context, migrations []*Mig
 		}
 		if migration.downUnavailable {
 			return &AtlasDownNotImplementedError{
-				Version:     migration.Version,
-				Description: migration.Description,
+				Version:         migration.Version,
+				revisionVersion: migration.RevisionVersion(),
+				Description:     migration.Description,
 			}
 		}
 		if err := m.refuseEmptyRollback(migration); err != nil {
