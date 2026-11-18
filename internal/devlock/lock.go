@@ -133,7 +133,7 @@ func Acquire(
 	if err != nil {
 		return nil, err
 	}
-	lockName := fmt.Sprintf("ptah-dev-replay:%s:%s", dialect, identity)
+	lockName := realmLockName(dialect, identity)
 	// An executable provider's session takes the lock through the provider's
 	// session locks, which dblock reaches for any provider engine.
 	if dblock.Supported(dialect) || !conn.Info().Provider.IsZero() {
@@ -316,6 +316,26 @@ func realmIdentity(
 	default:
 		return "", fmt.Errorf("unsupported dev database lock dialect %q", dialect)
 	}
+}
+
+// maxLockNameBytes is the longest advisory lock name every engine takes.
+// MySQL refuses a GET_LOCK name over 64 characters, and a character is at
+// least one byte, so a name within 64 bytes is within the limit whatever its
+// characters are.
+const maxLockNameBytes = 64
+
+// realmLockName names the advisory lock of the realm identity names on
+// dialect. A database name may itself be 64 characters long, so where the
+// readable name does not fit, the lock is named by a digest of the dialect
+// and the identity. The digested form has no dialect segment, so it never
+// equals a readable name, and two realms share a lock only if their digests
+// collide.
+func realmLockName(dialect, identity string) string {
+	if name := "ptah-dev-replay:" + dialect + ":" + identity; len(name) <= maxLockNameBytes {
+		return name
+	}
+	digest := sha256.Sum256([]byte(dialect + "\x00" + identity))
+	return "ptah-dev-replay:#" + hex.EncodeToString(digest[:16])
 }
 
 // realmIdentifier is what a connection's writer says about the dev database

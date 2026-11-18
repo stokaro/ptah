@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -126,6 +127,62 @@ func postgresDriverOverrideURL(c *qt.C, rawURL string) string {
 // work saw: here the work only waits for the context, and its cancellation is
 // not reported a second time. The release afterwards gives nothing back,
 // since the server released the lock with the session.
+// MySQL takes a GET_LOCK name of at most 64 characters, and a database name
+// may be 64 characters itself. A dev database with a 60-character name locks,
+// a second replay of it is refused while the first holds it, and another one
+// whose name shares the first 59 characters is another realm and locks too.
+func TestAcquire_LocksADevDatabaseWithALongNameLive(t *testing.T) {
+	for _, engine := range []dbtarget.Engine{dbtarget.MySQLAdmin, dbtarget.MariaDBAdmin} {
+		t.Run(engine.String(), func(t *testing.T) {
+			c := qt.New(t)
+			stem := "ptah_devlock_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_"
+			stem += strings.Repeat("x", 59-len(stem))
+			first := mysqlFamilyDevDatabase(c, engine, stem+"a")
+			second := mysqlFamilyDevDatabase(c, engine, stem+"b")
+
+			held, err := devlock.Acquire(c.Context(), connectDev(c, first), dblock.NoWait)
+			c.Assert(err, qt.IsNil)
+			refused, err := devlock.Acquire(c.Context(), connectDev(c, first), dblock.NoWait)
+			c.Assert(dblock.IsTimeout(err), qt.IsTrue, qt.Commentf("error: %v", err))
+			c.Assert(refused, qt.IsNil)
+			other, err := devlock.Acquire(c.Context(), connectDev(c, second), dblock.NoWait)
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(other.Release(), qt.IsNil)
+			c.Assert(held.Release(), qt.IsNil)
+		})
+	}
+}
+
+// mysqlFamilyDevDatabase creates the database name on engine's server, drops
+// it when the test ends, and returns the URL ptah connects to it with.
+func mysqlFamilyDevDatabase(c *qt.C, engine dbtarget.Engine, name string) string {
+	c.Helper()
+	c.Assert(name, qt.HasLen, 60)
+	adminURL := dbtarget.URL(c, engine)
+	admin := connectDev(c, adminURL)
+	_, err := admin.ExecContext(c.Context(), "CREATE DATABASE `"+name+"`")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		_, err := admin.ExecContext(ctx, "DROP DATABASE IF EXISTS `"+name+"`")
+		c.Check(err, qt.IsNil)
+	})
+	slash := strings.LastIndex(adminURL, "/")
+	c.Assert(slash, qt.Not(qt.Equals), -1)
+	return adminURL[:slash+1] + name
+}
+
+// connectDev opens a connection to databaseURL, closed when the test ends.
+func connectDev(c *qt.C, databaseURL string) *dbschema.DatabaseConnection {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	return conn
+}
+
 func TestGuard_ReportsTheEndOfTheLockSessionLive(t *testing.T) {
 	c := qt.New(t)
 	databaseURL := dbtarget.URL(c, dbtarget.PostgreSQL)
