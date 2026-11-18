@@ -871,8 +871,11 @@ the account needs no privilege for it:
 | `--include '*[type=table]'` | `SHOW VIEW` and the routine privilege |
 
 MariaDB can hide constraint rows from an account with only `SELECT`. The read
-still gets primary-key columns from the visible primary index, so excluding
-constraints does not turn an existing key into a planned addition.
+still gets each primary and unique key from its visible index, and the selector
+leaves that key out as it does for an account that sees the row, so both
+accounts plan the same. The index a server built for a foreign key stays in the
+comparison under this selector for every account, because an account that sees
+no foreign key cannot tell which index one stands on.
 
 A selector that names objects does not count, because a read that cannot see a
 trigger cannot say what it is called: `--exclude 'audit_*[type=trigger]'` still needs
