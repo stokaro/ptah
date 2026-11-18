@@ -1446,7 +1446,35 @@ func (m *Migrator) GetRevisions(ctx context.Context) ([]MigrationRevision, error
 	if err := m.refuseRespelledRevisions(revisions); err != nil {
 		return nil, err
 	}
+	if err := m.refuseNumberlessVersionsInANumericTable(); err != nil {
+		return nil, err
+	}
 	return revisions, nil
+}
+
+// refuseNumberlessVersionsInANumericTable refuses an Atlas directory holding a
+// version that is not a number, such as v1_x.sql, over a revision table that
+// records numbers. Such a file runs under an order key above every number the
+// directory holds, and the key moves when a numbered file is added, so the row
+// a Ptah table keeps for it would name another file the next run.
+func (m *Migrator) refuseNumberlessVersionsInANumericTable() error {
+	if m.revisionTableFormat.isAtlas() || m.migrationProvider == nil {
+		return nil
+	}
+	for _, migration := range m.migrationProvider.Migrations() {
+		if !migration.hasAtlasRevisionVersion || migration.atlasRepeatable || migration.atlasRevisionVersionMapped {
+			continue
+		}
+		if strings.Trim(migration.atlasRevisionVersion, "0123456789") == "" && strings.Trim(migration.atlasRevisionVersion, "0") != "" {
+			continue
+		}
+		return fmt.Errorf(
+			"Atlas migration %s has version %q, which a revision table that records numbers cannot keep; "+
+				"use the Atlas revision table (--revision-format atlas)",
+			migration.atlasOrderKey, migration.atlasRevisionVersion,
+		)
+	}
+	return nil
 }
 
 func queryMigrationRows[T any](
@@ -1804,6 +1832,11 @@ func maxRevisionVersion(revisions []MigrationRevision) int64 {
 type migrationIdentitySet struct {
 	versions  map[int64]struct{}
 	exactKeys map[string]struct{}
+	// exact marks a set read from an Atlas revision table, whose rows record
+	// each file's version string. There the string is the identity of a file
+	// that carries one, and the numeric fallback of
+	// [migrationIdentitySet.containsMigration] does not apply to it.
+	exact bool
 }
 
 func newMigrationIdentitySet(versions []int64, revisions []MigrationRevision) migrationIdentitySet {
@@ -1853,6 +1886,11 @@ func (s migrationIdentitySet) containsMigration(migration *Migration) bool {
 		return true
 	}
 	if migration.atlasRevisionVersionMapped {
+		return false
+	}
+	// Without this, 1_a.sql added beside an applied 1R__rep.sql reads as
+	// applied, since both run under the number 1, and it never runs.
+	if s.exact && migration.hasAtlasRevisionVersion {
 		return false
 	}
 	_, ok := s.versions[migration.Version]
@@ -2209,6 +2247,7 @@ func (m *Migrator) effectiveAppliedIdentitySetFromRevisions(
 	revisions []MigrationRevision,
 ) migrationIdentitySet {
 	set := newMigrationIdentitySet(applied, revisions)
+	set.exact = m.revisionTableFormat.isAtlas()
 	boundary := atlasRevisionBoundary(revisions)
 	if boundary == 0 {
 		return set

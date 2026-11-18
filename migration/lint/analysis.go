@@ -662,7 +662,7 @@ func LintFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) ([]F
 func versionDirections(names []string, dirFormat migrationfile.DirFormat) map[int64]map[string]bool {
 	versionDirs := make(map[int64]map[string]bool)
 	for _, name := range names {
-		if parsed, parseErr := parseKnownMigrationName(path.Base(name), dirFormat); parseErr == nil {
+		if parsed, parseErr := parseKnownMigrationName(name, dirFormat); parseErr == nil {
 			if versionDirs[parsed.Version] == nil {
 				versionDirs[parsed.Version] = make(map[string]bool)
 			}
@@ -738,7 +738,7 @@ func filterAtlasTemplateSupportNames(
 
 	filtered := make([]string, 0, len(names))
 	for _, name := range names {
-		if _, err := parseKnownMigrationName(path.Base(name), dirFormat); err == nil {
+		if _, err := parseKnownMigrationName(name, dirFormat); err == nil {
 			filtered = append(filtered, name)
 			continue
 		}
@@ -755,7 +755,7 @@ func hasAtlasTemplateMigration(
 	dirFormat migrationfile.DirFormat,
 ) bool {
 	for _, name := range names {
-		parsed, err := parseKnownMigrationName(path.Base(name), dirFormat)
+		parsed, err := parseKnownMigrationName(name, dirFormat)
 		if err != nil || parsed.Format != migrationfile.DirFormatAtlas {
 			continue
 		}
@@ -803,7 +803,7 @@ func prepareFile(
 	// Atlas version "R".
 	_, ptahRepeatable := repeatables[name]
 	repeatable := ptahRepeatable
-	if parsed, parseErr := parseKnownMigrationName(base, dirFormat); parseErr == nil && !ptahRepeatable {
+	if parsed, parseErr := parseKnownMigrationName(name, dirFormat); parseErr == nil && !ptahRepeatable {
 		direction = parsed.Direction
 		version = parsed.Version
 		revisionVersion = parsed.RevisionVersion()

@@ -260,8 +260,8 @@ func TestParseAtlasFileName(t *testing.T) {
 
 	migrationFile, err = migrationfile.ParseAtlasFileName("2.10.x-20_description.sql")
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationFile.Version, qt.Equals, int64(2))
-	c.Assert(migrationFile.Name, qt.Equals, "10 X-20 Description")
+	c.Assert(migrationFile.Version, qt.Equals, int64(0))
+	c.Assert(migrationFile.RevisionVersion(), qt.Equals, "2.10.x-20")
 
 	migrationFile, err = migrationfile.ParseAtlasFileName("3R_views.sql")
 	c.Assert(err, qt.IsNil)
@@ -302,7 +302,6 @@ func TestParseAtlasFileName_RevisionVersionKeepsTheSpelling(t *testing.T) {
 		{name: "bare version", fileName: "0010.sql", wantVersion: 10, wantRevision: "0010"},
 		{name: "up half", fileName: "000001_create_users.up.sql", wantVersion: 1, wantRevision: "000001"},
 		{name: "down half", fileName: "000001_create_users.down.sql", wantVersion: 1, wantRevision: "000001"},
-		{name: "dotted description", fileName: "02.10.x-20_description.sql", wantVersion: 2, wantRevision: "02"},
 		{name: "timestamp", fileName: "20220318104614_team_A.sql", wantVersion: 20220318104614, wantRevision: "20220318104614"},
 	}
 	for _, test := range tests {
@@ -329,6 +328,66 @@ func TestParseFileName_RevisionVersionIsTheNumber(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrationFile.Version, qt.Equals, int64(1))
 	c.Assert(migrationFile.RevisionVersion(), qt.Equals, "1")
+}
+
+// TestParseAtlasFileName_VersionIsTheTextBeforeTheFirstUnderscore reads the
+// version of a name whose version is not a decimal number above zero as the
+// pinned community binary v1.3.0 records it: the text before the first
+// underscore, whatever it holds. Such a file carries no number, so Version is
+// 0, and reading the leading digits would record 1.x.sql as version 1.
+func TestParseAtlasFileName_VersionIsTheTextBeforeTheFirstUnderscore(t *testing.T) {
+	tests := []struct {
+		name        string
+		version     string
+		description string
+	}{
+		{name: "1.x.sql", version: "1.x", description: ""},
+		{name: "1.x_y.sql", version: "1.x", description: "y"},
+		{name: "1._x.sql", version: "1.", description: "x"},
+		{name: "02.10.x-20_description.sql", version: "02.10.x-20", description: "description"},
+		{name: "1-x_y.sql", version: "1-x", description: "y"},
+		{name: "v1_x.sql", version: "v1", description: "x"},
+		{name: "x_y.sql", version: "x", description: "y"},
+		{name: "1a_x.sql", version: "1a", description: "x"},
+		{name: "00_x.sql", version: "00", description: "x"},
+		{name: "notaversion.sql", version: "notaversion", description: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := migrationfile.ParseAtlasFileName(tt.name)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Version, qt.Equals, int64(0))
+			c.Assert(got.RevisionVersion(), qt.Equals, tt.version)
+			c.Assert(got.RevisionDescription, qt.Equals, tt.description)
+			c.Assert(got.Repeatable, qt.IsFalse)
+		})
+	}
+}
+
+// TestParseAtlasFileName_FailurePath_EmptyVersion refuses _x.sql, which Atlas
+// reads as version "": no --to-version, --baseline or migrate set argument
+// can name it.
+func TestParseAtlasFileName_FailurePath_EmptyVersion(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := migrationfile.ParseAtlasFileName("_x.sql")
+
+	c.Assert(err, qt.ErrorMatches, `Atlas reads the version of _x\.sql as the empty string, which Ptah cannot address`)
+	c.Assert(got, qt.IsNil)
+}
+
+// TestParseAtlasFileNameForAutoDetection_ReadsTheLeadingDigits keeps the
+// auto-detection reading of a dotted name, which a native directory with no
+// atlas.sum and no --dir-format goes through.
+func TestParseAtlasFileNameForAutoDetection_ReadsTheLeadingDigits(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := migrationfile.ParseAtlasFileNameForAutoDetection("02.10.x-20_description.sql")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.Version, qt.Equals, int64(2))
+	c.Assert(got.RevisionVersion(), qt.Equals, "02")
 }
 
 func TestFileName(t *testing.T) {

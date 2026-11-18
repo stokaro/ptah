@@ -545,14 +545,15 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 			},
 		},
 		{
-			// A directory holding SQL that carries no version still refuses
-			// --latest: the selector was asked to order a set it cannot order,
-			// and answering "nothing to lint" there would lint nothing quietly.
+			// A directory holding SQL whose version is empty still refuses
+			// --latest: Atlas reads _x.sql as version "", which no command
+			// line can name, and answering "nothing to lint" there would lint
+			// nothing quietly.
 			name: "lint --latest over unversioned files is still refused",
 			setup: func(c *qt.C, root string) {
 				dir := filepath.Join(root, "migrations")
 				c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-				c.Assert(os.WriteFile(filepath.Join(dir, "notaversion.sql"), []byte("CREATE TABLE t (id INTEGER);\n"), 0o600), qt.IsNil)
+				c.Assert(os.WriteFile(filepath.Join(dir, "_x.sql"), []byte("CREATE TABLE t (id INTEGER);\n"), 0o600), qt.IsNil)
 			},
 			args: []string{
 				"migrate", "lint",

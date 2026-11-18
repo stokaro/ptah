@@ -24,6 +24,10 @@ type MigrateStatusOptions struct {
 	// migrations, as the run that produced Status read them: they leave
 	// `Available`, and Status.Repeatables fills `Repeatables`.
 	Repeatables bool
+	// StringOrder names as current the highest applied version string, as
+	// the community binary does for a native Atlas directory: with 10 and 1R
+	// applied it reports 1R, and with 00 and 1 applied it reports 1.
+	StringOrder bool
 }
 
 type MigrateStatus struct {
@@ -99,13 +103,9 @@ func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {
 		Applied:    migrateStatusAppliedRevisions(files, opts.AppliedRevisions),
 		Pending:    selectedMigrateStatusFiles(files, opts.Status.PendingMigrations, opts.Status.PendingMigrationKeys, ""),
 		OutOfOrder: selectedMigrateStatusFiles(files, opts.Status.OutOfOrderMigrations, opts.Status.OutOfOrderMigrationKeys, ""),
-		Current: migrateStatusCurrent(
-			opts.Status,
-			opts.AppliedRevisions,
-			opts.RevisionVersions,
-		),
-		Next:   migrateStatusNext(opts.Status.PendingMigrations, opts.Status.PendingMigrationKeys),
-		Status: migrateStatusLabel(opts.Status),
+		Current:    opts.current(),
+		Next:       migrateStatusNext(opts.Status.PendingMigrations, opts.Status.PendingMigrationKeys),
+		Status:     migrateStatusLabel(opts.Status),
 	}
 	if opts.Repeatables {
 		result.Repeatables = migrateStatusRepeatables(opts.Status.Repeatables)
@@ -284,18 +284,16 @@ func migrateStatusVersionKeySet(versions []int64, keys []string) map[string]stru
 	return set
 }
 
-func migrateStatusCurrent(
-	status *migrator.MigrationStatus,
-	revisions []migrator.MigrationRevision,
-	revisionVersions map[int64]string,
-) string {
+// current is the version the report names as current.
+func (opts MigrateStatusOptions) current() string {
+	status, revisions := opts.Status, opts.AppliedRevisions
 	if status.DirtyRevision != nil {
 		if len(status.AppliedMigrations) == 0 {
 			return "No migration applied yet"
 		}
 		return status.DirtyRevision.RevisionVersion()
 	}
-	if revisionVersions != nil && len(revisions) > 0 {
+	if (opts.RevisionVersions != nil || opts.StringOrder) && len(revisions) > 0 {
 		current := revisions[0].RevisionVersion()
 		for _, revision := range revisions[1:] {
 			current = max(current, revision.RevisionVersion())

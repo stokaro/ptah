@@ -1111,7 +1111,7 @@ statements rather than being skipped.
 
 ### Deliberate divergences
 
-Three behaviors differ from Atlas on purpose. All three are cases where matching
+Four behaviors differ from Atlas on purpose. All four are cases where matching
 would mean reproducing a defect, so Ptah is stricter — never looser — than Atlas.
 
 #### A Goose directive with the wrong case
@@ -1147,6 +1147,28 @@ Atlas applies the first and then panics. Ptah refuses the directory before
 anything runs. With `PTAH_ATLAS_REPEATABLE_MIGRATIONS` set, `ptah-compat` reads
 `R__<identity>.sql` as a [repeatable migration](../../versioned/repeatable/)
 instead, which runs again when its body changes.
+
+#### An Atlas file whose version is not a number
+
+For example `1.x.sql`, `v1_x.sql`, `x_y.sql` or `00_x.sql`.
+
+Both binaries read the version as the text before the first underscore of the
+name (`1.x`, `v1`, `x`, `00`), run the file in file-name order, and record that
+text in the revision table. `migrate status` reports as current the highest
+applied version as text, so `v1` is current beside `1`, and a `2_b.sql` added
+after `v1_x.sql` ran is out of order.
+
+The divergence is a name that starts with an underscore, such as `_x.sql`,
+whose version is empty. Atlas runs it. Ptah refuses the directory before
+anything runs, because no `--to-version`, `--baseline` or `migrate set`
+argument can name an empty version. See
+[A file whose Atlas version is empty](../retained-divergences/#a-file-whose-atlas-version-is-empty).
+
+Native `ptah migrations up --dir-format atlas` runs such a file over the Atlas
+revision table (`--revision-format atlas`). Over the Ptah revision table, which
+records a number, it refuses the directory before anything runs: the number
+such a file runs under moves when a numbered file is added, so the row would
+name another file the next run.
 
 Ptah refuses only exact near-miss spellings of the four section directives.
 Prose that merely begins with one (`-- +goose up to date`) and unrecognized

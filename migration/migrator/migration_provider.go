@@ -442,14 +442,14 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 	if err != nil {
 		return err
 	}
-	maxVersion := atlasMaxNumericVersion(files)
+	numberless := atlasNumberlessVersions(files)
 	partsByRevision := make(map[string]*atlasParts)
 	spellings := make(map[int64]migrationfile.File)
 	for i := range files {
 		migrationFile := files[i]
-		runtimeVersion := atlasRuntimeVersion(migrationFile, maxVersion)
+		runtimeVersion := atlasRuntimeVersion(migrationFile, numberless)
 		revisionVersion, repeatable, mapped := p.atlasFileIdentity(migrationFile)
-		if !repeatable && !mapped {
+		if !repeatable && !mapped && migrationFile.Version > 0 {
 			if err := recordAtlasSpelling(spellings, migrationFile); err != nil {
 				return err
 			}
@@ -535,8 +535,7 @@ func (p *FSMigrationProvider) atlasFileIdentity(
 	migrationFile migrationfile.File,
 ) (revisionVersion string, repeatable, mapped bool) {
 	revisionVersion = migrationFile.RevisionVersion()
-	repeatable = revisionVersion == "R" || strings.HasSuffix(revisionVersion, "R") ||
-		p.atlasRepeatable[migrationFile.Version]
+	repeatable = migrationFile.Repeatable || p.atlasRepeatable[migrationFile.Version]
 	if mappedRevisionVersion, ok := p.atlasRevisionVersions[migrationFile.Version]; ok {
 		return mappedRevisionVersion, repeatable, true
 	}
@@ -566,21 +565,37 @@ func recordAtlasSpelling(spellings map[int64]migrationfile.File, file migrationf
 	)
 }
 
-func atlasMaxNumericVersion(files []migrationfile.File) int64 {
+// atlasNumberlessVersions gives each version of the directory that carries no
+// number, such as R, v1 or 1.x, an order key of its own above every number
+// the directory holds, in file-name order. The key only tells the migrator
+// files apart: an Atlas revision table records the version string, and the
+// files run in file-name order whatever their keys.
+//
+// Without a key of its own every such file would run under 0, and v1_x.sql
+// and 1.x.sql would be one migration.
+func atlasNumberlessVersions(files []migrationfile.File) map[string]int64 {
 	var maxVersion int64
 	for _, file := range files {
-		if !file.Repeatable && file.Version > maxVersion {
-			maxVersion = file.Version
-		}
+		maxVersion = max(maxVersion, file.Version)
 	}
-	return maxVersion
+	byPath := slices.Clone(files)
+	slices.SortStableFunc(byPath, func(a, b migrationfile.File) int { return strings.Compare(a.Path, b.Path) })
+	numberless := make(map[string]int64)
+	for _, file := range byPath {
+		if _, seen := numberless[file.RevisionVersion()]; file.Version > 0 || seen {
+			continue
+		}
+		maxVersion++
+		numberless[file.RevisionVersion()] = maxVersion
+	}
+	return numberless
 }
 
-func atlasRuntimeVersion(file migrationfile.File, maxVersion int64) int64 {
-	if !file.Repeatable || file.Version > 0 {
+func atlasRuntimeVersion(file migrationfile.File, numberless map[string]int64) int64 {
+	if file.Version > 0 {
 		return file.Version
 	}
-	return maxVersion + 1
+	return numberless[file.RevisionVersion()]
 }
 
 // recordAtlasHashes attaches the two checksums a converted migration can carry.

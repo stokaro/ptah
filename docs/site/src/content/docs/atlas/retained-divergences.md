@@ -121,6 +121,7 @@ own measurement conditions.
 | [An edited already-applied migration file](#an-edited-already-applied-migration-file) | compares each applied migration against the checksum recorded when it ran, and refuses on a mismatch | records the same value and never compares it |
 | [A prefix migration inserted below the oldest applied revision](#a-prefix-migration-inserted-below-the-oldest-applied-revision) | refuses at the default `--exec-order linear` with the binary's own out-of-order line | exits `0` with `No migration files to execute`, saying nothing about the file it passed over |
 | [A file numbered above the current version that sorts below it as text](#a-file-numbered-above-the-current-version-that-sorts-below-it-as-text) | reports it as out of order and refuses it at the default `--exec-order linear` | reports `OK` and exits `0` with `No migration files to execute` under every `--exec-order`; the file never runs |
+| [A file whose Atlas version is empty](#a-file-whose-atlas-version-is-empty) | refuses the directory before anything runs and names the file | runs `_x.sql` and records the version `""` |
 | [A file `--exec-order linear-skip` leaves pending](#a-file---exec-order-linear-skip-leaves-pending) | writes one warning per skipped file on stderr | skips it without a word |
 | [A dirty revision left by a non-transactional body](#a-dirty-revision-left-by-a-non-transactional-body) | discards the revision row only where it observed the rollback, so `--tx-mode none` needs `--allow-dirty` | keeps the row in both cases and resumes from it |
 | [A project migration directory outside its root](#a-project-migration-directory-outside-its-root) | confines a project `migration.dir` to the directory holding `atlas.hcl` | writes the migration and `atlas.sum` wherever the project file points |
@@ -388,6 +389,31 @@ own line for an out-of-order file, and the page it links describes both ways
 forward. A file whose number is above the current version reads as new to a
 person, which is why the case is easy to meet: going from `9_` to `10_` is
 the usual way a directory without zero-padded versions grows.
+
+## A file whose Atlas version is empty
+
+**Type.** Deliberate divergence
+
+**Current boundary.** Both binaries read the version of an Atlas file as the
+text before the first underscore of its name, whatever it holds: `1.x.sql` is
+version `1.x`, `v1_x.sql` is `v1`, `00_x.sql` is `00`. Both run the files in
+file-name order and record that text in the revision table. The one name they
+part on is a file whose name starts with an underscore, such as `_x.sql`, whose
+version is the empty string. `ptah-compat` refuses the directory before
+anything runs and names the file.
+
+Measured on SQLite on 2026-11-18, with `1_a.sql` and `_x.sql` in one
+directory:
+
+| step | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply` | exit `0`, runs both, records `""` and `1` | exit `1`, `Atlas migration files Ptah cannot run: _x.sql (version "")` |
+| `migrate status` after `2_b.sql` is added | `Current Version: 1`, `2_b.sql` out of order | the same refusal |
+
+No command line can name the empty version: `--to-version`, `--baseline` and
+`migrate set` each read an empty argument as no version. A file that a person
+can run but never address is a file `migrate set` cannot move past and
+`migrate down` cannot select, so `ptah-compat` asks for a name instead.
 
 ## A file `--exec-order linear-skip` leaves pending
 

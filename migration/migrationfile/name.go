@@ -32,9 +32,10 @@ type File struct {
 	// filesystem root. [Discover] fills it; the name parsers, which see only
 	// a file name, leave it empty.
 	Path string
-	// Version is the numeric version the name carries. An Atlas repeatable
-	// file with no numeric prefix (R__name.sql) leaves it 0 and carries its
-	// identity in [File.RevisionVersion].
+	// Version is the numeric version the name carries. An Atlas file whose
+	// version is not a decimal number above zero, such as R__name.sql,
+	// v1_name.sql or 1.x.sql, leaves it 0 and carries its identity in
+	// [File.RevisionVersion].
 	Version int64
 	// Name is the humanized description: underscore (and, in Atlas names,
 	// dot) separators become spaces and words are Title-Cased, so
@@ -177,6 +178,13 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 	}
 
 	versionDigits, rawName, ok := splitAtlasStem(stem)
+	// Atlas reads the version as the text before the first underscore,
+	// whatever it holds, so it records 1.x.sql as 1.x and v1_x.sql as v1.
+	// Reading the digits alone would record 1.x.sql as 1, a version Atlas
+	// never gives it.
+	if token, description, _ := strings.Cut(stem, "_"); mode == atlasParseExplicit && (!ok || !isAtlasNumber(token, versionDigits)) {
+		return parseAtlasOpaqueVersion(filename, token, description, direction)
+	}
 	if !ok {
 		return nil, errors.New("invalid Atlas migration file name format")
 	}
@@ -207,6 +215,45 @@ func parseAtlasFileName(filename string, mode atlasParseMode) (*File, error) {
 		Format:               DirFormatAtlas,
 		atlasRevisionVersion: versionDigits,
 		RevisionDescription:  rawName,
+	}, nil
+}
+
+// isAtlasNumber reports whether the version token of an Atlas name is the
+// decimal number above zero that splitAtlasStem read from it, one an int64
+// holds.
+func isAtlasNumber(token, versionDigits string) bool {
+	if token != versionDigits {
+		return false
+	}
+	version, err := strconv.ParseInt(versionDigits, 10, 64)
+	return err == nil && version > 0
+}
+
+// parseAtlasOpaqueVersion reads an Atlas name whose version is not a decimal
+// number above zero, such as 1.x.sql, v1_x.sql or 00_x.sql. The file carries
+// the version as its revision identity and no number: Version is 0, and a
+// migrator gives it an order key of its own. An empty version, as in _x.sql,
+// is refused, because no command line can name it.
+func parseAtlasOpaqueVersion(filename, token, description, direction string) (*File, error) {
+	if token == "" {
+		return nil, fmt.Errorf("Atlas reads the version of %s as the empty string, which Ptah cannot address", filename)
+	}
+	// A version spelled as a repeatable one, R or 3R, that the repeatable
+	// grammar refused, as R__.sql or 3R_views.down.sql, stays refused.
+	if digits, ok := strings.CutSuffix(token, "R"); ok && strings.Trim(digits, "0123456789") == "" {
+		return nil, errors.New("invalid Atlas migration file name format")
+	}
+	name := description
+	if name == "" {
+		name = token
+	}
+	return &File{
+		Name:                 titleAtlasName(name),
+		Direction:            direction,
+		Extension:            ".sql",
+		Format:               DirFormatAtlas,
+		atlasRevisionVersion: token,
+		RevisionDescription:  description,
 	}, nil
 }
 

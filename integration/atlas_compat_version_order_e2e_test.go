@@ -61,7 +61,7 @@ func writeVersionOrderFiles(c *qt.C, dir string, run versionOrderRun, names []st
 	migrations := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
 	for _, name := range names {
-		table := "t_" + strings.NewReplacer(".", "_").Replace(strings.TrimSuffix(name, ".sql"))
+		table := "t_" + strings.NewReplacer(".", "_", "-", "_").Replace(strings.TrimSuffix(name, ".sql"))
 		body := fmt.Sprintf("CREATE TABLE %s (id int);\n", table)
 		c.Assert(os.WriteFile(filepath.Join(migrations, name), []byte(body), 0o600), qt.IsNil)
 	}

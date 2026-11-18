@@ -70,7 +70,10 @@ func classifySQLFiles(sqlFiles []string, parseAtlas func(string) (*File, error))
 		if parseAtlas == nil {
 			continue
 		}
-		if migrationFile, err := parseAtlas(base); err == nil {
+		// Atlas reads the top level of a directory alone, so a nested file
+		// whose name carries no number, such as a template under shared/, is
+		// no migration there.
+		if migrationFile, err := parseAtlas(base); err == nil && (migrationFile.Version > 0 || migrationFile.Repeatable || base == p) {
 			migrationFile.Path = p
 			atlasFiles = append(atlasFiles, *migrationFile)
 		}
@@ -90,41 +93,9 @@ func discover(fsys fs.FS, format DirFormat, reading rReading) (discovered, error
 		return discovered{}, err
 	}
 
-	var sqlFiles []string
-	hasAtlasSum := false
-	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-
-		// Top-level only, and deliberately so. The predicate that decides
-		// which integrity file governs a directory -- migratesum's hasFile --
-		// looks at the root, so accepting a nested sub/atlas.sum here would
-		// make the two disagree.
-		//
-		// Measured when they did: a directory holding a top-level ptah pair, a
-		// nested pair and sub/atlas.sum applied version 1 only, exit 0, with
-		// the success banner and no warning. The author's second migration
-		// silently never ran -- the same silent-drop shape this change exists
-		// to remove, pointed the other way.
-		if p == "atlas.sum" {
-			hasAtlasSum = true
-			return nil
-		}
-		if path.Base(p) == "atlas.sum" {
-			return nil
-		}
-		if !strings.EqualFold(path.Ext(p), ".sql") {
-			return nil
-		}
-		sqlFiles = append(sqlFiles, p)
-		return nil
-	})
+	sqlFiles, hasAtlasSum, err := walkSQLFiles(fsys)
 	if err != nil {
-		return discovered{}, fmt.Errorf("failed to scan migrations directory: %w", err)
+		return discovered{}, err
 	}
 
 	if atlasSumGovernsSelection(format, hasAtlasSum) {
@@ -158,13 +129,105 @@ func discover(fsys fs.FS, format DirFormat, reading rReading) (discovered, error
 	if len(files) == 0 && len(repeatables) == 0 && len(sqlFiles) > 0 {
 		return discovered{}, fmt.Errorf("no migration files matched format %q; unrecognized SQL files: %s", format, strings.Join(sqlFiles, ", "))
 	}
+	if isAtlasSelection(files) && (format == DirFormatAtlas || hasAtlasSum) {
+		if err := refuseUnreadAtlasFiles(versioned, atlasFiles); err != nil {
+			return discovered{}, err
+		}
+	}
+	sortDiscovered(files)
+	return discovered{files: files, repeatables: repeatables}, nil
+}
+
+// walkSQLFiles lists the SQL files under fsys, and reports whether the
+// directory holds atlas.sum at its top level.
+func walkSQLFiles(fsys fs.FS) (sqlFiles []string, hasAtlasSum bool, err error) {
+	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		// Top-level only, and deliberately so. The predicate that decides
+		// which integrity file governs a directory -- migratesum's hasFile --
+		// looks at the root, so accepting a nested sub/atlas.sum here would
+		// make the two disagree.
+		//
+		// Measured when they did: a directory holding a top-level ptah pair, a
+		// nested pair and sub/atlas.sum applied version 1 only, exit 0, with
+		// the success banner and no warning. The author's second migration
+		// silently never ran -- the same silent-drop shape this change exists
+		// to remove, pointed the other way.
+		if p == "atlas.sum" {
+			hasAtlasSum = true
+			return nil
+		}
+		if path.Base(p) == "atlas.sum" {
+			return nil
+		}
+		if !strings.EqualFold(path.Ext(p), ".sql") {
+			return nil
+		}
+		sqlFiles = append(sqlFiles, p)
+		return nil
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to scan migrations directory: %w", err)
+	}
+	return sqlFiles, hasAtlasSum, nil
+}
+
+// isAtlasSelection reports whether a walk selected Atlas files. Every file of
+// one selection carries the same format.
+func isAtlasSelection(files []File) bool {
+	return len(files) > 0 && files[0].Format == DirFormatAtlas
+}
+
+// sortDiscovered orders the files of one selection: Ptah files by version,
+// Atlas files by name, as Atlas orders a directory. So 10_b.sql comes before
+// 9_a.sql, and v1_x.sql after 2_b.sql.
+func sortDiscovered(files []File) {
+	byName := isAtlasSelection(files)
 	sort.Slice(files, func(i, j int) bool {
-		if files[i].Version != files[j].Version {
+		if files[i].Version != files[j].Version && !byName {
 			return files[i].Version < files[j].Version
 		}
 		return files[i].Path < files[j].Path
 	})
-	return discovered{files: files, repeatables: repeatables}, nil
+}
+
+// refuseUnreadAtlasFiles refuses an Atlas-format directory holding a SQL file
+// at its top level that the Atlas name reading did not accept, such as _x.sql
+// or R__.sql.
+//
+// Atlas runs every SQL file at the top level, under the text before the first
+// underscore of its name, so _x.sql is version "" there, which no command line
+// can name. Without this refusal the file is left out of the selection, and a
+// directory holding 1_a.sql and _x.sql applies 1_a.sql alone, reports itself
+// applied, and never runs _x.sql.
+func refuseUnreadAtlasFiles(sqlFiles []string, atlasFiles []File) error {
+	read := make(map[string]struct{}, len(atlasFiles))
+	for _, file := range atlasFiles {
+		read[file.Path] = struct{}{}
+	}
+	var unread []string
+	for _, p := range sqlFiles {
+		if _, ok := read[p]; ok || path.Base(p) != p {
+			continue
+		}
+		version, _, _ := strings.Cut(strings.TrimSuffix(path.Base(p), ".sql"), "_")
+		unread = append(unread, fmt.Sprintf("%s (version %q)", p, version))
+	}
+	if len(unread) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"Atlas migration files Ptah cannot run: %s. Atlas runs every SQL file at the top level of the "+
+			"directory, under the text before the first underscore of its name, so Ptah refuses the "+
+			"directory rather than leave these files unapplied",
+		strings.Join(unread, ", "),
+	)
 }
 
 // readsRepeatables reports whether a walk resolved to the Ptah format, the
