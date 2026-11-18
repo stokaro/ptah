@@ -16,11 +16,9 @@ import (
 
 // Two declared sequences a --from document records it does not describe are
 // two changes `schema diff` cannot plan. The run reports them as one warning
-// that names both, on both binaries. The two documents are HCL, which the
-// command reads without a database when the dev URL pins search_path, so the
-// dev database URL names a port nothing listens on: a run that tried to
-// connect would fail rather than pass. Without search_path the run connects
-// to learn where the dev database places a name written without a schema.
+// that names both, on both binaries. The two documents are HCL; the dev
+// database names the dialect and pins search_path, so nothing has to be
+// asked where it places a name written without a schema.
 
 // undecidedFromDocument records that it describes no sequences.
 const undecidedFromDocument = `// ptah:not-described sequence
@@ -62,6 +60,7 @@ const undecidedSequencesWarning = `warning: 2 objects get no planned change beca
 // schema diff arguments that compare them.
 func undecidedDiffArgs(c *qt.C) []string {
 	c.Helper()
+	dev := pinnedDevURL(c, postgresScratchDevURL(c, "ptah_undecided_dev"), "public")
 	dir := c.TempDir()
 	from := filepath.Join(dir, "from.hcl")
 	to := filepath.Join(dir, "to.hcl")
@@ -69,7 +68,7 @@ func undecidedDiffArgs(c *qt.C) []string {
 	c.Assert(os.WriteFile(to, []byte(undecidedToDocument), 0o600), qt.IsNil)
 	return []string{
 		"schema", "diff", "--from", "file://" + filepath.ToSlash(from), "--to", "file://" + filepath.ToSlash(to),
-		"--dev-url", "postgres://nobody@127.0.0.1:1/dev?search_path=public",
+		"--dev-url", dev,
 	}
 }
 

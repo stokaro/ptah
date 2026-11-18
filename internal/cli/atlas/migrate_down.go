@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devreach"
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/revisiontable"
@@ -271,6 +272,15 @@ func runAtlasMigrateDownFormat(
 		return err
 	}
 
+	// A rollback with nothing to replay still opens the dev database it was
+	// given, so a --dev-url nothing answers on fails here and not on the next
+	// rollback that has something to verify; see [devreach]. A docker:// URL
+	// is parsed and no container is started.
+	if plan.Noop() {
+		if _, err := devreach.Server(cmd.Context(), conn.Info().Dialect, "dev-url", opts.devURL, dbcli.DefaultConnectTimeout); err != nil {
+			return err
+		}
+	}
 	// Replay the rollback plan on the dev database first, so a failing or
 	// missing down migration aborts before the target is touched.
 	if opts.devURL != "" && !plan.Noop() {

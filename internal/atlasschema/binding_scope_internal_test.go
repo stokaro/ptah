@@ -5,6 +5,7 @@ package atlasschema
 // a test builds. The exported commands take URLs, which cannot carry one.
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -82,7 +83,7 @@ func TestDiffResolvedStates_ScopesAPolicyWhole(t *testing.T) {
 			options := test.options
 			options.Runtime = must.Must(builtin.New())
 
-			report, diff, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, capability.Capabilities{}, devServerSides{}, options)
+			report, diff, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, noCapabilities, devServerSides{}, options)
 
 			c.Assert(err, qt.ErrorIs, featureselect.ErrPartialScope)
 			c.Assert(err, qt.ErrorMatches, splitPolicyErr)
@@ -92,7 +93,7 @@ func TestDiffResolvedStates_ScopesAPolicyWhole(t *testing.T) {
 	}
 	t.Run("an exclusion of an unbound table", func(t *testing.T) {
 		c := qt.New(t)
-		_, _, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, capability.Capabilities{}, devServerSides{},
+		_, _, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, noCapabilities, devServerSides{},
 			DiffOptions{Exclude: []string{"audit"}, Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.IsNil)
 	})
@@ -155,4 +156,10 @@ func TestSelectApplyStates_ScopesAPolicyWhole(t *testing.T) {
 // command passes from its runtime.
 func ownerSelections() selectext.Set {
 	return builtintest.Runtime().Selections()
+}
+
+// noCapabilities answers what a diff of two documents with no dev database
+// plans for: nothing beyond the dialect.
+func noCapabilities(context.Context) (capability.Capabilities, error) {
+	return capability.Capabilities{}, nil
 }

@@ -336,6 +336,24 @@ func EffectiveString(
 	return configValue.Value
 }
 
+// ChecksUnusedDevURL reports whether a run that needs nothing from its dev or
+// shadow database opens the URL in flagName anyway, only to refuse one nothing
+// answers on (see [ptah.run/internal/devreach]).
+//
+// It does when the operator gave the URL for this run, on the command line or
+// through the flag's PTAH_* variable, which is what pflag's Changed bit says on
+// a Ptah surface. A URL [EffectiveString] took from the project file's `dev:`
+// key does not count: it is a default for every command in the project, and a
+// command that does not use it has no reason to fail on it.
+//
+// A run ptah-compat forwards here always counts as given, wherever its URL came
+// from, as the Atlas CLI opens every dev URL it is given: the adapter writes an
+// atlas.hcl `dev` onto the forwarded command line as the native flag, so the
+// flag carries the Changed bit like any other.
+func ChecksUnusedDevURL(cmd *cobra.Command, flagName string) bool {
+	return flagChanged(cmd, flagName)
+}
+
 // JoinSchemasValue converts a presence-aware schema list to its CLI form.
 func JoinSchemasValue(value projectconfig.Value[[]string]) projectconfig.Value[string] {
 	return projectconfig.Value[string]{

@@ -76,7 +76,12 @@ reset for that, as it is for a replay, and a --dev-url that names the --from or
 created inside the dev database under its name, and a file naming two is
 refused. When both sides are schema files, a PostgreSQL-family --dev-url that
 pins no search_path is connected to learn the schema it resolves a name
-written without one to, and every statement names that schema. This makes
+written without one to, and every statement names that schema. A --dev-url
+given for the run, on the command line or through its environment variable, is
+opened whatever the sides are, so one nothing answers on fails the run; a
+docker:// value is read for its server and no container is started for two
+schema files or two databases. A dev URL from the project file's dev: key is
+opened only when the comparison uses it. This makes
 CI checks like "do these two schema files differ?" or "does this migration
 directory converge to schema.hcl?" possible without touching a production
 database. --schemas and --include positively select what both comparison
@@ -178,6 +183,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		FromURLs:            opts.fromURLs,
 		ToURLs:              opts.toURLs,
 		DevURL:              opts.devURL,
+		SkipUnusedDevURL:    !dbcli.ChecksUnusedDevURL(cmd, diffDevURLFlag),
 		ServerVersion:       opts.serverVersion,
 		Exclude:             exclude,
 		ExcludeSources:      excludeSources,

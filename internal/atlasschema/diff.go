@@ -31,7 +31,6 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlassource"
-	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
@@ -39,6 +38,7 @@ import (
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
+	"ptah.run/internal/devreach"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/readscope"
@@ -65,7 +65,16 @@ type DiffOptions struct {
 	FromURLs []string
 	ToURLs   []string
 	DevURL   string
-	Exclude  []string
+	// SkipUnusedDevURL leaves DevURL unopened when the comparison needs
+	// nothing from the dev database, where by default it is opened and one
+	// nothing answers on fails the run, as on the Atlas CLI; see
+	// [ptah.run/internal/devreach]. A native command sets it for a URL taken
+	// from the project file rather than given for the run. Two documents
+	// compared as written still ask such a URL for its server version, within
+	// [devVersionTimeout], and plan for the dialect default when it does not
+	// answer.
+	SkipUnusedDevURL bool
+	Exclude          []string
 	// ImplicitExclude leaves objects out of both sides as Exclude does, for
 	// selectors the caller adds and the user did not write, such as the names
 	// of the revision tables. One that matches nothing is neither reported
@@ -267,13 +276,6 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		report  atlasreport.SchemaDiff
 		changes *difftypes.SchemaDiff
 	)
-	// Two documents compared as written hold no connection, so the server
-	// behind --dev-url is asked once for what it is.
-	var documentCaps capability.Capabilities
-	if opts.ServerVersion == "" && !materializesFrom(fromSet, toSet, opts.DevURL) &&
-		!holdsServerForComparison(fromSet, toSet) {
-		documentCaps = devServerCapabilities(ctx, dialect, opts.DevURL, opts.ConnectTimeout)
-	}
 	err = withResolvedDiffSources(ctx, opts.Runtime, fromSet, toSet, resolveOpts,
 		func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error {
 			// A side read from the dev database holds that database's own
@@ -295,9 +297,24 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 			if err != nil {
 				return err
 			}
+			// The dev database is opened on every run that names one, unless
+			// the caller set SkipUnusedDevURL, whether or not the comparison
+			// needed it, so a --dev-url nothing answers on fails the run as it
+			// does on the pinned community binary; see [devreach]. It is opened
+			// once the sources are read and the refusals decided from them
+			// alone are made, so those come first. Two documents compared as
+			// written hold no other connection, so the server behind it also
+			// answers what they are planned for.
+			capabilities := func(ctx context.Context) (capability.Capabilities, error) {
+				documentCaps, err := documentCapabilities(ctx, opts, dialect, fromSet, toSet)
+				if err != nil {
+					return capability.Capabilities{}, err
+				}
+				return diffCapabilities(target, opts.ServerVersion, conn, documentCaps), nil
+			}
 			var diffErr error
 			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect,
-				diffCapabilities(target, opts.ServerVersion, conn, documentCaps), devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
+				capabilities, devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
 			return diffErr
 		})
 	if err != nil {
@@ -370,7 +387,7 @@ func readsADevRealm(ctx context.Context, contexts schemaext.DatabaseContextResol
 // (stokaro/ptah#3910, stokaro/ptah#3936). Only a diff with no connection at
 // all keeps the dialect default. Two documents compared as written hold no
 // connection, and plan for the dev server instead; see
-// [devServerCapabilities], which answers documentCaps.
+// [devreach.Server], which answers documentCaps.
 func diffCapabilities(
 	target servertarget.Target,
 	version string,
@@ -389,65 +406,72 @@ func diffCapabilities(
 	}
 }
 
-// devServerCapabilities answers what the server behind a dev URL can do, for a
-// diff of two documents that never opens it otherwise, or nil where the dialect
-// default stands.
-//
-// A docker:// URL names its server in the image tag, `docker://postgres/18`,
-// which is read without starting the container; a tag no release line
-// matches, such as `latest`, answers nil. Any other URL is opened and asked,
-// as the comparison of a file with a database asks the database. Two
-// documents are compared as written, and the dev database is not otherwise
-// opened, so one that cannot be opened within devVersionTimeout answers nil:
-// the comparison it would have informed runs as it does with no dev database,
-// and a declaration the default cannot plan is refused by name there.
-// ErrDevURLRequired is returned by a diff whose sources are all local files and
-// that has no dev database to load them into, so no source names the dialect.
-var ErrDevURLRequired = errors.New("--dev-url is required for local schema file diffing")
+// documentCapabilities opens the dev URL of a diff, unless
+// [DiffOptions.SkipUnusedDevURL] is set, and answers what the dev server can do
+// when the two sides are documents compared as written, which are planned for
+// it. Otherwise it answers nil.
+func documentCapabilities(
+	ctx context.Context,
+	opts DiffOptions,
+	dialect string,
+	fromSet, toSet atlassource.Set,
+) (capability.Capabilities, error) {
+	asksDevServer := opts.ServerVersion == "" && !materializesFrom(fromSet, toSet, opts.DevURL) &&
+		!holdsServerForComparison(fromSet, toSet)
+	switch {
+	case !opts.SkipUnusedDevURL:
+		devCaps, err := devreach.Server(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout)
+		if err != nil || !asksDevServer {
+			return capability.Capabilities{}, err
+		}
+		return devCaps, nil
+	case asksDevServer:
+		return devServerVersion(ctx, dialect, opts.DevURL, opts.ConnectTimeout, opts.Diagnostics), nil
+	}
+	return capability.Capabilities{}, nil
+}
 
-func devServerCapabilities(ctx context.Context, dialect, devURL string, timeout time.Duration) capability.Capabilities {
-	devURL = strings.TrimSpace(devURL)
-	if devURL == "" {
-		return capability.Capabilities{}
-	}
-	if devdocker.IsURL(devURL) {
-		spec, err := devdocker.Parse(devURL)
-		if err != nil {
-			return capability.Capabilities{}
-		}
-		_, tag, tagged := strings.Cut(spec.Image, ":")
-		resolution := capability.ResolveServerVersion(dialect, tag)
-		if !tagged || !resolution.Recognized {
-			return capability.Capabilities{}
-		}
-		return resolution.Capabilities
-	}
-	if atlasurl.NamesAFile(devURL) {
-		// A SQLite file has no server to ask: the engine is the one compiled
-		// into Ptah, which the dialect's default preset describes. Opening the
-		// file to ask creates it, so without this `--dev-url sqlite://dev.db`
-		// on a diff of two files leaves an empty dev.db in the working
-		// directory.
-		return capability.Capabilities{}
-	}
+// devServerVersion answers what the server behind devURL can do, for a diff of
+// two documents whose dev URL is not checked ([DiffOptions.SkipUnusedDevURL]),
+// or nil where the dialect default stands. A URL that cannot be opened within
+// devVersionTimeout answers nil, so the comparison runs as it does with no dev
+// database, and a declaration the default cannot plan is refused by name
+// there. That fallback is noted on diagnostics, when it is not nil, so an
+// operator whose project-wide dev server is down learns the plan was not made
+// for it; the run's outcome does not change.
+func devServerVersion(
+	ctx context.Context,
+	dialect, devURL string,
+	timeout time.Duration,
+	diagnostics io.Writer,
+) capability.Capabilities {
 	if timeout <= 0 || timeout > devVersionTimeout {
 		timeout = devVersionTimeout
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	conn, err := dbschema.ConnectToServer(ctx, devURL)
+	caps, err := devreach.Server(ctx, dialect, "dev-url", devURL, timeout)
 	if err != nil {
-		slog.Debug("could not open --dev-url for its server version; planning for the dialect default",
+		slog.Debug("could not open the dev URL for its server version; planning for the dialect default",
 			"dialect", dialect, "error", err)
+		if diagnostics != nil {
+			fmt.Fprintf(diagnostics,
+				"note: the dev database named in the project file did not answer; planning for the %s default capabilities\n",
+				dialect)
+		}
 		return capability.Capabilities{}
 	}
-	defer func() { _ = conn.Close() }()
-	return conn.Info().Capabilities
+	return caps
 }
 
 // devVersionTimeout bounds the one connection a diff of two documents makes to
-// learn the dev server's version, which nothing else in that diff waits for.
+// learn the version of a dev server it does not check, which nothing else in
+// that diff waits for. A dev URL that is checked takes the run's connect
+// timeout instead, as every other connection does, since a server slower than
+// this to answer is no reason to refuse the run.
 const devVersionTimeout = 5 * time.Second
+
+// ErrDevURLRequired is returned by a diff whose sources are all local files and
+// that has no dev database to load them into, so no source names the dialect.
+var ErrDevURLRequired = errors.New("--dev-url is required for local schema file diffing")
 
 // checkDiffSelections settles what the selectors of a comparison matched,
 // once both sides are scoped and before the dev database root is set or
@@ -522,7 +546,7 @@ func diffResolvedStates(
 	conn *dbschema.DatabaseConnection,
 	fromState, toState atlassource.State,
 	dialect string,
-	capabilities capability.Capabilities,
+	resolveCapabilities func(context.Context) (capability.Capabilities, error),
 	sides devServerSides,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
@@ -591,6 +615,10 @@ func diffResolvedStates(
 	}
 
 	if err := validateClickHouseRBAC(dialect, to, fromSide.database); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
+	capabilities, err := resolveCapabilities(ctx)
+	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 	// Without a held connection, validate using the selected target's offline

@@ -32,6 +32,7 @@ import (
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/devreach"
 	"ptah.run/internal/genexprprobe"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/providerurl"
@@ -467,8 +468,8 @@ func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff, undecided schemadiff.Diagn
 // Oracle alone: it quotes and upper-cases every column reference, drops the
 // spaces around operators, and adds parentheses the declaration did not carry.
 // Everywhere else the stored text is the declared text and the comparison is
-// already sound, so no dev database is opened and no probe is rendered
-// (stokaro/ptah#1915).
+// already sound, so no probe is rendered (stokaro/ptah#1915). A dev URL that
+// was given is opened and closed all the same.
 //
 // Without a dev URL the expression stays uncompared rather than reported. The
 // diagnostic says so rather than leaving it silent: an exclusion the user did
@@ -486,7 +487,10 @@ func resolveGeneratedExpressions(
 		return nil, err
 	}
 	if len(probes) == 0 {
-		return nil, nil
+		// Nothing needs asking, and a --dev-url that was given is still
+		// opened, so one nothing answers on fails the run; see [devreach].
+		_, err := devreach.Server(ctx, info.Dialect, devURLFlag, opts.devURL, connectTimeout)
+		return nil, err
 	}
 	if strings.TrimSpace(opts.devURL) == "" {
 		return nil, nil

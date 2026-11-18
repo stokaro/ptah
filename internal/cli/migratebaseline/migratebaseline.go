@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/cli/internal/schemaops"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devreach"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/sqlitevirtual"
@@ -220,6 +221,13 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		WithMigrationLockTimeout(lockTimeout).
 		WithMigrationLockName(lockName.Value)
 	if opts.dryRun {
+		// A dry run verifies nothing, and the shadow database is opened all
+		// the same, so a --shadow-db nothing answers on fails the dry run
+		// rather than the run it rehearses. A docker:// URL is parsed and no
+		// container is started.
+		if _, err := devreach.Server(ctx, conn.Info().Dialect, shadowDBFlag, opts.shadowDB, connectTimeout); err != nil {
+			return err
+		}
 		printDryRun(opts.dbURL, opts.migrationsDir, version, mig, lockName, rows)
 		return nil
 	}
