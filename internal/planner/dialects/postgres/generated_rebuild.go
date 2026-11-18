@@ -125,8 +125,8 @@ func planGeneratedRebuild(
 	if column.Collate != "" {
 		return generatedRebuild{}, fmt.Errorf(
 			"%w: generated column %s.%s reads column %s, whose type this plan changes, and has the collation %s: "+
-				"PostgreSQL refuses the type change while the column exists, and the plan cannot add the column back "+
-				"with its collation, since the PostgreSQL renderer writes no COLLATE on a column",
+				"PostgreSQL refuses the type change while the column exists, and the rebuild does not add a generated column back "+
+				"with a collation of its own",
 			ptaherr.ErrUnsupportedFeature, tableDiff.TableName, column.Name, strings.Join(reads, ", "), column.Collate)
 	}
 	index := slices.IndexFunc(tableDiff.Desired.Fields, func(field schemamodel.Field) bool { return sameColumn(field.Name) })
@@ -183,12 +183,12 @@ func restatedIndexDefinition(definition, table string) (string, bool) {
 	return parts[1] + quotePostgresIdentifierPath(table) + parts[3], true
 }
 
-// retypedColumnNames names the columns of the table whose type the plan
-// changes.
+// retypedColumnNames names the columns of the table whose type or collation
+// the plan changes.
 func retypedColumnNames(tableDiff difftypes.TableDiff) []string {
 	var names []string
 	for _, column := range tableDiff.ColumnsModified {
-		if _, changed := column.Changes["type"]; changed {
+		if rewritesColumnType(column) {
 			names = append(names, column.ColumnName)
 		}
 	}
@@ -353,8 +353,9 @@ func qualifiedIndexName(table string, index catalog.Index) string {
 // prefix.
 //
 // A collation other than the type's own is refused rather than restated: the
-// PostgreSQL renderer writes no COLLATE on a column, so the add would bring
-// the column back under the type's collation, and every index on it with it.
+// rebuild does not carry the generated column's own collation into the add, so
+// the add would bring the column back under the type's collation, and every
+// index on it with it.
 func (r generatedRebuild) guard() string {
 	table := quotePostgresLiteral(quotePostgresIdentifierPath(r.table)) + "::regclass"
 	column := quotePostgresLiteral(r.column.Name)

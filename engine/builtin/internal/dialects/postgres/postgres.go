@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/notnullfill"
 	"ptah.run/internal/objectowner"
+	"ptah.run/internal/pgcollation"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/renderdiag"
@@ -655,27 +656,7 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 		local.Columns, local.Elements = nil, nil
 	}
 	node = &local
-	// This target writes the identity clauses, UNIQUE, and -- where the server
-	// persists one -- the name on a NOT NULL, refusing the name rather than
-	// dropping it where it does not. What it has no clause for is the MySQL
-	// family's ON UPDATE and a per-column character set, and it renders no
-	// COLLATE even though the server has one.
-	for _, column := range node.Columns {
-		r.sink.RecordLostColumnProperties(
-			renderdiag.ColumnName(node.Name, column.Name),
-			renderdiag.ColumnProperties{
-				Collate:       column.Collate,
-				AutoIncrement: column.AutoInc && !generatesItsOwnValues(column),
-				// The one remedy in this group. It matters more than it looks:
-				// the table-level AUTO_INCREMENT option already tells the
-				// author to move the start onto identity_start, and on a column
-				// rendered as a plain integer that is advice about a key this
-				// target was not generating at all (stokaro/ptah#2969).
-				AutoIncrementRemedy: "declare the column type as SERIAL or BIGSERIAL, " +
-					"or give it an identity clause with identity_generation",
-			},
-		)
-	}
+	r.recordLostColumnProperties(node)
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -1690,6 +1671,13 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 
 	// Column name and type
 	parts = append(parts, fmt.Sprintf("  %s %s", r.escapeIdentifier(column.Name), columnType))
+	collation, err := r.columnCollationClause(column)
+	if err != nil {
+		return "", err
+	}
+	if collation != "" {
+		parts = append(parts, collation)
+	}
 
 	// Column constraints - PostgreSQL order: PRIMARY KEY, then NOT NULL, then UNIQUE
 	keyParts, err := r.columnKeyAndNullability(column)
@@ -2199,7 +2187,7 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, op *ast.Modify
 	if identityLeaves {
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP IDENTITY;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	}
-	if changed.Type && !r.writeColumnTypeChange(tableName, column) {
+	if changesTypeClause(changed) && !r.writeColumnTypeChange(tableName, column) {
 		return
 	}
 	if changed.Nullability {
@@ -2266,6 +2254,68 @@ func (r *Renderer) writeSequenceSeed(tableName, column, sequence string) {
 		r.escapeValue(r.escapeQualifiedIdentifier(sequence)), name, r.escapeQualifiedIdentifier(tableName), name)
 }
 
+// recordLostColumnProperties reports the column properties of node this
+// target has no clause for.
+//
+// This target writes the identity clauses, UNIQUE, and -- where the server
+// persists one -- the name on a NOT NULL, refusing the name rather than
+// dropping it where it does not. What it has no clause for is the MySQL
+// family's ON UPDATE and a per-column character set. It writes a column's
+// COLLATE where the descriptor states Columns.Collations, and reports it lost
+// on the other engines it serves.
+func (r *Renderer) recordLostColumnProperties(node *ast.CreateTableNode) {
+	writesCollations := r.writesColumnCollations()
+	for _, column := range node.Columns {
+		lostCollation := column.Collate
+		if writesCollations {
+			lostCollation = ""
+		}
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Collate:       lostCollation,
+				AutoIncrement: column.AutoInc && !generatesItsOwnValues(column),
+				// The one remedy in this group. It matters more than it looks:
+				// the table-level AUTO_INCREMENT option already tells the
+				// author to move the start onto identity_start, and on a column
+				// rendered as a plain integer that is advice about a key this
+				// target was not generating at all (stokaro/ptah#2969).
+				AutoIncrementRemedy: "declare the column type as SERIAL or BIGSERIAL, " +
+					"or give it an identity clause with identity_generation",
+			},
+		)
+	}
+}
+
+// writesColumnCollations reports whether the engine this renderer writes for
+// takes a column's COLLATE from it: the descriptor's Columns.Collations, which
+// the comparison reads too, so a collation is compared exactly where it is
+// written.
+func (r *Renderer) writesColumnCollations() bool {
+	described, _ := platform.Lookup(r.dialect)
+	return described.Columns.Collations
+}
+
+// columnCollationClause is the COLLATE clause of column, empty for a column
+// that names no collation or an engine that is not handed one.
+func (r *Renderer) columnCollationClause(column *ast.ColumnNode) (string, error) {
+	if column.Collate == "" || !r.writesColumnCollations() {
+		return "", nil
+	}
+	name, err := pgcollation.Read(column.Collate)
+	if err != nil {
+		return "", fmt.Errorf("column %s: %w", column.Name, err)
+	}
+	return "COLLATE " + name.SQL(), nil
+}
+
+// changesTypeClause reports whether changed is made with ALTER COLUMN ...
+// TYPE: a type change, or a collation change, since the TYPE clause writes the
+// column's COLLATE and without one the column takes its type's collation.
+func changesTypeClause(changed ast.ColumnProperties) bool {
+	return changed.Type || changed.Collation
+}
+
 // writeColumnTypeChange writes the TYPE clause of a column modification, and
 // reports whether the type could be rendered at all.
 func (r *Renderer) writeColumnTypeChange(tableName string, column *ast.ColumnNode) bool {
@@ -2293,6 +2343,14 @@ func (r *Renderer) writeColumnTypeChange(tableName string, column *ast.ColumnNod
 		targetType = columnType
 	}
 	targetType = serialStorageType(targetType)
+	collation, err := r.columnCollationClause(column)
+	if err != nil {
+		r.w.WriteLinef("-- %s: %s", r.dialectUpper, err.Error())
+		return false
+	}
+	if collation != "" {
+		targetType += " " + collation
+	}
 	if column.EnumType {
 		// Through text: no cast reaches an enum from another enum, and every
 		// type a column can leave casts to text. An array goes through text[].

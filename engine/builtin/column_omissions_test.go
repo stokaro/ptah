@@ -47,9 +47,10 @@ func lostProperties(c *qt.C, database *schemamodel.Database, dialect string) []s
 // which targets carry a column's collation.
 //
 // It decides which values a comparison and a unique index treat as equal, and
-// four of the five targets that drop it here do have a column COLLATE clause,
-// so the declaration is lost passing through Ptah rather than by the server's
-// incapacity (stokaro/ptah#2983).
+// most of the targets that drop it here do have a column COLLATE clause, so the
+// declaration is lost passing through Ptah rather than by the server's
+// incapacity (stokaro/ptah#2983). PostgreSQL writes it, and CockroachDB and
+// YugabyteDB, which the same renderer serves, report it lost.
 func TestGetOrderedCreateStatementsReportingOmissions_NamesALostCollation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -58,7 +59,9 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesALostCollation(t *tes
 	}{
 		{name: "mysql writes it", dialect: platform.MySQL, want: nil},
 		{name: "mariadb writes it", dialect: platform.MariaDB, want: nil},
-		{name: "postgres drops it", dialect: platform.Postgres, want: []string{"collation"}},
+		{name: "postgres writes it", dialect: platform.Postgres, want: nil},
+		{name: "cockroachdb drops it", dialect: platform.CockroachDB, want: []string{"collation"}},
+		{name: "yugabytedb drops it", dialect: platform.YugabyteDB, want: []string{"collation"}},
 		{name: "sqlite drops it", dialect: platform.SQLite, want: []string{"collation"}},
 		{name: "sql server drops it", dialect: platform.SQLServer, want: []string{"collation"}},
 		{name: "oracle drops it", dialect: platform.Oracle, want: []string{"collation"}},
@@ -359,6 +362,18 @@ func TestGetOrderedCreateStatementsReportingOmissions_ATargetWritesWhatItKeeps(t
 			dialect: platform.MySQL,
 			field:   schemamodel.Field{Name: "title", Type: "VARCHAR(80)", Collate: "utf8mb4_bin"},
 			want:    "COLLATE utf8mb4_bin",
+		},
+		{
+			name:    "postgres writes the collation",
+			dialect: platform.Postgres,
+			field:   schemamodel.Field{Name: "title", Type: "VARCHAR(80)", Collate: "utf8mb4_bin"},
+			want:    `"title" VARCHAR(80) COLLATE "utf8mb4_bin"`,
+		},
+		{
+			name:    "postgres writes the collation's schema",
+			dialect: platform.Postgres,
+			field:   schemamodel.Field{Name: "title", Type: "VARCHAR(80)", Collate: `"app"."MixedCase"`},
+			want:    `"title" VARCHAR(80) COLLATE "app"."MixedCase"`,
 		},
 		{
 			name:    "postgres writes a unique column",

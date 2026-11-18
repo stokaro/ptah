@@ -460,14 +460,14 @@ func (t retypedTable) cause() rebuildCause {
 	return rebuildCause{change: "the type change of " + listed, then: "change the type of " + listed}
 }
 
-// retypedColumns is the tables with at least one column whose type changes,
-// and those columns.
+// retypedColumns is the tables with at least one column whose type or
+// collation changes, and those columns.
 func retypedColumns(diff *difftypes.SchemaDiff) []retypedTable {
 	var tables []retypedTable
 	for _, tableDiff := range diff.TablesModified {
 		var columns []string
 		for _, colDiff := range tableDiff.ColumnsModified {
-			if _, retyped := colDiff.Changes["type"]; retyped {
+			if rewritesColumnType(colDiff) {
 				columns = append(columns, colDiff.ColumnName)
 			}
 		}

@@ -39,6 +39,10 @@ type targetGrammar struct {
 	// identityColumns is the descriptor's Comparison.IdentityColumns: ALTER
 	// COLUMN adds an identity, so ALTER COLUMN ... ADD GENERATED is read.
 	identityColumns bool
+	// collations is the descriptor's Columns.Collations: a column's COLLATE
+	// names a collation the renderer writes and the comparison reads, so the
+	// name is read into the one spelling both use.
+	collations bool
 }
 
 // targetGrammars derives each dialect's grammar once per registry. A parser is
@@ -56,6 +60,7 @@ var targetGrammars = descriptortable.New(func(described descriptor.Dialect) targ
 		batches:            described.Scripts.BatchSeparator != "",
 		ownedSequences:     described.Conversion.OwnedSequences,
 		identityColumns:    described.Comparison.IdentityColumns,
+		collations:         described.Columns.Collations,
 	}
 })
 

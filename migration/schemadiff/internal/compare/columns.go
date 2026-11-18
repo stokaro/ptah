@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/oracletype"
+	"ptah.run/internal/pgcollation"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
@@ -539,6 +540,8 @@ func columnsWithDesiredDomains(
 	// change.
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnCollation]; owned {
 		applyColumnDifference(colDiff.Changes, "collation", receipt.Difference)
+	} else if change := columnCollationChange(genCol, dbCol, dialect); change != "" {
+		colDiff.Changes["collation"] = change
 	}
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnType]; owned {
 		applyColumnDifference(colDiff.Changes, "type", receipt.Difference)
@@ -597,6 +600,50 @@ func columnsWithDesiredDomains(
 	applyDeclaredSerial(&colDiff, genCol, dbCol, dialect, ctx)
 
 	return colDiff
+}
+
+// columnCollationChange is the change of a column's collation, on an engine
+// whose descriptor states Columns.Collations, and empty where the collation
+// holds. The names are read with PostgreSQL's spelling, the one such engine.
+//
+// A column that declares a collation is compared with the one the catalog
+// reports it declaring, and where it reports none, with the one the column
+// takes from its type: `COLLATE "C"` on a column of type name, or `COLLATE
+// "default"` on text, restates what the column holds. That inherited
+// collation is compared by name alone, because the catalog's answer for it
+// names no schema. A column that declares none holds where the catalog
+// reports none declared.
+func columnCollationChange(desired schemamodel.Field, current catalog.Column, dialect string) string {
+	if !columnFactsOf(dialect).Collations {
+		return ""
+	}
+	change := current.Collate + " -> " + desired.Collate
+	if desired.Collate == "" {
+		if current.Collate == "" {
+			return ""
+		}
+		return change
+	}
+	declared, err := pgcollation.Read(desired.Collate)
+	if err != nil {
+		// A name the renderer refuses is not one the catalog can hold.
+		return change
+	}
+	if current.Collate == "" {
+		inherited := current.EffectiveCollate
+		if inherited == "" {
+			inherited = "default"
+		}
+		if declared.Name == inherited {
+			return ""
+		}
+		return change
+	}
+	read, err := pgcollation.Read(current.Collate)
+	if err != nil || !pgcollation.Same(declared, read) {
+		return change
+	}
+	return ""
 }
 
 // applyDeclaredSerial records the default a column of a serial type takes where the

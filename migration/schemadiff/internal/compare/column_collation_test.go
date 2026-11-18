@@ -1,0 +1,87 @@
+package compare_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff/internal/compare"
+)
+
+// TestColumnsWithDialect_ComparesAPostgreSQLColumnCollation pins when a
+// declared collation is the one the catalog reports.
+//
+// A read fills Collate only for a collation the column declares, and
+// EffectiveCollate with the one it compares with, empty for the database
+// default. So a declaration restating what the column takes from its type
+// holds: "C" on a column of type name, "default" on text. A collation of
+// pg_catalog is read without its schema, and one of another schema with it.
+func TestColumnsWithDialect_ComparesAPostgreSQLColumnCollation(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		read     catalog.Column
+		want     string
+	}{
+		{name: "the collation the column declares", declared: "C",
+			read: catalog.Column{Collate: "C", EffectiveCollate: "C"}, want: ""},
+		{name: "a collation the column does not declare", declared: "C",
+			read: catalog.Column{}, want: " -> C"},
+		{name: "a collation the declaration leaves out", declared: "",
+			read: catalog.Column{Collate: "C", EffectiveCollate: "C"}, want: "C -> "},
+		{name: "neither names one", declared: "", read: catalog.Column{}, want: ""},
+		{name: "another collation", declared: "POSIX",
+			read: catalog.Column{Collate: "C", EffectiveCollate: "C"}, want: "C -> POSIX"},
+		{name: "default restated on text", declared: "default", read: catalog.Column{}, want: ""},
+		{name: "C restated on a column of type name", declared: "C",
+			read: catalog.Column{EffectiveCollate: "C"}, want: ""},
+		{name: "default on a column that takes C from its domain", declared: "default",
+			read: catalog.Column{EffectiveCollate: "C"}, want: " -> default"},
+		{name: "pg_catalog named", declared: `"pg_catalog"."C"`,
+			read: catalog.Column{Collate: "C", EffectiveCollate: "C"}, want: ""},
+		{name: "a schema's mixed-case collation", declared: `"app"."MixedCase"`,
+			read: catalog.Column{Collate: `"app"."MixedCase"`, EffectiveCollate: "MixedCase"}, want: ""},
+		{name: "a schema's collation declared without its schema", declared: "MixedCase",
+			read: catalog.Column{Collate: `"app"."MixedCase"`, EffectiveCollate: "MixedCase"}, want: ""},
+		{name: "the collation of another schema", declared: `"app"."MixedCase"`,
+			read: catalog.Column{Collate: `"other"."MixedCase"`, EffectiveCollate: "MixedCase"},
+			want: `"other"."MixedCase" -> "app"."MixedCase"`},
+		{name: "a name in another case", declared: "c",
+			read: catalog.Column{Collate: "C", EffectiveCollate: "C"}, want: "C -> c"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			read := test.read
+			read.Name, read.DataType, read.IsNullable = "c", "text", "YES"
+
+			diff := compare.ColumnsWithDialect(
+				schemamodel.Field{Name: "c", Type: "text", Nullable: true, Collate: test.declared}, read, "postgres")
+
+			c.Assert(diff.Changes["collation"], qt.Equals, test.want)
+		})
+	}
+}
+
+// TestColumnsWithDialect_LeavesAColumnCollationAloneElsewhere is the control:
+// an engine whose descriptor does not state Columns.Collations is not
+// compared, since its renderer writes no COLLATE or its reader has not been
+// measured.
+func TestColumnsWithDialect_LeavesAColumnCollationAloneElsewhere(t *testing.T) {
+	for _, dialect := range []string{"cockroachdb", "yugabytedb", "mysql", "sqlite"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compare.ColumnsWithDialect(
+				schemamodel.Field{Name: "c", Type: "text", Nullable: true, Collate: "C"},
+				catalog.Column{Name: "c", DataType: "text", IsNullable: "YES"},
+				dialect,
+			)
+
+			_, changed := diff.Changes["collation"]
+			c.Assert(changed, qt.IsFalse)
+		})
+	}
+}

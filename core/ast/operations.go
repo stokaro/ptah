@@ -169,11 +169,14 @@ type ColumnProperties struct {
 	// Identity is set when the column gains or loses an identity, or its
 	// generation changes.
 	Identity bool
+	// Collation is set when the column's collation changes. The column's
+	// Collate is the one it takes, and an empty one is its type's.
+	Collation bool
 }
 
 // Any reports whether at least one property is named.
 func (p ColumnProperties) Any() bool {
-	return p.Type || p.Nullability || p.Default || p.Identity
+	return p.Type || p.Nullability || p.Default || p.Identity || p.Collation
 }
 
 // Accept hands the visitor this operation.

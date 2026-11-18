@@ -396,6 +396,47 @@ back, because YugabyteDB keeps a temporary view through the rollback and the
 session. A `*` is not asked, because the server expands it against the columns
 the database holds now, not the ones the desired tables declare.
 
+## Column collations
+
+A column's `COLLATE` is written right after its type, each part of the name
+quoted, so a mixed-case name and a schema keep what they name:
+
+```sql
+"title" varchar(80) COLLATE "app"."MixedCase"
+```
+
+In a SQL schema file an unquoted name folds to lower case, as PostgreSQL
+folds it: `COLLATE Ucs_Basic` names `ucs_basic`, and `COLLATE
+app."MixedCase"` names `MixedCase` in the schema `app`.
+
+The comparison reads the collation each column declares from
+`pg_attribute.attcollation`. A column whose declared collation differs is
+changed with `ALTER COLUMN ... TYPE <type> COLLATE ...`, and one the
+declaration names no collation for is given its type's collation back with
+`ALTER COLUMN ... TYPE <type>`. Some declarations match what the server holds
+without a change:
+
+- A collation the column takes from its type anyway, `COLLATE "default"` on
+  `text` or `COLLATE "C"` on `name`, matches a column that declares none. This
+  match is by name alone, because the catalog reports the type's collation
+  without its schema.
+- Against a column that declares a collation, a name without a schema matches
+  a collation of that name in any schema, and a name with a schema matches
+  only that schema's collation.
+- `COLLATE "pg_catalog"."C"` matches `COLLATE "C"`.
+
+A type change on a column with a collation restates the collation, because a
+`TYPE` clause without `COLLATE` gives the column its new type's collation.
+PostgreSQL makes a collation change with the `TYPE` clause, and refuses it
+while a view or a generated column reads the column, so the plan rebuilds them
+as for a type change; see [Changing a column type under a
+view](#changing-a-column-type-under-a-view) and [Changing a column type under
+a generated column](#changing-a-column-type-under-a-generated-column).
+
+CockroachDB and YugabyteDB are not compared this way: a rendered schema
+reports a column collation as not written there, and the comparison does not
+read it.
+
 ## Constraint enforcement and the MATCH type
 
 PostgreSQL 18 keeps a `CHECK` or a foreign key declared `NOT ENFORCED` and does
@@ -1302,7 +1343,9 @@ views that read its table, directly or through another view, before the column
 step. It creates them again after it, in dependency order. A live view the
 declaration no longer holds is dropped at the same point, because the removal
 step comes after the column step. The rollback migration does the same in the
-other direction. See [What a view rebuild keeps](#what-a-view-rebuild-keeps).
+other direction. A change of a column's collation is a `TYPE` clause too, so
+it rebuilds the same views. See
+[What a view rebuild keeps](#what-a-view-rebuild-keeps).
 
 ## Changing a column type under a generated column
 
@@ -1335,10 +1378,11 @@ undoes the rebuild.
 
 A plan that also removes the generated column, or whose declaration does not
 hold it, is refused before it runs, and so is one where the generated column
-has a collation of its own, since Ptah writes no `COLLATE` on a PostgreSQL
-column. CockroachDB refuses the same type change, but its catalog does not
-report what depends on a computed column, so Ptah refuses the plan there
-instead of rebuilding.
+has a collation of its own, which the rebuild does not restate. A change of
+the collation of the column it reads is rebuilt around like a type change.
+CockroachDB refuses the same type change, but its catalog does not report what
+depends on a computed column, so Ptah refuses the plan there instead of
+rebuilding.
 
 The rebuild has these limits:
 

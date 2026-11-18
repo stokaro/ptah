@@ -44,8 +44,9 @@ import (
 // state: PostgreSQL and YugabyteDB refuse a second CREATE EXTENSION of one
 // extension, and CockroachDB accepts it.
 //
-// A serial column's NOT NULL replaces no switch: the comparison reads it, and
-// its tests pin what it decides, so it is left out here.
+// A serial column's NOT NULL and a column's collation replace no switch: the
+// comparison reads them, and their tests pin what they decide, so they are
+// left out here.
 func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T) {
 	pgFamily := descriptor.IndexNaming{PrimaryKeySuffix: "pkey"}
 	tests := []struct {
@@ -131,7 +132,7 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			c.Assert(got.IndexNaming, qt.DeepEquals, test.indexNaming)
 			c.Assert(got.CheckNaming, qt.Equals, test.checkNaming)
 			c.Assert(got.ConstraintNaming, qt.Equals, test.constraintNaming)
-			c.Assert(got.Columns, qt.CmpEquals(cmpopts.IgnoreFields(descriptor.Columns{}, "SerialNotNull")), test.columns)
+			c.Assert(got.Columns, qt.CmpEquals(cmpopts.IgnoreFields(descriptor.Columns{}, "SerialNotNull", "Collations")), test.columns)
 			c.Assert(got.Statements, qt.DeepEquals, test.statements)
 			c.Assert(got.TableOptions, qt.DeepEquals, test.tableOptions)
 		})
