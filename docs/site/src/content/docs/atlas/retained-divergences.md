@@ -122,6 +122,7 @@ own measurement conditions.
 | [A prefix migration inserted below the oldest applied revision](#a-prefix-migration-inserted-below-the-oldest-applied-revision) | refuses at the default `--exec-order linear` with the binary's own out-of-order line | exits `0` with `No migration files to execute`, saying nothing about the file it passed over |
 | [A file numbered above the current version that sorts below it as text](#a-file-numbered-above-the-current-version-that-sorts-below-it-as-text) | reports it as out of order and refuses it at the default `--exec-order linear` | reports `OK` and exits `0` with `No migration files to execute` under every `--exec-order`; the file never runs |
 | [A file whose Atlas version is empty](#a-file-whose-atlas-version-is-empty) | refuses the directory before anything runs and names the file, and does the same for a version that starts with a dot | runs `_x.sql` and records the version `""`, and runs `.draft_x.sql` as `.draft` |
+| [`migrate set` past a file that sorts above the target](#migrate-set-past-a-file-that-sorts-above-the-target) | records every file whose version is at or below the target as text | stops at the first file in file-name order whose version sorts above the target, so `migrate set 1` beside `10_c.sql` exits `0` and records nothing |
 | [A file `--exec-order linear-skip` leaves pending](#a-file---exec-order-linear-skip-leaves-pending) | writes one warning per skipped file on stderr | skips it without a word |
 | [A dirty revision left by a non-transactional body](#a-dirty-revision-left-by-a-non-transactional-body) | discards the revision row only where it observed the rollback, so `--tx-mode none` needs `--allow-dirty` | keeps the row in both cases and resumes from it |
 | [A project migration directory outside its root](#a-project-migration-directory-outside-its-root) | confines a project `migration.dir` to the directory holding `atlas.hcl` | writes the migration and `atlas.sum` wherever the project file points |
@@ -422,6 +423,35 @@ and Ptah reads every one of them as the table's own. On the pinned community
 binary v1.3.0, measured on SQLite, `.draft_x.sql` runs, is recorded as
 `.draft` and counts as executed. Ptah would run it and then report it pending,
 so it refuses the directory and names the file.
+
+## `migrate set` past a file that sorts above the target
+
+**Type.** Deliberate divergence
+
+**Current boundary.** Both binaries order the versions of `migrate set` as
+text. They part where a file whose version sorts above the target comes first
+in file-name order. The underscore after a version sorts after digits and
+capital letters, so `10_c.sql` and `1R__rep.sql` come before `1_a.sql`, and
+`20_c.sql` before `2_b.sql`. The pinned community binary v1.3.0 stops at the
+first such file and records only the files before it. `ptah-compat` records
+every file whose version is at or below the target.
+
+Measured on SQLite, over an empty database and a directory hashed by the
+binary:
+
+| directory | command | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- | --- |
+| `1_a.sql`, `10_c.sql`, `2_b.sql`, `v1_x.sql` | `migrate set 1` | exit `0`, no output, no row | exit `0`, records `1` |
+| `1_a.sql`, `1R__rep.sql` | `migrate set 1` | exit `0`, no output, no row | exit `0`, records `1` |
+| `1_a.sql`, `10_c.sql`, `2_b.sql` | `migrate set 1` | exit `0`, no output, no row | exit `0`, records `1` |
+| `1_a.sql`, `2_b.sql`, `20_c.sql` | `migrate set 2` | exit `0`, `Current version is 1 (1 set)`, records `1` | exit `0`, records `1` and `2` |
+
+The binary drops the version the operator named and still exits `0`, so with
+no row recorded `1_a.sql` stays pending. Where no such
+file comes first, as for `set 2` over the first directory, both record the same
+rows.
+
+**Evidence.** `integration/atlas_compat_opaque_versions_e2e_test.go`
 
 ## A file `--exec-order linear-skip` leaves pending
 

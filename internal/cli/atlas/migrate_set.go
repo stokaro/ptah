@@ -139,17 +139,7 @@ func runAtlasMigrateSet(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
-	// Atlas validates the environment, migration directory, and database
-	// connection before the positional version. Binary compatibility tests pin
-	// this otherwise surprising diagnostic and side-effect order.
-	if err := atlasMigrateSetExactArgs(cmd, args); err != nil {
-		return err
-	}
-	version, err := resolveAtlasMigrateSetVersion(tokens, opaque, args[0])
-	if err != nil {
-		return failAtlasCommand(cmd, err)
-	}
-	result, err := atlasmigrate.Set(cmd.Context(), conn, version, atlasmigrate.SetOptions{
+	setOptions := atlasmigrate.SetOptions{
 		Dir:                       source.Display,
 		FS:                        migrationFS,
 		AtlasEnv:                  opts.atlasEnv,
@@ -160,7 +150,26 @@ func runAtlasMigrateSet(
 		RevisionVersionComparator: atlasMigrateSetRevisionVersionComparator(prepared.format),
 		VerbatimDescriptions:      true,
 		TextOrder:                 true,
-	})
+	}
+	// The pinned community binary v1.3.0 creates its revision table as soon
+	// as it connects, so every refusal below leaves the empty table behind:
+	// measured on SQLite for zero and two positionals, `abc`, `0`, and a
+	// number or a version string no file carries.
+	if err := atlasmigrate.InitializeRevisions(cmd.Context(), conn, setOptions); err != nil {
+		return failAtlasCommand(cmd, err)
+	}
+
+	// Atlas validates the environment, migration directory, and database
+	// connection before the positional version. Binary compatibility tests pin
+	// this otherwise surprising diagnostic and side-effect order.
+	if err := atlasMigrateSetExactArgs(cmd, args); err != nil {
+		return err
+	}
+	version, err := resolveAtlasMigrateSetVersion(tokens, opaque, args[0])
+	if err != nil {
+		return failAtlasCommand(cmd, err)
+	}
+	result, err := atlasmigrate.Set(cmd.Context(), conn, version, setOptions)
 	if err != nil {
 		return failAtlasCommand(cmd, remapAtlasExactIdentityError(err, sourceVersions))
 	}

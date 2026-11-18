@@ -73,14 +73,50 @@ func Set(
 	version int64,
 	opts SetOptions,
 ) (migrator.AtlasRevisionSetResult, error) {
+	mig, err := newSetMigrator(conn, opts)
+	if err != nil {
+		return migrator.AtlasRevisionSetResult{}, err
+	}
+	if opts.Version != "" {
+		if version, err = mig.ResolveVersion(opts.Version); err != nil {
+			return migrator.AtlasRevisionSetResult{}, fmt.Errorf("invalid migration version %q: %w", opts.Version, err)
+		}
+	}
+
+	result, err := mig.SetRevision(ctx, version)
+	if err != nil {
+		return migrator.AtlasRevisionSetResult{}, err
+	}
+	return result, nil
+}
+
+// InitializeRevisions creates the revision table [Set] writes with opts, and
+// writes no row. ptah-compat calls it as soon as it connects, because the
+// pinned community binary creates its revision table there: a `migrate set`
+// that then refuses its arity or a version no file carries leaves the empty
+// table behind on both binaries.
+func InitializeRevisions(ctx context.Context, conn *dbschema.DatabaseConnection, opts SetOptions) error {
+	mig, err := newSetMigrator(conn, opts)
+	if err != nil {
+		return err
+	}
+	if err := mig.Initialize(ctx); err != nil {
+		return fmt.Errorf("failed to initialize migrations table: %w", err)
+	}
+	return nil
+}
+
+// newSetMigrator builds the migrator a revision set runs through, over the
+// directory and the revision table opts name.
+func newSetMigrator(conn *dbschema.DatabaseConnection, opts SetOptions) (*migrator.Migrator, error) {
 	if conn == nil {
-		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("migrate set requires database connection")
+		return nil, fmt.Errorf("migrate set requires database connection")
 	}
 	if strings.TrimSpace(opts.Dir) == "" {
-		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("migrate set requires migration directory")
+		return nil, fmt.Errorf("migrate set requires migration directory")
 	}
 	if opts.FS == nil {
-		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("migrate set requires migration filesystem")
+		return nil, fmt.Errorf("migrate set requires migration filesystem")
 	}
 	dirFormat := opts.DirFormat
 	if dirFormat == "" {
@@ -104,7 +140,7 @@ func Set(
 	}
 	mig, err := migrator.NewFSMigrator(conn, opts.FS, providerOptions...)
 	if err != nil {
-		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("error registering migrations: %w", err)
+		return nil, fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(opts.RevisionsSchema, opts.RevisionsTable).
 		WithRevisionTableFormat(revisionFormat).
@@ -113,15 +149,5 @@ func Set(
 	if opts.TextOrder {
 		mig = mig.WithAtlasStringLinearity()
 	}
-	if opts.Version != "" {
-		if version, err = mig.ResolveVersion(opts.Version); err != nil {
-			return migrator.AtlasRevisionSetResult{}, fmt.Errorf("invalid migration version %q: %w", opts.Version, err)
-		}
-	}
-
-	result, err := mig.SetRevision(ctx, version)
-	if err != nil {
-		return migrator.AtlasRevisionSetResult{}, err
-	}
-	return result, nil
+	return mig, nil
 }
