@@ -214,18 +214,27 @@ target does anyway.
 `ptah migrations down` and `ptah migrations baseline` answer the same way: all
 three take the same lock on the same history.
 
-A run without the lock, on an engine that has none or under
-`ptah-compat migrate apply --skip-lock`, is still kept from applying a migration
-another run recorded after it read the revision table. When the INSERT of the
-revision row fails because the other run's row is there, the run stops with
-`another run recorded this migration after this run read the revision table`
-before any statement of the body. A retry with `--allow-dirty` rewrites the
-dirty row only while the row is as the retry read it: in Ptah's layout while its
-state is unchanged, and in the Atlas layout, which has no state column, while it
-still carries its error. Of two retries of one failed migration, the second
-stops with the same error. A retry that records inside the migration's own
-transaction is not checked, and neither is one on ClickHouse, because neither
-reports how many rows the rewrite changed.
+The lock is what serializes runs, retries included. A run without it, on an
+engine that has none or under `ptah-compat migrate apply --skip-lock`, is
+protected only where its read of the revision table is stale by the time it
+writes:
+
+- A run that found no row for a version, and whose INSERT of the revision row
+  then fails on the key because another run recorded the version meanwhile,
+  stops with
+  `another run recorded this migration after this run read the revision table`
+  before any statement of the body. Any other failure of the INSERT is reported
+  as the server gave it.
+- A retry with `--allow-dirty` rewrites the dirty row only while the row is as
+  the retry read it: in Ptah's layout while its state, applied count and
+  checksum are unchanged, and in the Atlas layout, which has no state column,
+  while its applied count is unchanged and it still carries its error. A retry
+  that read the row before another retry rewrote it stops with the same error.
+
+Two retries that both read the row before either writes it both pass the check,
+and both run the rest of the body. A retry that records inside the migration's
+own transaction is not checked, and neither is one on ClickHouse, because
+neither reports how many rows the rewrite changed.
 
 YugabyteDB 2024.x cannot take the session advisory lock. Ptah refuses a
 migration run on that server before changing the schema. YugabyteDB 2025.1

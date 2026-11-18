@@ -306,17 +306,22 @@ turn, as on the other engines with a lock: the second waits for the first, then
 finds nothing pending. `--migration-lock-timeout` bounds the wait, and a lock
 still held when it ends refuses the run with `timed out acquiring migration lock
 "ptah_migrate" for oracle after 10s`. `ptah schema apply` takes its own lock the
-same way.
+same way, a dry run included.
 
 The lock is a row lock. Ptah keeps one row per lock name in the table
 `ptah_locks`, which it creates in the session's schema the first time it takes
-a lock there. The row's key is the lock name exactly as given, `ptah_migrate`
-unless `--migration-lock-name` names another, and Ptah locks that row with
-`SELECT ... FOR UPDATE NOWAIT`, asked again until the wait ends. Creating the
-table needs `CREATE TABLE`, which a migration needs already. Schema reads on
-Oracle leave `ptah_locks` out, as they leave out the revision table, so a diff
-never plans to drop it. On the other engines Ptah creates no such table, and a
+a lock there, the schema the revision table lives in too. The row's key is the
+lock name exactly as given, `ptah_migrate` unless `--migration-lock-name` names
+another, and Ptah locks that row with `SELECT ... FOR UPDATE NOWAIT`. It asks
+again every 25 milliseconds until the wait ends, so waiting runs are not served
+in the order they arrived. Creating the table needs `CREATE TABLE`, which a
+migration needs already. On the other engines Ptah creates no such table, and a
 table of that name there is an ordinary one.
+
+Do not name a table of your own `ptah_locks` on Oracle. Schema reads leave that
+name out, as they leave out the revision table, so `schema diff` and `schema
+apply` never see the table, the lock fails when its columns are not the ones
+Ptah creates, and `db drop-all` drops it with the rest.
 
 The rows are never deleted, and a row holds no state of its own: only the lock
 on it does, and the lock ends with the session's transaction. A run that
@@ -329,18 +334,22 @@ holds it.
 
 Oracle commits every schema statement, and a commit gives a row lock back. So
 the lock lives on a database session of its own that runs nothing else, and
-the migration runs on other sessions. Oracle's named lock, `DBMS_LOCK`, would
-survive a commit, but only `SYS` can grant `EXECUTE` on it, so an ordinary
-account cannot take it.
+the migration runs on other sessions. Each run holds that one extra session for
+as long as it holds the lock. Oracle's named lock, `DBMS_LOCK`, would survive a
+commit, but only `SYS` can grant `EXECUTE` on it, so an ordinary account cannot
+take it.
 
-A run that holds no lock, such as `ptah-compat migrate apply --skip-lock`, is
-still not allowed to apply a migration twice. When another run records the same
-version first, the INSERT of the revision row fails on its key, and the run
-stops with `another run recorded this migration after this run read the
-revision table` before any statement of the body. An `--allow-dirty` retry
-rewrites the failed row only while it is as the retry read it, in either
-revision table layout, so of two retries of one failed migration, the second
-stops with the same error; see
+The migration lock is what serializes runs, retries included. A run that holds
+no lock, such as `ptah-compat migrate apply --skip-lock`, is protected only
+where its read of the revision table is stale by the time it writes. When
+another run recorded the version after this run found no row for it, the
+INSERT of the revision row fails on its key, and the run stops with `another
+run recorded this migration after this run read the revision table` before any
+statement of the body. An `--allow-dirty` retry rewrites the failed row only
+while it still has the state, applied count and checksum the retry read, so a
+retry that read the row before another retry rewrote it stops with the same
+error. Two retries that both read the row before either writes it both pass
+that check; see
 [Locking](../../versioned/apply/#locking-and---migration-lock-timeout).
 
 ## Open work
