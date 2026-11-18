@@ -7,7 +7,7 @@ require (
 	google.golang.org/grpc v1.86.0-dev
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.62.0
-	ptah.run/provider-sdk v0.40.0
+	ptah.run/provider-sdk v0.42.0
 )
 
 require (

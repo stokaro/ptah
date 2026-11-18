@@ -559,14 +559,16 @@ An executable provider, such as the YDB provider, guards its own dev databases
 and decides in its dialect what trust lifts. A provider that declares
 `database.dev-replay-trust` (provider contract 25.43) receives the declaration
 with each replay guard request and with each dev session Ptah opens for the
-run, so a statement its guard accepts under trust also runs. The YDB provider
-lifts a write outside its dev realm, users, groups, permissions, backups and
-statements that reach past the server, and keeps a statement that changes the
-session, such as `PRAGMA TablePathPrefix` or `USE`, refused. When you declare
+run, so a statement its guard accepts under trust also runs. When you declare
 trust and the provider does not declare the feature, Ptah stops before the
 replay and names the provider: install a provider release that supports it, or
 run without the declaration. Without the declaration, every provider replays
 under its own default confinement.
+
+The YDB provider lifts a write outside its dev realm, actions, users, groups,
+permissions, backups and statements that reach past the server. It keeps a
+statement that changes the session, such as `PRAGMA TablePathPrefix` or `USE`,
+refused, inside the body of an action or a `DO` block too.
 
 Trust covers the SQL a run executes on its dev database: a migration directory
 it replays, a desired schema file it loads there, and the baseline and plan a
