@@ -144,7 +144,15 @@ func TestColumnsWithDialect_ComparesAMySQLColumnCollationWhereDeclared(t *testin
 		{name: "another collation", declared: "utf8mb4_unicode_ci", read: "utf8mb4_bin", effective: "utf8mb4_bin", want: "utf8mb4_bin -> utf8mb4_unicode_ci"},
 		{name: "a collation the declaration leaves out", declared: "", read: "utf8mb4_bin", effective: "utf8mb4_bin", want: ""},
 		{name: "a declaration read back without an effective collation", declared: "utf8mb4_bin", read: "utf8mb4_bin", effective: "", want: ""},
-		{name: "a column that holds none", declared: "utf8mb4_bin", read: "", effective: "", want: " -> utf8mb4_bin"},
+		{name: "a character column that holds none", declared: "utf8mb4_bin", read: "", effective: "", want: " -> utf8mb4_bin"},
+		{name: "a collation named after the utf8 alias", declared: "utf8_general_ci", read: "utf8mb3_general_ci", effective: "utf8mb3_general_ci", want: ""},
+		{name: "the alias in upper case", declared: "UTF8_BIN", read: "utf8mb3_bin", effective: "utf8mb3_bin", want: ""},
+		{name: "the alias read back", declared: "utf8mb3_bin", read: "utf8_bin", effective: "utf8_bin", want: ""},
+		{
+			name: "another collation of the alias", declared: "utf8_bin", read: "utf8mb3_general_ci", effective: "utf8mb3_general_ci",
+			want: "utf8mb3_general_ci -> utf8_bin",
+		},
+		{name: "utf8mb4 is no alias", declared: "utf8mb4_bin", read: "utf8mb3_bin", effective: "utf8mb3_bin", want: "utf8mb3_bin -> utf8mb4_bin"},
 	}
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		for _, test := range tests {
@@ -163,5 +171,77 @@ func TestColumnsWithDialect_ComparesAMySQLColumnCollationWhereDeclared(t *testin
 				c.Assert(diff.Changes["collation"], qt.Equals, test.want)
 			})
 		}
+	}
+}
+
+// TestColumnsWithDialect_LeavesAMySQLCollationTheServerDropsAlone pins a
+// collation declared on a type that holds none: MySQL 8.4 and MariaDB 11.8
+// accept `int COLLATE utf8mb4_bin` and read the column back with no collation,
+// so a change planned for it would restate the column on every run.
+func TestColumnsWithDialect_LeavesAMySQLCollationTheServerDropsAlone(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		declared string
+	}{
+		{name: "int", dialect: "mysql", declared: "int"},
+		{name: "a sized integer", dialect: "mariadb", declared: "INT(11)"},
+		{name: "a date", dialect: "mysql", declared: "date"},
+		{name: "a binary string", dialect: "mariadb", declared: "varbinary(20)"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compare.ColumnsWithDialect(
+				schemamodel.Field{Name: "c", Type: test.declared, Nullable: true, Collate: "utf8mb4_bin"},
+				catalog.Column{Name: "c", DataType: test.declared, ColumnType: test.declared, IsNullable: "YES"},
+				test.dialect,
+			)
+
+			_, changed := diff.Changes["collation"]
+			c.Assert(changed, qt.IsFalse)
+		})
+	}
+}
+
+// TestColumnsWithDialect_ResolvesAMariaDBCollationName pins the names MariaDB
+// 11.8 stores under another name: a collation named without its character set
+// takes the column's, and DEFAULT selects the character set's default, so a
+// column that declares it is compared as one that declares none. MySQL 8.4
+// refuses both spellings, and its descriptor leaves them unresolved.
+func TestColumnsWithDialect_ResolvesAMariaDBCollationName(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		declared string
+		held     string
+		want     string
+	}{
+		{name: "a collation without its character set", dialect: "mariadb", declared: "uca1400_ai_ci", held: "utf8mb4_uca1400_ai_ci", want: ""},
+		{name: "on another character set", dialect: "mariadb", declared: "uca1400_ai_ci", held: "utf8mb3_uca1400_ai_ci", want: ""},
+		{
+			name: "another collation without its character set", dialect: "mariadb", declared: "uca1400_as_cs", held: "utf8mb4_uca1400_ai_ci",
+			want: "utf8mb4_uca1400_ai_ci -> uca1400_as_cs",
+		},
+		{name: "DEFAULT", dialect: "mariadb", declared: "default", held: "utf8mb4_uca1400_ai_ci", want: ""},
+		{name: "MySQL names the character set", dialect: "mysql", declared: "uca1400_ai_ci", held: "utf8mb4_uca1400_ai_ci", want: "utf8mb4_uca1400_ai_ci -> uca1400_ai_ci"},
+		{name: "MySQL has no DEFAULT", dialect: "mysql", declared: "DEFAULT", held: "utf8mb4_0900_ai_ci", want: "utf8mb4_0900_ai_ci -> DEFAULT"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compare.ColumnsWithDialect(
+				schemamodel.Field{Name: "c", Type: "varchar(20)", Nullable: true, Collate: test.declared},
+				catalog.Column{
+					Name: "c", DataType: "varchar", ColumnType: "varchar(20)", IsNullable: "YES",
+					Collate: test.held, EffectiveCollate: test.held,
+				},
+				test.dialect,
+			)
+
+			c.Assert(diff.Changes["collation"], qt.Equals, test.want)
+		})
 	}
 }

@@ -596,6 +596,15 @@ table, so `COLLATE utf8mb4_unicode_ci` on a column of a table whose default is
 collation is planned as `MODIFY COLUMN`, which restates the column with the
 declared collation and its declared character set.
 
+A name the server stores under another name is compared as the stored name.
+Both servers store a collation of the `utf8` character set under `utf8mb3`,
+so `COLLATE utf8_bin` holds as `utf8mb3_bin`. MariaDB also takes a collation
+without its character set, so `COLLATE uca1400_ai_ci` on a `utf8mb4` column
+holds as `utf8mb4_uca1400_ai_ci`, and `COLLATE DEFAULT`, which selects the
+default collation of the column's character set and is compared as no
+collation. Both servers accept a collation on a type that holds none, such as
+`int COLLATE utf8mb4_bin`, and keep none, so such a collation is not compared.
+
 A column that declares no collation is not compared. The server gives it its
 table's default collation, or the default collation of a character set the
 column names: `CHARACTER SET utf8mb4` in a table whose default is

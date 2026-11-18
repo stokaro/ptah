@@ -129,6 +129,18 @@ func mariaDB() descriptor.Dialect {
 		Columns: descriptor.Columns{
 			NationalCharAsChar: true, NationalCharCharset: "utf8mb3",
 			Collations: true, InheritedCollationVaries: true,
+			// Measured on MariaDB 11.8.9 and 12.3.3: utf8_bin is stored as
+			// utf8mb3_bin, uca1400_ai_ci and DEFAULT on a utf8mb4 column as
+			// utf8mb4_uca1400_ai_ci, and int COLLATE utf8mb4_bin keeps no
+			// collation.
+			CollationNames: descriptor.CollationNames{
+				CharsetAliases: map[string]string{"utf8": "utf8mb3"},
+				WithoutCharset: true, CharsetDefault: "DEFAULT",
+				Types: []string{
+					"char", "character", "nchar", "national", "varchar", "nvarchar",
+					"tinytext", "text", "mediumtext", "longtext", "enum", "set",
+				},
+			},
 		},
 
 		// Dev databases. MariaDB has no server UUID; its host name, port and data
