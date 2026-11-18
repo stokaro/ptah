@@ -381,7 +381,7 @@ func TestMigrateUpExpectSequenceComparesVersionKeys(t *testing.T) {
 		c := qt.New(t)
 		dbPath := filepath.Join(c.TempDir(), "unkeyed.db")
 		err := run(c, writeDirectory(c), dbPath, seqWriteExpected(c, 1, 2))
-		c.Assert(err, qt.ErrorMatches, `.*selected under the migration lock are \[1/0001 2/0002\], and the approved sequence is \[1 2\].*`)
+		c.Assert(err, qt.ErrorMatches, `.*selected under the migration lock are \[0001 0002\], and the approved sequence is \[1 2\].*`)
 		c.Assert(seqTableExists(c, dbPath, "users"), qt.IsFalse)
 	})
 }

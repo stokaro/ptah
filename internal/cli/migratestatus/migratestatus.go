@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/errorkind"
+	"ptah.run/internal/keyedversions"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
@@ -116,11 +117,21 @@ type statusDocument struct {
 	written bool
 }
 
-// writeStatus writes status as the run's document.
-func (d *statusDocument) writeStatus(status *migrator.MigrationStatus) error {
+// writeStatus writes status as the run's document. Where mig runs its
+// migrations under their positions, the numeric versions are left out and the
+// version keys name each migration, since a position names none outside this
+// run.
+func (d *statusDocument) writeStatus(mig *migrator.Migrator, status *migrator.MigrationStatus) error {
 	d.written = true
 	document := *status
 	document.Command = Command
+	if mig.KeyedByPosition() {
+		encoded, err := json.Marshal(&document)
+		if err != nil {
+			return fmt.Errorf("write the JSON result: %w", err)
+		}
+		return keyedversions.WriteIndented(d.out, encoded)
+	}
 	return outputJSON(d.out, &document)
 }
 
@@ -372,7 +383,7 @@ func migrateStatusCommand(cmd *cobra.Command, opts *options, document *statusDoc
 	}
 
 	if opts.jsonOutput {
-		if err := document.writeStatus(status); err != nil {
+		if err := document.writeStatus(mig, status); err != nil {
 			return err
 		}
 	} else if err := outputHuman(emit, status, conn, mig, opts.verbose); err != nil {

@@ -45,6 +45,17 @@ func (m *Migrator) versionLabel(version int64) (string, bool) {
 	return "", false
 }
 
+// KeyedByPosition reports that the migrations run under their positions in
+// file-name order: an Atlas directory holds a version that is not a decimal
+// number above zero, or a repeatable that shares its number with a numbered
+// file. Every numeric version the migrator reports, in a status, a plan or a
+// failure, is then a position, which moves when a file is added before it and
+// names no migration outside this migrator. The version keys beside those
+// numbers name each migration, and [Migrator.VersionLabel] spells one.
+func (m *Migrator) KeyedByPosition() bool {
+	return m.hasAtlasPositions()
+}
+
 // VersionLabels returns [Migrator.VersionLabel] of each version, in order.
 func (m *Migrator) VersionLabels(versions []int64) []string {
 	labels := make([]string, len(versions))

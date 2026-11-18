@@ -41,7 +41,10 @@ type expectedRepeatable struct {
 }
 
 // expectedMigration is one approved migration, named the way the revision
-// table names it.
+// table names it: by its version key when the entry carries one, and by the
+// decimal version otherwise. An entry with a key needs no version, because in
+// an Atlas directory whose files run under their positions the run document
+// prints none.
 type expectedMigration struct {
 	Version    int64  `json:"version"`
 	VersionKey string `json:"version_key"`
@@ -88,8 +91,8 @@ func loadExpectedSequence(path string) (*expectedSequence, error) {
 		return nil, fmt.Errorf("parse --%s: the document names no migrations list", expectSequenceFlag)
 	}
 	for index, migration := range sequence.Migrations {
-		if migration.Version < 1 {
-			return nil, fmt.Errorf("parse --%s: migration %d has version %d, which is not positive",
+		if migration.VersionKey == "" && migration.Version < 1 {
+			return nil, fmt.Errorf("parse --%s: migration %d has version %d, which is not positive, and no version_key",
 				expectSequenceFlag, index, migration.Version)
 		}
 	}
@@ -163,15 +166,15 @@ func (e *expectedSequence) guard() migrator.MigrationPlanGuard {
 	}
 }
 
-// identity is how one migration is named for comparison. A revision row keeps
-// its version key when the directory gave one and the decimal version when it
-// did not, so an absent key means the numeric identity rather than a wildcard.
+// identity is how one migration is named for comparison: its version key when
+// it has one, and the decimal version when it does not, so an absent key means
+// the numeric identity rather than a wildcard. The number beside a key takes no
+// part: in an Atlas directory whose files run under their positions it is a
+// position, which moves when a file is added before it, and an approval
+// written in one run would name another migration in the next.
 func identity(version int64, key string) string {
 	if key == "" {
-		key = strconv.FormatInt(version, 10)
+		return strconv.FormatInt(version, 10)
 	}
-	if key == strconv.FormatInt(version, 10) {
-		return key
-	}
-	return strconv.FormatInt(version, 10) + "/" + key
+	return key
 }

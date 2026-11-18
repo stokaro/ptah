@@ -316,10 +316,12 @@ migrations in another order are refused too. An empty selection is compared as
 well: a history that already moved past the approval is refused rather than
 reported up to date.
 
-Each entry names a migration by `version`, plus `version_key` when the directory
-gives one. The file is read strictly: an unknown field, a second document, a
-missing `migrations` list or a version below one is an error, because a field
-this build did not read would be a constraint the caller believes it set.
+Each entry names a migration by `version_key` when it carries one, and by
+`version` otherwise; the number beside a key takes no part in the comparison.
+An entry with a key needs no `version`. The file is read strictly: an unknown
+field, a second document, a missing `migrations` list or an entry with neither a
+key nor a version of one or more is an error, because a field this build did
+not read would be a constraint the caller believes it set.
 
 A directory with [repeatable migrations](../repeatable/) approves their work in
 a `repeatables` list, each entry an `identity` and a `checksum`. Without the
@@ -531,6 +533,18 @@ does not know the version it reads should refuse the document rather than read
 the fields it recognizes out of a shape that means something else. A new field
 an existing reader can ignore does not raise it.
 
+In an Atlas directory whose files run under their positions in file-name order,
+because a version such as `00` or `v1` is not a decimal number above zero, the
+numbers the migrator works with are positions. A position moves when a file is
+added before it, so it names no migration to another process. There the status
+document and the run document leave out every numeric version member:
+`current_version` beside `current_version_key`, `applied_migrations`,
+`pending_migrations` and `out_of_order_migrations` beside their `*_keys` lists,
+`version` beside `version_key` in each entry, and an empty numeric list. The
+members are absent, never `null`, and the key members name each migration by the
+version its file spells. A directory of numbered files prints the numbers as
+above.
+
 A status that could not be read prints a document of its own, in the same
 contract version: the version, the command and an `error` object, and none of
 the fields above. A document that carries `error` is never a status, so a
@@ -671,7 +685,10 @@ prove which statements it may skip. `unknown` is for a person.
 `planned` is what the migrator selected while holding the migration lock, which
 a `--limit`, a target version or a checkpoint narrows; `applied` names the
 selected migrations the history records afterwards, so a migration that was
-already applied before the run is not counted as this run's work.
+already applied before the run is not counted as this run's work. In an Atlas
+directory whose files run under their positions, `planned`, `applied` and
+`failure.version` are absent, as the status members are, and `planned_keys`,
+`applied_keys` and `failure.version_key` name the migrations.
 
 `error.message` is the message written for a person, and it quotes what the
 database said. That can include a row of data, such as the key in a
@@ -1038,7 +1055,12 @@ and pipelines share a directory:
   ```
 
   The version is written the way the migration file writes it, so leading zeros
-  are accepted. A version the directory does not carry is refused, and so is a
+  are accepted. In an Atlas directory whose files run under their positions in
+  file-name order, the bound is the version string a file spells: `2` names
+  `2_x.sql` and `v1` names `v1_x.sql`, and the run stops after that file in
+  file-name order. `0` is refused before the command connects, because it names
+  the empty history rather than a migration. A version the directory does not
+  carry is refused, and so is a
   version the database has already passed: nothing pending reaches the target
   there, and an exit `0` would report a state the database never arrived at. A
   database recorded at exactly the named version is not that case, and applies
