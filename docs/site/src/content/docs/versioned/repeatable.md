@@ -101,11 +101,13 @@ That holds on an engine that rolls schema changes back as a unit: PostgreSQL,
 SQLite, SQL Server, and CockroachDB 24 and older. MySQL, MariaDB, Oracle and
 CockroachDB from 25 commit the open transaction before a schema statement, and
 YugabyteDB keeps schema changes through a rollback, so a transaction there
-would not undo a failed body, and ClickHouse has no transactions. On those engines every repeatable migration runs
-without a transaction, and its record says `no_transaction=true`. A body that
-changes data only gets no transaction either, so write it to converge when it
-runs again from its first statement. A file that asks for a transaction with
-`-- atlas:txmode file` is refused there before anything runs.
+would not undo a failed body, and ClickHouse has no transactions. On those
+engines every repeatable migration runs without a transaction, and its record
+says `no_transaction=true`. Oracle commits each schema statement as it runs, so
+a failed body there leaves every statement that ran before the failing one. A
+body that changes data only gets no transaction either, so write it to converge
+when it runs again from its first statement. A file that asks for a
+transaction with `-- atlas:txmode file` is refused there before anything runs.
 
 What "changed" means is the digest of the file: `h1:` followed by the base64
 SHA-256 of its bytes, the same value `ptah.sum` holds for the file. The run
@@ -117,6 +119,32 @@ reads the record after the first released the lock, finds the digest applied,
 and runs nothing. CockroachDB has no session advisory lock, and Ptah takes none
 on Oracle or ClickHouse, so it runs every migration on those engines without
 one, repeatable migrations included: run one migrator at a time against them.
+
+Without the lock, the record still decides which of two runners executes a
+changed repeatable migration, on every engine but ClickHouse. Each runner
+claims the row before the body runs,
+and the claim matches only a row that still holds the state, the applied digest
+and the run that this runner read. The runner that loses the claim refuses with
+`another run changed the repeatable migration's record after this run read it`
+before any statement of the body. A new file is claimed by inserting its row,
+and the record's key refuses the second insert.
+
+### On ClickHouse
+
+Nothing decides between two runs on ClickHouse. An `ALTER TABLE ... UPDATE`
+reports no count of the rows it matched, and the record's `PRIMARY KEY` does
+not make an identity unique, so two runs that read the same record both run
+the body, and both insert a row for a new file. Run one migrator at a time
+against ClickHouse.
+
+Every change to the record is a mutation. An attempt, a failure and a
+completion are each an `ALTER TABLE ... UPDATE` with `mutations_sync = 1`,
+which rewrites the data parts that hold the row and waits until it has. The
+wait covers only the replica that ran the statement. With a replicated engine
+named through `--migrations-engine`, a run against another replica can read the
+record before the mutation reaches it and execute the body again, so point
+every run at the same replica. A repair removes a row with a lightweight
+`DELETE`, which needs a `MergeTree`-family engine that supports it.
 
 ## Seal the directory
 
@@ -357,6 +385,7 @@ migrations; stokaro/ptah#6152 records the gap.
 ## Limits
 
 - Engines reached through a provider do not run repeatable migrations.
+- On ClickHouse nothing decides between two concurrent runs.
 - `ptah migrations repair --repeatable` removes a row; nothing marks a
   repeatable migration applied without running it. Removing the row of a file
   still in the directory makes the next run execute it as new.

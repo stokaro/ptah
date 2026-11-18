@@ -44,9 +44,10 @@ type RevisionTable struct {
 	// one row per identity with the digest of the content that last applied
 	// and the outcome of the last attempt. Empty means the migrator runs no
 	// repeatable migration on the engine and refuses a directory that holds
-	// one. The template takes {table}, {engine} and {object}, the record's
-	// name as a string literal for an existence guard such as SQL Server's
-	// OBJECT_ID.
+	// one. The template takes {table}, {table_escaped} for a CREATE TABLE
+	// carried in a string literal such as Oracle's EXECUTE IMMEDIATE,
+	// {engine}, and {object}, the record's name as a string literal for an
+	// existence guard such as SQL Server's OBJECT_ID.
 	CreateRepeatables string `json:"create_repeatables,omitempty"`
 	// LogInsertPrefix is the SQL before INTO when the migrator appends an
 	// operation log entry. Empty uses INSERT. An engine can use this prefix to
@@ -88,11 +89,17 @@ type RevisionTable struct {
 	// bound empty value as NULL. Empty binds the value.
 	EmptyBinary string `json:"empty_binary,omitempty"`
 	// RepeatableUpdate changes the repeatable record's row of one identity.
-	// It takes {table}, {assignments} and {key}, the identity column, and
-	// binds the identity last. Empty uses UPDATE {table} SET {assignments}
-	// WHERE {key} = ?; an engine that changes rows through mutations states
-	// its own.
+	// It takes {table}, {assignments} and {where}, the condition that selects
+	// the row: the identity, bound after the assignments' values, and any
+	// condition an attempt's claim adds. Empty uses UPDATE {table} SET
+	// {assignments} WHERE {where}; an engine that changes rows through
+	// mutations states its own.
 	RepeatableUpdate string `json:"repeatable_update,omitempty"`
+	// UncountedUpdates reports that an UPDATE reports no count of the rows
+	// it matched, as a ClickHouse mutation does. A repeatable migration's
+	// attempt is then not a claim: the row is updated by its key, and two
+	// runs that read the same record both run the body.
+	UncountedUpdates bool `json:"uncounted_updates,omitempty"`
 	// RowLock is how a read of every revision locks the rows it read until
 	// its transaction ends: "for-update" (a FOR UPDATE suffix),
 	// "table-hint" (WITH (UPDLOCK, HOLDLOCK) after the table), or empty for

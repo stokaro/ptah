@@ -249,10 +249,13 @@ SETTINGS mutations_sync = 1`,
 		Mutations: true,
 		// The record of repeatable migrations is the shared one, under the
 		// engine clause. Its rows change through mutations, which the run
-		// waits for, as the revision table's do. A repair deletes its row
-		// with DELETE FROM, which ClickHouse runs as a lightweight delete.
+		// waits for on this replica, as the revision table's do. A mutation
+		// reports no rows, so an attempt is no claim. A repair deletes the
+		// row with DELETE FROM, which ClickHouse runs as a lightweight
+		// delete.
 		CreateRepeatables: createRepeatables,
-		RepeatableUpdate:  "ALTER TABLE {table} UPDATE {assignments} WHERE {key} = ? SETTINGS mutations_sync = 1",
+		RepeatableUpdate:  "ALTER TABLE {table} UPDATE {assignments} WHERE {where} SETTINGS mutations_sync = 1",
+		UncountedUpdates:  true,
 		UpsertTag:         "INSERT INTO {table} (tag, version, recorded_at, deleted) VALUES (?, ?, now64(9), 0)",
 		TagServerTime:     true,
 		TagReadSuffix:     " FINAL",

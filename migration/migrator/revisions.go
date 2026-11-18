@@ -1196,7 +1196,7 @@ func (m *Migrator) createAtlasRevisionsTableSQL() string {
 	return atlasRevisionsTableDDL(
 		m.connectionDialect(),
 		m.qualifiedMigrationsTable(),
-		sqlStringLiteral(m.metadataObjectName()),
+		sqlStringLiteral(m.metadataObjectName(m.migrationsTableName())),
 		m.migrationsEngine,
 	)
 }
