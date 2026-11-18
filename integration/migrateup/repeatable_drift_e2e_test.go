@@ -5,6 +5,8 @@ package migrateup_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -86,22 +88,84 @@ func (r *repeatableE2ETarget) versions(c *qt.C) []int64 {
 }
 
 func TestRepeatableMigrationsDriftE2E_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	r := appliedForDrift(c)
-	shadow, relations := newRepeatableShadow(c)
+	t.Run("the file is the content that applied", func(t *testing.T) {
+		c := qt.New(t)
+		r := appliedForDrift(c)
+		shadow, relations := newRepeatableShadow(c)
 
-	result, document := r.up(c, "--check-drift", "--shadow-db", shadow)
+		result, document := r.up(c, "--check-drift", "--shadow-db", shadow)
 
-	c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
-	c.Assert(document.DriftCheck, qt.DeepEquals, &migrator.DriftCheck{
-		Outcome:             migrator.DriftClean,
-		Replayed:            []int64{1},
-		ReplayedKeys:        []string{"1"},
-		ReplayedRepeatables: []string{"account_names"},
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(document.DriftCheck, qt.DeepEquals, &migrator.DriftCheck{
+			Outcome:             migrator.DriftClean,
+			Replayed:            []int64{1},
+			ReplayedKeys:        []string{"1"},
+			ReplayedRepeatables: []string{"account_names"},
+		})
+		c.Assert(r.versions(c), qt.DeepEquals, []int64{1, 2})
+		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
+		c.Assert(relations(c), qt.Equals, 0)
 	})
-	c.Assert(r.versions(c), qt.DeepEquals, []int64{1, 2})
-	c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
-	c.Assert(relations(c), qt.Equals, 0)
+
+	// The check replays the body the record keeps, so the file's new content
+	// is not what the database is compared against; the run then applies it.
+	t.Run("the file changed after it applied", func(t *testing.T) {
+		c := qt.New(t)
+		r := appliedForDrift(c)
+		r.write(c, "R__account_names.sql", repeatableE2EView("v2", "name, id"))
+		shadow, relations := newRepeatableShadow(c)
+
+		result, document := r.up(c, "--check-drift", "--shadow-db", shadow)
+
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(document.DriftCheck.Outcome, qt.Equals, migrator.DriftClean)
+		c.Assert(document.DriftCheck.ReplayedRepeatables, qt.DeepEquals, []string{"account_names"})
+		c.Assert(r.versions(c), qt.DeepEquals, []int64{1, 2})
+		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1", "v2"})
+		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name", "id"})
+		c.Assert(relations(c), qt.Equals, 0)
+	})
+
+	// The record keeps the body of a file that was deleted after it applied,
+	// so the check replays what the database ran; the run neither runs nor
+	// removes the repeatable migration.
+	t.Run("the file is gone", func(t *testing.T) {
+		c := qt.New(t)
+		r := appliedForDrift(c)
+		c.Assert(os.Remove(filepath.Join(r.dir, "R__account_names.sql")), qt.IsNil)
+		shadow, relations := newRepeatableShadow(c)
+
+		result, document := r.up(c, "--check-drift", "--shadow-db", shadow)
+
+		c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+		c.Assert(document.DriftCheck.Outcome, qt.Equals, migrator.DriftClean)
+		c.Assert(document.DriftCheck.ReplayedRepeatables, qt.DeepEquals, []string{"account_names"})
+		c.Assert(r.versions(c), qt.DeepEquals, []int64{1, 2})
+		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
+		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name"})
+		c.Assert(relations(c), qt.Equals, 0)
+	})
+
+	// PostgreSQL rolls a failed body back with the record's outcome, so the
+	// record describes the content that applied before the attempt. The retry
+	// fails again after the check passed.
+	t.Run("the last attempt failed in a transaction", func(t *testing.T) {
+		c := qt.New(t)
+		r := appliedForDrift(c)
+		r.write(c, "R__account_names.sql", repeatableE2EView("v2", "name, id")+"THIS IS NOT SQL;\n")
+		first, _ := r.up(c)
+		c.Assert(first.ExitCode, qt.Not(qt.Equals), 0)
+		shadow, relations := newRepeatableShadow(c)
+
+		result, document := r.up(c, "--allow-dirty", "--check-drift", "--shadow-db", shadow)
+
+		c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
+		c.Assert(document.DriftCheck.Outcome, qt.Equals, migrator.DriftClean, qt.Commentf("%s", result.Stderr))
+		c.Assert(document.DriftCheck.ReplayedRepeatables, qt.DeepEquals, []string{"account_names"})
+		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
+		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name"})
+		c.Assert(relations(c), qt.Equals, 0)
+	})
 }
 
 func TestRepeatableMigrationsDriftE2E_FailurePath(t *testing.T) {
@@ -121,25 +185,45 @@ func TestRepeatableMigrationsDriftE2E_FailurePath(t *testing.T) {
 		c.Assert(relations(c), qt.Equals, 0)
 	})
 
-	t.Run("a repeatable migration that changed after it applied cannot be replayed", func(t *testing.T) {
+	// The control for the replay of a changed file: the database already
+	// holds the new content, which the record does not say applied.
+	t.Run("a changed repeatable migration whose new content the database already holds is drift", func(t *testing.T) {
 		c := qt.New(t)
-		r := appliedForDrift(c)
+		r := appliedForDrift(c, "CREATE OR REPLACE VIEW account_names AS SELECT name, id FROM accounts")
 		r.write(c, "R__account_names.sql", repeatableE2EView("v2", "name, id"))
 		shadow, relations := newRepeatableShadow(c)
 
 		result, document := r.up(c, "--check-drift", "--shadow-db", shadow)
 
+		c.Assert(result.ExitCode, qt.Equals, 1, qt.Commentf("%s", result.Stderr))
+		c.Assert(document.DriftCheck.Outcome, qt.Equals, migrator.DriftDrifted)
+		c.Assert(document.DriftCheck.ReplayedRepeatables, qt.DeepEquals, []string{"account_names"})
+		c.Assert(r.versions(c), qt.DeepEquals, []int64{1})
+		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
+		c.Assert(relations(c), qt.Equals, 0)
+	})
+
+	// A run refuses a dirty record before it checks drift, so the check meets
+	// one only in a run that retries it.
+	t.Run("an attempt outside a transaction that failed cannot be replayed", func(t *testing.T) {
+		c := qt.New(t)
+		r := appliedForDrift(c)
+		r.write(c, "R__account_names.sql", "-- +ptah no_transaction\nCREATE TABLE partial_marker (id INT);\nTHIS IS NOT SQL;\n")
+		first, _ := r.up(c)
+		c.Assert(first.ExitCode, qt.Not(qt.Equals), 0)
+		shadow, relations := newRepeatableShadow(c)
+
+		result, document := r.up(c, "--allow-dirty", "--check-drift", "--shadow-db", shadow)
+
 		c.Assert(result.ExitCode, qt.Equals, 2, qt.Commentf("%s", result.Stderr))
 		c.Assert(document.DriftCheck, qt.DeepEquals, &migrator.DriftCheck{
 			Outcome: migrator.DriftUnable,
 			Stage:   "history",
-			Reason:  migrator.UnreplayableChanged,
+			Reason:  migrator.UnreplayableDirty,
 			Message: "the applied history cannot be replayed: repeatable migration account_names: " +
-				"R__account_names.sql changed after it applied, and the content the database ran is not in the directory",
+				"its last attempt is failed and ran outside a transaction, so what it left in the database is unknown",
 		})
-		c.Assert(r.versions(c), qt.DeepEquals, []int64{1})
-		c.Assert(r.audit(c), qt.DeepEquals, []string{"v1"})
-		c.Assert(r.viewColumns(c), qt.DeepEquals, []string{"name"})
+		c.Assert(r.versions(c), qt.DeepEquals, []int64{1, 2})
 		c.Assert(relations(c), qt.Equals, 0)
 	})
 }

@@ -4,53 +4,118 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // appliedRepeatables returns the repeatable migrations a replay of the
-// history runs: the ones whose file hashes to the digest recorded as applied,
-// in execution order. A file with no record never ran and is left out. Any
-// other record is an [UnreplayableHistoryError], since what that attempt left
-// in the database is not what a file of the directory says.
+// history runs, in identity order, which is the order an up run executes
+// them in: for each record, the content in effect in the database.
+//
+// That is the file when it hashes to the digest recorded as applied, and
+// otherwise the body the record keeps for that digest, for a file that
+// changed or is gone. A transactional attempt records its outcome in its own
+// transaction, so a record whose last such attempt is unfinished or failed
+// describes the content that applied before it, or none. A file with no
+// record never ran and is left out. Where nothing says what the database
+// holds, the answer is an [UnreplayableHistoryError]: an attempt outside a
+// transaction that did not finish, and a record that keeps no body for the
+// content it applied.
 func (m *Migrator) appliedRepeatables(ctx context.Context) ([]AppliedRepeatable, error) {
 	state, err := m.readRepeatableState(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read the applied repeatable migrations: %w", err)
 	}
+	reader, _ := m.migrationProvider.(recordedRepeatableSource)
+	recorded := recordedBodies{reader: reader, read: func(identity string) ([]byte, error) {
+		return m.readRepeatableBody(ctx, identity)
+	}}
 	var applied []AppliedRepeatable
 	for _, record := range state.records() {
-		if err := unreplayableRepeatable(record); err != nil {
+		content, err := state.appliedContent(record, recorded)
+		if err != nil {
 			return nil, err
 		}
-		if record.State != RepeatableStateApplied {
+		if content == nil {
 			continue
 		}
 		applied = append(applied, AppliedRepeatable{
 			Identity:  record.Identity,
-			Path:      record.Path,
-			Checksum:  record.Checksum,
-			Migration: state.repeatable(record.Identity).migration,
+			Path:      content.path,
+			Checksum:  content.checksum,
+			Migration: content.migration,
 		})
 	}
+	slices.SortFunc(applied, func(a, b AppliedRepeatable) int { return strings.Compare(a.Identity, b.Identity) })
 	return applied, nil
 }
 
-// unreplayableRepeatable is the refusal a record gives a replay, or nil for a
-// record that is applied as its file says, or that has no row yet.
-func unreplayableRepeatable(record RepeatableRecord) error {
-	var reason, detail string
+// recordedBodies reads the bodies a record keeps, and the provider turns one
+// into a repeatable migration as it would a file.
+type recordedBodies struct {
+	reader recordedRepeatableSource
+	read   func(identity string) ([]byte, error)
+}
+
+// appliedContent is the content of record in effect in the database, nil
+// when none is.
+func (s *repeatableState) appliedContent(
+	record RepeatableRecord,
+	recorded recordedBodies,
+) (*repeatableMigration, error) {
 	switch {
+	case record.State == RepeatableStatePending:
+		return nil, nil
+	case record.State == RepeatableStateApplied:
+		return s.repeatable(record.Identity), nil
+	case (record.State == RepeatableStateRunning || record.State == RepeatableStateFailed) && !record.NoTransaction:
+		if record.AppliedChecksum == "" {
+			return nil, nil
+		}
+		return s.recordedContent(record, recorded, UnreplayableDirty,
+			fmt.Sprintf("its last attempt is %s and rolled back, leaving the content that applied before it", record.State))
 	case record.dirty():
-		reason, detail = UnreplayableDirty, fmt.Sprintf("its last attempt is %s, not cleanly applied", record.State)
+		return nil, &UnreplayableHistoryError{
+			Reason: UnreplayableDirty, Repeatable: record.Identity,
+			Detail: fmt.Sprintf("its last attempt is %s and ran outside a transaction, "+
+				"so what it left in the database is unknown", record.State),
+		}
 	case record.Orphaned:
-		reason, detail = UnreplayableMissingFile,
-			"the database records it as applied and the migration directory has no file for it"
-	case record.State == RepeatableStateChanged:
-		reason, detail = UnreplayableChanged,
-			fmt.Sprintf("%s changed after it applied, and the content the database ran is not in the directory", record.Path)
+		return s.recordedContent(record, recorded, UnreplayableMissingFile,
+			"the database records it as applied and the migration directory has no file for it")
 	default:
-		return nil
+		return s.recordedContent(record, recorded, UnreplayableChanged,
+			fmt.Sprintf("%s changed after it applied", record.Path))
 	}
-	return &UnreplayableHistoryError{Reason: reason, Repeatable: record.Identity, Detail: detail}
+}
+
+// recordedContent is the content record applied, read from the directory when
+// a file still hashes to it and from the record's body otherwise. reason and
+// detail describe the record for the refusal a missing or damaged body gives.
+func (s *repeatableState) recordedContent(
+	record RepeatableRecord,
+	recorded recordedBodies,
+	reason, detail string,
+) (*repeatableMigration, error) {
+	if file := s.repeatable(record.Identity); file != nil && file.checksum == record.AppliedChecksum {
+		return file, nil
+	}
+	refuse := func(problem string) error {
+		return &UnreplayableHistoryError{Reason: reason, Repeatable: record.Identity, Detail: detail + ", and " + problem}
+	}
+	if !s.rows[record.Identity].hasBody {
+		return nil, refuse("its record keeps no body for the content that applied")
+	}
+	if recorded.reader == nil {
+		return nil, refuse("the migration provider cannot read the body its record keeps")
+	}
+	body, err := recorded.read(record.Identity)
+	if err != nil {
+		return nil, err
+	}
+	if repeatableChecksum(body) != record.AppliedChecksum {
+		return nil, refuse("the body its record keeps does not hash to the digest recorded as applied")
+	}
+	return recorded.reader.repeatableFromRecord(record.Identity, record.Path, body)
 }
 
 // ReplayProvider returns a provider holding what a replay of the history

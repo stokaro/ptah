@@ -361,8 +361,10 @@ hand or an index dropped during an incident leaves every checksum intact.
 Under the migration lock, after reading the history and selecting what is
 pending, `up` replays the migrations the revision table records as applied on
 the `--shadow-db` database and compares that schema with the target's, before
-anything runs. Each [repeatable migration](../repeatable/) the record holds as
-applied is replayed after them. The baseline is the applied
+anything runs. Each [repeatable migration](../repeatable/) is replayed after
+them with the content in effect: its file when the file hashes to the digest
+recorded as applied, and otherwise the body the record keeps for that digest.
+The baseline is the applied
 history, not the directory, so what a pending migration is about to create is
 not drift. The revision table, its log and the record of repeatable
 migrations, under the names this run is configured with, are left out of the
@@ -396,8 +398,9 @@ and applies nothing, when:
 
 - the history cannot be replayed: an applied revision whose file is gone, an
   Atlas `R` version, whose row records only its last run, a history that
-  applied a lower version after a higher one, or a repeatable migration whose
-  file is gone or changed after it applied;
+  applied a lower version after a higher one, a repeatable migration whose
+  last attempt ran outside a transaction and did not finish, or one whose
+  record keeps no body that hashes to the digest it applied;
 - the shadow database cannot be used: it is the target under another name, it
   is not empty, or the replay of the applied migrations fails on it;
 - the target read cannot describe an object the applied migrations create, so
