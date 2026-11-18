@@ -138,7 +138,10 @@ func TestGuard_ReportsTheEndOfTheLockSessionLive(t *testing.T) {
 	c.Cleanup(func() { dbschema.CloseAndWarn(witness) })
 	var database string
 	c.Assert(witness.QueryRowContext(c.Context(), "SELECT current_database()").Scan(&database), qt.IsNil)
-	key := pglock.Key("ptah-dev-replay:postgres:" + database)
+	lockName := "ptah-dev-replay:postgres:" + database
+	// A longer name is digested, and this readable form would name no lock.
+	c.Assert(len(lockName) <= 64, qt.IsTrue, qt.Commentf("lock name %q", lockName))
+	key := pglock.Key(lockName)
 
 	lock, err := devlock.Acquire(c.Context(), conn, 0)
 	c.Assert(err, qt.IsNil)

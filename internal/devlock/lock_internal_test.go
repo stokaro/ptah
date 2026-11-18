@@ -1,13 +1,15 @@
 package devlock
 
-// White-box testing required: local-file-lock URL eligibility and the
-// post-acquisition cancellation handoff are safety boundaries that cannot be
-// exercised deterministically through exported API without live databases.
+// White-box testing required: local-file-lock URL eligibility, the
+// post-acquisition cancellation handoff and the advisory lock's name are
+// safety boundaries that cannot be exercised deterministically through
+// exported API without live databases.
 
 import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -114,6 +116,52 @@ func TestValidateLocalFileLockURL_FailurePath(t *testing.T) {
 				qt.ErrorMatches,
 				test.wantErr,
 			)
+		})
+	}
+}
+
+// A readable lock name is kept up to 64 bytes, the bound MySQL's GET_LOCK
+// holds in characters. Past it the name is a digest of the dialect and the
+// identity, pinned literally so that two Ptah builds name one realm alike, and
+// distinct for identities that share every byte the readable form would keep.
+func TestRealmLockName(t *testing.T) {
+	tests := []struct {
+		name     string
+		identity string
+		want     string
+	}{
+		{
+			name:     "exactly 64 bytes stays readable",
+			identity: strings.Repeat("x", 42),
+			want:     "ptah-dev-replay:mysql:" + strings.Repeat("x", 42),
+		},
+		{
+			name:     "65 bytes is digested",
+			identity: strings.Repeat("x", 43),
+			want:     "ptah-dev-replay:#e0b1b154db9488909225b1e14c3a67f1",
+		},
+		{
+			name:     "a shared prefix gets its own digest",
+			identity: strings.Repeat("x", 42) + "y",
+			want:     "ptah-dev-replay:#5478bfd385ede11c173d5ea5850ed81c",
+		},
+		{
+			name:     "21 two-byte characters fit in 64 bytes",
+			identity: strings.Repeat("д", 21),
+			want:     "ptah-dev-replay:mysql:" + strings.Repeat("д", 21),
+		},
+		{
+			name:     "22 two-byte characters are counted in bytes",
+			identity: strings.Repeat("д", 22),
+			want:     "ptah-dev-replay:#eedb56cf99fcf9d56fec5ba797a88901",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := realmLockName("mysql", tt.identity)
+			c.Assert(got, qt.Equals, tt.want)
+			c.Assert(len(got) <= maxLockNameBytes, qt.IsTrue)
 		})
 	}
 }
