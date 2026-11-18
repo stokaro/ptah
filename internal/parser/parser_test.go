@@ -670,7 +670,7 @@ CREATE TABLE pg_escaped_defaults (c text default E'\\A\\');`
 
 	mysqlTable := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(mysqlTable.Columns, qt.HasLen, 1)
-	c.Assert(mysqlTable.Columns[0].Default.Expression, qt.Equals, `"\""+ '\''`)
+	c.Assert(mysqlTable.Columns[0].Default.Expression, qt.Equals, `"\"" + '\''`)
 
 	pgPlainTable := statements.Statements[1].(*ast.CreateTableNode)
 	c.Assert(pgPlainTable.Columns, qt.HasLen, 1)
