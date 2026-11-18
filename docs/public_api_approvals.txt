@@ -970,3 +970,12 @@ v0.28.0 ptah.run/core/platform/descriptor
 # are; nothing in Ptah compares it by value. Pre-v1, so no compatibility is
 # owed.
 v0.29.5 ptah.run/core/ast
+
+# SQLite takes a standalone unique index as a foreign key's parent key when the
+# index has no WHERE clause and every key is a bare column, which then compares
+# under the column's declared collation. Ptah's model holds a per-key COLLATE as
+# the key's text, so no index is accepted under a collation the model cannot
+# compare, and Comparison.ForeignKeyIgnoresStandaloneUniqueIndex described a
+# refusal SQLite does not make. Nothing else read it. Pre-v1, so no
+# compatibility is owed.
+v0.32.0 ptah.run/core/platform/descriptor
