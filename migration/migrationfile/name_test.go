@@ -323,6 +323,14 @@ func TestParseAtlasFileName_RevisionVersionKeepsTheSpelling(t *testing.T) {
 // TestParseFileName_RevisionVersionIsTheNumber is the control for the test
 // above: a native file pads its version to ten digits by rule, and the native
 // revision table stores the number, so the padding is not part of its identity.
+func TestParseFileName_RevisionVersionIsTheNumber(t *testing.T) {
+	c := qt.New(t)
+	migrationFile, err := migrationfile.ParseFileName("0000000001_initial.up.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationFile.Version, qt.Equals, int64(1))
+	c.Assert(migrationFile.RevisionVersion(), qt.Equals, "1")
+}
+
 // TestParseAtlasFileName_RevisionDescriptionIsTheCommunityBinarys pins the
 // description each name records in atlas_schema_revisions, as the pinned
 // community binary v1.3.0 records it after `migrate apply` on SQLite: the text
@@ -353,14 +361,6 @@ func TestParseAtlasFileName_RevisionDescriptionIsTheCommunityBinarys(t *testing.
 			c.Assert(got.RevisionDescription, qt.Equals, tt.want)
 		})
 	}
-}
-
-func TestParseFileName_RevisionVersionIsTheNumber(t *testing.T) {
-	c := qt.New(t)
-	migrationFile, err := migrationfile.ParseFileName("0000000001_initial.up.sql")
-	c.Assert(err, qt.IsNil)
-	c.Assert(migrationFile.Version, qt.Equals, int64(1))
-	c.Assert(migrationFile.RevisionVersion(), qt.Equals, "1")
 }
 
 func TestFileName(t *testing.T) {

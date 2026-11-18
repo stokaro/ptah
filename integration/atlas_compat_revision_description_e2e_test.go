@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -36,14 +37,32 @@ var revisionDescriptionFiles = []string{
 // about each row and nothing that varies between runs.
 const revisionDescriptionAppliedTemplate = `{{ range .Applied }}{{ .Version }} {{ printf "%q" .Description }}` + "\n" + `{{ end }}`
 
+// revisionDescriptionRewritten is the row whose description the test rewrites
+// in the database after the apply, and what it rewrites it to. Status reads
+// Applied from the revision table, so the rewritten value is what it prints.
+const (
+	revisionDescriptionRewrittenVersion = "3"
+	revisionDescriptionRewrittenTo      = "zzz"
+)
+
+// revisionDescriptionVarying matches the Applied fields that differ between two
+// runs of the same directory and are blanked before a byte comparison:
+// ExecutedAt and ExecutionTime are when and how long the run took, and
+// OperatorVersion names the binary that wrote the row ("Atlas CLI v1.3.0" or
+// "Ptah"). Every other byte of the list is compared, field order and
+// "Description":"" included.
+var revisionDescriptionVarying = regexp.MustCompile(`"(ExecutedAt|ExecutionTime|OperatorVersion)":("[^"]*"|[0-9]+)`)
+
 // revisionDescriptionObservation is what one binary leaves behind and reports
 // on the directory: Pending after the first version, then Available, Applied
-// and the revision table rows after the rest.
+// and the revision table rows after the rest, and the Applied JSON once a row's
+// description has been rewritten in the database.
 type revisionDescriptionObservation struct {
-	pending   string
-	available string
-	applied   string
-	revisions string
+	pending     string
+	available   string
+	applied     string
+	revisions   string
+	appliedJSON string
 }
 
 func revisionDescriptionProject(c *qt.C) string {
@@ -71,12 +90,31 @@ func observeRevisionDescriptions(c *qt.C, dir string, run func(args ...string) s
 	run(append([]string{"migrate", "apply", "1"}, target...)...)
 	pending := run(append([]string{"migrate", "status", "--format", "{{ json .Pending }}"}, target...)...)
 	run(append([]string{"migrate", "apply"}, target...)...)
-	return revisionDescriptionObservation{
+	observed := revisionDescriptionObservation{
 		pending:   pending,
 		available: run(append([]string{"migrate", "status", "--format", "{{ json .Available }}"}, target...)...),
 		applied:   run(append([]string{"migrate", "status", "--format", revisionDescriptionAppliedTemplate}, target...)...),
 		revisions: revisionTableDescriptions(c, filepath.Join(dir, "app.db")),
 	}
+	rewriteRevisionDescription(c, filepath.Join(dir, "app.db"))
+	appliedJSON := run(append([]string{"migrate", "status", "--format", "{{ json .Applied }}"}, target...)...)
+	observed.appliedJSON = revisionDescriptionVarying.ReplaceAllString(appliedJSON, `"$1":"varies"`)
+	return observed
+}
+
+// rewriteRevisionDescription changes the description of one revision row in
+// the database, leaving the directory alone.
+func rewriteRevisionDescription(c *qt.C, path string) {
+	c.Helper()
+	db, err := sql.Open("sqlite", path)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(db.Close(), qt.IsNil) }()
+	result, err := db.ExecContext(c.Context(), "UPDATE atlas_schema_revisions SET description = ? WHERE version = ?",
+		revisionDescriptionRewrittenTo, revisionDescriptionRewrittenVersion)
+	c.Assert(err, qt.IsNil)
+	rows, err := result.RowsAffected()
+	c.Assert(err, qt.IsNil)
+	c.Assert(rows, qt.Equals, int64(1))
 }
 
 // revisionTableDescriptions reads atlas_schema_revisions back as
@@ -136,6 +174,8 @@ func TestCompatMigrateRevisionDescriptionE2E(t *testing.T) {
 		"6 \"with space\"\n"+
 		"7 \"a.b\"\n"+
 		"R \"_view\"\n")
+	c.Assert(got.appliedJSON, qt.Contains, `{"Version":"3","Description":"zzz",`)
+	c.Assert(got.appliedJSON, qt.Contains, `{"Version":"4","Description":"",`)
 	c.Assert(got.pending, qt.Equals, `[`+
 		`{"Name":"20260101000000_x.sql","Version":"20260101000000","Description":"x"},`+
 		`{"Name":"2__init.sql","Version":"2","Description":"_init"},`+
@@ -169,4 +209,5 @@ func TestCompatMigrateRevisionDescriptionMatchesTheCommunityBinaryE2E(t *testing
 	c.Assert(compat.available, qt.Equals, community.available)
 	c.Assert(compat.pending, qt.Equals, community.pending)
 	c.Assert(compat.applied, qt.Equals, community.applied)
+	c.Assert(compat.appliedJSON, qt.Equals, community.appliedJSON)
 }
