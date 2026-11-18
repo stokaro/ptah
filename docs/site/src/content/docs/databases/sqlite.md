@@ -63,7 +63,10 @@ The SQLite renderer and planner support:
 - `CREATE INDEX`, including unique, descending, expression and partial
   indexes, and `DROP INDEX IF EXISTS` / `DROP TABLE IF EXISTS`. SQLite changes
   nothing about an index in place, so an index whose uniqueness, columns, key
-  directions, expressions or predicate changed is dropped and created again.
+  directions, key collations, expressions or predicate changed is dropped and
+  created again. A key with a `COLLATE` of its own is read and compared as the
+  text the index holds, `code COLLATE NOCASE`, as a document holds it; a key
+  without one takes its column's collation and is a column.
 - `ALTER TABLE ... ADD COLUMN`, `RENAME COLUMN`, and `RENAME TO`.
 - Column and constraint changes ALTER TABLE cannot express, through a
   generated table-rebuild plan: create a rebuilt table in its desired shape,

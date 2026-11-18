@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -593,7 +594,7 @@ func (r *Reader) buildIndexesForTable(
 		definition := indexDDLByName[entry.name]
 		indexColumns := columnsByIndex[entry.name]
 		columns := indexColumns.names
-		if indexColumns.needsDDLParsing || len(columns) == 0 {
+		if indexColumns.needsDDLParsing || len(columns) == 0 || slices.ContainsFunc(extractIndexColumns(definition), indexKeyCollates) {
 			columns = extractIndexColumns(definition)
 		}
 		constraintName := entry.name
@@ -773,7 +774,7 @@ func sqliteIndexParts(keys []sqliteIndexKey, keyTexts []string) []catalog.IndexP
 	}
 	parts := make([]catalog.IndexPart, len(keys))
 	for position, key := range keys {
-		if key.expression {
+		if key.expression || indexKeyCollates(keyTexts[position]) {
 			// An expression key's text comes from the DDL rather than from the
 			// catalog, and the DDL spells the direction inside it -- the text
 			// for `lower(c) DESC` IS "lower(c) DESC". Setting Desc as well
@@ -1350,11 +1351,28 @@ func simpleIndexColumnName(value string) (string, bool) {
 	switch fields[0] {
 	case "ASC", "DESC":
 		return name, true
-	case "COLLATE":
-		return name, true
 	default:
 		return "", false
 	}
+}
+
+// indexKeyCollates reports that an index key is a column with a COLLATE of its
+// own, `code COLLATE NOCASE`. The key is kept as the text the DDL holds, which
+// is how the SQL frontend holds the same key in a document, so a database and a
+// document with that index compare equal. PRAGMA index_xinfo names the column
+// and reports the collation in coll, but it cannot tell `code COLLATE BINARY`
+// from `code`, and the frontend keeps the first as text too. A key that takes
+// its column's collation carries no COLLATE and stays a column. Read as the
+// column alone, the key compares equal to the column without the collation: a
+// diff sees no change to it, and the referenced-key rule takes the index as a
+// foreign key's parent key, which SQLite refuses with "foreign key mismatch"
+// where the collation is not the column's.
+func indexKeyCollates(key string) bool {
+	if _, ok := leadingIdentifier(key); !ok {
+		return false
+	}
+	fields := strings.Fields(strings.ToUpper(strings.TrimSpace(key[len(consumedIdentifierPrefix(key)):])))
+	return len(fields) > 0 && fields[0] == "COLLATE"
 }
 
 func inferCheckName(tableName, expr string, fallback int) string {

@@ -154,6 +154,7 @@ own measurement conditions.
 | [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
 | [A finding in a goose or dbmate file](#a-finding-in-a-goose-or-dbmate-file) | places it on the statement's line of the source file, at the statement's offset | places it on line 1, the section directive, at an offset that falls there |
 | [A UNIQUE a SQLite column declares, removed](#a-unique-a-sqlite-column-declares-removed) | rebuilds the table, and the plan applies to a database the `--from` document created | plans `DROP INDEX` for an index the database does not hold, and the apply exits `1` |
+| [A COLLATE on a SQLite index key](#a-collate-on-a-sqlite-index-key) | reads the key with its collation, so a change of it is planned | reads the column alone, reports the change as synced, and plans the index without it |
 
 ## A `--config` selection naming more than one file
 
@@ -1583,6 +1584,32 @@ that applies: the binary creates a standalone unique index, and `ptah-compat`
 rebuilds `parent` with the `UNIQUE` on the column, as the document declares it.
 
 **Evidence.** `integration/sqlite_column_unique_removal_e2e_test.go`
+
+## A COLLATE on a SQLite index key
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** `ptah-compat` reads a SQLite index key that carries a
+`COLLATE` of its own, `CREATE UNIQUE INDEX pc ON parent (code COLLATE NOCASE)`,
+as that text, the shape a document gives it, so the two compare equal and a
+change of the collation is a change. The pinned community binary v1.3.0 reads
+the column alone. Measured on 2026-11-18 with `schema diff --dev-url
+"sqlite://dev?mode=memory"`, a database holding `parent (id INTEGER PRIMARY
+KEY, code TEXT NOT NULL)` and that index:
+
+| Run | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `--from` the database, `--to` a document with `pc ON parent (code)` | `Schemas are synced, no changes to be made.` | drops `pc` and creates it as `("code")` |
+| `--from` the database, `--to` a document with the same index | `Schemas are synced, no changes to be made.` | `Schemas are synced, no changes to be made.` |
+| `--to` the database with `child (code REFERENCES parent(code))` added, `--from` a document with `parent` alone | plans `CREATE UNIQUE INDEX pc ON parent (code)` and `child`, exit `0` | refuses the foreign key, exit `1` |
+
+A read that drops the collation changes what the index compares, without a
+word, in both the first and the third row. In the third, SQLite holds the
+database and fails every write to `child` with `foreign key mismatch`, since
+the parent key's index does not use the column's collation. `ptah-compat`
+refuses that key on the database as it refuses it in a `--to` document.
+
+**Evidence.** `integration/sqlite_index_key_collation_e2e_test.go`
 
 ## Not on this page
 

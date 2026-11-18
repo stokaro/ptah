@@ -134,10 +134,10 @@ func tableIndexesHaveUniqueKey(
 	// A key held as a bare column name carries no collation of its own, so the
 	// index compares the column under the collation the column declares. That is
 	// the collation SQLite requires of the index a foreign key uses; any other one
-	// fails the first write with "foreign key mismatch". A document keeps a
-	// per-key COLLATE as the key's text, `code COLLATE NOCASE`, which names no
-	// column, so such a key is refused even where the collation is the column's
-	// own. The SQLite reader drops that text (stokaro/ptah#6231).
+	// fails the first write with "foreign key mismatch". A document and a
+	// SQLite read both keep a per-key COLLATE as the key's text, `code COLLATE
+	// NOCASE`, which names no column, so such a key is refused even where the
+	// collation is the column's own.
 	indexOwners := schemamodel.ResolveIndexTableNames(database.Indexes, database.Tables)
 	for i, index := range database.Indexes {
 		indexColumns, valid := fullIndexColumnNames(index)
