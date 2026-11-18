@@ -32,6 +32,10 @@ type StatusOptions struct {
 	// [migrator.WithAtlasRepeatableMigrations]. The caller sets it only for a
 	// directory it reads in that layout.
 	Repeatables bool
+	// StringLinearity reports a pending file as out of order by its name and
+	// version string, as the community binary does; see
+	// [migrator.Migrator.WithAtlasStringLinearity].
+	StringLinearity bool
 }
 
 type StatusResult struct {
@@ -76,6 +80,9 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 	mig = mig.WithMigrationsTable(opts.RevisionsSchema, "").
 		WithMigrationsEngine(opts.MigrationsEngine).
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	if opts.StringLinearity {
+		mig = mig.WithAtlasStringLinearity()
+	}
 	snapshot, err := mig.GetMigrationStatusSnapshot(ctx)
 	if err != nil {
 		return StatusResult{}, fmt.Errorf("error getting migration status: %w", err)

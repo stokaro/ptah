@@ -122,25 +122,26 @@ func TestCompatAtlasLinearityByVersionString_HappyPath(t *testing.T) {
 // refuses it, so it never runs and the apply exits 0.
 func TestCompatAtlasLinearityByVersionString_FailurePath(t *testing.T) {
 	tests := []struct {
-		name  string
-		first string
+		name    string
+		first   []string
+		applied []string
 	}{
-		{name: "after 1_a.sql", first: "1_a.sql"},
-		{name: "after 9_a.sql", first: "9_a.sql"},
+		{name: "after 1_a.sql", first: []string{"1_a.sql"}, applied: []string{"1"}},
+		{name: "after 1_a.sql and 2_b.sql", first: []string{"1_a.sql", "2_b.sql"}, applied: []string{"1", "2"}},
+		{name: "after 9_a.sql", first: []string{"9_a.sql"}, applied: []string{"9"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
 			run := compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables())
-			prepareVersionOrder(c, dir, run, []string{tt.first}, []string{"10_b.sql"})
+			prepareVersionOrder(c, dir, run, tt.first, []string{"10_b.sql"})
 
 			got := run(append([]string{"migrate", "apply"}, versionOrderTarget...)...)
 
 			c.Assert(got.ExitCode, qt.Equals, 1)
 			c.Assert(got.Stderr, qt.Contains, "migration file 10_b.sql was added out of order.")
-			c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals,
-				[]string{strings.TrimSuffix(tt.first, "_a.sql")})
+			c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, tt.applied)
 		})
 	}
 }
@@ -159,6 +160,7 @@ func TestCompatAtlasLinearityMatchesTheCommunityBinaryE2E(t *testing.T) {
 	}{
 		{name: "string order above the mark", first: []string{"1_a.sql", "20260101000000_ts.sql"}, added: []string{"3__x.sql"}},
 		{name: "name order below an applied file", first: []string{"1_a.sql"}, added: []string{"10_b.sql"}},
+		{name: "a number above the current version", first: []string{"1_a.sql", "2_b.sql"}, added: []string{"10_b.sql"}},
 		{name: "one late and one pending", first: []string{"1_a.sql", "2_b.sql"}, added: []string{"10_c.sql", "3_d.sql"}},
 	}
 	for _, tt := range tests {
@@ -182,6 +184,36 @@ func TestCompatAtlasLinearityMatchesTheCommunityBinaryE2E(t *testing.T) {
 				revisionTableVersions(c, filepath.Join(communityDir, "app.db")))
 		})
 	}
+}
+
+// TestNativeAtlasFormatsKeepNumericLinearityE2E runs the native binary over an
+// Atlas directory and an Atlas revision table. The string rule belongs to
+// ptah-compat, so the native run keeps the numeric one: 10_b.sql added after
+// 1_a.sql and 2_b.sql applies, because 10 is above 2, where ptah-compat and
+// the community binary refuse it (the "a number above the current version"
+// row above).
+func TestNativeAtlasFormatsKeepNumericLinearityE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	hash := compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables())
+	up := []string{
+		"migrations", "up", "--db-url", "sqlite://app.db", "--migrations-dir", "migrations",
+		"--dir-format", "atlas", "--revision-format", "atlas",
+	}
+	native := func() clirun.Result {
+		return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()}, up...)
+	}
+	for _, name := range []string{"1_a.sql", "2_b.sql"} {
+		writeVersionOrderFiles(c, dir, hash, []string{name})
+		applied := native()
+		c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", applied.Stderr))
+	}
+	writeVersionOrderFiles(c, dir, hash, []string{"10_b.sql"})
+
+	got := native()
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, []string{"1", "10", "2"})
 }
 
 // executedAtShape is what a status template prints for one revision row

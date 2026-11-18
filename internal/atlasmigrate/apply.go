@@ -98,6 +98,10 @@ type ApplyOptions struct {
 	// [migrator.WithAtlasRepeatableMigrations]. The caller sets it only for a
 	// directory it reads in that layout.
 	Repeatables bool
+	// StringLinearity decides whether a pending file was added out of order
+	// by its name and version string, as the community binary does; see
+	// [migrator.Migrator.WithAtlasStringLinearity].
+	StringLinearity bool
 }
 
 // ApplyPlan is the selected Atlas migrate apply work prepared from the
@@ -192,6 +196,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		skipChecks:           opts.SkipChecks,
 		ownTransactions:      opts.OwnTransactions,
 		repeatables:          opts.Repeatables,
+		stringLinearity:      opts.StringLinearity,
 	})
 	if err != nil {
 		return ApplyPlan{}, err
@@ -574,6 +579,7 @@ type applyMigratorOptions struct {
 	skipChecks           bool
 	ownTransactions      bool
 	repeatables          bool
+	stringLinearity      bool
 }
 
 func newApplyMigrator(
@@ -609,6 +615,9 @@ func newApplyMigrator(
 		WithMigrationLockName(opts.migrationLockName).
 		WithSkipChecks(opts.skipChecks).
 		WithLogger(compatMigratorLogger())
+	if opts.stringLinearity {
+		mig = mig.WithAtlasStringLinearity()
+	}
 	if opts.skipMigrationLock {
 		mig = mig.WithoutMigrationLock()
 	}

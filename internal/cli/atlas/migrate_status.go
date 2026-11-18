@@ -220,6 +220,7 @@ func runAtlasMigrateStatus(
 		RevisionsSchema:  revisiontable.Schema(opts.revisionsSchema, opts.url),
 		RevisionVersions: sourceVersions,
 		Repeatables:      atlasReadsRepeatables(repeatables, format),
+		StringLinearity:  true,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, remapAtlasExactIdentityError(atlasRepeatablesHint(err), sourceVersions))

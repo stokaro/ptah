@@ -34,7 +34,7 @@ plus the flag translation rules are on the
 | `ptah-compat migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
 | `ptah-compat migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
 | `ptah-compat migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
-| `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
+| `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL; accepts the directory's non-numeric versions, such as `R`; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate diff` | Replays local migrations on `--dev-url`, diffs them against the desired state, and writes the selected layout with `atlas.sum` updated atomically. |
 | `ptah-compat migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
 | `ptah-compat migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a cumulative-schema checkpoint, Atlas single-file format by default or the ptah pair under `--dir-format ptah`. |
@@ -2668,7 +2668,11 @@ written.
 selected boundary without executing migration SQL. It preserves existing clean
 rows through the target, inserts missing rows as manually set, keeps dirty-row
 diagnostics with the combined applied and manually-set type, and removes rows
-above the target.
+above the target. The version is one the directory holds, spelled as its file
+names spell it: in an Atlas-format directory that includes a version that is
+not a number, so `migrate set R` sets the history through `R__view.sql`. A
+version no file holds, `0` included, is refused as the pinned binary refuses
+it, with `migration with version "0" not found`.
 
 ### Which verbs enforce `atlas.sum`
 

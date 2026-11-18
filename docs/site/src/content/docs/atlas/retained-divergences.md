@@ -120,6 +120,7 @@ own measurement conditions.
 | [A trailing positional argument](#a-trailing-positional-argument) | refuses one on a verb that defines none, naming the flag the value belongs to | accepts it and discards it without a word |
 | [An edited already-applied migration file](#an-edited-already-applied-migration-file) | compares each applied migration against the checksum recorded when it ran, and refuses on a mismatch | records the same value and never compares it |
 | [A prefix migration inserted below the oldest applied revision](#a-prefix-migration-inserted-below-the-oldest-applied-revision) | refuses at the default `--exec-order linear` with the binary's own out-of-order line | exits `0` with `No migration files to execute`, saying nothing about the file it passed over |
+| [A file numbered above the current version that sorts below it as text](#a-file-numbered-above-the-current-version-that-sorts-below-it-as-text) | reports it as out of order and refuses it at the default `--exec-order linear` | reports `OK` and exits `0` with `No migration files to execute` under every `--exec-order`; the file never runs |
 | [A file `--exec-order linear-skip` leaves pending](#a-file---exec-order-linear-skip-leaves-pending) | writes one warning per skipped file on stderr | skips it without a word |
 | [A dirty revision left by a non-transactional body](#a-dirty-revision-left-by-a-non-transactional-body) | discards the revision row only where it observed the rollback, so `--tx-mode none` needs `--allow-dirty` | keeps the row in both cases and resumes from it |
 | [A project migration directory outside its root](#a-project-migration-directory-outside-its-root) | confines a project `migration.dir` to the directory holding `atlas.hcl` | writes the migration and `atlas.sum` wherever the project file points |
@@ -351,6 +352,42 @@ applied migration above it. The value is an ordering key, not a content
 identity, and the message claimed otherwise. That is fixed; the diagnostic now
 describes the ordering fact it actually found. The genuine content-change case
 keeps the checksum wording and is the section above.
+
+## A file numbered above the current version that sorts below it as text
+
+**Type.** Deliberate divergence
+
+**Current boundary.** In an Atlas-format directory both binaries decide
+linearity on text, byte for byte: a pending file is out of order when its name
+sorts before the name of an applied file, or its version sorts below the
+highest applied version. `10_b.sql` added after `9_a.sql` meets both
+conditions, because `10_b.sql` sorts before `9_a.sql` and `10` sorts below
+`9`. `ptah-compat` reports it as out of order and refuses it at the default
+`--exec-order linear`. The other two orders treat it as they treat any
+out-of-order file.
+
+Measured on SQLite on 2026-11-18, with `9_a.sql` applied, then `10_b.sql`
+added and the directory rehashed:
+
+| step | pinned community binary v1.3.0 | `ptah-compat` |
+| --- | --- | --- |
+| `migrate status` | `OK`, `Pending Files: 0` | `PENDING`, `Pending Files: 1 (out of order)`, and the refusal as `ERROR` |
+| `migrate apply` | exit `0`, `No migration files to execute` | exit `1`, `migration file 10_b.sql was added out of order` |
+| `migrate apply --exec-order linear-skip` | exit `0`, `No migration files to execute` | exit `0`, one warning, the file left pending |
+| `migrate apply --exec-order non-linear` | exit `0`, `No migration files to execute` | exit `0`, `10_b.sql` applied |
+
+The binary's own rule calls the file late on both counts, and then it neither
+applies the file nor refuses it. Status reports the directory as applied, and
+`non-linear`, the order that exists to apply such a file, does not see it
+either. The file never runs, and nothing says so. Copying that would tell an
+operator who added a migration that it is applied when it is not, which is the
+kind of defect the parity rule declines to copy.
+
+So `ptah-compat` is stricter here, deliberately. The refusal is the binary's
+own line for an out-of-order file, and the page it links describes both ways
+forward. A file whose number is above the current version reads as new to a
+person, which is why the case is easy to meet: going from `9_` to `10_` is
+the usual way a directory without zero-padded versions grows.
 
 ## A file `--exec-order linear-skip` leaves pending
 

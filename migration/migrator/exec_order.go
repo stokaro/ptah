@@ -275,11 +275,12 @@ func newOutOfOrderSourceError(currentVersion int64, versions []int64, sourceVers
 }
 
 // readsAtlasRevisionOrder reports whether linearity over migrations is decided
-// on the Atlas revision strings rather than on numbers: an Atlas revision table
-// over a directory read in the Atlas format, with no source tool whose own
-// tokens decide instead (see [Migrator.WithSourceVersions]).
+// on the Atlas revision strings rather than on numbers: the caller selected
+// [Migrator.WithAtlasStringLinearity], the revision table is an Atlas one over
+// a directory read in the Atlas format, and no source tool's own tokens decide
+// instead (see [Migrator.WithSourceVersions]).
 func (m *Migrator) readsAtlasRevisionOrder(migrations []*Migration) bool {
-	if !m.revisionTableFormat.isAtlas() || len(m.sourceVersions) != 0 || len(migrations) == 0 {
+	if !m.atlasStringLinearity || !m.revisionTableFormat.isAtlas() || len(m.sourceVersions) != 0 || len(migrations) == 0 {
 		return false
 	}
 	for _, migration := range migrations {
