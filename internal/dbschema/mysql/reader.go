@@ -438,6 +438,9 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 			return nil, err
 		}
 		table.Charset = charsetOfCollation(table.Collate)
+		if table.Facets, err = mysqlschema.WithObservedTable(table.Facets, table.Charset); err != nil {
+			return nil, fmt.Errorf("table %s: %w", table.Name, err)
+		}
 		table.Columns = inheritTableCollation(columnsByTable[table.Name], table.Collate)
 		tables = append(tables, table)
 	}

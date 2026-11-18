@@ -47,5 +47,9 @@ func comparisonTableIdentities(desired *schemamodel.Database, current *catalog.D
 	if err := refuseUnreadTables(&declared, &observed, opts.Dialect, semantics); err != nil {
 		return comparisonIdentity{}, err
 	}
+	if err := refuseCaseOnlyNamesakes(&declared, &observed, opts.Dialect, semantics); err != nil {
+		return comparisonIdentity{}, err
+	}
+	observed = spellCaseSensitiveNames(observed, opts.Dialect, semantics)
 	return comparisonIdentity{desired: &declared, current: &observed, semantics: semantics}, nil
 }

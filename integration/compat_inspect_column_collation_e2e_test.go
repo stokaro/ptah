@@ -33,10 +33,10 @@ func inspectInheritedCollationMySQL(c *qt.C, format string) (clirun.Result, stri
 		"schema", "inspect", "--format", format, "--url", url), name
 }
 
-// The SQL a MySQL read renders writes no table collation, so every character
-// column names the collation it compares with, inherited or not: a file
-// without them, replayed on a server with another default, builds columns
-// that compare differently.
+// The SQL a MySQL read renders names, beside each table's own collation, the
+// collation every character column compares with, inherited or not, so a
+// file replayed on a server with another default builds columns that compare
+// as the inspected ones do.
 func TestCompatSchemaInspectSQLNamesAnInheritedMySQLCollationE2E(t *testing.T) {
 	c := qt.New(t)
 
@@ -47,9 +47,10 @@ func TestCompatSchemaInspectSQLNamesAnInheritedMySQLCollationE2E(t *testing.T) {
 		"CREATE TABLE `t` (`a` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL, "+
 		"`b` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL, "+
 		"`c` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL, `d` int NULL, "+
-		"`e` varchar(5) CHARACTER SET latin1 COLLATE latin1_swedish_ci NULL);\n"+
+		"`e` varchar(5) CHARACTER SET latin1 COLLATE latin1_swedish_ci NULL) CHARSET=utf8mb4 COLLATE=utf8mb4_bin;\n"+
 		"-- Create \"u\" table\n"+
-		"CREATE TABLE `u` (`a` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL);\n")
+		"CREATE TABLE `u` (`a` varchar(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL) "+
+		"CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n")
 }
 
 // The JSON document names every character column's collation, as the pinned
@@ -66,9 +67,11 @@ func TestCompatSchemaInspectJSONNamesAnInheritedMySQLCollationE2E(t *testing.T) 
 		`{"name":"b","type":"varchar(5)","null":true,"charset":"utf8mb4","collate":"utf8mb4_unicode_ci"},`+
 		`{"name":"c","type":"varchar(5)","null":true,"charset":"utf8mb4","collate":"utf8mb4_bin"},`+
 		`{"name":"d","type":"int","null":true},`+
-		`{"name":"e","type":"varchar(5)","null":true,"charset":"latin1","collate":"latin1_swedish_ci"}]},`+
+		`{"name":"e","type":"varchar(5)","null":true,"charset":"latin1","collate":"latin1_swedish_ci"}],`+
+		`"charset":"utf8mb4","collate":"utf8mb4_bin"},`+
 		`{"name":"u","columns":[`+
-		`{"name":"a","type":"varchar(5)","null":true,"charset":"utf8mb4","collate":"utf8mb4_unicode_ci"}]}],`+
+		`{"name":"a","type":"varchar(5)","null":true,"charset":"utf8mb4","collate":"utf8mb4_unicode_ci"}],`+
+		`"charset":"utf8mb4","collate":"utf8mb4_unicode_ci"}],`+
 		`"charset":"utf8mb4","collate":"utf8mb4_0900_ai_ci"}]}`, name))
 }
 

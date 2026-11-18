@@ -502,6 +502,7 @@ var directives = []Directive{
 			attr("proto_name", "Name this table carries in the Protobuf export only, overriding api_name there. It is the message identity, so changing it retires the old message.", valueString, false, false),
 			attr("schema", "Database schema name.", valueString, false, false),
 			attr("engine", "MySQL/MariaDB table engine shortcut.", valueString, false, false),
+			attr("collate", "MySQL/MariaDB table default collation.", valueString, false, false),
 			attr("comment", "Table comment.", valueString, false, false),
 			attr("primary_key_comment", "MySQL-family primary index comment.", valueString, false, false),
 			attr("primary_key", "Comma-separated primary key columns.", valueList, false, false),

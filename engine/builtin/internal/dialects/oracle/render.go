@@ -496,8 +496,19 @@ func escapeStringLiteral(s string) string {
 // see identifier.ForDialect. A name Oracle will not take bare is still quoted,
 // because that is the only way to express it, and an author's expression
 // referring to such a name must quote it too.
+//
+// A name that arrives quoted and is not its own upper-case fold is a catalog
+// name the comparison spelled that way (sqlident.CatalogName): a table created
+// as "orders" is stored as orders, which no bare spelling reaches. It stays
+// quoted, so a DROP names that table rather than ORDERS, which is a different
+// table or none at all (stokaro/ptah#6243). A quoted name that is its own fold,
+// such as "ORDERS", is written bare.
 func escapeIdentifier(identifier string) string {
-	return sqlident.Ident(platform.Oracle, unquoteIdentifier(identifier))
+	name := unquoteIdentifier(identifier)
+	if name != identifier && sqlident.CatalogName(platform.Oracle, name) != name {
+		return sqlident.Quote(platform.Oracle, name)
+	}
+	return sqlident.Ident(platform.Oracle, name)
 }
 
 func escapeQualifiedIdentifier(identifier string) string {

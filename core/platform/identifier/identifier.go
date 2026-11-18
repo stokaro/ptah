@@ -84,6 +84,16 @@ const (
 	ComparisonCatalogResolved Comparison = "catalog_resolved"
 )
 
+// Fold is the case a target records a name written without quotes in.
+type Fold string
+
+const (
+	// FoldUpper records an unquoted name in upper case, as Oracle does.
+	FoldUpper Fold = "upper"
+	// FoldLower records an unquoted name in lower case, as PostgreSQL does.
+	FoldLower Fold = "lower"
+)
+
 // IndexNamespace describes where index names must be unique.
 type IndexNamespace string
 
@@ -120,6 +130,16 @@ type Semantics struct {
 	// executable provider's engine declares it, such as / for a YDB directory
 	// path, so a coverage region can cover a schema and the schemas below it.
 	SchemaSeparator string `json:"schema_separator,omitempty"`
+	// UnquotedFold is the case the target records an unquoted name in, on a
+	// target that keeps a quoted name's spelling exactly; empty states no
+	// fold. [ForCatalog] sets it for a live read and [ForDialect] does not.
+	// Where it is set, a double-quoted name that is a plain identifier
+	// and not in that case keeps its spelling, quotes included, as both its
+	// identity and its conflict key: on Oracle `"orders"` names the table
+	// stored as orders, which ORDERS and `orders` (both stored as ORDERS) do
+	// not. Any other quoted name keys as the name without its quotes, which
+	// is what an unquoted spelling of it reaches.
+	UnquotedFold Fold `json:"unquoted_fold,omitempty"`
 }
 
 // ResolvedName maps one raw identifier to a deterministic catalog-equivalence
@@ -199,6 +219,30 @@ func FromDescriptor(described descriptor.Dialect) (Semantics, error) {
 			descriptor.ErrInvalidDescriptor, described.Name, described.Identifiers)
 	}
 	return semantics, nil
+}
+
+// ForCatalog returns the rules for comparing against the names a read of a
+// live dialect catalog reports: [ForDialect], with the UnquotedFold the
+// dialect's descriptor states.
+//
+// The two differ because a catalog reports a name as the server stores it,
+// while a declaration and a schema predicted from one carry the name as it is
+// written. On Oracle a declared `orders` and a predicted `orders` both mean
+// ORDERS, which is what [ForDialect] compares them as; a read that reports
+// orders has found a table created quoted, and only these rules keep it apart
+// from ORDERS once the read spells it `"orders"`.
+func ForCatalog(dialect string) Semantics {
+	semantics := ForDialect(dialect)
+	described, found := platform.Lookup(dialect)
+	if !found {
+		return semantics
+	}
+	fold := Fold(described.Identifiers.UnquotedFold)
+	if fold != FoldUpper && fold != FoldLower {
+		return semantics
+	}
+	semantics.UnquotedFold = fold
+	return semantics
 }
 
 // unmodelled returns the rules for a target Ptah does not model.
@@ -282,7 +326,8 @@ func (s Semantics) IsZero() bool {
 		s.ColumnNames == "" &&
 		s.CatalogCollation == "" &&
 		len(s.ResolvedNames) == 0 &&
-		s.SchemaSeparator == ""
+		s.SchemaSeparator == "" &&
+		s.UnquotedFold == ""
 }
 
 // Equal reports whether two semantics values carry the same rules and resolved
@@ -296,13 +341,14 @@ func (s Semantics) Equal(other Semantics) bool {
 		s.TableNames == other.TableNames &&
 		s.ColumnNames == other.ColumnNames &&
 		slices.Equal(s.ResolvedNames, other.ResolvedNames) &&
-		s.SchemaSeparator == other.SchemaSeparator
+		s.SchemaSeparator == other.SchemaSeparator &&
+		s.UnquotedFold == other.UnquotedFold
 }
 
 // Normalize returns a deep copy of s when it is complete and internally
 // consistent, and the conservative [ForDialect] rules for dialect otherwise.
 // Complete means: IndexNamespace and all three comparison fields hold
-// declared values; catalog-resolved comparison is all-or-nothing across the
+// declared values, and UnquotedFold is empty or a declared [Fold]; catalog-resolved comparison is all-or-nothing across the
 // three name kinds and requires both a CatalogCollation and at least one
 // resolved name, while every other mode carries neither; and ResolvedNames
 // satisfy the validity rules on [Semantics.WithResolvedNames]. Zero and
@@ -505,6 +551,12 @@ func (s Semantics) resolvedKey(value string) (string, bool) {
 // desired name the target does not have is a name it does not have, so keeping
 // such names distinct is also the answer that describes the target truthfully.
 func (s Semantics) identityKey(comparison Comparison, value string) string {
+	if name, quoted := s.quotedName(value); quoted {
+		if s.caseSensitive(name) {
+			return value
+		}
+		return s.identityKey(comparison, name)
+	}
 	if comparison == ComparisonASCIIFoldedNonASCIIResolved {
 		if key, ok := s.resolvedKey(value); ok {
 			return key
@@ -531,6 +583,12 @@ func (s Semantics) identityKey(comparison Comparison, value string) string {
 // [ComparisonCatalogResolved] is in the same position: nothing is known about
 // its equivalence class.
 func (s Semantics) conflictKey(comparison Comparison, value string) string {
+	if name, quoted := s.quotedName(value); quoted {
+		if s.caseSensitive(name) {
+			return value
+		}
+		return s.conflictKey(comparison, name)
+	}
 	if comparison == ComparisonASCIIFoldedNonASCIIResolved {
 		if key, ok := s.resolvedKey(value); ok {
 			return key
@@ -554,6 +612,7 @@ func (s Semantics) qualifiedTableKey(
 	if !ok {
 		return key(value)
 	}
+	ref = s.keepQuotedParts(value, ref)
 	schema := ref.Schema
 	if !ref.Qualified {
 		if s.DefaultSchema == "" {
@@ -562,6 +621,103 @@ func (s Semantics) qualifiedTableKey(
 		schema = s.DefaultSchema
 	}
 	return tableref.Canonical(key(schema), key(ref.Name))
+}
+
+// quotedName returns value without its double quotes, and whether it had them,
+// on a target that states an unquoted fold. A target that states none keys a
+// quoted name as it always has, so it reports false.
+func (s Semantics) quotedName(value string) (string, bool) {
+	if s.UnquotedFold == "" || len(value) < 2 || value[0] != '"' || value[len(value)-1] != '"' {
+		return "", false
+	}
+	return strings.ReplaceAll(value[1:len(value)-1], `""`, `"`), true
+}
+
+// caseSensitive reports whether name, written quoted, is a name no unquoted
+// spelling reaches: a plain identifier the target's fold would change. A name
+// that is not plain has no unquoted spelling at all, and one already in the
+// fold's case is what its unquoted spelling folds to.
+func (s Semantics) caseSensitive(name string) bool {
+	return plainIdentifier(name) && s.UnquotedFold.apply(name) != name
+}
+
+// keepQuotedParts puts back the quotes [tableref.Parse] removed from a part
+// that is case-sensitive under the target's fold, so `app."orders"` keys its
+// table as `"orders"` does. Every other part keys the same quoted or not.
+func (s Semantics) keepQuotedParts(value string, ref tableref.Ref) tableref.Ref {
+	if s.UnquotedFold == "" || !strings.Contains(value, `"`) {
+		return ref
+	}
+	parts := splitKeepingQuotes(value)
+	switch {
+	case len(parts) == 1 && !ref.Qualified:
+		ref.Name = s.spelledPart(parts[0], ref.Name)
+	case len(parts) == 2 && ref.Qualified:
+		ref.Schema = s.spelledPart(parts[0], ref.Schema)
+		ref.Name = s.spelledPart(parts[1], ref.Name)
+	}
+	return ref
+}
+
+// spelledPart is raw, trimmed, where it is a quoted case-sensitive name, and
+// parsed otherwise.
+func (s Semantics) spelledPart(raw, parsed string) string {
+	raw = strings.TrimSpace(raw)
+	if name, quoted := s.quotedName(raw); quoted && name == parsed && s.caseSensitive(name) {
+		return raw
+	}
+	return parsed
+}
+
+// splitKeepingQuotes splits a dotted reference at the dots outside double
+// quotes, leaving each part's quotes in place.
+func splitKeepingQuotes(value string) []string {
+	var parts []string
+	start := 0
+	quoted := false
+	for index := 0; index < len(value); index++ {
+		switch value[index] {
+		case '"':
+			quoted = !quoted
+		case '.':
+			if !quoted {
+				parts = append(parts, value[start:index])
+				start = index + 1
+			}
+		}
+	}
+	return append(parts, value[start:])
+}
+
+// apply folds the ASCII letters of value to the case f names.
+func (f Fold) apply(value string) string {
+	switch f {
+	case FoldUpper:
+		return strings.ToUpper(value)
+	case FoldLower:
+		return strings.ToLower(value)
+	default:
+		return value
+	}
+}
+
+// plainIdentifier reports whether value is an ASCII letter or underscore
+// followed by ASCII letters, digits and underscores, the names a target that
+// writes names bare writes without quotes.
+func plainIdentifier(value string) bool {
+	if value == "" {
+		return false
+	}
+	for index := range len(value) {
+		char := value[index]
+		switch {
+		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char == '_':
+		case char >= '0' && char <= '9' && index > 0:
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // validResolutionShape holds the rules about which modes may carry a resolved
@@ -593,6 +749,9 @@ func (s Semantics) validResolutionShape() bool {
 }
 
 func (s Semantics) valid() bool {
+	if s.UnquotedFold != "" && s.UnquotedFold != FoldUpper && s.UnquotedFold != FoldLower {
+		return false
+	}
 	if s.IndexNamespace != IndexNamespaceTable &&
 		s.IndexNamespace != IndexNamespaceSchema {
 		return false
