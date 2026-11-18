@@ -54,3 +54,28 @@ func Read(err error) (sqlState string, errorNumber int) {
 	}
 	return "", oracleErrorNumber(err)
 }
+
+// UniqueViolation reports whether a server refused a statement because a row
+// already holds the unique key the statement wrote: SQLSTATE 23505 from the
+// PostgreSQL protocol, error 1062 from MySQL and MariaDB, 2627 or 2601 from SQL
+// Server, ORA-00001 from Oracle, and the extended result code 1555
+// (SQLITE_CONSTRAINT_PRIMARYKEY) or 2067 (SQLITE_CONSTRAINT_UNIQUE) from the
+// SQLite driver. It reads the driver's error type, so a number one engine uses
+// for this means nothing on another, and it is false for every other error,
+// including one no server answered.
+func UniqueViolation(err error) bool {
+	if serverErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		return serverErr.Code == "23505"
+	}
+	if serverErr, ok := errors.AsType[*mysqldriver.MySQLError](err); ok {
+		return serverErr.Number == 1062
+	}
+	if serverErr, ok := errors.AsType[numberedError](err); ok {
+		number := serverErr.SQLErrorNumber()
+		return number == 2627 || number == 2601
+	}
+	if _, ok := errors.AsType[*clickhousedriver.Exception](err); ok {
+		return false
+	}
+	return oracleErrorNumber(err) == 1 || sqliteUniqueViolation(err)
+}

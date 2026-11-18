@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dblockext"
 	"ptah.run/internal/dblockext/mysql"
+	"ptah.run/internal/dblockext/oracle"
 	"ptah.run/internal/dblockext/postgres"
 	"ptah.run/internal/dblockext/sqlserver"
 )
@@ -18,6 +19,7 @@ var services = index(
 	mysql.MySQL(),
 	mysql.MariaDB(),
 	sqlserver.Services(),
+	oracle.Services(),
 )
 
 func index(all ...dblockext.Services) map[string]dblockext.Services {
@@ -38,6 +40,16 @@ func index(all ...dblockext.Services) map[string]dblockext.Services {
 // lock, for a dialect no built-in service serves.
 func Lookup(dialect string) dblockext.Services {
 	return services[platform.NormalizeDialect(dialect)]
+}
+
+// Tables returns the tables the built-in lock of dialect keeps, which its
+// schema reader leaves out as Ptah's bookkeeping: none for a lock that keeps
+// no table, or a dialect no built-in service serves.
+func Tables(dialect string) []string {
+	if table := Lookup(dialect).Table; table != "" {
+		return []string{table}
+	}
+	return nil
 }
 
 // Dialects returns every dialect a built-in service serves, in no order.

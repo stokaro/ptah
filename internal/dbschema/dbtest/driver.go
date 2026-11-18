@@ -33,6 +33,11 @@ type QueryHandler func(query string, args []driver.NamedValue) (QueryResult, err
 
 type ExecHandler func(query string, args []driver.NamedValue) (driver.Result, error)
 
+// ExecContextHandler is an [ExecHandler] that also receives the context the
+// caller passed, so a test can block until that context ends and see which
+// context a statement ran under.
+type ExecContextHandler func(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error)
+
 type DB struct {
 	SQL        *sql.DB
 	queryCount *atomic.Int64
@@ -47,6 +52,23 @@ func Open(t interface{ Cleanup(func()) }, handler QueryHandler) *DB {
 }
 
 func OpenWithExec(t interface{ Cleanup(func()) }, queryHandler QueryHandler, execHandler ExecHandler) *DB {
+	if execHandler == nil {
+		return OpenWithExecContext(t, queryHandler, nil)
+	}
+	return OpenWithExecContext(t, queryHandler,
+		func(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+			return execHandler(query, args)
+		},
+	)
+}
+
+// OpenWithExecContext is [OpenWithExec] with an exec handler that receives the
+// statement's context.
+func OpenWithExecContext(
+	t interface{ Cleanup(func()) },
+	queryHandler QueryHandler,
+	execHandler ExecContextHandler,
+) *DB {
 	name := "ptah_dbtest_" + strconv.FormatInt(driverID.Add(1), 10)
 	queryCount := new(atomic.Int64)
 	execCount := new(atomic.Int64)
@@ -103,7 +125,7 @@ var driverID atomic.Int64
 
 type countingDriver struct {
 	queryHandler QueryHandler
-	execHandler  ExecHandler
+	execHandler  ExecContextHandler
 	queryCount   *atomic.Int64
 	execCount    *atomic.Int64
 	beginCount   *atomic.Int64
@@ -125,7 +147,7 @@ func (d *countingDriver) Open(_ string) (driver.Conn, error) {
 
 type countingConn struct {
 	queryHandler QueryHandler
-	execHandler  ExecHandler
+	execHandler  ExecContextHandler
 	queryCount   *atomic.Int64
 	execCount    *atomic.Int64
 	beginCount   *atomic.Int64
@@ -162,12 +184,12 @@ func (c *countingConn) QueryContext(_ context.Context, query string, args []driv
 	return &rows{columns: result.Columns, rows: result.Rows, terminalErr: result.TerminalErr}, nil
 }
 
-func (c *countingConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+func (c *countingConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
 	c.execCount.Add(1)
 	if c.execHandler == nil {
 		return driver.RowsAffected(0), nil
 	}
-	return c.execHandler(query, args)
+	return c.execHandler(ctx, query, args)
 }
 
 type tx struct {

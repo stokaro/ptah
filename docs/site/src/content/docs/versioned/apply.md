@@ -200,7 +200,7 @@ ptah migrations up --db-url "sqlite://app.db" --migrations-dir ./migrations --mi
 Expected output on standard error:
 
 ```text
-error: --migration-lock-timeout requested the migration advisory lock, and dialect "sqlite" has none: only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. Remove --migration-lock-timeout to run without a lock
+error: --migration-lock-timeout requested the migration advisory lock, and dialect "sqlite" has none: only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. Remove --migration-lock-timeout to run without a lock
 ```
 
 Nothing is applied and the revision table is untouched. A URL that names its
@@ -213,6 +213,34 @@ target does anyway.
 
 `ptah migrations down` and `ptah migrations baseline` answer the same way: all
 three take the same lock on the same history.
+
+The lock is what serializes runs, retries included. A run without it, on an
+engine that has none or under `ptah-compat migrate apply --skip-lock`, is
+protected only where its read of the revision table is stale by the time it
+writes:
+
+- A run that found no row for a version, and whose INSERT of the revision row
+  then fails on the key because another run recorded the version meanwhile,
+  stops with
+  `another run recorded this migration after this run read the revision table`
+  before any statement of the body. Any other failure of the INSERT is reported
+  as the server gave it.
+- Under `--tx-mode all` the revision rows are written inside the run's
+  transaction, each after its migration's body, so that INSERT fails after the
+  body ran. The run stops with `a revision row for this migration appeared
+  after this run read the revision table, and the tx-mode all transaction rolls
+  back`, and the rollback takes every body of the run with it, since `--tx-mode
+  all` runs only where schema changes roll back.
+- A retry with `--allow-dirty` rewrites the dirty row only while the row is as
+  the retry read it: in Ptah's layout while its state, applied count and
+  checksum are unchanged, and in the Atlas layout, which has no state column,
+  while its applied count is unchanged and it still carries its error. A retry
+  that read the row before another retry rewrote it stops with the same error.
+
+Two retries that both read the row before either writes it both pass the check,
+and both run the rest of the body. A retry that records inside the migration's
+own transaction is not checked, and neither is one on ClickHouse, because
+neither reports how many rows the rewrite changed.
 
 YugabyteDB 2024.x cannot take the session advisory lock. Ptah refuses a
 migration run on that server before changing the schema. YugabyteDB 2025.1

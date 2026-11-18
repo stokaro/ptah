@@ -47,13 +47,21 @@ func YugabyteDB() migratorext.Services {
 
 // Family returns the services CockroachDB and YugabyteDB share with
 // PostgreSQL.
+//
+// The whole family checks the privilege to create before the name. Measured
+// with a role holding USAGE on the schema and DML on the table, CREATE TABLE
+// IF NOT EXISTS of the existing table answers "permission denied for schema"
+// on PostgreSQL 18 and YugabyteDB 2026.1 and "does not have CREATE privilege
+// on schema" on CockroachDB 26.4, and CREATE SCHEMA IF NOT EXISTS of the
+// existing schema answers the same about the database.
 func Family() migratorext.Services {
 	return migratorext.Services{
-		Catalog:        catalog{},
-		VersionColumn:  catalog{},
-		Owners:         catalog{},
-		Timeouts:       timeouts{},
-		ReadOnlyChecks: true,
+		Catalog:                    catalog{},
+		VersionColumn:              catalog{},
+		Owners:                     catalog{},
+		Timeouts:                   timeouts{},
+		ReadOnlyChecks:             true,
+		CreateChecksPrivilegeFirst: true,
 	}
 }
 

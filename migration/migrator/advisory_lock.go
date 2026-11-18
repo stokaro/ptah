@@ -1,6 +1,7 @@
 package migrator
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dblock"
+	lockbuiltin "ptah.run/internal/dblockext/builtin"
 )
 
 const migrationAdvisoryLockName = "ptah_migrate"
@@ -93,7 +95,10 @@ func (m *Migrator) MigrationLockSkipped() bool {
 // fn receives the context to run with. An operation of this migrator, or of a
 // copy of it with the same lock name, called with that context runs under the
 // held lock and takes no second one; the same operation called with another
-// context waits for the lock this call holds. The lock is acquired and
+// context waits for the lock this call holds. On an engine whose lock keeps a
+// table, Oracle's, the copy needs the same migrations schema too, an unnamed
+// one being the session's current schema: a copy configured for another
+// schema takes that schema's lock. The lock is acquired and
 // released, and a lost lock is reported, as for [Migrator.MigrateUp]. A
 // dry-run writer and [Migrator.WithoutMigrationLock] take no lock, and fn runs
 // at once.
@@ -107,10 +112,13 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 	}
 
 	dialect := m.conn.Info().Dialect
-	lockName := m.effectiveMigrationLockName()
-	if holder, ok := ctx.Value(migrationLockHolderKey{}).(migrationLockHolder); ok &&
-		holder.conn == m.conn && holder.name == lockName {
+	held := migrationLockHolder{conn: m.conn, name: m.effectiveMigrationLockName(), scope: m.migrationLockScope()}
+	lockName := held.name
+	if holder, ok := ctx.Value(migrationLockHolderKey{}).(migrationLockHolder); ok && holder == held {
 		return fn(ctx)
+	}
+	if err := m.refuseForeignLockTable(ctx); err != nil {
+		return fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err)
 	}
 	startedAt := time.Now()
 	observer := m.migrationObserver()
@@ -120,7 +128,7 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 		attr("lock.name", lockName),
 		attr("lock.timeout_ms", m.migrationLockTimeout.Milliseconds()),
 	)
-	lock, err := acquireMigrationLock(ctx, m.conn, lockName, m.migrationLockTimeout)
+	lock, err := acquireMigrationLock(ctx, m.conn, lockName, m.migrationLockSchema(), m.migrationLockTimeout)
 	wait := time.Since(startedAt)
 	span.SetAttributes(attr("lock.wait_ms", wait.Milliseconds()))
 	span.End(err)
@@ -134,10 +142,18 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 	if err != nil {
 		return fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err)
 	}
+	// Again once the lock is taken, which may have created its table: the
+	// check above and the creation are two round trips, and a table another
+	// account placed between them is the one the lock wrote its row to.
+	if err := m.refuseForeignLockTable(ctx); err != nil {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), migrationAdvisoryUnlockTimeout)
+		defer cancel()
+		return errors.Join(fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err), lock.Release(releaseCtx))
+	}
 
 	guarded, stopGuard := lock.Guard(ctx)
 	runCtx := withHeldMigrationLock(guarded, lock)
-	runCtx = context.WithValue(runCtx, migrationLockHolderKey{}, migrationLockHolder{conn: m.conn, name: lockName})
+	runCtx = context.WithValue(runCtx, migrationLockHolderKey{}, held)
 	if service, err := m.conn.SessionLocker(); err == nil && service != nil {
 		runCtx = withMigrationLockSession(runCtx, m.conn)
 	}
@@ -195,10 +211,11 @@ func withHeldMigrationLock(ctx context.Context, lock heldLock) context.Context {
 type migrationLockHolderKey struct{}
 
 // migrationLockHolder names a held migration lock: the connection it was
-// taken through and its name.
+// taken through, its name, and its scope (see [Migrator.migrationLockScope]).
 type migrationLockHolder struct {
-	conn *dbschema.DatabaseConnection
-	name string
+	conn  *dbschema.DatabaseConnection
+	name  string
+	scope string
 }
 
 // migrationLockSessionKey stores the connection whose own session holds the
@@ -234,15 +251,17 @@ func migrationLockLost(ctx context.Context) error {
 }
 
 // acquireMigrationLock takes the shared session advisory lock through
-// internal/dblock and converts its timeout error into the migrator's typed
-// [MigrationLockTimeoutError], preserving the historical error text.
+// internal/dblock, keeping a lock table in schema, and converts its timeout
+// error into the migrator's typed [MigrationLockTimeoutError], preserving the
+// historical error text.
 func acquireMigrationLock(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	name string,
+	name,
+	schema string,
 	timeout time.Duration,
 ) (*dblock.Lock, error) {
-	lock, err := dblock.Acquire(ctx, conn, normalizeMigrationLockName(name), timeout)
+	lock, err := dblock.AcquireInSchema(ctx, conn, normalizeMigrationLockName(name), schema, timeout)
 	if timeoutErr, ok := errors.AsType[*dblock.TimeoutError](err); ok {
 		return nil, &MigrationLockTimeoutError{
 			Dialect: timeoutErr.Dialect,
@@ -251,6 +270,43 @@ func acquireMigrationLock(
 		}
 	}
 	return lock, err
+}
+
+// migrationLockSchema is the schema a lock that keeps a table keeps it in: the
+// one the revision table is configured into, so that every account recording
+// in that table takes one lock, and the session's current schema, where an
+// unconfigured revision table lives, when none is configured.
+func (m *Migrator) migrationLockSchema() string {
+	return strings.TrimSpace(m.migrationsSchema)
+}
+
+// refuseForeignLockTable holds the table the migration lock keeps, on an
+// engine whose lock keeps one, to the policy of
+// [Migrator.refuseForeignMetadataTable]: the lock writes a row to it, as Ptah
+// writes to its other metadata tables, so a table another account owns is
+// refused unless [AllowForeignMetadataTableEnvVar] accepts it. On Oracle an
+// account owns the tables of its own schema, so this refuses a lock table in a
+// migrations schema another account owns.
+func (m *Migrator) refuseForeignLockTable(ctx context.Context) error {
+	for _, table := range lockbuiltin.Tables(m.conn.Info().Dialect) {
+		if err := m.refuseForeignMetadataTable(ctx, table); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrationLockScope is the schema that is part of the migration lock's
+// identity. A lock that keeps a table, as Oracle's does, is a row of the table
+// in migrationLockSchema, so a lock of the same name in another schema is
+// another lock; an unnamed schema is the session's current one, so naming that
+// schema takes the same lock. A lock that keeps no table, such as PostgreSQL's
+// advisory lock, is one lock whatever the schema, and its scope is empty.
+func (m *Migrator) migrationLockScope() string {
+	if len(lockbuiltin.Tables(m.conn.Info().Dialect)) == 0 {
+		return ""
+	}
+	return cmp.Or(m.migrationLockSchema(), m.conn.Info().Schema)
 }
 
 func (m *Migrator) effectiveMigrationLockName() string {

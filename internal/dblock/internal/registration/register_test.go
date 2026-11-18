@@ -11,6 +11,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,13 +22,14 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/dbschema"
 	"ptah.run/internal/dblock"
 	"ptah.run/internal/dblockext"
 	"ptah.run/internal/dbschema/dbtest"
 )
 
 // builtinLocks are the dialects whose locks Ptah ships, in registry order.
-var builtinLocks = []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb"}
+var builtinLocks = []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb", "oracle"}
 
 func described(name string, aliases ...string) descriptor.Dialect {
 	return descriptor.Dialect{
@@ -85,6 +87,19 @@ func (l *sessionLock) record(op string, session dblockext.Session, request dbloc
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.calls = append(l.calls, call{op: op, session: session, request: request})
+}
+
+// since returns the calls after the first n.
+func (l *sessionLock) since(n int) []call {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]call(nil), l.calls[n:]...)
+}
+
+func (l *sessionLock) count() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.calls)
 }
 
 func (l *sessionLock) Acquire(_ context.Context, session dblockext.Session, request dblockext.Request) error {
@@ -274,6 +289,11 @@ func TestRegister_FailurePath(t *testing.T) {
 			services: []dblockext.Services{{Dialects: []string{"refused"}, Separate: separate, Exclusion: exclusion{}}},
 			wantErr:  `invalid lock service registration: the services of \["refused"\] check the exclusion of a lock no session holds`,
 		},
+		{
+			name:     "a lock a commit releases without a session lock",
+			services: []dblockext.Services{{Dialects: []string{"refused"}, Separate: separate, ReleasedByCommit: true}},
+			wantErr:  `invalid lock service registration: the services of \["refused"\] say a commit releases a lock no session holds`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -340,4 +360,80 @@ type exclusion struct{}
 
 func (exclusion) Excludes(context.Context, dblockext.Pool, dblockext.Request) error {
 	return nil
+}
+
+// A lock a commit releases is taken on a session of its own, never on the
+// session the callback runs on, so that a commit the callback makes, such as
+// the one each Oracle DDL statement makes, does not give the lock back. A
+// preview takes it the same way. The engine is SQLite because these entry
+// points take a *dbschema.DatabaseConnection, which no connector makes for an
+// engine Ptah does not ship, and SQLite has no lock of its own to replace.
+func TestRegister_ALockACommitReleasesTakesASessionOfItsOwn(t *testing.T) {
+	c := qt.New(t)
+	lock := &sessionLock{}
+	c.Assert(dblock.Register(dblockext.Services{
+		Dialects:         []string{platform.SQLite},
+		Session:          lock,
+		ReleasedByCommit: true,
+	}), qt.IsNil)
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TempDir(), "commit.db"))
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = conn.Close() })
+
+	tests := []struct {
+		name        string
+		with        func(context.Context, *dbschema.DatabaseConnection, string, time.Duration, func(*dbschema.DatabaseConnection, *dblock.Lock) error) (error, error)
+		wantPreview bool
+	}{
+		{name: "a run that writes", with: dblock.WithLockSession},
+		{name: "a preview", with: dblock.WithPreviewLockSession, wantPreview: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			before := lock.count()
+			var pinned *dbschema.DatabaseConnection
+
+			runErr, releaseErr := test.with(c.Context(), conn, "commit_lock", time.Second,
+				func(session *dbschema.DatabaseConnection, held *dblock.Lock) error {
+					pinned = session
+					c.Assert(held.Supported(), qt.IsTrue)
+					return nil
+				})
+
+			c.Assert(runErr, qt.IsNil)
+			c.Assert(releaseErr, qt.IsNil)
+			calls := lock.since(before)
+			c.Assert(calls, qt.HasLen, 2)
+			c.Assert(pinned, qt.IsNotNil)
+			c.Assert(calls[0].session, qt.Not(qt.Equals), dblockext.Session(pinned))
+			_, ownSession := calls[0].session.(dblockext.SQLSession)
+			c.Assert(ownSession, qt.IsTrue)
+			c.Assert(calls[1].session, qt.Equals, calls[0].session)
+			c.Assert(calls[0].request.Preview, qt.Equals, test.wantPreview)
+		})
+	}
+}
+
+// AcquireInSchema hands the service the schema a lock table belongs in, and
+// Acquire hands it none, which is the session's current schema.
+func TestRegister_SessionLockInASchema(t *testing.T) {
+	c := qt.New(t)
+	lock := &sessionLock{}
+	c.Assert(platform.Register(described("acmeschema")), qt.IsNil)
+	c.Assert(dblock.Register(dblockext.Services{Dialects: []string{"acmeschema"}, Session: lock}), qt.IsNil)
+	conn := open(c, "acmeschema")
+
+	inSchema, err := dblock.AcquireInSchema(c.Context(), conn, "acme_lock", "acme_revisions", time.Second)
+	c.Assert(err, qt.IsNil)
+	c.Assert(inSchema.Release(c.Context()), qt.IsNil)
+	plain, err := dblock.Acquire(c.Context(), conn, "acme_lock", time.Second)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plain.Release(c.Context()), qt.IsNil)
+
+	calls := lock.since(0)
+	c.Assert(calls, qt.HasLen, 4)
+	c.Assert(calls[0].request.Schema, qt.Equals, "acme_revisions")
+	c.Assert(calls[1].request.Schema, qt.Equals, "acme_revisions")
+	c.Assert(calls[2].request.Schema, qt.Equals, "")
 }

@@ -27,6 +27,10 @@ func Services() migratorext.Services {
 		Owners:         catalog{},
 		Checks:         checks{},
 		ReadOnlyChecks: true,
+		// Measured on Oracle 23.26: the guarded CREATE of an existing table
+		// in another account's schema answers ORA-01031 to an account
+		// without CREATE ANY TABLE, not the ORA-00955 the guard ignores.
+		CreateChecksPrivilegeFirst: true,
 	}
 }
 

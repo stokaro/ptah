@@ -31,6 +31,11 @@ func MySQL() migratorext.Services {
 		// MySQL shows a table's triggers in information_schema only to an
 		// account holding TRIGGER on it.
 		TriggerGrant: true,
+		// Measured on MySQL 8.4 with DML grants on the table: CREATE TABLE IF
+		// NOT EXISTS of the existing table answers 1142 "CREATE command
+		// denied", and CREATE SCHEMA IF NOT EXISTS of the existing database
+		// answers 1044 "Access denied".
+		CreateChecksPrivilegeFirst: true,
 	}
 }
 
@@ -43,6 +48,9 @@ func MariaDB() migratorext.Services {
 		Timeouts:          timeouts{statementVariable: "max_statement_time", statementValue: seconds},
 		ReadOnlyChecks:    true,
 		AutocommitControl: true,
+		// Measured on MariaDB 11.8, with the answers MySQL gives: 1142 for the
+		// table and 1044 for the database.
+		CreateChecksPrivilegeFirst: true,
 	}
 }
 

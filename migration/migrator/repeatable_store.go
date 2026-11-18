@@ -149,8 +149,14 @@ func (m *Migrator) ensureRepeatableTable(ctx context.Context) error {
 		sqlStringLiteral(m.metadataObjectName(m.repeatableTableName())),
 		revisionEngineClauseFor(m.connectionDialect(), m.migrationsEngine),
 	)
-	if _, err := m.conn.ExecContext(ctx, ddl); err != nil {
+	create, err := m.createsMetadataTable(ctx, m.repeatableTableName())
+	if err != nil {
 		return fmt.Errorf("failed to create the repeatable migration record: %w", err)
+	}
+	if create {
+		if _, err := m.conn.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("failed to create the repeatable migration record: %w", err)
+		}
 	}
 	return m.refuseForeignMetadataTable(ctx, m.repeatableTableName())
 }

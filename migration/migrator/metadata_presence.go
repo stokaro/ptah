@@ -847,6 +847,28 @@ func configuredOrConnectionSchema(configured, connection string) string {
 	return connection
 }
 
+// createsMetadataTable reports whether the metadata table named table, and
+// the schema statement before it, are to be sent. They are, except on an
+// engine that checks the privilege to create before the name, where a table
+// the catalog shows is left as it is: its guarded CREATE would change nothing,
+// and it would refuse an account that may only read and write the table. The
+// schema statement is skipped with it, since a table there means the schema
+// is there too.
+//
+// The catalog shows a table the account holds some privilege on. One it holds
+// none on is not shown, so its CREATE is sent and refused, as it is without
+// the check, and a table that is really missing is created or refused.
+func (m *Migrator) createsMetadataTable(ctx context.Context, table string) (bool, error) {
+	if !builtin.Lookup(m.connectionDialect()).CreateChecksPrivilegeFirst {
+		return true, nil
+	}
+	exists, err := m.metadataTableExists(ctx, table)
+	if err != nil {
+		return false, fmt.Errorf("inspect metadata table %s: %w", table, err)
+	}
+	return !exists, nil
+}
+
 // metadataTableExists reports whether the metadata table named table exists,
 // asking the engine's catalog.
 func (m *Migrator) metadataTableExists(ctx context.Context, table string) (bool, error) {

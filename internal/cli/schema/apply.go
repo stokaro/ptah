@@ -106,16 +106,17 @@ type schemaApplyOptions struct {
 }
 
 // schemaApplyLockSession runs one apply with the lock held. The callback is
-// handed the pinned session and a context that ends when the lock is lost:
-// whether that session carries a real database lock is settled from --db-url
-// before the connection is opened, so no caller reads the lock back here.
+// handed the pinned session, a context that ends when the lock is lost, and
+// the lock. Whether the dialect has a real database lock is settled from
+// --db-url before the connection is opened; the lock says whether a dry run's
+// preview took one (see [noteUntakenPreviewLock]).
 type schemaApplyLockSession func(
 	context.Context,
 	*dbschema.DatabaseConnection,
 	string,
 	time.Duration,
 	applyLockScope,
-	func(context.Context, *dbschema.DatabaseConnection) error,
+	func(context.Context, *dbschema.DatabaseConnection, *atlasschema.ApplyLock) error,
 ) (runErr, releaseErr error)
 
 // applyLockScope says what an apply may write, which decides how it takes
@@ -145,21 +146,27 @@ func withSchemaApplyLockSession(
 	name string,
 	timeout time.Duration,
 	scope applyLockScope,
-	use func(context.Context, *dbschema.DatabaseConnection) error,
+	use func(context.Context, *dbschema.DatabaseConnection, *atlasschema.ApplyLock) error,
 ) (runErr, releaseErr error) {
 	session := atlasschema.WithApplyLockSession
 	if scope == applyPreviews {
 		session = atlasschema.WithApplyPreviewLockSession
 	}
-	return session(
-		ctx,
-		conn,
-		name,
-		timeout,
-		func(ctx context.Context, pinned *dbschema.DatabaseConnection, _ *atlasschema.ApplyLock) error {
-			return use(ctx, pinned)
-		},
-	)
+	return session(ctx, conn, name, timeout, use)
+}
+
+// noteUntakenPreviewLock says on stderr that a dry run holds no lock on a
+// dialect that has one. A preview creates nothing, so where the lock lives on
+// something no run has created yet, such as the row of Oracle's lock table, it
+// takes no lock, and a first run that starts meanwhile is not kept out of the
+// plan the dry run reads.
+func noteUntakenPreviewLock(cmd *cobra.Command, lock *atlasschema.ApplyLock, dialect string) {
+	if lock == nil || lock.Supported() || !atlasschema.ApplyLockSupported(dialect) {
+		return
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"note: the dry run holds no schema apply lock: no run has taken lock %q on this database yet, "+
+			"and a dry run creates nothing to take it on\n", lock.Name())
 }
 
 func newSchemaApplyCommand() *cobra.Command {
@@ -649,7 +656,8 @@ func applySchema(
 		"",
 		lockTimeout,
 		opts.lockScope(),
-		func(ctx context.Context, session *dbschema.DatabaseConnection) error {
+		func(ctx context.Context, session *dbschema.DatabaseConnection, lock *atlasschema.ApplyLock) error {
+			noteUntakenPreviewLock(cmd, lock, session.Info().Dialect)
 			var applyErr error
 			outcome, applyErr = runSchemaApplyOnLockedSession(ctx, cmd, opts, session, desired, projectCfg, txMode, run)
 			return applyErr
@@ -872,7 +880,8 @@ func applySchemaPlanFile(
 		"",
 		lockTimeout,
 		opts.lockScope(),
-		func(ctx context.Context, session *dbschema.DatabaseConnection) error {
+		func(ctx context.Context, session *dbschema.DatabaseConnection, lock *atlasschema.ApplyLock) error {
+			noteUntakenPreviewLock(cmd, lock, session.Info().Dialect)
 			var applyErr error
 			outcome, applyErr = runSchemaApplyPlanFileOnLockedSession(ctx, cmd, opts, session, plan, txMode, run)
 			return applyErr

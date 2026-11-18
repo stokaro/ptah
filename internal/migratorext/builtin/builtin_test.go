@@ -171,3 +171,37 @@ func TestChecks_ValidateRefusesASequenceAdvance(t *testing.T) {
 		})
 	}
 }
+
+// The engines measured to check the privilege to create before the name are
+// the ones whose guarded metadata CREATE the migrator leaves out for a table
+// the catalog shows. Oracle answers ORA-01031 for an existing table in
+// another account's schema; the PostgreSQL family "permission denied for
+// schema" or "does not have CREATE privilege"; MySQL and MariaDB 1142 and
+// 1044. SQL Server guards its creates with OBJECT_ID and SCHEMA_ID, which a
+// DML-only user passes for an existing table and schema (measured on 2022),
+// and SQLite and ClickHouse keep sending theirs. Each declared engine has a
+// catalog to ask, since the skip reads one.
+func TestServices_CreateChecksPrivilegeFirst(t *testing.T) {
+	tests := []struct {
+		dialect string
+		want    bool
+	}{
+		{dialect: platform.Oracle, want: true},
+		{dialect: platform.Postgres, want: true},
+		{dialect: platform.CockroachDB, want: true},
+		{dialect: platform.YugabyteDB, want: true},
+		{dialect: platform.MySQL, want: true},
+		{dialect: platform.MariaDB, want: true},
+		{dialect: platform.SQLServer},
+		{dialect: platform.SQLite},
+		{dialect: platform.ClickHouse},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			services := builtin.Lookup(test.dialect)
+			c.Assert(services.CreateChecksPrivilegeFirst, qt.Equals, test.want)
+			c.Assert(services.Catalog, qt.IsNotNil)
+		})
+	}
+}

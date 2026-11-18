@@ -104,14 +104,17 @@ func oracleDataSourceName(dbURL string) string {
 // Release 23.26.2.0.0" names 26 before it names 23.26 -- which the resolver
 // handles, and which this column avoids entirely.
 //
-// The schema is the connected user, because in Oracle a schema IS a user:
-// objects live in the namespace of the account that owns them, and there is no
-// separate namespace to select. An explicit ?schema= still wins, for the reader
-// that has been granted access to somebody else's objects.
+// The schema is the session's current schema, which is the connected user
+// unless a logon trigger changed it, because in Oracle a schema IS a user:
+// objects live in the namespace of the account that owns them. The URL cannot
+// name another: Open hands the URL to go-ora, which refuses a schema option
+// with "unknown URL option: schema" before the connection opens. A migrator
+// that records in another account's schema names it with --migrations-schema
+// instead.
 func (Service) Describe(
 	ctx context.Context,
 	opened *connector.Pool,
-	request connector.Request,
+	_ connector.Request,
 	info catalog.ServerInfo,
 ) (catalog.ServerInfo, error) {
 	db := opened.DB
@@ -128,9 +131,6 @@ func (Service) Describe(
 		return info, fmt.Errorf("failed to get Oracle schema: %w", err)
 	}
 	info.Schema = currentSchema
-	if schema := request.Parsed.Query().Get("schema"); schema != "" {
-		info.Schema = schema
-	}
 	info.IdentifierSemantics = identifier.ForDialect(platform.Oracle)
 	info.IdentifierSemantics.DefaultSchema = info.Schema
 	return info, nil

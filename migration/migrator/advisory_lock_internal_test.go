@@ -163,3 +163,24 @@ func TestMigrationLockOutcomePreservesUncertainty(t *testing.T) {
 		})
 	}
 }
+
+// The migration lock keeps a lock table beside the revision table: in the
+// schema the table is configured into, and in the session's current schema
+// when none is.
+func TestMigrationLockSchema(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+		want   string
+	}{
+		{name: "no configured schema"},
+		{name: "a configured schema", schema: " APP ", want: "APP"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			m := NewMigrator(nil, nil).WithMigrationsTable(test.schema, "")
+			c.Assert(m.migrationLockSchema(), qt.Equals, test.want)
+		})
+	}
+}

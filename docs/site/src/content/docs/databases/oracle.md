@@ -297,9 +297,109 @@ it stay applied and the revision row counts them. See
 `--tx-mode all` is refused.
 
 `--migrations-engine` is refused on Oracle, because the revision table has no
-engine clause to carry it. Ptah takes no advisory lock on Oracle, so two
-`ptah migrations up` runs against one schema are not serialized: run one at a
-time.
+engine clause to carry it.
+
+### The migration lock
+
+Two `ptah migrations up` runs against one schema take the migration lock in
+turn, as on the other engines with a lock: the second waits for the first, then
+finds nothing pending. `--migration-lock-timeout` bounds the wait, and a lock
+still held when it ends refuses the run with `timed out acquiring migration lock
+"ptah_migrate" for oracle after 10s`. `ptah schema apply` takes its own lock the
+same way, a dry run included. A dry run creates neither the lock table nor the
+lock's row, so where no run has taken that lock yet it holds none, and says so
+on standard error.
+
+The lock is a row lock. Ptah keeps one row per lock name in the table
+`ptah_locks`, which it creates beside the revision table the first time it
+takes a lock there: in the session's schema, or in the schema
+`--migrations-schema` names (`--revisions-schema` on `ptah-compat`). So two
+accounts that record in one revision table take one lock. The row's key is the
+lock name exactly as given, `ptah_migrate` unless `--migration-lock-name` names
+another, and Ptah locks that row with `SELECT ... FOR UPDATE NOWAIT`. It asks
+again every 25 milliseconds until the wait ends, so waiting runs are not served
+in the order they arrived. On the other engines Ptah creates no such table, and
+a table of that name there is an ordinary one.
+
+Creating the table needs `CREATE TABLE` in the account's own schema, and
+`CREATE ANY TABLE` in a schema another account owns. Without that privilege, a
+DBA creates the table once and grants the account `SELECT`, which
+`FOR UPDATE` needs, and `INSERT`, for the row of each new lock name. `READ`
+in place of `SELECT` is refused by `FOR UPDATE`.
+
+```sql
+CREATE TABLE "APP".ptah_locks (name VARCHAR2(1000) PRIMARY KEY);
+GRANT SELECT, INSERT ON "APP".ptah_locks TO deployer;
+```
+
+A lock table in another account's schema belongs to that account, so the run
+needs `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1`, as the revision table there does.
+Without it the lock refuses before it writes a row to a table that is there,
+and again after it created one.
+
+Where neither the table nor the privilege is there, the lock refuses before the
+run starts and names both remedies. It does not fall back to the account's own
+schema, because a table there would not exclude another account that records
+in the same revision table.
+
+The revision table and its log follow the same rule. Ptah sends no `CREATE` for
+a metadata table that `ALL_TABLES` shows the account, so tables a DBA created
+in another account's schema need only `SELECT`, `INSERT`, `UPDATE` and
+`DELETE`. Oracle checks the privilege before the name, and its guarded
+`CREATE` of an existing table answers ORA-01031 to an account without
+`CREATE ANY TABLE`. Such tables belong to another account, so they also need
+`PTAH_ALLOW_FOREIGN_METADATA_TABLE=1`, as described in
+[Maintain migration history](../../versioned/maintain-history/).
+
+Do not name a table of your own `ptah_locks` on Oracle. Schema reads leave out
+the table as the lock creates it, unquoted, which Oracle stores as
+`PTAH_LOCKS`, as they leave out the revision table. So `schema diff` and
+`schema apply` never see a table of that name, the lock fails when its columns
+are not the ones Ptah creates, and `db drop-all` drops it with the rest.
+
+The rows are never deleted, and a row holds no state of its own: only the lock
+on it does, and the lock ends with the session's transaction. A run that
+crashes leaves its row behind, unlocked once the server ends the session, and
+the next run takes the lock. The lock session runs nothing but pings and the
+lock statement, so it is idle when its client dies. When the client's host
+closes the connection, the server notices at once: one second after the client
+of an idle holder was killed with `SIGKILL` on its own host, another session
+locked the row.
+
+A host that fails, or a network partition, closes nothing, and the session
+keeps the row until the server's dead connection detection notices, which
+`SQLNET.EXPIRE_TIME` in the server's `sqlnet.ora` configures. A waiting run
+waits without end unless `--migration-lock-timeout` bounds it, so set one where
+a run must not wait that long. A held row cannot outlive the session that holds
+it.
+
+The first time a lock name is taken, Ptah inserts its row, and Oracle makes
+that INSERT wait for another session's uncommitted INSERT of the same name.
+Neither `--migration-lock-timeout` nor a run that does not wait ends that wait:
+Oracle bounds no INSERT, and a canceled call does not stop the server's wait.
+Ptah's own runs commit the row in the call that inserts it, so only a session
+outside Ptah that inserts into `ptah_locks` without committing can hold a run
+there.
+
+Oracle commits every schema statement, and a commit gives a row lock back. So
+the lock lives on a database session of its own that runs nothing else, and
+the migration runs on other sessions. Each run holds that one extra session for
+as long as it holds the lock. Oracle's named lock, `DBMS_LOCK`, would survive a
+commit, but only `SYS` can grant `EXECUTE` on it, so an ordinary account cannot
+take it.
+
+The migration lock is what serializes runs, retries included. A run that holds
+no lock, such as `ptah-compat migrate apply --skip-lock`, is protected only
+where its read of the revision table is stale by the time it writes. When
+another run recorded the version after this run found no row for it, the
+INSERT of the revision row fails on its key, and the run stops with `another
+run recorded this migration after this run read the revision table` before any
+statement of the body. An `--allow-dirty` retry rewrites the failed row only
+while it still has the state, applied count and checksum the retry read, so a
+retry that read the row before another retry rewrote it stops with the same
+error. Two retries that both read the row before either writes it both pass
+that check; see
+[Locking](../../versioned/apply/#locking-and---migration-lock-timeout).
 
 ## Open work
 

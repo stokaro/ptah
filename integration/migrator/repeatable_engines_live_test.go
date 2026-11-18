@@ -101,8 +101,9 @@ var (
 	// repeatableSQLServer has no CREATE OR REPLACE VIEW and no CREATE TABLE
 	// IF NOT EXISTS, so its fixtures say both its own way.
 	// repeatableOracle commits its own DDL, so every repeatable migration runs
-	// without a transaction, and Ptah takes no migration lock there. A schema
-	// is an account on Oracle, so the scratch database is one.
+	// without a transaction, and its migration lock is a row lock on a session
+	// of its own. A schema is an account on Oracle, so the scratch database is
+	// one.
 	repeatableOracle = repeatableEngine{
 		name: "oracle", engine: dbtarget.Oracle, dialect: "oracle", admin: dbtarget.OracleAdmin,
 		family: "oracle", noTransaction: true, keepsPartial: true,
@@ -133,6 +134,7 @@ var (
 	// session advisory lock, and Ptah runs every migration there without one.
 	repeatableLockingEngines = []repeatableEngine{
 		repeatablePostgres, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB, repeatableSQLServer,
+		repeatableOracle,
 	}
 	// repeatableMySQLFamilyEngines read session variables from the URL.
 	repeatableMySQLFamilyEngines = []repeatableEngine{repeatableMySQL, repeatableMariaDB}

@@ -48,13 +48,13 @@ func (r *redirectApplySession) run(
 	_ string,
 	_ time.Duration,
 	_ applyLockScope,
-	use func(context.Context, *dbschema.DatabaseConnection) error,
+	use func(context.Context, *dbschema.DatabaseConnection, *atlasschema.ApplyLock) error,
 ) (runErr, releaseErr error) {
 	r.root = root
 	r.callCount++
 	callbackErr := r.target.WithSession(ctx, func(session *dbschema.DatabaseConnection) error {
 		r.session = session
-		return use(ctx, session)
+		return use(ctx, session, nil)
 	})
 	return errors.Join(callbackErr, r.terminal), nil
 }
@@ -141,14 +141,15 @@ func TestSchemaApplyAcquisitionFailureKeepsDiagnosticAndExitCode(t *testing.T) {
 		name string,
 		timeout time.Duration,
 		scope applyLockScope,
-		use func(context.Context, *dbschema.DatabaseConnection) error,
+		use func(context.Context, *dbschema.DatabaseConnection, *atlasschema.ApplyLock) error,
 	) (runErr, releaseErr error) {
 		return withSchemaApplyLockSession(ctx, nil, name, timeout, scope, func(
 			ctx context.Context,
 			session *dbschema.DatabaseConnection,
+			lock *atlasschema.ApplyLock,
 		) error {
 			callbackCount++
-			return use(ctx, session)
+			return use(ctx, session, lock)
 		})
 	}
 
@@ -313,7 +314,7 @@ func testSchemaApplyJSONPanicAfterDispatch(t *testing.T, setup applySessionLossS
 		name string,
 		timeout time.Duration,
 		scope applyLockScope,
-		use func(context.Context, *dbschema.DatabaseConnection) error,
+		use func(context.Context, *dbschema.DatabaseConnection, *atlasschema.ApplyLock) error,
 	) (runErr, releaseErr error) {
 		_, _ = redirect.run(ctx, root, name, timeout, scope, use)
 		panic("lock session lost its connection")
@@ -350,7 +351,7 @@ func TestSchemaApplyJSONReportsAPanicBeforeDispatchAsFailed(t *testing.T) {
 		string,
 		time.Duration,
 		applyLockScope,
-		func(context.Context, *dbschema.DatabaseConnection) error,
+		func(context.Context, *dbschema.DatabaseConnection, *atlasschema.ApplyLock) error,
 	) (runErr, releaseErr error) {
 		panic("lock session could not start")
 	}

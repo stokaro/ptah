@@ -16,6 +16,7 @@ package dblockext
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"ptah.run/catalog"
@@ -28,6 +29,12 @@ type Request struct {
 	Dialect string
 	// Name is the lock's name, trimmed and never empty.
 	Name string
+	// Schema is the schema a lock that keeps a table keeps it in, and empty
+	// for the session's current schema. A caller names one when its own state
+	// lives there, such as a revision table in a configured schema, so that
+	// every account writing that state takes the same lock. A lock that keeps
+	// no table ignores it.
+	Schema string
 	// Timeout bounds the wait for a lock another session holds. A positive
 	// timeout waits that long, zero waits until the context ends, and a
 	// negative one does not wait.
@@ -47,6 +54,7 @@ type Request struct {
 // on. SQLSession and a pinned *dbschema.DatabaseConnection satisfy it.
 type Session interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
 // Pool hands out database sessions of their own, which the caller closes.
@@ -61,12 +69,19 @@ type SessionLock interface {
 	// Acquire takes the lock on session. It returns request.Held when
 	// another session holds the lock, and an [AmbiguousError] when session
 	// may hold the lock after the failure, such as when the answer to the
-	// acquiring statement was lost. Every other error leaves session without
-	// the lock.
+	// acquiring statement was lost. It returns [ErrNothingToLock] when
+	// request.Preview is set and the lock lives on something that does not
+	// exist yet, such as a table row. Every other error leaves session
+	// without the lock.
 	Acquire(ctx context.Context, session Session, request Request) error
 	// Release gives the lock back on the session that took it.
 	Release(ctx context.Context, session Session, request Request) error
 }
+
+// ErrNothingToLock is what a [SessionLock] returns for a preview whose lock
+// lives on something that does not exist yet. A preview creates nothing, so
+// it takes no lock, and the caller holds a lock that holds nothing.
+var ErrNothingToLock = errors.New("the lock does not exist yet, and a preview creates nothing")
 
 // ExclusionCheck proves that a [SessionLock] just taken keeps other sessions
 // out. A lock held by a session can exclude nobody when something between the
@@ -133,6 +148,18 @@ type Services struct {
 	// Exclusion proves that a Session lock excludes other sessions. Nil
 	// proves nothing.
 	Exclusion ExclusionCheck
+	// ReleasedByCommit reports that the end of the transaction which took a
+	// Session lock gives it back too, as it does a row lock. The session that
+	// holds such a lock must run nothing else, so dblock takes it on a
+	// session of its own even where the caller pins one for its work.
+	ReleasedByCommit bool
+	// Table names the table the lock keeps its rows in, in the schema
+	// [Request.Schema] names, when it keeps one; it is empty otherwise. It is
+	// the name as the dialect's catalog stores it, which is what a reader
+	// compares. The lock creates the table itself, so on the dialects these
+	// services serve the table is Ptah's bookkeeping, and their schema readers
+	// leave it out. On every other dialect a table of that name is the user's.
+	Table string
 	// Separate takes a lock that a session of the service's own holds.
 	Separate SeparateLock
 }
@@ -143,7 +170,8 @@ func (s Services) Locks() bool {
 }
 
 // SQLSession adapts a database/sql connection to the lock query contract.
-// It retains the caller's ownership of the physical connection.
+// It retains the caller's ownership of the physical connection. ExecContext
+// is the connection's own.
 type SQLSession struct{ *sql.Conn }
 
 // QueryRowContext returns the SQL driver's row through the shared query contract.

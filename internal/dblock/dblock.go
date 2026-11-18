@@ -87,7 +87,8 @@ var registered = struct {
 // the canonical name of a dialect the process registry describes
 // (platform.Register), and no other lock service serves it. Each Services
 // value takes a lock, through Session or Separate and not both, and an
-// Exclusion check goes with a Session lock only. Every refusal wraps
+// Exclusion check and ReleasedByCommit go with a Session lock only. Every
+// refusal wraps
 // [ErrInvalidRegistration], and on a refusal nothing is added.
 //
 // Registration only adds, and lasts for the rest of the process. Register is
@@ -129,6 +130,9 @@ func validServices(served dblockext.Services) error {
 			ErrInvalidRegistration, served.Dialects)
 	case served.Exclusion != nil && served.Session == nil:
 		return fmt.Errorf("%w: the services of %q check the exclusion of a lock no session holds",
+			ErrInvalidRegistration, served.Dialects)
+	case served.ReleasedByCommit && served.Session == nil:
+		return fmt.Errorf("%w: the services of %q say a commit releases a lock no session holds",
 			ErrInvalidRegistration, served.Dialects)
 	default:
 		return nil
@@ -217,7 +221,8 @@ func IsLost(err error) bool {
 }
 
 // Supported reports whether the lock is backed by a real database lock, as
-// opposed to the no-op lock acquired on dialects without advisory locks.
+// opposed to the no-op lock acquired on dialects without advisory locks, and
+// by a preview that took nothing (see [WithPreviewLockSession]).
 func (l *Lock) Supported() bool {
 	return l != nil && l.release != nil
 }
@@ -226,10 +231,13 @@ func (l *Lock) Supported() bool {
 // from its holder. A lock [Acquire] took reports a loss: it belongs to a
 // session of its own -- a database session from the pool, or a session the
 // engine's lock service opens apart from the pool -- which can end while the
-// work it guards goes on over other sessions. A lock [WithLockSession] took returns nil, a channel that
-// never closes: the work runs on the session that holds the lock, so the end
-// of that session fails the work itself. So does a no-op lock. A release is
-// not a loss and closes nothing.
+// work it guards goes on over other sessions. A lock [WithLockSession] took
+// on the session it pins returns nil, a channel that never closes: the work
+// runs on the session that holds the lock, so the end of that session fails
+// the work itself. A lock a commit gives back
+// (dblockext.Services.ReleasedByCommit) is never taken on that session, and
+// reports a loss as one [Acquire] took does. A no-op lock returns nil too. A
+// release is not a loss and closes nothing.
 func (l *Lock) Done() <-chan struct{} {
 	if l == nil || l.holding == nil {
 		return nil
@@ -366,7 +374,10 @@ func (l *Lock) Release(ctx context.Context) error {
 // WithLockSession pins one physical database session, acquires name on that
 // session, and runs use with the same session. The original pool is retained
 // only for the lock service: a second session from it is the witness of an
-// exclusion check, and a lock held apart from the pool is taken through it.
+// exclusion check, and a lock held apart from the pool is taken through it. A
+// lock that a commit gives back (dblockext.Services.ReleasedByCommit) is taken
+// on a second session from it too, since the work's own commits would give
+// the lock back on the pinned one.
 // Dialects without advisory-lock semantics still pin the callback session and
 // receive an explicit no-op lock.
 //
@@ -391,9 +402,11 @@ func WithLockSession(
 // WithPreviewLockSession is [WithLockSession] for a run that writes nothing,
 // such as a dry run: it takes the lock only where taking it writes nothing
 // either. A lock whose service would first have to create the object it lives
-// on, such as YDB's coordination node, is not taken while that object is
-// missing, and the run gets a no-op lock: no run that took a lock has used
-// that database, so there is nobody to wait for.
+// on, such as YDB's coordination node or the row of Oracle's lock table, is not
+// taken while that object is missing, and the run gets a no-op lock, whose
+// [Lock.Supported] reports false: no run has taken that lock on the database,
+// but one may start while the preview runs, so the caller says that the
+// preview holds nothing.
 func WithPreviewLockSession(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -468,7 +481,11 @@ func acquireSessionLock(
 	if lock, handled, err := nativeLock(ctx, session, name, timeout); handled {
 		return lock, err
 	}
-	return acquireOnSession(ctx, session, witness, dialect, name, timeout, false)
+	request := dblockext.Request{Dialect: dialect, Name: name, Timeout: timeout}
+	if servicesOf(dialect).ReleasedByCommit {
+		return acquireOnOwnSession(ctx, witness, request)
+	}
+	return acquireOnSession(ctx, session, witness, request)
 }
 
 func acquirePreviewLock(
@@ -485,7 +502,11 @@ func acquirePreviewLock(
 	if lock, handled, err := nativePreviewLock(session, dialect, name); handled {
 		return lock, err
 	}
-	return acquireOnSession(ctx, session, witness, dialect, name, timeout, true)
+	request := dblockext.Request{Dialect: dialect, Name: name, Timeout: timeout, Preview: true}
+	if servicesOf(dialect).ReleasedByCommit {
+		return acquireOnOwnSession(ctx, witness, request)
+	}
+	return acquireOnSession(ctx, session, witness, request)
 }
 
 // Connection is the database [Acquire] takes a lock on: a pool that names the
@@ -508,6 +529,22 @@ func Acquire(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
+	return AcquireInSchema(ctx, conn, name, "", timeout)
+}
+
+// AcquireInSchema is [Acquire] for a caller whose state lives in a schema of
+// its own choosing, such as a migrator whose revision table sits in a schema
+// the caller configured. A lock that keeps a table, which Oracle's does, keeps
+// it in schema, so every account that writes there takes the same lock. An
+// empty schema is the session's current schema, as [Acquire] uses. A lock that
+// keeps no table ignores schema.
+func AcquireInSchema(
+	ctx context.Context,
+	conn Connection,
+	name,
+	schema string,
+	timeout time.Duration,
+) (*Lock, error) {
 	if isNil(conn) {
 		return nil, errors.New("advisory locking requires database connection")
 	}
@@ -527,10 +564,11 @@ func Acquire(
 	if !services.Locks() {
 		return &Lock{name: name}, nil
 	}
+	request := dblockext.Request{Dialect: dialect, Name: name, Schema: schema, Timeout: timeout}
 	if services.Separate != nil {
 		// The lock belongs to a session the service opens itself, so it
 		// holds no database session from the pool.
-		return acquireOnSession(ctx, nil, conn, dialect, name, timeout, false)
+		return acquireOnSession(ctx, nil, conn, request)
 	}
 
 	session, err := conn.Conn(ctx)
@@ -550,9 +588,39 @@ func Acquire(
 		return lock, nil
 	}
 
-	lock, acquireErr := acquireOnSession(ctx, dblockext.SQLSession{Conn: session}, conn, dialect, name, timeout, false)
+	return holdOnSession(ctx, session, conn, request)
+}
+
+// acquireOnOwnSession takes a session lock on a session of its own from pool,
+// which runs nothing but the lock's statements, and watches that session as
+// [Acquire] does.
+func acquireOnOwnSession(ctx context.Context, pool dblockext.Pool, request dblockext.Request) (*Lock, error) {
+	session, err := pool.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return holdOnSession(ctx, session, pool, request)
+}
+
+// holdOnSession takes a session lock on session, which belongs to the lock
+// from then on, and starts the watch that reports its loss. request carries no
+// Held error; [acquireOnSession] fills it in.
+func holdOnSession(
+	ctx context.Context,
+	session *sql.Conn,
+	pool dblockext.Pool,
+	request dblockext.Request,
+) (*Lock, error) {
+	lock, acquireErr := acquireOnSession(ctx, dblockext.SQLSession{Conn: session}, pool, request)
 	if acquireErr != nil {
 		return nil, closeAfterFailedAcquisition(session, acquireErr)
+	}
+	if !lock.Supported() {
+		// A preview that took nothing holds nothing on session.
+		if err := session.Close(); err != nil && !errors.Is(err, sql.ErrConnDone) {
+			return nil, err
+		}
+		return lock, nil
 	}
 	lock.conn = session
 	hold := newSessionHold(session.PingContext, lock.release, time.Now)
@@ -613,35 +681,31 @@ func isNil(conn Connection) bool {
 	return value.Kind() == reflect.Pointer && value.IsNil()
 }
 
-// acquireOnSession takes the lock dialect's service offers: on session when
-// it is a session lock, and through witness when the service holds it apart
-// from the pool. preview marks a run that writes nothing (see
-// [WithPreviewLockSession]).
+// acquireOnSession takes the lock the service of request's dialect offers: on
+// session when it is a session lock, and through witness when the service
+// holds it apart from the pool.
 func acquireOnSession(
 	ctx context.Context,
 	session dblockext.Session,
 	witness dblockext.Pool,
-	dialect,
-	name string,
-	timeout time.Duration,
-	preview bool,
+	request dblockext.Request,
 ) (*Lock, error) {
-	lock := &Lock{name: name, dialect: dialect}
-	services := servicesOf(dialect)
-	request := dblockext.Request{
-		Dialect: dialect,
-		Name:    name,
-		Timeout: timeout,
-		Preview: preview,
-		Held:    &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout},
-	}
+	lock := &Lock{name: request.Name, dialect: request.Dialect}
+	services := servicesOf(request.Dialect)
+	request.Held = &TimeoutError{Dialect: request.Dialect, Name: request.Name, Timeout: request.Timeout}
 
 	var acquireErr error
 	switch {
 	case services.Session != nil:
 		lock.release = func(ctx context.Context) error { return services.Session.Release(ctx, session, request) }
 		acquireErr = services.Session.Acquire(ctx, session, request)
-		if acquireErr == nil && services.Exclusion != nil {
+		if request.Preview && errors.Is(acquireErr, dblockext.ErrNothingToLock) {
+			// A no-op lock, as a separate lock's preview that took nothing
+			// leaves: nothing was taken, so nothing is given back.
+			lock.release = nil
+			acquireErr = nil
+		}
+		if acquireErr == nil && lock.release != nil && services.Exclusion != nil {
 			if verifyErr := verifyExcludes(ctx, services.Exclusion, witness, request); verifyErr != nil {
 				acquireErr = &dblockext.AmbiguousError{Err: verifyErr}
 			}

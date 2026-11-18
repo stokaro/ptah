@@ -18,11 +18,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	lockbuiltin "ptah.run/internal/dblockext/builtin"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
 )
@@ -98,11 +101,15 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	schema.Indexes = indexes
 
 	// Ptah's own revision tables are bookkeeping, not schema. Reported, they
-	// read as tables no declaration has, and `migrations generate` planned
+	// read as tables no declaration has, and `migrations generate` plans
 	// `DROP TABLE IF EXISTS PTAH.schema_migrations PURGE` and the same for the
-	// log once a migration had been applied, measured on 23.26
-	// (stokaro/ptah#4029).
+	// log once a migration has been applied, measured on 23.26
+	// (stokaro/ptah#4029). So is the table Oracle's migration lock keeps its
+	// rows in: reported, `schema apply` plans to drop the table its own lock
+	// holds a row of. The lock service names it, because only a lock that
+	// keeps a table makes one Ptah's.
 	schema = revisiontable.Without(schema, revisiontable.NativeNames())
+	schema = revisiontable.WithoutTables(schema, isLockTable)
 
 	sequences, err := r.readSequences(ctx)
 	if err != nil {
@@ -200,6 +207,15 @@ func withoutGeneratedKeys(constraints []catalog.Constraint, desired map[string]b
 		kept = append(kept, constraint)
 	}
 	return kept
+}
+
+// isLockTable reports whether table, as the catalog spells it, is the table
+// the migration lock keeps. The lock creates it unquoted, so the catalog holds
+// its name in upper case, and only that spelling, which the lock service
+// names, is the lock's. A quoted "ptah_locks" or "Ptah_Locks" beside it is a
+// different table, the user's.
+func isLockTable(table string) bool {
+	return slices.Contains(lockbuiltin.Tables(platform.Oracle), table)
 }
 
 const tableQuery = `

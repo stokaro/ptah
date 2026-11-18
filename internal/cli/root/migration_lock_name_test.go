@@ -108,7 +108,7 @@ func TestMigrationVerbsRefuseAMigrationLockNameOnAnUnlockedDialect_FailurePath(t
 
 					c.Assert(got.err, qt.ErrorMatches, regexp.QuoteMeta(
 						spelling.want+` requested the migration advisory lock, and dialect "sqlite" has none: `+
-							`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. `+
+							`only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. `+
 							`Remove `+spelling.want+` to run without a lock`), qt.Commentf("%s", got.output))
 					_, statErr := os.Stat(got.dbPath)
 					c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
