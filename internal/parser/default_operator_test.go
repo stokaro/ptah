@@ -235,8 +235,12 @@ func TestParse_DefaultOperatorPerDialect_HappyPath(t *testing.T) {
 		{name: "MariaDB, in parentheses", dialect: "mariadb", column: "n int DEFAULT (5 - 2) NOT NULL", wantExpression: "(5 - 2)"},
 		{name: "SQLite, in parentheses", dialect: "sqlite", column: "n int DEFAULT (5 - 2) NOT NULL", wantExpression: "(5 - 2)"},
 		{
-			name: "MySQL, a concatenation in parentheses", dialect: "mysql",
-			column: "n varchar(4) DEFAULT ('a' || 'b') NOT NULL", wantExpression: "('a' || 'b')",
+			name: "MySQL, a bitwise or in parentheses", dialect: "mysql",
+			column: "n int DEFAULT (1 | 2) NOT NULL", wantExpression: "(1 | 2)",
+		},
+		{
+			name: "MySQL, pipes in a string", dialect: "mysql",
+			column: "n varchar(4) DEFAULT ('a||b') NOT NULL", wantExpression: "('a||b')",
 		},
 		{
 			name: "SQLite, a concatenation in parentheses", dialect: "sqlite",
@@ -255,6 +259,10 @@ func TestParse_DefaultOperatorPerDialect_HappyPath(t *testing.T) {
 		{
 			name: "PostgreSQL, a MySQL gate read as a comment", dialect: "postgres",
 			column: "n int DEFAULT 5 - 2 /*!80023 INVISIBLE */ NOT NULL", wantExpression: "5 - 2",
+		},
+		{
+			name: "PostgreSQL, a MySQL gate between operands", dialect: "postgres",
+			column: "n int DEFAULT 1 + 2 /*!80023 x */ + 3 NOT NULL", wantExpression: "1 + 2 + 3",
 		},
 	}
 	for _, row := range rows {
@@ -298,14 +306,19 @@ func TestParse_DefaultOperatorOutsideParentheses_FailurePath(t *testing.T) {
 			wantErr: `line 1, column 41: expected default value: 1 \| 2 is an operator expression outside parentheses: write DEFAULT \(1 \| 2\); ` + mysql,
 		},
 		{
-			name: "MySQL, a concatenation", dialect: "mysql",
-			sql:     "CREATE TABLE t (id int, s varchar(4) DEFAULT 'a' || 'b');",
-			wantErr: `line 1, column 50: expected default value: 'a' \|\| 'b' is an operator expression outside parentheses: write DEFAULT \('a' \|\| 'b'\); ` + mysql,
-		},
-		{
 			name: "MySQL, an operator after a parenthesized operand", dialect: "mysql",
 			sql:     "CREATE TABLE t (id int, n int DEFAULT (1) + 2);",
-			wantErr: `line 1, column 43: expected default value: \(1\) \+ 2 is an operator expression outside parentheses: write DEFAULT \(\(1\) \+ 2\); ` + mysql,
+			wantErr: `line 1, column 43: expected default value: \(1\) \+ 2 is an operator expression outside parentheses: write DEFAULT \(1 \+ 2\); ` + mysql,
+		},
+		{
+			name: "MySQL, an operator after a parenthesized string", dialect: "mysql",
+			sql:     "CREATE TABLE t (id int, n int DEFAULT ( 'a' ) + 2);",
+			wantErr: `line 1, column 47: expected default value: \( 'a' \) \+ 2 is an operator expression outside parentheses: write DEFAULT \('a' \+ 2\); ` + mysql,
+		},
+		{
+			name: "MySQL, an operator after a parenthesized operation", dialect: "mysql",
+			sql:     "CREATE TABLE t (id int, n int DEFAULT (1 - 2) * 3);",
+			wantErr: `line 1, column 47: expected default value: \(1 - 2\) \* 3 is an operator expression outside parentheses: write DEFAULT \(\(1 - 2\) \* 3\); ` + mysql,
 		},
 		{
 			name: "MySQL, a gate after the expression", dialect: "mysql",
@@ -368,6 +381,56 @@ func TestParse_DefaultOperatorOutsideParentheses_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			statements, err := parseAs(row.dialect, row.sql)
+
+			c.Assert(err, qt.ErrorMatches, row.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// MySQL and MariaDB read || as OR under their default SQL mode and as a
+// concatenation under PIPES_AS_CONCAT, so a default that holds it means what
+// the session's mode says. MySQL 26.10 stores DEFAULT ('a' || 'b') as
+// ((0 <> 'a') or (0 <> 'b')) and refuses the INSERT that takes it; MariaDB
+// 12.3 stores ('a' or 'b') and inserts 0. The default is refused at the
+// first ||, in parentheses or without, and the refusal names the CONCAT call
+// its operands make.
+func TestParse_DefaultPipes_FailurePath(t *testing.T) {
+	const mysql = `MySQL 26\.10 reads \|\| as OR under its default SQL mode and stores DEFAULT \('a' \|\| 'b'\) as ` +
+		`\(\(0 <> 'a'\) or \(0 <> 'b'\)\), so an INSERT that takes the default answers ERROR 1292 \(22007\); ` +
+		`under PIPES_AS_CONCAT it is a concatenation`
+	const mariadb = `MariaDB 12\.3 reads \|\| as OR under its default SQL mode and stores DEFAULT \('a' \|\| 'b'\) as ` +
+		`\('a' or 'b'\), which inserts 0; under PIPES_AS_CONCAT it is a concatenation`
+	rows := []struct {
+		name, dialect, column, wantErr string
+	}{
+		{
+			name: "MySQL, in parentheses", dialect: "mysql", column: "s varchar(4) DEFAULT ('a' || 'b') NOT NULL",
+			wantErr: `line 1, column 51: expected default value: \('a' \|\| 'b'\) holds \|\|: write DEFAULT ` +
+				`\(CONCAT\('a', 'b'\)\) for a concatenation, or OR for a logical or; ` + mysql,
+		},
+		{
+			name: "MySQL, outside parentheses", dialect: "mysql", column: "s varchar(4) DEFAULT 'a' || 'b'",
+			wantErr: `line 1, column 50: expected default value: 'a' \|\| 'b' holds \|\|: write DEFAULT ` +
+				`\(CONCAT\('a', 'b'\)\) for a concatenation, or OR for a logical or; ` + mysql,
+		},
+		{
+			name: "MySQL, three operands and a call", dialect: "mysql",
+			column: "s varchar(9) DEFAULT (concat('x', 'y') || 'b'||'c')",
+			wantErr: `line 1, column 64: expected default value: \(concat\('x', 'y'\) \|\| 'b'\|\|'c'\) holds \|\|: write ` +
+				`DEFAULT \(CONCAT\(concat\('x', 'y'\), 'b', 'c'\)\) for a concatenation, or OR for a logical or; ` + mysql,
+		},
+		{
+			name: "MariaDB, in parentheses", dialect: "mariadb", column: "s varchar(4) DEFAULT ('a' || 'b')",
+			wantErr: `line 1, column 51: expected default value: \('a' \|\| 'b'\) holds \|\|: write DEFAULT ` +
+				`\(CONCAT\('a', 'b'\)\) for a concatenation, or OR for a logical or; ` + mariadb,
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parseAs(row.dialect, "CREATE TABLE t (id int, "+row.column+", m int);")
 
 			c.Assert(err, qt.ErrorMatches, row.wantErr)
 			c.Assert(statements, qt.IsNil)

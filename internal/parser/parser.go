@@ -3963,13 +3963,14 @@ func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
 // parseDefaultValue parses a default value (literal or function call).
 func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	p.skipWhitespace()
+	start := p.current.Start
 
 	if p.current.MatchOperatorValue("(") {
 		value, err := p.parseParenthesizedDefault()
 		if err != nil {
 			return nil, err
 		}
-		return p.extendDefaultExpression(value)
+		return p.extendDefaultExpression(value, start)
 	}
 
 	var value *ast.DefaultValue
@@ -3990,7 +3991,7 @@ func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return p.extendDefaultExpression(value)
+	return p.extendDefaultExpression(value, start)
 }
 
 // parseParenthesizedDefault reads a default written as a parenthesized
@@ -4045,11 +4046,14 @@ func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
 // first operator once the whole expression is read, so the refusal can show
 // the parenthesized form without the clause or gate after it. One that sets
 // [descriptor.ColumnGrammar.DefaultPredicateRefusal] refuses IS, AND and OR
-// where they continue the expression.
-func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) (*ast.DefaultValue, error) {
+// where they continue the expression. One that sets
+// [descriptor.ColumnGrammar.DefaultPipesRefusal] refuses a default from start
+// on that holds ||, in parentheses or without.
+func (p *Parser) extendDefaultExpression(value *ast.DefaultValue, start int) (*ast.DefaultValue, error) {
+	end := p.current.Start
 	p.skipWhitespace()
 	if !isDefaultBinaryOperator(p.current) {
-		return value, nil
+		return value, p.refuseDefaultPipes(strings.TrimSpace(p.input[start:end]), start, end)
 	}
 	operator := p.current
 	first := value.Expression
@@ -4065,12 +4069,107 @@ func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) (*ast.DefaultV
 	if err != nil {
 		return nil, err
 	}
+	if err := p.refuseDefaultPipes(expression, start, p.current.Start); err != nil {
+		return nil, err
+	}
 	if refusal := p.target.grammar.Columns.DefaultOperatorRefusal; refusal != "" {
 		return nil, ptaherr.At(operator.Start, fmt.Errorf(
 			"%s is an operator expression outside parentheses: write DEFAULT (%s); %s",
-			expression, expression, refusal))
+			expression, p.withoutAtomGroup(first)+expression[len(strings.TrimSpace(first)):], refusal))
 	}
 	return &ast.DefaultValue{Expression: expression}, nil
+}
+
+// withoutAtomGroup answers the first operand of an operator default as the
+// parenthesized form of a refusal writes it: a group around one token loses
+// its parentheses, so `(1) + 2` is written DEFAULT (1 + 2). Any other operand
+// is answered as written, without the space after it.
+func (p *Parser) withoutAtomGroup(first string) string {
+	first = strings.TrimSpace(first)
+	if !strings.HasPrefix(first, "(") || !strings.HasSuffix(first, ")") {
+		return first
+	}
+	scan := lexer.NewLexerWithOptions(first[1:len(first)-1], lexerOptions(p.dialect))
+	var significant []lexer.Token
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		if token.Type != lexer.TokenWhitespace && token.Type != lexer.TokenComment {
+			significant = append(significant, token)
+		}
+	}
+	if len(significant) != 1 || significant[0].Type == lexer.TokenOperator || significant[0].Type == lexer.TokenUnknown {
+		return first
+	}
+	return significant[0].Value
+}
+
+// refuseDefaultPipes refuses the default text, read between start and end,
+// where it holds || and the dialect's descriptor sets
+// [descriptor.ColumnGrammar.DefaultPipesRefusal], naming the CONCAT call the
+// operands make, and answers nil everywhere else. The lexer emits || as two
+// adjacent | tokens; `1 | 2` is a bitwise or and passes.
+func (p *Parser) refuseDefaultPipes(text string, start, end int) error {
+	refusal := p.target.grammar.Columns.DefaultPipesRefusal
+	if refusal == "" {
+		return nil
+	}
+	scan := p.lexer.Range(start, end)
+	var previous lexer.Token
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		if token.MatchOperatorValue("|") && previous.MatchOperatorValue("|") && previous.End == token.Start {
+			return ptaherr.At(previous.Start, fmt.Errorf(
+				"%s holds ||: write DEFAULT (%s) for a concatenation, or OR for a logical or; %s",
+				text, p.concatenation(text), refusal))
+		}
+		previous = token
+	}
+	return nil
+}
+
+// concatenation answers the CONCAT call that joins the operands || separates
+// in expression, outside any group but one around the whole of it.
+func (p *Parser) concatenation(expression string) string {
+	inner := expression
+	if strings.HasPrefix(inner, "(") && strings.HasSuffix(inner, ")") && closesAtEnd(inner, lexerOptions(p.dialect)) {
+		inner = strings.TrimSpace(inner[1 : len(inner)-1])
+	}
+	scan := lexer.NewLexerWithOptions(inner, lexerOptions(p.dialect))
+	var operands []string
+	depth, from := 0, 0
+	var previous lexer.Token
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		switch {
+		case token.MatchOperatorValue("("):
+			depth++
+		case token.MatchOperatorValue(")"):
+			depth--
+		case depth == 0 && token.MatchOperatorValue("|") && previous.MatchOperatorValue("|") && previous.End == token.Start:
+			operands = append(operands, strings.TrimSpace(inner[from:previous.Start]))
+			from = token.End
+			token = lexer.Token{}
+		}
+		previous = token
+	}
+	operands = append(operands, strings.TrimSpace(inner[from:]))
+	return "CONCAT(" + strings.Join(operands, ", ") + ")"
+}
+
+// closesAtEnd reports whether the parenthesis that opens text closes at its
+// last byte, so that the group holds the whole of text.
+func closesAtEnd(text string, options lexer.Options) bool {
+	scan := lexer.NewLexerWithOptions(text, options)
+	depth := 0
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		switch {
+		case token.MatchOperatorValue("("):
+			depth++
+		case token.MatchOperatorValue(")"):
+			depth--
+			if depth == 0 {
+				return token.End == len(text)
+			}
+		}
+	}
+	return false
 }
 
 // readDefaultOperands reads an operator default from the operator at the

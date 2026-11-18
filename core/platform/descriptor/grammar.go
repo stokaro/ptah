@@ -95,8 +95,15 @@ type ColumnGrammar struct {
 	DefaultPredicateRefusal string `json:"default_predicate_refusal,omitempty"`
 	// DefaultDistinctFrom reports that IS [NOT] DISTINCT FROM continues an
 	// operator default where DefaultPredicateRefusal refuses every other
-	// predicate. It has no effect without DefaultPredicateRefusal.
+	// predicate. A grammar that sets it without DefaultPredicateRefusal is
+	// refused, since nothing would read it.
 	DefaultDistinctFrom bool `json:"default_distinct_from,omitempty"`
+	// DefaultPipesRefusal says why a default that holds ||, in parentheses or
+	// without, is refused, for an engine that reads || by the session's SQL
+	// mode: as OR under one mode and as concatenation under another. The
+	// parser names the CONCAT form before the sentence. Empty reads || as an
+	// operator of the default.
+	DefaultPipesRefusal string `json:"default_pipes_refusal,omitempty"`
 	// SecondCheckRefusal says why a column definition that writes a second
 	// CHECK is refused. Empty reads the second CHECK as the table's.
 	SecondCheckRefusal string `json:"second_check_refusal,omitempty"`
@@ -625,6 +632,8 @@ func validateColumnGrammar(grammar Grammar) error {
 		return errors.New("a MODIFY column constraint kind needs a column constraint kind")
 	case (grammar.Columns.EmptyCallRefusal == "") != (len(grammar.Columns.EmptyCallFunctions) == 0):
 		return errors.New("empty call functions and an empty call refusal are set together")
+	case grammar.Columns.DefaultDistinctFrom && grammar.Columns.DefaultPredicateRefusal == "":
+		return errors.New("a default that reads IS DISTINCT FROM needs a default predicate refusal")
 	default:
 		return nil
 	}

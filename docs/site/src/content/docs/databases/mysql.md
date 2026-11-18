@@ -578,12 +578,20 @@ table.
 
 MySQL and MariaDB take an expression default only in parentheses. MySQL 26.10
 and MariaDB 12.3 answer ERROR 1064 (42000) to `DEFAULT 1 + 2`, `DEFAULT 5 - 2
-NOT NULL`, `DEFAULT 'a' || 'b'` and `DEFAULT (1) + 2`, and take
-`DEFAULT (1 + 2)`. A SQL schema file read with `--dialect mysql` or
-`--dialect mariadb` is refused at the operator, before anything is planned,
-and the refusal names the parenthesized form, `write DEFAULT (1 + 2)`. A
-version gate after the default, such as `/*!80023 INVISIBLE */`, stays the
-column's.
+NOT NULL` and `DEFAULT (1) + 2`, and take `DEFAULT (1 + 2)`. A SQL schema file
+read with `--dialect mysql` or `--dialect mariadb` is refused at the operator,
+before anything is planned, and the refusal names the parenthesized form,
+`write DEFAULT (1 + 2)`. A version gate after the default, such as
+`/*!80023 INVISIBLE */`, stays the column's.
+
+Both engines read `||` as `OR` under their default SQL mode and as a
+concatenation only under `PIPES_AS_CONCAT`. MySQL 26.10 stores
+`DEFAULT ('a' || 'b')` as `((0 <> 'a') or (0 <> 'b'))` and answers
+ERROR 1292 (22007) to the INSERT that takes it; MariaDB 12.3 stores
+`('a' or 'b')` and inserts 0. A schema file read with either dialect is
+refused at the first `||`, in parentheses or without, and the refusal names
+the call that concatenates under every mode, `write DEFAULT (CONCAT('a',
+'b'))`. Write `OR` where a logical or is meant.
 
 ## Column character set and ON UPDATE
 

@@ -233,6 +233,9 @@ func mariaDB() descriptor.Dialect {
 			Columns: descriptor.ColumnGrammar{
 				DefaultOperatorRefusal: "MariaDB 12.3 takes an expression default only in parentheses and answers " +
 					"ERROR 1064 (42000) to an operator outside them",
+				DefaultPipesRefusal: "MariaDB 12.3 reads || as OR under its default SQL mode and stores " +
+					"DEFAULT ('a' || 'b') as ('a' or 'b'), which inserts 0; under PIPES_AS_CONCAT it is a " +
+					"concatenation",
 				SecondCheckRefusal: "MariaDB accepts one CHECK on a column and answers ERROR 1064 (42000) to the " +
 					"second; write it at table level",
 				Constraint:              descriptor.ColumnConstraint{Define: descriptor.ConstraintKindReferences},
