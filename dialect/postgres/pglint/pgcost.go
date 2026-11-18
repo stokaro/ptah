@@ -68,6 +68,9 @@ import (
 //	default -> COLLATE "default"                   kept       kept
 //	"C" -> "en-US-x-icu", default -> "C"           kept       rebuilt
 //	"C" -> no COLLATE clause (resets to default)   kept       rebuilt
+//	domain dc with C, no COLLATE clause            kept       kept
+//	dc COLLATE "POSIX" -> no COLLATE (resets to C) kept       rebuilt
+//	name, C from the type, no COLLATE clause       kept       kept
 //	varchar(20) -> varchar(40) COLLATE "POSIX"     kept       rebuilt (the widening is in place)
 //	default -> "C" with no index on the column     kept       -
 //	text -> varchar(20) COLLATE "C", "C" before    rewritten  rebuilt (the narrowing decides)
@@ -80,7 +83,8 @@ import (
 // once per index; on a column no index covers it is a catalog edit, and a
 // collation restated, or "default" on a column with none, changes nothing.
 // A clause that names no COLLATE resets the column to the type's default
-// collation, so on a column declared with one it is a change too. A USING
+// collation, so on a column declared with one it is a change too, and on a
+// column that takes its type's default, a domain's included, it is none. A USING
 // expression on a change that would otherwise be in place is still left to
 // DS103, since only the expression decides.
 //
@@ -119,18 +123,42 @@ func pgCollationName(word string) string {
 }
 
 // pgCollationChange compares the collation a column has with the one the
-// clause leaves it with. A clause that names none resets the column to the
-// type's default collation, and "default" names that same default, so
-// either spelling on a column declared with the default changes nothing.
-// The two spellings returned are for the message.
-func pgCollationChange(current, clause string) (from, to string, changed bool) {
-	if clause == "default" {
-		clause = ""
+// clause leaves it with. A clause that names a collation gives the column
+// that one, and "default" names the database default. One that names none
+// gives the column the default collation of its new type: C for name, the
+// database default for every other type pgtype knows, and for a domain or any
+// other type it does not know, the collation the column has when the type is
+// the one the column has and the column declares no collation of its own. A
+// column that declares one differs from its type's default, since a column
+// that restates the default reads as one that takes it, so the clause changes
+// it. The two spellings returned are for the message.
+func pgCollationChange(column lintext.BaselineColumn, updated pgtype.Type, sameType bool, clause string, named bool) (from, to string, changed bool) {
+	target := clause
+	switch {
+	case named && clause == "default":
+		target = ""
+	case named:
+	case updated.Known:
+		target = pgKnownTypeCollation(updated)
+	case sameType && !column.OwnCollation:
+		return "", "", false
+	default:
+		return pgCollationLabel(column.Collation), "the default collation of " + updated.Spell(), true
 	}
-	if current == clause {
+	if column.Collation == target {
 		return "", "", false
 	}
-	return pgCollationLabel(current), pgCollationLabel(clause), true
+	return pgCollationLabel(column.Collation), pgCollationLabel(target), true
+}
+
+// pgKnownTypeCollation is the default collation of a type pgtype knows: C for
+// name and for an array of it, and the database default for every other one,
+// which either takes it or has no collation at all.
+func pgKnownTypeCollation(t pgtype.Type) string {
+	if t.Base == "name" {
+		return "C"
+	}
+	return ""
 }
 
 func pgCollationLabel(name string) string {
@@ -201,8 +229,9 @@ func resolvePGTypeChanges(file *lintkit.File) []resolvedPGTypeChange {
 			transition: pgtype.Compare(old, updated),
 		}
 		if change.transition.Outcome == pgtype.Unchanged || change.transition.Outcome == pgtype.InPlace {
-			clause, _ := pgClauseCollation(stmt.Words, stmt.SourceWords, site.TypeStart, site.TypeEnd)
-			if from, to, changed := pgCollationChange(column.Collation, clause); changed {
+			clause, named := pgClauseCollation(stmt.Words, stmt.SourceWords, site.TypeStart, site.TypeEnd)
+			sameType := change.transition.Outcome == pgtype.Unchanged
+			if from, to, changed := pgCollationChange(column, updated, sameType, clause, named); changed {
 				change.transition = pgCollationTransition(from, to,
 					file.Baseline.ColumnIndexes(site.Table.Normalized, lintkit.NormalizeIdent(site.Column)))
 			}

@@ -151,9 +151,9 @@ type BaselineColumn struct {
 	// no character set gives the column (stokaro/ptah#2942).
 	Charset      string `json:"charset,omitempty"`
 	TableCharset string `json:"table_charset,omitempty"`
-	// Collation is the column's collation as the server names it: MySQL's
-	// COLLATION_NAME, which every character column carries, or the collation
-	// a PostgreSQL column was declared with, empty for one that takes the
+	// Collation is the collation the column compares with, as the server
+	// names it: MySQL's COLLATION_NAME, which every character column carries,
+	// or PostgreSQL's information_schema collation_name, empty for the
 	// database default. TableCollation is the owning table's default
 	// collation, which is what a MODIFY that names no COLLATE gives a column
 	// of the table's character set. A statement that names a collation is
@@ -161,6 +161,14 @@ type BaselineColumn struct {
 	// and a changed one costs an index rebuild or a copy (stokaro/ptah#2957).
 	Collation      string `json:"collation,omitempty"`
 	TableCollation string `json:"table_collation,omitempty"`
+	// OwnCollation reports a column that names a collation of its own
+	// rather than taking its type's default on PostgreSQL, or its table's on
+	// MySQL. A column that restates the default it would take reads as one
+	// that takes it. A PostgreSQL ALTER COLUMN ... TYPE that names no COLLATE
+	// gives the column its type's default, so for a domain, whose default
+	// only the domain knows, a column that declares none keeps the collation
+	// it has.
+	OwnCollation bool `json:"own_collation,omitempty"`
 	// TablePartitioned reports that the owning table is a PostgreSQL
 	// declaratively partitioned table (relkind 'p'): a parent, or a partition
 	// that is partitioned itself. Nothing in the migration text that indexes it

@@ -19,6 +19,14 @@ func pgCollated(name, columnType, collation string) lintext.BaselineColumn {
 	return column
 }
 
+// pgOwnCollated is one baseline column of orders that names a collation of
+// its own rather than taking its type's.
+func pgOwnCollated(name, columnType, collation string) lintext.BaselineColumn {
+	column := pgCollated(name, columnType, collation)
+	column.OwnCollation = true
+	return column
+}
+
 // pgIndex is one baseline index of orders over whole columns.
 func pgIndex(name string, columns ...string) lintext.BaselineIndex {
 	parts := make([]lintext.BaselineIndexPart, 0, len(columns))
@@ -78,6 +86,20 @@ func TestTypeRewriteRule_NamesTheIndexesACollationChangeRebuilds(t *testing.T) {
 			want:    []string{`from "C" to the database default`},
 		},
 		{
+			name:    "a clause with no COLLATE gives a name column its type's C",
+			alter:   "ALTER TABLE orders ALTER COLUMN body TYPE name;",
+			column:  pgOwnCollated("body", "name", "POSIX"),
+			indexes: []lintext.BaselineIndex{pgIndex("orders_body", "body")},
+			want:    []string{`from "POSIX" to "C"`},
+		},
+		{
+			name:    "a clause with no COLLATE resets a domain column's own collation",
+			alter:   "ALTER TABLE orders ALTER COLUMN body TYPE dc;",
+			column:  pgOwnCollated("body", "dc", "POSIX"),
+			indexes: []lintext.BaselineIndex{pgIndex("orders_body", "body")},
+			want:    []string{`TYPE dc changes the collation from "POSIX" to the default collation of dc`, "(orders_body)"},
+		},
+		{
 			name:    "an unquoted name folds to lower case",
 			alter:   "ALTER TABLE orders ALTER COLUMN body TYPE text COLLATE POSIX;",
 			column:  pgCollated("body", "text", "C"),
@@ -127,7 +149,8 @@ func TestTypeRewriteRule_ARewriteDecidesBeforeTheCollation(t *testing.T) {
 
 // TestTypeRewriteRule_StaysQuietWhereTheCollationDoesNotMove pins the
 // measured no-ops: a restated collation, "default" on a default-collated
-// column, and a change on a column no index reads, which is a catalog edit.
+// column, a clause with no COLLATE on a column that takes its type's default,
+// and a change on a column no index reads, which is a catalog edit.
 func TestTypeRewriteRule_StaysQuietWhereTheCollationDoesNotMove(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -158,6 +181,18 @@ func TestTypeRewriteRule_StaysQuietWhereTheCollationDoesNotMove(t *testing.T) {
 			alter:   `ALTER TABLE orders ALTER COLUMN body TYPE text COLLATE "C";`,
 			column:  pgCollated("body", "text", ""),
 			indexes: []lintext.BaselineIndex{pgIndex("orders_note", "note")},
+		},
+		{
+			name:    "a clause with no COLLATE on a domain column that takes the domain's",
+			alter:   "ALTER TABLE orders ALTER COLUMN body TYPE dc;",
+			column:  pgCollated("body", "dc", "C"),
+			indexes: []lintext.BaselineIndex{pgIndex("orders_body", "body")},
+		},
+		{
+			name:    "a clause with no COLLATE on a name column that takes C",
+			alter:   "ALTER TABLE orders ALTER COLUMN body TYPE name;",
+			column:  pgCollated("body", "name", "C"),
+			indexes: []lintext.BaselineIndex{pgIndex("orders_body", "body")},
 		},
 		{
 			name:   "a change with no indexes in the state at all",
