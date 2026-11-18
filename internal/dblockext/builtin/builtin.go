@@ -42,6 +42,16 @@ func Lookup(dialect string) dblockext.Services {
 	return services[platform.NormalizeDialect(dialect)]
 }
 
+// Tables returns the tables the built-in lock of dialect keeps, which its
+// schema reader leaves out as Ptah's bookkeeping: none for a lock that keeps
+// no table, or a dialect no built-in service serves.
+func Tables(dialect string) []string {
+	if table := Lookup(dialect).Table; table != "" {
+		return []string{table}
+	}
+	return nil
+}
+
 // Dialects returns every dialect a built-in service serves, in no order.
 func Dialects() []string {
 	names := make([]string, 0, len(services))

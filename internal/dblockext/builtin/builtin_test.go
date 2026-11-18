@@ -105,3 +105,28 @@ func TestDialects_AreBuiltinNames(t *testing.T) {
 	}
 	c.Assert(builtin.Dialects(), qt.HasLen, len(lockAgreement))
 }
+
+// Only a lock that keeps a table makes one Ptah's bookkeeping. On every other
+// dialect a table of that name is the user's, so no name is offered for its
+// reader to leave out.
+func TestTables(t *testing.T) {
+	tests := []struct {
+		dialect string
+		want    []string
+	}{
+		{dialect: platform.Oracle, want: []string{"ptah_locks"}},
+		{dialect: platform.Postgres},
+		{dialect: platform.MySQL},
+		{dialect: platform.MariaDB},
+		{dialect: platform.SQLServer},
+		{dialect: platform.YugabyteDB},
+		{dialect: platform.SQLite},
+		{dialect: "nonesuch"},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(builtin.Tables(test.dialect), qt.DeepEquals, test.want)
+		})
+	}
+}

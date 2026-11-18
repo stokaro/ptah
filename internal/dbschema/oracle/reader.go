@@ -22,7 +22,9 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	lockbuiltin "ptah.run/internal/dblockext/builtin"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
 )
@@ -101,8 +103,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	// read as tables no declaration has, and `migrations generate` planned
 	// `DROP TABLE IF EXISTS PTAH.schema_migrations PURGE` and the same for the
 	// log once a migration had been applied, measured on 23.26
-	// (stokaro/ptah#4029).
-	schema = revisiontable.Without(schema, revisiontable.NativeNames())
+	// (stokaro/ptah#4029). So is the table Oracle's migration lock keeps its
+	// rows in: reported, `schema apply` plans to drop the table its own lock
+	// holds a row of. The lock service names it, because only a lock that
+	// keeps a table makes one Ptah's.
+	schema = revisiontable.Without(schema, append(revisiontable.NativeNames(), lockbuiltin.Tables(platform.Oracle)...))
 
 	sequences, err := r.readSequences(ctx)
 	if err != nil {

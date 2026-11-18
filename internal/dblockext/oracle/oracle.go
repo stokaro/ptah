@@ -1,5 +1,5 @@
 // Package oracle takes Ptah's lock on Oracle for internal/dblock: a row lock
-// on the row a lock name has in the table revisiontable.Locks, taken with
+// on the row a lock name has in the table ptah_locks, taken with
 // SELECT ... FOR UPDATE NOWAIT, asked again until the wait ends, and given
 // back with ROLLBACK.
 //
@@ -33,9 +33,13 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/internal/dblockext"
-	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/servercode"
 )
+
+// table keeps one row per lock name, keyed by the name exactly as the caller
+// gives it, which is what the lock locks. Its rows are never deleted: a row
+// outlives every run, and only its lock ends with the session that holds it.
+const table = "ptah_locks"
 
 // pollInterval is how often a wait asks for the lock again.
 const pollInterval = 25 * time.Millisecond
@@ -63,17 +67,17 @@ const ensureRow = `DECLARE
   PRAGMA EXCEPTION_INIT(name_taken, -955);
 BEGIN
   BEGIN
-    EXECUTE IMMEDIATE 'INSERT INTO ` + revisiontable.Locks + ` (name) VALUES (:name)' USING lock_name;
+    EXECUTE IMMEDIATE 'INSERT INTO ` + table + ` (name) VALUES (:name)' USING lock_name;
   EXCEPTION
     WHEN DUP_VAL_ON_INDEX THEN NULL;
     WHEN missing_table THEN
       BEGIN
-        EXECUTE IMMEDIATE 'CREATE TABLE ` + revisiontable.Locks + ` (name VARCHAR2(1000) PRIMARY KEY)';
+        EXECUTE IMMEDIATE 'CREATE TABLE ` + table + ` (name VARCHAR2(1000) PRIMARY KEY)';
       EXCEPTION
         WHEN name_taken THEN NULL;
       END;
       BEGIN
-        EXECUTE IMMEDIATE 'INSERT INTO ` + revisiontable.Locks + ` (name) VALUES (:name)' USING lock_name;
+        EXECUTE IMMEDIATE 'INSERT INTO ` + table + ` (name) VALUES (:name)' USING lock_name;
       EXCEPTION
         WHEN DUP_VAL_ON_INDEX THEN NULL;
       END;
@@ -83,7 +87,7 @@ END;`
 
 // lockRow locks the row of the lock name, or fails at once with ORA-00054
 // when another session holds it.
-const lockRow = "SELECT name FROM " + revisiontable.Locks + " WHERE name = :1 FOR UPDATE NOWAIT"
+const lockRow = "SELECT name FROM " + table + " WHERE name = :1 FOR UPDATE NOWAIT"
 
 // Services returns Oracle's lock.
 func Services() dblockext.Services {
@@ -91,6 +95,7 @@ func Services() dblockext.Services {
 		Dialects:         []string{platform.Oracle},
 		Session:          rowLock{},
 		ReleasedByCommit: true,
+		Table:            table,
 	}
 }
 
@@ -107,7 +112,7 @@ func (rowLock) Acquire(ctx context.Context, session dblockext.Session, request d
 	if !request.Preview {
 		if _, err := session.ExecContext(ctx, ensureRow, request.Name); err != nil {
 			return &dblockext.AmbiguousError{Err: fmt.Errorf("create the row of lock %q in %s: %w",
-				request.Name, revisiontable.Locks, err)}
+				request.Name, table, err)}
 		}
 	}
 
@@ -129,7 +134,7 @@ func (rowLock) Acquire(ctx context.Context, session dblockext.Session, request d
 		case request.Preview && (number == tableMissing || errors.Is(err, sql.ErrNoRows)):
 			return nil
 		case errors.Is(err, sql.ErrNoRows):
-			return fmt.Errorf("the row of lock %q is missing from %s", request.Name, revisiontable.Locks)
+			return fmt.Errorf("the row of lock %q is missing from %s", request.Name, table)
 		case number != resourceBusy:
 			return &dblockext.AmbiguousError{Err: waitError(ctx, lockCtx, request, err)}
 		case request.Timeout < 0:
