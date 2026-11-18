@@ -40,11 +40,17 @@ import (
 // Any other URL is taken as written, so a docker:// URL behind a space is no
 // docker URL, as it is none to the pinned community binary.
 //
-// A docker:// URL is parsed and no container is started. Its server is the one
-// the image tag names, and a tag no release line matches, such as `latest`,
-// answers nil. A docker URL whose engine an executable provider in ctx
-// provisions answers nil unparsed, since the provider reads the image, not
-// Ptah; the engine is still checked against dialect.
+// A docker URL whose engine an executable provider in ctx provisions answers
+// nil unparsed, since the provider reads the image, not Ptah; the engine is
+// still checked against dialect. Both forms name the engine, as
+// `docker://<engine>/<tag>` and `docker+<engine>://...`, and
+// [devdocker.ExternalEngine] reads both, so it is asked first: a
+// `docker+<engine>` scheme of an engine Ptah does not start is no docker URL
+// to [devdocker.IsURL].
+//
+// Any other docker URL is parsed and no container is started. Its server is
+// the one the image tag names, and a tag no release line matches, such as
+// `latest`, answers nil.
 //
 // A URL naming a SQLite file answers nil without opening it, since opening it
 // creates the file and the engine is the one compiled into Ptah. A dev path
@@ -58,16 +64,17 @@ import (
 // timeout is the error, wrapped as `connect to --<flag>: ...`. A timeout of
 // zero leaves the deadline of ctx, if any, as the only bound.
 func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Duration) (capability.Capabilities, error) {
-	switch {
-	case strings.TrimSpace(devURL) == "":
+	if strings.TrimSpace(devURL) == "" {
 		return capability.Capabilities{}, nil
-	case devdocker.IsURL(devURL):
-		if engine, provisioned := devdocker.ExternalEngine(ctx, devURL); provisioned {
-			if dialect != "" && engine != dialect {
-				return capability.Capabilities{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", engine, dialect)
-			}
-			return capability.Capabilities{}, nil
+	}
+	if engine, provisioned := devdocker.ExternalEngine(ctx, devURL); provisioned {
+		if dialect != "" && engine != dialect {
+			return capability.Capabilities{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", engine, dialect)
 		}
+		return capability.Capabilities{}, nil
+	}
+	switch {
+	case devdocker.IsURL(devURL):
 		spec, err := devdocker.Parse(devURL)
 		if err != nil {
 			return capability.Capabilities{}, err

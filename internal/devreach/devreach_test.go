@@ -193,32 +193,51 @@ func (fixtureDevOwner) ProvisionDev(context.Context, string) (string, func(), er
 	return "", nil, errors.New("not provisioned here")
 }
 
+// providerDockerURLs names the fixture engine in each docker URL form.
+var providerDockerURLs = []string{"docker://fixture/dev", "docker+fixture://_/example.org/fixture:2.0"}
+
 // TestServer_ProviderDocker_HappyPath leaves a docker URL whose engine a
-// provider provisions to that provider: it is not parsed as an image Ptah
-// knows, and no capability is answered. A docker URL of another engine is
-// still read from its image tag.
+// provider provisions to that provider, in either form: it is not parsed as an
+// image Ptah knows, nothing is connected, and no capability is answered.
 func TestServer_ProviderDocker_HappyPath(t *testing.T) {
+	for _, devURL := range providerDockerURLs {
+		t.Run(devURL, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
+
+			got, err := devreach.Server(ctx, "fixture", "dev-url", devURL, 0)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Len(), qt.Equals, 0)
+		})
+	}
+}
+
+// TestServer_ProviderDocker_BuiltInImage reads a docker URL of an engine no
+// provider provisions from its image tag, with a provider in ctx.
+func TestServer_ProviderDocker_BuiltInImage(t *testing.T) {
 	c := qt.New(t)
 	ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
 
-	provisioned, err := devreach.Server(ctx, "fixture", "dev-url", "docker://fixture/dev", 0)
-	c.Assert(err, qt.IsNil)
-	c.Assert(provisioned.Len(), qt.Equals, 0)
+	got, err := devreach.Server(ctx, "postgres", "dev-url", "docker://postgres/18/dev", 0)
 
-	builtIn, err := devreach.Server(ctx, "postgres", "dev-url", "docker://postgres/18/dev", 0)
 	c.Assert(err, qt.IsNil)
-	c.Assert(builtIn.Equal(capability.ResolveServerVersion("postgres", "18").Capabilities), qt.IsTrue)
+	c.Assert(got.Equal(capability.ResolveServerVersion("postgres", "18").Capabilities), qt.IsTrue)
 }
 
 // TestServer_ProviderDocker_FailurePath refuses a docker URL whose engine a
-// provider provisions when the target is of another dialect, as it refuses a
-// built-in docker URL of another dialect.
+// provider provisions when the target is of another dialect, in either form,
+// as it refuses a built-in docker URL of another dialect.
 func TestServer_ProviderDocker_FailurePath(t *testing.T) {
-	c := qt.New(t)
-	ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
+	for _, devURL := range providerDockerURLs {
+		t.Run(devURL, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
 
-	got, err := devreach.Server(ctx, "postgres", "dev-url", "docker://fixture/dev", 0)
+			got, err := devreach.Server(ctx, "postgres", "dev-url", devURL, 0)
 
-	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "fixture" does not match --url dialect "postgres"`)
-	c.Assert(got.Len(), qt.Equals, 0)
+			c.Assert(err, qt.ErrorMatches, `--dev-url dialect "fixture" does not match --url dialect "postgres"`)
+			c.Assert(got.Len(), qt.Equals, 0)
+		})
+	}
 }

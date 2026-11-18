@@ -437,9 +437,9 @@ every connection without a credential, so the YDB provider refuses
 `docker://ydb` when the container runtime is on another machine, where its port
 would be published on every interface of that host.
 
-A `docker://<engine>` URL whose engine belongs to a selected
-[executable provider](../../extend/executable-providers/) goes to that provider
-instead. The provider picks the image, starts the server and removes it when the
+A `docker://<engine>/...` or `docker+<engine>://...` URL whose engine belongs
+to a selected [executable provider](../../extend/executable-providers/) goes to
+that provider instead. The provider picks the image, starts the server and removes it when the
 command ends. Ptah records the address it gets back as a server the run owns, as
 for a server it starts itself. A provider that will not provision answers with
 a refusal that says whether it does not serve the request or its runtime is
