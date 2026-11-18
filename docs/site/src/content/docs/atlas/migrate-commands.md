@@ -2953,12 +2953,22 @@ on `migrate lint`, and `default` on `migrate status`.
 - Top level: `.Env.Driver`, `.Env.URL`, `.Env.Dir`, `.Available`, `.Applied`,
   `.Pending`, `.Current`, `.Next`, and `.Status`.
 - Each available and pending migration file entry: `.Name`, `.Version`, and
-  `.Description`.
+  `.Description`. In an Atlas-format directory, files are listed by name, byte
+  for byte, which is the order they run in: `10_b.sql` comes before `1_a.sql`,
+  and `R__view.sql` after the numbered files. A Flyway directory lists them in
+  the numeric order it runs them in. `.Description` is the text after the first
+  underscore of the name, verbatim, so `R__view.sql` is `_view` and `1.sql` has
+  none.
 - Each applied revision entry: `.Version`, `.Description`, `.Type`, `.Applied`,
   `.Total`, `.ExecutedAt`, `.ExecutionTime`, `.Error`, `.ErrorStmt`, and
-  `.OperatorVersion`. On SQLite `.ExecutedAt` is the writer's local time with
-  its offset, as the pinned binary writes it, and reads back with that offset
-  under any `TZ`.
+  `.OperatorVersion`. Revisions are listed by version string, so `10` comes
+  before `2`, and `.Description` is the one the revision table holds. A row
+  keeps the description it was written with: a row that records `view` for
+  `R__view.sql`, as an earlier ptah-compat or the native
+  `ptah migrations up --revision-format atlas` writes it, is not rewritten,
+  and a fresh `ptah-compat migrate apply` writes `_view`. On SQLite
+  `.ExecutedAt` is the writer's local time with its offset, as the pinned
+  binary writes it, and reads back with that offset under any `TZ`.
 
 **`ptah-compat migrate down --format`**
 

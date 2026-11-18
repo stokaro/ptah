@@ -330,7 +330,7 @@ func TestCompatRepeatableMigrationsRefuseE2E(t *testing.T) {
 
 				c.Assert(got.ExitCode, qt.Equals, 1)
 				c.Assert(got.Stderr, qt.Matches, `(?s)Error: .*the revision table `+regexp.QuoteMeta(engine.quotedRevisions)+
-					` records version R \(description "view"\), .*R__view.sql .*`+
+					` records version R \(description "_view"\), .*R__view.sql .*`+
 					`delete the row with version 'R' from `+regexp.QuoteMeta(engine.quotedRevisions)+` .*`)
 				c.Assert(repeatableStrings(c, url, "SELECT version FROM "+engine.revisions+" ORDER BY version"),
 					qt.DeepEquals, []string{"1", "2", "R"})

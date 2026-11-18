@@ -2,8 +2,6 @@ package atlasreport
 
 import (
 	"net/url"
-	"path"
-	"strings"
 
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/dburldisplay"
@@ -56,15 +54,4 @@ func atlasRedactedURL(raw string) atlasTemplateURL {
 		result.Schema = fact.schema
 	}
 	return result
-}
-
-func atlasMigrationFileDescription(fileName string) string {
-	stem := strings.TrimSuffix(path.Base(fileName), ".sql")
-	stem = strings.TrimSuffix(stem, ".up")
-	stem = strings.TrimSuffix(stem, ".down")
-	_, description, ok := strings.Cut(stem, "_")
-	if !ok {
-		return ""
-	}
-	return description
 }

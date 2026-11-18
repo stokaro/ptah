@@ -384,6 +384,31 @@ func (e *RepeatableBoundError) Error() string {
 		bound, strings.Join(repeatableWorkIdentities(e.Work), ", "))
 }
 
+// RepeatableStatementTooLongError refuses, before anything runs, a repeatable
+// migration whose body the record cannot store. On an engine whose driver
+// writes bound values into the statement text, the statement that records the
+// body carries it escaped, and the server parses no statement longer than the
+// setting allows.
+type RepeatableStatementTooLongError struct {
+	// Path is the repeatable migration's file.
+	Path string
+	// Length is the least length in bytes of the statement that records the
+	// body.
+	Length int
+	// Limit is the longest statement, in bytes, the server parses.
+	Limit int64
+	// Setting names the server setting that holds Limit.
+	Setting string
+}
+
+// Error names the file, the statement's length, the limit and the setting.
+func (e *RepeatableStatementTooLongError) Error() string {
+	return fmt.Sprintf(
+		"repeatable migration %s cannot be recorded: the statement that records its body is %d bytes, and the "+
+			"server's %s is %d; raise %s for the migration user, or split the file",
+		e.Path, e.Length, e.Setting, e.Limit, e.Setting)
+}
+
 // RepeatableRollbackError reports a rollback of a database that records
 // repeatable migrations, whether or not the directory still holds their files.
 // A repeatable migration has no rollback, and its definition was written

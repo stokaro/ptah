@@ -53,10 +53,25 @@ func (r *repeatableEngineTarget) body(c *qt.C, identity string) keptBody {
 	var body []byte
 	var kept int
 	query := sqlutil.Rebind(r.engine.dialect,
-		"SELECT body, CASE WHEN body IS NULL THEN 0 ELSE 1 END FROM schema_migrations_repeatable WHERE "+
-			sqlident.Quote(r.engine.dialect, "identity")+" = ?")
+		"SELECT body, CASE WHEN body IS NULL THEN 0 ELSE 1 END FROM "+r.recordTable()+" WHERE "+
+			sqlident.Ident(r.engine.dialect, "identity")+" = ?")
 	c.Assert(r.conn.QueryRowContext(context.Background(), query, identity).Scan(&body, &kept), qt.IsNil)
 	return keptBody{Body: string(body), Kept: kept == 1}
+}
+
+// recordTable is the record's name as the migrator spells it, which on Oracle
+// is quoted and so is not the name a bare spelling folds to.
+func (r *repeatableEngineTarget) recordTable() string {
+	return sqlident.Qualified(r.engine.dialect, "", "schema_migrations_repeatable")
+}
+
+// clearBody is the statement that sets every body of the record to NULL.
+func (r *repeatableEngineTarget) clearBody() string {
+	statement := r.engine.clearBody
+	if statement == "" {
+		statement = "UPDATE {table} SET body = NULL"
+	}
+	return strings.ReplaceAll(statement, "{table}", r.recordTable())
 }
 
 // exec runs each statement on the target outside any migration.
@@ -125,7 +140,7 @@ func TestRepeatableBodyOnEnginesLive_FailurePath(t *testing.T) {
 			r := newRepeatableEngineTarget(c, t, engine)
 			c.Assert(r.up(c, repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": engine.widgetIDs()}),
 				migrator.MigrateUpOptions{}), qt.IsNil)
-			r.exec(c, "UPDATE schema_migrations_repeatable SET body = NULL")
+			r.exec(c, r.clearBody())
 
 			applied, err := r.appliedRepeatables(c, map[string]string{"R__widget_ids.sql": engine.widerIDs()})
 

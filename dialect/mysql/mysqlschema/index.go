@@ -29,6 +29,11 @@ type ObservedIndex struct {
 // Kind returns the owned index options identity.
 func (*DesiredIndex) Kind() schemaext.Kind { return IndexKind }
 
+// ServesNoForeignKey reports that an index with these options cannot be the
+// index a foreign key's referenced columns use: a parser makes it a FULLTEXT
+// index, which no foreign key can use. A nil receiver serves one.
+func (v *DesiredIndex) ServesNoForeignKey() bool { return v != nil && v.Parser != "" }
+
 // Kind returns the owned index options identity.
 func (*ObservedIndex) Kind() schemaext.Kind { return IndexKind }
 

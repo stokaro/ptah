@@ -130,6 +130,34 @@ table with that schema, as `table "public.orders"`. `schema diff` of two
 documents places it in the dev database's current schema. `schema validate`
 connects to no database, so it names the table as the source writes it.
 
+A `--to` document of `schema diff` is also held to the target's declaration
+rules, which `schema plan` applies to a desired schema: the types, features
+and keys the target accepts. These rules read the tables a run selects.
+
+A `--from` document describes the state a plan starts from, so it is held to
+one of those rules: the referenced-key rule, which refuses a foreign key whose
+referenced columns the target's
+[referenced-key policy](../../reference/capabilities/#what-capabilities-decide)
+does not accept as a key. The rule applies to a `--from` document only on an
+engine whose server refuses such a key when it creates the table. The line
+starts with `load --from schema:`, and the command exits `2` (`1` on
+`ptah-compat`). A fault of another rule in a `--from` document, such as
+`ON DELETE SET NULL` on a `NOT NULL` column, does not stop the diff and does
+not hide a key the rule refuses.
+
+On such an engine the referenced-key rule reads each document whole, on both
+sides, as the index check does: the Atlas CLI creates each document on its dev
+database before it selects, so `--exclude` and `--include` do not hide the
+fault. With `--dev-url`, a `--from` document compared with a database or a
+migration directory is created on the dev database first, so that server
+judges it too.
+
+SQLite creates such a table and, with foreign keys enforced, refuses the first
+write to it. A SQLite database can hold that state, so a `--from` document on
+SQLite is not held to the rule, as on the Atlas CLI. A `--to` document on
+SQLite is refused, where the Atlas CLI plans it: the plan would create a table
+no row can be written to.
+
 ## Validate against every dialect you ship to
 
 `--dialect` is repeatable, and each value is checked separately with its own

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -13,6 +14,7 @@ import (
 
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
+	"ptah.run/internal/sqlident"
 	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
@@ -54,7 +56,8 @@ func (r *repeatableEngineTarget) count(c *qt.C, query string) int {
 func (r *repeatableEngineTarget) revisionChecksum(c *qt.C, version int64) string {
 	c.Helper()
 	var checksum string
-	query := sqlutil.Rebind(r.engine.dialect, "SELECT checksum FROM schema_migrations WHERE version = ?")
+	query := sqlutil.Rebind(r.engine.dialect,
+		"SELECT checksum FROM "+sqlident.Qualified(r.engine.dialect, "", "schema_migrations")+" WHERE version = ?")
 	c.Assert(r.conn.QueryRowContext(context.Background(), query, version).Scan(&checksum), qt.IsNil)
 	return checksum
 }
@@ -165,19 +168,69 @@ func TestByteOrderMarkDirectiveOnPostgresLive_HappyPath(t *testing.T) {
 	}
 }
 
-// Only the mark at the very start of a file is removed. U+FEFF in front of a
-// later statement is part of that statement, and the server refuses it.
-func TestByteOrderMarkOnEnginesLive_FailurePath(t *testing.T) {
+// byteOrderMarkRefusingEngines are the engines whose server refuses U+FEFF
+// in front of a statement as a syntax error.
+var byteOrderMarkRefusingEngines = []repeatableEngine{
+	repeatablePostgres, repeatableCockroachDB, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB,
+	repeatableSQLServer, repeatableOracle,
+}
+
+// byteOrderMarkWhitespaceEngines are the engines whose server reads U+FEFF
+// between statements as whitespace: ClickHouse's lexer skips it, so a mark in
+// the middle of a file runs there as if it were absent.
+var byteOrderMarkWhitespaceEngines = []repeatableEngine{repeatableClickHouse}
+
+// byteOrderMarkInTheMiddle is a second versioned migration whose second
+// statement starts with a byte order mark, which no reader removes.
+func byteOrderMarkInTheMiddle(engine repeatableEngine) fstest.MapFS {
+	return byteOrderMarkMigrations(engine, map[string]string{
+		"0000000002_gadgets.up.sql":   "CREATE TABLE gadgets (id INTEGER PRIMARY KEY);\n" + byteOrderMark + "CREATE TABLE gizmos (id INTEGER PRIMARY KEY);\n",
+		"0000000002_gadgets.down.sql": "DROP TABLE gadgets;\n",
+	})
+}
+
+// Every engine the repeatable suite runs on says what its server does with a
+// mark in the middle of a file, so an engine added to the suite is not left
+// out of both tests below.
+func TestByteOrderMarkEngineListsCoverTheSuite_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	var listed, suite []string
+	for _, engine := range slices.Concat(byteOrderMarkRefusingEngines, byteOrderMarkWhitespaceEngines) {
+		listed = append(listed, engine.name)
+	}
 	for _, engine := range repeatableEngines {
+		suite = append(suite, engine.name)
+	}
+	c.Assert(listed, qt.ContentEquals, suite)
+}
+
+// Only the mark at the very start of a file is removed. U+FEFF in front of a
+// later statement reaches the server as part of that statement, and a server
+// that reads it as whitespace runs the statement.
+func TestByteOrderMarkInTheMiddleOnEnginesLive_HappyPath(t *testing.T) {
+	for _, engine := range byteOrderMarkWhitespaceEngines {
 		t.Run(engine.name+": a mark in the middle of a file reaches the server", func(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
-			fsys := byteOrderMarkMigrations(engine, map[string]string{
-				"0000000002_gadgets.up.sql":   "CREATE TABLE gadgets (id INTEGER PRIMARY KEY);\n" + byteOrderMark + "CREATE TABLE gizmos (id INTEGER PRIMARY KEY);\n",
-				"0000000002_gadgets.down.sql": "DROP TABLE gadgets;\n",
-			})
 
-			err := r.up(c, fsys, migrator.MigrateUpOptions{})
+			c.Assert(r.up(c, byteOrderMarkInTheMiddle(engine), migrator.MigrateUpOptions{}), qt.IsNil)
+
+			c.Assert(r.columns(c, "gadgets"), qt.Equals, 1)
+			c.Assert(r.columns(c, "gizmos"), qt.Equals, 1)
+		})
+	}
+}
+
+// Only the mark at the very start of a file is removed. U+FEFF in front of a
+// later statement is part of that statement, and a server that does not read
+// it as whitespace refuses it.
+func TestByteOrderMarkOnEnginesLive_FailurePath(t *testing.T) {
+	for _, engine := range byteOrderMarkRefusingEngines {
+		t.Run(engine.name+": a mark in the middle of a file reaches the server", func(t *testing.T) {
+			c := qt.New(t)
+			r := newRepeatableEngineTarget(c, t, engine)
+
+			err := r.up(c, byteOrderMarkInTheMiddle(engine), migrator.MigrateUpOptions{})
 
 			c.Assert(err, qt.ErrorMatches, `(?s).*failed to apply migration 2: .*SQL: \x{FEFF}CREATE TABLE gizmos.*`)
 			c.Assert(r.columns(c, "widgets"), qt.Equals, 1)

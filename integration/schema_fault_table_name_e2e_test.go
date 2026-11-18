@@ -103,8 +103,8 @@ var targetCommands = []targetCommand{
 }
 
 // fromDocumentDiff is `schema diff` with the schema as its --from document. It
-// checks the indexes of that document, as of a --to one, and the comparison
-// faults of the --to side alone, so it joins the index rows only.
+// checks that document as it checks a --to one, for both faults, and names the
+// table by the dev database's current schema.
 var fromDocumentDiff = targetCommand{
 	name:     "schema diff of two documents, the schema as --from",
 	args:     []string{"schema", "diff", "--from", "file://schema.sql", "--to", "file://empty.sql", "--dev-url", "{dev}"},
@@ -176,30 +176,167 @@ func TestSchemaCommandsNameAFaultTableByTheCurrentSchema_FailurePathE2E(t *testi
 	}
 }
 
-// TestSchemaDiffNamesAnIndexFaultOfItsFromDocument_FailurePathE2E runs
-// [fromDocumentDiff] on the index fault, alone and with t excluded, and expects
-// the line of a --to document, the table named by the dev database's current
-// schema. Without the check of the --from side, the diff plans the table's
-// removal and exits 0.
-func TestSchemaDiffNamesAnIndexFaultOfItsFromDocument_FailurePathE2E(t *testing.T) {
+// TestSchemaDiffNamesAFaultOfItsFromDocument_FailurePathE2E runs
+// [fromDocumentDiff] on each fault, and on the index fault with t excluded, and
+// expects the line of a --to document, the table named by the dev database's
+// current schema. Without the check of the --from side, the diff plans the
+// tables' removal and exits 0: the index check covers the index rows, and the
+// target validation the foreign-key row.
+func TestSchemaDiffNamesAFaultOfItsFromDocument_FailurePathE2E(t *testing.T) {
 	c := qt.New(t)
 	fixture := newFaultFixture(c)
-	want := fmt.Sprintf(schemaFaults[0].line, fixture.current[fromDocumentDiff.placedOn]+".t")
 
 	for _, test := range []struct {
 		name   string
 		schema string
 		extra  []string
+		fault  schemaFault
+		side   string
 	}{
-		{name: "index fault", schema: schemaFaults[0].schema},
-		{name: "index fault on an excluded table", schema: excludedFaultSchema, extra: []string{"--exclude", "{schema}.t"}},
+		{name: schemaFaults[0].name, schema: schemaFaults[0].schema, fault: schemaFaults[0]},
+		{name: schemaFaults[1].name, schema: schemaFaults[1].schema, fault: schemaFaults[1], side: fromSideRefusal},
+		{
+			name: "index on an undeclared column of an excluded table", schema: excludedFaultSchema,
+			extra: []string{"--exclude", "{schema}.t"}, fault: schemaFaults[0],
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			want := fmt.Sprintf(test.fault.line, fixture.current[fromDocumentDiff.placedOn]+"."+test.fault.table)
 			result := fixture.run(c, fromDocumentDiff, test.schema, test.extra...)
 			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
 			c.Assert(result.ExitCode, qt.Equals, 2, comment)
-			c.Assert(result.Stderr, qt.Equals, "error: "+want+"\n", comment)
+			c.Assert(result.Stderr, qt.Equals, "error: "+test.side+want+"\n", comment)
+		})
+	}
+}
+
+// fromSideRefusal is the prefix of a --from document's foreign-key refusal,
+// which names the side, as a --from that does not load is named. A --to
+// document's refusal carries none.
+const fromSideRefusal = "load --from schema: "
+
+// unkeyedReferenceSound is the foreign-key fault of [schemaFaults] with the
+// foreign key left out.
+const unkeyedReferenceSound = "CREATE TABLE parent (id bigint PRIMARY KEY, code text NOT NULL);\n" +
+	"CREATE TABLE child (id bigint PRIMARY KEY, code text);\n"
+
+// referenceFaultBesideSetNull is the foreign-key fault of [schemaFaults] with
+// another fault declared ahead of it: a SET NULL action on a NOT NULL column.
+// Ptah's target validation refuses that action and PostgreSQL creates it. The
+// validation stops at its first refusal, so a --from check that runs it whole
+// reports nothing about the foreign key, which PostgreSQL refuses with 42830.
+const referenceFaultBesideSetNull = "CREATE TABLE parent (id bigint PRIMARY KEY, code text NOT NULL);\n" +
+	"CREATE TABLE other (id bigint PRIMARY KEY, parent_id bigint NOT NULL REFERENCES parent (id) ON DELETE SET NULL);\n" +
+	"CREATE TABLE child (id bigint PRIMARY KEY, code text REFERENCES parent (code));\n"
+
+// runDocumentDiff runs `schema diff --from file://from.sql --to file://to.sql`
+// on the fixture's dev database, extra added to the command line with
+// {schema} standing for the dev database's current schema.
+func (f faultFixture) runDocumentDiff(c *qt.C, from, to string, extra ...string) clirun.Result {
+	c.Helper()
+	root := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(root, "from.sql"), []byte(from), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "to.sql"), []byte(to), 0o600), qt.IsNil)
+	args := []string{"schema", "diff", "--from", "file://from.sql", "--to", "file://to.sql", "--dev-url", f.devURL}
+	for _, arg := range extra {
+		args = append(args, strings.ReplaceAll(arg, "{schema}", f.current["dev"]))
+	}
+	return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()}, args...)
+}
+
+// TestSchemaDiffRefusesAReferenceFaultOfEitherDocument_FailurePathE2E puts the
+// foreign-key fault on each side of a diff with the sound schema. PostgreSQL
+// refuses such a key when it creates the table, so the --from document is
+// held to the rule as the --to one is, and its line names the side. The last
+// row declares a fault of another rule first: the --from document is held to
+// the referenced-key rule alone, so that fault does not hide the key.
+func TestSchemaDiffRefusesAReferenceFaultOfEitherDocument_FailurePathE2E(t *testing.T) {
+	c := qt.New(t)
+	fixture := newFaultFixture(c)
+	line := fmt.Sprintf(schemaFaults[1].line, fixture.current["dev"]+".parent")
+
+	for _, test := range []struct {
+		name     string
+		from, to string
+		want     string
+	}{
+		{name: "faulty --from", from: schemaFaults[1].schema, to: unkeyedReferenceSound, want: "error: " + fromSideRefusal + line + "\n"},
+		{name: "faulty --to", from: unkeyedReferenceSound, to: schemaFaults[1].schema, want: "error: " + line + "\n"},
+		{name: "faulty --from beside a SET NULL fault", from: referenceFaultBesideSetNull, to: unkeyedReferenceSound, want: "error: " + fromSideRefusal + line + "\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := fixture.runDocumentDiff(c, test.from, test.to)
+			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
+			c.Assert(result.ExitCode, qt.Equals, 2, comment)
+			c.Assert(result.Stderr, qt.Equals, test.want, comment)
+			c.Assert(result.Stdout, qt.Equals, "", comment)
+		})
+	}
+}
+
+// referenceParentAlone is the parent table of [schemaFaults]'s foreign-key
+// fault, without child.
+const referenceParentAlone = "CREATE TABLE parent (id bigint PRIMARY KEY, code text NOT NULL);\n"
+
+// TestSchemaDiffChecksTheWholeDocumentOfEitherSide_FailurePathE2E puts the
+// foreign-key fault on each side and excludes one of its two tables. The
+// community binary v1.3.0 creates each document whole on its dev database, so
+// it exits 1 with the server's 42830 in every row, whatever --exclude selects.
+// The rule reads the placed document, not the selection, so each row is
+// refused: checked on the selection, the parent rows plan a child with no key
+// or drop it, and the child rows report the schemas synced.
+func TestSchemaDiffChecksTheWholeDocumentOfEitherSide_FailurePathE2E(t *testing.T) {
+	c := qt.New(t)
+	fixture := newFaultFixture(c)
+	line := fmt.Sprintf(schemaFaults[1].line, fixture.current["dev"]+".parent")
+
+	for _, test := range []struct {
+		name     string
+		from, to string
+		excluded string
+		want     string
+	}{
+		{name: "faulty --from, parent excluded", from: schemaFaults[1].schema, to: referenceParentAlone, excluded: "{schema}.parent", want: "error: " + fromSideRefusal + line + "\n"},
+		{name: "faulty --from, child excluded", from: schemaFaults[1].schema, to: unkeyedReferenceSound, excluded: "{schema}.child", want: "error: " + fromSideRefusal + line + "\n"},
+		{name: "faulty --to, parent excluded", from: referenceParentAlone, to: schemaFaults[1].schema, excluded: "{schema}.parent", want: "error: " + line + "\n"},
+		{name: "faulty --to, child excluded", from: unkeyedReferenceSound, to: schemaFaults[1].schema, excluded: "{schema}.child", want: "error: " + line + "\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := fixture.runDocumentDiff(c, test.from, test.to, "--exclude", test.excluded)
+			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
+			c.Assert(result.ExitCode, qt.Equals, 2, comment)
+			c.Assert(result.Stderr, qt.Equals, test.want, comment)
+			c.Assert(result.Stdout, qt.Equals, "", comment)
+		})
+	}
+}
+
+// TestSchemaDiffChecksTheWholeDocumentOfEitherSide_HappyPathE2E is the control
+// for the rows above: the same exclusions over documents with no fault match
+// a table, so the diff compares what is left and reports it synced. An
+// exclusion that matched nothing would plan the excluded table here, and warn.
+func TestSchemaDiffChecksTheWholeDocumentOfEitherSide_HappyPathE2E(t *testing.T) {
+	c := qt.New(t)
+	fixture := newFaultFixture(c)
+
+	for _, test := range []struct {
+		name     string
+		from, to string
+		excluded string
+	}{
+		{name: "child excluded", from: unkeyedReferenceSound, to: referenceParentAlone, excluded: "{schema}.child"},
+		{name: "parent excluded", from: unkeyedReferenceSound, to: "CREATE TABLE child (id bigint PRIMARY KEY, code text);\n", excluded: "{schema}.parent"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := fixture.runDocumentDiff(c, test.from, test.to, "--exclude", test.excluded)
+			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
+			c.Assert(result.ExitCode, qt.Equals, 0, comment)
+			c.Assert(result.Stdout, qt.Equals, "Schemas are synced, no changes to be made.\n", comment)
+			c.Assert(result.Stderr, qt.Equals, "", comment)
 		})
 	}
 }
