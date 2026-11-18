@@ -96,6 +96,18 @@ func (m *Migrator) RevisionBodyOpensOwnTransactions(revision MigrationRevision) 
 	return migration.runnerReadsOwnTransactions(m.conn, repairMigrationDirection(&revision))
 }
 
+// repairRunner is the runner a repair of revision needs, read with the
+// predicate the hint `ptah migrations status` prints reads
+// ([Migrator.RevisionBodyOpensOwnTransactions]), so a refusal names the
+// command that hint names. A repair of such a body without that runner is
+// refused.
+func (m *Migrator) repairRunner(revision MigrationRevision) repaircommand.Runner {
+	if m.RevisionBodyOpensOwnTransactions(revision) {
+		return repaircommand.GolangMigrate
+	}
+	return repaircommand.DefaultRunner
+}
+
 // RevisionBodyStatements returns how many statements the body a resume of the
 // dirty revision would index into holds in the directory now: the down file of
 // the revision's migration when a rollback left the revision, and the up file
@@ -554,13 +566,15 @@ type unknownOutcomeError struct {
 	// version is the revision's version as its file name spells it.
 	version   string
 	statement int
+	// runner is the runner the repair it names needs for the body.
+	runner repaircommand.Runner
 }
 
 func (e *unknownOutcomeError) Error() string {
 	return fmt.Sprintf(
 		"migration %s cannot resume automatically: the outcome of statement %d is unknown after an interrupted run; "+
 			"inspect the database, then use %s",
-		e.version, e.statement, repaircommand.Reconciled(e.version, repaircommand.DefaultRunner))
+		e.version, e.statement, repaircommand.Reconciled(e.version, e.runner))
 }
 
 // rollbackLeftUnknownResumeError refuses to resume a migration whose transaction
@@ -568,13 +582,15 @@ func (e *unknownOutcomeError) Error() string {
 type rollbackLeftUnknownResumeError struct {
 	// version is the revision's version as its file name spells it.
 	version string
+	// runner is the runner the repair it names needs for the body.
+	runner repaircommand.Runner
 }
 
 func (e *rollbackLeftUnknownResumeError) Error() string {
 	return fmt.Sprintf(
 		"migration %s cannot resume automatically: the rollback of its transaction left some statements in place and "+
 			"undid others; inspect the database, then use %s",
-		e.version, repaircommand.Reconciled(e.version, repaircommand.DefaultRunner))
+		e.version, repaircommand.Reconciled(e.version, e.runner))
 }
 
 // describeUnknownOutcome rewrites a refusal to resume after an unknown outcome

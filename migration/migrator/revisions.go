@@ -1625,7 +1625,7 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 			m.versionText(migration.Version),
 		)
 	}
-	resumeFrom, err := resumeStatementFor(*revision, m.migrationStatementCount(migration.UpSQL))
+	resumeFrom, err := resumeStatementFor(*revision, m.migrationStatementCount(migration.UpSQL), m.repairRunner(*revision))
 	if err != nil {
 		return upRetryPlan{}, err
 	}
@@ -1652,15 +1652,15 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 // statement whose outcome nothing knows. The zero says only that no checkpoint
 // was written, and on a dialect where each statement commits by itself the
 // statement may well have committed.
-func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
+func resumeStatementFor(revision MigrationRevision, total int, runner repaircommand.Runner) (int, error) {
 	if err := validateRevisionProgress(revision, "resume automatically"); err != nil {
 		return 0, err
 	}
 	if revision.RollbackLeftUnknown() {
-		return 0, &rollbackLeftUnknownResumeError{version: revision.RevisionVersion()}
+		return 0, &rollbackLeftUnknownResumeError{version: revision.RevisionVersion(), runner: runner}
 	}
 	if revision.Error == unknownStatementOutcomeError {
-		return 0, &unknownOutcomeError{version: revision.RevisionVersion(), statement: revision.Applied + 1}
+		return 0, &unknownOutcomeError{version: revision.RevisionVersion(), statement: revision.Applied + 1, runner: runner}
 	}
 	if revision.Applied <= 0 {
 		return 1, nil
@@ -1672,7 +1672,7 @@ func resumeStatementFor(revision MigrationRevision, total int) (int, error) {
 			revision.Applied,
 			revision.Total,
 			total,
-			repaircommand.Reconciled(revision.RevisionVersion(), repaircommand.DefaultRunner),
+			repaircommand.Reconciled(revision.RevisionVersion(), runner),
 		)
 	}
 	return revision.Applied + 1, nil
