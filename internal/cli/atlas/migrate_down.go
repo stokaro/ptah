@@ -49,7 +49,7 @@ func newAtlasMigrateDownCommand(policy atlascompatpolicy.Policy) *cobra.Command 
 		if atlasArgsHaveHelp(args) {
 			return forward(cmd, args)
 		}
-		if err := refuseAtlasDownRepeatables(); err != nil {
+		if err := refuseAtlasDownRepeatables(cmd, verb, args); err != nil {
 			return err
 		}
 		if !atlasMigrateDownWantsFormat(verb, args) {

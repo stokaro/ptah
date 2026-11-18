@@ -420,7 +420,7 @@ func runAtlasMigrateApplyTarget(
 		Repeatables:     atlasReadsRepeatables(runOpts.repeatables, resolvedDirFormat),
 	})
 	if err != nil {
-		return formatOutput, remapAtlasExactIdentityError(err, linearity.sourceVersions)
+		return formatOutput, remapAtlasExactIdentityError(atlasRepeatablesHint(err), linearity.sourceVersions)
 	}
 	if err := runAtlasMigrateApplyRefusals(cmd.Context(), atlasMigrateApplyRefusalOperands{
 		conn:            conn,

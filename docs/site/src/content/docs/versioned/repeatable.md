@@ -378,7 +378,8 @@ as editing any file does.
 The revision table records the versioned files only. The record is
 `atlas_schema_revisions_repeatable`, beside `atlas_schema_revisions` and in the
 same schema (`atlas_schema_revisions` on PostgreSQL unless `--revisions-schema`
-moves it).
+moves it). Native `ptah migrations up --revision-format atlas` keeps its record
+in the same place, `<revision table>_repeatable`.
 
 Both reports keep the Atlas-shaped part as the community binary prints it, and
 add the repeatable work after it, only when there is some:
@@ -399,22 +400,39 @@ out when the list is empty.
 A database where the Atlas reading already applied the file holds the revision
 row `R`. Read as a repeatable migration, the file has no record there and would
 run again, so `migrate apply` and `migrate status` refuse the database before
-anything runs and name the row. Delete the row, check that the body runs again
-against the database, and apply:
+anything runs and name the revision table as the database resolves it. Delete
+the row, check that the body runs again against the database, and apply. On
+PostgreSQL the table is in the schema `atlas_schema_revisions` unless
+`--revisions-schema` or a `search_path` in the URL moves it:
+
+```sql
+DELETE FROM atlas_schema_revisions.atlas_schema_revisions WHERE version = 'R';
+```
+
+On MySQL, MariaDB and SQLite the table is in the database the URL connects to,
+and the bare name reaches it:
 
 ```sql
 DELETE FROM atlas_schema_revisions WHERE version = 'R';
 ```
 
-The opposite direction is not detected: with the variable unset, the community
-reading runs each `R__` file once more as the version `R`. Keep the variable set
-for a database that recorded repeatable migrations.
+On any other target, copy the name from the refusal.
 
-`migrate down` refuses to run while the variable is set, because it does not read
-the record, and a rollback under a repeatable migration is refused. `migrate
-lint` keeps the Atlas reading and analyzes the file as the version `R`.
-`PTAH_ATLAS_STRICT_COMPAT=1` refuses the variable when it is enabled, because
-the community binary has no re-run-on-change semantics.
+The opposite direction is refused too. With the variable unset, the Atlas
+reading would run each recorded `R__` file once more as the version `R`, so
+`migrate apply` and `migrate status` refuse a database whose record holds a row
+and say to set the variable. A database with no record costs one catalog lookup
+and reports as it does without this feature.
+
+`migrate down` reads an `R__` file as the version `R` either way. While the
+variable is set it refuses a directory that holds one, before connecting, and
+with or without the variable it refuses a database whose record holds a row, as
+`ptah migrations down` does. A directory with no `R__` file over a database with
+no record rolls back with the variable set. `migrate diff` and `migrate lint` keep the
+Atlas reading and analyze the file as the version `R`; when the variable is set
+and the directory holds an `R__` file, each prints one line on stderr that says
+so. `PTAH_ATLAS_STRICT_COMPAT=1` refuses the variable when it is enabled,
+because the community binary has no re-run-on-change semantics.
 
 ## Limits
 

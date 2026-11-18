@@ -39,6 +39,21 @@ func runAtlasUp(c *qt.C, dbPath string, fsys fstest.MapFS, opts ...migrator.FSPr
 		MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{})
 }
 
+// removeAtlasRepeatableRecord removes the row of identity from the record
+// beside the Atlas revision table at dbPath, leaving the table.
+func removeAtlasRepeatableRecord(c *qt.C, dbPath string, fsys fstest.MapFS, identity string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	mig, err := migrator.NewFSMigrator(conn, fsys,
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas), migrator.WithAtlasRepeatableMigrations())
+	c.Assert(err, qt.IsNil)
+	_, err = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).RemoveRepeatableRecord(
+		c.Context(), migrator.RemoveRepeatableRecordOptions{Identity: identity, Force: true})
+	c.Assert(err, qt.IsNil)
+}
+
 // atlasRevisionVersions reads the versions the Atlas revision table at dbPath
 // records, in byte order.
 func atlasRevisionVersions(c *qt.C, dbPath string) []string {
@@ -88,6 +103,20 @@ func TestAtlasRepeatableMigrations_HappyPath(t *testing.T) {
 		c.Assert(repeatableTableCount(c, dbPath, "atlas_schema_revisions_repeatable"), qt.Equals, 1)
 	})
 
+	t.Run("an empty record does not stop the Atlas reading", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		fsys := atlasRepeatableFiles(map[string]string{"R__user_names.sql": repeatableViewUp})
+		c.Assert(runAtlasUp(c, dbPath, fsys, migrator.WithAtlasRepeatableMigrations()), qt.IsNil)
+		removeAtlasRepeatableRecord(c, dbPath, fsys, "user_names")
+
+		err := runAtlasUp(c, dbPath, fsys)
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(atlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "R"})
+		c.Assert(repeatableAudit(c, dbPath), qt.DeepEquals, []string{"user_names", "user_names"})
+	})
+
 	t.Run("without the option R__ stays the one-time version R", func(t *testing.T) {
 		c := qt.New(t)
 		dbPath := filepath.Join(c.TempDir(), "app.db")
@@ -117,6 +146,23 @@ func TestAtlasRepeatableMigrations_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `the revision table "atlas_schema_revisions" records version R .* delete the row with version 'R' from "atlas_schema_revisions" .*`)
 		c.Assert(repeatableAudit(c, dbPath), qt.DeepEquals, []string{"user_names"})
 		c.Assert(repeatableTableCount(c, dbPath, "atlas_schema_revisions_repeatable"), qt.Equals, 0)
+	})
+
+	t.Run("a record the Atlas reading does not read is refused before anything runs", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		fsys := atlasRepeatableFiles(map[string]string{"R__user_names.sql": repeatableViewUp})
+		c.Assert(runAtlasUp(c, dbPath, fsys, migrator.WithAtlasRepeatableMigrations()), qt.IsNil)
+
+		err := runAtlasUp(c, dbPath, fsys)
+
+		refusal, ok := errors.AsType[*migrator.AtlasRepeatableRecordError](err)
+		c.Assert(ok, qt.IsTrue, qt.Commentf("%v", err))
+		c.Assert(refusal.Identities, qt.DeepEquals, []string{"user_names"})
+		c.Assert(refusal.Table, qt.Equals, `"atlas_schema_revisions_repeatable"`)
+		c.Assert(err, qt.ErrorMatches, `this database records repeatable migrations user_names in "atlas_schema_revisions_repeatable", which this run does not read: .*`)
+		c.Assert(atlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1"})
+		c.Assert(repeatableAudit(c, dbPath), qt.DeepEquals, []string{"user_names"})
 	})
 
 	t.Run("a directory not read in the Atlas format is refused", func(t *testing.T) {

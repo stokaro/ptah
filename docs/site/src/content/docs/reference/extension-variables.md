@@ -354,9 +354,12 @@ and an edit after it applied changes nothing. Set it to `1` and `migrate apply`
 and `migrate status` read the file as a
 [repeatable migration](../../versioned/repeatable/#the-compatibility-surface),
 which runs after the versioned files and again whenever its content changes.
-`atlas.sum` is the same either way. `migrate down` refuses to run while it is
-set. The community CLI has no re-run-on-change semantics, so strict mode refuses
-the enabled value.
+`atlas.sum` is the same either way. Unset over a database whose record of
+repeatable migrations holds a row, `migrate apply` and `migrate status` refuse
+and say to set it. While it is set, `migrate down` refuses a directory that
+holds an `R__` file, and `migrate diff` and `migrate lint` say on stderr that
+they read such a file as the version `R`. The community CLI has no
+re-run-on-change semantics, so strict mode refuses the enabled value.
 
 ## One shape has no Atlas-readable form at all
 

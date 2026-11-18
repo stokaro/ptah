@@ -222,7 +222,7 @@ func runAtlasMigrateStatus(
 		Repeatables:      atlasReadsRepeatables(repeatables, format),
 	})
 	if err != nil {
-		return cmdutil.Fail(cmd, remapAtlasExactIdentityError(err, sourceVersions))
+		return cmdutil.Fail(cmd, remapAtlasExactIdentityError(atlasRepeatablesHint(err), sourceVersions))
 	}
 	reportOpts := atlasreport.MigrateStatusOptions{
 		Driver:           conn.Info().Dialect,

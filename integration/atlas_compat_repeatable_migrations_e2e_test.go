@@ -5,6 +5,7 @@ package integration_test
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,9 +35,14 @@ const (
 type repeatableEngine struct {
 	name string
 	url  func(c *qt.C) string
-	// revisions and record are the tables an Atlas apply writes on it.
-	revisions string
-	record    string
+	// revisions and record are the tables an Atlas apply writes on it, as
+	// SQL names them; quotedRevisions is the revision table as a refusal
+	// quotes it.
+	revisions       string
+	quotedRevisions string
+	record          string
+	// recordTables lists the record table when it exists.
+	recordTables string
 }
 
 var repeatableEngines = []repeatableEngine{
@@ -47,14 +53,19 @@ var repeatableEngines = []repeatableEngine{
 		url: func(c *qt.C) string {
 			return "sqlite://" + filepath.ToSlash(filepath.Join(c.TempDir(), "app.db"))
 		},
-		revisions: "atlas_schema_revisions",
-		record:    "atlas_schema_revisions_repeatable",
+		revisions:       "atlas_schema_revisions",
+		quotedRevisions: `"atlas_schema_revisions"`,
+		record:          "atlas_schema_revisions_repeatable",
+		recordTables:    "SELECT name FROM sqlite_master WHERE name = 'atlas_schema_revisions_repeatable'",
 	},
 	{
-		name:      "postgres",
-		url:       func(c *qt.C) string { return postgresScratchDevURL(c, "ptah_compat_repeatable") },
-		revisions: "atlas_schema_revisions.atlas_schema_revisions",
-		record:    "atlas_schema_revisions.atlas_schema_revisions_repeatable",
+		name:            "postgres",
+		url:             func(c *qt.C) string { return postgresScratchDevURL(c, "ptah_compat_repeatable") },
+		revisions:       "atlas_schema_revisions.atlas_schema_revisions",
+		quotedRevisions: `"atlas_schema_revisions"."atlas_schema_revisions"`,
+		record:          "atlas_schema_revisions.atlas_schema_revisions_repeatable",
+		recordTables: "SELECT table_name FROM information_schema.tables " +
+			"WHERE table_name = 'atlas_schema_revisions_repeatable'",
 	},
 }
 
@@ -65,17 +76,37 @@ var repeatableEnabled = []string{"PTAH_ATLAS_REPEATABLE_MIGRATIONS=1"}
 // R__view.sql into dir and hashes it with binary.
 func writeRepeatableDir(c *qt.C, binary, dir, view string) {
 	c.Helper()
-	migrations := filepath.Join(dir, "migrations")
-	c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
-	for name, body := range map[string]string{
+	writeHashedDir(c, binary, dir, map[string]string{
 		"1_init.sql":  repeatableInitSQL,
 		"2_more.sql":  repeatableMoreSQL,
 		"R__view.sql": view,
-	} {
+	})
+}
+
+// writeHashedDir writes files into dir/migrations, removes every other .sql
+// file there, and hashes the directory with binary.
+func writeHashedDir(c *qt.C, binary, dir string, files map[string]string) {
+	c.Helper()
+	migrations := filepath.Join(dir, "migrations")
+	c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
+	existing, err := filepath.Glob(filepath.Join(migrations, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	for _, path := range existing {
+		c.Assert(os.Remove(path), qt.IsNil)
+	}
+	for name, body := range files {
 		c.Assert(os.WriteFile(filepath.Join(migrations, name), []byte(body), 0o600), qt.IsNil)
 	}
 	hashed := runFormatTemplateVerb(c, binary, dir, nil, "migrate", "hash", "--dir", "file://migrations")
 	c.Assert(hashed.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", hashed.Stderr))
+}
+
+// repeatableNote is the line migrate diff and migrate lint print on stderr
+// while the variable is set over the directory.
+func repeatableNote(verb string) string {
+	return "note: PTAH_ATLAS_REPEATABLE_MIGRATIONS is set, but migrate " + verb +
+		" reads R__view.sql as the one-time version R; only migrate apply and migrate status read them as " +
+		"repeatable migrations\n"
 }
 
 // applyRepeatableDir runs migrate apply of the directory in dir on url.
@@ -159,7 +190,10 @@ const repeatableOffStatus = `Migration Status: OK
 
 // TestCompatRepeatableFileWithoutTheVariableIsVersionRE2E is the shipped
 // compat binary with the variable unset: R__view.sql is the version R, the
-// reports are the community binary's, and no record table is created.
+// reports are the community binary's, and no record table is created. It is
+// also the control for the refusal of a record the reading ignores: with no
+// record table the run pays one catalog lookup and reports what the community
+// binary reports.
 func TestCompatRepeatableFileWithoutTheVariableIsVersionRE2E(t *testing.T) {
 	for _, engine := range repeatableEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -175,18 +209,21 @@ func TestCompatRepeatableFileWithoutTheVariableIsVersionRE2E(t *testing.T) {
 
 			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", applied.Stderr))
 			c.Assert(applyDurations.ReplaceAllString(applied.Stdout, "D"), qt.Equals, repeatableOffReport)
+			c.Assert(status.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", status.Stderr))
 			c.Assert(status.Stdout, qt.Equals, repeatableOffStatus)
 			c.Assert(repeatableStrings(c, url, "SELECT version FROM "+engine.revisions+" ORDER BY version"),
 				qt.DeepEquals, []string{"1", "2", "R"})
 			c.Assert(repeatableStrings(c, url,
 				"SELECT CAST(COUNT(*) AS TEXT) FROM "+engine.revisions+" WHERE version = 'R'"),
 				qt.DeepEquals, []string{"1"})
+			c.Assert(repeatableStrings(c, url, engine.recordTables), qt.HasLen, 0)
 		})
 	}
 }
 
 // TestReferenceRepeatableFileIsVersionRE2E takes the same measurement against
-// the pinned community binary.
+// the pinned community binary: its apply report and its status report are the
+// two texts the compat test above compares with.
 func TestReferenceRepeatableFileIsVersionRE2E(t *testing.T) {
 	for _, engine := range repeatableEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -202,6 +239,7 @@ func TestReferenceRepeatableFileIsVersionRE2E(t *testing.T) {
 
 			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", applied.Stderr))
 			c.Assert(applyDurations.ReplaceAllString(applied.Stdout, "D"), qt.Equals, repeatableOffReport)
+			c.Assert(status.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", status.Stderr))
 			c.Assert(status.Stdout, qt.Equals, repeatableOffStatus)
 			c.Assert(repeatableStrings(c, url, "SELECT version FROM "+engine.revisions+" ORDER BY version"),
 				qt.DeepEquals, []string{"1", "2", "R"})
@@ -287,10 +325,69 @@ func TestCompatRepeatableMigrationsRefuseE2E(t *testing.T) {
 				got := applyRepeatableDir(c, binary, dir, url, repeatableEnabled)
 
 				c.Assert(got.ExitCode, qt.Equals, 1)
-				c.Assert(got.Stderr, qt.Matches, `(?s)Error: .*records version R \(description "view"\), .*R__view.sql .*`+
-					`delete the row with version 'R' from .*`)
+				c.Assert(got.Stderr, qt.Matches, `(?s)Error: .*the revision table `+regexp.QuoteMeta(engine.quotedRevisions)+
+					` records version R \(description "view"\), .*R__view.sql .*`+
+					`delete the row with version 'R' from `+regexp.QuoteMeta(engine.quotedRevisions)+` .*`)
 				c.Assert(repeatableStrings(c, url, "SELECT version FROM "+engine.revisions+" ORDER BY version"),
 					qt.DeepEquals, []string{"1", "2", "R"})
+			})
+		}
+	})
+
+	// The statement the repeatable page gives for each engine clears the
+	// refusal above.
+	t.Run("the documented recovery", func(t *testing.T) {
+		for _, engine := range repeatableEngines {
+			t.Run(engine.name, func(t *testing.T) {
+				c := qt.New(t)
+				binary := clirun.Build(c, clirun.Compat)
+				dir := c.TempDir()
+				url := engine.url(c)
+				writeRepeatableDir(c, binary, dir, repeatableViewSQL)
+				off := applyRepeatableDir(c, binary, dir, url, nil)
+				c.Assert(off.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", off.Stderr))
+				_, err := connectDevDialect(c, url).ExecContext(c.Context(),
+					"DELETE FROM "+engine.revisions+" WHERE version = 'R'")
+				c.Assert(err, qt.IsNil)
+
+				got := applyRepeatableDir(c, binary, dir, url, repeatableEnabled)
+
+				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+				c.Assert(repeatableStrings(c, url, "SELECT version FROM "+engine.revisions+" ORDER BY version"),
+					qt.DeepEquals, []string{"1", "2"})
+				c.Assert(repeatableStrings(c, url, "SELECT identity || ' ' || state FROM "+engine.record),
+					qt.DeepEquals, []string{"view applied"})
+			})
+		}
+	})
+
+	t.Run("a record the Atlas reading would ignore", func(t *testing.T) {
+		for _, engine := range repeatableEngines {
+			t.Run(engine.name, func(t *testing.T) {
+				c := qt.New(t)
+				binary := clirun.Build(c, clirun.Compat)
+				dir := c.TempDir()
+				url := engine.url(c)
+				writeRepeatableDir(c, binary, dir, repeatableViewSQL)
+				on := applyRepeatableDir(c, binary, dir, url, repeatableEnabled)
+				c.Assert(on.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", on.Stderr))
+				writeRepeatableDir(c, binary, dir, repeatableViewChangedSQL)
+
+				applied := applyRepeatableDir(c, binary, dir, url, nil)
+				status := runFormatTemplateVerb(c, binary, dir, nil,
+					"migrate", "status", "--dir", "file://migrations", "--url", url)
+
+				want := `(?s)Error: .*this database records repeatable migrations view in .*` +
+					`which this run does not read: .*set PTAH_ATLAS_REPEATABLE_MIGRATIONS=1\n`
+				c.Assert(applied.ExitCode, qt.Equals, 1)
+				c.Assert(applied.Stdout, qt.Equals, "")
+				c.Assert(applied.Stderr, qt.Matches, want)
+				c.Assert(status.ExitCode, qt.Equals, 1)
+				c.Assert(status.Stdout, qt.Equals, "")
+				c.Assert(status.Stderr, qt.Matches, want)
+				c.Assert(repeatableStrings(c, url, "SELECT version FROM "+engine.revisions+" ORDER BY version"),
+					qt.DeepEquals, []string{"1", "2"})
+				c.Assert(viewColumns(c, url), qt.DeepEquals, []string{"id", "name"})
 			})
 		}
 	})
@@ -335,12 +432,12 @@ func TestCompatRepeatableMigrationsRefuseE2E(t *testing.T) {
 		c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
 	})
 
-	t.Run("a rollback", func(t *testing.T) {
+	t.Run("a rollback over a directory that holds an R__ file", func(t *testing.T) {
 		c := qt.New(t)
 		binary := clirun.Build(c, clirun.Compat)
 		dir := c.TempDir()
 		url := atlasurl.SQLiteURLFromPath(filepath.Join(dir, "app.db"))
-		writeRepeatableDir(c, binary, dir, repeatableViewSQL)
+		writeRollbackDir(c, binary, dir, repeatableViewFile)
 		applied := applyRepeatableDir(c, binary, dir, url, repeatableEnabled)
 		c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", applied.Stderr))
 
@@ -348,10 +445,120 @@ func TestCompatRepeatableMigrationsRefuseE2E(t *testing.T) {
 			"migrate", "down", "--dir", "file://migrations", "--url", url, "--dev-url", "sqlite://dev?mode=memory")
 
 		c.Assert(got.ExitCode, qt.Equals, 1)
-		c.Assert(got.Stderr, qt.Contains, "PTAH_ATLAS_REPEATABLE_MIGRATIONS is set, and migrate down does not read")
+		c.Assert(got.Stderr, qt.Contains,
+			"PTAH_ATLAS_REPEATABLE_MIGRATIONS is set and the directory holds R__view.sql, which migrate down reads")
 		c.Assert(repeatableStrings(c, url, "SELECT version FROM atlas_schema_revisions ORDER BY version"),
 			qt.DeepEquals, []string{"1", "2"})
+		c.Assert(repeatableStrings(c, url, "SELECT identity FROM atlas_schema_revisions_repeatable"),
+			qt.DeepEquals, []string{"view"})
+		c.Assert(viewColumns(c, url), qt.DeepEquals, []string{"id", "name"})
 	})
+
+	for _, tc := range []struct {
+		name string
+		env  []string
+	}{
+		{name: "a rollback over a record, variable unset"},
+		{name: "a rollback over a record, variable set", env: repeatableEnabled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			binary := clirun.Build(c, clirun.Compat)
+			dir := c.TempDir()
+			url := atlasurl.SQLiteURLFromPath(filepath.Join(dir, "app.db"))
+			writeRollbackDir(c, binary, dir, repeatableViewFile)
+			applied := applyRepeatableDir(c, binary, dir, url, repeatableEnabled)
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", applied.Stderr))
+			writeRollbackDir(c, binary, dir, nil)
+
+			got := runFormatTemplateVerb(c, binary, dir, tc.env,
+				"migrate", "down", "--dir", "file://migrations", "--url", url, "--dev-url", "sqlite://dev?mode=memory")
+
+			c.Assert(got.ExitCode, qt.Equals, 1)
+			c.Assert(got.Stderr, qt.Contains, "cannot roll back: this database records repeatable migrations view")
+			c.Assert(repeatableStrings(c, url, "SELECT version FROM atlas_schema_revisions ORDER BY version"),
+				qt.DeepEquals, []string{"1", "2"})
+			c.Assert(repeatableStrings(c, url, "SELECT identity FROM atlas_schema_revisions_repeatable"),
+				qt.DeepEquals, []string{"view"})
+		})
+	}
+}
+
+// repeatableViewFile is R__view.sql, for a directory that holds it.
+var repeatableViewFile = map[string]string{"R__view.sql": repeatableViewSQL}
+
+// writeRollbackDir writes a directory every version of which has a down file,
+// with the files of extra beside them, and hashes it with binary.
+func writeRollbackDir(c *qt.C, binary, dir string, extra map[string]string) {
+	c.Helper()
+	files := map[string]string{
+		"1_init.sql":      repeatableInitSQL,
+		"1_init.down.sql": "DROP TABLE t;\n",
+		"2_more.sql":      repeatableMoreSQL,
+		"2_more.down.sql": "DROP TABLE u;\n",
+	}
+	maps.Copy(files, extra)
+	writeHashedDir(c, binary, dir, files)
+}
+
+// TestCompatRepeatableMigrationsRollbackControlE2E is the control for the two
+// rollback refusals: with the variable set, a directory with no R__ file over
+// a database with no record rolls back.
+func TestCompatRepeatableMigrationsRollbackControlE2E(t *testing.T) {
+	c := qt.New(t)
+	binary := clirun.Build(c, clirun.Compat)
+	dir := c.TempDir()
+	url := atlasurl.SQLiteURLFromPath(filepath.Join(dir, "app.db"))
+	writeRollbackDir(c, binary, dir, nil)
+	applied := applyRepeatableDir(c, binary, dir, url, repeatableEnabled)
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", applied.Stderr))
+
+	got := runFormatTemplateVerb(c, binary, dir, repeatableEnabled,
+		"migrate", "down", "--dir", "file://migrations", "--url", url, "--dev-url", "sqlite://dev?mode=memory")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(repeatableStrings(c, url, "SELECT version FROM atlas_schema_revisions ORDER BY version"),
+		qt.HasLen, 0)
+}
+
+// TestCompatRepeatableMigrationsNoteE2E covers the line migrate diff and
+// migrate lint print while the variable is set over a directory that holds an
+// R__ file, and its absence without the variable.
+func TestCompatRepeatableMigrationsNoteE2E(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		env            []string
+		wantDiffStderr string
+		wantLintStderr string
+	}{
+		{
+			name:           "variable set",
+			env:            repeatableEnabled,
+			wantDiffStderr: repeatableNote("diff"),
+			wantLintStderr: repeatableNote("lint"),
+		},
+		{name: "variable unset"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			binary := clirun.Build(c, clirun.Compat)
+			dir := c.TempDir()
+			writeRepeatableDir(c, binary, dir, repeatableViewSQL)
+			schema := repeatableInitSQL + repeatableMoreSQL + "CREATE VIEW v AS SELECT id, name FROM t;\n"
+			c.Assert(os.WriteFile(filepath.Join(dir, "schema.sql"), []byte(schema), 0o600), qt.IsNil)
+
+			diff := runFormatTemplateVerb(c, binary, dir, tc.env, "migrate", "diff", "--dir", "file://migrations",
+				"--to", "file://schema.sql", "--dev-url", "sqlite://dev?mode=memory")
+			lint := runFormatTemplateVerb(c, binary, dir, tc.env, "migrate", "lint", "--dir", "file://migrations",
+				"--dev-url", "sqlite://dev?mode=memory", "--latest", "1")
+
+			c.Assert(diff.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", diff.Stderr))
+			c.Assert(diff.Stderr, qt.Equals, tc.wantDiffStderr)
+			c.Assert(lint.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", lint.Stderr))
+			c.Assert(lint.Stderr, qt.Equals, tc.wantLintStderr)
+			c.Assert(lint.Stdout, qt.Contains, "-- analyzing version R\n")
+		})
+	}
 }
 
 // TestCompatRepeatableMigrationsStrictControlE2E is the control for the strict

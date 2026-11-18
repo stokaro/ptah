@@ -91,6 +91,11 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	providerOptions := []migrator.FSProviderOption{
 		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.AtlasEnv}),
+		// Read as the native rollback reads it: the Atlas format gives an
+		// R__ file the version R either way, and a database whose record of
+		// repeatable migrations holds a row is refused by the rollback, which
+		// says how to clear it, rather than as a run that ignores the record.
+		migrator.WithRepeatableMigrations(),
 	}
 	if opts.OwnTransactions {
 		providerOptions = append(providerOptions, migrator.WithOwnTransactions())

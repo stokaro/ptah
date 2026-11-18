@@ -1598,7 +1598,7 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 	if err != nil {
 		return MigrationStatusSnapshot{}, fmt.Errorf("failed to get migration revisions: %w", err)
 	}
-	if err := m.refuseAtlasRepeatableVersion(revisions); err != nil {
+	if err := m.refuseAtlasRepeatableReading(ctx, revisions); err != nil {
 		return MigrationStatusSnapshot{}, err
 	}
 	appliedMigrations := appliedRevisionVersions(revisions)
