@@ -234,9 +234,16 @@ Maps a Go struct to a database table.
 | `schema` | No | Database schema name. |
 
 The table engine, character set, collation and `AUTO_INCREMENT` start are
-MySQL-family options. A PostgreSQL-family target renders none of them and
-names each one it was handed on a `skipped` comment above the statement;
-declare a key's start there with `identity_start` on the column.
+MySQL-family options. The character set and the start are platform properties
+of the `mysql` and `mariadb` targets, which another target leaves out as it
+leaves out any other target's properties. The engine and the collation are
+attributes of the directive. Every other built-in target leaves them out of
+the statement and reports each one as a skipped table option, ClickHouse
+except for the engine, which it writes as its table engine. A
+PostgreSQL-family target also names each one on a `skipped` comment above the
+statement; declare a key's start there with `identity_start` on the column.
+An engine provider that has no table collation refuses a table that declares
+one.
 
 CockroachDB row-level TTL is declared with `platform.cockroachdb` properties
 named for the storage parameters, such as
