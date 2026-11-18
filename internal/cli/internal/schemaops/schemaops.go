@@ -230,6 +230,16 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Checked on the placed schema and ahead of the selection and
+	// IgnoredTables, as `schema apply` checks it; see
+	// [schemavalidate.CollectTargetIndexProblems].
+	problems, err := schemavalidate.CollectTargetIndexProblems(opts.Runtime, desired, conn.Info().Dialect)
+	if err != nil {
+		return nil, err
+	}
+	if len(problems) != 0 {
+		return nil, errors.New(problems[0].String())
+	}
 	ctx = readscope.Qualified(ctx)
 
 	schemas, err := schemascope.ComparisonReadNames(ctx, conn.Info(), opts.Schemas, conn, desired)
@@ -255,17 +265,6 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 
 	if err := schemascope.RefuseOutsideTargetDatabase(info, desired); err != nil {
 		return nil, err
-	}
-	selected, err := opts.Runtime.ResolveTarget(info.Dialect)
-	if err != nil {
-		return nil, err
-	}
-	scoped, err := schemamodel.ScopeToTarget(desired, selected)
-	if err != nil {
-		return nil, err
-	}
-	if problems := schemavalidate.CollectIndexProblems(scoped, selected.Name()); len(problems) != 0 {
-		return nil, errors.New(problems[0].String())
 	}
 	compareOpts := config.DefaultCompareOptions()
 	compareOpts.IgnoredExtensions = append(compareOpts.IgnoredExtensions, opts.IgnoredExtensions...)

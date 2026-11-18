@@ -8,9 +8,10 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-// A missing index owner is a declaration fault on every schema command. Plan
-// and drift must name it as validate does, before comparison or rendering.
-func TestSchemaPlanAndDriftNameAnUndeclaredIndexTable(t *testing.T) {
+// A missing index owner is a declaration fault on every schema command. Plan,
+// drift and compare must name it as validate does, before comparison or
+// rendering.
+func TestSchemaPlanDriftAndCompareNameAnUndeclaredIndexTable(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql", "CREATE INDEX i ON missing (a);\n")
@@ -31,7 +32,7 @@ func TestSchemaPlanAndDriftNameAnUndeclaredIndexTable(t *testing.T) {
 			for _, test := range []struct {
 				verb  string
 				extra []string
-			}{{verb: "plan", extra: []string{"--dry-run"}}, {verb: "drift"}} {
+			}{{verb: "plan", extra: []string{"--dry-run"}}, {verb: "drift"}, {verb: "compare"}} {
 				t.Run(test.verb, func(t *testing.T) {
 					c := qt.New(t)
 					args := []string{test.verb, "--db-url", "sqlite://" + filepath.Join(dir, source.name+test.verb+".db")}
