@@ -37,14 +37,14 @@ type Comparison struct {
 	// CockroachDB take REFERENCES parent (a, b) over PRIMARY KEY (b, a), while MySQL
 	// answers with Error 6125 and MariaDB with errno 150.
 	ForeignKeyMatchesKeyInAnyOrder bool `json:"foreign_key_matches_key_in_any_order,omitempty"`
-	// ForeignKeyKeyIsInline reports that only a key the referenced table
-	// declares, as a primary key or a UNIQUE column or constraint, is taken as
-	// the key a foreign key references, and a standalone unique index is not.
-	// SQLite matches a foreign key against a unique index under the collation
-	// of each index part and reports a mismatch at the first write rather than
-	// at CREATE TABLE, and the schema model does not carry that collation, so
-	// only an inline key can be verified.
-	ForeignKeyKeyIsInline bool `json:"foreign_key_key_is_inline,omitempty"`
+	// ForeignKeyIgnoresStandaloneUniqueIndex reports that a standalone unique
+	// index is not taken as the key a foreign key references: only a key the
+	// referenced table declares, as a primary key or a UNIQUE column or
+	// constraint, is. SQLite matches a foreign key against a unique index under
+	// the collation of each index part and reports a mismatch at the first
+	// write rather than at CREATE TABLE, and the schema model does not carry
+	// that collation, so only a declared key can be verified.
+	ForeignKeyIgnoresStandaloneUniqueIndex bool `json:"foreign_key_ignores_standalone_unique_index,omitempty"`
 	// ColumnPrimaryKeyIsTheTablesKey reports that a primary key a column declares
 	// is compared as the table's key where the table holds another key or none:
 	// the planner has a statement for a change of the key, in both directions, and

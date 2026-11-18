@@ -144,14 +144,14 @@ func cockroachDB() descriptor.Dialect {
 
 		// How the common model is lowered for the engine.
 		GeneratedColumnDefault: "STORED",
+		// Measured on CockroachDB v26.4.0: a foreign key to a column no unique key
+		// covers fails at CREATE TABLE with 23503, indexed or not.
+		ForeignKeyReferencesCheckedAtCreate: true,
 		// Comparison: what comparing a declaration with a catalog reads.
 		// A probe's view goes in a schema, and a routine body is stored
 		// reflowed and qualified: measured on v26.3.2, `SELECT * FROM
 		// public.items` is stored as `SELECT public.items.id, ... FROM
 		// f1.public.items;` (stokaro/ptah#4058).
-		// Measured on CockroachDB v26.4.0: a foreign key to a column no unique key
-		// covers fails at CREATE TABLE with 23503, indexed or not.
-		ForeignKeyReferencesCheckedAtCreate: true,
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},

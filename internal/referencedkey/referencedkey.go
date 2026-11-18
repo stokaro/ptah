@@ -4,8 +4,8 @@
 // key, the leftmost prefix of an index, or any columns where the server builds
 // the index itself.
 //
-// The built-in renderer's schema validation and the schema-diff check of a
-// --from document both ask [Check], so the rule they apply cannot drift apart.
+// The built-in renderer's schema validation and the schema-diff check of each
+// document side both ask [Check], so the rule they apply cannot drift apart.
 package referencedkey
 
 import (
@@ -18,7 +18,6 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
-	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/tablelookup"
 )
@@ -128,10 +127,10 @@ func tableIndexesHaveUniqueKey(
 	columns []string,
 	same func(key, referenced []string) bool,
 ) bool {
-	// Where the descriptor says ForeignKeyKeyIsInline, accepting a standalone
+	// Where the descriptor says ForeignKeyIgnoresStandaloneUniqueIndex, accepting a standalone
 	// unique index could produce a deferred "foreign key mismatch" at the first
 	// write.
-	if described, found := platform.Lookup(dialect); found && described.Comparison.ForeignKeyKeyIsInline {
+	if described, found := platform.Lookup(dialect); found && described.Comparison.ForeignKeyIgnoresStandaloneUniqueIndex {
 		return false
 	}
 	indexOwners := schemamodel.ResolveIndexTableNames(database.Indexes, database.Tables)
@@ -234,7 +233,7 @@ func indexHasFullColumnPrefix(index schemamodel.Index, columns []string) bool {
 		return false
 	}
 	indexType := strings.ToUpper(strings.TrimSpace(index.Type))
-	if (indexType != "" && indexType != "BTREE") || mysqlIndexParser(index) != "" {
+	if (indexType != "" && indexType != "BTREE") || indexServesNoForeignKey(index) {
 		return false
 	}
 	if len(index.Parts) == 0 {
@@ -281,14 +280,24 @@ func indexedReferenceError(dialect string, table schemamodel.Table, columns []st
 	}
 }
 
-// mysqlIndexParser is the FULLTEXT parser an index declares, the MySQL owner's
-// index option, and empty for an index that declares none.
-func mysqlIndexParser(index schemamodel.Index) string {
-	options, _, err := schemaext.FacetAs[*mysqlschema.DesiredIndex](index.Facets, mysqlschema.IndexKind)
-	if err != nil || options == nil {
-		return ""
+// foreignKeyRefusal is an index option whose owner says the index cannot be
+// the one a foreign key's referenced columns use, such as a MySQL FULLTEXT
+// parser. The owner answers, so this package names no dialect.
+type foreignKeyRefusal interface {
+	ServesNoForeignKey() bool
+}
+
+// indexServesNoForeignKey reports that an option of index refuses it as a
+// referenced key. Options that cannot be read refuse nothing.
+func indexServesNoForeignKey(index schemamodel.Index) bool {
+	options, err := index.Facets.Values()
+	if err != nil {
+		return false
 	}
-	return options.Parser
+	return slices.ContainsFunc(options, func(option schemaext.Value) bool {
+		refusal, ok := option.(foreignKeyRefusal)
+		return ok && refusal.ServesNoForeignKey()
+	})
 }
 
 // Problems reports, in declaration order, every foreign key of database whose

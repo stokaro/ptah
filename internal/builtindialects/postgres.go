@@ -160,10 +160,10 @@ func postgres() descriptor.Dialect {
 		// How the common model is lowered for the engine.
 		GeneratedTimeouts:      descriptor.GeneratedTimeouts{Lock: "3s", Statement: "30s"},
 		GeneratedColumnDefault: "STORED",
-		// Comparison: what comparing a declaration with a catalog reads.
 		// Measured on PostgreSQL 18: a foreign key to a column no unique key covers
 		// fails at CREATE TABLE with 42830, indexed or not.
 		ForeignKeyReferencesCheckedAtCreate: true,
+		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},

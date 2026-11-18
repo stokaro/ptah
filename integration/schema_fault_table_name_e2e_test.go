@@ -276,25 +276,63 @@ func TestSchemaDiffRefusesAReferenceFaultOfEitherDocument_FailurePathE2E(t *test
 	}
 }
 
-// TestSchemaDiffChecksTheSelectedTablesOfEitherDocument_HappyPathE2E runs the
-// rows above with child excluded. The rule reads the tables a run selects on
-// either side, as the community binary v1.3.0 does, so both diffs compare
-// parent alone. Validating the --from document before the selection refuses
-// the first row.
-func TestSchemaDiffChecksTheSelectedTablesOfEitherDocument_HappyPathE2E(t *testing.T) {
+// referenceParentAlone is the parent table of [schemaFaults]'s foreign-key
+// fault, without child.
+const referenceParentAlone = "CREATE TABLE parent (id bigint PRIMARY KEY, code text NOT NULL);\n"
+
+// TestSchemaDiffChecksTheWholeDocumentOfEitherSide_FailurePathE2E puts the
+// foreign-key fault on each side and excludes one of its two tables. The
+// community binary v1.3.0 creates each document whole on its dev database, so
+// it exits 1 with the server's 42830 in every row, whatever --exclude selects.
+// The rule reads the placed document, not the selection, so each row is
+// refused: checked on the selection, the parent rows plan a child with no key
+// or drop it, and the child rows report the schemas synced.
+func TestSchemaDiffChecksTheWholeDocumentOfEitherSide_FailurePathE2E(t *testing.T) {
+	c := qt.New(t)
+	fixture := newFaultFixture(c)
+	line := fmt.Sprintf(schemaFaults[1].line, fixture.current["dev"]+".parent")
+
+	for _, test := range []struct {
+		name     string
+		from, to string
+		excluded string
+		want     string
+	}{
+		{name: "faulty --from, parent excluded", from: schemaFaults[1].schema, to: referenceParentAlone, excluded: "{schema}.parent", want: "error: " + fromSideRefusal + line + "\n"},
+		{name: "faulty --from, child excluded", from: schemaFaults[1].schema, to: unkeyedReferenceSound, excluded: "{schema}.child", want: "error: " + fromSideRefusal + line + "\n"},
+		{name: "faulty --to, parent excluded", from: referenceParentAlone, to: schemaFaults[1].schema, excluded: "{schema}.parent", want: "error: " + line + "\n"},
+		{name: "faulty --to, child excluded", from: unkeyedReferenceSound, to: schemaFaults[1].schema, excluded: "{schema}.child", want: "error: " + line + "\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := fixture.runDocumentDiff(c, test.from, test.to, "--exclude", test.excluded)
+			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
+			c.Assert(result.ExitCode, qt.Equals, 2, comment)
+			c.Assert(result.Stderr, qt.Equals, test.want, comment)
+			c.Assert(result.Stdout, qt.Equals, "", comment)
+		})
+	}
+}
+
+// TestSchemaDiffChecksTheWholeDocumentOfEitherSide_HappyPathE2E is the control
+// for the rows above: the same exclusions over documents with no fault match
+// a table, so the diff compares what is left and reports it synced. An
+// exclusion that matched nothing would plan the excluded table here, and warn.
+func TestSchemaDiffChecksTheWholeDocumentOfEitherSide_HappyPathE2E(t *testing.T) {
 	c := qt.New(t)
 	fixture := newFaultFixture(c)
 
 	for _, test := range []struct {
 		name     string
 		from, to string
+		excluded string
 	}{
-		{name: "faulty --from, child excluded", from: schemaFaults[1].schema, to: unkeyedReferenceSound},
-		{name: "faulty --to, child excluded", from: unkeyedReferenceSound, to: schemaFaults[1].schema},
+		{name: "child excluded", from: unkeyedReferenceSound, to: referenceParentAlone, excluded: "{schema}.child"},
+		{name: "parent excluded", from: unkeyedReferenceSound, to: "CREATE TABLE child (id bigint PRIMARY KEY, code text);\n", excluded: "{schema}.parent"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fixture.runDocumentDiff(c, test.from, test.to, "--exclude", "{schema}.child")
+			result := fixture.runDocumentDiff(c, test.from, test.to, "--exclude", test.excluded)
 			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
 			c.Assert(result.ExitCode, qt.Equals, 0, comment)
 			c.Assert(result.Stdout, qt.Equals, "Schemas are synced, no changes to be made.\n", comment)

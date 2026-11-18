@@ -133,13 +133,13 @@ END`,
 		// How the common model is lowered for the engine.
 		GeneratedColumnDefault: "PERSISTED",
 		InlineEnum:             descriptor.InlineEnum{Type: "NVARCHAR(255)", Check: descriptor.InlineEnumCheckQuoted},
-		// Comparison: what comparing a declaration with a catalog reads.
-		// A UNIQUE constraint and a unique index are separate objects, so
-		// neither backs the other.
 		// Measured on SQL Server 2025 (17.0.5035.5): a foreign key to a column no
 		// primary or candidate key covers fails at CREATE TABLE with Msg 1776,
 		// indexed or not.
 		ForeignKeyReferencesCheckedAtCreate: true,
+		// Comparison: what comparing a declaration with a catalog reads.
+		// A UNIQUE constraint and a unique index are separate objects, so
+		// neither backs the other.
 		Comparison: descriptor.Comparison{
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 7},
 			TemporalDefaultFunctions:       true,

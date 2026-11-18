@@ -156,9 +156,9 @@ func CollectTargetIndexProblems(resolver schemaext.TargetResolver, database *sch
 //
 // Unlike the validation, which stops at its first refusal of any rule, it
 // reads every foreign key and nothing else, so a caller can hold a schema to
-// this rule alone. `schema diff` does that for a --from document, on the
-// placed and selected names, where the server refuses such a key at CREATE
-// TABLE.
+// this rule alone. `schema diff` does that for each side it reads from a
+// document, on the placed names and ahead of --exclude and --include, where
+// the server refuses such a key at CREATE TABLE.
 func CollectTargetForeignKeyReferenceProblems(
 	resolver schemaext.TargetResolver,
 	database *schemamodel.Database,
