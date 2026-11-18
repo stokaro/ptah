@@ -2000,6 +2000,15 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 
+	// The generated columns a type change of a column they read takes out of
+	// their table and puts back; see [generatedRebuild]. Their own column
+	// changes leave the diff: the rebuild adds each one as declared.
+	generatedRebuilds, err := planGeneratedRebuilds(diff, semantics, p.targetDialect())
+	if err != nil {
+		return nil, err
+	}
+	diff = withoutRebuiltColumnChanges(diff, generatedRebuilds, semantics)
+
 	// The views, materialized views and routines a column type change, a
 	// materialized view change or a view change the server cannot make in
 	// place drops and creates again. Every step below that would plan one of
@@ -2121,8 +2130,16 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 	result = append(result, features.aheadOfColumns...)
 	windows.Lifecycle = &featurehost.Span{Start: len(result), End: len(result)}
 
+	// 5e. A generated column that reads a column whose type changes leaves
+	// its table, behind a guard that refuses what the rebuild cannot restate.
+	result = dropRebuiltGeneratedColumns(result, generatedRebuilds)
+
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
 	result = p.addAndModifyTableColumns(result, diff)
+
+	// 6.1. The generated columns 5e dropped come back, with the indexes,
+	// CHECK constraints and comments the drop took.
+	result = restoreRebuiltGeneratedColumns(result, generatedRebuilds, diff.DeclaredUserTypes)
 	result = p.restoreKeptSequenceOwners(result, diff)
 
 	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
