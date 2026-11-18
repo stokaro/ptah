@@ -27,7 +27,7 @@ import (
 )
 
 // builtinLocks are the dialects whose locks Ptah ships, in registry order.
-var builtinLocks = []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb"}
+var builtinLocks = []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb", "oracle"}
 
 func described(name string, aliases ...string) descriptor.Dialect {
 	return descriptor.Dialect{
@@ -273,6 +273,11 @@ func TestRegister_FailurePath(t *testing.T) {
 			name:     "an exclusion check without a session lock",
 			services: []dblockext.Services{{Dialects: []string{"refused"}, Separate: separate, Exclusion: exclusion{}}},
 			wantErr:  `invalid lock service registration: the services of \["refused"\] check the exclusion of a lock no session holds`,
+		},
+		{
+			name:     "a lock a commit releases without a session lock",
+			services: []dblockext.Services{{Dialects: []string{"refused"}, Separate: separate, ReleasedByCommit: true}},
+			wantErr:  `invalid lock service registration: the services of \["refused"\] say a commit releases a lock no session holds`,
 		},
 	}
 	for _, test := range tests {

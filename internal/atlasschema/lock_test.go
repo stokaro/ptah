@@ -159,6 +159,7 @@ func TestEnsureApplyLockSupported_HappyPath(t *testing.T) {
 		{name: "mariadb", dialect: "mariadb"},
 		{name: "sqlserver", dialect: "sqlserver"},
 		{name: "sqlserver alias", dialect: "mssql"},
+		{name: "oracle", dialect: "oracle"},
 	}
 
 	for _, test := range tests {
@@ -179,31 +180,25 @@ func TestEnsureApplyLockSupported_FailurePath(t *testing.T) {
 		{
 			name: "sqlite", request: "--lock-timeout", dialect: "sqlite",
 			wantErr: `--lock-timeout requested a schema apply lock, and dialect "sqlite" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
+				`only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. ` +
 				`Remove --lock-timeout to apply without a lock`,
 		},
 		{
 			name: "clickhouse", request: "--lock-timeout", dialect: "clickhouse",
 			wantErr: `--lock-timeout requested a schema apply lock, and dialect "clickhouse" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
+				`only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. ` +
 				`Remove --lock-timeout to apply without a lock`,
 		},
 		{
 			name: "cockroachdb", request: "--lock-timeout", dialect: "cockroachdb",
 			wantErr: `--lock-timeout requested a schema apply lock, and dialect "cockroachdb" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
-				`Remove --lock-timeout to apply without a lock`,
-		},
-		{
-			name: "oracle", request: "--lock-timeout", dialect: "oracle",
-			wantErr: `--lock-timeout requested a schema apply lock, and dialect "oracle" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
+				`only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. ` +
 				`Remove --lock-timeout to apply without a lock`,
 		},
 		{
 			name: "environment variable names itself", request: "PTAH_LOCK_TIMEOUT", dialect: "sqlite",
 			wantErr: `PTAH_LOCK_TIMEOUT requested a schema apply lock, and dialect "sqlite" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
+				`only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. ` +
 				`Remove PTAH_LOCK_TIMEOUT to apply without a lock`,
 		},
 	}
@@ -235,6 +230,7 @@ func TestApplyLockSupported_HappyPath(t *testing.T) {
 		{name: "mariadb", dialect: "mariadb"},
 		{name: "sqlserver", dialect: "sqlserver"},
 		{name: "sqlserver alias", dialect: "mssql"},
+		{name: "oracle", dialect: "oracle"},
 	}
 
 	for _, test := range tests {
@@ -246,8 +242,8 @@ func TestApplyLockSupported_HappyPath(t *testing.T) {
 }
 
 // TestApplyLockSupported_FailurePath covers every connectable dialect outside
-// that set, Oracle included: the refusal and the note both key on this answer,
-// so a dialect missing from here would be told it has a lock.
+// that set: the refusal and the note both key on this answer, so a dialect
+// missing from here would be told it has a lock.
 func TestApplyLockSupported_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -256,7 +252,6 @@ func TestApplyLockSupported_FailurePath(t *testing.T) {
 		{name: "sqlite", dialect: "sqlite"},
 		{name: "clickhouse", dialect: "clickhouse"},
 		{name: "cockroachdb", dialect: "cockroachdb"},
-		{name: "oracle", dialect: "oracle"},
 		{name: "unknown", dialect: "frobnicate"},
 		{name: "empty", dialect: ""},
 	}

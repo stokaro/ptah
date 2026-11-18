@@ -16,9 +16,10 @@ import (
 
 // TestAdvisoryLock_NoWaitRefusesAHeldLockAtOnceLive: under [dblock.NoWait] a
 // lock another session holds is refused on the first try, on every engine
-// with a session advisory lock. Each engine is asked in its own spelling --
+// with a session lock. Each engine is asked in its own spelling --
 // pg_try_advisory_lock once, GET_LOCK with a zero wait, sp_getapplock with a
-// zero @LockTimeout -- so each has to answer. The context would outlast any
+// zero @LockTimeout, SELECT ... FOR UPDATE NOWAIT on Oracle -- so each has to
+// answer. The context would outlast any
 // wait, so a refusal that came from it would name the deadline instead; and
 // the lock is taken again under NoWait once it is free, so the refusal is
 // about the holder and not about NoWait itself.
@@ -33,6 +34,7 @@ func TestAdvisoryLock_NoWaitRefusesAHeldLockAtOnceLive(t *testing.T) {
 		{name: "mysql", engine: dbtarget.MySQL, dialect: "mysql"},
 		{name: "mariadb", engine: dbtarget.MariaDB, dialect: "mariadb"},
 		{name: "sqlserver", engine: dbtarget.SQLServer, dialect: "sqlserver"},
+		{name: "oracle", engine: dbtarget.Oracle, dialect: "oracle"},
 	}
 
 	for _, test := range tests {

@@ -117,9 +117,11 @@ transaction the record and the body commit together.
 
 Two runners against one database take the migration lock in turn. The second
 reads the record after the first released the lock, finds the digest applied,
-and runs nothing. CockroachDB has no session advisory lock, and Ptah takes none
-on Oracle or ClickHouse, so it runs every migration on those engines without
-one, repeatable migrations included: run one migrator at a time against them.
+and runs nothing. On Oracle the lock is a row lock that Ptah keeps on a session
+of its own; see [the Oracle page](../../databases/oracle/#the-migration-lock).
+CockroachDB has no session advisory lock, and Ptah takes none on ClickHouse, so
+it runs every migration on those two engines without one, repeatable migrations
+included: run one migrator at a time against them.
 
 Without the lock, the record still decides which of two runners executes a
 changed repeatable migration, on every engine but ClickHouse. Each run has an

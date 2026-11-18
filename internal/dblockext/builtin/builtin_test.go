@@ -12,29 +12,35 @@ import (
 	"ptah.run/internal/dblockext/mysql"
 )
 
-// lockAgreement is the lock protocol each built-in dialect's descriptor named
-// before these services replaced it, written out as it stood; the protocol
-// chose the arm of the switch in internal/dblock that took the lock. A dialect
-// left out took a no-op lock. The unbounded GET_LOCK wait MariaDB's descriptor
-// stated, 31,536,000 seconds, is pinned by the mysql package's tests.
+// lockAgreement is the lock protocol each built-in dialect takes. The first
+// five are the protocols the descriptors named before these services replaced
+// them, written out as they stood; the protocol chose the arm of the switch in
+// internal/dblock that took the lock. Oracle's row lock has no descriptor
+// spelling. A dialect left out takes a no-op lock. The unbounded GET_LOCK wait
+// MariaDB's descriptor stated, 31,536,000 seconds, is pinned by the mysql
+// package's tests.
 var lockAgreement = map[string]string{
 	platform.Postgres:   "pg-advisory",
 	platform.YugabyteDB: "pg-advisory",
 	platform.MySQL:      "get-lock",
 	platform.MariaDB:    "get-lock",
 	platform.SQLServer:  "app-lock",
+	platform.Oracle:     "row-lock",
 }
 
 // protocol names the shape of the services the way the descriptor named the
 // protocol: the PostgreSQL advisory lock is the session lock with an
-// exclusion check, and the coordination semaphore the one a separate session
-// holds. Each other session lock is told apart by the services that offer it.
+// exclusion check, the row lock the one a commit gives back, and the
+// coordination semaphore the one a separate session holds. Each other session
+// lock is told apart by the services that offer it.
 func protocol(services dblockext.Services) string {
 	switch {
 	case services.Separate != nil:
 		return "coordination-semaphore"
 	case services.Exclusion != nil:
 		return "pg-advisory"
+	case services.ReleasedByCommit:
+		return "row-lock"
 	case services.Session == mysql.MySQL().Session || services.Session == mysql.MariaDB().Session:
 		return "get-lock"
 	case services.Session != nil:
@@ -75,7 +81,7 @@ func TestLookup_FoldsSpellings(t *testing.T) {
 }
 
 func TestLookup_UnknownDialectTakesNoLock(t *testing.T) {
-	for _, dialect := range []string{"", "nonesuch", platform.SQLite, platform.CockroachDB, "spanner", platform.Oracle} {
+	for _, dialect := range []string{"", "nonesuch", platform.SQLite, platform.CockroachDB, "spanner", platform.ClickHouse} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			services := builtin.Lookup(dialect)

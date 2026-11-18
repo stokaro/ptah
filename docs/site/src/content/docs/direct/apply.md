@@ -142,7 +142,7 @@ ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --lock-tim
 Expected output on standard error:
 
 ```text
-error: --lock-timeout requested a schema apply lock, and dialect "sqlite" has none: only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. Remove --lock-timeout to apply without a lock
+error: --lock-timeout requested a schema apply lock, and dialect "sqlite" has none: only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. Remove --lock-timeout to apply without a lock
 ```
 
 Nothing is planned and nothing is applied. A URL that names its dialect is

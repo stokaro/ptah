@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dblockext"
 	"ptah.run/internal/dblockext/mysql"
+	"ptah.run/internal/dblockext/oracle"
 	"ptah.run/internal/dblockext/postgres"
 	"ptah.run/internal/dblockext/sqlserver"
 )
@@ -18,6 +19,7 @@ var services = index(
 	mysql.MySQL(),
 	mysql.MariaDB(),
 	sqlserver.Services(),
+	oracle.Services(),
 )
 
 func index(all ...dblockext.Services) map[string]dblockext.Services {

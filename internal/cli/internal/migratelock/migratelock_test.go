@@ -22,6 +22,7 @@ func TestEnsure_HappyPath(t *testing.T) {
 		{name: "mysql", dialect: "mysql"},
 		{name: "mariadb", dialect: "mariadb"},
 		{name: "sqlserver", dialect: "sqlserver"},
+		{name: "oracle", dialect: "oracle"},
 		{name: "alias resolves before the lookup", dialect: "postgresql"},
 	}
 
@@ -44,28 +45,21 @@ func TestEnsure_FailurePath(t *testing.T) {
 			name:    "sqlite",
 			dialect: "sqlite",
 			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "sqlite" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
+				`only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. ` +
 				`Remove --migration-lock-timeout to run without a lock`,
 		},
 		{
 			name:    "clickhouse",
 			dialect: "clickhouse",
 			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "clickhouse" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
+				`only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. ` +
 				`Remove --migration-lock-timeout to run without a lock`,
 		},
 		{
 			name:    "cockroachdb",
 			dialect: "cockroachdb",
 			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "cockroachdb" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
-				`Remove --migration-lock-timeout to run without a lock`,
-		},
-		{
-			name:    "oracle",
-			dialect: "oracle",
-			wantErr: `--migration-lock-timeout requested the migration advisory lock, and dialect "oracle" has none: ` +
-				`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
+				`only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. ` +
 				`Remove --migration-lock-timeout to run without a lock`,
 		},
 	}
@@ -368,7 +362,7 @@ func TestNameRequestDecide_FailurePath(t *testing.T) {
 			err := request.Decide("sqlite")
 
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantSpell+` requested the migration advisory lock, `+
-				`and dialect "sqlite" has none: only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. `+
+				`and dialect "sqlite" has none: only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. `+
 				`Remove `+test.wantSpell+` to run without a lock`))
 			var unsupported *migratelock.UnsupportedError
 			c.Assert(err, qt.ErrorAs, &unsupported)

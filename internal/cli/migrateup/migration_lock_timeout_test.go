@@ -32,7 +32,6 @@ func TestMigrateUpRefusesMigrationLockTimeoutBeforeConnecting(t *testing.T) {
 		{name: "sqlite", dbURL: "sqlite://target.db", dialect: "sqlite"},
 		{name: "clickhouse", dbURL: "clickhouse://127.0.0.1:1/db", dialect: "clickhouse"},
 		{name: "cockroachdb", dbURL: "cockroachdb://root@127.0.0.1:1/db", dialect: "cockroachdb"},
-		{name: "oracle", dbURL: "oracle://ptah@127.0.0.1:1/db", dialect: "oracle"},
 	}
 
 	for _, test := range tests {
@@ -226,6 +225,6 @@ func TestMigrateUpKeepsMigrationLockTimeoutOnLockingDialect(t *testing.T) {
 func fmtMigrationLockRefusal(request, dialect string) string {
 	return regexp.QuoteMeta(
 		request + ` requested the migration advisory lock, and dialect "` + dialect + `" has none: ` +
-			`only postgres, mysql, mariadb, sqlserver, yugabytedb take a session advisory lock. ` +
+			`only postgres, mysql, mariadb, sqlserver, yugabytedb, oracle take a session advisory lock. ` +
 			`Remove ` + request + ` to run without a lock`)
 }

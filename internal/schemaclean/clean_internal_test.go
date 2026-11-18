@@ -327,7 +327,7 @@ func TestRevisionTableProbeBindsNamesInTheDialectsPlaceholderSyntax(t *testing.T
 			c.Assert(args[1:], qt.DeepEquals,
 				[]any{
 					revisiontable.Atlas, revisiontable.Ptah, revisiontable.PtahLog, revisiontable.PtahRepeatable,
-					revisiontable.Tags, revisiontable.ApplyLog, revisiontable.Seeds,
+					revisiontable.Tags, revisiontable.ApplyLog, revisiontable.Seeds, revisiontable.Locks,
 				})
 			c.Assert(query, qt.Contains, test.wantCatalog)
 			for _, token := range test.wantTokens {

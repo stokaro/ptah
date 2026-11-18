@@ -87,7 +87,8 @@ var registered = struct {
 // the canonical name of a dialect the process registry describes
 // (platform.Register), and no other lock service serves it. Each Services
 // value takes a lock, through Session or Separate and not both, and an
-// Exclusion check goes with a Session lock only. Every refusal wraps
+// Exclusion check and ReleasedByCommit go with a Session lock only. Every
+// refusal wraps
 // [ErrInvalidRegistration], and on a refusal nothing is added.
 //
 // Registration only adds, and lasts for the rest of the process. Register is
@@ -129,6 +130,9 @@ func validServices(served dblockext.Services) error {
 			ErrInvalidRegistration, served.Dialects)
 	case served.Exclusion != nil && served.Session == nil:
 		return fmt.Errorf("%w: the services of %q check the exclusion of a lock no session holds",
+			ErrInvalidRegistration, served.Dialects)
+	case served.ReleasedByCommit && served.Session == nil:
+		return fmt.Errorf("%w: the services of %q say a commit releases a lock no session holds",
 			ErrInvalidRegistration, served.Dialects)
 	default:
 		return nil
@@ -226,10 +230,13 @@ func (l *Lock) Supported() bool {
 // from its holder. A lock [Acquire] took reports a loss: it belongs to a
 // session of its own -- a database session from the pool, or a session the
 // engine's lock service opens apart from the pool -- which can end while the
-// work it guards goes on over other sessions. A lock [WithLockSession] took returns nil, a channel that
-// never closes: the work runs on the session that holds the lock, so the end
-// of that session fails the work itself. So does a no-op lock. A release is
-// not a loss and closes nothing.
+// work it guards goes on over other sessions. A lock [WithLockSession] took
+// on the session it pins returns nil, a channel that never closes: the work
+// runs on the session that holds the lock, so the end of that session fails
+// the work itself. A lock a commit gives back
+// (dblockext.Services.ReleasedByCommit) is never taken on that session, and
+// reports a loss as one [Acquire] took does. A no-op lock returns nil too. A
+// release is not a loss and closes nothing.
 func (l *Lock) Done() <-chan struct{} {
 	if l == nil || l.holding == nil {
 		return nil
@@ -366,7 +373,10 @@ func (l *Lock) Release(ctx context.Context) error {
 // WithLockSession pins one physical database session, acquires name on that
 // session, and runs use with the same session. The original pool is retained
 // only for the lock service: a second session from it is the witness of an
-// exclusion check, and a lock held apart from the pool is taken through it.
+// exclusion check, and a lock held apart from the pool is taken through it. A
+// lock that a commit gives back (dblockext.Services.ReleasedByCommit) is taken
+// on a second session from it too, since the work's own commits would give
+// the lock back on the pinned one.
 // Dialects without advisory-lock semantics still pin the callback session and
 // receive an explicit no-op lock.
 //
@@ -468,6 +478,9 @@ func acquireSessionLock(
 	if lock, handled, err := nativeLock(ctx, session, name, timeout); handled {
 		return lock, err
 	}
+	if servicesOf(dialect).ReleasedByCommit {
+		return acquireOnOwnSession(ctx, witness, dialect, name, timeout, false)
+	}
 	return acquireOnSession(ctx, session, witness, dialect, name, timeout, false)
 }
 
@@ -484,6 +497,9 @@ func acquirePreviewLock(
 	}
 	if lock, handled, err := nativePreviewLock(session, dialect, name); handled {
 		return lock, err
+	}
+	if servicesOf(dialect).ReleasedByCommit {
+		return acquireOnOwnSession(ctx, witness, dialect, name, timeout, true)
 	}
 	return acquireOnSession(ctx, session, witness, dialect, name, timeout, true)
 }
@@ -550,7 +566,40 @@ func Acquire(
 		return lock, nil
 	}
 
-	lock, acquireErr := acquireOnSession(ctx, dblockext.SQLSession{Conn: session}, conn, dialect, name, timeout, false)
+	return holdOnSession(ctx, session, conn, dialect, name, timeout, false)
+}
+
+// acquireOnOwnSession takes a session lock on a session of its own from pool,
+// which runs nothing but the lock's statements, and watches that session as
+// [Acquire] does. preview marks a run that writes nothing (see
+// [WithPreviewLockSession]).
+func acquireOnOwnSession(
+	ctx context.Context,
+	pool dblockext.Pool,
+	dialect,
+	name string,
+	timeout time.Duration,
+	preview bool,
+) (*Lock, error) {
+	session, err := pool.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return holdOnSession(ctx, session, pool, dialect, name, timeout, preview)
+}
+
+// holdOnSession takes a session lock on session, which belongs to the lock
+// from then on, and starts the watch that reports its loss.
+func holdOnSession(
+	ctx context.Context,
+	session *sql.Conn,
+	pool dblockext.Pool,
+	dialect,
+	name string,
+	timeout time.Duration,
+	preview bool,
+) (*Lock, error) {
+	lock, acquireErr := acquireOnSession(ctx, dblockext.SQLSession{Conn: session}, pool, dialect, name, timeout, preview)
 	if acquireErr != nil {
 		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}

@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/execoutcome"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/revisiontext"
+	"ptah.run/internal/servercode"
 )
 
 const (
@@ -1579,6 +1580,10 @@ type upRetryPlan struct {
 	// reuseRevision says a dirty revision row for this version already exists,
 	// so the attempt must rewrite that row instead of inserting a second one.
 	reuseRevision bool
+	// readState is the state column of that row as this run read it, in the
+	// native layout. The rewrite matches it, so a row another run rewrote
+	// after the read is not rewritten again (see [ErrRevisionClaimLost]).
+	readState string
 	// resumeFrom is the 1-based index of the first statement this attempt runs.
 	// Everything below it was committed by the earlier attempt.
 	resumeFrom int
@@ -1619,7 +1624,11 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 	if err := m.verifyCommittedPrefix(*revision, migration, MigrationDirectionUp, "resume automatically"); err != nil {
 		return upRetryPlan{}, err
 	}
-	return upRetryPlan{reuseRevision: true, resumeFrom: resumeFrom}, nil
+	return upRetryPlan{
+		reuseRevision: true,
+		readState:     encodeRevisionState(revision.State, revision.Direction),
+		resumeFrom:    resumeFrom,
+	}, nil
 }
 
 // resumeStatementFor returns the 1-based statement index a retry restarts at,
@@ -1809,10 +1818,21 @@ func (m *Migrator) recordPendingMigrationRevisionOn(
 	plan upRetryPlan,
 ) error {
 	if plan.reuseRevision {
-		return m.restartMigrationRevisionOn(ctx, conn, migration, startedAt, plan.resumeFrom-1)
+		return m.restartMigrationRevisionOn(ctx, conn, migration, startedAt, plan.resumeFrom-1, plan.readState)
 	}
 	return m.beginMigrationRevisionOn(ctx, conn, migration, startedAt)
 }
+
+// ErrRevisionClaimLost is returned when another run wrote a migration's
+// revision row after this run read the revision table: the row this run was
+// about to insert is there already, or the dirty row it was about to rewrite
+// for a retry no longer has the state this run read. The run stops before any
+// statement of the body, so the body runs once, in the run that wrote the row.
+//
+// The migration lock keeps two runs from reading the same table at once. This
+// is what a run that holds no lock is told, such as one run with
+// [Migrator.WithoutMigrationLock] or on an engine that takes no lock.
+var ErrRevisionClaimLost = errors.New("another run recorded this migration after this run read the revision table")
 
 // restartMigrationRevisionOn rewrites an existing revision row back to pending
 // for a fresh attempt, recording alreadyApplied as the progress this attempt
@@ -1824,6 +1844,7 @@ func (m *Migrator) restartMigrationRevisionOn(
 	migration *Migration,
 	startedAt time.Time,
 	alreadyApplied int,
+	readState string,
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
@@ -1834,11 +1855,7 @@ func (m *Migrator) restartMigrationRevisionOn(
 	if m.revisionTableFormat.isAtlas() {
 		return m.restartAtlasMigrationRevisionOn(ctx, conn, migration, startedAt, alreadyApplied)
 	}
-	query := sqlutil.Rebind(m.conn.Info().Dialect, m.restartMigrationSQL())
-	return executeSQLOn(
-		ctx,
-		conn,
-		query,
+	args := []any{
 		migration.Description,
 		nativeRevisionTimestamp(startedAt),
 		migrationStatePending,
@@ -1847,7 +1864,37 @@ func (m *Migrator) restartMigrationRevisionOn(
 		0,
 		m.dirtyRevisionChecksum(migration, MigrationDirectionUp, alreadyApplied),
 		migration.Version,
-	)
+	}
+	if readState == "" || !m.countsRevisionRestart(conn) {
+		return executeSQLOn(ctx, conn, sqlutil.Rebind(m.conn.Info().Dialect, m.restartMigrationSQL()), args...)
+	}
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.restartMigrationSQL()+" AND state = ?")
+	result, err := conn.ExecContext(ctx, query, append(args, readState)...)
+	if err != nil {
+		return err
+	}
+	restarted, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count the restarted revision row: %w", err)
+	}
+	if restarted == 0 {
+		return fmt.Errorf("%w: the row of migration %d no longer has state %q", ErrRevisionClaimLost,
+			migration.Version, readState)
+	}
+	return nil
+}
+
+// countsRevisionRestart reports whether the rewrite of a dirty row on conn
+// matches the state this run read and counts what it rewrote, so that two
+// retries of one failed attempt cannot both run its body. It does on the
+// migrator's own connection, which is the one every attempt that runs outside
+// a transaction records on. It does not on a copy of the connection bound to a
+// transaction, whose count may be a stand-in (see
+// [dbschema.DatabaseConnection.ExecContext]), where a rewrite that matched
+// nothing would go on as one that matched; nor on an engine whose UPDATE
+// counts no rows.
+func (m *Migrator) countsRevisionRestart(conn *dbschema.DatabaseConnection) bool {
+	return conn == m.conn && !m.revisionTable().UncountedUpdates
 }
 
 func (m *Migrator) restartAtlasMigrationRevisionOn(
@@ -1887,9 +1934,50 @@ func (m *Migrator) beginMigrationRevisionOn(
 	if handled, err := m.beginProviderRevision(ctx, conn, migration, startedAt); handled {
 		return err
 	}
+	var err error
 	if m.revisionTableFormat.isAtlas() {
-		return m.beginAtlasMigrationRevisionOn(ctx, conn, migration, startedAt)
+		err = m.beginAtlasMigrationRevisionOn(ctx, conn, migration, startedAt)
+	} else {
+		err = m.beginNativeMigrationRevisionOn(ctx, conn, migration, startedAt)
 	}
+	if err != nil {
+		return m.settleRevisionInsert(ctx, conn, migration, err)
+	}
+	return nil
+}
+
+// settleRevisionInsert decides an INSERT of a revision row the server
+// refused. This run read no row for the version, so a row there now is
+// another run's: a refused statement wrote nothing of its own. That run is
+// applying the migration or has, and this one stops with
+// [ErrRevisionClaimLost]. An error the server did not answer, such as a lost
+// connection, may follow an INSERT that took effect, and stands as it is. So
+// does a refusal when no row is there, and one whose row cannot be read, as on
+// a transaction the refusal aborted.
+func (m *Migrator) settleRevisionInsert(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	insertErr error,
+) error {
+	if sqlState, number := servercode.Read(insertErr); sqlState == "" && number == 0 {
+		return insertErr
+	}
+	query := sqlutil.Rebind(m.conn.Info().Dialect, m.getRevisionSQL())
+	revision, err := m.scanRevisionRow(conn.QueryRowContext(ctx, query, m.migrationRevisionVersionArg(migration)))
+	if err != nil {
+		return insertErr
+	}
+	return fmt.Errorf("%w: the row of migration %d has state %q: %w", ErrRevisionClaimLost,
+		migration.Version, revision.State, insertErr)
+}
+
+func (m *Migrator) beginNativeMigrationRevisionOn(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	startedAt time.Time,
+) error {
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.beginMigrationSQL())
 	return executeSQLOn(
 		ctx,

@@ -297,9 +297,37 @@ it stay applied and the revision row counts them. See
 `--tx-mode all` is refused.
 
 `--migrations-engine` is refused on Oracle, because the revision table has no
-engine clause to carry it. Ptah takes no advisory lock on Oracle, so two
-`ptah migrations up` runs against one schema are not serialized: run one at a
-time.
+engine clause to carry it.
+
+### The migration lock
+
+Two `ptah migrations up` runs against one schema take the migration lock in
+turn, as on the other engines with a lock: the second waits for the first, then
+finds nothing pending. `--migration-lock-timeout` bounds the wait, and a lock
+still held when it ends refuses the run with `timed out acquiring migration lock
+"ptah_migrate" for oracle after 10s`. `ptah schema apply` takes its own lock the
+same way.
+
+The lock is a row lock. Ptah keeps one row per lock name in the table
+`ptah_locks`, which it creates in the session's schema the first time it takes
+a lock there, and locks that row with `SELECT ... FOR UPDATE NOWAIT`, asked
+again until the wait ends. Creating the table needs `CREATE TABLE`, which a
+migration needs already. Schema reads leave `ptah_locks` out, as they leave out
+the revision table, so a diff never plans to drop it.
+
+Oracle commits every schema statement, and a commit gives a row lock back. So
+the lock lives on a database session of its own that runs nothing else, and
+the migration runs on other sessions. Oracle's named lock, `DBMS_LOCK`, would
+survive a commit, but only `SYS` can grant `EXECUTE` on it, so an ordinary
+account cannot take it.
+
+A run that holds no lock, such as `ptah-compat migrate apply --skip-lock`, is
+still not allowed to apply a migration twice. When another run records the same
+version first, the INSERT of the revision row fails on its key, and the run
+stops with `another run recorded this migration after this run read the
+revision table` before any statement of the body. An `--allow-dirty` retry rewrites the failed
+row only while it still has the state the retry read, so of two retries of one
+failed migration, the second stops with the same error.
 
 ## Open work
 

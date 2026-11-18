@@ -55,7 +55,7 @@ func TestSupportedDialects_HappyPath(t *testing.T) {
 	dialects := dblock.SupportedDialects()
 
 	// The order is the dialect registry's, which a refusal prints.
-	c.Assert(dialects, qt.DeepEquals, []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb"})
+	c.Assert(dialects, qt.DeepEquals, []string{"postgres", "mysql", "mariadb", "sqlserver", "yugabytedb", "oracle"})
 	for _, dialect := range dialects {
 		c.Assert(dblock.Supported(dialect), qt.IsTrue, qt.Commentf("dialect %q", dialect))
 	}

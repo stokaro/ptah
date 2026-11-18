@@ -81,6 +81,14 @@ const (
 	// and applying that plan loses the record of every seed run.
 	Seeds = "schema_seeds"
 
+	// Locks is the table Ptah's lock on Oracle keeps one row per lock name
+	// in, and locks the row of. internal/dblockext/oracle creates it in the
+	// session's schema the first time it takes a lock there. No setting
+	// renames it, so it is in [NativeNames] and every reader leaves it out:
+	// read as a table no declaration has, `schema apply` would plan to drop
+	// the table its own lock holds a row of.
+	Locks = "ptah_locks"
+
 	// PtahOperatorVersion is the generic operator marker for migrations without
 	// a mapped source identity. Current mapped writes use the source-identity
 	// marker instead, so a Flyway row with this generic value is eligible for
@@ -105,7 +113,7 @@ const (
 // DefaultNames returns the migrator's bookkeeping tables for every supported
 // revision-table format, when no explicit table name is configured: the
 // revision tables of both formats, the native operation log, [Tags],
-// [ApplyLog] and [Seeds].
+// [ApplyLog], [Seeds] and [Locks].
 //
 // Callers that enumerate bookkeeping tables in a live database must iterate all
 // of them rather than picking the one matching the current configuration: a
@@ -117,16 +125,16 @@ const (
 // only these can go missing from a schema snapshot; a custom name is
 // read back as an ordinary table and needs no restoring.
 func DefaultNames() []string {
-	return []string{Atlas, Ptah, PtahLog, PtahRepeatable, Tags, ApplyLog, Seeds}
+	return []string{Atlas, Ptah, PtahLog, PtahRepeatable, Tags, ApplyLog, Seeds, Locks}
 }
 
 // NativeNames returns the tables Ptah's own bookkeeping writes under their
 // default names: the native revision table, its operation log, its record of
 // repeatable migrations, [Tags], which either revision format writes and
-// which only Ptah knows, the schema apply log [ApplyLog], and the seed ledger
-// [Seeds].
+// which only Ptah knows, the schema apply log [ApplyLog], the seed ledger
+// [Seeds], and the lock table [Locks].
 func NativeNames() []string {
-	return []string{Ptah, PtahLog, PtahRepeatable, Tags, ApplyLog, Seeds}
+	return []string{Ptah, PtahLog, PtahRepeatable, Tags, ApplyLog, Seeds, Locks}
 }
 
 // IsNative reports whether name is one of [NativeNames].
@@ -160,12 +168,12 @@ func IsDefault(name string) bool {
 // `name NOT IN (` + NativeSQLNames + `)`. It is a constant so a query declared
 // as one can use it; TestSQLNamesMatchTheNameLists keeps it equal to the list.
 const NativeSQLNames = "'" + Ptah + "', '" + PtahLog + "', '" + PtahRepeatable + "', '" + Tags + "', '" +
-	ApplyLog + "', '" + Seeds + "'"
+	ApplyLog + "', '" + Seeds + "', '" + Locks + "'"
 
 // DefaultSQLNames is [DefaultNames] as SQL string literals separated by commas,
 // as [NativeSQLNames] is for the native set.
 const DefaultSQLNames = "'" + Atlas + "', '" + Ptah + "', '" + PtahLog + "', '" + PtahRepeatable + "', '" +
-	Tags + "', '" + ApplyLog + "', '" + Seeds + "'"
+	Tags + "', '" + ApplyLog + "', '" + Seeds + "', '" + Locks + "'"
 
 // Configured returns the bookkeeping tables a migrator configured with format
 // and table writes: the revision table, for Ptah's native format the operation

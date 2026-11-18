@@ -47,6 +47,7 @@ type Request struct {
 // on. SQLSession and a pinned *dbschema.DatabaseConnection satisfy it.
 type Session interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) dataext.Row
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
 // Pool hands out database sessions of their own, which the caller closes.
@@ -133,6 +134,11 @@ type Services struct {
 	// Exclusion proves that a Session lock excludes other sessions. Nil
 	// proves nothing.
 	Exclusion ExclusionCheck
+	// ReleasedByCommit reports that the end of the transaction which took a
+	// Session lock gives it back too, as it does a row lock. The session that
+	// holds such a lock must run nothing else, so dblock takes it on a
+	// session of its own even where the caller pins one for its work.
+	ReleasedByCommit bool
 	// Separate takes a lock that a session of the service's own holds.
 	Separate SeparateLock
 }
@@ -143,7 +149,8 @@ func (s Services) Locks() bool {
 }
 
 // SQLSession adapts a database/sql connection to the lock query contract.
-// It retains the caller's ownership of the physical connection.
+// It retains the caller's ownership of the physical connection. ExecContext
+// is the connection's own.
 type SQLSession struct{ *sql.Conn }
 
 // QueryRowContext returns the SQL driver's row through the shared query contract.
