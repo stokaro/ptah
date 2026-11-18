@@ -469,7 +469,7 @@ func TestFold_RaisesSeverityAndKeepsTheStrongestAccess(t *testing.T) {
 		Severity: safety.Warning, Reason: "lower", Access: schemaext.AccessNarrows, AccessReason: "weaker",
 	})
 	c.Assert(text, qt.DeepEquals, safety.StatementAssessment{
-		Index: 1, NodeType: "sql", Statement: "CREATE POLICY p ON t USING (true)",
+		Index: 1, NodeType: "sql", Subject: "p", Statement: "CREATE POLICY p ON t USING (true)",
 		Severity: safety.Destructive, Reason: "can widen access: admits every row",
 		Access: schemaext.AccessWidens, AccessReason: "admits every row",
 	})

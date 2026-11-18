@@ -1159,6 +1159,12 @@ judges them, the most severe impact wins, and a statement an owner declined is
 `Destructive`. Every other statement is read by its words. This changes the Go
 API; pre-v1, so no compatibility is owed.
 
+Each assessment `AssessSQL` returns names its statement's object in `Subject`,
+read from the statement's leading words. `migration/safety.StatementAction`
+reads the words before that name, such as `CREATE TABLE` or `ALTER TABLE`, and
+joins the actions of several statements with `"; "`. It names no object and no
+value, so it is read beside `Subject`.
+
 All `migration/planner.GenerateSchemaDiff*` functions and `Planner.GenerateMigrationAST`
 require the caller's context and selected runtime. AST planning consumes
 `featureplan.Runtime`. SQL planning consumes `planner.Runtime`, which adds

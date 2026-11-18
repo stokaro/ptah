@@ -237,39 +237,75 @@ func statementSubject(statement, target string) string {
 		return ""
 	}
 	words := subjectWords{upper: split[0].Words, source: split[0].SourceWords}
-	if len(words.upper) == 0 {
-		return ""
+	return words.objectNames(words.subject())
+}
+
+// StatementAction names what each statement of sql does, read from its
+// leading words as the assessment's Subject is read: the words before the
+// object's name, uppercased, such as `CREATE TABLE`, `ALTER TABLE`, `CREATE
+// UNIQUE INDEX`, `DROP VIEW IF EXISTS` or `INSERT INTO`, and the first word
+// alone for a statement whose object's name the words do not give, such as
+// `DO` or `GRANT`. The actions of several statements are joined with "; ", in
+// order, and sql with no statement has none. target selects the lexer as it
+// does for [AssessSQL].
+//
+// It names no object and no value, so two statements that do the same thing
+// to objects of different names, or with different values, have one action:
+// it is read beside Subject, which names the object.
+func StatementAction(sql, target string) string {
+	split := lintscan.Split(sql, lintscan.ForDialect(target))
+	actions := make([]string, 0, len(split))
+	for _, statement := range split {
+		words := subjectWords{upper: statement.Words, source: statement.SourceWords}
+		if len(words.upper) == 0 {
+			continue
+		}
+		name := words.subject()
+		if words.objectNames(name) == "" {
+			actions = append(actions, words.upper[0])
+			continue
+		}
+		actions = append(actions, strings.Join(words.upper[:name], " "))
+	}
+	return strings.Join(actions, "; ")
+}
+
+// subject returns the index of the object's name in a statement's words, as
+// [statementSubject] reads it, and -1 when the words name no object it reads.
+func (w subjectWords) subject() int {
+	if len(w.upper) == 0 {
+		return -1
 	}
 	at := 1
-	switch words.upper[0] {
+	switch w.upper[0] {
 	case "CREATE":
-		at = words.skip(at, "OR", "REPLACE")
-		at = words.skip(at, "OR", "ALTER")
-		return words.objectNames(words.kind(at))
+		at = w.skip(at, "OR", "REPLACE")
+		at = w.skip(at, "OR", "ALTER")
+		return w.kind(at)
 	case "ALTER", "DROP":
-		return words.objectNames(words.kind(at))
+		return w.kind(at)
 	case "COMMENT":
-		if !words.at(at, "ON") {
-			return ""
+		if !w.at(at, "ON") {
+			return -1
 		}
-		return words.objectNames(words.kind(at + 1))
+		return w.kind(at + 1)
 	case "INSERT", "UPSERT", "REPLACE":
-		return words.objectNames(words.skip(words.pastAny(at, insertModifiers), "INTO"))
+		return w.skip(w.pastAny(at, insertModifiers), "INTO")
 	case "UPDATE":
-		return words.objectNames(words.skip(words.pastAny(at, updateModifiers), "ONLY"))
+		return w.skip(w.pastAny(at, updateModifiers), "ONLY")
 	case "TRUNCATE":
-		return words.objectNames(words.skip(words.skip(at, "TABLE"), "ONLY"))
+		return w.skip(w.skip(at, "TABLE"), "ONLY")
 	case "DELETE":
-		return words.objectNames(words.skip(words.skip(words.pastAny(at, deleteModifiers), "FROM"), "ONLY"))
+		return w.skip(w.skip(w.pastAny(at, deleteModifiers), "FROM"), "ONLY")
 	case "REFRESH":
-		if !words.at(at, "MATERIALIZED") || !words.at(at+1, "VIEW") {
-			return ""
+		if !w.at(at, "MATERIALIZED") || !w.at(at+1, "VIEW") {
+			return -1
 		}
-		return words.objectNames(words.skip(at+2, "CONCURRENTLY"))
+		return w.skip(at+2, "CONCURRENTLY")
 	case "PRAGMA":
-		return words.objectNames(at)
+		return at
 	}
-	return ""
+	return -1
 }
 
 // subjectKinds are the kinds of object a CREATE, an ALTER, a DROP or a

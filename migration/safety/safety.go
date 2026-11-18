@@ -465,6 +465,9 @@ func judgeNullFillPair(assessment *StatementAssessment, statement, target string
 // CASCADE it stays destructive, since it also drops the objects that depend on
 // the dropped one.
 //
+// Each assessment names the object its statement acts on in Subject, read
+// from the statement's leading words as the target's lexer splits them.
+//
 // A missing context or runtime wraps [schemaext.ErrInvalidValue]; a target
 // without a splitter wraps [ptah.run/core/ptaherr.ErrUnsupportedDialect]. A
 // runtime error or cancellation returns no assessments.
@@ -477,6 +480,7 @@ func AssessSQL(ctx context.Context, runtime Runtime, target string, statements [
 	ownWords := make([]bool, 0, len(statements))
 	for i, statement := range statements {
 		assessment := assessStatement(statement, false, judgments[i])
+		assessment.Subject = statementSubject(statement, target)
 		assessment.Index = i + 1
 		assessments = append(assessments, assessment)
 		ownWords = append(ownWords, judgments[i] == nil)
