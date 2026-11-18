@@ -127,13 +127,12 @@ func migrateLintReplayErrorText(file migrationlint.File, failed *migrationreplay
 // counts that one file.
 func writeMigrateLintTextReplayFailure(
 	w io.Writer,
-	analysis migrationlint.Analysis,
-	revisionVersions map[int64]string,
+	opts MigrateLintOptions,
 	failure MigrateLintReplayFailure,
 	now func() time.Time,
 ) error {
 	start := now()
-	header := buildMigrateLintText(analysis, revisionVersions, nil).header
+	header := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions, nil, opts.fileOrder).header
 	if header == "" {
 		header = "Analyzing changes (1 migration in total):"
 	}

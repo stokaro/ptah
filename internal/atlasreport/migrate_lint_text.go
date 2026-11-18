@@ -41,9 +41,9 @@ func writeMigrateLintText(w io.Writer, opts MigrateLintOptions, now func() time.
 		return fmt.Errorf("migration lint analysis is required")
 	}
 	if opts.ReplayFailure != nil {
-		return writeMigrateLintTextReplayFailure(w, *opts.Analysis, opts.RevisionVersions, *opts.ReplayFailure, now)
+		return writeMigrateLintTextReplayFailure(w, opts, *opts.ReplayFailure, now)
 	}
-	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions, opts.Sources)
+	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions, opts.Sources, opts.fileOrder)
 	if model.analyzedCount == 0 {
 		// No analyzed versions means there is no report to render.
 		return nil
@@ -256,8 +256,9 @@ func buildMigrateLintText(
 	analysis migrationlint.Analysis,
 	revisionVersions map[int64]string,
 	sources map[int64]MigrateLintSource,
+	order func([]migrationlint.File) func(a, b migrationlint.File) int,
 ) migrateLintText {
-	upFiles := sortedUpFiles(analysis.Files())
+	upFiles := sortedUpFiles(analysis.Files(), order)
 	diagsByFile := diagnosticsByFile(sourcedFindings(analysis, sources))
 
 	firstSelected := -1
@@ -305,7 +306,10 @@ func buildMigrateLintText(
 	return model
 }
 
-func sortedUpFiles(files []migrationlint.File) []migrationlint.File {
+func sortedUpFiles(
+	files []migrationlint.File,
+	order func([]migrationlint.File) func(a, b migrationlint.File) int,
+) []migrationlint.File {
 	upFiles := make([]migrationlint.File, 0, len(files))
 	for _, file := range files {
 		if file.Direction != "up" || file.Ignored {
@@ -313,10 +317,7 @@ func sortedUpFiles(files []migrationlint.File) []migrationlint.File {
 		}
 		upFiles = append(upFiles, file)
 	}
-	maxVersion := migrateLintMaxVersion(upFiles)
-	slices.SortStableFunc(upFiles, func(a, b migrationlint.File) int {
-		return migrateLintFileOrder(a, b, maxVersion)
-	})
+	slices.SortStableFunc(upFiles, order(upFiles))
 	return upFiles
 }
 
