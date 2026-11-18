@@ -102,6 +102,37 @@ func TestParse_ParenthesizedColumnDefault_HappyPath(t *testing.T) {
 	}
 }
 
+// Each engine that takes an expression default only in parentheses writes one
+// in its own shape, and the group is read whole on each: MySQL and MariaDB
+// call UUID(), SQLite datetime('now'), and SQL Server reports a constant
+// default inside two groups, as sys.default_constraints prints it.
+func TestParse_ParenthesizedColumnDefaultPerDialect_HappyPath(t *testing.T) {
+	rows := []struct {
+		dialect, column, wantExpression string
+	}{
+		{dialect: "mysql", column: "u varchar(36) DEFAULT (UUID())", wantExpression: "(UUID())"},
+		{dialect: "mariadb", column: "u varchar(36) DEFAULT (UUID())", wantExpression: "(UUID())"},
+		{dialect: "sqlite", column: "d text DEFAULT (datetime('now'))", wantExpression: "(datetime('now'))"},
+		{dialect: "sqlserver", column: "n int DEFAULT ((0))", wantExpression: "((0))"},
+	}
+	for _, row := range rows {
+		t.Run(row.dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser("CREATE TABLE t (id int PRIMARY KEY, "+row.column+");",
+				parser.WithDialect(row.dialect), parser.WithSQL(builtintest.Runtime().SQL())).Parse()
+
+			c.Assert(err, qt.IsNil)
+			table, ok := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(ok, qt.IsTrue, qt.Commentf("got %T", statements.Statements[0]))
+			c.Assert(table.Columns, qt.HasLen, 2)
+			c.Assert(table.Columns[1].Default, qt.IsNotNil)
+			c.Assert(table.Columns[1].Default.Expression, qt.Equals, row.wantExpression)
+			c.Assert(table.Columns[1].Default.Value, qt.Equals, "")
+		})
+	}
+}
+
 // An empty group is refused at its opening parenthesis, in a column
 // declaration and in ALTER COLUMN SET DEFAULT alike.
 func TestParse_ParenthesizedColumnDefault_FailurePath(t *testing.T) {

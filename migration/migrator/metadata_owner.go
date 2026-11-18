@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"ptah.run/core/dataext"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/envbool"
@@ -88,22 +89,49 @@ func (e *ForeignMetadataTableError) Is(target error) bool {
 // does not write, and a row-level policy are others. Provenance survives the
 // next one.
 //
-// A table that is absent is "nothing to refuse" where what Ptah creates it
-// owns. Where a table belongs to the owner of its schema whoever creates it
+// A table that is absent is nothing to refuse where what Ptah creates it owns.
+// Where a table belongs to the owner of its schema whoever creates it
 // (migratorext.SchemaOwners, Oracle), an absent table in a schema another
-// account owns is refused before anything is created there. A dialect whose
-// catalog reports no owner is "nothing to refuse" too. The MySQL family is the second: it has no table
-// owner, and a trigger there runs as its definer rather than as the connected
-// account, so the same squat gains the squatter a hook and not the migration
-// role's privileges. Measured on MySQL 8.4.11 and MariaDB 12.3.3. YDB is
-// asked nothing for a stronger reason: a table there can carry no code at all.
+// account owns is refused before anything is created there.
+//
+// A dialect whose catalog reports no owner is nothing to refuse either. The
+// MySQL family has no table owner, and a trigger there runs as its definer
+// rather than as the connected account, so the same squat gains the squatter a
+// hook and not the migration role's privileges. Measured on MySQL 8.4.11 and
+// MariaDB 12.3.3. YDB is asked nothing for a stronger reason: a table there
+// can carry no code at all.
 func (m *Migrator) refuseForeignMetadataTable(ctx context.Context, table string) error {
-	allowed, err := allowForeignMetadataTableVar.Resolve()
-	if err != nil {
+	absent, err := m.refuseForeignExistingMetadataTable(ctx, table)
+	if err != nil || !absent {
 		return err
 	}
+	// No row means no table, and Ptah is about to create it.
+	return m.refuseForeignMetadataSchema(ctx, table)
+}
+
+// refuseForeignMetadataRead is [Migrator.refuseForeignMetadataTable] for a
+// path that reads a metadata table and creates none: a dry run, a status, an
+// adoption preflight. A foreign table that exists is refused, since a read can
+// run what it carries. An absent table runs nothing, and whose table the
+// schema would make it is a question for the run that creates it, which asks
+// it. Asked here, a read-only command against a schema another account owns
+// is refused for a table it does not create.
+func (m *Migrator) refuseForeignMetadataRead(ctx context.Context, table string) error {
+	_, err := m.refuseForeignExistingMetadataTable(ctx, table)
+	return err
+}
+
+// refuseForeignExistingMetadataTable refuses a metadata table that exists and
+// that the connection's role neither owns nor is a member of the owner of.
+// absent reports that the catalog holds no such table, on a dialect that
+// answers the question.
+func (m *Migrator) refuseForeignExistingMetadataTable(ctx context.Context, table string) (absent bool, err error) {
+	allowed, err := allowForeignMetadataTableVar.Resolve()
+	if err != nil {
+		return false, err
+	}
 	if allowed {
-		return nil
+		return false, nil
 	}
 	query, args, ok := metadataTableOwnerQuery(
 		m.connectionDialect(),
@@ -112,23 +140,23 @@ func (m *Migrator) refuseForeignMetadataTable(ctx context.Context, table string)
 		table,
 	)
 	if !ok {
-		return nil
+		return false, nil
 	}
 	var owner, role string
 	var mine bool
 	err = m.conn.QueryRowContext(ctx, sqlutil.Rebind(m.connectionDialect(), query), args...).
 		Scan(&owner, &role, &mine)
 	if errors.Is(err, sql.ErrNoRows) {
-		// No row means no table, and Ptah is about to create it.
-		return m.refuseForeignMetadataSchema(ctx, table)
+		return true, nil
 	}
 	if err != nil {
-		return fmt.Errorf("failed to read the owner of metadata table %s: %w", table, err)
+		return false, fmt.Errorf("failed to read the owner of metadata table %s (%s=1 skips the ownership check): %w",
+			table, AllowForeignMetadataTableEnvVar, err)
 	}
 	if mine {
-		return nil
+		return false, nil
 	}
-	return &ForeignMetadataTableError{
+	return false, &ForeignMetadataTableError{
 		Table: m.qualifiedMetadataTable(table),
 		Owner: owner,
 		Role:  role,
@@ -140,29 +168,48 @@ func (m *Migrator) refuseForeignMetadataTable(ctx context.Context, table string)
 // what is created in it. Elsewhere what Ptah creates it owns, and so does an
 // absent schema, which the CREATE refuses on its own.
 func (m *Migrator) refuseForeignMetadataSchema(ctx context.Context, table string) error {
-	schemaOwners, ok := builtin.Lookup(m.connectionDialect()).Owners.(migratorext.SchemaOwners)
-	if !ok {
-		return nil
-	}
-	query, args := schemaOwners.SchemaOwnerQuery(migratorext.Table{
+	return refuseForeignSchema(ctx, m.ownerRow, builtin.Lookup(m.connectionDialect()).Owners, migratorext.Table{
 		ConfiguredSchema: m.metadataTableSchemaName(),
 		ConnectionSchema: m.connectionSchemaName(),
 		Name:             table,
-	})
+	}, m.qualifiedMetadataTable(table))
+}
+
+// ownerRow runs one owner query on the migrator's connection, in the
+// placeholders its dialect takes.
+func (m *Migrator) ownerRow(ctx context.Context, query string, args ...any) dataext.Row {
+	return m.conn.QueryRowContext(ctx, sqlutil.Rebind(m.connectionDialect(), query), args...)
+}
+
+// refuseForeignSchema is [Migrator.refuseForeignMetadataSchema] over the
+// engine's owners and the row its query answers, which row runs. qualified is
+// the table's name as the refusal prints it.
+func refuseForeignSchema(
+	ctx context.Context,
+	row func(ctx context.Context, query string, args ...any) dataext.Row,
+	owners migratorext.Owners,
+	table migratorext.Table,
+	qualified string,
+) error {
+	schemaOwners, ok := owners.(migratorext.SchemaOwners)
+	if !ok {
+		return nil
+	}
+	query, args := schemaOwners.SchemaOwnerQuery(table)
 	var owner, role string
 	var mine bool
-	err := m.conn.QueryRowContext(ctx, sqlutil.Rebind(m.connectionDialect(), query), args...).
-		Scan(&owner, &role, &mine)
+	err := row(ctx, query, args...).Scan(&owner, &role, &mine)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return nil
 	case err != nil:
-		return fmt.Errorf("failed to read the owner of the schema of metadata table %s: %w", table, err)
+		return fmt.Errorf("failed to read the owner of the schema of metadata table %s (%s=1 skips the ownership check): %w",
+			table.Name, AllowForeignMetadataTableEnvVar, err)
 	case mine:
 		return nil
 	}
 	return &ForeignMetadataTableError{
-		Table:  m.qualifiedMetadataTable(table),
+		Table:  qualified,
 		Owner:  owner,
 		Role:   role,
 		Absent: true,

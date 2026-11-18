@@ -1205,8 +1205,13 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	// Before the dry run too: a dry run reads the existing metadata table, and
 	// a foreign one can attach a policy or a default expression that runs the
 	// squatter's SQL during a SELECT. A refusal that only covered writes would
-	// describe a protection the read path does not have.
-	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()); err != nil {
+	// describe a protection the read path does not have. The dry run creates
+	// nothing, so it asks only about a table that exists.
+	refuse := m.refuseForeignMetadataTable
+	if dryRun {
+		refuse = m.refuseForeignMetadataRead
+	}
+	if err := refuse(ctx, m.migrationsTableName()); err != nil {
 		return err
 	}
 
