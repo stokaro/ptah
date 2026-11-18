@@ -440,8 +440,9 @@ type repeatableAttempt struct {
 	order int
 	// transactional reports that the body runs in a transaction of its own.
 	transactional bool
-	// read is the identity's row as the run read the record, the state the
-	// attempt's claim expects to find. It is the zero row when none was read.
+	// read is the identity's row as the run read the record; the attempt's
+	// claim expects it to still name the run it named then. It is the zero
+	// row when none was read.
 	read repeatableRow
 	// recorded reports that the record table already holds a row for the
 	// identity, which the attempt then updates rather than inserts.

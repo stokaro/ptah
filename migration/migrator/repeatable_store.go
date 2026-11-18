@@ -22,8 +22,8 @@ type repeatableRow struct {
 	attemptChecksum string
 	attemptOrder    int
 	transactional   bool
-	// runID names the run that last attempted the identity. A claim compares
-	// it, so a row another run claimed and left as it found it still differs.
+	// runID names the run that last attempted the identity. A claim matches
+	// it, and writes its own, so a row another run claimed no longer matches.
 	runID       string
 	attemptedAt time.Time
 	appliedAt   time.Time
@@ -155,10 +155,14 @@ func (m *Migrator) readRepeatableBody(ctx context.Context, identity string) ([]b
 	return body, nil
 }
 
-// ErrRepeatableClaimLost is returned when another run changed a repeatable
-// migration's row after this run read the record and before it claimed the
-// row. The run that loses the claim stops before any statement of the body.
+// ErrRepeatableClaimLost is returned when another run claimed a repeatable
+// migration's row after this run read the record. The run that loses the
+// claim stops before any statement of the body.
 var ErrRepeatableClaimLost = errors.New("another run changed the repeatable migration's record after this run read it")
+
+// errRepeatableRowUnmatched is a claim's UPDATE that matched no row: another
+// run's claim replaced the run this run read, or the row is gone.
+var errRepeatableRowUnmatched = fmt.Errorf("%w: no row names the run this run read", ErrRepeatableClaimLost)
 
 // markRepeatableAttempt claims the identity for this run and records that an
 // attempt is about to run, before any statement of its body does. It commits
@@ -166,49 +170,41 @@ var ErrRepeatableClaimLost = errors.New("another run changed the repeatable migr
 // attempt started and has no outcome. The digest recorded as applied is left
 // as it was.
 //
-// The claim is the write itself. An UPDATE matches only the row as this run
-// read it, its state, applied digest and last run, and an INSERT is refused by
-// the key when another run inserted first. Either way exactly one of two runs
-// that read the same record goes on to run the body; the other refuses with
-// [ErrRepeatableClaimLost].
+// The claim is the write itself, and the run ID decides it: every run has its
+// own, and a claim writes it. An UPDATE matches the row only while it still
+// names the run this run read, and an INSERT is refused by the key when
+// another run inserted first. A write that does not succeed cleanly is
+// settled by [Migrator.settleRepeatableClaim]. Either way exactly one of two
+// runs that read the same record goes on to run the body; the other refuses
+// with [ErrRepeatableClaimLost].
 func (m *Migrator) markRepeatableAttempt(ctx context.Context, attempt repeatableAttempt) error {
-	if attempt.recorded {
-		return m.claimRecordedRepeatable(ctx, attempt)
-	}
-	repeatable := attempt.repeatable
-	query := "INSERT INTO " + m.repeatableTable() + " (" + m.repeatableIdentity() + ", checksum, state, attempt_checksum, attempt_order, " +
-		"transactional, run_id, attempted_at, applied_at, error) VALUES (?, '', ?, ?, ?, ?, ?, ?, NULL, NULL)"
-	err := executeSQLOn(ctx, m.conn, sqlutil.Rebind(m.connectionDialect(), query),
-		repeatable.identity, RepeatableStateRunning, repeatable.checksum, attempt.order, attempt.transactionalColumn(),
-		m.migrationLogRunID, nativeRevisionTimestamp(time.Now()))
+	err := m.writeRepeatableAttempt(ctx, attempt)
 	if err == nil {
 		return nil
 	}
-	// The key is what refuses the second insert, and each engine words that
-	// refusal its own way. A row that exists now, where this run read none,
-	// is the other run's claim.
-	if exists, countErr := m.repeatableRowExists(ctx, repeatable.identity); countErr == nil && exists {
-		return fmt.Errorf("%w: %w", ErrRepeatableClaimLost, err)
-	}
-	return err
+	return m.settleRepeatableClaim(ctx, attempt.repeatable.identity, err)
 }
 
-// claimRecordedRepeatable updates the row this run read into the running
-// state, matching it only while it is still as read.
-func (m *Migrator) claimRecordedRepeatable(ctx context.Context, attempt repeatableAttempt) error {
+// writeRepeatableAttempt writes the attempt's row: an UPDATE of the row the
+// run read, or an INSERT where it read none. An UPDATE that matched no row
+// returns errRepeatableRowUnmatched.
+func (m *Migrator) writeRepeatableAttempt(ctx context.Context, attempt repeatableAttempt) error {
 	repeatable := attempt.repeatable
-	read := attempt.read
-	checksum, checksumArgs := repeatableColumnIs("checksum", read.checksum)
-	runID, runIDArgs := repeatableColumnIs("run_id", read.runID)
+	dialect := m.connectionDialect()
+	now := nativeRevisionTimestamp(time.Now())
+	if !attempt.recorded {
+		query := "INSERT INTO " + m.repeatableTable() + " (" + m.repeatableIdentity() + ", checksum, state, attempt_checksum, attempt_order, " +
+			"transactional, run_id, attempted_at, applied_at, error) VALUES (?, '', ?, ?, ?, ?, ?, ?, NULL, NULL)"
+		return executeSQLOn(ctx, m.conn, sqlutil.Rebind(dialect, query),
+			repeatable.identity, RepeatableStateRunning, repeatable.checksum, attempt.order, attempt.transactionalColumn(),
+			m.migrationLogRunID, now)
+	}
 	query := "UPDATE " + m.repeatableTable() + " SET state = ?, attempt_checksum = ?, attempt_order = ?, " +
 		"transactional = ?, run_id = ?, attempted_at = ?, error = NULL WHERE " + m.repeatableIdentity() + " = ? " +
-		"AND state = ? AND " + checksum + " AND " + runID
-	args := []any{
+		"AND run_id = ?"
+	result, err := m.conn.ExecContext(ctx, sqlutil.Rebind(dialect, query),
 		RepeatableStateRunning, repeatable.checksum, attempt.order, attempt.transactionalColumn(),
-		m.migrationLogRunID, nativeRevisionTimestamp(time.Now()), repeatable.identity, read.state,
-	}
-	args = append(append(args, checksumArgs...), runIDArgs...)
-	result, err := m.conn.ExecContext(ctx, sqlutil.Rebind(m.connectionDialect(), query), args...)
+		m.migrationLogRunID, now, repeatable.identity, attempt.read.runID)
 	if err != nil {
 		return err
 	}
@@ -217,39 +213,47 @@ func (m *Migrator) claimRecordedRepeatable(ctx context.Context, attempt repeatab
 		return fmt.Errorf("count the claimed row: %w", err)
 	}
 	if claimed == 0 {
-		return fmt.Errorf("%w (read as %s, %s)", ErrRepeatableClaimLost, read.state, displayRepeatableChecksum(read.checksum))
+		return errRepeatableRowUnmatched
 	}
 	return nil
 }
 
-// repeatableColumnIs is the condition that column still holds value, the way
-// the run read it. An empty value matches NULL too, because an engine that
-// stores an empty string as NULL reads it back as empty.
-func repeatableColumnIs(column, value string) (string, []any) {
-	if value == "" {
-		return "(" + column + " IS NULL OR " + column + " = '')", nil
+// settleRepeatableClaim decides a claim whose write did not succeed cleanly:
+// an UPDATE that matched no row, an INSERT the server refused, or any error
+// from either, such as a serialization failure under contention. The row's run
+// ID, read back on the run's connection, says who holds the identity. This
+// run's ID means its write took effect, a response lost after the INSERT
+// committed or a migrator run again over the row its own attempt left, and
+// the claim holds. Another run's ID means the claim is lost. When the read
+// fails or finds no row, the write's own error stands.
+func (m *Migrator) settleRepeatableClaim(ctx context.Context, identity string, claimErr error) error {
+	holder, found, err := m.repeatableRowRunID(ctx, identity)
+	if err != nil || !found {
+		return claimErr
 	}
-	return column + " = ?", []any{value}
+	if holder == m.migrationLogRunID {
+		return nil
+	}
+	if errors.Is(claimErr, errRepeatableRowUnmatched) {
+		return fmt.Errorf("%w: run %q holds the row", ErrRepeatableClaimLost, holder)
+	}
+	return fmt.Errorf("%w: run %q holds the row: %w", ErrRepeatableClaimLost, holder, claimErr)
 }
 
-// displayRepeatableChecksum names an applied digest in a message; a row whose
-// content never applied has none.
-func displayRepeatableChecksum(checksum string) string {
-	if checksum == "" {
-		return "no applied digest"
-	}
-	return "applied digest " + checksum
-}
-
-// repeatableRowExists reports whether the record holds a row for identity.
-func (m *Migrator) repeatableRowExists(ctx context.Context, identity string) (bool, error) {
+// repeatableRowRunID reads the run ID of the record's row for identity, and
+// whether there is one.
+func (m *Migrator) repeatableRowRunID(ctx context.Context, identity string) (string, bool, error) {
 	query := sqlutil.Rebind(m.connectionDialect(),
-		"SELECT count(*) FROM "+m.repeatableTable()+" WHERE "+m.repeatableIdentity()+" = ?")
-	var count int64
-	if err := m.conn.QueryRowContext(ctx, query, identity).Scan(&count); err != nil {
-		return false, err
+		"SELECT run_id FROM "+m.repeatableTable()+" WHERE "+m.repeatableIdentity()+" = ?")
+	var runID sql.NullString
+	err := m.conn.QueryRowContext(ctx, query, identity).Scan(&runID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
 	}
-	return count > 0, nil
+	if err != nil {
+		return "", false, err
+	}
+	return runID.String, true, nil
 }
 
 // completeRepeatableOn records the attempt's content as applied, its digest
