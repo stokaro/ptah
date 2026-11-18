@@ -45,7 +45,8 @@ var schemaFaults = []schemaFault{
 		schema: "CREATE TABLE parent (id bigint PRIMARY KEY, code text NOT NULL);\n" +
 			"CREATE TABLE child (id bigint PRIMARY KEY, code text REFERENCES parent (code));\n",
 		table: "parent",
-		line:  `postgres requires referenced columns code on table %q to be declared unique`,
+		line: `postgres requires referenced columns code on table %q to be declared unique: ` +
+			`a primary key, UNIQUE constraint or unique index must key exactly those columns`,
 	},
 }
 

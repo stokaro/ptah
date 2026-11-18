@@ -30,6 +30,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/collatedkey"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/routineext"
 	routinebuiltin "ptah.run/internal/routineext/builtin"
@@ -460,6 +461,10 @@ func indexParts(index *ast.IndexNode, sourcePlatform string) []schemamodel.Index
 			continue
 		}
 		hasExpression = true
+		if key, ok := collatedkey.Read(sourcePlatform, column); ok {
+			parts = append(parts, schemamodel.IndexPart{Expr: key.Text, Desc: key.Desc})
+			continue
+		}
 		parts = append(parts, schemamodel.IndexPart{Expr: column})
 	}
 	if !hasExpression {

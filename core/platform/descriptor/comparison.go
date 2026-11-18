@@ -33,18 +33,10 @@ type Comparison struct {
 	// it back once a key is there to reference.
 	ForeignKeyHoldsItsKey bool `json:"foreign_key_holds_its_key,omitempty"`
 	// ForeignKeyMatchesKeyInAnyOrder reports that a foreign key may reference a
-	// unique key's columns in another order than the key lists them. PostgreSQL and
-	// CockroachDB take REFERENCES parent (a, b) over PRIMARY KEY (b, a), while MySQL
-	// answers with Error 6125 and MariaDB with errno 150.
+	// unique key's columns in another order than the key lists them. PostgreSQL,
+	// CockroachDB and SQLite take REFERENCES parent (a, b) over PRIMARY KEY (b, a),
+	// while MySQL answers with Error 6125 and MariaDB with errno 150.
 	ForeignKeyMatchesKeyInAnyOrder bool `json:"foreign_key_matches_key_in_any_order,omitempty"`
-	// ForeignKeyIgnoresStandaloneUniqueIndex reports that a standalone unique
-	// index is not taken as the key a foreign key references: only a key the
-	// referenced table declares, as a primary key or a UNIQUE column or
-	// constraint, is. SQLite matches a foreign key against a unique index under
-	// the collation of each index part and reports a mismatch at the first
-	// write rather than at CREATE TABLE, and the schema model does not carry
-	// that collation, so only a declared key can be verified.
-	ForeignKeyIgnoresStandaloneUniqueIndex bool `json:"foreign_key_ignores_standalone_unique_index,omitempty"`
 	// ColumnPrimaryKeyIsTheTablesKey reports that a primary key a column declares
 	// is compared as the table's key where the table holds another key or none:
 	// the planner has a statement for a change of the key, in both directions, and
@@ -200,6 +192,16 @@ type Comparison struct {
 	// such as in another case, is dropped and created under the declared
 	// spelling rather than kept.
 	RespelledIndexReplaced bool `json:"respelled_index_replaced,omitempty"`
+	// CollatedKeysRespelled reports that an index key written as a column and
+	// a COLLATE, `code COLLATE NOCASE`, is that column under that collation,
+	// and that a double-quoted, a bracketed, a backquoted and a bare name are
+	// one identifier there, as is each spelling of the collation's name. A
+	// document and a catalog then compare such a key in one spelling, so
+	// `("code" COLLATE "NOCASE" ASC)` and `([code] COLLATE /*x*/ NOCASE)` are
+	// one key, as SQLite reads them. MySQL reads a double-quoted word as a
+	// string unless ANSI_QUOTES is set, and SQL Server and ClickHouse key no
+	// column under a collation of its own, so the fact is not theirs.
+	CollatedKeysRespelled bool `json:"collated_keys_respelled,omitempty"`
 }
 
 // TimePrecision states that a comparison reads the precision of a temporal column,

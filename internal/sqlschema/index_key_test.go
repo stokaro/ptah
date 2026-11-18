@@ -139,6 +139,74 @@ func TestToIndex_KeySuffixes(t *testing.T) {
 	}
 }
 
+// TestToIndex_CollatedKeyHasOneSpelling reads a SQLite column under a COLLATE
+// of its own into the spelling the SQLite reader gives the key, so a document
+// and a database compare equal however the document quotes, spaces or comments
+// it. On PostgreSQL a quoted name and a bare one can name two columns, so the
+// text stays as written there.
+func TestToIndex_CollatedKeyHasOneSpelling(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		dialect string
+		sql     string
+		parts   []schemamodel.IndexPart
+		fields  []string
+	}{
+		{
+			name:    "a bare key",
+			dialect: platform.SQLite,
+			sql:     `CREATE INDEX i ON t (code COLLATE NOCASE);`,
+			parts:   []schemamodel.IndexPart{{Expr: "code COLLATE NOCASE"}},
+			fields:  []string{"code COLLATE NOCASE"},
+		},
+		{
+			name:    "a quoted key with a comment and an ASC",
+			dialect: platform.SQLite,
+			sql:     `CREATE INDEX i ON t ("code"  COLLATE /*x*/ NOCASE ASC);`,
+			parts:   []schemamodel.IndexPart{{Expr: "code COLLATE NOCASE"}},
+			fields:  []string{"code COLLATE NOCASE"},
+		},
+		{
+			name:    "a key that descends beside a column",
+			dialect: platform.SQLite,
+			sql:     `CREATE INDEX i ON t (id, "code" COLLATE NOCASE DESC);`,
+			parts:   []schemamodel.IndexPart{{Name: "id"}, {Expr: "code COLLATE NOCASE", Desc: true}},
+			fields:  []string{"id", "code COLLATE NOCASE"},
+		},
+		{
+			name:    "a name that needs its quotes",
+			dialect: platform.SQLite,
+			sql:     `CREATE INDEX i ON t ("my code" COLLATE NOCASE);`,
+			parts:   []schemamodel.IndexPart{{Expr: `"my code" COLLATE NOCASE`}},
+			fields:  []string{`"my code" COLLATE NOCASE`},
+		},
+		{
+			name:    "a PostgreSQL key keeps its text",
+			dialect: platform.Postgres,
+			sql:     `CREATE INDEX i ON t ("Code" COLLATE "C");`,
+			parts:   []schemamodel.IndexPart{{Expr: `"Code" COLLATE "C"`}},
+			fields:  []string{`"Code" COLLATE "C"`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			statements, err := parser.NewParser(tt.sql, parser.WithDialect(tt.dialect)).Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+			node, ok := statements.Statements[0].(*ast.IndexNode)
+			c.Assert(ok, qt.IsTrue)
+
+			index := sqlschema.ToIndex(node, tt.dialect)
+
+			c.Assert(index.Parts, qt.DeepEquals, tt.parts)
+			c.Assert(index.Fields, qt.DeepEquals, tt.fields)
+		})
+	}
+}
+
 // TestToIndex_StructuredPartsKeepTheirNullsOrdering guards the other hop into
 // the same field.
 //

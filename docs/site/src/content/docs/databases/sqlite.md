@@ -63,7 +63,14 @@ The SQLite renderer and planner support:
 - `CREATE INDEX`, including unique, descending, expression and partial
   indexes, and `DROP INDEX IF EXISTS` / `DROP TABLE IF EXISTS`. SQLite changes
   nothing about an index in place, so an index whose uniqueness, columns, key
-  directions, expressions or predicate changed is dropped and created again.
+  directions, key collations, expressions or predicate changed is dropped and
+  created again. A key with a `COLLATE` of its own is read and compared as its
+  text, spelled one way on both sides: `("code" COLLATE /*x*/ NOCASE ASC)` and
+  `(code COLLATE NOCASE)` are one key. A key without one takes its column's
+  collation and is a column. A key whose `COLLATE` repeats its column's
+  collation compares unequal to a bare key, so a database index
+  `(nc COLLATE NOCASE)` over a `NOCASE` column against a document `(nc)` plans
+  one rebuild of the index.
 - `ALTER TABLE ... ADD COLUMN`, `RENAME COLUMN`, and `RENAME TO`.
 - Column and constraint changes ALTER TABLE cannot express, through a
   generated table-rebuild plan: create a rebuilt table in its desired shape,
@@ -72,7 +79,8 @@ The SQLite renderer and planner support:
   drops, column type, nullability, default and generated-expression changes,
   a key column that gains or loses `AUTOINCREMENT`, added and removed table
   constraints (including enum-backed `CHECK`
-  constraints), a changed `STRICT` or `WITHOUT ROWID` option, and a column
+  constraints, and a `UNIQUE` a column declares, which SQLite keeps as an
+  autoindex no `DROP INDEX` can name), a changed `STRICT` or `WITHOUT ROWID` option, and a column
   drop combined with a column addition. SQLite stores no comment on a table
   or a column, so the comparison does not compare one, and a declared comment
   is neither a difference nor a reason to rebuild. A column the
@@ -94,6 +102,17 @@ alias, and SQLite stores no `NULL` in it whether or not it says `NOT NULL`. The
 two spellings are one table, so a comparison between them plans nothing. Any
 other key column keeps its flag: `id TEXT PRIMARY KEY` holds `NULL` on a rowid
 table, and making it `NOT NULL` rebuilds the table.
+
+A foreign key references the parent table's primary key, a `UNIQUE`
+constraint, or a unique index with no `WHERE` clause, and may list the key's
+columns in any order. SQLite takes a unique index only where it compares each
+key under the collation the column declares, which a bare column key always
+does. Ptah refuses an index key with an expression or a `COLLATE`, because the
+schema model holds it as text it cannot compare with the column's collation.
+That is stricter than SQLite where the `COLLATE` names the column's own
+collation. SQLite creates a table that references any other columns and fails
+the first write to it with `foreign key mismatch`, so `ptah schema render` and
+the `--to` document of `schema diff` refuse such a key.
 
 A column's type is compared by the affinity it gives the column, so `VARCHAR(80)` and
 `TEXT` are one type. A portable name such as `boolean` or `bytea` writes `INTEGER` or

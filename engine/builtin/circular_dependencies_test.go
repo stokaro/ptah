@@ -421,7 +421,7 @@ func TestGetOrderedCreateStatements_MySQL84RejectsNonuniqueReferencedKey(t *test
 	statements, err := builtin.GetOrderedCreateStatements(indexedForeignKeyDatabase(), "mysql")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `mysql requires referenced columns tenant_id, code on table "parents" to be declared unique`)
+	c.Assert(err, qt.ErrorMatches, `mysql requires referenced columns tenant_id, code on table "parents" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns in that order`)
 	c.Assert(statements, qt.IsNil)
 }
 
@@ -727,7 +727,7 @@ func TestGetOrderedCreateStatements_PartialUniqueIndexIsNotReferencedKey_Failure
 	statements, err := builtin.GetOrderedCreateStatements(database, "postgres")
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `postgres requires referenced columns tenant_id, code on table "parents" to be declared unique`)
+	c.Assert(err, qt.ErrorMatches, `postgres requires referenced columns tenant_id, code on table "parents" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns; unique index "idx_parents_tenant_code" has a WHERE clause`)
 	c.Assert(statements, qt.IsNil)
 }
 
@@ -852,7 +852,11 @@ func TestGetOrderedCreateStatements_MySQLBTREEReferencedIndex(t *testing.T) {
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "fk_children_parents")
 }
 
-func TestGetOrderedCreateStatements_SQLiteRejectsUnverifiableStandaloneUniqueIndex_FailurePath(t *testing.T) {
+// TestGetOrderedCreateStatements_SQLiteAcceptsStandaloneUniqueIndex_HappyPath
+// references a column a standalone unique index covers. SQLite takes it as the
+// parent key: the key is a bare column name, so the index compares it under
+// the column's own collation, which is the one SQLite requires.
+func TestGetOrderedCreateStatements_SQLiteAcceptsStandaloneUniqueIndex_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	database := simpleForeignKeyDatabase("INTEGER", "INTEGER")
 	database.Fields[0].Primary = false
@@ -865,8 +869,31 @@ func TestGetOrderedCreateStatements_SQLiteRejectsUnverifiableStandaloneUniqueInd
 
 	statements, err := builtin.GetOrderedCreateStatements(database, "sqlite")
 
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, `REFERENCES "parents" ("id")`)
+}
+
+// TestGetOrderedCreateStatements_SQLiteRejectsPartialUniqueIndex_FailurePath
+// references a column only a partial unique index covers, which SQLite answers
+// with "foreign key mismatch" at the first write.
+func TestGetOrderedCreateStatements_SQLiteRejectsPartialUniqueIndex_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	database := simpleForeignKeyDatabase("INTEGER", "INTEGER")
+	database.Fields[0].Primary = false
+	database.Indexes = []schemamodel.Index{{
+		StructName: "Parent",
+		Name:       "uq_parents_id",
+		Fields:     []string{"id"},
+		Unique:     true,
+		Condition:  "id > 0",
+	}}
+
+	statements, err := builtin.GetOrderedCreateStatements(database, "sqlite")
+
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `sqlite requires referenced columns id on table "parents" to be declared unique`)
+	c.Assert(err, qt.ErrorMatches, `sqlite requires referenced columns id on table "parents" to be declared unique: `+
+		`a primary key, UNIQUE constraint or unique index must key exactly those columns; `+
+		`unique index "uq_parents_id" has a WHERE clause`)
 	c.Assert(statements, qt.IsNil)
 }
 

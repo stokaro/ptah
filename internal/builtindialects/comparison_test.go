@@ -88,15 +88,16 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		"mysql":   mysqlFamily,
 		"mariadb": mariaDB,
 		"sqlite": {
-			ForeignKeyIgnoresStandaloneUniqueIndex: true,
-			VerbatimTableNames:                     true,
-			InternalIndexPrefix:                    "sqlite_autoindex_",
-			AutoIncrementFlag:                      true,
-			PrimaryKeyNullable:                     true,
-			RowidTables:                            true,
-			TypeAffinity:                           true,
-			DefaultGeneratedKind:                   "VIRTUAL",
-			NoTableComments:                        true,
+			ForeignKeyMatchesKeyInAnyOrder: true,
+			VerbatimTableNames:             true,
+			InternalIndexPrefix:            "sqlite_autoindex_",
+			AutoIncrementFlag:              true,
+			PrimaryKeyNullable:             true,
+			RowidTables:                    true,
+			TypeAffinity:                   true,
+			DefaultGeneratedKind:           "VIRTUAL",
+			NoTableComments:                true,
+			CollatedKeysRespelled:          true,
 		},
 		"sqlserver": {
 			TimePrecision:                  descriptor.TimePrecision{Compared: true, Default: 7},
@@ -156,6 +157,26 @@ func TestComparison_ServerDatabasesAndRespelledIndexes_AgreeWithTheSwitchesTheyR
 			c.Assert(found, qt.IsTrue)
 			c.Assert(described.Comparison.ServerDatabases, qt.Equals, serverDatabases[canonical])
 			c.Assert(described.Comparison.RespelledIndexReplaced, qt.Equals, respelledIndexReplaced[canonical])
+		})
+	}
+}
+
+// TestComparison_CollatedKeysRespelled_ForEverySpelling pins the fact that
+// lets internal/collatedkey respell a column key under a COLLATE: SQLite and
+// every alias of it, libsql among them, and no other engine. MySQL reads
+// `("code" COLLATE x)` as a string under a collation, so a respelling there
+// changes what the key means.
+func TestComparison_CollatedKeysRespelled_ForEverySpelling(t *testing.T) {
+	respelled := map[string]bool{platform.SQLite: true}
+	spellings := platform.DialectSpellings()
+	c := qt.New(t)
+	c.Assert(spellings, qt.Contains, "libsql")
+	for _, spelling := range spellings {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
+			described, found := platform.Lookup(spelling)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(described.Comparison.CollatedKeysRespelled, qt.Equals, respelled[platform.NormalizeDialect(spelling)])
 		})
 	}
 }

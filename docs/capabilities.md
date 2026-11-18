@@ -1037,8 +1037,9 @@ file, exactly as any other command reaching the same URL would.
   referential actions, and the target's referenced-key policy. Targets other
   than SQLite create tables first and add foreign keys in a second phase, so
   circular and composite cycles are executable. SQLite keeps constraints
-  inline and accepts only candidate keys whose collation semantics are present
-  in the schema IR. MySQL before 8.4 and MariaDB accept a full leftmost BTREE
+  inline and accepts a standalone unique index as a candidate key when it has
+  no `WHERE` clause and every key is a bare column; a key with an expression or
+  a `COLLATE` does not qualify. MySQL before 8.4 and MariaDB accept a full leftmost BTREE
   index prefix on InnoDB tables; FULLTEXT, SPATIAL, HASH, parser-backed, prefix,
   and expression indexes do not qualify. The portable MySQL-family path also
   emits `ENGINE=InnoDB` explicitly for every table participating in a foreign

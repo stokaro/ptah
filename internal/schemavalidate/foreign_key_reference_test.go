@@ -65,9 +65,9 @@ func TestCollectTargetForeignKeyReferenceProblems_ReportsEveryRefusedKey(t *test
 	c.Assert(err, qt.IsNil)
 	c.Assert(problems, qt.HasLen, 3)
 	c.Assert(problems[0], qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(problems[0], qt.ErrorMatches, `postgres requires referenced columns code on table "parent" to be declared unique`)
-	c.Assert(problems[1], qt.ErrorMatches, `postgres requires referenced columns rank on table "parent" to be declared unique`)
-	c.Assert(problems[2], qt.ErrorMatches, `postgres requires referenced columns code, rank on table "parent" to be declared unique`)
+	c.Assert(problems[0], qt.ErrorMatches, `postgres requires referenced columns code on table "parent" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns`)
+	c.Assert(problems[1], qt.ErrorMatches, `postgres requires referenced columns rank on table "parent" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns`)
+	c.Assert(problems[2], qt.ErrorMatches, `postgres requires referenced columns code, rank on table "parent" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns`)
 }
 
 // TestCollectTargetForeignKeyReferenceProblems_ReadsThePolicyOfTheCapabilities
@@ -90,8 +90,8 @@ func TestCollectTargetForeignKeyReferenceProblems_ReadsThePolicyOfTheCapabilitie
 			dialect: "postgres",
 			caps:    uniqueReference,
 			want: []string{
-				`postgres requires referenced columns code on table "parent" to be declared unique`,
-				`postgres requires referenced columns rank on table "parent" to be declared unique`,
+				`postgres requires referenced columns code on table "parent" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns`,
+				`postgres requires referenced columns rank on table "parent" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns`,
 			},
 		},
 		{
