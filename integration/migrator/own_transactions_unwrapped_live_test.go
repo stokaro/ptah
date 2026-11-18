@@ -255,12 +255,16 @@ func TestMigrateUpOwnTransactions_UnknownCommitOutcomeNamesTheTransactionLive(t 
 		{
 			name: "the file's COMMIT", applied: 0, statement: "CREATE TABLE owntx_a_%s (id int)",
 			wantErr: `(?s).*migration 2 cannot resume automatically: statements 1 to 4 commit together, and whether the COMMIT ` +
-				`at statement 4 took effect is unknown after an interrupted run; .*`,
+				`at statement 4 took effect is unknown after an interrupted run; inspect the database: if they committed, ` +
+				`run statements 5 to 6 by hand; if they did not, run statements 1 to 6 by hand; then record the migration ` +
+				`applied with 'ptah migrations repair --version 2 --force --runner golang-migrate'`,
 		},
 		{
 			name: "the commit at the end of the file", applied: 4, statement: "CREATE TABLE owntx_c_%s (id int)",
 			wantErr: `(?s).*migration 2 cannot resume automatically: statements 5 to 6 commit together, and whether the commit ` +
-				`at the end of the file took effect is unknown after an interrupted run; .*`,
+				`at the end of the file took effect is unknown after an interrupted run; inspect the database: if they ` +
+				`committed, nothing is left to run; if they did not, run statements 5 to 6 by hand; then record the ` +
+				`migration applied with 'ptah migrations repair --version 2 --force --runner golang-migrate'`,
 		},
 	}
 	for _, test := range tests {
