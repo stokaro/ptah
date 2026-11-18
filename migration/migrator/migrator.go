@@ -255,6 +255,9 @@ type Migrator struct {
 	outOfOrderExempt     []int64
 	sourceVersions       map[int64]string
 	atlasRevisionCompare AtlasRevisionVersionComparator
+	// atlasStringLinearity decides linearity over an Atlas directory on the
+	// revision strings; see [Migrator.WithAtlasStringLinearity].
+	atlasStringLinearity bool
 	txMode               MigrationTxMode
 	migrationLockName    string
 	migrationLockTimeout time.Duration
@@ -804,6 +807,23 @@ func (m *Migrator) WithAtlasRevisionVersionComparator(
 ) *Migrator {
 	tmp := *m
 	tmp.atlasRevisionCompare = compare
+	return &tmp
+}
+
+// WithAtlasStringLinearity returns a copy of the migrator that decides whether
+// a pending migration of an Atlas directory, recorded in an Atlas revision
+// table, was added out of order the way Atlas decides it: by its file name and
+// its version string, compared byte for byte, rather than by its numeric
+// version. Under it 3__x.sql added after 20260101000000_ts.sql applies, and
+// 10_b.sql added after 1_a.sql or after 9_a.sql is out of order.
+//
+// A caller reproducing the Atlas CLI selects it. Without it, and for every
+// directory a source tool's tokens order (see [Migrator.WithSourceVersions]),
+// the numeric rule decides. [Migrator.WithExecOrder] decides what happens to
+// an out-of-order migration under either rule.
+func (m *Migrator) WithAtlasStringLinearity() *Migrator {
+	tmp := *m
+	tmp.atlasStringLinearity = true
 	return &tmp
 }
 
@@ -1619,6 +1639,10 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 	pendingMigrationKeys := migrationVersionKeys(pendingMigrationList)
 	outOfOrderMigrations := outOfOrderMigrationVersions(pendingMigrations, currentVersion)
 	outOfOrderMigrationKeys := outOfOrderMigrationKeys(pendingMigrationList, currentVersion)
+	if m.readsAtlasRevisionOrder(providerMigrations) {
+		late := atlasRevisionOutOfOrder(providerMigrations, pendingMigrationList, effectiveAppliedIdentities)
+		outOfOrderMigrations, outOfOrderMigrationKeys = migrationVersions(late), migrationVersionKeys(late)
+	}
 	dirtyRevision := firstDirtyRevision(revisions)
 	if dirtyRevision != nil {
 		currentVersionKey = dirtyRevision.RevisionVersion()
@@ -3759,9 +3783,13 @@ func (m *Migrator) migrationsToApply(
 	// disagree on real directories, so both are asked and the exemption is
 	// applied to the union rather than to either half — see
 	// [Migrator.WithSourceVersions].
+	ordered := outOfOrderMigrationVersions(pendingVersions, currentVersion)
+	if m.readsAtlasRevisionOrder(migrations) {
+		ordered = migrationVersions(atlasRevisionOutOfOrder(migrations, pendingMigrationList, appliedIdentities))
+	}
 	outOfOrderVersions := outOfOrderExempt(
 		mergeOutOfOrderVersions(
-			outOfOrderMigrationVersions(pendingVersions, currentVersion),
+			ordered,
 			outOfOrderSourceVersions(
 				pendingVersions,
 				applied,

@@ -418,6 +418,7 @@ func runAtlasMigrateApplyTarget(
 		// opens no transaction around a file.
 		OwnTransactions: resolvedDirFormat.TransactionOwner() == lintext.TransactionOwnerFile,
 		Repeatables:     atlasReadsRepeatables(runOpts.repeatables, resolvedDirFormat),
+		StringLinearity: true,
 	})
 	if err != nil {
 		return formatOutput, remapAtlasExactIdentityError(atlasRepeatablesHint(err), linearity.sourceVersions)
