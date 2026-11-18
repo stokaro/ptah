@@ -109,8 +109,8 @@ database is the exception, as it is on the Atlas CLI.
 Two kinds of URL are read without a connection in such a run. A `docker://` URL
 is read for the server its tag names, and no container is started. When a
 selected [executable provider](../../extend/executable-providers/) provisions
-the URL's engine, only the engine is read and checked against the target's,
-and the provider is asked for no database. A
+the URL's engine, only the engine is read, and the provider is asked for no
+database. A URL whose engine is not the target's is refused. A
 `sqlite://` URL or a file path is not opened, since opening it would create the
 file, so a SQLite dev path that does not exist is not refused there.
 

@@ -3,11 +3,14 @@
 package providercli_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/providerconfig"
 )
 
 // A `schema diff` of two schema files for an engine an executable provider
@@ -68,4 +71,65 @@ func TestProviderFileDiffTakesADockerDevURL_FailurePathE2E(t *testing.T) {
 	c.Assert(stderr, qt.Equals, "error: --dev-url is required for local schema file diffing\n")
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(entries(c, f.dir), qt.HasLen, 0)
+}
+
+// withSecondDevEngine adds to the manifest of f a second devdb provider, which
+// serves and provisions the engine fixture2 with dev databases in a directory
+// of its own, and returns that directory.
+func withSecondDevEngine(c *qt.C, f devCLI) string {
+	c.Helper()
+	dir := c.TempDir()
+	spec := devdbSpec(c, dir)
+	spec.ProviderID = "example.org/fixture-second"
+	spec.Environment = append(spec.Environment, "FIXTURE_DEV_ENGINE=fixture2", "FIXTURE_DEV_PROVIDER_ID="+spec.ProviderID)
+	config, err := providerconfig.Load(f.manifestPath)
+	c.Assert(err, qt.IsNil)
+	config.Providers = append(config.Providers, providerconfig.Installation{Spec: spec, Engines: []providerconfig.Engine{{ID: "fixture2"}}})
+	data, err := json.Marshal(config)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(f.manifestPath, data, 0o600), qt.IsNil)
+	return dir
+}
+
+// compareWithDevURL runs `schema compare` of the fixture schema with the
+// fixture database, which names the engine fixture, and devURL as the dev
+// database the command does not use.
+func compareWithDevURL(c *qt.C, f devCLI, devURL string) (stdout, stderr string, code int) {
+	c.Helper()
+	return executeProviderCLI(c.Context(), []string{"schema", "compare", "--provider-config", f.manifestPath,
+		"--db-url", f.address, "--schema-file", f.schemaPath, "--dev-url", devURL})
+}
+
+// TestProviderDockerDevURLOfAnotherEngine_FailurePathE2E gives a command whose
+// target is the engine fixture a docker dev URL for fixture2, which a second
+// selected provider provisions. The command refuses the URL before it reads
+// anything, and neither provider provisions a database.
+func TestProviderDockerDevURLOfAnotherEngine_FailurePathE2E(t *testing.T) {
+	c := qt.New(t)
+	f := newDevCLI(c)
+	second := withSecondDevEngine(c, f)
+
+	stdout, stderr, code := compareWithDevURL(c, f, "docker://fixture2/1")
+
+	c.Assert(code, qt.Equals, 2)
+	c.Assert(stderr, qt.Equals, "error: The --dev-url target is not owned by the selected provider engine.\n")
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(entries(c, f.dir), qt.HasLen, 0)
+	c.Assert(entries(c, second), qt.HasLen, 0)
+}
+
+// TestProviderDockerDevURLOfAnotherEngine_HappyPathE2E is the control: the
+// same manifest and command with a docker dev URL for the target's own engine
+// compares, so the refusal above is the engine's doing.
+func TestProviderDockerDevURLOfAnotherEngine_HappyPathE2E(t *testing.T) {
+	c := qt.New(t)
+	f := newDevCLI(c)
+	second := withSecondDevEngine(c, f)
+
+	stdout, stderr, code := compareWithDevURL(c, f, "docker://fixture/1")
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stderr:\n%s", stderr))
+	c.Assert(stdout, qt.Contains, "CREATE TABLE \"second\" (\"value\" TEXT);\n")
+	c.Assert(entries(c, f.dir), qt.HasLen, 0)
+	c.Assert(entries(c, second), qt.HasLen, 0)
 }
