@@ -51,6 +51,7 @@ func writeMigrateStatusReport(w io.Writer, report MigrateStatus) {
 	writeMigrateStatusField(w, "Pending Files:", migrateStatusPendingField(report))
 	writeMigrateStatusError(w, report)
 	writeMigrateStatusOutOfOrder(w, report)
+	writeMigrateStatusRepeatablesText(w, report.Repeatables)
 }
 
 // migrateStatusPartial reports whether the highest revision row is half-applied.

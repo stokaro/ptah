@@ -109,15 +109,7 @@ func runAtlasMigrateLint(
 	// and a lint carrying --dev-url never read PTAH_ATLAS_LINT_WITHOUT_DEV_URL --
 	// so a typo in either survived every healthy run of the pipeline that
 	// exported it. See stokaro/ptah#1334.
-	lintAllVersions, err := atlasMigrateLintAllVersions()
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	withoutDevURL, err := lintWithoutDevURL()
-	if err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
-	devServerDisposable, err := devdocker.DisposableServerDeclared()
+	vars, err := resolveAtlasMigrateLintVariables()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -187,7 +179,7 @@ func runAtlasMigrateLint(
 	// the same invocation carrying a tampered atlas.sum answers it too. An
 	// atlas.hcl env that supplies `dev` satisfies it there and here, which is why
 	// this reads the merged value rather than the flag.
-	if !withoutDevURL {
+	if !vars.withoutDevURL {
 		if err := requireAtlasMigrateLintDevURL(cmd, opts.devURL); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -204,7 +196,7 @@ func runAtlasMigrateLint(
 	if _, err := resolveAtlasVerbDirFormat(cmd.ErrOrStderr(), "lint", opts.dirFormat, nil); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if !lintAllVersions {
+	if !vars.allVersions {
 		if err := requireAtlasMigrateLintScope(cmd, opts, projectCfg); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -258,7 +250,7 @@ func runAtlasMigrateLint(
 	// dir is the directory as the report names it in `.Env.Dir`. The analysis
 	// reads source.Display, the path the directory was captured at.
 	dir := atlasMigrateLintEnvDir(opts.dir, source.Display)
-	lintOptions := atlasMigrateLintReportOptions(cmd, opts, format, policy, devServerDisposable, formatOutput)
+	lintOptions := atlasMigrateLintReportOptions(cmd, opts, format, policy, vars.devServerDisposable, formatOutput)
 	// The changeset selection is required, and requireAtlasMigrateLintScope
 	// above is the one place that asks. Asking again here, through
 	// migrationlintreport.SelectorConfigured, duplicates the requirement
@@ -269,6 +261,9 @@ func runAtlasMigrateLint(
 	captured, err := captureAtlasDirSource(source.FileSystem, format)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))
+	}
+	if err := vars.repeatables.noteReadAsVersions(cmd.ErrOrStderr(), "lint", format, source.FileSystem); err != nil {
+		return cmdutil.Fail(cmd, err)
 	}
 	covered, err := captured.coveredNames()
 	if err != nil {
@@ -540,6 +535,35 @@ var atlasLintAllVersions = envbool.New(atlasMigrateLintAllVersionsEnvVar, false,
 // atlasMigrateLintAllVersions reports whether the opt-in lints the whole
 // directory. Unset keeps the default and a valid false spelling keeps it too; an
 // empty or unparsable value is a configuration error (stokaro/ptah#1334).
+// atlasMigrateLintVariables are the variables `migrate lint` owns, resolved
+// together before the verb does any work.
+type atlasMigrateLintVariables struct {
+	allVersions         bool
+	withoutDevURL       bool
+	devServerDisposable bool
+	repeatables         atlasRepeatableReading
+}
+
+// resolveAtlasMigrateLintVariables resolves every variable `migrate lint`
+// owns, refusing the first malformed one.
+func resolveAtlasMigrateLintVariables() (atlasMigrateLintVariables, error) {
+	var vars atlasMigrateLintVariables
+	var err error
+	if vars.allVersions, err = atlasMigrateLintAllVersions(); err != nil {
+		return atlasMigrateLintVariables{}, err
+	}
+	if vars.repeatables, err = resolveAtlasRepeatableReading(); err != nil {
+		return atlasMigrateLintVariables{}, err
+	}
+	if vars.withoutDevURL, err = lintWithoutDevURL(); err != nil {
+		return atlasMigrateLintVariables{}, err
+	}
+	if vars.devServerDisposable, err = devdocker.DisposableServerDeclared(); err != nil {
+		return atlasMigrateLintVariables{}, err
+	}
+	return vars, nil
+}
+
 func atlasMigrateLintAllVersions() (bool, error) {
 	return atlasLintAllVersions.Resolve()
 }

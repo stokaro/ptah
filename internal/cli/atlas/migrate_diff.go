@@ -157,6 +157,10 @@ func runAtlasMigrateDiff(
 	if err := dbcli.TrustReplaySQLDeclared(cmd); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	repeatables, err := resolveAtlasRepeatableReading()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	opts.exclude, err = atlasMigrateDiffExcludeFromEnv(opts.policy)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -287,6 +291,9 @@ func runAtlasMigrateDiff(
 	}
 	if err := validateAtlasMigrateDiffCurrentSource(project, localDir, dirFormat, opts.policy, opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("validate current migration directory: %w", err))
+	}
+	if err := noteAtlasMigrateDiffRepeatables(cmd, project, localDir, repeatables.reads(dirFormat)); err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
 	if err := project.refuseWriteToReadOnlyMigrationDir(localDir, "atlas migrate diff"); err != nil {
 		return err
@@ -461,6 +468,28 @@ func runAtlasMigrateDiff(
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Updated migration checksum: %s\n", diffResult.SumPath)
 	return nil
+}
+
+// noteAtlasMigrateDiffRepeatables says, under reading, that the replay of the
+// directory reads its R__ files as versions. A directory that does not exist
+// yet holds none.
+func noteAtlasMigrateDiffRepeatables(
+	cmd *cobra.Command,
+	project atlasProject,
+	dir atlasargs.LocalDir,
+	reading atlasRepeatableReading,
+) error {
+	if !reading.enabled {
+		return nil
+	}
+	source, err := project.captureLocal(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return reading.noteReadAsVersions(cmd.ErrOrStderr(), "diff", atlasmigrateimport.FormatAtlas, source.FileSystem)
 }
 
 func validateAtlasMigrateDiffCurrentSource(

@@ -44,9 +44,10 @@ type RevisionTable struct {
 	// one row per identity with the digest of the content that last applied
 	// and the outcome of the last attempt. Empty means the migrator runs no
 	// repeatable migration on the engine and refuses a directory that holds
-	// one. The template takes {table}, {engine} and {object}, the record's
-	// name as a string literal for an existence guard such as SQL Server's
-	// OBJECT_ID.
+	// one. The template takes {table}, {table_escaped} for a CREATE TABLE
+	// carried in a string literal such as Oracle's EXECUTE IMMEDIATE,
+	// {engine}, and {object}, the record's name as a string literal for an
+	// existence guard such as SQL Server's OBJECT_ID.
 	CreateRepeatables string `json:"create_repeatables,omitempty"`
 	// LogInsertPrefix is the SQL before INTO when the migrator appends an
 	// operation log entry. Empty uses INSERT. An engine can use this prefix to
@@ -83,6 +84,10 @@ type RevisionTable struct {
 	// as NULL and keeps revision text in a type that refuses COALESCE with an
 	// empty string.
 	EmptyStringIsNull bool `json:"empty_string_is_null,omitempty"`
+	// EmptyBinary is the expression that stores a zero-length value in the
+	// repeatable record's binary body column, on an engine that stores a
+	// bound empty value as NULL. Empty binds the value.
+	EmptyBinary string `json:"empty_binary,omitempty"`
 	// RowLock is how a read of every revision locks the rows it read until
 	// its transaction ends: "for-update" (a FOR UPDATE suffix),
 	// "table-hint" (WITH (UPDLOCK, HOLDLOCK) after the table), or empty for

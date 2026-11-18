@@ -42,8 +42,10 @@ func WriteMigrateApplyText(w io.Writer, opts MigrateApplyResultOptions) error {
 	if err != nil {
 		return err
 	}
-	_, err = io.WriteString(w, migrateApplyText(result))
-	return err
+	if _, err := io.WriteString(w, migrateApplyText(result)); err != nil {
+		return err
+	}
+	return writeMigrateApplyRepeatablesText(w, result.Repeatables, result.dryRun)
 }
 
 // migrateApplyText is the whole default report for one run.

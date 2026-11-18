@@ -52,25 +52,21 @@ func (m *Migrator) readRepeatableState(ctx context.Context) (*repeatableState, e
 // repeatable migration needs. Where it refuses, no record can exist either, so
 // a reader of the record takes the refusal as "nothing recorded".
 //
-// The Atlas-compatible revision format is refused for the reason the operation
-// log is off under it: that contract defines the revision table and nothing
-// beside it. An engine is refused when its descriptor states no record table,
-// which is how an engine on which the path is not measured leaves it out. A
-// connection through a provider session is refused because the record is a
-// table read and written with SQL, which such a session does not expose; a
-// history store that fails to open is that kind of connection too.
+// An engine is refused when its descriptor states no record table, which is
+// how an engine on which the path is not measured leaves it out. A connection
+// through a provider session is refused because the record is a table read and
+// written with SQL, which such a session does not expose; a history store that
+// fails to open is that kind of connection too. The revision format is not a
+// reason: the record is a table of its own beside the revision table, named
+// after it, so under the Atlas-compatible format it sits beside
+// atlas_schema_revisions and the revision table keeps the shape that contract
+// defines.
 func (m *Migrator) refuseRepeatablesHere() error {
 	if store, err := m.conn.HistoryStore(); err != nil || store != nil {
 		return &RepeatableMigrationsUnsupportedError{
 			Dialect: m.connectionDialect(),
 			Reason: "this connection reaches the database through a provider rather than a database/sql driver, " +
 				"and the record of repeatable migrations is a table Ptah reads and writes with SQL",
-		}
-	}
-	if m.revisionTableFormat.isAtlas() {
-		return &RepeatableMigrationsUnsupportedError{
-			Reason: "the Atlas-compatible revision format defines no table to record them in; " +
-				"use the native revision format",
 		}
 	}
 	if m.revisionTable().CreateRepeatables == "" {
@@ -421,8 +417,10 @@ func (m *Migrator) applyRepeatables(ctx context.Context, state *repeatableState,
 	}
 	return m.withRunSession(ctx, func(scoped *Migrator) error {
 		for index, item := range work {
-			_, recorded := state.rows[item.Identity]
-			attempt := repeatableAttempt{repeatable: state.repeatable(item.Identity), order: index + 1, recorded: recorded}
+			read, recorded := state.rows[item.Identity]
+			attempt := repeatableAttempt{
+				repeatable: state.repeatable(item.Identity), order: index + 1, read: read, recorded: recorded,
+			}
 			if err := scoped.applyRepeatable(ctx, attempt); err != nil {
 				return err
 			}
@@ -438,6 +436,10 @@ type repeatableAttempt struct {
 	order int
 	// transactional reports that the body runs in a transaction of its own.
 	transactional bool
+	// read is the identity's row as the run read the record; the attempt's
+	// claim expects it to still name the run it named then. It is the zero
+	// row when none was read.
+	read repeatableRow
 	// recorded reports that the record table already holds a row for the
 	// identity, which the attempt then updates rather than inserts.
 	recorded bool
@@ -470,7 +472,7 @@ func (m *Migrator) applyRepeatable(ctx context.Context, attempt repeatableAttemp
 	m.logger.Info("Applying repeatable migration", "identity", repeatable.identity, "checksum", repeatable.checksum)
 	m.logRepeatableEvent(ctx, repeatable, MigrationLogStarted, nil)
 	if err := m.markRepeatableAttempt(ctx, attempt); err != nil {
-		err = fmt.Errorf("failed to record the attempt of repeatable migration %s: %w", repeatable.identity, err)
+		err = fmt.Errorf("failed to claim repeatable migration %s for this run: %w", repeatable.identity, err)
 		m.logRepeatableEvent(ctx, repeatable, MigrationLogFailed, err)
 		return err
 	}

@@ -2,6 +2,7 @@ package migrationsource_test
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -49,6 +50,39 @@ func TestResolve_LocalDirectoryFailurePath(t *testing.T) {
 		migrationsource.Options{DirFormat: migrationfile.DirFormatPtah},
 	)
 	c.Assert(err, qt.ErrorMatches, "open migrations directory: .*")
+}
+
+func TestResolve_SourceCheckHappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE users (id INTEGER);\n")
+	var checked []string
+	ctx := migrationsource.WithSourceCheck(context.Background(), func(fsys fs.FS) error {
+		names, err := fs.Glob(fsys, "*.sql")
+		checked = names
+		return err
+	})
+
+	source, err := migrationsource.Resolve(ctx, dir, migrationsource.Options{DirFormat: migrationfile.DirFormatAtlas})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(checked, qt.DeepEquals, []string{"1_init.sql"})
+	contents, err := fs.ReadFile(source.FileSystem, "1_init.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "CREATE TABLE users (id INTEGER);\n")
+}
+
+func TestResolve_SourceCheckFailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE users (id INTEGER);\n")
+	refused := errors.New("refused by the forwarding surface")
+	ctx := migrationsource.WithSourceCheck(context.Background(), func(fs.FS) error { return refused })
+
+	source, err := migrationsource.Resolve(ctx, dir, migrationsource.Options{DirFormat: migrationfile.DirFormatAtlas})
+
+	c.Assert(err, qt.ErrorIs, refused)
+	c.Assert(source, qt.DeepEquals, migrationsource.Source{})
 }
 
 func TestResolve_EmptyLocalDirectory(t *testing.T) {

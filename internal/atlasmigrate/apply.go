@@ -93,6 +93,11 @@ type ApplyOptions struct {
 	// [migrator.WithOwnTransactions]. The converted layout carries
 	// no trace of the runner, so the caller that read the source layout says.
 	OwnTransactions bool
+	// Repeatables reads a top-level R__<identity>.sql of a directory in the
+	// Atlas layout as a repeatable migration rather than as the version R; see
+	// [migrator.WithAtlasRepeatableMigrations]. The caller sets it only for a
+	// directory it reads in that layout.
+	Repeatables bool
 }
 
 // ApplyPlan is the selected Atlas migrate apply work prepared from the
@@ -153,6 +158,12 @@ type ApplyResult struct {
 	// ChecksDeferredKeys are exact revision identities aligned with
 	// ChecksDeferred. A present empty key is the migration identity.
 	ChecksDeferredKeys []string
+	// Repeatables is the repeatable work the run selected under the migration
+	// lock, in execution order, and AppliedRepeatables the identities of the
+	// ones whose content applied. Both are empty unless
+	// [ApplyOptions.Repeatables] is set.
+	Repeatables        []migrator.RepeatableWork
+	AppliedRepeatables []string
 }
 
 // PrepareApply builds the Atlas-format migrator, applies real baseline
@@ -180,6 +191,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		skipMigrationLock:    opts.SkipMigrationLock,
 		skipChecks:           opts.SkipChecks,
 		ownTransactions:      opts.OwnTransactions,
+		repeatables:          opts.Repeatables,
 	})
 	if err != nil {
 		return ApplyPlan{}, err
@@ -336,6 +348,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 		AssumedAppliedVersionKeys: p.assumedAppliedKeys,
 		PlanObserver: func(_ context.Context, plan migrator.MigrationPlan) {
 			result.Inputs = plan.Inputs
+			result.Repeatables = slices.Clone(plan.Repeatables)
 			lockedPlanObserved = true
 			result.SelectedVersions = slices.Clone(plan.Versions)
 			result.SelectedKeys = slices.Clone(plan.VersionKeys)
@@ -347,7 +360,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 			if err := runApplyPreflight(ctx, hook, plan); err != nil {
 				return err
 			}
-			executionStarted = len(plan.Versions) > 0
+			executionStarted = len(plan.Versions) > 0 || len(plan.Repeatables) > 0
 			return nil
 		},
 		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
@@ -402,7 +415,21 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 	}
 	result.FinalStatus = finalStatus
 	result.Applied = true
+	result.AppliedRepeatables = appliedRepeatables(result.Repeatables, finalStatus)
 	return result, nil
+}
+
+// appliedRepeatables names the selected repeatable work whose content the
+// status after the run records as applied, read the way a native run document
+// reads it.
+func appliedRepeatables(work []migrator.RepeatableWork, after *migrator.MigrationStatus) []string {
+	if len(work) == 0 {
+		return nil
+	}
+	return migrator.NewRunResult(migrator.RunEvidence{
+		Plan:  &migrator.MigrationPlan{Repeatables: work},
+		After: after,
+	}).AppliedRepeatables
 }
 
 func runApplyPreflight(
@@ -546,6 +573,7 @@ type applyMigratorOptions struct {
 	skipMigrationLock    bool
 	skipChecks           bool
 	ownTransactions      bool
+	repeatables          bool
 }
 
 func newApplyMigrator(
@@ -562,6 +590,9 @@ func newApplyMigrator(
 	}
 	if opts.ownTransactions {
 		providerOptions = append(providerOptions, migrator.WithOwnTransactions())
+	}
+	if opts.repeatables {
+		providerOptions = append(providerOptions, migrator.WithAtlasRepeatableMigrations())
 	}
 	mig, err := migrator.NewFSMigrator(conn, fsys, providerOptions...)
 	if err != nil {
