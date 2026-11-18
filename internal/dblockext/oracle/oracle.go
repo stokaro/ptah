@@ -14,6 +14,14 @@
 // enable would refuse every run of an ordinary account. A row lock needs what
 // a migration needs already: CREATE TABLE in its own schema.
 //
+// The table is named without a schema, so it lives in the lock session's
+// current schema. That is the schema the migrator qualifies its revision table
+// with, which the connector reads as SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
+// on a session of the same pool. An Oracle URL cannot name another one: go-ora
+// refuses ?schema= with "unknown URL option: schema" before the connection
+// opens. And no statement Ptah sends the lock session changes its current
+// schema.
+//
 // A row lock ends with the transaction that took it, and Oracle commits every
 // DDL statement, so the session holding it must run nothing but the lock's
 // own statements. The services say so with ReleasedByCommit, and dblock takes
@@ -108,19 +116,21 @@ type rowLock struct{}
 // A preview writes nothing, so it creates neither the table nor the row. A
 // lock name without its row has never been taken in this schema, so there is
 // nobody to wait for, and the preview goes on holding nothing.
+//
+// The timeout bounds the creation of the row too, which can wait for another
+// session's lock on the table.
 func (rowLock) Acquire(ctx context.Context, session dblockext.Session, request dblockext.Request) error {
-	if !request.Preview {
-		if _, err := session.ExecContext(ctx, ensureRow, request.Name); err != nil {
-			return &dblockext.AmbiguousError{Err: fmt.Errorf("create the row of lock %q in %s: %w",
-				request.Name, table, err)}
-		}
-	}
-
 	lockCtx := ctx
 	var cancel context.CancelFunc
 	if request.Timeout > 0 {
 		lockCtx, cancel = context.WithTimeout(ctx, request.Timeout)
 		defer cancel()
+	}
+	if !request.Preview {
+		if _, err := session.ExecContext(lockCtx, ensureRow, request.Name); err != nil {
+			return &dblockext.AmbiguousError{Err: waitError(ctx, lockCtx, request,
+				fmt.Errorf("create the row of lock %q in %s: %w", request.Name, table, err))}
+		}
 	}
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()

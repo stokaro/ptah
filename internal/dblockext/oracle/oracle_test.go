@@ -245,3 +245,27 @@ func TestRelease_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, errStatement)
 }
+
+// The timeout bounds the creation of the row as well as the wait for its
+// lock: a creation that outlasts it is the lock another session holds, not a
+// wait without end.
+func TestAcquire_RowCreationRunsUnderTheTimeout(t *testing.T) {
+	c := qt.New(t)
+	db := dbtest.OpenWithExec(c,
+		func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+			return dbtest.QueryResult{}, errStatement
+		},
+		func(string, []driver.NamedValue) (driver.Result, error) {
+			time.Sleep(200 * time.Millisecond)
+			return nil, context.DeadlineExceeded
+		},
+	)
+	session, err := db.SQL.Conn(c.Context())
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = session.Close() })
+
+	err = oracle.Services().Session.Acquire(c.Context(), dblockext.SQLSession{Conn: session}, request(50*time.Millisecond))
+
+	c.Assert(err, qt.ErrorIs, errHeld)
+	c.Assert(err, qt.ErrorAs, new(*dblockext.AmbiguousError))
+}

@@ -22,7 +22,7 @@ import (
 // the work's CREATE TABLE committed on the pinned session, a second session is
 // still refused the lock. Taken on the pinned session, the CREATE TABLE would
 // have given it back, and the second session would get it.
-func TestWithLockSession_OracleKeepsTheLockThroughTheWorksDDLLive(t *testing.T) {
+func TestWithLockSessionOracleLive_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	databaseURL := dbtarget.URL(c, dbtarget.Oracle)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
