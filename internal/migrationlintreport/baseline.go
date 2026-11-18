@@ -244,6 +244,7 @@ func baselineColumnsOf(schema *catalog.Database, version int64) []lintext.Baseli
 				TableCharset:     table.Charset,
 				Collation:        column.EffectiveCollate,
 				TableCollation:   table.Collate,
+				OwnCollation:     column.Collate != "",
 				TablePartitioned: table.Partitioned,
 				NotNull:          strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
 				HasDefault:       strings.TrimSpace(columnDefault(column)) != "",
