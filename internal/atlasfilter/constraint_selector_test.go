@@ -1,6 +1,7 @@
 package atlasfilter_test
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -204,12 +205,27 @@ func TestExcludeNamesADeclaredPrimaryKey_HappyPath(t *testing.T) {
 			primaryField: true,
 		},
 		{
-			name: "a column key on a dialect nothing describes", exclude: "public.kinds.kinds_pkey",
-			primaryField: true,
+			name: "a named column key on SQL Server by its name", exclude: "kinds.c_pk", dialect: "sqlserver",
+			table: schemamodel.Table{PrimaryKeyName: "c_pk"}, primaryField: true,
 		},
 		{
-			name: "a column key on SQLite, where a key column may hold NULL", exclude: "public.kinds.kinds_pkey", dialect: "sqlite",
-			primaryField: true, wantNullable: true,
+			name: "a column key on a dialect nothing describes keeps a name no server is known to give", exclude: "public.kinds.kinds_pkey",
+			primaryField: true, wantPrimary: true, wantNullable: true,
+		},
+		{
+			name: "the MySQL name on PostgreSQL names another object", exclude: "public.kinds.PRIMARY[type=index]", dialect: "postgres",
+			table:   schemamodel.Table{PrimaryKey: []string{"id"}},
+			wantKey: "id", primaryField: true, wantPrimary: true, wantNullable: true,
+		},
+		{
+			name: "the PostgreSQL name on MySQL names another object", exclude: "kinds.kinds_pkey[type=index]", dialect: "mysql",
+			table:   schemamodel.Table{PrimaryKey: []string{"id"}},
+			wantKey: "id", primaryField: true, wantPrimary: true, wantNullable: true,
+		},
+		{
+			name: "the declared name on MySQL names another object", exclude: "kinds.c_pk", dialect: "mysql",
+			table:   schemamodel.Table{PrimaryKey: []string{"id"}, PrimaryKeyName: "c_pk"},
+			wantKey: "id", primaryField: true, wantPrimary: true, wantNullable: true,
 		},
 		{
 			name: "another constraint keeps the key", exclude: "public.kinds.kinds_code_key", dialect: "postgres",
@@ -339,21 +355,27 @@ func generatedIndexTables(indexes []schemamodel.Index) []string {
 }
 
 // TestExcludeNamesAColumnUniqueByTheServersName declares UNIQUE on the column
-// code, with no name. The server names it kinds_code_key, as PostgreSQL does,
-// or code, as the MySQL family does, and a selector naming it by either name
-// under a type a UNIQUE constraint answers takes the declaration out. A
-// selector of another type, or another name, leaves it.
+// code, with no name. The target's server names it kinds_code_key, as
+// PostgreSQL does, or code, as the MySQL family does, and a selector naming it
+// by that name under a type a UNIQUE constraint answers takes the declaration
+// out. The other dialect's name can belong to an unrelated object on the same
+// table, so a selector naming it leaves the declaration, as does a selector of
+// another type or another name.
 func TestExcludeNamesAColumnUniqueByTheServersName(t *testing.T) {
 	tests := []struct {
-		name, exclude string
-		wantUnique    bool
+		name, dialect, exclude string
+		wantUnique             bool
 	}{
-		{name: "the PostgreSQL name as an index", exclude: "public.kinds.kinds_code_key[type=index]"},
-		{name: "the PostgreSQL name as a constraint", exclude: "public.kinds.kinds_code_key[type=constraint]"},
-		{name: "the PostgreSQL name with no type", exclude: "kinds.kinds_code_key"},
-		{name: "the MySQL name as an index", exclude: "kinds.code[type=index]"},
-		{name: "the PostgreSQL name as a check", exclude: "public.kinds.kinds_code_key[type=check]", wantUnique: true},
-		{name: "another name", exclude: "public.kinds.kinds_name_key[type=index]", wantUnique: true},
+		{name: "the PostgreSQL name as an index", dialect: "postgres", exclude: "public.kinds.kinds_code_key[type=index]"},
+		{name: "the PostgreSQL name as a constraint", dialect: "postgres", exclude: "public.kinds.kinds_code_key[type=constraint]"},
+		{name: "the PostgreSQL name with no type", dialect: "postgres", exclude: "kinds.kinds_code_key"},
+		{name: "the MySQL name as an index", dialect: "mysql", exclude: "kinds.code[type=index]"},
+		{name: "the MariaDB name as an index", dialect: "mariadb", exclude: "kinds.code[type=index]"},
+		{name: "the MySQL name on PostgreSQL names another object", dialect: "postgres", exclude: "public.kinds.code[type=index]", wantUnique: true},
+		{name: "the PostgreSQL name on MySQL names another object", dialect: "mysql", exclude: "kinds.kinds_code_key[type=index]", wantUnique: true},
+		{name: "a dialect nothing describes takes the PostgreSQL name", exclude: "kinds.kinds_code_key"},
+		{name: "the PostgreSQL name as a check", dialect: "postgres", exclude: "public.kinds.kinds_code_key[type=check]", wantUnique: true},
+		{name: "another name", dialect: "postgres", exclude: "public.kinds.kinds_name_key[type=index]", wantUnique: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -366,7 +388,10 @@ func TestExcludeNamesAColumnUniqueByTheServersName(t *testing.T) {
 				},
 			}
 
-			declared, _, err := atlasfilter.ExcludeGeneratedScopeReport(desired, realmScope(test.exclude))
+			scope := realmScope(test.exclude)
+			scope.Dialect = test.dialect
+
+			declared, _, err := atlasfilter.ExcludeGeneratedScopeReport(desired, scope)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(declared.Fields, qt.HasLen, 2)
@@ -374,4 +399,82 @@ func TestExcludeNamesAColumnUniqueByTheServersName(t *testing.T) {
 			c.Assert(desired.Fields[1].Unique, qt.IsTrue)
 		})
 	}
+}
+
+// SQLite changes a constraint only by writing a new table from the
+// declaration, so a constraint a selector kept out of scope would be left out
+// of the new table. Each side refuses a selector that names one, and names the
+// remedy: excluding the whole table, which no plan rewrites.
+func TestExcludeRefusesAConstraintWhereTheTableIsRewritten_FailurePath(t *testing.T) {
+	const remedy = `, and sqlite changes a constraint only by writing a new table from the declaration, ` +
+		`which would leave the constraint out; exclude the whole table instead`
+	tests := []struct {
+		name, exclude, want string
+	}{
+		{
+			name: "a check", exclude: "public.kinds.code_len[type=check]",
+			want: `exclude selector "public.kinds.code_len[type=check]" names constraint "code_len" of table "kinds"`,
+		},
+		{
+			name: "a unique constraint", exclude: "public.kinds.kinds_code_key[type=constraint]",
+			want: `exclude selector "public.kinds.kinds_code_key[type=constraint]" names constraint "kinds_code_key" of table "kinds"`,
+		},
+		{
+			name: "a primary key", exclude: "public.kinds.kinds_pkey[type=constraint]",
+			want: `exclude selector "public.kinds.kinds_pkey[type=constraint]" names constraint "kinds_pkey" of table "kinds"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scope := realmScope(test.exclude)
+			scope.Dialect = "sqlite"
+
+			current, _, currentErr := atlasfilter.ExcludeDatabaseScopeReport(observedSelectorConstraints(), scope)
+			declared, _, declaredErr := atlasfilter.ExcludeGeneratedScopeReport(desiredSelectorConstraints(), scope)
+
+			c.Assert(currentErr, qt.ErrorMatches, regexp.QuoteMeta(test.want+remedy))
+			c.Assert(declaredErr, qt.ErrorMatches, regexp.QuoteMeta(test.want+remedy))
+			c.Assert(current, qt.IsNil)
+			c.Assert(declared, qt.IsNil)
+		})
+	}
+}
+
+// A column's own UNIQUE carries no name in the declaration, so the refusal
+// names the column it is written on.
+func TestExcludeRefusesAColumnUniqueWhereTheTableIsRewritten_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{Schema: "public", Name: "kinds", StructName: "Kinds"}},
+		Fields: []schemamodel.Field{{StructName: "Kinds", Name: "code", Type: "text", Unique: true}},
+	}
+	scope := realmScope("kinds.kinds_code_key")
+	scope.Dialect = "sqlite"
+
+	declared, _, err := atlasfilter.ExcludeGeneratedScopeReport(desired, scope)
+
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`exclude selector "kinds.kinds_code_key" names the UNIQUE of column "code" of table "kinds", `+
+		`and sqlite changes a constraint only by writing a new table from the declaration, `+
+		`which would leave the constraint out; exclude the whole table instead`))
+	c.Assert(declared, qt.IsNil)
+}
+
+// A selector that names a constraint and an object it can leave out keeps its
+// meaning for that object on SQLite, and leaves the constraint in scope.
+func TestExcludeKeepsAConstraintAWildcardNamesWhereTheTableIsRewritten_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	// SQLite reports no index for a key or a UNIQUE constraint a statement
+	// could name, so the table's one index is the one CREATE INDEX made.
+	observed := observedSelectorConstraints()
+	observed.Indexes = []catalog.Index{{Schema: "public", TableName: "kinds", Name: "kinds_code", Columns: []string{"code"}}}
+	scope := realmScope("public.kinds.*[type=index]")
+	scope.Dialect = "sqlite"
+
+	current, report, err := atlasfilter.ExcludeDatabaseScopeReport(observed, scope)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(constraintNames(current.Constraints), qt.DeepEquals, []string{"kinds_pkey", "kinds_code_key", "code_len"})
+	c.Assert(current.Indexes, qt.HasLen, 0)
+	c.Assert(report.Unmatched, qt.IsNil)
 }

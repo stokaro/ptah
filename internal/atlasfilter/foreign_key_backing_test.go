@@ -133,3 +133,69 @@ func TestExclusionLeavesOutTheIndexAServerBuiltForAForeignKey_HappyPath(t *testi
 		})
 	}
 }
+
+// A selector that leaves every constraint out takes no index with a foreign
+// key. It lets a read go without the privilege to see constraints, and an
+// account that cannot see the key cannot tell which index it stands on, so an
+// account that can answers the same.
+func TestExcludeKeepsTheIndexOfAForeignKeyEveryConstraintSelectorLeavesOut_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	scope := atlasfilter.Scope{
+		Selections: ownerSelections(), Exclude: []string{"*[type=constraint]"}, DefaultSchema: "app",
+		Dialect: "mysql", ForeignKeyIndexes: namedAfterKey{},
+	}
+
+	current, report, err := atlasfilter.ExcludeDatabaseScopeReport(observedForeignKeys(), scope)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(current.Constraints, qt.HasLen, 0)
+	c.Assert(indexNames(current.Indexes), qt.DeepEquals, []string{"kids_parent_fk", "kids_owner_idx"})
+	c.Assert(report.Unmatched, qt.IsNil)
+}
+
+// hiddenKeys is a MariaDB read for an account that sees no constraint row:
+// the primary index and a unique index carry the keys, and the columns' flags
+// come from them.
+func hiddenKeys() *catalog.Database {
+	return &catalog.Database{
+		Tables: []catalog.Table{{Schema: "app", Name: "kinds", Columns: []catalog.Column{
+			{Name: "id", IsPrimaryKey: true}, {Name: "code", IsUnique: true},
+		}}},
+		Indexes: []catalog.Index{
+			{Schema: "app", TableName: "kinds", Name: "PRIMARY", Columns: []string{"id"}, IsPrimary: true, IsUnique: true},
+			{Schema: "app", TableName: "kinds", Name: "code", Columns: []string{"code"}, IsUnique: true},
+		},
+	}
+}
+
+// A key the read reports through its index alone is named as the key would
+// be, so a selector naming it takes the key's flags and index whether or not
+// the account could see the key's row. A UNIQUE is a constraint of its own
+// where the server does not make it an index, and there the unique index is
+// asked only as an index.
+func TestExcludeNamesAKeyTheReadReportsThroughItsIndex_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, dialect, exclude string
+		wantIndexes            []string
+		// wantFlags are the primary-key flag of id and the unique flag of
+		// code.
+		wantFlags [2]bool
+	}{
+		{name: "every constraint on MariaDB", dialect: "mariadb", exclude: "*[type=constraint]", wantIndexes: make([]string, 0), wantFlags: [2]bool{false, false}},
+		{name: "the primary key on MariaDB", dialect: "mariadb", exclude: "kinds.PRIMARY[type=constraint]", wantIndexes: []string{"code"}, wantFlags: [2]bool{false, true}},
+		{name: "the UNIQUE on MariaDB", dialect: "mariadb", exclude: "kinds.code[type=constraint]", wantIndexes: []string{"PRIMARY"}, wantFlags: [2]bool{true, false}},
+		{name: "a unique index on PostgreSQL is no constraint", dialect: "postgres", exclude: "kinds.code[type=constraint]", wantIndexes: []string{"PRIMARY", "code"}, wantFlags: [2]bool{true, true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scope := atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{test.exclude}, DefaultSchema: "app", Dialect: test.dialect}
+
+			current, _, err := atlasfilter.ExcludeDatabaseScopeReport(hiddenKeys(), scope)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(indexNames(current.Indexes), qt.DeepEquals, test.wantIndexes)
+			c.Assert([2]bool{current.Tables[0].Columns[0].IsPrimaryKey, current.Tables[0].Columns[1].IsUnique}, qt.Equals, test.wantFlags)
+		})
+	}
+}

@@ -38,6 +38,13 @@ type Migration struct {
 	// transaction, and a check that knows it can say so before the file runs
 	// rather than after the server refuses it part way through.
 	RefusedInTransaction []TransactionRefusal `json:"refused_in_transaction,omitempty"`
+	// ConstraintsRewriteTable reports that the engine adds, changes or drops
+	// a table constraint only by writing a new table and copying the rows
+	// into it, as SQLite does. The new table is written from the
+	// declaration, so a constraint the declaration leaves out does not
+	// survive the rewrite, and an exclude selector cannot keep one out of
+	// scope.
+	ConstraintsRewriteTable bool `json:"constraints_rewrite_table,omitempty"`
 }
 
 // TransactionRefusal is one statement an engine refuses inside a transaction

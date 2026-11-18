@@ -1037,9 +1037,22 @@ Ptah names the key under `[type=foreign_key]` and leaves the index the server
 built out with it, so the plan is synced. An index the author declared stays in
 the plan on both binaries, and the server refuses its removal the same way.
 
+On SQLite, the binary and `ptah-compat` both fail a selector that names a
+`CHECK`, for different reasons. With the table `kinds` holding a column
+`UNIQUE`, the check `code_len` and the index `kinds_code`, a desired schema that
+declares none of them, and `--exclude 'kinds.code_len[type=check]'`, the binary
+v1.3.0 plans `DROP INDEX kinds_code` twice and leaves the `UNIQUE` in place; its
+`schema apply` fails on the second statement with `no such index: kinds_code`
+and leaves the table as it was. Ptah plans the removal of the `UNIQUE`, and
+SQLite removes it only by writing a new table from the declaration, which would
+not hold the `CHECK` the selector keeps. So `ptah-compat` refuses the selector,
+says why, plans nothing and leaves the table as it is. Excluding the whole table
+works on both.
+
 **Evidence.** `integration/constraint_selector_e2e_test.go`,
 `integration/exclusion_selector_e2e_test.go`,
 `integration/foreign_key_selector_e2e_test.go`,
+`integration/key_selector_names_e2e_test.go`,
 `internal/atlasfilter/constraint_selector_test.go`,
 `internal/atlasfilter/foreign_key_backing_test.go`
 
