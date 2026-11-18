@@ -1900,13 +1900,13 @@ func (m *Migrator) restartMigrationRevisionOn(
 	}
 	query += " AND state = ? AND applied = ?"
 	args = append(args, plan.readState, plan.readApplied)
-	lost := fmt.Sprintf("the row of migration %d no longer has state %q and %d applied statements",
-		migration.Version, plan.readState, plan.readApplied)
+	lost := fmt.Sprintf("the row of migration %d no longer has state %q and %d applied %s",
+		migration.Version, plan.readState, plan.readApplied, plural(plan.readApplied, "statement", "statements"))
 	if plan.readChecksum != "" {
 		query += " AND checksum = ?"
 		args = append(args, plan.readChecksum)
-		lost = fmt.Sprintf("the row of migration %d no longer has state %q, %d applied statements and the checksum this run read",
-			migration.Version, plan.readState, plan.readApplied)
+		lost = fmt.Sprintf("the row of migration %d no longer has state %q, %d applied %s and the checksum this run read",
+			migration.Version, plan.readState, plan.readApplied, plural(plan.readApplied, "statement", "statements"))
 	}
 	return m.claimRevisionRestart(ctx, conn, migration, query, args, lost)
 }
@@ -2012,13 +2012,13 @@ func (m *Migrator) restartAtlasMigrationRevisionOn(
 	}
 	query += " AND applied = ?"
 	args = append(args, plan.readApplied)
-	lost := fmt.Sprintf("the row of migration %s no longer has the %d applied statements this run read",
-		migration.RevisionVersion(), plan.readApplied)
+	lost := fmt.Sprintf("the row of migration %s no longer has the %d applied %s this run read",
+		migration.RevisionVersion(), plan.readApplied, plural(plan.readApplied, "statement", "statements"))
 	if plan.readError {
 		recorded, _ := atlasRevisionErrorTests(m.connectionDialect())
 		query += " AND " + recorded
-		lost = fmt.Sprintf("the row of migration %s no longer has the %d applied statements and the error this run read",
-			migration.RevisionVersion(), plan.readApplied)
+		lost = fmt.Sprintf("the row of migration %s no longer has the %d applied %s and the error this run read",
+			migration.RevisionVersion(), plan.readApplied, plural(plan.readApplied, "statement", "statements"))
 	}
 	return m.claimRevisionRestart(ctx, conn, migration, query, args, lost)
 }

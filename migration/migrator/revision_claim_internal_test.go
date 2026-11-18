@@ -157,14 +157,14 @@ func TestRestartMigrationRevision_FailurePath(t *testing.T) {
 			format:  RevisionTableFormatPtah,
 			on:      onRoot,
 			rewrite: "UPDATE schema_migrations SET state = 'pending'",
-			wantErr: `.*the row of migration 1 no longer has state "failed", 1 applied statements and the checksum this run read`,
+			wantErr: `.*the row of migration 1 no longer has state "failed", 1 applied statement and the checksum this run read`,
 		},
 		{
 			name:    "native, a further statement applied",
 			format:  RevisionTableFormatPtah,
 			on:      onRoot,
 			rewrite: "UPDATE schema_migrations SET applied = 2",
-			wantErr: `.*no longer has state "failed", 1 applied statements.*`,
+			wantErr: `.*no longer has state "failed", 1 applied statement.*`,
 		},
 		{
 			name:    "native, another checksum",
@@ -185,14 +185,14 @@ func TestRestartMigrationRevision_FailurePath(t *testing.T) {
 			format:  RevisionTableFormatAtlas,
 			on:      onRoot,
 			rewrite: "UPDATE atlas_schema_revisions SET error = ''",
-			wantErr: `.*the row of migration 1 no longer has the 1 applied statements and the error this run read`,
+			wantErr: `.*the row of migration 1 no longer has the 1 applied statement and the error this run read`,
 		},
 		{
 			name:    "atlas, a further statement applied",
 			format:  RevisionTableFormatAtlas,
 			on:      onRoot,
 			rewrite: "UPDATE atlas_schema_revisions SET applied = 2",
-			wantErr: `.*no longer has the 1 applied statements.*`,
+			wantErr: `.*no longer has the 1 applied statement.*`,
 		},
 	}
 	for _, test := range tests {

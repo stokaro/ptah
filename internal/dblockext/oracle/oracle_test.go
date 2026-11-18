@@ -248,26 +248,31 @@ func TestRelease_FailurePath(t *testing.T) {
 
 // The timeout bounds the creation of the row as well as the wait for its
 // lock: a creation that outlasts it is the lock another session holds, not a
-// wait without end.
+// wait without end. The creation here waits until its own context ends, and
+// the caller's context lasts much longer than the timeout, so only a creation
+// run under the timeout ends in time to report the lock as held.
 func TestAcquire_RowCreationRunsUnderTheTimeout(t *testing.T) {
 	c := qt.New(t)
-	db := dbtest.OpenWithExec(c,
+	db := dbtest.OpenWithExecContext(c,
 		func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
 			return dbtest.QueryResult{}, errStatement
 		},
-		func(string, []driver.NamedValue) (driver.Result, error) {
-			time.Sleep(200 * time.Millisecond)
-			return nil, context.DeadlineExceeded
+		func(ctx context.Context, _ string, _ []driver.NamedValue) (driver.Result, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
 		},
 	)
-	session, err := db.SQL.Conn(c.Context())
+	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
+	c.Cleanup(cancel)
+	session, err := db.SQL.Conn(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = session.Close() })
 
-	err = oracle.Services().Session.Acquire(c.Context(), dblockext.SQLSession{Conn: session}, request(50*time.Millisecond))
+	err = oracle.Services().Session.Acquire(ctx, dblockext.SQLSession{Conn: session}, request(50*time.Millisecond))
 
 	c.Assert(err, qt.ErrorIs, errHeld)
 	c.Assert(err, qt.ErrorAs, new(*dblockext.AmbiguousError))
+	c.Assert(ctx.Err(), qt.IsNil)
 }
 
 // The lock table lives in the schema the request names, which the migrator
@@ -331,6 +336,56 @@ func TestAcquire_LocksTheTableOfTheRequestSchema(t *testing.T) {
 			defer mu.Unlock()
 			c.Assert(created, qt.Equals, test.wantCreated)
 			c.Assert(lockedBy, qt.Equals, test.wantLocked)
+		})
+	}
+}
+
+// A lock table the account may not create is a refusal that says what to do,
+// and not an ambiguous error: the block stopped before its COMMIT, so nothing
+// was written and the session goes back to the pool. In another account's
+// schema the remedy is a table the DBA creates with SELECT and INSERT granted,
+// or CREATE ANY TABLE; in the account's own schema it is CREATE TABLE.
+func TestAcquire_RefusesALockTableItCannotCreate(t *testing.T) {
+	tests := []struct {
+		name    string
+		schema  string
+		wantErr string
+	}{
+		{
+			name:    "the session's current schema",
+			wantErr: `lock table ptah_locks does not exist and the account may not create it: grant it CREATE TABLE: ORA-20001: .*`,
+		},
+		{
+			name:   "a configured schema",
+			schema: "APP",
+			wantErr: `lock table "APP".ptah_locks does not exist, or this account holds no privilege on it, ` +
+				`and the account may not create it: create it with CREATE TABLE "APP".ptah_locks \(name VARCHAR2\(1000\) PRIMARY KEY\) ` +
+				`and GRANT SELECT, INSERT ON "APP".ptah_locks TO the account, or grant the account CREATE ANY TABLE: ORA-20001: .*`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.OpenWithExec(c,
+				func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+					return dbtest.QueryResult{}, errStatement
+				},
+				func(string, []driver.NamedValue) (driver.Result, error) {
+					return nil, &network.OracleError{ErrCode: 20001, ErrMsg: "ORA-20001: lock table cannot be created"}
+				},
+			)
+			session, err := db.SQL.Conn(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(func() { _ = session.Close() })
+			req := request(time.Second)
+			req.Schema = test.schema
+
+			err = oracle.Services().Session.Acquire(c.Context(), dblockext.SQLSession{Conn: session}, req)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			_, ambiguous := errors.AsType[*dblockext.AmbiguousError](err)
+			c.Assert(ambiguous, qt.IsFalse)
+			c.Assert(db.QueryCount(), qt.Equals, 0)
 		})
 	}
 }

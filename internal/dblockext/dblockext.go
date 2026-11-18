@@ -146,10 +146,10 @@ type Services struct {
 	// session of its own even where the caller pins one for its work.
 	ReleasedByCommit bool
 	// Table names the table the lock keeps its rows in, in the schema
-	// [Request.Schema] names, when it keeps one; it is empty otherwise. The lock creates the
-	// table itself, so on the dialects these services serve the table is
-	// Ptah's bookkeeping, and their schema readers leave it out. On every
-	// other dialect a table of that name is the user's.
+	// [Request.Schema] names, when it keeps one; it is empty otherwise. The
+	// lock creates the table itself, so on the dialects these services serve
+	// the table is Ptah's bookkeeping, and their schema readers leave it out.
+	// On every other dialect a table of that name is the user's.
 	Table string
 	// Separate takes a lock that a session of the service's own holds.
 	Separate SeparateLock

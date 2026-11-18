@@ -21,14 +21,17 @@ func TestRead_OracleGivesANumber(t *testing.T) {
 	c.Assert(number, qt.Equals, 1)
 }
 
-// ORA-00001 is Oracle's unique violation. Insufficient privileges, an exceeded
-// quota and the two lost-connection errors are not.
+// ORA-00001 is Oracle's unique violation. A missing parent key (ORA-02291), a
+// NULL into a NOT NULL column (ORA-01400), insufficient privileges, an
+// exceeded quota and the two lost-connection errors are not.
 func TestUniqueViolation_Oracle(t *testing.T) {
 	tests := []struct {
 		code int
 		want bool
 	}{
 		{code: 1, want: true},
+		{code: 2291},
+		{code: 1400},
 		{code: 1031},
 		{code: 1536},
 		{code: 3113},

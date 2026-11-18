@@ -316,9 +316,24 @@ accounts that record in one revision table take one lock. The row's key is the
 lock name exactly as given, `ptah_migrate` unless `--migration-lock-name` names
 another, and Ptah locks that row with `SELECT ... FOR UPDATE NOWAIT`. It asks
 again every 25 milliseconds until the wait ends, so waiting runs are not served
-in the order they arrived. Creating the table needs `CREATE TABLE` in that
-schema, which recording a migration there needs already. On the other engines
-Ptah creates no such table, and a table of that name there is an ordinary one.
+in the order they arrived. On the other engines Ptah creates no such table, and
+a table of that name there is an ordinary one.
+
+Creating the table needs `CREATE TABLE` in the account's own schema, and
+`CREATE ANY TABLE` in a schema another account owns. Without that privilege, a
+DBA creates the table once and grants the account `SELECT`, which
+`FOR UPDATE` needs, and `INSERT`, for the row of each new lock name. `READ`
+in place of `SELECT` is refused by `FOR UPDATE`.
+
+```sql
+CREATE TABLE "APP".ptah_locks (name VARCHAR2(1000) PRIMARY KEY);
+GRANT SELECT, INSERT ON "APP".ptah_locks TO deployer;
+```
+
+Where neither the table nor the privilege is there, the lock refuses before the
+run starts and names both remedies. It does not fall back to the account's own
+schema, because a table there would not exclude another account that records
+in the same revision table.
 
 Do not name a table of your own `ptah_locks` on Oracle. Schema reads leave that
 name out, as they leave out the revision table, so `schema diff` and `schema
