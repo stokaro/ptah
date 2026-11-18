@@ -1619,6 +1619,10 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 	pendingMigrationKeys := migrationVersionKeys(pendingMigrationList)
 	outOfOrderMigrations := outOfOrderMigrationVersions(pendingMigrations, currentVersion)
 	outOfOrderMigrationKeys := outOfOrderMigrationKeys(pendingMigrationList, currentVersion)
+	if m.readsAtlasRevisionOrder(providerMigrations) {
+		late := atlasRevisionOutOfOrder(providerMigrations, pendingMigrationList, effectiveAppliedIdentities)
+		outOfOrderMigrations, outOfOrderMigrationKeys = migrationVersions(late), migrationVersionKeys(late)
+	}
 	dirtyRevision := firstDirtyRevision(revisions)
 	if dirtyRevision != nil {
 		currentVersionKey = dirtyRevision.RevisionVersion()
@@ -3759,9 +3763,13 @@ func (m *Migrator) migrationsToApply(
 	// disagree on real directories, so both are asked and the exemption is
 	// applied to the union rather than to either half — see
 	// [Migrator.WithSourceVersions].
+	ordered := outOfOrderMigrationVersions(pendingVersions, currentVersion)
+	if m.readsAtlasRevisionOrder(migrations) {
+		ordered = migrationVersions(atlasRevisionOutOfOrder(migrations, pendingMigrationList, appliedIdentities))
+	}
 	outOfOrderVersions := outOfOrderExempt(
 		mergeOutOfOrderVersions(
-			outOfOrderMigrationVersions(pendingVersions, currentVersion),
+			ordered,
 			outOfOrderSourceVersions(
 				pendingVersions,
 				applied,

@@ -8,7 +8,12 @@ import (
 	"ptah.run/internal/atlasurl"
 )
 
-// storedTimeLayouts are the spellings the text of a time column arrives in.
+// atlasRevisionTimeLayout is how an Atlas revision row spells executed_at where
+// the column is text: the layout the pinned community binary writes.
+const atlasRevisionTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
+
+// storedTimeLayouts are the spellings without an offset that the text of a
+// time column arrives in, read in the zone the URL names.
 var storedTimeLayouts = []string{
 	"2006-01-02 15:04:05.999999",
 	"2006-01-02 15:04:05",
@@ -51,6 +56,13 @@ func (m *Migrator) parseStoredTimeText(column, value string) (time.Time, error) 
 	value = strings.TrimSpace(value)
 	if value == "" || (len(value) >= len(zeroDate) && strings.HasPrefix(zeroDateTime, value)) {
 		return time.Time{}, nil
+	}
+	// A value that carries its own offset is read in UTC, so the offset stays
+	// a bare offset rather than borrowing the reader's zone name: the pinned
+	// community binary prints `+0900 +0900`, not `+0900 JST`, for a row written
+	// at +09:00 and read under TZ=Asia/Tokyo.
+	if parsed, err := time.ParseInLocation(atlasRevisionTimeLayout, value, time.UTC); err == nil {
+		return parsed, nil
 	}
 	location := atlasurl.TextTimeLocation(m.conn.Info().URL)
 	for _, layout := range storedTimeLayouts {

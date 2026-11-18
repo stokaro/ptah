@@ -3797,12 +3797,19 @@ func nativeRevisionTimestamp(at time.Time) time.Time {
 	return at.UTC().Round(0)
 }
 
+// atlasRevisionTimestamp is the executed_at value an Atlas revision row binds.
+//
+// Where the engine keeps the column as text, the row records the writer's
+// local time with its offset, in the layout the pinned community binary v1.3.0
+// writes and reads back unchanged: run under TZ=Asia/Tokyo it stores
+// `2026-11-18 14:59:32.08399+09:00`, and `migrate status` prints that offset
+// whatever zone the reader runs in. Elsewhere the column holds an instant and
+// UTC is bound, so no driver can store the wall clock of another zone.
 func (m *Migrator) atlasRevisionTimestamp(at time.Time) any {
-	now := at.UTC().Round(0)
 	if m.revisionTable().TimeAsText {
-		return now.Format(time.RFC3339Nano)
+		return at.Round(0).Format(atlasRevisionTimeLayout)
 	}
-	return now
+	return at.UTC().Round(0)
 }
 
 func (m *Migrator) atlasNullJSONValue() any {

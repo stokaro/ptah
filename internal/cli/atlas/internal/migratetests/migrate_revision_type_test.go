@@ -48,7 +48,7 @@ func TestMigrateApply_RecordsAppliedAtlasRevisionMetadata(t *testing.T) {
 			PartialHashes:  "blob",
 		},
 	)
-	_, err := time.Parse(time.RFC3339Nano, readAtlasRevisionExecutedAt(c, fixture.dbPath, fixture.version))
+	_, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", readAtlasRevisionExecutedAt(c, fixture.dbPath, fixture.version))
 	c.Assert(err, qt.IsNil)
 	c.Assert(readAtlasRevisionVersions(c, fixture.dbPath), qt.DeepEquals, []string{
 		"20260719000000",

@@ -273,3 +273,58 @@ func newOutOfOrderSourceError(currentVersion int64, versions []int64, sourceVers
 	}
 	return err
 }
+
+// readsAtlasRevisionOrder reports whether linearity over migrations is decided
+// on the Atlas revision strings rather than on numbers: an Atlas revision table
+// over a directory read in the Atlas format, with no source tool whose own
+// tokens decide instead (see [Migrator.WithSourceVersions]).
+func (m *Migrator) readsAtlasRevisionOrder(migrations []*Migration) bool {
+	if !m.revisionTableFormat.isAtlas() || len(m.sourceVersions) != 0 || len(migrations) == 0 {
+		return false
+	}
+	for _, migration := range migrations {
+		if migration.atlasOrderKey == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// atlasRevisionOutOfOrder returns the pending migrations an Atlas directory
+// runs out of order. A file is out of order when its version string sorts
+// below the highest applied one, or when its file name sorts below the name of
+// an applied file, because an Atlas directory runs by file name.
+//
+// Measured on the pinned community binary v1.3.0 over SQLite. 3__x.sql added
+// after 20260101000000_ts.sql applies, since "3" sorts above
+// "20260101000000"; a number would call it out of order. 10_b.sql added after
+// 1_a.sql is refused, since 10_b.sql sorts before 1_a.sql; a number would
+// apply it. The binary refuses 1_a.sql pending after 1R__rep.sql, since "1"
+// sorts below "1R"; here 1_a.sql shares the runtime version of 1R and reads as
+// applied, so it never reaches this function (stokaro/ptah#6229). The binary
+// has a third answer this function does not copy:
+// 10_b.sql added after 9_a.sql is neither pending nor refused there, so it
+// never runs and the run exits 0. Both halves of the test hold for that file,
+// so it is refused here.
+func atlasRevisionOutOfOrder(migrations, pending []*Migration, applied migrationIdentitySet) []*Migration {
+	highestVersion, haveVersion := "", false
+	for _, key := range applied.revisionKeys() {
+		if !haveVersion || key > highestVersion {
+			highestVersion, haveVersion = key, true
+		}
+	}
+	highestName := ""
+	for _, migration := range migrations {
+		if applied.containsMigration(migration) && migration.atlasOrderKey > highestName {
+			highestName = migration.atlasOrderKey
+		}
+	}
+	late := make([]*Migration, 0, len(pending))
+	for _, migration := range pending {
+		belowVersion := haveVersion && migration.RevisionVersion() < highestVersion
+		if belowVersion || migration.atlasOrderKey < highestName {
+			late = append(late, migration)
+		}
+	}
+	return late
+}

@@ -298,7 +298,7 @@ WHERE version = '1'`,
 	).Scan(&executedAtText, &executionNanos)
 	c.Assert(err, qt.IsNil)
 
-	executedAt, err := time.Parse(time.RFC3339Nano, executedAtText)
+	executedAt, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", executedAtText)
 	c.Assert(err, qt.IsNil)
 	executionTime := time.Duration(executionNanos)
 	c.Assert(executedAt.Before(commandStartedAt), qt.IsFalse)
@@ -346,7 +346,7 @@ WHERE version = '1'`,
 	).Scan(&executedAtText, &executionNanos)
 	c.Assert(err, qt.IsNil)
 
-	executedAt, err := time.Parse(time.RFC3339Nano, executedAtText)
+	executedAt, err := time.Parse("2006-01-02 15:04:05.999999999-07:00", executedAtText)
 	c.Assert(err, qt.IsNil)
 	executionTime := time.Duration(executionNanos)
 	c.Assert(executedAt.Before(commandStartedAt), qt.IsFalse)
