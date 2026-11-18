@@ -332,14 +332,23 @@ func (m *Migrator) refuseRepeatablesOverQuerySize(
 	}
 	for _, item := range work {
 		repeatable := state.repeatable(item.Identity)
-		length := inlinedStatementLength(m.repeatableCompletion(repeatable))
-		if int64(length) > limit {
-			return &RepeatableStatementTooLongError{
-				Path: repeatable.path, Length: length, Limit: limit, Setting: table.QuerySizeSetting,
-			}
+		query, args := m.repeatableCompletion(repeatable)
+		if err := refuseStatementOverLimit(repeatable.path, query, args, limit, table.QuerySizeSetting); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// refuseStatementOverLimit returns a [RepeatableStatementTooLongError] when
+// query, with args written into its text, is longer than limit, the value of
+// setting. A statement exactly limit bytes long is accepted.
+func refuseStatementOverLimit(path, query string, args []any, limit int64, setting string) error {
+	length := inlinedStatementLength(query, args)
+	if int64(length) <= limit {
+		return nil
+	}
+	return &RepeatableStatementTooLongError{Path: path, Length: length, Limit: limit, Setting: setting}
 }
 
 // inlinedStatementLength is the length in bytes, at least, of query once a
