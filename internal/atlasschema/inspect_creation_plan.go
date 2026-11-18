@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"strings"
+	"sync"
 
 	"ptah.run/catalog"
 	"ptah.run/config"
@@ -73,8 +74,8 @@ type creationScope struct {
 // Planned, a grant on the database names a database the scope does not
 // describe, and YDB refuses to render one without the database's path.
 //
-// The plan is made against the path of the inspected database, which is how
-// YDB names the target of a grant on it.
+// The template helper may call the result more than once. It plans once and
+// writes the note once, and every call returns that answer.
 func inspectCreationPlan(
 	runtime CreationPlanRuntime,
 	desired *schemamodel.Database,
@@ -83,57 +84,98 @@ func inspectCreationPlan(
 	scope creationScope,
 	diagnostics io.Writer,
 ) func(context.Context) ([]atlasreport.SchemaChange, error) {
+	var (
+		once    sync.Once
+		changes []atlasreport.SchemaChange
+		err     error
+	)
 	return func(ctx context.Context) ([]atlasreport.SchemaChange, error) {
-		options := config.DefaultCompareOptions()
-		// The new database describes what the read described and holds
-		// nothing else of it, so a kind the read established is created and a
-		// kind it left out stays undecided.
-		empty := &catalog.Database{
-			FeatureCoverage:         read.FeatureCoverage,
-			PlanningContextCoverage: read.PlanningContextCoverage,
-			NotDescribed:            read.NotDescribed,
-			DatabasePath:            read.DatabasePath,
-		}
-		held := func(name string) bool {
-			return !scope.describeSchemas || name == info.IdentifierSemantics.DefaultSchema
-		}
-		for _, schema := range read.Schemas {
-			if held(schema.Name) {
-				empty.Schemas = append(empty.Schemas, schema)
-			}
-		}
-		for _, grant := range read.Grants {
-			if strings.EqualFold(grant.ObjectType, "SCHEMA") && held(grant.ObjectName) {
-				empty.Grants = append(empty.Grants, grant)
-			}
-		}
-		if scope.partial {
-			leftOut, err := databaseObjectsOutsideScope(read, options)
-			if err != nil {
-				return nil, err
-			}
-			empty.Grants = append(empty.Grants, leftOut.grants...)
-			empty.FeatureObjects = leftOut.objects
-			leftOut.report(diagnostics)
-		}
-		compared, err := schemadiff.CompareWithDatabaseInfo(ctx, desired, empty, info, options, runtime)
-		if err != nil {
-			return nil, err
-		}
-		if !compared.HasChanges() {
-			return nil, nil
-		}
-		changes, plan, err := planChanges(ctx, runtime, compared, info.Dialect, planext.Options{
-			Capabilities: info.Capabilities,
-			Statements:   planstyle.Statements,
-			Shape:        planext.StatementShapeCatalog,
+		once.Do(func() {
+			changes, err = planCreation(ctx, runtime, desired, read, info, scope, diagnostics)
 		})
-		if err != nil {
-			return nil, err
-		}
-		if err := nameDiffChanges(changes, plan, info.Dialect); err != nil {
-			return nil, err
-		}
-		return changes, nil
+		return changes, err
 	}
+}
+
+// newCreationDatabase is the database the creation plan of read starts from,
+// and what a partial read leaves out of the plan because that database holds
+// it already; see [inspectCreationPlan].
+//
+// It describes what the read described and holds nothing else of it, so a
+// kind the read established is created and a kind it left out stays
+// undecided. It has the path of the inspected database, which is how YDB names
+// the target of a grant on the database.
+func newCreationDatabase(
+	read *catalog.Database,
+	info catalog.ServerInfo,
+	scope creationScope,
+	options *config.CompareOptions,
+) (*catalog.Database, databaseObjects, error) {
+	empty := &catalog.Database{
+		FeatureCoverage:         read.FeatureCoverage,
+		PlanningContextCoverage: read.PlanningContextCoverage,
+		NotDescribed:            read.NotDescribed,
+		DatabasePath:            read.DatabasePath,
+	}
+	held := func(name string) bool {
+		return !scope.describeSchemas || name == info.IdentifierSemantics.DefaultSchema
+	}
+	for _, schema := range read.Schemas {
+		if held(schema.Name) {
+			empty.Schemas = append(empty.Schemas, schema)
+		}
+	}
+	for _, grant := range read.Grants {
+		if strings.EqualFold(grant.ObjectType, "SCHEMA") && held(grant.ObjectName) {
+			empty.Grants = append(empty.Grants, grant)
+		}
+	}
+	if !scope.partial {
+		return empty, databaseObjects{}, nil
+	}
+	leftOut, err := databaseObjectsOutsideScope(read, options)
+	if err != nil {
+		return nil, databaseObjects{}, err
+	}
+	empty.Grants = append(empty.Grants, leftOut.grants...)
+	empty.FeatureObjects = leftOut.objects
+	return empty, leftOut, nil
+}
+
+// planCreation plans desired from the database [newCreationDatabase] builds
+// for read, and writes the note naming what that database holds already.
+func planCreation(
+	ctx context.Context,
+	runtime CreationPlanRuntime,
+	desired *schemamodel.Database,
+	read *catalog.Database,
+	info catalog.ServerInfo,
+	scope creationScope,
+	diagnostics io.Writer,
+) ([]atlasreport.SchemaChange, error) {
+	options := config.DefaultCompareOptions()
+	empty, leftOut, err := newCreationDatabase(read, info, scope, options)
+	if err != nil {
+		return nil, err
+	}
+	leftOut.report(diagnostics)
+	compared, err := schemadiff.CompareWithDatabaseInfo(ctx, desired, empty, info, options, runtime)
+	if err != nil {
+		return nil, err
+	}
+	if !compared.HasChanges() {
+		return nil, nil
+	}
+	changes, plan, err := planChanges(ctx, runtime, compared, info.Dialect, planext.Options{
+		Capabilities: info.Capabilities,
+		Statements:   planstyle.Statements,
+		Shape:        planext.StatementShapeCatalog,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := nameDiffChanges(changes, plan, info.Dialect); err != nil {
+		return nil, err
+	}
+	return changes, nil
 }

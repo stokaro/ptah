@@ -129,10 +129,19 @@ left out: an extension installed in a schema outside the scope, and a grant on
 the database itself. One note on standard error names each of them. So
 `--schema app` on a database with `pgcrypto` in `public` writes no
 `CREATE EXTENSION`, as the community binary writes none, and the note names
-`pgcrypto`. An extension installed in a scoped schema is created with it, and a
-read of the whole database plans every extension and every grant on the
-database. Native `ptah schema inspect --format sql` writes the rendered schema
-instead.
+`pgcrypto`. An extension installed in a scoped schema is created with it.
+
+The selectors and a whole read treat these objects as follows:
+
+- A read of the whole database plans every grant on the database and every
+  extension the comparison does not ignore (it ignores `plpgsql`).
+- `--include` leaves out a grant on the database, as `--schema` does. It keeps
+  every schema the read holds, so an extension installed in one of them is
+  planned.
+- `--exclude` removes what it names, an extension installed in an excluded
+  schema with it, and leaves the rest of the read whole.
+
+Native `ptah schema inspect --format sql` writes the rendered schema instead.
 
 ## How to read green and red checks
 

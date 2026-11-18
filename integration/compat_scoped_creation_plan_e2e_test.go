@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -74,4 +75,45 @@ func TestReferenceScopedInspectPlanE2E(t *testing.T) {
 		"-- Create \"users\" table\n"+
 		"CREATE TABLE \"app\".\"users\" (\"id\" integer NOT NULL, \"name\" text NOT NULL, PRIMARY KEY (\"id\"));\n")
 	c.Assert(got.Stderr, qt.Equals, "")
+}
+
+// TestCompatScopedInspectPlanNotesOnceE2E is a template that calls the helper
+// twice: it writes the plan twice and the note once.
+func TestCompatScopedInspectPlanNotesOnceE2E(t *testing.T) {
+	c := qt.New(t)
+	target := postgresScratchDevURL(c, "ptah_scoped_plan")
+	execPostgresFamilySQL(c, c.Context(), target, scopedPlanFixture)
+
+	got := runFormatTemplateVerb(c, clirun.Build(c, clirun.Compat), c.TempDir(), nil,
+		"schema", "inspect", "--format", "{{ sql . }}{{ sql . }}", "--url", target, "--schema", "app")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(strings.Count(got.Stdout, "-- Create \"users\" table\n"), qt.Equals, 2)
+	c.Assert(strings.Count(got.Stderr, scopedPlanNote), qt.Equals, 1)
+}
+
+// TestCompatIncludeInspectPlanKeepsTheExtensionE2E pins what --include does
+// to an extension: the selection keeps schema public, so pgcrypto, installed
+// in it, is planned, and nothing is noted.
+func TestCompatIncludeInspectPlanKeepsTheExtensionE2E(t *testing.T) {
+	c := qt.New(t)
+
+	got := inspectScopedPlan(c, clirun.Build(c, clirun.Compat), "--include", "app.*")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(got.Stdout, qt.Matches, `(?s).*CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "public" VERSION '[0-9.]+';\n.*`)
+	c.Assert(got.Stderr, qt.Not(qt.Contains), "leaves out what belongs to the database")
+}
+
+// TestCompatExcludeInspectPlanDropsTheExtensionE2E pins the other selector:
+// --exclude of schema public removes pgcrypto with it, as a selector removes
+// what it names, and nothing is noted.
+func TestCompatExcludeInspectPlanDropsTheExtensionE2E(t *testing.T) {
+	c := qt.New(t)
+
+	got := inspectScopedPlan(c, clirun.Build(c, clirun.Compat), "--exclude", "public")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+	c.Assert(got.Stdout, qt.Not(qt.Contains), "pgcrypto")
+	c.Assert(got.Stderr, qt.Not(qt.Contains), "leaves out what belongs to the database")
 }

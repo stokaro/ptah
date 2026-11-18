@@ -341,16 +341,24 @@ func creationPlanOf(
 	if opts.SQLCreationPlan == nil {
 		return nil
 	}
-	// The read covers part of the database when --schema named schemas or the
-	// URL limits the connection to one. A dialect whose schema boundary nobody
-	// measured, as YDB served by a provider, limits nothing by URL, so a read
-	// without --schema there covers the whole database.
-	_, urlLimited := schemaselection.URLScope(info.URL)
-	scope := creationScope{
-		describeSchemas: describesSchemas(info, opts),
-		partial:         len(SplitSchemaNames(opts.Schemas)) > 0 || urlLimited,
-	}
+	scope := creationScope{describeSchemas: describesSchemas(info, opts), partial: readIsPartial(opts, info)}
 	return inspectCreationPlan(opts.SQLCreationPlan, desired, read, info, scope, opts.Diagnostics)
+}
+
+// readIsPartial reports whether the read covers part of the database rather
+// than the whole of it: --schema named schemas, --include selected objects, or
+// the URL limits the connection to one schema.
+//
+// A dialect whose schema boundary nobody measured, as YDB served by a
+// provider, limits nothing by URL, so a read without --schema there covers the
+// whole database. --exclude leaves a read whole: it removes the objects it
+// names, an extension installed in an excluded schema among them, and what
+// belongs to the database stays in the plan unless a selector names it.
+// --include keeps the schemas of the read, so an extension installed in one of
+// them is created; a grant on the database, which no schema holds, is not.
+func readIsPartial(opts InspectOptions, info catalog.ServerInfo) bool {
+	_, urlLimited := schemaselection.URLScope(info.URL)
+	return len(SplitSchemaNames(opts.Schemas)) > 0 || len(opts.Include) > 0 || urlLimited
 }
 
 // reportOmittedVirtualTables answers for a SQLite virtual table the rendering
