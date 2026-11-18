@@ -111,14 +111,15 @@ func sqlite() descriptor.Dialect {
 		// own backing structures sqlite_autoindex_*, which no statement can
 		// refer to, and stores no comment on a table or a column.
 		Comparison: descriptor.Comparison{
-			VerbatimTableNames:   true,
-			InternalIndexPrefix:  "sqlite_autoindex_",
-			DefaultGeneratedKind: "VIRTUAL",
-			AutoIncrementFlag:    true,
-			PrimaryKeyNullable:   true,
-			RowidTables:          true,
-			TypeAffinity:         true,
-			NoTableComments:      true,
+			ForeignKeyIgnoresStandaloneUniqueIndex: true,
+			VerbatimTableNames:                     true,
+			InternalIndexPrefix:                    "sqlite_autoindex_",
+			DefaultGeneratedKind:                   "VIRTUAL",
+			AutoIncrementFlag:                      true,
+			PrimaryKeyNullable:                     true,
+			RowidTables:                            true,
+			TypeAffinity:                           true,
+			NoTableComments:                        true,
 		},
 
 		// SQLite has no enum type, so an enum column is TEXT with a CHECK.

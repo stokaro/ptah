@@ -655,19 +655,10 @@ func diffResolvedStates(
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	// Without a held connection, validate using the selected target's offline
-	// facts before the declaration reaches planning (stokaro/ptah#2315).
-	// A held connection validates the same
-	// schema with the identifier semantics that server resolves. Run here
-	// instead, the validation would use the offline rules, and on SQL Server
-	// those keep no two names apart: every table with two columns would be
-	// refused (stokaro/ptah#4122).
-	if conn == nil {
-		if err := validateDesiredDiffComparison(
-			ctx, opts.Runtime, to, fromSide.database, dialect, capabilities,
-		); err != nil {
-			return atlasreport.SchemaDiff{}, nil, err
-		}
+	if err := validateDiffDeclarations(
+		ctx, conn, opts.Runtime, fromState, toState, to, fromSide.database, dialect, capabilities,
+	); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 
 	// Both documents and live reads may carry knowledge limits. Preserve them
@@ -950,6 +941,90 @@ func validateDesiredDiffComparison(
 		return err
 	}
 	return schemadiff.ValidateRolePasswordComparison(desired, current, selected)
+}
+
+// validateDiffDeclarations runs the target validation of both sides before
+// the declarations reach planning: the referenced-key rule of every side read
+// from a document first, see [refuseDocumentReferenceProblems], then the --to
+// declaration.
+//
+// Without a held connection, the --to declaration is validated here using the
+// selected target's offline facts (stokaro/ptah#2315). A held connection
+// validates the same schema with the identifier semantics that server
+// resolves. Run here instead, the validation would use the offline rules, and
+// on SQL Server those keep no two names apart: every table with two columns
+// would be refused (stokaro/ptah#4122). A --from read from a document has no
+// held connection, since conn is the connection the --from side was read on.
+func validateDiffDeclarations(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	service schemavalidation.Runtime,
+	fromState, toState atlassource.State,
+	to *schemamodel.Database,
+	current *catalog.Database,
+	dialect string,
+	capabilities capability.Capabilities,
+) error {
+	if err := refuseDocumentReferenceProblems(service, dialect, capabilities, fromState, toState); err != nil {
+		return err
+	}
+	if conn != nil {
+		return nil
+	}
+	return validateDesiredDiffComparison(ctx, service, to, current, dialect, capabilities)
+}
+
+// refuseDocumentReferenceProblems refuses a side read from a document that
+// holds a foreign key its engine's server refuses to create, as the community
+// binary refuses it: that binary creates each document whole on its dev
+// database, and measured with v1.3.0 on PostgreSQL, a --from or a --to that
+// references a column no unique key covers exits 1 with the server's 42830,
+// whatever --exclude selects. So the check reads the placed document whole,
+// as [refuseDocumentIndexProblems] does, not the tables a run selects: a key
+// whose referenced table is excluded is still checked. A --from refusal
+// names the side, `load --from schema: ...`, as a --from that does not load
+// is named; a --to refusal is the line the --to declaration's validation
+// writes.
+//
+// Only the referenced-key rule is checked
+// ([schemavalidate.CollectTargetForeignKeyReferenceProblems]), and only on an
+// engine whose server applies it at CREATE TABLE
+// ([ptah.run/core/platform/descriptor.Dialect.ForeignKeyReferencesCheckedAtCreate]).
+// A --from document describes the state a plan starts from, and a server that
+// takes a table the rule refuses, as SQLite does, can hold that state: a diff
+// from it to a document that adds the key is the repair. The other target
+// rules are left to the --to side for the same reason.
+//
+// A side read from a database or replayed from a migration directory holds
+// only what its server accepted, and is not checked.
+func refuseDocumentReferenceProblems(
+	resolver schemaext.TargetResolver,
+	dialect string,
+	capabilities capability.Capabilities,
+	fromState, toState atlassource.State,
+) error {
+	if !described(dialect).ForeignKeyReferencesCheckedAtCreate {
+		return nil
+	}
+	for _, side := range []struct {
+		state  atlassource.State
+		prefix string
+	}{
+		{state: fromState, prefix: "load --from schema: "},
+		{state: toState},
+	} {
+		if side.state.DB != nil {
+			continue
+		}
+		problems, err := schemavalidate.CollectTargetForeignKeyReferenceProblems(resolver, side.state.Schema, dialect, capabilities)
+		if err != nil {
+			return err
+		}
+		if len(problems) != 0 {
+			return fmt.Errorf("%s%w", side.prefix, problems[0])
+		}
+	}
+	return nil
 }
 
 func validateDiffSystemSchemaStates(

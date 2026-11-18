@@ -155,6 +155,12 @@ func mysql() descriptor.Dialect {
 		GeneratedColumnDefault:   "VIRTUAL",
 		InlineEnum:               descriptor.InlineEnum{Type: descriptor.InlineEnumValues},
 		IndexesBeforeForeignKeys: true,
+		// Measured on MySQL 8.4.13, where the target requires a unique reference,
+		// with Error 6125 for an indexed column no unique key covers, and on 8.0.46,
+		// where it requires an indexed one, with Error 1822 for a column no index
+		// covers: the server applies the policy the capabilities state at CREATE
+		// TABLE.
+		ForeignKeyReferencesCheckedAtCreate: true,
 		// Comparison: what comparing a declaration with a catalog reads.
 		// MySQL creates an index for every foreign key unasked, and a
 		// database is the schema, so a key into another database is accepted

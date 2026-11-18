@@ -18,6 +18,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/internal/referencedkey"
 )
 
 // Problem is one structural fault found in a desired schema.
@@ -142,6 +143,37 @@ func CollectTargetIndexProblems(resolver schemaext.TargetResolver, database *sch
 		return nil, err
 	}
 	return CollectIndexProblems(scoped, selected.Name()), nil
+}
+
+// CollectTargetForeignKeyReferenceProblems reports, in declaration order, every
+// foreign key of database whose referenced columns the target resolver selects
+// for dialect does not accept as a key under caps. It applies the rule the
+// built-in schema validation applies, through the same predicate
+// ([referencedkey.Check]): a declared unique key, the leftmost prefix of an
+// index, or any columns, as the policy in caps says. Each problem is the
+// validation's own refusal and satisfies errors.Is(err,
+// ptaherr.ErrUnsupportedFeature). A nil database has no problems.
+//
+// Unlike the validation, which stops at its first refusal of any rule, it
+// reads every foreign key and nothing else, so a caller can hold a schema to
+// this rule alone. `schema diff` does that for each side it reads from a
+// document, on the placed names and ahead of --exclude and --include, where
+// the server refuses such a key at CREATE TABLE.
+func CollectTargetForeignKeyReferenceProblems(
+	resolver schemaext.TargetResolver,
+	database *schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+) ([]error, error) {
+	selected, err := resolver.ResolveTarget(dialect)
+	if err != nil {
+		return nil, err
+	}
+	scoped, err := schemamodel.ScopeToTarget(database, selected)
+	if err != nil || scoped == nil {
+		return nil, err
+	}
+	return referencedkey.Problems(*scoped, selected.Name(), caps), nil
 }
 
 // CollectIndexProblems checks every index against the relation it belongs to.

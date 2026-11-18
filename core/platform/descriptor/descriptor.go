@@ -243,6 +243,14 @@ type Dialect struct {
 	// its table's CREATE TABLE and never added to an existing table, as on
 	// SQLite, which has no ALTER TABLE ... ADD CONSTRAINT.
 	ForeignKeysInCreateTable bool `json:"foreign_keys_in_create_table,omitempty"`
+	// ForeignKeyReferencesCheckedAtCreate reports that the server holds a new
+	// foreign key to the referenced-key rule of the target's capabilities when
+	// it creates the key: a CREATE TABLE whose foreign key references columns
+	// no unique key covers fails there, as PostgreSQL's 42830 does. A schema
+	// document holding such a key then describes a state no database of the
+	// engine holds. SQLite takes the table and refuses the first write to it,
+	// so it is not set there.
+	ForeignKeyReferencesCheckedAtCreate bool `json:"foreign_key_references_checked_at_create,omitempty"`
 	// IndexesBeforeForeignKeys reports that every index a schema declares is
 	// created before the schema's foreign keys are added, because the server
 	// builds an index of its own for a foreign key no declared index covers, as
