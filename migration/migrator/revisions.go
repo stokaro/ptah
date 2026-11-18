@@ -199,10 +199,13 @@ type ChecksumMismatchError struct {
 	// use of a feature rather than a sign of tampering. See
 	// [ConvertedFlywayRepeatableVersion].
 	ConvertedRepeatable bool
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *ChecksumMismatchError) Error() string {
-	base := fmt.Sprintf("migration %d checksum mismatch: stored %s, current %s", e.Version, e.Stored, e.Computed)
+	base := fmt.Sprintf("migration %d checksum mismatch: stored %s, current %s", versionText{number: e.Version, label: e.versionLabel}, e.Stored, e.Computed)
 	if !e.ConvertedRepeatable {
 		return base
 	}
@@ -233,6 +236,9 @@ func (e *ChecksumMismatchError) Error() string {
 type RepairNothingAppliedError struct {
 	// Version is the migration the repair named.
 	Version int64
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *RepairNothingAppliedError) Error() string {
@@ -240,7 +246,7 @@ func (e *RepairNothingAppliedError) Error() string {
 		"migration %d recorded no applied statement, so there is nothing to finish: "+
 			"run 'ptah migrations up --allow-dirty' to apply it, or repair with --force to "+
 			"record it applied because you ran it yourself",
-		e.Version)
+		versionText{number: e.Version, label: e.versionLabel})
 }
 
 // MissingMigrationError reports that the database recorded a migration as
@@ -1562,18 +1568,18 @@ func (m *Migrator) discardRolledBackFailure(ctx context.Context, failure error) 
 	defer cancelRecord()
 	migration := m.migrationByVersion(version)
 	if migration == nil {
-		return fmt.Errorf("inspect rolled-back migration failure %d: migration is not registered", version)
+		return fmt.Errorf("inspect rolled-back migration failure %d: migration is not registered", m.versionText(version))
 	}
 	revision, err := m.getMigrationRevision(recordCtx, migration)
 	if err != nil {
-		return fmt.Errorf("inspect rolled-back migration failure %d: %w", version, err)
+		return fmt.Errorf("inspect rolled-back migration failure %d: %w", m.versionText(version), err)
 	}
 	if revision == nil || !revision.Dirty || !isZeroProgressUpFailure(*revision) {
 		return nil
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, query); err != nil {
-		return fmt.Errorf("discard rolled-back migration failure %d: %w", version, err)
+		return fmt.Errorf("discard rolled-back migration failure %d: %w", m.versionText(version), err)
 	}
 	return nil
 }
@@ -1615,7 +1621,7 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 	if revision.Direction == MigrationDirectionDown {
 		return upRetryPlan{}, fmt.Errorf(
 			"migration %d is dirty from an interrupted rollback; repair the rollback before migrating up",
-			migration.Version,
+			m.versionText(migration.Version),
 		)
 	}
 	resumeFrom, err := resumeStatementFor(*revision, m.migrationStatementCount(migration.UpSQL))
@@ -1694,7 +1700,7 @@ func validateNativeRevisionState(revision MigrationRevision, storedState, operat
 	default:
 		return fmt.Errorf(
 			"migration %d cannot %s: revision metadata records non-canonical state=%q; inspect the database before choosing a repair point",
-			revision.Version,
+			revision.versionText(),
 			operation,
 			storedState,
 		)
@@ -1707,7 +1713,7 @@ func validateNativeRevisionState(revision MigrationRevision, storedState, operat
 	}
 	return fmt.Errorf(
 		"migration %d cannot %s: revision metadata records state=%s with applied=%d total=%d; inspect the database before choosing a repair point",
-		revision.Version,
+		revision.versionText(),
 		operation,
 		revision.State,
 		revision.Applied,
@@ -1796,7 +1802,7 @@ func nativeFullChecksumMatches(stored string, migration *Migration, direction Mi
 func committedPrefixVerificationError(revision MigrationRevision, operation, reason string) error {
 	return fmt.Errorf(
 		"migration %d cannot %s: %s after %d of %d statements committed; inspect the database before choosing a repair point",
-		revision.Version,
+		revision.versionText(),
 		operation,
 		reason,
 		revision.Applied,
@@ -2239,7 +2245,7 @@ func (m *Migrator) failMigrationRevisionWithMode(
 	if usesTransactionalProgressWitness(m.conn.Info().Dialect, txMode) {
 		revision, err := m.getMigrationRevision(recordCtx, migration)
 		if err != nil {
-			return fmt.Errorf("failed to read migration %d progress witness: %w", migration.Version, err)
+			return fmt.Errorf("failed to read migration %d progress witness: %w", m.versionText(migration.Version), err)
 		}
 		if revision != nil {
 			if preservesProgressWitnessUnknownOutcome(failure, revision, m.connectionDialect()) {
@@ -2516,7 +2522,7 @@ func (m *Migrator) migrationsForBaseline(version int64) ([]*Migration, error) {
 
 	migrations := m.migrationsAtOrBelow(version)
 	if len(migrations) == 0 {
-		return nil, fmt.Errorf("no migrations found at or below baseline version %d", version)
+		return nil, fmt.Errorf("no migrations found at or below baseline version %d", m.versionText(version))
 	}
 	return migrations, nil
 }
@@ -2537,7 +2543,7 @@ func (m *Migrator) baselineSQLMigrations(ctx context.Context, migrations []*Migr
 	if err != nil {
 		return err
 	}
-	if err := validateBaselineRevisions(revisions, opts); err != nil {
+	if err := validateBaselineRevisions(revisions, opts, m.versionText(opts.Version)); err != nil {
 		return err
 	}
 	return m.baselineMigrations(ctx, migrations)
@@ -2545,7 +2551,7 @@ func (m *Migrator) baselineSQLMigrations(ctx context.Context, migrations []*Migr
 
 // validateBaselineRevisions is shared by SQL and native stores. The caller
 // holds the migration lock; native stores also read through the data transaction.
-func validateBaselineRevisions(revisions []MigrationRevision, opts BaselineOptions) error {
+func validateBaselineRevisions(revisions []MigrationRevision, opts BaselineOptions, baseline versionText) error {
 	for _, revision := range revisions {
 		if revision.Dirty {
 			return &DirtyMigrationError{Revision: revision}
@@ -2556,7 +2562,7 @@ func validateBaselineRevisions(revisions []MigrationRevision, opts BaselineOptio
 	}
 	for _, revision := range revisions {
 		if revision.Version > opts.Version {
-			return fmt.Errorf("schema migrations table contains revisions above baseline version %d; refusing to rewrite migration history", opts.Version)
+			return fmt.Errorf("schema migrations table contains revisions above baseline version %d; refusing to rewrite migration history", baseline)
 		}
 	}
 	return nil
@@ -2595,7 +2601,7 @@ func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschem
 		if !m.forceAppliedReplacesRow() {
 			deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 			if err := conn.Writer().ExecuteSQL(ctx, deleteSQL, m.migrationRevisionVersionArg(migration)); err != nil {
-				return fmt.Errorf("failed to prepare baseline revision %d: %w", migration.Version, err)
+				return fmt.Errorf("failed to prepare baseline revision %d: %w", m.versionText(migration.Version), err)
 			}
 		}
 		if m.revisionTableFormat.isAtlas() {
@@ -2616,7 +2622,7 @@ func (m *Migrator) writeBaselineMigrationRows(ctx context.Context, conn *dbschem
 			0,
 			migrationRevisionHash(migration),
 		); err != nil {
-			return fmt.Errorf("failed to record baseline revision %d: %w", migration.Version, err)
+			return fmt.Errorf("failed to record baseline revision %d: %w", m.versionText(migration.Version), err)
 		}
 	}
 	return nil
@@ -2646,7 +2652,7 @@ func (m *Migrator) writeAtlasBaselineMigrationRow(
 		m.atlasNullJSONValue(),
 		operatorVersion,
 	); err != nil {
-		return fmt.Errorf("failed to record baseline revision %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record baseline revision %d: %w", m.versionText(migration.Version), err)
 	}
 	return nil
 }
@@ -3227,7 +3233,7 @@ func (m *Migrator) writeAtlasSetRevisionRows(
 		sqlutil.Rebind(m.conn.Info().Dialect, deleteSQL),
 		deleteArgs...,
 	); err != nil {
-		return fmt.Errorf("failed to remove Atlas revisions above %d: %w", version, err)
+		return fmt.Errorf("failed to remove Atlas revisions above %d: %w", m.versionText(version), err)
 	}
 
 	revisions := newSetRevisionIndex(existing)
@@ -3247,7 +3253,7 @@ func (m *Migrator) writeAtlasSetRevisionRows(
 				revisionType.sqlArg(),
 				revision.RevisionVersion(),
 			); err != nil {
-				return fmt.Errorf("failed to update dirty Atlas revision %d type: %w", revision.Version, err)
+				return fmt.Errorf("failed to update dirty Atlas revision %d type: %w", m.versionText(revision.Version), err)
 			}
 			continue
 		}
@@ -3275,7 +3281,7 @@ func (m *Migrator) writePtahSetRevisionRows(
 		deleteArgs = nil
 	}
 	if _, err := tx.ExecContext(ctx, sqlutil.Rebind(m.conn.Info().Dialect, deleteSQL), deleteArgs...); err != nil {
-		return fmt.Errorf("failed to remove revisions above %d: %w", version, err)
+		return fmt.Errorf("failed to remove revisions above %d: %w", m.versionText(version), err)
 	}
 
 	revisionsByVersion := make(map[int64]MigrationRevision, len(existing))
@@ -3298,7 +3304,7 @@ func (m *Migrator) writePtahSetRevisionRows(
 				migrationRevisionHash(migration),
 				revision.Version,
 			); err != nil {
-				return fmt.Errorf("failed to mark dirty revision %d applied: %w", revision.Version, err)
+				return fmt.Errorf("failed to mark dirty revision %d applied: %w", m.versionText(revision.Version), err)
 			}
 			continue
 		}
@@ -3317,7 +3323,7 @@ func (m *Migrator) writePtahSetRevisionRows(
 			0,
 			migrationRevisionHash(migration),
 		); err != nil {
-			return fmt.Errorf("failed to record manually set revision %d: %w", migration.Version, err)
+			return fmt.Errorf("failed to record manually set revision %d: %w", m.versionText(migration.Version), err)
 		}
 	}
 	return nil
@@ -3365,14 +3371,14 @@ func (m *Migrator) repairMigrationLocked(ctx context.Context, opts RepairMigrati
 	}
 	migration := m.migrationByVersion(opts.Version)
 	if migration == nil {
-		return fmt.Errorf("migration %d not found", opts.Version)
+		return fmt.Errorf("migration %d not found", m.versionText(opts.Version))
 	}
 	revision, err := m.getMigrationRevision(ctx, migration)
 	if err != nil {
 		return err
 	}
 	if revision == nil && !opts.Force {
-		return fmt.Errorf("migration %d has no revision row; rerun with --force to mark it applied", opts.Version)
+		return fmt.Errorf("migration %d has no revision row; rerun with --force to mark it applied", m.versionText(opts.Version))
 	}
 	if revision != nil && !revision.Dirty && !opts.Force {
 		return fmt.Errorf("migration %s is not dirty; rerun with --force to rewrite it", m.VersionLabel(opts.Version))
@@ -3423,7 +3429,7 @@ func (m *Migrator) validateRepairMigrationSQL(
 	}
 	own, err := m.ownTransactionMode(migration, txMode, direction)
 	if err != nil {
-		return ownTransactionRun{}, fmt.Errorf("migration %d cannot be repaired safely: %w", migration.Version, err)
+		return ownTransactionRun{}, fmt.Errorf("migration %d cannot be repaired safely: %w", m.versionText(migration.Version), err)
 	}
 	if !own.blocks.Empty() {
 		if opts.ResumeFrom > 0 {
@@ -3496,13 +3502,13 @@ func (m *Migrator) repairUpMigration(
 	// explicit force for an incomplete body, after the operator has reconciled
 	// its SQL by hand.
 	if revisionProvesNothingRan(revision, m.grammar()) && !opts.Force {
-		return &RepairNothingAppliedError{Version: migration.Version}
+		return &RepairNothingAppliedError{Version: migration.Version, versionLabel: m.versionText(migration.Version).label}
 	}
 	if revision != nil && revision.Dirty && revision.Applied < revision.Total && !opts.Force {
 		if revision.StatementOutcomeUnknown() {
 			return fmt.Errorf(
 				"migration %d has an unknown statement outcome; repair without --resume-from would record unverified SQL as applied without running it: inspect the database and rerun with --force only after reconciling the migration yourself",
-				migration.Version,
+				m.versionText(migration.Version),
 			)
 		}
 		if !own.blocks.Empty() {
@@ -3510,7 +3516,7 @@ func (m *Migrator) repairUpMigration(
 		}
 		return fmt.Errorf(
 			"migration %d recorded %d of %d applied statements; repair without --resume-from would mark the rest applied without running them: rerun with --resume-from %d to run the rest, or with --force only after running them yourself",
-			migration.Version,
+			m.versionText(migration.Version),
 			revision.Applied,
 			revision.Total,
 			revision.Applied+1,
@@ -3597,12 +3603,12 @@ func refuseUnknownStatementOutcomeResume(migration *Migration, revision *Migrati
 		return fmt.Errorf(
 			"migration %d stopped and the rollback of its transaction left some statements in place and undid others; "+
 				"inspect the database before repair and omit --resume-from, because no statement is the place to resume from",
-			migration.Version,
+			migration.versionText(),
 		)
 	}
 	return fmt.Errorf(
 		"migration %d has an unknown statement outcome for %q; inspect the database before repair and omit --resume-from to avoid repeating committed SQL",
-		migration.Version,
+		migration.versionText(),
 		revision.ErrorStatement,
 	)
 }
@@ -3690,16 +3696,16 @@ func (m *Migrator) resumeStatementsOnSession(
 			continue
 		}
 		if err := m.markMigrationStatementInFlight(ctx, migration, startedAt, event, direction); err != nil {
-			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
+			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, m.versionText(migration.Version), event.Index, err)
 		}
 		if err := executeSQLOn(ctx, executionConn, stmt); err != nil {
 			return m.failResumedMigrationDirection(ctx, migration, startedAt, err, event, direction)
 		}
 		if err := m.checkpointMigrationRevision(ctx, migration, startedAt, event, direction); err != nil {
-			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
+			return fmt.Errorf("failed to record resumed %s %d at statement %d: %w", operation, m.versionText(migration.Version), event.Index, err)
 		}
 		if err := m.observePostgresIndexStatement(ctx, executionConn, stmt); err != nil {
-			return fmt.Errorf("failed to observe resumed %s %d at statement %d: %w", operation, migration.Version, event.Index, err)
+			return fmt.Errorf("failed to observe resumed %s %d at statement %d: %w", operation, m.versionText(migration.Version), event.Index, err)
 		}
 	}
 	return nil
@@ -3721,7 +3727,7 @@ func (m *Migrator) failResumedMigrationDirection(
 			startedAt,
 			execErr,
 			migration.DownSQL,
-			fmt.Sprintf("failed to resume rollback of migration %d", migration.Version),
+			fmt.Sprintf("failed to resume rollback of migration %d", m.versionText(migration.Version)),
 			MigrationTxModeNone,
 		)
 	}
@@ -3731,7 +3737,7 @@ func (m *Migrator) failResumedMigrationDirection(
 		startedAt,
 		execErr,
 		migration.UpSQL,
-		fmt.Sprintf("failed to resume migration %d", migration.Version),
+		fmt.Sprintf("failed to resume migration %d", m.versionText(migration.Version)),
 		MigrationTxModeNone,
 		MigrationDirectionUp,
 	)
@@ -3849,7 +3855,7 @@ func (m *Migrator) writeAtlasManuallySetMigrationRow(
 		m.atlasNullJSONValue(),
 		migration.atlasOperatorVersion(),
 	); err != nil {
-		return fmt.Errorf("failed to record manually set Atlas revision %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record manually set Atlas revision %d: %w", m.versionText(migration.Version), err)
 	}
 	return nil
 }

@@ -370,11 +370,14 @@ type RepeatableBoundError struct {
 	Amount        uint64
 	// Work is the repeatable work the run would have had to leave behind.
 	Work []RepeatableWork
+	// versionLabel names TargetVersion as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 // Error names the bound and the repeatable work it would leave behind.
 func (e *RepeatableBoundError) Error() string {
-	bound := fmt.Sprintf("target version %d", e.TargetVersion)
+	bound := fmt.Sprintf("target version %d", versionText{number: e.TargetVersion, label: e.versionLabel})
 	if e.TargetVersion == 0 {
 		bound = fmt.Sprintf("a limit of %d", e.Amount)
 	}

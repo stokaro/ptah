@@ -231,6 +231,52 @@ func TestNativeAtlasNumberlessVersionRepairHintE2E(t *testing.T) {
 	c.Assert(repair.Stdout, qt.Contains, "Updated migration v1 revision metadata; no migration SQL ran")
 }
 
+// TestNativeAtlasNumberlessVersionApplyFailure_FailurePath names a migration
+// that fails by its version: v1 for v1_x.sql, which runs under the order key 2
+// here, and 1 for 1_a.sql, worded as for any numbered file. The order key
+// appears in no file name, so a message naming it sends the reader to a file
+// that does not exist.
+func TestNativeAtlasNumberlessVersionApplyFailure_FailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		a, x string
+		want string
+	}{
+		{
+			name: "numberless file",
+			a:    "CREATE TABLE t_a (id int);\n",
+			x:    "CREATE TABLE t_x (id int);\nCREATE TABLE t_x (id int);\n",
+			want: "failed to apply migration v1: failed to execute migration SQL: ",
+		},
+		{
+			name: "numbered file",
+			a:    "CREATE TABLE t_a (id int);\nCREATE TABLE t_a (id int);\n",
+			x:    "CREATE TABLE t_x (id int);\n",
+			want: "failed to apply migration 1: failed to execute migration SQL: ",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			migrations := filepath.Join(dir, "migrations")
+			c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(migrations, "1_a.sql"), []byte(tt.a), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(migrations, "v1_x.sql"), []byte(tt.x), 0o600), qt.IsNil)
+			hash := compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables())(
+				"migrate", "hash", "--dir", "file://migrations",
+			)
+			c.Assert(hash.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", hash.Stderr))
+
+			up := nativePtah(c, dir, "migrations", "up")
+
+			c.Assert(up.ExitCode, qt.Not(qt.Equals), 0)
+			c.Assert(up.Stderr, qt.Contains, tt.want)
+			c.Assert(up.Stderr, qt.Not(qt.Contains), "migration 2")
+		})
+	}
+}
+
 // TestNativeAutoFormatOverAnAtlasSumRefusesANumberlessVersion_FailurePath runs
 // the native defaults, --dir-format auto and the Ptah revision table, over a
 // directory atlas.sum covers. atlas.sum makes it an Atlas directory, so

@@ -38,12 +38,15 @@ type StaleDerivedRollbackError struct {
 	// Applied are the versions applied above TargetVersion when the migrator
 	// read them again, newest first.
 	Applied []int64
+	// versionLabel names TargetVersion as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *StaleDerivedRollbackError) Error() string {
 	return fmt.Sprintf("the rollback to version %d was derived for the applied migrations %v, "+
 		"and the migrations applied above version %d are now %v; nothing was rolled back",
-		e.TargetVersion, e.Derived, e.TargetVersion, e.Applied)
+		versionText{number: e.TargetVersion, label: e.versionLabel}, e.Derived, versionText{number: e.TargetVersion, label: e.versionLabel}, e.Applied)
 }
 
 // MigrateDownDerived runs a rollback the caller derived and moves the revision
@@ -105,14 +108,17 @@ func (m *Migrator) migrateDownDerivedLocked(ctx context.Context, rollback Derive
 	}))
 	derived := newestFirst(slices.Clone(rollback.Versions))
 	if !slices.Equal(above, derived) {
-		return &StaleDerivedRollbackError{TargetVersion: rollback.TargetVersion, Derived: derived, Applied: above}
+		return &StaleDerivedRollbackError{
+			TargetVersion: rollback.TargetVersion, Derived: derived, Applied: above,
+			versionLabel: m.versionText(rollback.TargetVersion).label,
+		}
 	}
 	if err := m.repeatableRollbackRefusal(ctx); err != nil {
 		return err
 	}
 	boundary := m.derivedRollbackBoundary(rollback.TargetVersion)
 	if err := m.checkRevisionSet(ctx, boundary); err != nil {
-		return fmt.Errorf("move the revision boundary to version %d: %w", boundary, err)
+		return fmt.Errorf("move the revision boundary to version %d: %w", m.versionText(boundary), err)
 	}
 	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
 		Direction:      MigrationDirectionDown,
@@ -129,7 +135,7 @@ func (m *Migrator) migrateDownDerivedLocked(ctx context.Context, rollback Derive
 	err = applyDerivedRollback(ctx, rollback)
 	if err == nil {
 		if _, setErr := m.setRevisionLocked(ctx, boundary); setErr != nil {
-			err = fmt.Errorf("move the revision boundary to version %d: %w", boundary, setErr)
+			err = fmt.Errorf("move the revision boundary to version %d: %w", m.versionText(boundary), setErr)
 		}
 	}
 	settle(err)

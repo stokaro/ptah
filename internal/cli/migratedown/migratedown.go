@@ -755,7 +755,11 @@ func recheckConfirmed(ctx context.Context, mig *migrator.Migrator, target int64,
 	}
 	now := newestFirst(versionsAboveTarget(applied, target))
 	if want := newestFirst(confirmed); !slices.Equal(now, want) {
-		return &confirmedRollbackChangedError{target: target, confirmed: want, applied: now}
+		return &confirmedRollbackChangedError{
+			target:    mig.VersionLabel(target),
+			confirmed: mig.VersionLabels(want),
+			applied:   mig.VersionLabels(now),
+		}
 	}
 	return nil
 }
@@ -764,13 +768,15 @@ func recheckConfirmed(ctx context.Context, mig *migrator.Migrator, target int64,
 // target changed between the confirmation prompt and the rollback. It is
 // returned before any statement runs.
 type confirmedRollbackChangedError struct {
-	target             int64
-	confirmed, applied []int64
+	// The versions are named as [migrator.Migrator.VersionLabel] names them,
+	// as the confirmation prompt printed them.
+	target             string
+	confirmed, applied []string
 }
 
 func (e *confirmedRollbackChangedError) Error() string {
-	return fmt.Sprintf("the rollback to version %d was confirmed for the applied migrations %v, "+
-		"and the migrations applied above version %d are now %v; nothing was rolled back. "+
+	return fmt.Sprintf("the rollback to version %s was confirmed for the applied migrations %v, "+
+		"and the migrations applied above version %s are now %v; nothing was rolled back. "+
 		"Run migrations down again to confirm the rollback of the database as it is now",
 		e.target, e.confirmed, e.target, e.applied)
 }

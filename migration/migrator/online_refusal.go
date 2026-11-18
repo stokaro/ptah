@@ -19,6 +19,9 @@ import (
 type OnlineAlterRefusedError struct {
 	Version int64
 	Err     error
+	// versionLabel names Version as its file name spells it, for an Atlas
+	// file whose version is not a number; empty otherwise.
+	versionLabel string
 }
 
 func (e *OnlineAlterRefusedError) Error() string {
@@ -26,7 +29,7 @@ func (e *OnlineAlterRefusedError) Error() string {
 		"migration %d asked the server to apply a change without blocking writes and the server refused: %v "+
 			"(the change cannot run online here; apply it in a window where a table copy is acceptable, "+
 			"or split it into changes that can)",
-		e.Version,
+		versionText{number: e.Version, label: e.versionLabel},
 		e.Err,
 	)
 }
@@ -43,7 +46,7 @@ func (e *OnlineAlterRefusedError) Unwrap() error {
 // as asked -- measured on MySQL 8.4.6 and MariaDB 12.3.3 over eighteen ALTER
 // TABLE forms. Neither number means anything else, so the mapping needs no
 // second signal.
-func onlineAlterRefusal(version int64, err error) error {
+func onlineAlterRefusal(version versionText, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -53,7 +56,7 @@ func onlineAlterRefusal(version int64, err error) error {
 	}
 	switch mysqlErr.Number {
 	case 1845, 1846:
-		return &OnlineAlterRefusedError{Version: version, Err: err}
+		return &OnlineAlterRefusedError{Version: version.number, versionLabel: version.label, Err: err}
 	default:
 		return err
 	}

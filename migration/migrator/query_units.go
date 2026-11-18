@@ -229,7 +229,7 @@ func (m *Migrator) refuseUnsplittableMigrations(ctx context.Context, migrations 
 	for _, migration := range migrations {
 		if err := grammar.refuse(migrationSQLForDirection(migration, direction)); err != nil {
 			return fmt.Errorf("migration %d cannot run %s on %s: %w",
-				migration.Version, direction, m.connectionDialect(), err)
+				m.versionText(migration.Version), direction, m.connectionDialect(), err)
 		}
 	}
 	return nil
@@ -248,7 +248,7 @@ func (m *Migrator) askForSplits(ctx context.Context, migrations []*Migration, di
 	for _, migration := range migrations {
 		body := migrationSQLForDirection(migration, direction)
 		if _, err := splitter.SplitMigration(ctx, body, m.checkAssertions(migration, direction)); err != nil {
-			return fmt.Errorf("migration %d cannot run %s on %s: %w", migration.Version, direction, m.connectionDialect(), err)
+			return fmt.Errorf("migration %d cannot run %s on %s: %w", m.versionText(migration.Version), direction, m.connectionDialect(), err)
 		}
 	}
 	return nil
@@ -274,7 +274,7 @@ func (m *Migrator) refuseUnsplitBody(migration *Migration, direction MigrationDi
 	}
 	return fmt.Errorf("migration %d cannot run %s on %s: the provider does not split a migration body into the units "+
 		"its engine runs (%s), so a body of %d statements cannot run outside a transaction; upgrade the provider",
-		migration.Version, direction, m.connectionDialect(), migrationSplitFeature, count)
+		m.versionText(migration.Version), direction, m.connectionDialect(), migrationSplitFeature, count)
 }
 
 // migrationSplitFeature names the contract feature a refusal points to.
@@ -297,7 +297,7 @@ func (m *Migrator) refuseOutsideUnitInTransaction(migration *Migration, directio
 	}
 	return fmt.Errorf("migration %d cannot run %s on %s with tx-mode %s: its unit %d runs outside any transaction, "+
 		"so one transaction cannot hold the body; run it with tx-mode none, which commits each unit on its own",
-		migration.Version, direction, m.connectionDialect(), mode, unit)
+		m.versionText(migration.Version), direction, m.connectionDialect(), mode, unit)
 }
 
 // refusePlacement refuses, before a run touches anything, a migration whose
@@ -407,7 +407,7 @@ func (m *Migrator) commitDataQuery(
 	splitter, splits := migrationSplitter(m.conn)
 	if !splits {
 		return fmt.Errorf("migration %d: unit %d changes data only, and only a provider that splits migration bodies "+
-			"commits such a unit with its checkpoint", migration.Version, event.Index)
+			"commits such a unit with its checkpoint", m.versionText(migration.Version), event.Index)
 	}
 	return providerDataQueryCommit(m.conn, splitter, event.Statement, func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
 		return m.checkpointMigrationRevisionOn(ctx, conn, migration, startedAt, event, direction)

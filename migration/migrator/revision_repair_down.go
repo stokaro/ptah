@@ -136,14 +136,14 @@ func rollbackRepairNeedsDirectionError(
 		return fmt.Errorf(
 			"migration %d stopped while rolling back and the rollback of its transaction left some statements in place "+
 				"and undid others; inspect the database, then rerun with "+endings,
-			migration.Version,
+			migration.versionText(),
 		)
 	}
 	if revision.Error == unknownStatementOutcomeError {
 		return fmt.Errorf(
 			"migration %d stopped while rolling back and the outcome of %q is unknown after an interruption; "+
 				"inspect the database, then rerun with "+endings,
-			migration.Version,
+			migration.versionText(),
 			revision.ErrorStatement,
 		)
 	}
@@ -154,7 +154,7 @@ func rollbackRepairNeedsDirectionError(
 		"migration %d stopped while rolling back: %d of %d down statements committed; "+
 			"rerun with --resume-from %d to run the remaining down statements and remove the revision, with "+
 			endings,
-		migration.Version,
+		migration.versionText(),
 		revision.Applied,
 		revision.Total,
 		revision.Applied+1,
@@ -178,7 +178,7 @@ func (m *Migrator) deleteRolledBackRevision(ctx context.Context, migration *Migr
 	defer cancelRecord()
 	deleteSQL := sqlutil.Rebind(m.conn.Info().Dialect, m.deleteMigrationSQL())
 	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
-		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record migration reversion %d: %w", m.versionText(migration.Version), err)
 	}
 	m.logger.Info(
 		"Completed rollback of migration",
@@ -221,7 +221,7 @@ func (m *Migrator) refuseUpResumeOverRecordedRollback(
 			"the row predates directional rollback recording, and --resume-from would replay the up body over a "+
 			"schema a rollback already changed; finish the rollback manually, "+
 			"or rerun with --force to replay the up body anyway",
-		migration.Version,
+		m.versionText(migration.Version),
 		revision.Total,
 		downCount,
 		upCount,

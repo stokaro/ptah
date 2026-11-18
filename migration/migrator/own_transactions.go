@@ -122,7 +122,7 @@ func (m *Migration) readOwnTransactions(
 	if err == nil {
 		return blocks, statements, nil
 	}
-	subject := fmt.Sprintf("migration %d", m.Version)
+	subject := fmt.Sprintf("migration %d", m.versionText())
 	if direction == MigrationDirectionDown {
 		subject = "rollback of " + subject
 	}
@@ -189,7 +189,7 @@ func (m *Migrator) validateOwnTransactions(migrations []*Migration, direction Mi
 		if direction == MigrationDirectionUp && m.txMode == MigrationTxModeAll {
 			return fmt.Errorf(
 				"migration %d opens and closes its own transaction, which tx-mode all would nest in the one transaction "+
-					"it runs every migration in; apply the directory with tx-mode file", migration.Version)
+					"it runs every migration in; apply the directory with tx-mode file", m.versionText(migration.Version))
 		}
 		txMode := migration.parsedTxModeForDialect(direction, m.connectionDialect())
 		if txMode.Source != 0 && txMode.Mode == migrationfile.FileTxModeFile {
@@ -197,7 +197,7 @@ func (m *Migrator) validateOwnTransactions(migrations []*Migration, direction Mi
 			if direction == MigrationDirectionDown {
 				file = "its down file"
 			}
-			return fmt.Errorf("migration %d asks for a transaction around %s and opens its own", migration.Version, file)
+			return fmt.Errorf("migration %d asks for a transaction around %s and opens its own", m.versionText(migration.Version), file)
 		}
 	}
 	return nil
@@ -278,11 +278,11 @@ func (m *Migrator) applyUpMigrationOwnTransactions(
 			return err
 		}
 		if err := scoped.restoreSessionPrefix(ctx, migration, MigrationDirectionUp, plan.resumeFrom, run); err != nil {
-			failure := fmt.Errorf("failed to restore session state for migration %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to restore session state for migration %d: %w", m.versionText(migration.Version), err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		if err := scoped.recordPendingMigrationRevisionOn(ctx, scoped.conn, migration, startedAt, plan); err != nil {
-			failure := fmt.Errorf("failed to record pending migration %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to record pending migration %d: %w", m.versionText(migration.Version), err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		if plan.resumeFrom > 1 {
@@ -319,7 +319,7 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 	}
 	if err != nil {
 		failure := m.ownTransactionFailure(ctx, migration.Version, err, run.transactions)
-		failure = fail(failure, fmt.Sprintf("failed to apply migration %d", migration.Version))
+		failure = fail(failure, fmt.Sprintf("failed to apply migration %d", m.versionText(migration.Version)))
 		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 	}
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
@@ -328,13 +328,13 @@ func (m *Migrator) applyUpMigrationOwnTransactionsOnSession(
 	if err := m.refuseUpCompletionOverUnsafeIndex(ctx, executionConn, migration); err != nil {
 		return fail(
 			completedMigrationIndexObservationError(migration, m.connectionDialect(), MigrationDirectionUp, err),
-			fmt.Sprintf("failed to verify migration %d", migration.Version),
+			fmt.Sprintf("failed to verify migration %d", m.versionText(migration.Version)),
 		)
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
 	if err := m.completeMigrationRevision(recordCtx, migration, startedAt); err != nil {
-		return fmt.Errorf("failed to record migration %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record migration %d: %w", m.versionText(migration.Version), err)
 	}
 	m.logger.Info("Applied migration that runs its own transactions", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
@@ -373,7 +373,7 @@ func (m *Migrator) rollbackMigrationOwnTransactions(
 			return err
 		}
 		if err := scoped.beginRollbackRevision(ctx, migration, startedAt); err != nil {
-			failure := fmt.Errorf("failed to record pending rollback %d: %w", migration.Version, err)
+			failure := fmt.Errorf("failed to record pending rollback %d: %w", m.versionText(migration.Version), err)
 			return scoped.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 		}
 		return scoped.rollbackMigrationOwnTransactionsOnSession(boundedCtx, migration, startedAt, deleteSQL, restoreTimeouts, run)
@@ -403,7 +403,7 @@ func (m *Migrator) rollbackMigrationOwnTransactionsOnSession(
 	}
 	if err != nil {
 		failure := m.ownTransactionFailure(ctx, migration.Version, err, run.transactions)
-		failure = fail(failure, fmt.Sprintf("failed to revert migration %d", migration.Version))
+		failure = fail(failure, fmt.Sprintf("failed to revert migration %d", m.versionText(migration.Version)))
 		return m.restoreTimeoutsAfterFailure(ctx, migration.Version, restoreTimeouts, failure)
 	}
 	if err := m.restoreTimeouts(ctx, migration.Version, restoreTimeouts); err != nil {
@@ -412,13 +412,13 @@ func (m *Migrator) rollbackMigrationOwnTransactionsOnSession(
 	if err := m.refuseRollbackCompletionOverUnsafeIndexOn(ctx, executionConn, migration); err != nil {
 		return fail(
 			completedMigrationIndexObservationError(migration, m.connectionDialect(), MigrationDirectionDown, err),
-			fmt.Sprintf("failed to verify rollback of migration %d", migration.Version),
+			fmt.Sprintf("failed to verify rollback of migration %d", m.versionText(migration.Version)),
 		)
 	}
 	recordCtx, cancelRecord := durableRevisionWriteContext(ctx)
 	defer cancelRecord()
 	if err := m.deleteMigrationRevisionOn(recordCtx, m.conn, migration, deleteSQL); err != nil {
-		return fmt.Errorf("failed to record migration reversion %d: %w", migration.Version, err)
+		return fmt.Errorf("failed to record migration reversion %d: %w", m.versionText(migration.Version), err)
 	}
 	m.logger.Info("Rolled back migration that runs its own transactions", "version", m.logVersion(migration.Version), "description", migration.Description)
 	return nil
@@ -714,5 +714,5 @@ func (m *Migrator) rollBackOwnTransaction(ctx context.Context, version int64) er
 	if err == nil || errors.Is(err, sql.ErrConnDone) || errors.Is(err, driver.ErrBadConn) {
 		return nil
 	}
-	return fmt.Errorf("failed to roll back migration %d: %w", version, err)
+	return fmt.Errorf("failed to roll back migration %d: %w", m.versionText(version), err)
 }

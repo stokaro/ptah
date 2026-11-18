@@ -27,7 +27,7 @@ func (m *Migrator) writeProviderBaseline(ctx context.Context, store dbschema.His
 	if err != nil {
 		return err
 	}
-	if err := validateBaselineRevisions(revisions, opts); err != nil {
+	if err := validateBaselineRevisions(revisions, opts, m.versionText(opts.Version)); err != nil {
 		return err
 	}
 	for _, migration := range migrations {
@@ -36,7 +36,7 @@ func (m *Migrator) writeProviderBaseline(ctx context.Context, store dbschema.His
 			return &record, nil
 		})
 		if err != nil {
-			return fmt.Errorf("failed to record baseline revision %d: %w", migration.Version, err)
+			return fmt.Errorf("failed to record baseline revision %d: %w", m.versionText(migration.Version), err)
 		}
 	}
 	return nil

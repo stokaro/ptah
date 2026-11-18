@@ -56,7 +56,7 @@ func (m *Migrator) validateManagedTransactionSQL(
 		return fmt.Errorf(
 			"migration %d cannot run tx-mode %s %s statement %d because it controls transaction state; "+
 				"remove the transaction control and let Ptah manage the transaction",
-			migration.Version, mode, direction, i+1,
+			m.versionText(migration.Version), mode, direction, i+1,
 		)
 	}
 	return nil

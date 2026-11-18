@@ -190,7 +190,7 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 	}
 	rows := baselineRows(version, provider.Migrations())
 	if len(rows) == 0 {
-		return fmt.Errorf("no migrations found at or below baseline version %d", version)
+		return fmt.Errorf("no migrations found at or below baseline version %s", resolver.VersionLabel(version))
 	}
 
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)

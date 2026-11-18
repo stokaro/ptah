@@ -35,7 +35,7 @@ func ownTransactionsResumeError(migration *Migration, revision *MigrationRevisio
 	return fmt.Errorf(
 		"migration %d cannot be resumed: its %s file opens and closes its own transactions, and a resume would "+
 			"run the rest of it one statement at a time, outside them; %s",
-		migration.Version, file, ownTransactionsNextStep(revision, direction),
+		migration.versionText(), file, ownTransactionsNextStep(revision, direction),
 	)
 }
 
@@ -69,7 +69,7 @@ func ownTransactionsDownRepairError(migration *Migration, revision *MigrationRev
 	return fmt.Errorf(
 		"migration %d stopped while rolling back: %d of %d down statements committed, in transactions its down "+
 			"file opens itself, and a resume would run the rest outside them; %s",
-		migration.Version, revision.Applied, revision.Total, downEndingsByHand,
+		migration.versionText(), revision.Applied, revision.Total, downEndingsByHand,
 	)
 }
 
@@ -80,7 +80,7 @@ func ownTransactionsUpRepairError(migration *Migration, revision *MigrationRevis
 	return fmt.Errorf(
 		"migration %d recorded %d of %d applied statements, in transactions its file opens itself; repair "+
 			"without --resume-from would mark the rest applied without running them: %s",
-		migration.Version, revision.Applied, revision.Total, upResumeByRun,
+		migration.versionText(), revision.Applied, revision.Total, upResumeByRun,
 	)
 }
 
@@ -99,11 +99,11 @@ func ownTransactionsUpRepairError(migration *Migration, revision *MigrationRevis
 // transaction control, which is why the advice err gives stays.
 func (m *Migrator) unwrappedRepairError(migration *Migration, direction MigrationDirection, err error) error {
 	if migration.ownTransactions || !migration.runnerReadsOwnTransactions(m.conn, direction) {
-		return fmt.Errorf("migration %d cannot be repaired safely: %w", migration.Version, err)
+		return fmt.Errorf("migration %d cannot be repaired safely: %w", m.versionText(migration.Version), err)
 	}
 	return fmt.Errorf(
 		"migration %d cannot be repaired safely: %w; a directory written for golang-migrate, whose files open "+
 			"their own transactions, is repaired with --runner golang-migrate",
-		migration.Version, err,
+		m.versionText(migration.Version), err,
 	)
 }
