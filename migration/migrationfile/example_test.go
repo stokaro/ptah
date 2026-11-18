@@ -223,3 +223,21 @@ func ExampleRenderAtlasTemplateSQL() {
 	// rendered=false
 	// CREATE TABLE plain (id INTEGER PRIMARY KEY);
 }
+
+// ExampleSQLText reads the SQL a migration file holds. A UTF-8 byte order mark
+// at the start of the file is its encoding and is removed, so the directive on
+// the first line still applies; the same character later in the file is
+// content and stays.
+func ExampleSQLText() {
+	content := "\uFEFF-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY users_email ON users (email);\n"
+
+	text := migrationfile.SQLText(content)
+	fmt.Printf("%d bytes in the file, %d bytes of SQL\n", len(content), len(text))
+	fmt.Println(migrationfile.ParseDirectives(text)[migrationfile.DirectiveNoTransaction])
+	fmt.Println(migrationfile.SQLText("SELECT 1;\n\uFEFFSELECT 2;\n") == "SELECT 1;\n\uFEFFSELECT 2;\n")
+
+	// Output:
+	// 83 bytes in the file, 80 bytes of SQL
+	// true
+	// true
+}

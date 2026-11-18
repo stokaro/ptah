@@ -21,9 +21,12 @@ type ParsedUp struct {
 }
 
 // ParseUp returns the executable up-direction view of plain SQL or
-// Atlas txtar migration content. An unspecified transaction mode means the
+// Atlas txtar migration content. The content is read through [SQLText], so a
+// byte order mark at its start is not part of [ParsedUp.SQL] and does not hide
+// a txtar header or a directive. An unspecified transaction mode means the
 // caller's global mode applies.
 func ParseUp(filename, sql string) (ParsedUp, error) {
+	sql = SQLText(sql)
 	parsed, isTxtar, err := ParseAtlasTxtar(filename, sql)
 	if err != nil {
 		return ParsedUp{}, err
@@ -77,6 +80,7 @@ func ParseUpForAnalysis(filename, sql string) (ParsedUp, error) {
 // the transaction-mode directive, so a caller can tell a txmode complaint apart
 // from a file it genuinely cannot read.
 func parseUpIgnoringTxMode(filename, sql string) (ParsedUp, error) {
+	sql = SQLText(sql)
 	parsed, isTxtar, err := ParseAtlasTxtar(filename, sql)
 	if err != nil {
 		return ParsedUp{}, err

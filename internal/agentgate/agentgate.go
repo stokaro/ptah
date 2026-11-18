@@ -346,7 +346,7 @@ func (r *Runner) migrationSQL(ctx context.Context, scope *agentworkspace.Scope) 
 		}
 		findings, lintErr := sqllint.LintSource(
 			ctx,
-			sqllint.Source{Name: entry.Path, SQL: string(content)},
+			sqllint.Source{Name: entry.Path, SQL: migrationfile.SQLText(string(content))},
 			sqllint.Options{
 				Dialect:      r.opts.Dialect,
 				Version:      r.opts.Version,

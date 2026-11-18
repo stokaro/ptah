@@ -624,7 +624,10 @@ func (p Policy) ValidateMigrationSourceForDialect(fsys fs.FS, dialect string) er
 		if err != nil {
 			return fmt.Errorf("read migration %s for Atlas CE strict compatibility: %w", name, err)
 		}
-		source := string(contents)
+		// The gate reads the text the loader executes: a byte order mark in
+		// front of a construct must not hide it from the refusal while the
+		// loader removes the mark and runs the construct.
+		source := migrationfile.SQLText(string(contents))
 		if firstNonemptyLine(source) == "-- atlas:txtar" {
 			return fmt.Errorf("Atlas Community Edition strict compatibility does not support Atlas txtar migration %s", name)
 		}
