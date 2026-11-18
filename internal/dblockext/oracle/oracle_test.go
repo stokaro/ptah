@@ -269,3 +269,68 @@ func TestAcquire_RowCreationRunsUnderTheTimeout(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, errHeld)
 	c.Assert(err, qt.ErrorAs, new(*dblockext.AmbiguousError))
 }
+
+// The lock table lives in the schema the request names, which the migrator
+// sets to the schema its revision table is configured into, so that every
+// account recording there locks one row. The schema is quoted as the revision
+// table's is; with none, the table is the session's own.
+func TestAcquire_LocksTheTableOfTheRequestSchema(t *testing.T) {
+	tests := []struct {
+		name        string
+		schema      string
+		wantCreated string
+		wantLocked  string
+	}{
+		{
+			name:        "the session's current schema",
+			wantCreated: "ptah_locks",
+			wantLocked:  "SELECT name FROM ptah_locks WHERE name = :1 FOR UPDATE NOWAIT",
+		},
+		{
+			name:        "a configured schema",
+			schema:      "APP",
+			wantCreated: `"APP".ptah_locks`,
+			wantLocked:  `SELECT name FROM "APP".ptah_locks WHERE name = :1 FOR UPDATE NOWAIT`,
+		},
+		{
+			name:        "a quote in the schema name",
+			schema:      `A"B`,
+			wantCreated: `"A""B".ptah_locks`,
+			wantLocked:  `SELECT name FROM "A""B".ptah_locks WHERE name = :1 FOR UPDATE NOWAIT`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var mu sync.Mutex
+			var created, lockedBy string
+			db := dbtest.OpenWithExec(c,
+				func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+					mu.Lock()
+					defer mu.Unlock()
+					lockedBy = query
+					return dbtest.QueryResult{Columns: []string{"NAME"}, Rows: [][]driver.Value{{args[0].Value}}}, nil
+				},
+				func(_ string, args []driver.NamedValue) (driver.Result, error) {
+					mu.Lock()
+					defer mu.Unlock()
+					created = args[1].Value.(string)
+					return driver.RowsAffected(0), nil
+				},
+			)
+			session, err := db.SQL.Conn(c.Context())
+			c.Assert(err, qt.IsNil)
+			c.Cleanup(func() { _ = session.Close() })
+			req := request(time.Second)
+			req.Schema = test.schema
+
+			err = oracle.Services().Session.Acquire(c.Context(), dblockext.SQLSession{Conn: session}, req)
+
+			c.Assert(err, qt.IsNil)
+			mu.Lock()
+			defer mu.Unlock()
+			c.Assert(created, qt.Equals, test.wantCreated)
+			c.Assert(lockedBy, qt.Equals, test.wantLocked)
+		})
+	}
+}

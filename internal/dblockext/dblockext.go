@@ -28,6 +28,12 @@ type Request struct {
 	Dialect string
 	// Name is the lock's name, trimmed and never empty.
 	Name string
+	// Schema is the schema a lock that keeps a table keeps it in, and empty
+	// for the session's current schema. A caller names one when its own state
+	// lives there, such as a revision table in a configured schema, so that
+	// every account writing that state takes the same lock. A lock that keeps
+	// no table ignores it.
+	Schema string
 	// Timeout bounds the wait for a lock another session holds. A positive
 	// timeout waits that long, zero waits until the context ends, and a
 	// negative one does not wait.
@@ -139,8 +145,8 @@ type Services struct {
 	// holds such a lock must run nothing else, so dblock takes it on a
 	// session of its own even where the caller pins one for its work.
 	ReleasedByCommit bool
-	// Table names the table the lock keeps its rows in, in the session's
-	// schema, when it keeps one; it is empty otherwise. The lock creates the
+	// Table names the table the lock keeps its rows in, in the schema
+	// [Request.Schema] names, when it keeps one; it is empty otherwise. The lock creates the
 	// table itself, so on the dialects these services serve the table is
 	// Ptah's bookkeeping, and their schema readers leave it out. On every
 	// other dialect a table of that name is the user's.

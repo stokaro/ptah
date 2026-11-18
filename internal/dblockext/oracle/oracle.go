@@ -14,13 +14,16 @@
 // enable would refuse every run of an ordinary account. A row lock needs what
 // a migration needs already: CREATE TABLE in its own schema.
 //
-// The table is named without a schema, so it lives in the lock session's
-// current schema. That is the schema the migrator qualifies its revision table
-// with, which the connector reads as SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
-// on a session of the same pool. An Oracle URL cannot name another one: go-ora
-// refuses ?schema= with "unknown URL option: schema" before the connection
-// opens. And no statement Ptah sends the lock session changes its current
-// schema.
+// The table lives in the schema the request names, and in the lock session's
+// current schema when it names none. The migrator names the schema its
+// revision table is configured into, so two accounts that keep one revision
+// table lock one row. With none configured, the revision table is in the
+// session's current schema too, which the connector reads as
+// SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') on a session of the same pool. An
+// Oracle URL cannot name another one: go-ora refuses ?schema= with "unknown
+// URL option: schema" before the connection opens. The schema is quoted as the
+// revision table's is, and the table name is not, so it folds to PTAH_LOCKS as
+// an unquoted name does.
 //
 // A row lock ends with the transaction that took it, and Oracle commits every
 // DDL statement, so the session holding it must run nothing but the lock's
@@ -42,12 +45,22 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/internal/dblockext"
 	"ptah.run/internal/servercode"
+	"ptah.run/internal/sqlident"
 )
 
 // table keeps one row per lock name, keyed by the name exactly as the caller
 // gives it, which is what the lock locks. Its rows are never deleted: a row
 // outlives every run, and only its lock ends with the session that holds it.
 const table = "ptah_locks"
+
+// tableIn is the lock table in schema, or in the session's current schema when
+// schema is empty.
+func tableIn(schema string) string {
+	if schema == "" {
+		return table
+	}
+	return sqlident.Quote(platform.Oracle, schema) + "." + table
+}
 
 // pollInterval is how often a wait asks for the lock again.
 const pollInterval = 25 * time.Millisecond
@@ -66,26 +79,29 @@ const (
 // before the row is locked, so the commit gives back nothing. A second
 // session inserting the same name concurrently waits for the first one's
 // commit and then finds the name taken, which is what DUP_VAL_ON_INDEX
-// ignores; ORA-00955 is a table another session created first.
+// ignores; ORA-00955 is a table another session created first. The table, as
+// [tableIn] spells it, is the second bind, so no name is written into a string
+// literal.
 const ensureRow = `DECLARE
   lock_name VARCHAR2(1000) := :1;
+  lock_table VARCHAR2(300) := :2;
   missing_table EXCEPTION;
   PRAGMA EXCEPTION_INIT(missing_table, -942);
   name_taken EXCEPTION;
   PRAGMA EXCEPTION_INIT(name_taken, -955);
 BEGIN
   BEGIN
-    EXECUTE IMMEDIATE 'INSERT INTO ` + table + ` (name) VALUES (:name)' USING lock_name;
+    EXECUTE IMMEDIATE 'INSERT INTO ' || lock_table || ' (name) VALUES (:name)' USING lock_name;
   EXCEPTION
     WHEN DUP_VAL_ON_INDEX THEN NULL;
     WHEN missing_table THEN
       BEGIN
-        EXECUTE IMMEDIATE 'CREATE TABLE ` + table + ` (name VARCHAR2(1000) PRIMARY KEY)';
+        EXECUTE IMMEDIATE 'CREATE TABLE ' || lock_table || ' (name VARCHAR2(1000) PRIMARY KEY)';
       EXCEPTION
         WHEN name_taken THEN NULL;
       END;
       BEGIN
-        EXECUTE IMMEDIATE 'INSERT INTO ` + table + ` (name) VALUES (:name)' USING lock_name;
+        EXECUTE IMMEDIATE 'INSERT INTO ' || lock_table || ' (name) VALUES (:name)' USING lock_name;
       EXCEPTION
         WHEN DUP_VAL_ON_INDEX THEN NULL;
       END;
@@ -93,9 +109,11 @@ BEGIN
   COMMIT;
 END;`
 
-// lockRow locks the row of the lock name, or fails at once with ORA-00054
-// when another session holds it.
-const lockRow = "SELECT name FROM " + table + " WHERE name = :1 FOR UPDATE NOWAIT"
+// lockRow locks the row of the lock name in lockTable, or fails at once with
+// ORA-00054 when another session holds it.
+func lockRow(lockTable string) string {
+	return "SELECT name FROM " + lockTable + " WHERE name = :1 FOR UPDATE NOWAIT"
+}
 
 // Services returns Oracle's lock.
 func Services() dblockext.Services {
@@ -126,17 +144,18 @@ func (rowLock) Acquire(ctx context.Context, session dblockext.Session, request d
 		lockCtx, cancel = context.WithTimeout(ctx, request.Timeout)
 		defer cancel()
 	}
+	lockTable := tableIn(request.Schema)
 	if !request.Preview {
-		if _, err := session.ExecContext(lockCtx, ensureRow, request.Name); err != nil {
+		if _, err := session.ExecContext(lockCtx, ensureRow, request.Name, lockTable); err != nil {
 			return &dblockext.AmbiguousError{Err: waitError(ctx, lockCtx, request,
-				fmt.Errorf("create the row of lock %q in %s: %w", request.Name, table, err))}
+				fmt.Errorf("create the row of lock %q in %s: %w", request.Name, lockTable, err))}
 		}
 	}
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
 		var locked string
-		err := session.QueryRowContext(lockCtx, lockRow, request.Name).Scan(&locked)
+		err := session.QueryRowContext(lockCtx, lockRow(lockTable), request.Name).Scan(&locked)
 		_, number := servercode.Read(err)
 		switch {
 		case err == nil:
@@ -144,7 +163,7 @@ func (rowLock) Acquire(ctx context.Context, session dblockext.Session, request d
 		case request.Preview && (number == tableMissing || errors.Is(err, sql.ErrNoRows)):
 			return nil
 		case errors.Is(err, sql.ErrNoRows):
-			return fmt.Errorf("the row of lock %q is missing from %s", request.Name, table)
+			return fmt.Errorf("the row of lock %q is missing from %s", request.Name, lockTable)
 		case number != resourceBusy:
 			return &dblockext.AmbiguousError{Err: waitError(ctx, lockCtx, request, err)}
 		case request.Timeout < 0:

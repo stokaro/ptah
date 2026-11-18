@@ -478,10 +478,11 @@ func acquireSessionLock(
 	if lock, handled, err := nativeLock(ctx, session, name, timeout); handled {
 		return lock, err
 	}
+	request := dblockext.Request{Dialect: dialect, Name: name, Timeout: timeout}
 	if servicesOf(dialect).ReleasedByCommit {
-		return acquireOnOwnSession(ctx, witness, dialect, name, timeout, false)
+		return acquireOnOwnSession(ctx, witness, request)
 	}
-	return acquireOnSession(ctx, session, witness, dialect, name, timeout, false)
+	return acquireOnSession(ctx, session, witness, request)
 }
 
 func acquirePreviewLock(
@@ -498,10 +499,11 @@ func acquirePreviewLock(
 	if lock, handled, err := nativePreviewLock(session, dialect, name); handled {
 		return lock, err
 	}
+	request := dblockext.Request{Dialect: dialect, Name: name, Timeout: timeout, Preview: true}
 	if servicesOf(dialect).ReleasedByCommit {
-		return acquireOnOwnSession(ctx, witness, dialect, name, timeout, true)
+		return acquireOnOwnSession(ctx, witness, request)
 	}
-	return acquireOnSession(ctx, session, witness, dialect, name, timeout, true)
+	return acquireOnSession(ctx, session, witness, request)
 }
 
 // Connection is the database [Acquire] takes a lock on: a pool that names the
@@ -524,6 +526,22 @@ func Acquire(
 	name string,
 	timeout time.Duration,
 ) (*Lock, error) {
+	return AcquireInSchema(ctx, conn, name, "", timeout)
+}
+
+// AcquireInSchema is [Acquire] for a caller whose state lives in a schema of
+// its own choosing, such as a migrator whose revision table sits in a schema
+// the caller configured. A lock that keeps a table, which Oracle's does, keeps
+// it in schema, so every account that writes there takes the same lock. An
+// empty schema is the session's current schema, as [Acquire] uses. A lock that
+// keeps no table ignores schema.
+func AcquireInSchema(
+	ctx context.Context,
+	conn Connection,
+	name,
+	schema string,
+	timeout time.Duration,
+) (*Lock, error) {
 	if isNil(conn) {
 		return nil, errors.New("advisory locking requires database connection")
 	}
@@ -543,10 +561,11 @@ func Acquire(
 	if !services.Locks() {
 		return &Lock{name: name}, nil
 	}
+	request := dblockext.Request{Dialect: dialect, Name: name, Schema: schema, Timeout: timeout}
 	if services.Separate != nil {
 		// The lock belongs to a session the service opens itself, so it
 		// holds no database session from the pool.
-		return acquireOnSession(ctx, nil, conn, dialect, name, timeout, false)
+		return acquireOnSession(ctx, nil, conn, request)
 	}
 
 	session, err := conn.Conn(ctx)
@@ -566,40 +585,30 @@ func Acquire(
 		return lock, nil
 	}
 
-	return holdOnSession(ctx, session, conn, dialect, name, timeout, false)
+	return holdOnSession(ctx, session, conn, request)
 }
 
 // acquireOnOwnSession takes a session lock on a session of its own from pool,
 // which runs nothing but the lock's statements, and watches that session as
-// [Acquire] does. preview marks a run that writes nothing (see
-// [WithPreviewLockSession]).
-func acquireOnOwnSession(
-	ctx context.Context,
-	pool dblockext.Pool,
-	dialect,
-	name string,
-	timeout time.Duration,
-	preview bool,
-) (*Lock, error) {
+// [Acquire] does.
+func acquireOnOwnSession(ctx context.Context, pool dblockext.Pool, request dblockext.Request) (*Lock, error) {
 	session, err := pool.Conn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return holdOnSession(ctx, session, pool, dialect, name, timeout, preview)
+	return holdOnSession(ctx, session, pool, request)
 }
 
 // holdOnSession takes a session lock on session, which belongs to the lock
-// from then on, and starts the watch that reports its loss.
+// from then on, and starts the watch that reports its loss. request carries no
+// Held error; [acquireOnSession] fills it in.
 func holdOnSession(
 	ctx context.Context,
 	session *sql.Conn,
 	pool dblockext.Pool,
-	dialect,
-	name string,
-	timeout time.Duration,
-	preview bool,
+	request dblockext.Request,
 ) (*Lock, error) {
-	lock, acquireErr := acquireOnSession(ctx, dblockext.SQLSession{Conn: session}, pool, dialect, name, timeout, preview)
+	lock, acquireErr := acquireOnSession(ctx, dblockext.SQLSession{Conn: session}, pool, request)
 	if acquireErr != nil {
 		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}
@@ -662,28 +671,18 @@ func isNil(conn Connection) bool {
 	return value.Kind() == reflect.Pointer && value.IsNil()
 }
 
-// acquireOnSession takes the lock dialect's service offers: on session when
-// it is a session lock, and through witness when the service holds it apart
-// from the pool. preview marks a run that writes nothing (see
-// [WithPreviewLockSession]).
+// acquireOnSession takes the lock the service of request's dialect offers: on
+// session when it is a session lock, and through witness when the service
+// holds it apart from the pool.
 func acquireOnSession(
 	ctx context.Context,
 	session dblockext.Session,
 	witness dblockext.Pool,
-	dialect,
-	name string,
-	timeout time.Duration,
-	preview bool,
+	request dblockext.Request,
 ) (*Lock, error) {
-	lock := &Lock{name: name, dialect: dialect}
-	services := servicesOf(dialect)
-	request := dblockext.Request{
-		Dialect: dialect,
-		Name:    name,
-		Timeout: timeout,
-		Preview: preview,
-		Held:    &TimeoutError{Dialect: dialect, Name: name, Timeout: timeout},
-	}
+	lock := &Lock{name: request.Name, dialect: request.Dialect}
+	services := servicesOf(request.Dialect)
+	request.Held = &TimeoutError{Dialect: request.Dialect, Name: request.Name, Timeout: request.Timeout}
 
 	var acquireErr error
 	switch {

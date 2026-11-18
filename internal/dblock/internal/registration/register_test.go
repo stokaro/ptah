@@ -414,3 +414,26 @@ func TestRegister_ALockACommitReleasesTakesASessionOfItsOwn(t *testing.T) {
 		})
 	}
 }
+
+// AcquireInSchema hands the service the schema a lock table belongs in, and
+// Acquire hands it none, which is the session's current schema.
+func TestRegister_SessionLockInASchema(t *testing.T) {
+	c := qt.New(t)
+	lock := &sessionLock{}
+	c.Assert(platform.Register(described("acmeschema")), qt.IsNil)
+	c.Assert(dblock.Register(dblockext.Services{Dialects: []string{"acmeschema"}, Session: lock}), qt.IsNil)
+	conn := open(c, "acmeschema")
+
+	inSchema, err := dblock.AcquireInSchema(c.Context(), conn, "acme_lock", "acme_revisions", time.Second)
+	c.Assert(err, qt.IsNil)
+	c.Assert(inSchema.Release(c.Context()), qt.IsNil)
+	plain, err := dblock.Acquire(c.Context(), conn, "acme_lock", time.Second)
+	c.Assert(err, qt.IsNil)
+	c.Assert(plain.Release(c.Context()), qt.IsNil)
+
+	calls := lock.since(0)
+	c.Assert(calls, qt.HasLen, 4)
+	c.Assert(calls[0].request.Schema, qt.Equals, "acme_revisions")
+	c.Assert(calls[1].request.Schema, qt.Equals, "acme_revisions")
+	c.Assert(calls[2].request.Schema, qt.Equals, "")
+}

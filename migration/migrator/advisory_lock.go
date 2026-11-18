@@ -120,7 +120,7 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 		attr("lock.name", lockName),
 		attr("lock.timeout_ms", m.migrationLockTimeout.Milliseconds()),
 	)
-	lock, err := acquireMigrationLock(ctx, m.conn, lockName, m.migrationLockTimeout)
+	lock, err := acquireMigrationLock(ctx, m.conn, lockName, m.migrationLockSchema(), m.migrationLockTimeout)
 	wait := time.Since(startedAt)
 	span.SetAttributes(attr("lock.wait_ms", wait.Milliseconds()))
 	span.End(err)
@@ -234,15 +234,17 @@ func migrationLockLost(ctx context.Context) error {
 }
 
 // acquireMigrationLock takes the shared session advisory lock through
-// internal/dblock and converts its timeout error into the migrator's typed
-// [MigrationLockTimeoutError], preserving the historical error text.
+// internal/dblock, keeping a lock table in schema, and converts its timeout
+// error into the migrator's typed [MigrationLockTimeoutError], preserving the
+// historical error text.
 func acquireMigrationLock(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	name string,
+	name,
+	schema string,
 	timeout time.Duration,
 ) (*dblock.Lock, error) {
-	lock, err := dblock.Acquire(ctx, conn, normalizeMigrationLockName(name), timeout)
+	lock, err := dblock.AcquireInSchema(ctx, conn, normalizeMigrationLockName(name), schema, timeout)
 	if timeoutErr, ok := errors.AsType[*dblock.TimeoutError](err); ok {
 		return nil, &MigrationLockTimeoutError{
 			Dialect: timeoutErr.Dialect,
@@ -251,6 +253,14 @@ func acquireMigrationLock(
 		}
 	}
 	return lock, err
+}
+
+// migrationLockSchema is the schema a lock that keeps a table keeps it in: the
+// one the revision table is configured into, so that every account recording
+// in that table takes one lock, and the session's current schema, where an
+// unconfigured revision table lives, when none is configured.
+func (m *Migrator) migrationLockSchema() string {
+	return strings.TrimSpace(m.migrationsSchema)
 }
 
 func (m *Migrator) effectiveMigrationLockName() string {

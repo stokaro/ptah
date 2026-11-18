@@ -186,7 +186,11 @@ func TestCloseAfterFailedAcquisition_DiscardsAmbiguousSession(t *testing.T) {
 			session, err := db.Conn(c.Context())
 			c.Assert(err, qt.IsNil)
 
-			lock, acquireErr := acquireOnSession(c.Context(), dblockext.SQLSession{Conn: session}, db, test.dialect, "ptah_test", time.Second, false)
+			lock, acquireErr := acquireOnSession(c.Context(), dblockext.SQLSession{Conn: session}, db, dblockext.Request{
+				Dialect: test.dialect,
+				Name:    "ptah_test",
+				Timeout: time.Second,
+			})
 			c.Assert(lock, qt.IsNil)
 			c.Assert(acquireErr, qt.ErrorIs, queryErr)
 			c.Assert(closeAfterFailedAcquisition(session, acquireErr), qt.ErrorIs, queryErr)

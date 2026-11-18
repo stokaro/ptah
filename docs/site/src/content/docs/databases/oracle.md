@@ -309,14 +309,16 @@ still held when it ends refuses the run with `timed out acquiring migration lock
 same way, a dry run included.
 
 The lock is a row lock. Ptah keeps one row per lock name in the table
-`ptah_locks`, which it creates in the session's schema the first time it takes
-a lock there, the schema the revision table lives in too. The row's key is the
+`ptah_locks`, which it creates beside the revision table the first time it
+takes a lock there: in the session's schema, or in the schema
+`--migrations-schema` names (`--revisions-schema` on `ptah-compat`). So two
+accounts that record in one revision table take one lock. The row's key is the
 lock name exactly as given, `ptah_migrate` unless `--migration-lock-name` names
 another, and Ptah locks that row with `SELECT ... FOR UPDATE NOWAIT`. It asks
 again every 25 milliseconds until the wait ends, so waiting runs are not served
-in the order they arrived. Creating the table needs `CREATE TABLE`, which a
-migration needs already. On the other engines Ptah creates no such table, and a
-table of that name there is an ordinary one.
+in the order they arrived. Creating the table needs `CREATE TABLE` in that
+schema, which recording a migration there needs already. On the other engines
+Ptah creates no such table, and a table of that name there is an ordinary one.
 
 Do not name a table of your own `ptah_locks` on Oracle. Schema reads leave that
 name out, as they leave out the revision table, so `schema diff` and `schema
