@@ -285,6 +285,34 @@ func recordRow(c *qt.C, m *Migrator) {
 		upRetryPlan{readNoRow: true, resumeFrom: 1}), qt.IsNil)
 }
 
+// On SQLite the INSERT itself meets the row: the driver reports the duplicate
+// with its own extended result code, which is what lets the claim read it.
+// Without that code the run returns the bare UNIQUE refusal. The Atlas layout
+// keeps no state, and a row with fewer applied statements than its total
+// reads as failed.
+func TestBeginMigrationRevision_SQLiteDuplicateIsAClaimLost(t *testing.T) {
+	tests := []struct {
+		format    RevisionTableFormat
+		wantState string
+	}{
+		{format: RevisionTableFormatPtah, wantState: "pending"},
+		{format: RevisionTableFormatAtlas, wantState: "failed"},
+	}
+	for _, test := range tests {
+		t.Run(string(test.format), func(t *testing.T) {
+			c := qt.New(t)
+			m := claimMigrator(c, test.format)
+			recordRow(c, m)
+
+			err := m.beginMigrationRevisionOn(context.Background(), m.conn, m.migrationByVersion(1), time.Now(),
+				upRetryPlan{readNoRow: true, resumeFrom: 1})
+
+			c.Assert(err, qt.ErrorIs, ErrRevisionClaimLost)
+			c.Assert(err, qt.ErrorMatches, `(?s).*the row of migration 1 has state "`+test.wantState+`".*UNIQUE constraint failed.*`)
+		})
+	}
+}
+
 // A run that read no row, and whose INSERT the server refused as a duplicate
 // key over a row that is there now, lost the claim to the run that wrote it.
 func TestSettleRevisionInsert_ClaimLost(t *testing.T) {
