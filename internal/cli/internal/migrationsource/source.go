@@ -103,6 +103,8 @@ type localRootContextKey struct{}
 
 type virtualContextKey struct{}
 
+type sourceCheckContextKey struct{}
+
 type localRootContextValue struct {
 	raw     string
 	options LocalOptions
@@ -161,8 +163,35 @@ func WithVirtual(ctx context.Context, raw string, fsys fs.FS, display string) co
 	})
 }
 
-// Resolve loads raw as a local directory or an oci:// artifact.
+// WithSourceCheck returns a context whose [Resolve] runs check over the
+// directory it resolved before returning it, and returns check's error in
+// place of the source. A forwarding surface uses it to refuse a directory by
+// its content where the target command reads it, so the directory is read
+// once per invocation and the refusal comes before the target connects. A
+// second call replaces the first check.
+func WithSourceCheck(ctx context.Context, check func(fs.FS) error) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, sourceCheckContextKey{}, check)
+}
+
+// Resolve loads raw as a local directory or an oci:// artifact, then runs the
+// check [WithSourceCheck] attached to ctx, if any, over it.
 func Resolve(ctx context.Context, raw string, opts Options) (Source, error) {
+	source, err := resolve(ctx, raw, opts)
+	if err != nil {
+		return Source{}, err
+	}
+	if check := sourceCheckFromContext(ctx); check != nil {
+		if err := check(source.FileSystem); err != nil {
+			return Source{}, err
+		}
+	}
+	return source, nil
+}
+
+func resolve(ctx context.Context, raw string, opts Options) (Source, error) {
 	if virtual, ok := virtualFromContext(ctx, raw); ok {
 		return resolveVirtual(virtual, opts)
 	}
@@ -170,6 +199,14 @@ func Resolve(ctx context.Context, raw string, opts Options) (Source, error) {
 		return resolveOCI(ctx, raw, opts)
 	}
 	return resolveLocal(raw, opts, localOptionsFromContext(ctx, raw))
+}
+
+func sourceCheckFromContext(ctx context.Context) func(fs.FS) error {
+	if ctx == nil {
+		return nil
+	}
+	check, _ := ctx.Value(sourceCheckContextKey{}).(func(fs.FS) error)
+	return check
 }
 
 func resolveVirtual(virtual virtualContextSource, opts Options) (Source, error) {

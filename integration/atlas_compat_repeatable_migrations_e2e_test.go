@@ -5,16 +5,20 @@ package integration_test
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/internal/atlasurl"
 	"ptah.run/internal/clirun"
+	"ptah.run/internal/exeext"
 )
 
 // The directory of these tests holds two versioned files and R__view.sql in
@@ -499,6 +503,127 @@ func writeRollbackDir(c *qt.C, binary, dir string, extra map[string]string) {
 	}
 	maps.Copy(files, extra)
 	writeHashedDir(c, binary, dir, files)
+}
+
+// downPaths are the two paths `migrate down` takes: the forward to the native
+// rollback, and the --format report.
+var downPaths = []struct {
+	name string
+	args []string
+}{
+	{name: "forwarded"},
+	{name: "format", args: []string{"--format", "{{ json . }}"}},
+}
+
+// TestCompatRepeatableMigrationsDownRefusesBeforeConnectingE2E covers the
+// refusal of a directory that holds an R__ file on both paths of `migrate
+// down`: it comes from the directory the verb read, before the verb connects,
+// so the SQLite file the URL names is never created.
+func TestCompatRepeatableMigrationsDownRefusesBeforeConnectingE2E(t *testing.T) {
+	for _, path := range downPaths {
+		t.Run(path.name, func(t *testing.T) {
+			c := qt.New(t)
+			binary := clirun.Build(c, clirun.Compat)
+			dir := c.TempDir()
+			dbPath := filepath.Join(dir, "app.db")
+			writeRollbackDir(c, binary, dir, repeatableViewFile)
+
+			got := runFormatTemplateVerb(c, binary, dir, repeatableEnabled, append([]string{
+				"migrate", "down", "--dir", "file://migrations", "--url", atlasurl.SQLiteURLFromPath(dbPath),
+				"--dev-url", "sqlite://dev?mode=memory",
+			}, path.args...)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 1)
+			c.Assert(got.Stderr, qt.Contains,
+				"PTAH_ATLAS_REPEATABLE_MIGRATIONS is set and the directory holds R__view.sql, which migrate down reads")
+			_, statErr := os.Stat(dbPath)
+			c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+		})
+	}
+}
+
+// countingProgram appends one line to the file its first argument names and
+// prints its second argument: a data "external" program whose runs a test
+// counts.
+const countingProgram = `package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	file, err := os.OpenFile(os.Args[1], os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		os.Exit(2)
+	}
+	if _, err := fmt.Fprintln(file, "evaluated"); err != nil {
+		os.Exit(2)
+	}
+	if err := file.Close(); err != nil {
+		os.Exit(2)
+	}
+	fmt.Print(os.Args[2])
+}
+`
+
+// buildCountingProgram compiles countingProgram and returns its path.
+func buildCountingProgram(c *qt.C) string {
+	c.Helper()
+	dir := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module counting\n\ngo 1.22\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "main.go"), []byte(countingProgram), 0o600), qt.IsNil)
+	binary := filepath.Join(dir, "counting"+exeext.Suffix)
+	build := exec.CommandContext(c.Context(), "go", "build", "-o", binary, ".")
+	build.Dir = dir
+	build.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=")
+	output, err := build.CombinedOutput()
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+	return binary
+}
+
+// TestCompatRepeatableMigrationsDownEvaluatesTheProjectOnceE2E pins one
+// evaluation of atlas.hcl per `migrate down` with the variable set, on both
+// paths: the data "external" program that supplies the URL runs once, so a
+// program with side effects is not run twice to look for R__ files.
+func TestCompatRepeatableMigrationsDownEvaluatesTheProjectOnceE2E(t *testing.T) {
+	for _, path := range downPaths {
+		t.Run(path.name, func(t *testing.T) {
+			c := qt.New(t)
+			binary := clirun.Build(c, clirun.Compat)
+			program := buildCountingProgram(c)
+			dir := c.TempDir()
+			count := filepath.Join(dir, "evaluations.txt")
+			url := "sqlite://" + filepath.ToSlash(filepath.Join(dir, "app.db"))
+			writeRollbackDir(c, binary, dir, nil)
+			project := fmt.Sprintf(`data "external" "url" {
+  program = [%s, %s, %s]
+}
+
+env "local" {
+  url = data.external.url
+  dev = "sqlite://dev?mode=memory"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`, strconv.Quote(program), strconv.Quote(count), strconv.Quote(url))
+			c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(project), 0o600), qt.IsNil)
+			applied := runFormatTemplateVerb(c, binary, dir, repeatableEnabled, "migrate", "apply", "--env", "local")
+			c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", applied.Stderr))
+			c.Assert(os.Remove(count), qt.IsNil)
+
+			got := runFormatTemplateVerb(c, binary, dir, repeatableEnabled,
+				append([]string{"migrate", "down", "--env", "local"}, path.args...)...)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", got.Stderr))
+			evaluations, err := os.ReadFile(count)
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(evaluations), qt.Equals, "evaluated\n")
+			c.Assert(repeatableStrings(c, url, "SELECT version FROM atlas_schema_revisions ORDER BY version"),
+				qt.HasLen, 0)
+		})
+	}
 }
 
 // TestCompatRepeatableMigrationsRollbackControlE2E is the control for the two

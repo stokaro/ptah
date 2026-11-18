@@ -1,13 +1,12 @@
 package atlas
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"strings"
-
-	"github.com/spf13/cobra"
 
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/cli/internal/migrationsource"
@@ -131,57 +130,25 @@ func (e *atlasDownRepeatablesError) Error() string {
 		atlasRepeatableMigrationsEnvVar, strings.Join(e.files, ", "))
 }
 
-// refuseAtlasDownRepeatables refuses `migrate down` when the variable is
-// enabled and the directory the invocation names holds an R__ file, and a
-// malformed value in any case.
-func refuseAtlasDownRepeatables(cmd *cobra.Command, verb atlasVerb, args []string) error {
-	enabled, err := resolveAtlasRepeatableMigrations()
-	if err != nil || !enabled {
-		return err
+// refuseDown refuses `migrate down` over fsys, the directory the verb
+// resolved, when the variable is set and fsys holds an R__ file.
+func (r atlasRepeatableReading) refuseDown(fsys fs.FS) error {
+	if !r.enabled {
+		return nil
 	}
-	files, err := atlasDownRepeatableFiles(cmd, verb, args)
+	files, err := atlasRepeatableFiles(fsys)
 	if err != nil || len(files) == 0 {
 		return err
 	}
 	return &atlasDownRepeatablesError{files: files}
 }
 
-// atlasDownRepeatableFiles reads the directory a `migrate down` invocation
-// names, with its project file, and returns its R__ files. An invocation that
-// names no directory holds none here; the verb refuses it itself. It runs only
-// while the variable is set, so a run without it reads the project file once.
-func atlasDownRepeatableFiles(cmd *cobra.Command, verb atlasVerb, args []string) (files []string, runErr error) {
-	parentFlags, parentChanged, err := atlasProjectFlagsFromCommand(cmd)
-	if err != nil {
-		return nil, err
+// downSourceCheck attaches [atlasRepeatableReading.refuseDown] to ctx for the
+// native rollback a forwarded `migrate down` runs, which reads the directory
+// once and runs the check before it connects. Unset, ctx is returned as it is.
+func (r atlasRepeatableReading) downSourceCheck(ctx context.Context) context.Context {
+	if !r.enabled {
+		return ctx
 	}
-	project, remaining, err := extractAtlasProjectArgs(args)
-	if err != nil {
-		return nil, err
-	}
-	project = mergeAtlasProjectArgs(atlasProjectArgValues{flags: parentFlags, changed: parentChanged}, project)
-	opts, err := parseAtlasMigrateDownFormatArgs(verb, remaining)
-	if err != nil {
-		return nil, err
-	}
-	// The verb reads the project file again and says what it has to say about
-	// it, so this read writes nothing.
-	loadedProject, err := applyAtlasMigrateDownFormatProjectConfig(cmd.Context(), io.Discard, opts, project)
-	if err != nil {
-		return nil, err
-	}
-	defer closeAtlasProject(&loadedProject, &runErr)
-	if opts.dir == "" {
-		return nil, nil
-	}
-	var source migrationsource.LocalSource
-	if loadedProject.isVirtualMigrationDir(loadedProject.migrationDir) {
-		source, err = loadedProject.captureLocal(loadedProject.migrationDir)
-	} else {
-		source, err = migrationsource.CaptureLocal(opts.dir, opts.dirOptions)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("atlas migrate down --dir: %w", err)
-	}
-	return atlasRepeatableFiles(source.FileSystem)
+	return migrationsource.WithSourceCheck(ctx, r.refuseDown)
 }
