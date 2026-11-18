@@ -54,6 +54,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"ptah.run/core/platform"
@@ -150,7 +151,9 @@ func Services() dblockext.Services {
 		Dialects:         []string{platform.Oracle},
 		Session:          rowLock{},
 		ReleasedByCommit: true,
-		Table:            table,
+		// The table is created unquoted, so the catalog stores its name in
+		// upper case.
+		Table: strings.ToUpper(table),
 	}
 }
 

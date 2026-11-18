@@ -211,12 +211,11 @@ func withoutGeneratedKeys(constraints []catalog.Constraint, desired map[string]b
 
 // isLockTable reports whether table, as the catalog spells it, is the table
 // the migration lock keeps. The lock creates it unquoted, so the catalog holds
-// its name in upper case, and only that spelling is the lock's. A quoted
-// "ptah_locks" or "Ptah_Locks" beside it is a different table, the user's.
+// its name in upper case, and only that spelling, which the lock service
+// names, is the lock's. A quoted "ptah_locks" or "Ptah_Locks" beside it is a
+// different table, the user's.
 func isLockTable(table string) bool {
-	return slices.ContainsFunc(lockbuiltin.Tables(platform.Oracle), func(name string) bool {
-		return table == strings.ToUpper(name)
-	})
+	return slices.Contains(lockbuiltin.Tables(platform.Oracle), table)
 }
 
 const tableQuery = `

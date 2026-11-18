@@ -117,6 +117,9 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 	if holder, ok := ctx.Value(migrationLockHolderKey{}).(migrationLockHolder); ok && holder == held {
 		return fn(ctx)
 	}
+	if err := m.refuseForeignLockTable(ctx); err != nil {
+		return fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err)
+	}
 	startedAt := time.Now()
 	observer := m.migrationObserver()
 	lockCtx, span := observer.StartSpan(ctx, "ptah.lock.acquire",
@@ -138,6 +141,14 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 	)
 	if err != nil {
 		return fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err)
+	}
+	// Again once the lock is taken, which may have created its table: the
+	// check above and the creation are two round trips, and a table another
+	// account placed between them is the one the lock wrote its row to.
+	if err := m.refuseForeignLockTable(ctx); err != nil {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), migrationAdvisoryUnlockTimeout)
+		defer cancel()
+		return errors.Join(fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err), lock.Release(releaseCtx))
 	}
 
 	guarded, stopGuard := lock.Guard(ctx)
@@ -267,6 +278,22 @@ func acquireMigrationLock(
 // unconfigured revision table lives, when none is configured.
 func (m *Migrator) migrationLockSchema() string {
 	return strings.TrimSpace(m.migrationsSchema)
+}
+
+// refuseForeignLockTable holds the table the migration lock keeps, on an
+// engine whose lock keeps one, to the policy of
+// [Migrator.refuseForeignMetadataTable]: the lock writes a row to it, as Ptah
+// writes to its other metadata tables, so a table another account owns is
+// refused unless [AllowForeignMetadataTableEnvVar] accepts it. On Oracle an
+// account owns the tables of its own schema, so this refuses a lock table in a
+// migrations schema another account owns.
+func (m *Migrator) refuseForeignLockTable(ctx context.Context) error {
+	for _, table := range lockbuiltin.Tables(m.conn.Info().Dialect) {
+		if err := m.refuseForeignMetadataTable(ctx, table); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrationLockScope is the schema that is part of the migration lock's

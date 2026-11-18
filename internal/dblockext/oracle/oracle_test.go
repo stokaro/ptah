@@ -103,7 +103,7 @@ func TestServices(t *testing.T) {
 	c.Assert(services.Dialects, qt.DeepEquals, []string{"oracle"})
 	c.Assert(services.Session, qt.IsNotNil)
 	c.Assert(services.ReleasedByCommit, qt.IsTrue)
-	c.Assert(services.Table, qt.Equals, "ptah_locks")
+	c.Assert(services.Table, qt.Equals, "PTAH_LOCKS")
 	c.Assert(services.Exclusion, qt.IsNil)
 	c.Assert(services.Separate, qt.IsNil)
 }

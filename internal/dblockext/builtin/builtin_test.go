@@ -114,7 +114,7 @@ func TestTables(t *testing.T) {
 		dialect string
 		want    []string
 	}{
-		{dialect: platform.Oracle, want: []string{"ptah_locks"}},
+		{dialect: platform.Oracle, want: []string{"PTAH_LOCKS"}},
 		{dialect: platform.Postgres},
 		{dialect: platform.MySQL},
 		{dialect: platform.MariaDB},
