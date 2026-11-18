@@ -113,13 +113,15 @@ and exits `0`, so a hook can read the status alone. Cancellation or failure to
 perform validation returns an error instead of schema findings. Those errors
 exit `2`; they do not establish whether the schema is valid.
 
-`schema plan`, `schema apply`, `schema compare`, `schema drift` and `schema
-diff` (for its `--to` document) check every index before comparing a desired
-schema with a database. An index whose table no declaration defines, or that
-names a column its table does not declare, gets the diagnostic `schema
-validate` prints, and those commands exit `2` without a plan, comparison or
-drift report. The check reads the whole document: `--exclude` and `--include`
-choose what a run changes, and do not hide a fault in what it reads.
+`schema plan`, `schema apply`, `schema compare` and `schema drift` check every
+index of the desired schema before comparing it with a database, and `schema
+diff` checks every side it reads from a document, `--from` as well as `--to`.
+An index whose table no declaration defines, or that names a column its table
+does not declare, gets the diagnostic `schema validate` prints, and those
+commands exit `2` without a plan, comparison or drift report. `ptah-compat
+schema diff` refuses the same documents and exits `1`. The check reads the
+whole document: `--exclude` and `--include` choose what a run changes, and do
+not hide a fault in what it reads.
 
 On a PostgreSQL URL that pins no `search_path`, those commands first place a
 table the schema names without a schema in the connection's current schema

@@ -510,8 +510,8 @@ func replaysCurrent(conn *dbschema.DatabaseConnection, fromState atlassource.Sta
 // scopedDiffSides prepares the two resolved sides for scoping: each side's
 // view bodies are rebased on the other's database, both are narrowed on a dev
 // server, the one-database rule reads the narrowed sides, the documents'
-// unqualified names are placed, and the indexes of a --to document are
-// checked on the placed names; see [placeDiffDocuments] and
+// unqualified names are placed, and the indexes of each side read from a
+// document are checked on the placed names; see [placeDiffDocuments] and
 // [refuseDocumentIndexProblems].
 func scopedDiffSides(
 	ctx context.Context,
@@ -538,27 +538,31 @@ func scopedDiffSides(
 	if err != nil {
 		return atlassource.State{}, atlassource.State{}, err
 	}
-	if err := refuseDocumentIndexProblems(resolver, toState, dialect); err != nil {
+	if err := refuseDocumentIndexProblems(resolver, dialect, fromState, toState); err != nil {
 		return atlassource.State{}, atlassource.State{}, err
 	}
 	return fromState, toState, nil
 }
 
-// refuseDocumentIndexProblems refuses a --to document with an index its server
-// would refuse, as `schema apply` refuses its desired schema: on the placed
-// names and ahead of the selection, so the comparison plans no CREATE INDEX
-// the server refuses; see [schemavalidate.CollectTargetIndexProblems]. A --to
-// database holds only indexes its server accepted.
-func refuseDocumentIndexProblems(resolver schemaext.TargetResolver, to atlassource.State, dialect string) error {
-	if to.DB != nil {
-		return nil
-	}
-	problems, err := schemavalidate.CollectTargetIndexProblems(resolver, to.Schema, dialect)
-	if err != nil {
-		return err
-	}
-	if len(problems) != 0 {
-		return errors.New(problems[0].String())
+// refuseDocumentIndexProblems refuses a side read from a document, --from or
+// --to, with an index its server would refuse, as `schema apply` refuses its
+// desired schema: on the placed names and ahead of the selection; see
+// [schemavalidate.CollectTargetIndexProblems]. A --to document would plan a
+// CREATE INDEX the server refuses, and a --from document describes a state no
+// server holds. A side read from a database or replayed from a migration
+// directory holds only indexes its server accepted, and is not checked.
+func refuseDocumentIndexProblems(resolver schemaext.TargetResolver, dialect string, sides ...atlassource.State) error {
+	for _, side := range sides {
+		if side.DB != nil {
+			continue
+		}
+		problems, err := schemavalidate.CollectTargetIndexProblems(resolver, side.Schema, dialect)
+		if err != nil {
+			return err
+		}
+		if len(problems) != 0 {
+			return errors.New(problems[0].String())
+		}
 	}
 	return nil
 }

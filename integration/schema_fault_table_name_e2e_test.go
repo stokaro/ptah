@@ -102,6 +102,15 @@ var targetCommands = []targetCommand{
 	},
 }
 
+// fromDocumentDiff is `schema diff` with the schema as its --from document. It
+// checks the indexes of that document, as of a --to one, and the comparison
+// faults of the --to side alone, so it joins the index rows only.
+var fromDocumentDiff = targetCommand{
+	name:     "schema diff of two documents, the schema as --from",
+	args:     []string{"schema", "diff", "--from", "file://schema.sql", "--to", "file://empty.sql", "--dev-url", "{dev}"},
+	placedOn: "dev",
+}
+
 // faultFixture is the realm fixture with the current schema of its target and
 // of its dev database, read from each with current_schema().
 type faultFixture struct {
@@ -167,6 +176,34 @@ func TestSchemaCommandsNameAFaultTableByTheCurrentSchema_FailurePathE2E(t *testi
 	}
 }
 
+// TestSchemaDiffNamesAnIndexFaultOfItsFromDocument_FailurePathE2E runs
+// [fromDocumentDiff] on the index fault, alone and with t excluded, and expects
+// the line of a --to document, the table named by the dev database's current
+// schema. Without the check of the --from side, the diff plans the table's
+// removal and exits 0.
+func TestSchemaDiffNamesAnIndexFaultOfItsFromDocument_FailurePathE2E(t *testing.T) {
+	c := qt.New(t)
+	fixture := newFaultFixture(c)
+	want := fmt.Sprintf(schemaFaults[0].line, fixture.current[fromDocumentDiff.placedOn]+".t")
+
+	for _, test := range []struct {
+		name   string
+		schema string
+		extra  []string
+	}{
+		{name: "index fault", schema: schemaFaults[0].schema},
+		{name: "index fault on an excluded table", schema: excludedFaultSchema, extra: []string{"--exclude", "{schema}.t"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := fixture.run(c, fromDocumentDiff, test.schema, test.extra...)
+			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
+			c.Assert(result.ExitCode, qt.Equals, 2, comment)
+			c.Assert(result.Stderr, qt.Equals, "error: "+want+"\n", comment)
+		})
+	}
+}
+
 // TestSchemaCommandsReadTheCorrectedSchema_HappyPathE2E runs each command on
 // [soundSchema], so the refusals above are the faults' doing and not the
 // fixture's.
@@ -174,7 +211,7 @@ func TestSchemaCommandsReadTheCorrectedSchema_HappyPathE2E(t *testing.T) {
 	c := qt.New(t)
 	fixture := newFaultFixture(c)
 
-	for _, cmd := range targetCommands {
+	for _, cmd := range slices.Concat(targetCommands, []targetCommand{fromDocumentDiff}) {
 		t.Run(cmd.name, func(t *testing.T) {
 			c := qt.New(t)
 			result := fixture.run(c, cmd, soundSchema)
