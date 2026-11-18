@@ -25,6 +25,10 @@ func LooksAtlasTemplateSQL(sql string) bool {
 
 // RenderAtlasTemplateSQL renders an Atlas SQL template migration file.
 //
+// Every file is read through [SQLText], the root file and each shared
+// template alike, so a byte order mark at the start of a file reaches neither
+// the template engine nor the returned SQL.
+//
 // Shared templates may live anywhere in fsys, subdirectories included. One is
 // referenced by its path with the .sql extension stripped, so
 // {{ template "shared/users" . }} names shared/users.sql. A root file that
@@ -41,8 +45,9 @@ func RenderAtlasTemplateSQL(fsys fs.FS, filename string, data any) (sql string, 
 	if err != nil {
 		return "", false, fmt.Errorf("failed to read migration file: %w", err)
 	}
-	if !LooksAtlasTemplateSQL(string(raw)) {
-		return string(raw), false, nil
+	text := SQLText(string(raw))
+	if !LooksAtlasTemplateSQL(text) {
+		return text, false, nil
 	}
 
 	renderedSQL, err := renderAtlasTemplateSQL(fsys, filename, data)
@@ -67,7 +72,8 @@ func renderAtlasTemplateSQL(fsys fs.FS, filename string, data any) (string, erro
 		if err != nil {
 			return fmt.Errorf("failed to read SQL template %s: %w", p, err)
 		}
-		if path.Clean(p) != rootName && !LooksAtlasTemplateSQL(string(raw)) {
+		text := SQLText(string(raw))
+		if path.Clean(p) != rootName && !LooksAtlasTemplateSQL(text) {
 			return nil
 		}
 
@@ -75,7 +81,7 @@ func renderAtlasTemplateSQL(fsys fs.FS, filename string, data any) (string, erro
 		if name != rootName {
 			name = atlasTemplateReferenceName(name)
 		}
-		if _, err := tmpl.New(name).Parse(string(raw)); err != nil {
+		if _, err := tmpl.New(name).Parse(text); err != nil {
 			return fmt.Errorf("failed to parse SQL template %s: %w", p, err)
 		}
 		return nil

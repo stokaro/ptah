@@ -179,8 +179,9 @@ type File struct {
 	// filesystem.
 	Source string
 	// SQL is the executable SQL analyzed by the linter. It differs from Source
-	// when an Atlas SQL template is rendered or when a txtar migration.sql
-	// section is extracted. Statement spans index SQL; reported line numbers
+	// when the file starts with a byte order mark, which
+	// [migrationfile.SQLText] removes as the migrator does, when an Atlas SQL
+	// template is rendered or when a txtar migration.sql section is extracted. Statement spans index SQL; reported line numbers
 	// are translated back to Source.
 	SQL string
 	// Version is the parsed migration version, or zero when the name is not
@@ -814,7 +815,7 @@ func prepareFile(
 		Path:            path.Join(pathPrefix, name),
 		Name:            name,
 		Source:          raw,
-		SQL:             raw,
+		SQL:             migrationfile.SQLText(raw),
 		Version:         version,
 		RevisionVersion: revisionVersion,
 		Repeatable:      repeatable,
@@ -858,7 +859,7 @@ func prepareFile(
 	// [Rule.AppliesToDown]. Schema changes stay up-only: a change set is the
 	// forward delta this version applies, and the rollback is not a second one.
 	if file.IsUp || file.IsDown {
-		sql := raw
+		sql := file.SQL
 		if atlasFormat && migrationfile.LooksAtlasTemplateSQL(sql) {
 			rendered, _, err := migrationfile.RenderAtlasTemplateSQL(snapshot, name, atlasTemplateData)
 			if err != nil {
