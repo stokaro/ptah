@@ -562,7 +562,7 @@ func TestPtahYAMLExcludeTooManyParts_FailurePathE2E(t *testing.T) {
 		{
 			name:       "schema drift",
 			args:       []string{"schema", "drift"},
-			wantStderr: "Error: apply exclude selectors to current schema: " + reason,
+			wantStderr: "error: apply exclude selectors to current schema: " + reason,
 		},
 	}
 	for _, test := range tests {
