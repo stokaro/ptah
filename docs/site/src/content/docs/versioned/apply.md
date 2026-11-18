@@ -1087,8 +1087,9 @@ and pipelines share a directory:
   file-name order, the bound is the version string a file spells: `2` names
   `2_x.sql` and `v1` names `v1_x.sql`, and the run stops after that file in
   file-name order. `0` is refused before the command connects, because it names
-  the empty history rather than a migration. A version the directory does not
-  carry is refused, and so is a
+  the empty history rather than a migration, and so is text over a directory
+  whose every file carries a number, because no file there can spell it. A
+  version the directory does not carry is refused, and so is a
   version the database has already passed: nothing pending reaches the target
   there, and an exit `0` would report a state the database never arrived at. A
   database recorded at exactly the named version is not that case, and applies
@@ -1242,6 +1243,23 @@ scripts. `ptah migrations up` supports:
   every replica reports itself consistent; see
   [the ClickHouse revision table's storage engine](../../databases/clickhouse/#the-revision-tables-storage-engine).
   An engine the revision table cannot be is refused before any statement runs.
+
+A command hook runs with `PTAH_DB_URL`, `PTAH_DIALECT`, `PTAH_CURRENT_VERSION`
+and `PTAH_TARGET_VERSION` in its environment: the version the database records
+and the version the run ends at. The webhook receives a JSON object with
+`direction`, `dialect`, `current_version`, `target_version` and
+`database_url`, the URL with its password and secret query parameters hidden.
+A backup is named `ptah_pre_v<current>_to_v<target>_<UTC time>.dump`, or
+`.sql` for `--mysqldump-to`.
+
+In an Atlas directory whose files run under their positions in file-name order,
+the numbers are positions, which name no migration outside the run, so the
+hooks receive the version keys alone. The command hook gets
+`PTAH_CURRENT_VERSION_KEY` and `PTAH_TARGET_VERSION_KEY`, the webhook gets
+`current_version_key` and `target_version_key`, and a backup is named
+`ptah_pre_<current>_to_<target>_<UTC time>`, as the files spell the versions.
+An empty current key means no migration is applied, and a backup name spells it
+`none`.
 
 All of these can live in `ptah.yaml` instead of the command line; see
 [Configuration](../../reference/configuration/). A hook written in `ptah.yaml`

@@ -252,9 +252,8 @@ The install now refuses on every platform ([#1547](https://github.com/stokaro/pt
 
 ## Understand deployment reporting
 
-After an OCI-backed `migrations up` applies pending migrations successfully,
-Ptah attempts to attach a `deployment.json` referrer to the exact migration
-manifest digest that was pulled.
+After an OCI-backed `migrations up` applies migrations, Ptah tries to attach a
+`deployment.json` referrer to the exact manifest digest it pulled.
 
 The report records:
 
@@ -262,7 +261,8 @@ The report records:
 - the migration artifact digest;
 - the database dialect;
 - before and after versions;
-- versions actually added to committed revision state;
+- versions added to committed revision state, by key where files run under
+  their positions;
 - UTC start and finish timestamps;
 - a `succeeded` outcome.
 
