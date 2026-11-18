@@ -309,6 +309,7 @@ func runAtlasMigrateDownFormat(
 
 		providerOptions := []migrator.FSProviderOption{
 			migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
+			migrator.WithAtlasVerbatimDescriptions(),
 		}
 		if ownTransactions {
 			providerOptions = append(providerOptions, migrator.WithOwnTransactions())
@@ -642,7 +643,9 @@ func resolveAtlasDownFormatTag(
 		return 0, fmt.Errorf("--to-version and --to-tag both name where to stop; pass one")
 	}
 	resolver, err := migrator.NewFSMigrator(conn, migrations,
-		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
+		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
+		migrator.WithAtlasVerbatimDescriptions(),
+	)
 	if err != nil {
 		return 0, fmt.Errorf("error registering migrations: %w", err)
 	}

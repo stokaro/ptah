@@ -96,6 +96,8 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 		// repeatable migrations holds a row is refused by the rollback, which
 		// says how to clear it, rather than as a run that ignores the record.
 		migrator.WithRepeatableMigrations(),
+		// A revision named in a refusal reads as the community binary names it.
+		migrator.WithAtlasVerbatimDescriptions(),
 	}
 	if opts.OwnTransactions {
 		providerOptions = append(providerOptions, migrator.WithOwnTransactions())

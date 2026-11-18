@@ -593,6 +593,8 @@ func newApplyMigrator(
 		migrator.WithAtlasRevisionChecksums(opts.revisionChecksums),
 		migrator.WithAtlasRevisionTypes(opts.revisionTypes),
 		migrator.WithAtlasRepeatableVersions(opts.repeatableVersions),
+		// The revision rows read the same to the community binary.
+		migrator.WithAtlasVerbatimDescriptions(),
 	}
 	if opts.ownTransactions {
 		providerOptions = append(providerOptions, migrator.WithOwnTransactions())

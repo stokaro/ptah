@@ -48,6 +48,11 @@ type SetOptions struct {
 	// the source format. Nil or an ambiguous result makes metadata movement fail
 	// closed instead of guessing from opaque identity bytes.
 	RevisionVersionComparator migrator.AtlasRevisionVersionComparator
+	// VerbatimDescriptions records and reports each revision under the
+	// description the community binary gives it (see
+	// [migrator.WithAtlasVerbatimDescriptions]). ptah-compat sets it; the
+	// native `ptah migrations set` keeps Ptah's description.
+	VerbatimDescriptions bool
 }
 
 // Set moves revision metadata to version without executing migration SQL.
@@ -75,16 +80,18 @@ func Set(
 		revisionFormat = migrator.RevisionTableFormatAtlas
 	}
 
-	mig, err := migrator.NewFSMigrator(
-		conn,
-		opts.FS,
+	providerOptions := []migrator.FSProviderOption{
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.AtlasEnv}),
 		migrator.WithAtlasRevisionVersions(opts.RevisionVersions),
 		migrator.WithAtlasRevisionChecksums(opts.RevisionChecksums),
 		migrator.WithAtlasRevisionTypes(opts.RevisionTypes),
 		migrator.WithAtlasRepeatableVersions(opts.RepeatableVersions),
-	)
+	}
+	if opts.VerbatimDescriptions {
+		providerOptions = append(providerOptions, migrator.WithAtlasVerbatimDescriptions())
+	}
+	mig, err := migrator.NewFSMigrator(conn, opts.FS, providerOptions...)
 	if err != nil {
 		return migrator.AtlasRevisionSetResult{}, fmt.Errorf("error registering migrations: %w", err)
 	}

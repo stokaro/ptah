@@ -243,6 +243,14 @@ type Dialect struct {
 	// its table's CREATE TABLE and never added to an existing table, as on
 	// SQLite, which has no ALTER TABLE ... ADD CONSTRAINT.
 	ForeignKeysInCreateTable bool `json:"foreign_keys_in_create_table,omitempty"`
+	// ForeignKeyReferencesCheckedAtCreate reports that the server holds a new
+	// foreign key to the referenced-key rule of the target's capabilities when
+	// it creates the key: a CREATE TABLE whose foreign key references columns
+	// no unique key covers fails there, as PostgreSQL's 42830 does. A schema
+	// document holding such a key then describes a state no database of the
+	// engine holds. SQLite takes the table and refuses the first write to it,
+	// so it is not set there.
+	ForeignKeyReferencesCheckedAtCreate bool `json:"foreign_key_references_checked_at_create,omitempty"`
 	// IndexesBeforeForeignKeys reports that every index a schema declares is
 	// created before the schema's foreign keys are added, because the server
 	// builds an index of its own for a foreign key no declared index covers, as
@@ -499,47 +507,28 @@ func (d Dialect) validate() error {
 	if !slices.Contains(Placeholders(), d.Placeholder) {
 		return fmt.Errorf("%w: dialect %q: placeholder %q is not one of %q", ErrInvalidDescriptor, d.Name, d.Placeholder, Placeholders())
 	}
-	if err := d.validateConnection(); err != nil {
-		return err
+	// Each check reads one part of the descriptor; the first refusal stands.
+	checks := []func() error{
+		d.validateConnection,
+		d.validateURLs,
+		d.validateAtlas,
+		d.validateScope,
+		d.validateIdentifiers,
+		d.validateNames,
+		d.validateLexical,
+		d.validateScripts,
+		d.validateReach,
+		d.validateGrammar,
+		d.validateCleanCheck,
+		d.validateSystemSchemas,
+		d.validateMigration,
+		d.validateCleanup,
+		d.validateRevisionTable,
 	}
-	if err := d.validateURLs(); err != nil {
-		return err
-	}
-	if err := d.validateAtlas(); err != nil {
-		return err
-	}
-	if err := d.validateScope(); err != nil {
-		return err
-	}
-	if err := d.validateIdentifiers(); err != nil {
-		return err
-	}
-	if err := d.validateNames(); err != nil {
-		return err
-	}
-	if err := d.validateLexical(); err != nil {
-		return err
-	}
-	if err := d.validateScripts(); err != nil {
-		return err
-	}
-	if err := d.validateReach(); err != nil {
-		return err
-	}
-	if err := d.validateGrammar(); err != nil {
-		return err
-	}
-	if err := d.validateCleanCheck(); err != nil {
-		return err
-	}
-	if err := d.validateSystemSchemas(); err != nil {
-		return err
-	}
-	if err := d.validateMigration(); err != nil {
-		return err
-	}
-	if err := d.validateCleanup(); err != nil {
-		return err
+	for _, check := range checks {
+		if err := check(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

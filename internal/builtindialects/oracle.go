@@ -311,6 +311,31 @@ BEGIN
 EXCEPTION
     WHEN already_exists THEN NULL;
 END;`,
+		// The record of repeatable migrations. checksum is nullable because
+		// Oracle stores the empty digest of a record nothing applied yet as
+		// NULL. body is a BLOB, which a bound empty value leaves NULL, so an
+		// empty file is stored as EMPTY_BLOB().
+		CreateRepeatables: `DECLARE
+    already_exists EXCEPTION;
+    PRAGMA EXCEPTION_INIT(already_exists, -955);
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE {table_escaped} (
+    identity VARCHAR2(255 CHAR) NOT NULL PRIMARY KEY,
+    checksum VARCHAR2(64) NULL,
+    state VARCHAR2(32) NOT NULL,
+    attempt_checksum VARCHAR2(64) NOT NULL,
+    attempt_order NUMBER(10) NOT NULL,
+    transactional NUMBER(10) NOT NULL,
+    run_id VARCHAR2(64) NOT NULL,
+    attempted_at TIMESTAMP NOT NULL,
+    applied_at TIMESTAMP NULL,
+    error CLOB NULL,
+    body BLOB NULL
+)';
+EXCEPTION
+    WHEN already_exists THEN NULL;
+END;`,
+		EmptyBinary: "EMPTY_BLOB()",
 		AddedColumns: map[string]string{
 			"run_reference": "VARCHAR2(255) NULL",
 			"actor_origin":  "VARCHAR2(64) NULL",

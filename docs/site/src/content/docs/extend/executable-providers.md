@@ -521,9 +521,10 @@ the provider, for a database the operator cannot create. A `parallel` case of
 `ptah migrations test` or `ptah schema test` gets a realm of its own the same
 way, removed when the case ends.
 
-A `ptah schema diff` of two schema files for such an engine takes
-`--dev-url docker://<engine>/<tag>` and provisions nothing: the URL selects the
-engine, the tag is not read, and the host compares the files offline.
+A `ptah schema diff` of two schema files for such an engine takes a
+`--dev-url` in either docker form, `docker://<engine>/<tag>` or
+`docker+<engine>://...`, and provisions nothing: the URL selects the engine,
+the rest of it is not read, and the host compares the files offline.
 
 A provider's dev database is cleaned and guarded by the provider, so
 `schema apply --dev-url` rehearses a plan on it, `migrations lint --dev-url`
