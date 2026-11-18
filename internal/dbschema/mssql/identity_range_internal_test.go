@@ -74,15 +74,15 @@ func answeringIdentityRange(_ string, _ []driver.NamedValue) (dbtest.QueryResult
 			"schema_name", "table_name", "column_name", "type_name",
 			"max_length", "precision", "scale", "is_nullable",
 			"is_identity", "ident_seed", "ident_incr", "column_id",
-			"default_definition", "generated_expression", "is_persisted", "comment",
+			"default_definition", "generated_expression", "is_persisted", "comment", "collation_name", "database_collation",
 		},
 		Rows: [][]driver.Value{
 			{"dbo", "orders", "id", "int",
 				int64(4), int64(10), int64(0), false,
-				int64(1), "1000", "5", int64(1), nil, nil, nil, nil},
+				int64(1), "1000", "5", int64(1), nil, nil, nil, nil, nil, "SQL_Latin1_General_CP1_CI_AS"},
 			{"dbo", "orders", "note", "nvarchar",
 				int64(80), int64(0), int64(0), true,
-				int64(0), "1000", "5", int64(2), nil, nil, nil, nil},
+				int64(0), "1000", "5", int64(2), nil, nil, nil, nil, nil, "SQL_Latin1_General_CP1_CI_AS"},
 		},
 	}, nil
 }

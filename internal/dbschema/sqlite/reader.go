@@ -405,6 +405,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[
 	type tableDDLMetadata struct {
 		autoIncrementColumn  string
 		generatedExpressions map[string]string
+		collations           map[string]string
 	}
 	ddlMetadataByTable := make(map[string]tableDDLMetadata)
 	columnsByTable := make(map[string][]catalog.Column)
@@ -431,6 +432,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[
 			ddlMetadata = tableDDLMetadata{
 				autoIncrementColumn:  autoincrementColumn(ddl.String),
 				generatedExpressions: extractGeneratedExpressions(ddl.String),
+				collations:           extractColumnCollations(ddl.String),
 			}
 			ddlMetadataByTable[tableName] = ddlMetadata
 		}
@@ -445,6 +447,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[
 			IsAutoIncrement:     strings.EqualFold(name, ddlMetadata.autoIncrementColumn),
 			GeneratedKind:       sqliteGeneratedKind(hidden),
 			GeneratedExpression: nil,
+			Collate:             ddlMetadata.collations[name],
 		}
 		// PRAGMA table_xinfo is the authority on WHETHER a column is generated;
 		// the DDL only supplies the text. Asking the DDL both questions is what
@@ -1238,6 +1241,27 @@ func extractGeneratedExpressions(ddl string) map[string]string {
 		expression := generatedExpression(part)
 		if expression != "" {
 			out[column] = expression
+		}
+	}
+	return out
+}
+
+// extractColumnCollations maps each column of a CREATE TABLE to the collation
+// it declares. No pragma reports a column's collation: pragma_index_xinfo
+// does for an index key, and only the table's text says it for a column.
+// BINARY is what a column that declares nothing takes, so a column declaring
+// it is one that inherits and is left out, as a restated default is on every
+// other engine.
+func extractColumnCollations(ddl string) map[string]string {
+	out := make(map[string]string)
+	for _, part := range splitTopLevelComma(tableBody(ddl)) {
+		column, ok := leadingIdentifier(part)
+		if !ok {
+			continue
+		}
+		collation, declared := collatedkey.ColumnCollation(platform.SQLite, part)
+		if declared && !strings.EqualFold(collation, "BINARY") {
+			out[column] = collation
 		}
 	}
 	return out

@@ -493,7 +493,20 @@ type Column struct {
 	IsNullable         string  `json:"is_nullable"`              // YES/NO
 	ColumnDefault      *string `json:"column_default"`           // Can be NULL
 	CharacterMaxLength *int    `json:"character_max_length"`     // For VARCHAR, etc.
-	Collate            string  `json:"collate,omitempty"`        // MySQL/MariaDB column collation; on PostgreSQL the declared collation, empty for the database default
+	// Collate is the collation the column declares, empty where the column
+	// takes the one it inherits: the table's default on MySQL and MariaDB,
+	// its type's on PostgreSQL (a domain's own, or the database default), the
+	// database's on SQL Server, and BINARY on SQLite. A column that restates
+	// what it inherits reads as one that does not, because the server keeps
+	// nothing that tells the two apart. Oracle and ClickHouse report none.
+	Collate string `json:"collate,omitempty"`
+	// EffectiveCollate is the collation the column compares with, declared
+	// or inherited, as information_schema.COLUMNS names it on MySQL, MariaDB
+	// and PostgreSQL, where it is empty for the database default. Migration
+	// lint reads it to tell a restated collation from a changed one, and the
+	// Atlas-compatible inspect document prints it. The other readers leave it
+	// empty.
+	EffectiveCollate string `json:"effective_collate,omitempty"`
 	// Comment is the column's own comment, where the target has one and the
 	// reader reads it. It is empty for a column nobody commented, which is why
 	// it is omitted from the encoding rather than written as "".

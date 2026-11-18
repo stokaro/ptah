@@ -460,25 +460,28 @@ func charsetOfCollation(collation string) string {
 func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]catalog.Column, error) {
 	query := `
 		SELECT
-			TABLE_NAME,
-			COLUMN_NAME,
-			DATA_TYPE,
-			COLUMN_TYPE,
-			IS_NULLABLE,
-			COLUMN_DEFAULT,
-			CHARACTER_MAXIMUM_LENGTH,
-			NUMERIC_PRECISION,
-			NUMERIC_SCALE,
-			ORDINAL_POSITION,
-			CHARACTER_SET_NAME,
-			COLLATION_NAME,
-			EXTRA,
-			GENERATION_EXPRESSION,
-			COLUMN_COMMENT
-		FROM information_schema.COLUMNS
-		WHERE TABLE_SCHEMA = ?
-		AND TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
-		ORDER BY TABLE_NAME, ORDINAL_POSITION`
+			c.TABLE_NAME,
+			c.COLUMN_NAME,
+			c.DATA_TYPE,
+			c.COLUMN_TYPE,
+			c.IS_NULLABLE,
+			c.COLUMN_DEFAULT,
+			c.CHARACTER_MAXIMUM_LENGTH,
+			c.NUMERIC_PRECISION,
+			c.NUMERIC_SCALE,
+			c.ORDINAL_POSITION,
+			c.CHARACTER_SET_NAME,
+			c.COLLATION_NAME,
+			t.TABLE_COLLATION,
+			c.EXTRA,
+			c.GENERATION_EXPRESSION,
+			c.COLUMN_COMMENT
+		FROM information_schema.COLUMNS c
+		LEFT JOIN information_schema.TABLES t
+			ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+		WHERE c.TABLE_SCHEMA = ?
+		AND c.TABLE_NAME NOT IN (` + revisiontable.NativeSQLNames + `)
+		ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION`
 
 	rows, err := r.db.QueryContext(ctx, query, dbName)
 	if err != nil {
@@ -492,7 +495,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 		var tableName string
 		var defaultValue sql.NullString
 		var characterMaxLength, numericPrecision, numericScale sql.NullInt64
-		var charset, collate, extra, generatedExpression sql.NullString
+		var charset, collate, tableCollate, extra, generatedExpression sql.NullString
 		var comment sql.NullString
 
 		err := rows.Scan(
@@ -508,6 +511,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 			&col.OrdinalPosition,
 			&charset,
 			&collate,
+			&tableCollate,
 			&extra,
 			&generatedExpression,
 			&comment,
@@ -532,7 +536,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 			numericPrecision,
 			numericScale,
 			charset,
-			collate,
+			collation{column: collate, table: tableCollate},
 			extra,
 			generatedExpression,
 		); err != nil {
@@ -547,14 +551,33 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 	return columnsByTable, nil
 }
 
+// collation is a column's COLLATION_NAME beside its table's
+// TABLE_COLLATION. A character column the author gave no COLLATE takes the
+// table's default, and so does one that restated it: the server reports both
+// with the table's collation, and nothing in information_schema tells them
+// apart. A view's columns have no table default to inherit, so they report
+// the collation they have.
+type collation struct {
+	column sql.NullString
+	table  sql.NullString
+}
+
+// declared is the collation the column declares, empty for one it inherits.
+func (c collation) declared() string {
+	if !c.column.Valid || (c.table.Valid && strings.EqualFold(c.column.String, c.table.String)) {
+		return ""
+	}
+	return c.column.String
+}
+
 func applyMySQLColumnMetadata(
 	col *catalog.Column,
 	defaultValue sql.NullString,
 	characterMaxLength,
 	numericPrecision,
 	numericScale sql.NullInt64,
-	charset,
-	collate,
+	charset sql.NullString,
+	collate collation,
 	extra,
 	generatedExpression sql.NullString,
 ) error {
@@ -581,9 +604,7 @@ func applyMySQLColumnMetadata(
 	if charset.Valid {
 		settings.Charset = strings.TrimSpace(charset.String)
 	}
-	if collate.Valid {
-		col.Collate = collate.String
-	}
+	col.Collate, col.EffectiveCollate = collate.declared(), collate.column.String
 	if extra.Valid {
 		extraValue := strings.ToLower(extra.String)
 		col.IsAutoIncrement = strings.Contains(extraValue, "auto_increment")

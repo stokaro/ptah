@@ -25,7 +25,7 @@ import (
 var generatedColumnRow = []driver.Value{
 	"t", "g", "integer", "int4", "",
 	"", "", "YES", nil, nil,
-	nil, nil, nil, "", int64(1),
+	nil, nil, nil, "", "", int64(1),
 	"s", "(n + 1)", "",
 	"", "", "", "pg_catalog",
 }
@@ -34,7 +34,7 @@ var generatedColumnRow = []driver.Value{
 var columnQueryColumns = []string{
 	"table_name", "column_name", "data_type", "udt_name", "formatted_type",
 	"domain_name", "domain_schema", "is_nullable", "column_default", "character_maximum_length",
-	"numeric_precision", "numeric_scale", "datetime_precision", "collation_name", "ordinal_position",
+	"numeric_precision", "numeric_scale", "datetime_precision", "declared_collation", "collation_name", "ordinal_position",
 	"generated_kind", "generated_expression", "identity_kind",
 	"column_comment", "not_null_constraint_name", "owned_sequence_name", "udt_schema",
 }

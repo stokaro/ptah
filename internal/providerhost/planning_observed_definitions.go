@@ -9,9 +9,12 @@ import (
 )
 
 func observedPlanningColumn(source catalog.Column) (*protocol.ObservedColumn, error) {
+	// EffectiveCollate is accepted and not sent. The protocol's collation is
+	// empty for the engine's default, which is what Collate holds; the
+	// effective name is what lint and the inspect document read on the host.
 	if err := onlyFields(
 		source, "Facets", "Name", "DataType", "UDTName", "UDTSchema", "FormattedType", "ColumnType", "IsNullable", "ColumnDefault", "CharacterMaxLength",
-		"Collate", "Comment", "NotNullConstraintName", "NumericPrecision", "NumericScale", "DatetimePrecision", "OrdinalPosition", "IsAutoIncrement",
+		"Collate", "EffectiveCollate", "Comment", "NotNullConstraintName", "NumericPrecision", "NumericScale", "DatetimePrecision", "OrdinalPosition", "IsAutoIncrement",
 		"IsPrimaryKey", "IsUnique", "TypeIsDeclaredText", "DomainName", "DomainSchema", "GeneratedExpression", "GeneratedKind", "IdentityGeneration",
 		"IdentityStart", "IdentityIncrement", "SequenceRestart", "OwnedSequence",
 	); err != nil {
