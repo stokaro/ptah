@@ -84,11 +84,20 @@ func attachFeatureJSONLoss(ctx context.Context, realm *atlasSchemaInspectJSONRea
 
 // representedInJSON reports a facet value the document writes in full: MySQL
 // column settings that state only a character set, which a column carries as
-// its charset attribute. An ON UPDATE clause has no attribute there and is
-// reported as left out.
+// its charset attribute, and MySQL table options that state only one, which a
+// table carries the same way. An ON UPDATE clause, an engine and an
+// auto-increment value have no attribute there and are reported as left out.
 func representedInJSON(value schemaext.Value) bool {
-	settings, ok := mysqlschema.ValueSettings(value)
-	return ok && settings.OnUpdate == ""
+	if settings, ok := mysqlschema.ValueSettings(value); ok {
+		return settings.OnUpdate == ""
+	}
+	switch options := value.(type) {
+	case *mysqlschema.DesiredTable:
+		return options != nil && options.Engine == "" && options.AutoIncrement == ""
+	case *mysqlschema.ObservedTable:
+		return options != nil
+	}
+	return false
 }
 
 // reportedByInspect reports a facet value whose loss the inspect command

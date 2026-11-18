@@ -14,6 +14,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/dbschema/dbtest"
@@ -205,6 +206,12 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	// takes, so the read derives it from the collation the catalog carries.
 	c.Assert(tables[0].Collate, qt.Equals, "utf8mb4_0900_ai_ci")
 	c.Assert(tables[0].Charset, qt.Equals, "utf8mb4")
+	// The character set is the MySQL owner's observation too, which is how
+	// a description built from the read writes it.
+	options, found, err := schemaext.FacetAs[*mysqlschema.ObservedTable](tables[0].Facets, mysqlschema.TableKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(*options, qt.Equals, mysqlschema.ObservedTable{Charset: "utf8mb4"})
 	c.Assert(tables[0].Columns, qt.HasLen, 3)
 	// A column's comment is read, and a column without one carries none: the
 	// engines report the absence as an empty string, so a reader that assigned
