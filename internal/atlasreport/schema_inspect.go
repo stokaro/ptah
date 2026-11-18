@@ -735,10 +735,16 @@ func atlasSchemaInspectTable(
 	indexesByTable map[string][]catalog.Index,
 	constraintsByTable map[string][]catalog.Constraint,
 ) atlasSchemaInspectJSONTable {
+	// A MySQL table's charset and collation are listed whether or not they
+	// differ from its schema's, as the pinned community binary v1.3.0 lists
+	// them in JSON, measured on MySQL 8.4. Only HCL leaves a restated one to
+	// the schema block.
 	jsonTable := atlasSchemaInspectJSONTable{
 		Name: table.Name,
 		atlasSchemaInspectJSONAttrs: atlasSchemaInspectJSONAttrs{
 			Comment: table.Comment,
+			Charset: table.Charset,
+			Collate: table.Collate,
 		},
 	}
 	for _, column := range table.Columns {

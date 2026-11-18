@@ -2019,9 +2019,10 @@ establish no inspection coverage and do not resolve omitted settings.
 `dialect/mysql/mysqlschema` owns the options a MySQL or MariaDB table is
 created with as a table facet under `TableKind`. `DesiredTable` holds the
 engine, the first auto-increment value and the default character set a
-declaration states; `ObservedTable` holds the character set a table created
-from one reports, since the engine and the next auto-increment value are not
-read.
+declaration states; `ObservedTable` holds the character set a read reports,
+since the engine and the next auto-increment value are not read.
+`WithObservedTable` adds that observation, bound to the MySQL family, as a
+read of a MySQL or MariaDB server records it on the table.
 `ValidateDesiredTable` refuses an engine or a character set that is not a name
 and an auto-increment value that is not a whole number. `TableCodecs` and
 `TableCoverage` complete the model under `Owner`.

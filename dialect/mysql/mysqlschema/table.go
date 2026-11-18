@@ -32,14 +32,29 @@ type DesiredTable struct {
 	Charset string `json:"charset,omitempty"`
 }
 
-// ObservedTable is the options a table created from a declaration holds as a
-// read would report them: its default character set, which the server reports
-// as part of its collation. Empty is a table whose collation names none. The
-// reader keeps the character set it finds on the catalog table, so an
-// observation comes from converting a declaration, as a file compared with a
-// file is.
+// ObservedTable is the options a read reports for a table: its default
+// character set, which the server reports as part of its collation. Empty is a
+// table whose collation names none. A read of a MySQL or MariaDB server
+// records it with [WithObservedTable], and a declaration projects to it with
+// [DesiredTable.Observed].
 type ObservedTable struct {
 	Charset string `json:"charset,omitempty"`
+}
+
+// WithObservedTable returns facets with an observation of the table's default
+// character set added, bound to [Targets], as a read of a MySQL or MariaDB
+// server records it. An empty charset returns facets unchanged; a collection
+// that already holds the kind is refused, and so is a charset that is not a
+// name.
+func WithObservedTable(facets schemaext.Facets, charset string) (schemaext.Facets, error) {
+	if charset == "" {
+		return facets, nil
+	}
+	observed := &ObservedTable{Charset: charset}
+	if err := ValidateObservedTable(observed); err != nil {
+		return schemaext.Facets{}, err
+	}
+	return withScoped(facets, observed)
 }
 
 // Kind returns the owned table options identity.

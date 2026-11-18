@@ -550,10 +550,16 @@ not a name of letters, digits and underscores, and an auto-increment value
 that is not a whole number, is refused where it is written.
 
 The options apply when the table is created. A read reports the character set
-and neither the engine nor the next auto-increment value, so a plan never
-changes the options of a table that exists. Another target leaves the
-auto-increment value and the character set out, as it leaves out any other
+and the collation and neither the engine nor the next auto-increment value, so
+a plan never changes the options of a table that exists. Another target leaves
+the auto-increment value and the character set out, as it leaves out any other
 target's properties.
+
+A description of a read keeps the table's character set and collation, so SQL
+written from it creates the table as the server holds it. In HCL a table
+leaves out the ones its schema block states, as the Atlas community binary
+writes them; SQL writes both on every table, and JSON lists both on every
+table.
 
 ## Column character set and ON UPDATE
 

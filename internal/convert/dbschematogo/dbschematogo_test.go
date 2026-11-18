@@ -977,6 +977,31 @@ func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 	c.Assert(result.Fields[0].Collate, qt.Equals, "hebrew_general_ci")
 }
 
+// A MySQL table's collation and the character set the read observed become
+// the declaration's, so a description built from the read creates the table
+// as the server holds it.
+func TestConvertDBSchemaToGoSchema_TableCharsetCollate(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
+			Name:    "users",
+			Charset: "latin1",
+			Collate: "latin1_swedish_ci",
+			Facets:  must.Must(mysqlschema.WithObservedTable(schemaext.Facets{}, "latin1")),
+			Columns: []catalog.Column{{Name: "id", DataType: "int"}},
+		}},
+	}
+
+	result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), dbSchema, "mysql", must.Must(builtin.New())))
+
+	c.Assert(result.Tables, qt.HasLen, 1)
+	c.Assert(result.Tables[0].Collate, qt.Equals, "latin1_swedish_ci")
+	declared, found, err := schemaext.FacetAs[*mysqlschema.DesiredTable](result.Tables[0].Facets, mysqlschema.TableKind)
+	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(*declared, qt.Equals, mysqlschema.DesiredTable{Charset: "latin1"})
+}
+
 func TestConvertDBSchemaToGoSchema_SQLiteTableOptions(t *testing.T) {
 	c := qt.New(t)
 	dbSchema := &catalog.Database{
