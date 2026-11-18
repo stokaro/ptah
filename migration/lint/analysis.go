@@ -178,10 +178,11 @@ type File struct {
 	// Source is the migration file exactly as captured from the input
 	// filesystem.
 	Source string
-	// SQL is the executable SQL analyzed by the linter. It differs from Source
-	// when the file starts with a byte order mark, which
-	// [migrationfile.SQLText] removes as the migrator does, when an Atlas SQL
-	// template is rendered or when a txtar migration.sql section is extracted. Statement spans index SQL; reported line numbers
+	// SQL is the executable SQL analyzed by the linter. It differs from
+	// Source when the file starts with a byte order mark, which
+	// [migrationfile.SQLText] removes as the migrator does, when an Atlas
+	// SQL template is rendered, or when a txtar migration.sql section is
+	// extracted. Statement spans index SQL; reported line numbers
 	// are translated back to Source.
 	SQL string
 	// Version is the parsed migration version, or zero when the name is not

@@ -4,11 +4,16 @@ package migrator_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
 
@@ -43,10 +48,39 @@ func (r *repeatableEngineTarget) count(c *qt.C, query string) int {
 	return n
 }
 
+// revisionChecksum reads the checksum the revision row of version keeps.
+func (r *repeatableEngineTarget) revisionChecksum(c *qt.C, version int64) string {
+	c.Helper()
+	var checksum string
+	query := sqlutil.Rebind(r.engine.dialect, "SELECT checksum FROM schema_migrations WHERE version = ?")
+	c.Assert(r.conn.QueryRowContext(context.Background(), query, version).Scan(&checksum), qt.IsNil)
+	return checksum
+}
+
+// upWith runs every pending migration of fsys through a migrator built with
+// opts, on a connection of its own.
+func (r *repeatableEngineTarget) upWith(c *qt.C, fsys fstest.MapFS, opts ...migrator.FSProviderOption) error {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), r.url)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	mig, err := migrator.NewFSMigrator(conn, fsys, opts...)
+	c.Assert(err, qt.IsNil)
+	return mig.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{})
+}
+
+// sha256Hex is the checksum a native revision row keeps for SQL text,
+// computed here rather than taken from the code under test.
+func sha256Hex(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
 // The byte order mark at the start of a file is not sent to the server: the
 // table and the view are created and can be read. The repeatable's record
 // keeps the bytes of the file, mark included, and its digest is the h1 hash of
-// those bytes, the entry ptah.sum carries for the file.
+// those bytes, the entry ptah.sum carries for the file. The revision row of
+// the versioned file hashes the SQL that ran, which leaves the mark out.
 func TestByteOrderMarkOnEnginesLive_HappyPath(t *testing.T) {
 	for _, engine := range repeatableEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -61,6 +95,27 @@ func TestByteOrderMarkOnEnginesLive_HappyPath(t *testing.T) {
 			c.Assert(r.body(c, "widget_ids"), qt.DeepEquals, keptBody{Body: byteOrderMarkRepeatable, Kept: true})
 			record := r.record(c, fsys, "widget_ids")
 			c.Assert(record.AppliedChecksum, qt.Equals, repeatableDigest(byteOrderMarkRepeatable))
+			c.Assert(r.revisionChecksum(c, 1), qt.Equals, sha256Hex(repeatableEnginesTable))
+		})
+	}
+}
+
+// A down file that starts with a byte order mark rolls its version back.
+func TestByteOrderMarkDownOnEnginesLive_HappyPath(t *testing.T) {
+	for _, engine := range repeatableEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			r := newRepeatableEngineTarget(c, t, engine)
+			fsys := fstest.MapFS{
+				"0000000001_widgets.up.sql":   &fstest.MapFile{Data: []byte(byteOrderMark + repeatableEnginesTable)},
+				"0000000001_widgets.down.sql": &fstest.MapFile{Data: []byte(byteOrderMark + "DROP TABLE widgets;\n")},
+			}
+			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
+			c.Assert(r.columns(c, "widgets"), qt.Equals, 1)
+
+			c.Assert(r.migrator(c, fsys).MigrateDownTo(context.Background(), 0), qt.IsNil)
+
+			c.Assert(r.columns(c, "widgets"), qt.Equals, 0)
 		})
 	}
 }
@@ -68,19 +123,44 @@ func TestByteOrderMarkOnEnginesLive_HappyPath(t *testing.T) {
 // A directive on the first line of a file still decides how the file runs
 // when a byte order mark comes before it. PostgreSQL refuses CREATE INDEX
 // CONCURRENTLY inside a transaction, so the index exists only if the file ran
-// outside one, as `-- +ptah no_transaction` asks.
+// outside one, as `-- +ptah no_transaction` and `-- atlas:txmode none` ask.
 func TestByteOrderMarkDirectiveOnPostgresLive_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	r := newRepeatableEngineTarget(c, t, repeatablePostgres)
-	fsys := byteOrderMarkMigrations(map[string]string{
-		"0000000002_widgets_index.up.sql": byteOrderMark + "-- +ptah no_transaction\n" +
-			"CREATE INDEX CONCURRENTLY widgets_id_idx ON widgets (id);\n",
-		"0000000002_widgets_index.down.sql": "DROP INDEX widgets_id_idx;\n",
-	})
+	tests := []struct {
+		name   string
+		fsys   fstest.MapFS
+		format migrationfile.DirFormat
+	}{
+		{
+			name: "+ptah no_transaction",
+			fsys: fstest.MapFS{
+				"0000000001_widgets.up.sql":   &fstest.MapFile{Data: []byte(byteOrderMark + repeatableEnginesTable)},
+				"0000000001_widgets.down.sql": &fstest.MapFile{Data: []byte("DROP TABLE widgets;\n")},
+				"0000000002_widgets_index.up.sql": &fstest.MapFile{Data: []byte(byteOrderMark +
+					"-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY widgets_id_idx ON widgets (id);\n")},
+				"0000000002_widgets_index.down.sql": &fstest.MapFile{Data: []byte("DROP INDEX widgets_id_idx;\n")},
+			},
+			format: migrationfile.DirFormatPtah,
+		},
+		{
+			name: "atlas:txmode none",
+			fsys: fstest.MapFS{
+				"20260101000000_widgets.sql": &fstest.MapFile{Data: []byte(byteOrderMark + repeatableEnginesTable)},
+				"20260101000001_widgets_index.sql": &fstest.MapFile{Data: []byte(byteOrderMark +
+					"-- atlas:txmode none\n\nCREATE INDEX CONCURRENTLY widgets_id_idx ON widgets (id);\n")},
+			},
+			format: migrationfile.DirFormatAtlas,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			r := newRepeatableEngineTarget(c, t, repeatablePostgres)
 
-	c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
+			c.Assert(r.upWith(c, tt.fsys, migrator.WithMigrationDirFormat(tt.format)), qt.IsNil)
 
-	c.Assert(r.count(c, "SELECT COUNT(*) FROM pg_indexes WHERE indexname = 'widgets_id_idx'"), qt.Equals, 1)
+			c.Assert(r.count(c, "SELECT COUNT(*) FROM pg_indexes WHERE indexname = 'widgets_id_idx'"), qt.Equals, 1)
+		})
+	}
 }
 
 // Only the mark at the very start of a file is removed. U+FEFF in front of a

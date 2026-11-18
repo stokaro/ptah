@@ -929,45 +929,47 @@ func TestStrictCEValidatesProjectConfigSchemaSourceFormats(t *testing.T) {
 		`Atlas Community Edition strict compatibility does not support YAML schema source "schema.yaml"`)
 }
 
-func TestStrictCERefusesMigrationContentExtensions(t *testing.T) {
-	tests := []struct {
-		name    string
-		content string
-		wantErr string
-	}{
-		{
-			name:    "Atlas txtar",
-			content: "-- atlas:txtar\n\n-- migration.sql --\nCREATE TABLE users (id integer);\n",
-			wantErr: `Atlas Community Edition strict compatibility does not support Atlas txtar migration 1_users.sql`,
-		},
-		{
-			name:    "Ptah check",
-			content: `-- +ptah check name="ready" assert="SELECT 1"` + "\nSELECT 1;\n",
-			wantErr: `Atlas Community Edition strict compatibility does not support Ptah pre-migration checks in 1_users.sql`,
-		},
-		{
-			name:    "Ptah file directive",
-			content: "-- +ptah no_transaction\nCREATE INDEX users_name_idx ON users (name);\n",
-			wantErr: `Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
-		},
-		{
-			name:    "bare Ptah directive marker",
-			content: "-- +ptah\nSELECT 1;\n",
-			wantErr: `Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
-		},
-		{
-			name:    "unknown Ptah directive marker",
-			content: "-- +ptah future_directive\nSELECT 1;\n",
-			wantErr: `Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
-		},
-		{
-			name:    "Atlas SQL template",
-			content: "{{ if eq .Env \"production\" }}\nCREATE TABLE users (id integer);\n{{ end }}\n",
-			wantErr: `Atlas Community Edition strict compatibility does not support SQL template migration 1_users.sql`,
-		},
-	}
+// strictCEMigrationContentExtensions are migration contents strict mode
+// refuses, each with its refusal.
+var strictCEMigrationContentExtensions = []struct {
+	name    string
+	content string
+	wantErr string
+}{
+	{
+		name:    "Atlas txtar",
+		content: "-- atlas:txtar\n\n-- migration.sql --\nCREATE TABLE users (id integer);\n",
+		wantErr: `Atlas Community Edition strict compatibility does not support Atlas txtar migration 1_users.sql`,
+	},
+	{
+		name:    "Ptah check",
+		content: `-- +ptah check name="ready" assert="SELECT 1"` + "\nSELECT 1;\n",
+		wantErr: `Atlas Community Edition strict compatibility does not support Ptah pre-migration checks in 1_users.sql`,
+	},
+	{
+		name:    "Ptah file directive",
+		content: "-- +ptah no_transaction\nCREATE INDEX users_name_idx ON users (name);\n",
+		wantErr: `Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
+	},
+	{
+		name:    "bare Ptah directive marker",
+		content: "-- +ptah\nSELECT 1;\n",
+		wantErr: `Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
+	},
+	{
+		name:    "unknown Ptah directive marker",
+		content: "-- +ptah future_directive\nSELECT 1;\n",
+		wantErr: `Atlas Community Edition strict compatibility does not support Ptah migration directives in 1_users.sql`,
+	},
+	{
+		name:    "Atlas SQL template",
+		content: "{{ if eq .Env \"production\" }}\nCREATE TABLE users (id integer);\n{{ end }}\n",
+		wantErr: `Atlas Community Edition strict compatibility does not support SQL template migration 1_users.sql`,
+	},
+}
 
-	for _, test := range tests {
+func TestStrictCERefusesMigrationContentExtensions(t *testing.T) {
+	for _, test := range strictCEMigrationContentExtensions {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			fsys := fstest.MapFS{"1_users.sql": {Data: []byte(test.content)}}
@@ -977,6 +979,26 @@ func TestStrictCERefusesMigrationContentExtensions(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(atlascompatpolicy.Full().ValidateMigrationSource(fsys), qt.IsNil)
 		})
+	}
+}
+
+// The migrator removes a byte order mark at the start of a file and then runs
+// what follows it, so the gate refuses each construct behind the mark too,
+// with and without a target dialect.
+func TestStrictCERefusesMigrationContentExtensionsBehindAByteOrderMark(t *testing.T) {
+	targets := []struct{ name, dialect string }{{name: "no dialect"}, {name: "postgres", dialect: "postgres"}}
+	for _, target := range targets {
+		for _, test := range strictCEMigrationContentExtensions {
+			t.Run(target.name+": "+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				fsys := fstest.MapFS{"1_users.sql": {Data: []byte("\xEF\xBB\xBF" + test.content)}}
+
+				err := atlascompatpolicy.StrictCE().ValidateMigrationSourceForDialect(fsys, target.dialect)
+
+				c.Assert(err, qt.ErrorMatches, test.wantErr)
+				c.Assert(atlascompatpolicy.Full().ValidateMigrationSourceForDialect(fsys, target.dialect), qt.IsNil)
+			})
+		}
 	}
 }
 

@@ -53,10 +53,12 @@ ptah.sum
   [Repeatable migrations](../../versioned/repeatable/). Only the native format
   has them; an Atlas directory reads the same name as a one-time version.
 - **A file may start with a UTF-8 byte order mark** (the bytes `EF BB BF`).
-  Ptah removes that one mark before it reads the directives and runs the SQL,
-  so a directive on the first line still applies. A mark anywhere else is part
-  of the SQL. `ptah.sum`, `atlas.sum` and the digest of a repeatable migration
-  hash the file as it is on disk, mark included.
+  Ptah removes that one mark before it reads the directives, lints the file
+  and runs the SQL, so a directive on the first line still applies. A mark
+  anywhere else is part of the SQL. `ptah.sum`, `atlas.sum` and the digest of
+  a repeatable migration hash the file as it is on disk, mark included, as
+  Atlas does for `atlas.sum`. The revision row of a migration in a directory
+  without `atlas.sum` hashes the SQL that ran, without the mark.
 
 Applied versions are recorded in a **revision table** in the target database
 (`schema_migrations` by default). Pending work is the set of directory
