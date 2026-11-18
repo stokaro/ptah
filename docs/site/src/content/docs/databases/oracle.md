@@ -306,7 +306,9 @@ turn, as on the other engines with a lock: the second waits for the first, then
 finds nothing pending. `--migration-lock-timeout` bounds the wait, and a lock
 still held when it ends refuses the run with `timed out acquiring migration lock
 "ptah_migrate" for oracle after 10s`. `ptah schema apply` takes its own lock the
-same way, a dry run included.
+same way, a dry run included. A dry run creates neither the lock table nor the
+lock's row, so where no run has taken that lock yet it holds none, and says so
+on standard error.
 
 The lock is a row lock. Ptah keeps one row per lock name in the table
 `ptah_locks`, which it creates beside the revision table the first time it

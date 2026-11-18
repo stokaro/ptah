@@ -152,8 +152,11 @@ reach a server that is not PostgreSQL, and that target is decided once the
 server has named itself — after the connection, still before the plan, as is a
 URL a provider serves. `--dry-run` is refused on the same targets: a dry run
 against an engine that does lock acquires the lock and waits out the timeout,
-so the flag means the same thing there. A dry run on a provider target takes
-no lock and accepts the flag.
+so the flag means the same thing there. A dry run creates nothing, so on Oracle,
+where the lock is a row of a table, a dry run before any run has taken the lock
+holds none, and says so on standard error with `note: the dry run holds no
+schema apply lock`. A dry run on a provider target takes no lock and accepts
+the flag.
 
 On YDB the provider takes the lock as a semaphore on the coordination node
 `ptah_locks`, which the first apply that locks creates. A coordination session

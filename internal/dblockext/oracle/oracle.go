@@ -161,8 +161,9 @@ type rowLock struct{}
 // negative timeout asks once.
 //
 // A preview writes nothing, so it creates neither the table nor the row. A
-// lock name without its row has never been taken in this schema, so there is
-// nobody to wait for, and the preview goes on holding nothing.
+// lock name without its row has never been taken in this schema, and the
+// preview gets [dblockext.ErrNothingToLock]: it holds nothing, which its caller
+// says.
 //
 // The row's creation runs under the timeout's context too, but nothing on the
 // server bounds it. Oracle has no wait bound for an INSERT, which meets
@@ -200,7 +201,7 @@ func (rowLock) Acquire(ctx context.Context, session dblockext.Session, request d
 		case err == nil:
 			return nil
 		case request.Preview && (number == tableMissing || errors.Is(err, sql.ErrNoRows)):
-			return nil
+			return dblockext.ErrNothingToLock
 		case errors.Is(err, sql.ErrNoRows):
 			return fmt.Errorf("the row of lock %q is missing from %s", request.Name, lockTable)
 		case number != resourceBusy:

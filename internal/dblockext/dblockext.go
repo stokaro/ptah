@@ -16,6 +16,7 @@ package dblockext
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"ptah.run/catalog"
@@ -68,12 +69,19 @@ type SessionLock interface {
 	// Acquire takes the lock on session. It returns request.Held when
 	// another session holds the lock, and an [AmbiguousError] when session
 	// may hold the lock after the failure, such as when the answer to the
-	// acquiring statement was lost. Every other error leaves session without
-	// the lock.
+	// acquiring statement was lost. It returns [ErrNothingToLock] when
+	// request.Preview is set and the lock lives on something that does not
+	// exist yet, such as a table row. Every other error leaves session
+	// without the lock.
 	Acquire(ctx context.Context, session Session, request Request) error
 	// Release gives the lock back on the session that took it.
 	Release(ctx context.Context, session Session, request Request) error
 }
+
+// ErrNothingToLock is what a [SessionLock] returns for a preview whose lock
+// lives on something that does not exist yet. A preview creates nothing, so
+// it takes no lock, and the caller holds a lock that holds nothing.
+var ErrNothingToLock = errors.New("the lock does not exist yet, and a preview creates nothing")
 
 // ExclusionCheck proves that a [SessionLock] just taken keeps other sessions
 // out. A lock held by a session can exclude nobody when something between the

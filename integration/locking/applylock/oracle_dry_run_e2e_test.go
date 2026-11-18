@@ -89,7 +89,8 @@ func countTables(c *qt.C, conn *dbschema.DatabaseConnection, name string) int {
 
 // A dry run with the apply lock free plans the schema and writes nothing: no
 // table, and no lock table either, since a preview creates neither the table
-// nor the row of the lock.
+// nor the row of the lock. With no row to lock it holds no lock, and says so
+// on stderr rather than run as if it held one.
 func TestSchemaApplyDryRunOnOracleE2E_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	dbURL, conn := oracleApplyTarget(c)
@@ -98,8 +99,28 @@ func TestSchemaApplyDryRunOnOracleE2E_HappyPath(t *testing.T) {
 
 	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
 	c.Assert(got.Stdout, qt.Contains, "CREATE TABLE dry_widgets")
+	c.Assert(got.Stderr, qt.Contains, `note: the dry run holds no schema apply lock: no run has taken lock "ptah_schema_apply" `+
+		`on this database yet, and a dry run creates nothing to take it on`)
 	c.Assert(countTables(c, conn, "DRY_WIDGETS"), qt.Equals, 0)
 	c.Assert(countTables(c, conn, "PTAH_LOCKS"), qt.Equals, 0)
+}
+
+// Once a run has taken the apply lock, its row is there, and a dry run takes
+// the lock as a run that writes does: it plans, writes nothing, and has
+// nothing to say about the lock.
+func TestSchemaApplyDryRunOnOracleE2E_TakesAnExistingLock(t *testing.T) {
+	c := qt.New(t)
+	dbURL, conn := oracleApplyTarget(c)
+	taken, err := dblock.Acquire(c.Context(), conn, atlasschema.ApplyLockName, dblock.NoWait)
+	c.Assert(err, qt.IsNil)
+	c.Assert(taken.Release(context.Background()), qt.IsNil)
+
+	got := dryRun(c, dbURL, "5s")
+
+	c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+	c.Assert(got.Stdout, qt.Contains, "CREATE TABLE dry_widgets")
+	c.Assert(got.Stderr, qt.Not(qt.Contains), "holds no schema apply lock")
+	c.Assert(countTables(c, conn, "DRY_WIDGETS"), qt.Equals, 0)
 }
 
 // A dry run waits for the apply lock another session holds, and refuses once

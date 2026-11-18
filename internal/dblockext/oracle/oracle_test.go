@@ -142,10 +142,25 @@ func TestAcquire_HappyPath(t *testing.T) {
 	}
 }
 
-// A preview creates nothing. A name that has no row, or a schema with no lock
-// table, has never been locked, so it goes on holding nothing.
+// A preview creates nothing, and takes the lock of a row that is there.
 func TestAcquire_PreviewWritesNothing(t *testing.T) {
-	for _, answer := range []string{locked, noTable, noRow} {
+	c := qt.New(t)
+	s := &server{answers: []string{locked}}
+	preview := request(time.Second)
+	preview.Preview = true
+
+	err := oracle.Services().Session.Acquire(c.Context(), open(c, s), preview)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(s.statements(), qt.DeepEquals, []string{"lock ptah_test"})
+}
+
+// A name that has no row, or a schema with no lock table, has never been
+// locked. The preview creates neither, takes nothing, and says so with
+// ErrNothingToLock, so that its caller does not report a lock it does not
+// hold.
+func TestAcquire_PreviewOfNothingTakesNothing(t *testing.T) {
+	for _, answer := range []string{noTable, noRow} {
 		t.Run(answer, func(t *testing.T) {
 			c := qt.New(t)
 			s := &server{answers: []string{answer}}
@@ -154,7 +169,7 @@ func TestAcquire_PreviewWritesNothing(t *testing.T) {
 
 			err := oracle.Services().Session.Acquire(c.Context(), open(c, s), preview)
 
-			c.Assert(err, qt.IsNil)
+			c.Assert(err, qt.ErrorIs, dblockext.ErrNothingToLock)
 			c.Assert(s.statements(), qt.DeepEquals, []string{"lock ptah_test"})
 		})
 	}

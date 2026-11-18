@@ -221,7 +221,8 @@ func IsLost(err error) bool {
 }
 
 // Supported reports whether the lock is backed by a real database lock, as
-// opposed to the no-op lock acquired on dialects without advisory locks.
+// opposed to the no-op lock acquired on dialects without advisory locks, and
+// by a preview that took nothing (see [WithPreviewLockSession]).
 func (l *Lock) Supported() bool {
 	return l != nil && l.release != nil
 }
@@ -401,9 +402,11 @@ func WithLockSession(
 // WithPreviewLockSession is [WithLockSession] for a run that writes nothing,
 // such as a dry run: it takes the lock only where taking it writes nothing
 // either. A lock whose service would first have to create the object it lives
-// on, such as YDB's coordination node, is not taken while that object is
-// missing, and the run gets a no-op lock: no run that took a lock has used
-// that database, so there is nobody to wait for.
+// on, such as YDB's coordination node or the row of Oracle's lock table, is not
+// taken while that object is missing, and the run gets a no-op lock, whose
+// [Lock.Supported] reports false: no run has taken that lock on the database,
+// but one may start while the preview runs, so the caller says that the
+// preview holds nothing.
 func WithPreviewLockSession(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -612,6 +615,13 @@ func holdOnSession(
 	if acquireErr != nil {
 		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}
+	if !lock.Supported() {
+		// A preview that took nothing holds nothing on session.
+		if err := session.Close(); err != nil && !errors.Is(err, sql.ErrConnDone) {
+			return nil, err
+		}
+		return lock, nil
+	}
 	lock.conn = session
 	hold := newSessionHold(session.PingContext, lock.release, time.Now)
 	lock.release = hold.release
@@ -689,7 +699,13 @@ func acquireOnSession(
 	case services.Session != nil:
 		lock.release = func(ctx context.Context) error { return services.Session.Release(ctx, session, request) }
 		acquireErr = services.Session.Acquire(ctx, session, request)
-		if acquireErr == nil && services.Exclusion != nil {
+		if request.Preview && errors.Is(acquireErr, dblockext.ErrNothingToLock) {
+			// A no-op lock, as a separate lock's preview that took nothing
+			// leaves: nothing was taken, so nothing is given back.
+			lock.release = nil
+			acquireErr = nil
+		}
+		if acquireErr == nil && lock.release != nil && services.Exclusion != nil {
 			if verifyErr := verifyExcludes(ctx, services.Exclusion, witness, request); verifyErr != nil {
 				acquireErr = &dblockext.AmbiguousError{Err: verifyErr}
 			}
