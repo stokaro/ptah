@@ -367,7 +367,7 @@ conditions, because `10_b.sql` sorts before `9_a.sql` and `10` sorts below
 `--exec-order linear`. The other two orders treat it as they treat any
 out-of-order file.
 
-Measured on SQLite on 2026-11-18, with `9_a.sql` applied, then `10_b.sql`
+Measured on SQLite, with `9_a.sql` applied, then `10_b.sql`
 added and the directory rehashed:
 
 | step | pinned community binary v1.3.0 | `ptah-compat` |
@@ -403,7 +403,7 @@ part on is a file whose name starts with an underscore, such as `_x.sql`, whose
 version is the empty string. `ptah-compat` refuses the directory before
 anything runs and names the file.
 
-Measured on SQLite on 2026-11-18, with `1_a.sql` and `_x.sql` in one
+Measured on SQLite, with `1_a.sql` and `_x.sql` in one
 directory:
 
 | step | pinned community binary v1.3.0 | `ptah-compat` |

@@ -496,7 +496,10 @@ type atlasSQLMigrationFile struct {
 // embedded down.sql section. Ptah does not yet synthesize Atlas dynamic down
 // plans from the current database state and a dev database.
 type AtlasDownNotImplementedError struct {
-	Version         int64
+	Version int64
+	// revisionVersion is the version the message names, and empty where the
+	// message names the number. The refusal before a rollback runs sets it
+	// only for an Atlas file whose version is not a number.
 	revisionVersion string
 	Description     string
 }

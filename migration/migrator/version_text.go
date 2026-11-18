@@ -24,7 +24,9 @@ func (v versionText) String() string {
 	return fmt.Sprintf("%d", v)
 }
 
-// Format implements [fmt.Formatter].
+// Format implements [fmt.Formatter]. A set label prints bare under every verb
+// and ignores width and flags, since the messages that print a version use %d
+// alone; a number is formatted as the verb, width and flags format an int64.
 func (v versionText) Format(f fmt.State, verb rune) {
 	if v.label != "" {
 		_, _ = io.WriteString(f, v.label)
