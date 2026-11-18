@@ -1050,7 +1050,7 @@ func nationalCharMatchesCatalog(declared string, current catalog.Column, dialect
 	if rest != "" && rest[0] != '(' && rest[0] != '[' {
 		return false
 	}
-	if facts.NationalCharCharset != "" && !nationalCharCollationMatches(current.Collate, facts.NationalCharCharset) {
+	if facts.NationalCharCharset != "" && !nationalCharCollationMatches(current.EffectiveCollate, facts.NationalCharCharset) {
 		return false
 	}
 	return typeEngineOf(dialect).Same(current.RawType(), "char"+rest)

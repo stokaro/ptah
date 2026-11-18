@@ -3,11 +3,13 @@
 package providercli_test
 
 import (
+	"io"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
+	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/convert/dbschematogo"
 )
 
@@ -23,8 +25,21 @@ func TestProviderInspectionPreservesCompleteColumnFacts(t *testing.T) {
 		Name: "Id", DataType: "Int64", FormattedType: "INT64", ColumnType: "signed integer", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1,
 		IsAutoIncrement: true, IdentityGeneration: "BY DEFAULT", IdentityStart: "5", IdentityIncrement: "2", SequenceRestart: "11", OwnedSequence: "private_sequence",
 		Comment: "captured column", NotNullConstraintName: "id_present", IsUnique: true, NumericPrecision: new(19), NumericScale: new(0), DatetimePrecision: new(6), CharacterMaxLength: new(42),
-		UDTName: "int8", UDTSchema: "types", DomainName: "identifier", DomainSchema: "domain_schema", Collate: "case_sensitive", TypeIsDeclaredText: true,
+		UDTName: "int8", UDTSchema: "types", DomainName: "identifier", DomainSchema: "domain_schema", Collate: "case_sensitive",
+		EffectiveCollate: "case_sensitive", TypeIsDeclaredText: true,
 	})
+	// The provider's collation reaches every output a read writes: the model
+	// the SQL and HCL documents render, and the JSON document.
+	described, err := dbschematogo.ConvertDBSchemaToGoSchema(c.Context(), snapshot, "fixture", runtime)
+	c.Assert(err, qt.IsNil)
+	c.Assert(described.Fields[0].Collate, qt.Equals, "case_sensitive")
+	report, err := atlasreport.NewSchemaInspectReport(c.Context(), described, snapshot, connection.Info(), io.Discard,
+		atlasreport.SchemaInspectReportOptions{}, runtime)
+	c.Assert(err, qt.IsNil)
+	document, err := report.MarshalJSON()
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(document), qt.Contains, `"name":"Id"`)
+	c.Assert(string(document), qt.Contains, `"collate":"case_sensitive"`)
 	generated := observedConnection(c, host, "column_generated")
 	snapshot, err = generated.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)

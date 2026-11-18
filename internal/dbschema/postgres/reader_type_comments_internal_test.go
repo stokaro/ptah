@@ -38,7 +38,7 @@ func commentedTypeServer(tb interface{ Cleanup(func()) }, caps capability.Capabi
 		case strings.Contains(query, "t.typtype = 'd'"):
 			return dbtest.QueryResult{
 				Columns: typeColumns("d"),
-				Rows:    [][]driver.Value{{"public", "d", "integer", false, "", "", comment}},
+				Rows:    [][]driver.Value{{"public", "d", "integer", false, "", "", "", comment}},
 			}, nil
 		case strings.Contains(query, "t.typtype = 'c'"):
 			return dbtest.QueryResult{

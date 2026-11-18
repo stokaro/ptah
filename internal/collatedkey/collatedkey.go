@@ -6,6 +6,9 @@
 // server. Without one spelling the comparison takes them for two keys and plans
 // a drop and a create of an identical index.
 //
+// [ColumnCollation] reads the same clause where it follows a column in a
+// table definition, which is the only place SQLite keeps a column's collation.
+//
 // The spelling is applied only on a dialect whose descriptor states
 // Comparison.CollatedKeysRespelled; any other dialect keeps the text as
 // written.
@@ -50,7 +53,7 @@ func Read(dialect, element string) (Key, bool) {
 	if !ok {
 		return Key{}, false
 	}
-	collation, ok := identifierName(tokens[2])
+	collation, ok := collationName(tokens[2])
 	if !ok {
 		return Key{}, false
 	}
@@ -65,6 +68,51 @@ func Read(dialect, element string) (Key, bool) {
 		}
 	}
 	return key, true
+}
+
+// ColumnCollation reads the collation definition declares, where definition
+// is one column of a CREATE TABLE as dialect writes it: `code TEXT NOT NULL
+// COLLATE NOCASE`. The name comes back as written, unquoted, from any of the
+// spellings [Read] accepts for it. A COLLATE inside
+// parentheses belongs to an expression, a CHECK or a generated column's AS,
+// and is not the column's; of two COLLATE clauses the last one is, which is
+// what sqlite3 3.51.0 applies.
+//
+// It reports false for a definition that declares no collation, for one whose
+// clause names something other than a name, and for every definition
+// of a dialect whose descriptor does not state
+// Comparison.CollatedKeysRespelled.
+func ColumnCollation(dialect, definition string) (string, bool) {
+	described, found := platform.Lookup(dialect)
+	if !found || !described.Comparison.CollatedKeysRespelled {
+		return "", false
+	}
+	tokens := significantTokens(definition, dialectlexer.Options(dialect))
+	collation, declared, depth := "", false, 0
+	// The first token is the column's name, which may itself be a quoted
+	// "COLLATE".
+	for position := 1; position < len(tokens); position++ {
+		token := tokens[position]
+		switch {
+		case token.Type == lexer.TokenOperator && token.Value == "(":
+			depth++
+		case token.Type == lexer.TokenOperator && token.Value == ")":
+			depth--
+		case depth == 0 && token.MatchIdentifierValue("COLLATE") && position+1 < len(tokens):
+			name, ok := collationName(tokens[position+1])
+			if !ok {
+				// Not the earlier clause: the last one is what the column
+				// compares with, so an earlier name would report a
+				// collation the column does not have. The schema holds
+				// only text SQLite accepted, so a name this reader cannot
+				// spell is one to refuse to guess at.
+				return "", false
+			}
+			collation, declared = name, true
+			position++
+		}
+	}
+	return collation, declared
 }
 
 func significantTokens(element string, options lexer.Options) []lexer.Token {
@@ -105,6 +153,16 @@ func identifierName(token lexer.Token) (string, bool) {
 	default:
 		return value, true
 	}
+}
+
+// collationName reads the name a token after COLLATE spells: an identifier,
+// or a single-quoted string, which sqlite3 3.51.0 takes for the same name
+// there, `COLLATE 'NOCASE'` as `COLLATE NOCASE`, in a key and in a column.
+func collationName(token lexer.Token) (string, bool) {
+	if token.Type == lexer.TokenString && quotedBy(token.Value, '\'', '\'') {
+		return strings.ReplaceAll(token.Value[1:len(token.Value)-1], "''", "'"), true
+	}
+	return identifierName(token)
 }
 
 func quotedBy(value string, open, closing byte) bool {

@@ -28,6 +28,15 @@ the object's ACL is NULL or spells it out. `Grant.OwnerDefault` and
 `Grant.OwnerRevoked` name those rows: no statement wrote them, so code that walks the
 grants as what somebody granted leaves them out.
 
+A read reports a column's collation twice. `catalog.Column.Collate` (JSON
+`collate`) is the collation the column declares, empty where it takes the one it
+inherits: its table's on MySQL and MariaDB, its type's on PostgreSQL and
+CockroachDB, the database's on SQL Server, and `BINARY` on SQLite.
+`catalog.Column.EffectiveCollate` (JSON `effective_collate`) is the collation
+the column compares with, declared or inherited, and is what every output
+written from a read prints. A description that is not a read, such as a schema
+file or a provider's answer, sets both to the collation it names.
+
 ## Stable Embedder API
 
 These packages are intended for application and tool embedders:

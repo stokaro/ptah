@@ -178,15 +178,36 @@ func objectsOfKind(schema *catalog.Database, kind lintext.BaselineObjectKind) []
 }
 
 // featureObjectsOf lists the extension objects of the read schema whose kind
-// is one of kinds.
+// is one of kinds. A domain carries what the read observed of it.
 func featureObjectsOf(schema *catalog.Database, kinds ...schemaext.Kind) []lintext.BaselineObject {
 	var objects []lintext.BaselineObject
 	for _, ref := range schema.FeatureObjects.Refs() {
 		if slices.Contains(kinds, schemaext.Kind(ref.Kind)) {
-			objects = append(objects, lintext.BaselineObject{Schema: ref.Schema.Authored(), Name: ref.Name.Source})
+			object := lintext.BaselineObject{Schema: ref.Schema.Authored(), Name: ref.Name.Source}
+			objects = append(objects, withObservedDomain(schema, ref, object))
 		}
 	}
 	return objects
+}
+
+// withObservedDomain fills object's domain facts from the observed domain ref
+// names. An object that is no observed domain, or whose value cannot be read,
+// is returned as it is, which a rule reads as a type it knows nothing about.
+func withObservedDomain(schema *catalog.Database, ref objectidentity.ID, object lintext.BaselineObject) lintext.BaselineObject {
+	if schemaext.Kind(ref.Kind) != pgtype.DomainKind {
+		return object
+	}
+	held, found, err := schema.FeatureObjects.Get(ref)
+	if err != nil || !found {
+		return object
+	}
+	domain, ok := held.Value.(*pgtype.ObservedDomain)
+	if !ok || domain == nil {
+		return object
+	}
+	object.Domain, object.BaseType, object.Collation = true, domain.BaseType, domain.Collation
+	object.Constrained = domain.NotNull || domain.Check != "" || len(domain.Checks) > 0
+	return object
 }
 
 // columnSequencesOf lists the sequences the columns of the read schema own.
@@ -242,8 +263,9 @@ func baselineColumnsOf(schema *catalog.Database, version int64) []lintext.Baseli
 				ColumnType:       baselineTypeSpelling(column),
 				Charset:          settings.Charset,
 				TableCharset:     table.Charset,
-				Collation:        column.Collate,
+				Collation:        column.EffectiveCollate,
 				TableCollation:   table.Collate,
+				OwnCollation:     column.Collate != "",
 				TablePartitioned: table.Partitioned,
 				NotNull:          strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
 				HasDefault:       strings.TrimSpace(columnDefault(column)) != "",
