@@ -181,6 +181,8 @@ func mysql() descriptor.Dialect {
 			ViewPredicatesAsIntegers:       true,
 			ViewSQLSecurity:                true,
 			AutoIncrementFlag:              true,
+			// MySQL 26.10 stores the default (2 * 3 + 1) as ((2 * 3) + 1).
+			OperatorPrecedence: "mysql",
 			// A whole server compares its databases too.
 			ServerDatabases: true,
 		},

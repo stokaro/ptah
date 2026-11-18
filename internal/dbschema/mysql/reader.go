@@ -18,6 +18,7 @@ import (
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/mysqlsystemdb"
+	"ptah.run/internal/normalize"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
 )
@@ -300,7 +301,7 @@ func (r *Reader) readDatabase(
 	}
 
 	// Read tables
-	tables, err := r.readTables(ctx, dbName)
+	tables, err := r.readTables(ctx, dbName, account.defaultLiterals())
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tables: %w", err)
 	}
@@ -411,8 +412,8 @@ func carryPrimaryKeyMethod(schema *catalog.Database) {
 
 // readTables reads all tables and their columns using bulk information_schema
 // queries.
-func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table, error) {
-	columnsByTable, err := r.readColumnsByTable(ctx, dbName)
+func (r *Reader) readTables(ctx context.Context, dbName string, literals defaultLiterals) ([]catalog.Table, error) {
+	columnsByTable, err := r.readColumnsByTable(ctx, dbName, literals)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read columns: %w", err)
 	}
@@ -479,7 +480,7 @@ func charsetOfCollation(collation string) string {
 	return charset
 }
 
-func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]catalog.Column, error) {
+func (r *Reader) readColumnsByTable(ctx context.Context, dbName string, literals defaultLiterals) (map[string][]catalog.Column, error) {
 	query := `
 		SELECT
 			TABLE_NAME,
@@ -549,6 +550,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 
 		if err := applyMySQLColumnMetadata(
 			&col,
+			literals,
 			defaultValue,
 			characterMaxLength,
 			numericPrecision,
@@ -571,6 +573,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 
 func applyMySQLColumnMetadata(
 	col *catalog.Column,
+	literals defaultLiterals,
 	defaultValue sql.NullString,
 	characterMaxLength,
 	numericPrecision,
@@ -581,7 +584,7 @@ func applyMySQLColumnMetadata(
 	generatedExpression sql.NullString,
 ) error {
 	if defaultValue.Valid && !isAbsentColumnDefault(defaultValue.String) {
-		defaultSQL := normalizeMySQLColumnDefault(col, defaultValue.String)
+		defaultSQL := normalizeMySQLColumnDefault(col, defaultValue.String, extra.String, literals)
 		col.ColumnDefault = &defaultSQL
 	}
 	if characterMaxLength.Valid {
@@ -677,12 +680,79 @@ func isAbsentColumnDefault(value string) bool {
 	return strings.EqualFold(strings.TrimSpace(value), "NULL")
 }
 
-func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue string) string {
+// defaultLiterals says how a server writes a literal default in
+// information_schema.COLUMNS.COLUMN_DEFAULT, which decides whether a value
+// written there without quotes is a literal or an expression.
+type defaultLiterals uint8
+
+const (
+	// literalsUnquoted is MySQL's: a literal is written without quotes, and
+	// EXTRA says DEFAULT_GENERATED for an expression default.
+	literalsUnquoted defaultLiterals = iota
+	// literalsQuoted is MariaDB's: a literal is written in quotes, so a value
+	// without them is an expression, a number or a keyword.
+	literalsQuoted
+)
+
+// defaultLiterals answers how the server the account is on writes a literal
+// default.
+func (a sessionAccount) defaultLiterals() defaultLiterals {
+	if a.mariaDB {
+		return literalsQuoted
+	}
+	return literalsUnquoted
+}
+
+// normalizeMySQLColumnDefault returns the default the catalog reports for col
+// as SQL: a literal MySQL writes without quotes gains them, and an expression
+// stays an expression. Measured on MySQL 26.10, `DEFAULT (now() + INTERVAL 1
+// DAY)` on a datetime column reports `(now() + interval 1 day)` with EXTRA
+// `DEFAULT_GENERATED`, and `DEFAULT 'abc'` on a varchar column reports `abc`
+// with an empty EXTRA. MariaDB 12.3 reports `(current_timestamp() + interval
+// 1 day)` and `'abc'`, with an empty EXTRA for both. Quoted, the expression
+// would read as a string, so the column would plan again on every apply and a
+// read would write the string back.
+func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string, literals defaultLiterals) string {
 	value := strings.TrimSpace(defaultValue)
-	if value == "" || isQuotedMySQLDefault(value) || !mysqlDefaultNeedsLiteralQuotes(col, value) {
+	switch {
+	case value == "", literals == literalsQuoted, isQuotedMySQLDefault(value):
+		return defaultValue
+	case hasGeneratedDefault(extra):
+		return generatedDefault(value)
+	case !mysqlDefaultNeedsLiteralQuotes(col, value):
 		return defaultValue
 	}
 	return quoteMySQLDefaultLiteral(defaultValue)
+}
+
+// generatedDefault returns an expression default as MySQL's catalog reports
+// it, as SQL. The catalog escapes the expression the way it escapes the body
+// of a string: measured on MySQL 26.10, `DEFAULT (concat('a\'b', 'c\\d'))`
+// reports `concat(_utf8mb4\'a\\\'b\',_utf8mb4\'c\\\\d\')`, which is
+// `concat(_utf8mb4'a\'b',_utf8mb4'c\\d')` once a backslash before a quote or
+// a backslash is undone. The catalog also drops the parentheses around a call,
+// `curdate()` for `DEFAULT (CURRENT_DATE)`, and the server takes an
+// expression default only in parentheses, so they are put back. A
+// current-time default and uuid() keep the spelling the catalog reports.
+func generatedDefault(value string) string {
+	var b strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] == '\\' && i+1 < len(value) && (value[i+1] == '\'' || value[i+1] == '\\') {
+			i++
+		}
+		b.WriteByte(value[i])
+	}
+	expression := b.String()
+	if isMySQLDefaultExpression(expression) || normalize.Expression(expression) != expression {
+		return expression
+	}
+	return "(" + expression + ")"
+}
+
+// hasGeneratedDefault reports whether a column's EXTRA marks its default as an
+// expression.
+func hasGeneratedDefault(extra string) bool {
+	return slices.Contains(strings.Fields(strings.ToUpper(extra)), "DEFAULT_GENERATED")
 }
 
 func isQuotedMySQLDefault(value string) bool {

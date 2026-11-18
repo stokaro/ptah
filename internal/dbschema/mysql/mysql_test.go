@@ -195,7 +195,7 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	})
 	reader := NewMySQLReader(db.SQL, "app")
 
-	tables, err := reader.readTables(t.Context(), "app")
+	tables, err := reader.readTables(t.Context(), "app", literalsUnquoted)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.QueryCount(), qt.Equals, 2)
@@ -304,6 +304,7 @@ func TestApplyMySQLColumnMetadataKeepsGeneratedExpressionWithoutExtra(t *testing
 	var col catalog.Column
 	err := applyMySQLColumnMetadata(
 		&col,
+		literalsUnquoted,
 		sql.NullString{String: "default", Valid: true},
 		sql.NullInt64{Int64: 255, Valid: true},
 		sql.NullInt64{Int64: 10, Valid: true},
@@ -328,8 +329,65 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 		columnType   string
 		dataType     string
 		defaultValue string
-		want         string
+		// extra is the column's EXTRA, and literals how the server writes a
+		// literal default; the zero value is MySQL's.
+		extra    string
+		literals defaultLiterals
+		want     string
 	}{
+		{
+			// Measured on MySQL 26.10 for DEFAULT (CURRENT_TIMESTAMP + INTERVAL 1 DAY).
+			name:         "a MySQL expression default on a temporal column",
+			columnType:   "datetime",
+			dataType:     "datetime",
+			defaultValue: "(now() + interval 1 day)",
+			extra:        "DEFAULT_GENERATED",
+			want:         "(now() + interval 1 day)",
+		},
+		{
+			// The catalog escapes the expression as a string body and drops
+			// the parentheses around a call.
+			name:         "a MySQL expression default on a string column",
+			columnType:   "varchar(20)",
+			dataType:     "varchar",
+			defaultValue: `concat(_utf8mb4\'a\\\'b\',_utf8mb4\'c\\\\d\')`,
+			extra:        "DEFAULT_GENERATED",
+			want:         `(concat(_utf8mb4'a\'b',_utf8mb4'c\\d'))`,
+		},
+		{
+			name:         "a MySQL call default",
+			columnType:   "date",
+			dataType:     "date",
+			defaultValue: "curdate()",
+			extra:        "DEFAULT_GENERATED",
+			want:         "(curdate())",
+		},
+		{
+			name:         "a MySQL current-time default",
+			columnType:   "datetime",
+			dataType:     "datetime",
+			defaultValue: "CURRENT_TIMESTAMP",
+			extra:        "DEFAULT_GENERATED on update CURRENT_TIMESTAMP",
+			want:         "CURRENT_TIMESTAMP",
+		},
+		{
+			// Measured on MariaDB 12.3 for the same declaration: no EXTRA, and
+			// a literal would be in quotes.
+			name:         "a MariaDB expression default on a temporal column",
+			columnType:   "datetime",
+			dataType:     "datetime",
+			defaultValue: "(current_timestamp() + interval 1 day)",
+			literals:     literalsQuoted,
+			want:         "(current_timestamp() + interval 1 day)",
+		},
+		{
+			// The control: without DEFAULT_GENERATED a MySQL value is a literal.
+			name:         "a MySQL literal that reads like an expression",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "(now() + interval 1 day)",
+			want:         "'(now() + interval 1 day)'",
+		},
 		{
 			name:         "enum value",
 			columnType:   "enum('draft','active')",
@@ -389,7 +447,7 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 				DataType:   test.dataType,
 			}
 
-			c.Assert(normalizeMySQLColumnDefault(col, test.defaultValue), qt.Equals, test.want)
+			c.Assert(normalizeMySQLColumnDefault(col, test.defaultValue, test.extra, test.literals), qt.Equals, test.want)
 		})
 	}
 }

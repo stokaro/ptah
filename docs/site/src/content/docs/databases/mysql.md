@@ -153,6 +153,19 @@ SQL:
   `MODIFY COLUMN`. A key column is restated `NOT NULL` without `PRIMARY KEY`,
   because both engines refuse a `MODIFY COLUMN ... PRIMARY KEY` on a table that
   has a key (`ERROR 1068`); the same holds for a key column whose type changes.
+- An expression default is compared as the operations its operators group,
+  by the precedence both engines share, and read back as an expression on
+  every column type. MySQL 26.10 stores `(2 * 3 + 1)` as ``((2 * 3) + 1)``,
+  `(a + b * 2)` as ``(`a` + (`b` * 2))``, `(CURRENT_TIMESTAMP + INTERVAL 1
+  DAY)` as `(now() + interval 1 day)` and `(concat('a', 'b'))` as
+  `concat(_utf8mb4'a',_utf8mb4'b')`. MariaDB 12.3 writes `7 % 4` as
+  `7 MOD 4` and `NOW()` as `current_timestamp()`. Each pair is one default,
+  so a second apply plans nothing, and `db read` writes the default in
+  parentheses. A parenthesis that changes the grouping is part of the
+  default: `((1 + 2) * 3)` and `(1 + 2 * 3)` differ. An expression that holds
+  `NOT`, `IS`, `IN`, `CASE`, a qualified name or another character set
+  introducer is compared as written, and so is one the server rewrites
+  further: MySQL stores `(NOT 1 + 1)` as `(0 = (1 + 1))`.
 - `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
   MariaDB type. Both engines take one auto-increment column per table, and only

@@ -165,6 +165,9 @@ func mariaDB() descriptor.Dialect {
 			ViewPredicatesAsIntegers:       true,
 			ViewSQLSecurity:                true,
 			AutoIncrementFlag:              true,
+			// MariaDB 12.3 stores the default (7 % 4 * 2) as (7 MOD 4 * 2)
+			// and a column a as `a`.
+			OperatorPrecedence: "mysql",
 			// A whole server compares its databases too.
 			ServerDatabases: true,
 		},

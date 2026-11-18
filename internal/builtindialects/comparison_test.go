@@ -29,6 +29,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 		ConstraintComments:             true,
 		RoutineNamesFold:               true,
 		RoutineTypeAliases:             "mysqlroutine",
+		OperatorPrecedence:             "mysql",
 		ViewPredicatesAsIntegers:       true,
 		ViewSQLSecurity:                true,
 		AutoIncrementFlag:              true,
