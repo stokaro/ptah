@@ -221,6 +221,7 @@ These features cover addresses, the databases Ptah rehearses and replays on, and
 | `database.dev-realms` | — | [Dev database cleanup and the replay guard](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#dev-database-cleanup-and-the-replay-guard) | — |
 | `database.dev-cleanup` | `DevCleaner` | [Dev database cleanup and the replay guard](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#dev-database-cleanup-and-the-replay-guard) | — |
 | `database.dev-replay-guard` | `ReplayGuard` | [Dev database cleanup and the replay guard](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#dev-database-cleanup-and-the-replay-guard) | — |
+| `database.dev-replay-trust` | — | [Trusted replay SQL (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#trusted-replay-sql) | 0124 |
 | `engine.default-capabilities` | — | [Offline capabilities](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#offline-capabilities) | 0070 |
 | `engine.linked-release-lines` | — | [Linked release lines](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#linked-release-lines) | 0098 |
 | `engine.connection-capability-source` | — | [Connection capability source](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#connection-capability-source) | — |

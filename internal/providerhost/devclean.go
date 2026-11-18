@@ -217,12 +217,22 @@ type replayGuard struct{ target *target }
 
 // Validate asks the provider, offline, whether the statement's effects stay
 // inside scope. A provider that cannot answer refuses the statement.
+//
+// A trusted scope ([replay.Scope.TrustedSQL]) reaches the provider only when
+// its engine negotiates [provider.ReplayTrustFeature]. Otherwise the statement
+// is refused without asking: the provider would judge it without the trust,
+// so trust would lift nothing, and the guard's question whether trust would
+// lift a refusal must hear no.
 func (g replayGuard) Validate(stmt string, scope replay.Scope) error {
+	if scope.TrustedSQL && !g.target.negotiated(provider.ReplayTrustFeature) {
+		return g.target.untrustedProvider()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), providerruntime.CallTimeout)
 	defer cancel()
 	engine := g.target.engine.GetId()
 	guarded, err := g.target.host.client.GuardReplay(ctx, &protocol.GuardReplayRequest{Engine: engine, Statements: []string{stmt},
-		Scope: &protocol.ReplayScope{Database: scope.Database, Server: scope.Server, Provisioned: scope.Provisioned, Databases: scope.Databases, Session: scope.Session}})
+		Scope: &protocol.ReplayScope{Database: scope.Database, Server: scope.Server, Provisioned: scope.Provisioned, Databases: scope.Databases, Session: scope.Session,
+			TrustedSql: scope.TrustedSQL}})
 	if err != nil {
 		return replay.Refuse(engine, "a statement the provider could not judge")
 	}

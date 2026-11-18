@@ -5,7 +5,10 @@
 // any other value serves the engine under that name, as the provider
 // FIXTURE_DEV_PROVIDER_ID names when it is set. FIXTURE_RELEASE_LINES=linked
 // declares the engine as one linked into the provider, which certifies its
-// line by the version it links.
+// line by the version it links. FIXTURE_DEV_TRUST=undeclared serves the
+// provider as one built before contract 25.43, which declares no trust in
+// replayed SQL, and FIXTURE_TRUST_LOG names a file the provider records the
+// trust of each session and guard request in.
 package main
 
 import (
@@ -48,6 +51,9 @@ func main() {
 		if id := os.Getenv("FIXTURE_DEV_PROVIDER_ID"); id != "" {
 			description.ProviderId = id
 		}
+	}
+	if os.Getenv("FIXTURE_DEV_TRUST") == "undeclared" {
+		description = devdb.UntrustingDescription()
 	}
 	if os.Getenv("FIXTURE_RELEASE_LINES") == "linked" {
 		description.Features = append(description.Features, provider.LinkedReleaseLinesFeature)
