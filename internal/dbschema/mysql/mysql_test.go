@@ -173,9 +173,9 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 		}
 		tableRows = append(tableRows, []driver.Value{tableName, "BASE TABLE", comment, "utf8mb4_0900_ai_ci", "Dynamic"})
 		columnRows = append(columnRows,
-			[]driver.Value{tableName, "id", "int", "int", "NO", nil, nil, int64(10), int64(0), int64(1), nil, nil, "utf8mb4_0900_ai_ci", "auto_increment", nil, ""},
-			[]driver.Value{tableName, "email", "varchar", "varchar(255)", "NO", nil, int64(255), nil, nil, int64(2), "utf8mb4", "utf8mb4_0900_ai_ci", "utf8mb4_0900_ai_ci", "", nil, "login address"},
-			[]driver.Value{tableName, "email_lc", "varchar", "varchar(255)", "YES", nil, int64(255), nil, nil, int64(3), "utf8mb4", "utf8mb4_bin", "utf8mb4_0900_ai_ci", "STORED GENERATED", "lower(`email`)", ""},
+			[]driver.Value{tableName, "id", "int", "int", "NO", nil, nil, int64(10), int64(0), int64(1), nil, nil, "auto_increment", nil, ""},
+			[]driver.Value{tableName, "email", "varchar", "varchar(255)", "NO", nil, int64(255), nil, nil, int64(2), "utf8mb4", "utf8mb4_0900_ai_ci", "", nil, "login address"},
+			[]driver.Value{tableName, "email_lc", "varchar", "varchar(255)", "YES", nil, int64(255), nil, nil, int64(3), "utf8mb4", "utf8mb4_bin", "STORED GENERATED", "lower(`email`)", ""},
 		)
 	}
 
@@ -302,7 +302,7 @@ func TestApplyMySQLColumnMetadataKeepsGeneratedExpressionWithoutExtra(t *testing
 		sql.NullInt64{Int64: 10, Valid: true},
 		sql.NullInt64{Int64: 2, Valid: true},
 		sql.NullString{String: "utf8mb4", Valid: true},
-		collation{column: sql.NullString{String: "utf8mb4_0900_ai_ci", Valid: true}},
+		sql.NullString{String: "utf8mb4_0900_ai_ci", Valid: true},
 		sql.NullString{},
 		sql.NullString{String: "lower(`email`)", Valid: true},
 	)
@@ -704,7 +704,6 @@ func columnQueryResult(query string, rows [][]driver.Value) (dbtest.QueryResult,
 			"ORDINAL_POSITION",
 			"CHARACTER_SET_NAME",
 			"COLLATION_NAME",
-			"TABLE_COLLATION",
 			"EXTRA",
 			"GENERATION_EXPRESSION",
 			"COLUMN_COMMENT",

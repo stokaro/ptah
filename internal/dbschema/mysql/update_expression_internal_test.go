@@ -123,7 +123,7 @@ func TestApplyMySQLColumnMetadata_PutsTheClauseOnTheColumn(t *testing.T) {
 
 			err := applyMySQLColumnMetadata(&column,
 				sql.NullString{}, sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{},
-				sql.NullString{}, collation{},
+				sql.NullString{}, sql.NullString{},
 				sql.NullString{String: test.extra, Valid: true},
 				sql.NullString{})
 
