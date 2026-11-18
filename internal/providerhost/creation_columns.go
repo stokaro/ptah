@@ -15,7 +15,7 @@ func catalogColumn(source *protocol.ObservedColumn) (catalog.Column, error) {
 	result := catalog.Column{
 		Name: source.GetName(), DataType: source.GetDataType(), UDTName: source.GetUdtName(), UDTSchema: source.GetUdtSchema(),
 		FormattedType: source.GetFormattedType(), ColumnType: source.GetColumnType(), IsNullable: source.GetIsNullable(),
-		ColumnDefault: copyPlanningPointer(source.DefaultExpression), Collate: source.GetCollation(), Comment: source.GetComment(),
+		ColumnDefault: copyPlanningPointer(source.DefaultExpression), Collate: source.GetCollation(), EffectiveCollate: source.GetCollation(), Comment: source.GetComment(),
 		NotNullConstraintName: source.GetNotNullConstraintName(), IsAutoIncrement: source.GetAutoIncrement(), IsPrimaryKey: source.GetPrimaryKey(),
 		IsUnique: source.GetUnique(), TypeIsDeclaredText: source.GetTypeIsDeclaredText(), DomainName: source.GetDomainName(), DomainSchema: source.GetDomainSchema(),
 		GeneratedExpression: copyPlanningPointer(source.GeneratedExpression), GeneratedKind: source.GetGeneratedKind(),

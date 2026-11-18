@@ -494,18 +494,25 @@ type Column struct {
 	ColumnDefault      *string `json:"column_default"`           // Can be NULL
 	CharacterMaxLength *int    `json:"character_max_length"`     // For VARCHAR, etc.
 	// Collate is the collation the column declares, empty where the column
-	// takes the one it inherits: the table's default on MySQL and MariaDB,
-	// its type's on PostgreSQL (a domain's own, or the database default), the
-	// database's on SQL Server, and BINARY on SQLite. A column that restates
-	// what it inherits reads as one that does not, because the server keeps
-	// nothing that tells the two apart. Oracle and ClickHouse report none.
+	// takes the one it inherits: its table's default on MySQL and MariaDB,
+	// its type's on PostgreSQL and CockroachDB (a domain's own, C for name,
+	// or the database default), the database's on SQL Server, and BINARY on
+	// SQLite. A column that restates what it inherits reads as one that does
+	// not, because the server keeps nothing that tells the two apart. On
+	// PostgreSQL only COLLATE "default" restates the database default this
+	// way: a column naming the collation the database default is built from,
+	// such as "en_US.utf8", reads as declared, because the catalog stores
+	// that collation rather than "default". Oracle and ClickHouse report
+	// none.
 	Collate string `json:"collate,omitempty"`
 	// EffectiveCollate is the collation the column compares with, declared
-	// or inherited, as information_schema.COLUMNS names it on MySQL, MariaDB
-	// and PostgreSQL, where it is empty for the database default. Migration
-	// lint reads it to tell a restated collation from a changed one, and the
-	// Atlas-compatible inspect document prints it. The other readers leave it
-	// empty.
+	// or inherited, and the one every output written from a read prints.
+	// MySQL and MariaDB name it for every character column. PostgreSQL and
+	// CockroachDB name it as information_schema.COLUMNS does, empty for the
+	// database default. SQLite and SQL Server read no inherited name, so
+	// there it is the declared one, empty for BINARY and for the database's
+	// collation. A description that is not a read, such as a schema file or
+	// a provider's answer, sets both fields to the collation it names.
 	EffectiveCollate string `json:"effective_collate,omitempty"`
 	// Comment is the column's own comment, where the target has one and the
 	// reader reads it. It is empty for a column nobody commented, which is why

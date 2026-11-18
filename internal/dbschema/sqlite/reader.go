@@ -448,6 +448,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, skipped []string) (map[
 			GeneratedKind:       sqliteGeneratedKind(hidden),
 			GeneratedExpression: nil,
 			Collate:             ddlMetadata.collations[name],
+			EffectiveCollate:    ddlMetadata.collations[name],
 		}
 		// PRAGMA table_xinfo is the authority on WHETHER a column is generated;
 		// the DDL only supplies the text. Asking the DDL both questions is what
@@ -1094,26 +1095,26 @@ func reconcileColumnUniqueness(schema *catalog.Database) {
 	}
 }
 
+// tableBody is the text between the parentheses of a CREATE TABLE. A quoted
+// name, a string and a comment are skipped whole, so a parenthesis inside
+// one neither opens nor closes the body.
 func tableBody(ddl string) string {
-	start := strings.Index(ddl, "(")
-	if start < 0 {
-		return ""
-	}
-	depth := 0
-	inQuote := false
-	for i := start; i < len(ddl); i++ {
-		ch := ddl[i]
-		if ch == '\'' {
-			inQuote = !inQuote
+	start, depth := -1, 0
+	for i := 0; i < len(ddl); i++ {
+		if next := skipQuotedOrComment(ddl, i); next != i {
+			i = next - 1
 			continue
 		}
-		if inQuote {
-			continue
-		}
-		switch ch {
+		switch ddl[i] {
 		case '(':
+			if start < 0 {
+				start = i
+			}
 			depth++
 		case ')':
+			if start < 0 {
+				continue
+			}
 			depth--
 			if depth == 0 {
 				return ddl[start+1 : i]
@@ -1123,21 +1124,18 @@ func tableBody(ddl string) string {
 	return ""
 }
 
+// splitTopLevelComma splits value at each comma outside parentheses, quoted
+// names, strings and comments, so `"code,part" TEXT` stays one part.
 func splitTopLevelComma(value string) []string {
 	var parts []string
 	start := 0
 	depth := 0
-	inString := false
 	for i := 0; i < len(value); i++ {
-		ch := value[i]
-		if ch == '\'' {
-			inString = !inString
+		if next := skipQuotedOrComment(value, i); next != i {
+			i = next - 1
 			continue
 		}
-		if inString {
-			continue
-		}
-		switch ch {
+		switch value[i] {
 		case '(':
 			depth++
 		case ')':
@@ -1155,6 +1153,63 @@ func splitTopLevelComma(value string) []string {
 		parts = append(parts, tail)
 	}
 	return parts
+}
+
+// skipQuotedOrComment returns the offset just past the quoted run or the
+// comment that starts at offset i of value, and i where none starts there.
+// The quotes are SQLite's: a string in single quotes, a name in double
+// quotes, backquotes or square brackets, each but the last escaping its
+// closing character by doubling it. A run left open ends at the end of
+// value.
+func skipQuotedOrComment(value string, i int) int {
+	switch value[i] {
+	case '\'', '"', '`':
+		quote := value[i]
+		for j := i + 1; j < len(value); j++ {
+			if value[j] != quote {
+				continue
+			}
+			if j+1 < len(value) && value[j+1] == quote {
+				j++
+				continue
+			}
+			return j + 1
+		}
+		return len(value)
+	case '[':
+		if end := strings.IndexByte(value[i+1:], ']'); end >= 0 {
+			return i + end + 2
+		}
+		return len(value)
+	case '-':
+		if strings.HasPrefix(value[i:], "--") {
+			if end := strings.IndexByte(value[i:], '\n'); end >= 0 {
+				return i + end + 1
+			}
+			return len(value)
+		}
+	case '/':
+		if strings.HasPrefix(value[i:], "/*") {
+			if end := strings.Index(value[i+2:], "*/"); end >= 0 {
+				return i + end + 4
+			}
+			return len(value)
+		}
+	}
+	return i
+}
+
+// trimLeadingComments drops the white space and the comments value starts
+// with, which a part of a table body keeps when the author commented the
+// line it begins on.
+func trimLeadingComments(value string) string {
+	for {
+		value = strings.TrimLeft(value, " \t\r\n")
+		if !strings.HasPrefix(value, "--") && !strings.HasPrefix(value, "/*") {
+			return value
+		}
+		value = value[skipQuotedOrComment(value, 0):]
+	}
 }
 
 func extractCheckConstraints(tableName, schema, ddl string) []catalog.Constraint {
@@ -1643,7 +1698,7 @@ func optionalConstraintName(value string) (name, rest string) {
 }
 
 func leadingIdentifier(value string) (string, bool) {
-	value = strings.TrimSpace(value)
+	value = trimLeadingComments(value)
 	switch {
 	case value == "":
 		return "", false
@@ -1685,7 +1740,15 @@ func leadingIdentifier(value string) (string, bool) {
 	}
 }
 
+// consumedIdentifierPrefix is the text of value up to the end of the name
+// [leadingIdentifier] reads from it, the white space and comments before the
+// name included, so slicing value by its length leaves what follows the name.
 func consumedIdentifierPrefix(value string) string {
+	lead := len(value) - len(trimLeadingComments(value))
+	return value[:lead] + identifierPrefix(value[lead:])
+}
+
+func identifierPrefix(value string) string {
 	value = strings.TrimSpace(value)
 	switch {
 	case value == "":

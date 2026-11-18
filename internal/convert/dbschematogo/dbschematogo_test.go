@@ -960,7 +960,8 @@ func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 						DataType: "varchar(255)",
 						Facets: must.Must(mysqlschema.WithObservedColumnSettings(schemaext.Facets{},
 							mysqlschema.ColumnSettings{Charset: "hebrew"})),
-						Collate: "hebrew_general_ci",
+						Collate:          "hebrew_general_ci",
+						EffectiveCollate: "hebrew_general_ci",
 					},
 				},
 			},
@@ -975,6 +976,30 @@ func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 	c.Assert(found, qt.IsTrue)
 	c.Assert(*declared, qt.Equals, mysqlschema.DesiredColumnSettings{Charset: "hebrew"})
 	c.Assert(result.Fields[0].Collate, qt.Equals, "hebrew_general_ci")
+}
+
+// TestConvertDBSchemaToGoSchema_InheritedColumnCollation describes a MySQL
+// column that inherits its table's collation with that collation. The SQL a
+// read renders writes no table collation, so a column written without the
+// one it inherits takes the server's default when the file is replayed.
+func TestConvertDBSchemaToGoSchema_InheritedColumnCollation(t *testing.T) {
+	c := qt.New(t)
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
+			Name:    "users",
+			Collate: "utf8mb4_bin",
+			Columns: []catalog.Column{{
+				Name:             "name",
+				DataType:         "varchar(255)",
+				EffectiveCollate: "utf8mb4_bin",
+			}},
+		}},
+	}
+
+	result := must.Must(dbschematogo.ConvertDBSchemaToGoSchema(t.Context(), dbSchema, "mysql", must.Must(builtin.New())))
+
+	c.Assert(result.Fields, qt.HasLen, 1)
+	c.Assert(result.Fields[0].Collate, qt.Equals, "utf8mb4_bin")
 }
 
 func TestConvertDBSchemaToGoSchema_SQLiteTableOptions(t *testing.T) {

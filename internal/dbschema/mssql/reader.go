@@ -374,7 +374,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context) (map[catalogTableKey][]
 			return nil, err
 		}
 		if collation.Valid && !strings.EqualFold(collation.String, databaseCollation.String) {
-			column.Collate = collation.String
+			column.Collate, column.EffectiveCollate = collation.String, collation.String
 		}
 		column.DataType = strings.ToUpper(typeName)
 		// The catalog answers with SQL Server's own type name, and the portable

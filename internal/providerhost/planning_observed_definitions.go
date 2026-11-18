@@ -9,9 +9,11 @@ import (
 )
 
 func observedPlanningColumn(source catalog.Column) (*protocol.ObservedColumn, error) {
-	// EffectiveCollate is accepted and not sent. The protocol's collation is
-	// empty for the engine's default, which is what Collate holds; the
-	// effective name is what lint and the inspect document read on the host.
+	// Collate is accepted and not sent. The protocol's collation is empty
+	// for the engine's default, and a MySQL column that inherits takes its
+	// table's collation, which need not be the engine's default: sending the
+	// declared name, empty there, would describe a column that compares
+	// differently. EffectiveCollate names the collation the column uses.
 	if err := onlyFields(
 		source, "Facets", "Name", "DataType", "UDTName", "UDTSchema", "FormattedType", "ColumnType", "IsNullable", "ColumnDefault", "CharacterMaxLength",
 		"Collate", "EffectiveCollate", "Comment", "NotNullConstraintName", "NumericPrecision", "NumericScale", "DatetimePrecision", "OrdinalPosition", "IsAutoIncrement",
@@ -30,7 +32,7 @@ func observedPlanningColumn(source catalog.Column) (*protocol.ObservedColumn, er
 		IsNullable:            source.IsNullable,
 		DefaultExpression:     copyPlanningPointer(source.ColumnDefault),
 		CharacterMaxLength:    planningInt64Pointer(source.CharacterMaxLength),
-		Collation:             source.Collate,
+		Collation:             source.EffectiveCollate,
 		Comment:               source.Comment,
 		NotNullConstraintName: source.NotNullConstraintName,
 		NumericPrecision:      planningInt64Pointer(source.NumericPrecision),

@@ -101,6 +101,11 @@ func ColumnCollation(dialect, definition string) (string, bool) {
 		case depth == 0 && token.MatchIdentifierValue("COLLATE") && position+1 < len(tokens):
 			name, ok := collationName(tokens[position+1])
 			if !ok {
+				// Not the earlier clause: the last one is what the column
+				// compares with, so an earlier name would report a
+				// collation the column does not have. The schema holds
+				// only text SQLite accepted, so a name this reader cannot
+				// spell is one to refuse to guess at.
 				return "", false
 			}
 			collation, declared = name, true

@@ -309,6 +309,7 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		IsPrimaryKey:          field.Primary,
 		IsUnique:              field.Unique,
 		Collate:               field.Collate,
+		EffectiveCollate:      field.Collate,
 		// The column's own comment, which a read reports beside it. Without
 		// it, a schema file compared with itself planned the comment again
 		// on every commented column.

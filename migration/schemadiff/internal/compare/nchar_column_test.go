@@ -38,7 +38,7 @@ func TestTableColumns_NationalCharacterAlias(t *testing.T) {
 			}}}
 			current := catalog.Table{Name: "t", Columns: []catalog.Column{{
 				Name: "c", DataType: test.held, ColumnType: test.held,
-				IsNullable: "YES", Collate: test.collation, TypeIsDeclaredText: test.dialect == "sqlserver",
+				IsNullable: "YES", EffectiveCollate: test.collation, TypeIsDeclaredText: test.dialect == "sqlserver",
 			}}}
 			diff := compare.TableColumnsWithDialect(schemamodel.Table{StructName: "T", Name: "t"}, current, desired, test.dialect)
 			c.Assert(len(diff.ColumnsModified) > 0, qt.Equals, test.change)
