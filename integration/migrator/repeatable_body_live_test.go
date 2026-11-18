@@ -20,8 +20,9 @@ import (
 // order mark, which a text column or a line-oriented reader would change; one
 // that runs outside a transaction; and an empty one, which is a kept body and
 // not a missing one. The byte order mark sits inside the comment because a
-// file that starts with one fails to execute on these servers, versioned or
-// repeatable alike.
+// mark at the start of a file is the file's encoding, which the migrator
+// removes before the SQL runs while the record keeps it; the comment keeps it
+// in text a server reads.
 func repeatableBodyFixtures(engine repeatableEngine) []repeatableBodyFixture {
 	view := engine.widgetIDs()
 	return []repeatableBodyFixture{

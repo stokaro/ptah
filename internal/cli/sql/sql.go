@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqllint"
 	migrationlint "ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 const (
@@ -288,7 +289,7 @@ func readSQLLintSources(stdin io.Reader, opts sqlLintOptions) ([]sqllint.Source,
 		if err != nil {
 			return nil, fmt.Errorf("read stdin: %w", err)
 		}
-		return []sqllint.Source{{Name: "<stdin>", SQL: string(data)}}, nil
+		return []sqllint.Source{{Name: "<stdin>", SQL: migrationfile.SQLText(string(data))}}, nil
 	}
 
 	sources := make([]sqllint.Source, 0, len(opts.files))
@@ -306,7 +307,9 @@ func readSQLLintSources(stdin io.Reader, opts sqlLintOptions) ([]sqllint.Source,
 		}
 		sources = append(sources, sqllint.Source{
 			Name: filepath.ToSlash(path),
-			SQL:  string(data),
+			// A file is read as the migrator reads one, so a byte order mark
+			// at its start is not taken for SQL.
+			SQL: migrationfile.SQLText(string(data)),
 		})
 	}
 	return sources, nil
