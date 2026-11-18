@@ -66,10 +66,21 @@ type ColumnGrammar struct {
 	CurrentTimeKeywords bool `json:"current_time_keywords,omitempty"`
 	// NiladicFunctions names the functions, beside the current-time
 	// keywords, that a default calls without parentheses, in upper case:
-	// Oracle's SYSDATE, SYSTIMESTAMP, USER and UID. A default of one is kept
-	// as the expression written. Without its name, the word is read as a
-	// literal value, which a renderer writes as a string.
+	// Oracle's SYSDATE, SYSTIMESTAMP, USER and UID, among others. A default
+	// of one is kept as the expression written. Without its name, the word
+	// is read as a literal value, which a renderer writes as a string.
 	NiladicFunctions []string `json:"niladic_functions,omitempty"`
+	// EmptyCallFunctions names, in upper case, the functions a default may
+	// write bare that the engine refuses with an empty argument list, such as
+	// Oracle's SYSDATE(). A precision, as in SYSTIMESTAMP(3), is no empty
+	// list. A function the engine calls either way, such as Oracle's
+	// SESSIONTIMEZONE, is left out.
+	EmptyCallFunctions []string `json:"empty_call_functions,omitempty"`
+	// EmptyCallRefusal says why a default that writes a function of
+	// EmptyCallFunctions with an empty argument list is refused. The parser
+	// names the bare spelling before the sentence. The two fields are set
+	// together or not at all.
+	EmptyCallRefusal string `json:"empty_call_refusal,omitempty"`
 	// SecondCheckRefusal says why a column definition that writes a second
 	// CHECK is refused. Empty reads the second CHECK as the table's.
 	SecondCheckRefusal string `json:"second_check_refusal,omitempty"`
@@ -575,7 +586,10 @@ func (d Dialect) validateGrammar() error {
 // validateColumnGrammar checks the niladic function names and the column
 // constraint kinds.
 func validateColumnGrammar(grammar Grammar) error {
-	if err := validateNiladicFunctions(grammar.Columns.NiladicFunctions); err != nil {
+	if err := validateFunctionNames("niladic function", grammar.Columns.NiladicFunctions); err != nil {
+		return err
+	}
+	if err := validateFunctionNames("empty call function", grammar.Columns.EmptyCallFunctions); err != nil {
 		return err
 	}
 	constraint := grammar.Columns.Constraint
@@ -587,6 +601,8 @@ func validateColumnGrammar(grammar Grammar) error {
 		return fmt.Errorf("column constraint kind %q in MODIFY is not one of %q", constraint.Modify, columnKinds)
 	case constraint.Modify != "" && constraint.Define == "":
 		return errors.New("a MODIFY column constraint kind needs a column constraint kind")
+	case (grammar.Columns.EmptyCallRefusal == "") != (len(grammar.Columns.EmptyCallFunctions) == 0):
+		return errors.New("empty call functions and an empty call refusal are set together")
 	default:
 		return nil
 	}
@@ -707,17 +723,18 @@ func validateStatementForms(grammar Grammar) error {
 	return nil
 }
 
-// validateNiladicFunctions refuses a niladic function name that is not one
+// validateFunctionNames refuses a function name of names that is not one
 // upper-case word, which the parser could never match, and one written twice.
-func validateNiladicFunctions(names []string) error {
+// label names the list in the error.
+func validateFunctionNames(label string, names []string) error {
 	for i, name := range names {
 		if name == "" || name != strings.ToUpper(name) || strings.IndexFunc(name, func(r rune) bool {
 			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
 		}) >= 0 {
-			return fmt.Errorf("niladic function %q is not one upper-case word", name)
+			return fmt.Errorf("%s %q is not one upper-case word", label, name)
 		}
 		if slices.Contains(names[:i], name) {
-			return fmt.Errorf("niladic function %q is written twice", name)
+			return fmt.Errorf("%s %q is written twice", label, name)
 		}
 	}
 	return nil

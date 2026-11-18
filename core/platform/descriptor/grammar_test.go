@@ -19,6 +19,8 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 			TimestampLocalTimeZone: true,
 			CurrentTimeKeywords:    true,
 			NiladicFunctions:       []string{"SYSDATE", "USER"},
+			EmptyCallFunctions:     []string{"SYSDATE"},
+			EmptyCallRefusal:       "alpha refuses SYSDATE()",
 			SecondCheckRefusal:     "alpha takes one CHECK on a column",
 			ReferencesRefusal:      "what alpha builds depends on its release",
 			Constraint: descriptor.ColumnConstraint{
@@ -196,6 +198,24 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			name:    "a niladic function stated twice",
 			dialect: with(func(g *descriptor.Grammar) { g.Columns.NiladicFunctions = []string{"USER", "USER"} }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: niladic function "USER" is written twice`,
+		},
+		{
+			name:    "an empty call refusal without functions",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.EmptyCallRefusal = "alpha refuses SYSDATE()" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: empty call functions and an empty call refusal are set together`,
+		},
+		{
+			name:    "empty call functions without a refusal",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.EmptyCallFunctions = []string{"SYSDATE"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: empty call functions and an empty call refusal are set together`,
+		},
+		{
+			name: "an empty call function in lower case",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Columns.EmptyCallFunctions = []string{"sysdate"}
+				g.Columns.EmptyCallRefusal = "alpha refuses sysdate()"
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: empty call function "sysdate" is not one upper-case word`,
 		},
 		{
 			name:    "an undeclared column constraint kind",

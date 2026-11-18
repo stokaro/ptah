@@ -28,6 +28,19 @@ func TestGenerateCommand_OracleNiladicDefault_HappyPath(t *testing.T) {
 		{name: "LOCALTIMESTAMP", column: "a TIMESTAMP DEFAULT LOCALTIMESTAMP", want: "a TIMESTAMP DEFAULT LOCALTIMESTAMP,"},
 		{name: "USER", column: "a VARCHAR2(128) DEFAULT USER", want: "a VARCHAR2(128) DEFAULT USER,"},
 		{name: "UID", column: "a NUMBER DEFAULT UID", want: "a NUMBER DEFAULT UID,"},
+		{
+			name: "SESSIONTIMEZONE", column: "a VARCHAR2(64) DEFAULT SESSIONTIMEZONE",
+			want: "a VARCHAR2(64) DEFAULT SESSIONTIMEZONE,",
+		},
+		{name: "DBTIMEZONE", column: "a VARCHAR2(64) DEFAULT DBTIMEZONE", want: "a VARCHAR2(64) DEFAULT DBTIMEZONE,"},
+		{
+			name: "ORA_INVOKING_USER", column: "a VARCHAR2(128) DEFAULT ORA_INVOKING_USER",
+			want: "a VARCHAR2(128) DEFAULT ORA_INVOKING_USER,",
+		},
+		{
+			name: "ORA_INVOKING_USERID", column: "a NUMBER DEFAULT ORA_INVOKING_USERID",
+			want: "a NUMBER DEFAULT ORA_INVOKING_USERID,",
+		},
 		{name: "a quoted SYSDATE", column: "a VARCHAR2(16) DEFAULT 'SYSDATE'", want: "a VARCHAR2(16) DEFAULT 'SYSDATE',"},
 	}
 	for _, row := range rows {

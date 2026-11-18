@@ -75,6 +75,7 @@ import (
 // statements on every engine.
 var noOldSwitch = cmp.Options{
 	cmpopts.IgnoreFields(descriptor.Grammar{}, "Forms"),
+	cmpopts.IgnoreFields(descriptor.ColumnGrammar{}, "EmptyCallFunctions", "EmptyCallRefusal"),
 	cmpopts.IgnoreFields(descriptor.IndexGrammar{}, "Storing", "Nonclustered"),
 	cmpopts.IgnoreFields(descriptor.ConstraintGrammar{}, "TableNotNull"),
 }
@@ -214,7 +215,10 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Columns: descriptor.ColumnGrammar{
 			TimestampLocalTimeZone: true,
 			CurrentTimeKeywords:    true,
-			NiladicFunctions:       []string{"SYSDATE", "SYSTIMESTAMP", "USER", "UID"},
+			NiladicFunctions: []string{
+				"SYSDATE", "SYSTIMESTAMP", "USER", "UID", "SESSIONTIMEZONE", "DBTIMEZONE",
+				"ORA_INVOKING_USER", "ORA_INVOKING_USERID",
+			},
 		},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
