@@ -79,3 +79,34 @@ func TestResolveLeavesOtherEnginesAlone(t *testing.T) {
 	c.Assert(resolved, qt.Equals, "postgres://localhost/dev")
 	c.Assert(owner.requests, qt.HasLen, 0)
 }
+
+// TestSameEngine_HappyPath folds each name onto its engine: a built-in alias
+// through the dialect registry and an official provider alias through the
+// provider catalog, and a name neither knows as written.
+func TestSameEngine_HappyPath(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"postgresql", "postgres"},
+		{"ydbs", "ydb"},
+		{"cloudspanner", "spanner"},
+		{"fixture", "Fixture"},
+	} {
+		t.Run(pair[0]+"="+pair[1], func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(devdocker.SameEngine(pair[0], pair[1]), qt.IsTrue)
+		})
+	}
+}
+
+// TestSameEngine_FailurePath keeps two engines apart.
+func TestSameEngine_FailurePath(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"ydbs", "spanner"},
+		{"fixture", "postgres"},
+		{"fixture", "fixture2"},
+	} {
+		t.Run(pair[0]+"!="+pair[1], func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(devdocker.SameEngine(pair[0], pair[1]), qt.IsFalse)
+		})
+	}
+}

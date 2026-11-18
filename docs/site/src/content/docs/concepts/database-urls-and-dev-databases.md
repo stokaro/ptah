@@ -106,13 +106,14 @@ a dev URL, wherever it came from.
 because the Atlas CLI fails on one it cannot reach. Its `schema inspect` of a
 database is the exception, as it is on the Atlas CLI.
 
-Two kinds of URL are read without a connection in such a run. A `docker://` URL
-is read for the server its tag names, and no container is started. When a
-selected [executable provider](../../extend/executable-providers/) provisions
-the URL's engine, only the engine is read, and the provider is asked for no
-database. A URL whose engine is not the target's is refused. A
-`sqlite://` URL or a file path is not opened, since opening it would create the
-file, so a SQLite dev path that does not exist is not refused there.
+Two kinds of URL are read without a connection in such a run. A docker URL,
+`docker://` or `docker+<engine>://`, is read for the server its tag names, and
+no container is started. When a selected
+[executable provider](../../extend/executable-providers/) provisions the URL's
+engine, only the engine is read, and the provider is asked for no database. A
+URL whose engine is not the target's is refused. A `sqlite://` URL or a file
+path is not opened, since opening it would create the file, so a SQLite dev
+path that does not exist is not refused there.
 
 A dev database must hold nothing the reset would drop when a command starts.
 Ptah refuses a table before anything is dropped, as the Atlas CLI does, and
@@ -440,13 +441,13 @@ every connection without a credential, so the YDB provider refuses
 `docker://ydb` when the container runtime is on another machine, where its port
 would be published on every interface of that host.
 
-A `docker://<engine>/...` or `docker+<engine>://...` URL whose engine belongs
-to a selected [executable provider](../../extend/executable-providers/) goes to
-that provider instead. The provider picks the image, starts the server and removes it when the
-command ends. Ptah records the address it gets back as a server the run owns, as
-for a server it starts itself. A provider that will not provision answers with
-a refusal that says whether it does not serve the request or its runtime is
-unavailable, and the command stops with that reason.
+A `docker://<engine>/...` or `docker+<engine>://...` URL whose engine belongs to
+a selected [executable provider](../../extend/executable-providers/) goes to
+that provider instead. The provider picks the image, starts the server and
+removes it when the command ends. Ptah records the address it gets back as a
+server the run owns, as for a server it starts itself. A provider that will not
+provision answers with a refusal that says whether it does not serve the request
+or its runtime is unavailable, and the command stops with that reason.
 
 The decision reads what Ptah recorded when it started the server, not the
 URL's spelling. A named server keeps the whole list, since it may hold

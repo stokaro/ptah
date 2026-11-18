@@ -68,7 +68,7 @@ func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Dura
 		return capability.Capabilities{}, nil
 	}
 	if engine, provisioned := devdocker.ExternalEngine(ctx, devURL); provisioned {
-		if dialect != "" && engine != dialect {
+		if dialect != "" && !devdocker.SameEngine(engine, dialect) {
 			return capability.Capabilities{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", engine, dialect)
 		}
 		return capability.Capabilities{}, nil

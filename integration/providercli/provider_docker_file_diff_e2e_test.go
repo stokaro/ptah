@@ -14,12 +14,12 @@ import (
 )
 
 // A `schema diff` of two schema files for an engine an executable provider
-// serves compares the documents offline. A `--dev-url docker://<engine>/<tag>`
-// names the engine, and the command checks that engine against the target's
-// and asks the provider for no dev database. The fixture's dev databases are
-// files in FIXTURE_DEV_DIR, so an empty directory says none was left behind,
-// and the tag `none`, which the fixture refuses to provision, says none was
-// requested.
+// serves compares the documents offline. A docker dev URL names the engine in
+// either form, `docker://<engine>/<tag>` and `docker+<engine>://...`, and the
+// command checks that engine against the target's and asks the provider for
+// no dev database. The fixture's dev databases are files in FIXTURE_DEV_DIR,
+// so an empty directory says none was left behind, and a spec ending in
+// `none`, which the fixture refuses to provision, says none was requested.
 
 // dockerDiffFrom declares items alone.
 const dockerDiffFrom = "tables:\n  items:\n    columns:\n      id:\n        type: INTEGER\n        not_null: true\n"
@@ -41,11 +41,18 @@ func dockerFileDiff(c *qt.C, f devCLI, extra ...string) (stdout, stderr string, 
 }
 
 // TestProviderFileDiffTakesADockerDevURL_HappyPathE2E plans the change with a
-// docker dev URL for the provider's engine and leaves the dev directory empty.
-// The `none` row fails if the command asks the provider for the database,
-// and both rows fail if the command opens the URL as an engine Ptah starts.
+// docker dev URL for the provider's engine in each form and leaves the dev
+// directory empty. A `none` row fails if the command asks the provider for the
+// database, a `docker://` row fails if the command opens the URL as an engine
+// Ptah starts, and a `docker+` row fails if the command reads only the
+// `docker://` form as the provider's and connects to the URL as an address.
 func TestProviderFileDiffTakesADockerDevURL_HappyPathE2E(t *testing.T) {
-	for _, devURL := range []string{"docker://fixture/1", "docker://fixture/none"} {
+	for _, devURL := range []string{
+		"docker://fixture/1",
+		"docker://fixture/none",
+		"docker+fixture://_/example.org/fixture:2.0",
+		"docker+fixture://_/example.org/fixture:none",
+	} {
 		t.Run(devURL, func(t *testing.T) {
 			c := qt.New(t)
 			f := newDevCLI(c)

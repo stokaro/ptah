@@ -193,19 +193,39 @@ func (fixtureDevOwner) ProvisionDev(context.Context, string) (string, func(), er
 	return "", nil, errors.New("not provisioned here")
 }
 
-// providerDockerURLs names the fixture engine in each docker URL form.
-var providerDockerURLs = []string{"docker://fixture/dev", "docker+fixture://_/example.org/fixture:2.0"}
+// aliasDevOwner provisions the dev databases of Spanner, an official provider
+// engine, under its ID and under its catalog alias. Nothing here asks it to.
+type aliasDevOwner struct{}
+
+func (aliasDevOwner) DevEngines() []string { return []string{"cloudspanner", "spanner"} }
+
+func (aliasDevOwner) ProvisionDev(context.Context, string) (string, func(), error) {
+	return "", nil, errors.New("not provisioned here")
+}
 
 // TestServer_ProviderDocker_HappyPath leaves a docker URL whose engine a
 // provider provisions to that provider, in either form: it is not parsed as an
-// image Ptah knows, nothing is connected, and no capability is answered.
+// image Ptah knows, nothing is connected, and no capability is answered. The
+// engine is compared with the target through the registry and the provider
+// catalog, so an alias on either side names the same engine.
 func TestServer_ProviderDocker_HappyPath(t *testing.T) {
-	for _, devURL := range providerDockerURLs {
-		t.Run(devURL, func(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		owner   devdocker.External
+		dialect string
+		devURL  string
+	}{
+		{name: "docker://", owner: fixtureDevOwner{}, dialect: "fixture", devURL: "docker://fixture/dev"},
+		{name: "docker+", owner: fixtureDevOwner{}, dialect: "fixture", devURL: "docker+fixture://_/example.org/fixture:2.0"},
+		{name: "an alias in the URL", owner: aliasDevOwner{}, dialect: "spanner", devURL: "docker://cloudspanner/dev"},
+		{name: "an alias in the docker+ scheme", owner: aliasDevOwner{}, dialect: "spanner", devURL: "docker+cloudspanner://_/example.org/spanner:1"},
+		{name: "an alias as the target", owner: aliasDevOwner{}, dialect: "cloudspanner", devURL: "docker://spanner/dev"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
+			ctx := devdocker.WithExternal(c.Context(), test.owner)
 
-			got, err := devreach.Server(ctx, "fixture", "dev-url", devURL, 0)
+			got, err := devreach.Server(ctx, test.dialect, "dev-url", test.devURL, 0)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Len(), qt.Equals, 0)
@@ -226,18 +246,14 @@ func TestServer_ProviderDocker_BuiltInImage(t *testing.T) {
 }
 
 // TestServer_ProviderDocker_FailurePath refuses a docker URL whose engine a
-// provider provisions when the target is of another dialect, in either form,
-// as it refuses a built-in docker URL of another dialect.
+// provider provisions when the target is of another dialect, as it refuses a
+// built-in docker URL of another dialect.
 func TestServer_ProviderDocker_FailurePath(t *testing.T) {
-	for _, devURL := range providerDockerURLs {
-		t.Run(devURL, func(t *testing.T) {
-			c := qt.New(t)
-			ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
+	c := qt.New(t)
+	ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
 
-			got, err := devreach.Server(ctx, "postgres", "dev-url", devURL, 0)
+	got, err := devreach.Server(ctx, "postgres", "dev-url", "docker://fixture/dev", 0)
 
-			c.Assert(err, qt.ErrorMatches, `--dev-url dialect "fixture" does not match --url dialect "postgres"`)
-			c.Assert(got.Len(), qt.Equals, 0)
-		})
-	}
+	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "fixture" does not match --url dialect "postgres"`)
+	c.Assert(got.Len(), qt.Equals, 0)
 }
