@@ -27,6 +27,11 @@ type StatusOptions struct {
 	// RevisionChecksums carries source atlas.sum h1 hashes for converted
 	// layouts; see [ApplyOptions.RevisionChecksums] (stokaro/ptah#1209).
 	RevisionChecksums map[int64]string
+	// Repeatables reads a top-level R__<identity>.sql of a directory in the
+	// Atlas layout as a repeatable migration rather than as the version R; see
+	// [migrator.WithAtlasRepeatableMigrations]. The caller sets it only for a
+	// directory it reads in that layout.
+	Repeatables bool
 }
 
 type StatusResult struct {
@@ -55,14 +60,16 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 	restore := writer.IsDryRun()
 	writer.SetDryRun(true)
 	defer writer.SetDryRun(restore)
-	mig, err := migrator.NewFSMigrator(
-		conn,
-		opts.FS,
+	providerOptions := []migrator.FSProviderOption{
 		migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas),
 		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.AtlasEnv}),
 		migrator.WithAtlasRevisionVersions(opts.RevisionVersions),
 		migrator.WithAtlasRevisionChecksums(opts.RevisionChecksums),
-	)
+	}
+	if opts.Repeatables {
+		providerOptions = append(providerOptions, migrator.WithAtlasRepeatableMigrations())
+	}
+	mig, err := migrator.NewFSMigrator(conn, opts.FS, providerOptions...)
 	if err != nil {
 		return StatusResult{}, fmt.Errorf("error registering migrations: %w", err)
 	}

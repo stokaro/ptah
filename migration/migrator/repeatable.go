@@ -136,13 +136,34 @@ func (r RepeatableRecord) dirty() bool {
 // and guards them. Without it, an R__<identity>.sql file is not loaded, and a
 // migrator over the directory behaves as if the file were absent.
 //
-// A directory read in the Atlas format holds no repeatable migration: Atlas
-// reads R__<name>.sql as a one-time version, and that reading is kept. An up
-// run with repeatable work is refused under [WithOwnTransactions], because a
+// A directory read in the Atlas format holds no repeatable migration under
+// this option: Atlas reads R__<name>.sql as a one-time version, and that
+// reading is kept unless [WithAtlasRepeatableMigrations] is given. An up run
+// with repeatable work is refused under [WithOwnTransactions], because a
 // repeatable migration runs in a transaction Ptah opens.
 func WithRepeatableMigrations() FSProviderOption {
 	return func(p *FSMigrationProvider) {
 		p.loadsRepeatables = true
+	}
+}
+
+// WithAtlasRepeatableMigrations is [WithRepeatableMigrations] for a directory
+// read in the Atlas format: a top-level file named R__<identity>.sql is a
+// repeatable migration, run, reported, guarded and recorded as one in a Ptah
+// directory is, instead of the one-time version R the Atlas format reads it as.
+// The other files of the directory keep their Atlas reading, and atlas.sum
+// still covers every file, so the integrity file is the one the Atlas format
+// writes for the same directory.
+//
+// A revision table that records version R was written under the Atlas
+// reading, and the migrator refuses it with an [AtlasRepeatableVersionError]
+// before anything runs, because the file would run again as a repeatable
+// migration the record has no row for. The provider refuses a directory not
+// read in the Atlas format; select it with [WithMigrationDirFormat].
+func WithAtlasRepeatableMigrations() FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.loadsRepeatables = true
+		p.atlasRepeatables = true
 	}
 }
 
@@ -192,7 +213,7 @@ func (p *FSMigrationProvider) repeatableMigrations() []*repeatableMigration {
 
 // loadRepeatables reads the directory's repeatable files.
 func (p *FSMigrationProvider) loadRepeatables() error {
-	files, err := migrationfile.DiscoverRepeatables(p.fsys, p.format)
+	files, err := p.discoverRepeatableFiles()
 	if err != nil {
 		return err
 	}

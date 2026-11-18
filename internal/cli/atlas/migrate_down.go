@@ -40,16 +40,27 @@ import (
 // forward runs unchanged, so the default output and exit codes stay
 // byte-identical to the plain forward; with --format (flag or PTAH_FORMAT) the
 // verb executes the rollback through internal/atlasmigrate and renders the
-// Atlas Go-template report instead of the native text output.
+// Atlas Go-template report instead of the native text output. Under
+// PTAH_ATLAS_REPEATABLE_MIGRATIONS both paths refuse a directory that holds an
+// R__ file where they read it, before they connect; see
+// [atlasRepeatableReading.refuseDown].
 func newAtlasMigrateDownCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	verb := atlasMigrateDownVerb()
 	cmd := newAtlasAdapterCommand("migrate", verb)
 	forward := cmd.RunE
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if atlasArgsHaveHelp(args) || !atlasMigrateDownWantsFormat(verb, args) {
+		if atlasArgsHaveHelp(args) {
 			return forward(cmd, args)
 		}
-		return runAtlasMigrateDownFormat(cmd, verb, policy, args)
+		repeatables, err := resolveAtlasRepeatableReading()
+		if err != nil {
+			return err
+		}
+		if !atlasMigrateDownWantsFormat(verb, args) {
+			cmd.SetContext(repeatables.downSourceCheck(cmd.Context()))
+			return forward(cmd, args)
+		}
+		return runAtlasMigrateDownFormat(cmd, verb, policy, repeatables, args)
 	}
 	return cmd
 }
@@ -129,6 +140,7 @@ func runAtlasMigrateDownFormat(
 	cmd *cobra.Command,
 	verb atlasVerb,
 	compatibilityPolicy atlascompatpolicy.Policy,
+	repeatables atlasRepeatableReading,
 	args []string,
 ) (runErr error) {
 	integrityPolicy, err := migrationintegrity.Resolve()
@@ -197,6 +209,9 @@ func runAtlasMigrateDownFormat(
 	}
 	if err != nil {
 		return fmt.Errorf("atlas migrate down --dir: %w", err)
+	}
+	if err := repeatables.refuseDown(source.FileSystem); err != nil {
+		return err
 	}
 	dir := source.Display
 

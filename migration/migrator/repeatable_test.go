@@ -430,17 +430,6 @@ func TestRepeatableMigrations_FailurePath(t *testing.T) {
 		c.Assert(repeatableTableCount(c, dbPath, "users"), qt.Equals, 0)
 	})
 
-	t.Run("the Atlas-compatible revision format refuses repeatable migrations", func(t *testing.T) {
-		c := qt.New(t)
-		dbPath := filepath.Join(c.TempDir(), "app.db")
-		_, mig := openRepeatableMigrator(c, dbPath, repeatableFiles(map[string]string{"R__user_names.sql": repeatableViewUp}))
-
-		err := mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).MigrateUpWithOptions(
-			c.Context(), migrator.MigrateUpOptions{})
-		c.Assert(err, qt.ErrorMatches, `this directory holds repeatable migrations, which this run cannot execute: the Atlas-compatible revision format .*`)
-		c.Assert(repeatableTableCount(c, dbPath, "users"), qt.Equals, 0)
-	})
-
 	t.Run("a repeatable migration takes no check directive", func(t *testing.T) {
 		c := qt.New(t)
 		dbPath := filepath.Join(c.TempDir(), "app.db")
