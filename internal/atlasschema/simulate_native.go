@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/catalog"
@@ -176,9 +177,11 @@ func guardRehearsedUnits(units []renderer.Fragment, guard *devclean.ReplayGuard,
 //
 // The assessment names an SQL unit by NodeType "sql" alone, so action, the
 // leading words of its statements, says whether it creates, alters or drops
-// ([safety.StatementAction]). Without it two plans that do different things
+// ([safety.StatementTargets]), with the head of an ALTER's clause, and subject
+// the objects they act on. Without them two plans that do different things
 // with the same number of units, such as an ALTER TABLE on the target where
-// the dev database creates the table, compare equal.
+// the dev database creates the table, or an ADD COLUMN of another column,
+// compare equal.
 type operationSignature struct {
 	native   schemaext.Kind
 	node     string
@@ -259,26 +262,52 @@ func operationSignatures(ctx context.Context, runtime safety.Runtime, planned pl
 			inputs:   strings.Join(names, ","),
 		}
 		if unit.Native == nil {
-			signatures[i].action = safety.StatementAction(unit.SQL, dialect)
-			signatures[i].subject = inOwnDatabase(assessed[i].Subject, planned.info)
+			signatures[i].action, signatures[i].subject = sqlUnitSignature(unit.SQL, planned.info)
 		}
 	}
 	return signatures, nil
 }
 
-// inOwnDatabase is subject, the names an SQL unit acts on joined with ", ",
-// with the database qualifier taken off each name that the plan's own
-// database qualifies, where a schema is a database. A MySQL-family plan names
-// a table with its database, `app`.`notes` on the target where the dev
-// database's plan writes `app_dev`.`notes`, and both act on the table notes of
-// the database they run in. A name of another database keeps its qualifier.
-func inOwnDatabase(subject string, info catalog.ServerInfo) string {
-	if subject == "" || info.Schema == "" || !schemaScopeNamesDatabase(info.Dialect) {
-		return subject
+// sqlUnitSignature is what the statements of an SQL unit do and the objects
+// they act on, as [safety.StatementTargets] reads them: each statement's
+// action followed by the head of an ALTER's clause, and its objects, each
+// statement's joined with "; ".
+//
+// Where a schema is a database, a name the plan's own database qualifies is
+// read without that part: a MySQL-family plan writes `app`.`notes` on the
+// target where the dev database's plan writes `app_dev`.`notes`, and both act
+// on the table notes of the database they run in. A name of another database
+// is read as written, and so is every name where info names no database, as on
+// a URL for a whole server, whose plan names each table by its database.
+func sqlUnitSignature(sql string, info catalog.ServerInfo) (action, subject string) {
+	own := ""
+	if schemaScopeNamesDatabase(info.Dialect) {
+		own = info.Schema
 	}
-	names := strings.Split(subject, ", ")
-	for i, name := range names {
-		names[i] = strings.TrimPrefix(name, info.Schema+".")
+	var actions, subjects []string
+	for _, statement := range safety.StatementTargets(sql, info.Dialect) {
+		actions = append(actions, strings.TrimSpace(statement.Action+" "+statement.Clause))
+		names := make([]string, 0, len(statement.Objects))
+		for _, parts := range statement.Objects {
+			if own != "" && len(parts) > 1 && parts[0] == own {
+				parts = parts[1:]
+			}
+			names = append(names, qualifiedName(parts))
+		}
+		subjects = append(subjects, strings.Join(names, ", "))
 	}
-	return strings.Join(names, ", ")
+	return strings.Join(actions, "; "), strings.Join(subjects, "; ")
+}
+
+// qualifiedName joins the parts of a name with dots, quoting a part that holds
+// a dot, so the table "app.notes" and the table notes of app read apart.
+func qualifiedName(parts []string) string {
+	quoted := make([]string, len(parts))
+	for i, part := range parts {
+		quoted[i] = part
+		if strings.Contains(part, ".") {
+			quoted[i] = strconv.Quote(part)
+		}
+	}
+	return strings.Join(quoted, ".")
 }

@@ -1160,10 +1160,14 @@ judges them, the most severe impact wins, and a statement an owner declined is
 API; pre-v1, so no compatibility is owed.
 
 Each assessment `AssessSQL` returns names its statement's object in `Subject`,
-read from the statement's leading words. `migration/safety.StatementAction`
-reads the words before that name, such as `CREATE TABLE` or `ALTER TABLE`, and
-joins the actions of several statements with `"; "`. It names no object and no
-value, so it is read beside `Subject`.
+read from the statement's leading words, and is empty for text that holds
+several statements. `migration/safety.StatementTargets` reads each statement
+of a text the same way into a `StatementTarget`: the uppercased words before the
+object's name with their modifiers (`CREATE UNIQUE INDEX CONCURRENTLY`), the
+name's parts without quotes, and for an ALTER the head of each clause after the
+name (`ADD COLUMN body TEXT`). It stops a clause before a literal, so it reads
+no value. An engine with no descriptor is read with the default lexer rather
+than refused, where `AssessSQL` returns `ErrUnsupportedDialect`.
 
 All `migration/planner.GenerateSchemaDiff*` functions and `Planner.GenerateMigrationAST`
 require the caller's context and selected runtime. AST planning consumes
