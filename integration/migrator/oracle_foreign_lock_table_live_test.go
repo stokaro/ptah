@@ -21,6 +21,8 @@ import (
 // set to 0.
 type foreignSchemaAccounts struct {
 	admin *dbschema.DatabaseConnection
+	// conn is the connection run is on.
+	conn  *dbschema.DatabaseConnection
 	run   *migrator.Migrator
 	owner string
 	login string
@@ -37,9 +39,10 @@ func newForeignSchemaAccounts(c *qt.C) foreignSchemaAccounts {
 		"GRANT CREATE SESSION, CREATE TABLE, CREATE ANY TABLE, CREATE ANY INDEX, INSERT ANY TABLE, SELECT ANY TABLE TO ptah_fl_a_%d",
 		stamp,
 	))
-	run, err := migrator.NewFSMigrator(connectOracleLock(c, oracleAccountURL(c, adminURL, login)), oracleWidgets())
+	conn := connectOracleLock(c, oracleAccountURL(c, adminURL, login))
+	run, err := migrator.NewFSMigrator(conn, oracleWidgets())
 	c.Assert(err, qt.IsNil)
-	return foreignSchemaAccounts{admin: admin, run: run.WithMigrationsTable(owner, ""), owner: owner, login: login}
+	return foreignSchemaAccounts{admin: admin, conn: conn, run: run.WithMigrationsTable(owner, ""), owner: owner, login: login}
 }
 
 // tables counts the tables of both accounts.
@@ -106,5 +109,33 @@ func assertAbsentForeignTableRefused(c *qt.C, accounts foreignSchemaAccounts, er
 	c.Assert(err, qt.ErrorIs, migrator.ErrForeignMetadataTable)
 	c.Assert(err, qt.ErrorMatches, `(?s).*refusing to create metadata table "`+accounts.owner+`"\."`+table+
 		`": its schema belongs to "`+accounts.owner+`" and this connection runs as "`+accounts.login+`".*`)
+	c.Assert(accounts.tables(c), qt.Equals, "0")
+}
+
+// A command that creates nothing is not refused for a revision table that does
+// not exist yet in another account's schema: the status and a dry run of the
+// run report an empty history. A refusal there says Ptah refuses to create a
+// table the command was never going to create. Neither schema gains a table,
+// and the run that would create one is refused, as
+// TestOracleAbsentForeignRevisionTableLive_FailurePath holds.
+//
+// The layout question an adoption preflight asks is asked of a table that
+// exists, and with none it reports the table missing rather than a refusal to
+// create it.
+func TestOracleAbsentForeignRevisionTableReadLive_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	accounts := newForeignSchemaAccounts(c)
+	accounts.conn.SchemaWriter().SetDryRun(true)
+	reader := accounts.run.WithoutMigrationLock()
+
+	status, statusErr := reader.GetMigrationStatus(context.Background())
+	dryRunErr := reader.MigrateUp(context.Background())
+	_, baseErr := reader.RevisionLayoutBase(context.Background())
+
+	c.Assert(statusErr, qt.IsNil)
+	c.Assert(status.PendingMigrations, qt.DeepEquals, []int64{1})
+	c.Assert(dryRunErr, qt.IsNil)
+	c.Assert(baseErr, qt.Not(qt.ErrorIs), migrator.ErrForeignMetadataTable)
+	c.Assert(baseErr, qt.ErrorMatches, `(?s)failed to inspect migrations metadata columns: .*ORA-00942.*`)
 	c.Assert(accounts.tables(c), qt.Equals, "0")
 }

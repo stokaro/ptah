@@ -835,13 +835,28 @@ func columnDefaultChange(
 		if normalize.IsDefaultExpr(dbDefault) {
 			idxName = "default_expr"
 		}
-		if !columnDefaultsEqual(genDefault, dbDefault, genType, dialect,
+		declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault)
+		if !columnDefaultsEqual(declared, reported, genType, dialect,
 			genCol.Default == "" && genCol.DefaultExpr != "") {
 			return idxName, fmt.Sprintf("%s -> %s", dbDefault, genDefault)
 		}
 	}
 
 	return "", ""
+}
+
+// comparableExpressionDefaults answers the declared and the reported default
+// as they are compared. Where the column declares an expression default, both
+// lose the parentheses around the whole of them: `DEFAULT (datetime('now'))`
+// and the `datetime('now')` SQLite reports for it are one default. Compared
+// with them, the declaration differs from the table it built on every run, and
+// SQLite rebuilds the table for it each time. A literal keeps its text, so a
+// string default `(x)` stays a different value from `x`.
+func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported string) (comparedDeclared, comparedReported string) {
+	if genCol.Default != "" || genCol.DefaultExpr == "" {
+		return declared, reported
+	}
+	return normalize.Expression(declared), normalize.Expression(reported)
 }
 
 // columnDefaultsEqual compares both values under the desired column type.

@@ -155,6 +155,7 @@ own measurement conditions.
 | [A file that controls the transaction it runs in](#a-file-that-controls-the-transaction-it-runs-in) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies the files before it and exits `1` with the engine's error; its dry run exits `0` |
 | [A MySQL file the transaction witness refuses](#a-mysql-file-the-transaction-witness-refuses) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies every file, exit `0` |
 | [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
+| [A column written with two defaults](#a-column-written-with-two-defaults) | refuses the column definition on every engine and names the column | keeps the last default on SQLite, exit `0`, and refuses the file on PostgreSQL |
 | [A finding in a goose or dbmate file](#a-finding-in-a-goose-or-dbmate-file) | places it on the statement's line of the source file, at the statement's offset | places it on line 1, the section directive, at an offset that falls there |
 | [Removing a column-level UNIQUE on SQLite](#removing-a-column-level-unique-on-sqlite) | rebuilds the table, and the plan applies to a database the `--from` document created | plans `DROP INDEX` for an index the database does not hold, and the apply exits `1` |
 | [A COLLATE on a SQLite index key](#a-collate-on-a-sqlite-index-key) | reads the key with its collation, so a change of it is planned | reads the column alone, reports the change as synced, and plans the index without it |
@@ -1629,6 +1630,27 @@ own, and the apply refuses the same statement on the same engine, so a lint that
 accepted it would pass a directory Ptah cannot apply.
 
 **Evidence.** `integration/atlas_migrate_lint_replay_failure_e2e_test.go`
+
+## A column written with two defaults
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** A column definition in a SQL schema file that writes
+`DEFAULT` twice is refused, on every engine, before anything is planned:
+`column n carries a second DEFAULT: a column has one default; remove one of
+them`. The pinned community binary v1.3.0 replays the file on the dev database
+and keeps the engine's answer. PostgreSQL refuses `n int DEFAULT 1 DEFAULT 3`
+with `multiple default values specified for column "n"`, and SQLite accepts it
+and keeps the last default, so the binary plans the column with `DEFAULT 3` and
+exits `0`.
+
+A schema file that writes two defaults for one column has lost one of them,
+whichever the engine keeps, and SQLite keeps it without a word. Refusing it on
+every engine says so before a plan does. `PTAH_ATLAS_STRICT_COMPAT=1` keeps the
+refusal: it refuses capabilities the binary lacks, and does not reproduce a
+defect.
+
+**Evidence.** `internal/parser/default_operator_test.go`
 
 ## A finding in a goose or dbmate file
 

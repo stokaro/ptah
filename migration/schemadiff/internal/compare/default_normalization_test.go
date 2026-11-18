@@ -67,3 +67,72 @@ func TestColumns_ADefaultIsNormalizedUnderOneType(t *testing.T) {
 		})
 	}
 }
+
+// TestColumns_AParenthesizedExpressionDefaultIsTheExpression pins that the
+// parentheses around a whole expression default are not part of it. SQLite
+// reports `DEFAULT (datetime('now'))` as `datetime('now')`, and a comparison
+// that kept them reported the table it built as changed on every run.
+func TestColumns_AParenthesizedExpressionDefaultIsTheExpression(t *testing.T) {
+	tests := []struct {
+		name     string
+		genCol   schemamodel.Field
+		reported string
+		want     map[string]string
+	}{
+		{
+			name:     "a call",
+			genCol:   schemamodel.Field{Name: "d", Type: "text", Nullable: true, DefaultExpr: "(datetime('now'))"},
+			reported: "datetime('now')",
+			want:     make(map[string]string),
+		},
+		{
+			name:     "an operator",
+			genCol:   schemamodel.Field{Name: "n", Type: "integer", Nullable: true, DefaultExpr: "(5 - 2)"},
+			reported: "5 - 2",
+			want:     make(map[string]string),
+		},
+		{
+			name:     "a concatenation",
+			genCol:   schemamodel.Field{Name: "s", Type: "text", Nullable: true, DefaultExpr: "('a' || 'b')"},
+			reported: "'a' || 'b'",
+			want:     make(map[string]string),
+		},
+		{
+			name:     "two groups",
+			genCol:   schemamodel.Field{Name: "n", Type: "integer", Nullable: true, DefaultExpr: "((0))"},
+			reported: "0",
+			want:     make(map[string]string),
+		},
+		{
+			// Two groups side by side are not one group around the whole.
+			name:     "groups that do not enclose the whole",
+			genCol:   schemamodel.Field{Name: "n", Type: "integer", Nullable: true, DefaultExpr: "(5) - (2)"},
+			reported: "5 - 2",
+			want:     map[string]string{"default_expr": "5 - 2 -> (5) - (2)"},
+		},
+		{
+			name:     "an expression that changed",
+			genCol:   schemamodel.Field{Name: "n", Type: "integer", Nullable: true, DefaultExpr: "(5 - 3)"},
+			reported: "5 - 2",
+			want:     map[string]string{"default_expr": "5 - 2 -> (5 - 3)"},
+		},
+		{
+			// A literal is a value, and its text is the value.
+			name:     "a string literal",
+			genCol:   schemamodel.Field{Name: "s", Type: "text", Nullable: true, Default: "(x)", DefaultSet: true},
+			reported: "'x'",
+			want:     map[string]string{"default": "'x' -> (x)"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dbCol := catalog.Column{Name: test.genCol.Name, DataType: test.genCol.Type, IsNullable: "YES", ColumnDefault: new(test.reported)}
+
+			result := compare.ColumnsWithDialect(test.genCol, dbCol, platform.SQLite)
+
+			c.Assert(result.Changes, qt.DeepEquals, test.want)
+		})
+	}
+}

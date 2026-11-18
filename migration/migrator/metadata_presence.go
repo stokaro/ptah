@@ -89,8 +89,9 @@ func (m *Migrator) RevisionLayoutBase(ctx context.Context) (bool, error) {
 	// This one selects from the table itself rather than from the catalog, so
 	// it needs the ownership refusal that Initialize performs: a foreign table
 	// can carry a policy or an expression the planner evaluates, and an
-	// adoption preflight reaches here without Initialize having run.
-	if err := m.refuseForeignMetadataTable(ctx, m.migrationsTableName()); err != nil {
+	// adoption preflight reaches here without Initialize having run. It
+	// creates nothing, so it asks only about a table that exists.
+	if err := m.refuseForeignMetadataRead(ctx, m.migrationsTableName()); err != nil {
 		return false, err
 	}
 	if m.revisionTableFormat.isAtlas() {
