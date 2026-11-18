@@ -221,6 +221,15 @@ const fromSideRefusal = "load --from schema: "
 const unkeyedReferenceSound = "CREATE TABLE parent (id bigint PRIMARY KEY, code text NOT NULL);\n" +
 	"CREATE TABLE child (id bigint PRIMARY KEY, code text);\n"
 
+// referenceFaultBesideSetNull is the foreign-key fault of [schemaFaults] with
+// another fault declared ahead of it: a SET NULL action on a NOT NULL column.
+// Ptah's target validation refuses that action and PostgreSQL creates it. The
+// validation stops at its first refusal, so a --from check that runs it whole
+// reports nothing about the foreign key, which PostgreSQL refuses with 42830.
+const referenceFaultBesideSetNull = "CREATE TABLE parent (id bigint PRIMARY KEY, code text NOT NULL);\n" +
+	"CREATE TABLE other (id bigint PRIMARY KEY, parent_id bigint NOT NULL REFERENCES parent (id) ON DELETE SET NULL);\n" +
+	"CREATE TABLE child (id bigint PRIMARY KEY, code text REFERENCES parent (code));\n"
+
 // runDocumentDiff runs `schema diff --from file://from.sql --to file://to.sql`
 // on the fixture's dev database, extra added to the command line with
 // {schema} standing for the dev database's current schema.
@@ -239,7 +248,9 @@ func (f faultFixture) runDocumentDiff(c *qt.C, from, to string, extra ...string)
 // TestSchemaDiffRefusesAReferenceFaultOfEitherDocument_FailurePathE2E puts the
 // foreign-key fault on each side of a diff with the sound schema. PostgreSQL
 // refuses such a key when it creates the table, so the --from document is
-// held to the rule as the --to one is, and its line names the side.
+// held to the rule as the --to one is, and its line names the side. The last
+// row declares a fault of another rule first: the --from document is held to
+// the referenced-key rule alone, so that fault does not hide the key.
 func TestSchemaDiffRefusesAReferenceFaultOfEitherDocument_FailurePathE2E(t *testing.T) {
 	c := qt.New(t)
 	fixture := newFaultFixture(c)
@@ -252,6 +263,7 @@ func TestSchemaDiffRefusesAReferenceFaultOfEitherDocument_FailurePathE2E(t *test
 	}{
 		{name: "faulty --from", from: schemaFaults[1].schema, to: unkeyedReferenceSound, want: "error: " + fromSideRefusal + line + "\n"},
 		{name: "faulty --to", from: unkeyedReferenceSound, to: schemaFaults[1].schema, want: "error: " + line + "\n"},
+		{name: "faulty --from beside a SET NULL fault", from: referenceFaultBesideSetNull, to: unkeyedReferenceSound, want: "error: " + fromSideRefusal + line + "\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

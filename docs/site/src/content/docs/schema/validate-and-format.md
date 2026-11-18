@@ -132,16 +132,20 @@ connects to no database, so it names the table as the source writes it.
 
 A `--to` document of `schema diff` is also held to the target's declaration
 rules, which `schema plan` applies to a desired schema: the types, features
-and keys the target accepts. A `--from` document describes the state a plan
-starts from, so it is held to one of them: the referenced-key rule, which
-refuses a foreign key whose referenced columns no unique key covers (on MySQL
-8.0 and MariaDB, no index). That rule applies only on an engine whose server
-refuses such a key when it creates the table: PostgreSQL, CockroachDB,
-YugabyteDB, MySQL, MariaDB and SQL Server. The line starts with
-`load --from schema:`, and the command exits `2` (`1` on `ptah-compat`). These
-checks read only the tables a run selects. With `--dev-url`, a `--from`
-document compared with a database or a migration directory is created on the
-dev database first, so that server judges it instead.
+and keys the target accepts.
+
+A `--from` document describes the state a plan starts from, so it is held to
+one of those rules: the referenced-key rule, which refuses a foreign key whose
+referenced columns no unique key covers (on MySQL 8.0 and MariaDB, no index).
+That rule applies only on an engine whose server refuses such a key when it
+creates the table: PostgreSQL, CockroachDB, YugabyteDB, MySQL, MariaDB and SQL
+Server. The line starts with `load --from schema:`, and the command exits `2`
+(`1` on `ptah-compat`). A fault of another rule in a `--from` document, such
+as `ON DELETE SET NULL` on a `NOT NULL` column, does not stop the diff and does
+not hide a key the rule refuses. Both documents are checked on the tables a
+run selects. With `--dev-url`, a `--from` document compared with a database or
+a migration directory is created on the dev database first, so that server
+judges it instead.
 
 SQLite creates such a table and, with foreign keys enforced, refuses the first
 write to it. A SQLite database can hold that state, so a `--from` document on
