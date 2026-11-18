@@ -5,6 +5,7 @@ package integration_test
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -23,6 +24,10 @@ const collatedMySQLTables = "ALTER DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb
 
 // mySQLFamilyEngines are the servers a MySQL read is measured on.
 var mySQLFamilyEngines = []dbtarget.Engine{dbtarget.MySQLAdmin, dbtarget.MariaDBAdmin}
+
+// mySQLFamilyDialects are the dialects ptah renders for each of
+// mySQLFamilyEngines.
+var mySQLFamilyDialects = map[dbtarget.Engine]string{dbtarget.MySQLAdmin: "mysql", dbtarget.MariaDBAdmin: "mariadb"}
 
 // inspectCollatedMySQLTables builds collatedMySQLTables in a new database of
 // scratch and runs the compat binary's schema inspect on it in format. It
@@ -124,6 +129,30 @@ func TestCompatSchemaInspectSQLReplaysAMySQLTableCollationE2E(t *testing.T) {
 			inspected, source := inspectCollatedMySQLTables(c, scratch, "{{ sql . }}")
 
 			replayed, _ := scratch.builtFrom(c, inspected.Stdout)
+
+			c.Assert(tableCollationsOf(c, scratch, replayed), qt.DeepEquals, tableCollationsOf(c, scratch, source))
+		})
+	}
+}
+
+// The Go models introspect writes, rendered for the same engine and replayed
+// on a new database of it, create every table with the charset and collation
+// the introspected one has: the read binds a table's character set to both
+// MySQL-family targets, which the export writes as a platform property of
+// each, and the collation is the table directive's collate.
+func TestIntrospectKeepsAMySQLTableCollationE2E(t *testing.T) {
+	for _, engine := range mySQLFamilyEngines {
+		t.Run(engine.String(), func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, engine)
+			source, url := scratch.builtFrom(c, collatedMySQLTables)
+			models := filepath.Join(c.TempDir(), "models")
+			runPtahNative(c, "introspect", "--db-url", url, "--out", models)
+			rendered, notes, err := runPtahSplitStreams(c.Context(),
+				[]string{"schema", "render", "--root-dir", models, "--dialect", mySQLFamilyDialects[engine]})
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", notes))
+
+			replayed, _ := scratch.builtFrom(c, rendered)
 
 			c.Assert(tableCollationsOf(c, scratch, replayed), qt.DeepEquals, tableCollationsOf(c, scratch, source))
 		})

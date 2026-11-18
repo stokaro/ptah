@@ -222,6 +222,7 @@ Maps a Go struct to a database table.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `checks` | No | Comma-separated table-level check expressions. |
+| `collate` | No | MySQL/MariaDB table default collation; see the note below the table. |
 | `comment` | No | Table comment. |
 | `depends_on` | No | Comma-separated tables this table must be created after. |
 | `custom` | No | Raw custom CREATE TABLE SQL. |

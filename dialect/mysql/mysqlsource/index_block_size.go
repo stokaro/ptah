@@ -42,13 +42,14 @@ const primaryKeyHint = "MySQL-family primary index block-size hint."
 // [PrimaryKeyBlockSizeAttribute] of the table directive, read as the hint of
 // the table's primary key, and the claim that a Go source describes every
 // hint, so an index or a key declared without the attribute has none. Its
-// encoder writes the hints back, and a column's settings and an index's
-// parser as the platform properties the owner's property decoding reads, so
-// it declares those models too. Their coverage stays the properties'.
+// encoder writes the hints back, and a column's settings, an index's parser
+// and a table's options as the platform properties the owner's property
+// decoding reads, so it declares those models too. Their coverage stays the
+// properties'.
 func Annotations() annotation.Extension {
 	return annotation.Extension{
 		Owner: mysqlschema.Owner,
-		Kinds: []schemaext.Kind{mysqlschema.IndexBlockSizeKind, mysqlschema.ColumnSettingsKind, mysqlschema.IndexKind},
+		Kinds: []schemaext.Kind{mysqlschema.IndexBlockSizeKind, mysqlschema.ColumnSettingsKind, mysqlschema.IndexKind, mysqlschema.TableKind},
 		Attributes: []annotation.DirectiveAttributes{
 			{
 				Directive: indexDirective,
@@ -71,7 +72,7 @@ func Annotations() annotation.Extension {
 		},
 		Coverage: annotation.Unlimited(BlockSizeCoverage),
 		Encoder:  annotationEncoder{},
-		Encodes:  []schemaext.Kind{mysqlschema.IndexBlockSizeKind, mysqlschema.ColumnSettingsKind, mysqlschema.IndexKind},
+		Encodes:  []schemaext.Kind{mysqlschema.IndexBlockSizeKind, mysqlschema.ColumnSettingsKind, mysqlschema.IndexKind, mysqlschema.TableKind},
 	}
 }
 
