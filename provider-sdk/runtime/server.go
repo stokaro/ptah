@@ -289,6 +289,9 @@ func (s *serverAdapter) Open(ctx context.Context, request *protocol.OpenRequest)
 	if !s.hasEngine(request.GetEngine()) {
 		return nil, status.Error(codes.InvalidArgument, "engine is not owned by this provider")
 	}
+	if err := provider.ValidateOpenRequest(s.negotiated(), request); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	result, err := s.server.Sessions.Open(s.owner(ctx), proto.CloneOf(request))
 	if err != nil {
 		return nil, err

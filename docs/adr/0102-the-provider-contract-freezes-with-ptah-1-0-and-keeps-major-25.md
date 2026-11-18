@@ -260,7 +260,9 @@ Later minors add negotiated additions:
   (ADR 0121);
 - contract 25.40, the current state of another comparison's models
   (ADR 0122);
-- contract 25.41, the kinds of object a read does not describe (ADR 0123).
+- contract 25.41, the kinds of object a read does not describe (ADR 0123);
+- contract 25.42, the reviewed server advisory snapshot a provider carries;
+- contract 25.43, the operator's trust in replayed SQL (ADR 0124).
 
 ## Alternatives considered
 

@@ -7203,7 +7203,14 @@ type OpenRequest struct {
 	// identity records may contain it. A relative file path in it resolves
 	// against the provider's working directory, which the bootstrap sets to the
 	// host's own, so it names the file the host's user means.
-	Address       string `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	Address string `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	// The operator trusts the SQL the run executes on this dev database, with
+	// the privileges of the connection. A provider that confines what a dev
+	// session executes lifts there the refusals its replay guard lifts under
+	// ReplayScope.trusted_sql, and keeps every other check. It grants no
+	// ownership of the server and changes no cleanup scope. Contract 25.43,
+	// sent only when both sides list database.dev-replay-trust.
+	TrustedSql    bool `protobuf:"varint,3,opt,name=trusted_sql,json=trustedSql,proto3" json:"trusted_sql,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7250,6 +7257,13 @@ func (x *OpenRequest) GetAddress() string {
 		return x.Address
 	}
 	return ""
+}
+
+func (x *OpenRequest) GetTrustedSql() bool {
+	if x != nil {
+		return x.TrustedSql
+	}
+	return false
 }
 
 type Session struct {
@@ -26817,7 +26831,16 @@ type ReplayScope struct {
 	// as a whole, and nothing beyond them. Excludes server.
 	Databases bool `protobuf:"varint,4,opt,name=databases,proto3" json:"databases,omitempty"`
 	// The replay owns one pinned session and discards it after every outcome.
-	Session       bool `protobuf:"varint,5,opt,name=session,proto3" json:"session,omitempty"`
+	Session bool `protobuf:"varint,5,opt,name=session,proto3" json:"session,omitempty"`
+	// The operator trusts the SQL the run executes, with the privileges of the
+	// dev connection. The owner then accepts a statement it refuses only
+	// because it cannot confine the statement's effects to the scope above. It
+	// keeps every refusal that protects the run: the replay session's own
+	// state, an effect the cleanup of the scope cannot remove, and anything the
+	// owner's execution relies on. It never widens the scope: server,
+	// provisioned and databases mean what they mean without it. Contract 25.43,
+	// sent only when both sides list database.dev-replay-trust.
+	TrustedSql    bool `protobuf:"varint,6,opt,name=trusted_sql,json=trustedSql,proto3" json:"trusted_sql,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -26883,6 +26906,13 @@ func (x *ReplayScope) GetDatabases() bool {
 func (x *ReplayScope) GetSession() bool {
 	if x != nil {
 		return x.Session
+	}
+	return false
+}
+
+func (x *ReplayScope) GetTrustedSql() bool {
+	if x != nil {
+		return x.TrustedSql
 	}
 	return false
 }
@@ -36783,10 +36813,12 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x0fsource_database\x18\x02 \x01(\tR\x0esourceDatabase\"J\n" +
 	"\x16DatabaseContextRequest\x12\x16\n" +
 	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x18\n" +
-	"\aaddress\x18\x02 \x01(\tR\aaddress\"?\n" +
+	"\aaddress\x18\x02 \x01(\tR\aaddress\"`\n" +
 	"\vOpenRequest\x12\x16\n" +
 	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x18\n" +
-	"\aaddress\x18\x02 \x01(\tR\aaddress\"\xe9\x03\n" +
+	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x1f\n" +
+	"\vtrusted_sql\x18\x03 \x01(\bR\n" +
+	"trustedSql\"\xe9\x03\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06engine\x18\x02 \x01(\tR\x06engine\x12\x1a\n" +
@@ -38755,13 +38787,15 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\aOutcome\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\v\n" +
 	"\aCLEANED\x10\x01\x12\v\n" +
-	"\aREFUSED\x10\x02\"\x9b\x01\n" +
+	"\aREFUSED\x10\x02\"\xbc\x01\n" +
 	"\vReplayScope\x12\x1a\n" +
 	"\bdatabase\x18\x01 \x01(\tR\bdatabase\x12\x16\n" +
 	"\x06server\x18\x02 \x01(\bR\x06server\x12 \n" +
 	"\vprovisioned\x18\x03 \x01(\bR\vprovisioned\x12\x1c\n" +
 	"\tdatabases\x18\x04 \x01(\bR\tdatabases\x12\x18\n" +
-	"\asession\x18\x05 \x01(\bR\asession\"\x8b\x01\n" +
+	"\asession\x18\x05 \x01(\bR\asession\x12\x1f\n" +
+	"\vtrusted_sql\x18\x06 \x01(\bR\n" +
+	"trustedSql\"\x8b\x01\n" +
 	"\x12GuardReplayRequest\x12\x16\n" +
 	"\x06engine\x18\x01 \x01(\tR\x06engine\x12=\n" +
 	"\x05scope\x18\x02 \x01(\v2'.ptah.provider.experimental.ReplayScopeR\x05scope\x12\x1e\n" +
