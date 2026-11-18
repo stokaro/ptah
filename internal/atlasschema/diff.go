@@ -655,19 +655,10 @@ func diffResolvedStates(
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	// Without a held connection, validate using the selected target's offline
-	// facts before the declaration reaches planning (stokaro/ptah#2315).
-	// A held connection validates the same
-	// schema with the identifier semantics that server resolves. Run here
-	// instead, the validation would use the offline rules, and on SQL Server
-	// those keep no two names apart: every table with two columns would be
-	// refused (stokaro/ptah#4122).
-	if conn == nil {
-		if err := validateDesiredDiffComparison(
-			ctx, opts.Runtime, to, fromSide.database, dialect, capabilities,
-		); err != nil {
-			return atlasreport.SchemaDiff{}, nil, err
-		}
+	if err := validateDiffDeclarations(
+		ctx, conn, opts.Runtime, fromState, from, to, fromSide.database, dialect, capabilities,
+	); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
 	}
 
 	// Both documents and live reads may carry knowledge limits. Preserve them
@@ -950,6 +941,63 @@ func validateDesiredDiffComparison(
 		return err
 	}
 	return schemadiff.ValidateRolePasswordComparison(desired, current, selected)
+}
+
+// validateDiffDeclarations runs the target validation of both sides before
+// the declarations reach planning: a --from read from a document first, see
+// [validateDiffFromDocument], then the --to declaration.
+//
+// Without a held connection, the --to declaration is validated here using the
+// selected target's offline facts (stokaro/ptah#2315). A held connection
+// validates the same schema with the identifier semantics that server
+// resolves. Run here instead, the validation would use the offline rules, and
+// on SQL Server those keep no two names apart: every table with two columns
+// would be refused (stokaro/ptah#4122). A --from read from a document has no
+// held connection, since conn is the connection the --from side was read on.
+func validateDiffDeclarations(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	service schemavalidation.Runtime,
+	fromState atlassource.State,
+	from, to *schemamodel.Database,
+	current *catalog.Database,
+	dialect string,
+	capabilities capability.Capabilities,
+) error {
+	if err := validateDiffFromDocument(ctx, service, fromState, from, dialect, capabilities); err != nil {
+		return err
+	}
+	if conn != nil {
+		return nil
+	}
+	return validateDesiredDiffComparison(ctx, service, to, current, dialect, capabilities)
+}
+
+// validateDiffFromDocument checks a --from side read from a document with the
+// target validation the --to declaration gets, on the same placed and selected
+// names, so the two sides are refused for the same fault in the same words.
+// The community binary creates each document on its dev database, so a
+// document its server refuses fails on either side: measured with v1.3.0 on
+// PostgreSQL, a --from that references a column no unique key covers exits 1
+// with the server's 42830. A side read from a database or replayed from a
+// migration directory holds only what its server accepted, and is not checked.
+// The role-password half of [validateDesiredDiffComparison] is left out: it
+// compares a declaration with the state it changes, and --from is that state.
+func validateDiffFromDocument(
+	ctx context.Context,
+	service schemavalidation.Runtime,
+	state atlassource.State,
+	from *schemamodel.Database,
+	dialect string,
+	capabilities capability.Capabilities,
+) error {
+	if state.DB != nil {
+		return nil
+	}
+	return schemadiff.ValidateDesiredSchema(ctx, service, from, catalog.ServerInfo{
+		Dialect:      dialect,
+		Capabilities: capabilities,
+	})
 }
 
 func validateDiffSystemSchemaStates(

@@ -103,8 +103,8 @@ var targetCommands = []targetCommand{
 }
 
 // fromDocumentDiff is `schema diff` with the schema as its --from document. It
-// checks the indexes of that document, as of a --to one, and the comparison
-// faults of the --to side alone, so it joins the index rows only.
+// checks that document as it checks a --to one, for both faults, and names the
+// table by the dev database's current schema.
 var fromDocumentDiff = targetCommand{
 	name:     "schema diff of two documents, the schema as --from",
 	args:     []string{"schema", "diff", "--from", "file://schema.sql", "--to", "file://empty.sql", "--dev-url", "{dev}"},
@@ -176,26 +176,32 @@ func TestSchemaCommandsNameAFaultTableByTheCurrentSchema_FailurePathE2E(t *testi
 	}
 }
 
-// TestSchemaDiffNamesAnIndexFaultOfItsFromDocument_FailurePathE2E runs
-// [fromDocumentDiff] on the index fault, alone and with t excluded, and expects
-// the line of a --to document, the table named by the dev database's current
-// schema. Without the check of the --from side, the diff plans the table's
-// removal and exits 0.
-func TestSchemaDiffNamesAnIndexFaultOfItsFromDocument_FailurePathE2E(t *testing.T) {
+// TestSchemaDiffNamesAFaultOfItsFromDocument_FailurePathE2E runs
+// [fromDocumentDiff] on each fault, and on the index fault with t excluded, and
+// expects the line of a --to document, the table named by the dev database's
+// current schema. Without the check of the --from side, the diff plans the
+// tables' removal and exits 0: the index check covers the index rows, and the
+// target validation the foreign-key row.
+func TestSchemaDiffNamesAFaultOfItsFromDocument_FailurePathE2E(t *testing.T) {
 	c := qt.New(t)
 	fixture := newFaultFixture(c)
-	want := fmt.Sprintf(schemaFaults[0].line, fixture.current[fromDocumentDiff.placedOn]+".t")
 
 	for _, test := range []struct {
 		name   string
 		schema string
 		extra  []string
+		fault  schemaFault
 	}{
-		{name: "index fault", schema: schemaFaults[0].schema},
-		{name: "index fault on an excluded table", schema: excludedFaultSchema, extra: []string{"--exclude", "{schema}.t"}},
+		{name: schemaFaults[0].name, schema: schemaFaults[0].schema, fault: schemaFaults[0]},
+		{name: schemaFaults[1].name, schema: schemaFaults[1].schema, fault: schemaFaults[1]},
+		{
+			name: "index on an undeclared column of an excluded table", schema: excludedFaultSchema,
+			extra: []string{"--exclude", "{schema}.t"}, fault: schemaFaults[0],
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			want := fmt.Sprintf(test.fault.line, fixture.current[fromDocumentDiff.placedOn]+"."+test.fault.table)
 			result := fixture.run(c, fromDocumentDiff, test.schema, test.extra...)
 			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
 			c.Assert(result.ExitCode, qt.Equals, 2, comment)

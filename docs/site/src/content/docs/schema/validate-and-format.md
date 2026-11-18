@@ -123,6 +123,11 @@ schema diff` refuses the same documents and exits `1`. The check reads the
 whole document: `--exclude` and `--include` choose what a run changes, and do
 not hide a fault in what it reads.
 
+`schema diff` also holds every side it reads from a document to the target's
+rules, such as a foreign key whose referenced columns no unique key covers. A
+`--from` document gets the line a `--to` document gets, and the command exits
+`2` (`1` on `ptah-compat`). These rules read only the tables a run selects.
+
 On a PostgreSQL URL that pins no `search_path`, those commands first place a
 table the schema names without a schema in the connection's current schema
 ([PostgreSQL](../../databases/postgresql/#connecting)), so the line names the
