@@ -150,6 +150,18 @@ func namedColumnCheck(table string, column *ast.ColumnNode) *ast.ColumnNode {
 
 // tableLeafName drops the schema qualifier, so a table in a named schema gets
 // the same check name it would get in the default one.
+// storedQualifiedName is table as a message names it: a part that needs
+// quotes is the name it is stored under, without them, and a bare part stays
+// as written. The spelled app."Cust" is app.Cust, where the model's own form
+// reads app."""Cust""" once the message quotes it.
+func storedQualifiedName(table string) string {
+	parts := splitQualifiedIdentifier(table)
+	for i, part := range parts {
+		parts[i], _ = writtenName(part)
+	}
+	return strings.Join(parts, ".")
+}
+
 func tableLeafName(table string) string {
 	parts := splitQualifiedIdentifier(table)
 	if len(parts) == 0 {
@@ -361,7 +373,7 @@ func quotedColumnsAreQuotedInExpressions(node *ast.CreateTableNode) error {
 			return unsupportedFeaturef(
 				"column %q of table %q needs quoting in Oracle, and the expression %q names it without quotes; "+
 					"an unquoted name folds to upper case and refers to a different column, so write %s in the expression",
-				stored, node.Name, strings.TrimSpace(expression), escapeIdentifier(column.Name))
+				stored, storedQualifiedName(node.Name), strings.TrimSpace(expression), escapeIdentifier(column.Name))
 		}
 	}
 	return nil

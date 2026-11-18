@@ -94,7 +94,7 @@ func TestSpelledColumn_BareReference_FailurePath(t *testing.T) {
 				&ast.ColumnNode{Name: `"Code"`, Type: "VARCHAR2(10)", Nullable: true},
 				&ast.ColumnNode{Name: `"Twice"`, Type: "NUMBER(10)", Nullable: true},
 			),
-			wantErr: `.*column "Status" of table .* needs quoting in Oracle, and the expression "Status IN \('a','b'\)" names it without quotes; .* so write "Status" in the expression`,
+			wantErr: `.*column "Status" of table "Cust" needs quoting in Oracle, and the expression "Status IN \('a','b'\)" names it without quotes; .* so write "Status" in the expression`,
 		},
 		{
 			name: "a DEFAULT",
@@ -103,7 +103,7 @@ func TestSpelledColumn_BareReference_FailurePath(t *testing.T) {
 				&ast.ColumnNode{Name: `"Code"`, Type: "VARCHAR2(10)", Nullable: true, Default: &ast.DefaultValue{Expression: `'c' || status`}},
 				&ast.ColumnNode{Name: `"Twice"`, Type: "NUMBER(10)", Nullable: true},
 			),
-			wantErr: `.*column "Status" of table .* the expression "'c' \|\| status" names it without quotes; .* so write "Status" in the expression`,
+			wantErr: `.*column "Status" of table "Cust" needs quoting in Oracle, and the expression "'c' \|\| status" names it without quotes; .* so write "Status" in the expression`,
 		},
 		{
 			name: "a virtual column",
@@ -112,7 +112,7 @@ func TestSpelledColumn_BareReference_FailurePath(t *testing.T) {
 				&ast.ColumnNode{Name: `"Code"`, Type: "VARCHAR2(10)", Nullable: true},
 				&ast.ColumnNode{Name: `"Twice"`, Type: "NUMBER(10)", Nullable: true, GeneratedExpression: `Id * 2`},
 			),
-			wantErr: `.*column "Id" of table .* the expression "Id \* 2" names it without quotes; .* so write "Id" in the expression`,
+			wantErr: `.*column "Id" of table "Cust" needs quoting in Oracle, and the expression "Id \* 2" names it without quotes; .* so write "Id" in the expression`,
 		},
 		{
 			name: "a lower-case column in a CHECK",
