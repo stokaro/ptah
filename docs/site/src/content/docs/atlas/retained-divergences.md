@@ -153,7 +153,7 @@ own measurement conditions.
 | [A MySQL file the transaction witness refuses](#a-mysql-file-the-transaction-witness-refuses) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies every file, exit `0` |
 | [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
 | [A finding in a goose or dbmate file](#a-finding-in-a-goose-or-dbmate-file) | places it on the statement's line of the source file, at the statement's offset | places it on line 1, the section directive, at an offset that falls there |
-| [A UNIQUE a SQLite column declares, removed](#a-unique-a-sqlite-column-declares-removed) | rebuilds the table, and the plan applies to a database the `--from` document created | plans `DROP INDEX` for an index the database does not hold, and the apply exits `1` |
+| [Removing a column-level UNIQUE on SQLite](#removing-a-column-level-unique-on-sqlite) | rebuilds the table, and the plan applies to a database the `--from` document created | plans `DROP INDEX` for an index the database does not hold, and the apply exits `1` |
 | [A COLLATE on a SQLite index key](#a-collate-on-a-sqlite-index-key) | reads the key with its collation, so a change of it is planned | reads the column alone, reports the change as synced, and plans the index without it |
 
 ## A `--config` selection naming more than one file
@@ -1557,7 +1557,7 @@ source line. Ptah places the finding where the statement is.
 
 **Evidence.** `integration/migrate_lint_converted_source_lines_e2e_test.go`
 
-## A UNIQUE a SQLite column declares, removed
+## Removing a column-level UNIQUE on SQLite
 
 **Type.** Divergence: a defect not copied
 
@@ -1591,8 +1591,9 @@ rebuilds `parent` with the `UNIQUE` on the column, as the document declares it.
 
 **Current boundary.** `ptah-compat` reads a SQLite index key that carries a
 `COLLATE` of its own, `CREATE UNIQUE INDEX pc ON parent (code COLLATE NOCASE)`,
-as that text, the shape a document gives it, so the two compare equal and a
-change of the collation is a change. The pinned community binary v1.3.0 reads
+as its text, spelled as a document's key is spelled whatever the quoting, the
+`ASC`, comments or spacing, so the two compare equal and a change of the
+collation is a change. The pinned community binary v1.3.0 reads
 the column alone. Measured on 2026-11-18 with `schema diff --dev-url
 "sqlite://dev?mode=memory"`, a database holding `parent (id INTEGER PRIMARY
 KEY, code TEXT NOT NULL)` and that index:
