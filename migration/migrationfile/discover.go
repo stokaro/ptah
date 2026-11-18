@@ -129,8 +129,15 @@ func discover(fsys fs.FS, format DirFormat, reading rReading) (discovered, error
 	if len(files) == 0 && len(repeatables) == 0 && len(sqlFiles) > 0 {
 		return discovered{}, fmt.Errorf("no migration files matched format %q; unrecognized SQL files: %s", format, strings.Join(sqlFiles, ", "))
 	}
-	if isAtlasSelection(files) && (format == DirFormatAtlas || hasAtlasSum) {
+	// Whenever Atlas governs the directory, whichever files the reading
+	// selected: the community binary runs every top-level file atlas.sum
+	// covers, so a file this reading leaves out is one it would never run.
+	// The Ptah format, asked for by name, is never governed by atlas.sum.
+	if format == DirFormatAtlas || atlasSumGovernsSelection(format, hasAtlasSum) {
 		if err := refuseUnreadAtlasFiles(versioned, atlasFiles); err != nil {
+			return discovered{}, err
+		}
+		if err := refuseOmittedAtlasFiles(sqlFiles, files, repeatables); err != nil {
 			return discovered{}, err
 		}
 	}
@@ -231,6 +238,36 @@ func refuseUnreadAtlasFiles(sqlFiles []string, atlasFiles []File) error {
 			"directory, under the text before the first underscore of its name, so Ptah refuses the "+
 			"directory rather than leave these files unapplied",
 		strings.Join(unread, ", "),
+	)
+}
+
+// refuseOmittedAtlasFiles refuses a directory Atlas governs whose selection
+// leaves out a top-level SQL file, such as v1_x.sql beside a Ptah pair in a
+// directory hashed into atlas.sum. Auto mode reads the pair as Ptah files and
+// v1_x.sql as no migration, while Atlas runs all three, so without this
+// refusal the pair applies and the directory reports itself applied.
+func refuseOmittedAtlasFiles(sqlFiles []string, files []File, repeatables []RepeatableFile) error {
+	selected := make(map[string]struct{}, len(files)+len(repeatables))
+	for _, file := range files {
+		selected[file.Path] = struct{}{}
+	}
+	for _, repeatable := range repeatables {
+		selected[repeatable.Path] = struct{}{}
+	}
+	var omitted []string
+	for _, p := range sqlFiles {
+		if _, ok := selected[p]; !ok && path.Base(p) == p {
+			omitted = append(omitted, p)
+		}
+	}
+	if len(omitted) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"migration files the selected format does not read: %s. atlas.sum covers them and Atlas runs every "+
+			"SQL file at the top level of the directory, so Ptah refuses the directory rather than leave them "+
+			"unapplied; read it with --dir-format atlas, or remove them from the directory",
+		strings.Join(omitted, ", "),
 	)
 }
 

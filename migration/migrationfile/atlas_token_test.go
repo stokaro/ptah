@@ -108,3 +108,33 @@ func TestDiscover_OrderKeys(t *testing.T) {
 		})
 	}
 }
+
+// TestDiscover_FailurePath_AnAtlasGovernedFileTheSelectionLeavesOut refuses a
+// directory Atlas governs whose selection leaves a top-level file out. Beside
+// atlas.sum, auto mode reads the Ptah pair as Ptah files and v1_x.sql as no
+// migration, and the pinned community binary v1.3.0 runs all three; read with
+// Atlas repeatables, R__view.sql is a repeatable and _x.sql is version "",
+// which no command can name.
+func TestDiscover_FailurePath_AnAtlasGovernedFileTheSelectionLeavesOut(t *testing.T) {
+	c := qt.New(t)
+	pair := fstest.MapFS{
+		"0000000001_a.up.sql":   {Data: []byte("CREATE TABLE a (id int);\n")},
+		"0000000001_a.down.sql": {Data: []byte("DROP TABLE a;\n")},
+		"v1_x.sql":              {Data: []byte("CREATE TABLE v (id int);\n")},
+		"atlas.sum": {Data: []byte("h1:x=\n0000000001_a.down.sql h1:x=\n0000000001_a.up.sql h1:x=\n" +
+			"v1_x.sql h1:x=\n")},
+	}
+	repeatable := fstest.MapFS{
+		"R__view.sql": {Data: []byte("CREATE VIEW v AS SELECT 1;\n")},
+		"_x.sql":      {Data: []byte("CREATE TABLE x (id int);\n")},
+	}
+
+	files, err := migrationfile.Discover(pair, migrationfile.DirFormatAuto)
+	_, repeatables, repeatableErr := migrationfile.DiscoverAtlasRepeatables(repeatable)
+
+	c.Assert(err, qt.ErrorMatches, `migration files the selected format does not read: v1_x\.sql\. atlas\.sum covers `+
+		`them .*`)
+	c.Assert(files, qt.IsNil)
+	c.Assert(repeatableErr, qt.ErrorMatches, `Atlas migration files Ptah cannot run: _x\.sql \(version ""\)\..*`)
+	c.Assert(repeatables, qt.IsNil)
+}
