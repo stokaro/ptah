@@ -229,9 +229,11 @@ func (p *FSMigrationProvider) repeatableFromRecord(identity, path string, body [
 }
 
 // newRepeatable reads data as the body of the repeatable migration identity.
-// name is what a directive error names.
+// name is what a directive error names. The SQL is the text
+// [migrationfile.SQLText] reads out of data, while the digest and the kept
+// body are data itself, byte for byte.
 func (p *FSMigrationProvider) newRepeatable(identity, name string, data []byte) (*repeatableMigration, error) {
-	up, err := migrationFuncFromSQLStringWithMetadata(name, string(data), p.hooks)
+	up, err := migrationFuncFromSQLStringWithMetadata(name, migrationfile.SQLText(string(data)), p.hooks)
 	if err != nil {
 		return nil, err
 	}

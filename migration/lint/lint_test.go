@@ -490,6 +490,16 @@ ALTER TABLE t ADD COLUMN c INT;`,
 CREATE INDEX CONCURRENTLY idx ON t (id);
 ALTER TABLE t ADD COLUMN c INT;`,
 		},
+		// A byte order mark in front of the directive is the file's encoding,
+		// not text on the directive's line, so the directive still holds.
+		{
+			name: "ptah directive after a byte order mark",
+			sql:  "\uFEFF-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY idx ON t (id);\nALTER TABLE t ADD COLUMN c INT;",
+		},
+		{
+			name: "atlas directive after a byte order mark",
+			sql:  "\uFEFF-- atlas:txmode none\n\nCREATE INDEX CONCURRENTLY idx ON t (id);\nALTER TABLE t ADD COLUMN c INT;",
+		},
 	}
 
 	for _, tt := range tests {
