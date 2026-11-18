@@ -68,6 +68,8 @@ import (
 //     descriptor is the one statement of each.
 //   - a key USING INDEX in ALTER TABLE ... ADD reads PostgreSQL alone, the one
 //     engine measured to take it.
+//   - a column's COLLATE read as a name or a schema and a name, folded unless
+//     quoted, on PostgreSQL alone.
 //
 // YDB's documents never reach the shared grammar, which refuses the YQL
 // lexer before any of the switches is asked, so it states no grammar.
@@ -81,7 +83,7 @@ var noOldSwitch = cmp.Options{
 
 var oldParserSwitches = map[string]descriptor.Grammar{
 	platform.Postgres: {
-		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
+		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true, QualifiedCollations: true},
 		Constraints: descriptor.ConstraintGrammar{
 			Enforcement: descriptor.Enforcement{Checks: true, ForeignKeys: true, Once: true},
 			NotValid:    true,

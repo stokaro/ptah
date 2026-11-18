@@ -121,15 +121,11 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 			Increment:  column.IdentityIncrement,
 			Options:    column.IdentityOptions,
 		})
-		// UNIQUE and AUTOINCREMENT are written; the rest of the column's
-		// properties are not. SQLite does have a column COLLATE clause, so the
-		// collation is a declaration this target could carry and does not.
+		// UNIQUE, AUTOINCREMENT and COLLATE are written; the rest of the
+		// column's properties are not.
 		r.sink.RecordLostColumnProperties(
 			renderdiag.ColumnName(node.Name, column.Name),
-			renderdiag.ColumnProperties{
-				Collate:               column.Collate,
-				NotNullConstraintName: column.NotNullConstraintName,
-			},
+			renderdiag.ColumnProperties{NotNullConstraintName: column.NotNullConstraintName},
 		)
 	}
 	// Only the PostgreSQL family renders a PARTITION BY clause, so a
@@ -688,6 +684,11 @@ func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string,
 		return "", fmt.Errorf("nil column")
 	}
 	parts := []string{"  " + escapeIdentifier(column.Name), mapColumnType(column)}
+	if column.Collate != "" {
+		// The name bare where it is a plain one, quoted otherwise: sqlite3
+		// 3.51.0 finds a collation by its name in either spelling.
+		parts = append(parts, "COLLATE", sqlident.BareOrQuoted(DialectName, column.Collate))
+	}
 	if column.AutoInc && !column.Primary {
 		return "", unsupportedFeaturef("AUTOINCREMENT requires an INTEGER PRIMARY KEY column")
 	}

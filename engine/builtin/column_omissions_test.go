@@ -49,8 +49,9 @@ func lostProperties(c *qt.C, database *schemamodel.Database, dialect string) []s
 // It decides which values a comparison and a unique index treat as equal, and
 // most of the targets that drop it here do have a column COLLATE clause, so the
 // declaration is lost passing through Ptah rather than by the server's
-// incapacity (stokaro/ptah#2983). PostgreSQL writes it, and CockroachDB and
-// YugabyteDB, which the same renderer serves, report it lost.
+// incapacity (stokaro/ptah#2983). PostgreSQL and SQLite write it, and
+// CockroachDB and YugabyteDB, which the PostgreSQL renderer serves, report it
+// lost.
 func TestGetOrderedCreateStatementsReportingOmissions_NamesALostCollation(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -62,7 +63,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesALostCollation(t *tes
 		{name: "postgres writes it", dialect: platform.Postgres, want: nil},
 		{name: "cockroachdb drops it", dialect: platform.CockroachDB, want: []string{"collation"}},
 		{name: "yugabytedb drops it", dialect: platform.YugabyteDB, want: []string{"collation"}},
-		{name: "sqlite drops it", dialect: platform.SQLite, want: []string{"collation"}},
+		{name: "sqlite writes it", dialect: platform.SQLite, want: nil},
 		{name: "sql server drops it", dialect: platform.SQLServer, want: []string{"collation"}},
 		{name: "oracle drops it", dialect: platform.Oracle, want: []string{"collation"}},
 		{name: "clickhouse drops it", dialect: platform.ClickHouse, want: []string{"collation"}},
@@ -380,6 +381,18 @@ func TestGetOrderedCreateStatementsReportingOmissions_ATargetWritesWhatItKeeps(t
 			dialect: platform.Postgres,
 			field:   schemamodel.Field{Name: "title", Type: "VARCHAR(80)", Unique: true},
 			want:    "UNIQUE",
+		},
+		{
+			name:    "sqlite writes the collation",
+			dialect: platform.SQLite,
+			field:   schemamodel.Field{Name: "title", Type: "VARCHAR(80)", Collate: "NOCASE"},
+			want:    `"title" TEXT COLLATE NOCASE NOT NULL`,
+		},
+		{
+			name:    "sqlite quotes a collation that is not a plain name",
+			dialect: platform.SQLite,
+			field:   schemamodel.Field{Name: "title", Type: "VARCHAR(80)", Collate: "my coll"},
+			want:    `"title" TEXT COLLATE "my coll" NOT NULL`,
 		},
 		{
 			name:    "sqlite writes a unique column",

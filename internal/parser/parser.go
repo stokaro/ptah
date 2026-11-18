@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/chtype"
 	"ptah.run/internal/clientdelimiter"
+	"ptah.run/internal/collatedkey"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
@@ -2930,8 +2931,17 @@ func (p *Parser) handleCollate(column *ast.ColumnNode) error {
 	p.advance()
 	p.skipWhitespace()
 
-	if p.target.collations {
+	if p.target.qualifiedCollations {
 		return p.readCollationName(column)
+	}
+	if p.target.collations {
+		name, ok := collatedkey.CollationName(p.current)
+		if !ok {
+			return ptaherr.At(p.current.Start, fmt.Errorf("expected collation name: %q is not a name", p.current.Value))
+		}
+		p.advance()
+		column.Collate = name
+		return nil
 	}
 	var collation string
 	switch p.current.Type {
