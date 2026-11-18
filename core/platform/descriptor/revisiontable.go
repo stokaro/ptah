@@ -83,6 +83,10 @@ type RevisionTable struct {
 	// as NULL and keeps revision text in a type that refuses COALESCE with an
 	// empty string.
 	EmptyStringIsNull bool `json:"empty_string_is_null,omitempty"`
+	// EmptyBinary is the expression that stores a zero-length value in the
+	// repeatable record's binary body column, on an engine that stores a
+	// bound empty value as NULL. Empty binds the value.
+	EmptyBinary string `json:"empty_binary,omitempty"`
 	// RowLock is how a read of every revision locks the rows it read until
 	// its transaction ends: "for-update" (a FOR UPDATE suffix),
 	// "table-hint" (WITH (UPDLOCK, HOLDLOCK) after the table), or empty for

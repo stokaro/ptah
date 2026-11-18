@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"time"
 
 	"ptah.run/core/sqlutil"
@@ -100,14 +101,17 @@ func (m *Migrator) scanRepeatableRow(scanner rowScanner) (repeatableRow, error) 
 	var row repeatableRow
 	var transactional int64
 	var attemptedAt, appliedAt any
-	var errorText sql.NullString
+	// checksum is empty until a content applies, which an engine that stores
+	// an empty string as NULL reads back as NULL.
+	var checksum, errorText sql.NullString
 	var hasBody int64
 	if err := scanner.Scan(
-		&row.identity, &row.checksum, &row.state, &row.attemptChecksum, &row.attemptOrder, &transactional,
+		&row.identity, &checksum, &row.state, &row.attemptChecksum, &row.attemptOrder, &transactional,
 		&attemptedAt, &appliedAt, &errorText, &hasBody,
 	); err != nil {
 		return repeatableRow{}, err
 	}
+	row.checksum = checksum.String
 	row.transactional = transactional != 0
 	row.hasBody = hasBody != 0
 	row.errorText = errorText.String
@@ -188,11 +192,19 @@ func (m *Migrator) completeRepeatableOn(
 	conn *dbschema.DatabaseConnection,
 	repeatable *repeatableMigration,
 ) error {
-	query := "UPDATE " + m.repeatableTable() + " SET state = ?, checksum = ?, body = ?, applied_at = ?, error = NULL " +
-		"WHERE " + m.repeatableIdentity() + " = ?"
-	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), query),
+	set := "SET state = ?, checksum = ?, body = ?, applied_at = ?, error = NULL"
+	args := []any{
 		RepeatableStateApplied, repeatable.checksum, repeatable.body, nativeRevisionTimestamp(time.Now()),
-		repeatable.identity)
+		repeatable.identity,
+	}
+	// An empty file is a kept body. Where a bound empty value is stored as
+	// NULL, which reads as no body, the engine's own expression stores it.
+	if empty := m.revisionTable().EmptyBinary; empty != "" && len(repeatable.body) == 0 {
+		set = "SET state = ?, checksum = ?, body = " + empty + ", applied_at = ?, error = NULL"
+		args = slices.Delete(args, 2, 3)
+	}
+	query := "UPDATE " + m.repeatableTable() + " " + set + " WHERE " + m.repeatableIdentity() + " = ?"
+	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), query), args...)
 }
 
 // failRepeatable records that the attempt's body failed. It runs on a context
