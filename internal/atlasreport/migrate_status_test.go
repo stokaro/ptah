@@ -215,7 +215,7 @@ func TestWriteMigrateStatusFormat_JSONShape(t *testing.T) {
 		AppliedRevisions: []migrator.MigrationRevision{
 			{
 				Version:         1,
-				Description:     "Create Users",
+				Description:     "create_users",
 				AtlasType:       migrator.AtlasRevisionTypeApplied,
 				Applied:         1,
 				Total:           1,
@@ -257,6 +257,83 @@ func TestWriteMigrateStatusFormat_JSONShape(t *testing.T) {
 	c.Assert(got.Current, qt.Equals, "1")
 	c.Assert(got.Next, qt.Equals, "2")
 	c.Assert(got.Status, qt.Equals, "PENDING")
+}
+
+// statusRevision is a revision row as the Atlas revision table holds it.
+func statusRevision(c *qt.C, version int64, token, description string) migrator.MigrationRevision {
+	c.Helper()
+	var revision migrator.MigrationRevision
+	row, err := json.Marshal(map[string]any{
+		"version": version, "atlas_version": token, "description": description, "applied": 1, "total": 1,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(json.Unmarshal(row, &revision), qt.IsNil)
+	return revision
+}
+
+// TestWriteMigrateStatusFormat_ListsInTheCommunityBinaryOrder holds the lists
+// to the order the pinned community binary v1.3.0 prints after applying
+// 10_b.sql and then 1_a.sql: Available and Pending by file name, byte for
+// byte, so R__view.sql is last, and Applied by version string, not in the
+// order the rows were written.
+func TestWriteMigrateStatusFormat_ListsInTheCommunityBinaryOrder(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	err := atlasreport.WriteMigrateStatusFormat(&out,
+		`{{ range .Available }}{{ .Name }} {{ end }}|{{ range .Pending }}{{ .Version }} {{ end }}|{{ range .Applied }}{{ .Version }} {{ end }}`,
+		atlasreport.MigrateStatusOptions{
+			FS: fstest.MapFS{
+				"1_a.sql":               {Data: []byte("CREATE TABLE a (id int);")},
+				"10_b.sql":              {Data: []byte("CREATE TABLE b (id int);")},
+				"2_c.sql":               {Data: []byte("CREATE TABLE c (id int);")},
+				"R__view.sql":           {Data: []byte("CREATE TABLE r (id int);")},
+				"20260101000000_ts.sql": {Data: []byte("CREATE TABLE ts (id int);")},
+			},
+			Status: &migrator.MigrationStatus{
+				AppliedMigrations:    []int64{10, 1},
+				PendingMigrations:    []int64{20260101000000, 2, 0},
+				PendingMigrationKeys: []string{"20260101000000", "2", "R"},
+				HasPendingChanges:    true,
+			},
+			AppliedRevisions: []migrator.MigrationRevision{
+				statusRevision(c, 10, "10", "b"),
+				statusRevision(c, 1, "1", "a"),
+			},
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(out.String(), qt.Equals, "10_b.sql 1_a.sql 20260101000000_ts.sql 2_c.sql R__view.sql |20260101000000 2 R |1 10 ")
+}
+
+// TestWriteMigrateStatusFormat_AppliedDescriptionIsTheRevisionRows holds
+// Applied to the description the revision table holds, present when empty.
+// Measured on the pinned community binary v1.3.0: a row whose description was
+// rewritten to zzz under 1_init.sql reads back zzz, and the row of 1.sql
+// prints "Description":"".
+func TestWriteMigrateStatusFormat_AppliedDescriptionIsTheRevisionRows(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	err := atlasreport.WriteMigrateStatusFormat(&out, `{{ json .Applied }}`, atlasreport.MigrateStatusOptions{
+		FS: fstest.MapFS{
+			"1_init.sql": {Data: []byte("CREATE TABLE a (id int);")},
+			"2.sql":      {Data: []byte("CREATE TABLE b (id int);")},
+		},
+		Status: &migrator.MigrationStatus{AppliedMigrations: []int64{1, 2}},
+		AppliedRevisions: []migrator.MigrationRevision{
+			statusRevision(c, 1, "1", "zzz"),
+			statusRevision(c, 2, "2", ""),
+		},
+	})
+
+	c.Assert(err, qt.IsNil)
+	var got []struct{ Description *string }
+	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
+	c.Assert(got, qt.HasLen, 2)
+	c.Assert(got[0].Description, qt.DeepEquals, new("zzz"))
+	c.Assert(got[1].Description, qt.DeepEquals, new(""))
 }
 
 func TestWriteMigrateStatusFormat_JSONPreservesPresentEmptyIdentities(t *testing.T) {

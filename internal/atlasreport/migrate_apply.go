@@ -100,7 +100,7 @@ func RenamedMigrateApplySourceFiles(fsys fs.FS, renamed map[string]string) (map[
 		}
 		files[file.Version] = MigrateApplySourceFile{
 			Name:        source,
-			Description: atlasMigrationFileDescription(file.Path),
+			Description: file.VerbatimDescription,
 		}
 	}
 	return files, nil
@@ -238,7 +238,7 @@ func atlasMigrateApplyFilesByVersion(fsys fs.FS) (map[string]atlasMigrateApplyFi
 		files[file.RevisionVersion()] = atlasMigrateApplyFile{
 			Name:        file.Path,
 			Version:     file.RevisionVersion(),
-			Description: atlasMigrationFileDescription(file.Path),
+			Description: file.VerbatimDescription,
 		}
 	}
 	return files, nil
