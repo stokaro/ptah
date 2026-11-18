@@ -23,7 +23,7 @@ has no version, `ptah migrations up` runs it after the versioned migrations, and
 the next run executes it again only when its content changed.
 
 Repeatable migrations run on PostgreSQL, CockroachDB, YugabyteDB, MySQL,
-MariaDB and SQLite. SQL Server, Oracle and ClickHouse refuse a directory that
+MariaDB, SQLite and SQL Server. Oracle and ClickHouse refuse a directory that
 holds one, before anything changes, and so does a connection through a
 provider.
 
@@ -99,7 +99,7 @@ says `-- +ptah no_transaction` or the run uses `--tx-mode none`. Under
 and each repeatable migration then runs in its own.
 
 That holds on an engine that rolls schema changes back as a unit: PostgreSQL,
-SQLite, and CockroachDB 24 and older. MySQL, MariaDB and CockroachDB from 25
+SQLite, SQL Server, and CockroachDB 24 and older. MySQL, MariaDB and CockroachDB from 25
 commit the open transaction before a schema statement, and YugabyteDB keeps
 schema changes through a rollback, so a transaction there would not undo a
 failed body. On those engines every repeatable migration runs without a
@@ -335,9 +335,9 @@ script. Each refusal below comes before anything changes:
 - **A runner that opens its own transactions.** Under
   `migration.runner: golang-migrate` a repeatable migration would run in a
   transaction Ptah opens, so the run is refused.
-- **SQL Server, Oracle and ClickHouse**, which keep no record table yet, and a
-  connection through a provider rather than a built-in driver, which does not
-  expose the SQL the record is kept with.
+- **Oracle and ClickHouse**, which keep no record table yet, and a connection
+  through a provider rather than a built-in driver, which does not expose the
+  SQL the record is kept with.
 - **A file that asks for a transaction** with `-- atlas:txmode file` on an
   engine that does not roll schema changes back as a unit.
 
@@ -358,8 +358,8 @@ migrations; stokaro/ptah#6152 records the gap.
 
 ## Limits
 
-- SQL Server, Oracle, ClickHouse and engines reached through a provider do not
-  run repeatable migrations.
+- Oracle, ClickHouse and engines reached through a provider do not run
+  repeatable migrations.
 - `ptah migrations repair --repeatable` removes a row; nothing marks a
   repeatable migration applied without running it. Removing the row of a file
   still in the directory makes the next run execute it as new.

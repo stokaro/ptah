@@ -116,7 +116,7 @@ func (m *Migrator) removeRepeatableRecordLocked(
 	if repeatable != nil {
 		record = state.record(repeatable)
 	}
-	query := "DELETE FROM " + m.repeatableTable() + " WHERE identity = ?"
+	query := "DELETE FROM " + m.repeatableTable() + " WHERE " + m.repeatableIdentity() + " = ?"
 	if err := executeSQLOn(ctx, m.conn, sqlutil.Rebind(m.connectionDialect(), query), opts.Identity); err != nil {
 		return nil, fmt.Errorf("failed to delete the row of repeatable migration %s: %w", opts.Identity, err)
 	}

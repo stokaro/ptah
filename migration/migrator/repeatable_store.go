@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/sqlident"
 )
 
 // repeatableRow is one row of the repeatable migration record.
@@ -40,6 +41,25 @@ func (m *Migrator) repeatableTable() string {
 	return m.qualifiedMetadataTable(m.repeatableTableName())
 }
 
+// repeatableObjectName is the record's name as SQL Server's OBJECT_ID probe
+// takes it, built as [Migrator.migrationLogObjectName] builds the log's.
+func (m *Migrator) repeatableObjectName() string {
+	table := m.quoteIdentifier(m.repeatableTableName())
+	if schema := m.metadataTableSchemaName(); schema != "" {
+		return m.quoteIdentifier(schema) + "." + table
+	}
+	return table
+}
+
+// repeatableIdentity is the record's key column as every statement names it.
+// IDENTITY is a reserved word in T-SQL, where the bare name is a syntax error,
+// so the name is spelled the way [sqlident.Ident] spells a column the record's
+// DDL creates: quoted where the engine needs it, and bare on Oracle, where a
+// quoted lower-case name is another column.
+func (m *Migrator) repeatableIdentity() string {
+	return sqlident.Ident(m.connectionDialect(), "identity")
+}
+
 // readRepeatableRows reads the record, keyed by identity. A database that has
 // no record yet has no rows: the table is created by the first run that has
 // repeatable work, so a status or a dry run never creates it. A record table
@@ -60,7 +80,7 @@ func (m *Migrator) readRepeatableRows(ctx context.Context) (map[string]repeatabl
 	}
 	// A status reads every row and needs no body, so the query asks only
 	// whether one is kept. An empty body is kept too: it is not NULL.
-	query := "SELECT identity, checksum, state, attempt_checksum, attempt_order, transactional, " +
+	query := "SELECT " + m.repeatableIdentity() + ", checksum, state, attempt_checksum, attempt_order, transactional, " +
 		"attempted_at, applied_at, error, CASE WHEN body IS NULL THEN 0 ELSE 1 END FROM " + m.repeatableTable()
 	read, err := queryMigrationRowsFrom(ctx, m.conn, query, m.scanRepeatableRow,
 		"failed to read the repeatable migration record",
@@ -108,13 +128,13 @@ func (m *Migrator) scanRepeatableRow(scanner rowScanner) (repeatableRow, error) 
 // check runs again after the create, which is what catches a table created
 // under the name in between.
 //
-// The template takes {table} and {engine}. No engine that declares one names
-// {object}, so the migrator fills in nothing for it.
+// The template takes {table}, {engine} and {object}, the literal SQL Server's
+// existence guard reads.
 func (m *Migrator) ensureRepeatableTable(ctx context.Context) error {
 	ddl := expandTableStatement(
 		m.revisionTable().CreateRepeatables,
 		m.repeatableTable(),
-		"",
+		sqlStringLiteral(m.repeatableObjectName()),
 		revisionEngineClauseFor(m.connectionDialect(), m.migrationsEngine),
 	)
 	if _, err := m.conn.ExecContext(ctx, ddl); err != nil {
@@ -128,7 +148,7 @@ func (m *Migrator) ensureRepeatableTable(ctx context.Context) error {
 // a body is kept is the row's hasBody, never these bytes, so an empty body
 // reads as kept whatever slice the driver returns for it.
 func (m *Migrator) readRepeatableBody(ctx context.Context, identity string) ([]byte, error) {
-	query := sqlutil.Rebind(m.connectionDialect(), "SELECT body FROM "+m.repeatableTable()+" WHERE identity = ?")
+	query := sqlutil.Rebind(m.connectionDialect(), "SELECT body FROM "+m.repeatableTable()+" WHERE "+m.repeatableIdentity()+" = ?")
 	var body []byte
 	if err := m.conn.QueryRowContext(ctx, query, identity).Scan(&body); err != nil {
 		return nil, fmt.Errorf("failed to read the body of repeatable migration %s: %w", identity, err)
@@ -146,12 +166,12 @@ func (m *Migrator) markRepeatableAttempt(ctx context.Context, attempt repeatable
 	repeatable := attempt.repeatable
 	if attempt.recorded {
 		query := "UPDATE " + m.repeatableTable() + " SET state = ?, attempt_checksum = ?, attempt_order = ?, " +
-			"transactional = ?, run_id = ?, attempted_at = ?, error = NULL WHERE identity = ?"
+			"transactional = ?, run_id = ?, attempted_at = ?, error = NULL WHERE " + m.repeatableIdentity() + " = ?"
 		return executeSQLOn(ctx, m.conn, sqlutil.Rebind(dialect, query),
 			RepeatableStateRunning, repeatable.checksum, attempt.order, attempt.transactionalColumn(),
 			m.migrationLogRunID, now, repeatable.identity)
 	}
-	query := "INSERT INTO " + m.repeatableTable() + " (identity, checksum, state, attempt_checksum, attempt_order, " +
+	query := "INSERT INTO " + m.repeatableTable() + " (" + m.repeatableIdentity() + ", checksum, state, attempt_checksum, attempt_order, " +
 		"transactional, run_id, attempted_at, applied_at, error) VALUES (?, '', ?, ?, ?, ?, ?, ?, NULL, NULL)"
 	return executeSQLOn(ctx, m.conn, sqlutil.Rebind(dialect, query),
 		repeatable.identity, RepeatableStateRunning, repeatable.checksum, attempt.order, attempt.transactionalColumn(),
@@ -169,7 +189,7 @@ func (m *Migrator) completeRepeatableOn(
 	repeatable *repeatableMigration,
 ) error {
 	query := "UPDATE " + m.repeatableTable() + " SET state = ?, checksum = ?, body = ?, applied_at = ?, error = NULL " +
-		"WHERE identity = ?"
+		"WHERE " + m.repeatableIdentity() + " = ?"
 	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), query),
 		RepeatableStateApplied, repeatable.checksum, repeatable.body, nativeRevisionTimestamp(time.Now()),
 		repeatable.identity)
@@ -181,7 +201,7 @@ func (m *Migrator) completeRepeatableOn(
 func (m *Migrator) failRepeatable(ctx context.Context, repeatable *repeatableMigration, failure error) error {
 	durable, cancel := durableRevisionWriteContext(ctx)
 	defer cancel()
-	query := "UPDATE " + m.repeatableTable() + " SET state = ?, error = ? WHERE identity = ?"
+	query := "UPDATE " + m.repeatableTable() + " SET state = ?, error = ? WHERE " + m.repeatableIdentity() + " = ?"
 	return executeSQLOn(durable, m.conn, sqlutil.Rebind(m.connectionDialect(), query),
 		RepeatableStateFailed, failure.Error(), repeatable.identity)
 }
