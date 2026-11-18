@@ -97,6 +97,12 @@ type ColumnGrammar struct {
 	// it. A bare IDENTITY is IDENTITY(1, 1). Without it IDENTITY is refused
 	// as an unsupported column attribute.
 	IdentityProperty bool `json:"identity_property,omitempty"`
+	// QualifiedCollations reports that a column's COLLATE names a collation
+	// by a name or by a schema and a name, each an identifier that folds to
+	// lower case unless it is quoted. The model keeps the name the server
+	// finds: a bare name, or the schema and the name each quoted. Without it
+	// the name is kept as written.
+	QualifiedCollations bool `json:"qualified_collations,omitempty"`
 }
 
 // ColumnConstraint is which column constraint a CONSTRAINT keyword may

@@ -53,7 +53,7 @@ func Read(dialect, element string) (Key, bool) {
 	if !ok {
 		return Key{}, false
 	}
-	collation, ok := collationName(tokens[2])
+	collation, ok := CollationName(tokens[2])
 	if !ok {
 		return Key{}, false
 	}
@@ -99,7 +99,7 @@ func ColumnCollation(dialect, definition string) (string, bool) {
 		case token.Type == lexer.TokenOperator && token.Value == ")":
 			depth--
 		case depth == 0 && token.MatchIdentifierValue("COLLATE") && position+1 < len(tokens):
-			name, ok := collationName(tokens[position+1])
+			name, ok := CollationName(tokens[position+1])
 			if !ok {
 				// Not the earlier clause: the last one is what the column
 				// compares with, so an earlier name would report a
@@ -155,10 +155,15 @@ func identifierName(token lexer.Token) (string, bool) {
 	}
 }
 
-// collationName reads the name a token after COLLATE spells: an identifier,
-// or a single-quoted string, which sqlite3 3.51.0 takes for the same name
-// there, `COLLATE 'NOCASE'` as `COLLATE NOCASE`, in a key and in a column.
-func collationName(token lexer.Token) (string, bool) {
+// CollationName reads the name a token after COLLATE spells, unquoted: an
+// identifier in any of SQLite's quotes, or a single-quoted string, which
+// sqlite3 3.51.0 takes for the same name there, `COLLATE 'NOCASE'` as
+// `COLLATE NOCASE`, in a key and in a column. It reports false for a token
+// that spells no name.
+//
+// The SQL parser reads a column's COLLATE through it as [ColumnCollation]
+// does, so a schema file and a read of the database give a column one name.
+func CollationName(token lexer.Token) (string, bool) {
 	if token.Type == lexer.TokenString && quotedBy(token.Value, '\'', '\'') {
 		return strings.ReplaceAll(token.Value[1:len(token.Value)-1], "''", "'"), true
 	}

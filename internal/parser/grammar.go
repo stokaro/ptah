@@ -41,8 +41,13 @@ type targetGrammar struct {
 	identityColumns bool
 	// collations is the descriptor's Columns.Collations: a column's COLLATE
 	// names a collation the renderer writes and the comparison reads, so the
-	// name is read into the one spelling both use.
+	// name is read unquoted, as the reader reports it.
 	collations bool
+	// qualifiedCollations is the descriptor's
+	// Grammar.Columns.QualifiedCollations: a column's COLLATE names a
+	// collation by a name or a schema and a name, read into the one spelling
+	// the renderer and the comparison use.
+	qualifiedCollations bool
 }
 
 // targetGrammars derives each dialect's grammar once per registry. A parser is
@@ -50,17 +55,18 @@ type targetGrammar struct {
 // lookup copies the whole descriptor.
 var targetGrammars = descriptortable.New(func(described descriptor.Dialect) targetGrammar {
 	return targetGrammar{
-		known:              described.Name != "",
-		grammar:            described.Grammar,
-		nullableTypes:      described.Comparison.NullableTypes,
-		checkOwnColumnOnly: described.Columns.CheckOwnColumnOnly,
-		viewSQLSecurity:    described.Comparison.ViewSQLSecurity,
-		family:             described.Family,
-		defaultSchema:      described.DefaultSchema,
-		batches:            described.Scripts.BatchSeparator != "",
-		ownedSequences:     described.Conversion.OwnedSequences,
-		identityColumns:    described.Comparison.IdentityColumns,
-		collations:         described.Columns.Collations,
+		known:               described.Name != "",
+		grammar:             described.Grammar,
+		nullableTypes:       described.Comparison.NullableTypes,
+		checkOwnColumnOnly:  described.Columns.CheckOwnColumnOnly,
+		viewSQLSecurity:     described.Comparison.ViewSQLSecurity,
+		family:              described.Family,
+		defaultSchema:       described.DefaultSchema,
+		batches:             described.Scripts.BatchSeparator != "",
+		ownedSequences:      described.Conversion.OwnedSequences,
+		identityColumns:     described.Comparison.IdentityColumns,
+		collations:          described.Columns.Collations,
+		qualifiedCollations: described.Grammar.Columns.QualifiedCollations,
 	}
 })
 

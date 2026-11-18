@@ -29,6 +29,9 @@ var (
 	describedDialects = descriptortable.New(func(described descriptor.Dialect) bool {
 		return described.Name != ""
 	})
+	qualifiedCollations = descriptortable.New(func(described descriptor.Dialect) bool {
+		return described.Grammar.Columns.QualifiedCollations
+	})
 )
 
 // comparisonOf returns what dialect's descriptor states about comparing a

@@ -70,7 +70,7 @@ func TestColumnsWithDialect_ComparesAPostgreSQLColumnCollation(t *testing.T) {
 // compared, since its renderer writes no COLLATE or its reader has not been
 // measured.
 func TestColumnsWithDialect_LeavesAColumnCollationAloneElsewhere(t *testing.T) {
-	for _, dialect := range []string{"cockroachdb", "yugabytedb", "mysql", "sqlite"} {
+	for _, dialect := range []string{"cockroachdb", "yugabytedb", "mysql"} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
@@ -82,6 +82,41 @@ func TestColumnsWithDialect_LeavesAColumnCollationAloneElsewhere(t *testing.T) {
 
 			_, changed := diff.Changes["collation"]
 			c.Assert(changed, qt.IsFalse)
+		})
+	}
+}
+
+// TestColumnsWithDialect_ComparesASQLiteColumnCollation pins SQLite's names:
+// one identifier, found in any case, and BINARY for a column that declares
+// none. A read reports no collation for a column that declares BINARY, so a
+// declaration of BINARY holds against it.
+func TestColumnsWithDialect_ComparesASQLiteColumnCollation(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		read     string
+		want     string
+	}{
+		{name: "the collation the column declares", declared: "NOCASE", read: "NOCASE", want: ""},
+		{name: "a name in another case", declared: "nocase", read: "NOCASE", want: ""},
+		{name: "a collation the column does not declare", declared: "NOCASE", read: "", want: " -> NOCASE"},
+		{name: "a collation the declaration leaves out", declared: "", read: "RTRIM", want: "RTRIM -> "},
+		{name: "another collation", declared: "RTRIM", read: "NOCASE", want: "NOCASE -> RTRIM"},
+		{name: "BINARY restated", declared: "binary", read: "", want: ""},
+		{name: "BINARY against a declared collation", declared: "BINARY", read: "NOCASE", want: "NOCASE -> BINARY"},
+		{name: "neither names one", declared: "", read: "", want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compare.ColumnsWithDialect(
+				schemamodel.Field{Name: "c", Type: "TEXT", Nullable: true, Collate: test.declared},
+				catalog.Column{Name: "c", DataType: "TEXT", IsNullable: "YES", Collate: test.read, EffectiveCollate: test.read},
+				"sqlite",
+			)
+
+			c.Assert(diff.Changes["collation"], qt.Equals, test.want)
 		})
 	}
 }

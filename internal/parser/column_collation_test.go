@@ -75,7 +75,8 @@ func TestParser_PostgreSQLColumnCollation_FailurePath(t *testing.T) {
 }
 
 // TestParser_ColumnCollationOnAnotherDialect is the control: a dialect whose
-// descriptor does not state Columns.Collations keeps the collation as written.
+// descriptor states neither Columns.Collations nor qualified collations keeps
+// the collation as written.
 func TestParser_ColumnCollationOnAnotherDialect(t *testing.T) {
 	tests := []struct {
 		dialect string
@@ -83,7 +84,6 @@ func TestParser_ColumnCollationOnAnotherDialect(t *testing.T) {
 		want    string
 	}{
 		{dialect: "cockroachdb", sql: `CREATE TABLE t (a STRING COLLATE "en_US");`, want: `"en_US"`},
-		{dialect: "sqlite", sql: `CREATE TABLE t (a TEXT COLLATE NOCASE);`, want: "NOCASE"},
 		{dialect: "mysql", sql: `CREATE TABLE t (a varchar(10) COLLATE utf8mb4_bin);`, want: "utf8mb4_bin"},
 	}
 	for _, test := range tests {
@@ -96,4 +96,41 @@ func TestParser_ColumnCollationOnAnotherDialect(t *testing.T) {
 			c.Assert(got, qt.Equals, test.want)
 		})
 	}
+}
+
+// TestParser_SQLiteColumnCollation_HappyPath pins SQLite's spelling: the name
+// unquoted from any of the quotes sqlite3 takes there, in the case it is
+// written, as the reader reports a column's collation.
+func TestParser_SQLiteColumnCollation_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{name: "a bare name keeps its case", sql: `CREATE TABLE t (a TEXT COLLATE NoCase);`, want: "NoCase"},
+		{name: "a double-quoted name", sql: `CREATE TABLE t (a TEXT COLLATE "NoCase");`, want: "NoCase"},
+		{name: "a single-quoted name", sql: `CREATE TABLE t (a TEXT COLLATE 'rtrim');`, want: "rtrim"},
+		{name: "a backquoted name", sql: "CREATE TABLE t (a TEXT COLLATE `nocase`);", want: "nocase"},
+		{name: "a bracketed name", sql: `CREATE TABLE t (a TEXT COLLATE [binary]);`, want: "binary"},
+		{name: "after a constraint", sql: `CREATE TABLE t (a TEXT NOT NULL COLLATE RTRIM);`, want: "RTRIM"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := parsedColumnCollation(c, "sqlite", test.sql)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+func TestParser_SQLiteColumnCollation_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := parsedColumnCollation(c, "sqlite", `CREATE TABLE t (a TEXT COLLATE 1);`)
+
+	c.Assert(err, qt.ErrorMatches, `line 1, column 32: expected collation name: "1" is not a name`)
+	c.Assert(got, qt.Equals, "")
 }

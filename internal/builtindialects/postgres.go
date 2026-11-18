@@ -263,7 +263,7 @@ func postgres() descriptor.Dialect {
 		// writes no LANGUAGE is PL/pgSQL. ALTER TABLE ... ADD CONSTRAINT k
 		// UNIQUE USING INDEX i makes the unique index i the key k, renaming it.
 		Grammar: descriptor.Grammar{
-			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
+			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true, QualifiedCollations: true},
 			Constraints: descriptor.ConstraintGrammar{
 				TableNotNull: true,
 				Enforcement:  descriptor.Enforcement{Checks: true, ForeignKeys: true, Once: true},
