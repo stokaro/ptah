@@ -132,7 +132,7 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
 - `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
 - `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
-- `cockroachdb` 26.4, pinned as `cockroachdb/cockroach:v26.4.0`.
+- `cockroachdb` 26.4, pinned as `cockroachdb/cockroach:v26.4.1`.
 <!-- END GENERATED VERSION MATRIX -->
 
 ## Interpret the result

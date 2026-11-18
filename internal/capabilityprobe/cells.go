@@ -629,7 +629,7 @@ var Cells = []Cell{
 	{
 		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB264,
 		Preset: capability.CockroachDB263, PresetName: "CockroachDB263",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "cockroachdb/cockroach:v26.4.0",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "cockroachdb/cockroach:v26.4.1",
 		Note: "measured live on CockroachDB CCL v26.4.0: 127 decidable rows agree with " +
 			"CockroachDB263, with 22 rows undecidable and no disagreements",
 	},
