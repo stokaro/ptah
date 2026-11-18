@@ -3868,6 +3868,7 @@ func (m *Migrator) migrationsToApply(
 
 	if execOrder == ExecOrderLinear && len(outOfOrderVersions) > 0 {
 		err := newOutOfOrderSourceError(currentVersion, outOfOrderVersions, m.sourceVersions)
+		err.labels = m.numberlessLabels()
 		if currentSource, ok := m.retiredCurrentSourceVersion(currentVersion, applied, appliedIdentities); ok {
 			err.currentSourceVersion = currentSource
 			err.currentSourceVersionSet = true

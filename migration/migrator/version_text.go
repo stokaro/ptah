@@ -19,6 +19,11 @@ type versionText struct {
 	label string
 }
 
+// String returns the version as %d prints it.
+func (v versionText) String() string {
+	return fmt.Sprintf("%d", v)
+}
+
 // Format implements [fmt.Formatter].
 func (v versionText) Format(f fmt.State, verb rune) {
 	if v.label != "" {
@@ -37,6 +42,20 @@ func (m *Migrator) versionText(version int64) versionText {
 		}
 	}
 	return versionText{number: version}
+}
+
+// numberlessLabels returns the version string of each Atlas file whose
+// version is not a number, by the order key it runs under, and nil when the
+// directory holds none.
+func (m *Migrator) numberlessLabels() map[int64]string {
+	var labels map[int64]string
+	for _, migration := range m.numberlessMigrations() {
+		if labels == nil {
+			labels = make(map[int64]string)
+		}
+		labels[migration.Version] = migration.atlasRevisionVersion
+	}
+	return labels
 }
 
 // versionText names the migration's version for a message that prints it with

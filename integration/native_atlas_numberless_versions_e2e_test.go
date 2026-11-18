@@ -277,6 +277,32 @@ func TestNativeAtlasNumberlessVersionApplyFailure_FailurePath(t *testing.T) {
 	}
 }
 
+// TestNativeAtlasNumberlessVersionOutOfOrder_FailurePath adds 3_c.sql after
+// v1_x.sql is applied. The file sorts below v1_x.sql, so a linear run refuses
+// it, and the refusal names the current version v1. The order key of v1_x.sql
+// moves from 2 to 4 when 3_c.sql is added, and neither number names a file.
+func TestNativeAtlasNumberlessVersionOutOfOrder_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	migrations := filepath.Join(dir, "migrations")
+	hash := compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables())
+	c.Assert(os.MkdirAll(migrations, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "1_a.sql"), []byte("CREATE TABLE t_a (id int);\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrations, "v1_x.sql"), []byte("CREATE TABLE t_x (id int);\n"), 0o600), qt.IsNil)
+	first := hash("migrate", "hash", "--dir", "file://migrations")
+	c.Assert(first.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", first.Stderr))
+	applied := nativePtah(c, dir, "migrations", "up")
+	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", applied.Stderr))
+	c.Assert(os.WriteFile(filepath.Join(migrations, "3_c.sql"), []byte("CREATE TABLE t_c (id int);\n"), 0o600), qt.IsNil)
+	second := hash("migrate", "hash", "--dir", "file://migrations")
+	c.Assert(second.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", second.Stderr))
+
+	up := nativePtah(c, dir, "migrations", "up")
+
+	c.Assert(up.ExitCode, qt.Not(qt.Equals), 0)
+	c.Assert(up.Stderr, qt.Contains, "out-of-order pending migrations below current version v1: [3] ")
+}
+
 // TestNativeAutoFormatOverAnAtlasSumRefusesANumberlessVersion_FailurePath runs
 // the native defaults, --dir-format auto and the Ptah revision table, over a
 // directory atlas.sum covers. atlas.sum makes it an Atlas directory, so

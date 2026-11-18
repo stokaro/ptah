@@ -11,7 +11,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -719,10 +718,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	}
 
 	if settings.execOrder == migrator.ExecOrderLinear && len(status.OutOfOrderMigrations) > 0 {
-		return &migrator.OutOfOrderError{
-			CurrentVersion: status.CurrentVersion,
-			Versions:       slices.Clone(status.OutOfOrderMigrations),
-		}
+		return mig.OutOfOrderRefusal(status.CurrentVersion, status.OutOfOrderMigrations)
 	}
 	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
 		Direction:          preflight.DirectionUp,
