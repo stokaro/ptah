@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlname"
 	"ptah.run/internal/pgname"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
 
@@ -83,7 +84,7 @@ func ColumnCheckNames(
 			taken[name] = struct{}{}
 			names[field.Name] = name
 		default:
-			names[field.Name] = leaf + "_" + field.Name + "_check"
+			names[field.Name] = DefaultCheckName(table.Name, field.Name)
 		}
 	}
 	return names
@@ -169,6 +170,16 @@ func tableCheckConstraintName(tableName string, ordinal int) string {
 		return leaf + "_check"
 	}
 	return fmt.Sprintf("%s_check%d", leaf, ordinal)
+}
+
+// DefaultCheckName is the name a column's unnamed CHECK takes on a target that
+// names it <table>_<column>_check. Each part is the name the catalog stores,
+// so a column spelled `"Status"` of a table spelled `"Cust"`, as a read or a
+// quoted SQL name on Oracle gives them, names its CHECK Cust_Status_check,
+// which is what the renderer creates. Kept quoted, the name would hold the
+// quotes themselves and match nothing the catalog reports.
+func DefaultCheckName(table, column string) string {
+	return tableLeaf(table) + "_" + sqlident.UnquoteDoubleQuoted(strings.TrimSpace(column)) + "_check"
 }
 
 // tableLeaf is the bare name of a table name that may carry its schema.

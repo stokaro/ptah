@@ -78,10 +78,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.42. Each released SDK speaks one contract:
+speaks contract 25.43. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.42.0` | 25.43 |
 | `provider-sdk/v0.41.0` | 25.42 |
 | `provider-sdk/v0.40.0` | 25.41 |
 | `provider-sdk/v0.39.0` | 25.41 |
@@ -207,6 +208,7 @@ returns to 0.
   Contract 25.40 adds [current context](#current-context).
   Contract 25.41 adds [not-described kinds](#not-described-kinds).
   Contract 25.42 adds [provider-owned server advisories](#provider-owned-server-advisories).
+  Contract 25.43 adds [trusted replay SQL](#trusted-replay-sql).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -257,7 +259,9 @@ does not oblige a peer to use it.
   `engine.connection-capability-source`, `models.omission-counts`,
   `schema.view-query-context`, `models.declared-facets`,
   `schema.read-sql-undeclared`, `schema.removal-blockers`,
-  `models.current-context` and `schema.not-described`. The embedding store's
+  `models.current-context`, `schema.not-described`,
+  `security.advisory-snapshot` and `database.dev-replay-trust`. The embedding
+  store's
   calls,
   `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
@@ -1910,6 +1914,9 @@ and nothing outside it, so a host that cannot read the dialect needs this
 answer; without it, the host refuses the replay. A reply that does not answer
 every statement exposes no verdict.
 
+`database.dev-replay-trust` carries the operator's trust in that SQL; see
+[Trusted replay SQL](#trusted-replay-sql).
+
 `database.dev-realms` is an engine feature beside `database.dev`. A
 `ProvisionDevRequest` then carries the operator's `address` instead of a `spec`:
 the owner creates a realm of its own for the run in that database, such as a
@@ -3267,6 +3274,37 @@ without an operator-selected source reports the scan as unassessed.
 The provider repository owns the snapshot and its source update workflow.
 Neither the provider nor the host downloads advisories during a scan. Changed
 vendor content needs review before the provider publishes new affected ranges.
+
+## Trusted replay SQL
+
+[ADR 0124](../docs/adr/0124-a-provider-receives-the-operators-trust-in-replayed-sql.md)
+decides this feature. An operator who trusts the SQL a run executes on its dev
+database says so with `--trust-replay-sql` or `PTAH_TRUST_REPLAY_SQL=1`.
+`database.dev-replay-trust` carries that answer to the provider in two places:
+`ReplayScope.trusted_sql`, which the replay guard reads, and
+`OpenRequest.trusted_sql`, on the session the host opens on that dev database.
+A provider that checks what a dev session executes, as the YDB provider does in
+a dev realm, reads the second one there.
+
+Under trust the owner accepts a statement it refuses only because it cannot
+confine the statement's effects to the scope: an opaque body, a role or a
+privilege, a write outside the dev database, and data sent to or read from
+outside the server. It keeps every refusal that protects the run: the replay
+session's own state, the identity it runs as, server configuration, an object
+the cleanup cannot remove, and a statement it cannot read. The owner decides
+which of its refusals are which, because it reads the dialect. Trust is not
+ownership. It never stands for `ReplayScope.server`, never selects the guard
+of a server the run owns, and never widens what `CleanDevDatabase` removes: an
+object the trusted SQL creates outside the dev database stays where it is.
+
+It is a two-way feature. The provider and each engine that honors trust list
+it beside `database.dev-replay-guard`, and the host lists it. Without it on
+either side the host sends neither field, and an older provider runs with the
+strict default. When the operator asks for trust and the provider or the engine
+does not list the feature, the host refuses to open the dev session, before
+anything runs, rather than replay under a policy the operator did not choose.
+The SDK refuses either field set without the feature, in both directions, and a
+provider or an engine that lists the feature without its replay guard.
 
 ## Not-described kinds
 

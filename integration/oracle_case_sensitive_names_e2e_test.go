@@ -158,6 +158,36 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 			objects:  []string{"TABLE KEEP_ME"},
 			columns:  []string{"KEEP_ME.ID"},
 		},
+		{
+			// A SQL file that quotes a camelCase column names it quoted in its
+			// CHECK, DEFAULT and virtual column. The expressions are accepted,
+			// the unnamed CHECK takes customers_Status_check, which the server
+			// stores as CUSTOMERS_STATUS_CHECK, and the key on "cust_id" takes
+			// fk_orders_cust_id, so the second plan finds every constraint
+			// where the first one put it.
+			name: "a quoted column named quoted in a CHECK, a DEFAULT and a virtual column",
+			held: []string{`CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY)`},
+			declared: "CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY);\n" +
+				`CREATE TABLE "customers" ("id" NUMBER(10) PRIMARY KEY, ` +
+				`"Status" VARCHAR2(5) DEFAULT 'a' CHECK ("Status" IN ('a','b')), ` +
+				`"Twice" NUMBER(10) GENERATED ALWAYS AS ("id" * 2) VIRTUAL);` + "\n" +
+				`CREATE TABLE orders (id NUMBER(10) PRIMARY KEY, "cust_id" NUMBER(10) REFERENCES "customers" ("id"));` + "\n",
+			planned: []string{
+				`CONSTRAINT customers_Status_check CHECK ("Status" IN ('a','b'))`,
+				`GENERATED ALWAYS AS ("id" * 2) VIRTUAL`,
+				`ADD CONSTRAINT fk_orders_cust_id FOREIGN KEY ("cust_id") REFERENCES "customers" ("id")`,
+			},
+			objects: []string{"TABLE KEEP_ME", "TABLE ORDERS", "TABLE customers"},
+			columns: []string{"KEEP_ME.ID", "ORDERS.ID", "ORDERS.cust_id", "customers.Status", "customers.Twice", "customers.id"},
+		},
+		{
+			name:     "a quoted column starting with an underscore is created quoted",
+			held:     []string{`CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY)`},
+			declared: `CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY, "_A" NUMBER(10));` + "\n",
+			planned:  []string{`ADD ("_A" NUMBER(10))`},
+			objects:  []string{"TABLE KEEP_ME"},
+			columns:  []string{"KEEP_ME.ID", "KEEP_ME._A"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -181,8 +211,7 @@ func TestOracleCaseSensitiveNamesE2E_HappyPath(t *testing.T) {
 				"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--dry-run")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", again, againStderr))
-			c.Assert(again, qt.Not(qt.Contains), "DROP")
-			c.Assert(again, qt.Not(qt.Contains), "CREATE")
+			c.Assert(again, qt.Contains, "Schema is synced")
 		})
 	}
 }
@@ -328,6 +357,12 @@ func TestOracleCaseSensitiveNamesE2E_ReadAsDesired(t *testing.T) {
 			args: []string{"schema", "apply", "--db-url", "URL", "--to", "URL", "--dry-run"}, want: "Schema is synced"},
 		{name: "compat apply of a namesake pair to itself", held: pair, compat: true,
 			args: []string{"schema", "apply", "--url", "URL", "--to", "URL", "--dry-run"}, want: "Schema is synced"},
+		{name: "native diff of a namesake pair excluding the quoted table", held: pair,
+			args: []string{"schema", "diff", "--from", "URL", "--to", "URL", "--exclude", "orders"}, want: "No changes found"},
+		{name: "compat diff of a namesake pair excluding the quoted table", held: pair, compat: true,
+			args: []string{"schema", "diff", "--from", "URL", "--to", "URL", "--exclude", "orders"}, want: "No changes found"},
+		{name: "native apply of a namesake pair excluding the quoted table", held: pair,
+			args: []string{"schema", "apply", "--db-url", "URL", "--to", "URL", "--exclude", "orders", "--dry-run"}, want: "Schema is synced"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -351,10 +386,12 @@ func TestOracleCaseSensitiveNamesE2E_ReadAsDesired(t *testing.T) {
 }
 
 // TestOracleCaseSensitiveNamesE2E_InspectReplays inspects an account holding a
-// quoted table, its folded namesake and a third table as SQL, compares the
-// file with the account, and replays it into a fresh account. Written bare,
-// the quoted table is `CREATE TABLE orders`, which creates ORDERS: the file
-// names one table twice, and the replay cannot recreate the account.
+// quoted table, its folded namesake, a third table and a camelCase table an
+// ORM would create as SQL, compares the file with the account, and replays it
+// into a fresh account. Written bare, the quoted table is `CREATE TABLE
+// orders`, which creates ORDERS: the file names one table twice, and the
+// replay cannot recreate the account. The camelCase table's CHECK, DEFAULT and
+// virtual column name its columns quoted, and the inspection writes them so.
 func TestOracleCaseSensitiveNamesE2E_InspectReplays(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -366,6 +403,8 @@ func TestOracleCaseSensitiveNamesE2E_InspectReplays(t *testing.T) {
 		`CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY)`,
 		`CREATE TABLE "orders" (id NUMBER(10) PRIMARY KEY)`,
 		`CREATE TABLE orders (id NUMBER(10) PRIMARY KEY)`,
+		`CREATE TABLE "Cust" ("Id" NUMBER(10) PRIMARY KEY, "Status" VARCHAR2(5) DEFAULT 'a', ` +
+			`"Twice" NUMBER(10) GENERATED ALWAYS AS ("Id" * 2) VIRTUAL, CONSTRAINT "ck_st" CHECK ("Status" IN ('a','b')))`,
 	})
 
 	inspected, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
@@ -374,6 +413,7 @@ func TestOracleCaseSensitiveNamesE2E_InspectReplays(t *testing.T) {
 	sourceSchema := strings.ToUpper(source)
 	c.Assert(inspected, qt.Contains, `CREATE TABLE `+sourceSchema+`."orders" (`)
 	c.Assert(inspected, qt.Contains, `CREATE TABLE `+sourceSchema+`.ORDERS (`)
+	c.Assert(inspected, qt.Contains, `CONSTRAINT "ck_st" CHECK ("Status" IN ('a','b'))`)
 
 	compared, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
 		"schema", "compare", "--db-url", sourceURL, "--schema-file", writeDeclaredSchema(c, inspected))
@@ -388,7 +428,15 @@ func TestOracleCaseSensitiveNamesE2E_InspectReplays(t *testing.T) {
 		"schema", "apply", "--db-url", replicaURL, "--schema-file", writeDeclaredSchema(c, replayed), "--auto-approve")
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 
-	c.Assert(accountTables(c, ctx, replicaConn), qt.DeepEquals, []string{"KEEP_ME", "ORDERS", "orders"})
+	c.Assert(accountTables(c, ctx, replicaConn), qt.DeepEquals, []string{"Cust", "KEEP_ME", "ORDERS", "orders"})
+	c.Assert(accountNames(c, ctx, replicaConn,
+		`SELECT constraint_name || ' ' || search_condition_vc FROM user_constraints `+
+			`WHERE table_name = 'Cust' AND constraint_type = 'C' AND constraint_name NOT LIKE 'SYS%'`),
+		qt.DeepEquals, []string{`ck_st "Status" IN ('a','b')`})
+	c.Assert(accountNames(c, ctx, replicaConn,
+		`SELECT column_name || ' ' || data_default_vc FROM user_tab_cols `+
+			`WHERE table_name = 'Cust' AND data_default_vc IS NOT NULL ORDER BY column_name`),
+		qt.DeepEquals, []string{`Status 'a'`, `Twice "Id"*2`})
 }
 
 // oracleCaseSensitiveAccount creates an Oracle account for one test, drops it

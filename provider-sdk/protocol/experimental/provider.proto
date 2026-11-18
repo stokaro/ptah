@@ -701,6 +701,13 @@ message OpenRequest {
   // against the provider's working directory, which the bootstrap sets to the
   // host's own, so it names the file the host's user means.
   string address = 2;
+  // The operator trusts the SQL the run executes on this dev database, with
+  // the privileges of the connection. A provider that confines what a dev
+  // session executes lifts there the refusals its replay guard lifts under
+  // ReplayScope.trusted_sql, and keeps every other check. It grants no
+  // ownership of the server and changes no cleanup scope. Contract 25.43,
+  // sent only when both sides list database.dev-replay-trust.
+  bool trusted_sql = 3;
 }
 message Session {
   string id = 1;
@@ -3491,6 +3498,15 @@ message ReplayScope {
   bool databases = 4;
   // The replay owns one pinned session and discards it after every outcome.
   bool session = 5;
+  // The operator trusts the SQL the run executes, with the privileges of the
+  // dev connection. The owner then accepts a statement it refuses only
+  // because it cannot confine the statement's effects to the scope above. It
+  // keeps every refusal that protects the run: the replay session's own
+  // state, an effect the cleanup of the scope cannot remove, and anything the
+  // owner's execution relies on. It never widens the scope: server,
+  // provisioned and databases mean what they mean without it. Contract 25.43,
+  // sent only when both sides list database.dev-replay-trust.
+  bool trusted_sql = 6;
 }
 // GuardReplayRequest asks the owner, offline, which statements of a
 // migration replay have effects it cannot confine to the scope: a change

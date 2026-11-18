@@ -160,7 +160,8 @@ own measurement conditions.
 | [A finding in a goose or dbmate file](#a-finding-in-a-goose-or-dbmate-file) | places it on the statement's line of the source file, at the statement's offset | places it on line 1, the section directive, at an offset that falls there |
 | [Removing a column-level UNIQUE on SQLite](#removing-a-column-level-unique-on-sqlite) | rebuilds the table, and the plan applies to a database the `--from` document created | plans `DROP INDEX` for an index the database does not hold, and the apply exits `1` |
 | [A COLLATE on a SQLite index key](#a-collate-on-a-sqlite-index-key) | reads the key with its collation, so a change of it is planned | reads the column alone, reports the change as synced, and plans the index without it |
-| [A COLLATE on a SQLite column](#a-collate-on-a-sqlite-column) | `schema inspect` writes the collation a column declares, in the HCL and the JSON document | writes none, so the document describes a column that compares as BINARY |
+| [A COLLATE on a SQLite column](#a-collate-on-a-sqlite-column) | `schema inspect` writes the collation a column declares, in every format, and `schema diff` and `schema apply` plan a change of it | writes none, so the document describes a column that compares as BINARY, and reports the schemas synced |
+| [A COLLATE on a PostgreSQL column](#a-collate-on-a-postgresql-column) | `schema diff` and `schema apply` plan a change of a column's collation | report the schemas synced |
 
 ## A `--config` selection naming more than one file
 
@@ -1853,26 +1854,57 @@ refuses that key on the database as it refuses it in a `--to` document.
 
 **Current boundary.** `ptah-compat schema inspect` writes the collation a
 SQLite column declares, `b TEXT COLLATE NOCASE`, as `collate = "NOCASE"` in
-the HCL document and `"collate":"NOCASE"` in the JSON one. A column that
-declares none, or declares `BINARY`, the collation it takes without one, is
-written without it. The pinned community binary v1.3.0 writes no column
-collation for SQLite at all. Measured on 2026-11-18 on a database holding
-`t (a TEXT, b TEXT COLLATE NOCASE, c TEXT COLLATE BINARY, d TEXT DEFAULT 'x'
-COLLATE RTRIM)`:
+the HCL document, `"collate":"NOCASE"` in the JSON one and `COLLATE NOCASE`
+in the SQL one. A column that declares none, or declares `BINARY`, the
+collation it takes without one, is written without it. The pinned community
+binary v1.3.0 writes no column collation for SQLite at all. Measured on
+2026-11-18 on a database holding `t (a TEXT, b TEXT COLLATE NOCASE, c TEXT
+COLLATE BINARY, d TEXT DEFAULT 'x' COLLATE RTRIM)`:
 
 | Format | Binary | `ptah-compat` |
 | --- | --- | --- |
 | HCL | no `collate` on any column | `collate = "NOCASE"` on `b`, `collate = "RTRIM"` on `d` |
 | `{{ json . }}` | no `collate` on any column | `"collate":"NOCASE"` on `b`, `"collate":"RTRIM"` on `d` |
-| `{{ sql . }}` | no `COLLATE` | no `COLLATE` |
+| `{{ sql . }}` | no `COLLATE` | `COLLATE NOCASE` on `b`, `COLLATE RTRIM` on `d` |
+
+`schema diff` and `schema apply` compare the collation too. Against a
+database holding `t (id INTEGER PRIMARY KEY, a TEXT, b TEXT COLLATE NOCASE,
+c TEXT COLLATE RTRIM)` and a desired file declaring `a TEXT COLLATE NOCASE`
+and `b TEXT`, the binary reports `Schemas are synced, no changes to be made.`,
+and `ptah-compat` rebuilds the table with `"a" text COLLATE NOCASE` and
+`"b" text`.
 
 A document without the collation describes `b` as a column that compares as
 `BINARY`, so an apply of it builds a column that sorts and compares
 differently, and nothing says so. The binary reads the HCL document Ptah
-writes, `collate` included. The SQL format matches the binary because Ptah's
-SQLite renderer writes no column `COLLATE` yet.
+writes, `collate` included.
 
-**Evidence.** `internal/dbschema/sqlite/column_collation_test.go`
+**Evidence.** `internal/dbschema/sqlite/column_collation_test.go`,
+`integration/sqlite_column_collation_e2e_test.go`
+
+## A COLLATE on a PostgreSQL column
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** `ptah-compat schema diff` and `schema apply` compare the
+collation a PostgreSQL column declares with the one the desired schema names,
+and plan `ALTER COLUMN ... TYPE <type> COLLATE ...` where they differ. The
+pinned community binary v1.3.0 does not compare column collations. Measured on
+2026-11-18 on a database holding `t (id integer PRIMARY KEY, a text, b text
+COLLATE "C", c text COLLATE "C")`, against a desired file declaring `a text
+COLLATE "C"`, `b text COLLATE "POSIX"` and `c text`:
+
+| Command | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `schema diff` | `Schemas are synced, no changes to be made.` | `ALTER TABLE "t" ALTER COLUMN "a" TYPE text COLLATE "C", ALTER COLUMN "b" TYPE text COLLATE "POSIX", ALTER COLUMN "c" TYPE text;` |
+| `schema apply --dry-run` | `Schema is synced, no changes to be made` | the same statement |
+
+A collation decides how a column's values sort and compare, and which index
+a query can use. A plan that reports the schemas synced leaves a column
+comparing differently from the declaration, and nothing says so.
+
+**Evidence.** `migration/schemadiff/internal/compare/column_collation_test.go`,
+`integration/postgres_column_collation_e2e_test.go`
 
 ## Not on this page
 

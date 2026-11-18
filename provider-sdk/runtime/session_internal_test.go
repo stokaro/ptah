@@ -96,3 +96,41 @@ func TestServerRefusesInvalidSessionFactsAndReleasesHandle(t *testing.T) {
 	c.Assert(result, qt.IsNil)
 	c.Assert(owner.closed, qt.DeepEquals, []string{"session"})
 }
+
+// trustPeer records the trust each Open request carried.
+type trustPeer struct {
+	sessionPeer
+	trusted []bool
+}
+
+func (p *trustPeer) Open(ctx context.Context, request *protocol.OpenRequest, options ...grpc.CallOption) (*protocol.Session, error) {
+	p.trusted = append(p.trusted, request.GetTrustedSql())
+	return p.sessionPeer.Open(ctx, request, options...)
+}
+
+func trustSessionDescription(features ...string) *protocol.Description {
+	return &protocol.Description{Features: features, Engines: []*protocol.Engine{{Id: "fixture", Features: features}}}
+}
+
+// The client sends a session for trusted dev SQL only to an engine that
+// negotiated the feature, and refuses it before the call otherwise, so an
+// older provider never receives a field it would ignore.
+func TestClientOpensATrustedSessionOnlyWhenNegotiated(t *testing.T) {
+	c := qt.New(t)
+	negotiated := &trustPeer{sessionPeer: sessionPeer{reply: sessionReply()}}
+	client := &Client{description: trustSessionDescription(provider.ReplayGuardFeature, provider.ReplayTrustFeature), rpc: negotiated}
+	trusted, err := client.Open(c.Context(), &protocol.OpenRequest{Engine: "fixture", Address: "fixture://dev", TrustedSql: true})
+	c.Assert(err, qt.IsNil)
+	c.Assert(trusted.GetId(), qt.Equals, "session")
+	c.Assert(negotiated.trusted, qt.DeepEquals, []bool{true})
+
+	older := &trustPeer{sessionPeer: sessionPeer{reply: sessionReply()}}
+	client = &Client{description: trustSessionDescription(provider.ReplayGuardFeature), rpc: older}
+	refused, err := client.Open(c.Context(), &protocol.OpenRequest{Engine: "fixture", Address: "fixture://dev", TrustedSql: true})
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(refused, qt.IsNil)
+	strict, err := client.Open(c.Context(), &protocol.OpenRequest{Engine: "fixture", Address: "fixture://dev"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(strict.GetId(), qt.Equals, "session")
+	c.Assert(older.trusted, qt.DeepEquals, []bool{false})
+}

@@ -23,6 +23,7 @@ func TestProperties(t *testing.T) {
 		{name: "nullability", changes: map[string]string{"nullable": "true -> false"}, want: ast.ColumnProperties{Nullability: true}},
 		{name: "a literal default", changes: map[string]string{"default": "1 -> 2"}, want: ast.ColumnProperties{Default: true}},
 		{name: "an expression default", changes: map[string]string{"default_expr": " -> now()"}, want: ast.ColumnProperties{Default: true}},
+		{name: "a collation", changes: map[string]string{"collation": "C -> "}, want: ast.ColumnProperties{Collation: true}},
 		{name: "UNIQUE and PRIMARY KEY", changes: map[string]string{"unique": "false -> true", "primary_key": "false -> true"}, want: ast.ColumnProperties{}},
 		{
 			name:    "all three at once",

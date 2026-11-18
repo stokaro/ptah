@@ -313,7 +313,7 @@ func reverseConstraintRemovals(
 		if f.Check != "" {
 			name := f.CheckName
 			if name == "" {
-				name = tableName + "_" + f.Name + "_check"
+				name = schemaprep.DefaultCheckName(tableName, f.Name)
 			}
 			checkTables[name] = tableName
 		}

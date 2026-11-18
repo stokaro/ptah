@@ -119,6 +119,13 @@ func mapColumnType(column *ast.ColumnNode) string {
 // 23.26, `"size" NUMBER(10), doubled NUMBER(10) GENERATED ALWAYS AS (size * 2)
 // VIRTUAL` answers ORA-00936, missing expression.
 //
+// The column may arrive spelled, as `"Status"`, when it was read from a
+// catalog or quoted in a SQL file (stokaro/ptah#6243). The scan looks for the
+// name the column is stored under, Status, which is what escapeIdentifier
+// writes inside its quotes: `"Status"` in the expression is the column, and a
+// bare status folds to STATUS, which is not. Scanning for the spelling itself
+// would refuse the quoted reference and miss the bare one.
+//
 // This is a scan for the name as a whole word, not a parse, so it is
 // deliberately one-directional: what it finds is always a real mismatch, and an
 // expression it does not recognize still reaches the server, which refuses it
@@ -136,11 +143,15 @@ func bareReferenceInExpression(columnName, expression string) bool {
 	// renderer is reached, so this is stated twice on purpose: a scan that
 	// cannot terminate should not depend on a caller having validated its
 	// input.
-	if expression == "" || columnName == "" || !requiresQuoting(columnName) {
+	if expression == "" || columnName == "" {
+		return false
+	}
+	stored, quoted := writtenName(columnName)
+	if !quoted || stored == "" {
 		return false
 	}
 	lowered := strings.ToLower(expression)
-	target := strings.ToLower(columnName)
+	target := strings.ToLower(stored)
 	for index := 0; ; {
 		found := strings.Index(lowered[index:], target)
 		if found < 0 {
@@ -164,8 +175,16 @@ func bareReferenceInExpression(columnName, expression string) bool {
 	}
 }
 
-func requiresQuoting(name string) bool {
-	return sqlident.Ident(platform.Oracle, name) != name
+// writtenName returns the name a column is stored under and whether a
+// statement has to quote it: escapeIdentifier's spelling without its quotes.
+// A spelled `"Status"` is stored as Status and quoted, a keyword `size` is
+// stored as size and quoted, and a plain `status` is written bare.
+func writtenName(name string) (string, bool) {
+	written := escapeIdentifier(name)
+	if !quotedOnce(written) {
+		return written, false
+	}
+	return unquoteIdentifier(written), true
 }
 
 func isIdentifierByte(b byte) bool {

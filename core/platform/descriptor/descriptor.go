@@ -449,9 +449,15 @@ type Identifiers struct {
 	// underscore that a name written without quotes may hold after its first
 	// character, such as "$#" on Oracle. A plain identifier is one made of
 	// those characters, and a dialect that writes names bare writes it bare.
-	// Only ASCII punctuation is accepted, and never a quote character or a
-	// dot.
+	// Empty means a plain identifier holds ASCII letters, digits and the
+	// underscore only. Only ASCII punctuation is accepted, and never a quote
+	// character or a dot.
 	BareChars string `json:"bare_chars,omitempty"`
+	// LetterFirst reports that a name written without quotes starts with an
+	// ASCII letter. Oracle sets it, since a leading underscore answers
+	// ORA-00911 there, so a name such as _a is written quoted. False lets a
+	// plain identifier start with a letter or an underscore.
+	LetterFirst bool `json:"letter_first,omitempty"`
 }
 
 // Placeholder is how a statement marks a bound parameter.

@@ -62,3 +62,13 @@ func TestGenerateForeignKeyName(t *testing.T) {
 	t.Parallel()
 	c.Assert(schemaprep.GenerateForeignKeyName("OrderItems", "ProductID"), qt.Equals, "fk_orderitems_productid")
 }
+
+// TestGenerateForeignKeyName_SpelledNames names the key of a column spelled
+// `"cust_id"`, as a quoted SQL name on Oracle gives it, from the names inside
+// the quotes. Kept, the quotes would become part of the constraint name, which
+// the renderer writes as "fk_orders_""cust_id""" and no read reports back.
+func TestGenerateForeignKeyName_SpelledNames(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(schemaprep.GenerateForeignKeyName(`"Orders"`, `"cust_id"`), qt.Equals, "fk_orders_cust_id")
+}

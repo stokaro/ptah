@@ -71,13 +71,18 @@ The SQLite renderer and planner support:
   collation compares unequal to a bare key, so a database index
   `(nc COLLATE NOCASE)` over a `NOCASE` column against a document `(nc)` plans
   one rebuild of the index.
+- A column's `COLLATE`, written after its type: the name bare where it is a
+  plain identifier, `COLLATE NOCASE`, and quoted otherwise. SQLite finds a
+  collation by its name in any case, so the comparison compares names
+  ignoring case: `nocase` and `NOCASE` are one collation. A column without a
+  `COLLATE` compares as `BINARY`, so a declared `COLLATE BINARY` matches it.
 - `ALTER TABLE ... ADD COLUMN`, `RENAME COLUMN`, and `RENAME TO`.
 - Column and constraint changes ALTER TABLE cannot express, through a
   generated table-rebuild plan: create a rebuilt table in its desired shape,
   copy the retained columns, swap it in, and recreate the desired indexes and
   triggers when their metadata round-trips safely. One rebuild covers column
-  drops, column type, nullability, default and generated-expression changes,
-  a key column that gains or loses `AUTOINCREMENT`, added and removed table
+  drops, column type, nullability, collation, default and
+  generated-expression changes, a key column that gains or loses `AUTOINCREMENT`, added and removed table
   constraints (including enum-backed `CHECK`
   constraints, and a `UNIQUE` a column declares, which SQLite keeps as an
   autoindex no `DROP INDEX` can name), a changed `STRICT` or `WITHOUT ROWID` option, and a column

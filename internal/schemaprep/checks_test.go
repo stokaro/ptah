@@ -75,6 +75,22 @@ func TestColumnCheckNames(t *testing.T) {
 	}
 }
 
+// TestColumnCheckNames_SpelledNames names the unnamed CHECK of a column spelled
+// `"Status"` in a table spelled `"Cust"`, as an Oracle read or a quoted SQL
+// name gives them, from the stored names: Cust_Status_check, which is the name
+// the Oracle renderer creates. Built from the spellings, the name holds the
+// quotes, so the comparison plans the CHECK again on every run.
+func TestColumnCheckNames_SpelledNames(t *testing.T) {
+	c := qt.New(t)
+	table := schemamodel.Table{StructName: "Cust", Name: `"Cust"`}
+	fields := []schemamodel.Field{{StructName: "Cust", Name: `"Status"`, Check: `"Status" IN ('a','b')`}}
+
+	got := schemaprep.ColumnCheckNames(table, fields, nil, "oracle")
+
+	c.Assert(got, qt.DeepEquals, map[string]string{`"Status"`: "Cust_Status_check"})
+	c.Assert(schemaprep.DefaultCheckName(`APP."Cust"`, `"Status"`), qt.Equals, "Cust_Status_check")
+}
+
 // TestColumnCheckNames_MySQLFamily names the CHECKs of columns a, b and d,
 // none named, beside c's named one. Measured on MySQL 8.4.11, the table the
 // renderer writes holds `e_chk_1`, `e_chk_2` and `e_chk_3`: the numbers follow

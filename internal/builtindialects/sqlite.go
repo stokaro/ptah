@@ -90,6 +90,11 @@ func sqlite() descriptor.Dialect {
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names: descriptor.Names{Lookup: "ascii_case_insensitive"},
+		// A column's COLLATE is written after its type. sqlite3 3.51.0 finds
+		// a collation by its name in any case and quoted or not: NOCASE,
+		// "NoCase" and nocase compare alike, and a column without one
+		// compares as BINARY.
+		Columns: descriptor.Columns{Collations: true, InheritedCollation: "BINARY"},
 		TableOptions: []descriptor.TableOption{
 			{Option: "STRICT", Words: []string{"STRICT"}, Property: "strict"},
 			{Option: "WITHOUT_ROWID", Words: []string{"WITHOUT", "ROWID"}, Property: "without_rowid"},

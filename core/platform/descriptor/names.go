@@ -152,6 +152,18 @@ type Columns struct {
 	// changes its type, nullability and collation and keeps the rest of the
 	// column as it was.
 	AlterColumnKeepsRest bool `json:"alter_column_keeps_rest,omitempty"`
+	// Collations reports that a column's own collation is written on the
+	// column and compared with the one the catalog reports the column
+	// declaring. A column that declares none takes its type's collation, so
+	// one the catalog reports declaring a collation is changed back. Names
+	// compare exactly where Grammar.Columns.QualifiedCollations holds, and
+	// ignoring ASCII case elsewhere.
+	Collations bool `json:"collations,omitempty"`
+	// InheritedCollation is the collation every column that declares none
+	// compares with, whatever its type: BINARY on SQLite. A declaration
+	// naming it holds against a column that declares none. Empty means the
+	// type decides, and the catalog reports the collation the column takes.
+	InheritedCollation string `json:"inherited_collation,omitempty"`
 }
 
 // Statements states how a server reads statements a schema file writes about

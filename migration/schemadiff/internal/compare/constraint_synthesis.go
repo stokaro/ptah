@@ -72,7 +72,7 @@ func synthesizeFieldLevelCheckConstraints(
 		}
 		name, named := checkNames[f.StructName][f.Name]
 		if !named {
-			name = tableLeafName + "_" + f.Name + "_check"
+			name = schemaprep.DefaultCheckName(tableLeafName, f.Name)
 		}
 		synthesized = append(synthesized, schemamodel.Constraint{
 			StructName:      f.StructName,

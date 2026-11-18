@@ -1143,6 +1143,15 @@ func addedColumnUnique(tableDiff difftypes.TableDiff, colDiff difftypes.ColumnDi
 	}
 }
 
+// rewritesColumnType reports whether colDiff changes the column through ALTER
+// COLUMN ... TYPE: a type change, or a collation change, which PostgreSQL makes
+// with the same clause and refuses alike while a view or a generated column
+// reads the column.
+func rewritesColumnType(colDiff difftypes.ColumnDiff) bool {
+	changed := columnchange.Properties(colDiff)
+	return changed.Type || changed.Collation
+}
+
 // modifyColumnComment describes a column's changes. The changes are listed in
 // sorted key order so migration output is deterministic (issue #59).
 func modifyColumnComment(tableName string, colDiff difftypes.ColumnDiff) ast.Node {

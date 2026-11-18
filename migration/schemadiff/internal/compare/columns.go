@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/oracletype"
+	"ptah.run/internal/pgcollation"
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
@@ -539,6 +540,8 @@ func columnsWithDesiredDomains(
 	// change.
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnCollation]; owned {
 		applyColumnDifference(colDiff.Changes, "collation", receipt.Difference)
+	} else if change := columnCollationChange(genCol, dbCol, dialect); change != "" {
+		colDiff.Changes["collation"] = change
 	}
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnType]; owned {
 		applyColumnDifference(colDiff.Changes, "type", receipt.Difference)
@@ -597,6 +600,67 @@ func columnsWithDesiredDomains(
 	applyDeclaredSerial(&colDiff, genCol, dbCol, dialect, ctx)
 
 	return colDiff
+}
+
+// columnCollationChange is the change of a column's collation, on an engine
+// whose descriptor states Columns.Collations, and empty where the collation
+// holds. A column that declares none holds where the catalog reports none
+// declared.
+//
+// On an engine whose grammar reads qualified collations, the names are
+// PostgreSQL's ([qualifiedCollationHolds]). Elsewhere a name is one identifier
+// compared ignoring ASCII case, and a declaration of the descriptor's
+// InheritedCollation is a column that declares none, since the catalog reports
+// none declared for it: `COLLATE BINARY` on SQLite.
+func columnCollationChange(desired schemamodel.Field, current catalog.Column, dialect string) string {
+	facts := columnFactsOf(dialect)
+	if !facts.Collations {
+		return ""
+	}
+	change := current.Collate + " -> " + desired.Collate
+	if qualifiedCollations.Get(dialect) {
+		if qualifiedCollationHolds(desired.Collate, current) {
+			return ""
+		}
+		return change
+	}
+	declared := desired.Collate
+	if facts.InheritedCollation != "" && strings.EqualFold(declared, facts.InheritedCollation) {
+		declared = ""
+	}
+	if strings.EqualFold(declared, current.Collate) {
+		return ""
+	}
+	return change
+}
+
+// qualifiedCollationHolds reports whether the collation declared, in the
+// spelling [pgcollation.Name.Model] writes, is the one current holds.
+//
+// A column that declares a collation is compared with the one the catalog
+// reports it declaring, and where it reports none, with the one the column
+// takes from its type: `COLLATE "C"` on a column of type name, or `COLLATE
+// "default"` on text, restates what the column holds. That inherited
+// collation is compared by name alone, because the catalog's answer for it
+// names no schema.
+func qualifiedCollationHolds(declaredCollation string, current catalog.Column) bool {
+	if declaredCollation == "" {
+		return current.Collate == ""
+	}
+	declared, err := pgcollation.Read(declaredCollation)
+	if err != nil {
+		// A name the renderer refuses is not one the catalog can hold.
+		return false
+	}
+	if current.Collate == "" {
+		inherited := current.EffectiveCollate
+		if inherited == "" {
+			inherited = "default"
+		}
+		return declared.Name == inherited
+	}
+	read, err := pgcollation.Read(current.Collate)
+	return err == nil && pgcollation.Same(declared, read)
 }
 
 // applyDeclaredSerial records the default a column of a serial type takes where the

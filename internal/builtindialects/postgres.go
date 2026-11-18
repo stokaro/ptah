@@ -138,7 +138,12 @@ func postgres() descriptor.Dialect {
 		Names:            descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true, RegclassConstants: true},
 		IndexNaming:      descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		ConstraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
-		Columns:          descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true, SerialNotNull: true},
+		// A column's collation is written after its type and read back from
+		// pg_attribute.attcollation. CockroachDB and YugabyteDB leave it
+		// unset: neither renderer path nor reader has been measured there.
+		Columns: descriptor.Columns{
+			NationalCharAsChar: true, IdentityNotNull: true, SerialNotNull: true, Collations: true,
+		},
 		// A second CREATE EXTENSION of one extension is refused, measured on
 		// 18.6: `extension "pgcrypto" already exists`.
 		//
@@ -258,7 +263,7 @@ func postgres() descriptor.Dialect {
 		// writes no LANGUAGE is PL/pgSQL. ALTER TABLE ... ADD CONSTRAINT k
 		// UNIQUE USING INDEX i makes the unique index i the key k, renaming it.
 		Grammar: descriptor.Grammar{
-			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
+			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true, QualifiedCollations: true},
 			Constraints: descriptor.ConstraintGrammar{
 				TableNotNull: true,
 				Enforcement:  descriptor.Enforcement{Checks: true, ForeignKeys: true, Once: true},

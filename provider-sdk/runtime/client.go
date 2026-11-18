@@ -148,9 +148,13 @@ func (c *Client) Close() {
 }
 
 // Open starts a session after negotiation. It returns no usable handle on an
-// error, an empty handle, or an engine mismatch.
+// error, an empty handle, or an engine mismatch. A request for trusted dev
+// SQL that the engine did not negotiate is refused before it is sent.
 func (c *Client) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
 	request = proto.CloneOf(request)
+	if err := provider.ValidateOpenRequest(c.description, request); err != nil {
+		return nil, err
+	}
 	expected, err := c.addressContext(ctx, request)
 	if err != nil {
 		return nil, err

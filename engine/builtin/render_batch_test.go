@@ -80,11 +80,12 @@ func TestRenderBatchReportsOmissionsWithoutLeakingBetweenCalls(t *testing.T) {
 			{Name: "email", Type: "VARCHAR(255)", Nullable: true, Collate: "utf8mb4_bin"},
 		},
 	}
-	request := renderer.Request{Target: "postgres", Capabilities: capability.Postgres18(), Nodes: []ast.Node{table}}
+	// CockroachDB is handed no column collation, so the render reports one.
+	request := renderer.Request{Target: "cockroachdb", Capabilities: capability.ForDialect("cockroachdb"), Nodes: []ast.Node{table}}
 	result, err := runtime.Render(t.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Omissions, qt.HasLen, 1)
-	c.Assert(result.Omissions[0].Dialect, qt.Equals, "postgres")
+	c.Assert(result.Omissions[0].Dialect, qt.Equals, "cockroachdb")
 	c.Assert(result.Omissions[0].Name, qt.Equals, "accounts.email")
 	c.Assert(result.Omissions[0].Property, qt.Equals, "collation")
 	c.Assert(result.Omissions[0].Detail, qt.Equals, "utf8mb4_bin")
