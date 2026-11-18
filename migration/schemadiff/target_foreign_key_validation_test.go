@@ -37,7 +37,7 @@ func TestCompareWithDatabaseInfo_ValidatesTargetForeignKeys_FailurePath(t *testi
 			dialect: platform.MySQL,
 			schema:  indexedForeignKeyDatabase(),
 			wantIs:  ptaherr.ErrUnsupportedFeature,
-			wantErr: `mysql requires referenced columns tenant_id, code on table "parents" to be declared unique`,
+			wantErr: `mysql requires referenced columns tenant_id, code on table "parents" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns in that order, with no WHERE clause and no expression, COLLATE, prefix length or operator class on a key`,
 		},
 		{
 			name:      "sql server cascade cycle",

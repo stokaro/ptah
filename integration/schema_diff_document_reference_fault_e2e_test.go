@@ -37,7 +37,7 @@ const sqliteDiffReferenceKeyed = "CREATE TABLE parent (id integer PRIMARY KEY, c
 
 // sqliteDiffReferenceFaultLine is the diagnostic for
 // sqliteDiffReferenceFaulty, without the surface's prefix.
-const sqliteDiffReferenceFaultLine = `sqlite requires referenced columns code on table "parent" to be declared unique`
+const sqliteDiffReferenceFaultLine = `sqlite requires referenced columns code on table "parent" to be declared unique: a primary key, UNIQUE constraint or unique index must key exactly those columns, with no WHERE clause and no expression, COLLATE, prefix length or operator class on a key`
 
 // TestSchemaDiffRefusesAReferenceFaultInTheToDocument_FailurePathE2E plans
 // toward the faulty document on every surface of [documentDiffRuns].

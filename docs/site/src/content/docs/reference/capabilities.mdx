@@ -127,9 +127,11 @@ policy accepts a complete leftmost BTREE prefix, not FULLTEXT, SPATIAL, HASH,
 parser-backed, expression, or prefix indexes. The same path rejects generated
 FK columns on MariaDB, virtual generated FK columns on MySQL, invalid actions
 on MySQL stored generated columns, and mismatched signedness, character sets,
-or collations. SQLite accepts standalone candidate keys only when their
-collation semantics are represented in the schema IR; otherwise declare the
-primary or unique key inline.
+or collations. On SQLite a standalone unique index is a candidate key when it
+has no `WHERE` clause and every key is a bare column, which SQLite then compares
+under the column's declared collation. A key with an expression or a `COLLATE`
+does not qualify, because the schema model holds it as text it cannot compare
+with the column's collation.
 
 Ptah emits `ENGINE=InnoDB` for participating tables when the schema leaves the
 engine blank, so a session default cannot silently disable foreign keys.

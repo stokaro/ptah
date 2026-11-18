@@ -109,17 +109,18 @@ func sqlite() descriptor.Dialect {
 		// Comparison: what comparing a declaration with a catalog reads.
 		// SQLite keeps a table's name as the bytes it was given, names its
 		// own backing structures sqlite_autoindex_*, which no statement can
-		// refer to, and stores no comment on a table or a column.
+		// refer to, and stores no comment on a table or a column. A foreign
+		// key may list its parent key's columns in any order.
 		Comparison: descriptor.Comparison{
-			ForeignKeyIgnoresStandaloneUniqueIndex: true,
-			VerbatimTableNames:                     true,
-			InternalIndexPrefix:                    "sqlite_autoindex_",
-			DefaultGeneratedKind:                   "VIRTUAL",
-			AutoIncrementFlag:                      true,
-			PrimaryKeyNullable:                     true,
-			RowidTables:                            true,
-			TypeAffinity:                           true,
-			NoTableComments:                        true,
+			ForeignKeyMatchesKeyInAnyOrder: true,
+			VerbatimTableNames:             true,
+			InternalIndexPrefix:            "sqlite_autoindex_",
+			DefaultGeneratedKind:           "VIRTUAL",
+			AutoIncrementFlag:              true,
+			PrimaryKeyNullable:             true,
+			RowidTables:                    true,
+			TypeAffinity:                   true,
+			NoTableComments:                true,
 		},
 
 		// SQLite has no enum type, so an enum column is TEXT with a CHECK.

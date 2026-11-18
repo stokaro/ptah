@@ -153,6 +153,7 @@ own measurement conditions.
 | [A MySQL file the transaction witness refuses](#a-mysql-file-the-transaction-witness-refuses) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies every file, exit `0` |
 | [A statement the bundled SQLite refuses](#a-statement-the-bundled-sqlite-refuses) | replays on the SQLite it bundles, reports the refusal as a replay error of the file, and exits `1` | replays on an older SQLite that accepts the statement, and lints the selection |
 | [A finding in a goose or dbmate file](#a-finding-in-a-goose-or-dbmate-file) | places it on the statement's line of the source file, at the statement's offset | places it on line 1, the section directive, at an offset that falls there |
+| [A UNIQUE a SQLite column declares, removed](#a-unique-a-sqlite-column-declares-removed) | rebuilds the table, and the plan applies to a database the `--from` document created | plans `DROP INDEX` for an index the database does not hold, and the apply exits `1` |
 
 ## A `--config` selection naming more than one file
 
@@ -1554,6 +1555,34 @@ file, and the binary's own answer in the other three layouts shows it means the
 source line. Ptah places the finding where the statement is.
 
 **Evidence.** `integration/migrate_lint_converted_source_lines_e2e_test.go`
+
+## A UNIQUE a SQLite column declares, removed
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** SQLite keeps a `UNIQUE` that a column declares as an
+index it builds for itself, `sqlite_autoindex_parent_1`, and `DROP INDEX`
+cannot name it. Removing it means rebuilding the table, which is the plan
+`ptah-compat schema diff` writes. The pinned community binary v1.3.0 names the
+index `parent_code` and plans `DROP INDEX`. Measured on 2026-11-18 with
+`schema diff --dev-url "sqlite://dev?mode=memory"` from
+`parent (id INTEGER PRIMARY KEY, code TEXT NOT NULL UNIQUE)` and
+`child (id INTEGER PRIMARY KEY, code TEXT REFERENCES parent(code))` to the same
+document without the `UNIQUE` and without the foreign key:
+
+| Step | Binary | `ptah-compat` |
+| --- | --- | --- |
+| The plan | `DROP INDEX parent_code`, then a rebuild of `child` | a rebuild of `parent`, then a rebuild of `child` |
+| The plan, run with `sqlite3` on a database created from the first document | fails at its second statement with `no such index: parent_code` | applies, and both rows remain |
+| `schema apply --auto-approve` on that database | exits `1` with the same error | exits `0`, and both rows remain |
+| `schema diff` from the database to the second document afterwards | plans the same `DROP INDEX` again | `Schemas are synced, no changes to be made.` |
+
+A plan that fails on every database the `--from` document describes loses the
+change the author asked for. In the other direction both binaries write a plan
+that applies: the binary creates a standalone unique index, and `ptah-compat`
+rebuilds `parent` with the `UNIQUE` on the column, as the document declares it.
+
+**Evidence.** `integration/sqlite_column_unique_removal_e2e_test.go`
 
 ## Not on this page
 
