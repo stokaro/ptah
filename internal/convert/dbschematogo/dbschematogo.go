@@ -21,6 +21,7 @@ import (
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/catalogfield"
+	"ptah.run/internal/catalogspelling"
 	"ptah.run/internal/columnsemantics"
 	"ptah.run/internal/convert/features"
 	"ptah.run/internal/indexbacking"
@@ -31,6 +32,10 @@ import (
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
 // This is needed for down migrations where we use the current DB state as the target
+//
+// A read whose names are the stored spelling (catalog.Database.StoredNames)
+// is converted with the spelling [catalogspelling.Spell] gives it, so every
+// name in the result addresses the object it was read from.
 //
 // dialect names the server the catalog was read from, and decides which
 // constraint kinds that server enforces with an index the reader also reports;
@@ -46,7 +51,12 @@ func ConvertDBSchemaToGoSchema(ctx context.Context, dbSchema *catalog.Database, 
 	if dbSchema == nil {
 		dbSchema = &catalog.Database{}
 	}
-	dbSchema = withoutPartitionCopies(dbSchema)
+	// A read that reports stored names becomes a schema whose names address
+	// the same objects: on Oracle a table stored as orders was created quoted,
+	// and only `"orders"` renders and compares as that table rather than as
+	// ORDERS (stokaro/ptah#6243).
+	spelled := catalogspelling.Spell(*dbSchema, dialect)
+	dbSchema = withoutPartitionCopies(&spelled)
 	rules, err := targetRules(dialect, runtime)
 	if err != nil {
 		return nil, err

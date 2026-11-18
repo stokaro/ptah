@@ -503,12 +503,26 @@ func escapeStringLiteral(s string) string {
 // quoted, so a DROP names that table rather than ORDERS, which is a different
 // table or none at all (stokaro/ptah#6243). A quoted name that is its own fold,
 // such as "ORDERS", is written bare.
+//
+// Such a name may arrive quoted twice, `"""orders"""`, when a qualified name
+// was built with tableref.Canonical, which quotes a part holding a quote so
+// that it parses back. Oracle refuses a double quote inside a name, so a name
+// that is still quoted once its quotes are removed is that spelling, and it is
+// read as `"orders"`.
 func escapeIdentifier(identifier string) string {
 	name := unquoteIdentifier(identifier)
+	for name != identifier && quotedOnce(name) {
+		identifier, name = name, unquoteIdentifier(name)
+	}
 	if name != identifier && sqlident.CatalogName(platform.Oracle, name) != name {
 		return sqlident.Quote(platform.Oracle, name)
 	}
 	return sqlident.Ident(platform.Oracle, name)
+}
+
+// quotedOnce reports whether name is a double-quoted identifier.
+func quotedOnce(name string) bool {
+	return len(name) >= 2 && name[0] == '"' && name[len(name)-1] == '"'
 }
 
 func escapeQualifiedIdentifier(identifier string) string {

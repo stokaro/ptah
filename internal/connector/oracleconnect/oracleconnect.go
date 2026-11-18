@@ -131,7 +131,7 @@ func (Service) Describe(
 		return info, fmt.Errorf("failed to get Oracle schema: %w", err)
 	}
 	info.Schema = currentSchema
-	info.IdentifierSemantics = identifier.ForCatalog(platform.Oracle)
+	info.IdentifierSemantics = identifier.ForDialect(platform.Oracle)
 	info.IdentifierSemantics.DefaultSchema = info.Schema
 	return info, nil
 }

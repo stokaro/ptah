@@ -53,28 +53,48 @@ A name Oracle refuses bare — a reserved word such as `size`, `comment` or
 `user`, or a name carrying a character outside a plain identifier — is quoted on
 both sides instead, so the two still agree.
 
-The case of a declared name carries no meaning. A declared `orders` means the
-table Oracle stores as `ORDERS`, and there is no syntax to declare a name whose
-case Oracle keeps. A reserved word is quoted, as above, and compared the same
-way.
+A plain name is written bare. Besides letters, digits and the underscore it
+may hold `$` and `#` after its first character, as Oracle allows, so `a$b` is
+written bare and stored as `A$B`.
+
+The case of a name declared bare carries no meaning. A declared `orders` means
+the table Oracle stores as `ORDERS`, whether it comes from a Go annotation or
+a SQL file. A reserved word is quoted, as above, and compared the same way. In
+a SQL schema file a quoted name keeps the meaning Oracle gives it:
+`CREATE TABLE "orders"` declares the table stored as `orders`. Go annotations
+have no quoted form.
 
 A name read from the catalog is the stored spelling, and two spellings that
 differ only in case are two objects. A table created as `"orders"` is stored
 as `orders`, which is not what any bare name folds to, so Ptah keeps it apart
-from `ORDERS` and writes it quoted wherever a statement names it. A catalog
-name that equals its upper-case fold is written bare:
+from `ORDERS` and writes it quoted wherever a statement names it. The rule
+covers tables, columns, indexes, constraints, views, materialized views and
+sequences. Triggers follow it too, but the Oracle read does not report them,
+so a plan never names one. A catalog name that equals its upper-case fold is
+written bare:
 
 ```sql
 DROP TABLE APP."orders" PURGE;
 DROP TABLE APP.ORDERS PURGE;
 ```
 
+A database used as the desired side keeps the same spelling. `schema diff
+--from` and `--to` on one account plan nothing, and `schema inspect --format
+sql` and `db read` write `CREATE TABLE APP."orders"`, so the file creates the
+same objects when it is replayed.
+
 A declaration that would replace such an object is refused. If the declaration
 names `orders`, the catalog has no `ORDERS`, and it holds the case-sensitive
 `"orders"`, the plan would drop `"orders"` and create an empty `ORDERS`. Ptah
-stops before planning and names both spellings instead. The same rule holds for
-columns, indexes and constraints. Rename the declaration or the database object
-so that the two names agree.
+stops before planning and names both spellings instead. Only a name declared
+bare and not in upper case is refused this way: `ORDERS` and `"orders"` each
+name one object exactly. Rename the declaration or the database object so that
+the two names agree.
+
+An `--exclude` or `--include` selector matches the stored spelling exactly,
+without quotes: `orders` selects the table created as `"orders"`, and `ORDERS`
+selects the one created unquoted. A selector written with quotes matches
+nothing.
 
 Two type mappings are worth knowing because Oracle has no direct equivalent:
 `BOOLEAN` becomes `NUMBER(1)`, with `true` and `false` written as `1` and `0`,

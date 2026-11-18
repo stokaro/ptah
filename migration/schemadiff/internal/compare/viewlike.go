@@ -52,8 +52,9 @@ type viewLikeFamily[LA ~[]D, LM ~[]M, D, C, M any] struct {
 	Compare func(D, C, string) M
 	Changed func(M) bool
 
-	// Carry describes a row the database reported in the shape the diff holds.
-	Carry func(C) D
+	// Carry describes a row the database reported in the shape the diff holds,
+	// for the dialect the comparison targets.
+	Carry func(C, string) D
 }
 
 var plainViewFamily = viewLikeFamily[
@@ -358,7 +359,7 @@ func compareViewLikesByName[LA ~[]D, LM ~[]M, D, C, M any](
 			continue
 		}
 		if desired.NotDescribed.DescribesIn(family.CoverageKind, family.CurrentSchema(row), family.CurrentQualifiedName(row), family.CurrentName(row)) {
-			*family.Removed(diff) = append(*family.Removed(diff), family.Carry(row))
+			*family.Removed(diff) = append(*family.Removed(diff), family.Carry(row, dialect))
 		}
 	}
 
@@ -414,7 +415,7 @@ func compareViewLikesByIdentity[LA ~[]D, LM ~[]M, D, C, M any](
 	for identity, row := range reported {
 		if _, exists := declared[identity]; !exists {
 			if desired.NotDescribed.DescribesIn(family.CoverageKind, family.CurrentSchema(row), family.CurrentQualifiedName(row), family.CurrentName(row)) {
-				*family.Removed(diff) = append(*family.Removed(diff), family.Carry(row))
+				*family.Removed(diff) = append(*family.Removed(diff), family.Carry(row, dialect))
 			}
 		}
 	}
@@ -508,8 +509,8 @@ func findViewLikeRow[C any](
 // two bools, and the rules are sqlutil.CheckOptionRequestsCheck and
 // sqlutil.CheckOptionIsLocal, shared with the conversion path rather than
 // spelled a second time here.
-func viewFromCatalog(reported catalog.View) schemamodel.View {
-	name := reported.QualifiedName()
+func viewFromCatalog(reported catalog.View, dialect string) schemamodel.View {
+	name := spelledQualifiedName(reported.Schema, reported.Name, dialect)
 	if reported.Schema == "" {
 		name = reported.Name
 	}
@@ -532,9 +533,9 @@ func viewFromCatalog(reported catalog.View) schemamodel.View {
 // observed facets are not carried: a declaration holds desired settings, and
 // only an owner converts one into the other. A rollback that recreates the view
 // takes it from the converted pre-change schema instead.
-func matViewFromCatalog(reported catalog.MaterializedView) schemamodel.MaterializedView {
+func matViewFromCatalog(reported catalog.MaterializedView, dialect string) schemamodel.MaterializedView {
 	return schemamodel.MaterializedView{
-		Name:    reported.QualifiedName(),
+		Name:    spelledQualifiedName(reported.Schema, reported.Name, dialect),
 		Body:    reported.Body,
 		Comment: reported.Comment,
 		Options: slices.Clone(reported.Options),

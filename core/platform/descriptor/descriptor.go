@@ -442,8 +442,16 @@ type Identifiers struct {
 	// spelling exactly. Empty states no fold. Where it is set, a catalog name
 	// that is a plain identifier and not in that case was created quoted, so
 	// no unquoted name reaches it: it compares exactly, and a statement names
-	// it quoted.
+	// it quoted. Any other value is refused when the registry is built
+	// ([ErrInvalidDescriptor]); [UnquotedFolds] lists the accepted ones.
 	UnquotedFold string `json:"unquoted_fold,omitempty"`
+	// BareChars lists the characters besides ASCII letters, digits and the
+	// underscore that a name written without quotes may hold after its first
+	// character, such as "$#" on Oracle. A plain identifier is one made of
+	// those characters, and a dialect that writes names bare writes it bare.
+	// Only ASCII punctuation is accepted, and never a quote character or a
+	// dot.
+	BareChars string `json:"bare_chars,omitempty"`
 }
 
 // Placeholder is how a statement marks a bound parameter.

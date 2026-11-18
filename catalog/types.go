@@ -248,6 +248,15 @@ type Database struct {
 	// ConnectedRoleSuperuser reports whether the PostgreSQL connection acts as
 	// the owner when it revokes an object's privileges.
 	ConnectedRoleSuperuser bool `json:"-"`
+	// StoredNames reports that every name is the spelling the engine's catalog
+	// stores, which is what a live read reports, rather than the spelling a
+	// declaration wrote. It matters only on an engine whose descriptor states an
+	// UnquotedFold: there a stored name that is a plain identifier and not in
+	// the fold's case was created quoted, so no unquoted name reaches it, and
+	// Ptah names it quoted when it compares, converts or renders the read.
+	// Without it the same name is taken as written, as a schema predicted from
+	// a declaration writes it, and folds. The Oracle reader sets it.
+	StoredNames bool `json:"stored_names,omitempty"`
 }
 
 // VirtualTable identifies one SQLite virtual table and the module that owns

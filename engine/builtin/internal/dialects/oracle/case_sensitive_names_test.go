@@ -64,6 +64,26 @@ func TestCaseSensitiveNames_StayQuoted(t *testing.T) {
 			want: `DROP INDEX "idx_qty";`,
 		},
 		{
+			name: "a spelled name quoted again when it was qualified",
+			node: ast.NewDropTable(`APP."""orders"""`),
+			want: `DROP TABLE APP."orders" PURGE;`,
+		},
+		{
+			name: "a created table named by its spelling",
+			node: &ast.CreateTableNode{Name: `APP."""orders"""`, Columns: []*ast.ColumnNode{{Name: "ID", Type: "NUMBER(10)", Primary: true}}},
+			want: `CREATE TABLE APP."orders" (`,
+		},
+		{
+			name: "a name holding a dollar sign is written bare",
+			node: &ast.AlterTableNode{Name: "ORDERS", Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: "a$b"}}},
+			want: `ALTER TABLE ORDERS DROP COLUMN a$b;`,
+		},
+		{
+			name: "a spelled name holding a dollar sign stays quoted",
+			node: &ast.AlterTableNode{Name: "ORDERS", Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: `"a$b"`}}},
+			want: `ALTER TABLE ORDERS DROP COLUMN "a$b";`,
+		},
+		{
 			name: "a keyword keeps the quotes it always had",
 			node: &ast.AlterTableNode{Name: "ORDERS", Operations: []ast.AlterOperation{&ast.DropColumnOperation{ColumnName: "size"}}},
 			want: `ALTER TABLE ORDERS DROP COLUMN "size";`,

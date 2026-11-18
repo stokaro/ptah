@@ -80,6 +80,9 @@ func (r *Reader) ReadSchema() (*catalog.Database, error) {
 func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, error) {
 	schema := &catalog.Database{
 		Schemas: []catalog.Schema{{Name: r.schema}},
+		// Every name below is read from the data dictionary, which stores a
+		// quoted name as written and an unquoted one in upper case.
+		StoredNames: true,
 	}
 
 	tables, err := r.readTables(ctx)
