@@ -225,7 +225,8 @@ func sqliteRevisionTable() descriptor.RevisionTable {
 		CreateLog:      createLog,
 		CreateApplyLog: createApplyLog,
 		// Measured in process by the migrator's repeatable tests.
-		CreateRepeatables: createRepeatables,
+		CreateRepeatables: sqliteCreateRepeatables,
+		AddedColumns:      map[string]string{repeatableBodyColumn: "BLOB NULL"},
 		FirstRow:          "limit",
 		Update:            updateRevision,
 		Respell:           respellRevision(),

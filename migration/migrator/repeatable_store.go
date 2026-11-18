@@ -22,7 +22,17 @@ type repeatableRow struct {
 	attemptedAt     time.Time
 	appliedAt       time.Time
 	errorText       string
+	// body is the content that last applied, nil where the record keeps none.
+	body []byte
 }
+
+// repeatableBodyColumn is the record's column holding the content that last
+// applied, and repeatableBodyDefinition the definition it is added with to a
+// record created without it, where the engine's descriptor states none.
+const (
+	repeatableBodyColumn     = "body"
+	repeatableBodyDefinition = "BYTEA NULL"
+)
 
 // repeatableTableName is the bare name of the record, derived from the
 // revision table's as the operation log's is, so an operator who renamed or
@@ -54,8 +64,18 @@ func (m *Migrator) readRepeatableRows(ctx context.Context) (map[string]repeatabl
 	if err := m.refuseForeignMetadataTable(ctx, name); err != nil {
 		return nil, err
 	}
+	// A record created without the body column reads as one that keeps no
+	// body. Reading never adds it, so a status or a dry run changes nothing.
+	withBody, err := m.metadataColumnExists(ctx, name, repeatableBodyColumn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the repeatable migration record: %w", err)
+	}
+	body := "NULL"
+	if withBody {
+		body = repeatableBodyColumn
+	}
 	query := "SELECT identity, checksum, state, attempt_checksum, attempt_order, transactional, " +
-		"attempted_at, applied_at, error FROM " + m.repeatableTable()
+		"attempted_at, applied_at, error, " + body + " FROM " + m.repeatableTable()
 	read, err := queryMigrationRowsFrom(ctx, m.conn, query, m.scanRepeatableRow,
 		"failed to read the repeatable migration record",
 		"failed to scan the repeatable migration record",
@@ -77,7 +97,7 @@ func (m *Migrator) scanRepeatableRow(scanner rowScanner) (repeatableRow, error) 
 	var errorText sql.NullString
 	if err := scanner.Scan(
 		&row.identity, &row.checksum, &row.state, &row.attemptChecksum, &row.attemptOrder, &transactional,
-		&attemptedAt, &appliedAt, &errorText,
+		&attemptedAt, &appliedAt, &errorText, &row.body,
 	); err != nil {
 		return repeatableRow{}, err
 	}
@@ -112,7 +132,14 @@ func (m *Migrator) ensureRepeatableTable(ctx context.Context) error {
 	if _, err := m.conn.ExecContext(ctx, ddl); err != nil {
 		return fmt.Errorf("failed to create the repeatable migration record: %w", err)
 	}
-	return m.refuseForeignMetadataTable(ctx, m.repeatableTableName())
+	if err := m.refuseForeignMetadataTable(ctx, m.repeatableTableName()); err != nil {
+		return err
+	}
+	err := m.ensureMetadataColumn(ctx, m.repeatableTableName(), repeatableBodyColumn, repeatableBodyDefinition)
+	if err != nil {
+		return fmt.Errorf("failed to add column %s to the repeatable migration record: %w", repeatableBodyColumn, err)
+	}
+	return nil
 }
 
 // markRepeatableAttempt records that an attempt is about to run, before any
@@ -137,18 +164,21 @@ func (m *Migrator) markRepeatableAttempt(ctx context.Context, attempt repeatable
 		m.migrationLogRunID, now)
 }
 
-// completeRepeatableOn records the attempt's content as applied, on conn: the
-// body's own transaction when it ran in one, so the digest and the body commit
-// together or not at all.
+// completeRepeatableOn records the attempt's content as applied, its digest
+// and its bytes, on conn: the body's own transaction when it ran in one, so the
+// record and the work commit together or not at all. A record whose last
+// transactional attempt is unfinished therefore describes the content that
+// applied before it.
 func (m *Migrator) completeRepeatableOn(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	repeatable *repeatableMigration,
 ) error {
-	query := "UPDATE " + m.repeatableTable() + " SET state = ?, checksum = ?, applied_at = ?, error = NULL " +
-		"WHERE identity = ?"
+	query := "UPDATE " + m.repeatableTable() + " SET state = ?, checksum = ?, " + repeatableBodyColumn +
+		" = ?, applied_at = ?, error = NULL WHERE identity = ?"
 	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), query),
-		RepeatableStateApplied, repeatable.checksum, nativeRevisionTimestamp(time.Now()), repeatable.identity)
+		RepeatableStateApplied, repeatable.checksum, repeatable.body, nativeRevisionTimestamp(time.Now()),
+		repeatable.identity)
 }
 
 // failRepeatable records that the attempt's body failed. It runs on a context

@@ -108,14 +108,14 @@ const createApplyLog = `CREATE TABLE IF NOT EXISTS {table} (
     PRIMARY KEY (run_id, seq)
 ){engine}`
 
-// createRepeatables is the record of repeatable migrations, one row per
-// identity. checksum is the digest of the content that last applied, empty
-// until one has; the attempt columns describe the last attempt, whichever way
-// it went. An engine states it only where the migrator's repeatable path is
-// measured, so leaving it out is what refuses the path elsewhere.
-// integration/migrator/repeatable_engines_live_test.go runs that path on every
-// server engine that states one.
-const createRepeatables = `CREATE TABLE IF NOT EXISTS {table} (
+// createRepeatablesColumns is the record of repeatable migrations, one row
+// per identity, up to its last column. checksum is the digest of the content
+// that last applied, empty until one has; the attempt columns describe the
+// last attempt, whichever way it went. An engine states the record only where
+// the migrator's repeatable path is measured, so leaving it out is what
+// refuses the path elsewhere. integration/migrator/repeatable_engines_live_test.go
+// runs that path on every server engine that states one.
+const createRepeatablesColumns = `CREATE TABLE IF NOT EXISTS {table} (
     identity VARCHAR(255) NOT NULL PRIMARY KEY,
     checksum VARCHAR(64) NOT NULL DEFAULT '',
     state VARCHAR(32) NOT NULL,
@@ -125,8 +125,25 @@ const createRepeatables = `CREATE TABLE IF NOT EXISTS {table} (
     run_id VARCHAR(64) NOT NULL,
     attempted_at TIMESTAMP NOT NULL,
     applied_at TIMESTAMP NULL,
-    error TEXT NULL
+    error TEXT NULL,
+`
+
+// createRepeatables is the record on the PostgreSQL family. body is the
+// content that last applied, byte for byte, which is what lets a drift check
+// replay a repeatable migration whose file changed or is gone. It is binary
+// so the bytes the digest covers are the bytes read back, whatever encoding
+// the file is in.
+const createRepeatables = createRepeatablesColumns + `    body BYTEA NULL
 ){engine}`
+
+// sqliteCreateRepeatables is the record on SQLite, whose binary type is BLOB.
+const sqliteCreateRepeatables = createRepeatablesColumns + `    body BLOB NULL
+){engine}`
+
+// repeatableBodyColumn names the record's body column in AddedColumns. The
+// migrator adds the column to a record created without it, as BYTEA unless the
+// engine states its own binary type there.
+const repeatableBodyColumn = "body"
 
 // respellRevision gives a revision row its file's version spelling in place.
 func respellRevision() []string {

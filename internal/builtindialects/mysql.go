@@ -358,7 +358,9 @@ const mysqlCreateApplyLog = `CREATE TABLE IF NOT EXISTS {table} (
 // time its attempt started.
 //
 // error is LONGTEXT for the reason the apply log's is: in strict mode a
-// failure longer than TEXT holds would fail the write that records it.
+// failure longer than TEXT holds would fail the write that records it. body is
+// LONGBLOB for the same reason: a BLOB holds 65,535 bytes, and a longer body
+// would fail the write that records it as applied, inside its transaction.
 const mysqlCreateRepeatables = `CREATE TABLE IF NOT EXISTS {table} (
     identity VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL PRIMARY KEY,
     checksum VARCHAR(64) NOT NULL DEFAULT '',
@@ -369,7 +371,8 @@ const mysqlCreateRepeatables = `CREATE TABLE IF NOT EXISTS {table} (
     run_id VARCHAR(64) NOT NULL,
     attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     applied_at TIMESTAMP NULL,
-    error LONGTEXT NULL
+    error LONGTEXT NULL,
+    body LONGBLOB NULL
 ){engine} DEFAULT CHARSET=utf8mb4`
 
 func mysqlFamilyRevisionTable(logInsertPrefix string) descriptor.RevisionTable {
@@ -393,6 +396,7 @@ func mysqlFamilyRevisionTable(logInsertPrefix string) descriptor.RevisionTable {
 		CreateLog:         createLog,
 		CreateApplyLog:    mysqlCreateApplyLog,
 		CreateRepeatables: mysqlCreateRepeatables,
+		AddedColumns:      map[string]string{repeatableBodyColumn: "LONGBLOB NULL"},
 		LogInsertPrefix:   logInsertPrefix,
 		CreateSchema:      createSchema,
 		EngineClause:      " ENGINE=InnoDB",

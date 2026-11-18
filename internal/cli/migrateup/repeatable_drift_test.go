@@ -57,17 +57,42 @@ func viewSQL(c *qt.C, dbPath string) string {
 	return definition
 }
 
+// driftRepeatableChangedView is the file's next content, which the record
+// does not hold as applied until a run executes it.
+const driftRepeatableChangedView = "DROP VIEW IF EXISTS user_emails;\n" +
+	"CREATE VIEW user_emails AS SELECT id, email FROM drift_users;\n"
+
 func TestCheckDriftRepeatables_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	dir, dbPath, shadowURL := appliedRepeatableDrift(c)
+	t.Run("a repeatable migration whose file is the content that applied", func(t *testing.T) {
+		c := qt.New(t)
+		dir, dbPath, shadowURL := appliedRepeatableDrift(c)
 
-	out, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
-		"--check-drift", "--shadow-db", shadowURL)
+		out, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
+			"--check-drift", "--shadow-db", shadowURL)
 
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains,
-		"Drift check: the database matches the schema its 1 applied migration and 1 repeatable migration produce\n")
-	c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1, 2})
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(out, qt.Contains,
+			"Drift check: the database matches the schema its 1 applied migration and 1 repeatable migration produce\n")
+		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1, 2})
+	})
+
+	// The check replays the body the record keeps, so a file that changed
+	// after it applied is compared against what the database ran; the run
+	// then applies the new content.
+	t.Run("a repeatable migration whose file changed after it applied", func(t *testing.T) {
+		c := qt.New(t)
+		dir, dbPath, shadowURL := appliedRepeatableDrift(c)
+		c.Assert(os.WriteFile(filepath.Join(dir, "R__user_emails.sql"), []byte(driftRepeatableChangedView), 0o600), qt.IsNil)
+
+		out, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
+			"--check-drift", "--shadow-db", shadowURL)
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(out, qt.Contains,
+			"Drift check: the database matches the schema its 1 applied migration and 1 repeatable migration produce\n")
+		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1, 2})
+		c.Assert(viewSQL(c, dbPath), qt.Equals, "CREATE VIEW user_emails AS SELECT id, email FROM drift_users")
+	})
 }
 
 func TestCheckDriftRepeatables_FailurePath(t *testing.T) {
@@ -84,20 +109,40 @@ func TestCheckDriftRepeatables_FailurePath(t *testing.T) {
 		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1})
 	})
 
-	t.Run("a repeatable migration that changed after it applied cannot be replayed", func(t *testing.T) {
+	// The control for the changed file: somebody ran the new content by hand.
+	// The file now describes the database, the record does not, and the check
+	// compares against the record.
+	t.Run("a changed repeatable migration whose new content the database already holds is drift", func(t *testing.T) {
 		c := qt.New(t)
-		dir, dbPath, shadowURL := appliedRepeatableDrift(c)
-		changed := "DROP VIEW IF EXISTS user_emails;\nCREATE VIEW user_emails AS SELECT id, email FROM drift_users;\n"
-		c.Assert(os.WriteFile(filepath.Join(dir, "R__user_emails.sql"), []byte(changed), 0o600), qt.IsNil)
+		dir, dbPath, shadowURL := appliedRepeatableDrift(c,
+			"DROP VIEW user_emails", "CREATE VIEW user_emails AS SELECT id, email FROM drift_users")
+		c.Assert(os.WriteFile(filepath.Join(dir, "R__user_emails.sql"), []byte(driftRepeatableChangedView), 0o600), qt.IsNil)
 
 		_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
 			"--check-drift", "--shadow-db", shadowURL)
 
+		c.Assert(err, qt.ErrorAs, new(*migrateup.DriftError))
+		c.Assert(err, qt.ErrorMatches, `(?s)error running migrations: the database schema differs from the schema its 1 applied `+
+			`migration and 1 repeatable migration produce, .*user_emails.*`)
+		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1})
+	})
+
+	// A run refuses a dirty record before it checks drift, so the check meets
+	// one only in a run that retries it.
+	t.Run("a repeatable migration whose attempt outside a transaction failed cannot be replayed", func(t *testing.T) {
+		c := qt.New(t)
+		dir, dbPath, shadowURL := appliedRepeatableDrift(c)
+		failing := "-- +ptah no_transaction\nCREATE TABLE partial_marker (id INTEGER PRIMARY KEY);\nTHIS IS NOT SQL;\n"
+		c.Assert(os.WriteFile(filepath.Join(dir, "R__user_emails.sql"), []byte(failing), 0o600), qt.IsNil)
+		_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir)
+		c.Assert(err, qt.IsNotNil)
+
+		_, err = runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
+			"--allow-dirty", "--check-drift", "--shadow-db", shadowURL)
+
 		c.Assert(err, qt.ErrorAs, new(*migrateup.DriftCheckUnavailableError))
 		c.Assert(err, qt.ErrorMatches, `error running migrations: the drift check could not compare the database with its applied history, `+
 			`so no pending migration was run: the applied history cannot be replayed: repeatable migration user_emails: `+
-			`R__user_emails\.sql changed after it applied, and the content the database ran is not in the directory`)
-		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1})
-		c.Assert(viewSQL(c, dbPath), qt.Equals, "CREATE VIEW user_emails AS SELECT email FROM drift_users")
+			`its last attempt is failed and ran outside a transaction, so what it left in the database is unknown`)
 	})
 }

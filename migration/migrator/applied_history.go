@@ -21,22 +21,25 @@ import (
 type AppliedHistory struct {
 	Migrations []*Migration
 	Revisions  []MigrationRevision
-	// Repeatables are the repeatable migrations whose record says the file
-	// the directory holds is the content the database last applied, in the
-	// order an up run executes them. A directory read without
+	// Repeatables are the repeatable migrations whose content is in effect in
+	// the database, each with that content, in the order an up run executes
+	// them: the file where it hashes to the digest recorded as applied, and
+	// the body the record keeps otherwise. A directory read without
 	// [WithRepeatableMigrations] contributes none.
 	Repeatables []AppliedRepeatable
 }
 
-// AppliedRepeatable is a repeatable migration whose file hashes to the digest
-// its record says applied.
+// AppliedRepeatable is a repeatable migration and the content of it in effect
+// in the database.
 type AppliedRepeatable struct {
 	// Identity is the name the record keys the migration by.
 	Identity string
-	// Path is the file's path in the migration directory.
+	// Path is the file's path in the migration directory, empty when the
+	// directory has no file for the identity and the content is the body the
+	// record keeps.
 	Path string
-	// Checksum is the digest of the file, which is the digest recorded as
-	// applied.
+	// Checksum is the digest recorded as applied, which the content hashes
+	// to.
 	Checksum string
 	// Migration carries the body the way a versioned up migration carries it.
 	// A history [Migrator.AppliedHistory] returns never holds a nil one.
@@ -58,10 +61,13 @@ func (h AppliedHistory) VersionKeys() []string {
 const (
 	// UnreplayableDirty is a revision that is not cleanly applied: a failed or
 	// partial run, or a rollback that stopped halfway. What it left in the
-	// database is not what any file says.
+	// database is not what any file says. For a repeatable migration it is an
+	// unfinished attempt outside a transaction, or a rolled-back one whose
+	// record keeps no body for the content that applied before it.
 	UnreplayableDirty = "dirty"
 	// UnreplayableMissingFile is an applied revision whose migration the
-	// directory no longer holds.
+	// directory no longer holds. For a repeatable migration the record keeps no
+	// body that hashes to the digest it applied.
 	UnreplayableMissingFile = "missing_file"
 	// UnreplayableRepeatable is an applied repeatable migration. Its row
 	// records the last run of a file that ran more than once, which a single
@@ -72,8 +78,8 @@ const (
 	// statements in the order the database ran them.
 	UnreplayableOutOfOrder = "out_of_order"
 	// UnreplayableChanged is a repeatable migration whose file changed after
-	// it applied. The database holds what the earlier content created, and
-	// the directory no longer has that content to replay.
+	// it applied, and whose record keeps no body that hashes to the digest it
+	// applied, so nothing holds the earlier content the database ran.
 	UnreplayableChanged = "changed"
 )
 

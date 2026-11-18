@@ -199,7 +199,15 @@ it from there when you write SQL against the table. It holds one row per
 identity: the digest that last applied, the state of the last attempt, the
 digest that attempt executed, its position in that run, whether it ran in a
 transaction, the run identifier, when it started, when content last applied,
-and the error of a failed attempt.
+the error of a failed attempt, and the bytes of the content that last applied,
+in the binary `body` column. The digest and the body are written in the
+attempt's own transaction when it runs in one, so the row and the work commit
+together.
+
+A record table created without `body` gets the column from the next run that
+has repeatable work, and the row of each repeatable migration that run executes
+gets its body. A status or a dry run never adds it, and reads the rows of such
+a table as rows that keep no body.
 
 The first run that has repeatable work creates the table, before its first
 versioned migration runs, so a database that refuses the table, for example for
@@ -310,13 +318,16 @@ script. Each refusal below comes before anything changes:
   any row, including the row of a file that was deleted or renamed. Drop what
   the repeatable migrations created, delete their rows from the record table,
   and then roll back, or roll forward with a new migration instead.
-- **A drift check over a changed repeatable migration.** `--check-drift`
-  replays the applied versioned history on the shadow database, and then each
-  repeatable migration whose file is the content the database last applied.
-  A repeatable migration whose file changed after it applied, whose file is
-  gone, or whose last attempt did not finish has no content in the directory
-  to replay, so the check exits with status 2 and the run applies nothing. Run
-  without `--check-drift` to apply the change.
+- **A drift check that cannot know what a repeatable migration left.**
+  `--check-drift` replays the applied versioned history on the shadow
+  database, and then each repeatable migration with the content in effect:
+  the file when it hashes to the digest recorded as applied, and the body the
+  record keeps when the file changed or is gone. A transactional attempt that
+  failed or did not finish rolled back, so the content that applied before it
+  is replayed. The check exits with status 2 and the run applies nothing when
+  an attempt that ran outside a transaction did not finish, or when the record
+  keeps no body that hashes to the digest it applied. Run without
+  `--check-drift` to apply the change.
 - **The Atlas-compatible revision format.** `--revision-format atlas` defines
   the revision table and nothing beside it.
 - **A runner that opens its own transactions.** Under

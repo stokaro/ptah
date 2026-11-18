@@ -151,6 +151,9 @@ type repeatableMigration struct {
 	identity string
 	path     string
 	checksum string
+	// body is the content checksum covers, which the record keeps once it
+	// applies.
+	body []byte
 	// migration carries the body the way a versioned up file carries it, so
 	// the statements run through the same splitter, directive reader,
 	// interceptor and timeouts.
@@ -165,6 +168,12 @@ type repeatableSource interface {
 	// apart from a record of a file the provider did not look for.
 	loadsRepeatableMigrations() bool
 	repeatableMigrations() []*repeatableMigration
+}
+
+// recordedRepeatableSource is implemented by a provider that can read the
+// body a record keeps as it reads a file.
+type recordedRepeatableSource interface {
+	repeatableFromRecord(identity, path string, body []byte) (*repeatableMigration, error)
 }
 
 // loadsRepeatableMigrations reports whether [WithRepeatableMigrations] was
@@ -193,25 +202,53 @@ func (p *FSMigrationProvider) loadRepeatables() error {
 		if err != nil {
 			return fmt.Errorf("failed to read repeatable migration %s: %w", file.Path, err)
 		}
-		up, err := migrationFuncFromSQLStringWithMetadata(file.Path, string(data), p.hooks)
+		repeatable, err := p.newRepeatable(file.Identity, file.Path, data)
 		if err != nil {
 			return fmt.Errorf("failed to load repeatable migration %s: %w", file.Path, err)
 		}
-		migration := &Migration{
-			Description:     "Repeatable " + file.Identity,
-			Up:              NoopMigrationFunc,
-			Down:            NoopMigrationFunc,
-			ownTransactions: p.ownTransactions,
-		}
-		setMigrationUp(migration, up)
-		p.repeatables = append(p.repeatables, &repeatableMigration{
-			identity:  file.Identity,
-			path:      file.Path,
-			checksum:  repeatableChecksum(data),
-			migration: migration,
-		})
+		p.repeatables = append(p.repeatables, repeatable)
 	}
 	return nil
+}
+
+// repeatableFromRecord builds the repeatable migration a record's body holds,
+// read the way the provider reads a file, so a replay runs it as the run that
+// applied it did. path is the file it came from, or empty when the directory
+// has none.
+func (p *FSMigrationProvider) repeatableFromRecord(identity, path string, body []byte) (*repeatableMigration, error) {
+	name := path
+	if name == "" {
+		name = "the recorded body of " + identity
+	}
+	repeatable, err := p.newRepeatable(identity, name, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load the recorded body of repeatable migration %s: %w", identity, err)
+	}
+	repeatable.path = path
+	return repeatable, nil
+}
+
+// newRepeatable reads data as the body of the repeatable migration identity.
+// name is what a directive error names.
+func (p *FSMigrationProvider) newRepeatable(identity, name string, data []byte) (*repeatableMigration, error) {
+	up, err := migrationFuncFromSQLStringWithMetadata(name, string(data), p.hooks)
+	if err != nil {
+		return nil, err
+	}
+	migration := &Migration{
+		Description:     "Repeatable " + identity,
+		Up:              NoopMigrationFunc,
+		Down:            NoopMigrationFunc,
+		ownTransactions: p.ownTransactions,
+	}
+	setMigrationUp(migration, up)
+	return &repeatableMigration{
+		identity:  identity,
+		path:      name,
+		checksum:  repeatableChecksum(data),
+		body:      data,
+		migration: migration,
+	}, nil
 }
 
 // repeatableChecksum is the digest a repeatable migration is recorded under:
