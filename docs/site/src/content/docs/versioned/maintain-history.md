@@ -470,13 +470,16 @@ the table, which is the arrangement the refusal exists to catch. Where a table
 has to stay owned by another role, `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1`
 accepts it as it stands.
 
-A table kept that way needs no privilege to create it. PostgreSQL and Oracle
-check the privilege to create a table, or its schema, before they check the
-name, so a guarded `CREATE` of a table that is already there is refused to a
-role that may not create one. On those engines Ptah sends no `CREATE` for a
-metadata table the catalog shows. A role with `SELECT`, `INSERT`, `UPDATE` and
-`DELETE` on tables a DBA created then records there, and on PostgreSQL it needs
-`USAGE` on their schema too. Oracle's migration lock keeps a table of its own;
+A table kept that way needs no privilege to create it. PostgreSQL,
+CockroachDB, YugabyteDB, MySQL, MariaDB and Oracle check the privilege to
+create a table, or its schema, before they check the name, so a guarded
+`CREATE` of a table that is already there is refused to a role that may not
+create one. On those engines Ptah sends no `CREATE` for a metadata table the
+catalog shows. SQL Server guards its `CREATE` with `OBJECT_ID`, which an
+account without that privilege passes. A role with `SELECT`, `INSERT`,
+`UPDATE` and `DELETE` on tables a DBA created then records there, and on the
+PostgreSQL family it needs `USAGE` on their schema too. Oracle's migration lock
+keeps a table of its own;
 [the Oracle page](../../databases/oracle/#the-migration-lock) says what it
 needs.
 
