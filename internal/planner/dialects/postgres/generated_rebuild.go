@@ -29,9 +29,8 @@ import (
 // constraint on it, any statistics object that names it, its comment, its
 // privileges and its storage options. Measured on PostgreSQL 18, a plain DROP
 // COLUMN under RESTRICT takes a partial GIN index outside the declaration with
-// it, and refuses only for a view, a policy, a trigger with a column list, a
-// SQL-standard routine body, a publication column list and a foreign key on
-// another table.
+// it. A view that reads the column never meets the drop: the view rebuild
+// drops it earlier in the plan and creates it after the column step.
 //
 // So the rebuild restates what the database holds on the column, from the
 // catalog the comparison read: its indexes from their pg_get_indexdef text,
@@ -40,8 +39,13 @@ import (
 // after the rebuild find the table as it was and change it as they would
 // have. Before it drops the column, a guard asks the database for anything
 // else that depends on it -- an index or a constraint the read did not report,
-// a statistics object, a privilege, a storage option, a security label -- and
-// refuses the plan naming each one, rather than drop it silently.
+// a policy, a trigger with a column list, a foreign key from another table, a
+// statistics object, a privilege, a storage option, a collation, a security
+// label -- and refuses the plan naming each one, rather than drop it silently.
+// It refuses a policy or a trigger even where the declaration keeps it
+// unchanged, since the plan restates neither.
+//
+// The column comes back at the end of the table, since ADD COLUMN appends it.
 type generatedRebuild struct {
 	// table is the table as the column steps name it.
 	table string
@@ -117,6 +121,13 @@ func planGeneratedRebuild(
 			"%w: generated column %s.%s reads column %s, whose type this plan changes, and the plan also removes it: "+
 				"PostgreSQL refuses the type change while the column exists, so remove the generated column in a plan of its own first",
 			ptaherr.ErrUnsupportedFeature, tableDiff.TableName, column.Name, strings.Join(reads, ", "))
+	}
+	if column.Collate != "" {
+		return generatedRebuild{}, fmt.Errorf(
+			"%w: generated column %s.%s reads column %s, whose type this plan changes, and has the collation %s: "+
+				"PostgreSQL refuses the type change while the column exists, and the plan cannot add the column back "+
+				"with its collation, since the PostgreSQL renderer writes no COLLATE on a column",
+			ptaherr.ErrUnsupportedFeature, tableDiff.TableName, column.Name, strings.Join(reads, ", "), column.Collate)
 	}
 	index := slices.IndexFunc(tableDiff.Desired.Fields, func(field schemamodel.Field) bool { return sameColumn(field.Name) })
 	if index < 0 {
@@ -262,7 +273,10 @@ func dropRebuiltGeneratedColumns(result []ast.Node, rebuilds []generatedRebuild)
 }
 
 // restoreRebuiltGeneratedColumns adds each generated column the plan rebuilds
-// back, after the column step, and restates what the drop took with it.
+// back, after the column step, and then restates what the drops took with
+// them. Every column comes back before any index or CHECK: an index or a
+// CHECK on two rebuilt columns reads both, and each drop took it, so it is
+// written once, after the last add.
 func restoreRebuiltGeneratedColumns(result []ast.Node, rebuilds []generatedRebuild, vocabulary difftypes.UserTypeVocabulary) []ast.Node {
 	for _, rebuild := range rebuilds {
 		column := modelast.FromFieldWithoutForeignKeys(rebuild.declared, vocabulary.Enums, platform.Postgres)
@@ -274,14 +288,26 @@ func restoreRebuiltGeneratedColumns(result []ast.Node, rebuilds []generatedRebui
 				&ast.SetCommentOperation{Column: column.Name, Comment: column.Comment},
 			}})
 		}
+	}
+	restated := make(map[string]bool)
+	for _, rebuild := range rebuilds {
 		for _, index := range rebuild.indexes {
+			name := qualifiedIndexName(rebuild.table, index)
+			if restated["index "+name] {
+				continue
+			}
+			restated["index "+name] = true
 			result = append(result, ast.NewRawSQL(index.Definition))
 			if index.Comment != "" {
 				result = append(result, ast.NewRawSQL(fmt.Sprintf("COMMENT ON INDEX %s IS %s",
-					quotePostgresIdentifierPath(qualifiedIndexName(rebuild.table, index)), quotePostgresLiteral(index.Comment))))
+					quotePostgresIdentifierPath(name), quotePostgresLiteral(index.Comment))))
 			}
 		}
 		for _, check := range rebuild.checks {
+			if restated["check "+rebuild.table+" "+check.Name] {
+				continue
+			}
+			restated["check "+rebuild.table+" "+check.Name] = true
 			result = append(result, ast.NewRawSQL(fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s)",
 				quotePostgresIdentifierPath(rebuild.table), quotePostgresIdentifier(check.Name), *check.CheckClause)))
 			if check.Comment != "" {
@@ -318,9 +344,17 @@ func qualifiedIndexName(table string, index catalog.Index) string {
 // automatically on PostgreSQL 14 and internally on 18; the add restates it, so
 // the guard leaves it out.
 //
+// PostgreSQL 18 keeps a column's NOT NULL as a pg_constraint row of type n
+// that depends on the column. The add restates it from the declaration, so
+// the guard leaves it out with the CHECK constraints the plan restates.
+//
 // An option the server writes itself, such as pg_attver on PostgreSQL 18.7,
 // is not one the operator set, so the options it counts leave out the pg_
 // prefix.
+//
+// A collation other than the type's own is refused rather than restated: the
+// PostgreSQL renderer writes no COLLATE on a column, so the add would bring
+// the column back under the type's collation, and every index on it with it.
 func (r generatedRebuild) guard() string {
 	table := quotePostgresLiteral(quotePostgresIdentifierPath(r.table)) + "::regclass"
 	column := quotePostgresLiteral(r.column.Name)
@@ -343,7 +377,7 @@ FROM (
       AND d.deptype IN ('n', 'a') AND d.classid <> 'pg_attrdef'::regclass
       AND NOT (d.classid = 'pg_class'::regclass AND d.objid = ANY (ARRAY[%[4]s]::oid[]))
       AND NOT (d.classid = 'pg_constraint'::regclass AND d.objid IN (
-          SELECT oid FROM pg_constraint WHERE conrelid = %[2]s AND conname = ANY (ARRAY[%[5]s]::text[])))
+          SELECT oid FROM pg_constraint WHERE conrelid = %[2]s AND (contype = 'n' OR conname = ANY (ARRAY[%[5]s]::text[]))))
     UNION ALL
     SELECT 'the privileges or storage options of the column'
     FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid
@@ -351,6 +385,10 @@ FROM (
       AND (a.attacl IS NOT NULL OR EXISTS (SELECT 1 FROM unnest(a.attoptions) o WHERE o NOT LIKE 'pg\_%%')
            OR COALESCE(a.attstattarget::int, -1) <> -1
            OR COALESCE(to_jsonb(a) ->> 'attcompression', '') <> '' OR a.attstorage <> t.typstorage)
+    UNION ALL
+    SELECT 'the collation ' || quote_ident(c.collname) || ' of the column'
+    FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid JOIN pg_collation c ON c.oid = a.attcollation
+    WHERE a.attrelid = %[2]s AND a.attname = %[3]s AND a.attcollation <> t.typcollation
     UNION ALL
     SELECT 'the security label of the column'
     FROM pg_seclabel l JOIN pg_attribute a ON a.attrelid = l.objoid AND a.attnum = l.objsubid

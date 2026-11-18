@@ -1318,20 +1318,40 @@ column step and adds it back, as declared, after it. The server computes its
 values again on the add. Dropping the column also drops every index and CHECK
 constraint on it and its comment, so the plan creates them again from the
 definitions the server reports, including a partial index or one with an
-operator class.
+operator class. Where several generated columns read the retyped column, all
+of them come back before any index or CHECK, and an index or CHECK over two of
+them is created once. A view that reads the generated column is dropped and
+created again around the change, as for any other column type change.
 
 A guard runs before the drop. It reads `pg_depend` and refuses the plan,
 naming each object, when something else depends on the column: an index
-outside the selected scope, a key or exclusion constraint, a statistics
-object, a column privilege, a storage option or a security label. A view, a
-policy or a trigger that names the column makes the server refuse the drop
-itself. Every statement runs in the apply's transaction, so a later failure
+outside the selected scope, a key or exclusion constraint, a policy, a
+trigger with a column list, a foreign key from another table, a statistics
+object, a column privilege, a storage option, a collation other than the
+type's own, or a security label. The plan does not restate any of them, so the
+guard refuses a policy or a trigger even where the declaration keeps it
+unchanged. Every statement runs in the apply's transaction, so a later failure
 undoes the rebuild.
 
 A plan that also removes the generated column, or whose declaration does not
-hold it, is refused before it runs. CockroachDB refuses the same type change,
-but its catalog does not report what depends on a computed column, so Ptah
-refuses the plan there instead of rebuilding.
+hold it, is refused before it runs, and so is one where the generated column
+has a collation of its own, since Ptah writes no `COLLATE` on a PostgreSQL
+column. CockroachDB refuses the same type change, but its catalog does not
+report what depends on a computed column, so Ptah refuses the plan there
+instead of rebuilding.
+
+The rebuild has these limits:
+
+- The generated column moves to the end of the table, since `ADD COLUMN`
+  appends it.
+- `--qualifier` refuses the plan. The guard and the restated indexes and
+  constraints are raw SQL, which the qualifier does not rewrite.
+- A migration that holds the rebuild lints without a destructive change: the
+  drop rules `DS102` and `BC104` skip a column the file adds back as a
+  generated column, so `ptah migrations up` applies it without
+  `--allow-destructive`. The lint still warns that the type change may
+  rewrite the table (`DS103`), that the add computes every row (`PG309`) and
+  that each `CREATE INDEX` blocks writes (`PG101`), because each one does.
 
 ## Changing a column to or from an enum
 
