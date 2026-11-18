@@ -45,10 +45,14 @@ func atlasMigrator(c *qt.C, r *repeatableEngineTarget, fsys fstest.MapFS) *migra
 // Atlas revision table, spelled for r. On PostgreSQL the table sits in a schema
 // of its own name, as the community binary keeps it; on Oracle, where a schema
 // is an account, it sits in the account's schema, and the migrator quotes the
-// name, which keeps it lower case.
+// name, which keeps it lower case; on MySQL and MariaDB, where a schema is a
+// database, it sits in the database the run connects to.
 func clearAtlasError(r *repeatableEngineTarget) string {
 	if r.engine.family == "oracle" {
 		return `UPDATE "atlas_schema_revisions" SET error = ''`
+	}
+	if r.engine.family == "mysql" {
+		return "UPDATE atlas_schema_revisions SET error = ''"
 	}
 	return "UPDATE atlas_schema_revisions.atlas_schema_revisions SET error = ''"
 }
@@ -57,6 +61,9 @@ func clearAtlasError(r *repeatableEngineTarget) string {
 // Oracle account, that wait for a row another transaction holds.
 func blockedSessionCount(c *qt.C, r *repeatableEngineTarget) int {
 	c.Helper()
+	if r.engine.family == "mysql" {
+		return mySQLLockWaits(c, r)
+	}
 	parsed, err := url.Parse(r.url)
 	c.Assert(err, qt.IsNil)
 	query := `SELECT COUNT(*) FROM pg_stat_activity WHERE datname = $1 AND wait_event_type = 'Lock'`
@@ -69,6 +76,22 @@ func blockedSessionCount(c *qt.C, r *repeatableEngineTarget) int {
 	}
 	var count int
 	c.Assert(admin.QueryRowContext(context.Background(), query, scope).Scan(&count), qt.IsNil)
+	return count
+}
+
+// mySQLLockWaits counts the sessions of r's scratch database that are running
+// an UPDATE of the Atlas revision table. The holder's UPDATE has returned, so
+// its session is idle, and the only such statement is the retry's, which
+// waits for the row. innodb_trx is no witness here: on MySQL 8.4 it showed
+// the waiting statement's transaction as running for seconds. A MySQL-family
+// address in the driver's tcp() form is not a URL, so the database is the one
+// r's connection is in.
+func mySQLLockWaits(c *qt.C, r *repeatableEngineTarget) int {
+	c.Helper()
+	const query = `SELECT COUNT(*) FROM information_schema.processlist
+WHERE db = DATABASE() AND id <> CONNECTION_ID() AND info LIKE 'UPDATE %atlas_schema_revisions%'`
+	var count int
+	c.Assert(r.conn.QueryRowContext(context.Background(), query).Scan(&count), qt.IsNil)
 	return count
 }
 
@@ -94,9 +117,10 @@ func waitForBlockedSession(c *qt.C, r *repeatableEngineTarget) bool {
 // which runs without the lock and read the row with its error, waits on the
 // row, and once the first commits it matches nothing, refuses, and runs no
 // statement of the body. Without the guard it rewrites the row again and runs
-// the body a second time.
+// the body a second time. On MySQL and MariaDB the rewrite's count of zero is
+// confirmed by a read through the same guard, which finds the row changed.
 func TestAtlasRevisionRestartLive_FailurePath(t *testing.T) {
-	for _, engine := range []repeatableEngine{repeatablePostgres, repeatableOracle} {
+	for _, engine := range []repeatableEngine{repeatablePostgres, repeatableOracle, repeatableMySQL, repeatableMariaDB} {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)

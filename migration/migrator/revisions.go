@@ -1917,31 +1917,50 @@ func (m *Migrator) restartMigrationRevisionOn(
 		_, err := m.rewriteRevisionRow(ctx, conn, migration, query, args)
 		return err
 	}
-	query += " AND state = ? AND applied = ?"
-	args = append(args, plan.readState, plan.readApplied)
-	lost := fmt.Sprintf("the row of migration %d no longer has state %q and %d applied %s",
-		migration.Version, plan.readState, plan.readApplied, plural(plan.readApplied, "statement", "statements"))
+	guard := revisionGuard{
+		terms: " AND state = ? AND applied = ?",
+		args:  []any{plan.readState, plan.readApplied},
+		lost: fmt.Sprintf("the row of migration %d no longer has state %q and %d applied %s",
+			migration.Version, plan.readState, plan.readApplied, plural(plan.readApplied, "statement", "statements")),
+	}
 	if plan.readChecksum != "" {
-		query += " AND checksum = ?"
-		args = append(args, plan.readChecksum)
-		lost = fmt.Sprintf("the row of migration %d no longer has state %q, %d applied %s and the checksum this run read",
+		guard.terms += " AND checksum = ?"
+		guard.args = append(guard.args, plan.readChecksum)
+		guard.lost = fmt.Sprintf("the row of migration %d no longer has state %q, %d applied %s and the checksum this run read",
 			migration.Version, plan.readState, plan.readApplied, plural(plan.readApplied, "statement", "statements"))
 	}
-	return m.claimRevisionRestart(ctx, conn, migration, query, args, lost)
+	return m.claimRevisionRestart(ctx, conn, migration, query, args, guard)
 }
 
-// claimRevisionRestart runs the guarded rewrite of a dirty row, whose WHERE
-// clause matches only the row as this run read it, and refuses with
-// [ErrRevisionClaimLost] and lost when it rewrote nothing.
+// revisionGuard matches a dirty revision row as this run read it: the terms
+// its rewrite adds to the WHERE clause, their arguments, and what a rewrite
+// that matched nothing reports.
+type revisionGuard struct {
+	terms string
+	args  []any
+	lost  string
+}
+
+// claimRevisionRestart runs the rewrite of a dirty row, query and args, with
+// guard added to its WHERE clause so that it matches only the row as this run
+// read it, and refuses with [ErrRevisionClaimLost] and guard.lost when it
+// matched nothing.
+//
+// A count of zero is confirmed by reading the row through the same guard.
+// MySQL and MariaDB count the rows an UPDATE changed, not the rows it matched,
+// unless the client sets clientFoundRows, and Ptah's connector does not. There a
+// rewrite that matched the row and wrote the values it already had, as a retry
+// within the second the row was written can, counts zero, and refusing it
+// would stop a retry no other run raced.
 func (m *Migrator) claimRevisionRestart(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
 	query string,
 	args []any,
-	lost string,
+	guard revisionGuard,
 ) error {
-	result, err := m.rewriteRevisionRow(ctx, conn, migration, query, args)
+	result, err := m.rewriteRevisionRow(ctx, conn, migration, query+guard.terms, append(slices.Clone(args), guard.args...))
 	if err != nil {
 		return err
 	}
@@ -1949,10 +1968,20 @@ func (m *Migrator) claimRevisionRestart(
 	if err != nil {
 		return fmt.Errorf("count the restarted revision row of migration %s: %w", migration.RevisionVersion(), err)
 	}
-	if restarted == 0 {
-		return fmt.Errorf("%w: %s", ErrRevisionClaimLost, lost)
+	if restarted > 0 {
+		return nil
 	}
-	return nil
+	read := sqlutil.Rebind(m.conn.Info().Dialect,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE version = ?%s", m.qualifiedMigrationsTable(), guard.terms))
+	var matched int
+	err = conn.QueryRowContext(ctx, read, append([]any{m.migrationRevisionVersionArg(migration)}, guard.args...)...).Scan(&matched)
+	if err != nil {
+		return fmt.Errorf("read the restarted revision row of migration %s: %w", migration.RevisionVersion(), err)
+	}
+	if matched > 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrRevisionClaimLost, guard.lost)
 }
 
 // rewriteRevisionRow runs the rewrite of a dirty row on conn, guarded or not,
@@ -2029,17 +2058,19 @@ func (m *Migrator) restartAtlasMigrationRevisionOn(
 		_, err := m.rewriteRevisionRow(ctx, conn, migration, query, args)
 		return err
 	}
-	query += " AND applied = ?"
-	args = append(args, plan.readApplied)
-	lost := fmt.Sprintf("the row of migration %s no longer has the %d applied %s this run read",
-		migration.RevisionVersion(), plan.readApplied, plural(plan.readApplied, "statement", "statements"))
+	guard := revisionGuard{
+		terms: " AND applied = ?",
+		args:  []any{plan.readApplied},
+		lost: fmt.Sprintf("the row of migration %s no longer has the %d applied %s this run read",
+			migration.RevisionVersion(), plan.readApplied, plural(plan.readApplied, "statement", "statements")),
+	}
 	if plan.readError {
 		recorded, _ := atlasRevisionErrorTests(m.connectionDialect())
-		query += " AND " + recorded
-		lost = fmt.Sprintf("the row of migration %s no longer has the %d applied %s and the error this run read",
+		guard.terms += " AND " + recorded
+		guard.lost = fmt.Sprintf("the row of migration %s no longer has the %d applied %s and the error this run read",
 			migration.RevisionVersion(), plan.readApplied, plural(plan.readApplied, "statement", "statements"))
 	}
-	return m.claimRevisionRestart(ctx, conn, migration, query, args, lost)
+	return m.claimRevisionRestart(ctx, conn, migration, query, args, guard)
 }
 
 func (m *Migrator) beginMigrationRevisionOn(
