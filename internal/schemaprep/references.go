@@ -4,6 +4,8 @@ package schemaprep
 
 import (
 	"strings"
+
+	"ptah.run/internal/sqlident"
 )
 
 // ForeignKeyReference is the model-side interpretation of a field's foreign
@@ -62,7 +64,10 @@ func ParseForeignKeyReference(foreign string) *ForeignKeyReference {
 	}
 }
 
-// GenerateForeignKeyName returns the conventional field foreign-key name.
+// GenerateForeignKeyName returns the conventional field foreign-key name. A
+// table or field name spelled with its quotes, as a read or a quoted SQL name
+// on Oracle gives it, contributes the name inside them.
 func GenerateForeignKeyName(tableName, fieldName string) string {
-	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
+	return "fk_" + strings.ToLower(sqlident.UnquoteDoubleQuoted(tableName)) + "_" +
+		strings.ToLower(sqlident.UnquoteDoubleQuoted(fieldName))
 }

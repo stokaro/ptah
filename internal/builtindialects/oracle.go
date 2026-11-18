@@ -21,6 +21,8 @@ import (
 // (stokaro/ptah#6243). BareChars holds the characters Oracle accepts in
 // an unquoted name besides letters, digits and the underscore, so a$b is
 // written bare and stored as A$B, and a catalog name a$b was created quoted.
+// LetterFirst holds the other half of that rule: an unquoted name starts with
+// a letter, so _a, $a, #a and 1a are written quoted.
 //
 // Index names are schema-scoped, not table-scoped: `DROP INDEX <name>` is the
 // whole statement here, with no ON clause naming a table, so two tables in one
@@ -39,6 +41,7 @@ func oracle() descriptor.Dialect {
 			ColumnNames:    "ascii_case_insensitive",
 			UnquotedFold:   "upper",
 			BareChars:      "$#",
+			LetterFirst:    true,
 		},
 		Placeholder: descriptor.PlaceholderColon,
 

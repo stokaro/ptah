@@ -84,6 +84,7 @@ import (
 	"ptah.run/internal/rolepassword"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tablelookup"
 	"ptah.run/internal/tableref"
 )
@@ -2994,7 +2995,8 @@ func (v foreignKeyValidation) fieldKeys() ([]foreignKeyBinding, error) {
 		if target == nil {
 			return nil, invalidSchemaForeignKeyError(
 				v.dialect,
-				fmt.Sprintf("field %q references unknown table %q", field.Name, reference.Table),
+				fmt.Sprintf("field %q references unknown table %q", field.Name, reference.Table)+
+					sqlident.NamesakeHint(v.dialect, "table", reference.Table, tableNames(v.database.Tables)),
 			)
 		}
 		referencedColumns := reference.ReferencedColumns()
@@ -3024,6 +3026,15 @@ func (v foreignKeyValidation) fieldKeys() ([]foreignKeyBinding, error) {
 	return bindings, nil
 }
 
+// tableNames lists the name of every table, as the model spells it.
+func tableNames(tables []schemamodel.Table) []string {
+	names := make([]string, 0, len(tables))
+	for _, table := range tables {
+		names = append(names, table.Name)
+	}
+	return names
+}
+
 // constraintKeys checks the keys declared as table constraints.
 func (v foreignKeyValidation) constraintKeys() ([]foreignKeyBinding, error) {
 	bindings := make([]foreignKeyBinding, 0)
@@ -3049,7 +3060,8 @@ func (v foreignKeyValidation) constraintKeys() ([]foreignKeyBinding, error) {
 		if target == nil {
 			return nil, invalidSchemaForeignKeyError(
 				v.dialect,
-				fmt.Sprintf("constraint %q references unknown table %q", constraint.Name, constraint.ForeignTable),
+				fmt.Sprintf("constraint %q references unknown table %q", constraint.Name, constraint.ForeignTable)+
+					sqlident.NamesakeHint(v.dialect, "table", constraint.ForeignTable, tableNames(v.database.Tables)),
 			)
 		}
 		if err := validateSchemaForeignKeyColumns(

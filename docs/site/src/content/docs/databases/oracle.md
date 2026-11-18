@@ -53,9 +53,10 @@ A name Oracle refuses bare — a reserved word such as `size`, `comment` or
 `user`, or a name carrying a character outside a plain identifier — is quoted on
 both sides instead, so the two still agree.
 
-A plain name is written bare. Besides letters, digits and the underscore it
-may hold `$` and `#` after its first character, as Oracle allows, so `a$b` is
-written bare and stored as `A$B`.
+A plain name is written bare. It starts with a letter, and after that it may
+hold digits, the underscore, `$` and `#`, as Oracle allows, so `a$b` is
+written bare and stored as `A$B`. A name that starts with any other character,
+such as `_a`, is written quoted, since Oracle refuses it bare with ORA-00911.
 
 The case of a name declared bare carries no meaning. A declared `orders` means
 the table Oracle stores as `ORDERS`, whether it comes from a Go annotation or
@@ -63,6 +64,16 @@ a SQL file. A reserved word is quoted, as above, and compared the same way. In
 a SQL schema file a quoted name keeps the meaning Oracle gives it:
 `CREATE TABLE "orders"` declares the table stored as `orders`. Go annotations
 have no quoted form.
+
+So a quoted name in lower or mixed case is not a spelling of the bare one. A
+file that declares `CREATE TABLE "orders"` against an account holding `ORDERS`
+plans a new table `"orders"` and drops `ORDERS`; write `orders` or `ORDERS`
+bare to mean the existing table. The same file has to name the object the same
+way everywhere: a table declared `"customers"` and referenced bare in a
+foreign key or an index is refused, and the error names the quoted
+declaration. A CHECK, a DEFAULT or a virtual column names a quoted column
+quoted, as Oracle requires, such as `CHECK ("Status" IN ('a', 'b'))`; a bare
+`status` there is refused before the server sees it.
 
 A name read from the catalog is the stored spelling, and two spellings that
 differ only in case are two objects. A table created as `"orders"` is stored
@@ -93,8 +104,9 @@ the two names agree.
 
 An `--exclude` or `--include` selector matches the stored spelling exactly,
 without quotes: `orders` selects the table created as `"orders"`, and `ORDERS`
-selects the one created unquoted. A selector written with quotes matches
-nothing.
+selects the one created unquoted. It matches the same way on both sides of a
+plan, including a desired side read from a database or declared quoted in a
+SQL file. A selector written with quotes matches nothing.
 
 Two type mappings are worth knowing because Oracle has no direct equivalent:
 `BOOLEAN` becomes `NUMBER(1)`, with `true` and `false` written as `1` and `0`,

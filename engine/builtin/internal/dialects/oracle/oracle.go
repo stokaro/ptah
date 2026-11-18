@@ -134,13 +134,17 @@ func (r *Renderer) renderCreateDatabase(node *ast.CreateDatabaseNode) error {
 // CK__orders__status__571DF1D5 is the same idea with a different hash.
 //
 // A declaration that names its own check keeps that name; only the unnamed
-// case is filled in.
+// case is filled in. The name is built from the names the catalog stores, so
+// a column spelled `"Status"` of a table spelled `"Cust"` gives
+// Cust_Status_check, the name the comparison predicts for it.
 func namedColumnCheck(table string, column *ast.ColumnNode) *ast.ColumnNode {
 	if column == nil || column.Check == "" || column.CheckName != "" {
 		return column
 	}
 	named := *column
-	named.CheckName = unquoteIdentifier(tableLeafName(table)) + "_" + column.Name + "_check"
+	table, _ = writtenName(tableLeafName(table))
+	columnName, _ := writtenName(column.Name)
+	named.CheckName = table + "_" + columnName + "_check"
 	return &named
 }
 
@@ -353,10 +357,11 @@ func quotedColumnsAreQuotedInExpressions(node *ast.CreateTableNode) error {
 			if !bareReferenceInExpression(column.Name, expression) {
 				continue
 			}
+			stored, _ := writtenName(column.Name)
 			return unsupportedFeaturef(
 				"column %q of table %q needs quoting in Oracle, and the expression %q names it without quotes; "+
 					"an unquoted name folds to upper case and refers to a different column, so write %s in the expression",
-				column.Name, node.Name, strings.TrimSpace(expression), escapeIdentifier(column.Name))
+				stored, node.Name, strings.TrimSpace(expression), escapeIdentifier(column.Name))
 		}
 	}
 	return nil
