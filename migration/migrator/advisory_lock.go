@@ -142,9 +142,12 @@ func (m *Migrator) withMigrationLock(ctx context.Context, operation string, fn f
 	if err != nil {
 		return fmt.Errorf("failed to acquire migration lock for %s: %w", operation, err)
 	}
-	// Again once the lock is taken, which may have created its table: the
-	// check above and the creation are two round trips, and a table another
-	// account placed between them is the one the lock wrote its row to.
+	// Again once the lock is taken, which may have created its table: where a
+	// table belongs to the account that created it, the check above and the
+	// creation are two round trips, and a table another account placed between
+	// them is the one the lock wrote its row to. On Oracle a table belongs to
+	// its schema's account, so the check above already answered for a table
+	// the lock had yet to create, and this one gives the same answer.
 	if err := m.refuseForeignLockTable(ctx); err != nil {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), migrationAdvisoryUnlockTimeout)
 		defer cancel()
@@ -285,8 +288,8 @@ func (m *Migrator) migrationLockSchema() string {
 // [Migrator.refuseForeignMetadataTable]: the lock writes a row to it, as Ptah
 // writes to its other metadata tables, so a table another account owns is
 // refused unless [AllowForeignMetadataTableEnvVar] accepts it. On Oracle an
-// account owns the tables of its own schema, so this refuses a lock table in a
-// migrations schema another account owns.
+// account owns every table of its schema, so this refuses a lock table in a
+// migrations schema another account owns, before the lock creates one there.
 func (m *Migrator) refuseForeignLockTable(ctx context.Context) error {
 	for _, table := range lockbuiltin.Tables(m.conn.Info().Dialect) {
 		if err := m.refuseForeignMetadataTable(ctx, table); err != nil {

@@ -78,6 +78,18 @@ type Owners interface {
 	OwnerQuery(table Table) (query string, args []any)
 }
 
+// SchemaOwners is implemented by the Owners of an engine where a table
+// belongs to the owner of its schema, whoever creates it. On such an engine a
+// table that does not exist yet already has an owner, so the migrator can
+// refuse a foreign one before it creates anything there.
+type SchemaOwners interface {
+	// SchemaOwnerQuery returns the catalog query that answers, as (owner,
+	// current role, whether the current role is the owner), who owns the
+	// schema table would be created in, and the values it binds in order. No
+	// row means the schema does not exist.
+	SchemaOwnerQuery(table Table) (query string, args []any)
+}
+
 // Scope is what a migration's timeouts are attached to.
 type Scope uint8
 

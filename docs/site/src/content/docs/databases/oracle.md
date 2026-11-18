@@ -334,8 +334,10 @@ GRANT SELECT, INSERT ON "APP".ptah_locks TO deployer;
 
 A lock table in another account's schema belongs to that account, so the run
 needs `PTAH_ALLOW_FOREIGN_METADATA_TABLE=1`, as the revision table there does.
-Without it the lock refuses before it writes a row to a table that is there,
-and again after it created one.
+A table created in a schema is the schema's account's, whoever creates it, so
+without the variable the run refuses before it creates or writes anything
+there: a lock table, revision table or log that does not exist yet is refused
+as one that does, even where `CREATE ANY TABLE` would create it.
 
 Where neither the table nor the privilege is there, the lock refuses before the
 run starts and names both remedies. It does not fall back to the account's own
