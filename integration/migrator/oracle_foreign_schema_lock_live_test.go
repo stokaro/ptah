@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -14,7 +15,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
-	"ptah.run/internal/dblock"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/migration/migrator"
 )
@@ -70,6 +70,49 @@ func (f *foreignRevisionsSchema) tables(c *qt.C, table string) int {
 	return n
 }
 
+// oracleLogTable is the revision table's log, quoted as Ptah creates it.
+const oracleLogTable = `"schema_migrations_log"`
+
+// createLog has the owner run a migration once, which creates the revision
+// table's log with Ptah's own DDL, and then empties what that run recorded
+// and drops the table it created, as a DBA preparing the schema would.
+func (f *foreignRevisionsSchema) createLog(c *qt.C) {
+	c.Helper()
+	ownerURL := oracleAccountURL(c, dbtarget.URL(c, dbtarget.OracleAdmin), f.owner)
+	owner, err := migrator.NewFSMigrator(connectOracleLock(c, ownerURL), oracleWidgets())
+	c.Assert(err, qt.IsNil)
+	c.Assert(owner.MigrateUp(context.Background()), qt.IsNil)
+	f.exec(c, `DROP TABLE "`+f.owner+`".widgets`)
+	f.exec(c, `DELETE FROM "`+f.owner+`".`+oracleRevisionTable)
+	f.exec(c, `DELETE FROM "`+f.owner+`".`+oracleLogTable)
+	f.exec(c, `DELETE FROM "`+f.owner+`".ptah_locks`)
+}
+
+// value reads the one value query returns, as text.
+func (f *foreignRevisionsSchema) value(c *qt.C, query string) string {
+	c.Helper()
+	var v string
+	c.Assert(f.admin.QueryRowContext(context.Background(), query).Scan(&v), qt.IsNil, qt.Commentf("query: %s", query))
+	return v
+}
+
+// ownerTables lists the tables the owner's schema holds, sorted.
+func (f *foreignRevisionsSchema) ownerTables(c *qt.C) []string {
+	c.Helper()
+	rows, err := f.admin.QueryContext(context.Background(), "SELECT table_name FROM all_tables WHERE owner = :1", f.owner)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = rows.Close() })
+	var names []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		names = append(names, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	slices.Sort(names)
+	return names
+}
+
 func oracleAccountURL(c *qt.C, adminURL, account string) string {
 	c.Helper()
 	parsed, err := url.Parse(adminURL)
@@ -78,32 +121,29 @@ func oracleAccountURL(c *qt.C, adminURL, account string) string {
 	return parsed.String()
 }
 
-// A lock table the DBA created in the revisions schema, with SELECT and
-// INSERT granted, is all an account needs to take the migration lock there:
-// the run inserts the row of its lock name and locks it with FOR UPDATE
-// NOWAIT, creating nothing in the owner's schema. A second account recording
-// in the same revision table is refused while the first holds it.
+// An account with DML grants alone records a full `migrate up` in tables a
+// DBA created for it in another account's schema: the revision table, its log
+// and the lock table. The run creates nothing there. It takes the lock with
+// SELECT and INSERT on ptah_locks, and Initialize leaves alone the revision
+// table the catalog shows, whose guarded CREATE Oracle would refuse with
+// ORA-01031 to an account without CREATE ANY TABLE.
 func TestOracleForeignRevisionsSchemaLockLive_HappyPath(t *testing.T) {
 	t.Setenv("PTAH_ALLOW_FOREIGN_METADATA_TABLE", "1")
 	c := qt.New(t)
 	f := newForeignRevisionsSchema(c)
 	f.exec(c, `CREATE TABLE "`+f.owner+`".ptah_locks (name VARCHAR2(1000) PRIMARY KEY)`)
+	f.createLog(c)
 	f.exec(c, `GRANT SELECT, INSERT ON "`+f.owner+`".ptah_locks TO `+f.app)
-	var secondErr error
+	f.exec(c, `GRANT SELECT, INSERT, UPDATE, DELETE ON "`+f.owner+`".`+oracleLogTable+` TO `+f.app)
 
-	err := f.migrator(c).HoldMigrationLock(context.Background(), "test", func(context.Context) error {
-		_, secondErr = dblock.AcquireInSchema(context.Background(), connectOracleLock(c, f.appURL),
-			"ptah_migrate", f.owner, dblock.NoWait)
-		return nil
-	})
+	err := f.migrator(c).MigrateUp(context.Background())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(secondErr, qt.ErrorMatches, `advisory lock "ptah_migrate" on oracle is held by another session`)
-	c.Assert(f.tables(c, "PTAH_LOCKS"), qt.Equals, 1)
-	var rows int
-	c.Assert(f.admin.QueryRowContext(context.Background(),
-		`SELECT COUNT(*) FROM "`+f.owner+`".ptah_locks WHERE name = 'ptah_migrate'`).Scan(&rows), qt.IsNil)
-	c.Assert(rows, qt.Equals, 1)
+	c.Assert(f.value(c, `SELECT COUNT(*) FROM "`+f.app+`".widgets`), qt.Equals, "1")
+	c.Assert(f.value(c, `SELECT state FROM "`+f.owner+`".`+oracleRevisionTable+` WHERE version = 1`), qt.Equals, "applied")
+	c.Assert(f.value(c, `SELECT COUNT(*) FROM "`+f.owner+`".`+oracleLogTable+` WHERE version = 1`), qt.Not(qt.Equals), "0")
+	c.Assert(f.value(c, `SELECT name FROM "`+f.owner+`".ptah_locks`), qt.Equals, "ptah_migrate")
+	c.Assert(f.ownerTables(c), qt.DeepEquals, []string{"PTAH_LOCKS", "schema_migrations", "schema_migrations_log"})
 }
 
 // Without a lock table in the revisions schema, an account that may not create

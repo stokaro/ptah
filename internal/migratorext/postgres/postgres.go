@@ -26,6 +26,11 @@ func Postgres() migratorext.Services {
 	services.Dialects = []string{platform.Postgres}
 	services.Indexes = indexGuard{}
 	services.OwnTransactions = filetx.ReadUnwrapped
+	// Measured on PostgreSQL 18: CREATE TABLE IF NOT EXISTS of an existing
+	// table answers "permission denied for schema" to a role without CREATE
+	// on it, and CREATE SCHEMA IF NOT EXISTS of an existing schema answers
+	// "permission denied for database".
+	services.CreateChecksPrivilegeFirst = true
 	return services
 }
 

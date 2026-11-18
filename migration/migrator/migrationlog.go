@@ -569,8 +569,14 @@ func (m *Migrator) ensureMigrationLogTable(ctx context.Context) error {
 		// the rest of the run.
 		return m.latchLogTableRefusal(err)
 	}
-	if _, err := m.conn.ExecContext(ctx, m.createMigrationLogTableSQL()); err != nil {
+	create, err := m.createsMetadataTable(ctx, m.migrationsTableName()+migrationLogTableSuffix)
+	if err != nil {
 		return fmt.Errorf("create the migration log table: %w", err)
+	}
+	if create {
+		if _, err := m.conn.ExecContext(ctx, m.createMigrationLogTableSQL()); err != nil {
+			return fmt.Errorf("create the migration log table: %w", err)
+		}
 	}
 	// Again after the create, for the reason the revision table is asked
 	// twice: the check above and this statement are two round trips, and a

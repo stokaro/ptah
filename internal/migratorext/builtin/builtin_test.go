@@ -171,3 +171,34 @@ func TestChecks_ValidateRefusesASequenceAdvance(t *testing.T) {
 		})
 	}
 }
+
+// The engines measured to check the privilege to create before the name are
+// the ones whose guarded metadata CREATE the migrator leaves out for a table
+// the catalog shows: Oracle answers ORA-01031 for an existing table in
+// another account's schema, and PostgreSQL "permission denied for schema" or
+// "for database". The others keep sending it. Each declared engine has a
+// catalog to ask, since the skip reads one.
+func TestServices_CreateChecksPrivilegeFirst(t *testing.T) {
+	tests := []struct {
+		dialect string
+		want    bool
+	}{
+		{dialect: platform.Oracle, want: true},
+		{dialect: platform.Postgres, want: true},
+		{dialect: platform.CockroachDB},
+		{dialect: platform.YugabyteDB},
+		{dialect: platform.MySQL},
+		{dialect: platform.MariaDB},
+		{dialect: platform.SQLServer},
+		{dialect: platform.SQLite},
+		{dialect: platform.ClickHouse},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			services := builtin.Lookup(test.dialect)
+			c.Assert(services.CreateChecksPrivilegeFirst, qt.Equals, test.want)
+			c.Assert(services.Catalog, qt.IsNotNil)
+		})
+	}
+}

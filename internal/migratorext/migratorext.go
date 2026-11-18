@@ -188,6 +188,13 @@ type Services struct {
 	// as it is runs them; see internal/filetx. Nil reads none, so a migrator
 	// that runs such bodies as written wraps every body of the engine as usual.
 	OwnTransactions func(statements []string) (filetx.Blocks, error)
+	// CreateChecksPrivilegeFirst reports that the engine checks the privilege
+	// to create a table, or its schema, before it checks whether the name
+	// exists, so a guarded CREATE of a table that is already there is refused
+	// to an account that may not create one. The migrator asks [Catalog] first
+	// and sends no CREATE for a metadata table it shows, which lets an account
+	// with DML grants alone record in tables a DBA created for it.
+	CreateChecksPrivilegeFirst bool
 	// TriggerGrant reports that the catalog shows a table's triggers only to
 	// an account holding the TRIGGER privilege, so a run that must prove a
 	// table has no hidden writer proves the privilege first.

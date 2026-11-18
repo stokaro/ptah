@@ -1189,19 +1189,8 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 		return m.initializeDryRun(ctx)
 	}
 
-	if schemaSQL := m.migrationsSchemaStatement(); schemaSQL != "" {
-		// Deliberately outside the migration writer: Initialize runs before any
-		// per-migration transaction exists. Dry-run returns above so metadata DDL
-		// is never written when callers asked for a simulation.
-		if _, err := m.conn.ExecContext(ctx, schemaSQL); err != nil {
-			return fmt.Errorf("failed to create migrations schema: %w", err)
-		}
-	}
-
-	// Deliberately outside the migration writer for the same reason as schema
-	// creation: there is no active migration transaction yet.
-	if _, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL()); err != nil {
-		return m.migrationsTableCreateError(err)
+	if err := m.createMigrationsTable(ctx); err != nil {
+		return err
 	}
 	// Again after the create, because the check above and this statement are
 	// two round trips: a role that can create objects in the metadata schema
@@ -1236,6 +1225,30 @@ func (m *Migrator) Initialize(ctx context.Context) error {
 	m.initializedDryRun = false
 	m.metadataAvailable = true
 	m.legacyRevisionTable = false
+	return nil
+}
+
+// createMigrationsTable creates the revision table's schema and the table,
+// both guarded, unless [Migrator.createsMetadataTable] leaves a table the
+// catalog shows as it is.
+//
+// Both statements run deliberately outside the migration writer: Initialize
+// runs before any per-migration transaction exists. Initialize returns before
+// this on a dry run, so metadata DDL is never written when callers asked for a
+// simulation.
+func (m *Migrator) createMigrationsTable(ctx context.Context) error {
+	create, err := m.createsMetadataTable(ctx, m.migrationsTableName())
+	if err != nil || !create {
+		return err
+	}
+	if schemaSQL := m.migrationsSchemaStatement(); schemaSQL != "" {
+		if _, err := m.conn.ExecContext(ctx, schemaSQL); err != nil {
+			return fmt.Errorf("failed to create migrations schema: %w", err)
+		}
+	}
+	if _, err := m.conn.ExecContext(ctx, m.createMigrationsTableSQL()); err != nil {
+		return m.migrationsTableCreateError(err)
+	}
 	return nil
 }
 

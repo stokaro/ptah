@@ -335,6 +335,15 @@ run starts and names both remedies. It does not fall back to the account's own
 schema, because a table there would not exclude another account that records
 in the same revision table.
 
+The revision table and its log follow the same rule. Ptah sends no `CREATE` for
+a metadata table that `ALL_TABLES` shows the account, so tables a DBA created
+in another account's schema need only `SELECT`, `INSERT`, `UPDATE` and
+`DELETE`. Oracle checks the privilege before the name, and its guarded
+`CREATE` of an existing table answers ORA-01031 to an account without
+`CREATE ANY TABLE`. Such tables belong to another account, so they also need
+`PTAH_ALLOW_FOREIGN_METADATA_TABLE=1`, as described in
+[Maintain migration history](../../versioned/maintain-history/).
+
 Do not name a table of your own `ptah_locks` on Oracle. Schema reads leave that
 name out, as they leave out the revision table, so `schema diff` and `schema
 apply` never see the table, the lock fails when its columns are not the ones
