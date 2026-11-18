@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasretry"
@@ -1580,10 +1581,23 @@ type upRetryPlan struct {
 	// reuseRevision says a dirty revision row for this version already exists,
 	// so the attempt must rewrite that row instead of inserting a second one.
 	reuseRevision bool
+	// readNoRow says this run read the revision table and found no row for
+	// the version. Only then is a row the INSERT runs into another run's; a
+	// run that did not read, or read a clean row, is told what the server said
+	// (see [Migrator.settleRevisionInsert]).
+	readNoRow bool
 	// readState is the state column of that row as this run read it, in the
-	// native layout. The rewrite matches it, so a row another run rewrote
-	// after the read is not rewritten again (see [ErrRevisionClaimLost]).
+	// native layout. The rewrite matches it, with readApplied and
+	// readChecksum, so a row another run rewrote after the read is not
+	// rewritten again (see [ErrRevisionClaimLost]).
 	readState string
+	// readApplied is the applied count of that row as this run read it. Both
+	// layouts match it, so a retry that committed further statements after the
+	// read is not run again from where this run read it.
+	readApplied int
+	// readChecksum is the checksum of that row as this run read it in the
+	// native layout, and empty when the row had none.
+	readChecksum string
 	// readError says the row carried a recorded error when this run read it.
 	// The Atlas layout has no state column, and the error is what a restart
 	// clears, so the Atlas rewrite matches a row that still carries one.
@@ -1609,10 +1623,14 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 	if err != nil {
 		return upRetryPlan{}, err
 	}
+	if revision == nil {
+		plan.readNoRow = true
+		return plan, nil
+	}
 	// A row that is present and clean means an applied migration is being
 	// applied again, which no up path should have selected. Leave it to the
 	// INSERT so the contradiction surfaces instead of being overwritten.
-	if revision == nil || !revision.Dirty {
+	if !revision.Dirty {
 		return plan, nil
 	}
 	if revision.Direction == MigrationDirectionDown {
@@ -1631,6 +1649,8 @@ func (m *Migrator) planUpRetry(ctx context.Context, migration *Migration) (upRet
 	return upRetryPlan{
 		reuseRevision: true,
 		readState:     encodeRevisionState(revision.State, revision.Direction),
+		readApplied:   revision.Applied,
+		readChecksum:  revision.Checksum,
 		readError:     revision.Error != "",
 		resumeFrom:    resumeFrom,
 	}, nil
@@ -1825,19 +1845,21 @@ func (m *Migrator) recordPendingMigrationRevisionOn(
 	if plan.reuseRevision {
 		return m.restartMigrationRevisionOn(ctx, conn, migration, startedAt, plan)
 	}
-	return m.beginMigrationRevisionOn(ctx, conn, migration, startedAt)
+	return m.beginMigrationRevisionOn(ctx, conn, migration, startedAt, plan)
 }
 
 // ErrRevisionClaimLost is returned when another run wrote a migration's
 // revision row after this run read the revision table: the row this run was
-// about to insert is there already, or the dirty row it was about to rewrite
-// for a retry no longer has the state this run read, which in the Atlas layout
-// is the error the row carried. The run stops before any statement of the
-// body, so the body runs once, in the run that wrote the row.
+// about to insert, having read none, is there already, or the dirty row it was
+// about to rewrite for a retry is no longer the row this run read. The rewrite
+// compares the state, the applied count and the checksum in the native
+// layout, and the applied count and the recorded error in the Atlas layout.
+// The run stops before any statement of the body.
 //
-// The migration lock keeps two runs from reading the same table at once. This
-// is what a run that holds no lock is told, such as one run with
-// [Migrator.WithoutMigrationLock] or on an engine that takes no lock.
+// The migration lock is what serializes two runs. This check only stops a run
+// whose read is stale by the time it writes, such as one run with
+// [Migrator.WithoutMigrationLock]. Two retries that both read a row another
+// run has not changed yet both pass it.
 var ErrRevisionClaimLost = errors.New("another run recorded this migration after this run read the revision table")
 
 // restartMigrationRevisionOn rewrites an existing revision row back to pending
@@ -1871,11 +1893,22 @@ func (m *Migrator) restartMigrationRevisionOn(
 		m.dirtyRevisionChecksum(migration, MigrationDirectionUp, alreadyApplied),
 		migration.Version,
 	}
-	if plan.readState == "" || !m.countsRevisionRestart(conn) {
-		return executeSQLOn(ctx, conn, sqlutil.Rebind(m.conn.Info().Dialect, m.restartMigrationSQL()), args...)
+	query := m.restartMigrationSQL()
+	if !m.countsRevisionRestart(conn) {
+		_, err := m.rewriteRevisionRow(ctx, conn, migration, query, args)
+		return err
 	}
-	return m.claimRevisionRestart(ctx, conn, m.restartMigrationSQL()+" AND state = ?", append(args, plan.readState),
-		fmt.Sprintf("the row of migration %d no longer has state %q", migration.Version, plan.readState))
+	query += " AND state = ? AND applied = ?"
+	args = append(args, plan.readState, plan.readApplied)
+	lost := fmt.Sprintf("the row of migration %d no longer has state %q and %d applied statements",
+		migration.Version, plan.readState, plan.readApplied)
+	if plan.readChecksum != "" {
+		query += " AND checksum = ?"
+		args = append(args, plan.readChecksum)
+		lost = fmt.Sprintf("the row of migration %d no longer has state %q, %d applied statements and the checksum this run read",
+			migration.Version, plan.readState, plan.readApplied)
+	}
+	return m.claimRevisionRestart(ctx, conn, migration, query, args, lost)
 }
 
 // claimRevisionRestart runs the guarded rewrite of a dirty row, whose WHERE
@@ -1884,17 +1917,18 @@ func (m *Migrator) restartMigrationRevisionOn(
 func (m *Migrator) claimRevisionRestart(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	migration *Migration,
 	query string,
 	args []any,
 	lost string,
 ) error {
-	result, err := conn.ExecContext(ctx, sqlutil.Rebind(m.conn.Info().Dialect, query), args...)
+	result, err := m.rewriteRevisionRow(ctx, conn, migration, query, args)
 	if err != nil {
 		return err
 	}
 	restarted, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("count the restarted revision row: %w", err)
+		return fmt.Errorf("count the restarted revision row of migration %s: %w", migration.RevisionVersion(), err)
 	}
 	if restarted == 0 {
 		return fmt.Errorf("%w: %s", ErrRevisionClaimLost, lost)
@@ -1902,27 +1936,55 @@ func (m *Migrator) claimRevisionRestart(
 	return nil
 }
 
+// rewriteRevisionRow runs the rewrite of a dirty row on conn, guarded or not,
+// so that both report a failure in one shape.
+func (m *Migrator) rewriteRevisionRow(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	query string,
+	args []any,
+) (sql.Result, error) {
+	result, err := conn.ExecContext(ctx, sqlutil.Rebind(m.conn.Info().Dialect, query), args...)
+	if err != nil {
+		return nil, fmt.Errorf("restart the revision row of migration %s: %w", migration.RevisionVersion(), err)
+	}
+	return result, nil
+}
+
 // countsRevisionRestart reports whether the rewrite of a dirty row on conn
-// matches the state this run read and counts what it rewrote, so that two
-// retries of one failed attempt cannot both run its body. It does on the
+// matches the row this run read and counts what it rewrote. It does on the
 // migrator's own connection, which is the one every attempt that runs outside
 // a transaction records on. It does not on a copy of the connection bound to a
 // transaction, whose count may be a stand-in (see
 // [dbschema.DatabaseConnection.ExecContext]), where a rewrite that matched
 // nothing would go on as one that matched; nor on an engine whose UPDATE
 // counts no rows.
+//
+// The comparison is by identity, and it rests on m.conn never being bound to a
+// transaction. m.conn is the connection [NewMigrator] was given, or a session
+// [dbschema.DatabaseConnection.WithSession] pinned for a scoped copy of the
+// migrator, and a pinned session carries no executor, so its count is the
+// driver's. A connection bound to a transaction comes from
+// [dbschema.DatabaseConnection.WithExecutor], which returns a new value, so it
+// is never m.conn. The tags and the repeatable record read a count off m.conn
+// on the same ground.
 func (m *Migrator) countsRevisionRestart(conn *dbschema.DatabaseConnection) bool {
-	return conn == m.conn && !m.revisionTable().UncountedUpdates
+	return restartCounts(m.revisionTable(), m.conn, conn)
+}
+
+// restartCounts is [Migrator.countsRevisionRestart] for a migrator whose own
+// connection is root and whose revision table table describes.
+func restartCounts(table descriptor.RevisionTable, root, conn *dbschema.DatabaseConnection) bool {
+	return conn == root && !table.UncountedUpdates
 }
 
 // restartAtlasMigrationRevisionOn is restartMigrationRevisionOn in the Atlas
 // layout. That layout has no state column: a row is dirty when it carries an
 // error or counts fewer applied statements than its total, and the restart
-// clears the error. So when the row carried an error as this run read it
-// (plan.readError), the rewrite matches only a row that still carries one,
-// which is what tells two retries of one failed attempt apart. A row that was
-// dirty without an error, as an interrupted run leaves it, has nothing a
-// second rewrite would change, and is rewritten unguarded.
+// clears the error. So the rewrite matches the applied count this run read,
+// and, when the row carried an error as this run read it (plan.readError),
+// only a row that still carries one.
 func (m *Migrator) restartAtlasMigrationRevisionOn(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -1943,12 +2005,22 @@ func (m *Migrator) restartAtlasMigrationRevisionOn(
 		migration.atlasOperatorVersion(),
 		migration.RevisionVersion(),
 	}
-	if !plan.readError || !m.countsRevisionRestart(conn) {
-		return executeSQLOn(ctx, conn, sqlutil.Rebind(m.conn.Info().Dialect, m.restartMigrationSQL()), args...)
+	query := m.restartMigrationSQL()
+	if !m.countsRevisionRestart(conn) {
+		_, err := m.rewriteRevisionRow(ctx, conn, migration, query, args)
+		return err
 	}
-	recorded, _ := atlasRevisionErrorTests(m.connectionDialect())
-	return m.claimRevisionRestart(ctx, conn, m.restartMigrationSQL()+" AND "+recorded, args,
-		fmt.Sprintf("the row of migration %s no longer carries the error this run read", migration.RevisionVersion()))
+	query += " AND applied = ?"
+	args = append(args, plan.readApplied)
+	lost := fmt.Sprintf("the row of migration %s no longer has the %d applied statements this run read",
+		migration.RevisionVersion(), plan.readApplied)
+	if plan.readError {
+		recorded, _ := atlasRevisionErrorTests(m.connectionDialect())
+		query += " AND " + recorded
+		lost = fmt.Sprintf("the row of migration %s no longer has the %d applied statements and the error this run read",
+			migration.RevisionVersion(), plan.readApplied)
+	}
+	return m.claimRevisionRestart(ctx, conn, migration, query, args, lost)
 }
 
 func (m *Migrator) beginMigrationRevisionOn(
@@ -1956,6 +2028,7 @@ func (m *Migrator) beginMigrationRevisionOn(
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
 	startedAt time.Time,
+	plan upRetryPlan,
 ) error {
 	if m.conn.Writer().IsDryRun() {
 		return nil
@@ -1970,26 +2043,33 @@ func (m *Migrator) beginMigrationRevisionOn(
 		err = m.beginNativeMigrationRevisionOn(ctx, conn, migration, startedAt)
 	}
 	if err != nil {
-		return m.settleRevisionInsert(ctx, conn, migration, err)
+		return m.settleRevisionInsert(ctx, conn, migration, plan, err)
 	}
 	return nil
 }
 
 // settleRevisionInsert decides an INSERT of a revision row the server
-// refused. This run read no row for the version, so a row there now is
-// another run's: a refused statement wrote nothing of its own. That run is
-// applying the migration or has, and this one stops with
-// [ErrRevisionClaimLost]. An error the server did not answer, such as a lost
-// connection, may follow an INSERT that took effect, and stands as it is. So
-// does a refusal when no row is there, and one whose row cannot be read, as on
-// a transaction the refusal aborted.
+// refused. When this run read the revision table and found no row for the
+// version (plan.readNoRow) and the server refused the INSERT as a duplicate
+// key, the row there now is another run's: a refused statement wrote nothing
+// of its own. That run is applying the migration or has, and this one stops
+// with [ErrRevisionClaimLost].
+//
+// Every other error stands as it is: one from a run that did not read the
+// table, as a dry run or a legacy table does not, or that read a clean row,
+// which is a migration applied again rather than a race; a refusal other than
+// a duplicate key, such as a refused privilege, an exceeded quota or a
+// deadlock; an error the server did not answer, such as a lost connection,
+// which may follow an INSERT that took effect; and a duplicate key whose row
+// cannot be read, as on a transaction the refusal aborted.
 func (m *Migrator) settleRevisionInsert(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
+	plan upRetryPlan,
 	insertErr error,
 ) error {
-	if sqlState, number := servercode.Read(insertErr); sqlState == "" && number == 0 {
+	if !plan.readNoRow || !servercode.UniqueViolation(insertErr) {
 		return insertErr
 	}
 	query := sqlutil.Rebind(m.conn.Info().Dialect, m.getRevisionSQL())
@@ -2941,9 +3021,8 @@ func (m *Migrator) setAtlasRevisionRowsOnce(
 // serializable isolation.
 //
 // The level is what keeps two concurrent sets from each writing rows the other
-// did not see. The migration advisory lock does not cover it: Oracle and SQLite
-// take no such lock, so on those targets the isolation level is the only thing
-// standing between two runs.
+// did not see. The migration lock does not cover it: SQLite takes no such lock,
+// and a set run without one has nothing else standing between two runs.
 //
 // Oracle asks for it in SQL. Its driver implements one isolation level through
 // [database/sql] and refuses every other by name, so a `sql.TxOptions` naming

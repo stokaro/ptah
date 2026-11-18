@@ -71,3 +71,35 @@ func TestRead_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// Only the refusal of a duplicate key is a unique violation. A deadlock, a
+// refused privilege and a lost connection keep their own meaning, and a
+// number means what the engine that sent it says: ClickHouse's code 1 is not
+// Oracle's ORA-00001.
+func TestUniqueViolation(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "PostgreSQL unique_violation", err: &pgconn.PgError{Code: "23505"}, want: true},
+		{name: "PostgreSQL serialization failure", err: &pgconn.PgError{Code: "40001"}},
+		{name: "PostgreSQL insufficient privilege", err: &pgconn.PgError{Code: "42501"}},
+		{name: "MySQL duplicate entry", err: &mysqldriver.MySQLError{Number: 1062}, want: true},
+		{name: "MySQL deadlock", err: &mysqldriver.MySQLError{Number: 1213}},
+		{name: "MySQL command denied", err: &mysqldriver.MySQLError{Number: 1142}},
+		{name: "SQL Server primary key violation", err: mssql.Error{Number: 2627}, want: true},
+		{name: "SQL Server unique index violation", err: mssql.Error{Number: 2601}, want: true},
+		{name: "SQL Server deadlock victim", err: mssql.Error{Number: 1205}},
+		{name: "ClickHouse code 1", err: &clickhousedriver.Exception{Code: 1}},
+		{name: "a wrapped duplicate key", err: fmt.Errorf("record: %w", &pgconn.PgError{Code: "23505"}), want: true},
+		{name: "an error no server wrote", err: errors.New("duplicate key value violates unique constraint")},
+		{name: "no error"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(servercode.UniqueViolation(test.err), qt.Equals, test.want)
+		})
+	}
+}

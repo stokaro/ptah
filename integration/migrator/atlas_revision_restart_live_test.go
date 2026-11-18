@@ -95,7 +95,7 @@ func waitForBlockedSession(c *qt.C, r *repeatableEngineTarget) bool {
 // row, and once the first commits it matches nothing, refuses, and runs no
 // statement of the body. Without the guard it rewrites the row again and runs
 // the body a second time.
-func TestAtlasRevisionRestartLive_RefusesARowAnotherRetryRewrote(t *testing.T) {
+func TestAtlasRevisionRestartLive_FailurePath(t *testing.T) {
 	for _, engine := range []repeatableEngine{repeatablePostgres, repeatableOracle} {
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -120,7 +120,7 @@ func TestAtlasRevisionRestartLive_RefusesARowAnotherRetryRewrote(t *testing.T) {
 			wg.Wait()
 
 			c.Assert(retryErr, qt.ErrorIs, migrator.ErrRevisionClaimLost)
-			c.Assert(retryErr, qt.ErrorMatches, `(?s).*the row of migration 1 no longer carries the error this run read.*`)
+			c.Assert(retryErr, qt.ErrorMatches, `(?s).*the row of migration 1 no longer has the 0 applied statements and the error this run read.*`)
 			c.Assert(countRows(c, r.conn, "repairs"), qt.Equals, 0)
 			c.Assert(waited, qt.IsTrue)
 		})

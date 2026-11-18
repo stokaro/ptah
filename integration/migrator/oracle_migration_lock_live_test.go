@@ -191,38 +191,50 @@ func TestOracleMigrationLockLive_FailurePath(t *testing.T) {
 }
 
 // A retry of a failed migration rewrites the row it read only while the row
-// still has the state it read. Here the stand-in for a first retry rewrites
-// the row to pending in a transaction it has not committed; the second retry,
-// which runs without the lock and read the row as failed, waits on that row,
-// and once the first commits it matches nothing, refuses, and runs no
-// statement of the body. Without the guard it rewrites the row again and runs
-// the body a second time.
-func TestOracleMigrationRetryLive_RefusesARowAnotherRetryRewrote(t *testing.T) {
-	c := qt.New(t)
-	o := newOracleLockTarget(c)
-	fsys := fstest.MapFS{
-		"0000000001_repairs.up.sql":   &fstest.MapFile{Data: []byte("INSERT INTO repairs (id) VALUES (1);\n")},
-		"0000000001_repairs.down.sql": &fstest.MapFile{Data: []byte("DELETE FROM repairs;\n")},
+// is still the one it read. Here the stand-in for a first retry rewrites the
+// row in a transaction it has not committed, to pending as a retry starts, or
+// to a further applied statement as a retry that failed again leaves it. The
+// second retry, which runs without the lock and read the row as it was, waits
+// on that row, and once the first commits it matches nothing, refuses, and
+// runs no statement of the body. Without the guard it rewrites the row again
+// and runs the body a second time.
+func TestOracleMigrationRetryLive_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		rewrite string
+	}{
+		{name: "another state", rewrite: "UPDATE " + oracleRevisionTable + " SET state = 'pending' WHERE version = 1"},
+		{name: "a further statement applied", rewrite: "UPDATE " + oracleRevisionTable + " SET applied = 1 WHERE version = 1"},
 	}
-	c.Assert(o.migrator(c, fsys).MigrateUp(context.Background()), qt.ErrorMatches, `(?s).*ORA-00942.*`)
-	_, err := o.conn.ExecContext(context.Background(), "CREATE TABLE repairs (id INTEGER)")
-	c.Assert(err, qt.IsNil)
-	first := o.beginRowWrite(c, "UPDATE "+oracleRevisionTable+" SET state = 'pending' WHERE version = 1")
-	retry := o.migrator(c, fsys).WithoutMigrationLock()
-	var retryErr error
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		retryErr = retry.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{AllowDirty: true})
-	})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			o := newOracleLockTarget(c)
+			fsys := fstest.MapFS{
+				"0000000001_repairs.up.sql":   &fstest.MapFile{Data: []byte("INSERT INTO repairs (id) VALUES (1);\n")},
+				"0000000001_repairs.down.sql": &fstest.MapFile{Data: []byte("DELETE FROM repairs;\n")},
+			}
+			c.Assert(o.migrator(c, fsys).MigrateUp(context.Background()), qt.ErrorMatches, `(?s).*ORA-00942.*`)
+			_, err := o.conn.ExecContext(context.Background(), "CREATE TABLE repairs (id INTEGER)")
+			c.Assert(err, qt.IsNil)
+			first := o.beginRowWrite(c, test.rewrite)
+			retry := o.migrator(c, fsys).WithoutMigrationLock()
+			var retryErr error
+			var wg sync.WaitGroup
+			wg.Go(func() {
+				retryErr = retry.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{AllowDirty: true})
+			})
 
-	waited := o.waitForSessions(c, blockedSessions, 1)
-	c.Assert(first.Commit(), qt.IsNil)
-	wg.Wait()
+			waited := o.waitForSessions(c, blockedSessions, 1)
+			c.Assert(first.Commit(), qt.IsNil)
+			wg.Wait()
 
-	c.Assert(retryErr, qt.ErrorIs, migrator.ErrRevisionClaimLost)
-	c.Assert(retryErr, qt.ErrorMatches, `(?s).*the row of migration 1 no longer has state "failed".*`)
-	c.Assert(o.rows(c, "repairs"), qt.Equals, 0)
-	c.Assert(waited, qt.IsTrue)
+			c.Assert(retryErr, qt.ErrorIs, migrator.ErrRevisionClaimLost)
+			c.Assert(retryErr, qt.ErrorMatches, `(?s).*the row of migration 1 no longer has state "failed".* 0 applied statements.*`)
+			c.Assert(o.rows(c, "repairs"), qt.Equals, 0)
+			c.Assert(waited, qt.IsTrue)
+		})
+	}
 }
 
 // A run that reaches the INSERT of a revision row another run inserted after
@@ -230,7 +242,7 @@ func TestOracleMigrationRetryLive_RefusesARowAnotherRetryRewrote(t *testing.T) {
 // body. The stand-in for the other run inserts the row in a transaction it has
 // not committed; the run without the lock waits on the key, and once the
 // other commits, the server refuses its INSERT with ORA-00001.
-func TestOracleMigrationRecordLive_RefusesAVersionAnotherRunRecorded(t *testing.T) {
+func TestOracleMigrationRecordLive_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	o := newOracleLockTarget(c)
 	c.Assert(o.migrator(c, oracleWidgets()).MigrateUp(context.Background()), qt.IsNil)
