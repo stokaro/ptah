@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"ptah.run/core/sqlutil"
@@ -50,6 +51,17 @@ func (m *Migrator) repeatableObjectName() string {
 		return m.quoteIdentifier(schema) + "." + table
 	}
 	return table
+}
+
+// repeatableUpdate is the statement that sets assignments on the record's row
+// of one identity, which it binds last.
+func (m *Migrator) repeatableUpdate(assignments string) string {
+	template := m.revisionTable().RepeatableUpdate
+	if template == "" {
+		template = "UPDATE {table} SET {assignments} WHERE {key} = ?"
+	}
+	return strings.NewReplacer("{table}", m.repeatableTable(), "{assignments}", assignments,
+		"{key}", m.repeatableIdentity()).Replace(template)
 }
 
 // repeatableIdentity is the record's key column as every statement names it.
@@ -169,8 +181,8 @@ func (m *Migrator) markRepeatableAttempt(ctx context.Context, attempt repeatable
 	now := nativeRevisionTimestamp(time.Now())
 	repeatable := attempt.repeatable
 	if attempt.recorded {
-		query := "UPDATE " + m.repeatableTable() + " SET state = ?, attempt_checksum = ?, attempt_order = ?, " +
-			"transactional = ?, run_id = ?, attempted_at = ?, error = NULL WHERE " + m.repeatableIdentity() + " = ?"
+		query := m.repeatableUpdate("state = ?, attempt_checksum = ?, attempt_order = ?, " +
+			"transactional = ?, run_id = ?, attempted_at = ?, error = NULL")
 		return executeSQLOn(ctx, m.conn, sqlutil.Rebind(dialect, query),
 			RepeatableStateRunning, repeatable.checksum, attempt.order, attempt.transactionalColumn(),
 			m.migrationLogRunID, now, repeatable.identity)
@@ -192,7 +204,7 @@ func (m *Migrator) completeRepeatableOn(
 	conn *dbschema.DatabaseConnection,
 	repeatable *repeatableMigration,
 ) error {
-	set := "SET state = ?, checksum = ?, body = ?, applied_at = ?, error = NULL"
+	assignments := "state = ?, checksum = ?, body = ?, applied_at = ?, error = NULL"
 	args := []any{
 		RepeatableStateApplied, repeatable.checksum, repeatable.body, nativeRevisionTimestamp(time.Now()),
 		repeatable.identity,
@@ -200,11 +212,10 @@ func (m *Migrator) completeRepeatableOn(
 	// An empty file is a kept body. Where a bound empty value is stored as
 	// NULL, which reads as no body, the engine's own expression stores it.
 	if empty := m.revisionTable().EmptyBinary; empty != "" && len(repeatable.body) == 0 {
-		set = "SET state = ?, checksum = ?, body = " + empty + ", applied_at = ?, error = NULL"
+		assignments = "state = ?, checksum = ?, body = " + empty + ", applied_at = ?, error = NULL"
 		args = slices.Delete(args, 2, 3)
 	}
-	query := "UPDATE " + m.repeatableTable() + " " + set + " WHERE " + m.repeatableIdentity() + " = ?"
-	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), query), args...)
+	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), m.repeatableUpdate(assignments)), args...)
 }
 
 // failRepeatable records that the attempt's body failed. It runs on a context
@@ -213,7 +224,7 @@ func (m *Migrator) completeRepeatableOn(
 func (m *Migrator) failRepeatable(ctx context.Context, repeatable *repeatableMigration, failure error) error {
 	durable, cancel := durableRevisionWriteContext(ctx)
 	defer cancel()
-	query := "UPDATE " + m.repeatableTable() + " SET state = ?, error = ? WHERE " + m.repeatableIdentity() + " = ?"
+	query := m.repeatableUpdate("state = ?, error = ?")
 	return executeSQLOn(durable, m.conn, sqlutil.Rebind(m.connectionDialect(), query),
 		RepeatableStateFailed, failure.Error(), repeatable.identity)
 }

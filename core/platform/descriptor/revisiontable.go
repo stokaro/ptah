@@ -87,6 +87,12 @@ type RevisionTable struct {
 	// repeatable record's binary body column, on an engine that stores a
 	// bound empty value as NULL. Empty binds the value.
 	EmptyBinary string `json:"empty_binary,omitempty"`
+	// RepeatableUpdate changes the repeatable record's row of one identity.
+	// It takes {table}, {assignments} and {key}, the identity column, and
+	// binds the identity last. Empty uses UPDATE {table} SET {assignments}
+	// WHERE {key} = ?; an engine that changes rows through mutations states
+	// its own.
+	RepeatableUpdate string `json:"repeatable_update,omitempty"`
 	// RowLock is how a read of every revision locks the rows it read until
 	// its transaction ends: "for-update" (a FOR UPDATE suffix),
 	// "table-hint" (WITH (UPDLOCK, HOLDLOCK) after the table), or empty for

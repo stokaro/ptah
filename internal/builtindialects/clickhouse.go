@@ -246,14 +246,20 @@ SETTINGS mutations_sync = 1`,
 			"INSERT INTO {table} SELECT '{file}', * EXCEPT (version) FROM {table} WHERE version = '{recorded}'",
 			"ALTER TABLE {table} DELETE WHERE version = '{recorded}' SETTINGS mutations_sync = 1",
 		},
-		Mutations:      true,
-		UpsertTag:      "INSERT INTO {table} (tag, version, recorded_at, deleted) VALUES (?, ?, now64(9), 0)",
-		TagServerTime:  true,
-		TagReadSuffix:  " FINAL",
-		TagTombstone:   "INSERT INTO {table} (tag, version, recorded_at, deleted) VALUES (?, 0, now64(9), 1)",
-		VersionCast:    "BIGINT",
-		VersionLiteral: "backslash",
-		DerivedTableAs: " AS",
-		JSONAsText:     true,
+		Mutations: true,
+		// The record of repeatable migrations is the shared one, under the
+		// engine clause. Its rows change through mutations, which the run
+		// waits for, as the revision table's do. A repair deletes its row
+		// with DELETE FROM, which ClickHouse runs as a lightweight delete.
+		CreateRepeatables: createRepeatables,
+		RepeatableUpdate:  "ALTER TABLE {table} UPDATE {assignments} WHERE {key} = ? SETTINGS mutations_sync = 1",
+		UpsertTag:         "INSERT INTO {table} (tag, version, recorded_at, deleted) VALUES (?, ?, now64(9), 0)",
+		TagServerTime:     true,
+		TagReadSuffix:     " FINAL",
+		TagTombstone:      "INSERT INTO {table} (tag, version, recorded_at, deleted) VALUES (?, 0, now64(9), 1)",
+		VersionCast:       "BIGINT",
+		VersionLiteral:    "backslash",
+		DerivedTableAs:    " AS",
+		JSONAsText:        true,
 	}
 }

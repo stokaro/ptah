@@ -55,6 +55,9 @@ type repeatableEngine struct {
 	// where information_schema does not exist. Empty reads
 	// information_schema.columns in schema.
 	catalogColumns string
+	// clearBody sets body to NULL in every row of the record named {table}.
+	// Empty uses UPDATE.
+	clearBody string
 }
 
 // view is a view over widgets with the given select list, in the engine's
@@ -106,6 +109,14 @@ var (
 		replaceView: repeatableReplaceView, fixed: repeatableEnginesFixed,
 		catalogColumns: "SELECT count(*) FROM user_tab_columns WHERE table_name = UPPER(?)",
 	}
+	// repeatableClickHouse has no transaction and no migration lock, and its
+	// rows change through mutations.
+	repeatableClickHouse = repeatableEngine{
+		name: "clickhouse", engine: dbtarget.ClickHouse, dialect: "clickhouse", admin: dbtarget.ClickHouse,
+		family: "clickhouse", schema: "currentDatabase()", noTransaction: true, keepsPartial: true,
+		replaceView: repeatableReplaceView, fixed: repeatableEnginesFixed,
+		clearBody: "ALTER TABLE {table} UPDATE body = NULL WHERE 1 SETTINGS mutations_sync = 1",
+	}
 	repeatableSQLServer = repeatableEngine{
 		name: "sqlserver", engine: dbtarget.SQLServer, dialect: "sqlserver", admin: dbtarget.SQLServer,
 		family: "sqlserver", schema: "SCHEMA_NAME()", replaceView: "CREATE OR ALTER VIEW",
@@ -116,7 +127,7 @@ var (
 	// migrations.
 	repeatableEngines = []repeatableEngine{
 		repeatablePostgres, repeatableCockroachDB, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB,
-		repeatableSQLServer, repeatableOracle,
+		repeatableSQLServer, repeatableOracle, repeatableClickHouse,
 	}
 	// repeatableLockingEngines take the migration lock. CockroachDB has no
 	// session advisory lock, and Ptah runs every migration there without one.
@@ -128,6 +139,7 @@ var (
 	// repeatableNonAtomicEngines do not roll schema changes back as a unit.
 	repeatableNonAtomicEngines = []repeatableEngine{
 		repeatableCockroachDB, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB, repeatableOracle,
+		repeatableClickHouse,
 	}
 )
 
@@ -388,6 +400,27 @@ func TestRepeatableMigrationsOnEnginesLive_HappyPath(t *testing.T) {
 			c.Assert(r.record(c, fsys, "Widgets").State, qt.Equals, migrator.RepeatableStateOrphaned)
 			c.Assert(r.record(c, fsys, "widgets").State, qt.Equals, migrator.RepeatableStateApplied)
 			c.Assert(r.columns(c, "lower_ids"), qt.Equals, 1)
+		})
+
+		// Repair deletes one row by identity, which an engine whose rows
+		// change through mutations spells its own way.
+		t.Run(engine.name+": repair removes the row of a deleted file and keeps the others", func(t *testing.T) {
+			c := qt.New(t)
+			r := newRepeatableEngineTarget(c, t, engine)
+			fsys := repeatableEngineMigrations(map[string]string{
+				"R__widget_ids.sql": engine.widgetIDs(),
+				"R__copy_ids.sql":   engine.view("copy_ids", "id, id AS copy"),
+			})
+			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
+			delete(fsys, "R__widget_ids.sql")
+
+			removed, err := r.migrator(c, fsys).RemoveRepeatableRecord(context.Background(),
+				migrator.RemoveRepeatableRecordOptions{Identity: "widget_ids"})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(removed.State, qt.Equals, migrator.RepeatableStateOrphaned)
+			c.Assert(r.record(c, fsys, "widget_ids"), qt.DeepEquals, migrator.RepeatableRecord{})
+			c.Assert(r.record(c, fsys, "copy_ids").State, qt.Equals, migrator.RepeatableStateApplied)
 		})
 
 		t.Run(engine.name+": a failed attempt runs again with AllowDirty once its file is fixed", func(t *testing.T) {
