@@ -65,6 +65,8 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 		migrator.WithAtlasTemplateData(migrationfile.AtlasTemplateData{Env: opts.AtlasEnv}),
 		migrator.WithAtlasRevisionVersions(opts.RevisionVersions),
 		migrator.WithAtlasRevisionChecksums(opts.RevisionChecksums),
+		// A revision named in a refusal reads as the community binary names it.
+		migrator.WithAtlasVerbatimDescriptions(),
 	}
 	if opts.Repeatables {
 		providerOptions = append(providerOptions, migrator.WithAtlasRepeatableMigrations())

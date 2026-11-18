@@ -2955,8 +2955,9 @@ on `migrate lint`, and `default` on `migrate status`.
   `.OperatorVersion`. Revisions are listed by version string, so `10` comes
   before `2`, and `.Description` is the one the revision table holds. A row
   keeps the description it was written with: a row that records `view` for
-  `R__view.sql`, as an earlier ptah-compat wrote it, is not rewritten, and a
-  fresh apply writes `_view`.
+  `R__view.sql`, as an earlier ptah-compat or the native
+  `ptah migrations up --revision-format atlas` writes it, is not rewritten,
+  and a fresh `ptah-compat migrate apply` writes `_view`.
 
 **`ptah-compat migrate down --format`**
 

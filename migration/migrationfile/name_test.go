@@ -331,11 +331,11 @@ func TestParseFileName_RevisionVersionIsTheNumber(t *testing.T) {
 	c.Assert(migrationFile.RevisionVersion(), qt.Equals, "1")
 }
 
-// TestParseAtlasFileName_RevisionDescriptionIsTheCommunityBinarys pins the
+// TestParseAtlasFileName_VerbatimDescriptionIsTheCommunityBinarys pins the
 // description each name records in atlas_schema_revisions, as the pinned
 // community binary v1.3.0 records it after `migrate apply` on SQLite: the text
 // after the first underscore, verbatim, so a second underscore stays.
-func TestParseAtlasFileName_RevisionDescriptionIsTheCommunityBinarys(t *testing.T) {
+func TestParseAtlasFileName_VerbatimDescriptionIsTheCommunityBinarys(t *testing.T) {
 	tests := []struct {
 		name string
 		want string
@@ -352,6 +352,30 @@ func TestParseAtlasFileName_RevisionDescriptionIsTheCommunityBinarys(t *testing.
 		{name: "1_with space.sql", want: "with space"},
 		{name: "1_a.b.sql", want: "a.b"},
 		{name: "01_lead.sql", want: "lead"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			got, err := migrationfile.ParseAtlasFileName(tt.name)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.VerbatimDescription, qt.Equals, tt.want)
+		})
+	}
+}
+
+// TestParseAtlasFileName_RevisionDescriptionIsPtahs pins the description a
+// revision table Ptah writes records by default, which trims the separators
+// after the version and so differs from
+// [migrationfile.File.VerbatimDescription] on these names.
+func TestParseAtlasFileName_RevisionDescriptionIsPtahs(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "1__init.sql", want: "init"},
+		{name: "R__view.sql", want: "view"},
+		{name: "1.x.sql", want: "x"},
+		{name: "1_a_b.sql", want: "a_b"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

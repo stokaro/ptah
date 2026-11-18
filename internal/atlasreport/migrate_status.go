@@ -217,7 +217,7 @@ func migrateStatusFiles(opts MigrateStatusOptions) ([]MigrateStatusFile, error) 
 		files = append(files, MigrateStatusFile{
 			Name:        file.Path,
 			Version:     version,
-			Description: file.RevisionDescription,
+			Description: file.VerbatimDescription,
 		})
 	}
 	// Available, and with it Pending and OutOfOrder, lists the files in the

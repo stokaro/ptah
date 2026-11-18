@@ -151,6 +151,7 @@ func runAtlasMigrateSet(
 		RevisionTypes:             linearity.revisionTypes,
 		RepeatableVersions:        linearity.repeatableVersions,
 		RevisionVersionComparator: atlasMigrateSetRevisionVersionComparator(prepared.format),
+		VerbatimDescriptions:      true,
 	})
 	if err != nil {
 		return failAtlasCommand(cmd, remapAtlasExactIdentityError(err, sourceVersions))
