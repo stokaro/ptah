@@ -46,39 +46,69 @@ type repeatableEngine struct {
 	noTransaction bool
 	// keepsPartial is what a failed attempt leaves of its first statement.
 	keepsPartial bool
+	// replaceView is the statement prefix that creates a view or replaces
+	// the one under that name.
+	replaceView string
+	// fixed creates partial_marker unless it exists.
+	fixed string
 }
+
+// view is a view over widgets with the given select list, in the engine's
+// spelling.
+func (e repeatableEngine) view(name, columns string) string {
+	return e.replaceView + " " + name + " AS SELECT " + columns + " FROM widgets;\n"
+}
+
+// widgetIDs is the view the lifecycle tests apply first, and widerIDs its
+// replacement with a second column.
+func (e repeatableEngine) widgetIDs() string { return e.view("widget_ids", "id") }
+
+func (e repeatableEngine) widerIDs() string { return e.view("widget_ids", "id, id AS copy") }
 
 var (
 	repeatablePostgres = repeatableEngine{
 		name: "postgres", engine: dbtarget.PostgreSQL, dialect: "postgres", admin: dbtarget.PostgreSQL,
 		family: "postgres", drop: " WITH (FORCE)", schema: "current_schema()",
+		replaceView: repeatableReplaceView, fixed: repeatableEnginesFixed,
 	}
 	repeatableCockroachDB = repeatableEngine{
 		name: "cockroachdb", engine: dbtarget.CockroachDB, dialect: "cockroachdb", admin: dbtarget.CockroachDB,
 		family: "postgres", drop: " CASCADE", schema: "current_schema()", noTransaction: true, keepsPartial: true,
+		replaceView: repeatableReplaceView, fixed: repeatableEnginesFixed,
 	}
 	repeatableYugabyteDB = repeatableEngine{
 		name: "yugabytedb", engine: dbtarget.YugabyteDB, dialect: "yugabytedb", admin: dbtarget.YugabyteDB,
 		family: "postgres", drop: " WITH (FORCE)", schema: "current_schema()", noTransaction: true, keepsPartial: true,
+		replaceView: repeatableReplaceView, fixed: repeatableEnginesFixed,
 	}
 	repeatableMySQL = repeatableEngine{
 		name: "mysql", engine: dbtarget.MySQL, dialect: "mysql", admin: dbtarget.MySQLAdmin,
 		family: "mysql", schema: "DATABASE()", noTransaction: true, keepsPartial: true,
+		replaceView: repeatableReplaceView, fixed: repeatableEnginesFixed,
 	}
 	repeatableMariaDB = repeatableEngine{
 		name: "mariadb", engine: dbtarget.MariaDB, dialect: "mariadb", admin: dbtarget.MariaDBAdmin,
 		family: "mysql", schema: "DATABASE()", noTransaction: true, keepsPartial: true,
+		replaceView: repeatableReplaceView, fixed: repeatableEnginesFixed,
+	}
+	// repeatableSQLServer has no CREATE OR REPLACE VIEW and no CREATE TABLE
+	// IF NOT EXISTS, so its fixtures say both its own way.
+	repeatableSQLServer = repeatableEngine{
+		name: "sqlserver", engine: dbtarget.SQLServer, dialect: "sqlserver", admin: dbtarget.SQLServer,
+		family: "sqlserver", schema: "SCHEMA_NAME()", replaceView: "CREATE OR ALTER VIEW",
+		fixed: "IF OBJECT_ID(N'partial_marker', N'U') IS NULL CREATE TABLE partial_marker (id INTEGER PRIMARY KEY);\n",
 	}
 
 	// repeatableEngines is every server engine that runs repeatable
 	// migrations.
 	repeatableEngines = []repeatableEngine{
 		repeatablePostgres, repeatableCockroachDB, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB,
+		repeatableSQLServer,
 	}
 	// repeatableLockingEngines take the migration lock. CockroachDB has no
 	// session advisory lock, and Ptah runs every migration there without one.
 	repeatableLockingEngines = []repeatableEngine{
-		repeatablePostgres, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB,
+		repeatablePostgres, repeatableYugabyteDB, repeatableMySQL, repeatableMariaDB, repeatableSQLServer,
 	}
 	// repeatableMySQLFamilyEngines read session variables from the URL.
 	repeatableMySQLFamilyEngines = []repeatableEngine{repeatableMySQL, repeatableMariaDB}
@@ -90,8 +120,7 @@ var (
 
 const (
 	repeatableEnginesTable = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
-	repeatableEnginesView  = "CREATE OR REPLACE VIEW widget_ids AS SELECT id FROM widgets;\n"
-	repeatableEnginesWider = "CREATE OR REPLACE VIEW widget_ids AS SELECT id, id AS copy FROM widgets;\n"
+	repeatableReplaceView  = "CREATE OR REPLACE VIEW"
 	// repeatableEnginesFailing creates a table and then fails, so what the
 	// server kept of the attempt can be read back.
 	// The table has a primary key because CockroachDB gives one without a
@@ -140,6 +169,9 @@ func repeatableScratchDatabaseURL(c *qt.C, t *testing.T, engine repeatableEngine
 	if engine.family == "mysql" {
 		return mySQLFamilyScratchDatabaseURL(t, engine.dialect, engine.admin, "ptah_rt_repeatable")
 	}
+	if engine.family == "sqlserver" {
+		return sqlServerScratchDatabaseURL(c, engine.admin, "ptah_rt_repeatable")
+	}
 	adminURL := dbtarget.URL(c, engine.admin)
 	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
 	c.Assert(err, qt.IsNil)
@@ -156,6 +188,33 @@ func repeatableScratchDatabaseURL(c *qt.C, t *testing.T, engine repeatableEngine
 	parsed, err := url.Parse(adminURL)
 	c.Assert(err, qt.IsNil)
 	parsed.Path = "/" + database
+	return parsed.String()
+}
+
+// sqlServerScratchDatabaseURL creates a SQL Server database of its own for one
+// test and drops it when the test ends, closing whatever session the test left
+// open on it.
+func sqlServerScratchDatabaseURL(c *qt.C, adminEngine dbtarget.Engine, prefix string) string {
+	c.Helper()
+	adminURL := dbtarget.URL(c, adminEngine)
+	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(admin) })
+	database := fmt.Sprintf("%s_%d_%d", prefix, os.Getpid(), time.Now().UnixNano())
+	_, err = admin.ExecContext(context.Background(), "CREATE DATABASE "+database)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		_, dropErr := admin.ExecContext(ctx,
+			"ALTER DATABASE "+database+" SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE "+database)
+		c.Check(dropErr, qt.IsNil)
+	})
+	parsed, err := url.Parse(adminURL)
+	c.Assert(err, qt.IsNil)
+	query := parsed.Query()
+	query.Set("database", database)
+	parsed.RawQuery = query.Encode()
 	return parsed.String()
 }
 
@@ -242,7 +301,7 @@ func TestRepeatableMigrationsOnEnginesLive_HappyPath(t *testing.T) {
 		t.Run(engine.name+": a changed file runs again and an unchanged one does not", func(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
-			fsys := repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": repeatableEnginesView})
+			fsys := repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": engine.widgetIDs()})
 
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
 			first := r.record(c, fsys, "widget_ids")
@@ -253,7 +312,7 @@ func TestRepeatableMigrationsOnEnginesLive_HappyPath(t *testing.T) {
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
 			c.Assert(r.record(c, fsys, "widget_ids").AttemptedAt, qt.DeepEquals, first.AttemptedAt)
 
-			writeRepeatable(fsys, "R__widget_ids.sql", repeatableEnginesWider)
+			writeRepeatable(fsys, "R__widget_ids.sql", engine.widerIDs())
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
 			changed := r.record(c, fsys, "widget_ids")
 			c.Assert(changed.State, qt.Equals, migrator.RepeatableStateApplied)
@@ -268,11 +327,11 @@ func TestRepeatableMigrationsOnEnginesLive_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
 			fsys := repeatableEngineMigrations(map[string]string{
-				"R__Widgets.sql": "CREATE OR REPLACE VIEW upper_ids AS SELECT id FROM widgets;\n",
+				"R__Widgets.sql": engine.view("upper_ids", "id"),
 			})
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
 			delete(fsys, "R__Widgets.sql")
-			writeRepeatable(fsys, "R__widgets.sql", "CREATE OR REPLACE VIEW lower_ids AS SELECT id FROM widgets;\n")
+			writeRepeatable(fsys, "R__widgets.sql", engine.view("lower_ids", "id"))
 
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
 
@@ -287,7 +346,7 @@ func TestRepeatableMigrationsOnEnginesLive_HappyPath(t *testing.T) {
 			fsys := repeatableEngineMigrations(map[string]string{"R__partial.sql": repeatableEnginesFailing})
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.ErrorAs, new(*migrator.RepeatableMigrationError))
 
-			writeRepeatable(fsys, "R__partial.sql", repeatableEnginesFixed)
+			writeRepeatable(fsys, "R__partial.sql", engine.fixed)
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{AllowDirty: true}), qt.IsNil)
 
 			record := r.record(c, fsys, "partial")
@@ -307,7 +366,7 @@ func TestRepeatableRecordOnMySQLFamilyLive_HappyPath(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
 			r.url = withSessionVariable(c, r.url, "explicit_defaults_for_timestamp", "0")
-			fsys := repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": repeatableEnginesView})
+			fsys := repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": engine.widgetIDs()})
 
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
 
@@ -347,10 +406,10 @@ func TestRepeatableMigrationsOnEnginesLive_FailurePath(t *testing.T) {
 		t.Run(engine.name+": a held migration lock keeps a changed file from running", func(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
-			fsys := repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": repeatableEnginesView})
+			fsys := repeatableEngineMigrations(map[string]string{"R__widget_ids.sql": engine.widgetIDs()})
 			c.Assert(r.up(c, fsys, migrator.MigrateUpOptions{}), qt.IsNil)
 			applied := r.record(c, fsys, "widget_ids")
-			writeRepeatable(fsys, "R__widget_ids.sql", repeatableEnginesWider)
+			writeRepeatable(fsys, "R__widget_ids.sql", engine.widerIDs())
 			r.holdMigrationLock(c)
 
 			err := r.migrator(c, fsys).WithMigrationLockTimeout(500*time.Millisecond).
@@ -367,7 +426,7 @@ func TestRepeatableMigrationsOnEnginesLive_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			r := newRepeatableEngineTarget(c, t, engine)
 			fsys := repeatableEngineMigrations(map[string]string{
-				"R__widget_ids.sql": "-- atlas:txmode file\n\n" + repeatableEnginesView,
+				"R__widget_ids.sql": "-- atlas:txmode file\n\n" + engine.widgetIDs(),
 			})
 
 			err := r.up(c, fsys, migrator.MigrateUpOptions{})
