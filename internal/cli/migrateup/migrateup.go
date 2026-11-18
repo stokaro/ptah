@@ -147,6 +147,8 @@ type deploymentReportPublication struct {
 	finishedAt time.Time
 	dryRun     bool
 	skip       bool
+	// keyed is the migrator's [migrator.Migrator.KeyedByPosition].
+	keyed bool
 }
 
 // This command has no adoption gate, and that is a decision rather than an
@@ -732,8 +734,8 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 		cliobs.ObserveNoopMigration(context.Background(), runtime.Observer(), "ptah.migrate.up",
 			migrator.ObservationAttribute{Key: "db.system", Value: conn.Info().Dialect},
 			migrator.ObservationAttribute{Key: "migration.direction", Value: "up"},
-			migrator.ObservationAttribute{Key: "migration.current_version", Value: status.CurrentVersion},
-			migrator.ObservationAttribute{Key: "migration.target_version", Value: status.CurrentVersion},
+			mig.VersionAttribute("migration.current_version", status.CurrentVersion),
+			mig.VersionAttribute("migration.target_version", status.CurrentVersion),
 			migrator.ObservationAttribute{Key: "migration.pending_count", Value: 0},
 		)
 		emit.Println("✅ Database is already up to date!")
@@ -748,6 +750,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 		DatabaseURL:        dbURL,
 		DisplayDatabaseURL: dburldisplay.Format(dbURL),
 		Dialect:            conn.Info().Dialect,
+		KeyedByPosition:    mig.KeyedByPosition(),
 		Command:            resolvedOpts.preUpHook,
 		CommandOrigin:      resolvedOpts.preUpHookOrigin,
 		PostgresDumpDir:    resolvedOpts.pgDumpTo,
@@ -797,6 +800,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 		finishedAt: time.Now(),
 		dryRun:     opts.dryRun,
 		skip:       opts.skipReport,
+		keyed:      mig.KeyedByPosition(),
 	})
 
 	if !opts.jsonOutput {
@@ -1332,12 +1336,13 @@ func publishDeploymentReportIfNeeded(
 		emit,
 		publication.source,
 		deploymentreport.SuccessfulOptions{
-			Subject:    publication.source.Descriptor,
-			Dialect:    publication.dialect,
-			Before:     publication.before,
-			After:      publication.after,
-			StartedAt:  publication.startedAt,
-			FinishedAt: publication.finishedAt,
+			Subject:         publication.source.Descriptor,
+			Dialect:         publication.dialect,
+			Before:          publication.before,
+			After:           publication.after,
+			StartedAt:       publication.startedAt,
+			FinishedAt:      publication.finishedAt,
+			KeyedByPosition: publication.keyed,
 		},
 	)
 }

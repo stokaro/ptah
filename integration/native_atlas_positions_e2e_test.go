@@ -19,7 +19,7 @@ import (
 // under 3 and 3_x.sql under 4.
 var positionFiles = []string{"00_x.sql", "1_x.sql", "2_x.sql", "3_x.sql"}
 
-// mixedPositionFiles run in file-name order, 1_x.sql, 10_x.sql, 2_x.sql and
+// mixedPositionFiles run in file-name order, 10_x.sql, 1_x.sql, 2_x.sql and
 // v1_x.sql, under the positions 1 to 4, because v1 is not a number.
 var mixedPositionFiles = []string{"1_x.sql", "2_x.sql", "10_x.sql", "v1_x.sql"}
 

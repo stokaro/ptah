@@ -155,6 +155,7 @@ func TestMigrateDownDerived_HappyPath(t *testing.T) {
 			statements: []string{"DROP TABLE two"},
 			wantPlan: migrator.MigrationPlan{
 				Direction: migrator.MigrationDirectionDown, CurrentVersion: 2, TargetVersion: 1, Versions: []int64{2},
+				CurrentVersionKey: "2", CurrentVersionKeySet: true, TargetVersionKey: "1", VersionKeys: []string{"2"},
 			},
 			wantCalls:    1,
 			wantApplied:  []int64{1},
@@ -170,6 +171,7 @@ func TestMigrateDownDerived_HappyPath(t *testing.T) {
 			statements: []string{"DROP TABLE two", "DROP TABLE one"},
 			wantPlan: migrator.MigrationPlan{
 				Direction: migrator.MigrationDirectionDown, CurrentVersion: 2, TargetVersion: 0, Versions: []int64{2, 1},
+				CurrentVersionKey: "2", CurrentVersionKeySet: true, VersionKeys: []string{"2", "1"},
 			},
 			wantCalls:    1,
 			wantApplied:  make([]int64, 0),
@@ -184,6 +186,7 @@ func TestMigrateDownDerived_HappyPath(t *testing.T) {
 			statements: []string{"DROP TABLE twenty"},
 			wantPlan: migrator.MigrationPlan{
 				Direction: migrator.MigrationDirectionDown, CurrentVersion: 20, TargetVersion: 10, Versions: []int64{20},
+				CurrentVersionKey: "20", CurrentVersionKeySet: true, TargetVersionKey: "10", VersionKeys: []string{"20"},
 			},
 			wantCalls:    1,
 			wantApplied:  []int64{10},
@@ -199,6 +202,7 @@ func TestMigrateDownDerived_HappyPath(t *testing.T) {
 			statements: []string{"DROP TABLE three", "CREATE TABLE two (id INTEGER PRIMARY KEY)"},
 			wantPlan: migrator.MigrationPlan{
 				Direction: migrator.MigrationDirectionDown, CurrentVersion: 3, TargetVersion: 2, Versions: []int64{3},
+				CurrentVersionKey: "3", CurrentVersionKeySet: true, TargetVersionKey: "2", VersionKeys: []string{"3"},
 			},
 			wantCalls:    1,
 			wantApplied:  []int64{1, 2},
@@ -215,6 +219,7 @@ func TestMigrateDownDerived_HappyPath(t *testing.T) {
 			statements: []string{"DROP TABLE two"},
 			wantPlan: migrator.MigrationPlan{
 				Direction: migrator.MigrationDirectionDown, CurrentVersion: 2, TargetVersion: 1, Versions: []int64{2},
+				CurrentVersionKey: "2", CurrentVersionKeySet: true, TargetVersionKey: "1", VersionKeys: []string{"2"},
 			},
 			wantCalls:    0,
 			wantApplied:  []int64{1, 2},

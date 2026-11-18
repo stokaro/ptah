@@ -1751,7 +1751,7 @@ func (m *Migrator) GetMigrationStatusSnapshot(
 		Repeatables:       repeatables.records(),
 	}
 	span.SetAttributes(
-		attr("migration.current_version", status.CurrentVersion),
+		m.VersionAttribute("migration.current_version", status.CurrentVersion),
 		attr("migration.pending_count", len(status.PendingMigrations)),
 		attr("migration.out_of_order_count", len(status.OutOfOrderMigrations)),
 		attr("migration.total_count", status.TotalMigrations),
@@ -1960,7 +1960,7 @@ func (m *Migrator) MigrateUpWithOptions(ctx context.Context, opts MigrateUpOptio
 	observer := m.migrationObserver()
 	attrs := m.operationAttributes(MigrationDirectionUp)
 	if opts.TargetVersion > 0 {
-		attrs = append(attrs, attr("migration.requested_target_version", opts.TargetVersion))
+		attrs = append(attrs, m.VersionAttribute("migration.requested_target_version", opts.TargetVersion))
 	}
 	if opts.Amount > 0 {
 		attrs = append(attrs, attr("migration.requested_amount", opts.Amount))
@@ -2052,8 +2052,8 @@ func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) e
 	}
 	if span := rootSpanFromContext(ctx); span != nil {
 		span.SetAttributes(
-			attr("migration.current_version", currentVersion),
-			attr("migration.target_version", upTargetVersion(currentVersion, migrationsToApply)),
+			m.VersionAttribute("migration.current_version", currentVersion),
+			m.VersionAttribute("migration.target_version", upTargetVersion(currentVersion, migrationsToApply)),
 			attr("migration.pending_count", len(migrationsToApply)),
 		)
 	}
@@ -2348,7 +2348,8 @@ func (m *Migrator) MigrateDownTo(ctx context.Context, targetVersion int64) error
 // migration advisory lock. A nil hook is equivalent to [Migrator.MigrateDownTo].
 func (m *Migrator) MigrateDownToWithPreflight(ctx context.Context, targetVersion int64, hook PreMigrationHook) (err error) {
 	observer := m.migrationObserver()
-	ctx, span := observer.StartSpan(ctx, "ptah.migrate.down", append(m.operationAttributes(MigrationDirectionDown), attr("migration.requested_target_version", targetVersion))...)
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.down", append(m.operationAttributes(MigrationDirectionDown),
+		m.VersionAttribute("migration.requested_target_version", targetVersion))...)
 	defer func() { span.End(err) }()
 	ctx = contextWithRootSpan(ctx, span)
 	return m.withMigrationLock(ctx, "migrate down", func(ctx context.Context) error {
@@ -2406,19 +2407,15 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 	if err != nil {
 		return err
 	}
-	if err := runPreMigrationHook(ctx, hook, MigrationPlan{
-		Inputs:         inputs,
-		Direction:      MigrationDirectionDown,
-		CurrentVersion: currentVersion,
-		TargetVersion:  downTargetVersion(appliedMigrations, targetVersion),
-		Versions:       migrationVersions(migrationsToRollback),
-	}); err != nil {
+	if err := runPreMigrationHook(ctx, hook, m.downPlan(
+		inputs, currentVersion, downTargetVersion(appliedMigrations, targetVersion), migrationVersions(migrationsToRollback),
+	)); err != nil {
 		return err
 	}
 	if span := rootSpanFromContext(ctx); span != nil {
 		span.SetAttributes(
-			attr("migration.current_version", currentVersion),
-			attr("migration.target_version", downTargetVersion(appliedMigrations, targetVersion)),
+			m.VersionAttribute("migration.current_version", currentVersion),
+			m.VersionAttribute("migration.target_version", downTargetVersion(appliedMigrations, targetVersion)),
 			attr("migration.pending_count", len(migrationsToRollback)),
 		)
 	}
@@ -2453,7 +2450,8 @@ func (m *Migrator) migrateDownToLocked(ctx context.Context, targetVersion int64,
 // MigrateTo migrates the database to a specific version (up or down)
 func (m *Migrator) MigrateTo(ctx context.Context, targetVersion int64) (err error) {
 	observer := m.migrationObserver()
-	ctx, span := observer.StartSpan(ctx, "ptah.migrate.to", append(m.operationAttributes(""), attr("migration.requested_target_version", targetVersion))...)
+	ctx, span := observer.StartSpan(ctx, "ptah.migrate.to", append(m.operationAttributes(""),
+		m.VersionAttribute("migration.requested_target_version", targetVersion))...)
 	defer func() { span.End(err) }()
 	ctx = contextWithRootSpan(ctx, span)
 	return m.withMigrationLock(ctx, "migrate to", func(ctx context.Context) error {
@@ -2535,8 +2533,8 @@ func (m *Migrator) migrateUpTo(ctx context.Context, targetVersion int64) error {
 	}
 	if span := rootSpanFromContext(ctx); span != nil {
 		span.SetAttributes(
-			attr("migration.current_version", currentVersion),
-			attr("migration.target_version", upTargetVersion(currentVersion, migrationsToApply)),
+			m.VersionAttribute("migration.current_version", currentVersion),
+			m.VersionAttribute("migration.target_version", upTargetVersion(currentVersion, migrationsToApply)),
 			attr("migration.pending_count", len(migrationsToApply)),
 		)
 	}
@@ -2643,6 +2641,42 @@ func maxMigrationVersion(migrations []*Migration) int64 {
 		}
 	}
 	return maxVersion
+}
+
+// downPlan is the plan of a rollback from current to target that undoes the
+// migrations at versions, with the version keys beside each number that an up
+// plan carries too.
+func (m *Migrator) downPlan(inputs []MigrationInput, current, target int64, versions []int64) MigrationPlan {
+	keys := make([]string, len(versions))
+	for i, version := range versions {
+		keys[i] = m.planVersionKey(version)
+	}
+	currentKey := m.planVersionKey(current)
+	return MigrationPlan{
+		Inputs:               inputs,
+		Direction:            MigrationDirectionDown,
+		CurrentVersion:       current,
+		CurrentVersionKey:    currentKey,
+		CurrentVersionKeySet: currentKey != "",
+		TargetVersion:        target,
+		TargetVersionKey:     m.planVersionKey(target),
+		Versions:             versions,
+		VersionKeys:          keys,
+	}
+}
+
+// planVersionKey is the version key of the migration at version, as a plan
+// and the revision table spell it: empty for version 0, which names none, the
+// revision version of the file that carries version, and the label of a
+// version no file carries.
+func (m *Migrator) planVersionKey(version int64) string {
+	if version == 0 {
+		return ""
+	}
+	if migration := m.migrationByVersion(version); migration != nil {
+		return migration.RevisionVersion()
+	}
+	return m.VersionLabel(version)
 }
 
 func upTargetVersion(currentVersion int64, migrations []*Migration) int64 {
@@ -3640,7 +3674,7 @@ func (m *Migrator) migrationAttributes(direction MigrationDirection, migration *
 	return []ObservationAttribute{
 		attr("db.system", m.connectionDialect()),
 		attr("migration.direction", string(direction)),
-		attr("migration.version", migration.Version),
+		m.VersionAttribute("migration.version", migration.Version),
 		attr("migration.description", migration.Description),
 	}
 }
@@ -3649,7 +3683,7 @@ func (m *Migrator) migrationMetricAttributes(direction MigrationDirection, migra
 	return []ObservationAttribute{
 		attr("db.system", m.connectionDialect()),
 		attr("migration.direction", string(direction)),
-		attr("migration.version", migration.Version),
+		m.VersionAttribute("migration.version", migration.Version),
 	}
 }
 
