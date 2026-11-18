@@ -121,13 +121,16 @@ on Oracle or ClickHouse, so it runs every migration on those engines without
 one, repeatable migrations included: run one migrator at a time against them.
 
 Without the lock, the record still decides which of two runners executes a
-changed repeatable migration, on every engine but ClickHouse. Each runner
-claims the row before the body runs,
-and the claim matches only a row that still holds the state, the applied digest
-and the run that this runner read. The runner that loses the claim refuses with
+changed repeatable migration, on every engine but ClickHouse. Each run has an
+ID of its own, and the record keeps the ID of the run that last attempted each
+file. A runner claims the row before the body runs by writing its ID over the
+one it read, and the write matches only while the row still holds that ID. A
+new file is claimed by inserting its row, and the record's key refuses the
+second insert. When a claim does not succeed cleanly, the runner reads the row
+back: its own ID means the claim took effect, and another run's ID means it
+lost. The runner that loses refuses with
 `another run changed the repeatable migration's record after this run read it`
-before any statement of the body. A new file is claimed by inserting its row,
-and the record's key refuses the second insert.
+before any statement of the body.
 
 ### On ClickHouse
 
