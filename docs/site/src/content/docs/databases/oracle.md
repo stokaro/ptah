@@ -310,10 +310,22 @@ same way.
 
 The lock is a row lock. Ptah keeps one row per lock name in the table
 `ptah_locks`, which it creates in the session's schema the first time it takes
-a lock there, and locks that row with `SELECT ... FOR UPDATE NOWAIT`, asked
-again until the wait ends. Creating the table needs `CREATE TABLE`, which a
-migration needs already. Schema reads leave `ptah_locks` out, as they leave out
-the revision table, so a diff never plans to drop it.
+a lock there. The row's key is the lock name exactly as given, `ptah_migrate`
+unless `--migration-lock-name` names another, and Ptah locks that row with
+`SELECT ... FOR UPDATE NOWAIT`, asked again until the wait ends. Creating the
+table needs `CREATE TABLE`, which a migration needs already. Schema reads on
+Oracle leave `ptah_locks` out, as they leave out the revision table, so a diff
+never plans to drop it. On the other engines Ptah creates no such table, and a
+table of that name there is an ordinary one.
+
+The rows are never deleted, and a row holds no state of its own: only the lock
+on it does, and the lock ends with the session's transaction. A run that
+crashes leaves its row behind, unlocked once the server ends the session, and
+the next run takes the lock. The lock session runs nothing but pings and the
+lock statement, so it is idle when its client dies, and the server notices at
+once: one second after the client of an idle holder was killed with `SIGKILL`,
+another session locked the row. A held row cannot outlive the session that
+holds it.
 
 Oracle commits every schema statement, and a commit gives a row lock back. So
 the lock lives on a database session of its own that runs nothing else, and
@@ -325,9 +337,11 @@ A run that holds no lock, such as `ptah-compat migrate apply --skip-lock`, is
 still not allowed to apply a migration twice. When another run records the same
 version first, the INSERT of the revision row fails on its key, and the run
 stops with `another run recorded this migration after this run read the
-revision table` before any statement of the body. An `--allow-dirty` retry rewrites the failed
-row only while it still has the state the retry read, so of two retries of one
-failed migration, the second stops with the same error.
+revision table` before any statement of the body. An `--allow-dirty` retry
+rewrites the failed row only while it is as the retry read it, in either
+revision table layout, so of two retries of one failed migration, the second
+stops with the same error; see
+[Locking](../../versioned/apply/#locking-and---migration-lock-timeout).
 
 ## Open work
 

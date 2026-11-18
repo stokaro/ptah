@@ -214,6 +214,19 @@ target does anyway.
 `ptah migrations down` and `ptah migrations baseline` answer the same way: all
 three take the same lock on the same history.
 
+A run without the lock, on an engine that has none or under
+`ptah-compat migrate apply --skip-lock`, is still kept from applying a migration
+another run recorded after it read the revision table. When the INSERT of the
+revision row fails because the other run's row is there, the run stops with
+`another run recorded this migration after this run read the revision table`
+before any statement of the body. A retry with `--allow-dirty` rewrites the
+dirty row only while the row is as the retry read it: in Ptah's layout while its
+state is unchanged, and in the Atlas layout, which has no state column, while it
+still carries its error. Of two retries of one failed migration, the second
+stops with the same error. A retry that records inside the migration's own
+transaction is not checked, and neither is one on ClickHouse, because neither
+reports how many rows the rewrite changed.
+
 YugabyteDB 2024.x cannot take the session advisory lock. Ptah refuses a
 migration run on that server before changing the schema. YugabyteDB 2025.1
 and later support the lock.
