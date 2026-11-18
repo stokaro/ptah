@@ -3,6 +3,8 @@ package atlas
 import (
 	"fmt"
 	"io"
+	"io/fs"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -16,6 +18,7 @@ import (
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/revisiontable"
+	"ptah.run/migration/migrationfile"
 	"ptah.run/migration/migrator"
 )
 
@@ -120,6 +123,10 @@ func runAtlasMigrateSet(
 		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
 	}
 	sourceVersions := linearity.sourceVersions
+	opaque, err := atlasOpaqueVersions(migrationFS, prepared.format)
+	if err != nil {
+		return failAtlasCommand(cmd, fmt.Errorf("atlas migrate set --dir: %w", err))
+	}
 
 	if err := atlasDatabaseURLDiagnostic(contextOrBackground(cmd), opts.url); err != nil {
 		return failAtlasCommand(cmd, err)
@@ -138,7 +145,7 @@ func runAtlasMigrateSet(
 	if err := atlasMigrateSetExactArgs(cmd, args); err != nil {
 		return err
 	}
-	version, err := resolveAtlasMigrateSetVersion(tokens, args[0])
+	version, err := resolveAtlasMigrateSetVersion(tokens, opaque, args[0])
 	if err != nil {
 		return failAtlasCommand(cmd, err)
 	}
@@ -156,7 +163,7 @@ func runAtlasMigrateSet(
 	if err != nil {
 		return failAtlasCommand(cmd, remapAtlasExactIdentityError(err, sourceVersions))
 	}
-	if err := writeAtlasMigrateSetResult(cmd, tokens.withHistory(sourceVersions), result); err != nil {
+	if err := writeAtlasMigrateSetResult(cmd, tokens.withHistory(sourceVersions).withHistory(opaqueByVersion(opaque)), result); err != nil {
 		return failAtlasCommand(cmd, err)
 	}
 	return nil
@@ -286,10 +293,17 @@ func prepareAtlasMigrateSet(
 // int64 versions to parse.
 //
 // A native Atlas directory, and every plain-numeric-prefix converted layout,
-// keeps the int64 parsing it had: their file names ARE the versions, so there is
-// no second spelling to translate, and the golang-migrate control in
+// parses a numeric operand as an int64: their file names ARE the versions, so
+// there is no second spelling to translate, and the golang-migrate control in
 // stokaro/ptah#1206 stays green by construction.
-func resolveAtlasMigrateSetVersion(tokens flywayVersionTokens, value string) (int64, error) {
+//
+// A native Atlas directory also has versions that are not numbers, such as the
+// R of R__view.sql. opaque maps each to the order key it runs under, so
+// `migrate set R` sets what the pinned community binary v1.3.0 sets there. An
+// operand that is neither one of those nor a positive number names no file
+// either, and the binary answers `migration with version "nope" not found` and
+// `migration with version "0" not found` for it on such a directory.
+func resolveAtlasMigrateSetVersion(tokens flywayVersionTokens, opaque map[string]int64, value string) (int64, error) {
 	if tokens.translates() {
 		version, ok := tokens.resolve(value)
 		if !ok {
@@ -297,14 +311,45 @@ func resolveAtlasMigrateSetVersion(tokens flywayVersionTokens, value string) (in
 		}
 		return version, nil
 	}
-	version, err := atlasmigrate.ParseMigrationVersionFlag("version", value)
-	if err != nil {
-		return 0, err
+	if version, ok := opaque[value]; ok {
+		return version, nil
 	}
-	if version == 0 {
-		return 0, fmt.Errorf("migration version must be greater than zero")
+	version, err := atlasmigrate.ParseMigrationVersionFlag("version", value)
+	if err != nil || version == 0 {
+		return 0, fmt.Errorf("migration with version %q not found", value)
 	}
 	return version, nil
+}
+
+// atlasOpaqueVersions maps each version of a native Atlas directory that is not
+// a decimal number, such as R or 1R, to the order key the migrator runs it
+// under. Other layouts address their versions through [flywayVersionTokens]
+// or by number, and get an empty map.
+func atlasOpaqueVersions(fsys fs.FS, format atlasmigrateimport.Format) (map[string]int64, error) {
+	if !atlasmigrate.ReadsNativeAtlasDir(format) {
+		return nil, nil
+	}
+	provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
+	if err != nil {
+		return nil, err
+	}
+	opaque := make(map[string]int64)
+	for _, migration := range provider.Migrations() {
+		token := migration.RevisionVersion()
+		if _, err := strconv.ParseInt(token, 10, 64); err != nil {
+			opaque[token] = migration.Version
+		}
+	}
+	return opaque, nil
+}
+
+// opaqueByVersion inverts [atlasOpaqueVersions] for rendering.
+func opaqueByVersion(opaque map[string]int64) map[int64]string {
+	versions := make(map[int64]string, len(opaque))
+	for token, version := range opaque {
+		versions[version] = token
+	}
+	return versions
 }
 
 // writeAtlasMigrateSetResult renders the summary in the version spelling the

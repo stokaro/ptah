@@ -34,7 +34,7 @@ plus the flag translation rules are on the
 | `ptah-compat migrate validate` | Silently verifies `atlas.sum` on success; `--dev-url` replays migrations to validate SQL execution. |
 | `ptah-compat migrate lint` | Forwards to `ptah migrations lint` with Atlas changeset selectors, dev-database replay, and Atlas report output. |
 | `ptah-compat migrate new` | Creates an Atlas single-file skeleton migration; equivalent to `ptah migrations create`. |
-| `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
+| `ptah-compat migrate set [version]` | Moves Atlas revision history to the selected version without executing migration SQL; accepts the directory's non-numeric versions, such as `R`; refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate diff` | Replays local migrations on `--dev-url`, diffs them against the desired state, and writes the selected layout with `atlas.sum` updated atomically. |
 | `ptah-compat migrate import` | Imports local `file://` migration directories from Atlas-supported formats into a separate Atlas single-file directory. |
 | `ptah-compat migrate checkpoint [name]` | Forwards to `ptah migrations checkpoint`; writes a cumulative-schema checkpoint, Atlas single-file format by default or the ptah pair under `--dir-format ptah`. |
@@ -629,9 +629,14 @@ carries the refusal and lists no statement for that file.
 
 ### Apply an inserted migration out of order
 
-The default `--exec-order linear` refuses a pending migration below the current
-version, with the pinned binary's line. A refusal of several files names each
-of them, as `migration files 2_b.sql, 3_c.sql were added out of order`:
+The default `--exec-order linear` refuses a pending migration that was added
+out of order, with the pinned binary's line. In an Atlas-format directory that
+is a file whose name sorts before an applied file's, or whose version string
+sorts below the highest applied version, both compared byte for byte as the
+pinned binary compares them: `10_b.sql` added after `1_a.sql` is refused, and
+`3__x.sql` added after `20260101000000_ts.sql` applies, because `"3"` sorts
+above `"20260101000000"`. A refusal of several files names each of them, as
+`migration files 2_b.sql, 3_c.sql were added out of order`:
 
 ```text
 Error: migration file 2_b.sql was added out of order. See: https://atlasgo.io/versioned/apply#non-linear-error
@@ -652,6 +657,11 @@ ptah-compat migrate apply \
   --dir file://migrations \
   --exec-order non-linear
 ```
+
+`migrate status` reports the same files under `OutOfOrder`, leaves them out of
+`Pending`, prints no `Next`, and carries the refusal in `Error`, as the pinned
+binary does. It keeps listing the directory under `Available`, which the pinned
+binary leaves out while a file is out of order.
 
 An `atlas.sum` entry is a running hash over the files before it. Adding an
 earlier migration changes later entries even when those later files are
@@ -1127,21 +1137,16 @@ Ptah refuses, because nothing in the file would execute.
 
 For example `1R_view.sql` or `R__view.sql`.
 
-Atlas exits 0 and executes it, keyed on the opaque version string the file name
-spells (`1R`, `R`).
+Both binaries execute it once, keyed on the version string the file name spells
+(`1R`, `R`), and record that string in the revision table. Atlas sorts directory
+entries by file name, so `1R_view.sql` runs *before* `1_users.sql`, while
+`2_view.sql` runs after it, and `R__view.sql` runs after every numbered file.
 
-Ptah refuses, naming every such file. Ptah's migration identity is an `int64`
-version and a repeatable has none, so the only alternatives were executing it
-under a version no other tool records, or dropping it — which is what Ptah used
-to do, silently.
-
-An R-suffixed file only reaches a Ptah directory from outside: the community
-binary's own `migrate import` writes `1R_name.sql`, and `ptah-compat migrate
-import` writes the same migration on a reserved numeric slot instead, so a
-directory Ptah imported is unaffected. Rename the file to `<version>_<name>.sql`
-and re-run `ptah-compat migrate hash` to execute it. Ordering is not preserved by
-that rename: Atlas sorts directory entries by file name, so `1R_view.sql` runs
-*before* `1_users.sql`, while `2_view.sql` runs after it.
+The divergence is a directory with two `R__` files, which share the version `R`.
+Atlas applies the first and then panics. Ptah refuses the directory before
+anything runs. With `PTAH_ATLAS_REPEATABLE_MIGRATIONS` set, `ptah-compat` reads
+`R__<identity>.sql` as a [repeatable migration](../../versioned/repeatable/)
+instead, which runs again when its body changes.
 
 Ptah refuses only exact near-miss spellings of the four section directives.
 Prose that merely begins with one (`-- +goose up to date`) and unrecognized
@@ -2663,7 +2668,11 @@ written.
 selected boundary without executing migration SQL. It preserves existing clean
 rows through the target, inserts missing rows as manually set, keeps dirty-row
 diagnostics with the combined applied and manually-set type, and removes rows
-above the target.
+above the target. The version is one the directory holds, spelled as its file
+names spell it: in an Atlas-format directory that includes a version that is
+not a number, so `migrate set R` sets the history through `R__view.sql`. A
+version no file holds, `0` included, is refused as the pinned binary refuses
+it, with `migration with version "0" not found`.
 
 ### Which verbs enforce `atlas.sum`
 
@@ -2957,7 +2966,9 @@ on `migrate lint`, and `default` on `migrate status`.
   keeps the description it was written with: a row that records `view` for
   `R__view.sql`, as an earlier ptah-compat or the native
   `ptah migrations up --revision-format atlas` writes it, is not rewritten,
-  and a fresh `ptah-compat migrate apply` writes `_view`.
+  and a fresh `ptah-compat migrate apply` writes `_view`. On SQLite
+  `.ExecutedAt` is the writer's local time with its offset, as the pinned
+  binary writes it, and reads back with that offset under any `TZ`.
 
 **`ptah-compat migrate down --format`**
 

@@ -117,8 +117,37 @@ func NewMigrateStatus(opts MigrateStatusOptions) (MigrateStatus, error) {
 	if opts.Repeatables {
 		result.Repeatables = migrateStatusRepeatables(opts.Status.Repeatables)
 	}
+	applyMigrateStatusOutOfOrder(&result)
 	applyMigrateStatusPartial(&result, opts.Status.DirtyRevision, opts.AppliedRevisions)
 	return result, nil
+}
+
+// applyMigrateStatusOutOfOrder shapes the report of a directory with a file
+// added out of order the way the pinned community binary v1.3.0 does: the file
+// leaves Pending for OutOfOrder, Next is absent because nothing runs next under
+// linear execution, and Error carries the refusal `migrate apply` reports.
+// Measured on SQLite with 1_a.sql and 2_b.sql applied and then 10_c.sql and
+// 3_d.sql added: Pending is 3_d.sql alone, OutOfOrder 10_c.sql.
+//
+// The binary also leaves Available out on that run. That is not copied: the
+// directory still holds those files, and a template that lists them should not
+// go empty because one of them is out of order.
+func applyMigrateStatusOutOfOrder(result *MigrateStatus) {
+	if len(result.OutOfOrder) == 0 {
+		return
+	}
+	late := make(map[string]struct{}, len(result.OutOfOrder))
+	names := make([]string, 0, len(result.OutOfOrder))
+	for _, file := range result.OutOfOrder {
+		late[file.Name] = struct{}{}
+		names = append(names, file.Name)
+	}
+	result.Pending = slices.DeleteFunc(result.Pending, func(file MigrateStatusFile) bool {
+		_, found := late[file.Name]
+		return found
+	})
+	result.Next = ""
+	result.Error = (&MigrateApplyOutOfOrderError{Files: names}).Error()
 }
 
 // applyMigrateStatusPartial fills Count, Total, Error and SQL from the dirty

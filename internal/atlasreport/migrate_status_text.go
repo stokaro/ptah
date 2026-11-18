@@ -94,7 +94,10 @@ func migrateStatusExecuted(report MigrateStatus) string {
 // healthy one with work outstanding (stokaro/ptah#966): without it, Current
 // Version names the half-applied version and nothing says the attempt failed.
 func writeMigrateStatusError(w io.Writer, report MigrateStatus) {
-	if report.Error == "" {
+	// An out-of-order directory sets Error too, and its text form is the
+	// ERROR block writeMigrateStatusOutOfOrder writes: the binary prints no
+	// "Last migration attempt" block unless a revision row failed.
+	if report.Error == "" || (len(report.OutOfOrder) > 0 && !migrateStatusPartial(report)) {
 		return
 	}
 	fmt.Fprintln(w)
@@ -126,14 +129,20 @@ func migrateStatusNextField(report MigrateStatus) string {
 	return report.Next + migrateStatusLeft(report)
 }
 
-// migrateStatusPendingField counts pending files and annotates the count when
-// any of them is out of order, matching `1 (out of order)` from the binary.
+// migrateStatusPendingField counts the files that have not run, out-of-order
+// ones included, and annotates the count when any of them is out of order. The
+// pinned community binary prints `1 (out of order)` when every such file is out
+// of order, and `2 (1 out of order)` when one of two is.
 func migrateStatusPendingField(report MigrateStatus) string {
-	count := strconv.Itoa(len(report.Pending))
-	if len(report.OutOfOrder) > 0 {
+	count := strconv.Itoa(len(report.Pending) + len(report.OutOfOrder))
+	switch {
+	case len(report.OutOfOrder) == 0:
+		return count
+	case len(report.Pending) == 0:
 		return count + " (out of order)"
+	default:
+		return count + " (" + strconv.Itoa(len(report.OutOfOrder)) + " out of order)"
 	}
-	return count
 }
 
 // writeMigrateStatusOutOfOrder writes the trailing ERROR block the pinned
