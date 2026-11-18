@@ -26,6 +26,9 @@ type spelling struct {
 	// fold is the descriptor's Identifiers.UnquotedFold: the case the engine
 	// records an unquoted name in, or empty.
 	fold string
+	// bareChars is the descriptor's Identifiers.BareChars: what an unquoted
+	// name may hold besides letters, digits and underscores.
+	bareChars string
 }
 
 // spellings caches the spelling of each dialect name a caller has asked
@@ -56,6 +59,7 @@ func spellingOf(dialect string) spelling {
 	}
 	written := spellingFrom(described.Quoting)
 	written.fold = described.Identifiers.UnquotedFold
+	written.bareChars = described.Identifiers.BareChars
 	spellings.Store(dialect, written)
 	return written
 }
@@ -152,8 +156,9 @@ func (w spelling) ident(name string) string {
 // compatibility. See stokaro/ptah#1028.
 //
 // "Plain" is the conservative intersection: an ASCII letter or underscore
-// followed by ASCII letters, digits or underscores. Anything else, including
-// the empty string, is quoted. SQLite keywords are also quoted because their
+// followed by ASCII letters, digits or underscores, and the characters the
+// descriptor's Identifiers.BareChars lists, such as Oracle's $ and #. Anything
+// else, including the empty string, is quoted. SQLite keywords are also quoted because their
 // bare forms are parsed as syntax in the virtual-table module position.
 //
 // A dialect whose descriptor writes no name bare, as YDB's does, is always
@@ -168,13 +173,13 @@ func (w spelling) bareOrQuoted(name string) string {
 	if w.bare == descriptor.BareNever {
 		return w.quote(name)
 	}
-	if !isPlainIdentifier(name) || w.keywords[strings.ToUpper(name)] {
+	if !isPlainIdentifier(name, w.bareChars) || w.keywords[strings.ToUpper(name)] {
 		return w.quote(name)
 	}
 	return name
 }
 
-func isPlainIdentifier(name string) bool {
+func isPlainIdentifier(name, extra string) bool {
 	if name == "" {
 		return false
 	}
@@ -183,7 +188,7 @@ func isPlainIdentifier(name string) bool {
 		switch {
 		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char == '_':
 			continue
-		case char >= '0' && char <= '9' && index > 0:
+		case (char >= '0' && char <= '9' || strings.IndexByte(extra, char) >= 0) && index > 0:
 			continue
 		}
 		return false

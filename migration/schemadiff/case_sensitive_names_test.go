@@ -18,14 +18,13 @@ import (
 // Oracle stores an unquoted name in upper case and a quoted one exactly, so a
 // read that reports orders has found a table created quoted, a different table
 // from ORDERS, which is what a declared `orders` means. These tests compare
-// against such a read under the rules a live Oracle read carries
-// (identifier.ForCatalog), and against the same rows without them, which is
-// what a schema predicted from a declaration is compared under
-// (stokaro/ptah#6243).
+// against such a read, which reports stored names (catalog.Database.StoredNames),
+// and against the same rows without the mark, which is what a schema predicted
+// from a declaration is (stokaro/ptah#6243).
 
 // oracleRead is the server a live Oracle read reports, connected as APP.
 func oracleRead() catalog.ServerInfo {
-	semantics := identifier.ForCatalog("oracle")
+	semantics := identifier.ForDialect("oracle")
 	semantics.DefaultSchema = "APP"
 	return catalog.ServerInfo{Dialect: "oracle", Schema: "APP", IdentifierSemantics: semantics}
 }
@@ -84,6 +83,33 @@ func TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_HappyPath(t *testing.T
 			removed: []string{`APP."keep_me"`},
 		},
 		{
+			name: "a quoted table read from the database as the desired side is that table",
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "orders", Name: `"orders"`}},
+				Fields: []schemamodel.Field{{StructName: "orders", Name: "ID", Type: "NUMBER", Primary: true}},
+			},
+			held: []catalog.Table{heldTable("orders")},
+		},
+		{
+			name:    "a declared name in the fold's case names only the folded table",
+			desired: declaredTable("ORDERS"),
+			held:    []catalog.Table{heldTable("orders")},
+			removed: []string{`APP."orders"`},
+			added:   []string{"ORDERS"},
+		},
+		{
+			name: "a quoted column holding a dollar sign and its folded namesake are two columns",
+			desired: &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "keep_me", Name: "keep_me"}},
+				Fields: []schemamodel.Field{
+					{StructName: "keep_me", Name: "id", Type: "NUMBER", Primary: true},
+					{StructName: "keep_me", Name: "a$b", Type: "NUMBER", Nullable: true},
+				},
+			},
+			held:     []catalog.Table{heldTable("KEEP_ME", "a$b", "A$B")},
+			modified: []string{`"a$b"`},
+		},
+		{
 			name:     "a quoted column of a matched table is removed by its quoted name",
 			desired:  declaredTable("orders"),
 			held:     []catalog.Table{heldTable("ORDERS", "qty")},
@@ -94,7 +120,7 @@ func TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_HappyPath(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), test.desired, &catalog.Database{Tables: test.held},
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), test.desired, &catalog.Database{StoredNames: true, Tables: test.held},
 				oracleRead(), nil, must.Must(builtin.New()))
 
 			c.Assert(err, qt.IsNil)
@@ -105,8 +131,40 @@ func TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_HappyPath(t *testing.T
 	}
 }
 
+// TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_ViewsAndSequences
+// removes a view and a sequence created quoted by their quoted names, beside
+// their folded namesakes, each by its own name.
+func TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_ViewsAndSequences(t *testing.T) {
+	c := qt.New(t)
+	database := &catalog.Database{
+		StoredNames: true,
+		Tables:      []catalog.Table{heldTable("KEEP_ME")},
+		Views: []catalog.View{
+			{Name: "v1", Schema: "APP", Body: "SELECT ID FROM KEEP_ME"},
+			{Name: "V1", Schema: "APP", Body: "SELECT ID FROM KEEP_ME"},
+		},
+		Sequences: []catalog.Sequence{{Name: "s1", Schema: "APP"}, {Name: "S1", Schema: "APP"}},
+	}
+
+	diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declaredTable("keep_me"), database,
+		oracleRead(), nil, must.Must(builtin.New()))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.ViewsRemoved.Names(), qt.ContentEquals, []string{`APP."v1"`, "APP.V1"})
+	c.Assert(sequenceNames(diff.SequencesRemoved), qt.ContentEquals, []string{`"s1"`, "S1"})
+}
+
+// sequenceNames lists the unqualified name of every sequence.
+func sequenceNames(sequences difftypes.SequenceChanges) []string {
+	names := make([]string, 0, len(sequences))
+	for _, sequence := range sequences {
+		names = append(names, sequence.Name)
+	}
+	return names
+}
+
 // TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_PredictedSchema is the
-// control: rows that carry no catalog rules come from a declaration, where
+// control: rows that do not report stored names come from a declaration, where
 // `orders` is written as declared and means ORDERS, so it pairs with the
 // declared `orders` rather than being removed.
 func TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_PredictedSchema(t *testing.T) {
@@ -133,7 +191,7 @@ func TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_FailurePath(t *testing
 		{
 			name:     "a declared table whose fold only a quoted table matches",
 			desired:  declaredTable("orders"),
-			database: &catalog.Database{Tables: []catalog.Table{heldTable("orders")}},
+			database: &catalog.Database{StoredNames: true, Tables: []catalog.Table{heldTable("orders")}},
 			wantErr: `unsupported feature: declared table orders names ORDERS on oracle, which the database does not hold; ` +
 				`the database holds the case-sensitive table "orders", which the declared name does not address\. ` +
 				`Planning would drop "orders" and create ORDERS, so rename one of them`,
@@ -141,7 +199,7 @@ func TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_FailurePath(t *testing
 		{
 			name:     "a declared column whose fold only a quoted column matches",
 			desired:  declaredTable("orders", "qty"),
-			database: &catalog.Database{Tables: []catalog.Table{heldTable("ORDERS", "qty")}},
+			database: &catalog.Database{StoredNames: true, Tables: []catalog.Table{heldTable("ORDERS", "qty")}},
 			wantErr:  `unsupported feature: declared column orders\.qty names ORDERS\.QTY on oracle, .* case-sensitive column ORDERS\."qty", .*`,
 		},
 		{
@@ -149,8 +207,9 @@ func TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_FailurePath(t *testing
 			desired: withIndex(declaredTable("orders", "qty"),
 				schemamodel.Index{StructName: "orders", TableName: "orders", Name: "idx_qty", Fields: []string{"qty"}}),
 			database: &catalog.Database{
-				Tables:  []catalog.Table{heldTable("ORDERS", "QTY")},
-				Indexes: []catalog.Index{{Name: "idx_qty", TableName: "ORDERS", Schema: "APP", Columns: []string{"QTY"}}},
+				StoredNames: true,
+				Tables:      []catalog.Table{heldTable("ORDERS", "QTY")},
+				Indexes:     []catalog.Index{{Name: "idx_qty", TableName: "ORDERS", Schema: "APP", Columns: []string{"QTY"}}},
 			},
 			wantErr: `unsupported feature: declared index idx_qty names IDX_QTY on oracle, .* case-sensitive index "idx_qty", .*`,
 		},
@@ -159,10 +218,47 @@ func TestCompareWithDatabaseInfo_CaseSensitiveOracleNames_FailurePath(t *testing
 			desired: withConstraint(declaredTable("orders", "qty"),
 				schemamodel.Constraint{StructName: "orders", Table: "orders", Name: "ck_qty", Type: "CHECK", CheckExpression: "qty > 0"}),
 			database: &catalog.Database{
+				StoredNames: true,
 				Tables:      []catalog.Table{heldTable("ORDERS", "QTY")},
 				Constraints: []catalog.Constraint{{Name: "ck_qty", TableName: "ORDERS", Schema: "APP", Type: "CHECK", CheckClause: new("QTY > 0")}},
 			},
 			wantErr: `unsupported feature: declared constraint ck_qty names CK_QTY on oracle, .* case-sensitive constraint "ck_qty", .*`,
+		},
+		{
+			name:    "a declared view whose fold only a quoted view matches",
+			desired: withView(declaredTable("keep_me"), schemamodel.View{StructName: "v1", Name: "v1", Body: "SELECT id FROM keep_me"}),
+			database: &catalog.Database{
+				StoredNames: true,
+				Tables:      []catalog.Table{heldTable("KEEP_ME")},
+				Views:       []catalog.View{{Name: "v1", Schema: "APP", Body: "SELECT ID FROM KEEP_ME"}},
+			},
+			wantErr: `unsupported feature: declared view v1 names V1 on oracle, .* case-sensitive view "v1", .*`,
+		},
+		{
+			name:    "a declared sequence whose fold only a quoted sequence matches",
+			desired: withSequence(declaredTable("keep_me"), schemamodel.Sequence{StructName: "s1", Name: "s1"}),
+			database: &catalog.Database{
+				StoredNames: true,
+				Tables:      []catalog.Table{heldTable("KEEP_ME")},
+				Sequences:   []catalog.Sequence{{Name: "s1", Schema: "APP"}},
+			},
+			wantErr: `unsupported feature: declared sequence s1 names S1 on oracle, .* case-sensitive sequence "s1", .*`,
+		},
+		{
+			name:    "a declared trigger whose fold only a quoted trigger matches",
+			desired: withTrigger(declaredTable("keep_me"), schemamodel.Trigger{StructName: "t1", Name: "t1", Table: "keep_me"}),
+			database: &catalog.Database{
+				StoredNames: true,
+				Tables:      []catalog.Table{heldTable("KEEP_ME")},
+				Triggers:    []catalog.Trigger{{Name: "t1", Schema: "APP", Table: "KEEP_ME"}},
+			},
+			wantErr: `unsupported feature: declared trigger t1 names T1 on oracle, .* case-sensitive trigger "t1", .*`,
+		},
+		{
+			name:     "a declared column holding a dollar sign whose fold only a quoted column matches",
+			desired:  declaredTable("keep_me", "a$b"),
+			database: &catalog.Database{StoredNames: true, Tables: []catalog.Table{heldTable("KEEP_ME", "a$b")}},
+			wantErr:  `unsupported feature: declared column keep_me\.a\$b names KEEP_ME\.A\$B on oracle, .* case-sensitive column KEEP_ME\."a\$b", .*`,
 		},
 	}
 	for _, test := range tests {
@@ -197,4 +293,19 @@ func removedColumnNames(diff *difftypes.SchemaDiff) []string {
 		names = append(names, table.ColumnsRemoved.Names()...)
 	}
 	return names
+}
+
+func withView(desired *schemamodel.Database, view schemamodel.View) *schemamodel.Database {
+	desired.Views = append(desired.Views, view)
+	return desired
+}
+
+func withSequence(desired *schemamodel.Database, sequence schemamodel.Sequence) *schemamodel.Database {
+	desired.Sequences = append(desired.Sequences, sequence)
+	return desired
+}
+
+func withTrigger(desired *schemamodel.Database, trigger schemamodel.Trigger) *schemamodel.Database {
+	desired.Triggers = append(desired.Triggers, trigger)
+	return desired
 }

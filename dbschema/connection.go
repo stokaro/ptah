@@ -217,7 +217,7 @@ func getDatabaseInfo(
 		Dialect:             request.Dialect.Name,
 		URL:                 request.URL,
 		RedactedURL:         dburldisplay.Format(request.URL),
-		IdentifierSemantics: identifier.ForCatalog(request.Dialect.Name),
+		IdentifierSemantics: identifier.ForDialect(request.Dialect.Name),
 	}
 	return service.Describe(ctx, pool, request, info)
 }

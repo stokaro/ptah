@@ -132,14 +132,21 @@ type Semantics struct {
 	SchemaSeparator string `json:"schema_separator,omitempty"`
 	// UnquotedFold is the case the target records an unquoted name in, on a
 	// target that keeps a quoted name's spelling exactly; empty states no
-	// fold. [ForCatalog] sets it for a live read and [ForDialect] does not.
-	// Where it is set, a double-quoted name that is a plain identifier
-	// and not in that case keeps its spelling, quotes included, as both its
-	// identity and its conflict key: on Oracle `"orders"` names the table
-	// stored as orders, which ORDERS and `orders` (both stored as ORDERS) do
-	// not. Any other quoted name keys as the name without its quotes, which
-	// is what an unquoted spelling of it reaches.
+	// fold. [ForDialect] takes it from the dialect's descriptor. Where it is
+	// set, a double-quoted name that is a plain identifier and not in that
+	// case keeps its spelling, quotes included, as both its identity and its
+	// conflict key: on Oracle `"orders"` names the table stored as orders,
+	// which ORDERS and `orders` (both stored as ORDERS) do not. Any other
+	// quoted name keys as the name without its quotes, which is what an
+	// unquoted spelling of it reaches. An unquoted name keys as it always
+	// does, so only a name written with its quotes is told apart.
 	UnquotedFold Fold `json:"unquoted_fold,omitempty"`
+	// BareChars lists the characters besides ASCII letters, digits and the
+	// underscore that an unquoted name may hold after its first character,
+	// such as "$#" on Oracle. It decides which quoted names UnquotedFold
+	// keeps apart, because only a name that could be written without quotes
+	// has an unquoted spelling to be confused with.
+	BareChars string `json:"bare_chars,omitempty"`
 }
 
 // ResolvedName maps one raw identifier to a deterministic catalog-equivalence
@@ -213,36 +220,14 @@ func FromDescriptor(described descriptor.Dialect) (Semantics, error) {
 		IndexNames:     Comparison(described.Identifiers.IndexNames),
 		TableNames:     Comparison(described.Identifiers.TableNames),
 		ColumnNames:    Comparison(described.Identifiers.ColumnNames),
+		UnquotedFold:   Fold(described.Identifiers.UnquotedFold),
+		BareChars:      described.Identifiers.BareChars,
 	}
 	if !semantics.valid() {
 		return Semantics{}, fmt.Errorf("%w: dialect %q states identifier rules %+v, which are not complete offline rules",
 			descriptor.ErrInvalidDescriptor, described.Name, described.Identifiers)
 	}
 	return semantics, nil
-}
-
-// ForCatalog returns the rules for comparing against the names a read of a
-// live dialect catalog reports: [ForDialect], with the UnquotedFold the
-// dialect's descriptor states.
-//
-// The two differ because a catalog reports a name as the server stores it,
-// while a declaration and a schema predicted from one carry the name as it is
-// written. On Oracle a declared `orders` and a predicted `orders` both mean
-// ORDERS, which is what [ForDialect] compares them as; a read that reports
-// orders has found a table created quoted, and only these rules keep it apart
-// from ORDERS once the read spells it `"orders"`.
-func ForCatalog(dialect string) Semantics {
-	semantics := ForDialect(dialect)
-	described, found := platform.Lookup(dialect)
-	if !found {
-		return semantics
-	}
-	fold := Fold(described.Identifiers.UnquotedFold)
-	if fold != FoldUpper && fold != FoldLower {
-		return semantics
-	}
-	semantics.UnquotedFold = fold
-	return semantics
 }
 
 // unmodelled returns the rules for a target Ptah does not model.
@@ -327,7 +312,8 @@ func (s Semantics) IsZero() bool {
 		s.CatalogCollation == "" &&
 		len(s.ResolvedNames) == 0 &&
 		s.SchemaSeparator == "" &&
-		s.UnquotedFold == ""
+		s.UnquotedFold == "" &&
+		s.BareChars == ""
 }
 
 // Equal reports whether two semantics values carry the same rules and resolved
@@ -342,13 +328,15 @@ func (s Semantics) Equal(other Semantics) bool {
 		s.ColumnNames == other.ColumnNames &&
 		slices.Equal(s.ResolvedNames, other.ResolvedNames) &&
 		s.SchemaSeparator == other.SchemaSeparator &&
-		s.UnquotedFold == other.UnquotedFold
+		s.UnquotedFold == other.UnquotedFold &&
+		s.BareChars == other.BareChars
 }
 
 // Normalize returns a deep copy of s when it is complete and internally
 // consistent, and the conservative [ForDialect] rules for dialect otherwise.
 // Complete means: IndexNamespace and all three comparison fields hold
-// declared values, and UnquotedFold is empty or a declared [Fold]; catalog-resolved comparison is all-or-nothing across the
+// declared values, and UnquotedFold is empty or a declared [Fold];
+// catalog-resolved comparison is all-or-nothing across the
 // three name kinds and requires both a CatalogCollation and at least one
 // resolved name, while every other mode carries neither; and ResolvedNames
 // satisfy the validity rules on [Semantics.WithResolvedNames]. Zero and
@@ -638,7 +626,7 @@ func (s Semantics) quotedName(value string) (string, bool) {
 // that is not plain has no unquoted spelling at all, and one already in the
 // fold's case is what its unquoted spelling folds to.
 func (s Semantics) caseSensitive(name string) bool {
-	return plainIdentifier(name) && s.UnquotedFold.apply(name) != name
+	return plainIdentifier(name, s.BareChars) && s.UnquotedFold.apply(name) != name
 }
 
 // keepQuotedParts puts back the quotes [tableref.Parse] removed from a part
@@ -702,9 +690,9 @@ func (f Fold) apply(value string) string {
 }
 
 // plainIdentifier reports whether value is an ASCII letter or underscore
-// followed by ASCII letters, digits and underscores, the names a target that
-// writes names bare writes without quotes.
-func plainIdentifier(value string) bool {
+// followed by ASCII letters, digits, underscores and the characters in extra,
+// the names a target that writes names bare writes without quotes.
+func plainIdentifier(value, extra string) bool {
 	if value == "" {
 		return false
 	}
@@ -712,7 +700,7 @@ func plainIdentifier(value string) bool {
 		char := value[index]
 		switch {
 		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z', char == '_':
-		case char >= '0' && char <= '9' && index > 0:
+		case (char >= '0' && char <= '9' || strings.IndexByte(extra, char) >= 0) && index > 0:
 		default:
 			return false
 		}

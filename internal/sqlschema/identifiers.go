@@ -32,7 +32,12 @@ import (
 // Other dialects keep an unquoted name as written. MySQL, MariaDB, SQL Server,
 // ClickHouse, SQLite and Oracle each have their own case rules, which this
 // package does not model. A read with no dialect keeps names as written too,
-// so a file mixing conventions can be read at all.
+// so a file mixing conventions can be read at all. One part of Oracle's rule
+// is kept: a quoted name that is a plain identifier and not in upper case
+// keeps its quotes, as [sqlident.CatalogName] writes it, because no unquoted
+// name reaches the object it creates. `CREATE TABLE "orders"` declares the
+// table stored as orders, which `orders` and ORDERS do not name
+// (stokaro/ptah#6243).
 //
 // A dialect with quoting of its own, as YQL's backslash escapes are YDB's, is
 // read by internal/sqlident first; see [sqlident.ReadName].
@@ -53,7 +58,14 @@ func foldedIdentifierPart(sourcePlatform, part string) string {
 		return name
 	}
 	if isQuotedSQLIdentifierPart(part) {
-		return unquoteSQLIdentifierPart(part)
+		name := unquoteSQLIdentifierPart(part)
+		if part[0] == '"' {
+			// On a dialect that folds an unquoted name and keeps a quoted one
+			// exactly, a quoted name no unquoted name reaches keeps its quotes,
+			// which is how a read of the object it creates spells it.
+			return sqlident.CatalogName(sourcePlatform, name)
+		}
+		return name
 	}
 	if fold := factsOf(sourcePlatform).names.Unquoted; fold != "" {
 		return identifier.Comparison(fold).IdentityKey(part)

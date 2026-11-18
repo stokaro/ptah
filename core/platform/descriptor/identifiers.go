@@ -3,6 +3,7 @@ package descriptor
 import (
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // Quoting states how an engine writes an identifier. The zero value is the
@@ -106,7 +107,20 @@ func (d Dialect) validateIdentifiers() error {
 	if fold := d.Identifiers.UnquotedFold; fold != "" && !slices.Contains(UnquotedFolds(), fold) {
 		return fmt.Errorf("%w: dialect %q: unquoted fold %q is not one of %q", ErrInvalidDescriptor, d.Name, fold, UnquotedFolds())
 	}
+	for _, char := range d.Identifiers.BareChars {
+		if !bareChar(char) {
+			return fmt.Errorf("%w: dialect %q: bare character %q is not ASCII punctuation outside quotes and dots",
+				ErrInvalidDescriptor, d.Name, char)
+		}
+	}
 	return nil
+}
+
+// bareChar reports whether char may be listed in [Identifiers.BareChars]:
+// ASCII punctuation that neither quotes a name nor qualifies one.
+func bareChar(char rune) bool {
+	return char > ' ' && char < 0x7f && !strings.ContainsRune("\"'`[].", char) &&
+		(char < '0' || char > '9') && (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && char != '_'
 }
 
 // UnquotedFolds returns every value [Identifiers.UnquotedFold] may spell
