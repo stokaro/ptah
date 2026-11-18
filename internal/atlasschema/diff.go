@@ -43,6 +43,7 @@ import (
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/tableref"
@@ -508,11 +509,14 @@ func replaysCurrent(conn *dbschema.DatabaseConnection, fromState atlassource.Sta
 
 // scopedDiffSides prepares the two resolved sides for scoping: each side's
 // view bodies are rebased on the other's database, both are narrowed on a dev
-// server, the one-database rule reads the narrowed sides, and the documents'
-// unqualified names are placed; see [placeDiffDocuments].
+// server, the one-database rule reads the narrowed sides, the documents'
+// unqualified names are placed, and the indexes of each side read from a
+// document are checked on the placed names; see [placeDiffDocuments] and
+// [refuseDocumentIndexProblems].
 func scopedDiffSides(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	resolver schemaext.TargetResolver,
 	fromState, toState atlassource.State,
 	dialect string,
 	sides devServerSides,
@@ -530,7 +534,37 @@ func scopedDiffSides(
 	if err := validateResolvedDiffScope(fromState, toState, dialect); err != nil {
 		return atlassource.State{}, atlassource.State{}, err
 	}
-	return placeDiffDocuments(ctx, conn, fromState, toState, dialect, devURL)
+	fromState, toState, err = placeDiffDocuments(ctx, conn, fromState, toState, dialect, devURL)
+	if err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	if err := refuseDocumentIndexProblems(resolver, dialect, fromState, toState); err != nil {
+		return atlassource.State{}, atlassource.State{}, err
+	}
+	return fromState, toState, nil
+}
+
+// refuseDocumentIndexProblems refuses a side read from a document, --from or
+// --to, with an index its server would refuse, as `schema apply` refuses its
+// desired schema: on the placed names and ahead of the selection; see
+// [schemavalidate.CollectTargetIndexProblems]. A --to document would plan a
+// CREATE INDEX the server refuses, and a --from document describes a state no
+// server holds. A side read from a database or replayed from a migration
+// directory holds only indexes its server accepted, and is not checked.
+func refuseDocumentIndexProblems(resolver schemaext.TargetResolver, dialect string, sides ...atlassource.State) error {
+	for _, side := range sides {
+		if side.DB != nil {
+			continue
+		}
+		problems, err := schemavalidate.CollectTargetIndexProblems(resolver, side.Schema, dialect)
+		if err != nil {
+			return err
+		}
+		if len(problems) != 0 {
+			return errors.New(problems[0].String())
+		}
+	}
+	return nil
 }
 
 // diffResolvedStates is the part of a schema diff that runs once both sides
@@ -550,7 +584,7 @@ func diffResolvedStates(
 	sides devServerSides,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
-	fromState, toState, err := scopedDiffSides(ctx, conn, fromState, toState, dialect, sides, opts.DevURL)
+	fromState, toState, err := scopedDiffSides(ctx, conn, opts.Runtime, fromState, toState, dialect, sides, opts.DevURL)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
