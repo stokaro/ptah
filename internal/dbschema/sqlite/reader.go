@@ -1177,6 +1177,11 @@ func skipQuotedOrComment(value string, i int) int {
 		}
 		return len(value)
 	case '[':
+		// Outside a string, a quoted name and a comment, SQLite's tokenizer
+		// reads `[` only as the start of a bracketed name, which runs to the
+		// first `]` with no escape: the language has no subscript or other
+		// operator spelled with a bracket, so no expression in a column or
+		// table definition holds one.
 		if end := strings.IndexByte(value[i+1:], ']'); end >= 0 {
 			return i + end + 2
 		}
