@@ -1304,6 +1304,35 @@ declaration no longer holds is dropped at the same point, because the removal
 step comes after the column step. The rollback migration does the same in the
 other direction. See [What a view rebuild keeps](#what-a-view-rebuild-keeps).
 
+## Changing a column type under a generated column
+
+PostgreSQL also refuses `ALTER COLUMN ... TYPE` on a column a generated column
+reads, and has no statement that detaches the expression:
+
+```text
+ERROR:  cannot alter type of a column used by a generated column
+```
+
+When a plan retypes such a column, Ptah drops the generated column before the
+column step and adds it back, as declared, after it. The server computes its
+values again on the add. Dropping the column also drops every index and CHECK
+constraint on it and its comment, so the plan creates them again from the
+definitions the server reports, including a partial index or one with an
+operator class.
+
+A guard runs before the drop. It reads `pg_depend` and refuses the plan,
+naming each object, when something else depends on the column: an index
+outside the selected scope, a key or exclusion constraint, a statistics
+object, a column privilege, a storage option or a security label. A view, a
+policy or a trigger that names the column makes the server refuse the drop
+itself. Every statement runs in the apply's transaction, so a later failure
+undoes the rebuild.
+
+A plan that also removes the generated column, or whose declaration does not
+hold it, is refused before it runs. CockroachDB refuses the same type change,
+but its catalog does not report what depends on a computed column, so Ptah
+refuses the plan there instead of rebuilding.
+
 ## Changing a column to or from an enum
 
 A column that becomes an enum is changed with `ALTER COLUMN ... TYPE status
