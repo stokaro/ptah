@@ -229,6 +229,8 @@ func TestMigrateUpToVersion_FailurePath(t *testing.T) {
 		c.Assert(countRevisionTables(c, dbPath), qt.Equals, 0)
 	})
 
+	// Every file of a numbered directory carries a number, so the text is
+	// refused before the command connects, and SQLite creates no file.
 	t.Run("a version that is not a number", func(t *testing.T) {
 		c := qt.New(t)
 		migrationsDir := writeThreeUpMigrations(c)
@@ -236,8 +238,28 @@ func TestMigrateUpToVersion_FailurePath(t *testing.T) {
 
 		out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--to-version", "v2")
 
+		c.Assert(err, qt.ErrorMatches, `invalid --to-version "v2": a migration version is a number`, qt.Commentf("%s", out))
+		_, err = os.Stat(dbPath)
+		c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+	})
+
+	// An Atlas file such as v1_b.sql spells text, so there the directory the
+	// migrator read answers.
+	t.Run("text no file of a directory that spells text carries", func(t *testing.T) {
+		c := qt.New(t)
+		migrationsDir := c.TempDir()
+		for name, content := range map[string]string{
+			"1_a.sql":  "CREATE TABLE a (id INTEGER PRIMARY KEY);\n",
+			"v1_b.sql": "CREATE TABLE b (id INTEGER PRIMARY KEY);\n",
+		} {
+			c.Assert(os.WriteFile(filepath.Join(migrationsDir, name), []byte(content), 0o600), qt.IsNil)
+		}
+		dbPath := filepath.Join(c.TempDir(), "atlas-words.db")
+
+		out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir,
+			"--dir-format", "atlas", "--revision-format", "atlas", "--to-version", "v2")
+
 		c.Assert(err, qt.ErrorMatches, `invalid --to-version "v2": no migration file carries version "v2"`, qt.Commentf("%s", out))
-		c.Assert(countRevisionTables(c, dbPath), qt.Equals, 0)
 	})
 
 	t.Run("a version of zero", func(t *testing.T) {

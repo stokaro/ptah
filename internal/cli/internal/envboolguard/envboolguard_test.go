@@ -57,6 +57,7 @@ var nonBooleanPtahVars = []string{
 	"PTAH_ATLAS_REFERENCE",       // path to the pinned Atlas CE binary
 	"PTAH_ATLAS_REGISTRY",        // OCI namespace an atlas:// reference resolves against
 	"PTAH_CURRENT_VERSION",       // migration version, passed to preflight hooks
+	"PTAH_CURRENT_VERSION_KEY",   // migration version key, passed to preflight hooks
 	"PTAH_DB_URL",                // database URL
 	"PTAH_DIALECT",               // dialect name
 	"PTAH_DIR",                   // migration directory URL
@@ -100,6 +101,7 @@ var nonBooleanPtahVars = []string{
 	"PTAH_RUNNER",               // runner name, the twin of --runner
 	"PTAH_SQLSERVER_TEST_URL",   // SQL Server address for the live test contour
 	"PTAH_TARGET_VERSION",       // migration version, passed to preflight hooks
+	"PTAH_TARGET_VERSION_KEY",   // migration version key, passed to preflight hooks
 	"PTAH_TO_TAG",               // tag name, an Atlas capability Ptah refuses
 	"PTAH_VAR",                  // repeatable name=value assignment
 

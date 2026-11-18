@@ -59,9 +59,20 @@ type Report struct {
 	FromVersion             int64
 	ToVersion               int64
 	AppliedVersions         []int64
-	StartedAt               time.Time
-	FinishedAt              time.Time
-	Outcome                 Outcome
+	// KeyedByPosition reports that the migrations ran under their positions in
+	// file-name order (see [migrator.Migrator.KeyedByPosition]). A position
+	// moves when a file is added before it, so such a report names each
+	// migration by its version key: FromVersionKey, ToVersionKey and
+	// AppliedVersionKeys are written in place of the three numeric fields,
+	// which are neither validated nor written. An empty FromVersionKey names
+	// no migration.
+	KeyedByPosition    bool
+	FromVersionKey     string
+	ToVersionKey       string
+	AppliedVersionKeys []string
+	StartedAt          time.Time
+	FinishedAt         time.Time
+	Outcome            Outcome
 }
 
 // SuccessfulOptions contains the committed migration state required to record
@@ -73,6 +84,10 @@ type SuccessfulOptions struct {
 	After      *migrator.MigrationStatus
 	StartedAt  time.Time
 	FinishedAt time.Time
+	// KeyedByPosition is the migrator's [migrator.Migrator.KeyedByPosition]:
+	// the report then names the migrations by the version keys of Before and
+	// After.
+	KeyedByPosition bool
 }
 
 type wireReport struct {
@@ -83,6 +98,21 @@ type wireReport struct {
 	FromVersion             int64     `json:"from_version"`
 	ToVersion               int64     `json:"to_version"`
 	AppliedVersions         []int64   `json:"applied_versions"`
+	StartedAt               time.Time `json:"started_at"`
+	FinishedAt              time.Time `json:"finished_at"`
+	Outcome                 Outcome   `json:"outcome"`
+}
+
+// keyedWireReport is wireReport with the version keys in place of the
+// numbers, for a report whose numbers are positions.
+type keyedWireReport struct {
+	SchemaVersion           int       `json:"schema_version"`
+	DeploymentID            string    `json:"deployment_id"`
+	MigrationArtifactDigest string    `json:"migration_artifact_digest"`
+	Dialect                 string    `json:"dialect"`
+	FromVersionKey          string    `json:"from_version_key"`
+	ToVersionKey            string    `json:"to_version_key"`
+	AppliedVersionKeys      []string  `json:"applied_version_keys"`
 	StartedAt               time.Time `json:"started_at"`
 	FinishedAt              time.Time `json:"finished_at"`
 	Outcome                 Outcome   `json:"outcome"`
@@ -112,6 +142,12 @@ func NewSuccessfulReport(opts SuccessfulOptions) (Report, error) {
 		FinishedAt: opts.FinishedAt,
 		Outcome:    OutcomeSucceeded,
 	}
+	if opts.KeyedByPosition {
+		report.KeyedByPosition = true
+		report.FromVersionKey = opts.Before.CurrentVersionKey
+		report.ToVersionKey = opts.After.CurrentVersionKey
+		report.AppliedVersionKeys = appliedKeyDelta(opts.Before.AppliedMigrationKeys, opts.After.AppliedMigrationKeys)
+	}
 	if err := validate(report); err != nil {
 		return Report{}, err
 	}
@@ -140,6 +176,19 @@ func AppliedVersionDelta(before, after []int64) []int64 {
 		applied = append(applied, version)
 	}
 	slices.Sort(applied)
+	return applied
+}
+
+// appliedKeyDelta returns the version keys present after a deployment but
+// absent before it, in the order after lists them, which is the order the
+// migrations run in.
+func appliedKeyDelta(before, after []string) []string {
+	applied := make([]string, 0, len(after))
+	for _, key := range after {
+		if !slices.Contains(before, key) && !slices.Contains(applied, key) {
+			applied = append(applied, key)
+		}
+	}
 	return applied
 }
 
@@ -255,13 +304,7 @@ func validate(report Report) error {
 	if !dialectPattern.MatchString(report.Dialect) {
 		return invalidField("dialect has an invalid format")
 	}
-	if report.FromVersion < 0 {
-		return invalidField("from version must not be negative")
-	}
-	if report.ToVersion < report.FromVersion {
-		return invalidField("to version must not be less than from version")
-	}
-	if err := validateAppliedVersions(report.AppliedVersions); err != nil {
+	if err := validateVersions(report); err != nil {
 		return err
 	}
 	if !validTimestamp(report.StartedAt) {
@@ -275,6 +318,38 @@ func validate(report Report) error {
 	}
 	if report.Outcome != OutcomeSucceeded {
 		return invalidField("outcome is invalid")
+	}
+	return nil
+}
+
+func validateVersions(report Report) error {
+	if report.KeyedByPosition {
+		return validateVersionKeys(report)
+	}
+	if report.FromVersion < 0 {
+		return invalidField("from version must not be negative")
+	}
+	if report.ToVersion < report.FromVersion {
+		return invalidField("to version must not be less than from version")
+	}
+	return validateAppliedVersions(report.AppliedVersions)
+}
+
+// validateVersionKeys holds a keyed report to what a run that applied
+// something leaves: a key it ended at, and applied keys that are non-empty
+// and distinct. Keys have no order to compare, since a key that is not a
+// number sorts nowhere among the numbers.
+func validateVersionKeys(report Report) error {
+	if report.ToVersionKey == "" {
+		return invalidField("to version key is required")
+	}
+	for index, key := range report.AppliedVersionKeys {
+		if key == "" {
+			return invalidField("applied version keys must not be empty")
+		}
+		if slices.Contains(report.AppliedVersionKeys[:index], key) {
+			return invalidField("applied version keys must be distinct")
+		}
 	}
 	return nil
 }
@@ -302,7 +377,7 @@ func invalidField(reason string) error {
 }
 
 func marshal(report Report) ([]byte, error) {
-	canonical := wireReport{
+	var canonical any = wireReport{
 		SchemaVersion:           SchemaVersion,
 		DeploymentID:            report.DeploymentID,
 		MigrationArtifactDigest: report.MigrationArtifactDigest,
@@ -313,6 +388,20 @@ func marshal(report Report) ([]byte, error) {
 		StartedAt:               report.StartedAt.Round(0).UTC(),
 		FinishedAt:              report.FinishedAt.Round(0).UTC(),
 		Outcome:                 report.Outcome,
+	}
+	if report.KeyedByPosition {
+		canonical = keyedWireReport{
+			SchemaVersion:           SchemaVersion,
+			DeploymentID:            report.DeploymentID,
+			MigrationArtifactDigest: report.MigrationArtifactDigest,
+			Dialect:                 report.Dialect,
+			FromVersionKey:          report.FromVersionKey,
+			ToVersionKey:            report.ToVersionKey,
+			AppliedVersionKeys:      append(make([]string, 0), report.AppliedVersionKeys...),
+			StartedAt:               report.StartedAt.Round(0).UTC(),
+			FinishedAt:              report.FinishedAt.Round(0).UTC(),
+			Outcome:                 report.Outcome,
+		}
 	}
 	contents, err := json.Marshal(canonical)
 	if err != nil {

@@ -667,8 +667,10 @@ func TestMigrateCheckpointAtlasPositions_FailurePath(t *testing.T) {
 				"1_b.sql":  "CREATE TABLE b (id INTEGER);\n",
 				"2_c.sql":  "CREATE TABLE c (id INTEGER);\n",
 			},
-			args:    []string{"--version", "10"},
-			wantErr: `a checkpoint at version 10 sorts before 1_b.sql, and this Atlas directory runs its files in file-name order, .*`,
+			args: []string{"--version", "10"},
+			wantErr: `a checkpoint at version 10 sorts before 2_c.sql, the last file in file-name order, and this Atlas ` +
+				`directory runs its files in that order, so the checkpoint would run before a migration it squashes; ` +
+				`a checkpoint version must sort after 2_c.sql, such as 3`,
 		},
 		{
 			name: "a derived version before a version string",
@@ -676,7 +678,28 @@ func TestMigrateCheckpointAtlasPositions_FailurePath(t *testing.T) {
 				"1_a.sql":  "CREATE TABLE a (id INTEGER);\n",
 				"v1_x.sql": "CREATE TABLE x (id INTEGER);\n",
 			},
-			wantErr: `a checkpoint at version [0-9]+ sorts before v1_x.sql, .*`,
+			wantErr: `a checkpoint at version [0-9]+ sorts before v1_x.sql, the last file in file-name order, .*; ` +
+				`a checkpoint version must sort after v1_x.sql, and no number sorts after it, since a checkpoint file name starts with its version`,
+		},
+		{
+			name: "the highest number, which is not the last file",
+			files: map[string]string{
+				"1_x.sql":  "CREATE TABLE x1 (id INTEGER);\n",
+				"2_x.sql":  "CREATE TABLE x2 (id INTEGER);\n",
+				"10_x.sql": "CREATE TABLE x10 (id INTEGER);\n",
+				"v1_x.sql": "CREATE TABLE v1 (id INTEGER);\n",
+			},
+			args:    []string{"--version", "10"},
+			wantErr: `a checkpoint at version 10 sorts before v1_x.sql, the last file in file-name order, .*, and no number sorts after it, .*`,
+		},
+		{
+			name: "a last file whose number leaves no digit to raise",
+			files: map[string]string{
+				"00_a.sql": "CREATE TABLE a (id INTEGER);\n",
+				"99_b.sql": "CREATE TABLE b (id INTEGER);\n",
+			},
+			args:    []string{"--version", "100"},
+			wantErr: `a checkpoint at version 100 sorts before 99_b.sql, .*, and no number sorts after it, .*`,
 		},
 	}
 	for _, tt := range tests {
@@ -697,21 +720,37 @@ func TestMigrateCheckpointAtlasPositions_FailurePath(t *testing.T) {
 	}
 }
 
-// TestMigrateCheckpointAtlasPositions_HappyPath is the control: over 00_a.sql
-// and 1_b.sql the checkpoint at version 2 sorts last, and is written.
+// TestMigrateCheckpointAtlasPositions_HappyPath writes a checkpoint whose
+// file name sorts last: 2 over 00_a.sql and 1_b.sql, and 2 over 00_a.sql and
+// 10_b.sql, where 2 is below the highest number and 2_checkpoint.sql still
+// runs after 10_b.sql in file-name order.
 func TestMigrateCheckpointAtlasPositions_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	writeMigrationFiles(c, dir, map[string]string{
-		"00_a.sql": "CREATE TABLE a (id INTEGER);\n",
-		"1_b.sql":  "CREATE TABLE b (id INTEGER);\n",
-	})
-	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+	tests := []struct {
+		name  string
+		files map[string]string
+	}{
+		{name: "above every number", files: map[string]string{
+			"00_a.sql": "CREATE TABLE a (id INTEGER);\n",
+			"1_b.sql":  "CREATE TABLE b (id INTEGER);\n",
+		}},
+		{name: "below a wider number", files: map[string]string{
+			"00_a.sql": "CREATE TABLE a (id INTEGER);\n",
+			"10_b.sql": "CREATE TABLE b (id INTEGER);\n",
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			writeMigrationFiles(c, dir, tt.files)
+			shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
 
-	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
-		"--dir-format", "atlas", "--version", "2")
+			out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+				"--dir-format", "atlas", "--version", "2")
 
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	_, err = os.Stat(filepath.Join(dir, "2_checkpoint.sql"))
-	c.Assert(err, qt.IsNil)
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			_, err = os.Stat(filepath.Join(dir, "2_checkpoint.sql"))
+			c.Assert(err, qt.IsNil)
+		})
+	}
 }

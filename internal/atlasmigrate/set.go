@@ -23,6 +23,10 @@ type SetOptions struct {
 	// RevisionsTable overrides the revision table name. Empty uses the
 	// revision-format default.
 	RevisionsTable string
+	// MigrationsEngine names the storage engine the revision table is created
+	// with (see [migrator.Migrator.WithMigrationsEngine]). Empty keeps the
+	// dialect's default.
+	MigrationsEngine string
 	// DirFormat selects the migration directory layout. Empty keeps the Atlas
 	// layout, preserving the Atlas-compatible caller's behavior.
 	DirFormat migrationfile.DirFormat
@@ -94,11 +98,21 @@ func Set(
 // writes no row. ptah-compat calls it as soon as it connects, because the
 // pinned community binary creates its revision table there: a `migrate set`
 // that then refuses its arity or a version no file carries leaves the empty
-// table behind on both binaries.
+// table behind on both binaries. Where Ptah refuses every set, as on
+// ClickHouse (see [migrator.Migrator.CanSetRevisions]), it creates nothing:
+// the set refuses after the arity check, and a table left behind would be
+// adopted by the next apply whatever engine it was created with.
 func InitializeRevisions(ctx context.Context, conn *dbschema.DatabaseConnection, opts SetOptions) error {
 	mig, err := newSetMigrator(conn, opts)
 	if err != nil {
 		return err
+	}
+	settable, err := mig.CanSetRevisions()
+	if err != nil {
+		return err
+	}
+	if !settable {
+		return nil
 	}
 	if err := mig.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
@@ -144,6 +158,7 @@ func newSetMigrator(conn *dbschema.DatabaseConnection, opts SetOptions) (*migrat
 	}
 	mig = mig.WithMigrationsTable(opts.RevisionsSchema, opts.RevisionsTable).
 		WithRevisionTableFormat(revisionFormat).
+		WithMigrationsEngine(opts.MigrationsEngine).
 		WithMigrationLockName(opts.MigrationLockName).
 		WithAtlasRevisionVersionComparator(opts.RevisionVersionComparator)
 	if opts.TextOrder {

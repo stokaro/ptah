@@ -12,37 +12,76 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 )
 
-// versionMembers maps each member that spells migrations by their numeric
-// version to the members that carry the same identity as a key: a revision
-// row names its migration in atlas_version, every other object in the
-// *_key or *_keys member beside the number. checkpoint_version has no key
-// member; the checkpoint's own entry in the migrations list names it.
-var versionMembers = map[string][]string{
-	"checkpoint_version":      nil,
-	"version":                 {"version_key", "atlas_version"},
-	"current_version":         {"current_version_key"},
-	"target_version":          {"target_version_key"},
-	"planned":                 {"planned_keys"},
-	"applied":                 {"applied_keys"},
-	"rolled_back":             {"rolled_back_keys"},
-	"replayed":                {"replayed_keys"},
-	"applied_migrations":      {"applied_migration_keys"},
-	"pending_migrations":      {"pending_migration_keys"},
-	"out_of_order_migrations": {"out_of_order_migration_keys"},
+// members maps each member of one object that spells migrations by their
+// numeric version to the members beside it that carry the same identity as a
+// key. A nil list means the member has no key and is always left out.
+type members map[string][]string
+
+var (
+	// statusMembers are the members of a status: the status document itself,
+	// and the status a run document carries. checkpoint_version has no key
+	// member; the checkpoint's own entry in the migrations list names it.
+	statusMembers = members{
+		"current_version":         {"current_version_key"},
+		"applied_migrations":      {"applied_migration_keys"},
+		"pending_migrations":      {"pending_migration_keys"},
+		"out_of_order_migrations": {"out_of_order_migration_keys"},
+		"checkpoint_version":      nil,
+	}
+	// runMembers are the members of a run document's top level.
+	runMembers = members{
+		"planned":     {"planned_keys"},
+		"applied":     {"applied_keys"},
+		"rolled_back": {"rolled_back_keys"},
+	}
+	// entryMembers are the members of one migration named in a list or a
+	// failure.
+	entryMembers = members{"version": {"version_key"}}
+	// revisionMembers are the members of a revision row, which names its
+	// migration in atlas_version.
+	revisionMembers = members{"version": {"atlas_version"}}
+)
+
+// paths names every object [Strip] edits, by its path from the top of the
+// document: a member name per level, and [] for the elements of a list. The
+// top level is a run document's or a status document's, and the two share no
+// member name. An object at any other path keeps every member.
+var paths = map[string]members{
+	"":                            merged(runMembers, statusMembers),
+	"failure":                     entryMembers,
+	"inputs[]":                    entryMembers,
+	"drift_check":                 {"replayed": {"replayed_keys"}},
+	"migrations[]":                entryMembers,
+	"missing_migrations[]":        entryMembers,
+	"dirty_revision":              revisionMembers,
+	"status":                      statusMembers,
+	"status.migrations[]":         entryMembers,
+	"status.missing_migrations[]": entryMembers,
+	"status.dirty_revision":       revisionMembers,
+}
+
+func merged(sets ...members) members {
+	all := make(members)
+	for _, set := range sets {
+		maps.Copy(all, set)
+	}
+	return all
 }
 
 // Strip returns doc, a JSON document, with its numeric version members left
-// out at any depth: a number or a list of numbers that spells migrations by
-// their version, beside the member that carries the same identity as a key,
-// and an empty list, which names nothing in either spelling. Member order and
+// out at the paths [paths] names: a number or a list of numbers that spells
+// migrations by their version, beside the member that carries the same
+// identity as a key, and an empty list, which names nothing in either
+// spelling. Member order and
 // every other byte are kept, so the result reads as the document did with
 // those members removed. A number with no key beside it stays, since a
 // current version of 0 is the empty history, which no key spells; the one
 // exception is checkpoint_version, which has no key member at all.
 func Strip(doc []byte) ([]byte, error) {
-	stripped, err := strip(doc)
+	stripped, err := strip(doc, "")
 	if err != nil {
 		return nil, fmt.Errorf("strip the numeric versions of a migration document: %w", err)
 	}
@@ -66,22 +105,23 @@ func WriteIndented(w io.Writer, doc []byte) error {
 	return err
 }
 
-func strip(raw []byte) ([]byte, error) {
+// strip edits raw, the value at path.
+func strip(raw []byte, path string) ([]byte, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return trimmed, nil
 	}
 	switch trimmed[0] {
 	case '{':
-		return stripObject(trimmed)
+		return stripObject(trimmed, path)
 	case '[':
-		return stripArray(trimmed)
+		return stripArray(trimmed, path)
 	default:
 		return trimmed, nil
 	}
 }
 
-func stripObject(raw []byte) ([]byte, error) {
+func stripObject(raw []byte, path string) ([]byte, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	if _, err := decoder.Token(); err != nil {
 		return nil, err
@@ -101,7 +141,7 @@ func stripObject(raw []byte) ([]byte, error) {
 		if err := decoder.Decode(&value); err != nil {
 			return nil, err
 		}
-		stripped, err := strip(value)
+		stripped, err := strip(value, member(path, name))
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +152,7 @@ func stripObject(raw []byte) ([]byte, error) {
 	out.WriteByte('{')
 	written := 0
 	for _, name := range names {
-		if leftOut(name, values) {
+		if leftOut(paths[path], name, values) {
 			continue
 		}
 		if written > 0 {
@@ -131,7 +171,7 @@ func stripObject(raw []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func stripArray(raw []byte) ([]byte, error) {
+func stripArray(raw []byte, path string) ([]byte, error) {
 	var elements []json.RawMessage
 	if err := json.Unmarshal(raw, &elements); err != nil {
 		return nil, err
@@ -139,7 +179,7 @@ func stripArray(raw []byte) ([]byte, error) {
 	var out bytes.Buffer
 	out.WriteByte('[')
 	for index, element := range elements {
-		stripped, err := strip(element)
+		stripped, err := strip(element, path+"[]")
 		if err != nil {
 			return nil, err
 		}
@@ -152,10 +192,18 @@ func stripArray(raw []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// leftOut reports that the member name of an object holding values is a
-// numeric version member [Strip] leaves out.
-func leftOut(name string, values map[string][]byte) bool {
-	keys, ok := versionMembers[name]
+// member is the path of the member name of the object at path.
+func member(path, name string) string {
+	if path == "" {
+		return name
+	}
+	return path + "." + name
+}
+
+// leftOut reports that the member name of an object holding values is one
+// of rules that [Strip] leaves out.
+func leftOut(rules members, name string, values map[string][]byte) bool {
+	keys, ok := rules[name]
 	if !ok {
 		return false
 	}
