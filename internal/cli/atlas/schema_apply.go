@@ -281,11 +281,12 @@ an ephemeral SQLite dev database for SQLite targets) starting from the
 target's current schema, and the reached state must equal the --to desired
 state before the target is touched. After every --plan apply with a desired
 state available, the end state is verified again on the target and a mismatch
-fails loudly; registry plan URLs are not supported. A session advisory lock
-serializes concurrent applies against one target on PostgreSQL, MySQL,
-MariaDB, and SQL Server; --lock-timeout bounds how long acquisition waits
-(empty waits indefinitely), and dialects without advisory locks proceed
-unlocked with a note. A --to that is not already a live database — a schema
+fails loudly; registry plan URLs are not supported. A lock serializes
+concurrent applies against one target: a session advisory lock on PostgreSQL,
+YugabyteDB 2025.1 and later, MySQL, MariaDB, and SQL Server, a row lock on
+Oracle, and the lock service of an executable provider that offers one.
+--lock-timeout bounds how long acquisition waits (empty waits indefinitely),
+and every other target proceeds unlocked with a note. A --to that is not already a live database — a schema
 file, a schema directory, a migration directory, or an env:// reference to one
 of those — requires --dev-url, exactly as ` + "`schema inspect`" + ` and ` + "`schema diff`" + `
 do; a database --to needs none. Before the target is touched, --dev-url
