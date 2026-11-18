@@ -646,3 +646,72 @@ func TestMigrateCheckpointCommand_RejectsNonPositiveVersion(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(out, qt.Contains, "must be a positive version")
 }
+
+// TestMigrateCheckpointAtlasPositions_FailurePath refuses a checkpoint whose
+// file name sorts before an existing file in an Atlas directory whose files
+// run under their positions in file-name order: 10_checkpoint.sql runs before
+// 1_b.sql, since 0 sorts before an underscore, and a timestamped checkpoint
+// before v1_x.sql. The refusal comes
+// before the shadow database is touched, and writes nothing.
+func TestMigrateCheckpointAtlasPositions_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   map[string]string
+		args    []string
+		wantErr string
+	}{
+		{
+			name: "an explicit number that sorts before a file",
+			files: map[string]string{
+				"00_a.sql": "CREATE TABLE a (id INTEGER);\n",
+				"1_b.sql":  "CREATE TABLE b (id INTEGER);\n",
+				"2_c.sql":  "CREATE TABLE c (id INTEGER);\n",
+			},
+			args:    []string{"--version", "10"},
+			wantErr: `a checkpoint at version 10 sorts before 1_b.sql, and this Atlas directory runs its files in file-name order, .*`,
+		},
+		{
+			name: "a derived version before a version string",
+			files: map[string]string{
+				"1_a.sql":  "CREATE TABLE a (id INTEGER);\n",
+				"v1_x.sql": "CREATE TABLE x (id INTEGER);\n",
+			},
+			wantErr: `a checkpoint at version [0-9]+ sorts before v1_x.sql, .*`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			writeMigrationFiles(c, dir, tt.files)
+			shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+			args := append([]string{"--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite", "--dir-format", "atlas"}, tt.args...)
+
+			out, err := runCheckpoint(args...)
+
+			c.Assert(err, qt.ErrorMatches, tt.wantErr, qt.Commentf("%s", out))
+			entries, readErr := os.ReadDir(dir)
+			c.Assert(readErr, qt.IsNil)
+			c.Assert(entries, qt.HasLen, len(tt.files))
+		})
+	}
+}
+
+// TestMigrateCheckpointAtlasPositions_HappyPath is the control: over 00_a.sql
+// and 1_b.sql the checkpoint at version 2 sorts last, and is written.
+func TestMigrateCheckpointAtlasPositions_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeMigrationFiles(c, dir, map[string]string{
+		"00_a.sql": "CREATE TABLE a (id INTEGER);\n",
+		"1_b.sql":  "CREATE TABLE b (id INTEGER);\n",
+	})
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
+		"--dir-format", "atlas", "--version", "2")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	_, err = os.Stat(filepath.Join(dir, "2_checkpoint.sql"))
+	c.Assert(err, qt.IsNil)
+}

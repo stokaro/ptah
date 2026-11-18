@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 
@@ -508,6 +509,43 @@ func resolveCheckpointVersion(explicit, migrationsDir string, dirFormat migratio
 	if err != nil {
 		return 0, fmt.Errorf("failed to scan migrations directory: %w", err)
 	}
+	version, err := checkpointVersion(explicit, migrationsDir, dirFormat, files)
+	if err != nil {
+		return 0, err
+	}
+	if dirFormat == migrationfile.DirFormatAtlas && migrationfile.AtlasKeyedByPosition(files) {
+		if err := refuseCheckpointBeforeAFile(files, version); err != nil {
+			return 0, err
+		}
+	}
+	return version, nil
+}
+
+// refuseCheckpointBeforeAFile refuses a checkpoint whose file name sorts before
+// an existing file, in an Atlas directory whose files run under their
+// positions in file-name order. There the name decides where the checkpoint
+// runs, not its number: 10_checkpoint.sql runs before 1_b.sql, and a
+// timestamped checkpoint before v1_x.sql, so a fresh database would start at
+// the checkpoint and then run a migration it already squashed. A repeatable
+// migration is not squashed into a checkpoint, so its name decides nothing.
+func refuseCheckpointBeforeAFile(files []migrationfile.File, version int64) error {
+	prefix := strconv.FormatInt(version, 10) + "_"
+	for _, file := range files {
+		name := path.Base(file.Path)
+		if !file.Repeatable && name >= prefix {
+			return fmt.Errorf(
+				"a checkpoint at version %d sorts before %s, and this Atlas directory runs its files in file-name order, "+
+					"so the checkpoint would run before a migration it squashes; pass a --%s whose file name sorts last",
+				version, name, versionFlag,
+			)
+		}
+	}
+	return nil
+}
+
+// checkpointVersion is the version resolveCheckpointVersion checks, read from
+// the flag or derived from the newest file of files.
+func checkpointVersion(explicit, migrationsDir string, dirFormat migrationfile.DirFormat, files []migrationfile.File) (int64, error) {
 	var latest int64
 	for _, file := range files {
 		if file.Version > latest {
