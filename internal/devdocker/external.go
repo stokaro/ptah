@@ -6,6 +6,9 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"ptah.run/core/platform"
+	"ptah.run/internal/providercatalog"
 )
 
 // External provisions the dev databases of engines a selected provider owns.
@@ -68,6 +71,24 @@ func externalFor(ctx context.Context, rawURL string) (External, string) {
 		}
 	}
 	return nil, ""
+}
+
+// SameEngine reports whether two engine names name one engine. Each is folded
+// onto its canonical name: a built-in dialect's through the dialect registry,
+// and an official provider engine's alias, such as `ydbs` or `cloudspanner`,
+// through the provider catalog. A name neither knows is compared as written.
+func SameEngine(a, b string) bool {
+	return canonicalEngine(a) == canonicalEngine(b)
+}
+
+func canonicalEngine(name string) string {
+	if canonical := platform.NormalizeDialect(name); canonical != "" {
+		return canonical
+	}
+	if entry, found := providercatalog.Lookup(name); found {
+		return entry.EngineID
+	}
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 // DockerEngine returns the engine either form of docker URL names, without

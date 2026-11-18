@@ -193,21 +193,56 @@ func (fixtureDevOwner) ProvisionDev(context.Context, string) (string, func(), er
 	return "", nil, errors.New("not provisioned here")
 }
 
+// aliasDevOwner provisions the dev databases of Spanner, an official provider
+// engine, under its ID and under its catalog alias. Nothing here asks it to.
+type aliasDevOwner struct{}
+
+func (aliasDevOwner) DevEngines() []string { return []string{"cloudspanner", "spanner"} }
+
+func (aliasDevOwner) ProvisionDev(context.Context, string) (string, func(), error) {
+	return "", nil, errors.New("not provisioned here")
+}
+
 // TestServer_ProviderDocker_HappyPath leaves a docker URL whose engine a
-// provider provisions to that provider: it is not parsed as an image Ptah
-// knows, and no capability is answered. A docker URL of another engine is
-// still read from its image tag.
+// provider provisions to that provider, in either form: it is not parsed as an
+// image Ptah knows, nothing is connected, and no capability is answered. The
+// engine is compared with the target through the registry and the provider
+// catalog, so an alias on either side names the same engine.
 func TestServer_ProviderDocker_HappyPath(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		owner   devdocker.External
+		dialect string
+		devURL  string
+	}{
+		{name: "docker://", owner: fixtureDevOwner{}, dialect: "fixture", devURL: "docker://fixture/dev"},
+		{name: "docker+", owner: fixtureDevOwner{}, dialect: "fixture", devURL: "docker+fixture://_/example.org/fixture:2.0"},
+		{name: "an alias in the URL", owner: aliasDevOwner{}, dialect: "spanner", devURL: "docker://cloudspanner/dev"},
+		{name: "an alias in the docker+ scheme", owner: aliasDevOwner{}, dialect: "spanner", devURL: "docker+cloudspanner://_/example.org/spanner:1"},
+		{name: "an alias as the target", owner: aliasDevOwner{}, dialect: "cloudspanner", devURL: "docker://spanner/dev"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx := devdocker.WithExternal(c.Context(), test.owner)
+
+			got, err := devreach.Server(ctx, test.dialect, "dev-url", test.devURL, 0)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Len(), qt.Equals, 0)
+		})
+	}
+}
+
+// TestServer_ProviderDocker_BuiltInImage reads a docker URL of an engine no
+// provider provisions from its image tag, with a provider in ctx.
+func TestServer_ProviderDocker_BuiltInImage(t *testing.T) {
 	c := qt.New(t)
 	ctx := devdocker.WithExternal(c.Context(), fixtureDevOwner{})
 
-	provisioned, err := devreach.Server(ctx, "fixture", "dev-url", "docker://fixture/dev", 0)
-	c.Assert(err, qt.IsNil)
-	c.Assert(provisioned.Len(), qt.Equals, 0)
+	got, err := devreach.Server(ctx, "postgres", "dev-url", "docker://postgres/18/dev", 0)
 
-	builtIn, err := devreach.Server(ctx, "postgres", "dev-url", "docker://postgres/18/dev", 0)
 	c.Assert(err, qt.IsNil)
-	c.Assert(builtIn.Equal(capability.ResolveServerVersion("postgres", "18").Capabilities), qt.IsTrue)
+	c.Assert(got.Equal(capability.ResolveServerVersion("postgres", "18").Capabilities), qt.IsTrue)
 }
 
 // TestServer_ProviderDocker_FailurePath refuses a docker URL whose engine a
