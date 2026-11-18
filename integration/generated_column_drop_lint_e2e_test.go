@@ -184,3 +184,27 @@ func TestMigrationsUpReadsWhetherARegeneratedColumnWasGeneratedE2E(t *testing.T)
 		})
 	}
 }
+
+// TestMigrationsUpJudgesALaterPendingVersionWithoutTheTargetsColumnsE2E has
+// two versions pending over a table whose total is generated: the first makes
+// total a stored column, and the second drops it and adds it back as
+// generated. The target's generated columns describe the first version's
+// start only, so the gate refuses the second and nothing runs: total keeps the
+// value it holds and stays generated.
+func TestMigrationsUpJudgesALaterPendingVersionWithoutTheTargetsColumnsE2E(t *testing.T) {
+	c := qt.New(t)
+	target := includeChildFixture{database: postgresScratchDevURL(c, "ptah_regenerated_up")}
+	dir := writeMigrations(c, map[string]string{"0001_orders.up.sql": ordersTable(ordersGenerated)})
+	created := runPtahIn(c, "migrations", "up", "--db-url", target.database, "--migrations-dir", dir)
+	c.Assert(created.ExitCode, qt.Equals, 0, historyComment(created))
+	execPostgresFamilySQL(c, c.Context(), target.database, "INSERT INTO orders (id, price, qty) VALUES (1, 2, 3);\n")
+	c.Assert(os.WriteFile(filepath.Join(dir, "0002_stored.up.sql"),
+		[]byte("ALTER TABLE orders ALTER COLUMN total DROP EXPRESSION;\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "0003_total.up.sql"), []byte(ordersRegenerate), 0o600), qt.IsNil)
+
+	applied := runPtahIn(c, "migrations", "up", "--db-url", target.database, "--migrations-dir", dir)
+
+	c.Assert(applied.ExitCode, qt.Equals, 2, historyComment(applied))
+	c.Assert(applied.Stderr, qt.Contains, "0003_total.up.sql:1 DS102 error")
+	c.Assert(target.read(c, ordersReadBack), qt.Equals, "6 generated=true")
+}

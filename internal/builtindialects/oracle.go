@@ -18,7 +18,9 @@ import (
 // A catalog name such as ptah_fold is not what an unquoted name folds to, so
 // it was created quoted: it compares exactly, the renderer writes it quoted,
 // and a declared `ptah_fold`, which means PTAH_FOLD, does not reach it
-// (stokaro/ptah#6243).
+// (stokaro/ptah#6243). BareChars holds the characters Oracle accepts in
+// an unquoted name besides letters, digits and the underscore, so a$b is
+// written bare and stored as A$B, and a catalog name a$b was created quoted.
 //
 // Index names are schema-scoped, not table-scoped: `DROP INDEX <name>` is the
 // whole statement here, with no ON clause naming a table, so two tables in one
@@ -36,6 +38,7 @@ func oracle() descriptor.Dialect {
 			TableNames:     "ascii_case_insensitive",
 			ColumnNames:    "ascii_case_insensitive",
 			UnquotedFold:   "upper",
+			BareChars:      "$#",
 		},
 		Placeholder: descriptor.PlaceholderColon,
 

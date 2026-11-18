@@ -86,6 +86,8 @@ func TestForDialect(t *testing.T) {
 				IndexNames:     identifier.ComparisonASCIIInsensitive,
 				TableNames:     identifier.ComparisonASCIIInsensitive,
 				ColumnNames:    identifier.ComparisonASCIIInsensitive,
+				UnquotedFold:   identifier.FoldUpper,
+				BareChars:      "$#",
 			},
 		},
 		{

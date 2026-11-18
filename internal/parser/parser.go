@@ -3963,6 +3963,12 @@ func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
 // in `DEFAULT (1) + 2 NOT NULL` the NOT NULL is the column's. Read into the
 // default, it would leave the column nullable. A clause word right after an
 // operator is an operand, as NULL is in `1 + NULL`.
+//
+// A version gate after a complete operand ends it too: in `DEFAULT 1 - 2
+// /*!80023 INVISIBLE */` the gate is the column's, and the column reader steps
+// over it as it does after any other default. Read into the default, the gate
+// would make the expression `1 - 2 /*!80023 INVISIBLE */`, which no server
+// reports back, and every comparison would plan the column again.
 func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultValue {
 	p.skipWhitespace()
 	if !isDefaultBinaryOperator(p.current) {
@@ -3999,7 +4005,7 @@ func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultVa
 				}
 			}
 		}
-		if depth == 0 && operand && p.current.Type == lexer.TokenIdentifier && columnClauseStart(p.current.Value) {
+		if depth == 0 && operand && p.currentIsColumnPart() {
 			return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
 		}
 
@@ -4015,6 +4021,28 @@ func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultVa
 		p.advance()
 	}
 	return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
+}
+
+// currentIsColumnPart reports whether the token at the cursor belongs to the
+// column rather than to a default expression that holds a complete operand:
+// a word that opens a column clause, or a version gate.
+func (p *Parser) currentIsColumnPart() bool {
+	if isVersionGate(p.current) {
+		return true
+	}
+	return p.current.Type == lexer.TokenIdentifier && columnClauseStart(p.current.Value)
+}
+
+// isVersionGate reports whether token is a MySQL `/*!NNNNN ... */` or a MariaDB
+// `/*M!NNNNN ... */` gate. A dialect that executes the gate emits it as one
+// TokenUnknown and any other as a comment, so both types are asked: MySQL
+// reads MariaDB's gate as a comment, and the expression still ends there.
+func isVersionGate(token lexer.Token) bool {
+	if token.Type != lexer.TokenUnknown && token.Type != lexer.TokenComment {
+		return false
+	}
+	_, _, ok := executableCommentBody(token.Value)
+	return ok
 }
 
 // isDefaultBinaryOperator reports whether token is a binary operator a default

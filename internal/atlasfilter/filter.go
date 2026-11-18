@@ -2160,6 +2160,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		CurrentAccount:         schema.CurrentAccount,
 		ConnectedRole:          schema.ConnectedRole,
 		ConnectedRoleSuperuser: schema.ConnectedRoleSuperuser,
+		// The names a filter keeps are spelled as the read spelled them, so
+		// whether that is the stored spelling does not change either.
+		StoredNames: schema.StoredNames,
 		// A table the read found and left out is still in the database, and a
 		// filter cannot change that: dropping the record would let a declared
 		// table at it plan a CREATE TABLE the database rejects.

@@ -6,6 +6,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/catalogspelling"
 	"ptah.run/internal/tableidentity"
 )
 
@@ -50,6 +51,6 @@ func comparisonTableIdentities(desired *schemamodel.Database, current *catalog.D
 	if err := refuseCaseOnlyNamesakes(&declared, &observed, opts.Dialect, semantics); err != nil {
 		return comparisonIdentity{}, err
 	}
-	observed = spellCaseSensitiveNames(observed, opts.Dialect, semantics)
+	observed = catalogspelling.Spell(observed, opts.Dialect)
 	return comparisonIdentity{desired: &declared, current: &observed, semantics: semantics}, nil
 }

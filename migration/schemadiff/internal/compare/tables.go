@@ -358,6 +358,17 @@ func removedTableName(schema, name, dialect string) string {
 	return part(schema) + "." + part(name)
 }
 
+// spelledQualifiedName is [catalog.QualifyTableName], except on a dialect
+// that states an unquoted fold, where a name the read was given with its
+// quotes (catalogspelling.Spell) keeps them rather than being quoted again:
+// the view stored as v1 is `APP."v1"`, not `APP."""v1"""`.
+func spelledQualifiedName(schema, name, dialect string) string {
+	if schema == "" || !spelledQuoted(name) || identifier.ForDialect(dialect).UnquotedFold == "" {
+		return catalog.QualifyTableName(schema, name)
+	}
+	return tableref.Canonical("", schema) + "." + name
+}
+
 // spelledQuoted reports whether value is a whole double-quoted name.
 func spelledQuoted(value string) bool {
 	return len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"'
