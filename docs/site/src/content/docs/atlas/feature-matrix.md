@@ -176,7 +176,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | `--dry-run`, `--auto-approve`, and `--edit` | ✅ | ✅ | ✅ | All three registered and functional; `--edit` opens $VISUAL/$EDITOR and the edited SQL is applied. `--dry-run` and `--auto-approve` exclude each other on the command line, as on CE. |
-| `--exclude` glob and type selectors | ✅ | ✅ | ✅ | Resource globs, one final [type=...], and leading [type=schema]. Qualified globs reach every kind. A column selector works in both scopes, and the depth rule matches the pinned binary exactly. |
+| `--exclude` glob and type selectors | ✅ | ✅ | ✅ | Resource globs, one final [type=...], and leading [type=schema]. A constraint a selector names is kept with its index, also where the pinned binary accepts the selector and drops it. |
 | `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics. |
 | `--schema` / -s scoping of both sides | ✅ | ✅ | ✅ | Schema names scope resources; non-extension matches carry extensions as support. Diff refuses exact PostgreSQL-family server namespaces before SQL because catalogs do not round-trip safely. |
 | `schema diff --export` | ✅ | ❌ | ✅ | An `exporter` block declares a Go template and an env's `exporter` attribute selects it; `--export` renders through it, on both `schema diff` and `schema inspect`. |

@@ -266,6 +266,7 @@ var includeChildTypes = map[string]struct{}{
 	"column":      {},
 	"index":       {},
 	"constraint":  {},
+	"check":       {},
 	"foreign_key": {},
 	"foreign-key": {},
 	"trigger":     {},

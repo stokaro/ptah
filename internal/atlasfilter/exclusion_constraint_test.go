@@ -66,8 +66,8 @@ func TestExcludeNamesAnExclusionConstraintThroughItsTable_HappyPath(t *testing.T
 	tests := []struct {
 		name, exclude string
 		// want are the constraints both sides keep, and wantIndexes the
-		// enforcing indexes the database side keeps. A constraint selector
-		// leaves the index to the constraint, which manages it.
+		// enforcing indexes the database side keeps. An index leaves with the
+		// constraint that manages it, whichever type named the constraint.
 		want, wantIndexes []string
 	}{
 		{
@@ -86,7 +86,7 @@ func TestExcludeNamesAnExclusionConstraintThroughItsTable_HappyPath(t *testing.T
 			name:        "a constraint selector",
 			exclude:     "public.rooms.room_slot[type=constraint]",
 			want:        []string{"public.desks.desk_slot"},
-			wantIndexes: []string{"room_slot", "desk_slot"},
+			wantIndexes: []string{"desk_slot"},
 		},
 		{
 			name:        "an index selector",
@@ -98,18 +98,18 @@ func TestExcludeNamesAnExclusionConstraintThroughItsTable_HappyPath(t *testing.T
 			name:        "the other table",
 			exclude:     "desks.desk_slot[type=constraint]",
 			want:        []string{"public.rooms.room_slot"},
-			wantIndexes: []string{"room_slot", "desk_slot"},
+			wantIndexes: []string{"room_slot"},
 		},
 		{
 			name:        "every constraint of one table",
 			exclude:     "public.rooms.*[type=constraint]",
 			want:        []string{"public.desks.desk_slot"},
-			wantIndexes: []string{"room_slot", "desk_slot"},
+			wantIndexes: []string{"desk_slot"},
 		},
 		{
 			name:        "every constraint",
 			exclude:     "*[type=constraint]",
-			wantIndexes: []string{"room_slot", "desk_slot"},
+			wantIndexes: make([]string, 0),
 		},
 		{
 			name:        "every index",

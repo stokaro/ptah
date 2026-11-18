@@ -53,6 +53,10 @@ func TestExcludeDatabase_KeepsWhichRolesTheServerHas(t *testing.T) {
 	c.Assert(got.RolesOutOfScopeReason, qt.Equals, "another tenant owns them")
 }
 
+// TestExcludeDatabase_TypeSelectorRemovesOnlyIndexes removes the indexes of
+// one table and the UNIQUE constraint whose index carries its name, which an
+// index selector names as the community binary does. The table and the
+// foreign key on the other table stay.
 func TestExcludeDatabase_TypeSelectorRemovesOnlyIndexes(t *testing.T) {
 	c := qt.New(t)
 	schema := filterFixtureSchema()
@@ -62,7 +66,7 @@ func TestExcludeDatabase_TypeSelectorRemovesOnlyIndexes(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"auth.users", "auth.audit_log"})
 	c.Assert(indexNames(got.Indexes), qt.DeepEquals, []string{"audit_log_created_at_idx"})
-	c.Assert(constraintNames(got.Constraints), qt.DeepEquals, []string{"users_email_key", "audit_log_user_fk"})
+	c.Assert(constraintNames(got.Constraints), qt.DeepEquals, []string{"audit_log_user_fk"})
 }
 
 func TestExcludeDatabase_TableSubtypeSelector(t *testing.T) {
