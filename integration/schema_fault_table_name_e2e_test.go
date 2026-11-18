@@ -191,9 +191,10 @@ func TestSchemaDiffNamesAFaultOfItsFromDocument_FailurePathE2E(t *testing.T) {
 		schema string
 		extra  []string
 		fault  schemaFault
+		side   string
 	}{
 		{name: schemaFaults[0].name, schema: schemaFaults[0].schema, fault: schemaFaults[0]},
-		{name: schemaFaults[1].name, schema: schemaFaults[1].schema, fault: schemaFaults[1]},
+		{name: schemaFaults[1].name, schema: schemaFaults[1].schema, fault: schemaFaults[1], side: fromSideRefusal},
 		{
 			name: "index on an undeclared column of an excluded table", schema: excludedFaultSchema,
 			extra: []string{"--exclude", "{schema}.t"}, fault: schemaFaults[0],
@@ -205,7 +206,87 @@ func TestSchemaDiffNamesAFaultOfItsFromDocument_FailurePathE2E(t *testing.T) {
 			result := fixture.run(c, fromDocumentDiff, test.schema, test.extra...)
 			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
 			c.Assert(result.ExitCode, qt.Equals, 2, comment)
-			c.Assert(result.Stderr, qt.Equals, "error: "+want+"\n", comment)
+			c.Assert(result.Stderr, qt.Equals, "error: "+test.side+want+"\n", comment)
+		})
+	}
+}
+
+// fromSideRefusal is the prefix of a --from document's foreign-key refusal,
+// which names the side, as a --from that does not load is named. A --to
+// document's refusal carries none.
+const fromSideRefusal = "load --from schema: "
+
+// unkeyedReferenceSound is the foreign-key fault of [schemaFaults] with the
+// foreign key left out.
+const unkeyedReferenceSound = "CREATE TABLE parent (id bigint PRIMARY KEY, code text NOT NULL);\n" +
+	"CREATE TABLE child (id bigint PRIMARY KEY, code text);\n"
+
+// runDocumentDiff runs `schema diff --from file://from.sql --to file://to.sql`
+// on the fixture's dev database, extra added to the command line with
+// {schema} standing for the dev database's current schema.
+func (f faultFixture) runDocumentDiff(c *qt.C, from, to string, extra ...string) clirun.Result {
+	c.Helper()
+	root := c.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(root, "from.sql"), []byte(from), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(root, "to.sql"), []byte(to), 0o600), qt.IsNil)
+	args := []string{"schema", "diff", "--from", "file://from.sql", "--to", "file://to.sql", "--dev-url", f.devURL}
+	for _, arg := range extra {
+		args = append(args, strings.ReplaceAll(arg, "{schema}", f.current["dev"]))
+	}
+	return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()}, args...)
+}
+
+// TestSchemaDiffRefusesAReferenceFaultOfEitherDocument_FailurePathE2E puts the
+// foreign-key fault on each side of a diff with the sound schema. PostgreSQL
+// refuses such a key when it creates the table, so the --from document is
+// held to the rule as the --to one is, and its line names the side.
+func TestSchemaDiffRefusesAReferenceFaultOfEitherDocument_FailurePathE2E(t *testing.T) {
+	c := qt.New(t)
+	fixture := newFaultFixture(c)
+	line := fmt.Sprintf(schemaFaults[1].line, fixture.current["dev"]+".parent")
+
+	for _, test := range []struct {
+		name     string
+		from, to string
+		want     string
+	}{
+		{name: "faulty --from", from: schemaFaults[1].schema, to: unkeyedReferenceSound, want: "error: " + fromSideRefusal + line + "\n"},
+		{name: "faulty --to", from: unkeyedReferenceSound, to: schemaFaults[1].schema, want: "error: " + line + "\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := fixture.runDocumentDiff(c, test.from, test.to)
+			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
+			c.Assert(result.ExitCode, qt.Equals, 2, comment)
+			c.Assert(result.Stderr, qt.Equals, test.want, comment)
+			c.Assert(result.Stdout, qt.Equals, "", comment)
+		})
+	}
+}
+
+// TestSchemaDiffChecksTheSelectedTablesOfEitherDocument_HappyPathE2E runs the
+// rows above with child excluded. The rule reads the tables a run selects on
+// either side, as the community binary v1.3.0 does, so both diffs compare
+// parent alone. Validating the --from document before the selection refuses
+// the first row.
+func TestSchemaDiffChecksTheSelectedTablesOfEitherDocument_HappyPathE2E(t *testing.T) {
+	c := qt.New(t)
+	fixture := newFaultFixture(c)
+
+	for _, test := range []struct {
+		name     string
+		from, to string
+	}{
+		{name: "faulty --from, child excluded", from: schemaFaults[1].schema, to: unkeyedReferenceSound},
+		{name: "faulty --to, child excluded", from: unkeyedReferenceSound, to: schemaFaults[1].schema},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := fixture.runDocumentDiff(c, test.from, test.to, "--exclude", "{schema}.child")
+			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
+			c.Assert(result.ExitCode, qt.Equals, 0, comment)
+			c.Assert(result.Stdout, qt.Equals, "Schemas are synced, no changes to be made.\n", comment)
+			c.Assert(result.Stderr, qt.Equals, "", comment)
 		})
 	}
 }

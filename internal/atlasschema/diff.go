@@ -973,16 +973,28 @@ func validateDiffDeclarations(
 	return validateDesiredDiffComparison(ctx, service, to, current, dialect, capabilities)
 }
 
-// validateDiffFromDocument checks a --from side read from a document with the
-// target validation the --to declaration gets, on the same placed and selected
-// names, so the two sides are refused for the same fault in the same words.
-// The community binary creates each document on its dev database, so a
-// document its server refuses fails on either side: measured with v1.3.0 on
-// PostgreSQL, a --from that references a column no unique key covers exits 1
-// with the server's 42830. A side read from a database or replayed from a
-// migration directory holds only what its server accepted, and is not checked.
-// The role-password half of [validateDesiredDiffComparison] is left out: it
-// compares a declaration with the state it changes, and --from is that state.
+// validateDiffFromDocument refuses a --from side read from a document that
+// holds a foreign key its engine's server refuses to create, as the community
+// binary refuses it: that binary creates each document on its dev database,
+// and measured with v1.3.0 on PostgreSQL, a --from that references a column no
+// unique key covers exits 1 with the server's 42830. The check runs on the
+// placed and selected names the --to declaration is validated on, and the
+// refusal names the side, `load --from schema: ...`, as a --from that does not
+// load is named.
+//
+// Only the referenced-key rule is checked, and only on an engine whose server
+// applies it at CREATE TABLE
+// ([ptah.run/core/platform/descriptor.Dialect.ForeignKeyReferencesCheckedAtCreate]).
+// A --from
+// document describes the state a plan starts from, and a server that takes a
+// table the rule refuses, as SQLite does, can hold that state: a diff from it
+// to a document that adds the key is the repair. The other target rules are
+// left to the --to side for the same reason; a refusal that the validation
+// still makes under the policy that accepts any referenced columns is one of
+// them, and does not stop the diff.
+//
+// A side read from a database or replayed from a migration directory holds
+// only what its server accepted, and is not checked.
 func validateDiffFromDocument(
 	ctx context.Context,
 	service schemavalidation.Runtime,
@@ -991,13 +1003,29 @@ func validateDiffFromDocument(
 	dialect string,
 	capabilities capability.Capabilities,
 ) error {
-	if state.DB != nil {
+	if state.DB != nil || !described(dialect).ForeignKeyReferencesCheckedAtCreate {
 		return nil
 	}
-	return schemadiff.ValidateDesiredSchema(ctx, service, from, catalog.ServerInfo{
+	refused := schemadiff.ValidateDesiredSchema(ctx, service, from, catalog.ServerInfo{
 		Dialect:      dialect,
 		Capabilities: capabilities,
 	})
+	if refused == nil {
+		return nil
+	}
+	// A target with foreign keys takes exactly one reference policy, and the
+	// policy that lets the server build its own index accepts any columns.
+	lifted := capabilities.
+		With(capability.ForeignKeysRequireUniqueReference, false).
+		With(capability.ForeignKeysRequireIndexedReference, false).
+		With(capability.ForeignKeysCreateBackingIndex, true)
+	if schemadiff.ValidateDesiredSchema(ctx, service, from, catalog.ServerInfo{
+		Dialect:      dialect,
+		Capabilities: lifted,
+	}) != nil {
+		return nil
+	}
+	return fmt.Errorf("load --from schema: %w", refused)
 }
 
 func validateDiffSystemSchemaStates(

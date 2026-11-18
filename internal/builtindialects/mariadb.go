@@ -144,6 +144,10 @@ func mariaDB() descriptor.Dialect {
 		InlineEnum:               descriptor.InlineEnum{Type: descriptor.InlineEnumValues},
 		IndexesBeforeForeignKeys: true,
 		// Comparison: what comparing a declaration with a catalog reads.
+		// Measured on MariaDB 11.8.9: a foreign key to a column no index covers
+		// fails at CREATE TABLE with errno 150, and one to an indexed column no
+		// unique key covers is created, as the indexed-reference policy says.
+		ForeignKeyReferencesCheckedAtCreate: true,
 		Comparison: descriptor.Comparison{
 			ColumnCheckDropByModify:        true,
 			TimePrecision:                  descriptor.TimePrecision{Compared: true},

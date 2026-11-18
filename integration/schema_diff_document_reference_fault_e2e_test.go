@@ -8,16 +8,17 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-// A document on either side of `schema diff` is checked with the target
-// validation a --to declaration gets, so a foreign key to a column no unique
-// key covers is refused on the --from side as on the --to side. The community
-// binary v1.3.0 creates each document on its dev database: on PostgreSQL both
-// sides exit 1 with the server's 42830. SQLite accepts the CREATE TABLE and
-// refuses the first write to child with `foreign key mismatch`, so there that
-// binary plans either side and exits 0. Ptah refuses both sides on SQLite
-// too, deliberately: the document describes a table no row can be written to.
-// SQLite needs no server, so the rows run on every platform; the PostgreSQL
-// line, which names the table by the dev database's schema, is pinned in
+// A --from document is held to the referenced-key rule only on an engine
+// whose server applies the rule when it creates the foreign key; SQLite does
+// not. It takes a CREATE TABLE whose foreign key references a column no
+// unique key covers and refuses the first write to child with `foreign key
+// mismatch`, so a SQLite database can hold that state, and the community
+// binary v1.3.0 plans a diff from it and exits 0. A diff from such a document
+// to one that adds the key is the repair, and refusing it would be stricter
+// than that binary for no gain. The --to document is refused on SQLite, which
+// is stricter than that binary, deliberately: it would plan a table no row can
+// be written to. SQLite needs no server, so the rows run on every platform;
+// the PostgreSQL rows, where the --from document is refused too, are in
 // schema_fault_table_name_e2e_test.go.
 
 // sqliteDiffReferenceSound declares parent and child with no foreign key.
@@ -38,47 +39,47 @@ const sqliteDiffReferenceKeyed = "CREATE TABLE parent (id integer PRIMARY KEY, c
 // sqliteDiffReferenceFaulty, without the surface's prefix.
 const sqliteDiffReferenceFaultLine = `sqlite requires referenced columns code on table "parent" to be declared unique`
 
-// TestSchemaDiffRefusesAReferenceFaultInEitherDocument_FailurePathE2E puts the
-// faulty document on each side, on every surface of [documentDiffRuns].
-// Without the check of the --from side, the diff of a faulty --from plans the
-// rebuild of child without its foreign key and exits 0.
-func TestSchemaDiffRefusesAReferenceFaultInEitherDocument_FailurePathE2E(t *testing.T) {
-	sides := []struct {
-		name     string
-		from, to string
-	}{
-		{name: "faulty --to", from: sqliteDiffReferenceSound, to: sqliteDiffReferenceFaulty},
-		{name: "faulty --from", from: sqliteDiffReferenceFaulty, to: sqliteDiffReferenceSound},
-	}
+// TestSchemaDiffRefusesAReferenceFaultInTheToDocument_FailurePathE2E plans
+// toward the faulty document on every surface of [documentDiffRuns].
+func TestSchemaDiffRefusesAReferenceFaultInTheToDocument_FailurePathE2E(t *testing.T) {
 	for _, run := range documentDiffRuns {
 		t.Run(run.name, func(t *testing.T) {
-			for _, side := range sides {
-				t.Run(side.name, func(t *testing.T) {
-					c := qt.New(t)
-					result := runSQLiteDocumentDiff(c, run.target, side.from, side.to, run.env)
-					comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
-					c.Assert(result.ExitCode, qt.Equals, run.wantExit, comment)
-					c.Assert(result.Stderr, qt.Equals, run.prefix+sqliteDiffReferenceFaultLine+"\n", comment)
-					c.Assert(result.Stdout, qt.Equals, "", comment)
-				})
-			}
+			c := qt.New(t)
+			result := runSQLiteDocumentDiff(c, run.target, sqliteDiffReferenceSound, sqliteDiffReferenceFaulty, run.env)
+			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
+			c.Assert(result.ExitCode, qt.Equals, run.wantExit, comment)
+			c.Assert(result.Stderr, qt.Equals, run.prefix+sqliteDiffReferenceFaultLine+"\n", comment)
+			c.Assert(result.Stdout, qt.Equals, "", comment)
 		})
 	}
 }
 
-// TestSchemaDiffComparesAKeyedReference_HappyPathE2E is the control: the same
-// foreign key with parent.code declared unique, as the --from document, plans
-// the rebuild of child without it on every surface, so the refusals above are
-// the missing key's doing.
-func TestSchemaDiffComparesAKeyedReference_HappyPathE2E(t *testing.T) {
+// TestSchemaDiffPlansFromAReferenceFaultInTheFromDocument_HappyPathE2E plans
+// from the faulty document on every surface of [documentDiffRuns]: to the
+// document that declares parent.code unique, the repair, and to the one that
+// drops the foreign key. The community binary v1.3.0 exits 0 on both. Holding
+// the --from document to the rule refuses both rows.
+func TestSchemaDiffPlansFromAReferenceFaultInTheFromDocument_HappyPathE2E(t *testing.T) {
+	targets := []struct {
+		name string
+		to   string
+		want string
+	}{
+		{name: "the repair", to: sqliteDiffReferenceKeyed, want: "NOT NULL UNIQUE"},
+		{name: "the foreign key dropped", to: sqliteDiffReferenceSound, want: `ALTER TABLE "new_child" RENAME TO "child";`},
+	}
 	for _, run := range documentDiffRuns {
 		t.Run(run.name, func(t *testing.T) {
-			c := qt.New(t)
-			result := runSQLiteDocumentDiff(c, run.target, sqliteDiffReferenceKeyed, sqliteDiffReferenceSound, run.env)
-			comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
-			c.Assert(result.ExitCode, qt.Equals, 0, comment)
-			c.Assert(result.Stdout, qt.Contains, `ALTER TABLE "new_child" RENAME TO "child";`, comment)
-			c.Assert(result.Stderr, qt.Equals, "", comment)
+			for _, target := range targets {
+				t.Run(target.name, func(t *testing.T) {
+					c := qt.New(t)
+					result := runSQLiteDocumentDiff(c, run.target, sqliteDiffReferenceFaulty, target.to, run.env)
+					comment := qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr)
+					c.Assert(result.ExitCode, qt.Equals, 0, comment)
+					c.Assert(result.Stdout, qt.Contains, target.want, comment)
+					c.Assert(result.Stderr, qt.Equals, "", comment)
+				})
+			}
 		})
 	}
 }

@@ -123,17 +123,31 @@ schema diff` refuses the same documents and exits `1`. The check reads the
 whole document: `--exclude` and `--include` choose what a run changes, and do
 not hide a fault in what it reads.
 
-`schema diff` also holds every side it reads from a document to the target's
-rules, such as a foreign key whose referenced columns no unique key covers. A
-`--from` document gets the line a `--to` document gets, and the command exits
-`2` (`1` on `ptah-compat`). These rules read only the tables a run selects.
-
 On a PostgreSQL URL that pins no `search_path`, those commands first place a
 table the schema names without a schema in the connection's current schema
 ([PostgreSQL](../../databases/postgresql/#connecting)), so the line names the
 table with that schema, as `table "public.orders"`. `schema diff` of two
 documents places it in the dev database's current schema. `schema validate`
 connects to no database, so it names the table as the source writes it.
+
+A `--to` document of `schema diff` is also held to the target's declaration
+rules, which `schema plan` applies to a desired schema: the types, features
+and keys the target accepts. A `--from` document describes the state a plan
+starts from, so it is held to one of them: the referenced-key rule, which
+refuses a foreign key whose referenced columns no unique key covers (on MySQL
+8.0 and MariaDB, no index). That rule applies only on an engine whose server
+refuses such a key when it creates the table: PostgreSQL, CockroachDB,
+YugabyteDB, MySQL, MariaDB and SQL Server. The line starts with
+`load --from schema:`, and the command exits `2` (`1` on `ptah-compat`). These
+checks read only the tables a run selects. With `--dev-url`, a `--from`
+document compared with a database or a migration directory is created on the
+dev database first, so that server judges it instead.
+
+SQLite creates such a table and, with foreign keys enforced, refuses the first
+write to it. A SQLite database can hold that state, so a `--from` document on
+SQLite is not held to the rule, as on the Atlas CLI. A `--to` document on
+SQLite is refused, where the Atlas CLI plans it: the plan would create a table
+no row can be written to.
 
 ## Validate against every dialect you ship to
 

@@ -134,6 +134,9 @@ func yugabyteDB() descriptor.Dialect {
 		// whatever their definitions say, as on PostgreSQL.
 		Columns: descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true, SerialNotNull: true},
 		// Comparison: what comparing a declaration with a catalog reads.
+		// Measured on YugabyteDB 2026.1.2.0: a foreign key to a column no unique key
+		// covers fails at CREATE TABLE, indexed or not, as on PostgreSQL.
+		ForeignKeyReferencesCheckedAtCreate: true,
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},

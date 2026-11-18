@@ -149,6 +149,9 @@ func cockroachDB() descriptor.Dialect {
 		// reflowed and qualified: measured on v26.3.2, `SELECT * FROM
 		// public.items` is stored as `SELECT public.items.id, ... FROM
 		// f1.public.items;` (stokaro/ptah#4058).
+		// Measured on CockroachDB v26.4.0: a foreign key to a column no unique key
+		// covers fails at CREATE TABLE with 23503, indexed or not.
+		ForeignKeyReferencesCheckedAtCreate: true,
 		Comparison: descriptor.Comparison{
 			DeclaredSchemas:    true,
 			TimePrecision:      descriptor.TimePrecision{Compared: true, Default: 6},
