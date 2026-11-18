@@ -155,7 +155,7 @@ type Options struct {
 
 // Render renders a finalized Ptah schema IR as deterministic HCL schema text.
 func Render(db *schemamodel.Database, opts Options) (Result, error) {
-	return render(db, opts, "", false)
+	return render(db, opts, "", false, false)
 }
 
 // RenderInspected renders a schema that was read out of a database, declaring
@@ -181,7 +181,7 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 // their IR already carries whatever the author wrote, and synthesizing a
 // schema there would invent one the author did not declare.
 func RenderInspected(db *schemamodel.Database, defaultSchema string, opts Options) (Result, error) {
-	return render(db, opts, strings.TrimSpace(defaultSchema), false)
+	return render(db, opts, strings.TrimSpace(defaultSchema), true, false)
 }
 
 // RenderInspectedForAtlasCLI renders an inspected schema for the
@@ -200,10 +200,10 @@ func RenderInspected(db *schemamodel.Database, defaultSchema string, opts Option
 // The capability is not deleted by the default. Setting
 // [KeepAtlasRefusedBlocksEnvVar] restores every block on this same surface.
 func RenderInspectedForAtlasCLI(db *schemamodel.Database, defaultSchema string, opts Options) (Result, error) {
-	return render(db, opts, strings.TrimSpace(defaultSchema), true)
+	return render(db, opts, strings.TrimSpace(defaultSchema), true, true)
 }
 
-func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAtlasRefusedBlocks bool) (Result, error) {
+func render(db *schemamodel.Database, opts Options, defaultSchema string, inspected, omitAtlasRefusedBlocks bool) (Result, error) {
 	if !opts.HCL.Selected() {
 		return Result{}, hclext.ErrUnselected
 	}
@@ -249,6 +249,7 @@ func render(db *schemamodel.Database, opts Options, defaultSchema string, omitAt
 		documented:             documented,
 		dialect:                dialect,
 		defaultSchema:          defaultSchema,
+		inspected:              inspected,
 		omitAtlasRefusedBlocks: omitAtlasRefusedBlocks,
 		carryStorageParams:     carryStorageParams,
 		owners:                 opts.HCL,
@@ -288,6 +289,10 @@ type renderer struct {
 	// IR is taken as written, which is what every parse-and-re-render caller
 	// wants.
 	defaultSchema string
+	// inspected marks a render of a schema read out of a database, where a
+	// table's charset and collation restate its schema's unless they differ;
+	// see [renderer.tableDefault].
+	inspected bool
 	// omitAtlasRefusedBlocks marks the render as feeding the Atlas-compatible
 	// surface, which leaves out the block types the pinned binary refuses
 	// unless the document names the object; see [renderer.omitRefusedBlock].
@@ -818,6 +823,32 @@ func (r *renderer) renderTables() {
 	}
 }
 
+// schemaCharset and schemaCollate read the default a schema block declares
+// for the tables in it.
+func schemaCharset(schema schemamodel.Schema) string { return schema.Charset }
+
+func schemaCollate(schema schemamodel.Schema) string { return schema.Collate }
+
+// tableDefault reports whether value, a table's charset or collation, is the
+// one the table's schema block declares, which an inspected render leaves to
+// the schema as a read of the server does: a MySQL table created without
+// either takes its database's. The pinned community binary v1.3.0 writes a
+// table's charset and collate in HCL only where they differ from its
+// schema's, measured on MySQL 8.4. A render of a declaration writes what the
+// author wrote.
+func (r *renderer) tableDefault(table schemamodel.Table, value string, of func(schemamodel.Schema) string) bool {
+	if !r.inspected || value == "" {
+		return false
+	}
+	name := r.schemaFor(table.Schema)
+	for _, schema := range r.db.Schemas {
+		if schema.Name == name {
+			return of(schema) == value
+		}
+	}
+	return false
+}
+
 func (r *renderer) renderTable(
 	table schemamodel.Table,
 	fields []schemamodel.Field,
@@ -842,8 +873,12 @@ func (r *renderer) renderTable(
 	r.stringAttr(1, "openapi_name", table.APINames.OpenAPI)
 	r.stringAttr(1, "graphql_name", table.APINames.GraphQL)
 	r.stringAttr(1, "proto_name", table.APINames.Protobuf)
-	r.slotAttr(1, slot, "charset")
-	r.stringAttr(1, "collate", table.Collate)
+	if charset, found := slot.attributes["charset"]; !found || !r.tableDefault(table, charset.Text, schemaCharset) {
+		r.slotAttr(1, slot, "charset")
+	}
+	if !r.tableDefault(table, table.Collate, schemaCollate) {
+		r.stringAttr(1, "collate", table.Collate)
+	}
 	r.stringAttr(1, "comment", table.Comment)
 	r.slotAttr(1, slot, "auto_increment")
 	r.slotAttr(1, slot, "strict")

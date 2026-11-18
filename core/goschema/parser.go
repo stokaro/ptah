@@ -723,6 +723,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		APINames:          targetNames(kv),
 		Schema:            schemaName,
 		Engine:            kv["engine"],
+		Collate:           kv["collate"],
 		Comment:           kv["comment"],
 		PrimaryKey:        primaryKey,
 		PrimaryKeyComment: kv["primary_key_comment"],
