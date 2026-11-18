@@ -71,6 +71,8 @@ import (
 //	domain dc with C, no COLLATE clause            kept       kept
 //	dc COLLATE "POSIX" -> no COLLATE (resets to C) kept       rebuilt
 //	name, C from the type, no COLLATE clause       kept       kept
+//	name[] or dc[], no COLLATE clause              kept       kept
+//	dc with C -> COLLATE "default"                 kept       rebuilt
 //	varchar(20) -> varchar(40) COLLATE "POSIX"     kept       rebuilt (the widening is in place)
 //	default -> "C" with no index on the column     kept       -
 //	text -> varchar(20) COLLATE "C", "C" before    rewritten  rebuilt (the narrowing decides)
@@ -126,13 +128,14 @@ func pgCollationName(word string) string {
 // clause leaves it with. A clause that names a collation gives the column
 // that one, and "default" names the database default. One that names none
 // gives the column the default collation of its new type: C for name, the
-// database default for every other type pgtype knows, and for a domain or any
-// other type it does not know, the collation the column has when the type is
-// the one the column has and the column declares no collation of its own. A
-// column that declares one differs from its type's default, since a column
-// that restates the default reads as one that takes it, so the clause changes
-// it. The two spellings returned are for the message.
-func pgCollationChange(column lintext.BaselineColumn, updated pgtype.Type, sameType bool, clause string, named bool) (from, to string, changed bool) {
+// database default for every other type pgtype knows. A type it does not
+// know reaches here only restated, since pgtype.Compare finds no outcome
+// between two types where one is unknown, so the column keeps the collation
+// it has unless it names one of its own. A column that does differs from its
+// type's default, since a column that restates the default reads as one that
+// takes it, so the clause changes it. The two spellings returned are for the
+// message.
+func pgCollationChange(column lintext.BaselineColumn, updated pgtype.Type, clause string, named bool) (from, to string, changed bool) {
 	target := clause
 	switch {
 	case named && clause == "default":
@@ -140,7 +143,7 @@ func pgCollationChange(column lintext.BaselineColumn, updated pgtype.Type, sameT
 	case named:
 	case updated.Known:
 		target = pgKnownTypeCollation(updated)
-	case sameType && !column.OwnCollation:
+	case !column.OwnCollation:
 		return "", "", false
 	default:
 		return pgCollationLabel(column.Collation), "the default collation of " + updated.Spell(), true
@@ -230,8 +233,7 @@ func resolvePGTypeChanges(file *lintkit.File) []resolvedPGTypeChange {
 		}
 		if change.transition.Outcome == pgtype.Unchanged || change.transition.Outcome == pgtype.InPlace {
 			clause, named := pgClauseCollation(stmt.Words, stmt.SourceWords, site.TypeStart, site.TypeEnd)
-			sameType := change.transition.Outcome == pgtype.Unchanged
-			if from, to, changed := pgCollationChange(column, updated, sameType, clause, named); changed {
+			if from, to, changed := pgCollationChange(column, updated, clause, named); changed {
 				change.transition = pgCollationTransition(from, to,
 					file.Baseline.ColumnIndexes(site.Table.Normalized, lintkit.NormalizeIdent(site.Column)))
 			}

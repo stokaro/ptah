@@ -161,13 +161,14 @@ type BaselineColumn struct {
 	// and a changed one costs an index rebuild or a copy (stokaro/ptah#2957).
 	Collation      string `json:"collation,omitempty"`
 	TableCollation string `json:"table_collation,omitempty"`
-	// OwnCollation reports a column that names a collation of its own
-	// rather than taking its type's default on PostgreSQL, or its table's on
-	// MySQL. A column that restates the default it would take reads as one
-	// that takes it. A PostgreSQL ALTER COLUMN ... TYPE that names no COLLATE
-	// gives the column its type's default, so for a domain, whose default
-	// only the domain knows, a column that declares none keeps the collation
-	// it has.
+	// OwnCollation reports a PostgreSQL column that names a collation of its
+	// own rather than taking its type's default. A column that restates the
+	// default it would take reads as one that takes it. A column an
+	// executable provider reports carries the collation it observed as its
+	// own, so it reads as one whenever it has a collation. The PostgreSQL
+	// rules read it: an ALTER COLUMN ... TYPE that names no COLLATE gives the
+	// column its type's default, and for a domain, whose default the baseline
+	// does not carry, a column that names none keeps the collation it has.
 	OwnCollation bool `json:"own_collation,omitempty"`
 	// TablePartitioned reports that the owning table is a PostgreSQL
 	// declaratively partitioned table (relkind 'p'): a parent, or a partition

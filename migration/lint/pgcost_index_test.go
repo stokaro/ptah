@@ -100,6 +100,13 @@ func TestTypeRewriteRule_NamesTheIndexesACollationChangeRebuilds(t *testing.T) {
 			want:    []string{`TYPE dc changes the collation from "POSIX" to the default collation of dc`, "(orders_body)"},
 		},
 		{
+			name:    "default named on a domain column that takes the domain's C",
+			alter:   `ALTER TABLE orders ALTER COLUMN body TYPE dc COLLATE "default";`,
+			column:  pgCollated("body", "dc", "C"),
+			indexes: []lintext.BaselineIndex{pgIndex("orders_body", "body")},
+			want:    []string{`TYPE dc changes the collation from "C" to the database default`, "(orders_body)"},
+		},
+		{
 			name:    "an unquoted name folds to lower case",
 			alter:   "ALTER TABLE orders ALTER COLUMN body TYPE text COLLATE POSIX;",
 			column:  pgCollated("body", "text", "C"),
@@ -192,6 +199,18 @@ func TestTypeRewriteRule_StaysQuietWhereTheCollationDoesNotMove(t *testing.T) {
 			name:    "a clause with no COLLATE on a name column that takes C",
 			alter:   "ALTER TABLE orders ALTER COLUMN body TYPE name;",
 			column:  pgCollated("body", "name", "C"),
+			indexes: []lintext.BaselineIndex{pgIndex("orders_body", "body")},
+		},
+		{
+			name:    "a clause with no COLLATE on a name[] column that takes C",
+			alter:   "ALTER TABLE orders ALTER COLUMN body TYPE name[];",
+			column:  pgCollated("body", "name[]", "C"),
+			indexes: []lintext.BaselineIndex{pgIndex("orders_body", "body")},
+		},
+		{
+			name:    "a clause with no COLLATE on a dc[] column that takes the domain's",
+			alter:   "ALTER TABLE orders ALTER COLUMN body TYPE dc[];",
+			column:  pgCollated("body", "dc[]", "C"),
 			indexes: []lintext.BaselineIndex{pgIndex("orders_body", "body")},
 		},
 		{

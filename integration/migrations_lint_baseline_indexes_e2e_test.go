@@ -111,6 +111,28 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			wantNot: []string{"] PG301: "},
 		},
 		{
+			name:    "control: a name[] column keeps C when the clause names none",
+			base:    "CREATE TABLE notes (id int, body name[]);\nCREATE INDEX notes_body ON notes (body);\n",
+			change:  "ALTER TABLE notes ALTER COLUMN body TYPE name[];\n",
+			wantNot: []string{"] PG301: "},
+		},
+		{
+			name:    "control: a dc[] column keeps the domain's collation when the clause names none",
+			base:    "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc[]);\nCREATE INDEX notes_body ON notes (body);\n",
+			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dc[];\n",
+			wantNot: []string{"] PG301: "},
+		},
+		{
+			name:   "default named on a domain column that takes the domain's C rebuilds the index",
+			base:   "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc);\nCREATE INDEX notes_body ON notes (body);\n",
+			change: "ALTER TABLE notes ALTER COLUMN body TYPE dc COLLATE \"default\";\n",
+			want: []string{
+				"] PG301: ",
+				`changes the collation from "C" to the database default`,
+				"rebuilds every index on the column (notes_body)",
+			},
+		},
+		{
 			name:   "a unique index rebuilt under a new name over a dropped index's columns",
 			base:   "CREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body_idx ON notes (body);\n",
 			change: "DROP INDEX notes_body_idx;\nCREATE UNIQUE INDEX notes_body_uq ON notes (body);\n",
