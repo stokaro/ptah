@@ -58,6 +58,12 @@ type SetOptions struct {
 	// [migrator.Migrator.WithAtlasStringLinearity]). ptah-compat sets it; the
 	// native `ptah migrations set` keeps the numeric order.
 	TextOrder bool
+	// Version, when not empty, names the target as the directory's file names
+	// spell it, such as v1, and replaces the version argument. Set reads it
+	// with [migrator.Migrator.ResolveVersion] once the directory is read, so a
+	// number no file carries is refused. The native `ptah migrations set`
+	// passes its --version flag here; ptah-compat resolves the version itself.
+	Version string
 }
 
 // Set moves revision metadata to version without executing migration SQL.
@@ -106,6 +112,11 @@ func Set(
 		WithAtlasRevisionVersionComparator(opts.RevisionVersionComparator)
 	if opts.TextOrder {
 		mig = mig.WithAtlasStringLinearity()
+	}
+	if opts.Version != "" {
+		if version, err = mig.ResolveVersion(opts.Version); err != nil {
+			return migrator.AtlasRevisionSetResult{}, fmt.Errorf("invalid migration version %q: %w", opts.Version, err)
+		}
 	}
 
 	result, err := mig.SetRevision(ctx, version)

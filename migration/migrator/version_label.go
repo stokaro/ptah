@@ -15,7 +15,9 @@ import (
 //
 // Such a file runs under an order key above every number in the directory,
 // and the key moves when a numbered file is added, so output that prints the
-// key names a version no file spells.
+// key names a version no file spells. Over a revision table that records
+// numbers, the one such file the table accepts, an Atlas repeatable, is
+// recorded under its key, so there the key is its name.
 func (m *Migrator) VersionLabel(version int64) string {
 	for _, migration := range m.numberlessMigrations() {
 		if migration.Version == version {
@@ -40,8 +42,13 @@ func (m *Migrator) VersionLabels(versions []int64) []string {
 // A decimal number is that number. It is refused when it reaches the order
 // keys of the Atlas files whose version is not a number, since those keys are
 // no file's version. Any other text is the version string of such a file, and
-// the error names the text when no file carries it.
+// the error names the text when no file carries it. Over a revision table that
+// records numbers, a directory holding such a file is refused first, as every
+// command that reads the revisions refuses it.
 func (m *Migrator) ResolveVersion(label string) (int64, error) {
+	if err := m.refuseNumberlessVersionsInANumericTable(); err != nil {
+		return 0, err
+	}
 	numberless := m.numberlessMigrations()
 	if version, err := strconv.ParseInt(label, 10, 64); err == nil {
 		for _, migration := range numberless {
@@ -64,9 +71,11 @@ func (m *Migrator) ResolveVersion(label string) (int64, error) {
 }
 
 // numberlessMigrations returns the provider's Atlas migrations whose version
-// carries no number, lowest order key first.
+// carries no number, lowest order key first, over an Atlas revision table,
+// which records that version. A revision table that records numbers records
+// their order keys, so there it returns none.
 func (m *Migrator) numberlessMigrations() []*Migration {
-	if m == nil || m.migrationProvider == nil {
+	if m == nil || m.migrationProvider == nil || !m.revisionTableFormat.isAtlas() {
 		return nil
 	}
 	var numberless []*Migration

@@ -4,6 +4,7 @@
 package migrateset
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -203,7 +204,8 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 	}
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
-	result, err := atlasmigrate.Set(cmd.Context(), conn, version, atlasmigrate.SetOptions{
+	result, err := atlasmigrate.Set(cmd.Context(), conn, 0, atlasmigrate.SetOptions{
+		Version:           version,
 		Dir:               source.Display,
 		FS:                source.FileSystem,
 		AtlasEnv:          opts.atlasEnv,
@@ -217,7 +219,7 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	if opts.dryRun {
-		writeSetDryRun(cmd.OutOrStdout(), version)
+		writeSetDryRun(cmd.OutOrStdout(), result)
 		return nil
 	}
 	if err := writeSetResult(cmd.OutOrStdout(), result); err != nil {
@@ -226,19 +228,23 @@ func runMigrateSet(cmd *cobra.Command, opts options) error {
 	return nil
 }
 
-func parseSetVersion(value string) (int64, error) {
+// parseSetVersion refuses a --version no directory can name before the command
+// connects: an empty one, a number out of range and a negative number. Any
+// other text names an Atlas file whose version is not a number, such as v1,
+// and the migrator resolves it once it has read the directory.
+func parseSetVersion(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return 0, fmt.Errorf("--%s is required", versionFlag)
+		return "", fmt.Errorf("--%s is required", versionFlag)
 	}
 	version, err := strconv.ParseInt(trimmed, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("--%s %q is not a valid migration version: %w", versionFlag, value, err)
+	if errors.Is(err, strconv.ErrRange) {
+		return "", fmt.Errorf("--%s %q is not a valid migration version: %w", versionFlag, value, err)
 	}
 	if version < 0 {
-		return 0, fmt.Errorf("--%s must not be negative", versionFlag)
+		return "", fmt.Errorf("--%s must not be negative", versionFlag)
 	}
-	return version, nil
+	return trimmed, nil
 }
 
 // writeSetResult renders the change summary.
@@ -252,7 +258,7 @@ func writeSetResult(out io.Writer, result migrator.AtlasRevisionSetResult) error
 			_, err := fmt.Fprintln(out, "No migration is recorded as applied; no changes to be made.")
 			return err
 		}
-		_, err := fmt.Fprintf(out, "Revision state already at version %d; no changes to be made.\n", result.CurrentVersion)
+		_, err := fmt.Fprintf(out, "Revision state already at version %s; no changes to be made.\n", setBoundary(result))
 		return err
 	}
 	if result.CurrentVersion == 0 {
@@ -265,7 +271,7 @@ func writeSetResult(out io.Writer, result migrator.AtlasRevisionSetResult) error
 	if len(result.Removed) > 0 {
 		changes = append(changes, fmt.Sprintf("%d removed", len(result.Removed)))
 	}
-	if _, err := fmt.Fprintf(out, "Current version is %d (%s):\n\n", result.CurrentVersion, strings.Join(changes, ", ")); err != nil {
+	if _, err := fmt.Fprintf(out, "Current version is %s (%s):\n\n", setBoundary(result), strings.Join(changes, ", ")); err != nil {
 		return fmt.Errorf("write migrations set summary: %w", err)
 	}
 	for _, revision := range result.Set {
@@ -305,12 +311,21 @@ func writeClearedSetResult(out io.Writer, result migrator.AtlasRevisionSetResult
 
 // writeSetDryRun says what the run would do, in the same terms the real run
 // reports it.
-func writeSetDryRun(out io.Writer, version int64) {
-	if version == 0 {
+func writeSetDryRun(out io.Writer, result migrator.AtlasRevisionSetResult) {
+	if result.CurrentVersion == 0 {
 		fmt.Fprintln(out, "Dry run: would remove every revision, leaving no migration recorded as applied.")
 		return
 	}
-	fmt.Fprintf(out, "Dry run: would set the revision boundary to version %d.\n", version)
+	fmt.Fprintf(out, "Dry run: would set the revision boundary to version %s.\n", setBoundary(result))
+}
+
+// setBoundary names the boundary a set moved to as its file name spells it, so
+// v1_x.sql reads as v1 rather than as the order key it runs under.
+func setBoundary(result migrator.AtlasRevisionSetResult) string {
+	if result.CurrentRevisionVersion != "" {
+		return result.CurrentRevisionVersion
+	}
+	return strconv.FormatInt(result.CurrentVersion, 10)
 }
 
 // writeSetRevision names a row by the identity the revision table holds, not

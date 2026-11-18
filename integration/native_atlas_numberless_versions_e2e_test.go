@@ -108,22 +108,64 @@ func TestNativeAtlasNumberlessVersionTarget_FailurePath(t *testing.T) {
 	}
 }
 
+// TestNativeAtlasNumberlessVersionSetE2E sets the revision to v1 named by its
+// version, and the summary and the dry run name it the same way.
+func TestNativeAtlasNumberlessVersionSetE2E(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	nativeAtlasDirectory(c, dir)
+
+	dryRun := nativePtah(c, dir, "migrations", "set", "--version", "v1", "--dry-run")
+	set := nativePtah(c, dir, "migrations", "set", "--version", "v1")
+
+	c.Assert(dryRun.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", dryRun.Stderr))
+	c.Assert(dryRun.Stdout, qt.Contains, "Dry run: would set the revision boundary to version v1.\n")
+	c.Assert(set.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", set.Stderr))
+	c.Assert(set.Stdout, qt.Equals, "Current version is v1 (3 set):\n\n  + 1 (a)\n  + 2 (b)\n  + v1 (x)\n\n")
+	c.Assert(revisionTableVersions(c, filepath.Join(dir, "app.db")), qt.DeepEquals, []string{"1", "2", "v1"})
+}
+
+// TestNativeAtlasNumberlessVersionSet_FailurePath refuses --version 3, the
+// order key v1_x.sql runs under, before any row is written.
+func TestNativeAtlasNumberlessVersionSet_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	nativeAtlasDirectory(c, dir)
+
+	got := nativePtah(c, dir, "migrations", "set", "--version", "3")
+
+	c.Assert(got.ExitCode, qt.Equals, 2)
+	c.Assert(got.Stderr, qt.Contains, `invalid migration version "3": no migration file carries version 3: Ptah numbers v1_x.sql after the highest numbered file, so name that file by its version, v1`)
+	c.Assert(sqliteTables(c, filepath.Join(dir, "app.db")), qt.Not(qt.Contains), "atlas_schema_revisions")
+}
+
 // TestNativeAutoFormatOverAnAtlasSumRefusesANumberlessVersion_FailurePath runs
 // the native defaults, --dir-format auto and the Ptah revision table, over a
 // directory atlas.sum covers. atlas.sum makes it an Atlas directory, so
 // README_x.sql is version README there, which the Ptah table cannot keep.
 // The run refuses before any migration runs, rather than apply 1_a.sql and
-// leave README_x.sql out while the sum covers it.
+// leave README_x.sql out while the sum covers it. A revision set refuses too:
+// set --version 2 would record README_x.sql under the number 2, which names
+// another file once a numbered file is added.
 func TestNativeAutoFormatOverAnAtlasSumRefusesANumberlessVersion_FailurePath(t *testing.T) {
-	for _, command := range []string{"up", "status"} {
-		t.Run(command, func(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "up", args: []string{"up"}},
+		{name: "status", args: []string{"status"}},
+		{name: "set to the order key", args: []string{"set", "--version", "2"}},
+		{name: "set to a numbered file", args: []string{"set", "--version", "1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
 			writeVersionOrderFiles(c, dir, compatVersionOrderRunner(c, dir, environmentWithoutPtahVariables()),
 				[]string{"1_a.sql", "README_x.sql"})
 
 			got := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
-				"migrations", command, "--db-url", "sqlite://app.db", "--migrations-dir", "migrations")
+				append(append([]string{"migrations"}, tt.args...), "--db-url", "sqlite://app.db", "--migrations-dir", "migrations")...)
 
 			c.Assert(got.ExitCode, qt.Equals, 2)
 			c.Assert(got.Stderr, qt.Contains, `Atlas migration README_x.sql has version "README", which a revision table that records numbers cannot keep; use the Atlas revision table (--revision-format atlas)`)

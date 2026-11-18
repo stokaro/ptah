@@ -1168,19 +1168,21 @@ argument can name an empty version. See
 
 Native `ptah migrations up --dir-format atlas` runs such a file over the Atlas
 revision table (`--revision-format atlas`). Native output names it by its
-version, so `migrations status` prints `Current Version: v1`, and
-`migrations down --target v1` rolls back to it. A number above every numbered
-file, such as `--target 3` beside `1_a.sql` and `2_b.sql`, is refused, because
-no file carries it.
+version, so `migrations status` prints `Current Version: v1`,
+`migrations down --target v1` rolls back to it, and
+`migrations set --version v1` records the history through it. A number above
+every numbered file, such as `--target 3` or `--version 3` beside `1_a.sql` and
+`2_b.sql`, is refused, because no file carries it.
 
-Over the Ptah revision table, which records a number, the native commands
-refuse the directory before anything runs. Ptah numbers such a file after the
-highest numbered file, so the number changes when you add a numbered file, and
-the row would then name another file. The refusal names the file and points at
-`--revision-format atlas`. It applies to the native defaults too
-(`--dir-format auto`, `--revision-format ptah`) on a directory that holds an
-`atlas.sum`: the sum makes it an Atlas directory, and the sum covers the file,
-so leaving the file out would apply the rest and report success.
+Over the Ptah revision table, which records a number, the native commands refuse
+the directory before anything runs or any row is written, `migrations set`
+included. Ptah numbers such a file after the highest numbered file, so the
+number changes when you add a numbered file, and the row would then name another
+file. The refusal names the file and points at `--revision-format atlas`. It
+applies to the native defaults too (`--dir-format auto`,
+`--revision-format ptah`) on a directory that holds an `atlas.sum`: the sum
+makes it an Atlas directory, and the sum covers the file, so leaving the file
+out would apply the rest and report success.
 
 Ptah refuses only exact near-miss spellings of the four section directives.
 Prose that merely begins with one (`-- +goose up to date`) and unrecognized

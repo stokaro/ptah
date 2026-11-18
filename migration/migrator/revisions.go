@@ -2687,6 +2687,9 @@ func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisio
 		result, err = m.setRevisionLocked(ctx, version)
 		return err
 	})
+	if err == nil && result.CurrentVersion != 0 {
+		result.CurrentRevisionVersion = m.VersionLabel(result.CurrentVersion)
+	}
 	return result, err
 }
 
@@ -2713,6 +2716,9 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 func (m *Migrator) revisionSetStore(ctx context.Context, version int64) (dbschema.HistoryStore, error) {
 	if version < 0 {
 		return nil, fmt.Errorf("migration version must not be negative")
+	}
+	if err := m.refuseNumberlessVersionsInANumericTable(); err != nil {
+		return nil, err
 	}
 	// Zero names no migration on purpose: it is the state where none is
 	// applied, and it is the only way to express that a rollback finished by
