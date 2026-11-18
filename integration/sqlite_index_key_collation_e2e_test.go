@@ -121,7 +121,8 @@ func TestSchemaDiffRefusesAForeignKeyOverACollatedKey_FailurePathE2E(t *testing.
 			result := runSQLiteCollationDiff(c, run.target, root, run.env, "file://parent.sql", url)
 
 			c.Assert(result.ExitCode, qt.Equals, run.wantExit, qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
-			c.Assert(result.Stderr, qt.Equals, run.prefix+sqliteDiffReferenceFaultLine+"\n")
+			c.Assert(result.Stderr, qt.Equals,
+				run.prefix+sqliteDiffReferenceFaultLine+`; unique index "pc" keys code COLLATE NOCASE rather than a column`+"\n")
 			c.Assert(result.Stdout, qt.Equals, "")
 			_, err := db.ExecContext(c.Context(), "INSERT INTO child VALUES (1, 'a')")
 			c.Assert(err, qt.ErrorMatches, `.*foreign key mismatch - "child" referencing "parent".*`)

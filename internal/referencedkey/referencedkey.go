@@ -304,7 +304,7 @@ func refusedUniqueIndexes(
 	columns []string,
 	same func(key, referenced []string) bool,
 ) []string {
-	tableColumns := map[string]bool{}
+	tableColumns := make(map[string]bool)
 	for _, field := range allDatabaseFields(database) {
 		if field.StructName == table.StructName {
 			tableColumns[field.Name] = true
