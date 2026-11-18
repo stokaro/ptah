@@ -53,6 +53,11 @@ type SetOptions struct {
 	// [migrator.WithAtlasVerbatimDescriptions]). ptah-compat sets it; the
 	// native `ptah migrations set` keeps Ptah's description.
 	VerbatimDescriptions bool
+	// TextOrder orders the versions of the set as text, as the community
+	// binary does, so `set 2` keeps 10 and removes v1 (see
+	// [migrator.Migrator.WithAtlasStringLinearity]). ptah-compat sets it; the
+	// native `ptah migrations set` keeps the numeric order.
+	TextOrder bool
 }
 
 // Set moves revision metadata to version without executing migration SQL.
@@ -99,6 +104,9 @@ func Set(
 		WithRevisionTableFormat(revisionFormat).
 		WithMigrationLockName(opts.MigrationLockName).
 		WithAtlasRevisionVersionComparator(opts.RevisionVersionComparator)
+	if opts.TextOrder {
+		mig = mig.WithAtlasStringLinearity()
+	}
 
 	result, err := mig.SetRevision(ctx, version)
 	if err != nil {

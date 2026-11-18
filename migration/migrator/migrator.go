@@ -821,6 +821,9 @@ func (m *Migrator) WithAtlasRevisionVersionComparator(
 // directory a source tool's tokens order (see [Migrator.WithSourceVersions]),
 // the numeric rule decides. [Migrator.WithExecOrder] decides what happens to
 // an out-of-order migration under either rule.
+//
+// [Migrator.SetRevision] orders versions as text under it too: a set to 2
+// keeps 10, which sorts below 2 as text, and removes v1.
 func (m *Migrator) WithAtlasStringLinearity() *Migrator {
 	tmp := *m
 	tmp.atlasStringLinearity = true

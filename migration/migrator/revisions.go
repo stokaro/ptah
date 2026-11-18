@@ -880,6 +880,12 @@ func (m *Migrator) deleteAtlasSetRevisionsAbove(
 		predicate += " AND version <> ?"
 		args = append(args, target.RevisionVersion())
 	}
+	// In text order a version above the boundary as a number may sort below
+	// it as text, as 10 does below 2, so exactRemoved names every row the set
+	// removes and the numeric comparison is left out.
+	if m.setsInTextOrder() && version > 0 {
+		predicate, args = "1 = 0", nil
+	}
 	if len(exactRemoved) > 0 {
 		literals := make([]string, len(exactRemoved))
 		for index, revision := range exactRemoved {
@@ -2693,7 +2699,7 @@ func (m *Migrator) setRevisionLocked(ctx context.Context, version int64) (AtlasR
 		return AtlasRevisionSetResult{CurrentVersion: version}, nil
 	}
 
-	migrations := m.migrationsAtOrBelow(version)
+	migrations := m.setMigrations(version)
 	if store != nil {
 		return m.setProviderRevisionRows(ctx, store, migrations, version)
 	}
@@ -2747,7 +2753,7 @@ func (m *Migrator) checkRevisionSet(ctx context.Context, version int64) error {
 	if err != nil {
 		return err
 	}
-	_, _, err = m.planRevisionSet(existing, m.migrationsAtOrBelow(version), version)
+	_, _, err = m.planRevisionSet(existing, m.setMigrations(version), version)
 	return err
 }
 
@@ -2893,8 +2899,8 @@ func (m *Migrator) atlasRevisionSetChanges(
 			Description:     migration.atlasFilenameDescription(),
 		})
 	}
-	sortAtlasRevisionChanges(result.Removed)
-	sortAtlasRevisionChanges(result.Set)
+	sortAtlasRevisionChanges(result.Removed, m.setsInTextOrder())
+	sortAtlasRevisionChanges(result.Set, m.setsInTextOrder())
 	return result
 }
 
@@ -2922,9 +2928,12 @@ func (m *Migrator) persistedRevisionIdentity(migration *Migration) string {
 // without this a summary lists them by storage order and a reader cannot tell
 // how far down the boundary moved. The identity breaks a tie, which is what
 // orders a numbered repeatable against the version it shares a number with.
-func sortAtlasRevisionChanges(changes []AtlasRevisionChange) {
+//
+// In text order the identity alone orders them, as Atlas lists them: 1, 10, 2,
+// v1.
+func sortAtlasRevisionChanges(changes []AtlasRevisionChange, textOrder bool) { //revive:disable-line:flag-parameter the order is the set's, decided once by its caller
 	slices.SortStableFunc(changes, func(a, b AtlasRevisionChange) int {
-		if a.Version != b.Version {
+		if a.Version != b.Version && !textOrder {
 			return cmp.Compare(a.Version, b.Version)
 		}
 		return cmp.Compare(a.RevisionVersion, b.RevisionVersion)
@@ -2961,6 +2970,10 @@ func (m *Migrator) revisionRemovedByAtlasSet(
 	}
 	if version == 0 {
 		return true
+	}
+	// In text order the rows above the boundary are named in exactRemoved.
+	if m.setsInTextOrder() {
+		return false
 	}
 	return revision.Version > version && !boundaryRowKept(target, key) && !slices.Contains(retired, key)
 }
@@ -3022,6 +3035,52 @@ func (m *Migrator) unnumberedRemovedAtlasRevisions(
 // revision is above it. Each caller below says what nil means where it reads
 // it; none of them may index this slice directly, which is what indexing the
 // last element of an empty selection would do.
+// setsInTextOrder reports whether a revision set orders versions as text,
+// byte for byte, as Atlas does: under it 10 sorts between 1 and 2, and v1
+// above every number. A caller selects it with
+// [Migrator.WithAtlasStringLinearity], over an Atlas revision table of a
+// directory no source tool's tokens order.
+func (m *Migrator) setsInTextOrder() bool {
+	return m.atlasStringLinearity && m.revisionTableFormat.isAtlas() && !m.hasAtlasRevisionVersionMap()
+}
+
+// setMigrations returns the migrations a revision set to version records as
+// applied, the boundary last. In text order they are the migrations whose
+// version sorts at or below the boundary's version as text; otherwise they are
+// [Migrator.migrationsAtOrBelow].
+func (m *Migrator) setMigrations(version int64) []*Migration {
+	target := m.migrationByVersion(version)
+	if !m.setsInTextOrder() || version == 0 || target == nil {
+		return m.migrationsAtOrBelow(version)
+	}
+	bound := target.RevisionVersion()
+	var out []*Migration
+	for _, migration := range m.migrationProvider.Migrations() {
+		if migration.RevisionVersion() <= bound {
+			out = append(out, migration)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b *Migration) int { return strings.Compare(a.RevisionVersion(), b.RevisionVersion()) })
+	return out
+}
+
+// textOrderRemoved names the rows a revision set in text order removes: every
+// recorded migration whose version sorts above the boundary's version as text.
+// Atlas metadata rows are never removed.
+func (m *Migrator) textOrderRemoved(existing []MigrationRevision, target *Migration) []string {
+	if !m.setsInTextOrder() || target == nil {
+		return nil
+	}
+	var removed []string
+	for _, revision := range existing {
+		key := revision.RevisionVersion()
+		if key > target.RevisionVersion() && !m.isAtlasMetadataRevisionVersion(key) {
+			removed = append(removed, key)
+		}
+	}
+	return removed
+}
+
 func setBoundary(migrations []*Migration) *Migration {
 	if len(migrations) == 0 {
 		return nil
