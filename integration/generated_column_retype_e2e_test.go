@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -253,7 +254,7 @@ func TestMigrateDiffRetypesAColumnAGeneratedColumnReadsE2E(t *testing.T) {
 		"--dev-url", postgresScratchDevURL(c, "ptah_generated_retype_dev"))
 
 	c.Assert(diffed.ExitCode, qt.Equals, 0, historyComment(diffed))
-	linted := compat("migrate", "lint", "--dir", dirURL, "--dev-url", postgresScratchDevURL(c, "ptah_generated_retype_lint"), "--latest", "1")
+	linted := compat("migrate", "lint", "--dir", dirURL, "--dev-url", boundToPublic(c, postgresScratchDevURL(c, "ptah_generated_retype_lint")), "--latest", "1")
 	c.Assert(linted.ExitCode, qt.Equals, 0, historyComment(linted))
 	c.Assert(linted.Stdout, qt.Not(qt.Contains), "destructive changes detected")
 	target := includeChildFixture{database: postgresScratchDevURL(c, "ptah_generated_retype_target")}
@@ -265,11 +266,25 @@ func TestMigrateDiffRetypesAColumnAGeneratedColumnReadsE2E(t *testing.T) {
 	c.Assert(target.read(c, generatedRetypeReadBack), qt.Equals, generatedRetypeAfter)
 }
 
+// boundToPublic is raw with its search path set to public, the dev database
+// of a lint bound to that schema. The lint reads the state the migration
+// starts from in that schema, which is what lets it match the qualified names
+// the migration writes.
+func boundToPublic(c *qt.C, raw string) string {
+	c.Helper()
+	parsed, err := url.Parse(raw)
+	c.Assert(err, qt.IsNil)
+	query := parsed.Query()
+	query.Set("search_path", "public")
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
 // TestMigrationsUpAppliesAGeneratedColumnRebuildE2E writes the change with
 // `ptah migrations generate` against a database holding the row and applies it
 // with `ptah migrations up`. The destructive-statement check before the run
-// leaves the rebuild's DROP COLUMN alone, so the run needs no
-// --allow-destructive.
+// reads the target's generated columns and leaves the rebuild's DROP COLUMN
+// alone, so the run needs no --allow-destructive.
 func TestMigrationsUpAppliesAGeneratedColumnRebuildE2E(t *testing.T) {
 	c := qt.New(t)
 	fixture := newGeneratedRetypeFixture(c, generatedRetypeDesired)

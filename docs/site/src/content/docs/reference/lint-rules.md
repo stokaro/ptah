@@ -152,13 +152,21 @@ leave it alone on both surfaces:
   a column an earlier `ALTER TABLE ... ADD` of the migration added. A column
   added with `IF NOT EXISTS` may have been there already, and a rename may give
   a table or a column a name that held data, so neither is skipped.
-- `DS102` and `BC104` also skip a column the migration drops and adds back to
-  the same table as a generated column, `GENERATED ALWAYS AS (...)`. It holds
-  no value of its own, the server computes every row again on the add, and
-  the column keeps its name. A plan writes this shape to change the type of a
-  column a PostgreSQL generated column reads, and the community binary reports
-  nothing for it. A column added back as an identity column is still a drop,
-  since the add numbers the rows again.
+- `DS102` and `BC104` also skip a generated column the migration drops and
+  adds back to the same table as a generated column, `GENERATED ALWAYS AS
+  (...)`. It holds no value a client wrote, the server computes every row
+  again on the add, and the column keeps its name. A plan writes this shape
+  to change the type of a column a PostgreSQL generated column reads. Only the
+  starting state says the column was generated: the same statements over a
+  column that stores what clients wrote delete every value, and a deployed
+  client that writes the column fails, so that drop is reported. The state
+  comes from the dev database; the apply gate of `ptah migrations up` reads
+  the target's generated columns before it refuses. A run with neither, or a
+  statement before the drop that may have changed the column, leaves the drop
+  reported. A column added back as an identity column is still a drop, since
+  the add numbers the rows again. Under `ptah-compat` the add has to be in the
+  drop's own `ALTER TABLE`: the community binary reports the drop where the
+  add is a statement of its own.
 - `DS101` and `BC103` skip a `DROP TABLE IF EXISTS` of a table the starting
   state does not hold. The summary of `ptah-compat migrate lint` counts no
   schema change for it. A schema the state does not hold, and a qualified name

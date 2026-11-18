@@ -355,6 +355,15 @@ type Options struct {
 	// run without a dev database does. See [lintext.BaselineColumn].
 	Baseline []lintext.BaselineColumn
 
+	// GeneratedAtStart carries the generated columns a live database reports
+	// for the version about to run, for a run that reads no starting state:
+	// the apply gate of `ptah migrations up` passes the target's under the
+	// first pending version. Only the drop rules read it, to tell a generated
+	// column a migration adds back as generated from a column that stores what
+	// clients wrote ([lintext.BaselineColumn.Generated]). A version Baseline
+	// describes reads Baseline instead.
+	GeneratedAtStart []lintext.BaselineColumn
+
 	// BaselineDependents carries what reads each column in the state a version
 	// starts from, for the rule that reports a drop by naming what breaks.
 	//

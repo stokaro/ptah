@@ -270,6 +270,7 @@ func baselineColumnsOf(schema *catalog.Database, version int64) []lintext.Baseli
 				NotNull:          strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
 				HasDefault:       strings.TrimSpace(columnDefault(column)) != "",
 				Default:          columnDefault(column),
+				Generated:        column.GeneratedExpression != nil && strings.TrimSpace(*column.GeneratedExpression) != "",
 			})
 		}
 	}

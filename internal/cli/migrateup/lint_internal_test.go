@@ -13,6 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/lintext"
 	"ptah.run/internal/builtintest"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/migrationlintgate"
@@ -202,7 +203,7 @@ func TestLockedDestructiveLintHookUsesLockedPlanVersions(t *testing.T) {
 	}
 	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 	c.Assert(err, qt.IsNil)
-	hook := lockedDestructiveLintHook(builtintest.Runtime(), fsys, policy, "")
+	hook := lockedDestructiveLintHook(builtintest.Runtime(), fsys, policy, "", nil)
 
 	err = hook(context.Background(), migrator.MigrationPlan{
 		Versions: []int64{2},
@@ -229,7 +230,7 @@ func TestLockedDestructiveLintHookAllowsSafeLockedPlan(t *testing.T) {
 	}
 	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 	c.Assert(err, qt.IsNil)
-	hook := lockedDestructiveLintHook(builtintest.Runtime(), fsys, policy, "")
+	hook := lockedDestructiveLintHook(builtintest.Runtime(), fsys, policy, "", nil)
 
 	err = hook(context.Background(), migrator.MigrationPlan{
 		Versions: []int64{1},
@@ -252,4 +253,62 @@ func (f *changingMigrationFS) ReadFile(name string) ([]byte, error) {
 	contents, err := fs.ReadFile(f.files, name)
 	responses := [][]byte{contents, []byte("SELECT 1;\n")}
 	return slices.Clone(responses[min(f.reads[name]-1, 1)]), err
+}
+
+// regeneratedTotalFS drops the column total of orders and adds it back as a
+// generated column.
+var regeneratedTotalFS = fstest.MapFS{
+	"0000000001_orders.up.sql": {
+		Data: []byte("CREATE TABLE orders (id integer, price numeric, qty integer, total numeric);\n"),
+	},
+	"0000000002_total.up.sql": {
+		Data: []byte("ALTER TABLE orders DROP COLUMN total;\n" +
+			"ALTER TABLE orders ADD COLUMN total numeric GENERATED ALWAYS AS (price * qty) STORED;\n"),
+	},
+}
+
+// targetColumns reports total as the target holds it, and records the version
+// the hook asked for.
+type targetColumns struct {
+	generated bool
+	asked     []int64
+}
+
+func (t *targetColumns) read(_ context.Context, version int64) ([]lintext.BaselineColumn, error) {
+	t.asked = append(t.asked, version)
+	return []lintext.BaselineColumn{{Version: version, Schema: "public", Table: "orders", Name: "total", Generated: t.generated}}, nil
+}
+
+// regeneratedTotalHook is the gate over regeneratedTotalFS for a PostgreSQL
+// target that reports total as target holds it.
+func regeneratedTotalHook(c *qt.C, target *targetColumns) migrator.PreMigrationHook {
+	c.Helper()
+	policy, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), regeneratedTotalFS, "postgres")
+	c.Assert(err, qt.IsNil)
+	return lockedDestructiveLintHook(builtintest.Runtime(), regeneratedTotalFS, policy, "", target.read)
+}
+
+// The gate reads the target's generated columns on the path where it would
+// refuse, under the first pending version, and lets a generated column the
+// migration adds back as generated through.
+func TestLockedDestructiveLintHookReadsTheTargetsGeneratedColumns_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	target := &targetColumns{generated: true}
+
+	err := regeneratedTotalHook(c, target)(context.Background(), migrator.MigrationPlan{Versions: []int64{2}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(target.asked, qt.DeepEquals, []int64{2})
+}
+
+// A column that stores what clients wrote, turned into a generated one, is
+// refused after the read.
+func TestLockedDestructiveLintHookReadsTheTargetsGeneratedColumns_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	target := &targetColumns{generated: false}
+
+	err := regeneratedTotalHook(c, target)(context.Background(), migrator.MigrationPlan{Versions: []int64{2}})
+
+	c.Assert(err, qt.ErrorMatches, "(?s)pending migrations contain destructive statements.*0000000002_total.up.sql:1 DS102.*")
+	c.Assert(target.asked, qt.DeepEquals, []int64{2})
 }

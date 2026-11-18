@@ -508,10 +508,11 @@ func tableDropBaselineSubjects(file *File) []int {
 // that the starting state shows the table does not have ([skipsColumn]). No
 // deployed version of the application ever read any of them.
 //
-// It also holds a column the file drops and adds back to the table as a
-// generated column ([regeneratedColumns]). Such a column holds no value of its
-// own: the server computes every row again on the add, and the column keeps
-// its name, so the drop loses nothing a reader could have had.
+// It also holds a generated column the file drops and adds back to the table
+// as a generated column, where the starting state shows it generated
+// ([regeneratedColumns]). Such a column holds no value a client wrote: the
+// server computes every row again on the add, and the column keeps its name,
+// so neither the data nor a deployed reader or writer loses anything.
 //
 // A column added with IF NOT EXISTS may have been there already, so it is not
 // one. A statement that renames, a RENAME or a MySQL CHANGE clause, may give a
@@ -567,24 +568,34 @@ func newColumnDrops(file *File) map[int]map[string]bool {
 }
 
 // regeneratedColumns returns, for each ALTER TABLE statement of file, the
-// folded names of the columns it drops that the same statement or a later one
-// adds back to the same table as a generated column, GENERATED ALWAYS AS
-// (expression). It is the shape of a plan that rebuilds a generated column
-// around a type change of a column it reads, which PostgreSQL refuses while
-// the generated column exists. An identity column, GENERATED ... AS IDENTITY,
-// is not one: its values come from a sequence, and the add numbers the rows
-// again.
+// folded names of the generated columns it drops that the file adds back to
+// the same table as generated columns, GENERATED ALWAYS AS (expression). It is
+// the shape of a plan that rebuilds a generated column around a type change of
+// a column it reads, which PostgreSQL refuses while the generated column
+// exists.
+//
+// Only the starting state can say the dropped column is generated
+// ([generatedAtStart]): the dev database replay's, or for a run with none the
+// generated columns a live database reports ([Options.GeneratedAtStart]). The same statements over a column that stores what
+// clients wrote turn it into a computed one and delete every value, so without
+// a state that shows it, or with a statement before the drop that may have
+// changed it, the drop stays a drop. An identity column, GENERATED ... AS
+// IDENTITY, is not added back as generated: its values come from a sequence,
+// and the add numbers the rows again.
+//
+// The Atlas profile counts an add in the drop's own statement only. The
+// community binary reads a drop and an add of one column in one ALTER TABLE as
+// a change of the column, and reports the drop where the add is a statement of
+// its own (measured with atlas v1.3.0 on PostgreSQL 18), so a later add would
+// make the compatibility surface pass a drop the community binary reports.
 func regeneratedColumns(file *File) map[int]map[string]bool {
 	regenerated := make(map[int]map[string]bool)
-	for i := range file.Statements {
+	for _, i := range regeneratedDropStatements(file) {
 		stmt := &file.Statements[i]
-		if !lintkit.IsAlterTable(stmt.Words) {
-			continue
-		}
 		owner := lintkit.AlterTableReference(stmt.Words, stmt.sourceWords).Normalized
 		for _, subject := range droppedColumnSubjects(stmt.Words, stmt.sourceWords) {
 			column := lintkit.NormalizeIdent(subject.Name)
-			if owner != "" && addsGeneratedColumnFrom(file, i, owner, column) {
+			if addsGeneratedColumnFrom(file, i, owner, column) && generatedAtStart(file, i, owner, column) {
 				if regenerated[i] == nil {
 					regenerated[i] = make(map[string]bool)
 				}
@@ -595,10 +606,118 @@ func regeneratedColumns(file *File) map[int]map[string]bool {
 	return regenerated
 }
 
-// addsGeneratedColumnFrom reports whether the statement at index or a later one
-// adds column to the table owner as a generated column.
+// regeneratedDropStatements returns the ALTER TABLE statements of file that
+// drop a column the file adds back to the same table as generated, whatever
+// the column was: the statements whose drop only the starting state can
+// clear.
+func regeneratedDropStatements(file *File) []int {
+	var statements []int
+	for i := range file.Statements {
+		stmt := &file.Statements[i]
+		if !lintkit.IsAlterTable(stmt.Words) {
+			continue
+		}
+		owner := lintkit.AlterTableReference(stmt.Words, stmt.sourceWords).Normalized
+		if owner == "" {
+			continue
+		}
+		for _, subject := range droppedColumnSubjects(stmt.Words, stmt.sourceWords) {
+			if addsGeneratedColumnFrom(file, i, owner, lintkit.NormalizeIdent(subject.Name)) {
+				statements = append(statements, i)
+				break
+			}
+		}
+	}
+	return statements
+}
+
+// generatedAtStart reports whether the starting state shows column of the
+// table owner as a generated column, with nothing before the statement at
+// index that may have changed either: one that names either, or one whose
+// effect its words do not show, other than a read-only SELECT.
+func generatedAtStart(file *File, index int, owner, column string) bool {
+	readOnly := readOnlySelects(file, index)
+	if opaqueBeforeExcept(file, index, readOnly) || changesNameBefore(file, index, column, readOnly) ||
+		changesNameBefore(file, index, lastComponent(owner), readOnly) {
+		return false
+	}
+	if file.baseline.Unread() {
+		// A live database names the schema of every row it reports, so a
+		// qualified reference is matched as written.
+		held, ok := file.generatedAtStart.Column(owner, column)
+		return ok && held.Generated
+	}
+	table, ok := stateRef(file, owner)
+	if !ok {
+		return false
+	}
+	held, ok := file.baseline.Column(table, column)
+	return ok && held.Generated
+}
+
+// changesNameBefore reports whether a statement before index, other than the
+// read-only ones, names name.
+func changesNameBefore(file *File, index int, name string, readOnly map[int]bool) bool {
+	for i := range index {
+		if readOnly[i] {
+			continue
+		}
+		for _, word := range file.Statements[i].Words {
+			if lintkit.NormalizeIdent(word) == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// readOnlySelects returns the statements before index that read and change
+// nothing: a SELECT with no INTO whose every call is to a function in
+// [readOnlyCalls]. The guard a plan writes ahead of a generated column
+// rebuild is one, and names the column only inside string literals. Any other
+// SELECT may call a function that changes the table out of sight, so it stays
+// opaque.
+func readOnlySelects(file *File, index int) map[int]bool {
+	selects := make(map[int]bool)
+	for i := range index {
+		words := file.Statements[i].Words
+		if len(words) > 0 && words[0] == "SELECT" && !slices.Contains(words, "INTO") && callsOnlyReadOnly(words) {
+			selects[i] = true
+		}
+	}
+	return selects
+}
+
+// readOnlyCalls are the words a read-only SELECT may put in front of an
+// opening parenthesis: the keywords that open a subquery or a list, and the
+// built-in functions that only read.
+var readOnlyCalls = map[string]bool{
+	"select": true, "from": true, "where": true, "and": true, "or": true, "not": true, "in": true,
+	"any": true, "all": true, "exists": true, "as": true, "on": true, "having": true, "coalesce": true,
+	"count": true, "string_agg": true, "pg_describe_object": true, "to_regclass": true, "unnest": true,
+	"to_jsonb": true, "quote_ident": true,
+}
+
+// callsOnlyReadOnly reports whether every identifier in w that an opening
+// parenthesis follows is in [readOnlyCalls].
+func callsOnlyReadOnly(w []string) bool {
+	for i := 0; i+1 < len(w); i++ {
+		if w[i+1] == "(" && lintkit.IdentLike(w[i]) && !readOnlyCalls[strings.ToLower(w[i])] {
+			return false
+		}
+	}
+	return true
+}
+
+// addsGeneratedColumnFrom reports whether the statement at index, or on any
+// profile but the Atlas one a later statement, adds column to the table owner
+// as a generated column.
 func addsGeneratedColumnFrom(file *File, index int, owner, column string) bool {
-	for j := index; j < len(file.Statements); j++ {
+	last := len(file.Statements)
+	if file.compatibility == CompatibilityProfileAtlas {
+		last = index + 1
+	}
+	for j := index; j < last; j++ {
 		stmt := &file.Statements[j]
 		if !lintkit.IsAlterTable(stmt.Words) || lintkit.AlterTableReference(stmt.Words, stmt.sourceWords).Normalized != owner {
 			continue
@@ -653,10 +772,11 @@ func guardedColumnDrops(file *File) []int {
 
 // columnDropBaselineSubjects are the statements DS102 and BC104 read the
 // starting state for: the CREATE TABLE IF NOT EXISTS statements, whose table it
-// may show to be new, and the DROP COLUMN IF EXISTS statements, whose column it
-// may show to be absent.
+// may show to be new, the DROP COLUMN IF EXISTS statements, whose column it
+// may show to be absent, and the drops of a column the file adds back as
+// generated, whose column it may show to be generated already.
 func columnDropBaselineSubjects(file *File) []int {
-	return unionSubjects(file, ifNotExistsCreates, guardedColumnDrops)
+	return unionSubjects(file, ifNotExistsCreates, guardedColumnDrops, regeneratedDropStatements)
 }
 
 // renames reports a statement that may move a name: a RENAME, or a MySQL
