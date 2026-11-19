@@ -536,6 +536,13 @@ line. An optional repeat count and a comment may follow it on the line. The
 `GO` line belongs to no statement, so a `-- ptah:nolint` directive goes after
 it, directly above the statement it suppresses.
 
+## Views that read other views
+
+The server checks a view's query when the view is created. Ptah creates each
+view the plan adds or replaces after the views of the plan its body reads, or
+that `depends_on` names. Views the plan adds that read one another in a ring
+are refused by name before anything is applied, because no order creates them.
+
 ## Triggers
 
 A SQL schema file declares a DML trigger with its table before its timing:

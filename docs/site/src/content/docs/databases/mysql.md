@@ -1410,6 +1410,22 @@ it replayed, so it drops only the databases the session sees, which are the
 ones it created; see
 [A whole dev server](../../atlas/migrate-commands/#a-whole-dev-server).
 
+## Views that read other views
+
+The server checks a view's query when the view is created, so a view has to be
+created after every view it reads. Ptah reads the body of each view the plan
+adds or replaces, and creates a view after the views of the plan it names,
+whatever order the schema file or the names give. `depends_on` adds an order
+the body does not show. A name inside a string is not a reference, and a string
+is read as the server reads it: `"x\"y"` is one string.
+
+Views the plan adds that read one another in a ring are refused before anything
+is applied, because no order creates them:
+
+```text
+error: generate schema apply operations: the views a_v, b_v read one another in a cycle, so none of them can be created first: a_v reads b_v reads a_v
+```
+
 ## Dropping a table read by a view
 
 MySQL accepts `DROP TABLE` when a view still reads the table. The view stays in

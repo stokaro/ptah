@@ -351,6 +351,13 @@ Go export preserves synonym names, schemas, targets, and declaration comments.
 The exported annotation binds the alias to Oracle and SQL Server. Export refuses
 incomplete coverage and an explicit target scope the annotation cannot preserve.
 
+## Views that read other views
+
+The server checks a view's query when the view is created. Ptah creates each
+view the plan adds or replaces after the views of the plan its body reads, or
+that `depends_on` names. Views the plan adds that read one another in a ring
+are refused by name before anything is applied, because no order creates them.
+
 ## Constraints that defer their check
 
 A primary key, a `UNIQUE` and a table's `CHECK` can be `DEFERRABLE`, with
