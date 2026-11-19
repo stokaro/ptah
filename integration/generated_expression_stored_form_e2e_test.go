@@ -191,7 +191,9 @@ func TestGeneratedExpressionInStoredFormPlansNothingE2E(t *testing.T) {
 // difference: amount is numeric(10,2), which a cast to integer rounds, a cast
 // to varchar(3) truncates title, octet_length counts the padding of a char(5)
 // and not of its text, and two integers compare as numbers and their texts as
-// text, so 9 < 10 holds and '9' < '10' does not.
+// text, so 9 < 10 holds and '9' < '10' does not. A backslash escapes nothing
+// in a standard string, so 'p\' ends at its second quote and the spaces after
+// it are in the next literal.
 var storedFormChanged = []struct {
 	name    string
 	live    string
@@ -216,6 +218,11 @@ var storedFormChanged = []struct {
 		name:    "a cast to text that drops the padding of a char",
 		live:    storedFormDerived(`"c" char(5)`, "integer", `octet_length("c")`),
 		desired: storedFormDerived(`"c" char(5)`, "integer", `octet_length("c"::text)`),
+	},
+	{
+		name:    "whitespace in a literal after a backslash",
+		live:    storedFormDerived(`"t" text`, "text", `"t" || 'p\' || ' a  b'`),
+		desired: storedFormDerived(`"t" text`, "text", `"t" || 'p\' || ' a b'`),
 	},
 	{
 		name:    "casts to text that compare two integers as text",

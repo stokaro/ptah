@@ -2320,13 +2320,14 @@ func generatedExpressionIsRewritten(dialect string) bool {
 // uncompared, and on every other target both leave today's textual comparison
 // alone. An arm that separated them would be an arm nothing could reach.
 //
-// A resolved declaration and the catalog are two forms the same server
-// printed, so they are compared exactly, with only the whitespace outside
-// quotes collapsed. The target's rule is not applied to them: it exists to
-// bridge a declaration nobody spelled and the catalog, and a rule that drops a
-// cast hides a change the cast makes. Measured on PostgreSQL 18, `(a < b)` and
-// `(a::text < b::text)` over two integers are stored as two expressions, and
-// with a=9 and b=10 they answer t and f.
+// A resolved declaration and the catalog are two forms pg_get_expr printed, so
+// they are compared byte for byte. Nothing is folded: the target's rule
+// exists to bridge a declaration nobody spelled and the catalog, and a rule
+// that drops a cast hides a change the cast makes. Measured on PostgreSQL 18,
+// `(a < b)` and `(a::text < b::text)` over two integers are stored as two
+// expressions, and with a=9 and b=10 they answer t and f. Collapsing
+// whitespace would need to know where each literal ends, and `'p\'` ends at
+// its second quote under standard_conforming_strings.
 func generatedColumnDiff(
 	genCol schemamodel.Field,
 	dbCol catalog.Column,
@@ -2341,9 +2342,7 @@ func generatedColumnDiff(
 		// The server's own spelling of the declaration, so the two sides are
 		// compared as like with like.
 		declared = resolution.Expression
-		spell = func(expression string) string {
-			return collapseWhitespaceOutsideQuotedSQL(normalize.Expression(expression))
-		}
+		spell = strings.TrimSpace
 	case generatedExpressionIsRewritten(dialect):
 		// A rewriting target with no usable answer. Reporting the textual
 		// difference here is what plans a MODIFY that changes nothing on every

@@ -156,16 +156,6 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 			want:       "",
 		},
 		{
-			name:       "two server spellings differing in whitespace alone are one expression",
-			dialect:    platform.Postgres,
-			declared:   "coalesce(title, 'x')",
-			stored:     "COALESCE(title, 'x')",
-			storedKind: "VIRTUAL",
-			resolution: resolvedAs("COALESCE(title,\n  'x')"),
-			spelling:   postgrescomparison.GeneratedExpressions{},
-			want:       "",
-		},
-		{
 			name:       "whitespace inside a literal is part of the expression",
 			dialect:    platform.Postgres,
 			declared:   "coalesce(title, 'a  b')",
@@ -173,7 +163,30 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 			storedKind: "VIRTUAL",
 			resolution: resolvedAs("COALESCE(title, 'a  b')"),
 			spelling:   postgrescomparison.GeneratedExpressions{},
-			want:       "VIRTUAL COALESCE(title,'a b') -> VIRTUAL COALESCE(title,'a  b')",
+			want:       "VIRTUAL COALESCE(title, 'a b') -> VIRTUAL COALESCE(title, 'a  b')",
+		},
+		{
+			// Under standard_conforming_strings a backslash escapes nothing,
+			// so 'p\' is one literal and the spaces after it are inside the
+			// next one.
+			name:       "whitespace in a literal after a backslash is part of the expression",
+			dialect:    platform.Postgres,
+			declared:   `(t || 'p\') || ' a b'`,
+			stored:     `((t || 'p\'::text) || ' a  b'::text)`,
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs(`((t || 'p\'::text) || ' a b'::text)`),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       `VIRTUAL ((t || 'p\'::text) || ' a  b'::text) -> VIRTUAL ((t || 'p\'::text) || ' a b'::text)`,
+		},
+		{
+			name:       "two server spellings are compared byte for byte",
+			dialect:    platform.Postgres,
+			declared:   "coalesce(title, 'x')",
+			stored:     "COALESCE(title, 'x')",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("COALESCE(title,  'x')"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "VIRTUAL COALESCE(title, 'x') -> VIRTUAL COALESCE(title,  'x')",
 		},
 		{
 			// A cast to text on one side is another stored expression: over
