@@ -838,9 +838,6 @@ func projectLiveStates(
 	if scoped.desiredErr != nil && !emptySelection(scoped.desiredErr) {
 		return scopedApplyStates{}, scoped.desiredErr
 	}
-	if err := atlasfilter.RefuseRewritten(scoped.currentReports.Exclude, scoped.desiredReports.Exclude); err != nil {
-		return scopedApplyStates{}, err
-	}
 	return scoped, nil
 }
 

@@ -206,6 +206,19 @@ type Database struct {
 	// narrowing the description cannot make the database lose the object.
 	RemovalBlockers []RemovalBlocker `json:"-"`
 
+	// OutOfScope holds the parts of tables that an exclude selector took out
+	// of this description while it kept their table in it: columns, indexes,
+	// constraints and triggers, as the read reported them. An object out of
+	// scope is kept as it is, and a comparison never reads one.
+	//
+	// A target that changes a table by writing a new one and copying the
+	// rows into it, as SQLite does, writes the new table from the
+	// declaration, which the selector left without these parts. Its plan
+	// reads them here to carry each part into the new table unchanged, and
+	// refuses where it cannot. It is a fact about the read, not part of the
+	// description, so it is never serialized.
+	OutOfScope TableParts `json:"-"`
+
 	// DatabasePath is the absolute path of the database this read describes,
 	// such as /local, on a target whose statements name some objects by an
 	// absolute path rather than relative to the connection: YDB, whose ALTER
@@ -257,6 +270,21 @@ type Database struct {
 	// Without it the same name is taken as written, as a schema predicted from
 	// a declaration writes it, and folds. The Oracle reader sets it.
 	StoredNames bool `json:"stored_names,omitempty"`
+}
+
+// TableParts are parts of tables, each naming the table it belongs to. A
+// column belongs to the table that holds it in Tables, and such a table holds
+// only those columns. The zero value holds no part.
+type TableParts struct {
+	Tables      []Table      `json:"tables,omitempty"`
+	Indexes     []Index      `json:"indexes,omitempty"`
+	Constraints []Constraint `json:"constraints,omitempty"`
+	Triggers    []Trigger    `json:"triggers,omitempty"`
+}
+
+// IsEmpty reports whether p holds no part.
+func (p TableParts) IsEmpty() bool {
+	return len(p.Tables) == 0 && len(p.Indexes) == 0 && len(p.Constraints) == 0 && len(p.Triggers) == 0
 }
 
 // VirtualTable identifies one SQLite virtual table and the module that owns
@@ -1434,6 +1462,13 @@ type Trigger struct {
 	// clause. Empty means the trigger declares none.
 	OldTable string `json:"old_table,omitempty"`
 	NewTable string `json:"new_table,omitempty"`
+
+	// Definition is the statement that created the trigger, as the server
+	// stores it, on an engine that keeps one: SQLite's sqlite_schema.sql. A
+	// plan that has to create the trigger again exactly as it stands, because
+	// it is out of scope, runs it. Empty from a reader that does not keep one.
+	// It is a reader-only fact and never serialized.
+	Definition string `json:"-"`
 
 	// ExecuteFunction is the name of the function the trigger runs, as the
 	// catalog reports it, qualified with the function's schema when that is not

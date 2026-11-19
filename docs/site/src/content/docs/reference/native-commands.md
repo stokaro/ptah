@@ -444,7 +444,9 @@ through their table in the same way. `--exclude
 'kinds.kinds_code_key[type=constraint]'` keeps the unique constraint
 `kinds_code_key` and the index that enforces it. `[type=index]` names a primary
 key or a `UNIQUE` constraint, whose index carries its name, and `[type=check]`
-names a `CHECK` constraint. A `UNIQUE` written on a column is named by the name
+names a `CHECK` constraint. A foreign key answers `[type=foreign_key]`,
+`[type=foreign-key]` and `[type=fk]`, the spelling the Atlas community binary
+uses. A `UNIQUE` written on a column is named by the name
 the server gives it: `kinds_code_key` on PostgreSQL, the column's name on MySQL
 and MariaDB. A name the target's server does not give the key names another
 object: on PostgreSQL, `kinds.code[type=index]` names an index called `code`,
@@ -471,15 +473,23 @@ from one the author declared, and keeps it in the comparison;
 [MySQL and MariaDB](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind) says how both accounts get the same
 answer.
 
-On SQLite, a selector cannot keep a constraint out of a plan. SQLite changes a
-constraint only by writing a new table from the declaration and copying the
-rows, and the new table would not hold the constraint the selector leaves out.
-So a selector that names only constraints, such as `kinds.code_len[type=check]`
-or `*[type=constraint]`, is refused with a message that says so; exclude the
-whole table instead. A selector that also names an index in the database or the
-declaration, such as `*[type=index]`, still leaves out the indexes it names and
-keeps the constraints in scope. A selector that leaves out every column of a
+On SQLite, a plan changes most of a table by writing a new one from the
+declaration and copying the rows. A part of the table that a selector keeps out
+of scope is not in the declaration, so the plan carries it into the new table
+from its live definition: a column with its values, type, collation, default
+and place among the columns, an index, a trigger, a `CHECK`, a `UNIQUE` and a
+primary key the declaration leaves out. `--exclude 'kinds.extra[type=column]'`
+keeps the column `extra` and its values while the plan drops another column,
+and `*[type=index]` keeps every index, the `UNIQUE` and primary key that SQLite
+enforces with an index included. A selector that leaves out every column of a
 table, such as `kinds.*`, leaves out the table's constraints with them.
+
+Where a part cannot be carried as it stands, the plan names it and stops before
+any change: a trigger or a `CHECK` that reads a column the new table drops, a
+constraint or an index over such a column, a primary key beside the one the
+declaration holds, and a column with `AUTOINCREMENT`, which SQLite takes only on
+the column's own `PRIMARY KEY` clause. Keep the column, or exclude the whole
+table.
 
 On Oracle, a `UNIQUE` constraint written with `USING INDEX` and an index of
 another name leaves that index in the comparison. A desired schema

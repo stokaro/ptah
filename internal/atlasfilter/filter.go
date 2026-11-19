@@ -18,7 +18,6 @@ import (
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/indexbacking"
-	"ptah.run/internal/readscope"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
@@ -64,12 +63,6 @@ type ExcludeReport struct {
 	// and excluded no whole readable kind in the state they were applied to.
 	// The selectors here are well formed, but had no effect.
 	Unmatched []string
-	// Rewritten holds, by selector as written, the refusal for a selector
-	// that named a constraint on a target that changes a constraint only by
-	// writing a new table, and named nothing else in this state. Whether it
-	// is refused depends on every state the command filtered; see
-	// [RefuseRewritten].
-	Rewritten map[string]string
 }
 
 // ExcludeDatabaseReport is [ExcludeDatabaseWithDefaultSchema] plus the report.
@@ -130,7 +123,6 @@ func excludeDatabase(
 
 	state := newExclusionState(filters, defaultSchema, words)
 	state.dialect = target.dialect
-	state.unmatchWholeConstraintKindsWhereRewritten()
 	filtered := cloneDatabase(schema)
 	// Schemas go first: every filter below asks whether its object's schema
 	// left, and that answer has to exist before the first object is judged.
@@ -181,7 +173,112 @@ func excludeDatabase(
 	state.noteRemovalBlockers(filtered.RemovalBlockers)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
+	filtered.OutOfScope = outOfScopeParts(schema, filtered)
 	return filtered, state.report(), nil
+}
+
+// outOfScopeParts returns the parts of the tables filtered keeps that read
+// reported and filtered left out, after the parts read already held out of
+// scope. A part of a table filtered does not keep is not one: a table out of
+// scope is not changed, so nothing has to carry its parts.
+//
+// It compares the two descriptions rather than asking each filter what it
+// removed, so a part every rule below takes out is carried alike: a column a
+// selector names, an index that left with the constraint it enforces, a
+// trigger of a kept table.
+func outOfScopeParts(read, filtered *catalog.Database) catalog.TableParts {
+	kept := make(map[partKey]catalog.Table, len(filtered.Tables))
+	for _, table := range filtered.Tables {
+		kept[partKey{schema: table.Schema, table: table.Name}] = table
+	}
+	keptTable := func(schema, table string) bool {
+		_, ok := kept[partKey{schema: schema, table: table}]
+		return ok
+	}
+	var parts catalog.TableParts
+	for _, table := range read.OutOfScope.Tables {
+		if keptTable(table.Schema, table.Name) {
+			parts.Tables = append(parts.Tables, table.Clone())
+		}
+	}
+	for _, table := range read.Tables {
+		held, ok := kept[partKey{schema: table.Schema, table: table.Name}]
+		if !ok {
+			continue
+		}
+		keptColumns := make(map[string]bool, len(held.Columns))
+		for _, column := range held.Columns {
+			keptColumns[column.Name] = true
+		}
+		left := table.Clone()
+		left.Columns = slices.DeleteFunc(left.Columns, func(column catalog.Column) bool { return keptColumns[column.Name] })
+		if len(left.Columns) > 0 {
+			parts.Tables = append(parts.Tables, left)
+		}
+	}
+	parts.Indexes = leftOutParts(read.OutOfScope.Indexes, read.Indexes, filtered.Indexes, keptTable, indexPartKey, catalog.Index.Clone)
+	parts.Constraints = leftOutParts(read.OutOfScope.Constraints, read.Constraints, filtered.Constraints, keptTable, constraintPartKey, catalog.Constraint.Clone)
+	parts.Triggers = leftOutParts(read.OutOfScope.Triggers, read.Triggers, filtered.Triggers, keptTable, triggerPartKey, catalog.Trigger.Clone)
+	return parts
+}
+
+// partKey names one part of a table, or the table itself with an empty kind
+// and name.
+type partKey struct {
+	schema, table, kind, name string
+}
+
+// leftOutParts returns the parts of read that filtered does not hold, after
+// those carried already, keeping only the parts of a table filtered keeps.
+func leftOutParts[T any](
+	carried, read, filtered []T,
+	keptTable func(schema, table string) bool,
+	key func(T) partKey,
+	clone func(T) T,
+) []T {
+	held := make(map[partKey]bool, len(filtered))
+	for _, part := range filtered {
+		held[key(part)] = true
+	}
+	var left []T
+	for _, part := range carried {
+		if k := key(part); keptTable(k.schema, k.table) {
+			left = append(left, clone(part))
+		}
+	}
+	for _, part := range read {
+		if k := key(part); keptTable(k.schema, k.table) && !held[k] {
+			left = append(left, clone(part))
+		}
+	}
+	return left
+}
+
+func indexPartKey(index catalog.Index) partKey {
+	return partKey{schema: index.Schema, table: index.TableName, kind: "index", name: index.Name}
+}
+
+// constraintPartKey names a constraint by its type and columns as well as its
+// name, because a reader may leave a constraint unnamed.
+func constraintPartKey(constraint catalog.Constraint) partKey {
+	columns := constraint.ColumnNames
+	if len(columns) == 0 && constraint.ColumnName != "" {
+		columns = []string{constraint.ColumnName}
+	}
+	check := ""
+	if constraint.CheckClause != nil {
+		check = *constraint.CheckClause
+	}
+	return partKey{
+		schema: constraint.Schema,
+		table:  constraint.TableName,
+		kind:   constraint.Type,
+		name:   constraint.Name + "\x00" + strings.Join(columns, "\x00") + "\x00" + check,
+	}
+}
+
+func triggerPartKey(trigger catalog.Trigger) partKey {
+	return partKey{schema: trigger.Schema, table: trigger.Table, kind: "trigger", name: trigger.Name}
 }
 
 // unfilteredReport is the report for a state no pattern was ever tested
@@ -259,7 +356,6 @@ func excludeGenerated(
 	state := newExclusionState(filters, defaultSchema, words)
 	state.dialect = dialect
 	state.liveKeys = liveKeys
-	state.unmatchWholeConstraintKindsWhereRewritten()
 	filtered := cloneGenerated(schema)
 	// Same ordering rule as the database side, and the same reason both sides
 	// have this pass at all: a schema removed from one side only would come
@@ -781,10 +877,6 @@ type exclusionState struct {
 	// for which index enforces a constraint. Empty is a target nothing
 	// describes.
 	dialect string
-	// rewritten records each constraint a selector names on a target that
-	// rewrites a table to change a constraint; see
-	// [exclusionState.constraintResourceTypes].
-	rewritten []rewrittenConstraint
 	// liveKeys are the primary keys the database holds, for the desired side
 	// to name a declared key by; see [exclusionState.primaryKeyNameCandidates].
 	liveKeys LiveKeys
@@ -1178,7 +1270,7 @@ func (s *exclusionState) withoutForeignKeyBackingIndexes(
 // that leaves every constraint out.
 func (s *exclusionState) namesConstraint(constraint catalog.Constraint) bool {
 	candidates := s.childNameCandidates(constraint.Schema, constraint.TableName, constraint.Name)
-	types := s.constraintResourceTypes(constraint.Type)
+	types := constraintTypes(constraint.Type)
 	return slices.ContainsFunc(s.patterns, func(pattern resourcePattern) bool {
 		return slices.ContainsFunc(types, func(resourceType string) bool { return pattern.matches(resourceType, candidates...) })
 	})
@@ -1289,8 +1381,7 @@ func (s *exclusionState) filterConstraints(constraints []catalog.Constraint) (ke
 func (s *exclusionState) keepConstraint(constraint catalog.Constraint) bool {
 	foreignSchema := foreignSchemaOrLocal(constraint)
 	candidates := s.childNameCandidates(constraint.Schema, constraint.TableName, constraint.Name)
-	s.noteRewrittenConstraint(constraint.Type, constraint.TableName, fmt.Sprintf("constraint %q", constraint.Name), candidates)
-	named := s.matchesAny(s.constraintResourceTypes(constraint.Type), candidates...)
+	named := s.matchesAny(constraintTypes(constraint.Type), candidates...)
 	if s.tableExcluded(constraint.Schema, constraint.TableName) ||
 		s.tableExcluded(foreignSchema, derefString(constraint.ForeignTable)) ||
 		s.anyColumnExcluded(constraint.Schema, constraint.TableName, constraint.ColumnNamesOrDefault()) ||
@@ -1525,8 +1616,7 @@ func (s *exclusionState) filterGeneratedFields(
 		}
 		if field.Unique {
 			candidates := s.columnUniqueNameCandidates(table, field.Name)
-			s.noteRewrittenConstraint("UNIQUE", table.Name, fmt.Sprintf("the UNIQUE of column %q", field.Name), candidates)
-			if s.matchesAny(s.constraintResourceTypes("UNIQUE"), candidates...) {
+			if s.matchesAny(constraintTypes("UNIQUE"), candidates...) {
 				field.Unique = false
 			}
 		}
@@ -1597,8 +1687,7 @@ func (s *exclusionState) excludeGeneratedPrimaryKeys(
 			continue
 		}
 		candidates := s.primaryKeyNameCandidates(table)
-		s.noteRewrittenConstraint("PRIMARY KEY", table.Name, "the primary key", candidates)
-		if !s.matchesAny(s.constraintResourceTypes("PRIMARY KEY"), candidates...) {
+		if !s.matchesAny(constraintTypes("PRIMARY KEY"), candidates...) {
 			continue
 		}
 		removedKeys[table.StructName] = keyColumns[table.StructName]
@@ -1613,16 +1702,19 @@ func (s *exclusionState) excludeGeneratedPrimaryKeys(
 // left the NOT NULL to the key, and without it the comparison plans DROP NOT
 // NULL, which PostgreSQL refuses while the key stands (SQLSTATE 42P16).
 //
-// SQLite lets a key column hold NULL, and no selector names a key there; see
-// [exclusionState.constraintResourceTypes].
+// A target whose key column can hold NULL, as SQLite's can, keeps the
+// nullability the declaration wrote: the server holds no NOT NULL the key did
+// not write, and adding one would refuse every NULL the column holds.
 func (s *exclusionState) leaveKey(field schemamodel.Field) schemamodel.Field {
 	field.Primary = false
-	field.Nullable = false
+	if !keyNamings.Get(s.dialect).primaryKeyNullable {
+		field.Nullable = false
+	}
 	return field
 }
 
-// keyNaming is what a target's descriptor says about the names its server
-// gives a key and whether it changes a constraint in place.
+// keyNaming is what a target's descriptor says about its server's keys: the
+// names it gives one, and whether a key column holds NOT NULL.
 type keyNaming struct {
 	// uniqueNamedAfterColumn is IndexNaming.UniqueIsIndex: a UNIQUE is an
 	// index, which the server names after its first column.
@@ -1633,20 +1725,20 @@ type keyNaming struct {
 	// primaryKeySuffix is IndexNaming.PrimaryKeySuffix, which names a
 	// primary key the file leaves unnamed `<table>_<suffix>`.
 	primaryKeySuffix string
-	// constraintsRewriteTable is Migration.ConstraintsRewriteTable.
-	constraintsRewriteTable bool
+	// primaryKeyNullable is Comparison.PrimaryKeyNullable: a key column holds
+	// no NOT NULL the declaration did not write.
+	primaryKeyNullable bool
 }
 
 // keyNamings derives each dialect's key naming once per registry. An unknown
-// dialect gets the zero value: a UNIQUE named `<table>_<column>_key`, a
-// primary key named as the declaration names it, and constraints changed in
-// place.
+// dialect gets the zero value: a UNIQUE named `<table>_<column>_key`, and a
+// primary key named as the declaration names it.
 var keyNamings = descriptortable.New(func(described descriptor.Dialect) keyNaming {
 	return keyNaming{
-		uniqueNamedAfterColumn:  described.IndexNaming.UniqueIsIndex,
-		primaryKeyName:          described.Comparison.PrimaryKeyName,
-		primaryKeySuffix:        described.IndexNaming.PrimaryKeySuffix,
-		constraintsRewriteTable: described.Migration.ConstraintsRewriteTable,
+		uniqueNamedAfterColumn: described.IndexNaming.UniqueIsIndex,
+		primaryKeyName:         described.Comparison.PrimaryKeyName,
+		primaryKeySuffix:       described.IndexNaming.PrimaryKeySuffix,
+		primaryKeyNullable:     described.Comparison.PrimaryKeyNullable,
 	}
 })
 
@@ -1762,14 +1854,13 @@ func (s *exclusionState) filterGeneratedConstraints(
 func (s *exclusionState) keepGeneratedConstraint(tables map[string]schemamodel.Table, constraint schemamodel.Constraint) bool {
 	table, ok := generatedConstraintTable(tables, constraint)
 	if !ok {
-		for _, resourceType := range s.constraintResourceTypes(constraint.Type) {
+		for _, resourceType := range constraintTypes(constraint.Type) {
 			s.noteGeneratedChild(resourceType, constraint.StructName, constraint.Table, constraint.Name)
 		}
 		return false
 	}
 	candidates := s.childNameCandidates(table.Schema, table.Name, constraint.Name)
-	s.noteRewrittenConstraint(constraint.Type, table.Name, fmt.Sprintf("constraint %q", constraint.Name), candidates)
-	named := s.matchesAny(s.constraintResourceTypes(constraint.Type), candidates...)
+	named := s.matchesAny(constraintTypes(constraint.Type), candidates...)
 	if s.generatedAnyColumnExcluded(table, generatedConstraintColumns(constraint)) {
 		return false
 	}
@@ -2208,6 +2299,9 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// prove what lies outside the scope.
 		PlanningContextObjects:  schema.PlanningContextObjects,
 		PlanningContextCoverage: schema.PlanningContextCoverage,
+		// What an earlier selector took out of a kept table stays out of
+		// scope; see [outOfScopeParts].
+		OutOfScope: schema.OutOfScope,
 	}
 }
 
@@ -2488,103 +2582,9 @@ func tableResourceTypes(table catalog.Table) []string {
 	return types
 }
 
-// constraintResourceTypes are the selector types that name a constraint of
-// constraintType, on the database side and the desired side alike.
-//
-// Every constraint answers `constraint`. A foreign key also answers
-// `foreign_key` and `foreign-key`, and a CHECK constraint answers `check`, the
-// type the community binary names it by. A primary key and a UNIQUE
-// constraint answer `index` as well: the server enforces each with an index
-// that carries the constraint's name, and the community binary names a UNIQUE
-// constraint as that index. Answering only under `constraint`, the constraint
-// stays in scope when a selector removes its index, and the plan drops the
-// constraint the selector was written to keep.
-//
-// The community binary keeps no constraint under `[type=constraint]`, and no
-// primary key under any selector: it accepts the selector and plans the DROP.
-// Ptah keeps what the selector names, deliberately, and records the
-// divergence on the retained-divergences page.
-//
-// A target that changes a constraint only by writing a new table, as SQLite
-// does, answers no type: the new table is written from the declaration, which
-// the selector left without the constraint, so a constraint the selector
-// keeps out of scope would not survive the rewrite, and a column the rewrite
-// copies would lose the constraint that held its rows to a rule.
-// [exclusionState.noteRewrittenConstraint] records the selector, and the
-// exclusion refuses it.
-func (s *exclusionState) constraintResourceTypes(constraintType string) []string {
-	if keyNamings.Get(s.dialect).constraintsRewriteTable {
-		return nil
-	}
-	return constraintTypes(constraintType)
-}
-
-// rewrittenConstraint is a constraint a selector names on a target that
-// rewrites a table to change a constraint.
-type rewrittenConstraint struct {
-	// pattern is the index of the selector in the state's patterns.
-	pattern     int
-	table, what string
-}
-
-// noteRewrittenConstraint records each selector that names a constraint of
-// constraintType, on table, by one of candidates, where the target rewrites a
-// table to change a constraint. what names the constraint in a refusal.
-func (s *exclusionState) noteRewrittenConstraint(constraintType, table, what string, candidates []string) {
-	if !keyNamings.Get(s.dialect).constraintsRewriteTable || len(candidates) == 0 {
-		return
-	}
-	types := constraintTypes(constraintType)
-	for i, pattern := range s.patterns {
-		if slices.ContainsFunc(types, func(resourceType string) bool { return pattern.matches(resourceType, candidates...) }) {
-			s.rewritten = append(s.rewritten, rewrittenConstraint{pattern: i, table: table, what: what})
-		}
-	}
-}
-
-// report is the state's [ExcludeReport]: the selectors that named nothing,
-// and the refusal for each of them noteRewrittenConstraint recorded. Such a
-// selector was written for the constraint, and a refusal that says why is more
-// use than one that says it matched nothing. A selector that also named an
-// object it can leave out, in this state or another, such as `*[type=index]`
-// naming the table's indexes, keeps its meaning there and leaves the
-// constraints in scope. Excluding the whole table keeps every constraint of
-// it, because a table out of scope is not rewritten.
+// report is the state's [ExcludeReport].
 func (s *exclusionState) report() ExcludeReport {
-	report := ExcludeReport{Unmatched: s.unmatchedSelectors()}
-	for _, rewritten := range s.rewritten {
-		raw := s.patterns[rewritten.pattern].raw
-		if s.matched[rewritten.pattern] {
-			continue
-		}
-		if _, seen := report.Rewritten[raw]; seen {
-			continue
-		}
-		if report.Rewritten == nil {
-			report.Rewritten = make(map[string]string)
-		}
-		report.Rewritten[raw] = fmt.Sprintf("exclude selector %q names %s of table %q, and %s changes a constraint only "+
-			"by writing a new table from the declaration, which would leave the constraint out; exclude the whole table instead",
-			raw, rewritten.what, rewritten.table, s.dialect)
-	}
-	return report
-}
-
-// unmatchWholeConstraintKindsWhereRewritten takes back the match a selector
-// that leaves out every constraint and nothing else, `*[type=constraint]`,
-// starts with, on a target that rewrites a table to change a constraint. Such
-// a target keeps every constraint in scope, so the selector protects nothing
-// there, and it is refused as a selector written for constraints.
-func (s *exclusionState) unmatchWholeConstraintKindsWhereRewritten() {
-	if !keyNamings.Get(s.dialect).constraintsRewriteTable {
-		return
-	}
-	for i, pattern := range s.patterns {
-		kinds := pattern.wholeKinds()
-		if len(kinds) > 0 && !slices.ContainsFunc(kinds, func(kind readscope.Kind) bool { return kind != readscope.Constraints }) {
-			s.matched[i] = false
-		}
-	}
+	return ExcludeReport{Unmatched: s.unmatchedSelectors()}
 }
 
 // leftWithoutColumns reports whether a selector left table without a column.
@@ -2600,13 +2600,29 @@ func (s *exclusionState) leftWithoutColumns(schema, table string) bool {
 	return columnless
 }
 
-// constraintTypes are the selector types a constraint of constraintType
-// answers to on a target that changes constraints in place.
+// constraintTypes are the selector types that name a constraint of
+// constraintType, on the database side and the desired side alike.
+//
+// Every constraint answers `constraint`. A foreign key also answers
+// `foreign_key`, `foreign-key` and `fk`, the type the community binary names
+// it by, and a CHECK constraint answers `check`, the type that binary names it
+// by. A primary key and a UNIQUE constraint answer `index` as well: the server
+// enforces each with an index that carries the constraint's name, and the
+// community binary names a UNIQUE constraint as that index. Answering only
+// under `constraint`, the constraint stays in scope when a selector removes its
+// index, and the plan drops the constraint the selector was written to keep.
+//
+// The community binary keeps no constraint under `[type=constraint]`, and no
+// primary key under any selector: it accepts the selector and plans the DROP.
+// Ptah keeps what the selector names, deliberately, and records the
+// divergence on the retained-divergences page. On SQLite, which changes a
+// constraint only by writing a new table, the planner carries a constraint the
+// selector keeps out of scope into the new table from its live definition.
 func constraintTypes(constraintType string) []string {
 	types := []string{"constraint"}
 	switch indexbacking.KindOf(constraintType) {
 	case indexbacking.ForeignKey:
-		types = append(types, "foreign_key", "foreign-key")
+		types = append(types, "foreign_key", "foreign-key", "fk")
 	case indexbacking.PrimaryKey, indexbacking.Unique:
 		types = append(types, "index")
 	case indexbacking.None:

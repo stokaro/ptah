@@ -1,7 +1,6 @@
 package atlasfilter_test
 
 import (
-	"regexp"
 	"strings"
 	"testing"
 
@@ -401,34 +400,21 @@ func TestExcludeNamesAColumnUniqueByTheServersName(t *testing.T) {
 	}
 }
 
-// SQLite changes a constraint only by writing a new table from the
-// declaration, so a constraint a selector kept out of scope would be left out
-// of the new table. Each side reports a selector that names one and nothing
-// else, and the selector is refused with the remedy, excluding the whole table,
-// which no plan rewrites. A selector that leaves every constraint out and
-// nothing else protects nothing there either.
-func TestExcludeRefusesAConstraintWhereTheTableIsRewritten_FailurePath(t *testing.T) {
-	const remedy = `, and sqlite changes a constraint only by writing a new table from the declaration, ` +
-		`which would leave the constraint out; exclude the whole table instead`
+// SQLite changes a constraint only by writing a new table, and the planner
+// carries a constraint a selector keeps out of scope into the new table from
+// its live definition. So a selector names a constraint there as it does on a
+// target that changes constraints in place, on both sides.
+func TestExcludeNamesAConstraintWhereTheTableIsRewritten_HappyPath(t *testing.T) {
 	tests := []struct {
-		name, exclude, want string
+		name, exclude string
+		// want are the constraints both sides keep.
+		want []string
 	}{
-		{
-			name: "a check", exclude: "public.kinds.code_len[type=check]",
-			want: `exclude selector "public.kinds.code_len[type=check]" names constraint "code_len" of table "kinds"`,
-		},
-		{
-			name: "a unique constraint", exclude: "public.kinds.kinds_code_key[type=constraint]",
-			want: `exclude selector "public.kinds.kinds_code_key[type=constraint]" names constraint "kinds_code_key" of table "kinds"`,
-		},
-		{
-			name: "a primary key", exclude: "public.kinds.kinds_pkey[type=constraint]",
-			want: `exclude selector "public.kinds.kinds_pkey[type=constraint]" names constraint "kinds_pkey" of table "kinds"`,
-		},
-		{
-			name: "every constraint", exclude: "*[type=constraint]",
-			want: `exclude selector "*[type=constraint]" names constraint "kinds_pkey" of table "kinds"`,
-		},
+		{name: "a check", exclude: "public.kinds.code_len[type=check]", want: []string{"kinds_pkey", "kinds_code_key"}},
+		{name: "a unique constraint", exclude: "public.kinds.kinds_code_key[type=constraint]", want: []string{"kinds_pkey", "code_len"}},
+		{name: "a primary key", exclude: "public.kinds.kinds_pkey[type=constraint]", want: []string{"kinds_code_key", "code_len"}},
+		{name: "every key as an index", exclude: "public.kinds.*[type=index]", want: []string{"code_len"}},
+		{name: "every constraint", exclude: "*[type=constraint]", want: make([]string, 0)},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -436,22 +422,22 @@ func TestExcludeRefusesAConstraintWhereTheTableIsRewritten_FailurePath(t *testin
 			scope := realmScope(test.exclude)
 			scope.Dialect = "sqlite"
 
-			_, currentReport, currentErr := atlasfilter.ExcludeDatabaseScopeReport(observedSelectorConstraints(), scope)
-			_, declaredReport, declaredErr := atlasfilter.ExcludeGeneratedScopeReport(desiredSelectorConstraints(), scope)
-			err := atlasfilter.RefuseRewritten(currentReport, declaredReport)
+			current, currentReport, currentErr := atlasfilter.ExcludeDatabaseScopeReport(observedSelectorConstraints(), scope)
+			declared, declaredReport, declaredErr := atlasfilter.ExcludeGeneratedScopeReport(desiredSelectorConstraints(), scope)
 
 			c.Assert(currentErr, qt.IsNil)
 			c.Assert(declaredErr, qt.IsNil)
-			c.Assert(currentReport.Rewritten[test.exclude], qt.Equals, test.want+remedy)
-			c.Assert(declaredReport.Rewritten[test.exclude], qt.Equals, test.want+remedy)
-			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.want+remedy))
+			c.Assert(constraintNames(current.Constraints), qt.DeepEquals, test.want)
+			c.Assert(generatedConstraintNames(declared.Constraints), qt.DeepEquals, test.want)
+			c.Assert(currentReport.Unmatched, qt.IsNil)
+			c.Assert(declaredReport.Unmatched, qt.IsNil)
 		})
 	}
 }
 
-// A column's own UNIQUE carries no name in the declaration, so the refusal
-// names the column it is written on.
-func TestExcludeRefusesAColumnUniqueWhereTheTableIsRewritten_FailurePath(t *testing.T) {
+// A column's own UNIQUE carries no name in the declaration, and on SQLite a
+// selector names it by the name the declaration predicts, as elsewhere.
+func TestExcludeNamesAColumnUniqueWhereTheTableIsRewritten_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{Schema: "public", Name: "kinds", StructName: "Kinds"}},
@@ -460,37 +446,11 @@ func TestExcludeRefusesAColumnUniqueWhereTheTableIsRewritten_FailurePath(t *test
 	scope := realmScope("kinds.kinds_code_key")
 	scope.Dialect = "sqlite"
 
-	_, report, err := atlasfilter.ExcludeGeneratedScopeReport(desired, scope)
+	declared, report, err := atlasfilter.ExcludeGeneratedScopeReport(desired, scope)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(atlasfilter.RefuseRewritten(report), qt.ErrorMatches, regexp.QuoteMeta(`exclude selector "kinds.kinds_code_key" `+
-		`names the UNIQUE of column "code" of table "kinds", and sqlite changes a constraint only by writing a new table `+
-		`from the declaration, which would leave the constraint out; exclude the whole table instead`))
-}
-
-// A selector that names an index in the database state and only the declared
-// primary key in the desired state keeps its meaning for the index, and is not
-// refused: it was written for an object it can leave out.
-func TestExcludeKeepsASelectorThatNamesAnIndexInOneStateWhereTheTableIsRewritten_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	observed := observedSelectorConstraints()
-	observed.Indexes = []catalog.Index{{Schema: "public", TableName: "kinds", Name: "kinds_code", Columns: []string{"code"}}}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{Schema: "public", Name: "kinds", StructName: "Kinds", PrimaryKeyName: "kinds_pk"}},
-		Fields: []schemamodel.Field{{StructName: "Kinds", Name: "id", Type: "integer", Primary: true}},
-	}
-	scope := realmScope("*[type=index]")
-	scope.Dialect = "sqlite"
-
-	current, currentReport, currentErr := atlasfilter.ExcludeDatabaseScopeReport(observed, scope)
-	declared, declaredReport, declaredErr := atlasfilter.ExcludeGeneratedScopeReport(desired, scope)
-
-	c.Assert(currentErr, qt.IsNil)
-	c.Assert(declaredErr, qt.IsNil)
-	c.Assert(current.Indexes, qt.HasLen, 0)
-	c.Assert(declared.Fields[0].Primary, qt.IsTrue)
-	c.Assert(declaredReport.Rewritten, qt.HasLen, 1)
-	c.Assert(atlasfilter.RefuseRewritten(currentReport, declaredReport), qt.IsNil)
+	c.Assert(declared.Fields[0].Unique, qt.IsFalse)
+	c.Assert(report.Unmatched, qt.IsNil)
 }
 
 // A selector that leaves every column of a table out takes the table's
@@ -508,24 +468,5 @@ func TestExcludeLeavesOutTheConstraintsOfATableLeftWithoutColumns_HappyPath(t *t
 	c.Assert(err, qt.IsNil)
 	c.Assert(current.Tables[0].Columns, qt.HasLen, 0)
 	c.Assert(current.Constraints, qt.HasLen, 0)
-	c.Assert(report.Rewritten, qt.IsNil)
-}
-
-// A selector that names a constraint and an object it can leave out keeps its
-// meaning for that object on SQLite, and leaves the constraint in scope.
-func TestExcludeKeepsAConstraintAWildcardNamesWhereTheTableIsRewritten_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	// SQLite reports no index for a key or a UNIQUE constraint a statement
-	// could name, so the table's one index is the one CREATE INDEX made.
-	observed := observedSelectorConstraints()
-	observed.Indexes = []catalog.Index{{Schema: "public", TableName: "kinds", Name: "kinds_code", Columns: []string{"code"}}}
-	scope := realmScope("public.kinds.*[type=index]")
-	scope.Dialect = "sqlite"
-
-	current, report, err := atlasfilter.ExcludeDatabaseScopeReport(observed, scope)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(constraintNames(current.Constraints), qt.DeepEquals, []string{"kinds_pkey", "kinds_code_key", "code_len"})
-	c.Assert(current.Indexes, qt.HasLen, 0)
 	c.Assert(report.Unmatched, qt.IsNil)
 }

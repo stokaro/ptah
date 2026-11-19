@@ -510,9 +510,6 @@ func readExcludedPlanStates(
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}
-	if err := atlasfilter.RefuseRewritten(desiredReport, observedReport); err != nil {
-		return nil, nil, err
-	}
 	atlasfilter.ReportUnmatched(opts.Diagnostics, opts.ExcludeSources, desiredReport, observedReport)
 	return desired, dbSchema, nil
 }

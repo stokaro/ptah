@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"ptah.run/catalog"
 	"ptah.run/core/coverage"
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform/identifier"
@@ -1171,6 +1172,22 @@ type SchemaDiff struct {
 	// It is the read the plan runs against, so a reversal carries the same
 	// read: a rollback recreates a table of that database too.
 	CurrentNotDescribed coverage.Set `json:"-"`
+
+	// CurrentOutOfScope is what an exclude selector took out of the tables
+	// the read this plan runs against kept in scope -- columns, indexes,
+	// constraints and triggers, as the read reported them -- carried once for
+	// the whole diff and off the wire.
+	//
+	// A comparison never reads these parts, so no entry above names one. A
+	// plan that writes a table anew to change it, as SQLite's does, writes
+	// it from the declaration, which the selector left without them, and
+	// the copy would drop each one without a word. This is how such a
+	// planner carries them into the new table as they stand, or refuses the
+	// rewrite where it cannot.
+	//
+	// It is the read the plan runs against, so a reversal carries the same
+	// read.
+	CurrentOutOfScope catalog.TableParts `json:"-"`
 
 	// CurrentDatabasePath is the DatabasePath of the catalog read this plan
 	// runs against, carried once for the whole diff and off the wire: the

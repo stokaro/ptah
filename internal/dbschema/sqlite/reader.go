@@ -1855,11 +1855,12 @@ func viewBody(ddl string) string {
 
 func parseTriggerDDL(name, table, schema, ddl string) catalog.Trigger {
 	trigger := catalog.Trigger{
-		Name:    name,
-		Schema:  schema,
-		Table:   table,
-		ForEach: "ROW",
-		Body:    strings.TrimSpace(ddl),
+		Name:       name,
+		Schema:     schema,
+		Table:      table,
+		ForEach:    "ROW",
+		Body:       strings.TrimSpace(ddl),
+		Definition: strings.TrimSpace(ddl),
 	}
 	matches := triggerHeaderPattern.FindStringSubmatchIndex(ddl)
 	if len(matches) == 0 {

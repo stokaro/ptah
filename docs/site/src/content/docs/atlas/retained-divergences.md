@@ -1044,38 +1044,55 @@ A foreign key on MySQL and MariaDB stands on an index, and the server builds
 one when no index covers the key's columns. The binary excludes the key under
 `[type=fk]` and keeps the index in the plan: `DROP INDEX`, which MySQL 26.10 and
 MariaDB 12.3 refuse with `ERROR 1553` while the key stands, so the apply fails.
-Ptah names the key under `[type=foreign_key]` and leaves the index the server
-built out with it, so the plan is synced. An index the author declared stays in
+Ptah names the key under `[type=fk]`, `[type=foreign_key]` and
+`[type=foreign-key]`, and leaves the index the server built out with it, so the
+plan is synced. An index the author declared stays in
 the plan on both binaries, and the server refuses its removal the same way.
 
-On SQLite, the binary and `ptah-compat` both fail a selector that names a
-`CHECK`, for different reasons. With the table `kinds` holding a column
-`UNIQUE`, the check `code_len` and the index `kinds_code`, a desired schema that
-declares none of them, and `--exclude 'kinds.code_len[type=check]'`, the binary
-v1.3.0 plans `DROP INDEX kinds_code` twice and leaves the `UNIQUE` in place; its
-`schema apply` fails on the second statement with `no such index: kinds_code`
-and leaves the table as it was. Ptah plans the removal of the `UNIQUE`, and
-SQLite removes it only by writing a new table from the declaration, which would
-not hold the `CHECK` the selector keeps. So `ptah-compat` refuses the selector,
-says why, plans nothing and leaves the table as it is. Excluding the whole table
-works on both.
+On SQLite, a plan changes most of a table by writing a new one from the
+declaration and copying the rows, and the declaration holds nothing a selector
+keeps out of scope. The binary v1.3.0 writes the new table without those parts.
+`ptah-compat` carries each one into the new table from its live definition.
+With the table `kinds(id, name, extra)` holding values in `extra`, the index
+`idx_name` and the trigger `trg_name`, and a desired schema that declares `id`
+and `name`, the selectors answer as follows:
 
-The other selectors over the same table answer as follows:
+- `kinds.extra[type=column]`: the binary applies and the values in `extra` are
+  gone; `ptah-compat` keeps the column, its default and its values.
+- `kinds.idx_name[type=index]` and `kinds.trg_name[type=trigger]`: the binary
+  applies without the index or the trigger; `ptah-compat` keeps it.
 
-- `*[type=constraint]` is refused the same way, since every constraint of a
-  SQLite table stays in scope. The binary writes a new table without the
-  `UNIQUE` and the `CHECK`.
-- `*[type=index]` names the index, so it is not refused, and both binaries
-  write the new table.
+With the table holding a column `UNIQUE`, the check `code_len` and the index
+`kinds_code`, and a desired schema that declares none of them:
+
+- `kinds.code_len[type=check]`: the binary plans `DROP INDEX kinds_code` twice,
+  and its `schema apply` fails on the second statement with
+  `no such index: kinds_code`. `ptah-compat` writes the new table with the
+  `CHECK` and without the `UNIQUE`.
+- `*[type=constraint]`: the binary writes a new table without the `UNIQUE` and
+  the `CHECK`. Every constraint stays out of scope on `ptah-compat`, so nothing
+  of the table changes.
+- `*[type=index]`: the binary writes a new table without the `UNIQUE` and drops
+  the index. `ptah-compat` keeps the index and the `UNIQUE`, which SQLite
+  enforces with an index.
 - `kinds.*` leaves out every column of the table and its constraints with them,
   and both binaries plan nothing.
+
+Where a part cannot be carried as it stands, `ptah-compat` refuses the plan and
+names the part: a trigger or a `CHECK` that reads a column the new table drops,
+a constraint or an index over such a column, a primary key beside the one the
+declaration holds, and a column with `AUTOINCREMENT`. With a trigger that reads
+`extra` and a selector that keeps only the trigger, the binary applies and
+leaves the trigger out; `ptah-compat` stops before any change.
 
 **Evidence.** `integration/constraint_selector_e2e_test.go`,
 `integration/exclusion_selector_e2e_test.go`,
 `integration/foreign_key_selector_e2e_test.go`,
 `integration/key_selector_names_e2e_test.go`,
+`integration/sqlite_rebuild_carry_e2e_test.go`,
 `internal/atlasfilter/constraint_selector_test.go`,
-`internal/atlasfilter/foreign_key_backing_test.go`
+`internal/atlasfilter/foreign_key_backing_test.go`,
+`internal/planner/dialects/sqlite/out_of_scope_test.go`
 
 ## One version spelled two ways
 

@@ -457,9 +457,6 @@ func readPlanStates(
 	if err != nil {
 		return planStates{}, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
 	}
-	if err := atlasfilter.RefuseRewritten(desiredReport, currentReport); err != nil {
-		return planStates{}, err
-	}
 	atlasfilter.ReportUnmatched(cmd.ErrOrStderr(), selection.excludeSources, desiredReport, currentReport)
 	current, desired, err = selection.inclusion.Apply(cmd.Context(), conn.Info().Dialect, naming, current, desired)
 	if err != nil {

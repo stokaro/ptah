@@ -655,9 +655,20 @@ func (p *Planner) rebuildTable(
 	if err != nil {
 		return nil, err
 	}
+	semantics := diff.EffectiveIdentifierSemantics(DialectName)
+	carried := outOfScopeOf(diff, *table, semantics)
 
 	createNode := modelast.FromTable(*table, declared.Fields, declared.Enums, DialectName)
 	if err := addInlineConstraints(createNode, *table, declared.Constraints); err != nil {
+		return nil, err
+	}
+	carriedCopies, err := carryColumns(createNode, *table, carried.columns, observed.Table.Columns, semantics)
+	if err != nil {
+		return nil, err
+	}
+	newColumns := rebuiltColumns(declared, carried.columns, semantics)
+	dropped := droppedColumns(observed, newColumns, semantics)
+	if err := carryConstraints(createNode, *table, carried.constraints, newColumns, dropped, semantics); err != nil {
 		return nil, err
 	}
 	createNode.Name = qualifyLikeTable(*table, tempName)
@@ -666,6 +677,7 @@ func (p *Planner) rebuildTable(
 	if err != nil {
 		return nil, err
 	}
+	columns = append(columns, carriedCopies...)
 	if len(columns) == 0 {
 		return nil, unsupportedFeaturef(
 			"rebuilding table %s would retain none of its columns, so the rebuilt table has nothing to copy and "+
@@ -683,7 +695,7 @@ func (p *Planner) rebuildTable(
 		ast.NewRawSQL(rebuild.Rename()),
 	}
 	nodes = append(nodes, p.recreateTableIndexes(*table, declared.Indexes)...)
-	kept, err := recreateKeptIndexes(declared, observed, diff)
+	kept, err := recreateKeptIndexes(declared, slices.Concat(observed.Indexes, carried.indexes), newColumns, diff)
 	if err != nil {
 		return nil, err
 	}
@@ -693,7 +705,39 @@ func (p *Planner) rebuildTable(
 		return nil, err
 	}
 	nodes = append(nodes, triggers...)
+	carriedTriggers, err := carryTriggers(*table, carried.triggers, dropped, semantics)
+	if err != nil {
+		return nil, err
+	}
+	nodes = append(nodes, carriedTriggers...)
 	return nodes, nil
+}
+
+// rebuiltColumns is the identity of every column the rebuilt table holds: the
+// declared ones and the ones an exclude selector keeps out of scope.
+func rebuiltColumns(declared schemacapture.TableDeclaration, carried []catalog.Column, semantics identifier.Semantics) map[string]bool {
+	columns := make(map[string]bool, len(declared.Fields)+len(carried))
+	for _, field := range declared.Fields {
+		if field.StructName == declared.Table.StructName {
+			columns[semantics.ColumnIdentityKey(field.Name)] = true
+		}
+	}
+	for _, column := range carried {
+		columns[semantics.ColumnIdentityKey(column.Name)] = true
+	}
+	return columns
+}
+
+// droppedColumns names the columns of the old table the rebuilt one does not
+// hold.
+func droppedColumns(observed schemacapture.TableObservation, kept map[string]bool, semantics identifier.Semantics) map[string]bool {
+	dropped := make(map[string]bool)
+	for _, column := range observed.Table.Columns {
+		if !kept[semantics.ColumnIdentityKey(column.Name)] {
+			dropped[column.Name] = true
+		}
+	}
+	return dropped
 }
 
 // rebuildTableNameAttempts bounds the search below. A schema holding
@@ -889,12 +933,17 @@ func (p *Planner) recreateTableIndexes(table schemamodel.Table, indexes []schema
 // key. A constraint's automatic index has no text, and the rebuilt table's
 // declaration creates it.
 //
+// An index an exclude selector keeps out of scope is put back the same way:
+// the plan has said nothing about it, so it stays as it is.
+//
 // An index over a column the rebuilt table leaves out cannot be kept, so the
-// plan refuses it by name. An expression key is left to the server, since the
-// columns an expression reads are not recorded.
+// plan refuses it by name. columns is the identity of every column the rebuilt
+// table holds. An expression key is left to the server, since the columns an
+// expression reads are not recorded.
 func recreateKeptIndexes(
 	declared schemacapture.TableDeclaration,
-	observed schemacapture.TableObservation,
+	observed []catalog.Index,
+	columns map[string]bool,
 	diff *difftypes.SchemaDiff,
 ) ([]ast.Node, error) {
 	semantics := diff.EffectiveIdentifierSemantics(DialectName)
@@ -905,15 +954,9 @@ func recreateKeptIndexes(
 	for _, ref := range diff.IndexRemovals() {
 		leaving[semantics.IndexIdentityKey(ref.Name)] = true
 	}
-	columns := make(map[string]bool, len(declared.Fields))
-	for _, field := range declared.Fields {
-		if field.StructName == declared.Table.StructName {
-			columns[semantics.ColumnIdentityKey(field.Name)] = true
-		}
-	}
 
 	var nodes []ast.Node
-	for _, index := range observed.Indexes {
+	for _, index := range observed {
 		if index.Definition == "" || leaving[semantics.IndexIdentityKey(index.Name)] {
 			continue
 		}

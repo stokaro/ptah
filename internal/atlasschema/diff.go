@@ -491,9 +491,6 @@ func checkDiffSelections(fromErr, toErr error, fromReport, toReport atlasfilter.
 	if emptySelection(fromErr) && emptySelection(toErr) {
 		return fromErr
 	}
-	if err := atlasfilter.RefuseRewritten(fromReport, toReport); err != nil {
-		return err
-	}
 	unmatched := writtenSelectors(atlasfilter.UnmatchedAcrossStates(fromReport, toReport), opts.ImplicitExclude)
 	if opts.RefuseUnmatchedExclude && len(unmatched) > 0 {
 		return &atlasfilter.UnmatchedExcludeError{Selectors: unmatched, Sources: opts.ExcludeSources}
