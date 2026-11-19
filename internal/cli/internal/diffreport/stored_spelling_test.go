@@ -14,24 +14,43 @@ import (
 // as orders on Oracle, beside a table whose name needs no quotes.
 func spelledDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		TablesAdded:    difftypes.TableChanges{{Name: `QRICH."""Items"""`}, {Name: "QRICH.KEEP_ME"}},
-		TablesModified: []difftypes.TableDiff{{TableName: `QRICH."""orders"""`, ColumnsAdded: difftypes.ColumnChanges{{Name: `"New"`}}}},
+		TablesAdded: difftypes.TableChanges{{Name: `QRICH."""Items"""`}, {Name: "QRICH.KEEP_ME"}},
+		TablesModified: []difftypes.TableDiff{{
+			TableName:    `QRICH."""orders"""`,
+			ColumnsAdded: difftypes.ColumnChanges{{Name: `"New"`}},
+			ColumnsModified: []difftypes.ColumnDiff{{
+				ColumnName: `"""Label"""`,
+				Changes:    map[string]string{"default": `'"""x"""' -> 'y'`},
+			}},
+		}},
 	}
 }
 
 // TestCategoriesFor_StoredSpelling reports the same diff for each dialect. On
 // Oracle, which allows no quote character in a name, a name quoted twice is
-// written with one pair of quotes, as a refusal and a DROP write it. On
-// PostgreSQL a stored name may hold quote characters, and the doubled quote is
-// how SQL writes one, so the names stay as the diff carries them.
+// written with one pair of quotes, as a refusal and a DROP write it, and a
+// default holding tripled quotes is a string literal that stays as written.
+// On PostgreSQL a stored name may hold quote characters, and the doubled quote
+// is how SQL writes one, so the names stay as the diff carries them.
 func TestCategoriesFor_StoredSpelling(t *testing.T) {
 	tests := []struct {
 		dialect  string
 		added    []string
 		modified []string
+		values   []string
 	}{
-		{dialect: "oracle", added: []string{`QRICH."Items"`, "QRICH.KEEP_ME"}, modified: []string{`QRICH."orders"`}},
-		{dialect: "postgres", added: []string{`QRICH."""Items"""`, "QRICH.KEEP_ME"}, modified: []string{`QRICH."""orders"""`}},
+		{
+			dialect:  "oracle",
+			added:    []string{`QRICH."Items"`, "QRICH.KEEP_ME"},
+			modified: []string{`QRICH."orders"`},
+			values:   []string{`QRICH."orders"."Label": default: '"""x"""' -> 'y'`},
+		},
+		{
+			dialect:  "postgres",
+			added:    []string{`QRICH."""Items"""`, "QRICH.KEEP_ME"},
+			modified: []string{`QRICH."""orders"""`},
+			values:   []string{`QRICH."""orders""".` + `"""Label""": default: '"""x"""' -> 'y'`},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -42,6 +61,7 @@ func TestCategoriesFor_StoredSpelling(t *testing.T) {
 			c.Assert(diffreport.Names(categories), qt.DeepEquals, []string{"tables_added", "tables_modified"})
 			c.Assert(categories[0].Objects, qt.DeepEquals, test.added)
 			c.Assert(categories[1].Objects, qt.DeepEquals, test.modified)
+			c.Assert(categories[1].Values, qt.DeepEquals, test.values)
 		})
 	}
 }

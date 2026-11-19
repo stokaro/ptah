@@ -156,9 +156,10 @@ func (d deferral) applyToForeignKey(reference *ast.ForeignKeyRef) {
 	reference.Initially = d.initially
 }
 
-// applyToKey carries the clauses onto the PRIMARY KEY, UNIQUE or EXCLUDE of
-// kind they follow, and refuses them where the dialect takes none there, as
-// SQLite takes a deferral clause after a foreign key alone.
+// applyToKey carries the clauses onto the PRIMARY KEY, UNIQUE, EXCLUDE or,
+// where the dialect keeps one there, CHECK of kind they follow, and refuses
+// them where the dialect takes none there, as SQLite takes a deferral clause
+// after a foreign key alone.
 func (d deferral) applyToKey(constraint *ast.ConstraintNode, kind string) error {
 	switch {
 	case !d.written:
@@ -275,6 +276,9 @@ func (d deferral) applyToTableElement(constraint *ast.ConstraintNode, kind strin
 		d.applyToForeignKey(constraint.Reference)
 		return nil
 	case checkElement:
+		if d.grammar.Checks {
+			return d.applyToKey(constraint, kind)
+		}
 		return d.refuseOnCheck()
 	case primaryKeyElement, uniqueElement:
 		return d.applyToKey(constraint, kind)

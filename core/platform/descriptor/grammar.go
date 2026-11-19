@@ -248,6 +248,12 @@ type Deferral struct {
 	// LoneInitiallyRefusal says why INITIALLY is refused where no [NOT]
 	// DEFERRABLE comes before it.
 	LoneInitiallyRefusal string `json:"lone_initially_refusal,omitempty"`
+	// Checks reports that a table's CHECK takes a deferral clause after it
+	// and keeps it, as Oracle's does: `CONSTRAINT c CHECK (n > 0) DEFERRABLE
+	// INITIALLY DEFERRED` creates a CHECK whose rows are checked at commit.
+	// Without it, a clause that defers a CHECK is refused, as PostgreSQL
+	// refuses one.
+	Checks bool `json:"checks,omitempty"`
 }
 
 // KeyGrammar states how the engine reads a key or an index declared in a
@@ -673,6 +679,8 @@ func validateConstraintGrammar(grammar Grammar) error {
 		return errors.New("MATCH PARTIAL cannot be both built and refused")
 	case deferral.Refusal != "" && (deferral.KeyRefusal != "" || deferral.LoneInitiallyRefusal != ""):
 		return errors.New("a deferral refusal leaves no deferral clause to refuse after a key or before DEFERRABLE")
+	case deferral.Checks && (deferral.Refusal != "" || deferral.KeyRefusal != ""):
+		return errors.New("a deferral clause after a CHECK cannot be both kept and refused")
 	default:
 		return nil
 	}

@@ -1,6 +1,7 @@
 package schemadiff_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -95,6 +96,20 @@ func TestCompare_GeneratedNameCheck_NotPaired(t *testing.T) {
 			added:    []string{""},
 			removed:  []string{"SYS_C008933"},
 		},
+		{
+			name:     "a deferred CHECK",
+			declared: thingsWithCheck("", "id > 0"),
+			held:     catalog.Constraint{Name: "SYS_C008933", GeneratedName: true, Deferrable: true, Initially: "deferred", CheckClause: new("id > 0")},
+			added:    []string{""},
+			removed:  []string{"SYS_C008933"},
+		},
+		{
+			name:     "a disabled CHECK",
+			declared: thingsWithCheck("", "id > 0"),
+			held:     catalog.Constraint{Name: "SYS_C008933", GeneratedName: true, Disabled: true, CheckClause: new("id > 0")},
+			added:    []string{""},
+			removed:  []string{"SYS_C008933"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -106,6 +121,85 @@ func TestCompare_GeneratedNameCheck_NotPaired(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, test.added)
 			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, test.removed)
+		})
+	}
+}
+
+// TestCompare_CheckDeferralAndEnablement compares a declared CHECK named
+// id_pos with the CHECK of that name an Oracle account holds. A CHECK the
+// server checks at commit, or keeps disabled, is another constraint from the
+// one declared, so the plan replaces it; deferral declared as the server holds
+// it plans nothing. Compared by condition alone, every row plans nothing.
+func TestCompare_CheckDeferralAndEnablement(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared schemamodel.Constraint
+		held     catalog.Constraint
+		// added and removed name the CHECKs the plan adds and drops,
+		// joined by commas.
+		added   string
+		removed string
+	}{
+		{
+			name:     "a deferred CHECK for a plain one",
+			declared: schemamodel.Constraint{},
+			held:     catalog.Constraint{Deferrable: true, Initially: "deferred"},
+			added:    "id_pos",
+			removed:  "ID_POS",
+		},
+		{
+			name:     "a deferrable CHECK for a plain one",
+			declared: schemamodel.Constraint{},
+			held:     catalog.Constraint{Deferrable: true, Initially: "immediate"},
+			added:    "id_pos",
+			removed:  "ID_POS",
+		},
+		{
+			name:     "a plain CHECK for a deferred one",
+			declared: schemamodel.Constraint{Deferrable: true, Initially: "deferred"},
+			held:     catalog.Constraint{},
+			added:    "id_pos",
+			removed:  "ID_POS",
+		},
+		{
+			name:     "another timing",
+			declared: schemamodel.Constraint{Deferrable: true, Initially: "deferred"},
+			held:     catalog.Constraint{Deferrable: true, Initially: "immediate"},
+			added:    "id_pos",
+			removed:  "ID_POS",
+		},
+		{
+			name:     "a disabled CHECK",
+			declared: schemamodel.Constraint{},
+			held:     catalog.Constraint{Disabled: true},
+			added:    "id_pos",
+			removed:  "ID_POS",
+		},
+		{
+			name:     "the same deferral",
+			declared: schemamodel.Constraint{Deferrable: true, Initially: "deferred"},
+			held:     catalog.Constraint{Deferrable: true, Initially: "deferred"},
+		},
+		{
+			name:     "neither defers",
+			declared: schemamodel.Constraint{},
+			held:     catalog.Constraint{},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			declared := thingsWithCheck("id_pos", "id > 0")
+			declared.Constraints[0].Deferrable, declared.Constraints[0].Initially = test.declared.Deferrable, test.declared.Initially
+			held := test.held
+			held.Name, held.CheckClause = "ID_POS", new("id > 0")
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), declared, thingsHolding(held),
+				oracleRead(), nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Join(diff.ConstraintsAdded.Names(), ","), qt.Equals, test.added)
+			c.Assert(strings.Join(diff.ConstraintsRemoved.Names(), ","), qt.Equals, test.removed)
 		})
 	}
 }

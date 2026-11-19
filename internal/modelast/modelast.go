@@ -839,6 +839,8 @@ func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode
 			Type:        ast.CheckConstraint,
 			Name:        constraint.Name,
 			Expression:  constraint.CheckExpression,
+			Deferrable:  constraint.Deferrable,
+			Initially:   constraint.Initially,
 			NotEnforced: constraint.NotEnforced,
 		}
 	default:

@@ -59,6 +59,12 @@ func (c Category) Count() int {
 // can report "no differences" from len(Categories(diff)) == 0 without a second
 // opinion about what counts as a change.
 func Categories(diff *difftypes.SchemaDiff) []Category {
+	return categories(diff, asCarried)
+}
+
+// categories is [Categories] with each name the diff carries written by
+// spell.
+func categories(diff *difftypes.SchemaDiff, spell func(string) string) []Category {
 	if diff == nil {
 		return nil
 	}
@@ -77,8 +83,8 @@ func Categories(diff *difftypes.SchemaDiff) []Category {
 		}
 		categories = append(categories, Category{
 			Name:    categoryName(field),
-			Objects: describeAll(list),
-			Values:  columnValues(list),
+			Objects: respell(describeAll(list), spell),
+			Values:  columnValues(list, spell),
 		})
 	}
 	return categories
@@ -91,33 +97,41 @@ func Categories(diff *difftypes.SchemaDiff) []Category {
 // stored outside the fold as the model spells it, `"orders"`, and a qualified
 // reference quotes that spelling once more, `APP."""orders"""`, because a part
 // holding a quote character is quoted. Such an engine allows no quote
-// character inside a name, so every tripled quote in the report is that second
+// character inside a name, so every tripled quote in a name is that second
 // quoting, and the report writes it once: `APP."orders"`, the spelling a
-// refusal and a DROP name the table by. On every other engine the report keeps
-// the diff's names: there a stored name may hold quote characters, and the
+// refusal and a DROP name the table by. Only names are rewritten: the old and
+// new values a [Category.Values] line reports, such as a default or a CHECK
+// condition, are kept as the diff carries them, since a string literal may hold
+// quote characters on any engine. On every other engine the report keeps the
+// diff's names too: there a stored name may hold quote characters, and the
 // doubled quote is how SQL writes one.
 func CategoriesFor(diff *difftypes.SchemaDiff, dialect string) []Category {
-	categories := Categories(diff)
-	if diff.EffectiveIdentifierSemantics(dialect).UnquotedFold == "" {
-		return categories
+	if diff == nil || diff.EffectiveIdentifierSemantics(dialect).UnquotedFold == "" {
+		return Categories(diff)
 	}
-	for i := range categories {
-		categories[i].Objects = storedSpellings(categories[i].Objects)
-		categories[i].Values = storedSpellings(categories[i].Values)
-	}
-	return categories
+	return categories(diff, storedSpelling)
 }
 
-// tripledQuotes matches a name quoted twice: `"""orders"""`.
+// asCarried returns name as the diff carries it.
+func asCarried(name string) string {
+	return name
+}
+
+// tripledQuotes matches a name part quoted twice: `"""orders"""`.
 var tripledQuotes = regexp.MustCompile(`"""([^"]*)"""`)
 
-// storedSpellings writes each name in lines that is quoted twice with one pair
+// storedSpelling writes each part of name that is quoted twice with one pair
 // of quotes.
-func storedSpellings(lines []string) []string {
-	for i, line := range lines {
-		lines[i] = tripledQuotes.ReplaceAllString(line, `"$1"`)
+func storedSpelling(name string) string {
+	return tripledQuotes.ReplaceAllString(name, `"$1"`)
+}
+
+// respell writes each of names by spell, in place.
+func respell(names []string, spell func(string) string) []string {
+	for i, name := range names {
+		names[i] = spell(name)
 	}
-	return lines
+	return names
 }
 
 // Names returns the category names, for a caller that needs the shape of a
@@ -194,9 +208,10 @@ func categoryName(field reflect.StructField) string {
 }
 
 // columnValues lists the old and new values of the columns a list of modified
-// tables changes. A table with only added or removed columns has no such line: the
-// statements say all there is about those.
-func columnValues(list reflect.Value) []string {
+// tables changes, with the table and column named by spell. A table with only
+// added or removed columns has no such line: the statements say all there is
+// about those.
+func columnValues(list reflect.Value, spell func(string) string) []string {
 	tables, ok := reflect.TypeAssert[[]difftypes.TableDiff](list)
 	if !ok {
 		return nil
@@ -205,7 +220,7 @@ func columnValues(list reflect.Value) []string {
 	for _, table := range tables {
 		for _, column := range table.ColumnsModified {
 			if changes := columnTransitions(column); len(changes) > 0 {
-				lines = append(lines, table.TableName+"."+column.ColumnName+": "+strings.Join(changes, ", "))
+				lines = append(lines, spell(table.TableName)+"."+spell(column.ColumnName)+": "+strings.Join(changes, ", "))
 			}
 		}
 	}

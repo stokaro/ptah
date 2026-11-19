@@ -360,7 +360,7 @@ func renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 		}
 		return "  " + renderNamedForeignKey(constraint.Name, constraint.Columns, constraint.Reference), nil
 	case ast.CheckConstraint:
-		return prefix + "CHECK (" + constraint.Expression + ")", nil
+		return prefix + "CHECK (" + constraint.Expression + ")" + renderKeyDeferral(constraint), nil
 	default:
 		return "", fmt.Errorf("oracle: unsupported constraint type %v", constraint.Type)
 	}

@@ -110,7 +110,9 @@ selects the one created unquoted. It matches the same way on both sides of a
 plan, including a desired side read from a database or declared in a SQL
 file, where a bare `orders` is the table stored as `ORDERS` and is selected by
 `ORDERS`. A selector written with quotes matches nothing. A report names such
-a table the same way a statement does, `APP."orders"`.
+a table the same way a statement does, `APP."orders"`. A selector that names
+nothing as written, where its upper-case spelling names a table, is reported
+with that spelling: `"orders" (the stored name is "ORDERS")`.
 
 Two type mappings are worth knowing because Oracle has no direct equivalent:
 `BOOLEAN` becomes `NUMBER(1)`, with `true` and `false` written as `1` and `0`,
@@ -311,10 +313,10 @@ Go export preserves synonym names, schemas, targets, and declaration comments.
 The exported annotation binds the alias to Oracle and SQL Server. Export refuses
 incomplete coverage and an explicit target scope the annotation cannot preserve.
 
-## Keys that defer their check
+## Constraints that defer their check
 
-A primary key and a `UNIQUE` can be `DEFERRABLE`, with `INITIALLY DEFERRED`
-or `INITIALLY IMMEDIATE`, as a foreign key can. Ptah writes the clause and
+A primary key, a `UNIQUE` and a table's `CHECK` can be `DEFERRABLE`, with
+`INITIALLY DEFERRED` or `INITIALLY IMMEDIATE`, as a foreign key can. Ptah writes the clause and
 reads it back from `ALL_CONSTRAINTS`, measured on Oracle Free 23. A primary
 key Oracle named itself is compared through the table's column flags, which
 cannot defer, so a deferrable one is compared as the table's key instead.
@@ -323,6 +325,11 @@ differs in every database. A change of deferral is a drop and an add. A key
 that is not deferrable reads back with no deferral clause, so `schema inspect`
 writes it as the server stores it and the file compares clean with the account
 it came from.
+
+A `CHECK` written on a column takes no deferral clause; write a deferrable one
+on the table. A `CHECK` whose deferral differs from the declaration is a drop
+and an add, and so is one the account holds `DISABLE`d: no declaration
+disables a `CHECK`, so the plan replaces it with the enabled one declared.
 
 ## Functions and procedures
 

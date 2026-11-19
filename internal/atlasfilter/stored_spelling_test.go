@@ -244,3 +244,73 @@ func TestExclude_QuoteCharactersInAStoredName(t *testing.T) {
 		})
 	}
 }
+
+// TestExclude_NamesTheStoredSpelling excludes from an Oracle read and a
+// declaration that writes its names bare, with selectors that name nothing as
+// written. A selector meets the stored name, so orders names no table where
+// ORDERS does, and the report gives the spelling that names one, with its
+// modifiers as written. A selector whose stored spelling names nothing either
+// gets no spelling, and neither does one on PostgreSQL, which states no fold.
+func TestExclude_NamesTheStoredSpelling(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		exclude string
+		stored  map[string]string
+		message string
+	}{
+		{
+			name:    "a bare name",
+			dialect: "oracle",
+			exclude: "orders",
+			stored:  map[string]string{"orders": "ORDERS"},
+			message: `the --exclude selection matched no objects: "orders" (the stored name is "ORDERS")`,
+		},
+		{
+			name:    "a qualified name",
+			dialect: "oracle",
+			exclude: "app.orders",
+			stored:  map[string]string{"app.orders": "APP.ORDERS"},
+			message: `the --exclude selection matched no objects: "app.orders" (the stored name is "APP.ORDERS")`,
+		},
+		{
+			name:    "a type modifier",
+			dialect: "oracle",
+			exclude: "orders[type=table]",
+			stored:  map[string]string{"orders[type=table]": "ORDERS[type=table]"},
+			message: `the --exclude selection matched no objects: "orders[type=table]" (the stored name is "ORDERS[type=table]")`,
+		},
+		{
+			name:    "a name nothing stores",
+			dialect: "oracle",
+			exclude: "nosuch",
+			message: `the --exclude selection matched no objects: "nosuch"`,
+		},
+		{
+			name:    "no fold",
+			dialect: "postgres",
+			exclude: "Orders",
+			message: `the --exclude selection matched no objects: "Orders"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scope := atlasfilter.Scope{Selections: ownerSelections(), Exclude: []string{test.exclude}, DefaultSchema: "APP", Dialect: test.dialect}
+			read, declared := oracleDeclared()
+
+			_, readReport, readErr := atlasfilter.ScopeDatabaseReport(read, scope)
+			_, declaredReport, declaredErr := atlasfilter.ExcludeGeneratedScopeReport(declared, scope)
+			unmatched := &atlasfilter.UnmatchedExcludeError{
+				Selectors: atlasfilter.UnmatchedAcrossStates(readReport, declaredReport),
+				Stored:    atlasfilter.StoredSpellings(readReport, declaredReport),
+			}
+
+			c.Assert(readErr, qt.IsNil)
+			c.Assert(declaredErr, qt.IsNil)
+			c.Assert(readReport.Stored, qt.DeepEquals, test.stored)
+			c.Assert(declaredReport.Stored, qt.DeepEquals, test.stored)
+			c.Assert(unmatched.Error(), qt.Equals, test.message)
+		})
+	}
+}

@@ -577,9 +577,10 @@ func TestOracleBareDeclaredNameSelectorE2E_HappyPath(t *testing.T) {
 
 // TestOracleBareDeclaredNameSelectorE2E_FailurePath plans the same
 // declaration with the selector orders, which names a table created quoted.
-// Neither side holds one, so schema apply refuses the selection and plans
-// nothing. Matched as written, the selector leaves the declared orders and
-// keeps the account's ORDERS, and the plan drops it.
+// Neither side holds one, so schema apply refuses the selection, names the
+// stored ORDERS as the spelling that names a table, and plans nothing.
+// Matched as written, the selector leaves the declared orders and keeps the
+// account's ORDERS, and the plan drops it.
 func TestOracleBareDeclaredNameSelectorE2E_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -598,6 +599,6 @@ func TestOracleBareDeclaredNameSelectorE2E_FailurePath(t *testing.T) {
 		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--dry-run", "--exclude", "orders")
 
 	c.Assert(err, qt.ErrorMatches, "exit status 2", qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(stderr, qt.Contains, `the --exclude selection matched no objects: "orders"`)
+	c.Assert(stderr, qt.Contains, `the --exclude selection matched no objects: "orders" (the stored name is "ORDERS")`)
 	c.Assert(stdout, qt.Not(qt.Contains), "DROP TABLE")
 }

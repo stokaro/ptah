@@ -8,8 +8,8 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
-	"ptah.run/core/schemacomparison"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
@@ -362,6 +362,10 @@ type UnmatchedExcludeError struct {
 	// Sources names where the run read each selector. The message names that
 	// source, and a selector it does not map is named as --exclude's.
 	Sources ExcludeSources
+	// Stored maps a selector to the spelling that names an object, which the
+	// message gives beside it; see [ExcludeReport.Stored] and
+	// [StoredSpellings]. Nil gives none.
+	Stored map[string]string
 }
 
 // Error names the selectors grouped by their source, in the order each source
@@ -378,9 +382,23 @@ func (e *UnmatchedExcludeError) Error() string {
 	}
 	parts := make([]string, 0, len(selections))
 	for _, selection := range selections {
-		parts = append(parts, selection+" matched no objects: "+quoteSelectors(grouped[selection]))
+		parts = append(parts, selection+" matched no objects: "+e.quoteSelectors(grouped[selection]))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// quoteSelectors quotes each of selectors, followed by the stored spelling
+// that names an object where e knows one.
+func (e *UnmatchedExcludeError) quoteSelectors(selectors []string) string {
+	quoted := make([]string, 0, len(selectors))
+	for _, selector := range selectors {
+		if stored, found := e.Stored[selector]; found {
+			quoted = append(quoted, fmt.Sprintf("%q (the stored name is %q)", selector, stored))
+			continue
+		}
+		quoted = append(quoted, fmt.Sprintf("%q", selector))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // ErrUnmatchedExclude is the sentinel every [UnmatchedExcludeError] matches

@@ -64,6 +64,13 @@ type ExcludeReport struct {
 	// and excluded no whole readable kind in the state they were applied to.
 	// The selectors here are well formed, but had no effect.
 	Unmatched []string
+	// Stored maps a selector of Unmatched to the spelling that names an
+	// object in this state, on a target whose descriptor states an
+	// UnquotedFold: the selector with its letters, outside its brackets, in
+	// the case the catalog stores a bare name in. A selector meets the stored
+	// name as written, so on Oracle items names nothing where ITEMS names the
+	// table a bare items declares. Nil where no such spelling names anything.
+	Stored map[string]string
 	// Rewritten holds, by selector as written, the refusal for a selector
 	// that named a constraint on a target that changes a constraint only by
 	// writing a new table, and named nothing else in this state. Whether it
@@ -130,6 +137,7 @@ func excludeDatabase(
 
 	state := newExclusionState(filters, defaultSchema, words)
 	state.dialect = target.dialect
+	state.foldSelectors(unquotedFold(target.dialect))
 	state.unmatchWholeConstraintKindsWhereRewritten()
 	filtered := cloneDatabase(schema)
 	// Schemas go first: every filter below asks whether its object's schema
@@ -259,6 +267,7 @@ func excludeGenerated(
 	state := newExclusionState(filters, defaultSchema, words)
 	state.dialect = dialect
 	state.fold = unquotedFold(dialect)
+	state.foldSelectors(state.fold)
 	state.liveKeys = liveKeys
 	state.unmatchWholeConstraintKindsWhereRewritten()
 	filtered := cloneGenerated(schema)
@@ -801,7 +810,14 @@ type exclusionState struct {
 	// run. Emptiness is an outcome rather than a shape -- a selector can be
 	// perfectly well formed and still name nothing -- so it cannot be decided
 	// by reading the selector text, only by watching the match.
-	matched         []bool
+	matched []bool
+	// storedGlobs[i] is the glob of patterns[i] with its letters in the case
+	// of the target's UnquotedFold, or empty where that is the glob itself
+	// or the target states no fold. storedMatched[i] records that it named
+	// an object, which [ExcludeReport.Stored] reports for a selector that
+	// named nothing as written.
+	storedGlobs     []string
+	storedMatched   []bool
 	excludedTables  map[tableIdentity]struct{}
 	excludedColumns map[columnIdentity]struct{}
 	// excludedSchemas holds the schemas a selector named. Every object that
@@ -1989,8 +2005,84 @@ func (s *exclusionState) matchesAnyField(resourceTypes []string, field string, n
 				break
 			}
 		}
+		if !s.matched[i] && s.storedSpelling(i) {
+			stored := pattern
+			stored.glob = s.storedGlobs[i]
+			s.storedMatched[i] = slices.ContainsFunc(resourceTypes, func(resourceType string) bool {
+				return stored.matchesField(resourceType, field, names...)
+			})
+		}
 	}
 	return found
+}
+
+// foldSelectors records the glob of each pattern in fold's case, so that a
+// selector that names nothing as written can say which spelling names an
+// object. The empty fold records nothing.
+func (s *exclusionState) foldSelectors(fold identifier.Fold) {
+	if fold == "" {
+		return
+	}
+	s.storedGlobs = make([]string, len(s.patterns))
+	s.storedMatched = make([]bool, len(s.patterns))
+	for i, pattern := range s.patterns {
+		if folded := fold.Apply(pattern.glob); folded != pattern.glob {
+			s.storedGlobs[i] = folded
+		}
+	}
+}
+
+// storedSpelling reports whether patterns[i] has a stored spelling that has
+// not named an object yet.
+func (s *exclusionState) storedSpelling(i int) bool {
+	return s.storedGlobs != nil && s.storedGlobs[i] != "" && !s.storedMatched[i]
+}
+
+// storedSelectors maps each unmatched selector whose stored spelling named an
+// object to that spelling, written as the selector with its letters outside
+// brackets in fold's case.
+func (s *exclusionState) storedSelectors(fold identifier.Fold) map[string]string {
+	var stored map[string]string
+	for i, pattern := range s.patterns {
+		if s.matched[i] || s.storedMatched == nil || !s.storedMatched[i] {
+			continue
+		}
+		if stored == nil {
+			stored = make(map[string]string)
+		}
+		stored[pattern.raw] = foldOutsideBrackets(pattern.raw, fold)
+	}
+	return stored
+}
+
+// foldOutsideBrackets writes selector with its letters outside square
+// brackets in fold's case, leaving a type or field modifier as written.
+func foldOutsideBrackets(selector string, fold identifier.Fold) string {
+	var out strings.Builder
+	depth := 0
+	start := 0
+	for index, r := range selector {
+		switch {
+		case r == '[':
+			if depth == 0 {
+				out.WriteString(fold.Apply(selector[start:index]))
+				start = index
+			}
+			depth++
+		case r == ']' && depth > 0:
+			depth--
+			if depth == 0 {
+				out.WriteString(selector[start : index+1])
+				start = index + 1
+			}
+		}
+	}
+	if depth == 0 {
+		out.WriteString(fold.Apply(selector[start:]))
+	} else {
+		out.WriteString(selector[start:])
+	}
+	return out.String()
 }
 
 func (s *exclusionState) matchesAny(resourceTypes []string, names ...string) bool {
@@ -2002,6 +2094,13 @@ func (s *exclusionState) matchesAny(resourceTypes []string, names ...string) boo
 				found = true
 				break
 			}
+		}
+		if !s.matched[i] && s.storedSpelling(i) {
+			stored := pattern
+			stored.glob = s.storedGlobs[i]
+			s.storedMatched[i] = slices.ContainsFunc(resourceTypes, func(resourceType string) bool {
+				return stored.matches(resourceType, names...)
+			})
 		}
 	}
 	return found
@@ -2575,7 +2674,7 @@ func (s *exclusionState) noteRewrittenConstraint(constraintType, table, what str
 // constraints in scope. Excluding the whole table keeps every constraint of
 // it, because a table out of scope is not rewritten.
 func (s *exclusionState) report() ExcludeReport {
-	report := ExcludeReport{Unmatched: s.unmatchedSelectors()}
+	report := ExcludeReport{Unmatched: s.unmatchedSelectors(), Stored: s.storedSelectors(unquotedFold(s.dialect))}
 	for _, rewritten := range s.rewritten {
 		raw := s.patterns[rewritten.pattern].raw
 		if s.matched[rewritten.pattern] {

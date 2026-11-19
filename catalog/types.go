@@ -913,9 +913,16 @@ type Constraint struct {
 	// `cannot drop inherited constraint` to one on this table. Only readers that
 	// can ask the catalog (pg_constraint) set it.
 	Inherited bool `json:"inherited,omitempty"`
-	// Deferrable reports a foreign key whose check may be postponed to the end
-	// of a transaction, read from pg_constraint.condeferrable.
+	// Deferrable reports a constraint whose check may be postponed to the end
+	// of a transaction, read from pg_constraint.condeferrable on PostgreSQL
+	// and from ALL_CONSTRAINTS.DEFERRABLE on Oracle, where a CHECK may defer
+	// too.
 	Deferrable bool `json:"deferrable,omitempty"`
+	// Disabled reports a constraint the server keeps and checks no row
+	// against, as Oracle's DISABLE does, read from ALL_CONSTRAINTS.STATUS.
+	// No declaration states a disabled constraint, so a disabled CHECK
+	// compares as different from every declared one, and a plan replaces it.
+	Disabled bool `json:"disabled,omitempty"`
 	// GeneratedName reports that the server chose the constraint's name
 	// because its declaration gave none, as Oracle names an unnamed CHECK
 	// SYS_C008933. A comparison pairs such a CHECK with an unnamed declared

@@ -559,6 +559,13 @@ func checkConstraintChanged(
 	if genConstraint.NotEnforced != dbConstraint.NotEnforced {
 		return true
 	}
+	// So is one the server checks at commit, and one it keeps disabled: no
+	// declaration disables a CHECK, so a disabled one is replaced by the
+	// declared CHECK. Oracle changes neither in place for a CHECK, so a
+	// difference is a drop and an add.
+	if deferralChanged(genConstraint, dbConstraint) || dbConstraint.Disabled {
+		return true
+	}
 	dbClause := getStringValue(dbConstraint.CheckClause)
 	if strings.TrimSpace(genConstraint.CheckExpression) == "" || strings.TrimSpace(dbClause) == "" {
 		return false

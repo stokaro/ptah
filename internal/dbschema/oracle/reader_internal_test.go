@@ -332,7 +332,8 @@ func text(value string) sql.NullString {
 // for a NOT DEFERRABLE key; carried into the model, the timing is written out
 // as DEFERRABLE INITIALLY IMMEDIATE, so it is kept only for a deferrable key.
 // GENERATED says whether Oracle chose the name, which lets a comparison pair
-// an unnamed declared CHECK with the one Oracle named SYS_C<n>.
+// an unnamed declared CHECK with the one Oracle named SYS_C<n>, and STATUS
+// whether the server checks rows against the constraint at all.
 func TestNewConstraint_DeferralAndGeneratedName(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -340,6 +341,7 @@ func TestNewConstraint_DeferralAndGeneratedName(t *testing.T) {
 		deferrable    bool
 		initially     string
 		generatedName bool
+		disabled      bool
 	}{
 		{
 			name: "a key that cannot be deferred",
@@ -360,6 +362,16 @@ func TestNewConstraint_DeferralAndGeneratedName(t *testing.T) {
 			row:           constraintRow{name: "SYS_C008933", generated: "GENERATED NAME", kind: "C", condition: "id > 0", deferrable: "NOT DEFERRABLE", deferred: "IMMEDIATE"},
 			generatedName: true,
 		},
+		{
+			name:       "a deferred CHECK",
+			row:        constraintRow{name: "CK_D", generated: "USER NAME", kind: "C", condition: "id > 0", deferrable: "DEFERRABLE", deferred: "DEFERRED", status: "ENABLED"},
+			deferrable: true, initially: "deferred",
+		},
+		{
+			name:     "a disabled CHECK",
+			row:      constraintRow{name: "CK_OFF", generated: "USER NAME", kind: "C", condition: "id > 0", deferrable: "NOT DEFERRABLE", deferred: "IMMEDIATE", status: "DISABLED"},
+			disabled: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -371,6 +383,7 @@ func TestNewConstraint_DeferralAndGeneratedName(t *testing.T) {
 			c.Assert(got.Deferrable, qt.Equals, tt.deferrable)
 			c.Assert(got.Initially, qt.Equals, tt.initially)
 			c.Assert(got.GeneratedName, qt.Equals, tt.generatedName)
+			c.Assert(got.Disabled, qt.Equals, tt.disabled)
 		})
 	}
 }

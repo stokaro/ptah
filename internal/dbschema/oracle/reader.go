@@ -403,6 +403,7 @@ SELECT c.constraint_name,
        NVL(c.delete_rule, ' '),
        c.deferrable,
        c.deferred,
+       c.status,
        col.column_name,
        col.position
 FROM all_constraints c
@@ -459,11 +460,12 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 			deleteRule string
 			deferrable string
 			deferred   string
+			status     string
 			columnName sql.NullString
 			position   sql.NullInt64
 		)
 		if err := rows.Scan(&name, &kind, &desired, &table, &condition, &refName,
-			&deleteRule, &deferrable, &deferred, &columnName, &position); err != nil {
+			&deleteRule, &deferrable, &deferred, &status, &columnName, &position); err != nil {
 			return nil, nil, err
 		}
 		if carriedOnColumns(desired, kind, deferrable) {
@@ -482,6 +484,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 				deleteRule: deleteRule,
 				deferrable: deferrable,
 				deferred:   deferred,
+				status:     status,
 			}, referenced))
 			at = len(constraints) - 1
 			index[name] = at
@@ -507,6 +510,7 @@ type constraintRow struct {
 	deleteRule string
 	deferrable string
 	deferred   string
+	status     string
 }
 
 // newConstraint builds the constraint a row describes.
@@ -522,6 +526,7 @@ func (r *Reader) newConstraint(row constraintRow, referenced map[string]referenc
 		Schema:        r.schema,
 		Type:          constraintTypeWord(row.kind),
 		Deferrable:    row.deferrable == "DEFERRABLE",
+		Disabled:      row.status == "DISABLED",
 		GeneratedName: row.generated == "GENERATED NAME",
 	}
 	// Oracle reports DEFERRED as IMMEDIATE for a constraint that is NOT

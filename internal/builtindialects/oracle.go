@@ -195,9 +195,12 @@ END;`,
 				// "APP"."SEQ"."NEXTVAL"; a qualified one is stored as written.
 				SequencePseudocolumns: []string{"NEXTVAL", "CURRVAL"},
 			},
-			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
-			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
-			Statements: descriptor.StatementGrammar{UserTypes: true},
+			// Oracle Free 23.26 creates `CHECK (n > 0) DEFERRABLE INITIALLY
+			// DEFERRED` deferrable and reports it so in USER_CONSTRAINTS.
+			Constraints: descriptor.ConstraintGrammar{Deferral: descriptor.Deferral{Checks: true}},
+			Keys:        descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+			AlterTable:  descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
+			Statements:  descriptor.StatementGrammar{UserTypes: true},
 		},
 
 		// Clean checks: what internal/migrateclean reads. A dev database is

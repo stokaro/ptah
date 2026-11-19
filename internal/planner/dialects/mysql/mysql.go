@@ -2722,6 +2722,8 @@ func (p *Planner) constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *
 			Type:        ast.CheckConstraint,
 			Name:        add.Name,
 			Expression:  add.CheckExpression,
+			Deferrable:  add.Deferrable,
+			Initially:   add.Initially,
 			NotEnforced: add.NotEnforced,
 		}
 	case "UNIQUE":

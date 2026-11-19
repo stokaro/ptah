@@ -115,3 +115,76 @@ func TestOracleChangeReportE2E(t *testing.T) {
 	c.Assert(compared, qt.Contains, "tables_modified (1): "+schema+`."orders"`)
 	c.Assert(compared, qt.Not(qt.Contains), `"""`)
 }
+
+// TestOracleCheckDeferralE2E applies plain CHECKs to an account holding the
+// same conditions as a deferred named CHECK, a deferred CHECK Oracle named
+// and a disabled one, then declares two of them deferrable. Each plan
+// replaces the CHECKs whose deferral or enablement differs, the account then
+// holds what was declared, and the second apply of each file finds nothing to
+// do. The account's deferrable CHECK is written with its deferral by schema
+// inspect, and the file compares clean with the account. Compared by
+// condition alone, the first plan reports the account synced and leaves the
+// three CHECKs deferred and disabled.
+func TestOracleCheckDeferralE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	binary := filepath.Join(c.TempDir(), "ptah")
+	buildPtah(c, ctx, e2eRepoRoot(t), binary)
+	_, dbURL, conn := oracleCaseSensitiveAccount(c, ctx)
+	runAsAccount(c, ctx, conn, []string{
+		`CREATE TABLE dk (id NUMBER(10) PRIMARY KEY, n NUMBER(10), ` +
+			`CONSTRAINT dk_named CHECK (n > 0) DEFERRABLE INITIALLY DEFERRED, ` +
+			`CHECK (n < 100) DEFERRABLE INITIALLY DEFERRED, CONSTRAINT dk_off CHECK (n <> 50) DISABLE)`,
+	})
+	checks := `SELECT search_condition_vc || ' ' || deferrable || ' ' || deferred || ' ' || status FROM user_constraints ` +
+		`WHERE table_name = 'DK' AND constraint_type = 'C' AND search_condition_vc NOT LIKE '%IS NOT NULL' ORDER BY 1`
+	steps := []struct {
+		declared string
+		want     []string
+	}{
+		{
+			declared: "CREATE TABLE dk (id NUMBER(10) PRIMARY KEY, n NUMBER(10), " +
+				"CONSTRAINT dk_named CHECK (n > 0), CHECK (n < 100), CONSTRAINT dk_off CHECK (n <> 50));\n",
+			want: []string{
+				"n < 100 NOT DEFERRABLE IMMEDIATE ENABLED",
+				"n <> 50 NOT DEFERRABLE IMMEDIATE ENABLED",
+				"n > 0 NOT DEFERRABLE IMMEDIATE ENABLED",
+			},
+		},
+		{
+			declared: "CREATE TABLE dk (id NUMBER(10) PRIMARY KEY, n NUMBER(10), " +
+				"CONSTRAINT dk_named CHECK (n > 0) DEFERRABLE INITIALLY DEFERRED, CHECK (n < 100) DEFERRABLE, " +
+				"CONSTRAINT dk_off CHECK (n <> 50));\n",
+			want: []string{
+				"n < 100 DEFERRABLE IMMEDIATE ENABLED",
+				"n <> 50 NOT DEFERRABLE IMMEDIATE ENABLED",
+				"n > 0 DEFERRABLE DEFERRED ENABLED",
+			},
+		},
+	}
+	for _, step := range steps {
+		schemaPath := writeDeclaredSchema(c, step.declared)
+
+		stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+			"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--auto-approve")
+		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+		c.Assert(stdout, qt.Contains, "DROP CONSTRAINT", qt.Commentf("stdout:\n%s", stdout))
+		c.Assert(accountNames(c, ctx, conn, checks), qt.DeepEquals, step.want)
+
+		again, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+			"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--auto-approve")
+		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", again, stderr))
+		c.Assert(again, qt.Contains, "Schema is synced")
+	}
+
+	inspected, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "inspect", "--db-url", dbURL, "--format", "sql")
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+	c.Assert(inspected, qt.Contains, "CONSTRAINT DK_NAMED CHECK (n > 0) DEFERRABLE INITIALLY DEFERRED")
+
+	compared, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "compare", "--db-url", dbURL, "--schema-file", writeDeclaredSchema(c, inspected))
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", compared, stderr))
+	c.Assert(compared, qt.Contains, "No schema differences detected")
+}
