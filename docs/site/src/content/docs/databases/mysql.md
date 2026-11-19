@@ -179,6 +179,12 @@ SQL:
   `DEFAULT_GENERATED` in `EXTRA`, and `db read` writes the string in quotes.
   A `default` in a Go struct or a YAML schema is such a string, so
   `default="1 + 2"` against a column that holds `(1 + 2)` changes it too.
+- A date or time default of `'now'`, `'today'`, `'tomorrow'` or
+  `'yesterday'` is sent as written. Ptah refuses one only on the PostgreSQL
+  family, where the server stores the moment it creates the table (see
+  [PostgreSQL](../postgresql/#how-a-declaration-is-compared-with-what-the-server-stored)).
+  MySQL 26.10 and MariaDB 12.3 refuse `DATETIME DEFAULT 'now'` themselves,
+  with `ERROR 1067`.
 - `DEFAULT ''` and no default are different defaults, and so are
   `DEFAULT 'NULL'` and `DEFAULT NULL`. MySQL reports the string `NULL`
   without quotes and SQL NULL as no value, and the empty string as an empty

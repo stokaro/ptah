@@ -5,20 +5,20 @@ import (
 	"strings"
 )
 
-// RelativeTimeLiteral reports whether value, a default written as SQL on a
-// column of columnType, is a string that literals names: a date and time
-// input the engine reads as a moment relative to when it reads it, such as
-// PostgreSQL's 'now'. literals is in upper case, as the dialect descriptor
-// states it, and the string is matched without case and surrounding spaces.
+// RelativeTimeLiteral reports whether value, a default written as SQL, is a
+// string that literals names: a date and time input the engine reads as a
+// moment relative to when it reads it, such as PostgreSQL's 'now'. literals is
+// in upper case, as the dialect descriptor states it, and the string is
+// matched without case and surrounding spaces.
 //
 // The string may carry a cast and parentheses, in either order: `'now'`,
 // `'now'::timestamptz`, `('now')` and `('now')::timestamptz` are each the
 // literal, because the engine folds each of them when it creates the table.
-// Only a date or time column holds such a moment; on any other column, and
-// for any value that is not one quoted string, the answer is false.
-func RelativeTimeLiteral(columnType, value string, literals []string) bool {
-	typeName := strings.ToLower(columnType)
-	if len(literals) == 0 || (!strings.Contains(typeName, "date") && !strings.Contains(typeName, "time")) {
+// For any value that is not one quoted string the answer is false. Only a
+// column that holds a moment reads the string as one, so a caller asks
+// [DateTimeType] about the column first.
+func RelativeTimeLiteral(value string, literals []string) bool {
+	if len(literals) == 0 {
 		return false
 	}
 	text := strings.TrimSpace(value)
@@ -37,6 +37,33 @@ func RelativeTimeLiteral(columnType, value string, literals []string) bool {
 		return false
 	}
 	return slices.Contains(literals, strings.ToUpper(strings.TrimSpace(text[1:len(text)-1])))
+}
+
+// dateTimeTypes are the built-in date and time types of the PostgreSQL
+// family, the engines whose descriptors name relative time literals, as a
+// column spells them without a precision.
+var dateTimeTypes = map[string]bool{
+	"date": true, "time": true, "timetz": true, "time without time zone": true, "time with time zone": true,
+	"timestamp": true, "timestamptz": true, "timestamp without time zone": true, "timestamp with time zone": true,
+}
+
+// DateTimeType reports whether spelling names a built-in date or time type of
+// the PostgreSQL family, without regard to case, a pg_catalog qualifier or a
+// precision: `TIMESTAMPTZ`, `timestamp(3) with time zone` and
+// `pg_catalog.date` each do. Any other name answers false, an array and a type
+// somebody created included: resolving a created type, such as a domain, is
+// the caller's. An enum named update_kind holds no moment, whatever its name
+// says.
+func DateTimeType(spelling string) bool {
+	name := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(spelling)), "pg_catalog.")
+	if open := strings.IndexByte(name, '('); open >= 0 {
+		end := strings.IndexByte(name[open:], ')')
+		if end < 0 {
+			return false
+		}
+		name = name[:open] + " " + name[open+end+1:]
+	}
+	return dateTimeTypes[strings.Join(strings.Fields(name), " ")]
 }
 
 // enclosed reports whether text is one pair of parentheses around the rest,
