@@ -76,3 +76,14 @@ func PreviousType(diff difftypes.ColumnDiff) string {
 	}
 	return strings.TrimSpace(before)
 }
+
+// PreviousIdentity is the identity generation the column holds before the change
+// colDiff records, from its `identity` entry, and empty where the column holds none or
+// the identity does not change.
+func PreviousIdentity(colDiff difftypes.ColumnDiff) string {
+	before, _, found := strings.Cut(colDiff.Changes["identity"], " -> ")
+	if !found {
+		return ""
+	}
+	return strings.TrimSpace(before)
+}

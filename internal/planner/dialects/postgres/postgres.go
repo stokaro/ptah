@@ -969,7 +969,7 @@ func (p *Planner) modifyExistingTableColumns(
 					TypeNarrowingKnown:    colDiff.PreviousType != "",
 					PreviousNullable:      previousColumnNullable(colDiff.Changes["nullable"]),
 					HasPreviousNullable:   colDiff.Changes["nullable"] != "",
-					PreviousIdentity:      previousColumnType(colDiff.Changes["identity"]),
+					PreviousIdentity:      columnchange.PreviousIdentity(colDiff),
 					SeedsSequence:         serialSequencePath(tableDiff.TableName, colDiff.SerialSequence),
 					DropsSequence:         sequenceGivingWayToIdentity(tableDiff.TableName, colDiff, removedSequences),
 					Changed:               changed,

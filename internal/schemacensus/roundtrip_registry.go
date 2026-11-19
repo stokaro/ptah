@@ -261,12 +261,6 @@ var roundTripGaps = []Unreached{
 	},
 	{Field: "schemamodel.EmbeddedField.Overrides", Dialects: []string{"mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.EmbeddedField.Type", Dialects: []string{"sqlite"}, Directions: nil, Reason: gapComparison},
-	{
-		Field:      "schemamodel.Field.AutoInc",
-		Dialects:   []string{"oracle"},
-		Directions: nil,
-		Reason:     gapComparison,
-	},
 	{Field: "schemamodel.Field.Facets", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Field.GeneratedExpression", Dialects: []string{"oracle"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Field.IdentityIncrement", Dialects: []string{"sqlserver"}, Directions: nil, Reason: gapComparison},

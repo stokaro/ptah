@@ -159,6 +159,13 @@ END;`,
 			// ALL_SEQUENCES keeps no START WITH; the reader reports
 			// LAST_NUMBER, which a used sequence has moved past it.
 			SequenceStartIsNextValue: true,
+			// Measured on Oracle Free 23.26: MODIFY (id GENERATED ALWAYS AS
+			// IDENTITY) changes the generation of an identity column, and
+			// the reverse too, and the counter goes on from where it was.
+			// MODIFY (id DROP IDENTITY) leaves the column nullable unless it
+			// is a primary key column. An existing column takes no identity:
+			// ORA-30673, column to be modified is not an identity column.
+			AutoIncrementIdentity: true,
 		},
 
 		// An enum column is VARCHAR2(255) with a CHECK. Oracle refuses a CHECK

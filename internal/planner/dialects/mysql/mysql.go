@@ -569,6 +569,7 @@ func (p *Planner) modifyExistingColumns(
 			HasPreviousDefault:     defaultChanged,
 			PreviousCharset:        previousCharset(colDiff.CharsetChange),
 			Charset:                newCharset(colDiff.CharsetChange),
+			PreviousIdentity:       columnchange.PreviousIdentity(colDiff),
 			// Stated although MODIFY restates the whole column, because the
 			// statement cannot say what changed: it repeats NOT NULL on a
 			// type change as on a nullability change, and migration/safety

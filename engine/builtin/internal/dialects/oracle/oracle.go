@@ -394,11 +394,13 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			}
 			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s%s;", table, escapeIdentifier(op.ColumnName), cascade)
 		case *ast.ModifyColumnOperation:
-			line, err := renderModifiedColumn(op)
+			lines, err := renderModifiedColumn(op)
 			if err != nil {
-				return fmt.Errorf("render modified column %s: %w", op.Column.Name, err)
+				return fmt.Errorf("render modified column %s.%s: %w", node.Name, op.Column.Name, err)
 			}
-			r.w.WriteLinef("ALTER TABLE %s MODIFY (%s);", table, strings.TrimSpace(line))
+			for _, line := range lines {
+				r.w.WriteLinef("ALTER TABLE %s MODIFY (%s);", table, strings.TrimSpace(line))
+			}
 		case *ast.RenameColumnOperation:
 			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
 				table, escapeIdentifier(op.OldName), escapeIdentifier(op.NewName))
