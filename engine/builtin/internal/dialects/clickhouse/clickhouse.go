@@ -794,6 +794,14 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;", node.Name, op.OldName, op.NewName)
 		case *ast.RenameTableOperation:
 			r.w.WriteLinef("RENAME TABLE %s TO %s;", node.Name, op.NewName)
+		case *ast.SetCommentOperation:
+			// An empty comment clears it: measured on 26.10, both statements
+			// take '' and the catalog then reports no comment.
+			if op.Column == "" {
+				r.w.WriteLinef("ALTER TABLE %s MODIFY COMMENT %s;", node.Name, chcolumn.StringLiteral(op.Comment))
+				continue
+			}
+			r.w.WriteLinef("ALTER TABLE %s COMMENT COLUMN %s %s;", node.Name, op.Column, chcolumn.StringLiteral(op.Comment))
 		default:
 			return fmt.Errorf("%w: %s: this renderer has no ALTER TABLE spelling for %T", ptaherr.ErrUnsupportedFeature, DialectName, op)
 		}

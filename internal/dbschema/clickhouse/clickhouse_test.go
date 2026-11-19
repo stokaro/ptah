@@ -127,6 +127,7 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	}
 	columnRows[3][3] = "DEFAULT"
 	columnRows[3][4] = "0"
+	columnRows[3][6] = `c\d`
 
 	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {
@@ -159,6 +160,7 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	c.Assert(tables[0].Columns[1].IsNullable, qt.Equals, "YES")
 	c.Assert(tables[1].Columns[1].ColumnDefault, qt.IsNotNil)
 	c.Assert(*tables[1].Columns[1].ColumnDefault, qt.Equals, "0")
+	c.Assert(tables[1].Columns[1].Comment, qt.Equals, `c\d`)
 }
 
 // Key clauses preserve catalog spelling even when the engine considers them
