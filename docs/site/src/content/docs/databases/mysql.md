@@ -161,11 +161,20 @@ SQL:
   `concat(_utf8mb4'a',_utf8mb4'b')`. MariaDB 12.3 writes `7 % 4` as
   `7 MOD 4` and `NOW()` as `current_timestamp()`. Each pair is one default,
   so a second apply plans nothing, and `db read` writes the default in
-  parentheses. A parenthesis that changes the grouping is part of the
-  default: `((1 + 2) * 3)` and `(1 + 2 * 3)` differ. An expression that holds
+  parentheses. Only a current-time function on a `DATETIME` or `TIMESTAMP`
+  column stays bare: MySQL 8.4 and 26.10 refuse `DEFAULT uuid()` with
+  `ERROR 1064` and `DEFAULT now()` on a `VARCHAR` with `ERROR 1067`. A
+  parenthesis that changes the grouping is part of the default:
+  `((1 + 2) * 3)` and `(1 + 2 * 3)` differ. An expression that holds
   `NOT`, `IS`, `IN`, `CASE`, a qualified name or another character set
   introducer is compared as written, and so is one the server rewrites
   further: MySQL stores `(NOT 1 + 1)` as `(0 = (1 + 1))`.
+- A string default is not an expression default, even where its characters
+  spell the expression. `DEFAULT '1 + 2'` stores five characters and
+  `DEFAULT (1 + 2)` stores 3, so a plan between the two changes the column in
+  either direction, and the same holds for `'now()'` and `(now())`. MySQL
+  reports both of those as `now()` and tells them apart by
+  `DEFAULT_GENERATED` in `EXTRA`, and `db read` writes the string in quotes.
 - `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
   MariaDB type. Both engines take one auto-increment column per table, and only

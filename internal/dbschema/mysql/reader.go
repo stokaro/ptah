@@ -718,7 +718,7 @@ func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string
 	case value == "", literals == literalsQuoted, isQuotedMySQLDefault(value):
 		return defaultValue
 	case hasGeneratedDefault(extra):
-		return generatedDefault(value)
+		return generatedDefault(col, value)
 	case !mysqlDefaultNeedsLiteralQuotes(col, value):
 		return defaultValue
 	}
@@ -732,9 +732,11 @@ func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string
 // `concat(_utf8mb4'a\'b',_utf8mb4'c\\d')` once a backslash before a quote or
 // a backslash is undone. The catalog also drops the parentheses around a call,
 // `curdate()` for `DEFAULT (CURRENT_DATE)`, and the server takes an
-// expression default only in parentheses, so they are put back. A
-// current-time default and uuid() keep the spelling the catalog reports.
-func generatedDefault(value string) string {
+// expression default only in parentheses, so they are put back. Only a
+// current-time function on a DATETIME or TIMESTAMP column keeps the bare
+// spelling the catalog reports: measured on MySQL 8.4 and 26.10, `DEFAULT
+// uuid()` answers ERROR 1064 and `DEFAULT now()` on a varchar ERROR 1067.
+func generatedDefault(col *catalog.Column, value string) string {
 	var b strings.Builder
 	for i := 0; i < len(value); i++ {
 		if value[i] == '\\' && i+1 < len(value) && (value[i+1] == '\'' || value[i+1] == '\\') {
@@ -743,7 +745,7 @@ func generatedDefault(value string) string {
 		b.WriteByte(value[i])
 	}
 	expression := b.String()
-	if isMySQLDefaultExpression(expression) || normalize.Expression(expression) != expression {
+	if (storesMySQLTime(col) && isMySQLCurrentTime(expression)) || normalize.Expression(expression) != expression {
 		return expression
 	}
 	return "(" + expression + ")"
@@ -761,32 +763,49 @@ func isQuotedMySQLDefault(value string) bool {
 			(strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`)))
 }
 
+// mysqlDefaultNeedsLiteralQuotes reports whether a default MySQL reports
+// without DEFAULT_GENERATED is a literal to quote. On a string column every
+// such value is: measured on MySQL 8.4 and 26.10, `DEFAULT 'now()'` on a
+// varchar reports `now()` with an empty EXTRA, where `DEFAULT (now())` reports
+// it with DEFAULT_GENERATED.
 func mysqlDefaultNeedsLiteralQuotes(col *catalog.Column, value string) bool {
-	if isMySQLDefaultExpression(value) {
-		return false
-	}
-
-	typeName := strings.ToLower(col.ColumnType)
-	if typeName == "" {
-		typeName = strings.ToLower(col.DataType)
-	}
+	typeName := mysqlColumnType(col)
 	switch {
+	case strings.EqualFold(strings.TrimSpace(value), "NULL"):
+		return false
+	case strings.Contains(typeName, "date"), strings.Contains(typeName, "time"), strings.Contains(typeName, "year"):
+		return !isMySQLCurrentTime(value)
 	case strings.HasPrefix(typeName, "enum("), strings.HasPrefix(typeName, "set("):
 		return true
 	case strings.Contains(typeName, "char"), strings.Contains(typeName, "text"):
-		return true
-	case strings.Contains(typeName, "date"), strings.Contains(typeName, "time"), strings.Contains(typeName, "year"):
 		return true
 	default:
 		return false
 	}
 }
 
-func isMySQLDefaultExpression(value string) bool {
+// mysqlColumnType returns the column's type in lower case, with its
+// arguments where the catalog reports them.
+func mysqlColumnType(col *catalog.Column) string {
+	if col.ColumnType != "" {
+		return strings.ToLower(col.ColumnType)
+	}
+	return strings.ToLower(col.DataType)
+}
+
+// storesMySQLTime reports whether the column is a DATETIME or a TIMESTAMP,
+// the types that take a current-time default without parentheses.
+func storesMySQLTime(col *catalog.Column) bool {
+	typeName := mysqlColumnType(col)
+	return strings.HasPrefix(typeName, "datetime") || strings.HasPrefix(typeName, "timestamp")
+}
+
+// isMySQLCurrentTime reports whether value calls a current-time function.
+func isMySQLCurrentTime(value string) bool {
 	normalized := strings.TrimSpace(strings.ToUpper(value))
 	normalized = strings.TrimSuffix(normalized, "()")
 	switch normalized {
-	case "NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIME", "LOCALTIMESTAMP", "NOW", "UUID":
+	case "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIME", "LOCALTIMESTAMP", "NOW":
 		return true
 	default:
 		return strings.HasPrefix(normalized, "CURRENT_TIMESTAMP(") ||

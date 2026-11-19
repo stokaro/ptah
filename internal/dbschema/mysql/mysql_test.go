@@ -363,6 +363,50 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         "(curdate())",
 		},
 		{
+			// Measured on MySQL 8.4 and 26.10 for DEFAULT (uuid()): the server
+			// refuses DEFAULT uuid() with ERROR 1064.
+			name:         "a MySQL uuid() default",
+			columnType:   "varchar(40)",
+			dataType:     "varchar",
+			defaultValue: "uuid()",
+			extra:        "DEFAULT_GENERATED",
+			want:         "(uuid())",
+		},
+		{
+			// A current-time call is bare only on a DATETIME or TIMESTAMP
+			// column; on a varchar the server answers ERROR 1067.
+			name:         "a MySQL current-time default on a string column",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "now()",
+			extra:        "DEFAULT_GENERATED",
+			want:         "(now())",
+		},
+		{
+			name:         "a MySQL current-time default with a precision",
+			columnType:   "datetime(3)",
+			dataType:     "datetime",
+			defaultValue: "CURRENT_TIMESTAMP(3)",
+			extra:        "DEFAULT_GENERATED on update CURRENT_TIMESTAMP(3)",
+			want:         "CURRENT_TIMESTAMP(3)",
+		},
+		{
+			// Measured on MySQL 8.4 and 26.10 for DEFAULT 'now()': the
+			// catalog reports now() with an empty EXTRA.
+			name:         "a MySQL string that spells a current-time call",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "now()",
+			want:         "'now()'",
+		},
+		{
+			name:         "a MySQL string that spells uuid()",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "uuid()",
+			want:         "'uuid()'",
+		},
+		{
 			name:         "a MySQL current-time default",
 			columnType:   "datetime",
 			dataType:     "datetime",
