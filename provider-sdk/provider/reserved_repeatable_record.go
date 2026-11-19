@@ -41,9 +41,11 @@ func negotiateReservedRepeatableRecord(engine *protocol.Engine) {
 
 // validateInspectedRepeatableRecordReservations refuses a reservation of the
 // record of repeatable migrations in a read that did not negotiate
-// ReservedRepeatableRecordFeature.
-func validateInspectedRepeatableRecordReservations(description *protocol.Description, engine *protocol.Engine, snapshot *protocol.Schema) error {
-	if EngineOffers(description, engine.GetId(), ReservedRepeatableRecordFeature) && slices.Contains(snapshot.GetTargetFeatures(), ReservedRepeatableRecordFeature) {
+// ReservedRepeatableRecordFeature. The read's target features are the
+// negotiation: [valueTarget] refuses one the engine does not list, and the
+// description refuses an engine that lists it without the provider.
+func validateInspectedRepeatableRecordReservations(_ *protocol.Description, _ *protocol.Engine, snapshot *protocol.Schema) error {
+	if slices.Contains(snapshot.GetTargetFeatures(), ReservedRepeatableRecordFeature) {
 		return nil
 	}
 	for _, record := range snapshot.GetReservedObjects() {

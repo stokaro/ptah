@@ -1816,24 +1816,6 @@ the record is the provider's check, made on every call: a call on a session
 whose engine does not list the feature is refused before it reads or writes
 anything.
 
-### Reserved repeatable migration record
-
-[ADR 0125](../docs/adr/0125-a-provider-keeps-the-record-of-repeatable-migrations.md),
-under Amendments, decides this feature. Under
-`schema.reserved-repeatable-record` a read reports the
-[repeatable migration record](#repeatable-migration-record) in
-`Schema.reserved_objects` with the purpose `REPEATABLE`, as it reports the
-revision table with `HISTORY` and the log with `LOG`. The host leaves the
-record out of every comparison, so a plan never drops it, and refuses a
-declaration of a table of its name. The provider and each engine that keeps
-the record list the two-way feature beside `sessions.repeatable-record`.
-
-The SDK refuses the engine's feature without the provider's or without the
-engine's `sessions.repeatable-record`, and drops it in negotiation where the
-record is negotiated away. It refuses a `REPEATABLE` reservation in a read
-that did not negotiate the feature, on the client and on the server, so a host
-that does not list it never receives the purpose.
-
 A provider that lists the feature owes each of these guarantees, and its live
 tests exercise them against the engine:
 
@@ -1855,6 +1837,24 @@ tests exercise them against the engine:
 - a record of `provider.MaxRepeatableRows` rows at every bound reads whole, and
   a larger one is refused, never truncated;
 - a call on a session whose engine does not list the feature is refused.
+
+### Reserved repeatable migration record
+
+[ADR 0125](../docs/adr/0125-a-provider-keeps-the-record-of-repeatable-migrations.md),
+under Amendments, decides this feature. Under
+`schema.reserved-repeatable-record` a read reports the
+[repeatable migration record](#repeatable-migration-record) in
+`Schema.reserved_objects` with the purpose `REPEATABLE`, as it reports the
+revision table with `HISTORY` and the log with `LOG`. The host leaves the
+record out of every comparison, so a plan never drops it, and refuses a
+declaration of a table of its name. The provider and each engine that keeps
+the record list the two-way feature beside `sessions.repeatable-record`.
+
+The SDK refuses the engine's feature without the provider's or without the
+engine's `sessions.repeatable-record`, and drops it in negotiation where the
+record is negotiated away. It refuses a `REPEATABLE` reservation in a read
+that did not negotiate the feature, on the client and on the server, so a host
+that does not list it never receives the purpose.
 
 ## Offline schema validation
 
