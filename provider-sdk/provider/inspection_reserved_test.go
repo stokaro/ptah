@@ -36,6 +36,7 @@ func TestInspectionRefusesMalformedReservations(t *testing.T) {
 		{"foreign engine", func(s *protocol.Schema) { s.ReservedObjects[0].Object.Engine = "foreign" }},
 		{"changed kind", func(s *protocol.Schema) { s.ReservedObjects[0].NormalizedObject.Kind = "other" }},
 		{"unknown purpose", func(s *protocol.Schema) { s.ReservedObjects[0].Purpose = 99 }},
+		{"unspecified purpose", func(s *protocol.Schema) { s.ReservedObjects[0].Purpose = protocol.ReservedObject_PURPOSE_UNSPECIFIED }},
 		{"missing own kind", func(s *protocol.Schema) { s.ReservedObjects[0].ConflictKinds = nil }},
 		{"duplicate kind", func(s *protocol.Schema) { s.ReservedObjects[0].ConflictKinds = []string{"table", "table"} }},
 		{"unregistered model", func(s *protocol.Schema) { s.ReservedObjects[0].ConflictKinds = []string{"table", "foreign"} }},
@@ -78,6 +79,23 @@ func TestInspectionRefusesMalformedReservations(t *testing.T) {
 			c.Assert(result, qt.IsNil)
 		})
 	}
+}
+
+// A purpose this SDK does not define, as a provider built with a newer SDK
+// reports, is refused with the object, the purpose number and what the
+// provider needs.
+func TestInspectionReservationOfAnUndefinedPurpose_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	d, r, s := inspection()
+	s.ReservedObjects = []*protocol.ReservedObject{reservedTable()}
+	s.ReservedObjects[0].Purpose = 99
+
+	result, err := provider.InspectionValues(d, r, s)
+
+	c.Assert(err, qt.ErrorIs, provider.ErrProtocol)
+	c.Assert(err, qt.ErrorMatches, `.*: reserved object history has purpose 99, which this provider SDK does not define; `+
+		`a provider that reports it needs a host built with a newer provider SDK`)
+	c.Assert(result, qt.IsNil)
 }
 
 func TestInspectionNativeReservationsRequireExactNegativeKnowledge(t *testing.T) {

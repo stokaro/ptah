@@ -64,7 +64,8 @@ func reservedNamesIndex(current *catalog.Database, target string, semantics iden
 			return nil, fmt.Errorf("%w: invalid provider storage reservation", ptaherr.ErrInvalidSchemaDiff)
 		}
 		if _, known := reservedPurposes[record.Purpose]; !known {
-			return nil, fmt.Errorf("%w: unknown provider storage purpose", ptaherr.ErrInvalidSchemaDiff)
+			return nil, fmt.Errorf("%w: provider %q reserves %s for storage purpose %q, which this Ptah does not know; the provider needs a newer Ptah",
+				ptaherr.ErrInvalidSchemaDiff, record.ProviderID, record.Identity, record.Purpose)
 		}
 		if record.Identity.Kind == objectidentity.KindTable && record.Identity.Key() != builder.TablePartsVerbatim(record.Identity.Schema.Source, record.Identity.Name.Source).Key() {
 			return nil, fmt.Errorf("%w: reserved table normalization differs from comparison", ptaherr.ErrInvalidSchemaDiff)

@@ -104,6 +104,22 @@ func TestReservedStorageRefusesConflictingObservationsAndNormalization(t *testin
 	}
 }
 
+// A purpose this Ptah does not know, such as one a newer provider reports,
+// is refused with the purpose, the storage and the provider named, and with
+// what to do about it.
+func TestReservedStorageOfAnUnknownPurpose_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	record := reservedHistory("postgres", "public", "history")
+	record.Purpose = "9"
+	current := &catalog.Database{ReservedNames: []catalog.ReservedName{record}}
+
+	diff, err := schemadiff.CompareWithDialect(c.Context(), &schemamodel.Database{}, current, "postgres", must.Must(builtin.New()))
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*: provider "example\.org/provider" reserves .*public\.history.* for storage purpose "9", which this Ptah does not know; the provider needs a newer Ptah`)
+	c.Assert(diff, qt.IsNil)
+}
+
 func TestReservedStoragePreventsSchemaRemoval(t *testing.T) {
 	c := qt.New(t)
 	current := &catalog.Database{Schemas: []catalog.Schema{{Name: "service"}}, ReservedNames: []catalog.ReservedName{reservedHistory("mysql", "service", "history")}}
