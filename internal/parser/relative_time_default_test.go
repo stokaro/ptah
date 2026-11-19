@@ -24,6 +24,16 @@ func TestParse_RelativeTimeDefault_FailurePath(t *testing.T) {
 		{dialect: "postgres", name: "in parentheses", column: "f timestamptz DEFAULT ('now')", wantErr: `(?s).*column f: DEFAULT \('now'\) on a timestamptz column is read once.*`},
 		{dialect: "postgres", name: "cast in parentheses", column: "g date DEFAULT ('today'::date)", wantErr: `(?s).*column g: DEFAULT \('today'::date\) on a date column.*`},
 		{dialect: "yugabytedb", name: "YugabyteDB", column: "h timestamptz DEFAULT 'now'", wantErr: `(?s).*column h: DEFAULT 'now' on a timestamptz column is read once.*`},
+		{dialect: "postgres", name: "a quoted type", column: `i "timestamp" DEFAULT 'now'`, wantErr: `(?s).*column i: DEFAULT 'now' on a "timestamp" column is read once.*`},
+		{
+			dialect: "postgres", name: "a quoted qualified type", column: `j "pg_catalog"."timestamptz" DEFAULT 'now'`,
+			wantErr: `(?s).*column j: DEFAULT 'now' on a "pg_catalog"."timestamptz" column is read once.*`,
+		},
+		{dialect: "postgres", name: "an array literal", column: "k timestamp[] DEFAULT '{now}'", wantErr: `(?s).*column k: DEFAULT '\{now\}' on a timestamp\[\] column is read once.*`},
+		{
+			dialect: "postgres", name: "an ARRAY constructor", column: "l date[] DEFAULT ARRAY['today']::date[]",
+			wantErr: `(?s).*column l: DEFAULT ARRAY\['today'\]::date\[\] on a date\[\] column is read once.*`,
+		},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -53,6 +63,9 @@ func TestParse_RelativeTimeDefault_HappyPath(t *testing.T) {
 		{name: "MySQL", dialect: "mysql", column: "a varchar(8) DEFAULT 'now'", want: "'now'"},
 		{name: "SQLite", dialect: "sqlite", column: "a datetime DEFAULT 'now'", want: "'now'"},
 		{name: "CockroachDB, which keeps the string", dialect: "cockroachdb", column: "a timestamptz DEFAULT 'now'", want: "'now'"},
+		{name: "a quoted created type", dialect: "postgres", column: `a "Timestamp" DEFAULT 'now'`, want: "'now'"},
+		{name: "an array of fixed moments", dialect: "postgres", column: "a timestamp[] DEFAULT '{epoch}'", want: "'{epoch}'"},
+		{name: "a text array", dialect: "postgres", column: "a text[] DEFAULT '{now}'", want: "'{now}'"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
