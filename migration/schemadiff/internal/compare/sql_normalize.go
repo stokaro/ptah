@@ -1,11 +1,51 @@
 package compare
 
 import (
+	"regexp"
 	"strings"
+
+	"ptah.run/internal/normalize"
 )
 
-func replaceSQLLiteralOutsideSingleQuotedSQL(value, old, replacement string) string {
-	return replaceOutsideSingleQuotedSQL(value, old, replacement, func(value string, start int) bool {
+// The helpers in this file rewrite SQL text outside its quoted parts. Each
+// takes the dialect's quoting, which says where a quoted part ends: a helper
+// that reads a backslash as an escape where the dialect does not loses track
+// of the quotes, and then folds the text inside a string as if it were SQL.
+
+// replaceMatchesOutsideQuotedSQL replaces each match of pattern that starts
+// outside quoted text with what replace returns for it, and keeps a match
+// that starts inside a string or a quoted name as written.
+func replaceMatchesOutsideQuotedSQL(
+	value string,
+	pattern *regexp.Regexp,
+	quoting normalize.Quoting,
+	replace func(match string) string,
+) string {
+	matches := pattern.FindAllStringIndex(value, -1)
+	if len(matches) == 0 {
+		return value
+	}
+	var b strings.Builder
+	written, next, quoteEnd := 0, 0, -1
+	for _, match := range matches {
+		for ; next < match[0]; next++ {
+			if next > quoteEnd && (value[next] == '\'' || value[next] == '"') {
+				quoteEnd = quoting.QuotedEnd(value, next)
+			}
+		}
+		if match[0] <= quoteEnd {
+			continue
+		}
+		b.WriteString(value[written:match[0]])
+		b.WriteString(replace(value[match[0]:match[1]]))
+		written, next = match[1], match[1]
+	}
+	b.WriteString(value[written:])
+	return b.String()
+}
+
+func replaceSQLLiteralOutsideSingleQuotedSQL(value, old, replacement string, quoting normalize.Quoting) string {
+	return replaceOutsideSingleQuotedSQL(value, old, replacement, quoting, func(value string, start int) bool {
 		end := start + len(old)
 		return end == len(value) || !isSQLIdentifierByte(value[end])
 	})
@@ -15,12 +55,13 @@ func replaceOutsideSingleQuotedSQL(
 	value,
 	old,
 	replacement string,
+	quoting normalize.Quoting,
 	allowed func(value string, start int) bool,
 ) string {
 	var b strings.Builder
 	for i := 0; i < len(value); i++ {
 		if value[i] == '\'' || value[i] == '"' {
-			i = copyQuotedSQL(&b, value, i)
+			i = copyQuotedSQL(&b, value, i, quoting)
 			continue
 		}
 		if strings.HasPrefix(value[i:], old) && allowed(value, i) {
@@ -33,15 +74,14 @@ func replaceOutsideSingleQuotedSQL(
 	return b.String()
 }
 
-func normalizeSQLCaseAndIdentifierQuotes(value, dialect string) string {
+func normalizeSQLCaseAndIdentifierQuotes(value string, quoting normalize.Quoting) string {
 	var b strings.Builder
-	mysqlFamily := comparisonOf(dialect).DoubleQuotedStrings
 	for i := 0; i < len(value); i++ {
 		switch ch := value[i]; {
-		case ch == '\'' || (mysqlFamily && ch == '"'):
-			i = copyQuotedSQL(&b, value, i)
+		case quoting.OpensString(value, i):
+			i = copyQuotedSQL(&b, value, i, quoting)
 		case ch == '`' || ch == '"':
-			i = copyIdentifierQuote(&b, value, i)
+			i = copyIdentifierQuote(&b, value, i, quoting)
 		default:
 			b.WriteByte(lowerASCII(ch))
 		}
@@ -49,12 +89,12 @@ func normalizeSQLCaseAndIdentifierQuotes(value, dialect string) string {
 	return b.String()
 }
 
-func stripSQLQualifiers(value, schema string, authored map[string]struct{}) string {
+func stripSQLQualifiers(value, schema string, authored map[string]struct{}, quoting normalize.Quoting) string {
 	schema = strings.ToLower(strings.TrimSpace(schema))
 	if schema != "" {
-		value = stripMatchingSchemaQualifiers(value, schema)
+		value = stripMatchingSchemaQualifiers(value, schema, quoting)
 	}
-	return stripSinglePartQualifiers(value, authored)
+	return stripSinglePartQualifiers(value, authored, quoting)
 }
 
 // stripMatchingSchemaQualifiers removes the object's own schema from the places
@@ -68,11 +108,11 @@ func stripSQLQualifiers(value, schema string, authored map[string]struct{}) stri
 // declaration kept it, reporting a change on an object nobody edited. On
 // ClickHouse that reads as a body change and is planned as a drop and a create,
 // which discards the view's accumulated rows.
-func stripMatchingSchemaQualifiers(value, schema string) string {
+func stripMatchingSchemaQualifiers(value, schema string, quoting normalize.Quoting) string {
 	var b strings.Builder
 	for i := 0; i < len(value); i++ {
 		if value[i] == '\'' || value[i] == '"' {
-			i = copyQuotedSQL(&b, value, i)
+			i = copyQuotedSQL(&b, value, i, quoting)
 			continue
 		}
 		if strings.HasPrefix(value[i:], schema+".") &&
@@ -93,11 +133,11 @@ func stripMatchingSchemaQualifiers(value, schema string) string {
 // One traversal serves all three questions asked about qualifiers -- which ones
 // a body carries, which ones a readback may lose, and whether a body qualifies a
 // relation -- so the three answers cannot drift apart.
-func walkSQLQualifiers(value string, keep func(start, dot int, name string) bool) string {
+func walkSQLQualifiers(value string, quoting normalize.Quoting, keep func(start, dot int, name string) bool) string {
 	var b strings.Builder
 	for i := 0; i < len(value); i++ {
 		if value[i] == '\'' || value[i] == '"' {
-			i = copyQuotedSQL(&b, value, i)
+			i = copyQuotedSQL(&b, value, i, quoting)
 			continue
 		}
 		if !isSQLIdentifierByte(value[i]) {
@@ -133,8 +173,8 @@ func walkSQLQualifiers(value string, keep func(start, dot int, name string) bool
 // Keeping only the authored names is what separates that from a real change: a
 // readback qualifier the declaration does not use is still stripped, so
 // `SELECT a.id` against a readback of `SELECT b.id` stays a difference.
-func stripSinglePartQualifiers(value string, authored map[string]struct{}) string {
-	return walkSQLQualifiers(value, func(start, dot int, name string) bool {
+func stripSinglePartQualifiers(value string, authored map[string]struct{}, quoting normalize.Quoting) string {
+	return walkSQLQualifiers(value, quoting, func(start, dot int, name string) bool {
 		if !canStripSinglePartQualifier(value, start, dot) {
 			return true
 		}
@@ -145,9 +185,9 @@ func stripSinglePartQualifiers(value string, authored map[string]struct{}) strin
 
 // singlePartQualifierNames returns the one-part qualifiers value uses on
 // columns -- aliases and table prefixes, not schemas.
-func singlePartQualifierNames(value string) map[string]struct{} {
+func singlePartQualifierNames(value string, quoting normalize.Quoting) map[string]struct{} {
 	names := make(map[string]struct{})
-	walkSQLQualifiers(value, func(start, dot int, name string) bool {
+	walkSQLQualifiers(value, quoting, func(start, dot int, name string) bool {
 		if canStripSinglePartQualifier(value, start, dot) {
 			names[name] = struct{}{}
 		}
@@ -167,9 +207,9 @@ func singlePartQualifierNames(value string) map[string]struct{} {
 // u` carries `u.`, and treating that as an authored schema made an unchanged
 // materialized view read as drift -- which on ClickHouse plans a drop and a
 // create and destroys the rows the view had accumulated.
-func bodyQualifiesRelation(value string) bool {
+func bodyQualifiesRelation(value string, quoting normalize.Quoting) bool {
 	qualified := false
-	walkSQLQualifiers(value, func(start, dot int, _ string) bool {
+	walkSQLQualifiers(value, quoting, func(start, dot int, _ string) bool {
 		if qualifiesRelationAt(value, start, dot) {
 			qualified = true
 		}
@@ -239,12 +279,12 @@ func startsIdentifierAt(value string, start int) bool {
 		start+1 < len(value) && isSQLIdentifierByte(value[start])
 }
 
-func collapseWhitespaceOutsideQuotedSQL(value string) string {
+func collapseWhitespaceOutsideQuotedSQL(value string, quoting normalize.Quoting) string {
 	var b strings.Builder
 	inWhitespace := false
 	for i := 0; i < len(value); i++ {
 		if value[i] == '\'' || value[i] == '"' {
-			i = copyQuotedSQL(&b, value, i)
+			i = copyQuotedSQL(&b, value, i, quoting)
 			inWhitespace = false
 			continue
 		}
@@ -261,11 +301,11 @@ func collapseWhitespaceOutsideQuotedSQL(value string) string {
 	return strings.TrimSpace(b.String())
 }
 
-func normalizeCommaSpacingOutsideQuotedSQL(value string) string {
+func normalizeCommaSpacingOutsideQuotedSQL(value string, quoting normalize.Quoting) string {
 	var b strings.Builder
 	for i := 0; i < len(value); i++ {
 		if value[i] == '\'' || value[i] == '"' {
-			i = copyQuotedSQL(&b, value, i)
+			i = copyQuotedSQL(&b, value, i, quoting)
 			continue
 		}
 		if value[i] != ',' {
@@ -287,32 +327,25 @@ func trimTrailingSpaces(b *strings.Builder) {
 	b.WriteString(value)
 }
 
-func copyQuotedSQL(b *strings.Builder, value string, start int) int {
-	quote := value[start]
-	b.WriteByte(value[start])
-	for i := start + 1; i < len(value); i++ {
-		b.WriteByte(value[i])
-		if value[i] == '\\' && i+1 < len(value) {
-			i++
-			b.WriteByte(value[i])
-			continue
-		}
-		if value[i] != quote {
-			continue
-		}
-		if i+1 < len(value) && value[i+1] == quote {
-			i++
-			b.WriteByte(value[i])
-			continue
-		}
-		return i
-	}
-	return len(value) - 1
+// copyQuotedSQL copies the quoted text that opens at value[start] as written
+// and returns the index of its closing quote.
+func copyQuotedSQL(b *strings.Builder, value string, start int, quoting normalize.Quoting) int {
+	end := quoting.QuotedEnd(value, start)
+	b.WriteString(value[start : end+1])
+	return end
 }
 
-func copyIdentifierQuote(b *strings.Builder, value string, start int) int {
+// copyIdentifierQuote copies the name quoted at value[start] without its
+// quotes and lowered, and returns the index of its closing quote. A backslash
+// escapes the next byte where quoting says a quoted name reads one.
+func copyIdentifierQuote(b *strings.Builder, value string, start int, quoting normalize.Quoting) int {
 	quote := value[start]
 	for i := start + 1; i < len(value); i++ {
+		if quoting.IdentifierBackslashEscapes && value[i] == '\\' && i+1 < len(value) {
+			i++
+			b.WriteByte(lowerASCII(value[i]))
+			continue
+		}
 		if value[i] == quote {
 			if i+1 < len(value) && value[i+1] == quote {
 				i++

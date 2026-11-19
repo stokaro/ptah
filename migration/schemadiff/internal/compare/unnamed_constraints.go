@@ -7,6 +7,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/normalize"
 	"ptah.run/internal/tableref"
 )
 
@@ -75,7 +76,7 @@ func unnamedCatalogDefinition(constraint catalog.Constraint) unnamedDefinition {
 // referenced table is compared by its bare name: a schema file and a catalog
 // qualify it differently, and a foreign key is still compared in full once it
 // is paired.
-func (d unnamedDefinition) member(semantics identifier.Semantics) string {
+func (d unnamedDefinition) member(quoting normalize.Quoting, semantics identifier.Semantics) string {
 	foreignTable := d.foreignTable
 	if ref, ok := tableref.Parse(foreignTable); ok {
 		foreignTable = ref.Name
@@ -83,7 +84,7 @@ func (d unnamedDefinition) member(semantics identifier.Semantics) string {
 	parts := []string{
 		"\x00unnamed",
 		foldNames(d.columns, semantics),
-		normalizeCheckExpression(d.check),
+		normalizeCheckExpression(d.check, quoting),
 		strings.ToLower(strings.TrimSpace(d.usingMethod)),
 		semantics.IndexIdentityKey(foreignTable),
 		foldNames(d.foreignColumns, semantics),
@@ -103,20 +104,20 @@ func foldNames(names []string, semantics identifier.Semantics) string {
 
 // newDeclaredConstraintKey keys a desired constraint: by its name, or by its
 // definition when it has none.
-func newDeclaredConstraintKey(constraint schemamodel.Constraint, semantics identifier.Semantics) tableMemberKey {
+func newDeclaredConstraintKey(constraint schemamodel.Constraint, dialect string, semantics identifier.Semantics) tableMemberKey {
 	key := newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
 	if strings.TrimSpace(constraint.Name) == "" {
-		key.member = unnamedDeclaredDefinition(constraint).member(semantics)
+		key.member = unnamedDeclaredDefinition(constraint).member(quotingOf(dialect), semantics)
 	}
 	return key
 }
 
 // newCatalogConstraintKey keys a constraint the other side holds, by the rule
 // [newDeclaredConstraintKey] follows.
-func newCatalogConstraintKey(constraint catalog.Constraint, semantics identifier.Semantics) tableMemberKey {
+func newCatalogConstraintKey(constraint catalog.Constraint, dialect string, semantics identifier.Semantics) tableMemberKey {
 	key := newConstraintKey(constraint.QualifiedTableName(), constraint.Name, constraint.Type, semantics)
 	if strings.TrimSpace(constraint.Name) == "" {
-		key.member = unnamedCatalogDefinition(constraint).member(semantics)
+		key.member = unnamedCatalogDefinition(constraint).member(quotingOf(dialect), semantics)
 	}
 	return key
 }

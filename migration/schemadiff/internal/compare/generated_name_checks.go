@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/normalize"
 )
 
 // pairGeneratedNameChecks lets a CHECK the server named answer for the CHECK
@@ -28,6 +29,7 @@ import (
 func pairGeneratedNameChecks(
 	genConstraints map[tableMemberKey]schemamodel.Constraint,
 	dbConstraints map[tableMemberKey]catalog.Constraint,
+	quoting normalize.Quoting,
 ) {
 	declared := unmatchedChecks(genConstraints, dbConstraints, func(constraint schemamodel.Constraint) bool {
 		return strings.TrimSpace(constraint.Name) == "" && strings.TrimSpace(constraint.CheckExpression) != ""
@@ -42,7 +44,7 @@ func pairGeneratedNameChecks(
 			if have.table != want.table ||
 				wanted.NotEnforced != held.NotEnforced ||
 				deferralChanged(wanted, held) ||
-				normalizeCheckExpression(wanted.CheckExpression) != normalizeCheckExpression(getStringValue(held.CheckClause)) {
+				normalizeCheckExpression(wanted.CheckExpression, quoting) != normalizeCheckExpression(getStringValue(held.CheckClause), quoting) {
 				continue
 			}
 			dbConstraints[want] = held

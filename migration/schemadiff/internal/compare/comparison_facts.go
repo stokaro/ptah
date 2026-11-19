@@ -5,6 +5,7 @@ import (
 
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/descriptortable"
+	"ptah.run/internal/normalize"
 )
 
 // The tables below hold what each descriptor of the process registry states
@@ -40,7 +41,24 @@ var (
 	nextValueClause = descriptortable.New(func(described descriptor.Dialect) []string {
 		return strings.Fields(described.Grammar.Columns.NextValueClause)
 	})
+	quotings = descriptortable.New(func(described descriptor.Dialect) normalize.Quoting {
+		quoting := normalize.Quoting{
+			BackslashEscapes:           described.Lexical.BackslashEscapes,
+			IdentifierBackslashEscapes: described.Lexical.IdentifierBackslashEscapes,
+			EscapeStrings:              described.Lexical.EscapeStrings,
+		}
+		if described.Comparison.DoubleQuotedStrings {
+			quoting.Strings = `'"`
+		}
+		return quoting
+	})
 )
+
+// quotingOf returns where quoted text ends on dialect, as its descriptor
+// states it, and the SQL standard for a dialect the registry does not know.
+func quotingOf(dialect string) normalize.Quoting {
+	return quotings.Get(dialect)
+}
 
 // comparisonOf returns what dialect's descriptor states about comparing a
 // declaration with its catalog, folding the spelling as

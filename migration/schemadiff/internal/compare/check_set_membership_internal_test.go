@@ -9,7 +9,13 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/normalize"
 )
+
+// sqlServer is how SQL Server ends a string: a doubled quote is the quote, and
+// a backslash is an ordinary byte.
+var sqlServer = normalize.Quoting{}
 
 // TestNormalizeCheckExpression_SetMembershipHasOneSpelling pins the fix for
 // the churn stokaro/ptah#1716 is about.
@@ -61,7 +67,7 @@ func TestNormalizeCheckExpression_SetMembershipHasOneSpelling(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			equal := normalizeCheckExpression(test.declared) == normalizeCheckExpression(test.stored)
+			equal := normalizeCheckExpression(test.declared, sqlServer) == normalizeCheckExpression(test.stored, sqlServer)
 
 			c.Assert(equal, qt.Equals, test.wantEqual)
 		})
@@ -127,8 +133,8 @@ func TestCanonicalizeCheckSetMembership_ReadsMembershipOnAnExpression(t *testing
 func TestCanonicalizeCheckSetMembership_ReadsAnOperatorSpellingInsideALiteral(t *testing.T) {
 	c := qt.New(t)
 
-	declared := normalizeCheckExpression("[label] IN ('in(x', 'y')")
-	stored := normalizeCheckExpression("([label]='y' OR [label]='in(x')")
+	declared := normalizeCheckExpression("[label] IN ('in(x', 'y')", sqlServer)
+	stored := normalizeCheckExpression("([label]='y' OR [label]='in(x')", sqlServer)
 
 	c.Assert(declared, qt.Equals, stored)
 	c.Assert(declared, qt.Contains, "'in(x'")
@@ -144,8 +150,8 @@ func TestCanonicalizeCheckSetMembership_ReadsAnOperatorSpellingInsideALiteral(t 
 func TestCanonicalizeCheckSetMembership_FindsTheOperatorPastALiteralHoldingIt(t *testing.T) {
 	c := qt.New(t)
 
-	declared := normalizeCheckExpression("f('in(') IN ('a', 'b')")
-	stored := normalizeCheckExpression("(f('in(')='b' OR f('in(')='a')")
+	declared := normalizeCheckExpression("f('in(') IN ('a', 'b')", sqlServer)
+	stored := normalizeCheckExpression("(f('in(')='b' OR f('in(')='a')", sqlServer)
 
 	c.Assert(declared, qt.Equals, stored)
 	c.Assert(declared, qt.Contains, "f('in(')")
@@ -160,8 +166,8 @@ func TestCanonicalizeCheckSetMembership_FindsTheOperatorPastALiteralHoldingIt(t 
 func TestCanonicalizeCheckSetMembership_DoesNotReadInsideALiteral(t *testing.T) {
 	c := qt.New(t)
 
-	declared := normalizeCheckExpression("[label] IN ('a or b', 'c, d')")
-	stored := normalizeCheckExpression("([label]='c, d' OR [label]='a or b')")
+	declared := normalizeCheckExpression("[label] IN ('a or b', 'c, d')", sqlServer)
+	stored := normalizeCheckExpression("([label]='c, d' OR [label]='a or b')", sqlServer)
 
 	c.Assert(declared, qt.Equals, stored)
 	c.Assert(declared, qt.Contains, "'a or b'")

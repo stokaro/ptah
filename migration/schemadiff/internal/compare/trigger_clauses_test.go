@@ -79,7 +79,7 @@ func TestTriggerDefinitions_ClausesTheServerSpellsItsOwnWay_HappyPath(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := compare.TriggerDefinitions(test.declared.declared(), test.read.read(), identifier.ForDialect(platform.Postgres))
+			diff := compare.TriggerDefinitions(test.declared.declared(), test.read.read(), platform.Postgres, identifier.ForDialect(platform.Postgres))
 			c.Assert(diff.Changes, qt.HasLen, 0)
 		})
 	}
@@ -141,7 +141,7 @@ func TestTriggerDefinitions_ClauseChanges(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := compare.TriggerDefinitions(test.declared.declared(), test.read.read(), identifier.ForDialect(platform.Postgres))
+			diff := compare.TriggerDefinitions(test.declared.declared(), test.read.read(), platform.Postgres, identifier.ForDialect(platform.Postgres))
 			c.Assert(diff.Changes, qt.DeepEquals, test.want)
 		})
 	}
@@ -181,7 +181,7 @@ func TestTriggersWithSemanticsAndConditions_UsesTheServerSpelling(t *testing.T) 
 			database := &catalog.Database{Triggers: []catalog.Trigger{read.read()}}
 			diff := &difftypes.SchemaDiff{}
 
-			compare.TriggersWithSemanticsAndConditions(desired, database, diff, semantics, test.conditions, capability.Postgres18())
+			compare.TriggersWithSemanticsAndConditions(desired, database, diff, platform.Postgres, semantics, test.conditions, capability.Postgres18())
 
 			c.Assert(diff.TriggersModified, qt.HasLen, test.wantCount)
 		})
@@ -214,7 +214,7 @@ func TestTriggersWithSemanticsAndConditions_ComparesOnlyAConditionTheReadReports
 			diff := &difftypes.SchemaDiff{}
 
 			compare.TriggersWithSemanticsAndConditions(
-				desired, database, diff, identifier.ForDialect(platform.CockroachDB), nil, test.caps,
+				desired, database, diff, platform.CockroachDB, identifier.ForDialect(platform.CockroachDB), nil, test.caps,
 			)
 
 			c.Assert(diff.TriggersModified, qt.HasLen, test.wantCount)
@@ -251,6 +251,7 @@ func TestTriggerDefinitions_CockroachTypeAnnotations(t *testing.T) {
 			diff := compare.TriggerDefinitions(
 				clauseTrigger{event: "UPDATE", forEach: "ROW", when: test.declared}.declared(),
 				clauseTrigger{event: "UPDATE", forEach: "ROW", when: test.read}.read(),
+				platform.CockroachDB,
 				identifier.ForDialect(platform.CockroachDB),
 			)
 			c.Assert(diff.Changes, qt.DeepEquals, test.want)

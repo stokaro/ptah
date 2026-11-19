@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/normalize"
 )
 
 // Constraints compares constraint definitions between generated and database schemas.
@@ -202,7 +203,7 @@ func pairedConstraints(
 	// Create maps for detailed constraint comparison
 	genConstraints = declaredAndCheckConstraints(desired, database, dialect, semantics)
 
-	recordSynthesized(genConstraints, synthesizeTablePrimaryKeyConstraints(desired, database, dialect, semantics), semantics)
+	recordSynthesized(genConstraints, synthesizeTablePrimaryKeyConstraints(desired, database, dialect, semantics), dialect, semantics)
 
 	// Synthesize table-level Constraint entries from field-level `foreign=`
 	// annotations so on_delete / on_update drift on an existing field-level
@@ -215,7 +216,7 @@ func pairedConstraints(
 	// Every database foreign key stays in the comparison and is paired by
 	// name, whichever form declares its counterpart; see
 	// [fieldLevelConstraints.has] for why none is excused by its column.
-	recordSynthesized(genConstraints, synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics), semantics)
+	recordSynthesized(genConstraints, synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics), dialect, semantics)
 
 	dbConstraints = collectDatabaseConstraints(
 		desired,
@@ -225,7 +226,7 @@ func pairedConstraints(
 		semantics,
 	)
 	pairNumberedForeignKeys(genConstraints, dbConstraints, dialect, semantics)
-	pairGeneratedNameChecks(genConstraints, dbConstraints)
+	pairGeneratedNameChecks(genConstraints, dbConstraints, quotingOf(dialect))
 
 	return genConstraints, dbConstraints
 }
@@ -254,7 +255,7 @@ func collectDatabaseConstraints(
 	dbConstraints := make(map[tableMemberKey]catalog.Constraint, len(database.Constraints))
 	fieldLevel := newFieldLevelConstraints(desired, semantics)
 	for _, constraint := range database.Constraints {
-		key := newCatalogConstraintKey(constraint, semantics)
+		key := newCatalogConstraintKey(constraint, dialect, semantics)
 		if _, owned := ownedByColumns[key]; owned {
 			continue
 		}
@@ -398,7 +399,7 @@ func constraintDefinitionsChanged(
 	// Type-specific comparisons
 	switch genConstraint.Type {
 	case "CHECK":
-		return checkConstraintChanged(genConstraint, dbConstraint, checkExpressionsOf(opts), semantics)
+		return checkConstraintChanged(genConstraint, dbConstraint, checkExpressionsOf(opts), quotingOf(dialect), semantics)
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint, semantics)
 	case "PRIMARY KEY":
@@ -454,13 +455,13 @@ func declaredAndCheckConstraints(
 	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
 	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
 	// constraint is created in the same migration step.
-	recordSynthesized(constraints, synthesizeFieldLevelCheckConstraints(desired, database, dialect, semantics), semantics)
+	recordSynthesized(constraints, synthesizeFieldLevelCheckConstraints(desired, database, dialect, semantics), dialect, semantics)
 
 	// Synthesize table-level Constraint entries from the table's own `checks`
 	// list, which renders as a named CHECK. Without this the constraint the
 	// render created is reported as one to drop on every run after the first
 	// (stokaro/ptah#2590).
-	recordSynthesized(constraints, synthesizeTableLevelCheckConstraints(desired, database, dialect, semantics), semantics)
+	recordSynthesized(constraints, synthesizeTableLevelCheckConstraints(desired, database, dialect, semantics), dialect, semantics)
 	return constraints
 }
 
@@ -470,10 +471,10 @@ func declaredAndCheckConstraints(
 // constraint through it, so the two cannot disagree about which constraint a
 // declaration is.
 func declaredConstraint(
-	constraint schemamodel.Constraint, tables []schemamodel.Table, semantics identifier.Semantics,
+	constraint schemamodel.Constraint, tables []schemamodel.Table, dialect string, semantics identifier.Semantics,
 ) (schemamodel.Constraint, tableMemberKey) {
 	constraint.Table = constraintowner.TableName(constraint, tables)
-	return constraint, newDeclaredConstraintKey(constraint, semantics)
+	return constraint, newDeclaredConstraintKey(constraint, dialect, semantics)
 }
 
 // comparedDeclaredConstraint is [declaredConstraint] for a comparison with
@@ -493,7 +494,7 @@ func comparedDeclaredConstraint(
 	dialect string,
 	semantics identifier.Semantics,
 ) (schemamodel.Constraint, tableMemberKey) {
-	constraint, key := declaredConstraint(constraint, tables, semantics)
+	constraint, key := declaredConstraint(constraint, tables, dialect, semantics)
 	if !strings.EqualFold(strings.TrimSpace(constraint.Type), "PRIMARY KEY") || database == nil {
 		return constraint, key
 	}
@@ -506,7 +507,7 @@ func comparedDeclaredConstraint(
 		return constraint, key
 	}
 	constraint.Name = name
-	return constraint, newDeclaredConstraintKey(constraint, semantics)
+	return constraint, newDeclaredConstraintKey(constraint, dialect, semantics)
 }
 
 // ComparedCheckConstraints returns every CHECK constraint the constraint
@@ -561,6 +562,7 @@ func checkConstraintChanged(
 	genConstraint schemamodel.Constraint,
 	dbConstraint catalog.Constraint,
 	checks map[string]config.CheckExpression,
+	quoting normalize.Quoting,
 	semantics identifier.Semantics,
 ) bool {
 	// A CHECK the server does not enforce is another constraint from one it
@@ -582,12 +584,12 @@ func checkConstraintChanged(
 		return false
 	}
 	if resolved, ok := resolvedCheckExpression(checks, genConstraint, semantics); ok {
-		return resolved.Differs || normalizeCheckExpression(resolved.Expression) != normalizeCheckExpression(dbClause)
+		return resolved.Differs || normalizeCheckExpression(resolved.Expression, quoting) != normalizeCheckExpression(dbClause, quoting)
 	}
 	if checkExpressionHasUnsupportedRewrite(genConstraint.CheckExpression, dbClause) {
 		return false
 	}
-	return normalizeCheckExpression(genConstraint.CheckExpression) != normalizeCheckExpression(dbClause)
+	return normalizeCheckExpression(genConstraint.CheckExpression, quoting) != normalizeCheckExpression(dbClause, quoting)
 }
 
 // resolvedCheckExpression looks up the server's spelling of one declared

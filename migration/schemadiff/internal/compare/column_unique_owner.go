@@ -80,7 +80,7 @@ func readColumnKeys(
 		if _, unique := uniqueColumns[column]; !unique {
 			continue
 		}
-		if _, byName := declared[newCatalogConstraintKey(constraint, semantics)]; byName ||
+		if _, byName := declared[newCatalogConstraintKey(constraint, dialect, semantics)]; byName ||
 			uniqueConstraintOwnedByDeclaredIndex(constraint, dialect, declaredIndexes, semantics) {
 			continue
 		}
@@ -108,7 +108,7 @@ func readColumnKeys(
 			}
 			owner = constraints[found]
 		}
-		keys.owned[newCatalogConstraintKey(owner, semantics)] = struct{}{}
+		keys.owned[newCatalogConstraintKey(owner, dialect, semantics)] = struct{}{}
 		keys.held[column] = struct{}{}
 	}
 	return keys

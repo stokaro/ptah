@@ -168,12 +168,15 @@ func reportedParts(index catalog.Index) []catalog.IndexPart {
 type GeneratedExpressions struct{}
 
 // Spelling returns expression folded the way a catalog reprints an expression
-// ([normalize.CatalogExpression]), with `lcase(` read as `lower(`. A
-// double-quoted token is a string under the default SQL mode of both engines,
-// so a double quote opens a string as a single quote does.
+// ([normalize.CatalogExpression]), with `lcase(` read as `lower(`.
 func (GeneratedExpressions) Spelling(expression string) string {
-	return normalize.RenameFunction(normalize.CatalogExpression(expression, `'"`), "lcase", "lower")
+	return normalize.RenameFunction(normalize.CatalogExpression(expression, quoting), "lcase", "lower", quoting)
 }
+
+// quoting is how both engines end quoted text under their default SQL mode: a
+// double-quoted token is a string, as a single-quoted one is, and a backslash
+// escapes the next byte in either.
+var quoting = normalize.Quoting{Strings: `'"`, BackslashEscapes: true}
 
 // ForeignKeyIndexes finds the index MySQL or MariaDB built for a foreign key.
 type ForeignKeyIndexes struct {

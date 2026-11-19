@@ -3,20 +3,36 @@ package compare
 import (
 	"strings"
 	"unicode"
+
+	"ptah.run/internal/normalize"
 )
 
-func normalizeCheckExpression(expr string) string {
+// normalizeCheckExpression folds a condition for comparison: whitespace and
+// backticks outside strings go, letters outside strings are lowered, and a
+// cast or a character set introducer on a literal is dropped.
+//
+// Where a string ends is quoting's question. A dialect whose strings read
+// backslash escapes keeps a rule for MySQL's information_schema, which prints
+// each quote of a CHECK clause escaped, `_utf8mb4\'abc\'`: a backslash before
+// a quote is dropped. Elsewhere a backslash is an ordinary byte outside an
+// E'...' string. PostgreSQL stores `t <> 'p\'` as a comparison with the
+// two-byte string p\, and dropping the backslash would read it as `t <> 'p'`.
+func normalizeCheckExpression(expr string, quoting normalize.Quoting) string {
 	expr = trimBalancedCheckParens(strings.TrimSpace(expr))
 
-	normalizer := checkExpressionNormalizer{expr: expr}
+	normalizer := checkExpressionNormalizer{expr: expr, quoting: quoting}
 	return canonicalizeCheckSetMembership(normalizer.normalize())
 }
 
 type checkExpressionNormalizer struct {
 	expr     string
+	quoting  normalize.Quoting
 	builder  strings.Builder
 	inString bool
-	pos      int
+	// escapes reports that the string the normalizer is in reads a
+	// backslash as an escape, an E'...' string on PostgreSQL.
+	escapes bool
+	pos     int
 }
 
 func (n *checkExpressionNormalizer) normalize() string {
@@ -44,7 +60,13 @@ func (n *checkExpressionNormalizer) writeNext() {
 }
 
 func (n *checkExpressionNormalizer) writeEscapedQuote(ch byte) bool {
-	if ch != '\\' || n.pos+1 >= len(n.expr) || n.expr[n.pos+1] != '\'' {
+	if ch != '\\' || n.pos+1 >= len(n.expr) {
+		return false
+	}
+	if !n.quoting.BackslashEscapes {
+		return n.writeEscape()
+	}
+	if n.expr[n.pos+1] != '\'' {
 		return false
 	}
 	if !n.inString || checkEscapedQuoteClosesString(n.expr, n.pos+1) {
@@ -55,9 +77,24 @@ func (n *checkExpressionNormalizer) writeEscapedQuote(ch byte) bool {
 	return true
 }
 
+// writeEscape copies a backslash and the byte after it, inside a string that
+// reads backslash escapes on a dialect whose other strings do not.
+func (n *checkExpressionNormalizer) writeEscape() bool {
+	if !n.inString || !n.escapes {
+		return false
+	}
+	n.builder.WriteByte(n.expr[n.pos])
+	n.pos++
+	n.builder.WriteByte(n.expr[n.pos])
+	return true
+}
+
 func (n *checkExpressionNormalizer) writeStringQuote(ch byte) bool {
 	if ch != '\'' {
 		return false
+	}
+	if !n.inString {
+		n.escapes = n.quoting.BackslashEscapesIn(n.expr, n.pos)
 	}
 	n.builder.WriteByte(ch)
 	if n.inString && n.pos+1 < len(n.expr) && n.expr[n.pos+1] == '\'' {
