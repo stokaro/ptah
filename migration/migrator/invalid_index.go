@@ -314,6 +314,12 @@ func explainFailedIndexBuild(ctx context.Context, conn *dbschema.DatabaseConnect
 // before, and a later retry resumes from the same statement. Recording a second
 // failure over it would reset those counters from something that is not a
 // statement failure, and the next retry would re-run SQL that already committed.
+//
+// A body with nothing to inspect opens no session (see [planUpIndexPreflight]).
+// The session the probe opens is discarded when it ends, and the backend behind
+// it exits after the run has asked for the next connection, so on a server at
+// its connection limit the revision row the run writes next is refused
+// (SQLSTATE 53300).
 func (m *Migrator) refuseUpOverUnsafeIndex(
 	ctx context.Context,
 	migration *Migration,
@@ -324,7 +330,13 @@ func (m *Migrator) refuseUpOverUnsafeIndex(
 	if m.conn == nil || m.conn.Writer().IsDryRun() {
 		return nil
 	}
-	if m.services().Indexes == nil {
+	guard := m.services().Indexes
+	if guard == nil {
+		return nil
+	}
+	statements := splitSQLStatementsForDialect(migration.UpSQL, m.connectionDialect())
+	plan := planUpIndexPreflight(guard, grammarFor(m.conn), statements, resumeFrom, run)
+	if !plan.inspects() {
 		return nil
 	}
 	// The preflight replays the migration's session statements before the
@@ -339,14 +351,14 @@ func (m *Migrator) refuseUpOverUnsafeIndex(
 	return detached.withNoTransactionSession(ctx, func(scoped *Migrator) error {
 		executionConn := scoped.noTransactionConnection()
 		if txMode == MigrationTxModeNone {
-			return scoped.refuseUpOverUnsafeIndexOn(ctx, executionConn, migration, resumeFrom, run)
+			return scoped.refuseUpOverUnsafeIndexOn(ctx, executionConn, migration, plan)
 		}
 		tx, err := executionConn.SchemaWriter().BeginTransaction(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to open PostgreSQL index recovery preflight: %w", err)
 		}
 		defer func() { _ = tx.Rollback() }()
-		return scoped.refuseUpOverUnsafeIndexOn(ctx, executionConn.WithExecutor(tx), migration, resumeFrom, run)
+		return scoped.refuseUpOverUnsafeIndexOn(ctx, executionConn.WithExecutor(tx), migration, plan)
 	})
 }
 
@@ -354,10 +366,9 @@ func (m *Migrator) refuseUpOverUnsafeIndexOn(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	migration *Migration,
-	resumeFrom int,
-	run ownTransactionRun,
+	plan upIndexPreflightPlan,
 ) error {
-	unsafe, err := m.postgresIndexStatesBlockingAttempt(ctx, conn, migration.UpSQL, resumeFrom, run)
+	unsafe, err := m.postgresIndexStatesBlockingAttempt(ctx, conn, plan)
 	if err != nil || len(unsafe) == 0 {
 		return err
 	}
@@ -496,51 +507,108 @@ func indexQueryer(conn *dbschema.DatabaseConnection) migratorext.RowsQueryer {
 	return conn
 }
 
-// postgresIndexStatesBlockingAttempt returns existing relations that would keep
-// an attempted CREATE INDEX from leaving a usable index on its target. A DROP
-// suppresses a conflict only after PostgreSQL's catalog and search path resolve
-// it to the same schema-level relation name. Statements before resumeFrom were
-// committed by an earlier attempt and are deliberately excluded. run
-// describes a body that opens and closes its own transactions: the session
-// state that ends with one of them, such as LOCK, is not replayed.
-func (m *Migrator) postgresIndexStatesBlockingAttempt(
-	ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	sqlText string,
+// upIndexPreflightStep is what the up preflight does with one statement of a
+// migration body.
+type upIndexPreflightStep uint8
+
+const (
+	// upIndexPreflightSkip passes over the statement.
+	upIndexPreflightSkip upIndexPreflightStep = iota
+	// upIndexPreflightReplay runs the statement for the session state it
+	// sets, which a name a later statement creates may resolve through.
+	upIndexPreflightReplay
+	// upIndexPreflightInspect reads the catalog for the indexes the statement
+	// creates with IF NOT EXISTS, or drops.
+	upIndexPreflightInspect
+)
+
+// upIndexPreflightStatement is one statement of a migration body and what the
+// up preflight does with it.
+type upIndexPreflightStatement struct {
+	text string
+	step upIndexPreflightStep
+}
+
+// upIndexPreflightPlan is what the up preflight does with each statement of a
+// migration body, in order.
+type upIndexPreflightPlan []upIndexPreflightStatement
+
+// inspects reports whether the plan reads the catalog for a statement, which
+// is when the preflight opens a session.
+func (p upIndexPreflightPlan) inspects() bool {
+	return slices.ContainsFunc(p, func(s upIndexPreflightStatement) bool { return s.step == upIndexPreflightInspect })
+}
+
+// planUpIndexPreflight returns what the up preflight does with each of
+// statements, the body of a migration resumed from resumeFrom: it inspects a
+// statement that creates an index with IF NOT EXISTS or drops one, from
+// resumeFrom on, and replays the session state the statements before it set.
+// Statements before resumeFrom were committed by an earlier attempt and are not
+// inspected. run describes a body that opens and closes its own transactions:
+// the session state that ends with one of them, such as LOCK, is not replayed.
+//
+// The plan is computed once, before the preflight opens a session, and both
+// halves read it: [Migrator.refuseUpOverUnsafeIndex] opens a session only when
+// the plan inspects a statement, and [Migrator.postgresIndexStatesBlockingAttempt]
+// reads the catalog only for a statement the plan inspects. One plan cannot
+// become two lists. A pre-scan that passed over a statement the loop inspects
+// would skip the preflight, and record the migration over an unusable index.
+func planUpIndexPreflight(
+	guard migratorext.IndexGuard,
+	grammar bodyGrammar,
+	statements []string,
 	resumeFrom int,
 	run ownTransactionRun,
-) ([]migratorext.IndexState, error) {
-	if builtin.Lookup(conn.Info().Dialect).Indexes == nil {
-		return nil, nil
-	}
-	statements := splitSQLStatementsForDialect(sqlText, conn.Info().Dialect)
-	dropped := make(map[migratorext.IndexName]struct{})
-	seen := make(map[migratorext.IndexName]struct{})
-	var unsafe []migratorext.IndexState
+) upIndexPreflightPlan {
+	plan := make(upIndexPreflightPlan, len(statements))
 	for i, statement := range statements {
+		plan[i] = upIndexPreflightStatement{text: statement}
+		switch {
 		// A lock changes no name a statement resolves, and outside a
 		// transaction PostgreSQL refuses it: replaying it here would refuse
 		// the migration for a reason that is not the preflight's, before
 		// any revision row exists. The statement meets the server's own
 		// answer when it runs.
-		if ownTransactionResumeAction(i, statement, grammarFor(conn), run) == noTransactionPrefixReplay &&
-			!locksTables(statement, conn.Info().Dialect) {
-			if err := executeSQLOn(ctx, conn, statement); err != nil {
+		case ownTransactionResumeAction(i, statement, grammar, run) == noTransactionPrefixReplay &&
+			!locksTables(statement, grammar.dialect):
+			plan[i].step = upIndexPreflightReplay
+		case i+1 >= max(resumeFrom, 1) && (len(guard.ConditionalCreates(statement)) > 0 || len(guard.Drops(statement)) > 0):
+			plan[i].step = upIndexPreflightInspect
+		}
+	}
+	return plan
+}
+
+// postgresIndexStatesBlockingAttempt returns existing relations that would keep
+// an attempted CREATE INDEX from leaving a usable index on its target, for the
+// statements plan inspects. A DROP suppresses a conflict only after
+// PostgreSQL's catalog and search path resolve it to the same schema-level
+// relation name.
+func (m *Migrator) postgresIndexStatesBlockingAttempt(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	plan upIndexPreflightPlan,
+) ([]migratorext.IndexState, error) {
+	dropped := make(map[migratorext.IndexName]struct{})
+	seen := make(map[migratorext.IndexName]struct{})
+	var unsafe []migratorext.IndexState
+	for _, statement := range plan {
+		switch statement.step {
+		case upIndexPreflightReplay:
+			if err := executeSQLOn(ctx, conn, statement.text); err != nil {
 				return nil, fmt.Errorf("failed to replay PostgreSQL session state for index recovery preflight: %w", err)
 			}
-			continue
+		case upIndexPreflightInspect:
+			if err := m.collectPostgresDroppedIndexNames(ctx, conn, statement.text, dropped); err != nil {
+				return nil, err
+			}
+			states, err := m.postgresUnsafeCreateStates(ctx, conn, statement.text, dropped, seen)
+			if err != nil {
+				return nil, err
+			}
+			unsafe = append(unsafe, states...)
+		case upIndexPreflightSkip:
 		}
-		if i+1 < max(resumeFrom, 1) {
-			continue
-		}
-		if err := m.collectPostgresDroppedIndexNames(ctx, conn, statement, dropped); err != nil {
-			return nil, err
-		}
-		states, err := m.postgresUnsafeCreateStates(ctx, conn, statement, dropped, seen)
-		if err != nil {
-			return nil, err
-		}
-		unsafe = append(unsafe, states...)
 	}
 	return unsafe, nil
 }

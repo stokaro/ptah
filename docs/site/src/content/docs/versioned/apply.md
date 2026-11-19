@@ -1489,10 +1489,13 @@ rows. Rebuild the index with the `REINDEX` the message names, or drop it so the
 name is free and the statement builds it, then run again. Only indexes named by
 `CREATE INDEX ... IF NOT EXISTS` are checked, and only on PostgreSQL; ordinary
 creates retain PostgreSQL's normal error semantics and may be renamed or removed
-by later statements. Other dialects
-have no concurrent index build to leave half-finished. A dry run is exempt,
-because it records nothing. `ptah migrations repair` refuses on the same
-grounds — see [Maintain migration history](../maintain-history/).
+by later statements. Other dialects have no concurrent index build to leave
+half-finished.
+
+The check opens a database session of its own and closes it when it ends; a
+migration with no conditional create and no `DROP INDEX` opens no such
+session. A dry run is exempt, because it records nothing. `ptah migrations
+repair` refuses on the same grounds — see [Maintain migration history](../maintain-history/).
 
 An intentional `DROP INDEX` followed by a matching create is allowed when the
 drop will execute in the current attempt. A statement skipped by dirty-resume
