@@ -126,6 +126,11 @@ func changeManifest(c *qt.C, f providerCLI, change func(*providerconfig.Configur
 	c.Assert(os.WriteFile(f.manifestPath, data, 0o600), qt.IsNil)
 }
 
+// TestMissingOfficialProviderDiagnosticsAcrossNativeCommands reports
+// provider_missing for each official engine, with its setup page, from every
+// native schema verb. The user store is an empty directory of the test's own:
+// a provider installed on the machine that runs the test would otherwise be
+// selected, and the run would not report it missing.
 func TestMissingOfficialProviderDiagnosticsAcrossNativeCommands(t *testing.T) {
 	for _, entry := range providercatalog.Entries() {
 		for _, command := range []struct {
@@ -136,6 +141,7 @@ func TestMissingOfficialProviderDiagnosticsAcrossNativeCommands(t *testing.T) {
 		} {
 			t.Run(entry.EngineID+"/"+command.verb, func(t *testing.T) {
 				c := qt.New(t)
+				isolateStore(c)
 				args := append([]string{"schema", command.verb, "--provider-engine", entry.EngineID}, command.args...)
 				out, stderr, code := executeProviderCLI(c.Context(), args)
 				c.Assert(code, qt.Equals, 2, qt.Commentf("%s", stderr))
