@@ -242,8 +242,9 @@ so does `DEFAULT ''`.
 
 PostgreSQL reads a date or time default of `'now'`, `'today'`, `'tomorrow'` or
 `'yesterday'` once, when it creates the table or the domain, and stores that
-moment as the default. Ptah refuses such a default, with or without a cast and
-in parentheses, as `('now')`; write `now()`, `CURRENT_TIMESTAMP` or
+moment as the default. Ptah refuses such a default, with or without a cast, as
+`'now'::date`, `CAST('now' AS date)` or `E'now'`, and in parentheses, as
+`('now')`; write `now()`, `CURRENT_TIMESTAMP` or
 `CURRENT_DATE` instead. It is refused:
 
 - on a column of a built-in date or time type, written plain or quoted, as
@@ -251,8 +252,9 @@ in parentheses, as `('now')`; write `now()`, `CURRENT_TIMESTAMP` or
   is a type somebody created;
 - on a column of a domain the schema declares over such a type;
 - on an array of such a type, with an array default that holds one of the
-  words, as `'{now}'` or `ARRAY['today']::date[]`. An uncast `ARRAY['today']`
-  is a `text[]`, which the server refuses with its own type error;
+  words, as `'{now}'`, `ARRAY['today']::date[]` or `ARRAY['today', CURRENT_DATE]`.
+  An `ARRAY['today']` with no cast and no element of another type is a
+  `text[]`, which the server refuses with its own type error;
 - as a domain's own default, as `CREATE DOMAIN moment AS timestamp DEFAULT 'now'`;
 - on a type name that domains in more than one schema answer to, when any of
   them holds a date or time, since the server takes the one its search path

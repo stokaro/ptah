@@ -76,11 +76,16 @@ func RelativeTimeArrayLiteral(value string, literals []string) bool {
 // constructorHolds reports whether an element of an ARRAY constructor, whose
 // elements inner holds, is a string literals names that the engine reads as a
 // date or time. typed says whether a cast around the constructor types its
-// uncast elements: without one an uncast string element is text, which the
-// engine never reads as a moment. A nested constructor is typed by its own
-// cast, or else by the one around it.
+// uncast elements. Without one, the engine gives the elements one common
+// type: text where every element is an uncast string, NULL or a string cast
+// to a string type ([keepsText]), and otherwise the type of the other
+// elements, so 'today' in ARRAY['today', CURRENT_DATE] is a date the engine
+// reads once. Measured on PostgreSQL 18. A nested constructor is typed by its
+// own cast, or else as its parent types it.
 func constructorHolds(inner string, typed bool, literals []string) bool {
-	return slices.ContainsFunc(splitTopLevel(inner), func(element string) bool {
+	elements := splitTopLevel(inner)
+	typed = typed || slices.ContainsFunc(elements, func(element string) bool { return !keepsText(element) })
+	return slices.ContainsFunc(elements, func(element string) bool {
 		text, cast := unwrap(element)
 		if stringType(cast) {
 			return false
@@ -90,6 +95,28 @@ func constructorHolds(inner string, typed bool, literals []string) bool {
 		}
 		return (typed || cast != "") && relativeTimeString(text, literals)
 	})
+}
+
+// keepsText reports whether element, an element of an uncast ARRAY
+// constructor, leaves the engine nothing but text to type the constructor by:
+// an uncast string, NULL, a string cast to a string type ([stringType]), or a
+// nested constructor of only such elements.
+func keepsText(element string) bool {
+	text, cast := unwrap(element)
+	if cast != "" {
+		return stringType(cast)
+	}
+	if nested, ok := arrayConstructor(text); ok {
+		return !slices.ContainsFunc(splitTopLevel(nested), func(inner string) bool { return !keepsText(inner) })
+	}
+	return strings.EqualFold(text, "NULL") || quotedString(text)
+}
+
+// quotedString reports whether text is one quoted string, where a doubled
+// quote inside it stands for one quote.
+func quotedString(text string) bool {
+	return len(text) >= 2 && text[0] == '\'' && text[len(text)-1] == '\'' &&
+		!strings.Contains(strings.ReplaceAll(text[1:len(text)-1], "''", ""), "'")
 }
 
 // RelativeTimeDefault reports whether value, a default on a column of the
@@ -265,7 +292,10 @@ func identifierPart(text string) (part, rest string, ok bool) {
 // at any depth, and returns what is left and the type of the innermost cast,
 // the one the engine applies first, or "" where there is no cast:
 // `('now'::text)::date` becomes `'now'` and text, and
-// `ARRAY['today']::date[]` becomes `ARRAY['today']` and date[].
+// `ARRAY['today']::date[]` becomes `ARRAY['today']` and date[]. A cast is
+// written with ::, as CAST(x AS type), or as a type before a string, as
+// date 'today'. A COLLATE clause makes what it follows text, so it reads as
+// a cast to text.
 func unwrap(value string) (text, innermost string) {
 	text = strings.TrimSpace(value)
 	for {
@@ -273,12 +303,104 @@ func unwrap(value string) (text, innermost string) {
 			text = strings.TrimSpace(text[1 : len(text)-1])
 			continue
 		}
+		if operand, ok := collated(text); ok {
+			text, innermost = operand, "text"
+			continue
+		}
 		if cast := outerCast(text); cast > 0 {
 			text, innermost = strings.TrimSpace(text[:cast]), strings.TrimSpace(text[cast+2:])
 			continue
 		}
+		if operand, typeName, ok := castCall(text); ok {
+			text, innermost = operand, typeName
+			continue
+		}
+		if typeName, literal, ok := typedLiteral(text); ok {
+			return literal, typeName
+		}
 		return text, innermost
 	}
+}
+
+// castCall reads text as CAST(operand AS typeName).
+func castCall(text string) (operand, typeName string, ok bool) {
+	if len(text) < len("CAST()") || !strings.EqualFold(text[:len("CAST")], "CAST") {
+		return "", "", false
+	}
+	rest := strings.TrimSpace(text[len("CAST"):])
+	if !enclosed(rest) {
+		return "", "", false
+	}
+	inner := rest[1 : len(rest)-1]
+	as := lastTopLevelWord(inner, "AS")
+	if as < 0 || !isTypeName(inner[as+len("AS"):]) {
+		return "", "", false
+	}
+	return strings.TrimSpace(inner[:as]), strings.TrimSpace(inner[as+len("AS"):]), true
+}
+
+// collated reads text as operand COLLATE name.
+func collated(text string) (string, bool) {
+	at := lastTopLevelWord(text, "COLLATE")
+	if at <= 0 {
+		return "", false
+	}
+	parts, rest, ok := identifierParts(text[at+len("COLLATE"):])
+	if !ok || len(parts) == 0 || strings.TrimSpace(rest) != "" {
+		return "", false
+	}
+	return strings.TrimSpace(text[:at]), true
+}
+
+// typedLiteral reads text as a type name before a string, as date 'today',
+// and returns the type and the string. A one-letter prefix written against
+// the quote makes a kind of string, not a type: E'now' is the string 'now',
+// with no type, which PostgreSQL 18 reads once on a timestamp column as it
+// reads 'now'. A bit string (B'1', X'1') or a national string (N'now') is not
+// read.
+func typedLiteral(text string) (typeName, literal string, ok bool) {
+	quote := strings.IndexByte(text, '\'')
+	if quote <= 0 || !quotedString(text[quote:]) {
+		return "", "", false
+	}
+	if quote == 1 && (text[0] == 'E' || text[0] == 'e') {
+		return "", text[quote:], true
+	}
+	typeName = strings.TrimSpace(text[:quote])
+	if typeName == "" || !isTypeName(typeName) || !identifierByte(typeName[0]) && typeName[0] != '"' ||
+		len(typeName) == 1 && text[quote-1] != ' ' {
+		return "", "", false
+	}
+	return typeName, text[quote:], true
+}
+
+// lastTopLevelWord returns where the last whole word word begins in text,
+// matched without case, outside strings, quoted names, parentheses and
+// brackets, or -1 where there is none.
+func lastTopLevelWord(text, word string) int {
+	found, depth, single, double := -1, 0, false, false
+	for i := 0; i < len(text); i++ {
+		switch ch := text[i]; {
+		case ch == '\'' && !double:
+			single = !single
+		case ch == '"' && !single:
+			double = !double
+		case single || double:
+		case ch == '(' || ch == '[':
+			depth++
+		case ch == ')' || ch == ']':
+			depth--
+		case depth == 0 && i+len(word) <= len(text) && strings.EqualFold(text[i:i+len(word)], word) &&
+			(i == 0 || !identifierByte(text[i-1])) && (i+len(word) == len(text) || !identifierByte(text[i+len(word)])):
+			found = i
+		}
+	}
+	return found
+}
+
+// identifierByte reports whether ch can continue a bare identifier.
+func identifierByte(ch byte) bool {
+	return ch == '_' || ch == '$' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9'
 }
 
 // outerCast returns where the outermost cast of text begins, or -1 where text

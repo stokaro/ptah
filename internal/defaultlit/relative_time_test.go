@@ -23,6 +23,11 @@ func TestRelativeTimeLiteral_Matches(t *testing.T) {
 		{name: "a cast after parentheses", value: "('yesterday')::timestamptz"},
 		{name: "a timestamp cast to a date", value: "'now'::timestamp::date"},
 		{name: "a cast to a created type", value: "'now'::app.moment"},
+		{name: "a CAST to a date", value: "CAST('now' AS date)"},
+		{name: "a CAST of a CAST", value: "cast(CAST('now' AS timestamp) as date)"},
+		{name: "a typed literal", value: "date 'today'"},
+		{name: "a typed literal of a spelled type", value: "TIMESTAMP WITH TIME ZONE 'now'"},
+		{name: "an escape string", value: "E'now'"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -52,6 +57,12 @@ func TestRelativeTimeLiteral_DoesNotMatch(t *testing.T) {
 		{name: "quoted text first", value: `'now'::"pg_catalog"."text"::timestamp`, literals: relativeTimeLiterals},
 		{name: "text alone", value: "'now'::TEXT", literals: relativeTimeLiterals},
 		{name: "a chain from text", value: "'now'::text::date", literals: relativeTimeLiterals},
+		{name: "a CAST to text first", value: "CAST('now' AS text)::date", literals: relativeTimeLiterals},
+		{name: "a CAST of a CAST to text", value: "CAST(CAST('now' AS varchar(5)) AS date)", literals: relativeTimeLiterals},
+		{name: "a collation before the cast", value: `('now'::text COLLATE "C")::date`, literals: relativeTimeLiterals},
+		{name: "a collation on the string", value: `'now' COLLATE "C"`, literals: relativeTimeLiterals},
+		{name: "a typed text literal", value: "text 'now'", literals: relativeTimeLiterals},
+		{name: "a national string", value: "N'now'", literals: relativeTimeLiterals},
 		{name: "no literals", value: "'now'"},
 	}
 	for _, row := range rows {
@@ -145,6 +156,11 @@ func TestRelativeTimeArrayLiteral_Matches(t *testing.T) {
 		{name: "an array literal with a cast", value: "'{now}'::date[]"},
 		{name: "a nested ARRAY constructor with a cast", value: "array[array['now']]::timestamp[]"},
 		{name: "a nested ARRAY constructor with its own cast", value: "array[array['now']::timestamp[]]"},
+		{name: "a word beside a function", value: "ARRAY['today', CURRENT_DATE]"},
+		{name: "a word before a cast element", value: "ARRAY['now', '2020-01-01'::date]"},
+		{name: "a word after a cast element", value: "ARRAY['2020-01-01'::date, 'now']"},
+		{name: "a word beside a cast NULL", value: "ARRAY[NULL::date, 'now']"},
+		{name: "a typed literal element", value: "ARRAY[date 'today']"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -175,6 +191,9 @@ func TestRelativeTimeArrayLiteral_DoesNotMatch(t *testing.T) {
 		{name: "an array literal cast to text first", value: "'{now}'::text[]::date[]", literals: relativeTimeLiterals},
 		{name: "a constructor cast to text first", value: "ARRAY['today']::text[]::date[]", literals: relativeTimeLiterals},
 		{name: "an element cast to text", value: "ARRAY['today'::text]::date[]", literals: relativeTimeLiterals},
+		{name: "a word beside NULL", value: "ARRAY['today', NULL]", literals: relativeTimeLiterals},
+		{name: "a word beside a text element", value: "ARRAY['today', 'epoch'::text]", literals: relativeTimeLiterals},
+		{name: "uncast nested constructors", value: "ARRAY[ARRAY['now'], ARRAY['today']]", literals: relativeTimeLiterals},
 		{name: "no literals", value: "'{now}'"},
 	}
 	for _, row := range rows {

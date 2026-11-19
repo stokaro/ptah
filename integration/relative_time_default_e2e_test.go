@@ -40,6 +40,21 @@ func TestSchemaApplyRefusesARelativeTimeDefaultE2E(t *testing.T) {
 			want:   `DEFAULT ARRAY['today']::date[] on a date[] column is read once, when the table is created`,
 		},
 		{
+			name:   "a word beside a date in an ARRAY constructor",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at date[] DEFAULT ARRAY['today', CURRENT_DATE]);",
+			want:   `DEFAULT ARRAY['today', CURRENT_DATE] on a date[] column is read once, when the table is created`,
+		},
+		{
+			name:   "a CAST to a date",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at date DEFAULT CAST('now' AS date));",
+			want:   `on a date column is read once, when the table is created`,
+		},
+		{
+			name:   "an escape string",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at timestamp DEFAULT E'now');",
+			want:   `on a timestamp column is read once, when the table is created`,
+		},
+		{
 			name:   "a timestamp cast to a date",
 			source: "CREATE TABLE notes (id int PRIMARY KEY, at date DEFAULT ('now'::timestamp)::date);",
 			want:   `DEFAULT ('now'::timestamp)::date on a date column is read once, when the table is created`,
