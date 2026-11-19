@@ -979,7 +979,9 @@ under `[type=check]`. Under every other selector that names the constraint, it
 accepts the selector, exits `0` and drops the constraint. `ptah-compat` keeps
 the constraint. The index the server enforces a primary key, `UNIQUE` or
 `EXCLUDE` constraint with leaves the comparison with the constraint, so the plan
-holds no `DROP INDEX` the server refuses with SQLSTATE `2BP01`.
+holds no `DROP INDEX` the server refuses with SQLSTATE `2BP01`. The key and
+unique flags a read derives for the constraint's column leave with it too, so
+native `schema compare` reports no difference on the column.
 
 Measured on 2026-11-18 with `schema apply --dry-run` on PostgreSQL 18, on a URL
 that names no schema. The table `kinds` holds the key `kinds_pkey`, the unique
@@ -1028,9 +1030,52 @@ are accepted by the binary, which then drops the constraint, and refused by
 `schema apply` here; see
 [An exclude selector that matches nothing](#an-exclude-selector-that-matches-nothing).
 
+A primary key declared without a name is named by the server's primary key on
+the same table, whatever the server calls it. With `kinds` holding
+`CONSTRAINT pk_kinds PRIMARY KEY (id)` and a desired schema declaring
+`id int NOT NULL PRIMARY KEY`, `public.kinds.pk_kinds` keeps the key on both
+binaries. `public.kinds.kinds_pkey`, the name PostgreSQL gives a new key, names
+nothing: the binary plans nothing, and `schema apply` here refuses the selector
+as matching nothing. A table renamed from `kinds` to `types` that kept
+`kinds_pkey` answers the same way to `public.types.kinds_pkey` and
+`public.types.types_pkey`.
+
+A foreign key on MySQL and MariaDB stands on an index, and the server builds
+one when no index covers the key's columns. The binary excludes the key under
+`[type=fk]` and keeps the index in the plan: `DROP INDEX`, which MySQL 26.10 and
+MariaDB 12.3 refuse with `ERROR 1553` while the key stands, so the apply fails.
+Ptah names the key under `[type=foreign_key]` and leaves the index the server
+built out with it, so the plan is synced. An index the author declared stays in
+the plan on both binaries, and the server refuses its removal the same way.
+
+On SQLite, the binary and `ptah-compat` both fail a selector that names a
+`CHECK`, for different reasons. With the table `kinds` holding a column
+`UNIQUE`, the check `code_len` and the index `kinds_code`, a desired schema that
+declares none of them, and `--exclude 'kinds.code_len[type=check]'`, the binary
+v1.3.0 plans `DROP INDEX kinds_code` twice and leaves the `UNIQUE` in place; its
+`schema apply` fails on the second statement with `no such index: kinds_code`
+and leaves the table as it was. Ptah plans the removal of the `UNIQUE`, and
+SQLite removes it only by writing a new table from the declaration, which would
+not hold the `CHECK` the selector keeps. So `ptah-compat` refuses the selector,
+says why, plans nothing and leaves the table as it is. Excluding the whole table
+works on both.
+
+The other selectors over the same table answer as follows:
+
+- `*[type=constraint]` is refused the same way, since every constraint of a
+  SQLite table stays in scope. The binary writes a new table without the
+  `UNIQUE` and the `CHECK`.
+- `*[type=index]` names the index, so it is not refused, and both binaries
+  write the new table.
+- `kinds.*` leaves out every column of the table and its constraints with them,
+  and both binaries plan nothing.
+
 **Evidence.** `integration/constraint_selector_e2e_test.go`,
 `integration/exclusion_selector_e2e_test.go`,
-`internal/atlasfilter/constraint_selector_test.go`
+`integration/foreign_key_selector_e2e_test.go`,
+`integration/key_selector_names_e2e_test.go`,
+`internal/atlasfilter/constraint_selector_test.go`,
+`internal/atlasfilter/foreign_key_backing_test.go`
 
 ## One version spelled two ways
 

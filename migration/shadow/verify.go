@@ -501,7 +501,7 @@ func assertSchemaMatches(
 ) error {
 	// The count is the one the plan was made with: native patterns count from
 	// the target connection's schema on every URL.
-	planNaming := atlasfilter.Naming{DefaultSchema: opts.TargetConnection.Info().Schema}
+	planNaming := atlasfilter.Naming{DefaultSchema: opts.TargetConnection.Info().Schema, Dialect: opts.TargetConnection.Info().Dialect}
 	generated, _, err := exclusion.Desired(opts.Generated, planNaming)
 	if err != nil {
 		return newVerificationError("schema-match", "exclude_error", "apply exclude selectors to the desired schema", err)

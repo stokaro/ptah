@@ -29,6 +29,9 @@ const (
 	// constraintSelectorKeyed declares the key and neither of the others.
 	constraintSelectorKeyed = "CREATE TABLE public.kinds (id int NOT NULL, code text NOT NULL, " +
 		"CONSTRAINT kinds_pkey PRIMARY KEY (id));\n"
+	// constraintSelectorColumnKeyed declares the key on its column, which
+	// leaves the column nullable as written.
+	constraintSelectorColumnKeyed = "CREATE TABLE public.kinds (id int PRIMARY KEY, code text NOT NULL);\n"
 	// constraintSelectorBare declares none of the three.
 	constraintSelectorBare = "CREATE TABLE public.kinds (id int NOT NULL, code text NOT NULL);\n"
 	// constraintSelectorReadBack answers the constraints public.kinds holds.
@@ -82,9 +85,9 @@ var constraintSelectorRows = []struct {
 	},
 }
 
-// primaryKeySelectorRows name the primary key, which the desired schema does
-// not declare, under the two types that name it. The community binary drops
-// the key under both.
+// primaryKeySelectorRows name the primary key under the two types that name
+// it, with the desired schema declaring no key, a table key and a column key.
+// The community binary drops the key under both types.
 var primaryKeySelectorRows = []struct {
 	name, desired, dropped, kept, after string
 	flags                               []string
@@ -98,6 +101,18 @@ var primaryKeySelectorRows = []struct {
 	{
 		name:    "a primary key as a constraint",
 		desired: constraintSelectorBare,
+		flags:   []string{"--exclude", "public.kinds.kinds_pkey[type=constraint]"},
+		dropped: `DROP CONSTRAINT "kinds_code_key"`, kept: `"kinds_pkey"`, after: "kinds_pkey",
+	},
+	{
+		name:    "a declared table key as an index",
+		desired: constraintSelectorKeyed,
+		flags:   []string{"--exclude", "public.kinds.kinds_pkey[type=index]"},
+		dropped: `DROP CONSTRAINT "kinds_code_key"`, kept: `"kinds_pkey"`, after: "kinds_pkey",
+	},
+	{
+		name:    "a declared column key as a constraint",
+		desired: constraintSelectorColumnKeyed,
 		flags:   []string{"--exclude", "public.kinds.kinds_pkey[type=constraint]"},
 		dropped: `DROP CONSTRAINT "kinds_code_key"`, kept: `"kinds_pkey"`, after: "kinds_pkey",
 	},
@@ -172,10 +187,9 @@ func (f includeChildFixture) strictCompatApply(c *qt.C, flags ...string) clirun.
 }
 
 // TestExcludeKeepsANamedPrimaryKeyE2E applies through both shipped binaries
-// and reads the key back. A second apply with the selector plans nothing.
-// `schema compare` is not the check here: it compares the primary-key flag
-// the read derives for the key's column, which the exclusion keeps, and
-// reports a difference no statement reconciles.
+// and reads the key back. Afterwards no surface reports the excluded key:
+// `schema compare` finds no difference on the key's column, `schema drift`
+// finds no drift, and a second apply plans nothing.
 func TestExcludeKeepsANamedPrimaryKeyE2E(t *testing.T) {
 	for _, row := range primaryKeySelectorRows {
 		t.Run(row.name+"/ptah", func(t *testing.T) {
@@ -183,12 +197,17 @@ func TestExcludeKeepsANamedPrimaryKeyE2E(t *testing.T) {
 			fixture := newConstraintSelectorFixture(c, row.desired)
 
 			applied := fixture.apply(c, row.flags...)
+			compared := fixture.compare(c, row.flags...)
+			drifted := fixture.drift(c, row.flags...)
 			again := fixture.apply(c, row.flags...)
 
 			c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
 			c.Assert(applied.Stdout, qt.Contains, row.dropped)
 			c.Assert(applied.Stdout, qt.Not(qt.Contains), row.kept)
 			c.Assert(fixture.read(c, constraintSelectorReadBack), qt.Equals, row.after)
+			c.Assert(compared.ExitCode, qt.Equals, 0, historyComment(compared))
+			c.Assert(comparisonBody(c, compared.Stdout), qt.Equals, includeNoDiffs)
+			c.Assert(drifted.ExitCode, qt.Equals, 0, historyComment(drifted))
 			c.Assert(again.ExitCode, qt.Equals, 0, historyComment(again))
 			c.Assert(again.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
 		})

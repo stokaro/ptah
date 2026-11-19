@@ -446,7 +446,45 @@ through their table in the same way. `--exclude
 key or a `UNIQUE` constraint, whose index carries its name, and `[type=check]`
 names a `CHECK` constraint. A `UNIQUE` written on a column is named by the name
 the server gives it: `kinds_code_key` on PostgreSQL, the column's name on MySQL
-and MariaDB.
+and MariaDB. A name the target's server does not give the key names another
+object: on PostgreSQL, `kinds.code[type=index]` names an index called `code`,
+never the column's `UNIQUE`.
+
+A primary key declared without a name is named by the database's primary key on
+the same table, since the comparison pairs the two keys whatever each is called:
+`pk_kinds` for a key an author named, or `kinds_pkey` on a table renamed to
+`types` that kept it. Where the table holds no key, the name the server gives a
+new one names it: `kinds_pkey` on PostgreSQL, `PRIMARY` on MySQL and MariaDB.
+The key's columns keep the `NOT NULL` the key gives them, and `schema compare`
+reports no difference on them.
+
+On MySQL and MariaDB, `--exclude 'kids.kids_parent_fk[type=foreign_key]'`
+also leaves out the index the server built for the foreign key, under the key's
+name or, for a key written without one, under its first column's. An index
+the author declared stays in the comparison even where the key stands on it:
+a desired schema that leaves it out plans `DROP INDEX`, and the server refuses
+that with `ERROR 1553` while the key needs the index. A selector that leaves
+out every constraint, such as `*[type=constraint]`, leaves out the index the
+server built with each key too. MariaDB shows an account that holds only
+`SELECT` no foreign key, so that account cannot tell the index the server built
+from one the author declared, and keeps it in the comparison;
+[MySQL and MariaDB](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind) says how both accounts get the same
+answer.
+
+On SQLite, a selector cannot keep a constraint out of a plan. SQLite changes a
+constraint only by writing a new table from the declaration and copying the
+rows, and the new table would not hold the constraint the selector leaves out.
+So a selector that names only constraints, such as `kinds.code_len[type=check]`
+or `*[type=constraint]`, is refused with a message that says so; exclude the
+whole table instead. A selector that also names an index in the database or the
+declaration, such as `*[type=index]`, still leaves out the indexes it names and
+keeps the constraints in scope. A selector that leaves out every column of a
+table, such as `kinds.*`, leaves out the table's constraints with them.
+
+On Oracle, a `UNIQUE` constraint written with `USING INDEX` and an index of
+another name leaves that index in the comparison. A desired schema
+that leaves the index out plans `DROP INDEX`, which Oracle refuses with
+`ORA-02429`; exclude the index as well.
 
 `ptah migrations plan` and `ptah migrations generate` take `--exclude` and
 `--include` with the same meaning, the include applied after the exclusion. The

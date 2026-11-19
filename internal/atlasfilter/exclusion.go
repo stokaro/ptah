@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
@@ -32,6 +33,10 @@ import (
 type Exclusion struct {
 	selections selectext.Set
 	patterns   []string
+	// comparison serves the target's comparison rules, when the runtime
+	// NewExclusion took serves them: the database side reads the rule for the
+	// index a server builds for a foreign key from them.
+	comparison schemacomparison.Runtime
 }
 
 // NewExclusion returns the exclusion patterns select under the scope
@@ -57,7 +62,8 @@ func NewExclusion(runtime any, patterns []string) (Exclusion, error) {
 	if err := ValidateExcludeSelectors(patterns, selections); err != nil {
 		return Exclusion{}, err
 	}
-	return Exclusion{selections: selections, patterns: slices.Clone(patterns)}, nil
+	comparison, _ := runtime.(schemacomparison.Runtime)
+	return Exclusion{selections: selections, patterns: slices.Clone(patterns), comparison: comparison}, nil
 }
 
 // NamesSelector reports whether one value of a selector flag or list holds at
@@ -100,6 +106,11 @@ type Naming struct {
 	// filled and the same pattern has one part too many. It is
 	// [Scope.RealmRelativePatterns] for a caller that holds no Scope.
 	RealmRelative bool
+	// Dialect is [Scope.Dialect] for a caller that holds no Scope.
+	Dialect string
+	// LiveKeys is [Scope.LiveKeys] for a caller that holds no Scope. Only
+	// [Exclusion.Desired] reads it.
+	LiveKeys LiveKeys
 }
 
 // ConnectionNaming is the Naming of a state read over the connection info
@@ -111,6 +122,7 @@ func ConnectionNaming(info catalog.ServerInfo) Naming {
 	return Naming{
 		DefaultSchema: info.Schema,
 		RealmRelative: schemaselection.Realm(info.Dialect, info.URL, info.Schema),
+		Dialect:       info.Dialect,
 	}
 }
 
@@ -129,7 +141,7 @@ func (e Exclusion) Desired(db *schemamodel.Database, naming Naming) (*schemamode
 	if !e.Excludes() {
 		return db, ExcludeReport{}, nil
 	}
-	return excludeGenerated(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, featureselect.Bindings{})
+	return excludeGenerated(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, naming.Dialect, naming.LiveKeys, featureselect.Bindings{})
 }
 
 // Observed returns a copy of db without the objects the selectors name, as
@@ -138,7 +150,15 @@ func (e Exclusion) Observed(db *catalog.Database, naming Naming) (*catalog.Datab
 	if !e.Excludes() {
 		return db, ExcludeReport{}, nil
 	}
-	return excludeDatabase(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, featureselect.Bindings{})
+	target := databaseTarget{dialect: naming.Dialect}
+	if e.comparison != nil && naming.Dialect != "" {
+		rules, err := e.comparison.ComparisonRules(naming.Dialect)
+		if err != nil {
+			return nil, ExcludeReport{}, fmt.Errorf("read the comparison rules of %s: %w", naming.Dialect, err)
+		}
+		target.foreignKeyIndexes = rules.ForeignKeyIndexes
+	}
+	return excludeDatabase(e.selections, db, e.patterns, naming.patternScope(), naming.DefaultSchema, target, featureselect.Bindings{})
 }
 
 // ReportUnmatched writes one warning to w naming the selectors that matched

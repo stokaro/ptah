@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
 	"ptah.run/internal/featureselect"
@@ -55,6 +56,18 @@ type Scope struct {
 	// value is refused with [selectext.ErrUnselected], and [selectext.None]
 	// names the common objects alone.
 	Selections selectext.Set
+	// Dialect is the target the projected states describe. An exclusion that
+	// leaves out a declared primary key reads it for whether the key made its
+	// columns NOT NULL, as the comparison does. Empty answers as the
+	// comparison answers for a dialect it does not know: a key column is NOT
+	// NULL.
+	Dialect string
+	// ForeignKeyIndexes is the target's rule for the index its server built
+	// for a foreign key, which the database side leaves out with a foreign
+	// key the exclusion leaves out. Kept, the index is planned for a DROP
+	// INDEX the server refuses while the key stands: MySQL and MariaDB
+	// answer ERROR 1553. Nil is a target whose server builds no such index.
+	ForeignKeyIndexes schemacomparison.ForeignKeyIndexes
 	// Requirements are the objects a comparison keeps on both of its sides
 	// because a kept object of its desired side requires them, though no
 	// selector names them: the resource pool a kept classifier routes to.
@@ -71,6 +84,10 @@ type Scope struct {
 	// side reports a matching non-extension resource, so an extension-only
 	// include remains authoritative for the identities it selected.
 	ExtensionSupport bool
+	// LiveKeys are the primary keys the database side holds, for the desired
+	// side to name a declared key by; see [LiveKeys]. The zero value names a
+	// declared key by the name the declaration predicts.
+	LiveKeys LiveKeys
 	// DefaultSchema owns unqualified objects ("public" for PostgreSQL, the
 	// database name for MySQL-family targets, "main" for SQLite).
 	DefaultSchema string

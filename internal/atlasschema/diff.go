@@ -491,6 +491,9 @@ func checkDiffSelections(fromErr, toErr error, fromReport, toReport atlasfilter.
 	if emptySelection(fromErr) && emptySelection(toErr) {
 		return fromErr
 	}
+	if err := atlasfilter.RefuseRewritten(fromReport, toReport); err != nil {
+		return err
+	}
 	unmatched := writtenSelectors(atlasfilter.UnmatchedAcrossStates(fromReport, toReport), opts.ImplicitExclude)
 	if opts.RefuseUnmatchedExclude && len(unmatched) > 0 {
 		return &atlasfilter.UnmatchedExcludeError{Selectors: unmatched, Sources: opts.ExcludeSources}
@@ -596,11 +599,15 @@ func diffResolvedStates(
 		Exclude:       slices.Concat(opts.Exclude, opts.ImplicitExclude),
 		DefaultSchema: defaultSchema,
 		Selections:    opts.Runtime.Selections(),
+		Dialect:       dialect,
 	}
 	scope.RealmRelativePatterns = realmRelative
 	scope.Bindings, err = scopeBindings(ctx, opts.Runtime, dialect, scope, generatedSide(fromState.Schema), databaseSide(fromState.DB),
 		generatedSide(toState.Schema), databaseSide(toState.DB))
 	if err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
+	if scope.ForeignKeyIndexes, err = scopeForeignKeyIndexes(opts.Runtime, dialect); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 	fromSide, toSide := scopeDiffStates(ctx, fromState, toState, scope, dialect, opts.Runtime)
@@ -1419,8 +1426,8 @@ func scopeDiffStates(
 	dialect string,
 	runtime atlassource.StateRuntime,
 ) (fromSide, toSide scopedDiffState) {
-	fromSide = scopeDiffState(ctx, fromState, scope, "--from schema", dialect, runtime)
-	toSide = scopeDiffState(ctx, toState, scope, "--to schema", dialect, runtime)
+	fromSide = scopeDiffState(ctx, fromState, withLiveKeys(scope, fromState, toState), "--from schema", dialect, runtime)
+	toSide = scopeDiffState(ctx, toState, withLiveKeys(scope, toState, fromState), "--to schema", dialect, runtime)
 	if fromSide.err != nil || toSide.err != nil {
 		return fromSide, toSide
 	}
@@ -1429,8 +1436,21 @@ func scopeDiffStates(
 	if !supportChanged && !requirementsChanged {
 		return fromSide, toSide
 	}
-	return scopeDiffState(ctx, fromState, pairScope, "--from schema", dialect, runtime),
-		scopeDiffState(ctx, toState, pairScope, "--to schema", dialect, runtime)
+	return scopeDiffState(ctx, fromState, withLiveKeys(pairScope, fromState, toState), "--from schema", dialect, runtime),
+		scopeDiffState(ctx, toState, withLiveKeys(pairScope, toState, fromState), "--to schema", dialect, runtime)
+}
+
+// withLiveKeys returns scope naming a declared key of side by the key the
+// database holds: side's own read where side is a database, and otherwise
+// the read of the other side, the database a document is compared with. Two
+// documents name a key by the name each predicts.
+func withLiveKeys(scope atlasfilter.Scope, side, other atlassource.State) atlasfilter.Scope {
+	read := side.DB
+	if read == nil {
+		read = other.DB
+	}
+	scope.LiveKeys = atlasfilter.KeysOf(read)
+	return scope
 }
 
 // withDocumentBaseline returns the --from side with what a server gives every

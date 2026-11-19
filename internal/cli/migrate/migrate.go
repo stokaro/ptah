@@ -427,8 +427,9 @@ func readPlanStates(
 	// Native patterns count from the connection's schema on every URL; the
 	// realm-relative count is the Atlas contract `ptah-compat` takes from a URL
 	// that names no schema.
-	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema}
-	desired, desiredReport, err := exclusion.Desired(desired, naming)
+	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema, Dialect: conn.Info().Dialect}
+	declared := desired
+	desired, _, err := exclusion.Desired(desired, naming)
 	if err != nil {
 		// The selectors may come from the project file or PTAH_EXCLUDE as well
 		// as the flag, so the wrap names none of them, as `migrations
@@ -444,9 +445,20 @@ func readPlanStates(
 		return planStates{}, fmt.Errorf("error reading database schema: %w", err)
 	}
 	current = revisiontable.Without(current, bookkeeping)
+	// The desired side names a declared key by the key the database holds,
+	// which only the read can say; the first pass decided which schemas to
+	// read.
+	naming.LiveKeys = atlasfilter.KeysOf(current)
+	desired, desiredReport, err := exclusion.Desired(declared, naming)
+	if err != nil {
+		return planStates{}, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
+	}
 	current, currentReport, err := exclusion.Observed(current, naming)
 	if err != nil {
 		return planStates{}, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
+	}
+	if err := atlasfilter.RefuseRewritten(desiredReport, currentReport); err != nil {
+		return planStates{}, err
 	}
 	atlasfilter.ReportUnmatched(cmd.ErrOrStderr(), selection.excludeSources, desiredReport, currentReport)
 	current, desired, err = selection.inclusion.Apply(cmd.Context(), conn.Info().Dialect, naming, current, desired)

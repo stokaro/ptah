@@ -388,7 +388,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	}
 	// Native patterns count from the connection's schema on every URL, as
 	// the exclusion counts them; see [readExcludedPlanStates].
-	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema}
+	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema, Dialect: conn.Info().Dialect}
 	dbSchema, desired, err = prepared.inclusion.Apply(ctx, conn.Info().Dialect, naming, dbSchema, desired)
 	if err != nil {
 		return nil, err
@@ -489,8 +489,9 @@ func readExcludedPlanStates(
 	// Native patterns count from the connection's schema on every URL; the
 	// realm-relative count is the Atlas contract `ptah-compat` takes from a URL
 	// that names no schema.
-	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema}
-	desired, desiredReport, err := exclusion.Desired(desired, naming)
+	naming := atlasfilter.Naming{DefaultSchema: conn.Info().Schema, Dialect: conn.Info().Dialect}
+	declared := desired
+	desired, _, err := exclusion.Desired(desired, naming)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
 	}
@@ -498,9 +499,19 @@ func readExcludedPlanStates(
 	if err != nil {
 		return nil, nil, err
 	}
+	// The desired side names a declared key by the key the database holds,
+	// which only the read can say; the first pass decided what to read.
+	naming.LiveKeys = atlasfilter.KeysOf(dbSchema)
+	desired, desiredReport, err := exclusion.Desired(declared, naming)
+	if err != nil {
+		return nil, nil, fmt.Errorf("apply exclude selectors to the desired schema: %w", err)
+	}
 	dbSchema, observedReport, err := exclusion.Observed(dbSchema, naming)
 	if err != nil {
 		return nil, nil, fmt.Errorf("apply exclude selectors to the database schema: %w", err)
+	}
+	if err := atlasfilter.RefuseRewritten(desiredReport, observedReport); err != nil {
+		return nil, nil, err
 	}
 	atlasfilter.ReportUnmatched(opts.Diagnostics, opts.ExcludeSources, desiredReport, observedReport)
 	return desired, dbSchema, nil

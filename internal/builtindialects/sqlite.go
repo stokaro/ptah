@@ -203,6 +203,9 @@ func sqlite() descriptor.Dialect {
 		// measured with sqlite3 3.51); REINDEX is accepted there.
 		Migration: descriptor.Migration{
 			DirectivesWithoutDialect: true,
+			// SQLite's ALTER TABLE adds a column, renames and drops one; every
+			// constraint change writes a new table and copies the rows.
+			ConstraintsRewriteTable: true,
 			RefusedInTransaction: []descriptor.TransactionRefusal{
 				{Statement: "VACUUM", StartsWith: []string{"VACUUM"}},
 			},

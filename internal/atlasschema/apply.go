@@ -581,6 +581,7 @@ func computeApplyPlan(
 		DefaultSchema:         conn.Info().Schema,
 		RealmRelativePatterns: ConnectionIsRealmScoped(conn.Info()),
 		Selections:            opts.Runtime.Selections(),
+		Dialect:               conn.Info().Dialect,
 	}
 	placed, err := loadPlacedDesiredApplySchema(ctx, conn, opts)
 	if err != nil {
@@ -822,8 +823,12 @@ func projectLiveStates(
 	scope atlasfilter.Scope,
 ) (scopedApplyStates, error) {
 	var err error
+	scope.LiveKeys = atlasfilter.KeysOf(current)
 	scope.Bindings, err = scopeBindings(ctx, runtime, dialect, scope, databaseSide(current), generatedSide(desired))
 	if err != nil {
+		return scopedApplyStates{}, err
+	}
+	if scope.ForeignKeyIndexes, err = scopeForeignKeyIndexes(runtime, dialect); err != nil {
 		return scopedApplyStates{}, err
 	}
 	scoped := scopeApplyStates(current, desired, scope)
@@ -832,6 +837,9 @@ func projectLiveStates(
 	}
 	if scoped.desiredErr != nil && !emptySelection(scoped.desiredErr) {
 		return scopedApplyStates{}, scoped.desiredErr
+	}
+	if err := atlasfilter.RefuseRewritten(scoped.currentReports.Exclude, scoped.desiredReports.Exclude); err != nil {
+		return scopedApplyStates{}, err
 	}
 	return scoped, nil
 }

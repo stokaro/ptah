@@ -599,12 +599,18 @@ func excludeCurrentWithBindings(ctx context.Context, current *catalog.Database, 
 ) (*catalog.Database, error) {
 	scope := atlasfilter.Scope{
 		Exclude: exclude, DefaultSchema: info.Schema, RealmRelativePatterns: ConnectionIsRealmScoped(info), Selections: runtime.Selections(),
+		Dialect: info.Dialect,
 	}
 	var err error
 	scope.Bindings, err = scopeBindings(ctx, runtime, info.Dialect, scope, databaseSide(current))
 	if err != nil {
 		return nil, err
 	}
+	if scope.ForeignKeyIndexes, err = scopeForeignKeyIndexes(runtime, info.Dialect); err != nil {
+		return nil, err
+	}
+	// The plan was computed with both states, which is where a selector
+	// written for a constraint a rewrite would lose is refused.
 	current, _, err = atlasfilter.ExcludeDatabaseScopeReport(current, scope)
 	return current, err
 }

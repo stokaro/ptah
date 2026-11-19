@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
@@ -114,6 +115,7 @@ func (s LiveSelection) applyCounted(
 		DefaultSchema:         naming.DefaultSchema,
 		RealmRelativePatterns: naming.RealmRelative,
 		Selections:            runtime.Selections(),
+		Dialect:               dialect,
 	}
 	if !slices.ContainsFunc(s.Schemas, atlasfilter.NamesSelector) &&
 		!slices.ContainsFunc(s.Include, atlasfilter.NamesSelector) &&
@@ -391,6 +393,23 @@ func scopeBindings(ctx context.Context, runtime any, dialect string, scope atlas
 		return featureselect.Bindings{}, fmt.Errorf("capture the tables feature objects bind: %w", err)
 	}
 	return bindings, nil
+}
+
+// scopeForeignKeyIndexes is the rule for the index the server of dialect builds
+// for a foreign key, from the comparison rules runtime serves, for a scope to
+// leave that index out with a foreign key it leaves out. It is nil for a
+// runtime that serves no comparison rules, which leaves every index to the
+// comparison, and for a target whose server builds no such index.
+func scopeForeignKeyIndexes(runtime any, dialect string) (schemacomparison.ForeignKeyIndexes, error) {
+	comparison, ok := runtime.(schemacomparison.Runtime)
+	if !ok || dialect == "" {
+		return nil, nil
+	}
+	rules, err := comparison.ComparisonRules(dialect)
+	if err != nil {
+		return nil, fmt.Errorf("read the comparison rules of %s: %w", dialect, err)
+	}
+	return rules.ForeignKeyIndexes, nil
 }
 
 // generatedSide and databaseSide are the feature states of a declaration and
