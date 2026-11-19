@@ -19,20 +19,26 @@ import (
 const foreignKeySelectorDesired = "CREATE TABLE parents (id int NOT NULL, PRIMARY KEY (id));\n" +
 	"CREATE TABLE kids (id int NOT NULL, parent_id int NOT NULL, PRIMARY KEY (id));\n"
 
-// foreignKeySelectorEngine is a MySQL-family server, the URL scheme that names
-// its dialect, and the name it gives the first foreign key of kids written
-// without one: `kids_ibfk_1` on MySQL, `1` on MariaDB 12.1 and later. The
-// server names that key's index after its column, parent_id. The compatibility
-// surface reads the dialect from the scheme, as the community binary does.
+// foreignKeySelectorEngine is a MySQL-family server and the URL scheme that
+// names its dialect. The compatibility surface reads the dialect from the
+// scheme, as the community binary does.
 type foreignKeySelectorEngine struct {
-	name, scheme, unnamedKey string
-	admin                    dbtarget.Engine
+	name, scheme string
+	admin        dbtarget.Engine
 }
 
 var foreignKeySelectorEngines = []foreignKeySelectorEngine{
-	{name: "mysql", scheme: "mysql://", unnamedKey: "kids_ibfk_1", admin: dbtarget.MySQLAdmin},
-	{name: "mariadb", scheme: "mariadb://", unnamedKey: "1", admin: dbtarget.MariaDBAdmin},
+	{name: "mysql", scheme: "mysql://", admin: dbtarget.MySQLAdmin},
+	{name: "mariadb", scheme: "mariadb://", admin: dbtarget.MariaDBAdmin},
 }
+
+// mySQLKidsForeignKey reads the name of the one foreign key of kids. A server
+// names a key written without one by its own rule, `kids_ibfk_1` on MySQL 8.4
+// and MariaDB 11.8 and `1` on MariaDB 12.3, so a row that selects such a key
+// writes `{key}` where the name goes and the test reads the name back. The
+// server names that key's index after its column, parent_id.
+const mySQLKidsForeignKey = "SELECT CONSTRAINT_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS " +
+	"WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'kids'"
 
 // foreignKeySelectorFixture is a database built from live, the dev database a
 // compatibility diff replays the desired schema on, the desired schema file,
@@ -112,17 +118,18 @@ func TestExcludeLeavesOutTheIndexAServerBuiltForAForeignKeyE2E(t *testing.T) {
 				live: "CREATE TABLE parents (id int NOT NULL, PRIMARY KEY (id));\n" +
 					"CREATE TABLE kids (id int NOT NULL, parent_id int NOT NULL, PRIMARY KEY (id), " +
 					"FOREIGN KEY (parent_id) REFERENCES parents (id));",
-				exclude: "kids." + engine.unnamedKey + "[type=foreign_key]",
+				exclude: "kids.{key}[type=foreign_key]",
 			},
 		}
 		for _, row := range rows {
 			t.Run(engine.name+"/"+row.name, func(t *testing.T) {
 				c := qt.New(t)
 				fixture := newForeignKeySelectorFixture(c, engine, row.live)
+				exclude := strings.ReplaceAll(row.exclude, "{key}", fixture.read(c, mySQLKidsForeignKey))
 
-				planned := fixture.dryRun(c, row.exclude)
-				compared := fixture.compare(c, row.exclude)
-				diffed := fixture.compatDiff(c, row.exclude)
+				planned := fixture.dryRun(c, exclude)
+				compared := fixture.compare(c, exclude)
+				diffed := fixture.compatDiff(c, exclude)
 
 				c.Assert(planned.ExitCode, qt.Equals, 0, historyComment(planned))
 				c.Assert(planned.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
@@ -166,13 +173,14 @@ func TestExcludeEveryConstraintKeepsTheIndexAForeignKeyStandsOnE2E(t *testing.T)
 				live: "CREATE TABLE parents (id int NOT NULL, PRIMARY KEY (id));\n" +
 					"CREATE TABLE kids (id int NOT NULL, parent_id int NOT NULL, PRIMARY KEY (id), " +
 					"FOREIGN KEY (parent_id) REFERENCES parents (id));",
-				want: engine.unnamedKey + " parent_id,PRIMARY",
+				want: "{key} parent_id,PRIMARY",
 			},
 		}
 		for _, row := range rows {
 			t.Run(engine.name+"/"+row.name, func(t *testing.T) {
 				c := qt.New(t)
 				fixture := newForeignKeySelectorFixture(c, engine, row.live)
+				want := strings.ReplaceAll(row.want, "{key}", fixture.read(c, mySQLKidsForeignKey))
 
 				applied := fixture.apply(c, exclude)
 				read := fixture.read(c, mySQLKidsKeysAndIndexes)
@@ -181,7 +189,7 @@ func TestExcludeEveryConstraintKeepsTheIndexAForeignKeyStandsOnE2E(t *testing.T)
 				diffed := fixture.compatDiff(c, exclude)
 
 				c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
-				c.Assert(read, qt.Equals, row.want)
+				c.Assert(read, qt.Equals, want)
 				c.Assert(planned.ExitCode, qt.Equals, 0, historyComment(planned))
 				c.Assert(planned.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
 				c.Assert(compared.ExitCode, qt.Equals, 0, historyComment(compared))
@@ -218,8 +226,8 @@ func TestExcludeNamesAForeignKeyAsFkE2E(t *testing.T) {
 				live: "CREATE TABLE parents (id int NOT NULL, PRIMARY KEY (id));\n" +
 					"CREATE TABLE kids (id int NOT NULL, parent_id int NOT NULL, PRIMARY KEY (id), " +
 					"FOREIGN KEY (parent_id) REFERENCES parents (id));",
-				exclude: "kids." + engine.unnamedKey + "[type=fk]",
-				want:    engine.unnamedKey + " parent_id,PRIMARY",
+				exclude: "kids.{key}[type=fk]",
+				want:    "{key} parent_id,PRIMARY",
 			},
 			{
 				name: "every key",
@@ -235,18 +243,20 @@ func TestExcludeNamesAForeignKeyAsFkE2E(t *testing.T) {
 				c := qt.New(t)
 				native := newForeignKeySelectorFixture(c, engine, row.live)
 				compat := newForeignKeySelectorFixture(c, engine, row.live)
+				key := native.read(c, mySQLKidsForeignKey)
+				exclude, want := strings.ReplaceAll(row.exclude, "{key}", key), strings.ReplaceAll(row.want, "{key}", key)
 
-				nativeApplied := native.apply(c, row.exclude)
+				nativeApplied := native.apply(c, exclude)
 				nativeRead := native.read(c, mySQLKidsKeysAndIndexes)
-				compatApplied := compat.compatApply(c, row.exclude)
+				compatApplied := compat.compatApply(c, exclude)
 				compatRead := compat.read(c, mySQLKidsKeysAndIndexes)
-				planned := native.dryRun(c, row.exclude)
-				diffed := compat.compatDiff(c, row.exclude)
+				planned := native.dryRun(c, exclude)
+				diffed := compat.compatDiff(c, exclude)
 
 				c.Assert(nativeApplied.ExitCode, qt.Equals, 0, historyComment(nativeApplied))
-				c.Assert(nativeRead, qt.Equals, row.want)
+				c.Assert(nativeRead, qt.Equals, want)
 				c.Assert(compatApplied.ExitCode, qt.Equals, 0, historyComment(compatApplied))
-				c.Assert(compatRead, qt.Equals, row.want)
+				c.Assert(compatRead, qt.Equals, want)
 				c.Assert(planned.ExitCode, qt.Equals, 0, historyComment(planned))
 				c.Assert(planned.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
 				c.Assert(diffed.ExitCode, qt.Equals, 0, historyComment(diffed))
@@ -264,10 +274,6 @@ const mySQLKidsKeyIndexes = "SELECT CONCAT_WS(' ', " +
 	"(SELECT GROUP_CONCAT(CONCAT(INDEX_NAME, ':', parts) ORDER BY INDEX_NAME SEPARATOR ' ') FROM " +
 	"(SELECT INDEX_NAME, GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS parts FROM information_schema.STATISTICS " +
 	"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'kids' GROUP BY INDEX_NAME) AS kids_indexes))"
-
-// mySQLKidsForeignKey reads the name of the one foreign key of kids.
-const mySQLKidsForeignKey = "SELECT CONSTRAINT_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS " +
-	"WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'kids'"
 
 // declaredIndexUnderAKey is a foreign key of kids that stands on an index the
 // author declared, and a desired schema that leaves out both. index is the

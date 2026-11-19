@@ -1057,8 +1057,8 @@ to keep what it names.
 An index the author declared under such a key stays in the plan on both
 binaries. The binary plans `DROP INDEX kids_parent_idx` alone, and the server
 refuses it with `ERROR 1553` after the statements before it ran: measured on
-MySQL 8.4 on 2026-11-19, a plan that also dropped the column `alpha.x` dropped
-it, then failed. `ptah-compat` adds an index for the key in the statement that
+MySQL 8.4, a plan that also dropped the column `alpha.x` dropped it, then
+failed. `ptah-compat` adds an index for the key in the statement that
 drops the declared one, under the name the server gives the key's index, with a
 comment above it. The next run plans nothing, on MySQL 8.4 and 26.10 and
 MariaDB 11.8 and 12.3.
