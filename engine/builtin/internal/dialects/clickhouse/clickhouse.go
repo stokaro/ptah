@@ -173,6 +173,9 @@ func defaultClause(col *ast.ColumnNode) string {
 // renderColumn emits a leading `-- CLICKHOUSE: ...` line BEFORE returning the
 // column DDL so users see why a column was rewritten.
 func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
+	if !chcolumn.KnownKind(col.GeneratedKind) {
+		return "", unknownKind(col)
+	}
 	_, forceNotNull := r.forceNotNullSet[col.Name]
 	if forceNotNull && col.Nullable && !col.Primary {
 		return "", fmt.Errorf("clickhouse: column %q is part of the sorting/primary key and must be NOT NULL (add not_null=\"true\" or remove it from order_by/primary_key)", col.Name)
@@ -191,6 +194,20 @@ func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
 	}
 	keyword, expression := chcolumn.Value(col)
 	return "  " + chcolumn.Definition(col.Name, mapping.Type, keyword, expression, col.Comment), nil
+}
+
+// unknownKind refuses a generated kind ClickHouse has no clause for, such as
+// SQL Server's PERSISTED. Written as MATERIALIZED, the column would compare as
+// the declared kind against the MATERIALIZED one the server reports, and plan
+// a change on every run.
+func unknownKind(col *ast.ColumnNode) error {
+	return &ptaherr.CapabilityError{
+		Dialect: platform.ClickHouse,
+		Feature: "generated column kind",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("column %s is generated as %s: ClickHouse takes MATERIALIZED, ALIAS or EPHEMERAL, "+
+			"and reads STORED as MATERIALIZED and VIRTUAL as ALIAS", col.Name, col.GeneratedKind),
+	}
 }
 
 // tableEngineSpec captures the parsed engine + family modifiers for a CH
@@ -845,9 +862,13 @@ func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperatio
 	if err != nil {
 		return fmt.Errorf("clickhouse: modify column on %q: %w", table, err)
 	}
+	if !chcolumn.KnownKind(op.Column.GeneratedKind) {
+		return unknownKind(op.Column)
+	}
 	clause := defaultClause(op.Column)
 	setsNotNull := op.HasPreviousNullable && op.PreviousNullable && !chcolumn.Nullable(op.Column)
-	computed := op.Column.GeneratedExpression != ""
+	keyword, expression := chcolumn.Value(op.Column)
+	computed := keyword != "" && keyword != "DEFAULT"
 	if setsNotNull && !computed && clause == "" {
 		return &ptaherr.CapabilityError{
 			Dialect: platform.ClickHouse,
@@ -861,25 +882,58 @@ func (r *Renderer) renderModifyColumn(table string, op *ast.ModifyColumnOperatio
 				table, op.Column.Name, mapping.Type),
 		}
 	}
-	if setsNotNull && computed && chcolumn.ComputedKeyword(op.Column.GeneratedKind) == "MATERIALIZED" {
+	if setsNotNull && computed && keyword == "MATERIALIZED" {
 		return r.replaceMaterialized(table, op.Column)
 	}
 	if mapping.Notice != "" {
 		r.w.WriteLinef("-- CLICKHOUSE: column %q %s", op.Column.Name, mapping.Notice)
 	}
-	if removesDefault(op, clause) {
+	if removesDefault(op, keyword) {
 		r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s REMOVE DEFAULT;", table, op.Column.Name)
+	}
+	if keyword == "" {
+		r.removeGeneration(table, op.Column.Name, mapping.Type, op.PreviousGeneratedKind)
 	}
 	if setsNotNull && clause != "" {
 		r.w.WriteLinef("ALTER TABLE %s UPDATE %s = %s WHERE %s IS NULL SETTINGS mutations_sync = 2;",
 			table, op.Column.Name, strings.TrimPrefix(clause, "DEFAULT "), op.Column.Name)
 	}
 	statement := fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", table, op.Column.Name, mapping.Type)
-	if clause != "" {
-		statement += " " + clause
+	if valueClause := chcolumn.Clause(keyword, expression, mapping.Type); valueClause != "" {
+		statement += " " + valueClause
 	}
 	r.w.WriteLinef("%s;", statement)
 	return nil
+}
+
+// removeGeneration makes a generated column ordinary, before the MODIFY
+// COLUMN that restates its type. previous is the generated kind the column
+// holds, as the catalog names it.
+//
+// A MODIFY COLUMN that names only the type keeps the expression, so each kind
+// takes a statement of its own. Measured on 24.10 and 26.10:
+//   - MATERIALIZED and ALIAS take `REMOVE MATERIALIZED` and `REMOVE ALIAS`. A
+//     MATERIALIZED column keeps the values it stored; an ALIAS column stored
+//     none, and reads the type's default for the rows it has.
+//   - EPHEMERAL has no REMOVE: `REMOVE EPHEMERAL` is a syntax error, and
+//     `REMOVE DEFAULT` answers `Cannot remove DEFAULT from column, because
+//     column default type is EPHEMERAL`. The column becomes a DEFAULT one,
+//     which MODIFY COLUMN accepts, and loses that default. It stored nothing,
+//     and reads the type's default for the rows it has. A column another
+//     column's expression reads stays readable throughout, where dropping it
+//     is refused with `Cannot drop column, because column depends on it`.
+//
+// A column created as a bare `e Int64 EPHEMERAL` refuses any other kind, with
+// `Syntax error (after altering table)`; the renderer never creates one
+// ([chcolumn.Clause]).
+func (r *Renderer) removeGeneration(table, column, typ, previous string) {
+	switch strings.ToUpper(strings.TrimSpace(previous)) {
+	case "MATERIALIZED", "ALIAS":
+		r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s REMOVE %s;", table, column, strings.ToUpper(strings.TrimSpace(previous)))
+	case "EPHEMERAL":
+		r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s %s DEFAULT %s;", table, column, typ, chcolumn.TypeDefault(typ))
+		r.w.WriteLinef("ALTER TABLE %s MODIFY COLUMN %s REMOVE DEFAULT;", table, column)
+	}
 }
 
 // replaceMaterialized makes a nullable MATERIALIZED column non-nullable by
@@ -910,8 +964,8 @@ func (r *Renderer) replaceMaterialized(table string, column *ast.ColumnNode) err
 }
 
 // removesDefault reports whether a modification takes away the default the
-// column had, so the plan has to say REMOVE DEFAULT. clause is the DEFAULT
-// clause the modification writes, empty when the declaration has none.
+// column had and gives it no other value clause, so the plan has to say
+// REMOVE DEFAULT.
 //
 // A MODIFY COLUMN that names only a type keeps the column's default: measured
 // on 24.10 and 26.9, `MODIFY COLUMN n Int64` on `n Int32 DEFAULT 5` leaves
@@ -935,12 +989,11 @@ func (r *Renderer) replaceMaterialized(table string, column *ast.ColumnNode) err
 //
 // The previous default has to be known to exist, since REMOVE DEFAULT on a
 // column without one answers `Column n doesn't have DEFAULT, cannot remove it`.
-// A computed column is left alone: its expression is MATERIALIZED or ALIAS to
-// the server, which refuses REMOVE DEFAULT for one, and the comparison does not
-// plan a computed column becoming a plain one.
-func removesDefault(op *ast.ModifyColumnOperation, clause string) bool {
-	return op.HasPreviousDefault && op.PreviousDefault != "" && clause == "" &&
-		op.Column.GeneratedExpression == ""
+// keyword is the keyword of the value clause the declaration writes
+// ([chcolumn.Value]). A column that becomes MATERIALIZED, ALIAS or EPHEMERAL is left alone: measured
+// on 24.10 and 26.10, MODIFY COLUMN with the new clause replaces the DEFAULT.
+func removesDefault(op *ast.ModifyColumnOperation, keyword string) bool {
+	return op.HasPreviousDefault && op.PreviousDefault != "" && keyword == ""
 }
 
 // renderColumnNode answers a column that arrives on its own, which is nothing.

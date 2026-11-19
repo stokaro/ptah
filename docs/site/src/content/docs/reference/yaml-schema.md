@@ -311,7 +311,7 @@ author order. Top-level maps render deterministically by sorted key.
 | `unique_expr` | Uniqueness over an expression. Not implemented; rendering refuses it rather than enforcing uniqueness on the column instead. |
 | `index` | Requests an index for the column. |
 | `generated` | Generated-column SQL expression. |
-| `generated_kind` | Generated-column kind, such as `STORED` or `VIRTUAL`. |
+| `generated_kind` | Generated-column kind: `STORED` or `VIRTUAL`, and on ClickHouse `MATERIALIZED`, `ALIAS` or `EPHEMERAL`. |
 | `stored` | Convenience boolean for `generated_kind: STORED`. |
 | `default` | Literal default value. |
 | `default_expr` | Default SQL expression, such as `NOW()`. |

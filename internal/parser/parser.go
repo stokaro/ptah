@@ -2598,6 +2598,11 @@ func (p *Parser) handleDefault(column *ast.ColumnNode) error {
 		return ptaherr.At(p.current.Start, fmt.Errorf(
 			"column %s carries a second DEFAULT: a column has one default; remove one of them", column.Name))
 	}
+	if _, computed := p.computedKind(column.GeneratedKind); computed {
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"column %s carries a second value: it takes one of DEFAULT and %s; remove one of them",
+			column.Name, computedKeywords(p.target.grammar.Columns.ComputedKinds)))
+	}
 	p.advance()
 	p.skipWhitespace()
 	defaultValue, err := p.parseDefaultValue()
@@ -3056,6 +3061,9 @@ func (p *Parser) parseColumnConstraintsAndAttributes(table *ast.CreateTableNode,
 }
 
 func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, column *ast.ColumnNode, keyword string) error {
+	if kind, computed := p.computedKind(keyword); computed {
+		return p.handleComputed(column, kind)
+	}
 	read, known := columnClauseReader(keyword)
 	if !known {
 		return ptaherr.At(p.current.Start, fmt.Errorf("unsupported column attribute: %s", keyword))
@@ -3147,6 +3155,86 @@ func columnClauseStart(word string) bool {
 	default:
 		return known
 	}
+}
+
+// opensColumnClause reports whether word opens a column clause on the
+// dialect being read: one [columnClauseStart] names, or a computed kind the
+// dialect's grammar states.
+func (p *Parser) opensColumnClause(word string) bool {
+	if _, computed := p.computedKind(word); computed {
+		return true
+	}
+	return columnClauseStart(word)
+}
+
+// computedKind returns the computed kind of the dialect's grammar that word
+// names, and false where it names none.
+func (p *Parser) computedKind(word string) (descriptor.ComputedKind, bool) {
+	for _, kind := range p.target.grammar.Columns.ComputedKinds {
+		if strings.EqualFold(kind.Keyword, word) {
+			return kind, true
+		}
+	}
+	return descriptor.ComputedKind{}, false
+}
+
+// handleComputed reads a clause that gives the column a value computed from
+// an expression, such as ClickHouse's `MATERIALIZED a + b * c`, into the
+// column's generated kind and expression. The expression is read as a DEFAULT
+// is and kept as written. A kind whose expression is optional and that is
+// followed by the end of the column reads an empty expression.
+//
+// A column takes one such clause or one DEFAULT: measured on ClickHouse 24.10
+// and 26.10, `x Int64 MATERIALIZED 1 DEFAULT 2` is a syntax error, so the
+// second clause is refused here too.
+func (p *Parser) handleComputed(column *ast.ColumnNode, kind descriptor.ComputedKind) error {
+	if column.Default != nil || column.GeneratedKind != "" || column.GeneratedExpression != "" {
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"column %s carries a second value: it takes one of DEFAULT and %s; remove one of them",
+			column.Name, computedKeywords(p.target.grammar.Columns.ComputedKinds)))
+	}
+	p.advance()
+	p.skipWhitespace()
+	if !p.computedExpressionFollows() {
+		if !kind.ExpressionOptional {
+			return ptaherr.At(p.current.Start, fmt.Errorf("expected %s expression", kind.Keyword))
+		}
+		column.SetGenerated("", kind.Keyword)
+		return nil
+	}
+	start := p.current.Start
+	if _, err := p.parseDefaultValue(); err != nil {
+		return fmt.Errorf("expected %s expression: %w", kind.Keyword, err)
+	}
+	column.SetGenerated(strings.TrimSpace(p.input[start:p.previous.End]), kind.Keyword)
+	return nil
+}
+
+// computedExpressionFollows reports whether an expression starts at the
+// cursor, after a computed kind: anything but the end of the column, which is
+// a comma, a closing parenthesis, the end of the statement, or a word that
+// opens another clause of the column. NULL is an expression there: measured on
+// ClickHouse 24.10 and 26.10, `x Nullable(Int64) EPHEMERAL NULL` reports the
+// expression NULL.
+func (p *Parser) computedExpressionFollows() bool {
+	switch {
+	case p.current.Type == lexer.TokenEOF,
+		p.current.MatchOperatorValue(","), p.current.MatchOperatorValue(")"), p.current.MatchOperatorValue(";"):
+		return false
+	case p.current.MatchIdentifierValue("NULL"):
+		return true
+	default:
+		return !p.opensNextOption(sqlext.ColumnOption)
+	}
+}
+
+// computedKeywords lists the computed kinds of a grammar for a message.
+func computedKeywords(kinds []descriptor.ComputedKind) string {
+	words := make([]string, len(kinds))
+	for i, kind := range kinds {
+		words[i] = kind.Keyword
+	}
+	return strings.Join(words, ", ")
 }
 
 // handleColumnConstraint reads `CONSTRAINT <name> <constraint>` on a column.
@@ -4798,7 +4886,7 @@ func (p *Parser) currentIsColumnPart() bool {
 	if isVersionGate(p.current) {
 		return true
 	}
-	return p.current.Type == lexer.TokenIdentifier && columnClauseStart(p.current.Value)
+	return p.current.Type == lexer.TokenIdentifier && p.opensColumnClause(p.current.Value)
 }
 
 // isVersionGate reports whether token is a MySQL `/*!NNNNN ... */` or a MariaDB

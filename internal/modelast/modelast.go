@@ -355,7 +355,7 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 			column.SetCheckName(field.CheckName)
 		}
 	}
-	if field.GeneratedExpression != "" {
+	if field.GeneratedExpression != "" || field.GeneratedKind != "" {
 		column.SetGenerated(field.GeneratedExpression, defaultGeneratedKind(field, targetPlatform))
 	}
 	if field.Collate != "" {
@@ -458,7 +458,7 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 			column.SetCheckName(field.CheckName)
 		}
 	}
-	if field.GeneratedExpression != "" {
+	if field.GeneratedExpression != "" || field.GeneratedKind != "" {
 		column.SetGenerated(field.GeneratedExpression, defaultGeneratedKind(field, targetPlatform))
 	}
 	if field.Collate != "" {

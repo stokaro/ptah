@@ -70,6 +70,8 @@ import (
 //     engine measured to take it.
 //   - a column's COLLATE read as a name or a schema and a name, folded unless
 //     quoted, on PostgreSQL alone.
+//   - MATERIALIZED, ALIAS and EPHEMERAL give a column its value on ClickHouse
+//     alone, where no switch read them.
 //
 // YDB's documents never reach the shared grammar, which refuses the YQL
 // lexer before any of the switches is asked, so it states no grammar.
@@ -167,7 +169,12 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Routines:   descriptor.RoutineGrammar{Body: descriptor.RoutineCompoundStatement, TriggerStatementBody: true},
 	},
 	platform.ClickHouse: {
-		Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true, StoredStringDefaults: true, StoredStringEscapes: true},
+		Columns: descriptor.ColumnGrammar{
+			TypeArgumentsAreTypes: true, StoredStringDefaults: true, StoredStringEscapes: true,
+			ComputedKinds: []descriptor.ComputedKind{
+				{Keyword: "MATERIALIZED"}, {Keyword: "ALIAS"}, {Keyword: "EPHEMERAL", ExpressionOptional: true},
+			},
+		},
 		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 	},
 	platform.SQLite: {

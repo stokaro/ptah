@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/clickhousecomparison"
 )
@@ -56,8 +57,9 @@ func TestIndexDefinitions_DefinitionChanged(t *testing.T) {
 	}
 }
 
-// TestRules pins the rules ClickHouse registers: whole index definitions, and
-// nothing it leaves to the shared comparison.
+// TestRules pins the rules ClickHouse registers: whole index definitions and
+// computed column expressions, and nothing it leaves to the shared
+// comparison.
 func TestRules(t *testing.T) {
 	c := qt.New(t)
 	rules := clickhousecomparison.Rules()
@@ -65,8 +67,35 @@ func TestRules(t *testing.T) {
 	c.Assert(rules.Indexes, qt.IsNil)
 	c.Assert(rules.IndexPredicates, qt.IsNil)
 	c.Assert(rules.ForeignKeyIndexes, qt.IsNil)
-	c.Assert(rules.GeneratedExpressions, qt.IsNil)
+	c.Assert(rules.GeneratedExpressions, qt.Equals, schemacomparison.GeneratedExpressions(clickhousecomparison.GeneratedExpressions{}))
 	c.Assert(rules.Columns, qt.IsNil)
 	c.Assert(rules.Views, qt.IsNil)
 	c.Assert(rules.Routines, qt.IsNil)
+}
+
+// TestGeneratedExpressions_Spelling gives a declared expression and the one
+// system.columns reports for it one spelling, and keeps expressions that
+// compute something else apart.
+func TestGeneratedExpressions_Spelling(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		reported string
+		same     bool
+	}{
+		{name: "arithmetic grouped by precedence", declared: "a + b * c", reported: "a + (b * c)", same: true},
+		{name: "a predicate grouped by precedence", declared: "a = 1 OR b = 3", reported: "(a = 1) OR (b = 3)", same: true},
+		{name: "no expression against the type's default", declared: "", reported: "defaultValueOfTypeName('Int64')", same: true},
+		{name: "a quoted type name", declared: "", reported: "defaultValueOfTypeName('Map(String, Int8)')", same: true},
+		{name: "a grouping that changes the value", declared: "(a + b) * c", reported: "a + (b * c)", same: false},
+		{name: "a call around the type's default", declared: "", reported: "plus(defaultValueOfTypeName('Int64'), 1)", same: false},
+		{name: "another operand", declared: "a * 3", reported: "a * 4", same: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			spelling := clickhousecomparison.GeneratedExpressions{}
+			c.Assert(spelling.Spelling(test.declared) == spelling.Spelling(test.reported), qt.Equals, test.same)
+		})
+	}
 }

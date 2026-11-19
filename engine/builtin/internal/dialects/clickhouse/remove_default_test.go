@@ -103,7 +103,7 @@ func TestRenderModifyColumn_LeavesAStatedDefaultAlone(t *testing.T) {
 				PreviousDefault: "5", HasPreviousDefault: true,
 				Changed: ast.ColumnProperties{Default: true}, HasChanged: true,
 			},
-			want: "ALTER TABLE asn MODIFY COLUMN n Int32;\n",
+			want: "ALTER TABLE asn MODIFY COLUMN n Int32 MATERIALIZED a + 1;\n",
 		},
 	}
 	for _, test := range tests {

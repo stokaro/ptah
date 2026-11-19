@@ -1,24 +1,56 @@
 // Package clickhousecomparison holds the rules ClickHouse gives the shared
 // schema comparison ([schemacomparison.Rules]): how a data-skipping index's
-// definition reads on ClickHouse. The built-in runtime registers them on its
-// ClickHouse target, so the shared comparison holds no ClickHouse knowledge of
-// its own.
+// definition and a computed column's expression read on ClickHouse. The
+// built-in runtime registers them on its ClickHouse target, so the shared
+// comparison holds no ClickHouse knowledge of its own.
 package clickhousecomparison
 
 import (
 	"cmp"
+	"regexp"
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/chindexkey"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/precedence"
 )
 
 // Rules returns ClickHouse's comparison rules.
 func Rules() schemacomparison.Rules {
-	return schemacomparison.Rules{IndexDefinitions: IndexDefinitions{}}
+	return schemacomparison.Rules{IndexDefinitions: IndexDefinitions{}, GeneratedExpressions: GeneratedExpressions{}}
+}
+
+// GeneratedExpressions reads the expression of a MATERIALIZED, ALIAS or
+// EPHEMERAL column.
+type GeneratedExpressions struct{}
+
+// typeDefault is the expression ClickHouse reports for an EPHEMERAL column
+// declared without one: defaultValueOfTypeName of the column's type.
+var typeDefault = regexp.MustCompile(`^defaultValueOfTypeName\('(?:[^'\\]|\\.|'')*'\)$`)
+
+// Spelling returns expression as the operations it groups under ClickHouse's
+// precedence, the reading a default gets: ClickHouse stores `a + b * c` as
+// `a + (b * c)` and `a = 1 OR b = 3` as `(a = 1) OR (b = 3)`. An expression
+// the precedence does not read is returned as it stands.
+//
+// The expression ClickHouse reports for an EPHEMERAL column declared without
+// one, `defaultValueOfTypeName('Int64')`, reads as no expression, the
+// spelling of that declaration. The type it names is not compared: the
+// column's type is compared on its own, and a lone call to the function names
+// the column's type wherever ClickHouse wrote it.
+func (GeneratedExpressions) Spelling(expression string) string {
+	if typeDefault.MatchString(expression) {
+		return ""
+	}
+	if grouped, read := precedence.Canonical(expression, precedence.ClickHouseOperators, dialectlexer.Options(platform.ClickHouse)); read {
+		return grouped
+	}
+	return expression
 }
 
 // IndexDefinitions compares ClickHouse data-skipping index definitions.

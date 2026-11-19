@@ -527,10 +527,11 @@ func columnsWithDesiredDomains(
 			generatedNotNullName(dialect, ctx.table, genCol.Name)),
 	}
 
-	// ClickHouse-only guard: older goschema models cannot express
-	// MATERIALIZED / ALIAS / EPHEMERAL columns. Once the schema side carries a
-	// generated expression, compare it normally below.
-	if dbCol.GeneratedKind != "" && genCol.GeneratedExpression == "" {
+	// A live generated column whose declaration states no generation is left
+	// uncompared, unless the target's plan makes such a column ordinary
+	// ([descriptor.Comparison.GeneratedColumnsBecomePlain]).
+	if dbCol.GeneratedKind != "" && genCol.GeneratedExpression == "" && genCol.GeneratedKind == "" &&
+		!comparisonOf(dialect).GeneratedColumnsBecomePlain {
 		return colDiff
 	}
 
@@ -623,6 +624,7 @@ func columnsWithDesiredDomains(
 	}
 	if diff := generatedColumnDiff(genCol, dbCol, dialect, resolution, ctx.generated); diff != "" {
 		colDiff.Changes["generated"] = diff
+		colDiff.PreviousGeneratedKind = strings.ToUpper(strings.TrimSpace(dbCol.GeneratedKind))
 	}
 
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnDefault]; owned {

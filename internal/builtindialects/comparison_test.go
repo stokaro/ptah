@@ -114,7 +114,14 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			DefaultGeneratedKind:           "PERSISTED",
 			RespelledIndexReplaced:         true,
 		},
-		"clickhouse": {NullableTypes: true, OperatorPrecedence: "clickhouse-operators"},
+		"clickhouse": {
+			NullableTypes:               true,
+			OperatorPrecedence:          "clickhouse-operators",
+			DefaultGeneratedKind:        "MATERIALIZED",
+			StoredGeneratedKind:         "MATERIALIZED",
+			VirtualGeneratedKind:        "ALIAS",
+			GeneratedColumnsBecomePlain: true,
+		},
 		"oracle": {
 			TimePrecision:                descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:                    descriptor.BareTypes{Stated: true, FloatBits: 126, FloatKeepsPrecision: true, IntervalLeading: 2},

@@ -184,6 +184,17 @@ type Comparison struct {
 	// DefaultGeneratedKind is the storage a generated column declared
 	// without one gets, such as "STORED". Empty means it has no default.
 	DefaultGeneratedKind string `json:"default_generated_kind,omitempty"`
+	// StoredGeneratedKind and VirtualGeneratedKind are the kinds the server
+	// creates for a generated column declared STORED or VIRTUAL, where it
+	// names them otherwise: ClickHouse creates MATERIALIZED and ALIAS. Empty
+	// compares the declared kind as written.
+	StoredGeneratedKind  string `json:"stored_generated_kind,omitempty"`
+	VirtualGeneratedKind string `json:"virtual_generated_kind,omitempty"`
+	// GeneratedColumnsBecomePlain reports that a live generated column whose
+	// declaration states no generated kind is compared with the declaration,
+	// and the plan makes it an ordinary column, as ClickHouse's REMOVE
+	// MATERIALIZED does. Without it such a column is left uncompared.
+	GeneratedColumnsBecomePlain bool `json:"generated_columns_become_plain,omitempty"`
 	// ServerDatabases reports that a comparison of a whole server compares
 	// the databases it holds as well as the objects in them: a database only
 	// the declaration holds is created, one only the server holds is

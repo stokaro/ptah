@@ -271,7 +271,7 @@ func (p *Parser) opensNextOption(site sqlext.Site) bool {
 	}
 	switch site {
 	case sqlext.ColumnOption, sqlext.ReferenceOption:
-		if columnClauseStart(p.current.Value) {
+		if p.opensColumnClause(p.current.Value) {
 			return true
 		}
 	case sqlext.RoutineOption:

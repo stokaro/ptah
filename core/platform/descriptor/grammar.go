@@ -154,6 +154,24 @@ type ColumnGrammar struct {
 	// finds: a bare name, or the schema and the name each quoted. Without it
 	// the name is kept as written.
 	QualifiedCollations bool `json:"qualified_collations,omitempty"`
+	// ComputedKinds are the words that give a column a value computed from
+	// the expression written after them, in place of a DEFAULT, as
+	// ClickHouse's MATERIALIZED, ALIAS and EPHEMERAL do. The column reads the
+	// word as its generated kind and the expression as written. A column
+	// takes one such clause or one DEFAULT, never both. Without them each
+	// word is an unsupported column attribute.
+	ComputedKinds []ComputedKind `json:"computed_kinds,omitempty"`
+}
+
+// ComputedKind is one word of [ColumnGrammar.ComputedKinds].
+type ComputedKind struct {
+	// Keyword opens the clause and is the generated kind the column reads,
+	// one upper-case word.
+	Keyword string `json:"keyword"`
+	// ExpressionOptional reports that the word may stand without an
+	// expression, as ClickHouse's EPHEMERAL does. The column then reads an
+	// empty generated expression.
+	ExpressionOptional bool `json:"expression_optional,omitempty"`
 }
 
 // DefaultPredicates states which comparisons and predicates an engine reads
@@ -679,8 +697,8 @@ func (d Dialect) validateGrammar() error {
 	return nil
 }
 
-// validateColumnGrammar checks the niladic function names and the column
-// constraint kinds.
+// validateColumnGrammar checks the niladic function names, the computed
+// kinds and the column constraint kinds.
 func validateColumnGrammar(grammar Grammar) error {
 	if err := validateFunctionNames("niladic function", grammar.Columns.NiladicFunctions); err != nil {
 		return err
@@ -692,6 +710,13 @@ func validateColumnGrammar(grammar Grammar) error {
 		return err
 	}
 	if err := validateClause("next value clause", grammar.Columns.NextValueClause); err != nil {
+		return err
+	}
+	computed := make([]string, len(grammar.Columns.ComputedKinds))
+	for i, kind := range grammar.Columns.ComputedKinds {
+		computed[i] = kind.Keyword
+	}
+	if err := validateFunctionNames("computed kind", computed); err != nil {
 		return err
 	}
 	constraint := grammar.Columns.Constraint
