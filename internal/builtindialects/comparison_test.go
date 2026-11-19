@@ -122,6 +122,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			RoutineNamesFold:             true,
 			ArgumentModeAfterName:        true,
 			MapsDeclaredTypes:            true,
+			SequenceStartIsNextValue:     true,
 		},
 	}
 	described := builtindialects.Descriptors()

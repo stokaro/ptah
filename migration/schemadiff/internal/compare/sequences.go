@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/coverage"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/objectlookup"
@@ -37,19 +38,21 @@ func Sequences(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	sequencesWithSemantics(desired, database, diff, cov, identifier.ForDialect(""))
+	sequencesWithSemantics(desired, database, diff, cov, "", identifier.ForDialect(""))
 }
 
 // SequencesWithSemantics compares sequence identity using the target
-// database's resolved default schema and identifier rules.
+// database's resolved default schema and identifier rules, and each
+// sequence's options as dialect reads them.
 func SequencesWithSemantics(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
+	dialect string,
 	semantics identifier.Semantics,
 ) {
-	sequencesWithSemantics(desired, database, diff, cov, semantics.Normalize(""))
+	sequencesWithSemantics(desired, database, diff, cov, dialect, semantics.Normalize(""))
 }
 
 func sequencesWithSemantics(
@@ -57,6 +60,7 @@ func sequencesWithSemantics(
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
+	dialect string,
 	semantics identifier.Semantics,
 ) {
 	generatedSequences := make(map[objectIdentity]schemamodel.Sequence, len(desired.Sequences))
@@ -82,7 +86,7 @@ func sequencesWithSemantics(
 			continue
 		}
 		diff.Matched.Sequences++
-		if changes := sequenceChanges(generatedSequence, databaseSequence); len(changes) > 0 {
+		if changes := sequenceChanges(generatedSequence, databaseSequence, comparisonOf(dialect)); len(changes) > 0 {
 			diff.SequencesModified = append(diff.SequencesModified, difftypes.SequenceDiff{
 				SequenceName: generatedNames[identity],
 				Changes:      changes,
@@ -311,15 +315,21 @@ func defaultLeaves(change difftypes.ColumnDiff) bool {
 }
 
 // sequenceChanges records the option-by-option transitions between a declared
-// sequence and its introspected counterpart. Unset (nil) target options are
-// skipped so that only explicitly declared options are managed.
-func sequenceChanges(target schemamodel.Sequence, current catalog.Sequence) map[string]string {
+// sequence and its introspected counterpart, read as facts states. Unset (nil)
+// target options are skipped so that only explicitly declared options are
+// managed.
+func sequenceChanges(target schemamodel.Sequence, current catalog.Sequence, facts descriptor.Comparison) map[string]string {
 	changes := make(map[string]string)
 
 	if target.AsType != "" && !strings.EqualFold(target.AsType, current.DataType) {
 		changes["as"] = fmt.Sprintf("%s -> %s", current.DataType, target.AsType)
 	}
-	compareInt64Option(changes, "start", target.Start, current.Start)
+	// Where the read start is where the counter stands, a counter at or past
+	// the declared start holds it; counted as a change, every comparison after
+	// the first NEXTVAL plans a START WITH nobody asked to change.
+	if !facts.SequenceStartIsNextValue || !startReached(target, current) {
+		compareInt64Option(changes, "start", target.Start, current.Start)
+	}
 	compareInt64Option(changes, "increment", target.Increment, current.Increment)
 	compareInt64Option(changes, "minvalue", target.MinValue, current.MinValue)
 	compareInt64Option(changes, "maxvalue", target.MaxValue, current.MaxValue)
@@ -332,6 +342,21 @@ func sequenceChanges(target schemamodel.Sequence, current catalog.Sequence) map[
 	}
 
 	return changes
+}
+
+// startReached reports whether the next value current issues is at or past
+// target's declared start, in the direction the sequence counts: at or above
+// it for an ascending sequence, at or below it for a descending one. A side
+// that states no start or no increment reads as the other side's.
+func startReached(target schemamodel.Sequence, current catalog.Sequence) bool {
+	if target.Start == nil || current.Start == nil {
+		return false
+	}
+	increment := cmp.Or(current.Increment, target.Increment)
+	if increment != nil && *increment < 0 {
+		return *current.Start <= *target.Start
+	}
+	return *current.Start >= *target.Start
 }
 
 // compareInt64Option records a change when the target explicitly sets an option

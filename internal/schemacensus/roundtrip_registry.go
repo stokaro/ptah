@@ -281,12 +281,6 @@ var roundTripGaps = []Unreached{
 	},
 	{Field: "schemamodel.Field.Facets", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Field.GeneratedExpression", Dialects: []string{"oracle"}, Directions: nil, Reason: gapComparison},
-	{
-		Field:      "schemamodel.Field.IdentityGeneration",
-		Dialects:   []string{"oracle"},
-		Directions: nil,
-		Reason:     gapComparison,
-	},
 	{Field: "schemamodel.Field.IdentityIncrement", Dialects: []string{"sqlserver"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.IdentityOptions",

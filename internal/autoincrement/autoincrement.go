@@ -7,6 +7,7 @@ package autoincrement
 import (
 	"strings"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/schemaprep"
 )
@@ -35,4 +36,17 @@ func SerialType(declared string) bool {
 // own auto-increment integer ([schemaprep.SerialWritesAutoIncrement]).
 func DeclaredOn(field schemamodel.Field, dialect string) bool {
 	return Declared(field) || schemaprep.SerialWritesAutoIncrement(field, dialect)
+}
+
+// NotNull reports whether the server builds field NOT NULL whatever its
+// definition says, as columns states it for the target: an identity column
+// where IdentityNotNull holds, any column [Declared] auto-increment where
+// AutoIncrementNotNull holds, and a serial type where SerialNotNull holds.
+// The comparison and the conversion of a declaration to a catalog both ask
+// it: when the two answer differently, a declaration compared with the
+// catalog converted from it plans a NOT NULL change.
+func NotNull(field schemamodel.Field, columns descriptor.Columns) bool {
+	return columns.IdentityNotNull && field.IdentityGeneration != "" ||
+		columns.AutoIncrementNotNull && Declared(field) ||
+		columns.SerialNotNull && SerialType(field.Type)
 }

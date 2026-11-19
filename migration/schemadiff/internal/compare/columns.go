@@ -2371,14 +2371,11 @@ func columnNullable(field schemamodel.Field, dialect string, ctx columnContext) 
 	if field.Primary && primaryKeyImpliesNotNull(dialect) {
 		return false
 	}
-	if field.IdentityGeneration != "" && columnFactsOf(dialect).IdentityNotNull {
-		return false
-	}
-	// A serial column is NOT NULL on PostgreSQL whatever its definition says,
-	// so a declaration that leaves it out describes the column the server
-	// built; held to its own nullability, it planned DROP NOT NULL on every
-	// comparison.
-	if autoincrement.SerialType(field.Type) && columnFactsOf(dialect).SerialNotNull {
+	// An identity or serial column is NOT NULL on PostgreSQL and Oracle
+	// whatever its definition says, so a declaration that leaves it out
+	// describes the column the server built; held to its own nullability, it
+	// plans DROP NOT NULL on every comparison.
+	if autoincrement.NotNull(field, columnFactsOf(dialect)) {
 		return false
 	}
 	if ctx.rules != nil && ctx.rules.AlwaysNotNull(field) {

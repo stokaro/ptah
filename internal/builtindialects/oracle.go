@@ -137,6 +137,12 @@ END;`,
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names: descriptor.Names{Lookup: "ascii_case_insensitive"},
+		// Measured on Oracle Free 23.26: an identity column reads back NOT
+		// NULL, declared so or not, and an auto-increment flag and a serial
+		// type are each written as one. Compared as declared, the plan writes
+		// MODIFY (id ... NULL), which Oracle answers with ORA-01451 on every
+		// apply.
+		Columns: descriptor.Columns{AutoIncrementNotNull: true, SerialNotNull: true},
 
 		// How the common model is lowered for the engine.
 		InlineEnum: descriptor.InlineEnum{Type: "VARCHAR2(255)", Check: descriptor.InlineEnumCheckQuoted},
@@ -150,6 +156,9 @@ END;`,
 			RoutineNamesFold:             true,
 			ArgumentModeAfterName:        true,
 			MapsDeclaredTypes:            true,
+			// ALL_SEQUENCES keeps no START WITH; the reader reports
+			// LAST_NUMBER, which a used sequence has moved past it.
+			SequenceStartIsNextValue: true,
 		},
 
 		// An enum column is VARCHAR2(255) with a CHECK. Oracle refuses a CHECK
