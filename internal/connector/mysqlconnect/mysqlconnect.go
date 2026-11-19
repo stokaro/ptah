@@ -261,7 +261,7 @@ func (Service) RefineSession(
 // refineSQLModeCapabilities sets [capability.NoBackslashEscapes] to whether
 // the sql_mode scan reads names NO_BACKSLASH_ESCAPES. A session in that mode
 // reads a backslash in a string literal as the character, so a schema apply
-// rewrites each literal it sends there (internal/sessiontext). A failed read
+// refuses a plan that renders one there. A failed read
 // fails the refinement: a guess would store the wrong characters on one of
 // the two kinds of session.
 func refineSQLModeCapabilities(caps capability.Capabilities, scan func(...any) error) (capability.Capabilities, error) {

@@ -811,7 +811,7 @@ func seedBaseline(
 		if err := guardRehearsalBaseline(seeded.Statements, dev.guard, dev.info.Dialect); err != nil {
 			return seeded.Added, devseed.WithAdded(err, seeded.Added)
 		}
-		if err := executeApplyStatements(ctx, dev.executor, dev.info, seeded.Statements); err != nil {
+		if err := executeApplyStatements(ctx, dev.executor, seeded.Statements); err != nil {
 			return seeded.Added, devseed.WithAdded(err, seeded.Added)
 		}
 	}
@@ -1073,7 +1073,7 @@ func nameColumnSequencesAsTarget(ctx context.Context, dev baselineDev, current *
 				" RENAME TO "+sqlident.Ident(dialect, target))
 		}
 	}
-	if err := executeApplyStatements(ctx, dev.executor, dev.info, slices.Concat(moves, settles)); err != nil {
+	if err := executeApplyStatements(ctx, dev.executor, slices.Concat(moves, settles)); err != nil {
 		return fmt.Errorf("name dev database sequences as the target names them: %w", err)
 	}
 	return nil
