@@ -1254,13 +1254,22 @@ failures.
 
 The dev database is where the migration directory is replayed: the current
 state of a history exists only as what its files build, so `migrate diff`
-always needs one. The desired schema is not built there. A schema file, or the
+always needs one. The desired schema is not built there for the comparison. A schema file, or the
 SQL that a `data "external_schema"` program writes, is read by Ptah's own
 reader, which stores a long PostgreSQL name the way the server would; see
 [SQL schema files](../../schema/sql/). The dev database is only asked how its
 server spells the declaration's CHECK, default and index expressions, so the
 two sides compare like with like. A desired schema given as a database URL is
 read from that database.
+
+On MySQL and MariaDB, a `CHECK` the generated file adds is written as the
+server reports it, as the pinned binary writes it: ``CHECK (`qty` > 0)`` for a
+declared `CHECK (qty > 0)`. When the comparison finds that the file adds a
+`CHECK`, Ptah resets the dev database, creates each table the file adds one to,
+with its columns and keys only, adds each such `CHECK` there and reads it back.
+It then resets the dev database and replays the directory again to write the
+file. The comparison does not change, and a directory that is synced, or a file
+that adds no `CHECK`, takes one replay.
 
 If the replayed state does not establish whether a declared object exists,
 Ptah reports the missing evidence and exits with an error. It does not report

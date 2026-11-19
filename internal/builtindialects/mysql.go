@@ -253,6 +253,7 @@ func mysql() descriptor.Dialect {
 			DockerImages:  []string{"mysql"},
 			DockerDrivers: []string{"mysql"},
 			ChangeWords:   descriptor.MySQLDriverChangeWords,
+			CheckSpelling: descriptor.DevCheckSpellingUnwrapped,
 			HCL:           mysqlFamilyAtlasHCL(),
 		},
 
