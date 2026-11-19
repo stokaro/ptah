@@ -75,3 +75,40 @@ func TestCompatUnknownFlagWhenNoCommandIsNamedE2E(t *testing.T) {
 	c.Assert(compat.Stdout, qt.Equals, communityOut)
 	c.Assert(compat.Stderr, qt.Equals, communityErr)
 }
+
+// TestCompatHelpWhenNoCommandIsNamedE2E runs the root's help forms through the
+// shipped ptah-compat and the pinned community binary. A help flag or a
+// terminator before the word leaves the root with no command to name, so both
+// binaries print the root help at exit 0 and write nothing on stderr. The help
+// text itself differs: each binary names itself and lists the commands it
+// registers.
+func TestCompatHelpWhenNoCommandIsNamedE2E(t *testing.T) {
+	reference := atlasReferenceBinary(t)
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "help flag before an unknown verb", args: []string{"--help", "security"}},
+		{name: "help shorthand before an unknown verb", args: []string{"-h", "nosuch"}},
+		{name: "terminator before an unknown verb", args: []string{"--", "security"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			communityOut, communityStderr, err := runCLIProcess(c.Context(), c.TempDir(), reference, test.args...)
+			communityErr := testutils.WithoutAtlasCommunityBuildNotice(communityStderr)
+			compat := clirun.Run(c, clirun.Compat, clirun.Options{
+				Dir: c.TempDir(),
+				Env: environmentWithoutPtahVariables(),
+			}, test.args...)
+
+			c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", communityOut, communityErr))
+			c.Assert(communityErr, qt.Equals, "")
+			c.Assert(communityOut, qt.Contains, "Usage:\n  atlas [command]")
+			c.Assert(compat.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
+			c.Assert(compat.Stderr, qt.Equals, "")
+			c.Assert(compat.Stdout, qt.Contains, "Usage:\n  ptah-compat [command]")
+		})
+	}
+}
