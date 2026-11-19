@@ -137,6 +137,7 @@ func captureApplyPlan(
 		return ApplyPlan{}, err
 	}
 	plan.effects = describeUnits(effects, plan.provider, rendered.Request.Nodes, indexes)
+	plan.escaped = escapedLiterals(rendered.Request.Nodes, indexes)
 	return plan, nil
 }
 
@@ -188,6 +189,9 @@ func (p ApplyPlan) Preflight(ctx context.Context, conn *dbschema.DatabaseConnect
 	}
 	if !p.HasChanges() {
 		return nil
+	}
+	if err := p.refuseEscapedLiterals(); err != nil {
+		return err
 	}
 	if err := checkOwnerTransactions(p.transactions, mode, conn); err != nil {
 		return err

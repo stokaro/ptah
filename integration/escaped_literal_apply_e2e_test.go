@@ -54,46 +54,29 @@ const escapedLiteralMySQLRead = "SELECT CONCAT_WS(',', HEX(a), HEX(q), HEX(r), n
 	"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notes' AND COLUMN_NAME = 'a'), (SELECT HEX(COLUMN_TYPE) " +
 	"FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notes' AND COLUMN_NAME = 'e'), HEX(b)) FROM notes"
 
-// The sql_mode values an escaped literal row sets on its session: the
-// server's own, under which a backslash in a string is an escape, and the
-// same with NO_BACKSLASH_ESCAPES, under which it is the character.
-const (
-	serverSQLMode          = "@@sql_mode"
-	noBackslashEscapesMode = "CONCAT(@@sql_mode,',NO_BACKSLASH_ESCAPES')"
-)
-
 // TestApplyKeepsAnEscapedLiteralDefaultE2E applies a Go model whose literal
 // defaults hold a backslash, a quote or the word NULL, with a column comment
 // and an enum value holding a backslash, twice, and reads what the server
-// stored back in hexadecimal. Each row sets the session's sql_mode. Under the
-// server's own mode a backslash in a string is an escape, so the renderer
-// doubles it; under NO_BACKSLASH_ESCAPES it is the character, so the apply
-// sends it once. The reader writes a stored backslash back doubled under
-// either mode. Each server stores the characters the model declares, and the
-// second apply plans nothing.
+// stored back in hexadecimal. Under the server's own sql_mode a backslash in
+// a string is an escape, so the renderer doubles it. The reader writes a
+// stored backslash back doubled. Each server stores the characters the model
+// declares, and the second apply plans nothing.
 func TestApplyKeepsAnEscapedLiteralDefaultE2E(t *testing.T) {
 	const want = "615C62,69745C27733B78,697427733B78,NULL,635C64,656E756D2827655C5C66272C27672729,615C5C62"
 	rows := []struct {
-		name    string
-		engine  dbtarget.Engine
-		sqlMode string
-		// noBackslashEscapes is whether the session's sql_mode names
-		// NO_BACKSLASH_ESCAPES, read back from the session.
-		noBackslashEscapes bool
+		name   string
+		engine dbtarget.Engine
 	}{
-		{name: "mysql", engine: dbtarget.MySQLAdmin, sqlMode: serverSQLMode},
-		{name: "mysql without backslash escapes", engine: dbtarget.MySQLAdmin, sqlMode: noBackslashEscapesMode, noBackslashEscapes: true},
-		{name: "mariadb", engine: dbtarget.MariaDBAdmin, sqlMode: serverSQLMode},
-		{name: "mariadb without backslash escapes", engine: dbtarget.MariaDBAdmin, sqlMode: noBackslashEscapesMode, noBackslashEscapes: true},
+		{name: "mysql", engine: dbtarget.MySQLAdmin},
+		{name: "mariadb", engine: dbtarget.MariaDBAdmin},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := withSQLMode(c, mysqlFamilyScratchURL(c, row.engine, "escaped_default"), row.sqlMode)
+			database := mysqlFamilyScratchURL(c, row.engine, "escaped_default")
 
 			got := applyEscapedLiteralModel(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyFields), escapedLiteralMySQLRead)
 
-			c.Assert(strings.Contains(sessionSQLMode(c, database), "NO_BACKSLASH_ESCAPES"), qt.Equals, row.noBackslashEscapes)
 			c.Assert(got, qt.Equals, want)
 		})
 	}
@@ -137,6 +120,13 @@ func applyEscapedLiteralModel(c *qt.C, database string, model declaredModel, rea
 	again := applyModel(c, database, model)
 	c.Assert(created.ExitCode, qt.Equals, 0, historyComment(created))
 	c.Assert(again.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n", historyComment(again))
+	return insertDefaultsAndRead(c, database, read)
+}
+
+// insertDefaultsAndRead inserts a row into notes that takes every default and
+// returns what read answers for it.
+func insertDefaultsAndRead(c *qt.C, database, read string) string {
+	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), database)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)

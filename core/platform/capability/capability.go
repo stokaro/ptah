@@ -1371,10 +1371,10 @@ const (
 	// literal as the character, where the default sql_mode reads it as the
 	// start of an escape: measured on MySQL 26.10 and MariaDB 12.3, `'a\\b'`
 	// holds two backslashes there and one under the default sql_mode. Ptah
-	// writes, splits and scans SQL text as the default sql_mode reads it, and a
-	// schema apply sends each statement to a session with this key with every
-	// string literal written as that session reads it, so the server stores
-	// the characters the plan shows.
+	// writes, splits and scans SQL text as the default sql_mode reads it, so a
+	// schema apply refuses a plan that writes a backslash in a literal it
+	// renders from the model -- a default, a comment, an enum value -- on a
+	// session with this key. SQL a user wrote is sent as written.
 	//
 	// No preset holds it, and no renderer reads it. The MySQL-family
 	// connector sets it from @@SESSION.sql_mode when it connects and again on
@@ -2282,7 +2282,7 @@ var registry = map[Capability]spec{
 		doc: "a column default may be an expression the server evaluates, not only a literal (MySQL 8.0.13+, MariaDB 10.2+; not YDB)",
 	},
 	NoBackslashEscapes: {
-		doc: "the MySQL-family session's sql_mode names NO_BACKSLASH_ESCAPES, so a schema apply sends each string literal as that session reads it (set from the session, never by a preset)",
+		doc: "the MySQL-family session's sql_mode names NO_BACKSLASH_ESCAPES, so a schema apply refuses a plan that renders a backslash in a string literal (set from the session, never by a preset)",
 	},
 	CheckConstraints: {
 		doc: "the grammar has CHECK constraints at all, enforced or not (not YDB)",

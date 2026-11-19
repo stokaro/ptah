@@ -75,7 +75,7 @@ func openRehearsalDatabase(
 ) (simulationDev, error) {
 	dropCreated := func() { discardDevRehearsalArtifacts(ctx, server, serverBaseline) }
 	create := "CREATE DATABASE " + sqlident.Quote(server.Info().Dialect, name)
-	if err := executeApplyStatements(ctx, server.Writer(), server.Info(), []string{create}); err != nil {
+	if err := executeApplyStatements(ctx, server.Writer(), []string{create}); err != nil {
 		dropCreated()
 		return simulationDev{}, fmt.Errorf("create the rehearsal database %q on the dev server: %w", name, err)
 	}
