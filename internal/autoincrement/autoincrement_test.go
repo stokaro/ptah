@@ -52,6 +52,54 @@ func TestSerialType(t *testing.T) {
 	}
 }
 
+// TestCounterType names the types that name a generated counter rather than
+// a width.
+func TestCounterType(t *testing.T) {
+	tests := []struct {
+		declared string
+		want     bool
+	}{
+		{declared: "SERIAL", want: true},
+		{declared: "bigserial", want: true},
+		{declared: " Auto_Increment ", want: true},
+		{declared: "identity", want: true},
+		{declared: "NUMBER(10)", want: false},
+		{declared: "IDENTITY(1,1)", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.declared, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(autoincrement.CounterType(test.declared), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestGeneration names the identity generation each declaration is built with
+// where every auto-increment column is an identity column.
+func TestGeneration(t *testing.T) {
+	tests := []struct {
+		name  string
+		field schemamodel.Field
+		want  string
+	}{
+		{name: "ALWAYS", field: schemamodel.Field{Type: "NUMBER(10)", IdentityGeneration: "ALWAYS"}, want: "ALWAYS"},
+		{name: "always, spaced", field: schemamodel.Field{Type: "NUMBER(10)", IdentityGeneration: " always "}, want: "ALWAYS"},
+		{name: "BY DEFAULT", field: schemamodel.Field{Type: "NUMBER(10)", IdentityGeneration: "BY DEFAULT"}, want: "BY_DEFAULT"},
+		{name: "an AutoInc flag", field: schemamodel.Field{Type: "NUMBER(10)", AutoInc: true}, want: "BY_DEFAULT"},
+		{name: "a serial type", field: schemamodel.Field{Type: "BIGSERIAL"}, want: "BY_DEFAULT"},
+		{name: "an AUTO_INCREMENT type", field: schemamodel.Field{Type: "AUTO_INCREMENT"}, want: "BY_DEFAULT"},
+		{name: "a plain column", field: schemamodel.Field{Type: "NUMBER(10)"}, want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(autoincrement.Generation(test.field), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestDeclaredOn names the declarations each target builds auto-increment. A
 // serial type is one on MySQL, MariaDB and SQL Server, which write it as their
 // own auto-increment integer, unless the field spells the target's type itself.
@@ -92,12 +140,14 @@ func TestDeclaredOn(t *testing.T) {
 
 // TestNotNull names the columns each fact holds NOT NULL. An identity
 // generation is held by IdentityNotNull and AutoIncrementNotNull, an
-// AutoInc flag only by AutoIncrementNotNull, and a serial type only by
-// SerialNotNull.
+// AutoInc flag and a counter type other than a serial type only by
+// AutoIncrementNotNull, and a serial type by SerialNotNull and
+// AutoIncrementNotNull.
 func TestNotNull(t *testing.T) {
 	identity := schemamodel.Field{Name: "id", Type: "BIGINT", Nullable: true, IdentityGeneration: "ALWAYS"}
 	flagged := schemamodel.Field{Name: "id", Type: "INT", Nullable: true, AutoInc: true}
 	serial := schemamodel.Field{Name: "id", Type: "serial", Nullable: true}
+	counter := schemamodel.Field{Name: "id", Type: "IDENTITY", Nullable: true}
 	plain := schemamodel.Field{Name: "id", Type: "INT", Nullable: true}
 	tests := []struct {
 		name    string
@@ -111,7 +161,9 @@ func TestNotNull(t *testing.T) {
 		{name: "a flag under IdentityNotNull", field: flagged, columns: descriptor.Columns{IdentityNotNull: true}, want: false},
 		{name: "a flag under AutoIncrementNotNull", field: flagged, columns: descriptor.Columns{AutoIncrementNotNull: true}, want: true},
 		{name: "a serial type under SerialNotNull", field: serial, columns: descriptor.Columns{SerialNotNull: true}, want: true},
-		{name: "a serial type under AutoIncrementNotNull", field: serial, columns: descriptor.Columns{AutoIncrementNotNull: true}, want: false},
+		{name: "a serial type under AutoIncrementNotNull", field: serial, columns: descriptor.Columns{AutoIncrementNotNull: true}, want: true},
+		{name: "an IDENTITY type under AutoIncrementNotNull", field: counter, columns: descriptor.Columns{AutoIncrementNotNull: true}, want: true},
+		{name: "an IDENTITY type under SerialNotNull", field: counter, columns: descriptor.Columns{SerialNotNull: true}, want: false},
 		{
 			name: "a plain column under every fact", field: plain,
 			columns: descriptor.Columns{IdentityNotNull: true, AutoIncrementNotNull: true, SerialNotNull: true}, want: false,

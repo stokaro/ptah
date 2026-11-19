@@ -143,8 +143,9 @@ type Columns struct {
 	// not the definition says so.
 	IdentityNotNull bool `json:"identity_not_null,omitempty"`
 	// AutoIncrementNotNull reports that a column declared auto-increment, by
-	// its flag or by an identity generation, is NOT NULL whether or not the
-	// definition says so, as Oracle builds each as an identity column. It
+	// its flag, an identity generation or a type that names a counter, is NOT
+	// NULL whether or not the definition says so, as Oracle builds each as an
+	// identity column. It
 	// differs from IdentityNotNull where the target writes an auto-increment
 	// flag as something other than an identity column, or not at all.
 	AutoIncrementNotNull bool `json:"auto_increment_not_null,omitempty"`

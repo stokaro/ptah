@@ -85,6 +85,14 @@ type Comparison struct {
 	// column holds, and that ALTER COLUMN adds, changes and drops it, so a
 	// column's identity is compared with its declaration.
 	IdentityColumns bool `json:"identity_columns,omitempty"`
+	// AutoIncrementIdentity reports that the target builds every
+	// auto-increment column as an identity column and that a read says which
+	// generation each holds, so a column's identity is compared with the one
+	// the declaration builds: its declared generation, or BY_DEFAULT for an
+	// auto-increment flag or a counter type. A serial spelling is that identity
+	// rather than a sequence of the column's own, which is how it differs from
+	// IdentityColumns.
+	AutoIncrementIdentity bool `json:"auto_increment_identity,omitempty"`
 
 	// SequenceStartIsNextValue reports that the start a read reports for a
 	// sequence is the next value the sequence issues, rounded up to the end of

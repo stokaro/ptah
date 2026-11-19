@@ -319,6 +319,11 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 		}
 		column := toDBColumn(field, i+1, literalAsRead)
 		column.IsAutoIncrement = autoincrement.DeclaredOn(field, dialect)
+		// A target that builds every auto-increment column as an identity
+		// column reports the generation of each, and the comparison reads it.
+		if described.Comparison.AutoIncrementIdentity {
+			column.IdentityGeneration = autoincrement.Generation(field)
+		}
 		// A target that stores a declared type as another reports the one it
 		// stores: Oracle a TEXT column as a CLOB, CockroachDB an INT column at
 		// its integer width. The comparison folds the declared side the same
