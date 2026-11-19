@@ -121,9 +121,13 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	// caller may compare twice with one value.
 	opts = withResolvedExpressions(opts, resolved)
 
-	return compareWithDatabaseInfoReportingUndecidedAdditions(
+	diff, diagnostics, err := compareWithDatabaseInfoReportingUndecidedAdditions(
 		ctx, desired, database, info, opts, runtime,
 	)
+	if err == nil {
+		warnUnspelledColumns(ctx, resolved.unspelledColumns, desired, diff, info.Dialect)
+	}
+	return diff, diagnostics, err
 }
 
 // resolveExpressions asks the server how it spells each declared expression
@@ -158,7 +162,8 @@ func resolveExpressions(
 	// A column batch owner supplies the offline type and default facts. Domain
 	// identities retain common comparison ownership and need no spelling probe.
 	if rules.ColumnService == nil {
-		if resolved.columns, err = resolveColumnSpellings(ctx, conn, desired, database, semantics, runtime); err != nil {
+		resolved.columns, resolved.unspelledColumns, err = resolveColumnSpellings(ctx, conn, desired, database, semantics, runtime)
+		if err != nil {
 			return resolvedExpressions{}, err
 		}
 	}
@@ -184,6 +189,10 @@ type resolvedExpressions struct {
 	triggers  map[string]config.TriggerCondition
 	arguments map[string]config.RoutineArguments
 	views     map[string]config.ViewBody
+
+	// unspelledColumns are the columns the server refused to spell. They are
+	// reported once the comparison has said which of them it changes.
+	unspelledColumns []dbexprprobe.ColumnSpellingRefusal
 }
 
 // empty reports that no server answered for anything, which is every offline
@@ -582,9 +591,9 @@ func resolveColumnSpellings(
 	database *catalog.Database,
 	semantics identifier.Semantics,
 	service renderer.Service,
-) (map[string]config.ColumnSpelling, error) {
+) (map[string]config.ColumnSpelling, []dbexprprobe.ColumnSpellingRefusal, error) {
 	if desired == nil || database == nil || !dbexprprobe.SupportsColumnSpellings(conn.Info().Dialect) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	held := make(map[string]map[string]string, len(database.Tables))
 	for _, table := range database.Tables {
@@ -610,20 +619,89 @@ func resolveColumnSpellings(
 		}
 		probe, ok, err := columnSpellingProbe(ctx, service, desired, table, fields, len(probes), conn.Info())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if ok {
 			probes = append(probes, probe)
 		}
 	}
 	if len(probes) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
-	spellings, err := dbexprprobe.ResolveColumnSpellings(ctx, conn, probes)
+	spellings, refusals, err := dbexprprobe.ResolveColumnSpellings(ctx, conn, probes)
 	if err != nil {
-		return nil, fmt.Errorf("compare schemas: %w", err)
+		return nil, nil, fmt.Errorf("compare schemas: %w", err)
 	}
-	return spellings, nil
+	return spellings, refusals, nil
+}
+
+// warnUnspelledColumns raises one warning for the columns the server refused
+// to spell whose type or default diff changes, and writes it now, for the
+// reason [warnUnspelledGeneratedColumns] gives.
+//
+// Only a changed column is named. Compared as written, a type or a default can
+// read as a change it is not, and the warning says that the change may be
+// one; a column the comparison leaves alone is compared correctly either way,
+// and naming it would repeat the same lines on every run.
+func warnUnspelledColumns(
+	ctx context.Context,
+	refusals []dbexprprobe.ColumnSpellingRefusal,
+	desired *schemamodel.Database,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+) {
+	if len(refusals) == 0 || diff == nil {
+		return
+	}
+	changed := changedColumnKeys(desired, diff, dialect)
+	stream := rundiag.Stream(ctx)
+	warned := false
+	for _, refusal := range refusals {
+		if !changed[refusal.Key] {
+			continue
+		}
+		warned = true
+		column := qualifiedColumnName(refusal.Schema, refusal.Table, refusal.Column)
+		_ = rundiag.Warn(ctx, stream, rundiag.UnspelledColumns, rundiag.Record{
+			Key: refusal.Key,
+			Line: fmt.Sprintf("column %s has its type and default compared as written, not in the form the server stores: "+
+				"the server refused the temporary table that spells them: %v", column, refusal.Reason),
+			Attrs: []slog.Attr{slog.String("column", column), slog.String("reason", refusal.Reason.Error())},
+		})
+	}
+	if warned {
+		rundiag.Settle(ctx, rundiag.UnspelledColumns)
+	}
+}
+
+// changedColumnKeys is the probe key of each declared column whose type or
+// default diff changes.
+func changedColumnKeys(desired *schemamodel.Database, diff *difftypes.SchemaDiff, dialect string) map[string]bool {
+	tables := make(map[string]schemamodel.Table, len(desired.Tables))
+	for _, table := range desired.Tables {
+		tables[table.QualifiedName()] = table
+	}
+	keys := make(map[string]bool)
+	for _, tableDiff := range diff.TablesModified {
+		table, declared := tables[tableDiff.TableName]
+		if !declared {
+			continue
+		}
+		for _, column := range tableDiff.ColumnsModified {
+			if slices.ContainsFunc([]string{"type", "default", "default_expr"}, func(change string) bool {
+				_, found := column.Changes[change]
+				return found
+			}) {
+				keys[exprkey.Column(dialect, table.Schema, table.Name, column.ColumnName)] = true
+			}
+		}
+	}
+	return keys
+}
+
+// qualifiedColumnName joins the parts of a column's name that are not empty.
+func qualifiedColumnName(parts ...string) string {
+	return strings.Join(slices.DeleteFunc(parts, func(part string) bool { return part == "" }), ".")
 }
 
 // needsColumnSpelling reports whether a column's comparison can depend on the
@@ -650,7 +728,11 @@ func columnSpellingProbe(
 	if len(fields) == 0 {
 		return dbexprprobe.ColumnSpellingProbe{}, false, nil
 	}
-	probe := dbexprprobe.ColumnSpellingProbe{Table: fmt.Sprintf("pg_temp.ptah_column_probe_%d", index)}
+	probe := dbexprprobe.ColumnSpellingProbe{
+		Table:    fmt.Sprintf("pg_temp.ptah_column_probe_%d", index),
+		Schema:   cmp.Or(table.Schema, info.Schema),
+		Declared: table.Name,
+	}
 	tableNode := ast.NewCreateTable(probe.Table)
 	nodes := []ast.Node{tableNode}
 	for position, field := range fields {
@@ -950,8 +1032,7 @@ func warnUnspelledGeneratedColumns(ctx context.Context, refusals []dbexprprobe.G
 	}
 	stream := rundiag.Stream(ctx)
 	for _, refusal := range refusals {
-		column := strings.Join(slices.DeleteFunc([]string{refusal.Schema, refusal.Table, refusal.Column},
-			func(part string) bool { return part == "" }), ".")
+		column := qualifiedColumnName(refusal.Schema, refusal.Table, refusal.Column)
 		_ = rundiag.Warn(ctx, stream, rundiag.UnspelledGeneratedColumns, rundiag.Record{
 			Key: refusal.Key,
 			Line: fmt.Sprintf("generated column %s is compared as written, not in the form the server stores: "+

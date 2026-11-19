@@ -50,6 +50,23 @@ var (
 		},
 	}
 
+	// UnspelledColumns is a declared column the server refused to spell, so
+	// its type and default are compared as written rather than in the form the
+	// server stores, and whose type or default the comparison changes. The
+	// probe is the one [UnspelledGeneratedColumns] names, refused for the same
+	// reasons. A default compared as written still keeps every cast that can
+	// change its value, but a form the server rewrites, such as a timestamp
+	// literal it fills in, reads as a change. Its records
+	// carry the column as the "column" attribute and the server's answer as
+	// the "reason" attribute.
+	UnspelledColumns = &Category{
+		Name: "unspelled-column",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d columns have their type and default compared as written, not in the form the server stores: "+
+				"the server refused the temporary table that spells each of them", len(records))
+		},
+	}
+
 	// IgnoredProjectSettings is an atlas.hcl name the community binary
 	// accepts without acting on.
 	IgnoredProjectSettings = &Category{

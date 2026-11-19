@@ -209,7 +209,9 @@ func ArrayElement(typeName string) (element string, isArray bool) {
 //
 //   - Empty/NULL values: Converted to empty string for consistent comparison
 //   - Quoted values: Quotes are removed for comparison (both single and double)
-//   - PostgreSQL type casting: Removes ::type syntax (e.g., 'user'::text → 'user')
+//   - PostgreSQL type casting: Removes a ::type cast that cannot change the
+//     value (e.g., 'user'::text → 'user'), and keeps one that can, such as
+//     (1.5)::integer
 //   - Boolean values: MySQL/MariaDB '1'/'0' normalized to 'true'/'false'
 //   - NULL literals: Database-specific NULL representations normalized to empty string
 //
@@ -218,7 +220,8 @@ func ArrayElement(typeName string) (element string, isArray bool) {
 //   - **MySQL/MariaDB**: Returns 'NULL' string for columns without explicit defaults
 //   - **PostgreSQL**: Returns actual NULL for columns without defaults, includes type casting
 //   - **Boolean types**: Handles '1'/'0' vs 'true'/'false' variations
-//   - **PostgreSQL type casting**: Strips ::type syntax from default values
+//   - **PostgreSQL type casting**: Strips a value-preserving ::type cast from
+//     default values
 //
 // # Example Usage
 //
@@ -235,6 +238,9 @@ func ArrayElement(typeName string) (element string, isArray bool) {
 //	DefaultValue("'user'::text", "text")     // → "user"
 //	DefaultValue("'0'::bigint", "integer")   // → "0"
 //	DefaultValue("'active'::text", "text")   // → "active"
+//
+//	// A cast that changes the value stays
+//	DefaultValue("(1.5)::integer", "decimal") // → "1.5::integer"
 //
 //	// NULL handling
 //	DefaultValue("NULL", "varchar")     // → ""
@@ -261,13 +267,13 @@ func DefaultValue(defaultValue, typeName string) string {
 		return normalizedSequence
 	}
 
-	cleanValue := defaultValue
-
-	// Handle PostgreSQL type casting syntax (e.g., 'user'::text, '0'::bigint)
-	// Remove the ::type suffix before processing quotes
-	// We need to find the last :: to handle cases like 'value::with::colons'::text
-	if lastColonIndex := strings.LastIndex(cleanValue, "::"); lastColonIndex != -1 {
-		cleanValue = cleanValue[:lastColonIndex]
+	// A PostgreSQL catalog types the literal it stores, as 'user'::text or
+	// '0'::bigint, and a declaration rarely writes that cast. It is folded
+	// before the quotes come off. A cast that can change the value is part of
+	// it, so the value is compared as the expression it is.
+	cleanValue, kept := withoutValuePreservingCast(defaultValue, typeName)
+	if kept {
+		return strings.TrimSpace(cleanValue)
 	}
 
 	// SQL NULL, including a PostgreSQL cast, is no default. Check before
@@ -340,6 +346,275 @@ func normalizeSequenceDefaultExpression(defaultValue string) string {
 		trimmed = strings.ReplaceAll(trimmed, cast, "")
 	}
 	return trimmed
+}
+
+// withoutValuePreservingCast returns value without its last `::type` cast
+// where that cast cannot change the value. Otherwise kept reports a cast that
+// can change it, and folded is the default in one spelling of that cast: the
+// operand without the parentheses PostgreSQL prints around a simple one, and
+// the type lowercase, under its family's name, with its length or precision.
+// CockroachDB stores `(1.5::integer)` as `1.5::INT8` and PostgreSQL as
+// `(1.5)::integer`, and the two read as one default.
+//
+// A cast cannot change the value where one of these holds:
+//
+//   - the operand is NULL;
+//   - the type is text or character varying without a length, and the column
+//     stores characters, so it converts the text as it converts the value
+//     before the cast;
+//   - the operand is a quoted literal and the type is the column's own,
+//     without a length or precision, which is how a catalog types the literal
+//     it stores;
+//   - the column's type is known and the cast names it, without a length or
+//     precision: the server converts a default to the column's type as it
+//     stores each row, the same conversion the cast makes, so
+//     `ARRAY[]::text[]` on a `text[]` column is `ARRAY[]`, which is how
+//     CockroachDB stores it;
+//   - the operand is a number and the type a numeric one that holds it
+//     exactly, as `(0)::bigint` and `1.5::numeric`.
+//
+// Every other cast is part of the value: `(1.5)::integer` rounds,
+// `'abcd'::character varying(3)` truncates, `(now())::date` drops the time,
+// and `'2020-01-01 10:30'::date` does too on a timestamp column. A cast to
+// text is one on a column that stores no characters: on a regclass column,
+// `'users'::text` looks the table up when a row is inserted, and `'users'`
+// when the default is set.
+func withoutValuePreservingCast(value, columnType string) (folded string, kept bool) {
+	at := strings.LastIndex(value, "::")
+	if at < 0 {
+		return value, false
+	}
+	operand := strings.TrimSpace(value[:at])
+	castType, isCast := readCastType(value[at+2:])
+	if !isCast {
+		return value, false
+	}
+	simple := withoutGroupingParentheses(operand)
+	switch {
+	case strings.EqualFold(simple, "NULL"):
+		return value[:at], false
+	case castType.modifier != "":
+		return simple + "::" + castType.canonical(), true
+	case castType.isText() && holdsCharacters(columnType):
+		return simple, false
+	case isQuotedDefaultLiteral(operand) && castType.isColumnType(columnType):
+		return value[:at], false
+	case strings.TrimSpace(columnType) != "" && castType.isColumnType(columnType):
+		return simple, false
+	case isIntegerLiteral(simple) && exactNumericTypes[castType.name],
+		isDecimalLiteral(simple) && (castType.name == "numeric" || castType.name == "decimal"):
+		return simple, false
+	default:
+		return simple + "::" + castType.canonical(), true
+	}
+}
+
+// exactNumericTypes are the types every integer literal converts to without
+// rounding.
+var exactNumericTypes = map[string]bool{
+	"smallint": true, "integer": true, "int": true, "int2": true, "int4": true,
+	"int8": true, "bigint": true, "numeric": true, "decimal": true,
+}
+
+// castType is the type that ends a default, after its `::`.
+type castType struct {
+	// name is the type's name, lowercase and without quotes or a pg_catalog
+	// qualifier.
+	name string
+	// modifier is the length or precision written with it, without spaces,
+	// and any words after it, as in `(3)` or `(3) with time zone`.
+	modifier string
+	// array is the array brackets written after it.
+	array string
+}
+
+// readCastType reads the text after a default's last `::` as a type. It
+// reports false for text that is no type name, as a `::` inside a string or
+// in the middle of an expression is followed by.
+func readCastType(text string) (castType, bool) {
+	text = strings.ToLower(strings.TrimSpace(text))
+	var cast castType
+	for strings.HasSuffix(text, "]") {
+		open := strings.LastIndex(text, "[")
+		if open < 0 || strings.Trim(text[open+1:len(text)-1], "0123456789") != "" {
+			return castType{}, false
+		}
+		cast.array = text[open:] + cast.array
+		text = strings.TrimSpace(text[:open])
+	}
+	name, rest, modified := strings.Cut(text, "(")
+	if modified {
+		arguments, after, closed := strings.Cut(rest, ")")
+		if !closed || strings.Trim(arguments, "0123456789, ") != "" || !spellsTypeName(after) {
+			return castType{}, false
+		}
+		cast.modifier = "(" + strings.ReplaceAll(arguments, " ", "") + ")"
+		if words := strings.Fields(after); len(words) > 0 {
+			cast.modifier += " " + strings.Join(words, " ")
+		}
+	}
+	name = strings.TrimPrefix(strings.ReplaceAll(strings.TrimSpace(name), `"`, ""), "pg_catalog.")
+	if name == "" || !spellsTypeName(name) {
+		return castType{}, false
+	}
+	cast.name = strings.Join(strings.Fields(name), " ")
+	return cast, true
+}
+
+// spellsTypeName reports that text holds only what a type name, with the
+// words and dots of a qualified or multi-word name, is spelled with.
+func spellsTypeName(text string) bool {
+	for _, r := range text {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_', r == ' ', r == '.', r == '"':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// canonical spells the cast's type with its family's name, so the spellings
+// two catalogs give one type compare equal.
+func (cast castType) canonical() string {
+	return typeFamily(cast.name) + cast.modifier + cast.array
+}
+
+// isText reports that the cast is to text, or to character varying without a
+// length.
+func (cast castType) isText() bool {
+	return cast.array == "" && (cast.name == "text" || cast.name == "character varying" || cast.name == "varchar")
+}
+
+// holdsCharacters reports that a column of columnType stores characters. An
+// unknown column type is taken to.
+func holdsCharacters(columnType string) bool {
+	switch unqualifiedTypeFamily(columnType) {
+	case "", "text", "varchar", "char", "name", "citext", "string":
+		return true
+	default:
+		return false
+	}
+}
+
+// isColumnType reports that the cast names the column's own type, compared
+// by family and without a schema. An unknown column type is the column's own.
+func (cast castType) isColumnType(columnType string) bool {
+	if strings.TrimSpace(columnType) == "" {
+		return true
+	}
+	return unqualifiedTypeFamily(cast.name+cast.array) == unqualifiedTypeFamily(columnType)
+}
+
+// unqualifiedTypeFamily is typeName's family without a schema, quotes, a
+// length or a precision.
+func unqualifiedTypeFamily(typeName string) string {
+	name := strings.ToLower(strings.ReplaceAll(typeName, `"`, ""))
+	element, isArray := ArrayElement(name)
+	element, _ = nameWithoutArguments(element)
+	if dot := strings.LastIndex(element, "."); dot >= 0 {
+		element = element[dot+1:]
+	}
+	family := Type(element)
+	if isArray {
+		return family + "[]"
+	}
+	return family
+}
+
+// withoutGroupingParentheses returns operand without the parentheses around
+// it where they hold one number, quoted literal, name or function call, as
+// PostgreSQL prints `(1.5::integer)` as `(1.5)::integer`. Parentheses around
+// anything else group it, and stay.
+func withoutGroupingParentheses(operand string) string {
+	for len(operand) >= 2 && operand[0] == '(' && closingParenthesis(operand, 0) == len(operand)-1 {
+		inner := strings.TrimSpace(operand[1 : len(operand)-1])
+		if !isSimpleOperand(inner) {
+			break
+		}
+		operand = inner
+	}
+	return operand
+}
+
+// closingParenthesis is the index of the parenthesis that closes the one at
+// open, outside quotes, or -1.
+func closingParenthesis(text string, open int) int {
+	depth := 0
+	var quote byte
+	for i := open; i < len(text); i++ {
+		switch c := text[i]; {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '\'' || c == '"':
+			quote = c
+		case c == '(':
+			depth++
+		case c == ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// isSimpleOperand reports that operand is one term: a signed number, a quoted
+// literal, a name, or a function call, with no operator outside parentheses.
+func isSimpleOperand(operand string) bool {
+	if operand == "" {
+		return false
+	}
+	if isIntegerLiteral(operand) || isDecimalLiteral(operand) || isQuotedDefaultLiteral(operand) {
+		return true
+	}
+	end := strings.IndexByte(operand, '(')
+	if end < 0 {
+		end = len(operand)
+	} else if closingParenthesis(operand, end) != len(operand)-1 {
+		return false
+	}
+	name := operand[:end]
+	for _, r := range name {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '.' {
+			return false
+		}
+	}
+	return name != ""
+}
+
+// isQuotedDefaultLiteral reports that operand is one quoted literal: a string,
+// with an optional E, B or X prefix, or a double-quoted value.
+func isQuotedDefaultLiteral(operand string) bool {
+	if len(operand) >= 3 && strings.ContainsRune("eEbBxX", rune(operand[0])) && operand[1] == '\'' {
+		operand = operand[1:]
+	}
+	if len(operand) < 2 {
+		return false
+	}
+	quote := operand[0]
+	if quote != '\'' && quote != '"' || operand[len(operand)-1] != quote {
+		return false
+	}
+	return !strings.ContainsRune(strings.ReplaceAll(operand[1:len(operand)-1], string([]byte{quote, quote}), ""), rune(quote))
+}
+
+// isIntegerLiteral reports that operand is a whole number, with an optional
+// sign.
+func isIntegerLiteral(operand string) bool {
+	operand = strings.TrimLeft(operand, "+-")
+	return operand != "" && isDecimalDigits(operand)
+}
+
+// isDecimalLiteral reports that operand is a number with a fractional part,
+// with an optional sign.
+func isDecimalLiteral(operand string) bool {
+	whole, fraction, found := strings.Cut(strings.TrimLeft(operand, "+-"), ".")
+	return found && (whole != "" || fraction != "") && (whole == "" || isDecimalDigits(whole)) &&
+		(fraction == "" || isDecimalDigits(fraction))
 }
 
 func normalizeDecimalDefaultValue(value string) string {

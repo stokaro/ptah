@@ -261,7 +261,7 @@ func TestDefaultValue(t *testing.T) {
 		{"multiple colons", "'value::with::colons'::text", "text", "value::with::colons"},
 		{"type cast without value", "::text", "text", ""},
 		{"malformed type cast", "'value':", "text", "value':"},
-		{"type cast with schema", "'value'::public.custom_type", "text", "value"},
+		{"type cast with schema", "'value'::public.custom_type", "custom_type", "value"},
 	}
 
 	for _, tt := range tests {

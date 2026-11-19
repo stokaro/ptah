@@ -256,6 +256,25 @@ On a text column a string is never the expression its characters spell:
 `'1 + 2'` and `(1 + 2)`. A `default` in a Go struct or a YAML schema is such a
 string, whatever its characters spell; `default_expr` declares the expression.
 
+The server spells each declared default the way it stores it, and a default it
+spells as the stored one is the same default. A spelling that differs can hold
+the same value: `DEFAULT (0::bigint)` is stored as `'0'::bigint` and
+`DEFAULT 0` as `0`, and `ALTER COLUMN ... TYPE` keeps the default as the old
+type spelled it. So the comparison then reads the value. A default loses a
+cast only where the cast cannot change the value: a cast to the column's own
+type without a length or precision, a number cast to a numeric type that holds
+it exactly, and a cast to `text` or `varchar` without a length on a column that
+stores characters. Any other cast is part of the default. On a `numeric` column,
+`DEFAULT (1.5::integer)` stores 2 and differs from `DEFAULT 1.5`. A plan that
+changes a column's type sets its default only where the value differs.
+
+CockroachDB offers no temporary table by default, so it spells no declared
+default, and the value is read in the same way. A role that may not create a
+temporary table on PostgreSQL or YugabyteDB cannot have its defaults spelled
+either. A form the server rewrites, such as a timestamp literal it fills in,
+then reads as a change, so the run warns and names each such column whose type
+or default it plans to change.
+
 | Declared | Read back |
 | --- | --- |
 | `varchar(10)[]` | `character varying(10)[]` |

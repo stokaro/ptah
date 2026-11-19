@@ -1070,7 +1070,12 @@ func columnDefaultChange(
 		(declaresColumnSequence(genCol) || (dbCol.IsAutoIncrement && dbCol.OwnedSequence == "") || identityMatchesLiveSerial(genCol, dbCol, dialect))
 	// A default the server spells as the catalog reports it is the same
 	// default: '2020-01-01'::timestamp with time zone is stored with its time
-	// and zone filled in.
+	// and zone filled in. A spelling that differs proves nothing: after ALTER
+	// COLUMN TYPE the catalog keeps the default as the old type spelled it,
+	// `'x'::character varying` on a column now text, where the server spells a
+	// declared 'x' as `'x'::text`, and PostgreSQL stores `DEFAULT 0` on a
+	// bigint column as 0 and `DEFAULT (0::bigint)` as '0'::bigint. The reading
+	// below decides those, and it keeps every cast that can change the value.
 	sameDefault := spelled && spelling.Default == strings.TrimSpace(dbDefault)
 	if !skipImplicitSequenceDefault && !sameDefault {
 		// Both sides are normalized under the DESIRED type, not each under its

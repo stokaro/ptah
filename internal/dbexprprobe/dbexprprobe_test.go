@@ -39,7 +39,7 @@ func TestResolversRefuseANilConnection(t *testing.T) {
 	_, err = dbexprprobe.ResolveIndexExpressions(ctx, nil, []dbexprprobe.IndexExpressionProbe{{Key: "k"}})
 	c.Assert(err, qt.ErrorMatches, `resolve index expressions: database connection is nil`)
 
-	_, err = dbexprprobe.ResolveColumnSpellings(ctx, nil, []dbexprprobe.ColumnSpellingProbe{{Table: "t"}})
+	_, _, err = dbexprprobe.ResolveColumnSpellings(ctx, nil, []dbexprprobe.ColumnSpellingProbe{{Table: "t"}})
 	c.Assert(err, qt.ErrorMatches, `resolve column spellings: database connection is nil`)
 
 	_, _, err = dbexprprobe.ResolveGeneratedColumns(ctx, nil, []dbexprprobe.GeneratedColumnProbe{{Key: "k"}})
@@ -58,9 +58,10 @@ func TestResolversAnswerNilForAnEmptyProbeList(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(checks, qt.IsNil)
 
-	columns, err := dbexprprobe.ResolveColumnSpellings(ctx, conn, nil)
+	columns, unspelled, err := dbexprprobe.ResolveColumnSpellings(ctx, conn, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(columns, qt.IsNil)
+	c.Assert(unspelled, qt.IsNil)
 
 	generated, refusals, err := dbexprprobe.ResolveGeneratedColumns(ctx, conn, nil)
 	c.Assert(err, qt.IsNil)
@@ -95,11 +96,12 @@ func TestResolversAnswerNilForADialectThatStoresWhatItWasGiven(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(desired, qt.IsNil)
 
-	columns, err := dbexprprobe.ResolveColumnSpellings(ctx, conn,
+	columns, unspelled, err := dbexprprobe.ResolveColumnSpellings(ctx, conn,
 		[]dbexprprobe.ColumnSpellingProbe{{Table: "p", Statement: "CREATE TABLE p (a INTEGER DEFAULT 1)",
 			Columns: []dbexprprobe.ColumnSpellingColumn{{Key: "t.a", Name: "a"}}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(columns, qt.IsNil)
+	c.Assert(unspelled, qt.IsNil)
 
 	generated, refusals, err := dbexprprobe.ResolveGeneratedColumns(ctx, conn,
 		[]dbexprprobe.GeneratedColumnProbe{{Key: "t.g", Table: "t", Column: "g", Type: "integer", Expression: "a * 2",
