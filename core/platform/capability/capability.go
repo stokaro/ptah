@@ -1079,6 +1079,20 @@ const (
 	// clause and so cannot ask their alter question without it.
 	GeneratedColumns Capability = "generated_columns"
 
+	// VirtualGeneratedColumns marks support for a column declared
+	// GENERATED ALWAYS AS (<expr>) VIRTUAL, computed when it is read and not
+	// stored. The PostgreSQL renderer writes the clause only where the key is
+	// set, and refuses a VIRTUAL column elsewhere rather than build a STORED
+	// one, which is a different table.
+	//
+	// Measured live: PostgreSQL 18.6 and CockroachDB v26.4.1 accept it and
+	// report pg_attribute.attgenerated 'v'; PostgreSQL 17.12 and YugabyteDB
+	// 2026.1.2.0 answer a syntax error at or near "VIRTUAL". MySQL 8.4.13 and
+	// MariaDB 11.8.9 accept it and report VIRTUAL GENERATED. SQLite and Oracle
+	// take the same clause in their own grammar; SQL Server and ClickHouse
+	// parse no such clause.
+	VirtualGeneratedColumns Capability = "virtual_generated_columns"
+
 	// DeferrableConstraints marks support for a foreign key declared
 	// DEFERRABLE, whose check can be postponed to the end of a transaction.
 	//
@@ -2206,6 +2220,13 @@ var registry = map[Capability]spec{
 	GeneratedColumns: {
 		doc: "columns declared GENERATED ALWAYS AS (expr) STORED (PostgreSQL 12+, MySQL 5.7+, MariaDB 10.2+, SQLite 3.31+)",
 	},
+	VirtualGeneratedColumns: {
+		doc: "columns declared GENERATED ALWAYS AS (expr) VIRTUAL, computed when read (PostgreSQL 18+, CockroachDB, MySQL, MariaDB, SQLite, Oracle)",
+		// Deliberately no `requires: GeneratedColumns`: the PostgreSQL
+		// renderer asks GeneratedColumns first, and a caller composing a set
+		// with .With(GeneratedColumns, false) restricts generated columns
+		// rather than asserting anything about this key.
+	},
 	DeferrableConstraints: {
 		doc: "foreign keys declared DEFERRABLE, whose check can be postponed to the end of a transaction (PostgreSQL, YugabyteDB, SQLite)",
 		// Deliberately no `requires: ForeignKeys`, for the reason
@@ -2730,6 +2751,7 @@ func buildMySQL84() Capabilities {
 		RenameTable:                     true,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                true,
+		VirtualGeneratedColumns:         true,
 		DeferrableConstraints:           false,
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               true,
@@ -3038,6 +3060,7 @@ func buildMariaDB1011() Capabilities {
 		RenameTable:                     true,
 		CatalogCheckConstraintTableName: true,
 		GeneratedColumns:                true,
+		VirtualGeneratedColumns:         true,
 		DeferrableConstraints:           false,
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               false,
@@ -3262,6 +3285,7 @@ func buildPostgres16() Capabilities {
 		RenameTable:                     true,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                true,
+		VirtualGeneratedColumns:         false,
 		DeferrableConstraints:           true,
 		DeferrableKeys:                  true,
 		NotEnforcedChecks:               false,
@@ -3403,7 +3427,11 @@ func buildPostgres18() Capabilities {
 		// PostgreSQL 18 grew publish_generated_columns. Measured: 18.4
 		// records pubgencols, and 17 answers `unrecognized publication
 		// parameter: "publish_generated_columns"`.
-		With(PublicationGeneratedColumns, true)
+		With(PublicationGeneratedColumns, true).
+		// PostgreSQL 18 grew VIRTUAL generated columns. Measured: 18.4 builds
+		// `GENERATED ALWAYS AS (a * 2) VIRTUAL` with attgenerated 'v', and 17
+		// answers a syntax error at or near "VIRTUAL".
+		With(VirtualGeneratedColumns, true)
 }
 
 // Postgres14 is the preset for the PostgreSQL 14 line.
@@ -3635,6 +3663,7 @@ func buildClickHouse24() Capabilities {
 		RenameTable:                     false,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                false,
+		VirtualGeneratedColumns:         false,
 		DeferrableConstraints:           false,
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               false,
@@ -3875,6 +3904,7 @@ func buildSQLite3() Capabilities {
 		RenameTable:                     true,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                true,
+		VirtualGeneratedColumns:         true,
 		DeferrableConstraints:           true,
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               false,
@@ -4016,6 +4046,7 @@ func buildSQLite324() Capabilities {
 		// linked engine for the upper arm: sqlite_version() 3.53.3 accepts
 		// `GENERATED ALWAYS AS (n + 1) STORED`.
 		With(GeneratedColumns, false).
+		With(VirtualGeneratedColumns, false).
 		// RETURNING arrived in 3.35.
 		With(ReturningClause, false)
 }
@@ -4206,6 +4237,7 @@ func buildSQLServer2022() Capabilities {
 		RenameTable:                     false,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                false,
+		VirtualGeneratedColumns:         false,
 		DeferrableConstraints:           false,
 		DeferrableKeys:                  false,
 		NotEnforcedChecks:               false,
@@ -4430,7 +4462,10 @@ func buildCockroachDB23() Capabilities {
 		With(ViewOptions, false).
 		With(MaterializedViewOptions, false).
 		// CockroachDB has no logical replication publication.
-		With(PublicationSchemas, false)
+		With(PublicationSchemas, false).
+		// Measured on v26.4.1: `GENERATED ALWAYS AS (a * 4) VIRTUAL` builds a
+		// VIRTUAL column, attgenerated 'v', as does `AS (a * 2)` with no kind.
+		With(VirtualGeneratedColumns, true)
 }
 
 // CockroachDB25 is the preset measured on CockroachDB 25.4. The line refuses
@@ -4834,7 +4869,8 @@ func buildOracle23() Capabilities {
 		RenameTable:                     true,
 		CatalogCheckConstraintTableName: false,
 		// GENERATED ALWAYS AS (expr) is ACCEPTED both VIRTUAL and STORED.
-		GeneratedColumns: true,
+		GeneratedColumns:        true,
+		VirtualGeneratedColumns: true,
 		// DEFERRABLE INITIALLY DEFERRED is ACCEPTED on a foreign key.
 		DeferrableConstraints: true,
 		// DEFERRABLE INITIALLY DEFERRED is ACCEPTED on a PRIMARY KEY and a

@@ -22,6 +22,7 @@ func planFor(dialect string) (plan, bool) {
 	}
 	withComments := withCommentAttributes(withConstraintComments(withObjectComments(family, normalized), normalized))
 	withKeys := withInvisibleIndexes(withEnforcementAndMatch(withDeferrableKeys(withComments, normalized), normalized), normalized)
+	withKeys = withVirtualGeneratedColumns(withKeys, normalized)
 	withTypes := withTypeKeys(withSchemaChanges(withKeys, normalized), normalized)
 	withFamilies := withViewOptionKeys(withViewKeys(withSerialKeys(withIndexKeys(withQueryKeys(withTypes, normalized), normalized)), normalized), normalized)
 	withColumnFamilies := withPublicationKeys(withColumnFamilyKeys(withFamilies, normalized))

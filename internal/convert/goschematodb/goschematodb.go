@@ -137,6 +137,7 @@ func toDBSchemasOn(ctx context.Context, dbs []*schemamodel.Database, dialect str
 			return nil, err
 		}
 		out.CharsetDefaultCollations, out.CharsetAliases = maps.Clone(facts.CharsetDefaultCollations), maps.Clone(facts.CharsetAliases)
+		out.Predicted = true
 		outs[i], lowered[i] = out, db
 		parts[i] = features.Part{Objects: db.FeatureObjects, Coverage: db.FeatureCoverage, Destinations: out.FacetSlots()}
 	}

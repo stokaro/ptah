@@ -145,6 +145,10 @@ func yugabyteDB() descriptor.Dialect {
 			RolePasswords:      true,
 			RoutineTypeAliases: "pg-aliases",
 			QualifiedTypeNames: true,
+			// The kind GeneratedColumnDefault creates a column declared with
+			// none, so such a declaration compares equal to the column Ptah
+			// built.
+			DefaultGeneratedKind: "STORED",
 		},
 
 		// A bare type name PostgreSQL defines is the built-in type here too.

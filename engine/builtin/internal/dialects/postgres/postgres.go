@@ -1709,20 +1709,11 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
 	if column.GeneratedExpression != "" {
-		if column.GeneratedKind != "" && !strings.EqualFold(column.GeneratedKind, "STORED") {
-			return "", fmt.Errorf("postgres does not support %s generated columns", column.GeneratedKind)
+		kind, err := r.generatedKind(column)
+		if err != nil {
+			return "", err
 		}
-		// This renderer serves YugabyteDB too, whose 2024 LTS line is still
-		// PostgreSQL 11 and answers `syntax error at or near "("`. Dropping the
-		// clause silently would turn a generated column into an ordinary one,
-		// which is a different table, so the refusal is the answer
-		// (stokaro/ptah#916).
-		if !r.capabilities().Has(capability.GeneratedColumns) {
-			return "", unsupportedFeaturef(
-				"%s does not support generated columns; column %q declares GENERATED ALWAYS AS",
-				r.dialect, column.Name)
-		}
-		parts = append(parts, fmt.Sprintf("GENERATED ALWAYS AS (%s) STORED", column.GeneratedExpression))
+		parts = append(parts, fmt.Sprintf("GENERATED ALWAYS AS (%s) %s", column.GeneratedExpression, kind))
 	}
 
 	// Check constraint. Emit `CONSTRAINT <name> CHECK (...)` only when an
@@ -4056,4 +4047,35 @@ func alterConstraintSQL(r *Renderer, table string, op *ast.AlterConstraintOperat
 		sql += " INITIALLY IMMEDIATE"
 	}
 	return sql
+}
+
+// generatedKind is the kind clause of generated column column: STORED where
+// the column names no kind or STORED, and VIRTUAL where it names VIRTUAL and
+// the target has [capability.VirtualGeneratedColumns]. Any other kind, and a
+// VIRTUAL column on a target without the key, is refused: writing STORED
+// instead builds another table than the one declared.
+func (r *Renderer) generatedKind(column *ast.ColumnNode) (string, error) {
+	// This renderer serves YugabyteDB too, whose 2024 LTS line is still
+	// PostgreSQL 11 and answers `syntax error at or near "("`. Dropping the
+	// clause silently would turn a generated column into an ordinary one,
+	// which is a different table, so the refusal is the answer
+	// (stokaro/ptah#916).
+	if !r.capabilities().Has(capability.GeneratedColumns) {
+		return "", unsupportedFeaturef(
+			"%s does not support generated columns; column %q declares GENERATED ALWAYS AS",
+			r.dialect, column.Name)
+	}
+	switch kind := strings.ToUpper(strings.TrimSpace(column.GeneratedKind)); kind {
+	case "", "STORED":
+		return "STORED", nil
+	case "VIRTUAL":
+		if !r.capabilities().Has(capability.VirtualGeneratedColumns) {
+			return "", unsupportedFeaturef(
+				"%s on this server line does not support VIRTUAL generated columns (capability %s); column %q declares one",
+				r.dialect, capability.VirtualGeneratedColumns, column.Name)
+		}
+		return kind, nil
+	default:
+		return "", fmt.Errorf("%s does not support %s generated columns; column %q declares one", r.dialect, column.GeneratedKind, column.Name)
+	}
 }

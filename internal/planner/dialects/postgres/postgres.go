@@ -1967,22 +1967,28 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	return nodes, nil
 }
 
-func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, windows *featurehost.Windows) ([]ast.Node, error) {
+// refuseUnplannedChanges refuses a diff holding a change this planner writes
+// no statement for, before anything is planned.
+func (p *Planner) refuseUnplannedChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseDatabaseChanges(DialectName, diff); err != nil {
-		return nil, err
+		return err
 	}
 	// No owner on this family plans a setting attached to a materialized view,
 	// and scheduleFeatures dispatches only standalone and table changes.
 	if err := schemaprecondition.RefuseMaterializedViewFeatureChanges(p.targetDialect(), diff); err != nil {
-		return nil, err
+		return err
 	}
 	if err := p.refuseIndexChangesInPlace(diff); err != nil {
-		return nil, err
+		return err
 	}
 	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
-		return nil, err
+		return err
 	}
-	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
+	return schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff)
+}
+
+func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.Runtime, diff *difftypes.SchemaDiff, windows *featurehost.Windows) ([]ast.Node, error) {
+	if err := p.refuseUnplannedChanges(diff); err != nil {
 		return nil, err
 	}
 	var result []ast.Node
@@ -2017,6 +2023,11 @@ func (p *Planner) generateMigrationAST(ctx context.Context, runtime featureplan.
 		return nil, err
 	}
 	diff = withoutRebuiltColumnChanges(diff, generatedRebuilds, semantics)
+	// A rebuilt generated column is added back as declared, kind included, so
+	// only a column the plan keeps can ask for a kind it cannot be given.
+	if err := refuseGeneratedKindChanges(p.targetDialect(), diff); err != nil {
+		return nil, err
+	}
 
 	// The views, materialized views and routines a column type change, a
 	// materialized view change or a view change the server cannot make in

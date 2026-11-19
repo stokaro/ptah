@@ -52,6 +52,11 @@ anything is read, and is never inspected or planned as PostgreSQL.
   operator class, and stores no index storage parameter. A unique `gin` or
   `gist` index is refused before anything is rendered, as CockroachDB refuses
   it with `inverted indexes can't be unique`.
+  A generated column is built with the kind it declares, and `STORED` when it
+  declares none, although CockroachDB itself builds `AS (expr)` with no kind
+  as `VIRTUAL`. A `VIRTUAL` column is read and printed `VIRTUAL`, and a plan
+  that would change a column's kind stops, as on PostgreSQL; see
+  [The kind of a generated column](../postgresql/#the-kind-of-a-generated-column).
 - **YugabyteDB**: the preset includes concurrent index creation, role
   management, row-level security, standalone sequences, `XML` columns, and
   advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`
@@ -72,6 +77,9 @@ anything is read, and is never inspected or planned as PostgreSQL.
   ordering.
   A column of a serial type or one declared `GENERATED ... AS IDENTITY` is
   `NOT NULL` whether or not the file says so, as the server builds it.
+  YugabyteDB 2026.1 answers `syntax error at or near "VIRTUAL"`, so a
+  declared `VIRTUAL` generated column is refused before anything is sent. A
+  generated column that declares no kind is built `STORED`.
   A date or time default of `'now'`, `'today'`, `'tomorrow'` or `'yesterday'`
   is refused as it is on PostgreSQL: YugabyteDB 2026.1 also stores the moment
   the table is created. CockroachDB keeps the string, so it is accepted

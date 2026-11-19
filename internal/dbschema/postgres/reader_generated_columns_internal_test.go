@@ -183,3 +183,42 @@ func TestReadColumnsForSchema_APostgres11EngineRefusesTheUngatedQuery(t *testing
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "column a.attgenerated does not exist")
 }
+
+// serveGeneratedKind answers the column query with the generated column above
+// under the attgenerated code given.
+func serveGeneratedKind(code string) func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+	return func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+		row := append([]driver.Value(nil), generatedColumnRow...)
+		row[slices.Index(columnQueryColumns, "generated_kind")] = code
+		return dbtest.QueryResult{Columns: columnQueryColumns, Rows: [][]driver.Value{row}}, nil
+	}
+}
+
+// TestReadColumnsForSchema_ReadsEachGeneratedKind reads pg_attribute.attgenerated
+// as the kind the server built: "s" a STORED column, and "v" a VIRTUAL one,
+// which PostgreSQL 18 and CockroachDB build. A VIRTUAL column read with no kind
+// compares equal to a declaration that leaves the kind to the target, which is
+// STORED on PostgreSQL, so the comparison would hide the difference.
+func TestReadColumnsForSchema_ReadsEachGeneratedKind(t *testing.T) {
+	tests := []struct {
+		name string
+		code string
+		kind string
+	}{
+		{name: "a stored column", code: "s", kind: "STORED"},
+		{name: "a virtual column", code: "v", kind: "VIRTUAL"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := dbtest.Open(t, serveGeneratedKind(test.code))
+
+			columnsByTable, err := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", capability.Postgres18()).
+				readColumnsForSchema(t.Context(), "public")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(columnsByTable["t"], qt.HasLen, 1)
+			c.Assert(columnsByTable["t"][0].GeneratedKind, qt.Equals, test.kind)
+		})
+	}
+}

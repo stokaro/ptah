@@ -346,3 +346,27 @@ func TestPlanner_GeneratedColumnRebuildRestatesItsCollation_HappyPath(t *testing
 		})
 	}
 }
+
+// TestPlanner_GeneratedColumnRebuildChangesItsKind_HappyPath changes the kind
+// of a generated column beside a type change of the column it reads. The
+// rebuild drops the generated column and adds it back as declared, kind
+// included, so the kind change is planned there rather than refused as a
+// change no statement makes in place.
+func TestPlanner_GeneratedColumnRebuildChangesItsKind_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := pricesRetype(nil, nil, []string{"id", "nickname", "search_vector"}, nil)
+	table := &diff.TablesModified[0]
+	table.Current.Table.Columns[2].GeneratedKind = "VIRTUAL"
+	table.ColumnsModified = append(table.ColumnsModified, difftypes.ColumnDiff{
+		ColumnName:            "search_vector",
+		Changes:               map[string]string{"generated": "VIRTUAL " + pricesSearch + " -> STORED " + pricesSearch},
+		PreviousGeneratedKind: "VIRTUAL",
+		Desired:               table.Desired.Fields[2],
+	})
+
+	sql, err := planPrices(c, platform.Postgres, diff)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "public"."prices" DROP COLUMN "search_vector";`)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "public"."prices" ADD COLUMN "search_vector" tsvector GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, nickname)) STORED;`)
+}
