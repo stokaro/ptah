@@ -1735,11 +1735,11 @@ qualification remain required under #4204.
 
 [ADR 0125](../docs/adr/0125-a-provider-keeps-the-record-of-repeatable-migrations.md)
 decides this feature. A repeatable migration, `R__<identity>.sql`, runs again
-whenever its content changes. The host keeps one row per identity in a table
-beside the revision table, named after it with the suffix `_repeatable`: the
-digest and the bytes of the content that last applied, and the state, digest,
-order, transaction and run of the last attempt. `sessions.repeatable-record`
-lets a provider keep that row with four calls:
+whenever its content changes. The provider keeps one row per identity in a
+table beside the revision table, named after it with the suffix `_repeatable`:
+the digest and the bytes of the content that last applied, and the state,
+digest, order, transaction and run of the last attempt.
+`sessions.repeatable-record` adds a call for each use the host makes of it:
 
 - `ReadRepeatables` returns every row without its body, as one complete
   snapshot bounded by `provider.MaxRepeatableRows`, and creates nothing;
@@ -1754,22 +1754,87 @@ lets a provider keep that row with four calls:
 The run ID decides a claim. A claim with `insert` succeeds only when the
 record holds no row for the identity; any other claim succeeds only while the
 row still names `expected_run_id`, the run the host read. A completion and a
-failure apply only to the row their run claimed. Any other row is a `CONFLICT`
-that names the run holding it, so of two runs that read the same record one
-runs the body and the other stops before it. A completion may carry the
-transaction its body ran in, so the record and the work commit together; every
-other call runs on the session alone. A body is at most
-`provider.MaxRepeatableBodyBytes`, and the host refuses a longer one before it
-runs anything. No receipt permits a replay: the host settles an `UNKNOWN`
-outcome by reading the row's run back.
+failure apply only to the row their run claimed. A completion also carries the
+claimed digest: its `checksum` equals the row's `attempt_checksum`, the
+provider checks it, and a completion of another digest changes nothing,
+because the host would record content it did not claim. A completion may carry
+the transaction its body ran in, so the record and the work commit together;
+every other call runs on the session alone. No receipt permits a replay: the
+host settles an `UNKNOWN` outcome by reading the row's run back.
+
+`CONFLICT` and `REFUSED` both confirm that a write changed nothing.
+`CONFLICT` is a row race and nothing else: the row is not the one the write
+expected, because another run inserted, claimed or removed it after the host
+read the record. `holder_run_id` names the run the row holds, and is empty
+when the record holds no row, which an inserting claim never meets.
+`REFUSED` is every other confirmed refusal: a record another owner holds or
+another layout keeps, a completion of another digest, or a write the store
+cannot hold.
+
+Runs that read the same record race for its rows, and the provider settles
+the race by these rules:
+
+- The provider checks a claim's precondition and writes the row in one atomic
+  step. Of N concurrent claims against one precondition, exactly one is
+  `APPLIED`, and each of the others is a `CONFLICT` that names the winner's
+  run.
+- A claim never expires. The provider never changes a `RUNNING` row on its
+  own, however old it is.
+- A `RUNNING` row that a crashed run left behind is taken over by a claim
+  whose `expected_run_id` names that run.
+- The host's migration lock, not the provider, keeps a live run from being
+  taken over. The provider cannot tell a live run from a crashed one.
+
+Every field of a row is bounded, so a complete snapshot of
+`provider.MaxRepeatableRows` rows fits the 64 MiB a host receives in one
+message, about 52 MB at worst. An identity is at most
+`provider.MaxRepeatableIdentityBytes`, a digest and a run ID at most
+`provider.MaxRepeatableTokenBytes`, and an error at most
+`provider.MaxRepeatableErrorBytes`. Without that last bound, one long error
+would make the record unreadable, and a record nobody can read can be neither
+run nor repaired. The host truncates a longer error at a UTF-8 boundary before
+it sends a failure. A body is at most `provider.MaxRepeatableBodyBytes`, and
+the host refuses a longer one before it runs anything.
 
 The feature also adds `MigrationLogRecord.repeatable`, the identity a log entry
 about a repeatable migration carries, with version `0`. That addition makes it
 a two-way feature: the provider and each engine that keeps the record list it
 beside `sessions.history`, and the host lists it. The SDK refuses the field,
 and every call, without the feature, on the client and on the server. A host
-that runs a directory holding repeatable migrations on an engine that does not
-list the feature refuses before anything changes.
+built on an SDK older than contract 25.44 lists no such feature, so the SDK
+refuses a log page that holds an entry about a repeatable migration, and that
+host gets an error where it reads the log. This changes behavior; pre-v1, so no
+compatibility is owed. A host that runs a directory holding repeatable
+migrations on an engine that does not list the feature refuses before anything
+changes.
+
+The SDK checks the feature against the negotiated description. A call carries
+only its `session_id`, not the engine, so whether the session's engine keeps
+the record is the provider's check, made on every call: a call on a session
+whose engine does not list the feature is refused before it reads or writes
+anything.
+
+A provider that lists the feature owes each of these guarantees, and its live
+tests exercise them against the engine:
+
+- concurrent inserting claims on an empty record, and concurrent claims that
+  expect the same run, end with exactly one `APPLIED` and the rest `CONFLICT`
+  naming the winner;
+- a claim that names the run of a `RUNNING` row takes the row over, and a claim
+  that names any other run is a `CONFLICT`;
+- a claim keeps the applied digest, time and body, and clears the error;
+- a completion or a failure from a run that does not hold the row is a
+  `CONFLICT`, a completion of another digest is `REFUSED`, and neither changes
+  the row;
+- a completion inside a transaction that rolls back leaves the row as the claim
+  wrote it;
+- a record another owner holds or another layout keeps is refused by every
+  call, `REFUSED` from a preparation or a write and an error from a read;
+- a removal deletes the row whatever it holds, and `removed` says whether
+  there was one;
+- a record of `provider.MaxRepeatableRows` rows at every bound reads whole, and
+  a larger one is refused, never truncated;
+- a call on a session whose engine does not list the feature is refused.
 
 ## Offline schema validation
 

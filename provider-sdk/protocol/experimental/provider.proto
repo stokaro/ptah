@@ -2916,7 +2916,10 @@ message RepeatableRow {
   bool applied = 10;
   int64 applied_at_seconds = 11;
   int32 applied_at_nanos = 12;
-  // The last failed attempt's error; empty after an attempt that applied.
+  // The last failed attempt's error; empty after an attempt that applied. At
+  // most MaxRepeatableErrorBytes of UTF-8, so that a complete snapshot of
+  // MaxRepeatableRows rows fits one message. The host truncates a longer
+  // error before it sends a failure.
   string error = 13;
   // Whether the record keeps the bytes of the content that last applied. An
   // empty body is kept: it differs from none. ReadRepeatableBody reads them.
@@ -2964,6 +2967,15 @@ message RepeatableBody {
 // succeeds only when the record holds no row for the identity. Without it,
 // the claim succeeds only while the row still names expected_run_id, the run
 // the host read. Any other row is a CONFLICT that names its run.
+//
+// The provider checks the precondition and writes the row as one atomic
+// step. Of N concurrent claims against one precondition, exactly one is
+// APPLIED, and each of the others is a CONFLICT that names the winner's run.
+// A claim never expires: the provider never changes a RUNNING row on its own,
+// however old it is. A RUNNING row that a crashed run left behind is taken
+// over by a claim whose expected_run_id names that run. Whether that run is
+// still alive is not the provider's question: the host's migration lock keeps
+// a live run from being taken over.
 message RepeatableClaim {
   string identity = 1;
   bool insert = 2;
@@ -2977,8 +2989,11 @@ message RepeatableClaim {
 }
 // RepeatableCompletion records the attempt's content as applied: state
 // APPLIED, the digest, the bytes and the time, and no error. It applies only
-// to the row run_id claimed. Under a transaction, APPLIED confirms the write,
-// not its commit.
+// to the row run_id claimed. checksum is the attempt_checksum the claim
+// wrote, and the provider checks it: a completion whose run holds the row but
+// whose checksum differs is REFUSED and changes nothing, because the host
+// would record content it did not claim. Under a transaction, APPLIED
+// confirms the write, not its commit.
 message RepeatableCompletion {
   string identity = 1;
   string run_id = 2;
@@ -2988,11 +3003,17 @@ message RepeatableCompletion {
   int32 applied_at_nanos = 6;
 }
 // RepeatableFailure records that the attempt's body failed: state FAILED and
-// the error. It applies only to the row run_id claimed.
+// the error. It applies only to the row run_id claimed. The error is at most
+// MaxRepeatableErrorBytes of UTF-8; the host truncates a longer one.
 message RepeatableFailure {
   string identity = 1;
   string run_id = 2;
   string error = 3;
+}
+// RepeatableRemoval deletes the row of one identity, whatever it holds. The
+// host's migration lock serializes it with runs.
+message RepeatableRemoval {
+  string identity = 1;
 }
 // MutateRepeatable is one atomic write to the record. No receipt permits a
 // replay: an UNKNOWN outcome is settled by reading the row's run_id back.
@@ -3003,18 +3024,24 @@ message MutateRepeatableRequest {
     RepeatableClaim claim = 3;
     RepeatableCompletion complete = 4;
     RepeatableFailure fail = 5;
-    // Deletes the row of one identity, whatever it holds. The host's
-    // migration lock serializes it with runs.
-    string remove = 6;
+    RepeatableRemoval remove = 6;
   }
 }
+// RepeatableResult is the outcome of one write. APPLIED confirms it. CONFLICT
+// is a row race and nothing else: the row is not the one the write expected,
+// because another run inserted, claimed or removed it after the host read the
+// record. REFUSED is every confirmed refusal that is not a row race: a record
+// another owner holds or another layout keeps, a completion whose checksum
+// is not the claimed one, or a write the store cannot hold. Neither changes
+// anything. UNKNOWN leaves the write's effect unsettled.
 message RepeatableResult {
   enum Outcome { UNKNOWN = 0; APPLIED = 1; CONFLICT = 2; REFUSED = 3; }
   RepeatableScope scope = 1;
   string request_id = 2;
   Outcome outcome = 3;
   // The run the row names when a claim, a completion or a failure meets a
-  // CONFLICT; empty when the record holds no row for the identity.
+  // CONFLICT; empty when the record holds no row for the identity, which an
+  // inserting claim never meets.
   string holder_run_id = 4;
   // Set only by a removal that APPLIED and deleted a row. False there
   // confirms the record held none.

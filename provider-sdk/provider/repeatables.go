@@ -35,6 +35,18 @@ const MaxRepeatableRows = 10000
 // key column on every built-in engine.
 const MaxRepeatableIdentityBytes = 255
 
+// MaxRepeatableTokenBytes bounds a digest and a run ID in the record. Ptah
+// writes digests of 47 bytes and run IDs of 36.
+const MaxRepeatableTokenBytes = 255
+
+// MaxRepeatableErrorBytes bounds the error a failure records and a row
+// returns. With every other field of a row bounded too, a complete snapshot of
+// MaxRepeatableRows rows stays under the 64 MiB a host receives in one
+// message, about 52 MB at worst, so one long error cannot make the record
+// unreadable and with it impossible to run or repair. The host truncates a
+// longer error, at a UTF-8 boundary, before it sends a failure.
+const MaxRepeatableErrorBytes = 4096
+
 // MaxRepeatableBodyBytes bounds the content a completion stores and a body
 // read returns, so either message fits the transport with room to spare. A
 // host refuses, before it runs anything, a repeatable migration whose content
@@ -119,14 +131,21 @@ func ValidateRepeatableIdentity(identity string) error {
 	return nil
 }
 
-// repeatableText reports whether each value is non-empty valid text.
+// repeatableText reports whether each value is non-empty valid text of at
+// most MaxRepeatableTokenBytes.
 func repeatableText(values ...string) bool {
 	for _, value := range values {
-		if value == "" || !metadataText(value) {
+		if value == "" || len(value) > MaxRepeatableTokenBytes || !metadataText(value) {
 			return false
 		}
 	}
 	return true
+}
+
+// repeatableError reports whether text can be the error of a row: valid
+// UTF-8 of at most MaxRepeatableErrorBytes.
+func repeatableError(text string) bool {
+	return len(text) <= MaxRepeatableErrorBytes && utf8.ValidString(text)
 }
 
 // ValidateRepeatableRow checks the representable facts of one row without
@@ -145,7 +164,7 @@ func ValidateRepeatableRow(row *protocol.RepeatableRow) error {
 		return fmt.Errorf("%w: unknown repeatable migration state", ErrProtocol)
 	}
 	if !repeatableText(row.GetAttemptChecksum(), row.GetRunId()) || row.GetAttemptOrder() == 0 ||
-		!metadataTimestamp(row.GetAttemptedAtSeconds(), row.GetAttemptedAtNanos()) || !utf8.ValidString(row.GetError()) {
+		!metadataTimestamp(row.GetAttemptedAtSeconds(), row.GetAttemptedAtNanos()) || !repeatableError(row.GetError()) {
 		return fmt.Errorf("%w: invalid repeatable migration attempt", ErrProtocol)
 	}
 	if row.GetApplied() {
@@ -252,16 +271,9 @@ func ValidateMutateRepeatableRequest(request *protocol.MutateRepeatableRequest) 
 	case *protocol.MutateRepeatableRequest_Complete:
 		return validateRepeatableCompletion(mutation.Complete)
 	case *protocol.MutateRepeatableRequest_Fail:
-		failure := mutation.Fail
-		if err := ValidateRepeatableIdentity(failure.GetIdentity()); err != nil {
-			return err
-		}
-		if !repeatableText(failure.GetRunId(), failure.GetError()) {
-			return fmt.Errorf("%w: a repeatable migration failure needs its run and error", ErrProtocol)
-		}
-		return nil
+		return validateRepeatableFailure(mutation.Fail)
 	case *protocol.MutateRepeatableRequest_Remove:
-		return ValidateRepeatableIdentity(mutation.Remove)
+		return ValidateRepeatableIdentity(mutation.Remove.GetIdentity())
 	default:
 		return fmt.Errorf("%w: missing repeatable migration write", ErrProtocol)
 	}
@@ -275,8 +287,21 @@ func validateRepeatableClaim(claim *protocol.RepeatableClaim) error {
 		!metadataTimestamp(claim.GetAttemptedAtSeconds(), claim.GetAttemptedAtNanos()) {
 		return fmt.Errorf("%w: a repeatable migration claim needs its run, digest, order and time", ErrProtocol)
 	}
-	if claim.GetInsert() != (claim.GetExpectedRunId() == "") || !metadataText(claim.GetExpectedRunId()) {
+	if claim.GetInsert() != (claim.GetExpectedRunId() == "") || !claim.GetInsert() && !repeatableText(claim.GetExpectedRunId()) {
 		return fmt.Errorf("%w: a repeatable migration claim either inserts a row or expects the run it read", ErrProtocol)
+	}
+	return nil
+}
+
+func validateRepeatableFailure(failure *protocol.RepeatableFailure) error {
+	if err := ValidateRepeatableIdentity(failure.GetIdentity()); err != nil {
+		return err
+	}
+	if !repeatableText(failure.GetRunId()) || failure.GetError() == "" || !metadataText(failure.GetError()) {
+		return fmt.Errorf("%w: a repeatable migration failure needs its run and error", ErrProtocol)
+	}
+	if len(failure.GetError()) > MaxRepeatableErrorBytes {
+		return fmt.Errorf("%w: repeatable migration error exceeds %d bytes", ErrProtocol, MaxRepeatableErrorBytes)
 	}
 	return nil
 }
@@ -296,8 +321,9 @@ func validateRepeatableCompletion(completion *protocol.RepeatableCompletion) err
 }
 
 // ValidateRepeatableResult checks that a receipt answers its exact request and
-// that its outcome has a valid shape: a holder only with CONFLICT, and
-// removed only from a removal that APPLIED.
+// that its outcome has a valid shape: a holder only with CONFLICT, always with
+// the CONFLICT of an inserting claim, whose row exists, and removed only from
+// a removal that APPLIED.
 func ValidateRepeatableResult(request *protocol.MutateRepeatableRequest, result *protocol.RepeatableResult) error {
 	if result == nil || request.GetRequestId() == "" || result.GetRequestId() != request.GetRequestId() ||
 		!proto.Equal(request.GetScope(), result.GetScope()) {
@@ -324,9 +350,13 @@ func validateRepeatableOutcome(result *protocol.RepeatableResult, mutation any) 
 	}
 	if result.GetHolderRunId() != "" {
 		_, removes := mutation.(*protocol.MutateRepeatableRequest_Remove)
-		if result.GetOutcome() != protocol.RepeatableResult_CONFLICT || mutation == nil || removes || !metadataText(result.GetHolderRunId()) {
+		if result.GetOutcome() != protocol.RepeatableResult_CONFLICT || mutation == nil || removes || !repeatableText(result.GetHolderRunId()) {
 			return fmt.Errorf("%w: only a conflicting write names the run that holds the row", ErrProtocol)
 		}
+	}
+	if inserting, ok := mutation.(*protocol.MutateRepeatableRequest_Claim); ok && inserting.Claim.GetInsert() &&
+		result.GetOutcome() == protocol.RepeatableResult_CONFLICT && result.GetHolderRunId() == "" {
+		return fmt.Errorf("%w: an inserting claim conflicts only with a row, which names its run", ErrProtocol)
 	}
 	if result.GetRemoved() {
 		if _, removes := mutation.(*protocol.MutateRepeatableRequest_Remove); !removes || result.GetOutcome() != protocol.RepeatableResult_APPLIED {

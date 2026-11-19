@@ -61,6 +61,37 @@ completion may carry a transaction, the one its body ran in, so the record and
 the work commit together. An `UNKNOWN` outcome permits no replay; the host
 settles it by reading the row back.
 
+Concurrent runs are settled by the same rules the built-in engines follow:
+
+- the provider checks a claim's precondition and writes the row in one atomic
+  step, so of N concurrent claims against one precondition exactly one is
+  `APPLIED`, and each of the others is a `CONFLICT` that names the winner;
+- a claim never expires, and the provider never changes a `RUNNING` row on its
+  own;
+- a `RUNNING` row a crashed run left behind is taken over by a claim whose
+  `expected_run_id` names that run;
+- the host's migration lock, not the provider, keeps a live run from being
+  taken over, since the provider cannot tell a live run from a crashed one.
+
+A completion carries the claimed digest: its `checksum` equals the row's
+`attempt_checksum`, and the provider checks it. A completion of another digest
+is `REFUSED`, not a `CONFLICT`, because no other run took the row: the host
+sent content it did not claim. `CONFLICT` is a row race and nothing else.
+`REFUSED` covers every other confirmed refusal: a foreign owner or layout, a
+completion of another digest, or a write the store cannot hold. Neither
+changes anything.
+
+A removal is a message, `RepeatableRemoval`, not a bare identity, so a guarded
+removal can add the run it expects without a new arm in the `oneof`.
+
+Every field of a row is bounded, so a complete snapshot of
+`MaxRepeatableRows` rows stays under the 64 MiB a host receives in one message:
+an identity at `MaxRepeatableIdentityBytes`, a digest and a run ID at
+`MaxRepeatableTokenBytes`, and an error at `MaxRepeatableErrorBytes`, 4096
+bytes. The host truncates a longer error before it sends a failure. Without the
+bound, one long error makes the snapshot unreadable, and the record can then be
+neither run nor repaired.
+
 The record keeps the host's meaning out of the provider. The provider stores
 states and digests; the host decides which file runs, whether a dirty record
 blocks the run, what a retry is, and when a removal is safe.
@@ -70,7 +101,10 @@ about a repeatable migration carries, with version `0`, which makes it a
 two-way feature. The provider and each engine that keeps the record list it
 beside `sessions.history`, and the host lists it. The SDK refuses every call
 and the log field without the feature, on the client and on the server, and a
-provider or an engine that lists the feature without its history.
+provider or an engine that lists the feature without its history. The SDK
+checks the feature against the negotiated description; a call carries only
+its session, so the provider checks on every call that the session's engine
+lists the feature.
 
 ## Consequences
 
@@ -83,6 +117,10 @@ provider or an engine that lists the feature without its history.
   changes, and the refusal names the provider and the feature.
 - A body is at most `MaxRepeatableBodyBytes`, so a completion and a body read
   fit one message. The host refuses a longer body before it runs anything.
+- A host built on an SDK older than contract 25.44 gets an error where it reads
+  a log page that holds an entry about a repeatable migration, because the
+  SDK refuses the field without the feature. Pre-v1, so no compatibility is
+  owed.
 - Which statements of a body run in a transaction stays the host's decision,
   read from the engine's capabilities: on an engine that does not roll schema
   changes back as a unit, every repeatable migration runs outside one.

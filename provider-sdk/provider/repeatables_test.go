@@ -2,6 +2,7 @@ package provider_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -99,7 +100,9 @@ func TestValidateMutateRepeatableRequest_HappyPath(t *testing.T) {
 			Complete: &protocol.RepeatableCompletion{Identity: "views", RunId: "run-2", Checksum: "h1:empty", AppliedAtSeconds: 1}}}},
 		{"a failure", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Fail{
 			Fail: &protocol.RepeatableFailure{Identity: "views", RunId: "run-2", Error: "syntax error"}}}},
-		{"a removal", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: "views"}}},
+		{"a failure at the error bound", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Fail{
+			Fail: &protocol.RepeatableFailure{Identity: "views", RunId: "run-2", Error: strings.Repeat("e", provider.MaxRepeatableErrorBytes)}}}},
+		{"a removal", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: &protocol.RepeatableRemoval{Identity: "views"}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -120,12 +123,12 @@ func TestValidateMutateRepeatableRequest_FailurePath(t *testing.T) {
 		want    string
 	}{
 		{"no write", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r"}, `.*missing repeatable migration write`},
-		{"no request ID", &protocol.MutateRepeatableRequest{Scope: recordScope(), Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: "views"}},
+		{"no request ID", &protocol.MutateRepeatableRequest{Scope: recordScope(), Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: &protocol.RepeatableRemoval{Identity: "views"}}},
 			`.*invalid repeatable migration write identity or size`},
 		{"no session", &protocol.MutateRepeatableRequest{Scope: &protocol.RepeatableScope{Table: "t"}, RequestId: "r",
-			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: "views"}}, `.*requires a session and valid store identifiers`},
+			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: &protocol.RepeatableRemoval{Identity: "views"}}}, `.*requires a session and valid store identifiers`},
 		{"a removal in a transaction", &protocol.MutateRepeatableRequest{Scope: inTransaction, RequestId: "r",
-			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: "views"}}, `.*only a completion writes the repeatable migration record inside a transaction`},
+			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: &protocol.RepeatableRemoval{Identity: "views"}}}, `.*only a completion writes the repeatable migration record inside a transaction`},
 		{"a claim that inserts and expects a run", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Claim{
 			Claim: &protocol.RepeatableClaim{Identity: "views", Insert: true, ExpectedRunId: "run-1", RunId: "run-2", AttemptChecksum: "h1:new", AttemptOrder: 1, AttemptedAtSeconds: 1}}},
 			`.*either inserts a row or expects the run it read`},
@@ -143,10 +146,19 @@ func TestValidateMutateRepeatableRequest_FailurePath(t *testing.T) {
 			`.*repeatable migration body exceeds 2097152 bytes`},
 		{"a failure without its error", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Fail{
 			Fail: &protocol.RepeatableFailure{Identity: "views", RunId: "run-2"}}}, `.*a repeatable migration failure needs its run and error`},
+		{"a failure over the error bound", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Fail{
+			Fail: &protocol.RepeatableFailure{Identity: "views", RunId: "run-2", Error: strings.Repeat("e", provider.MaxRepeatableErrorBytes+1)}}},
+			`.*repeatable migration error exceeds 4096 bytes`},
+		{"a claim of a run over the bound", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Claim{
+			Claim: &protocol.RepeatableClaim{Identity: "views", Insert: true, RunId: strings.Repeat("r", provider.MaxRepeatableTokenBytes+1), AttemptChecksum: "h1:new",
+				AttemptOrder: 1, AttemptedAtSeconds: 1}}}, `.*a repeatable migration claim needs its run, digest, order and time`},
+		{"a claim that expects a run over the bound", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Claim{
+			Claim: &protocol.RepeatableClaim{Identity: "views", ExpectedRunId: strings.Repeat("r", provider.MaxRepeatableTokenBytes+1), RunId: "run-2",
+				AttemptChecksum: "h1:new", AttemptOrder: 1, AttemptedAtSeconds: 1}}}, `.*either inserts a row or expects the run it read`},
 		{"an identity with a NUL byte", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r",
-			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: "vi\x00ews"}}, `.*invalid repeatable migration identity`},
+			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: &protocol.RepeatableRemoval{Identity: "vi\x00ews"}}}, `.*invalid repeatable migration identity`},
 		{"an identity over the key", &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r",
-			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: string(make([]byte, provider.MaxRepeatableIdentityBytes+1))}}, `.*invalid repeatable migration identity`},
+			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: &protocol.RepeatableRemoval{Identity: string(make([]byte, provider.MaxRepeatableIdentityBytes+1))}}}, `.*invalid repeatable migration identity`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -187,6 +199,10 @@ func TestValidateRepeatableSnapshotReply_FailurePath(t *testing.T) {
 	kept.BodyKept = true
 	unnamed := appliedRow()
 	unnamed.RunId = ""
+	verbose := neverAppliedRow()
+	verbose.Error = strings.Repeat("e", provider.MaxRepeatableErrorBytes+1)
+	digested := appliedRow()
+	digested.Checksum = strings.Repeat("h", provider.MaxRepeatableTokenBytes+1)
 	otherScope := recordScope()
 	otherScope.Table = "other_repeatable"
 	for _, test := range []struct {
@@ -204,6 +220,10 @@ func TestValidateRepeatableSnapshotReply_FailurePath(t *testing.T) {
 			`.*a repeatable migration that never applied keeps no digest, time or body`},
 		{"a row without its run", &protocol.RepeatableSnapshot{Scope: recordScope(), Exists: true, Complete: true, Rows: []*protocol.RepeatableRow{unnamed}},
 			`.*invalid repeatable migration attempt`},
+		{"an error over the bound", &protocol.RepeatableSnapshot{Scope: recordScope(), Exists: true, Complete: true, Rows: []*protocol.RepeatableRow{verbose}},
+			`.*invalid repeatable migration attempt`},
+		{"a digest over the bound", &protocol.RepeatableSnapshot{Scope: recordScope(), Exists: true, Complete: true, Rows: []*protocol.RepeatableRow{digested}},
+			`.*an applied repeatable migration needs its digest and time`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -257,7 +277,12 @@ func TestValidateRepeatableBodyReply_FailurePath(t *testing.T) {
 }
 
 func removal() *protocol.MutateRepeatableRequest {
-	return &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: "views"}}
+	return &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: &protocol.RepeatableRemoval{Identity: "views"}}}
+}
+
+func insertingClaim() *protocol.MutateRepeatableRequest {
+	return &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "r", Mutation: &protocol.MutateRepeatableRequest_Claim{
+		Claim: &protocol.RepeatableClaim{Identity: "views", Insert: true, RunId: "run-2", AttemptChecksum: "h1:new", AttemptOrder: 1, AttemptedAtSeconds: 1}}}
 }
 
 func claim() *protocol.MutateRepeatableRequest {
@@ -265,12 +290,22 @@ func claim() *protocol.MutateRepeatableRequest {
 		Claim: &protocol.RepeatableClaim{Identity: "views", ExpectedRunId: "run-1", RunId: "run-2", AttemptChecksum: "h1:new", AttemptOrder: 1, AttemptedAtSeconds: 1}}}
 }
 
-// An applied write is accepted, and a conflict carries the run that holds
-// the row in a RepeatableError that wraps ErrExecution.
+// An applied write is accepted, a conflict carries the run that holds the
+// row in a RepeatableError that wraps ErrExecution, a claim that read a row
+// conflicts with no row once another run removed it, and a refusal carries no
+// holder.
 func TestCheckRepeatableResult_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	applied := &protocol.RepeatableResult{Scope: recordScope(), RequestId: "r", Outcome: protocol.RepeatableResult_APPLIED, Removed: true}
 	conflict := &protocol.RepeatableResult{Scope: recordScope(), RequestId: "r", Outcome: protocol.RepeatableResult_CONFLICT, HolderRunId: "run-3"}
+	vanished := &protocol.RepeatableResult{Scope: recordScope(), RequestId: "r", Outcome: protocol.RepeatableResult_CONFLICT}
+	refused := &protocol.RepeatableResult{Scope: recordScope(), RequestId: "r", Outcome: protocol.RepeatableResult_REFUSED}
+
+	c.Assert(provider.ValidateRepeatableResult(insertingClaim(), conflict), qt.IsNil)
+	c.Assert(provider.ValidateRepeatableResult(claim(), vanished), qt.IsNil)
+	c.Assert(provider.ValidateRepeatableResult(insertingClaim(), refused), qt.IsNil)
+	c.Assert(provider.CheckRepeatableResult(refused), qt.ErrorMatches, `provider repeatable migration record outcome is REFUSED`)
+	c.Assert(provider.CheckRepeatableResult(refused), qt.ErrorIs, provider.ErrExecution)
 
 	c.Assert(provider.ValidateRepeatableResult(removal(), applied), qt.IsNil)
 	c.Assert(provider.CheckRepeatableResult(applied), qt.IsNil)
@@ -301,6 +336,8 @@ func TestCheckRepeatableResult_FailurePath(t *testing.T) {
 			HolderRunId: "run-3"}, `.*only a conflicting write names the run that holds the row`},
 		{"a claim that removed", claim(), &protocol.RepeatableResult{Scope: recordScope(), RequestId: "r", Outcome: protocol.RepeatableResult_APPLIED,
 			Removed: true}, `.*only a removal that applied removes a row`},
+		{"an inserting claim that conflicts with no row", insertingClaim(), &protocol.RepeatableResult{Scope: recordScope(), RequestId: "r",
+			Outcome: protocol.RepeatableResult_CONFLICT}, `.*an inserting claim conflicts only with a row, which names its run`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

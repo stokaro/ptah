@@ -2,7 +2,10 @@ package runtime_test
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -111,6 +114,10 @@ func (k *recordKeeper) MutateRepeatable(_ context.Context, request *protocol.Mut
 		if row.GetRunId() != completion.GetRunId() {
 			return conflict(completion.GetIdentity()), nil
 		}
+		if row.GetAttemptChecksum() != completion.GetChecksum() {
+			result.Outcome = protocol.RepeatableResult_REFUSED
+			return result, nil
+		}
 		row.State, row.Checksum, row.Applied, row.AppliedAtSeconds, row.BodyKept = protocol.RepeatableRow_APPLIED, completion.GetChecksum(), true, completion.GetAppliedAtSeconds(), true
 		k.body[completion.GetIdentity()] = slices.Clone(completion.GetBody())
 	case *protocol.MutateRepeatableRequest_Fail:
@@ -120,9 +127,10 @@ func (k *recordKeeper) MutateRepeatable(_ context.Context, request *protocol.Mut
 		}
 		row.State, row.Error = protocol.RepeatableRow_FAILED, mutation.Fail.GetError()
 	case *protocol.MutateRepeatableRequest_Remove:
-		_, result.Removed = k.rows[mutation.Remove]
-		delete(k.rows, mutation.Remove)
-		delete(k.body, mutation.Remove)
+		identity := mutation.Remove.GetIdentity()
+		_, result.Removed = k.rows[identity]
+		delete(k.rows, identity)
+		delete(k.body, identity)
 	}
 	return result, nil
 }
@@ -174,7 +182,7 @@ func TestRepeatableRecordThroughTheServer_HappyPath(t *testing.T) {
 	body, err := client.ReadRepeatableBody(c.Context(), &protocol.ReadRepeatableBodyRequest{Scope: recordScope(), Identity: "views"})
 	c.Assert(err, qt.IsNil)
 	removed, err := client.MutateRepeatable(c.Context(), &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "remove",
-		Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: "views"}})
+		Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: &protocol.RepeatableRemoval{Identity: "views"}}})
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(lost.GetOutcome(), qt.Equals, protocol.RepeatableResult_CONFLICT)
@@ -186,6 +194,58 @@ func TestRepeatableRecordThroughTheServer_HappyPath(t *testing.T) {
 	c.Assert(snapshot.GetRows()[0].GetRunId(), qt.Equals, "run-1")
 	c.Assert(string(body.GetBody()), qt.Equals, "CREATE VIEW v AS SELECT 1;")
 	c.Assert(removed.GetRemoved(), qt.IsTrue)
+}
+
+// worstRow is a row of the record with every field at its bound, unique by
+// position.
+func worstRow(position int) *protocol.RepeatableRow {
+	token := strings.Repeat("t", provider.MaxRepeatableTokenBytes)
+	return &protocol.RepeatableRow{Identity: fmt.Sprintf("%0*d", provider.MaxRepeatableIdentityBytes, position), State: protocol.RepeatableRow_APPLIED,
+		Checksum: token, AttemptChecksum: token, AttemptOrder: math.MaxUint32, Transactional: true, RunId: token,
+		AttemptedAtSeconds: -62135596799, AttemptedAtNanos: 999_999_999, Applied: true, AppliedAtSeconds: -62135596799, AppliedAtNanos: 999_999_999,
+		Error: strings.Repeat("e", provider.MaxRepeatableErrorBytes), BodyKept: true}
+}
+
+// A record of MaxRepeatableRows rows, each at the bound of every field, is
+// read through the server in one snapshot: the bounds keep the largest
+// record under what a host receives in one message.
+func TestRepeatableRecordReadsTheLargestRecord(t *testing.T) {
+	c := qt.New(t)
+	keeper := newRecordKeeper()
+	for position := range provider.MaxRepeatableRows {
+		row := worstRow(position)
+		keeper.rows[row.GetIdentity()] = row
+	}
+	client := serveRecord(c, keeper, []string{provider.RepeatableRecordFeature})
+
+	snapshot, err := client.ReadRepeatables(c.Context(), &protocol.ReadRepeatablesRequest{Scope: recordScope(), MaxRows: provider.MaxRepeatableRows})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(snapshot.GetRows(), qt.HasLen, provider.MaxRepeatableRows)
+	c.Assert(proto.Size(snapshot) < transport.LargeMessageBytes, qt.IsTrue)
+}
+
+// A completion whose run holds the row but whose digest is not the claimed
+// one is REFUSED, and the row keeps the claim.
+func TestRepeatableRecordRefusesACompletionOfAnotherDigest(t *testing.T) {
+	c := qt.New(t)
+	keeper := newRecordKeeper()
+	client := serveRecord(c, keeper, []string{provider.RepeatableRecordFeature})
+	_, err := client.MutateRepeatable(c.Context(), claimRequest("claim", true, "", "run-1"))
+	c.Assert(err, qt.IsNil)
+
+	refused, err := client.MutateRepeatable(c.Context(), &protocol.MutateRepeatableRequest{Scope: recordScope(), RequestId: "complete",
+		Mutation: &protocol.MutateRepeatableRequest_Complete{Complete: &protocol.RepeatableCompletion{Identity: "views", RunId: "run-1", Checksum: "h1:other",
+			AppliedAtSeconds: 1_700_000_001}}})
+	c.Assert(err, qt.IsNil)
+	snapshot, err := client.ReadRepeatables(c.Context(), &protocol.ReadRepeatablesRequest{Scope: recordScope(), MaxRows: provider.MaxRepeatableRows})
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(refused.GetOutcome(), qt.Equals, protocol.RepeatableResult_REFUSED)
+	c.Assert(refused.GetHolderRunId(), qt.Equals, "")
+	c.Assert(provider.CheckRepeatableResult(refused), qt.ErrorIs, provider.ErrExecution)
+	c.Assert(snapshot.GetRows()[0].GetState(), qt.Equals, protocol.RepeatableRow_RUNNING)
+	c.Assert(snapshot.GetRows()[0].GetApplied(), qt.IsFalse)
 }
 
 // The server refuses what the provider must not see: a call from a host that
@@ -205,7 +265,7 @@ func TestRepeatableRecordThroughTheServer_FailurePath(t *testing.T) {
 		scope := recordScope()
 		scope.TransactionId = "tx-1"
 		_, err := client.MutateRepeatable(c.Context(), &protocol.MutateRepeatableRequest{Scope: scope, RequestId: "remove",
-			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: "views"}})
+			Mutation: &protocol.MutateRepeatableRequest_Remove{Remove: &protocol.RepeatableRemoval{Identity: "views"}}})
 		c.Assert(status.Code(err), qt.Equals, codes.Unimplemented)
 	})
 	t.Run("an invalid write", func(t *testing.T) {
