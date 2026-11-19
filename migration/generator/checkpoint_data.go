@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/readscope"
 	"ptah.run/migration/datadiff"
 )
@@ -89,13 +90,16 @@ func renderBootstrapTable(
 		return "", fmt.Errorf("checkpoint generation failed: read bootstrap rows for %s: %w", name, err)
 	}
 	sortBootstrapRows(rows, columns)
+	// The rows are read through the shadow's session and run later, by a
+	// session nobody knows yet, so they are written for the default sql_mode;
+	// see [backslashmode.ForLater].
 	up, _, err := datadiff.RenderContext(ctx, &datadiff.DataDiff{
 		Schema:      tableSchema,
 		Table:       table,
 		Keys:        keys,
 		ColumnTypes: columnTypes,
 		Inserts:     rows,
-	}, conn.Info().Dialect, services, conn.Info().Capabilities)
+	}, conn.Info().Dialect, services, backslashmode.ForLater(conn.Info().Capabilities))
 	if err != nil {
 		return "", fmt.Errorf("checkpoint generation failed: render bootstrap rows for %s: %w", name, err)
 	}

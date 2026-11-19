@@ -20,6 +20,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -260,6 +261,10 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
+	// The plan is printed or published and run later, on a session nobody
+	// knows yet, so it is written for the default sql_mode; see
+	// [backslashmode.ForLater].
+	written := backslashmode.ForLater(info.Capabilities)
 	if err := schemascope.RefuseOutsideTargetDatabase(info, result); err != nil {
 		return err
 	}
@@ -289,7 +294,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	astNodes, err := planner.GenerateSchemaDiffASTWithOptions(
 		cmd.Context(), runtime,
 		diff, info.Dialect, planext.Options{
-			Capabilities:      info.Capabilities,
+			Capabilities:      written,
 			AllowTableRebuild: rebuild,
 			Statements:        planstyle.Statements,
 		},
@@ -298,7 +303,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error generating migration plan: %w", err)
 	}
-	assessments, err := safety.AssessRenderedWithCapabilities(cmd.Context(), runtime, astNodes, info.Dialect, info.Capabilities)
+	assessments, err := safety.AssessRenderedWithCapabilities(cmd.Context(), runtime, astNodes, info.Dialect, written)
 	if err != nil {
 		return fmt.Errorf("error assessing migration safety: %w", err)
 	}
@@ -308,7 +313,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 			loadResult.OCI.Descriptor,
 			dbSchema,
 			info.Dialect,
-			info.Capabilities,
+			written,
 			schemas,
 			assessments,
 		)
@@ -349,7 +354,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	fmt.Fprintln(out, "=== MIGRATION SQL ===")
 	fmt.Fprintln(out)
 
-	rendered, err := renderer.Render(cmd.Context(), runtime, renderer.Request{Target: info.Dialect, Capabilities: info.Capabilities, Nodes: astNodes, Form: renderer.FormText})
+	rendered, err := renderer.Render(cmd.Context(), runtime, renderer.Request{Target: info.Dialect, Capabilities: written, Nodes: astNodes, Form: renderer.FormText})
 	if err != nil {
 		return fmt.Errorf("error rendering SQL: %w", err)
 	}

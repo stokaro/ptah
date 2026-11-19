@@ -29,6 +29,7 @@ import (
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasschema"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/definer"
@@ -690,6 +691,10 @@ func planDiffFileContents(
 	format string,
 	opts DiffOptions,
 ) ([]MigrationFileContent, error) {
+	// info describes the dev database's session, and the file runs later, on
+	// a session nobody knows yet, so it is planned and written for the default
+	// sql_mode; see [backslashmode.ForLater].
+	info.Capabilities = backslashmode.ForLater(info.Capabilities)
 	var planned BidirectionalPlan
 	if opts.PlanBidirectional == nil {
 		upNodes, err := planner.GenerateSchemaDiffASTWithOptions(

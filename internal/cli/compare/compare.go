@@ -23,6 +23,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/diffreport"
@@ -297,10 +298,12 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	// The SQL is printed and run later, on a session nobody knows yet, so it
+	// is written for the default sql_mode; see [backslashmode.ForLater].
 	plan, err := planner.GenerateSchemaDiffTextPlan(
 		cmd.Context(), runtime,
 		diff, info.Dialect, planext.Options{
-			Capabilities:      info.Capabilities,
+			Capabilities:      backslashmode.ForLater(info.Capabilities),
 			AllowTableRebuild: rebuild,
 			Statements:        planstyle.Statements,
 		},
