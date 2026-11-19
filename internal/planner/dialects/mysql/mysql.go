@@ -1431,10 +1431,16 @@ func declaredForeignKeys(diff *difftypes.SchemaDiff) []affectedForeignKey {
 	return candidates
 }
 
-// columnTypeChangesByTable returns the columns whose SQL type is changing in
-// this diff, keyed table -> set of column names. Only "type" changes are
-// collected; nullability, default, uniqueness, and similar changes do not
-// disturb a foreign key's referential type match.
+// foreignKeyBlockingColumnChangesByTable returns the columns whose change a
+// foreign key over them refuses, keyed table -> set of column names: a change
+// of the SQL type, a change of the collation, and a removal. A collation
+// change counts because the server compares the two ends' collations as part
+// of their type: MySQL 8.4 and 26.10 answer `MODIFY COLUMN code varchar(10)
+// COLLATE utf8mb4_bin` on either end with Error 3780, and MariaDB 11.8 and
+// 12.3 with Error 1832, whichever end changes first. A change of a column's
+// character set is a change of its collation. Nullability, default,
+// uniqueness, and similar changes do not disturb a foreign key's referential
+// type match.
 func foreignKeyBlockingColumnChangesByTable(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
@@ -1443,7 +1449,7 @@ func foreignKeyBlockingColumnChangesByTable(
 	for _, tableDiff := range diff.TablesModified {
 		tableIdentity := semantics.QualifiedTableIdentityKey(tableDiff.TableName)
 		for _, colDiff := range tableDiff.ColumnsModified {
-			if strings.TrimSpace(colDiff.Changes["type"]) == "" {
+			if strings.TrimSpace(colDiff.Changes["type"]) == "" && strings.TrimSpace(colDiff.Changes["collation"]) == "" {
 				continue
 			}
 			columns := result[tableIdentity]

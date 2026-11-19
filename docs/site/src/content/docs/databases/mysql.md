@@ -681,6 +681,13 @@ one; see
 A change of a table's default collation is rated a warning, because a column
 added or restated without a collation takes it.
 
+A foreign key stands on the collation of both its ends, so the server refuses
+a change of either end's collation while the key stands: MySQL with Error 3780
+and MariaDB with Error 1832. Ptah drops the key, changes both ends, and adds
+the key back, as it does for a change of the columns' type, so one apply
+changes a key and the column it references together. A change of the
+character set is a change of the collation.
+
 A change of a column's character set converts every value the column holds,
 and is rated destructive: a character the new character set cannot hold fails
 the statement with Error 1366, or is lost where the session is not strict.

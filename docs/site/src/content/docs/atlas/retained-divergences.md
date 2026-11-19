@@ -163,6 +163,7 @@ own measurement conditions.
 | [A COLLATE on a SQLite column](#a-collate-on-a-sqlite-column) | `schema inspect` writes the collation a column declares, in every format, and `schema diff` and `schema apply` plan a change of it | writes none, so the document describes a column that compares as BINARY, and reports the schemas synced |
 | [A COLLATE on a PostgreSQL column](#a-collate-on-a-postgresql-column) | `schema diff` and `schema apply` plan a change of a column's collation | report the schemas synced |
 | [A changed MySQL table collation](#a-changed-mysql-table-collation) | plans the table's `COLLATE` in one statement with the reset of the column that takes it, so one apply converges | does the same with `--dev-url`; without it, plans the table's `COLLATE` alone, and the column keeps the old collation until a second apply |
+| [A foreign key over a changed collation](#a-foreign-key-over-a-changed-collation) | drops the foreign key, changes both ends, and adds the key back, so one apply converges | plans a bare `MODIFY COLUMN` of each end, which the server refuses while the key stands |
 
 ## A `--config` selection naming more than one file
 
@@ -1938,6 +1939,34 @@ a character set it names.
 
 **Evidence.** `migration/schemadiff/inherited_collation_test.go`,
 `integration/mysql_inherited_collation_e2e_test.go`
+
+## A foreign key over a changed collation
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** A foreign key stands on the collation of both its ends,
+so MySQL refuses a change of either end's collation while the key stands with
+Error 3780, and MariaDB with Error 1832. `ptah-compat schema apply` drops the
+key, changes both ends, and adds the key back, as it does for a change of the
+columns' type, so one apply converges and every row keeps its parent. The
+pinned community binary v1.3.0 plans a bare `MODIFY COLUMN` of each end, and
+the first statement fails. Measured on 2026-11-19 on MySQL 8.4 and MariaDB
+11.8, with `--dev-url`, on `parent (code varchar(10) PRIMARY KEY)` and
+`child (id int PRIMARY KEY, code varchar(10), FOREIGN KEY (code) REFERENCES parent (code))`,
+both columns `COLLATE utf8mb4_unicode_ci`, against a SQL file declaring both
+`COLLATE utf8mb4_bin`:
+
+| Step | Binary | `ptah-compat` |
+| --- | --- | --- |
+| first statement | ``ALTER TABLE `child` MODIFY COLUMN `code` varchar(10) NULL COLLATE utf8mb4_bin;`` | ``ALTER TABLE `child` DROP FOREIGN KEY `child_code_fk`, MODIFY COLUMN `code` varchar(10) COLLATE utf8mb4_bin NULL;`` |
+| last statement | the `parent` column's `MODIFY COLUMN` | ``ALTER TABLE `child` ADD CONSTRAINT `child_code_fk` FOREIGN KEY (`code`) REFERENCES `parent` (`code`) ...;`` |
+| apply | exits `1` with Error 3780 on MySQL and Error 1832 on MariaDB; both columns keep `utf8mb4_unicode_ci` | both columns hold `utf8mb4_bin`, and the key stands |
+
+The same holds where the columns take the collation from their tables'
+default, or from a character set each names.
+
+**Evidence.** `internal/planner/dialects/mysql/fk_collation_test.go`,
+`integration/mysql_foreign_key_collation_e2e_test.go`
 
 ## Not on this page
 
