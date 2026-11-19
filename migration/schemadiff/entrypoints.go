@@ -124,7 +124,7 @@ func comparisonSemantics(desired *schemamodel.Database, database *catalog.Databa
 			ptaherr.ErrInvalidSchemaDiff,
 		)
 	}
-	names := collectIdentifierNames(desired, database, semantics.DefaultSchema)
+	names := collectIdentifierNames(desired, database, semantics.DefaultSchema, info.Dialect)
 	if err := identifiervalidation.ValidateCoverage(semantics, names); err != nil {
 		return identifier.Semantics{}, err
 	}

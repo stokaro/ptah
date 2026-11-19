@@ -190,6 +190,22 @@ END;`,
 				},
 				EmptyCallRefusal: "Oracle Free 23.26 calls it without parentheses and answers ORA-03077, " +
 					"ORA-30088 or ORA-04044 to an empty argument list",
+				// Oracle Free 23.26 takes seq.NEXTVAL and seq.CURRVAL as a
+				// default, and stores an unqualified one qualified and quoted,
+				// "APP"."SEQ"."NEXTVAL"; a qualified one is stored as written.
+				SequencePseudocolumns: []string{"NEXTVAL", "CURRVAL"},
+			},
+			// Oracle Free 23.26 creates `CHECK (n > 0) DEFERRABLE INITIALLY
+			// DEFERRED` deferrable and reports it so in USER_CONSTRAINTS.
+			// ENABLE VALIDATE CONSTRAINT over a row the CHECK refuses
+			// answers ORA-02293 and leaves the constraint DISABLED. Each
+			// statement commits apart, so a CHECK dropped before a refused
+			// ADD is gone; ADD under another name, DROP and RENAME
+			// CONSTRAINT keep one CHECK in place at every step.
+			Constraints: descriptor.ConstraintGrammar{
+				Deferral:        descriptor.Deferral{Checks: true},
+				EnableValidate:  true,
+				CheckAddedFirst: true,
 			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},

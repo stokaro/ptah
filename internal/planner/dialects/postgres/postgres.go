@@ -3764,6 +3764,8 @@ func constraintAdditionNodeByType(add difftypes.ConstraintAdditionInfo) *ast.Con
 			Type:        ast.CheckConstraint,
 			Name:        add.Name,
 			Expression:  add.CheckExpression,
+			Deferrable:  add.Deferrable,
+			Initially:   add.Initially,
 			NotEnforced: add.NotEnforced,
 			NotValid:    add.NotValid,
 		}

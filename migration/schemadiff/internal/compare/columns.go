@@ -36,6 +36,8 @@ import (
 	"ptah.run/internal/pgname"
 	"ptah.run/internal/precedence"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sequenceref"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/sqlservertype"
 	"ptah.run/internal/typechange"
@@ -230,6 +232,7 @@ func tableColumnsWithSemantics(
 			colDiff := columnsWithDesiredDomains(genCol, dbCol, dialect, desiredDomains, columnContext{
 				schema:               genTable.Schema,
 				table:                genTable.Name,
+				heldSchema:           dbTable.Schema,
 				generatedExpressions: spellings.Generated,
 				columnSpellings:      spellings.Columns,
 				defaultIntSize:       spellings.DefaultIntSize,
@@ -237,6 +240,7 @@ func tableColumnsWithSemantics(
 				rules:                spellings.ColumnRules,
 				receipts:             spellings.OwnerColumns.Compared[objectidentity.NewBuilder(semantics).ColumnParts(genTable.Schema, genTable.Name, genCol.Name).Key()],
 				generated:            spellings.GeneratedExpressions,
+				semantics:            semantics,
 			})
 			// A comment-only difference has no entry in Changes, and it is
 			// still a difference: without the second condition a column whose
@@ -455,6 +459,13 @@ type columnContext struct {
 	// [config.CompareOptions.GeneratedExpressions].
 	schema string
 	table  string
+	// heldSchema is the schema the catalog holds the table in, which an
+	// unqualified sequence reference in a default resolves to.
+	heldSchema string
+	// semantics compares the schema and sequence names a sequence reference
+	// in a default spells, as the server compares them. The zero value
+	// compares them as they are stored.
+	semantics identifier.Semantics
 	// generatedExpressions is that map, nil when nobody asked a server.
 	generatedExpressions map[string]config.GeneratedExpression
 	// columnSpellings is [config.CompareOptions.ColumnSpellings], nil when
@@ -595,7 +606,7 @@ func columnsWithDesiredDomains(
 
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnDefault]; owned {
 		applyColumnDifference(colDiff.Changes, "default", receipt.Difference)
-	} else if key, change := columnDefaultChange(genCol, dbCol, genType, dialect, spelling, spelled, ctx.rules); change != "" {
+	} else if key, change := columnDefaultChange(genCol, dbCol, genType, dialect, spelling, spelled, ctx); change != "" {
 		colDiff.Changes[key] = change
 	}
 	maps.Copy(colDiff.Changes, autoIncrementChange(genCol, dbCol, dialect))
@@ -903,8 +914,9 @@ func columnDefaultChange(
 	genType, dialect string,
 	spelling config.ColumnSpelling,
 	spelled bool,
-	rules schemacomparison.Columns,
+	ctx columnContext,
 ) (key, change string) {
+	rules := ctx.rules
 	// Compare default values (simplified)
 	genDefault := genCol.Default
 	if genDefault == "" {
@@ -971,8 +983,12 @@ func columnDefaultChange(
 			idxName = "default_expr"
 		}
 		declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault, dialect)
-		if !columnDefaultsEqual(declared, reported, genType, dialect,
-			genCol.Default == "" && genCol.DefaultExpr != "") {
+		declaredIsExpression := genCol.Default == "" && genCol.DefaultExpr != ""
+		same, recognized := compareSequenceReferences(declared, reported, dialect, ctx.heldSchema, ctx.semantics, declaredIsExpression)
+		if !recognized {
+			same = columnDefaultsEqual(declared, reported, genType, dialect, declaredIsExpression)
+		}
+		if !same {
 			return idxName, fmt.Sprintf("%s -> %s", dbDefault, genDefault)
 		}
 	}
@@ -1009,6 +1025,69 @@ func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported, 
 		return declared, reported
 	}
 	return groupedDeclared, groupedReported
+}
+
+// compareSequenceReferences compares two defaults by the sequences they
+// read, on a dialect whose descriptor names a pseudocolumn or a clause that
+// reads one ([descriptor.ColumnGrammar.SequencePseudocolumns],
+// [descriptor.ColumnGrammar.NextValueClause]), with each reference read as
+// the names the catalog stores ([sequenceref.Canonical]). recognized reports
+// that either side reads one. A declared literal never does, so the string
+// 'seq.NEXTVAL' is not the sequence it spells.
+//
+// Oracle stores the declared seq.NEXTVAL as "APP"."SEQ"."NEXTVAL", and SQL
+// Server stores NEXT VALUE FOR seq as NEXT VALUE FOR [seq]. Compared as text,
+// the two differ, and every apply plans the column's default again.
+//
+// Each schema and sequence name compares by its key under semantics, written
+// as the name that addresses it ([sqlident.CatalogName]), which is the
+// equivalence class the server's collation answered for it where it was asked
+// ([SequenceReferenceNames]). SQL Server stores NEXT VALUE FOR S as
+// NEXT VALUE FOR [S] and reads it as the sequence s under its default
+// collation, SQL_Latin1_General_CP1_CI_AS, where Latin1_General_CS_AS
+// answers Msg 208 for it. Compared as stored, a declared S against a stored
+// [s] plans the default again.
+func compareSequenceReferences(declared, reported, dialect, heldSchema string, semantics identifier.Semantics, declaredIsExpression bool) (same, recognized bool) {
+	rules, ok := sequenceRules(dialect)
+	if !ok {
+		return false, false
+	}
+	rules.Key = func(name string) string {
+		return semantics.TableIdentityKey(sqlident.CatalogName(dialect, name))
+	}
+	left, leftFound := sequenceref.Canonical(declared, rules, heldSchema)
+	leftFound = leftFound && declaredIsExpression
+	right, rightFound := sequenceref.Canonical(reported, rules, heldSchema)
+	return leftFound && rightFound && left == right, leftFound || rightFound
+}
+
+// sequenceRules answers the rules a dialect's descriptor states for sequence
+// references in a default, and false where it states none.
+func sequenceRules(dialect string) (sequenceref.Rules, bool) {
+	pseudocolumns, clause := sequencePseudocolumns.Get(dialect), nextValueClause.Get(dialect)
+	if len(pseudocolumns) == 0 && len(clause) == 0 {
+		return sequenceref.Rules{}, false
+	}
+	return sequenceref.Rules{
+		NextValue:     clause,
+		Pseudocolumns: pseudocolumns,
+		Fold:          identifier.ForDialect(dialect).UnquotedFold,
+		Lexing:        dialectlexer.Options(dialect),
+	}, true
+}
+
+// SequenceReferenceNames returns the schema and sequence names the sequence
+// references in a default spell, as the catalog stores them, on a dialect
+// whose descriptor names a pseudocolumn or a clause that reads one, and nil
+// elsewhere. A caller that resolves names against a server asks it about
+// these, so the comparison keys each name by the class the server's collation
+// puts it in.
+func SequenceReferenceNames(expression, dialect string) []string {
+	rules, ok := sequenceRules(dialect)
+	if !ok {
+		return nil
+	}
+	return sequenceref.Names(expression, rules)
 }
 
 // columnDefaultsEqual compares both values under the desired column type.

@@ -424,6 +424,14 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 				guard = "IF EXISTS "
 			}
 			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s%s;", table, guard, escapeIdentifier(op.ConstraintName))
+		case *ast.ValidateConstraintOperation:
+			// ENABLE VALIDATE checks every row and enforces the constraint
+			// from then on. A row the constraint refuses answers ORA-02293
+			// and leaves the constraint as it was.
+			r.w.WriteLinef("ALTER TABLE %s ENABLE VALIDATE CONSTRAINT %s;", table, escapeIdentifier(op.ConstraintName))
+		case *ast.RenameConstraintOperation:
+			r.w.WriteLinef("ALTER TABLE %s RENAME CONSTRAINT %s TO %s;",
+				table, escapeIdentifier(op.From), escapeIdentifier(op.To))
 		case *ast.SetCommentOperation:
 			r.writeSetComment(table, op)
 		default:

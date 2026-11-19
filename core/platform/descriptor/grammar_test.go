@@ -16,13 +16,19 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 	described := head("alpha")
 	described.Grammar = descriptor.Grammar{
 		Columns: descriptor.ColumnGrammar{
-			TimestampLocalTimeZone: true,
-			CurrentTimeKeywords:    true,
-			NiladicFunctions:       []string{"SYSDATE", "USER"},
-			EmptyCallFunctions:     []string{"SYSDATE"},
-			EmptyCallRefusal:       "alpha refuses SYSDATE()",
-			SecondCheckRefusal:     "alpha takes one CHECK on a column",
-			ReferencesRefusal:      "what alpha builds depends on its release",
+			TimestampLocalTimeZone:  true,
+			CurrentTimeKeywords:     true,
+			NiladicFunctions:        []string{"SYSDATE", "USER"},
+			EmptyCallFunctions:      []string{"SYSDATE"},
+			EmptyCallRefusal:        "alpha refuses SYSDATE()",
+			SequencePseudocolumns:   []string{"NEXTVAL"},
+			NextValueClause:         "NEXT VALUE FOR",
+			DefaultOperatorRefusal:  "alpha takes an expression default only in parentheses",
+			DefaultPredicateRefusal: "alpha reads no predicate in a default",
+			DefaultDistinctFrom:     true,
+			DefaultPipesRefusal:     "alpha reads || by the session's SQL mode",
+			SecondCheckRefusal:      "alpha takes one CHECK on a column",
+			ReferencesRefusal:       "what alpha builds depends on its release",
 			Constraint: descriptor.ColumnConstraint{
 				Define: descriptor.ConstraintKindReferences,
 				Modify: descriptor.ConstraintKindCheck,
@@ -200,6 +206,26 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: niladic function "USER" is written twice`,
 		},
 		{
+			name:    "a sequence pseudocolumn in lower case",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.SequencePseudocolumns = []string{"nextval"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: sequence pseudocolumn "nextval" is not one upper-case word`,
+		},
+		{
+			name:    "a sequence pseudocolumn stated twice",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.SequencePseudocolumns = []string{"NEXTVAL", "NEXTVAL"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: sequence pseudocolumn "NEXTVAL" is written twice`,
+		},
+		{
+			name:    "a next value clause in lower case",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.NextValueClause = "next value for" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: next value clause word "next" is not one upper-case word`,
+		},
+		{
+			name:    "a next value clause with two spaces",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.NextValueClause = "NEXT  VALUE FOR" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: next value clause "NEXT  VALUE FOR" is not words separated by one space`,
+		},
+		{
 			name:    "an empty call refusal without functions",
 			dialect: with(func(g *descriptor.Grammar) { g.Columns.EmptyCallRefusal = "alpha refuses SYSDATE()" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: empty call functions and an empty call refusal are set together`,
@@ -235,6 +261,11 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a MODIFY column constraint kind needs a column constraint kind`,
 		},
 		{
+			name:    "IS DISTINCT FROM without a predicate refusal",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.DefaultDistinctFrom = true }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a default that reads IS DISTINCT FROM needs a default predicate refusal`,
+		},
+		{
 			name:    "a MATCH PARTIAL without the clause",
 			dialect: with(func(g *descriptor.Grammar) { g.Constraints.Match.Partial = true }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a MATCH type or refusal needs the MATCH clause`,
@@ -264,6 +295,20 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 				g.Constraints.Deferral = descriptor.Deferral{Refusal: "alpha has none", LoneInitiallyRefusal: "alpha needs DEFERRABLE"}
 			}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a deferral refusal leaves .*`,
+		},
+		{
+			name: "a kept CHECK deferral beside a refusal",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Constraints.Deferral = descriptor.Deferral{Refusal: "alpha has none", Checks: true}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a deferral clause after a CHECK cannot be both kept and refused`,
+		},
+		{
+			name: "a kept CHECK deferral beside a key refusal",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Constraints.Deferral = descriptor.Deferral{KeyRefusal: "alpha takes one after a foreign key", Checks: true}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a deferral clause after a CHECK cannot be both kept and refused`,
 		},
 		{
 			name:    "an undeclared index keyword",

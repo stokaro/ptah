@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -141,4 +142,81 @@ CREATE VIEW %[1]s.v AS SELECT id, a FROM %[1]s.t;
 
 	c.Assert(settled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", settled.Stdout, settled.Stderr))
 	c.Assert(settled.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+}
+
+// TestSchemaPlanRatesAPostgreSQLCollationChangeE2E rates the statement that
+// changes a UNIQUE column's collation a warning. PostgreSQL 18.6 rebuilds the
+// column's indexes under the new collation and refuses the change where the
+// unique key then holds equal values, so a plan that calls it safe hides a
+// failure. The comparison's reading rates the change, whether the statement
+// names the new collation or, for a reset to the type's collation, names
+// none. A TYPE clause that restates the collation the column holds is safe.
+func TestSchemaPlanRatesAPostgreSQLCollationChangeE2E(t *testing.T) {
+	tests := []struct {
+		name     string
+		before   string
+		declared string
+		want     string
+	}{
+		{
+			name: "set", before: "text", declared: `text COLLATE "C"`,
+			want: `ALTER TABLE "coll_app"."u" ALTER COLUMN "n" TYPE text COLLATE "C" | warning | the collation change rebuilds every index on the column, ` +
+				"changes how its values sort and compare, and fails where a unique key holds values the new collation finds equal",
+		},
+		{
+			name: "restated", before: `varchar(20) COLLATE "C"`, declared: `varchar(40) COLLATE "C"`,
+			want: `ALTER TABLE "coll_app"."u" ALTER COLUMN "n" TYPE varchar(40) COLLATE "C" | safe | ` +
+				"the statement restates the collation the column holds",
+		},
+		{
+			name: "reset", before: `text COLLATE "C"`, declared: "text",
+			want: `ALTER TABLE "coll_app"."u" ALTER COLUMN "n" TYPE text | warning | the collation change rebuilds every index on the column, ` +
+				"changes how its values sort and compare, and fails where a unique key holds values the new collation finds equal",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := newPolicyClauseDatabase(c, dbtarget.PostgreSQL)
+			execPostgresFamilySQL(c, c.Context(), target, fmt.Sprintf(
+				"CREATE SCHEMA %[1]s; CREATE TABLE %[1]s.u (id integer PRIMARY KEY, n %[2]s UNIQUE NOT NULL);", columnCollationSchema, test.before))
+			file := writeDeclaredSchemaFile(c, "schema.sql", fmt.Sprintf(
+				"CREATE TABLE %s.u (id integer PRIMARY KEY, n %s UNIQUE NOT NULL);\n", columnCollationSchema, test.declared))
+
+			planned := runPtahIn(c, "schema", "plan", "--db-url", target, "--schemas", columnCollationSchema, "--schema-file", file, "--dry-run")
+
+			c.Assert(planned.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned.Stdout, planned.Stderr))
+			var plan struct {
+				Statements []struct {
+					SQL      string `json:"sql"`
+					Severity string `json:"severity"`
+					Reason   string `json:"reason"`
+				} `json:"statements"`
+			}
+			c.Assert(json.Unmarshal([]byte(planned.Stdout), &plan), qt.IsNil, qt.Commentf("stdout:\n%s", planned.Stdout))
+			rated := make([]string, 0, len(plan.Statements))
+			for _, statement := range plan.Statements {
+				rated = append(rated, statement.SQL+" | "+statement.Severity+" | "+statement.Reason)
+			}
+			c.Assert(rated, qt.DeepEquals, []string{test.want})
+		})
+	}
+}
+
+// TestSchemaApplyHintsAtAnUnquotedCollationNameE2E applies `COLLATE C`, which
+// a SQL schema file folds to "c" as PostgreSQL folds it. PostgreSQL 18.6 ships
+// no collation "c" and refuses the statement, and the refusal says to quote
+// the name. Nothing is created.
+func TestSchemaApplyHintsAtAnUnquotedCollationNameE2E(t *testing.T) {
+	c := qt.New(t)
+	target := newPolicyClauseDatabase(c, dbtarget.PostgreSQL)
+	execPostgresFamilySQL(c, c.Context(), target, "CREATE SCHEMA "+columnCollationSchema+";")
+	file := writeDeclaredSchemaFile(c, "schema.sql", "CREATE TABLE "+columnCollationSchema+".t (id integer PRIMARY KEY, n text COLLATE C);\n")
+
+	applied := runPtahIn(c, "schema", "apply", "--db-url", target, "--schemas", columnCollationSchema, "--schema-file", file, "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0)
+	c.Assert(applied.Stderr, qt.Contains, `collation "c" for encoding "UTF8" does not exist (SQLSTATE 42704)`)
+	c.Assert(applied.Stderr, qt.Contains, "\nhint: if the name was written unquoted, it folded to lower case: COLLATE C names \"c\"; write COLLATE \"C\"\n")
+	c.Assert(storedColumnCollations(c, target, "t"), qt.HasLen, 0)
 }

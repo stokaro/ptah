@@ -217,7 +217,14 @@ func cockroachDB() descriptor.Dialect {
 		// INDEX table@index changes. A DO block that writes no LANGUAGE is
 		// read as PL/pgSQL.
 		Grammar: descriptor.Grammar{
-			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
+			Columns: descriptor.ColumnGrammar{
+				CurrentTimeKeywords:  true,
+				StoredStringDefaults: true,
+				DefaultPredicateRefusal: "CockroachDB v26.4.1 reads no IS test but IS [NOT] DISTINCT FROM, and no AND or OR, in a default " +
+					"written without parentheses, and answers a syntax error there; write the whole expression in " +
+					"parentheses, as DEFAULT (1 + 2 IS NOT NULL)",
+				DefaultDistinctFrom: true,
+			},
 			Constraints: descriptor.ConstraintGrammar{
 				NotValid: true,
 				Match:    descriptor.Match{Clause: true},

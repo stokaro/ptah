@@ -626,7 +626,7 @@ func (s Semantics) quotedName(value string) (string, bool) {
 // that is not plain has no unquoted spelling at all, and one already in the
 // fold's case is what its unquoted spelling folds to.
 func (s Semantics) caseSensitive(name string) bool {
-	return plainIdentifier(name, s.BareChars) && s.UnquotedFold.apply(name) != name
+	return plainIdentifier(name, s.BareChars) && s.UnquotedFold.Apply(name) != name
 }
 
 // keepQuotedParts puts back the quotes [tableref.Parse] removed from a part
@@ -677,13 +677,21 @@ func splitKeepingQuotes(value string) []string {
 	return append(parts, value[start:])
 }
 
-// apply folds the ASCII letters of value to the case f names.
-func (f Fold) apply(value string) string {
+// Apply returns value in the case f names, which is the name a target
+// stating f stores for value written unquoted. The empty Fold returns value
+// unchanged.
+//
+// FoldUpper maps every letter to its one-rune uppercase, as Oracle stores a
+// bare name in an AL32UTF8 database: été is stored as ÉTÉ and ıdx as IDX, and
+// straße as STRAßE, because ß has no one-rune uppercase. FoldLower maps only
+// the ASCII letters, as PostgreSQL stores a bare name in a UTF-8 database:
+// STRAßE is stored as straße and ÉTÉ as ÉtÉ.
+func (f Fold) Apply(value string) string {
 	switch f {
 	case FoldUpper:
 		return strings.ToUpper(value)
 	case FoldLower:
-		return strings.ToLower(value)
+		return foldASCII(value)
 	default:
 		return value
 	}

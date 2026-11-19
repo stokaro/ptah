@@ -63,6 +63,13 @@ type ExcludeReport struct {
 	// and excluded no whole readable kind in the state they were applied to.
 	// The selectors here are well formed, but had no effect.
 	Unmatched []string
+	// Stored maps a selector of Unmatched to the spelling that names an
+	// object in this state, on a target whose descriptor states an
+	// UnquotedFold: the selector with its letters, outside its brackets, in
+	// the case the catalog stores a bare name in. A selector meets the stored
+	// name as written, so on Oracle items names nothing where ITEMS names the
+	// table a bare items declares. Nil where no such spelling names anything.
+	Stored map[string]string
 }
 
 // ExcludeDatabaseReport is [ExcludeDatabaseWithDefaultSchema] plus the report.
@@ -123,6 +130,7 @@ func excludeDatabase(
 
 	state := newExclusionState(filters, defaultSchema, words)
 	state.dialect = target.dialect
+	state.foldSelectors(unquotedFold(target.dialect))
 	filtered := cloneDatabase(schema)
 	// Schemas go first: every filter below asks whether its object's schema
 	// left, and that answer has to exist before the first object is judged.
@@ -372,6 +380,8 @@ func excludeGenerated(
 
 	state := newExclusionState(filters, defaultSchema, words)
 	state.dialect = dialect
+	state.fold = unquotedFold(dialect)
+	state.foldSelectors(state.fold)
 	state.liveKeys = liveKeys
 	filtered := cloneGenerated(schema)
 	// Same ordering rule as the database side, and the same reason both sides
@@ -909,7 +919,14 @@ type exclusionState struct {
 	// run. Emptiness is an outcome rather than a shape -- a selector can be
 	// perfectly well formed and still name nothing -- so it cannot be decided
 	// by reading the selector text, only by watching the match.
-	matched         []bool
+	matched []bool
+	// storedGlobs[i] is the glob of patterns[i] with its letters in the case
+	// of the target's UnquotedFold, or empty where that is the glob itself
+	// or the target states no fold. storedMatched[i] records that it named
+	// an object, which [ExcludeReport.Stored] reports for a selector that
+	// named nothing as written.
+	storedGlobs     []string
+	storedMatched   []bool
 	excludedTables  map[tableIdentity]struct{}
 	excludedColumns map[columnIdentity]struct{}
 	// excludedSchemas holds the schemas a selector named. Every object that
@@ -929,6 +946,10 @@ type exclusionState struct {
 	// the child selector reports as naming nothing. The keep decision does not
 	// use this map -- a child of a removed table leaves with it either way.
 	removedGeneratedTables map[string]schemamodel.Table
+	// fold is the UnquotedFold of a filtered generated state, which spells
+	// its names as a statement does; see storedSpelling. Empty meets every
+	// name as written.
+	fold identifier.Fold
 }
 
 // tableIdentity and columnIdentity are the shared identity model's comparison
@@ -1015,6 +1036,9 @@ func (s *exclusionState) effectiveExtensionSchema(schema string) string {
 // bare name is looser than the community binary on a database URL, and
 // looseness on an exclude subtracts rather than adds statements.
 func (s *exclusionState) nameCandidates(schema, name string) []string {
+	if s.fold != "" {
+		schema, name = storedSpelling(schema, s.fold), storedSpelling(name, s.fold)
+	}
 	return qualifiedNameCandidates(s.effectiveSchema(schema), name)
 }
 
@@ -1032,6 +1056,9 @@ func (s *exclusionState) qualifiedNameCandidatesFor(name string) []string {
 // is in play, [checkPatternDepth] refuses a pattern that deep before it can be
 // matched against.
 func (s *exclusionState) childNameCandidates(schema, table, child string) []string {
+	if s.fold != "" {
+		schema, table, child = storedSpelling(schema, s.fold), storedSpelling(table, s.fold), storedSpelling(child, s.fold)
+	}
 	return tableChildNameCandidates(s.effectiveSchema(schema), table, child)
 }
 
@@ -2086,8 +2113,84 @@ func (s *exclusionState) matchesAnyField(resourceTypes []string, field string, n
 				break
 			}
 		}
+		if !s.matched[i] && s.storedSpelling(i) {
+			stored := pattern
+			stored.glob = s.storedGlobs[i]
+			s.storedMatched[i] = slices.ContainsFunc(resourceTypes, func(resourceType string) bool {
+				return stored.matchesField(resourceType, field, names...)
+			})
+		}
 	}
 	return found
+}
+
+// foldSelectors records the glob of each pattern in fold's case, so that a
+// selector that names nothing as written can say which spelling names an
+// object. The empty fold records nothing.
+func (s *exclusionState) foldSelectors(fold identifier.Fold) {
+	if fold == "" {
+		return
+	}
+	s.storedGlobs = make([]string, len(s.patterns))
+	s.storedMatched = make([]bool, len(s.patterns))
+	for i, pattern := range s.patterns {
+		if folded := fold.Apply(pattern.glob); folded != pattern.glob {
+			s.storedGlobs[i] = folded
+		}
+	}
+}
+
+// storedSpelling reports whether patterns[i] has a stored spelling that has
+// not named an object yet.
+func (s *exclusionState) storedSpelling(i int) bool {
+	return s.storedGlobs != nil && s.storedGlobs[i] != "" && !s.storedMatched[i]
+}
+
+// storedSelectors maps each unmatched selector whose stored spelling named an
+// object to that spelling, written as the selector with its letters outside
+// brackets in fold's case.
+func (s *exclusionState) storedSelectors(fold identifier.Fold) map[string]string {
+	var stored map[string]string
+	for i, pattern := range s.patterns {
+		if s.matched[i] || s.storedMatched == nil || !s.storedMatched[i] {
+			continue
+		}
+		if stored == nil {
+			stored = make(map[string]string)
+		}
+		stored[pattern.raw] = foldOutsideBrackets(pattern.raw, fold)
+	}
+	return stored
+}
+
+// foldOutsideBrackets writes selector with its letters outside square
+// brackets in fold's case, leaving a type or field modifier as written.
+func foldOutsideBrackets(selector string, fold identifier.Fold) string {
+	var out strings.Builder
+	depth := 0
+	start := 0
+	for index, r := range selector {
+		switch {
+		case r == '[':
+			if depth == 0 {
+				out.WriteString(fold.Apply(selector[start:index]))
+				start = index
+			}
+			depth++
+		case r == ']' && depth > 0:
+			depth--
+			if depth == 0 {
+				out.WriteString(selector[start : index+1])
+				start = index + 1
+			}
+		}
+	}
+	if depth == 0 {
+		out.WriteString(fold.Apply(selector[start:]))
+	} else {
+		out.WriteString(selector[start:])
+	}
+	return out.String()
 }
 
 func (s *exclusionState) matchesAny(resourceTypes []string, names ...string) bool {
@@ -2099,6 +2202,13 @@ func (s *exclusionState) matchesAny(resourceTypes []string, names ...string) boo
 				found = true
 				break
 			}
+		}
+		if !s.matched[i] && s.storedSpelling(i) {
+			stored := pattern
+			stored.glob = s.storedGlobs[i]
+			s.storedMatched[i] = slices.ContainsFunc(resourceTypes, func(resourceType string) bool {
+				return stored.matches(resourceType, names...)
+			})
 		}
 	}
 	return found
@@ -2371,7 +2481,8 @@ func keep[T any](values []T, keepValue func(T) bool) []T {
 }
 
 func tableChildNameCandidates(schema, table, child string) []string {
-	schema, table, child = storedSpelling(schema), storedSpelling(strings.TrimSpace(table)), storedSpelling(strings.TrimSpace(child))
+	table = strings.TrimSpace(table)
+	child = strings.TrimSpace(child)
 	if table == "" || child == "" {
 		return nil
 	}
@@ -2383,7 +2494,7 @@ func tableChildNameCandidates(schema, table, child string) []string {
 }
 
 func qualifiedNameCandidates(schema, name string) []string {
-	schema, name = storedSpelling(schema), storedSpelling(strings.TrimSpace(name))
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil
 	}
@@ -2394,21 +2505,33 @@ func qualifiedNameCandidates(schema, name string) []string {
 	return []string{name, qualified}
 }
 
-// storedSpelling is the name a catalog stores for a name part a schema model
-// spells with its quotes. On an engine whose descriptor states an
-// UnquotedFold, a schema converted from a read, or declared quoted in a SQL
-// file, names the table stored as orders `"orders"`, while the read reports
-// orders. The candidates a selector is matched against are built from the
-// stored name on both sides, so orders leaves the same table from each; built
-// from the spelling, the converted side offers `"orders"` and
-// `APP."""orders"""`, the selector leaves only the read's table, and a diff of
-// the database against itself plans the excluded one. A part that is not
-// wholly quoted, which is every name a read reports, is returned as it is.
-func storedSpelling(part string) string {
-	for len(part) >= 2 && part[0] == '"' && part[len(part)-1] == '"' {
-		part = sqlident.UnquoteDoubleQuoted(part)
+// storedSpelling is the name a catalog stores for a name part a generated
+// state spells as a statement does, on an engine whose UnquotedFold is fold
+// (see [Scope.Dialect]). A part in double quotes is stored as written inside
+// them, and a bare part in the fold's case: a state converted from a read, or
+// declared in a SQL file, names the table stored as orders `"orders"`, and the
+// one stored as ORDERS orders or ORDERS. Matched as spelled, the converted
+// side offers `"orders"` and `APP."""orders"""`, a declared bare orders meets
+// the selector orders while the read's ORDERS does not, and a plan drops or
+// creates the table the selector meant to leave alone. Only the generated
+// side of such an engine is respelled: a read reports stored names, and on
+// another engine a stored name may hold quote characters of its own. An empty
+// part, which leaves the default schema in force, is returned as it is.
+func storedSpelling(part string, fold identifier.Fold) string {
+	part = strings.TrimSpace(part)
+	if len(part) >= 2 && part[0] == '"' && part[len(part)-1] == '"' {
+		return sqlident.UnquoteDoubleQuoted(part)
 	}
-	return part
+	return fold.Apply(part)
+}
+
+// unquotedFold is the UnquotedFold of dialect's descriptor, empty when the
+// dialect states none or the caller names no dialect.
+func unquotedFold(dialect string) identifier.Fold {
+	if dialect == "" {
+		return ""
+	}
+	return identifier.ForDialect(dialect).UnquotedFold
 }
 
 func extensionNameCandidates(schema, name string) []string {
@@ -2601,7 +2724,7 @@ func tableResourceTypes(table catalog.Table) []string {
 
 // report is the state's [ExcludeReport].
 func (s *exclusionState) report() ExcludeReport {
-	return ExcludeReport{Unmatched: s.unmatchedSelectors()}
+	return ExcludeReport{Unmatched: s.unmatchedSelectors(), Stored: s.storedSelectors(unquotedFold(s.dialect))}
 }
 
 // leftWithoutColumns reports whether a selector left table without a column.

@@ -109,10 +109,12 @@ func ExampleSplitSourceStatements() {
 // ExampleDefaultLooksLikeExpression classifies DEFAULT strings the way the
 // catalog readers route them: a value the server wrapped in single or double
 // quotes is a literal, anything else is SQL the server will evaluate, and an
-// empty string is no default at all. The answer decides whether a default is
-// declared as a value (rendered quoted) or as an expression (rendered as SQL).
+// empty string is no default at all. Quoted names joined by dots, as the
+// sequence reference Oracle stores, are SQL. The answer decides whether a
+// default is declared as a value (rendered quoted) or as an expression
+// (rendered as SQL).
 func ExampleDefaultLooksLikeExpression() {
-	for _, def := range []string{"'active'", "now()", `"pending"`, ""} {
+	for _, def := range []string{"'active'", "now()", `"pending"`, `"APP"."SEQ"."NEXTVAL"`, ""} {
 		fmt.Printf("%q -> %t\n", def, sqlutil.DefaultLooksLikeExpression(def))
 	}
 
@@ -120,5 +122,6 @@ func ExampleDefaultLooksLikeExpression() {
 	// "'active'" -> false
 	// "now()" -> true
 	// "\"pending\"" -> false
+	// "\"APP\".\"SEQ\".\"NEXTVAL\"" -> true
 	// "" -> false
 }

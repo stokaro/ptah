@@ -105,6 +105,15 @@ func ValidateMigrationLogRecord(row *protocol.MigrationLogRecord) error {
 	default:
 		return fmt.Errorf("%w: invalid migration log actor source", ErrProtocol)
 	}
+	if row.GetRepeatable() == "" {
+		return nil
+	}
+	if err := ValidateRepeatableIdentity(row.GetRepeatable()); err != nil {
+		return err
+	}
+	if row.GetVersion() != 0 {
+		return fmt.Errorf("%w: a migration log entry about a repeatable migration has version 0", ErrProtocol)
+	}
 	return nil
 }
 

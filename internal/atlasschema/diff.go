@@ -492,10 +492,11 @@ func checkDiffSelections(fromErr, toErr error, fromReport, toReport atlasfilter.
 		return fromErr
 	}
 	unmatched := writtenSelectors(atlasfilter.UnmatchedAcrossStates(fromReport, toReport), opts.ImplicitExclude)
+	stored := atlasfilter.StoredSpellings(fromReport, toReport)
 	if opts.RefuseUnmatchedExclude && len(unmatched) > 0 {
-		return &atlasfilter.UnmatchedExcludeError{Selectors: unmatched, Sources: opts.ExcludeSources}
+		return &atlasfilter.UnmatchedExcludeError{Selectors: unmatched, Sources: opts.ExcludeSources, Stored: stored}
 	}
-	reportUnmatchedExclude(opts.Diagnostics, unmatched, opts.ExcludeSources)
+	reportUnmatchedExclude(opts.Diagnostics, unmatched, opts.ExcludeSources, stored)
 	return nil
 }
 

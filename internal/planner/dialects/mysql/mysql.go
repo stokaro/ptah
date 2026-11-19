@@ -2008,6 +2008,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
+	result = validateConstraints(result, diff)
 
 	// 5.6. Add field-level foreign keys for new tables after referenced
 	// unique indexes and constraints have been created.
@@ -2635,7 +2636,15 @@ func (p *Planner) addNonForeignKeyConstraintsWithTables(
 			continue
 		}
 		key := add.Identity
-		if info, modified := removalByTableName[key]; modified {
+		info, modified := removalByTableName[key]
+		if _, dropped := droppedForModify[key]; modified && !dropped && add.Type == "CHECK" && constraint.Name != "" &&
+			checksAddedFirst.Get(p.targetDialect()) {
+			droppedForModify[key] = struct{}{}
+			result = append(result, p.replacedCheck(add, constraint, p.dropConstraintNode(info))...)
+			handled[semantics.IndexIdentityKey(add.Name)] = struct{}{}
+			continue
+		}
+		if modified {
 			result = p.appendScopedDrop(result, info, droppedForModify, semantics)
 		}
 		result = p.dropIndexRebuiltAsConstraint(result, add, rebuiltIndexes)
@@ -2722,6 +2731,8 @@ func (p *Planner) constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *
 			Type:        ast.CheckConstraint,
 			Name:        add.Name,
 			Expression:  add.CheckExpression,
+			Deferrable:  add.Deferrable,
+			Initially:   add.Initially,
 			NotEnforced: add.NotEnforced,
 		}
 	case "UNIQUE":

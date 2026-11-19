@@ -29,6 +29,7 @@ import (
 	routinebuiltin "ptah.run/internal/routineext/builtin"
 	"ptah.run/internal/routineext/compound"
 	"ptah.run/internal/sourcepos"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/viewcolumns"
 )
@@ -3869,6 +3870,109 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	return &ast.DefaultValue{Value: value, ValueSet: true}, nil
 }
 
+// sequenceReferenceTokens returns how many tokens the default at the cursor
+// spends reading a sequence pseudocolumn the dialect's descriptor names among
+// [descriptor.ColumnGrammar.SequencePseudocolumns], and 0 where it reads none.
+// The reference is a sequence name, optionally after a schema and a dot, then
+// a dot and the pseudocolumn, each part bare or double-quoted and written
+// without spaces, as in seq.NEXTVAL, app."Seq".CURRVAL or the
+// "APP"."SEQ"."NEXTVAL" Oracle stores. An argument list after it makes the
+// words a call instead. It leaves the parser where it is.
+//
+// Read as a value, seq.NEXTVAL renders as the string 'seq.NEXTVAL', and a
+// default starting with a double-quoted name is refused at the dot.
+func (p *Parser) sequenceReferenceTokens() int {
+	pseudocolumns := p.target.grammar.Columns.SequencePseudocolumns
+	if len(pseudocolumns) == 0 || !isNamePartToken(p.current) {
+		return 0
+	}
+	scan := *p.lexer
+	last := p.current
+	for parts, tokens := 1, 1; ; parts, tokens = parts+1, tokens+2 {
+		dot := scan.NextToken()
+		if !dot.MatchOperatorValue(".") {
+			if parts < 2 || dot.MatchOperatorValue("(") || !slices.Contains(pseudocolumns, storedNamePart(last.Value)) {
+				return 0
+			}
+			return tokens
+		}
+		part := scan.NextToken()
+		if parts == 3 || !isNamePartToken(part) {
+			return 0
+		}
+		last = part
+	}
+}
+
+// nextValueTokens returns how many tokens the default at the cursor spends
+// reading a sequence's next value through the clause the dialect's descriptor
+// names in [descriptor.ColumnGrammar.NextValueClause], and 0 where it reads
+// none. The clause's words are separated by space, and the sequence name
+// follows them, optionally after a schema and a dot, each part bare,
+// bracketed or double-quoted, as in NEXT VALUE FOR dbo.seq or the
+// NEXT VALUE FOR [dbo].[seq] SQL Server stores. It leaves the parser where it
+// is.
+//
+// Read as a value, NEXT is a word and VALUE is refused as a column attribute.
+func (p *Parser) nextValueTokens() int {
+	words := strings.Fields(p.target.grammar.Columns.NextValueClause)
+	if len(words) == 0 || p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, words[0]) {
+		return 0
+	}
+	scan := *p.lexer
+	tokens := 1
+	significant := func() lexer.Token {
+		for {
+			tok := scan.NextToken()
+			tokens++
+			if tok.Type != lexer.TokenWhitespace && tok.Type != lexer.TokenComment {
+				return tok
+			}
+		}
+	}
+	for _, word := range words[1:] {
+		if tok := significant(); tok.Type != lexer.TokenIdentifier || !strings.EqualFold(tok.Value, word) {
+			return 0
+		}
+	}
+	if !isNamePartToken(significant()) {
+		return 0
+	}
+	if dot := scan.NextToken(); !dot.MatchOperatorValue(".") {
+		return tokens
+	}
+	if !isNamePartToken(scan.NextToken()) {
+		return 0
+	}
+	return tokens + 2
+}
+
+// readSequenceReference reads the tokens [Parser.sequenceReferenceTokens] or
+// [Parser.nextValueTokens] counted, and keeps them as the expression written.
+func (p *Parser) readSequenceReference(tokens int) *ast.DefaultValue {
+	start := p.current.Start
+	for range tokens {
+		p.advance()
+	}
+	return &ast.DefaultValue{Expression: p.input[start:p.previous.End]}
+}
+
+// isNamePartToken reports whether tok is a name a reference may hold: a bare
+// identifier or a double-quoted one.
+func isNamePartToken(tok lexer.Token) bool {
+	return tok.Type == lexer.TokenIdentifier || isDoubleQuotedIdentifierToken(tok)
+}
+
+// storedNamePart is the upper-case spelling of a bare name part and the text
+// inside the quotes of a double-quoted one, which is how a pseudocolumn is
+// matched: "NEXTVAL" is NEXTVAL, and "nextval" is no pseudocolumn.
+func storedNamePart(part string) string {
+	if strings.HasPrefix(part, `"`) {
+		return sqlident.UnquoteDoubleQuoted(part)
+	}
+	return strings.ToUpper(part)
+}
+
 // refuseEmptyNiladicCall refuses name followed by an empty argument list,
 // with the parser at its opening parenthesis, where the dialect's descriptor
 // names name among [descriptor.ColumnGrammar.EmptyCallFunctions]. The refusal
@@ -3963,13 +4067,21 @@ func (p *Parser) handleNumber() (*ast.DefaultValue, error) {
 // parseDefaultValue parses a default value (literal or function call).
 func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	p.skipWhitespace()
+	start := p.current.Start
 
 	if p.current.MatchOperatorValue("(") {
 		value, err := p.parseParenthesizedDefault()
 		if err != nil {
 			return nil, err
 		}
-		return p.extendDefaultExpression(value), nil
+		return p.extendDefaultExpression(value, start)
+	}
+
+	if tokens := p.sequenceReferenceTokens(); tokens > 0 {
+		return p.extendDefaultExpression(p.readSequenceReference(tokens), start)
+	}
+	if tokens := p.nextValueTokens(); tokens > 0 {
+		return p.extendDefaultExpression(p.readSequenceReference(tokens), start)
 	}
 
 	var value *ast.DefaultValue
@@ -3990,7 +4102,7 @@ func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return p.extendDefaultExpression(value), nil
+	return p.extendDefaultExpression(value, start)
 }
 
 // parseParenthesizedDefault reads a default written as a parenthesized
@@ -4027,70 +4139,334 @@ func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
 // and at a word that opens a column clause written after a complete operand:
 // in `DEFAULT (1) + 2 NOT NULL` the NOT NULL is the column's. Read into the
 // default, it would leave the column nullable. A clause word right after an
-// operator is an operand, as NULL is in `1 + NULL`.
+// operator is an operand, as NULL is in `1 + NULL`, and so is one after IS,
+// NOT, AND or OR: in `1 + 2 IS NOT NULL` the NOT NULL is the test's.
 //
-// A version gate after a complete operand ends it too: in `DEFAULT 1 - 2
-// /*!80023 INVISIBLE */` the gate is the column's, and the column reader steps
-// over it as it does after any other default. Read into the default, the gate
-// would make the expression `1 - 2 /*!80023 INVISIBLE */`, which no server
-// reports back, and every comparison would plan the column again.
-func (p *Parser) extendDefaultExpression(value *ast.DefaultValue) *ast.DefaultValue {
+// A comment separates tokens as whitespace does, and is not kept: a `--`
+// comment kept in the expression would swallow everything a renderer writes
+// after the default on the same line. A run of whitespace and comments is one
+// space.
+//
+// A version gate the dialect executes ends the expression after a complete
+// operand too: in `DEFAULT 1 - 2 /*!80023 INVISIBLE */` the gate is the
+// column's, as INVISIBLE would be without it. A dialect that does not execute
+// the gate reads it as a comment.
+//
+// An engine whose descriptor sets [descriptor.ColumnGrammar.DefaultOperatorRefusal]
+// takes the expression only in parentheses. The default is refused at its
+// first operator once the whole expression is read, so the refusal can show
+// the parenthesized form without the clause or gate after it. One that sets
+// [descriptor.ColumnGrammar.DefaultPredicateRefusal] refuses IS, AND and OR
+// where they continue the expression. One that sets
+// [descriptor.ColumnGrammar.DefaultPipesRefusal] refuses a default from start
+// on that holds ||, in parentheses or without.
+func (p *Parser) extendDefaultExpression(value *ast.DefaultValue, start int) (*ast.DefaultValue, error) {
+	end := p.current.Start
 	p.skipWhitespace()
 	if !isDefaultBinaryOperator(p.current) {
-		return value
+		return value, p.refuseDefaultPipes(strings.TrimSpace(p.input[start:end]), start, end)
 	}
-
-	var expr strings.Builder
-	if value.Expression != "" {
-		expr.WriteString(value.Expression)
-	} else {
-		expr.WriteString(value.Value)
+	operator := p.current
+	first := value.Expression
+	if first == "" {
+		first = value.Value
 	}
 	// Keep the space written before the `+`, which the skip above or the
 	// cast reader before it stepped over.
 	if p.previous.Type == lexer.TokenWhitespace || p.previous.Type == lexer.TokenComment {
-		expr.WriteString(" ")
+		first += " "
 	}
+	expression, err := p.readDefaultOperands(first)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.refuseDefaultPipes(expression, start, p.current.Start); err != nil {
+		return nil, err
+	}
+	if refusal := p.target.grammar.Columns.DefaultOperatorRefusal; refusal != "" {
+		return nil, ptaherr.At(operator.Start, fmt.Errorf(
+			"%s is an operator expression outside parentheses: write DEFAULT (%s); %s",
+			expression, p.withoutAtomGroup(first)+expression[len(strings.TrimSpace(first)):], refusal))
+	}
+	return &ast.DefaultValue{Expression: expression}, nil
+}
 
+// withoutAtomGroup answers the first operand of an operator default as the
+// parenthesized form of a refusal writes it: a group around one token loses
+// its parentheses, so `(1) + 2` is written DEFAULT (1 + 2). Any other operand
+// is answered as written, without the space after it.
+func (p *Parser) withoutAtomGroup(first string) string {
+	first = strings.TrimSpace(first)
+	if !strings.HasPrefix(first, "(") || !strings.HasSuffix(first, ")") {
+		return first
+	}
+	scan := lexer.NewLexerWithOptions(first[1:len(first)-1], lexerOptions(p.dialect))
+	var significant []lexer.Token
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		if token.Type != lexer.TokenWhitespace && token.Type != lexer.TokenComment {
+			significant = append(significant, token)
+		}
+	}
+	if len(significant) != 1 || significant[0].Type == lexer.TokenOperator || significant[0].Type == lexer.TokenUnknown {
+		return first
+	}
+	return significant[0].Value
+}
+
+// refuseDefaultPipes refuses the default text, read between start and end,
+// where it holds || and the dialect's descriptor sets
+// [descriptor.ColumnGrammar.DefaultPipesRefusal], naming the CONCAT call the
+// operands make, and answers nil everywhere else. The lexer emits || as two
+// adjacent | tokens; `1 | 2` is a bitwise or and passes.
+func (p *Parser) refuseDefaultPipes(text string, start, end int) error {
+	refusal := p.target.grammar.Columns.DefaultPipesRefusal
+	if refusal == "" {
+		return nil
+	}
+	scan := p.lexer.Range(start, end)
+	var previous lexer.Token
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		if token.MatchOperatorValue("|") && previous.MatchOperatorValue("|") && previous.End == token.Start {
+			return ptaherr.At(previous.Start, fmt.Errorf(
+				"%s holds ||: write DEFAULT %s for a concatenation, or OR for a logical or; %s",
+				text, p.concatenation(text), refusal))
+		}
+		previous = token
+	}
+	return nil
+}
+
+// concatenation answers expression written with CONCAT where it writes ||,
+// in parentheses unless one group holds the whole of it. Each run of operands
+// || joins becomes one CONCAT call where it stands, so in
+// `coalesce('a' || 'b', 'c')` the call takes the first argument's place.
+func (p *Parser) concatenation(expression string) string {
+	options := lexerOptions(p.dialect)
+	written := withConcat(expression, options)
+	if strings.HasPrefix(written, "(") && closesAtEnd(written, options) {
+		return written
+	}
+	return "(" + written + ")"
+}
+
+// withConcat rewrites each run of operands || joins in text as a CONCAT call,
+// in every group and argument list, and keeps the rest as written.
+func withConcat(text string, options lexer.Options) string {
+	var tokens []lexer.Token
+	scan := lexer.NewLexerWithOptions(text, options)
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		tokens = append(tokens, token)
+	}
+	var out, operand strings.Builder
+	var operands []string
+	flush := func() {
+		operands = append(operands, operand.String())
+		operand.Reset()
+		out.WriteString(joinedByConcat(operands))
+		operands = operands[:0]
+	}
+	for i := 0; i < len(tokens); i++ {
+		token := tokens[i]
+		switch {
+		case token.MatchOperatorValue("("):
+			closing := matchingParenthesis(tokens, i)
+			if closing < 0 {
+				operand.WriteString(text[token.Start:])
+				i = len(tokens)
+				continue
+			}
+			operand.WriteString("(" + withConcat(text[token.End:tokens[closing].Start], options) + ")")
+			i = closing
+		case token.MatchOperatorValue(","):
+			flush()
+			out.WriteString(",")
+		case token.MatchOperatorValue("|") && i+1 < len(tokens) && tokens[i+1].MatchOperatorValue("|") && token.End == tokens[i+1].Start:
+			operands = append(operands, operand.String())
+			operand.Reset()
+			i++
+		default:
+			operand.WriteString(token.Value)
+		}
+	}
+	flush()
+	return out.String()
+}
+
+// joinedByConcat answers one operand as written, and several as the CONCAT
+// call that joins them, keeping the space before the first and after the
+// last.
+func joinedByConcat(operands []string) string {
+	if len(operands) == 1 {
+		return operands[0]
+	}
+	trimmed := make([]string, len(operands))
+	for i, operand := range operands {
+		trimmed[i] = strings.TrimSpace(operand)
+	}
+	first, last := operands[0], operands[len(operands)-1]
+	leading := first[:len(first)-len(strings.TrimLeft(first, " \t\r\n"))]
+	trailing := last[len(strings.TrimRight(last, " \t\r\n")):]
+	return leading + "CONCAT(" + strings.Join(trimmed, ", ") + ")" + trailing
+}
+
+// matchingParenthesis answers the index of the token that closes the
+// parenthesis at open, or -1 where none does.
+func matchingParenthesis(tokens []lexer.Token, open int) int {
 	depth := 0
-	operand := false
-	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
-		if p.current.Type == lexer.TokenOperator {
-			switch p.current.Value {
-			case "(":
-				depth++
-			case ")":
-				if depth == 0 {
-					return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
-				}
-				depth--
-			case ",":
-				if depth == 0 {
-					return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
-				}
+	for i := open; i < len(tokens); i++ {
+		switch {
+		case tokens[i].MatchOperatorValue("("):
+			depth++
+		case tokens[i].MatchOperatorValue(")"):
+			depth--
+			if depth == 0 {
+				return i
 			}
 		}
-		if depth == 0 && operand && p.currentIsColumnPart() {
-			return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
+	}
+	return -1
+}
+
+// closesAtEnd reports whether the parenthesis that opens text closes at its
+// last byte, so that the group holds the whole of text.
+func closesAtEnd(text string, options lexer.Options) bool {
+	scan := lexer.NewLexerWithOptions(text, options)
+	depth := 0
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		switch {
+		case token.MatchOperatorValue("("):
+			depth++
+		case token.MatchOperatorValue(")"):
+			depth--
+			if depth == 0 {
+				return token.End == len(text)
+			}
+		}
+	}
+	return false
+}
+
+// readDefaultOperands reads an operator default from the operator at the
+// cursor to where [Parser.endsDefaultExpression] ends it, and answers the
+// whole expression with read, the text of the first operand, in front.
+func (p *Parser) readDefaultOperands(read string) (string, error) {
+	var expr strings.Builder
+	expr.WriteString(read)
+	depth := 0
+	operand := false
+	space := false
+	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
+		if p.endsDefaultExpression(&depth, operand) {
+			break
+		}
+		if depth == 0 && operand && isDefaultPredicateWord(p.current) {
+			if err := p.refuseDefaultPredicate(strings.TrimSpace(expr.String())); err != nil {
+				return "", err
+			}
 		}
 
 		switch p.current.Type {
 		case lexer.TokenWhitespace, lexer.TokenComment:
 			// Space neither completes an operand nor asks for one.
+			space = true
+			p.advance()
+			continue
 		case lexer.TokenOperator:
 			operand = p.current.Value == ")" || p.current.Value == "]"
 		default:
-			operand = true
+			operand = !asksForOperand(p.current)
+		}
+		if space {
+			expr.WriteString(" ")
+			space = false
 		}
 		expr.WriteString(p.current.Value)
 		p.advance()
 	}
-	return &ast.DefaultValue{Expression: strings.TrimSpace(expr.String())}
+	return strings.TrimSpace(expr.String()), nil
+}
+
+// endsDefaultExpression reports whether the token at the cursor ends an
+// operator default: a comma or a closing parenthesis outside any group, or a
+// part of the column after a complete operand. It counts in depth the groups
+// the token opens and closes.
+func (p *Parser) endsDefaultExpression(depth *int, operand bool) bool {
+	if p.current.Type == lexer.TokenOperator {
+		switch p.current.Value {
+		case "(":
+			*depth++
+		case ")":
+			if *depth == 0 {
+				return true
+			}
+			*depth--
+		case ",":
+			if *depth == 0 {
+				return true
+			}
+		}
+	}
+	return *depth == 0 && operand && p.currentIsColumnPart()
+}
+
+// refuseDefaultPredicate refuses the IS, AND or OR at the cursor, which
+// continues the operator default read so far, where the dialect's descriptor
+// says the engine reads no such predicate in a default, and answers nil
+// everywhere else. IS [NOT] DISTINCT FROM passes where the descriptor sets
+// [descriptor.ColumnGrammar.DefaultDistinctFrom].
+func (p *Parser) refuseDefaultPredicate(read string) error {
+	columns := p.target.grammar.Columns
+	if columns.DefaultPredicateRefusal == "" {
+		return nil
+	}
+	if columns.DefaultDistinctFrom && p.current.MatchIdentifierValue("IS") && p.distinctFromFollows() {
+		return nil
+	}
+	return ptaherr.At(p.current.Start, fmt.Errorf(
+		"%s continues with %s outside parentheses: %s",
+		read, strings.ToUpper(p.current.Value), columns.DefaultPredicateRefusal))
+}
+
+// distinctFromFollows reports whether the IS at the cursor opens IS [NOT]
+// DISTINCT FROM, and leaves the parser where it is.
+func (p *Parser) distinctFromFollows() bool {
+	scan := *p.lexer
+	next := nextSignificantToken(&scan)
+	if next.MatchIdentifierValue("NOT") {
+		next = nextSignificantToken(&scan)
+	}
+	return next.MatchIdentifierValue("DISTINCT")
+}
+
+// nextSignificantToken reads the next token from scan that is not whitespace,
+// a comment or a version gate.
+func nextSignificantToken(scan *lexer.Lexer) lexer.Token {
+	for {
+		token := scan.NextToken()
+		switch token.Type {
+		case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenUnknown:
+		default:
+			return token
+		}
+	}
+}
+
+// isDefaultPredicateWord reports whether token is IS, AND or OR, the words
+// that continue an operator default with a predicate.
+func isDefaultPredicateWord(token lexer.Token) bool {
+	return token.MatchIdentifierValue("IS") || token.MatchIdentifierValue("AND") || token.MatchIdentifierValue("OR")
+}
+
+// asksForOperand reports whether token is a word an operand follows in a
+// default: a predicate word of [isDefaultPredicateWord], or NOT. A clause word
+// after one is that operand, as NOT and NULL are in `1 + 2 IS NOT NULL`.
+func asksForOperand(token lexer.Token) bool {
+	return isDefaultPredicateWord(token) || token.MatchIdentifierValue("NOT")
 }
 
 // currentIsColumnPart reports whether the token at the cursor belongs to the
 // column rather than to a default expression that holds a complete operand:
-// a word that opens a column clause, or a version gate.
+// a word that opens a column clause, or a version gate the dialect executes.
 func (p *Parser) currentIsColumnPart() bool {
 	if isVersionGate(p.current) {
 		return true
@@ -4099,11 +4475,11 @@ func (p *Parser) currentIsColumnPart() bool {
 }
 
 // isVersionGate reports whether token is a MySQL `/*!NNNNN ... */` or a MariaDB
-// `/*M!NNNNN ... */` gate. A dialect that executes the gate emits it as one
-// TokenUnknown and any other as a comment, so both types are asked: MySQL
-// reads MariaDB's gate as a comment, and the expression still ends there.
+// `/*M!NNNNN ... */` gate the dialect executes, which the lexer emits as one
+// TokenUnknown. A dialect that does not execute the gate emits a comment, and
+// a comment separates the tokens of a default as whitespace does.
 func isVersionGate(token lexer.Token) bool {
-	if token.Type != lexer.TokenUnknown && token.Type != lexer.TokenComment {
+	if token.Type != lexer.TokenUnknown {
 		return false
 	}
 	_, _, ok := executableCommentBody(token.Value)
@@ -6075,6 +6451,11 @@ func (p *Parser) parseAlterOperation(table string) ([]ast.AlterOperation, error)
 		return oneOperation(p.parseRenameOperation())
 	case "VALIDATE":
 		return oneOperation(p.parseValidateConstraintOperation())
+	case "ENABLE":
+		if !p.target.grammar.Constraints.EnableValidate {
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER operation: %s", operation))
+		}
+		return oneOperation(p.parseEnableConstraintOperation())
 	case "REPLICA":
 		if _, after, _ := p.namedWords(0, 1); len(after) == 1 && strings.EqualFold(after[0], "IDENTITY") {
 			return nil, p.refuseReplicaIdentity(table)
@@ -6133,6 +6514,35 @@ func (p *Parser) parseValidateConstraintOperation() (ast.AlterOperation, error) 
 	}
 	if !p.target.takesNotValid() {
 		return nil, ptaherr.At(start, fmt.Errorf("VALIDATE CONSTRAINT: the %s dialect takes no VALIDATE CONSTRAINT", dialectName(p.dialect)))
+	}
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected constraint name: %w", err)
+	}
+	return &ast.ValidateConstraintOperation{ConstraintName: name}, nil
+}
+
+// parseEnableConstraintOperation reads ENABLE [VALIDATE] CONSTRAINT name,
+// which Oracle takes to check every row against a disabled or unvalidated
+// CHECK or foreign key and to enforce it from then on, as VALIDATE CONSTRAINT
+// completes one on the PostgreSQL family. ENABLE NOVALIDATE enforces the
+// constraint without checking the rows the table holds, a state no
+// declaration states, and is refused.
+func (p *Parser) parseEnableConstraintOperation() (ast.AlterOperation, error) {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("NOVALIDATE") {
+		return nil, ptaherr.At(p.current.Start, errors.New(
+			"ENABLE NOVALIDATE CONSTRAINT leaves the rows the table holds unchecked, a state no declaration states; "+
+				"write ENABLE VALIDATE CONSTRAINT"))
+	}
+	if p.current.MatchIdentifierValue("VALIDATE") {
+		p.advance()
+		p.skipWhitespace()
+	}
+	if err := p.expect(lexer.TokenIdentifier, "CONSTRAINT"); err != nil {
+		return nil, fmt.Errorf("expected CONSTRAINT after ENABLE: %w", err)
 	}
 	p.skipWhitespace()
 	name, err := p.expectIdentifier()

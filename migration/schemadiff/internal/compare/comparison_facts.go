@@ -1,6 +1,8 @@
 package compare
 
 import (
+	"strings"
+
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/descriptortable"
 )
@@ -31,6 +33,12 @@ var (
 	})
 	qualifiedCollations = descriptortable.New(func(described descriptor.Dialect) bool {
 		return described.Grammar.Columns.QualifiedCollations
+	})
+	sequencePseudocolumns = descriptortable.New(func(described descriptor.Dialect) []string {
+		return described.Grammar.Columns.SequencePseudocolumns
+	})
+	nextValueClause = descriptortable.New(func(described descriptor.Dialect) []string {
+		return strings.Fields(described.Grammar.Columns.NextValueClause)
 	})
 )
 

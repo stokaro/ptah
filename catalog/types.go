@@ -946,9 +946,23 @@ type Constraint struct {
 	// `cannot drop inherited constraint` to one on this table. Only readers that
 	// can ask the catalog (pg_constraint) set it.
 	Inherited bool `json:"inherited,omitempty"`
-	// Deferrable reports a foreign key whose check may be postponed to the end
-	// of a transaction, read from pg_constraint.condeferrable.
+	// Deferrable reports a constraint whose check may be postponed to the end
+	// of a transaction, read from pg_constraint.condeferrable on PostgreSQL
+	// and from ALL_CONSTRAINTS.DEFERRABLE on Oracle, where a CHECK may defer
+	// too.
 	Deferrable bool `json:"deferrable,omitempty"`
+	// Disabled reports a constraint the server keeps and checks no row
+	// against, as Oracle's DISABLE does, read from ALL_CONSTRAINTS.STATUS.
+	// No declaration states a disabled constraint, so a disabled CHECK or
+	// foreign key whose definition matches the declared one is planned
+	// enabled in place, where the target takes ENABLE VALIDATE CONSTRAINT.
+	Disabled bool `json:"disabled,omitempty"`
+	// GeneratedName reports that the server chose the constraint's name
+	// because its declaration gave none, as Oracle names an unnamed CHECK
+	// SYS_C008933. A comparison pairs such a CHECK with an unnamed declared
+	// CHECK on the same table whose condition is the same, so the declaration
+	// that created it plans nothing on the next run. The Oracle reader sets it.
+	GeneratedName bool `json:"generated_name,omitempty"`
 	// Initially is the default timing of a deferrable check -- "deferred" or
 	// "immediate" -- read from pg_constraint.condeferred. It is empty for a
 	// constraint that is not deferrable, so a schema that never asked for one
@@ -964,7 +978,8 @@ type Constraint struct {
 	NotEnforced bool `json:"not_enforced,omitempty"`
 	// NotValid reports a CHECK or foreign key the server has not validated
 	// against the rows the table held when it was added, as
-	// pg_get_constraintdef marks it with NOT VALID. A constraint declared NOT
+	// pg_get_constraintdef marks it with NOT VALID and Oracle's
+	// ALL_CONSTRAINTS.VALIDATED with NOT VALIDATED. A constraint declared NOT
 	// ENFORCED is not reported here, though PostgreSQL 18.6 records it with
 	// convalidated false, because VALIDATE CONSTRAINT refuses it.
 	NotValid    bool    `json:"not_valid,omitempty"`

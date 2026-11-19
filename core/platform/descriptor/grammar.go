@@ -76,11 +76,51 @@ type ColumnGrammar struct {
 	// list. A function the engine calls either way, such as Oracle's
 	// SESSIONTIMEZONE, is left out.
 	EmptyCallFunctions []string `json:"empty_call_functions,omitempty"`
+	// SequencePseudocolumns names, in upper case, the pseudocolumns a default
+	// reads from a sequence by writing them after its name, as Oracle's
+	// NEXTVAL and CURRVAL: `seq.NEXTVAL`, `app.seq.CURRVAL` or
+	// `"Seq".NEXTVAL`. A default naming one is kept as the expression
+	// written, and compared with the catalog by the names the catalog
+	// stores, without a schema that names the table's own. Without its name,
+	// the qualified word is read as a literal value, which a renderer writes
+	// as a string.
+	SequencePseudocolumns []string `json:"sequence_pseudocolumns,omitempty"`
+	// NextValueClause names, in upper case and separated by one space, the
+	// words a default writes before a sequence's name to read its next value,
+	// as SQL Server's NEXT VALUE FOR: `NEXT VALUE FOR seq` or
+	// `NEXT VALUE FOR [dbo].[seq]`. A default holding the clause is kept as
+	// the expression written, and compared with the catalog by the name it
+	// reads, each part without its brackets or quotes. Empty reads no such
+	// clause, and a renderer writes NEXT as a literal value.
+	NextValueClause string `json:"next_value_clause,omitempty"`
 	// EmptyCallRefusal says why a default that writes a function of
 	// EmptyCallFunctions with an empty argument list is refused. The parser
 	// names the bare spelling before the sentence. The two fields are set
 	// together or not at all.
 	EmptyCallRefusal string `json:"empty_call_refusal,omitempty"`
+	// DefaultOperatorRefusal says why a default that continues with a binary
+	// operator outside parentheses, such as DEFAULT 5 - 2, is refused, for an
+	// engine that takes an expression default only in parentheses. The parser
+	// writes the parenthesized form, DEFAULT (5 - 2), before the sentence.
+	// Empty reads the operator into the default.
+	DefaultOperatorRefusal string `json:"default_operator_refusal,omitempty"`
+	// DefaultPredicateRefusal says why a default whose operator expression
+	// continues with IS, AND or OR outside parentheses is refused, as in
+	// DEFAULT 1 + 2 IS NOT NULL, for an engine that reads no such predicate
+	// there. Empty reads the predicate into the default, with the NOT and the
+	// NULL after IS as its operands.
+	DefaultPredicateRefusal string `json:"default_predicate_refusal,omitempty"`
+	// DefaultDistinctFrom reports that IS [NOT] DISTINCT FROM continues an
+	// operator default where DefaultPredicateRefusal refuses every other
+	// predicate. A grammar that sets it without DefaultPredicateRefusal is
+	// refused, since nothing would read it.
+	DefaultDistinctFrom bool `json:"default_distinct_from,omitempty"`
+	// DefaultPipesRefusal says why a default that holds ||, in parentheses or
+	// without, is refused, for an engine that reads || by the session's SQL
+	// mode: as OR under one mode and as concatenation under another. The
+	// parser names the CONCAT form before the sentence. Empty reads || as an
+	// operator of the default.
+	DefaultPipesRefusal string `json:"default_pipes_refusal,omitempty"`
 	// SecondCheckRefusal says why a column definition that writes a second
 	// CHECK is refused. Empty reads the second CHECK as the table's.
 	SecondCheckRefusal string `json:"second_check_refusal,omitempty"`
@@ -165,6 +205,21 @@ type ConstraintGrammar struct {
 	// a table's PRIMARY KEY, UNIQUE, FOREIGN KEY or CHECK, which the
 	// constraint then reads as unnamed, as the MySQL family takes it.
 	SymbolOptional bool `json:"symbol_optional,omitempty"`
+	// EnableValidate reports that ALTER TABLE ... ENABLE [VALIDATE]
+	// CONSTRAINT name checks every row against a CHECK or foreign key the
+	// server holds disabled, or enabled without validating its rows, and
+	// enforces it from then on, as Oracle's does. A row that fails the check
+	// refuses the statement and leaves the constraint as it was. A plan
+	// brings such a constraint to the declared state with the statement,
+	// where without it the constraint is dropped and added again.
+	EnableValidate bool `json:"enable_validate,omitempty"`
+	// CheckAddedFirst reports that a plan replacing a named CHECK whose
+	// definition changed adds the new CHECK under a temporary name, drops the
+	// old one, and renames the new one to the declared name, for an engine
+	// that commits each schema statement apart. Dropped first, a refused ADD
+	// leaves the table with neither CHECK. Without it the old CHECK is
+	// dropped before the new one is added.
+	CheckAddedFirst bool `json:"check_added_first,omitempty"`
 }
 
 // Enforcement is where ENFORCED and NOT ENFORCED may follow a constraint.
@@ -208,6 +263,12 @@ type Deferral struct {
 	// LoneInitiallyRefusal says why INITIALLY is refused where no [NOT]
 	// DEFERRABLE comes before it.
 	LoneInitiallyRefusal string `json:"lone_initially_refusal,omitempty"`
+	// Checks reports that a table's CHECK takes a deferral clause after it
+	// and keeps it, as Oracle's does: `CONSTRAINT c CHECK (n > 0) DEFERRABLE
+	// INITIALLY DEFERRED` creates a CHECK whose rows are checked at commit.
+	// Without it, a clause that defers a CHECK is refused, as PostgreSQL
+	// refuses one.
+	Checks bool `json:"checks,omitempty"`
 }
 
 // KeyGrammar states how the engine reads a key or an index declared in a
@@ -598,6 +659,12 @@ func validateColumnGrammar(grammar Grammar) error {
 	if err := validateFunctionNames("empty call function", grammar.Columns.EmptyCallFunctions); err != nil {
 		return err
 	}
+	if err := validateFunctionNames("sequence pseudocolumn", grammar.Columns.SequencePseudocolumns); err != nil {
+		return err
+	}
+	if err := validateClause("next value clause", grammar.Columns.NextValueClause); err != nil {
+		return err
+	}
 	constraint := grammar.Columns.Constraint
 	columnKinds := []string{ConstraintKindCheck, ConstraintKindReferences}
 	switch {
@@ -609,6 +676,8 @@ func validateColumnGrammar(grammar Grammar) error {
 		return errors.New("a MODIFY column constraint kind needs a column constraint kind")
 	case (grammar.Columns.EmptyCallRefusal == "") != (len(grammar.Columns.EmptyCallFunctions) == 0):
 		return errors.New("empty call functions and an empty call refusal are set together")
+	case grammar.Columns.DefaultDistinctFrom && grammar.Columns.DefaultPredicateRefusal == "":
+		return errors.New("a default that reads IS DISTINCT FROM needs a default predicate refusal")
 	default:
 		return nil
 	}
@@ -625,6 +694,8 @@ func validateConstraintGrammar(grammar Grammar) error {
 		return errors.New("MATCH PARTIAL cannot be both built and refused")
 	case deferral.Refusal != "" && (deferral.KeyRefusal != "" || deferral.LoneInitiallyRefusal != ""):
 		return errors.New("a deferral refusal leaves no deferral clause to refuse after a key or before DEFERRABLE")
+	case deferral.Checks && (deferral.Refusal != "" || deferral.KeyRefusal != ""):
+		return errors.New("a deferral clause after a CHECK cannot be both kept and refused")
 	default:
 		return nil
 	}
@@ -741,6 +812,21 @@ func validateFunctionNames(label string, names []string) error {
 		}
 		if slices.Contains(names[:i], name) {
 			return fmt.Errorf("%s %q is written twice", label, name)
+		}
+	}
+	return nil
+}
+
+// validateClause refuses a clause that is not upper-case words separated by
+// one space. The empty clause is accepted.
+func validateClause(label, clause string) error {
+	words := strings.Fields(clause)
+	if strings.Join(words, " ") != clause {
+		return fmt.Errorf("%s %q is not words separated by one space", label, clause)
+	}
+	for _, word := range words {
+		if err := validateFunctionNames(label+" word", []string{word}); err != nil {
+			return err
 		}
 	}
 	return nil

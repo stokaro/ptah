@@ -61,6 +61,7 @@ type Server struct {
 	Executor         provider.Executor
 	Transactions     provider.Transactions
 	History          provider.History
+	Repeatables      provider.Repeatables
 	Metadata         provider.Metadata
 	Locks            provider.Locks
 	SQLAnalyzer      provider.SQLAnalyzer
@@ -114,6 +115,7 @@ func (s Server) Validate() error {
 		{provider.ExecuteFeature, !nilService(s.Executor)},
 		{provider.TransactionsFeature, !nilService(s.Transactions)},
 		{provider.HistoryFeature, !nilService(s.History)},
+		{provider.RepeatableRecordFeature, !nilService(s.Repeatables)},
 		{provider.MetadataFeature, !nilService(s.Metadata)},
 		{provider.LocksFeature, !nilService(s.Locks)},
 		{provider.AnalyzeSQLFeature, !nilService(s.SQLAnalyzer)},

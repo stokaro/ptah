@@ -1233,12 +1233,8 @@ func prepareConstraintNode(
 			return nil, err
 		}
 	}
-	// A foreign key carries its deferral on its reference, so a constraint
-	// node that defers is a key.
-	if node.Deferrable {
-		if err := refuseDeferrableKey(dialect, caps, node.Type.String(), keyIdentity(node.Name, "")); err != nil {
-			return nil, err
-		}
+	if err := refuseNodeDeferral(dialect, caps, node); err != nil {
+		return nil, err
 	}
 	if node.Type != ast.ForeignKeyConstraint {
 		return &cloned, nil
@@ -2015,9 +2011,9 @@ func constraintOwnerName(tables []schemamodel.Table, constraint schemamodel.Cons
 	return constraint.StructName
 }
 
-// validateDeclaredKeyDeferral refuses a deferrable PRIMARY KEY, UNIQUE or
-// EXCLUDE the target cannot write, before any statement is built, for the
-// reason validateDeclaredNullsDistinct gives.
+// validateDeclaredKeyDeferral refuses a deferrable PRIMARY KEY, UNIQUE,
+// EXCLUDE or CHECK the target cannot write, before any statement is built,
+// for the reason validateDeclaredNullsDistinct gives.
 func validateDeclaredKeyDeferral(dialect string, caps capability.Capabilities, database *schemamodel.Database) error {
 	for _, table := range database.Tables {
 		if !table.PrimaryKeyDeferrable {
@@ -2031,11 +2027,48 @@ func validateDeclaredKeyDeferral(dialect string, caps capability.Capabilities, d
 		if !constraint.Deferrable || strings.EqualFold(constraint.Type, "FOREIGN KEY") {
 			continue
 		}
+		if strings.EqualFold(constraint.Type, "CHECK") {
+			if err := refuseDeferrableCheck(dialect, checkIdentity(constraint.Name, "")); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := refuseDeferrableKey(dialect, caps, constraint.Type, keyIdentity(constraint.Name, constraint.Table)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// refuseNodeDeferral refuses a deferrable constraint node the target cannot
+// write. A foreign key carries its deferral on its reference, so a node that
+// defers is a key or a CHECK.
+func refuseNodeDeferral(dialect string, caps capability.Capabilities, node *ast.ConstraintNode) error {
+	switch {
+	case !node.Deferrable:
+		return nil
+	case node.Type == ast.CheckConstraint:
+		return refuseDeferrableCheck(dialect, checkIdentity(node.Name, ""))
+	default:
+		return refuseDeferrableKey(dialect, caps, node.Type.String(), keyIdentity(node.Name, ""))
+	}
+}
+
+// refuseDeferrableCheck refuses a deferrable CHECK on a target whose
+// descriptor does not keep a CHECK's deferral. Written without the clause,
+// the CHECK would reject at once the rows its author arranged to fix before
+// commit, so the declaration is refused rather than weakened.
+func refuseDeferrableCheck(dialect, identity string) error {
+	if described, found := platform.Lookup(dialect); found && described.Grammar.Constraints.Deferral.Checks {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "deferrable checks",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s does not support a DEFERRABLE CHECK; %s declares one",
+			platform.NormalizeDialect(dialect), identity),
+	}
 }
 
 // refuseDeferrableKey refuses a deferrable key on a target without

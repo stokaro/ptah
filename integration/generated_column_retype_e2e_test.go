@@ -119,6 +119,20 @@ var generatedRetypeRows = []struct {
 		readBack: labelsReadBack,
 		want:     labelsAfter,
 	},
+	{
+		name:     "a generated column with a collation of its own",
+		live:     strings.Replace(labelsTable, "b text GENERATED", `b text COLLATE "C" GENERATED`, 1) + labelsRow,
+		desired:  strings.Replace(labelsDesired, "b text GENERATED", `b text COLLATE "C" GENERATED`, 1),
+		readBack: labelsReadBack,
+		want:     strings.Replace(labelsAfter, "| b default", "| b C", 1),
+	},
+	{
+		name:     "a generated column whose collation the declaration resets",
+		live:     strings.Replace(labelsTable, "b text GENERATED", `b text COLLATE "C" GENERATED`, 1) + labelsRow,
+		desired:  labelsDesired,
+		readBack: labelsReadBack,
+		want:     labelsAfter,
+	},
 }
 
 // TestSchemaApplyRetypesAColumnAGeneratedColumnReadsE2E applies through
@@ -157,10 +171,9 @@ func TestSchemaApplyRetypesAColumnAGeneratedColumnReadsE2E(t *testing.T) {
 
 // generatedRetypeRefusals are applies that must leave the table as it was:
 // one where the partial index sits outside the selected scope, which the plan
-// cannot restate and the guard refuses before the drop; one where an
+// cannot restate and the guard refuses before the drop, and one where an
 // unrelated NOT NULL change after the drop fails on the row, which rolls the
-// rebuild back with it; and one where a generated column has a collation of
-// its own, which the add could not restate.
+// rebuild back with it.
 var generatedRetypeRefusals = []struct {
 	name     string
 	live     string
@@ -194,14 +207,6 @@ var generatedRetypeRefusals = []struct {
 			"CREATE INDEX user_search_index ON public.prices USING gin (search_vector) WHERE id > 0;\n" +
 			"COMMENT ON COLUMN public.prices.search_vector IS 'search';\n",
 		want: `column "note" of relation "prices" contains null values (SQLSTATE 23502)`,
-	},
-	{
-		name:     "a collation of its own",
-		live:     strings.Replace(labelsTable, "b text GENERATED", `b text COLLATE "C" GENERATED`, 1) + labelsRow,
-		desired:  strings.Replace(labelsDesired, "b text GENERATED", `b text COLLATE "C" GENERATED`, 1),
-		readBack: labelsReadBack,
-		before:   "character varying(40) | " + labelsIndexes + " | " + labelsConstraints + " | APPLE apple | b C",
-		want:     `generated column public.labels.b reads column nickname, whose type this plan changes, and has the collation C`,
 	},
 }
 

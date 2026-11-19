@@ -74,10 +74,13 @@ import (
 // YDB's documents never reach the shared grammar, which refuses the YQL
 // lexer before any of the switches is asked, so it states no grammar.
 // noOldSwitch leaves out the fields no switch answered: the parser refused those
-// statements on every engine.
+// statements on every engine, or, for the operator default fields, read them on
+// every engine. internal/parser/default_operator_test.go pins what each engine
+// states for those.
 var noOldSwitch = cmp.Options{
 	cmpopts.IgnoreFields(descriptor.Grammar{}, "Forms"),
-	cmpopts.IgnoreFields(descriptor.ColumnGrammar{}, "EmptyCallFunctions", "EmptyCallRefusal"),
+	cmpopts.IgnoreFields(descriptor.ColumnGrammar{}, "EmptyCallFunctions", "EmptyCallRefusal",
+		"DefaultOperatorRefusal", "DefaultPredicateRefusal", "DefaultDistinctFrom", "DefaultPipesRefusal"),
 	cmpopts.IgnoreFields(descriptor.IndexGrammar{}, "Storing", "Nonclustered"),
 	cmpopts.IgnoreFields(descriptor.ConstraintGrammar{}, "TableNotNull"),
 }
@@ -180,7 +183,9 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
 	},
 	platform.SQLServer: {
-		Columns:    descriptor.ColumnGrammar{IdentityProperty: true, CurrentTimestampNiladic: true},
+		Columns: descriptor.ColumnGrammar{
+			IdentityProperty: true, CurrentTimestampNiladic: true, NextValueClause: "NEXT VALUE FOR",
+		},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 		Indexes:    descriptor.IndexGrammar{DropNamesTable: true},
 		AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},
@@ -221,6 +226,12 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 				"SYSDATE", "SYSTIMESTAMP", "USER", "UID", "SESSIONTIMEZONE", "DBTIMEZONE",
 				"ORA_INVOKING_USER", "ORA_INVOKING_USERID",
 			},
+			SequencePseudocolumns: []string{"NEXTVAL", "CURRVAL"},
+		},
+		Constraints: descriptor.ConstraintGrammar{
+			Deferral:        descriptor.Deferral{Checks: true},
+			EnableValidate:  true,
+			CheckAddedFirst: true,
 		},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},

@@ -187,7 +187,17 @@ END`,
 		// table before its timing. A column is an identity column through the
 		// IDENTITY property, which is how `db read` describes one.
 		Grammar: descriptor.Grammar{
-			Columns:    descriptor.ColumnGrammar{IdentityProperty: true, CurrentTimestampNiladic: true},
+			Columns: descriptor.ColumnGrammar{
+				IdentityProperty:        true,
+				CurrentTimestampNiladic: true,
+				DefaultPredicateRefusal: "SQL Server 2025 takes no predicate as a default, in parentheses or without, " +
+					"and answers Msg 156, Incorrect syntax near the keyword",
+				// SQL Server 2022 takes NEXT VALUE FOR seq as a default, with
+				// or without parentheses, and stores it with the clause in
+				// upper case and each name bracketed, as written otherwise:
+				// next value for dbo.Seq is (NEXT VALUE FOR [dbo].[Seq]).
+				NextValueClause: "NEXT VALUE FOR",
+			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 			Indexes:    descriptor.IndexGrammar{DropNamesTable: true, Nonclustered: true},
 			AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},

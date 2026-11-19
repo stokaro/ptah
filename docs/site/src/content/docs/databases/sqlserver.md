@@ -395,6 +395,18 @@ For temporal columns, the comparison ignores case in `GETDATE()` and
 return the same value. `SYSDATETIME()` remains distinct because it returns
 more fractional-second digits.
 
+A default that reads a sequence, `NEXT VALUE FOR seq`, is kept as an
+expression, with or without parentheses, a schema or brackets;
+`'NEXT VALUE FOR seq'` stays a string. SQL Server stores the clause in upper
+case and each name bracketed: `next value for dbo.seq` is stored as
+`(NEXT VALUE FOR [dbo].[seq])`. The comparison reads each reference by the
+names it holds, so a second apply plans nothing. It compares those names as
+the database's collation does: under the default,
+`SQL_Latin1_General_CP1_CI_AS`, `NEXT VALUE FOR SEQ` and a stored
+`NEXT VALUE FOR [seq]` read one sequence, and under a case-sensitive collation
+they differ. A schema is part of the reference, as SQL Server keeps it:
+`NEXT VALUE FOR dbo.seq` and `NEXT VALUE FOR seq` differ.
+
 SQL Server refuses to change the data type of a column that has a default, so
 a plan that changes the type drops the default first and sets it again after
 the `ALTER COLUMN`. It does this for a longer length of the same type too,

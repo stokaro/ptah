@@ -83,6 +83,29 @@ func metadataServerCall[Q proto.Message, R proto.Message](ctx context.Context, s
 	return proto.CloneOf(result), nil
 }
 
+// negotiatedMutation is the request check of MutateMetadata: the request
+// alone, then the log entry against the negotiated description, which decides
+// whether it may name a repeatable migration.
+func negotiatedMutation(description *protocol.Description) func(*protocol.MutateMetadataRequest) error {
+	return func(request *protocol.MutateMetadataRequest) error {
+		if err := provider.ValidateMutateMetadataRequest(request); err != nil {
+			return err
+		}
+		return provider.ValidateMigrationLogNegotiation(description, request.GetAppendLog())
+	}
+}
+
+// negotiatedPage is the reply check of ReadMetadataPage: the page alone, then
+// its log entries against the negotiated description.
+func negotiatedPage(description *protocol.Description) func(*protocol.ReadMetadataPageRequest, *protocol.MetadataPage) error {
+	return func(request *protocol.ReadMetadataPageRequest, result *protocol.MetadataPage) error {
+		if err := provider.ValidateMetadataPage(request, result); err != nil {
+			return err
+		}
+		return provider.ValidateMigrationLogNegotiation(description, result.GetLogs()...)
+	}
+}
+
 func metadataReadCleanup(request *protocol.MetadataReadRequest) *protocol.MetadataReadRequest {
 	return &protocol.MetadataReadRequest{Scope: proto.CloneOf(request.GetScope()), ReaderId: request.GetReaderId(), RequestId: rand.Text()}
 }
@@ -116,7 +139,7 @@ func (s *serverAdapter) PrepareMetadata(ctx context.Context, request *protocol.P
 // MutateMetadata performs one typed mutation. Confirmed rejection differs from an unknown outcome; neither permits transport replay.
 func (c *Client) MutateMetadata(ctx context.Context, request *protocol.MutateMetadataRequest) (*protocol.MetadataResult, error) {
 	request = proto.CloneOf(request)
-	result, err := metadataClientCall(ctx, c, request, request.GetScope(), provider.ValidateMutateMetadataRequest, c.rpc.MutateMetadata, provider.ValidateMutateMetadataResult, provider.ErrOutcomeUnknown)
+	result, err := metadataClientCall(ctx, c, request, request.GetScope(), negotiatedMutation(c.description), c.rpc.MutateMetadata, provider.ValidateMutateMetadataResult, provider.ErrOutcomeUnknown)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +147,7 @@ func (c *Client) MutateMetadata(ctx context.Context, request *protocol.MutateMet
 }
 func (s *serverAdapter) MutateMetadata(ctx context.Context, request *protocol.MutateMetadataRequest) (*protocol.MetadataResult, error) {
 	request = proto.CloneOf(request)
-	return metadataServerCall(ctx, s, request, request.GetScope(), provider.ValidateMutateMetadataRequest,
+	return metadataServerCall(ctx, s, request, request.GetScope(), negotiatedMutation(s.negotiated()),
 		func(call context.Context, message *protocol.MutateMetadataRequest) (*protocol.MetadataResult, error) {
 			return s.server.Metadata.MutateMetadata(call, message)
 		},
@@ -168,7 +191,7 @@ func (s *serverAdapter) OpenMetadataRead(ctx context.Context, request *protocol.
 // ReadMetadataPage advances one bounded page without retry. A lost or malformed reply closes the snapshot and exposes no usable prefix.
 func (c *Client) ReadMetadataPage(ctx context.Context, request *protocol.ReadMetadataPageRequest) (*protocol.MetadataPage, error) {
 	request = proto.CloneOf(request)
-	result, err := metadataClientCall(ctx, c, request, request.GetReader().GetScope(), provider.ValidateReadMetadataPageRequest, c.rpc.ReadMetadataPage, provider.ValidateMetadataPage, provider.ErrOutcomeUnknown)
+	result, err := metadataClientCall(ctx, c, request, request.GetReader().GetScope(), provider.ValidateReadMetadataPageRequest, c.rpc.ReadMetadataPage, negotiatedPage(c.description), provider.ErrOutcomeUnknown)
 	if errors.Is(err, provider.ErrOutcomeUnknown) {
 		_, cleanupErr := c.CloseMetadataRead(context.WithoutCancel(ctx), metadataReadCleanup(request.GetReader()))
 		return nil, errors.Join(err, cleanupErr)
@@ -181,7 +204,7 @@ func (s *serverAdapter) ReadMetadataPage(ctx context.Context, request *protocol.
 		func(call context.Context, message *protocol.ReadMetadataPageRequest) (*protocol.MetadataPage, error) {
 			return s.server.Metadata.ReadMetadataPage(call, message)
 		},
-		provider.ValidateMetadataPage, func(cleanup context.Context) error { return s.closeMetadataReader(cleanup, request.GetReader()) })
+		negotiatedPage(s.negotiated()), func(cleanup context.Context) error { return s.closeMetadataReader(cleanup, request.GetReader()) })
 }
 
 // CloseMetadataRead releases or fences the exact snapshot handle. Missing acknowledgment remains an unknown cleanup outcome.

@@ -188,7 +188,14 @@ func yugabyteDB() descriptor.Dialect {
 		// for each partition's copy of an index. A DO block that writes no
 		// LANGUAGE is read as PL/pgSQL.
 		Grammar: descriptor.Grammar{
-			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true},
+			Columns: descriptor.ColumnGrammar{
+				CurrentTimeKeywords:  true,
+				StoredStringDefaults: true,
+				DefaultPredicateRefusal: "YugabyteDB 2026.1.2 reads no IS test but IS [NOT] DISTINCT FROM, and no AND or OR, in a default " +
+					"written without parentheses, and answers a syntax error there; write the whole expression in " +
+					"parentheses, as DEFAULT (1 + 2 IS NOT NULL)",
+				DefaultDistinctFrom: true,
+			},
 			Constraints: descriptor.ConstraintGrammar{
 				NotValid: true,
 				Match:    descriptor.Match{Clause: true},
