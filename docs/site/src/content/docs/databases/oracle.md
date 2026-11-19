@@ -334,14 +334,29 @@ deferrability when it creates it, so one whose deferral differs from the
 declaration is replaced. The plan adds the new `CHECK` before it drops the old
 one: a named one under a temporary name, renamed to the declared name after the
 drop. Oracle commits each statement, so a row that refuses the new `CHECK`
-stops the plan with the old one still in place.
+stops the plan with the old one still in place. The temporary name is the same
+on every run for one table and constraint, so a run that stops after the add
+leaves the new `CHECK` under it. The next plan drops that `CHECK` first, before
+it adds the new one again.
 
 No declaration disables a `CHECK` or a foreign key, or leaves its rows
 unchecked, so the parser refuses `DISABLE` and `NOVALIDATE`. One the account
 holds `DISABLE`d, or `ENABLE NOVALIDATE`d, whose definition is the one declared
 is enabled in place with `ALTER TABLE ... ENABLE VALIDATE CONSTRAINT`. A row
 the constraint refuses fails the statement, with `ORA-02293` for a `CHECK` and
-`ORA-02298` for a foreign key, and the constraint stays as it was.
+`ORA-02298` for a foreign key, and the constraint stays as it was:
+
+```text
+error: apply schema changes: failed to execute SQL statement: oracle: SQL execution failed: ORA-02293: cannot validate (APP.CK_QTY) - check constraint violated
+SQL: ALTER TABLE APP.ORDERS ENABLE VALIDATE CONSTRAINT CK_QTY
+```
+
+Every later apply plans the same statement and fails the same way, because the
+declaration says the rows are checked and the database says they are not.
+There are two remedies. Fix the rows the constraint refuses, and the next apply
+validates it. Or leave the constraint out of the comparison by its stored name,
+`--exclude 'ORDERS.CK_QTY[type=check]'` for a `CHECK` or `[type=foreign_key]`
+for a foreign key, and the apply leaves it unvalidated.
 
 ## Functions and procedures
 

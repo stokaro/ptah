@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"ptah.run/internal/dbtarget"
 )
 
 // sqlServerSequenceDefaultSchema declares defaults that read a sequence
@@ -86,4 +88,60 @@ func TestApplySQLServerSequenceNameCaseE2E(t *testing.T) {
 	c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
 	c.Assert(recased.ExitCode, qt.Equals, 0, historyComment(recased))
 	c.Assert(recased.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+}
+
+// caseSensitiveSQLServerDatabase is replaceSQLServerDatabase over a scratch
+// database that takes the case-sensitive collation Latin1_General_CS_AS.
+func caseSensitiveSQLServerDatabase(c *qt.C, adminURL, name string) string {
+	c.Helper()
+	_, err := connectDevDialect(c, adminURL).ExecContext(c.Context(), "ALTER DATABASE "+name+" COLLATE Latin1_General_CS_AS")
+	c.Assert(err, qt.IsNil)
+	return replaceSQLServerDatabase(c, adminURL, name)
+}
+
+// sqlServerCaseSensitiveSequences declares two sequences whose names differ
+// only in case, which a case-sensitive collation holds apart, and a default
+// that reads the sequence named.
+func sqlServerCaseSensitiveSequences(sequence string) string {
+	return "CREATE SEQUENCE ptah_s AS bigint START WITH 1;\n" +
+		"CREATE SEQUENCE PTAH_S AS bigint START WITH 100;\n" +
+		"CREATE TABLE seqd (\n" +
+		"  id int PRIMARY KEY,\n" +
+		"  a bigint DEFAULT (NEXT VALUE FOR " + sequence + ")\n" +
+		");\n"
+}
+
+// TestApplySQLServerSequenceNameCaseSensitiveE2E is the control of
+// TestApplySQLServerSequenceNameCaseE2E on a database whose collation,
+// Latin1_General_CS_AS, holds ptah_s and PTAH_S as two sequences. A file whose
+// default reads PTAH_S, applied over one that reads ptah_s, plans the default,
+// and a row inserted after it takes the value of PTAH_S. The third apply plans
+// nothing. Compared without case, the second apply finds the schema synced and
+// the row takes the value of ptah_s.
+func TestApplySQLServerSequenceNameCaseSensitiveE2E(t *testing.T) {
+	c := qt.New(t)
+	database := createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.SQLServer),
+		"ALTER DATABASE %[1]s SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE %[1]s", caseSensitiveSQLServerDatabase)
+	first := filepath.Join(c.TempDir(), "first.sql")
+	c.Assert(os.WriteFile(first, []byte(sqlServerCaseSensitiveSequences("ptah_s")), 0o600), qt.IsNil)
+	second := filepath.Join(c.TempDir(), "second.sql")
+	c.Assert(os.WriteFile(second, []byte(sqlServerCaseSensitiveSequences("PTAH_S")), 0o600), qt.IsNil)
+
+	applied := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", first, "--auto-approve")
+	recased := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", second, "--auto-approve")
+	again := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", second, "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
+	c.Assert(recased.ExitCode, qt.Equals, 0, historyComment(recased))
+	c.Assert(recased.Stdout, qt.Contains, "NEXT VALUE FOR PTAH_S", historyComment(recased))
+	c.Assert(again.ExitCode, qt.Equals, 0, historyComment(again))
+	c.Assert(again.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+	db, err := sql.Open("sqlserver", database)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Check(db.Close(), qt.IsNil) }()
+	_, err = db.ExecContext(c.Context(), "INSERT INTO seqd (id) VALUES (1)")
+	c.Assert(err, qt.IsNil)
+	var got int64
+	c.Assert(db.QueryRowContext(c.Context(), "SELECT a FROM seqd").Scan(&got), qt.IsNil)
+	c.Assert(got, qt.Equals, int64(100))
 }

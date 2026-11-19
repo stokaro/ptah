@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/engine/builtin"
 	mysqlplanner "ptah.run/internal/planner/dialects/mysql"
 	oracleplanner "ptah.run/internal/planner/dialects/oracle"
@@ -57,6 +58,78 @@ func TestPlanner_OracleReplacesANamedCheckAddingItFirst(t *testing.T) {
 		"ALTER TABLE T1 DROP CONSTRAINT CK11;",
 		"ALTER TABLE T1 RENAME CONSTRAINT ptah_e2c5b8dcf1d8c385 TO ck11;",
 	})
+}
+
+// leftoverOf is checkChange on a table that also holds the CHECK name, as
+// Oracle reports it, which the comparison removes as a CHECK nobody declared.
+// Its identity is the name folded as Oracle's index rule folds it.
+func leftoverOf(name, kind string) *difftypes.SchemaDiff {
+	diff := checkChange("CK11", "ck11")
+	diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, difftypes.ConstraintRemovalInfo{
+		Name: name, TableName: "T1", Type: kind,
+		Identity: difftypes.ConstraintIdentity{Table: "T1", Name: identifier.ForDialect("oracle").IndexIdentityKey(name)},
+	})
+	return diff
+}
+
+// A replacement that stopped after its ADD leaves the new CHECK under the
+// temporary name. The next plan drops it before it adds the CHECK under that
+// name again, and once: with the drop among the other removals, after the
+// ADD, Oracle answers ORA-02264 on every run.
+func TestPlanner_OracleDropsALeftoverTemporaryCheckFirst(t *testing.T) {
+	c := qt.New(t)
+
+	nodes, err := oracleplanner.New().GenerateMigrationAST(t.Context(), must.Must(builtin.New()), leftoverOf("PTAH_E2C5B8DCF1D8C385", "CHECK"))
+	c.Assert(err, qt.IsNil)
+	sql, err := builtin.RenderSQL("oracle", nodes...)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statementsOf(sql), qt.DeepEquals, []string{
+		"ALTER TABLE T1 DROP CONSTRAINT PTAH_E2C5B8DCF1D8C385;",
+		"ALTER TABLE T1 ADD CONSTRAINT ptah_e2c5b8dcf1d8c385 CHECK (a > 1);",
+		"ALTER TABLE T1 DROP CONSTRAINT CK11;",
+		"ALTER TABLE T1 RENAME CONSTRAINT ptah_e2c5b8dcf1d8c385 TO ck11;",
+	})
+}
+
+// The controls: a CHECK under the temporary name of another constraint's
+// replacement, and a constraint of another kind under this one's, are not
+// what a stopped replacement leaves. Each is an ordinary undeclared
+// constraint, dropped with the other removals.
+func TestPlanner_OracleDropsOtherConstraintsWithTheRemovals(t *testing.T) {
+	tests := []struct {
+		name string
+		diff *difftypes.SchemaDiff
+		drop string
+	}{
+		{
+			name: "another temporary name",
+			diff: leftoverOf("PTAH_0123456789ABCDEF", "CHECK"),
+			drop: "ALTER TABLE T1 DROP CONSTRAINT PTAH_0123456789ABCDEF;",
+		},
+		{
+			name: "a UNIQUE under the temporary name",
+			diff: leftoverOf("PTAH_E2C5B8DCF1D8C385", "UNIQUE"),
+			drop: "ALTER TABLE T1 DROP CONSTRAINT PTAH_E2C5B8DCF1D8C385;",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := oracleplanner.New().GenerateMigrationAST(t.Context(), must.Must(builtin.New()), test.diff)
+			c.Assert(err, qt.IsNil)
+			sql, err := builtin.RenderSQL("oracle", nodes...)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statementsOf(sql), qt.DeepEquals, []string{
+				"ALTER TABLE T1 ADD CONSTRAINT ptah_e2c5b8dcf1d8c385 CHECK (a > 1);",
+				"ALTER TABLE T1 DROP CONSTRAINT CK11;",
+				"ALTER TABLE T1 RENAME CONSTRAINT ptah_e2c5b8dcf1d8c385 TO ck11;",
+				test.drop,
+			})
+		})
+	}
 }
 
 // The control: MySQL sets no CheckAddedFirst, so the same change drops the

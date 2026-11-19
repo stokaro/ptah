@@ -5,6 +5,7 @@ package integration_test
 import (
 	"context"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -302,5 +303,52 @@ func TestOracleChangedCheckE2E(t *testing.T) {
 	again, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
 		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--auto-approve")
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", again, stderr))
+	c.Assert(again, qt.Contains, "Schema is synced")
+}
+
+// TestOracleLeftoverReplacementCheckE2E applies a changed condition to named
+// CHECKs whose table already holds a CHECK under the temporary name the
+// replacement adds the new condition under, as a replacement that stopped
+// after its ADD leaves it: on t13 with the declared condition, and on t14 with
+// another one. The plan drops each leftover before it adds the new CHECK, the
+// apply succeeds, the tables hold the declared conditions under the declared
+// names, and the second apply finds nothing to do. With the drop among the
+// other removals, the ADD fails with ORA-02264 on every run.
+func TestOracleLeftoverReplacementCheckE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	binary := filepath.Join(c.TempDir(), "ptah")
+	buildPtah(c, ctx, e2eRepoRoot(t), binary)
+	_, dbURL, conn := oracleCaseSensitiveAccount(c, ctx)
+	runAsAccount(c, ctx, conn, []string{
+		`CREATE TABLE t13 (id NUMBER(10) PRIMARY KEY, a NUMBER(10), CONSTRAINT ck13 CHECK (a > 0))`,
+		`CREATE TABLE t14 (id NUMBER(10) PRIMARY KEY, b NUMBER(10), CONSTRAINT ck14 CHECK (b > 0))`,
+	})
+	schemaPath := writeDeclaredSchema(c,
+		"CREATE TABLE t13 (id NUMBER(10) PRIMARY KEY, a NUMBER(10), CONSTRAINT ck13 CHECK (a > 1));\n"+
+			"CREATE TABLE t14 (id NUMBER(10) PRIMARY KEY, b NUMBER(10), CONSTRAINT ck14 CHECK (b > 1));\n")
+	planned, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--dry-run")
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", planned, stderr))
+	temporary := regexp.MustCompile(`ADD CONSTRAINT (ptah_[0-9a-f]{16}) CHECK`).FindAllStringSubmatch(planned, -1)
+	c.Assert(temporary, qt.HasLen, 2, qt.Commentf("%s", planned))
+	runAsAccount(c, ctx, conn, []string{
+		`ALTER TABLE t13 ADD CONSTRAINT ` + temporary[0][1] + ` CHECK (a > 1)`,
+		`ALTER TABLE t14 ADD CONSTRAINT ` + temporary[1][1] + ` CHECK (b > 5)`,
+	})
+	checks := `SELECT table_name || ' ' || constraint_name || ' ' || search_condition_vc FROM user_constraints ` +
+		`WHERE table_name IN ('T13', 'T14') AND constraint_type = 'C' AND search_condition_vc NOT LIKE '%IS NOT NULL' ORDER BY 1`
+
+	stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--auto-approve")
+	again, againErr, err2 := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--auto-approve")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	leftover := strings.ToUpper(temporary[0][1])
+	c.Assert(stdout, qt.Matches, `(?s).*DROP CONSTRAINT `+leftover+`;.*ADD CONSTRAINT `+temporary[0][1]+` CHECK \(a > 1\);.*`)
+	c.Assert(accountNames(c, ctx, conn, checks), qt.DeepEquals, []string{"T13 CK13 a > 1", "T14 CK14 b > 1"})
+	c.Assert(err2, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", again, againErr))
 	c.Assert(again, qt.Contains, "Schema is synced")
 }
