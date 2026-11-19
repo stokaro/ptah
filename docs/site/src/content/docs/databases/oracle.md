@@ -29,19 +29,16 @@ Schemas are synced, no changes to be made.
 ```
 
 A **declared file** converges too. Names fold across the case difference
-between a declaration and the catalog, constraint names included, so a
-`CHECK` declared on a column is named `orders_total_check`, stored as
-`ORDERS_TOTAL_CHECK` and matched on the next run. An unnamed `CHECK` declared on
+between a declaration and the catalog, so a `CHECK` declared on a column is
+named `orders_total_check`, stored as `ORDERS_TOTAL_CHECK` and matched on the
+next run. An unnamed `CHECK` declared on
 the table is named by Oracle, `SYS_C<n>`, with a number no file can predict.
 Oracle keeps its condition as written, so the comparison matches it to the
-unnamed declaration by that condition, ignoring case and spacing, and a second
-plan is empty. A changed condition is a drop and an add.
+unnamed declaration by that condition, ignoring case and spacing. A changed condition is a drop and an add.
 
-Oracle holds a constraint name once per schema, across its tables. Two `CHECK`
-constraints of one name are refused before any statement runs, with the error
-Oracle answers: `ORA-02264: name already used by an existing constraint`.
-Names compare as Oracle stores them, so `ck` and `"CK"` are one name, and
-`"ck"`, which keeps its lower case, is another.
+Oracle holds a constraint name once per schema, so two `CHECK` constraints of
+one name are refused before anything runs, with `ORA-02264`. `ck` and `"CK"`
+are one name; `"ck"` is another.
 
 ## Identifiers and type mappings
 
@@ -222,12 +219,10 @@ the capability preset for that line reflects it, so a plan for a 21 server omits
 them.
 
 **Domains are a 23-line feature too**, and the only object where the two lines
-differ rather than the spelling of a guard. Oracle 23 has a real `CREATE
-DOMAIN`; Oracle 21 answers `ORA-00901` to it and has no `ALL_DOMAINS` view at
-all. So a declared domain is planned, rendered, read back and compared on 23,
-and on 21 it is refused before any SQL — a column declared with a type the
-target cannot create would be left naming something the server has no
-definition of.
+differ rather than the spelling of a guard. Oracle 21 answers `ORA-00901` to
+`CREATE DOMAIN` and has no `ALL_DOMAINS` view. So a declared domain is planned,
+rendered, read back and compared on 23, and on 21 it is refused before any SQL,
+since a column typed by it would name a type the server cannot create.
 
 A Go annotation declares an Oracle domain or object type with
 `dialects="oracle"`: a `domain` or `composite` declaration without a scope is
@@ -478,8 +473,8 @@ engine clause to carry it.
 ### The migration lock
 
 Two `ptah migrations up` runs against one schema take the migration lock in
-turn, as on the other engines with a lock: the second waits for the first, then
-finds nothing pending. `--migration-lock-timeout` bounds the wait, and a lock
+turn: the second waits for the first, then finds nothing pending.
+`--migration-lock-timeout` bounds the wait, and a lock
 still held when it ends refuses the run with `timed out acquiring migration lock
 "ptah_migrate" for oracle after 10s`. `ptah schema apply` takes its own lock the
 same way, a dry run included. A dry run creates neither the lock table nor the
@@ -494,8 +489,8 @@ accounts that record in one revision table take one lock. The row's key is the
 lock name exactly as given, `ptah_migrate` unless `--migration-lock-name` names
 another, and Ptah locks that row with `SELECT ... FOR UPDATE NOWAIT`. It asks
 again every 25 milliseconds until the wait ends, so waiting runs are not served
-in the order they arrived. On the other engines Ptah creates no such table, and
-a table of that name there is an ordinary one.
+in the order they arrived. On other engines a table of that name is an ordinary
+one.
 
 Creating the table needs `CREATE TABLE` in the account's own schema, and
 `CREATE ANY TABLE` in a schema another account owns. Without that privilege, a
@@ -517,8 +512,8 @@ as one that does, even where `CREATE ANY TABLE` would create it.
 
 Where neither the table nor the privilege is there, the lock refuses before the
 run starts and names both remedies. It does not fall back to the account's own
-schema, because a table there would not exclude another account that records
-in the same revision table.
+schema, where a table would not exclude another account recording in the same
+revision table.
 
 The revision table and its log follow the same rule. Ptah sends no `CREATE` for
 a metadata table that `ALL_TABLES` shows the account, so tables a DBA created
