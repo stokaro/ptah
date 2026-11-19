@@ -58,6 +58,7 @@ func Apply(dialect string, nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 	for _, node := range nodes {
 		respell(node, spelling)
 	}
+	withoutUnreadCharsets(nodes, diff, dialect)
 	return nodes
 }
 

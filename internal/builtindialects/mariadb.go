@@ -137,6 +137,7 @@ func mariaDB() descriptor.Dialect {
 				CharsetAliases:  map[string]string{"utf8": "utf8mb3"},
 				CharsetDefaults: mariaDBCharsetDefaults(),
 				WithoutCharset:  true, CharsetDefault: "DEFAULT",
+				ListedWithoutCharset: []string{"uca1400_"},
 				Types: []string{
 					"char", "character", "nchar", "national", "varchar", "nvarchar",
 					"tinytext", "text", "mediumtext", "longtext", "enum", "set",
