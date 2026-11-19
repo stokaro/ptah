@@ -156,7 +156,8 @@ func TestAComparisonVerbThatLeavesAKindOutDoesNotNeedItsPrivilegeE2E(t *testing.
 
 // TestAComparisonVerbTakesAnAccountHoldingOnlySelectE2E covers the account that needs
 // every selector at once. MariaDB hides constraint rows from this account, but
-// its visible primary index still gives the same answer as the administrator.
+// its visible primary index and the foreign keys KEY_COLUMN_USAGE lists give
+// the same answer as the administrator.
 func TestAComparisonVerbTakesAnAccountHoldingOnlySelectE2E(t *testing.T) {
 	const everyKind = "*[type=trigger|view|function|constraint|event]"
 	for _, s := range servers() {

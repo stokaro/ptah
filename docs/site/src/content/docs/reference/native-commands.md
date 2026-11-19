@@ -459,8 +459,10 @@ the same table, since the comparison pairs the two keys whatever each is called:
 `pk_kinds` for a key an author named, or `kinds_pkey` on a table renamed to
 `types` that kept it. Where the table holds no key, the name the server gives a
 new one names it: `kinds_pkey` on PostgreSQL, `PRIMARY` on MySQL and MariaDB.
-The key's columns keep the `NOT NULL` the key gives them, and `schema compare`
-reports no difference on them.
+The primary key's columns keep the `NOT NULL` the key gives them, and `schema
+compare` reports no difference on them. A `UNIQUE` constraint or a foreign key
+the selector keeps does not keep `NOT NULL` on its columns: their nullability is
+the declaration's.
 
 On MySQL and MariaDB, `--exclude 'kids.kids_parent_fk[type=foreign_key]'`
 also leaves out the index the server built for the foreign key, under the key's
@@ -477,11 +479,10 @@ and a comment above the statement says why it is there. The selector leaves
 that index out with the key, so the next run plans nothing.
 
 A selector that leaves out every constraint, such as `*[type=constraint]`,
-leaves out the index the server built with each key too. MariaDB shows an
-account that holds only `SELECT` no foreign key, so that account cannot tell the
-index the server built from one the author declared, and keeps it in the
-comparison; [MySQL and MariaDB](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind)
-says how both accounts get the same answer.
+leaves out the index the server built with each key too. On MariaDB an account
+that holds only `SELECT` gets the same plan;
+[MySQL and MariaDB](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind)
+says how its read finds the keys.
 
 On SQLite, a plan changes most of a table by writing a new one from the
 declaration and copying the rows. A part of the table that a selector keeps out
