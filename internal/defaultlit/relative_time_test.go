@@ -11,7 +11,7 @@ import (
 var relativeTimeLiterals = []string{"NOW", "TODAY", "TOMORROW", "YESTERDAY"}
 
 // A string the engine reads as a moment is the literal however it is cast and
-// enclosed.
+// enclosed, as long as the first cast is not to a string type.
 func TestRelativeTimeLiteral_Matches(t *testing.T) {
 	rows := []struct{ name, value string }{
 		{name: "quoted", value: "'now'"},
@@ -21,6 +21,8 @@ func TestRelativeTimeLiteral_Matches(t *testing.T) {
 		{name: "two pairs of parentheses", value: "(('tomorrow'))"},
 		{name: "a cast inside parentheses", value: "('now'::timestamptz)"},
 		{name: "a cast after parentheses", value: "('yesterday')::timestamptz"},
+		{name: "a timestamp cast to a date", value: "'now'::timestamp::date"},
+		{name: "a cast to a created type", value: "'now'::app.moment"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -30,8 +32,10 @@ func TestRelativeTimeLiteral_Matches(t *testing.T) {
 	}
 }
 
-// A fixed moment, a function, a string beside other SQL, and an engine that
-// names no literal are not one.
+// A fixed moment, a function, a string beside other SQL, a string cast to a
+// string type before a date or time type, and an engine that names no literal
+// are not one. PostgreSQL 18 keeps `('now'::text)::date` as written and
+// converts the text for each row.
 func TestRelativeTimeLiteral_DoesNotMatch(t *testing.T) {
 	rows := []struct {
 		name, value string
@@ -43,6 +47,11 @@ func TestRelativeTimeLiteral_DoesNotMatch(t *testing.T) {
 		{name: "an expression around the string", value: "('now')::timestamptz + interval '1 day'", literals: relativeTimeLiterals},
 		{name: "two strings", value: "('now') || ('now')", literals: relativeTimeLiterals},
 		{name: "a quote inside", value: "'now''s'", literals: relativeTimeLiterals},
+		{name: "text first", value: "('now'::text)::date", literals: relativeTimeLiterals},
+		{name: "varchar first", value: "'now'::character varying(10)::timestamptz", literals: relativeTimeLiterals},
+		{name: "quoted text first", value: `'now'::"pg_catalog"."text"::timestamp`, literals: relativeTimeLiterals},
+		{name: "text alone", value: "'now'::TEXT", literals: relativeTimeLiterals},
+		{name: "a chain from text", value: "'now'::text::date", literals: relativeTimeLiterals},
 		{name: "no literals", value: "'now'"},
 	}
 	for _, row := range rows {
@@ -120,7 +129,8 @@ func TestArrayElementType_DoesNotMatch(t *testing.T) {
 
 // An array default holds the literal however the array is written: a quoted
 // array literal, quoted elements, nesting, a dimension decoration, an ARRAY
-// constructor, and casts and parentheses around each.
+// constructor whose elements are cast or typed by a cast around it, and casts
+// and parentheses around each.
 func TestRelativeTimeArrayLiteral_Matches(t *testing.T) {
 	rows := []struct{ name, value string }{
 		{name: "an array literal", value: "'{now}'"},
@@ -130,9 +140,11 @@ func TestRelativeTimeArrayLiteral_Matches(t *testing.T) {
 		{name: "a dimension decoration", value: "'[1:1]={now}'"},
 		{name: "a cast", value: "'{now}'::timestamptz[]"},
 		{name: "parentheses and a cast", value: "('{now}')::timestamp(3)[]"},
-		{name: "an ARRAY constructor", value: "ARRAY['today']"},
-		{name: "an ARRAY constructor with a cast", value: "ARRAY['epoch', 'today'::date]::date[]"},
-		{name: "a nested ARRAY constructor", value: "array[array['now']]"},
+		{name: "an ARRAY constructor with a cast element", value: "ARRAY['today'::date]"},
+		{name: "an ARRAY constructor with a cast", value: "ARRAY['epoch', 'today']::date[]"},
+		{name: "an array literal with a cast", value: "'{now}'::date[]"},
+		{name: "a nested ARRAY constructor with a cast", value: "array[array['now']]::timestamp[]"},
+		{name: "a nested ARRAY constructor with its own cast", value: "array[array['now']::timestamp[]]"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -143,8 +155,10 @@ func TestRelativeTimeArrayLiteral_Matches(t *testing.T) {
 }
 
 // Fixed moments, a function in a constructor, the word inside a longer
-// element, an escaped quote, a scalar string and an engine that names no
-// literal are not one.
+// element, an escaped quote, a scalar string, an uncast constructor, an array
+// or element cast to a string type first, and an engine that names no literal
+// are not one. PostgreSQL 18 reads an uncast ARRAY['today'] as a text array
+// and refuses it on a date array column with its own error.
 func TestRelativeTimeArrayLiteral_DoesNotMatch(t *testing.T) {
 	rows := []struct {
 		name, value string
@@ -156,6 +170,11 @@ func TestRelativeTimeArrayLiteral_DoesNotMatch(t *testing.T) {
 		{name: "a scalar string", value: "'now'", literals: relativeTimeLiterals},
 		{name: "an empty array", value: "'{}'", literals: relativeTimeLiterals},
 		{name: "an expression around the array", value: "'{now}'::timestamptz[] || '{epoch}'", literals: relativeTimeLiterals},
+		{name: "an uncast ARRAY constructor", value: "ARRAY['today']", literals: relativeTimeLiterals},
+		{name: "an uncast nested ARRAY constructor", value: "array[array['now']]", literals: relativeTimeLiterals},
+		{name: "an array literal cast to text first", value: "'{now}'::text[]::date[]", literals: relativeTimeLiterals},
+		{name: "a constructor cast to text first", value: "ARRAY['today']::text[]::date[]", literals: relativeTimeLiterals},
+		{name: "an element cast to text", value: "ARRAY['today'::text]::date[]", literals: relativeTimeLiterals},
 		{name: "no literals", value: "'{now}'"},
 	}
 	for _, row := range rows {
@@ -181,6 +200,8 @@ func TestRelativeTimeDefault(t *testing.T) {
 		{name: "a string on an array", columnType: "timestamp[]", value: "'now'"},
 		{name: "an array on a text array", columnType: "text[]", value: "'{now}'"},
 		{name: "a string on a created type", columnType: `"Timestamp"`, value: "'now'"},
+		{name: "text cast to a date on a date", columnType: "date", value: "('now'::text)::date"},
+		{name: "an uncast constructor on a date array", columnType: "date[]", value: "ARRAY['today']"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

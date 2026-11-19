@@ -40,6 +40,11 @@ func TestSchemaApplyRefusesARelativeTimeDefaultE2E(t *testing.T) {
 			want:   `DEFAULT ARRAY['today']::date[] on a date[] column is read once, when the table is created`,
 		},
 		{
+			name:   "a timestamp cast to a date",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at date DEFAULT ('now'::timestamp)::date);",
+			want:   `DEFAULT ('now'::timestamp)::date on a date column is read once, when the table is created`,
+		},
+		{
 			name:   "a domain's own default",
 			source: "CREATE DOMAIN moment AS timestamp DEFAULT 'now';\nCREATE TABLE notes (id int PRIMARY KEY, at moment);",
 			want:   `moment": DEFAULT 'now' on a timestamp domain is read once, when the domain is created`,
@@ -68,9 +73,10 @@ func TestSchemaApplyRefusesARelativeTimeDefaultE2E(t *testing.T) {
 // TestSchemaApplyKeepsAStringDefaultTheServerReadsAsWrittenE2E applies, on
 // PostgreSQL 18, the defaults beside the refused ones that the server keeps
 // as written or calls for each row: a shared domain name qualified with the
-// schema of the domain over text, a text array, and a domain over a
-// timestamp whose default is a function. Each applies, the second apply plans
-// nothing, and a new row takes the default.
+// schema of the domain over text, a text array, a domain over a timestamp
+// whose default is a function, and 'now' cast to text before a date, which
+// the server keeps as an expression and converts for each row. Each applies,
+// the second apply plans nothing, and a new row takes the default.
 func TestSchemaApplyKeepsAStringDefaultTheServerReadsAsWrittenE2E(t *testing.T) {
 	rows := []struct{ name, source, read, want string }{
 		{
@@ -85,6 +91,20 @@ func TestSchemaApplyKeepsAStringDefaultTheServerReadsAsWrittenE2E(t *testing.T) 
 			source: "CREATE TABLE notes (id int PRIMARY KEY, at text[] DEFAULT '{now}');\n",
 			read:   "SELECT array_to_string(at, ',') FROM notes",
 			want:   "now",
+		},
+		{
+			name:   "a string cast to text before a date",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at date DEFAULT ('now'::text)::date);\n",
+			read: "SELECT pg_get_expr(d.adbin, d.adrelid) || ',' || (n.at = CURRENT_DATE)::text " +
+				"FROM notes n, pg_attrdef d WHERE d.adrelid = 'notes'::regclass",
+			want: "('now'::text)::date,true",
+		},
+		{
+			name:   "a timestamp array whose element is cast to text",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at timestamp[] DEFAULT ARRAY['now'::text]::timestamp[]);\n",
+			read: "SELECT pg_get_expr(d.adbin, d.adrelid) || ',' || (n.at[1] > now()::timestamp - interval '1 hour')::text " +
+				"FROM notes n, pg_attrdef d WHERE d.adrelid = 'notes'::regclass",
+			want: "ARRAY[('now'::text)::timestamp without time zone],true",
 		},
 		{
 			name:   "a domain whose default is a function",

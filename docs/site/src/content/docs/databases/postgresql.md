@@ -251,7 +251,8 @@ in parentheses, as `('now')`; write `now()`, `CURRENT_TIMESTAMP` or
   is a type somebody created;
 - on a column of a domain the schema declares over such a type;
 - on an array of such a type, with an array default that holds one of the
-  words, as `'{now}'` or `ARRAY['today']::date[]`;
+  words, as `'{now}'` or `ARRAY['today']::date[]`. An uncast `ARRAY['today']`
+  is a `text[]`, which the server refuses with its own type error;
 - as a domain's own default, as `CREATE DOMAIN moment AS timestamp DEFAULT 'now'`;
 - on a type name that domains in more than one schema answer to, when any of
   them holds a date or time, since the server takes the one its search path
@@ -259,8 +260,10 @@ in parentheses, as `('now')`; write `now()`, `CURRENT_TIMESTAMP` or
 
 The refusal covers a SQL schema file's `CREATE TABLE`, `CREATE DOMAIN` and
 `ALTER COLUMN ... SET DEFAULT`, and a `default` or `default_expr` in a Go
-struct or a YAML schema. On a column of any other type the string is the value
-it spells, so `'today'` on an enum that has the value `today` is that value,
+struct or a YAML schema. A word cast to a string type first, as
+`('now'::text)::date`, is not refused: the server keeps that cast in the
+default and converts the text for each row. On a column of any other type the
+string is the value it spells, so `'today'` on an enum that has the value `today` is that value,
 whatever the enum is named.
 
 On a text column a string is never the expression its characters spell:

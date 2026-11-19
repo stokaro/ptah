@@ -11,17 +11,26 @@ import (
 // in upper case, as the dialect descriptor states it, and the string is
 // matched without case and surrounding spaces.
 //
-// The string may carry a cast and parentheses, in either order: `'now'`,
+// The string may carry casts and parentheses, in either order: `'now'`,
 // `'now'::timestamptz`, `('now')` and `('now')::timestamptz` are each the
 // literal, because the engine folds each of them when it creates the table.
-// For any value that is not one quoted string the answer is false. Only a
-// column that holds a moment reads the string as one, so a caller asks
-// [DateTimeType] about the column first.
+// A string cast to a string type first, as in `('now'::text)::date`, is not:
+// the engine keeps that cast in the default and converts the text each time
+// it evaluates it, so every row gets its own moment. For any value that is
+// not one quoted string the answer is false. Only a column that holds a
+// moment reads the string as one, so a caller asks [DateTimeType] about the
+// column first.
 func RelativeTimeLiteral(value string, literals []string) bool {
 	if len(literals) == 0 {
 		return false
 	}
-	text := unwrap(value)
+	text, cast := unwrap(value)
+	return !stringType(cast) && relativeTimeString(text, literals)
+}
+
+// relativeTimeString reports whether text is one quoted string whose contents
+// literals names ([relativeTimeWord]).
+func relativeTimeString(text string, literals []string) bool {
 	if len(text) < 2 || text[0] != '\'' || text[len(text)-1] != '\'' || strings.Contains(text[1:len(text)-1], "'") {
 		return false
 	}
@@ -31,18 +40,26 @@ func RelativeTimeLiteral(value string, literals []string) bool {
 // RelativeTimeArrayLiteral reports whether value, a default written as SQL for
 // an array column, holds an element that literals names ([RelativeTimeLiteral]).
 // The array may be a quoted array literal, such as '{now}' or
-// '{"epoch", today}', or an ARRAY constructor, such as ARRAY['today'], with
-// casts and parentheses around it, at any depth of nesting. Measured on
+// '{"epoch", today}', or an ARRAY constructor whose elements the engine reads
+// as dates or times, such as ARRAY['today']::date[] or ARRAY['today'::date],
+// with casts and parentheses around it, at any depth of nesting. Measured on
 // PostgreSQL 18, each of these stores the moment the table was created.
+//
+// A bare ARRAY['today'] is not one: the engine reads an uncast string element
+// as text, and refuses a text array on a date or time array column with its
+// own error. Neither is an array cast to a string type first, as in
+// '{now}'::text[]::date[], which the engine converts each time it evaluates
+// the default ([RelativeTimeLiteral]).
 func RelativeTimeArrayLiteral(value string, literals []string) bool {
 	if len(literals) == 0 {
 		return false
 	}
-	text := unwrap(value)
+	text, cast := unwrap(value)
+	if stringType(cast) {
+		return false
+	}
 	if inner, ok := arrayConstructor(text); ok {
-		return slices.ContainsFunc(splitTopLevel(inner), func(element string) bool {
-			return RelativeTimeLiteral(element, literals) || RelativeTimeArrayLiteral(element, literals)
-		})
+		return constructorHolds(inner, cast != "", literals)
 	}
 	if len(text) < 2 || text[0] != '\'' || text[len(text)-1] != '\'' {
 		return false
@@ -53,6 +70,25 @@ func RelativeTimeArrayLiteral(value string, literals []string) bool {
 	}
 	return slices.ContainsFunc(arrayLiteralElements(strings.ReplaceAll(body, "''", "'")), func(element string) bool {
 		return relativeTimeWord(element, literals)
+	})
+}
+
+// constructorHolds reports whether an element of an ARRAY constructor, whose
+// elements inner holds, is a string literals names that the engine reads as a
+// date or time. typed says whether a cast around the constructor types its
+// uncast elements: without one an uncast string element is text, which the
+// engine never reads as a moment. A nested constructor is typed by its own
+// cast, or else by the one around it.
+func constructorHolds(inner string, typed bool, literals []string) bool {
+	return slices.ContainsFunc(splitTopLevel(inner), func(element string) bool {
+		text, cast := unwrap(element)
+		if stringType(cast) {
+			return false
+		}
+		if nested, ok := arrayConstructor(text); ok {
+			return constructorHolds(nested, typed || cast != "", literals)
+		}
+		return (typed || cast != "") && relativeTimeString(text, literals)
 	})
 }
 
@@ -117,8 +153,39 @@ var catalogDateTimeTypes = map[string]bool{"date": true, "time": true, "timetz":
 // type, such as a domain, is the caller's. An enum named update_kind holds no
 // moment, whatever its name says.
 func DateTimeType(spelling string) bool {
+	return builtinType(spelling, dateTimeTypes, catalogDateTimeTypes)
+}
+
+// stringTypes are the built-in string types of the PostgreSQL family, as a
+// cast spells them without a length.
+var stringTypes = map[string]bool{
+	"text": true, "varchar": true, "character varying": true, "char": true, "character": true, "bpchar": true, "name": true,
+}
+
+// catalogStringTypes are the names the catalog gives the built-in string
+// types, the only ones a quoted name can spell. Quoted, "char" names the
+// one-byte internal type, so it is not among them.
+var catalogStringTypes = map[string]bool{"text": true, "varchar": true, "bpchar": true, "name": true}
+
+// stringType reports whether spelling, the type a cast names, is a built-in
+// string type or an array of one ([DateTimeType] reads the spelling the same
+// way). A string cast to one stays a string the engine converts each time it
+// evaluates the default. Any other cast, a created type included, answers
+// false, so a default cast to a type Ptah cannot resolve is judged by the
+// string it holds.
+func stringType(spelling string) bool {
+	if element, ok := ArrayElementType(spelling); ok {
+		spelling = element
+	}
+	return spelling != "" && builtinType(spelling, stringTypes, catalogStringTypes)
+}
+
+// builtinType reports whether spelling names one of the built-in types names
+// holds, or catalog holds where a part of the spelling is quoted, without
+// regard to case, a pg_catalog qualifier or a precision.
+func builtinType(spelling string, names, catalog map[string]bool) bool {
 	if strings.Contains(spelling, `"`) {
-		return quotedDateTimeType(spelling)
+		return quotedBuiltinType(spelling, catalog)
 	}
 	name := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(spelling)), "pg_catalog.")
 	if open := strings.IndexByte(name, '('); open >= 0 {
@@ -128,13 +195,13 @@ func DateTimeType(spelling string) bool {
 		}
 		name = name[:open] + " " + name[open+end+1:]
 	}
-	return dateTimeTypes[strings.Join(strings.Fields(name), " ")]
+	return names[strings.Join(strings.Fields(name), " ")]
 }
 
-// quotedDateTimeType answers [DateTimeType] for a spelling with a quoted part:
+// quotedBuiltinType answers [builtinType] for a spelling with a quoted part:
 // a name of one or two parts, the first pg_catalog, and an optional precision.
 // A bare part folds to lower case and a quoted part keeps its own.
-func quotedDateTimeType(spelling string) bool {
+func quotedBuiltinType(spelling string, catalog map[string]bool) bool {
 	parts, rest, ok := identifierParts(spelling)
 	if !ok || len(parts) == 0 || len(parts) > 2 || len(parts) == 2 && parts[0] != "pg_catalog" {
 		return false
@@ -143,7 +210,7 @@ func quotedDateTimeType(spelling string) bool {
 		(rest[0] != '(' || rest[len(rest)-1] != ')' || strings.Trim(rest[1:len(rest)-1], "0123456789 ") != "") {
 		return false
 	}
-	return catalogDateTimeTypes[parts[len(parts)-1]]
+	return catalog[parts[len(parts)-1]]
 }
 
 // identifierParts reads a dotted name from the start of text, each part bare
@@ -195,21 +262,39 @@ func identifierPart(text string) (part, rest string, ok bool) {
 }
 
 // unwrap removes the parentheses and casts around value, in either order and
-// at any depth: `('now')::timestamptz` becomes `'now'`, and
-// `ARRAY['today']::date[]` becomes `ARRAY['today']`.
-func unwrap(value string) string {
-	text := strings.TrimSpace(value)
+// at any depth, and returns what is left and the type of the innermost cast,
+// the one the engine applies first, or "" where there is no cast:
+// `('now'::text)::date` becomes `'now'` and text, and
+// `ARRAY['today']::date[]` becomes `ARRAY['today']` and date[].
+func unwrap(value string) (text, innermost string) {
+	text = strings.TrimSpace(value)
 	for {
 		if enclosed(text) {
 			text = strings.TrimSpace(text[1 : len(text)-1])
 			continue
 		}
-		if cast := strings.LastIndex(text, "::"); cast > 0 && strings.IndexByte("')]", text[cast-1]) >= 0 && isTypeName(text[cast+2:]) {
-			text = strings.TrimSpace(text[:cast])
+		if cast := outerCast(text); cast > 0 {
+			text, innermost = strings.TrimSpace(text[:cast]), strings.TrimSpace(text[cast+2:])
 			continue
 		}
-		return text
+		return text, innermost
 	}
+}
+
+// outerCast returns where the outermost cast of text begins, or -1 where text
+// does not end in one: a :: and a type name after a string, a parenthesis, a
+// bracket or another cast, so the cast in 'now'::timestamp::date that names
+// date is found, and the :: in a longer expression is not.
+func outerCast(text string) int {
+	cast := strings.LastIndex(text, "::")
+	if cast <= 0 || !isTypeName(text[cast+2:]) {
+		return -1
+	}
+	before := strings.TrimSpace(text[:cast])
+	if before != "" && (strings.IndexByte("')]", before[len(before)-1]) >= 0 || outerCast(before) > 0) {
+		return cast
+	}
+	return -1
 }
 
 // relativeTimeWord reports whether text, the contents of a string, is a word
