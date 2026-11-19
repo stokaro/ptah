@@ -86,6 +86,14 @@ type Comparison struct {
 	// column's identity is compared with its declaration.
 	IdentityColumns bool `json:"identity_columns,omitempty"`
 
+	// SequenceStartIsNextValue reports that the start a read reports for a
+	// sequence is the next value the sequence issues, rounded up to the end of
+	// its cached block, rather than the START WITH it was created with, as
+	// Oracle's LAST_NUMBER is. A declared start the counter has reached, at
+	// or below the read start for an ascending sequence and at or above it for
+	// a descending one, compares equal.
+	SequenceStartIsNextValue bool `json:"sequence_start_is_next_value,omitempty"`
+
 	// SerialOwnsSequence reports that a column of a serial type draws from a
 	// sequence it owns, so a plan makes a plain column serial with a sequence of
 	// its own, a default and an owner.

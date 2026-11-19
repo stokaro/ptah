@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/autoincrement"
 )
@@ -85,6 +86,43 @@ func TestDeclaredOn(t *testing.T) {
 			c := qt.New(t)
 
 			c.Assert(autoincrement.DeclaredOn(test.field, test.dialect), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestNotNull names the columns each fact holds NOT NULL. An identity
+// generation is held by IdentityNotNull and AutoIncrementNotNull, an
+// AutoInc flag only by AutoIncrementNotNull, and a serial type only by
+// SerialNotNull.
+func TestNotNull(t *testing.T) {
+	identity := schemamodel.Field{Name: "id", Type: "BIGINT", Nullable: true, IdentityGeneration: "ALWAYS"}
+	flagged := schemamodel.Field{Name: "id", Type: "INT", Nullable: true, AutoInc: true}
+	serial := schemamodel.Field{Name: "id", Type: "serial", Nullable: true}
+	plain := schemamodel.Field{Name: "id", Type: "INT", Nullable: true}
+	tests := []struct {
+		name    string
+		field   schemamodel.Field
+		columns descriptor.Columns
+		want    bool
+	}{
+		{name: "an identity under IdentityNotNull", field: identity, columns: descriptor.Columns{IdentityNotNull: true}, want: true},
+		{name: "an identity under AutoIncrementNotNull", field: identity, columns: descriptor.Columns{AutoIncrementNotNull: true}, want: true},
+		{name: "an identity under SerialNotNull", field: identity, columns: descriptor.Columns{SerialNotNull: true}, want: false},
+		{name: "a flag under IdentityNotNull", field: flagged, columns: descriptor.Columns{IdentityNotNull: true}, want: false},
+		{name: "a flag under AutoIncrementNotNull", field: flagged, columns: descriptor.Columns{AutoIncrementNotNull: true}, want: true},
+		{name: "a serial type under SerialNotNull", field: serial, columns: descriptor.Columns{SerialNotNull: true}, want: true},
+		{name: "a serial type under AutoIncrementNotNull", field: serial, columns: descriptor.Columns{AutoIncrementNotNull: true}, want: false},
+		{
+			name: "a plain column under every fact", field: plain,
+			columns: descriptor.Columns{IdentityNotNull: true, AutoIncrementNotNull: true, SerialNotNull: true}, want: false,
+		},
+		{name: "an identity without a fact", field: identity, columns: descriptor.Columns{}, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(autoincrement.NotNull(test.field, test.columns), qt.Equals, test.want)
 		})
 	}
 }

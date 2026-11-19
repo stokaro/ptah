@@ -116,7 +116,11 @@ func TestDescriptors_SchemaFileFactsAgreeWithTheSwitchesTheyReplace(t *testing.T
 			columns:     descriptor.Columns{NationalCharAsChar: true, IdentityNotNull: true},
 			statements:  descriptor.Statements{ViewsBlockDropTable: true, OwnerCreateOnce: true, RelationsShareNames: true},
 		},
-		{dialect: platform.Oracle, names: descriptor.Names{Lookup: "ascii_case_insensitive"}},
+		{
+			dialect: platform.Oracle,
+			names:   descriptor.Names{Lookup: "ascii_case_insensitive"},
+			columns: descriptor.Columns{AutoIncrementNotNull: true},
+		},
 	}
 	c := qt.New(t)
 	// Every built-in dialect has a row, so a new one cannot go unpinned.

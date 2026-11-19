@@ -7,6 +7,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/migration/schemadiff/internal/compare"
 )
@@ -153,4 +154,91 @@ func TestSequences_UnchangedProducesNoDiff(t *testing.T) {
 	c.Assert(diff.SequencesAdded.Names(), qt.IsNil)
 	c.Assert(diff.SequencesRemoved.Names(), qt.IsNil)
 	c.Assert(diff.SequencesModified, qt.IsNil)
+}
+
+// TestSequencesWithSemantics_StartAsTheNextValue compares a declared START
+// WITH with the start a read reports. Oracle keeps no START WITH and reports
+// LAST_NUMBER, the next value the sequence issues, so a counter at or past the
+// declared start in the direction the sequence counts compares equal there,
+// and one short of it is a change. PostgreSQL reports the start the sequence
+// was created with, so every difference is a change there.
+func TestSequencesWithSemantics_StartAsTheNextValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		declared schemamodel.Sequence
+		reported catalog.Sequence
+		want     []map[string]string
+	}{
+		{
+			name:     "an unused Oracle sequence",
+			dialect:  "oracle",
+			declared: schemamodel.Sequence{Name: "s", Start: new(int64(1))},
+			reported: catalog.Sequence{Name: "s", Start: new(int64(1)), Increment: new(int64(1))},
+		},
+		{
+			name:     "an Oracle sequence used past its start",
+			dialect:  "oracle",
+			declared: schemamodel.Sequence{Name: "s", Start: new(int64(1))},
+			reported: catalog.Sequence{Name: "s", Start: new(int64(21)), Increment: new(int64(1))},
+		},
+		{
+			name:     "an Oracle sequence short of its start",
+			dialect:  "oracle",
+			declared: schemamodel.Sequence{Name: "s", Start: new(int64(100))},
+			reported: catalog.Sequence{Name: "s", Start: new(int64(21)), Increment: new(int64(1))},
+			want:     []map[string]string{{"start": "21 -> 100"}},
+		},
+		{
+			name:     "a descending Oracle sequence used past its start",
+			dialect:  "oracle",
+			declared: schemamodel.Sequence{Name: "s", Start: new(int64(-1))},
+			reported: catalog.Sequence{Name: "s", Start: new(int64(-21)), Increment: new(int64(-1))},
+		},
+		{
+			name:     "a descending Oracle sequence short of its start",
+			dialect:  "oracle",
+			declared: schemamodel.Sequence{Name: "s", Start: new(int64(-100))},
+			reported: catalog.Sequence{Name: "s", Start: new(int64(-21)), Increment: new(int64(-1))},
+			want:     []map[string]string{{"start": "-21 -> -100"}},
+		},
+		{
+			name:     "a descending declaration over a read without an increment",
+			dialect:  "oracle",
+			declared: schemamodel.Sequence{Name: "s", Start: new(int64(-1)), Increment: new(int64(-1))},
+			reported: catalog.Sequence{Name: "s", Start: new(int64(-21))},
+			want:     []map[string]string{{"increment": "<unset> -> -1"}},
+		},
+		{
+			name:     "an Oracle read without a start",
+			dialect:  "oracle",
+			declared: schemamodel.Sequence{Name: "s", Start: new(int64(1))},
+			reported: catalog.Sequence{Name: "s"},
+			want:     []map[string]string{{"start": "<unset> -> 1"}},
+		},
+		{
+			name:     "a PostgreSQL sequence created with another start",
+			dialect:  "postgres",
+			declared: schemamodel.Sequence{Name: "s", Start: new(int64(1))},
+			reported: catalog.Sequence{Name: "s", Start: new(int64(21)), Increment: new(int64(1))},
+			want:     []map[string]string{{"start": "21 -> 1"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired := &schemamodel.Database{Sequences: []schemamodel.Sequence{test.declared}}
+			database := &catalog.Database{Sequences: []catalog.Sequence{test.reported}}
+			diff := &difftypes.SchemaDiff{}
+
+			compare.SequencesWithSemantics(desired, database, diff, compare.CoverageOf(desired, database),
+				test.dialect, identifier.ForDialect(test.dialect))
+
+			var changes []map[string]string
+			for _, modified := range diff.SequencesModified {
+				changes = append(changes, modified.Changes)
+			}
+			c.Assert(changes, qt.DeepEquals, test.want)
+		})
+	}
 }
