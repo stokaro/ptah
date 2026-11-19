@@ -291,12 +291,12 @@ func AssessRenderedWithCapabilities(
 		if placement == ast.MixedExtension {
 			nodeAssessment = mixedVerdict(node)
 		}
-		keepsNull := keepsNullability(node)
+		known := nodeKnowledge{keepsNullability: keepsNullability(node), settlesCollation: settlesCollation(node)}
 		fills := fillsNullRows(node)
 		_, raw := node.(*ast.RawSQLNode)
 		for _, statement := range rendered[i] {
 			judged := judgments[len(assessments)]
-			assessment := assessStatement(statement, keepsNull, judged)
+			assessment := assessStatement(statement, known, judged)
 			assessment.NodeType = nodeAssessment.NodeType
 			assessment.Subject = renderedSubject(node, nodeAssessment.Subject, statement, target)
 			ownedText := raw && judged != nil
@@ -479,7 +479,7 @@ func AssessSQL(ctx context.Context, runtime Runtime, target string, statements [
 	assessments := make([]StatementAssessment, 0, len(statements))
 	ownWords := make([]bool, 0, len(statements))
 	for i, statement := range statements {
-		assessment := assessStatement(statement, false, judgments[i])
+		assessment := assessStatement(statement, nodeKnowledge{}, judgments[i])
 		assessment.Subject = statementSubject(statement, target)
 		assessment.Index = i + 1
 		assessments = append(assessments, assessment)
@@ -498,7 +498,7 @@ func AssessSQL(ctx context.Context, runtime Runtime, target string, statements [
 // piece by piece, as the owner's split reads it: a judged piece by the
 // owner's judgment, and any other by its words, so the judgment of one piece
 // does not hide what another does. The most severe piece decides.
-func assessStatement(statement string, keepsNullability bool, pieces []statementPiece) StatementAssessment {
+func assessStatement(statement string, known nodeKnowledge, pieces []statementPiece) StatementAssessment {
 	assessment := StatementAssessment{
 		NodeType:  "sql",
 		Statement: strings.TrimSpace(statement),
@@ -506,14 +506,14 @@ func assessStatement(statement string, keepsNullability bool, pieces []statement
 		Reason:    safeReason,
 	}
 	if pieces == nil {
-		return assessRawSQL(statement, assessment, keepsNullability)
+		return assessRawSQL(statement, assessment, known)
 	}
 	for _, piece := range pieces {
 		verdict := StatementAssessment{Severity: Safe, Reason: safeReason}
 		if piece.judgment != nil {
 			verdict.Severity, verdict.Reason = piece.judgment.severity, piece.judgment.reason
 		} else {
-			verdict = assessRawSQL(piece.sql, verdict, keepsNullability)
+			verdict = assessRawSQL(piece.sql, verdict, known)
 		}
 		raiseAssessment(&assessment, verdict)
 	}
@@ -522,6 +522,27 @@ func assessStatement(statement string, keepsNullability bool, pieces []statement
 
 // safeReason is the reason of a statement nothing marks as risky.
 const safeReason = "does not remove data or tighten constraints"
+
+// collationChangeReason is why a change of a column's collation alone is a
+// warning. A unique key rebuilt under the new collation can find duplicates:
+// MySQL 8.4 answers a MODIFY from utf8mb4_bin to utf8mb4_general_ci on a
+// UNIQUE column holding 'a' and 'A' with Error 1062, and PostgreSQL 18.6
+// answers the change to a case-insensitive collation with `could not create
+// unique index`.
+const collationChangeReason = "the collation change rebuilds every index on the column, changes how its values " +
+	"sort and compare, and fails where a unique key holds values the new collation finds equal"
+
+// setsCollationReason is why a statement that writes a column's collation is a
+// warning where nothing says whether the collation changes: MODIFY COLUMN
+// restates a collation the column keeps, and so does a PostgreSQL TYPE clause
+// on a column with a collation.
+const setsCollationReason = "the statement sets a column's collation, which may change it: a changed collation " +
+	"rebuilds every index on the column and fails where a unique key holds values the new collation finds equal"
+
+// keptCollationReason is the reason of a statement that writes a column's
+// collation where the node that rendered it says the collation is the one
+// the column holds.
+const keptCollationReason = "the statement restates the collation the column holds"
 
 // HighestAssessment returns the highest severity from statement assessments.
 // Empty or nil assessments answer Safe; severities compare the way [Highest]
@@ -751,7 +772,7 @@ func assessNode(node ast.Node) StatementAssessment {
 		return assessAlterType(n, assessment)
 	case *ast.RawSQLNode:
 		assessment.Statement = n.SQL
-		return assessRawSQL(n.SQL, assessment, false)
+		return assessRawSQL(n.SQL, assessment, nodeKnowledge{})
 	}
 	return assessment
 }
@@ -889,7 +910,7 @@ func classifyModifyColumn(op *ast.ModifyColumnOperation) (Severity, string) {
 		return classifyDefaultChange(op.Column)
 	}
 	if op.HasChanged && op.Changed == (ast.ColumnProperties{Collation: true}) {
-		return Warning, "the collation change rebuilds every index on the column and changes how its values sort and compare"
+		return Warning, collationChangeReason
 	}
 	return Warning, "column modification needs manual review"
 }
@@ -980,12 +1001,24 @@ func classifyTypeOperation(op ast.TypeOperation) (Severity, string) {
 	}
 }
 
+// nodeKnowledge is what the node that rendered a statement establishes and the
+// statement's words cannot say. The zero value is a statement no node
+// rendered.
+type nodeKnowledge struct {
+	// keepsNullability says the statement comes from a column modification
+	// that states its changes and leaves nullability alone, so a NOT NULL it
+	// restates is the column's existing constraint and not a new one.
+	keepsNullability bool
+	// settlesCollation says every column modification of the node states
+	// whether the column's collation changes, so the node's own verdict rates
+	// a COLLATE the statement writes, and the words do not.
+	settlesCollation bool
+}
+
 // assessRawSQL classifies one statement by its words, which every dialect
 // shares; a statement only its owner recognizes is the owner's to judge (see
-// [AssessSQL]). keepsNullability says the statement comes from a column
-// modification that states its changes and leaves nullability alone, so a NOT
-// NULL it restates is the column's existing constraint and not a new one.
-func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability bool) StatementAssessment {
+// [AssessSQL]). known is what the node that rendered it establishes.
+func assessRawSQL(sql string, assessment StatementAssessment, known nodeKnowledge) StatementAssessment {
 	words, dropsDefault := withoutDefaultConstraintDrop(rawWords(sql))
 
 	if reason, found := destructivePrefixReason(words); found {
@@ -1028,7 +1061,7 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 	case addsNotNullConstraint(words):
 		assessment.Severity = Warning
 		assessment.Reason = "ADD CONSTRAINT ... NOT NULL can fail when existing rows contain NULL"
-	case !keepsNullability && restatesNotNull(sql):
+	case !known.keepsNullability && restatesNotNull(sql):
 		assessment.Severity = Warning
 		assessment.Reason, _ = restatedNotNullReason(sql)
 	case hasWordPrefix(words, "CREATE", "UNIQUE", "INDEX"):
@@ -1037,11 +1070,75 @@ func assessRawSQL(sql string, assessment StatementAssessment, keepsNullability b
 	case dropsDefault:
 		assessment.Severity = Warning
 		assessment.Reason = dropDefaultReason
+	// Last, so a statement it rates would be safe without it, and a node's
+	// verdict on the collation can take its place ([Fold]).
+	case !known.settlesCollation && setsColumnCollation(sql):
+		assessment.Severity = Warning
+		assessment.Reason = setsCollationReason
 	}
 	for _, statement := range lintscan.Split(sql, lintscan.ForDialect("")) {
 		raiseAssessment(&assessment, nextInsertVerdict(statement.Words))
 	}
 	return assessment
+}
+
+// setsColumnCollation reports whether statement writes the collation of a
+// column that exists: a clause that restates or retypes a column with a
+// COLLATE, which is PostgreSQL's ALTER [COLUMN] ... TYPE ... COLLATE and
+// MySQL's MODIFY or CHANGE with a COLLATE, or MySQL's CONVERT TO CHARACTER SET,
+// which gives every character column of the table a collation. The clauses are
+// read as [alterTableClauses] splits them, so a COLLATE inside a string
+// literal, such as a COMMENT or a DEFAULT, or a quoted identifier is not one. A
+// COLLATE in a CREATE TABLE, in a new column or in a table's default options
+// changes no column that holds rows.
+func setsColumnCollation(statement string) bool {
+	for _, clause := range alterTableClauses(statement) {
+		if hasWordSequence(clause, "CONVERT", "TO") {
+			return true
+		}
+		if !slices.Contains(clause, "COLLATE") {
+			continue
+		}
+		if slices.Contains(clause, "MODIFY") || slices.Contains(clause, "CHANGE") ||
+			slices.Contains(clause, "ALTER") && slices.Contains(clause, "TYPE") {
+			return true
+		}
+	}
+	return false
+}
+
+// settlesCollation reports whether node is an ALTER TABLE whose column
+// modifications all state what they change, collation included; see
+// [nodeKnowledge].
+func settlesCollation(node ast.Node) bool {
+	alter, ok := node.(*ast.AlterTableNode)
+	if !ok || alter == nil || ast.PlacementOf(node) != ast.NoExtension {
+		return false
+	}
+	modifies := false
+	for _, operation := range alter.Operations {
+		if modify, isModify := operation.(*ast.ModifyColumnOperation); isModify {
+			if !modify.HasChanged {
+				return false
+			}
+			modifies = true
+		}
+	}
+	return modifies
+}
+
+// keepsCollation reports whether node settles the collation of every column
+// it modifies and changes none of them.
+func keepsCollation(node ast.Node) bool {
+	if !settlesCollation(node) {
+		return false
+	}
+	for _, operation := range node.(*ast.AlterTableNode).Operations {
+		if modify, isModify := operation.(*ast.ModifyColumnOperation); isModify && modify.Changed.Collation {
+			return false
+		}
+	}
+	return true
 }
 
 // accessChangeReason is why a raw statement that changes who may reach an
@@ -1215,7 +1312,19 @@ func withoutDefaultConstraintDrop(words []string) (kept []string, dropsDefault b
 // the strongest access assessment either carries is kept. Index, NodeType,
 // Subject, and Statement remain target's own. A caller uses it to attach an
 // owner's verdict to the same statement classified from its text alone.
+//
+// One verdict replaces the reading of the words rather than raising it: a
+// [ColumnVerdicts] verdict on a column's collation, folded into a statement
+// rated only for the COLLATE it writes. The words cannot tell a changed
+// collation from one the column keeps, and the node that rendered the
+// statement can, so a restated collation is safe and a changed one carries
+// the node's reason.
 func Fold(target *StatementAssessment, source StatementAssessment) {
+	if target.Reason == setsCollationReason && (source.Reason == collationChangeReason || source.Reason == keptCollationReason) {
+		combineAccess(target, source.Access, source.AccessReason)
+		target.Severity, target.Reason = source.Severity, source.Reason
+		return
+	}
 	raiseAssessment(target, source)
 }
 

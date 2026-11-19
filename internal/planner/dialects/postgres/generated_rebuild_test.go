@@ -136,10 +136,6 @@ FROM (
            OR COALESCE(a.attstattarget::int, -1) <> -1
            OR COALESCE(to_jsonb(a) ->> 'attcompression', '') <> '' OR a.attstorage <> t.typstorage)
     UNION ALL
-    SELECT 'the collation ' || quote_ident(c.collname) || ' of the column'
-    FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid JOIN pg_collation c ON c.oid = a.attcollation
-    WHERE a.attrelid = '"public"."prices"'::regclass AND a.attname = 'search_vector' AND a.attcollation <> t.typcollation
-    UNION ALL
     SELECT 'the security label of the column'
     FROM pg_seclabel l JOIN pg_attribute a ON a.attrelid = l.objoid AND a.attnum = l.objsubid
     WHERE l.classoid = 'pg_class'::regclass AND l.objoid = '"public"."prices"'::regclass AND a.attname = 'search_vector'
@@ -259,7 +255,6 @@ func TestPlanner_GeneratedColumnRebuild_FailurePath(t *testing.T) {
 		dialect string
 		desired []string
 		removed []string
-		collate string
 		want    string
 	}{
 		{
@@ -276,13 +271,6 @@ func TestPlanner_GeneratedColumnRebuild_FailurePath(t *testing.T) {
 			want:    `.*generated column public.prices.search_vector reads column nickname, whose type this plan changes, and the declaration of the table does not hold it, .*`,
 		},
 		{
-			name:    "a collation of its own",
-			dialect: platform.Postgres,
-			desired: []string{"id", "nickname", "search_vector"},
-			collate: "C",
-			want:    `.*generated column public.prices.search_vector reads column nickname, whose type this plan changes, and has the collation C: .*`,
-		},
-		{
 			name:    "CockroachDB",
 			dialect: platform.CockroachDB,
 			desired: []string{"id", "nickname", "search_vector"},
@@ -294,7 +282,6 @@ func TestPlanner_GeneratedColumnRebuild_FailurePath(t *testing.T) {
 			c := qt.New(t)
 
 			diff := pricesRetype(searchIndexes, nil, test.desired, test.removed)
-			diff.TablesModified[0].Current.Table.Columns[2].Collate = test.collate
 
 			sql, err := planPrices(c, test.dialect, diff)
 
@@ -323,4 +310,39 @@ func TestPlanner_GeneratedColumnRebuildAroundACollationChange_HappyPath(t *testi
 	c.Assert(sql, qt.Contains, "ALTER TABLE \"public\".\"prices\" DROP COLUMN \"search_vector\";\n")
 	c.Assert(sql, qt.Contains, "ALTER TABLE \"public\".\"prices\" ALTER COLUMN \"nickname\" TYPE varchar(40) COLLATE \"C\";\n")
 	c.Assert(strings.Index(sql, "DROP COLUMN \"search_vector\"") < strings.Index(sql, "COLLATE \"C\""), qt.IsTrue)
+}
+
+// A generated column with a collation of its own comes back with the
+// collation its declaration gives it: the add writes the declared column, and
+// the guard leaves the collation to it. A declaration that gives the column
+// none brings it back under its type's collation, the one the comparison holds
+// an undeclared column to.
+func TestPlanner_GeneratedColumnRebuildRestatesItsCollation_HappyPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		want     string
+	}{
+		{name: "the collation it holds", declared: "C", want: "ALTER TABLE \"public\".\"prices\" ADD COLUMN \"label\" text COLLATE \"C\" GENERATED ALWAYS AS"},
+		{name: "none", want: "ALTER TABLE \"public\".\"prices\" ADD COLUMN \"label\" text GENERATED ALWAYS AS"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := pricesRetype(nil, nil, []string{"id", "nickname", "search_vector"}, nil)
+			declared := &diff.TablesModified[0].Desired.Fields[2]
+			declared.Name, declared.Type, declared.Collate, declared.GeneratedExpression = "label", "text", test.declared, "lower(nickname)"
+			declared.Comment = ""
+			held := &diff.TablesModified[0].Current.Table.Columns[2]
+			held.Name, held.DataType, held.UDTName, held.Collate, held.GeneratedExpression = "label", "text", "text", "C", new("lower((nickname)::text)")
+			held.Comment = ""
+
+			sql, err := planPrices(c, platform.Postgres, diff)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, "ALTER TABLE \"public\".\"prices\" DROP COLUMN \"label\";\n")
+			c.Assert(sql, qt.Contains, test.want)
+			c.Assert(sql, qt.Not(qt.Contains), "pg_collation")
+		})
+	}
 }

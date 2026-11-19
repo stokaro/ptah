@@ -40,8 +40,10 @@ import (
 // have. Before it drops the column, a guard asks the database for anything
 // else that depends on it -- an index or a constraint the read did not report,
 // a policy, a trigger with a column list, a foreign key from another table, a
-// statistics object, a privilege, a storage option, a collation, a security
-// label -- and refuses the plan naming each one, rather than drop it silently.
+// statistics object, a privilege, a storage option, a security label -- and
+// refuses the plan naming each one, rather than drop it silently. The column's
+// collation is not among them: the add writes the collation the declaration
+// gives the column, which is the one the comparison holds the column to.
 // It refuses a policy or a trigger even where the declaration keeps it
 // unchanged, since the plan restates neither.
 //
@@ -121,13 +123,6 @@ func planGeneratedRebuild(
 			"%w: generated column %s.%s reads column %s, whose type this plan changes, and the plan also removes it: "+
 				"PostgreSQL refuses the type change while the column exists, so remove the generated column in a plan of its own first",
 			ptaherr.ErrUnsupportedFeature, tableDiff.TableName, column.Name, strings.Join(reads, ", "))
-	}
-	if column.Collate != "" {
-		return generatedRebuild{}, fmt.Errorf(
-			"%w: generated column %s.%s reads column %s, whose type this plan changes, and has the collation %s: "+
-				"PostgreSQL refuses the type change while the column exists, and the rebuild does not add a generated column back "+
-				"with a collation of its own",
-			ptaherr.ErrUnsupportedFeature, tableDiff.TableName, column.Name, strings.Join(reads, ", "), column.Collate)
 	}
 	index := slices.IndexFunc(tableDiff.Desired.Fields, func(field schemamodel.Field) bool { return sameColumn(field.Name) })
 	if index < 0 {
@@ -351,11 +346,6 @@ func qualifiedIndexName(table string, index catalog.Index) string {
 // An option the server writes itself, such as pg_attver on PostgreSQL 18.7,
 // is not one the operator set, so the options it counts leave out the pg_
 // prefix.
-//
-// A collation other than the type's own is refused rather than restated: the
-// rebuild does not carry the generated column's own collation into the add, so
-// the add would bring the column back under the type's collation, and every
-// index on it with it.
 func (r generatedRebuild) guard() string {
 	table := quotePostgresLiteral(quotePostgresIdentifierPath(r.table)) + "::regclass"
 	column := quotePostgresLiteral(r.column.Name)
@@ -386,10 +376,6 @@ FROM (
       AND (a.attacl IS NOT NULL OR EXISTS (SELECT 1 FROM unnest(a.attoptions) o WHERE o NOT LIKE 'pg\_%%')
            OR COALESCE(a.attstattarget::int, -1) <> -1
            OR COALESCE(to_jsonb(a) ->> 'attcompression', '') <> '' OR a.attstorage <> t.typstorage)
-    UNION ALL
-    SELECT 'the collation ' || quote_ident(c.collname) || ' of the column'
-    FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid JOIN pg_collation c ON c.oid = a.attcollation
-    WHERE a.attrelid = %[2]s AND a.attname = %[3]s AND a.attcollation <> t.typcollation
     UNION ALL
     SELECT 'the security label of the column'
     FROM pg_seclabel l JOIN pg_attribute a ON a.attrelid = l.objoid AND a.attnum = l.objsubid

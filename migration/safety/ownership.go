@@ -137,9 +137,13 @@ func RestoredOwnerReason(reason string) string {
 // of planned statements by their text folds these in with [Fold] and loses nothing
 // [AssessRenderedWithCapabilities] reports as destructive.
 //
-// A verdict is a column modification the classifier rates Destructive, or a dropped
-// default. A warning that only says a column changes stays out, since a statement reports
-// that by being there, and so does every other operation an ALTER TABLE holds.
+// A verdict is a column modification the classifier rates Destructive, a dropped
+// default, or a change of the collation alone, which the words of a TYPE or MODIFY
+// clause cannot tell from a collation the column keeps. A statement whose words write
+// a COLLATE that the node keeps gets a Safe verdict saying so, which [Fold] puts in
+// place of the reading of those words. A warning that only says a column changes
+// stays out, since a statement reports that by being there, and so does every other
+// operation an ALTER TABLE holds.
 // A node that renders several statements gives its verdict only to one that changes the
 // column's type or restates its definition, as [AssessRenderedWithCapabilities] does. A
 // node holding an owner operation is left to [OwnerVerdicts].
@@ -165,8 +169,11 @@ func ColumnVerdicts(nodes []ast.Node, statementNodes []int, statements []string)
 			continue
 		}
 		verdict, established := columnVerdict(nodes[index])
-		if established && (rendered[index] == 1 || isTypeChangeSQL(statements[i])) {
+		switch {
+		case established && (rendered[index] == 1 || isTypeChangeSQL(statements[i])):
 			verdicts[i] = verdict
+		case keepsCollation(nodes[index]) && setsColumnCollation(statements[i]):
+			verdicts[i] = StatementAssessment{Severity: Safe, Reason: keptCollationReason}
 		}
 	}
 	return verdicts, nil
@@ -186,7 +193,7 @@ func columnVerdict(node ast.Node) (StatementAssessment, bool) {
 			continue
 		}
 		severity, reason := classifyModifyColumn(modify)
-		if severity == Destructive || reason == dropDefaultReason {
+		if severity == Destructive || reason == dropDefaultReason || reason == collationChangeReason {
 			raiseAssessment(&verdict, StatementAssessment{Severity: severity, Reason: reason})
 		}
 	}
