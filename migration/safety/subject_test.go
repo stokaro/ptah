@@ -165,7 +165,8 @@ var partNodes = []ast.Node{
 	&ast.EnumTypeDef{}, &ast.ModifyColumnOperation{}, &ast.RenameColumnOperation{},
 	&ast.RenameConstraintOperation{}, &ast.RenameEnumValueOperation{}, &ast.RenameIndexOperation{},
 	&ast.RenameTableOperation{}, &ast.RenameTypeOperation{}, &ast.ReplaceIndexOperation{},
-	&ast.SetCommentOperation{}, &ast.SetConstraintCommentOperation{}, &ast.ValidateConstraintOperation{},
+	&ast.SetCommentOperation{}, &ast.SetConstraintCommentOperation{}, &ast.SetTableCollationOperation{},
+	&ast.ValidateConstraintOperation{},
 }
 
 // nodeKindFloor is the least number of node kinds the source walk below may

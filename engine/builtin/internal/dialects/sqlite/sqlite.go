@@ -849,7 +849,11 @@ func bareSQLiteDefault(column *ast.ColumnNode, value string) (string, bool) {
 func renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 	switch constraint.Type {
 	case ast.PrimaryKeyConstraint:
-		return "  PRIMARY KEY (" + strings.Join(escapeIdentifierList(constraint.Columns), ", ") + ")", nil
+		prefix := "  "
+		if constraint.Name != "" {
+			prefix += "CONSTRAINT " + escapeIdentifier(constraint.Name) + " "
+		}
+		return prefix + "PRIMARY KEY (" + strings.Join(escapeIdentifierList(constraint.Columns), ", ") + ")", nil
 	case ast.UniqueConstraint:
 		prefix := "  "
 		if constraint.Name != "" {

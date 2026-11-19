@@ -544,6 +544,14 @@ const setsCollationReason = "the statement sets a column's collation, which may 
 // the column holds.
 const keptCollationReason = "the statement restates the collation the column holds"
 
+// tableCollationReason is why a change of a MySQL or MariaDB table's default
+// collation is a warning. It rewrites no row, and the columns the table holds
+// keep their collations, but every column later added or restated without a
+// collation takes the new one: a plan that resets such columns rebuilds their
+// indexes under it.
+const tableCollationReason = "the statement changes the table's default collation: a column added or restated " +
+	"without a collation takes it, and a unique key on such a column fails where it holds values the new collation finds equal"
+
 // HighestAssessment returns the highest severity from statement assessments.
 // Empty or nil assessments answer Safe; severities compare the way [Highest]
 // documents.
@@ -870,6 +878,8 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 		return classifyReplaceIndex(o)
 	case *ast.AlterIndexVisibilityOperation:
 		return Warning, "ALTER INDEX changes which index the optimizer can use, and so query plans"
+	case *ast.SetTableCollationOperation:
+		return Warning, tableCollationReason
 	default:
 		return Safe, "does not remove data or tighten constraints"
 	}
@@ -920,6 +930,11 @@ func classifyModifyColumn(op *ast.ModifyColumnOperation) (Severity, string) {
 func lostByModification(op *ast.ModifyColumnOperation) string {
 	if op.RemovesCheckProtection {
 		return "MODIFY COLUMN removes an existing CHECK protection"
+	}
+	if op.PreviousCharset != "" && op.Charset != "" {
+		return fmt.Sprintf("the column's character set changes from %s to %s: the server converts every value, "+
+			"and the statement fails on a character %s cannot hold, or loses it where the session is not strict",
+			op.PreviousCharset, op.Charset, op.Charset)
 	}
 	if from, to, ok := typechange.VectorDimensionChange(op.PreviousType, op.Column.Type); ok {
 		return fmt.Sprintf(
@@ -1072,14 +1087,75 @@ func assessRawSQL(sql string, assessment StatementAssessment, known nodeKnowledg
 		assessment.Reason = dropDefaultReason
 	// Last, so a statement it rates would be safe without it, and a node's
 	// verdict on the collation can take its place ([Fold]).
-	case !known.settlesCollation && setsColumnCollation(sql):
+	case collationReason(sql, known) != "":
 		assessment.Severity = Warning
-		assessment.Reason = setsCollationReason
+		assessment.Reason = collationReason(sql, known)
 	}
 	for _, statement := range lintscan.Split(sql, lintscan.ForDialect("")) {
 		raiseAssessment(&assessment, nextInsertVerdict(statement.Words))
 	}
 	return assessment
+}
+
+// collationReason is the reason a statement that sets a collation is rated a
+// warning, and empty for one that sets none: a column's collation, unless the
+// node that rendered the statement settles it, or the table's default
+// collation.
+func collationReason(sql string, known nodeKnowledge) string {
+	switch {
+	case !known.settlesCollation && setsColumnCollation(sql):
+		return setsCollationReason
+	case setsTableCollation(sql):
+		return tableCollationReason
+	default:
+		return ""
+	}
+}
+
+// setsTableCollation reports whether statement changes the default collation
+// of a MySQL or MariaDB table: an ALTER TABLE with a clause of table options
+// that names a COLLATE, CHARSET or CHARACTER SET option, which also selects
+// the character set's default collation. The clause may stand alone or beside
+// clauses that change columns, as in the statement a plan writes for a table
+// and the columns that take its default:
+// `ALTER TABLE t COLLATE utf8mb4_bin, MODIFY COLUMN n varchar(20)`. An option
+// may be written `COLLATE x` or `COLLATE=x`. The clauses are read as
+// [alterTableClauses] splits them, so the word inside a string literal, such
+// as a table comment, is not an option.
+func setsTableCollation(statement string) bool {
+	for i, clause := range alterTableClauses(statement) {
+		if i == 0 && len(clause) > 0 {
+			clause = clause[1:]
+		}
+		if namesCollationOption(clause) {
+			return true
+		}
+	}
+	return false
+}
+
+// namesCollationOption reports whether clause is a clause of table options
+// that names a collation or a character set. A clause that adds, alters,
+// modifies, changes, retypes or converts a column is not one: its COLLATE or
+// CHARACTER SET is the column's.
+func namesCollationOption(clause []string) bool {
+	option := false
+	for j, word := range clause {
+		if slices.Contains([]string{"ADD", "ALTER", "MODIFY", "CHANGE", "TYPE", "CONVERT"}, word) {
+			return false
+		}
+		if isTableOptionWord(word, "COLLATE") || isTableOptionWord(word, "CHARSET") ||
+			word == "CHARACTER" && j+1 < len(clause) && isTableOptionWord(clause[j+1], "SET") {
+			option = true
+		}
+	}
+	return option
+}
+
+// isTableOptionWord reports whether word is the table option name, alone or
+// joined to its value by `=`.
+func isTableOptionWord(word, name string) bool {
+	return word == name || strings.HasPrefix(word, name+"=")
 }
 
 // setsColumnCollation reports whether statement writes the collation of a
@@ -1397,6 +1473,18 @@ func narrowedTypes(columns []difftypes.ColumnDiff) int {
 		}
 	}
 	return narrowed
+}
+
+// convertedCharsets counts the columns whose character set changes with
+// their collation.
+func convertedCharsets(columns []difftypes.ColumnDiff) int {
+	converted := 0
+	for _, column := range columns {
+		if column.CharsetChange != nil {
+			converted++
+		}
+	}
+	return converted
 }
 
 // removedIdentities counts the columns that lose an identity and take none, whose

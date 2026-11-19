@@ -21,6 +21,17 @@ type repeatableState struct {
 	rows        map[string]repeatableRow
 }
 
+// refuseRepeatableDirectory refuses a directory that holds repeatable
+// migrations on a target that cannot run them, before a run creates the
+// revision table or reads anything; see [Migrator.refuseRepeatablesHere].
+func (m *Migrator) refuseRepeatableDirectory() error {
+	source, ok := m.migrationProvider.(repeatableSource)
+	if !ok || !source.loadsRepeatableMigrations() || len(source.repeatableMigrations()) == 0 {
+		return nil
+	}
+	return m.refuseRepeatablesHere()
+}
+
 // readRepeatableState reads the repeatable migrations of the provider and
 // every row of their record, including rows no file of the directory carries
 // any more. It returns nil when the provider does not load repeatable
@@ -54,20 +65,28 @@ func (m *Migrator) readRepeatableState(ctx context.Context) (*repeatableState, e
 //
 // An engine is refused when its descriptor states no record table, which is
 // how an engine on which the path is not measured leaves it out. A connection
-// through a provider session is refused because the record is a table read and
-// written with SQL, which such a session does not expose; a history store that
-// fails to open is that kind of connection too. The revision format is not a
-// reason: the record is a table of its own beside the revision table, named
-// after it, so under the Atlas-compatible format it sits beside
-// atlas_schema_revisions and the revision table keeps the shape that contract
-// defines.
+// through a provider session keeps the record in the provider's store, and is
+// refused when the provider keeps none for the engine; the refusal names the
+// provider and the feature it does not list. A history store that fails to
+// open is that kind of connection too. The revision format is not a reason:
+// the record is a table of its own beside the revision table, named after it,
+// so under the Atlas-compatible format it sits beside atlas_schema_revisions
+// and the revision table keeps the shape that contract defines.
 func (m *Migrator) refuseRepeatablesHere() error {
 	if store, err := m.conn.HistoryStore(); err != nil || store != nil {
-		return &RepeatableMigrationsUnsupportedError{
-			Dialect: m.connectionDialect(),
-			Reason: "this connection reaches the database through a provider rather than a database/sql driver, " +
-				"and the record of repeatable migrations is a table Ptah reads and writes with SQL",
+		repeatables, refusal := m.conn.RepeatableStore()
+		if refusal == nil && repeatables == nil {
+			// A provider connection with no record and no reason for it: the
+			// history store's error, or the absence itself, refuses the run.
+			refusal = err
+			if refusal == nil {
+				refusal = errors.New("the provider connection returned no record of repeatable migrations")
+			}
 		}
+		if refusal != nil {
+			return &RepeatableMigrationsUnsupportedError{Dialect: m.connectionDialect(), Reason: refusal.Error(), Err: refusal}
+		}
+		return nil
 	}
 	if m.revisionTable().CreateRepeatables == "" {
 		return &RepeatableMigrationsUnsupportedError{

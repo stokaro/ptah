@@ -106,6 +106,18 @@ type ModifyColumnOperation struct {
 	PreviousDefault string
 	// HasPreviousDefault reports whether PreviousDefault was populated.
 	HasPreviousDefault bool
+	// PreviousCharset is the character set the column holds where the
+	// modification gives it another one, Charset, and empty where the
+	// character set stays or the plan cannot name both. The server converts
+	// every value the column holds, so the statement fails on a value the new
+	// character set cannot hold, or replaces its characters where the session
+	// is not strict. migration/safety rates such a modification destructive.
+	// A renderer ignores both fields: the column definition states the new
+	// character set.
+	PreviousCharset string
+	// Charset is the character set the modification gives the column, set
+	// together with PreviousCharset.
+	Charset string
 	// PreviousIdentity is the identity generation the column holds before the
 	// modification, empty when it has none. The PostgreSQL family reads it where
 	// [ColumnProperties.Identity] is named: a column with one takes SET GENERATED,
@@ -503,6 +515,30 @@ type SetCommentOperation struct {
 	// them (stokaro/ptah#2168).
 	HasCurrent bool
 }
+
+// SetTableCollationOperation changes a table's default collation, and its
+// default character set where Charset names one. MySQL and MariaDB write it
+// as table options, `CHARSET latin1, COLLATE latin1_bin`, or `COLLATE
+// utf8mb4_bin` alone; every other renderer refuses it.
+//
+// The option leaves every column the table holds as it is. A column that takes
+// the table's default is restated by a [ModifyColumnOperation] beside it, in
+// the same ALTER TABLE: the server reads the new default for that column, and
+// a value it cannot convert fails the whole statement, so the table is never
+// left with the new default and the old column.
+type SetTableCollationOperation struct {
+	// Charset is the table's new default character set, empty where the
+	// change keeps it.
+	Charset string
+	// Collation is the table's new default collation.
+	Collation string
+}
+
+// Accept hands the visitor this operation.
+func (op *SetTableCollationOperation) Accept(visitor Visitor) error { return visitor.VisitNode(op) }
+
+// alterOperation implements the marker method for type safety.
+func (op *SetTableCollationOperation) alterOperation() {}
 
 // RenameConstraintOperation renames a constraint in place.
 //

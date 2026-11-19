@@ -41,6 +41,18 @@ func TestReservedSeeds_HappyPath(t *testing.T) {
 		c.Assert(provider.ValidateDescription(negotiated, nil), qt.IsNil)
 		c.Assert(provider.TwoWayFeatures(), qt.Contains, provider.ReservedSeedsFeature)
 	})
+	// The seed service is one-way: no host listing takes it away, so a host
+	// that lists the reservation alone, or none of the two-way features,
+	// reads a description the SDK still accepts.
+	t.Run("a host that lists the reservation without the seed service keeps both", func(t *testing.T) {
+		c := qt.New(t)
+		d, _, _ := seedLedgerInspection()
+		negotiated := provider.NegotiatedDescription(d, []string{provider.ReservedSeedsFeature})
+		c.Assert(provider.TwoWayFeatures(), qt.Not(qt.Contains), provider.SeedsFeature)
+		c.Assert(negotiated.Engines[0].Features, qt.Contains, provider.SeedsFeature)
+		c.Assert(negotiated.Engines[0].Features, qt.Contains, provider.ReservedSeedsFeature)
+		c.Assert(provider.ValidateDescription(negotiated, nil), qt.IsNil)
+	})
 }
 
 func TestReservedSeeds_FailurePath(t *testing.T) {

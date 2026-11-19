@@ -18,6 +18,7 @@ import (
 	"ptah.run/dialect/mssql/mssqllint"
 	"ptah.run/dialect/mssql/mssqlroutine"
 	"ptah.run/dialect/mysql/mysqlconvert"
+	"ptah.run/dialect/mysql/mysqlprepare"
 	"ptah.run/dialect/mysql/mysqlroutine"
 	"ptah.run/dialect/postgres/pglint"
 	"ptah.run/dialect/postgres/pgproject"
@@ -102,6 +103,7 @@ func New(additional ...engine.Provider) (*engine.Runtime, error) {
 			// MariaDB services on the mysql provider.
 			provider.Targets[0].Creations = mysqlconvert.CreationService{}
 			provider.Targets[0].ReadBack = mysqlconvert.ReadBack{}
+			provider.Targets[0].Preparation = mysqlprepare.Service{}
 		}
 		if name == platform.MySQL {
 			registerMySQLServices(&provider)

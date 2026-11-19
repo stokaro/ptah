@@ -133,6 +133,30 @@ type Database struct {
 	// the dialect. Like RolesOutOfScope it is never serialized.
 	RolesOutOfScopeReason string `json:"-"`
 
+	// CharsetDefaultCollations is a server fact: the collation the server
+	// gives a column or a table that names a character set and no collation,
+	// keyed by the character set's name in lower case. A MySQL or MariaDB
+	// read takes it from information_schema.CHARACTER_SETS, where MariaDB
+	// reports the defaults its character_set_collations setting chooses:
+	// utf8mb4 maps to utf8mb4_0900_ai_ci on MySQL 8.4 and to
+	// utf8mb4_uca1400_ai_ci on MariaDB 11.8. On MySQL the utf8mb4 entry is
+	// the session's default_collation_for_utf8mb4, which CHARACTER_SETS does
+	// not follow. Other readers leave it nil.
+	//
+	// It describes no object, so it is never serialized. A comparison that
+	// does not find a character set here leaves a column that inherits from
+	// it uncompared.
+	CharsetDefaultCollations map[string]string `json:"-"`
+
+	// CharsetAliases is a server fact: the character set each alias names in
+	// the session the read ran in, keyed by the alias in lower case. A MySQL
+	// or MariaDB read asks the server what utf8 names: utf8mb3 on MySQL 8.4,
+	// and on MariaDB utf8mb3 where old_mode holds UTF8_IS_UTF8MB3, its
+	// default, and utf8mb4 where it does not. Other readers leave it nil, and
+	// a comparison then reads the aliases the dialect's descriptor states.
+	// Like CharsetDefaultCollations, it is never serialized.
+	CharsetAliases map[string]string `json:"-"`
+
 	// NotDescribed records what this read did not look at, so a comparator can
 	// tell an object the database does not have from one the reader was never
 	// asked about. The zero value claims the read covered everything; see
@@ -206,6 +230,22 @@ type Database struct {
 	// narrowing the description cannot make the database lose the object.
 	RemovalBlockers []RemovalBlocker `json:"-"`
 
+	// OutOfScope holds what an exclude selector took out of this description
+	// that the database keeps beside the tables the description holds: the
+	// columns, indexes and constraints of those tables, and every trigger and
+	// view, as the read reported them. An object out of scope is kept as it
+	// is, and a comparison never reads one.
+	//
+	// A target that changes a table by writing a new one and copying the
+	// rows into it, as SQLite does, writes the new table from the
+	// declaration, which the selector left without these parts. Its plan
+	// reads them here to carry each part into the new table unchanged, and
+	// refuses where it cannot. A view or a trigger of another table that
+	// names the table must still work after the copy takes its name, so the
+	// plan reads those too. It is a fact about the read, not part of the
+	// description, so it is never serialized.
+	OutOfScope TableParts `json:"-"`
+
 	// DatabasePath is the absolute path of the database this read describes,
 	// such as /local, on a target whose statements name some objects by an
 	// absolute path rather than relative to the connection: YDB, whose ALTER
@@ -257,6 +297,23 @@ type Database struct {
 	// Without it the same name is taken as written, as a schema predicted from
 	// a declaration writes it, and folds. The Oracle reader sets it.
 	StoredNames bool `json:"stored_names,omitempty"`
+}
+
+// TableParts are parts of tables, each naming the table it belongs to, and
+// the views beside them. A column belongs to the table that holds it in
+// Tables, and such a table holds only those columns. The zero value holds no
+// part.
+type TableParts struct {
+	Tables      []Table      `json:"tables,omitempty"`
+	Indexes     []Index      `json:"indexes,omitempty"`
+	Constraints []Constraint `json:"constraints,omitempty"`
+	Triggers    []Trigger    `json:"triggers,omitempty"`
+	Views       []View       `json:"views,omitempty"`
+}
+
+// IsEmpty reports whether p holds no part.
+func (p TableParts) IsEmpty() bool {
+	return len(p.Tables) == 0 && len(p.Indexes) == 0 && len(p.Constraints) == 0 && len(p.Triggers) == 0 && len(p.Views) == 0
 }
 
 // VirtualTable identifies one SQLite virtual table and the module that owns
@@ -1449,6 +1506,13 @@ type Trigger struct {
 	// clause. Empty means the trigger declares none.
 	OldTable string `json:"old_table,omitempty"`
 	NewTable string `json:"new_table,omitempty"`
+
+	// Definition is the statement that created the trigger, as the server
+	// stores it, on an engine that keeps one: SQLite's sqlite_schema.sql. A
+	// plan that has to create the trigger again exactly as it stands, because
+	// it is out of scope, runs it. Empty from a reader that does not keep one.
+	// It is a reader-only fact and never serialized.
+	Definition string `json:"-"`
 
 	// ExecuteFunction is the name of the function the trigger runs, as the
 	// catalog reports it, qualified with the function's schema when that is not

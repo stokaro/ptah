@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/dbtarget"
 )
 
 // catalogOrderEngine is an engine a plan runs on, with what reads a database back.
@@ -41,6 +42,16 @@ var catalogOrderEngines = []catalogOrderEngine{
 	{
 		name: "mariadb", dialect: platform.MariaDB, reads: mysqlFamilyCatalogReads,
 		target: func(c *qt.C) string { return catalogRunTarget(c, "mariadb") },
+	},
+	// MariaDB 11.8 refuses a foreign key dropped and added under one name in one
+	// ALTER TABLE with errno 121, where the MariaDB server above accepts it, so
+	// the rows that drop and add one name run here too.
+	{
+		name: "mariadb-11.8", dialect: platform.MariaDB, reads: mysqlFamilyCatalogReads,
+		target: func(c *qt.C) string {
+			_, url := newMySQLFamilyScratch(c, dbtarget.MariaDB118).database(c, "order")
+			return url
+		},
 	},
 }
 
@@ -265,7 +276,7 @@ CREATE TABLE c (id int PRIMARY KEY, p_id int);
 	},
 	// One foreign key name dropped and added.
 	{
-		name: "fk action change same name", engines: []string{"postgres", "mysql", "mariadb"},
+		name: "fk action change same name", engines: []string{"postgres", "mysql", "mariadb", "mariadb-11.8"},
 		from: `CREATE TABLE p (id int PRIMARY KEY);
 CREATE TABLE c (id int PRIMARY KEY, p_id int, CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id));
 `,
@@ -274,7 +285,7 @@ CREATE TABLE c (id int PRIMARY KEY, p_id int, CONSTRAINT fk FOREIGN KEY (p_id) R
 `,
 	},
 	{
-		name: "fk action change and other table changed", engines: []string{"postgres", "mysql", "mariadb"},
+		name: "fk action change and other table changed", engines: []string{"postgres", "mysql", "mariadb", "mariadb-11.8"},
 		from: `CREATE TABLE p (id int PRIMARY KEY);
 CREATE TABLE c (id int PRIMARY KEY, p_id int, CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id));
 `,

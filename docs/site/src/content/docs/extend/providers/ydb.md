@@ -128,6 +128,12 @@ the manifest that `PTAH_PROVIDER_CONFIG` names; see
 The language server starts no provider: it completes the directives the
 provider claims from a copy recorded from a provider build.
 
+Repeatable migrations run on YDB when the installed provider release lists
+`sessions.repeatable-record`. A release that does not list it refuses a
+directory that holds a repeatable migration before anything changes, and the
+refusal names the provider and the feature; see
+[Repeatable migrations through a provider](../../../versioned/repeatable/#through-a-provider).
+
 The [native provider workflow](../../executable-providers/) describes inspection,
 saved plans, application, and its protocol limitations.
 

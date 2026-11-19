@@ -3817,11 +3817,11 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 		value += "." + part
 	}
 
+	if err := p.refuseEmptyNiladicCall(value); err != nil {
+		return nil, err
+	}
 	// Check if it's a function call
 	if p.current.Type == lexer.TokenOperator && p.current.Value == "(" {
-		if err := p.refuseEmptyNiladicCall(value); err != nil {
-			return nil, err
-		}
 		return p.parseDefaultFunctionCall(start)
 	}
 
@@ -3974,26 +3974,75 @@ func storedNamePart(part string) string {
 }
 
 // refuseEmptyNiladicCall refuses name followed by an empty argument list,
-// with the parser at its opening parenthesis, where the dialect's descriptor
-// names name among [descriptor.ColumnGrammar.EmptyCallFunctions]. The refusal
-// names the bare spelling. A precision, as in SYSTIMESTAMP(3), passes.
+// with the parser just after name, where the dialect's descriptor names name
+// among [descriptor.ColumnGrammar.EmptyCallFunctions]. The refusal names the
+// bare spelling. A precision, as in SYSTIMESTAMP(3), passes.
 func (p *Parser) refuseEmptyNiladicCall(name string) error {
 	columns := p.target.grammar.Columns
-	if !slices.Contains(columns.EmptyCallFunctions, strings.ToUpper(name)) || !p.emptyArgumentListFollows() {
+	if !slices.Contains(columns.EmptyCallFunctions, strings.ToUpper(name)) {
 		return nil
 	}
-	return ptaherr.At(p.current.Start, fmt.Errorf(
+	scan := *p.lexer
+	open, _, empty := emptyArgumentList(p.current, &scan)
+	if !empty {
+		return nil
+	}
+	return ptaherr.At(open, fmt.Errorf(
 		"%s() writes an empty argument list: write DEFAULT %s; %s", name, name, columns.EmptyCallRefusal))
 }
 
-// emptyArgumentListFollows reports whether the opening parenthesis at the
-// cursor closes before any argument, and leaves the parser where it is.
-func (p *Parser) emptyArgumentListFollows() bool {
-	scan := *p.lexer
+// refuseParenthesizedEmptyCall refuses a parenthesized default, the group
+// from start to end, that calls a function of
+// [descriptor.ColumnGrammar.EmptyCallFunctions] with an empty argument list,
+// as in DEFAULT (SYSDATE() + 1). The refusal writes the group with the bare
+// spelling of every such call.
+func (p *Parser) refuseParenthesizedEmptyCall(start, end int) error {
+	columns := p.target.grammar.Columns
+	if len(columns.EmptyCallFunctions) == 0 {
+		return nil
+	}
+	scan := p.lexer.Range(start, end)
+	var bare strings.Builder
+	from, first, name := start, -1, ""
+	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		if token.Type != lexer.TokenIdentifier || !slices.Contains(columns.EmptyCallFunctions, strings.ToUpper(token.Value)) {
+			continue
+		}
+		after := *scan
+		open, closed, empty := emptyArgumentList(after.NextToken(), &after)
+		if !empty {
+			continue
+		}
+		if first < 0 {
+			first, name = open, token.Value
+		}
+		bare.WriteString(p.input[from:token.End])
+		*scan = after
+		from = closed
+	}
+	if first < 0 {
+		return nil
+	}
+	bare.WriteString(p.input[from:end])
+	return ptaherr.At(first, fmt.Errorf(
+		"%s() writes an empty argument list: write DEFAULT %s; %s", name, bare.String(), columns.EmptyCallRefusal))
+}
+
+// emptyArgumentList reports whether token and the tokens scan yields after it
+// open an argument list and close it before any argument, past whitespace and
+// comments, and answers where the list opens and where it ends.
+func emptyArgumentList(token lexer.Token, scan *lexer.Lexer) (open, closed int, empty bool) {
+	for token.Type == lexer.TokenWhitespace || token.Type == lexer.TokenComment {
+		token = scan.NextToken()
+	}
+	if !token.MatchOperatorValue("(") {
+		return 0, 0, false
+	}
+	open = token.Start
 	for {
-		token := scan.NextToken()
+		token = scan.NextToken()
 		if token.Type != lexer.TokenWhitespace && token.Type != lexer.TokenComment {
-			return token.MatchOperatorValue(")")
+			return open, token.End, token.MatchOperatorValue(")")
 		}
 	}
 }
@@ -4127,6 +4176,9 @@ func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
 	}
 	if body == "" {
 		return nil, ptaherr.At(start, fmt.Errorf("empty DEFAULT expression"))
+	}
+	if err := p.refuseParenthesizedEmptyCall(start, p.previous.End); err != nil {
+		return nil, err
 	}
 	group := p.input[start:p.previous.End]
 	casts, err := p.parsePostgresCasts()

@@ -288,6 +288,10 @@ func compareReportingUndecidedAdditions(
 	// What the read of the database declined to describe, for a target that
 	// rebuilds a table and must not drop a setting nobody compared.
 	diff.CurrentNotDescribed = database.NotDescribed
+	// What a selector took out of the tables the read kept, for the same
+	// target: a part out of scope survives a rewrite only if the plan carries
+	// it.
+	diff.CurrentOutOfScope = database.OutOfScope
 	// Where the read happened, for the statements YDB takes only with an
 	// absolute path, and every grant it reported, for a plan that recreates a
 	// table and must give the table its grants back.

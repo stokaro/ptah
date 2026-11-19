@@ -107,6 +107,9 @@ func TestCanonical_DifferentGroupingsDiffer(t *testing.T) {
 		{name: "another unit", left: "now() + INTERVAL 1 DAY", right: "now() + INTERVAL 1 HOUR"},
 		{name: "an INTERVAL subtracted", left: "now() - INTERVAL 1 DAY", right: "now() + INTERVAL 1 DAY"},
 		{name: "CURDATE and NOW", left: "curdate()", right: "now()"},
+		{name: "CURRENT_DATE and CURRENT_TIME", left: "CURRENT_DATE", right: "CURRENT_TIME"},
+		{name: "% binds as tightly as *", left: "7 % 4 * 2", right: "7 % (4 * 2)"},
+		{name: "* binds as tightly as %", left: "2 * 7 % 4", right: "2 * (7 % 4)"},
 		{name: "strings in another case", left: "'a'", right: "'A'"},
 	}
 

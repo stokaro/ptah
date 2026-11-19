@@ -323,6 +323,7 @@ func reverseSchemaDiffWithPrior(
 	// A rollback runs against the same database, whose read declined the same
 	// settings.
 	reversed.CurrentNotDescribed = diff.CurrentNotDescribed
+	reversed.CurrentOutOfScope = diff.CurrentOutOfScope
 	// The same database's path and grants: a rollback names an object by the
 	// same absolute path, and a table it rebuilds held the same grants.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath
@@ -451,6 +452,25 @@ func priorTables(prior *schemamodel.Database) []schemamodel.Table {
 		return nil
 	}
 	return prior.Tables
+}
+
+// reverseCollationChange swaps the sides of a table's default collation
+// change, and of the character set change it carries, so the rollback
+// restores the collation the database had; nil stays nil.
+func reverseCollationChange(change *difftypes.CollationChange) *difftypes.CollationChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.CollationChange{Current: change.Desired, Desired: change.Current, Charset: reverseCharsetChange(change.Charset)}
+}
+
+// reverseCharsetChange swaps the sides of a character set change, so the
+// rollback restores the character set the database had; nil stays nil.
+func reverseCharsetChange(change *difftypes.CharsetChange) *difftypes.CharsetChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.CharsetChange{Current: change.Desired, Desired: change.Current}
 }
 
 // reverseCommentChange swaps the two sides of a comment transition, so the

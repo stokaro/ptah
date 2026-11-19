@@ -467,6 +467,12 @@ the column's type and, when the column declares one, its default. The default
 is in the statement because a `MODIFY COLUMN` that names only a type keeps the
 default the column already had.
 
+A comment is planned as a statement of its own, because `MODIFY COLUMN` keeps
+the comment the column holds: `ALTER TABLE ... COMMENT COLUMN` for a column and
+`ALTER TABLE ... MODIFY COMMENT` for the table. A column whose comment is the
+only change takes no `MODIFY COLUMN`, and an empty comment clears the one the
+server holds.
+
 A column's type is compared as the server stores it, width included. A live
 `Int32` declared `Int64`, `UInt8` declared `UInt16`, `Float32` declared
 `Float64`, `Decimal(9, 2)` declared `Decimal(18, 2)` and `DateTime` declared

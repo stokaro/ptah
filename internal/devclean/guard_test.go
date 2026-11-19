@@ -36,6 +36,10 @@ func TestReplayGuardSQLite_HappyPath(t *testing.T) {
 			name:      "foreign keys pragma",
 			statement: `PRAGMA foreign_keys = ON`,
 		},
+		{
+			name:      "legacy rename pragma",
+			statement: `PRAGMA legacy_alter_table = on`,
+		},
 	}
 
 	for _, test := range tests {

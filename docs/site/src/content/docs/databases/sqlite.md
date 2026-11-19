@@ -135,6 +135,39 @@ enforcement on its connection instead, runs the plan, and runs
 the plan and rolls it back. Declared rows in the same plan go inside the pair,
 ahead of the enabling pragma, so the plan still ends with it.
 
+SQLite checks every view and trigger when a table is renamed, and the rename
+fails while one names a table that does not exist. The rebuild drops the old
+table before it renames the new one, so a view that selects from the table, or a
+trigger of another table that writes it, would fail the rename. Where the plan
+sees such an object, declared or kept out of scope by a selector, it renames
+between `PRAGMA legacy_alter_table = on;` and `PRAGMA legacy_alter_table = off;`,
+and the object names the table again once the new table takes its name. A
+rebuild that nothing else names renames without the pair.
+
+The pragma takes effect inside a transaction and belongs to the connection, so
+it outlives the transaction. The plan cannot read the value the connection
+holds, so it always writes `off` after the rename, and a comment above the pair
+says so. `ptah schema apply` puts back the value it found when the transaction
+ends. `ptah migrations up` puts it back after each file, in every `--tx-mode`,
+so a file that sets the pragma does not change how the renames of the next file
+treat views and triggers.
+
+A table with an `AUTOINCREMENT` key keeps its high-water mark through a rebuild.
+SQLite holds the mark in `sqlite_sequence`. The copy sets the new table's mark to
+the largest key it copies, and the drop deletes the old table's mark, so a key
+handed out and then deleted would be handed out again: with rows 1 to 3 and row
+3 deleted, the next row would get 3. Where the live table and the rebuilt table
+both have `AUTOINCREMENT`, declared or kept out of scope by a selector, the plan
+writes this statement between the new table's `CREATE TABLE` and the copy:
+
+```sql
+INSERT INTO sqlite_sequence (name, seq) SELECT 'new_kinds', seq FROM sqlite_sequence WHERE name = 'kinds';
+```
+
+The statement reads the mark when it runs, inside the plan's transaction. The
+copy keeps the larger of the two values, and the rename gives the row the
+table's name, so the next row after the example above gets 4.
+
 ## A column default with an operator
 
 SQLite takes an expression default only in parentheses. SQLite 3.54 answers a
@@ -158,7 +191,8 @@ cannot, each refused before any SQL runs and each naming what to do instead.
 | A trigger whose body is itself a `CREATE TRIGGER` statement | Recreating it would nest one trigger inside another | Declare the body as the statements the trigger runs, without the `CREATE TRIGGER` header |
 | An `EXCLUDE` constraint | SQLite has no such constraint | Express the rule as a `UNIQUE` index when it compares whole values for equality, or as a `CHECK` constraint or trigger when it does not |
 | A constraint change the comparison cannot attribute to a table | The rebuild does not know which table to rebuild | Declare the constraint on its table |
-| An index `diff.skip: [drop_index]` keeps over a column the rebuild removes | The rebuilt table has no column for the index to cover | Keep the column, or remove the index in a separate migration first |
+| An index `diff.skip: [drop_index]` or a selector keeps whose columns, key expression or `WHERE` clause read a column the rebuild removes | The rebuilt table has no column for the index to read | Keep the column, or remove the index in a separate migration first |
+| A view, or a trigger of another table, that reads a column the rebuild removes | The rename leaves it as it is, and it would fail the first time it runs | Keep the column, or change the view or trigger first |
 
 A table already holding `new_<name>` is **not** refused. That name is
 an ordinary identifier and a schema is allowed to use it, so the rebuild's

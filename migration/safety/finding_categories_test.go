@@ -73,6 +73,10 @@ func classifierRows() []*difftypes.SchemaDiff {
 		{TablesModified: []difftypes.TableDiff{{ColumnsModified: []difftypes.ColumnDiff{
 			{Changes: map[string]string{"identity": "always -> "}},
 		}}}},
+		{TablesModified: []difftypes.TableDiff{{ColumnsModified: []difftypes.ColumnDiff{
+			{Changes: map[string]string{"collation": "utf8mb4_bin -> latin1_bin"},
+				CharsetChange: &difftypes.CharsetChange{Current: "utf8mb4", Desired: "latin1"}},
+		}}}},
 		{MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "daily", FeatureChanges: []schemaext.ChangeRecord{
 			ownerChange(&classifiedChange{effect: schemaext.Effect{Impact: schemaext.Behavioral, Reason: "rows are kept"}}),
 		}}}},

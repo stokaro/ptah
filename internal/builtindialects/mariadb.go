@@ -134,8 +134,10 @@ func mariaDB() descriptor.Dialect {
 			// utf8mb4_uca1400_ai_ci, and int COLLATE utf8mb4_bin keeps no
 			// collation.
 			CollationNames: descriptor.CollationNames{
-				CharsetAliases: map[string]string{"utf8": "utf8mb3"},
-				WithoutCharset: true, CharsetDefault: "DEFAULT",
+				CharsetAliases:  map[string]string{"utf8": "utf8mb3"},
+				CharsetDefaults: mariaDBCharsetDefaults(),
+				WithoutCharset:  true, CharsetDefault: "DEFAULT",
+				ListedWithoutCharset: []string{"uca1400_"},
 				Types: []string{
 					"char", "character", "nchar", "national", "varchar", "nvarchar",
 					"tinytext", "text", "mediumtext", "longtext", "enum", "set",
@@ -312,7 +314,7 @@ func mariaDB() descriptor.Dialect {
 
 		// Migrations: the engine's reading decides a migration file's
 		// directives when its dialect is unknown.
-		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
+		Migration: descriptor.Migration{DirectivesWithoutDialect: true, SameNamedForeignKeysApart: true},
 
 		// Reach: none of its own. MariaDB's constructs that reach outside the
 		// database are MySQL's, which MySQL's descriptor states and a scan
@@ -328,5 +330,31 @@ func mariaDB() descriptor.Dialect {
 
 		// Transactions: what migration/seeder and internal/schemaclean read.
 		Savepoint: descriptor.Savepoint{Create: "SAVEPOINT", Rollback: "ROLLBACK TO SAVEPOINT", Release: "RELEASE SAVEPOINT"},
+	}
+}
+
+// mariaDBCharsetDefaults is the descriptor's
+// [descriptor.CollationNames.CharsetDefaults]: information_schema.CHARACTER_SETS
+// on MariaDB 11.8 and 12.3. MariaDB 10.11 defaults the Unicode character sets
+// to their _general_ci collations.
+func mariaDBCharsetDefaults() map[string]string {
+	return map[string]string{
+		"armscii8": "armscii8_general_ci", "ascii": "ascii_general_ci",
+		"big5": "big5_chinese_ci", "binary": "binary", "cp1250": "cp1250_general_ci",
+		"cp1251": "cp1251_general_ci", "cp1256": "cp1256_general_ci",
+		"cp1257": "cp1257_general_ci", "cp850": "cp850_general_ci", "cp852": "cp852_general_ci",
+		"cp866": "cp866_general_ci", "cp932": "cp932_japanese_ci", "dec8": "dec8_swedish_ci",
+		"eucjpms": "eucjpms_japanese_ci", "euckr": "euckr_korean_ci",
+		"gb2312": "gb2312_chinese_ci", "gbk": "gbk_chinese_ci", "geostd8": "geostd8_general_ci",
+		"greek": "greek_general_ci", "hebrew": "hebrew_general_ci", "hp8": "hp8_english_ci",
+		"keybcs2": "keybcs2_general_ci", "koi8r": "koi8r_general_ci",
+		"koi8u": "koi8u_general_ci", "latin1": "latin1_swedish_ci",
+		"latin2": "latin2_general_ci", "latin5": "latin5_turkish_ci",
+		"latin7": "latin7_general_ci", "macce": "macce_general_ci",
+		"macroman": "macroman_general_ci", "sjis": "sjis_japanese_ci",
+		"swe7": "swe7_swedish_ci", "tis620": "tis620_thai_ci", "ucs2": "ucs2_uca1400_ai_ci",
+		"ujis": "ujis_japanese_ci", "utf16": "utf16_uca1400_ai_ci",
+		"utf16le": "utf16le_general_ci", "utf32": "utf32_uca1400_ai_ci",
+		"utf8mb3": "utf8mb3_uca1400_ai_ci", "utf8mb4": "utf8mb4_uca1400_ai_ci",
 	}
 }

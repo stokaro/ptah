@@ -301,6 +301,8 @@ type RepeatableMigrationsUnsupportedError struct {
 	Dialect string
 	// Reason says what stands in the way.
 	Reason string
+	// Err is the error Reason was read from, nil when nothing returned one.
+	Err error
 }
 
 // Error names the dialect, when the engine is what stands in the way, and the
@@ -311,6 +313,9 @@ func (e *RepeatableMigrationsUnsupportedError) Error() string {
 	}
 	return "this directory holds repeatable migrations, which this run cannot execute: " + e.Reason
 }
+
+// Unwrap returns the error Reason was read from.
+func (e *RepeatableMigrationsUnsupportedError) Unwrap() error { return e.Err }
 
 // DirtyRepeatableError reports repeatable migrations whose last attempt
 // failed or has no outcome. An up run refuses before it changes anything while

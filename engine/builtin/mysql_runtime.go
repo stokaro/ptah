@@ -11,6 +11,7 @@ import (
 	"ptah.run/dialect/mysql/mysqldiff"
 	"ptah.run/dialect/mysql/mysqllint"
 	"ptah.run/dialect/mysql/mysqlplan"
+	"ptah.run/dialect/mysql/mysqlprepare"
 	"ptah.run/dialect/mysql/mysqlreport"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/mysql/mysqlsource"
@@ -32,6 +33,9 @@ import (
 func registerMySQLServices(provider *engine.Provider) {
 	provider.Targets[0].Creations = mysqlconvert.CreationService{}
 	provider.Targets[0].ReadBack = mysqlconvert.ReadBack{}
+	// The character sets that decide a collation the declaration leaves to
+	// the server are the owner's settings.
+	provider.Targets[0].Preparation = mysqlprepare.Service{}
 	// The MySQL owner checks its lint rules for both engines of the family;
 	// each rule names the targets it judges.
 	provider.Lint = append(provider.Lint, engine.Lint{Rules: mysqllint.Rules(), Service: mysqllint.Service{}})

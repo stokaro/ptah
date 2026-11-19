@@ -57,6 +57,24 @@ func (m *Migrator) inRunSession(session *dbschema.DatabaseConnection) *Migrator 
 	return &scoped
 }
 
+// sessionSettingsResetter is an executor that can give its session back a
+// setting a statement changed: the SQLite writer and transaction, for
+// legacy_alter_table. A run calls it after each migration file whose session
+// outlives the file, so one file cannot change how the next one's statements
+// behave. An executor that is not one has nothing to give back.
+type sessionSettingsResetter interface {
+	ResetSessionSettings(ctx context.Context) error
+}
+
+// resetSessionSettings gives executor's session back the settings a statement
+// changed, where executor keeps any; see [sessionSettingsResetter].
+func resetSessionSettings(ctx context.Context, executor any) error {
+	if resetter, ok := executor.(sessionSettingsResetter); ok {
+		return resetter.ResetSessionSettings(ctx)
+	}
+	return nil
+}
+
 // withBodySession calls use with the session a migration body runs on: the
 // run's, which outlives the call, or a session pinned for this call alone and
 // discarded when it returns.

@@ -24,7 +24,7 @@ import (
 // diff is what the rollback compared. A statement whose access it and forward do not settle
 // keeps its place.
 func AlignRollback(dialect string, forward, rollback []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	form, spelling, ok := catalogRules(dialect)
+	target, spelling, ok := catalogRules(dialect)
 	if !ok {
 		return rollback
 	}
@@ -34,7 +34,7 @@ func AlignRollback(dialect string, forward, rollback []ast.Node, diff *difftypes
 	facts.readDiff(diff)
 	facts.readApplied(forward)
 	facts.readPlan(rollback)
-	how := arrangementFor(form, facts)
+	how := arrangementFor(target, facts)
 	how.redundant = inlinedConstraints(forward)
 	index := how.indexForward(forward)
 	how.reorder = index.namesFreedFirst(how)
@@ -43,6 +43,7 @@ func AlignRollback(dialect string, forward, rollback []ast.Node, diff *difftypes
 	for _, node := range out {
 		respell(node, spelling)
 	}
+	withoutUnreadCharsets(out, diff, dialect)
 	return out
 }
 

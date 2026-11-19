@@ -89,7 +89,7 @@ func (m *metadataSnapshot) load(ctx context.Context, runner historyRunner) error
 	}
 	query := "SELECT tag,version,recorded_at FROM main." + table + " ORDER BY tag"
 	if m.scope.Kind == protocol.MetadataScope_LOG {
-		query = "SELECT run_id,seq,operation,version,state,actor,actor_source,checksum,logged_at,error FROM main." + table + " ORDER BY run_id,seq"
+		query = "SELECT run_id,seq,operation,version,state,actor,actor_source,checksum,logged_at,error,repeatable FROM main." + table + " ORDER BY run_id,seq"
 	}
 	rows, err := runner.QueryContext(ctx, query)
 	if err != nil {
@@ -130,12 +130,13 @@ func (m *metadataSnapshot) load(ctx context.Context, runner historyRunner) error
 }
 func scanMetadataLog(rows *sql.Rows) (*protocol.MigrationLogRecord, error) {
 	row := &protocol.MigrationLogRecord{}
-	var actor, checksum, failure sql.NullString
+	var actor, checksum, failure, repeatable sql.NullString
 	var at time.Time
-	if err := rows.Scan(&row.RunId, &row.Sequence, &row.Operation, &row.Version, &row.State, &actor, &row.ActorSource, &checksum, &at, &failure); err != nil {
+	if err := rows.Scan(&row.RunId, &row.Sequence, &row.Operation, &row.Version, &row.State, &actor, &row.ActorSource, &checksum, &at, &failure, &repeatable); err != nil {
 		return nil, err
 	}
 	row.Actor, row.Checksum, row.Error = actor.String, checksum.String, failure.String
+	setLogRepeatable(row, repeatable.String)
 	nanos, err := metadataNanoseconds(at)
 	if err != nil {
 		return nil, err

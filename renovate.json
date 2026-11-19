@@ -74,6 +74,17 @@
       "enabled": false
     },
     {
+      "description": "The mariadb-11-8 integration service is pinned to 11.8 deliberately: MariaDB 11.8 refuses a foreign key dropped and added under one name in one ALTER TABLE with errno 121, the 12.3 service accepts it, and the catalog shape test points its rows that drop and add one name at both. A 12.x tag removes that coverage without failing anything. Matching on the current value freezes only that pin; the tag names a line, so the server still takes each 11.8 patch release.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "mariadb"
+      ],
+      "matchCurrentValue": "11.8",
+      "enabled": false
+    },
+    {
       "description": "Update indirect Go dependencies",
       "matchManagers": [
         "gomod"

@@ -3204,6 +3204,10 @@ message ReservedObject {
     // The ledger of the seed files the engine's seed service recorded.
     // Contract 25.29, under schema.reserved-seeds.
     SEEDS = 5;
+    // The record of repeatable migrations the engine's history keeps beside
+    // the revision table. Contract 25.45, under
+    // schema.reserved-repeatable-record.
+    REPEATABLE = 6;
   }
   Purpose purpose = 3;
   repeated string conflict_kinds = 4;

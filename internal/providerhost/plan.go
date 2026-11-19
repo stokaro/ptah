@@ -182,6 +182,9 @@ func indexRemovalPlacement(semantics identifier.Semantics, steps []ast.Node) (ah
 // mutation field of those objects. CurrentNotDescribed is observation
 // context even when none of those objects is writable; refusing it would
 // block table changes merely because access was not inspected.
+// CurrentOutOfScope is observation context too: a provider changes a table
+// with statements of its own, and a selector that keeps a column out of scope
+// asks it to change nothing about the column.
 func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObjectPlan, error) {
 	if len(diff.CurrentOwners) != 0 {
 		// The comparison carries owners only for an engine name whose
@@ -199,7 +202,7 @@ func (p commonPlanner) commonObjectSteps(diff *difftypes.SchemaDiff) (commonObje
 	// statements, so refusing it would refuse every plan made from a read.
 	fields := []string{"TablePreparation", "IdentifierSemantics", "TablesAdded", "TablesRemoved", "TablesModified",
 		"DeclaredTables", "DeclaredSchemas", "HeldSchemas", "DeclaredForeignKeys", "DeclaredConstraintHosts", "ObservedConstraintHosts",
-		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "Matched", "FeatureCounts",
+		"DeclaredTableDependencies", "Features", "FeatureChanges", "CurrentDatabasePath", "CurrentNotDescribed", "CurrentOutOfScope", "Matched", "FeatureCounts",
 		"ConnectedAccount"}
 	if p.commonObjects {
 		fields = append(fields, commonObjectFields...)

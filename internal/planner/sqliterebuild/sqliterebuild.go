@@ -103,6 +103,48 @@ func (s CopyStatement) CopyRows(columns, selectList string) string {
 	return "INSERT INTO " + quotedTable(s.New) + " (" + columns + ") SELECT " + selectList + " FROM " + quotedTable(s.Old) + ";"
 }
 
+// KeepSequence writes the statement that gives New the AUTOINCREMENT
+// high-water mark Old holds in sqlite_sequence, read when the statement runs.
+// It belongs between the CREATE TABLE of New and the copy: New has
+// AUTOINCREMENT, so its CREATE TABLE makes sure sqlite_sequence exists, which
+// a statement before it could not count on where an exclude selector keeps
+// Old's AUTOINCREMENT column out of what a dev database recreates. The lint
+// rebuild matcher and the change wording skip it there.
+//
+// The copy leaves New's mark at the largest key it copies, and the drop
+// deletes Old's mark, so without it a key Old handed out and then lost to a
+// DELETE is handed out again: with rows 1 to 3 and row 3 deleted, the mark is
+// 3 before the rebuild, 2 after it, and the next insert reuses 3. With New's
+// row in place, the copy keeps the larger value, and the rename gives the row
+// Old's name. Where Old holds no mark the statement inserts nothing.
+// [ReadSequenceStatement] reads the tables back.
+func (s CopyStatement) KeepSequence() string {
+	sequence := "sqlite_sequence"
+	newName, oldName := s.New, s.Old
+	if ref, ok := tableref.Parse(s.Old); ok {
+		oldName = ref.Name
+		if ref.Qualified {
+			sequence = quotedName(ref.Schema) + "." + sequence
+		}
+	}
+	if ref, ok := tableref.Parse(s.New); ok {
+		newName = ref.Name
+	}
+	return "INSERT INTO " + sequence + " (name, seq) SELECT " + quotedText(newName) + ", seq FROM " + sequence +
+		" WHERE name = " + quotedText(oldName) + ";"
+}
+
+// ReadSequenceStatement reports whether statement is one
+// [CopyStatement.KeepSequence] wrote for copied, which the plan places
+// between the CREATE TABLE of copied.New and its copy.
+func ReadSequenceStatement(statement string, copied CopyStatement) bool {
+	return statement == copied.KeepSequence()
+}
+
+func quotedText(text string) string {
+	return "'" + strings.ReplaceAll(text, "'", "''") + "'"
+}
+
 // Rename writes the statement that renames New over Old. It names the new name
 // without its schema, as SQLite's ALTER TABLE requires.
 func (s CopyStatement) Rename() string {

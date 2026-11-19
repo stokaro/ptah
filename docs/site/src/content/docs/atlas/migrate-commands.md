@@ -1798,9 +1798,11 @@ only where it can show that nothing depends on their order:
   counts as one, because the pass does not read the routine's body.
 - Added columns keep the order the declaration gives them, since that is the order the
   table holds them in, as a table created from the declaration does.
-- Two changes the server refuses in one statement stay in two: on MySQL a foreign key
-  dropped and added under one name, and on MySQL and MariaDB a foreign key of a table
-  to itself and the change it references.
+- Two changes the server refuses in one statement stay in two, on MySQL and MariaDB:
+  a foreign key dropped and added under one name, which MySQL 8.4 refuses with
+  `ERROR 1826` and MariaDB 10.11 to 11.8 with `errno: 121`, and a foreign key of a
+  table to itself and the change it references. MariaDB 12.3 takes the first pair in
+  one statement, and the file is written for every release line, so it keeps two.
 
 Some differences stay, on purpose:
 

@@ -3,6 +3,7 @@ package schemaprojection
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 
@@ -47,11 +48,24 @@ type TableCreationRequest struct {
 	Identifiers  identifier.Semantics
 	Capabilities capability.Capabilities
 	Tables       []TableCreationInput
+	// CharsetDefaultCollations is the default collation of each character
+	// set on the server the tables are predicted for, in the shape of
+	// [ptah.run/catalog.Database.CharsetDefaultCollations]: a dev database's
+	// read where the caller has one, or the target descriptor's static table.
+	// A service resolves nothing that needs a character set's default where
+	// it is nil.
+	CharsetDefaultCollations map[string]string
+	// CharsetAliases is the character set each alias names on that server,
+	// in the shape of [ptah.run/catalog.Database.CharsetAliases], nil where
+	// no server was read.
+	CharsetAliases map[string]string
 }
 
 // Clone returns independent declarations and target facts.
 func (r TableCreationRequest) Clone() TableCreationRequest {
 	r.Identifiers = r.Identifiers.Clone()
+	r.CharsetDefaultCollations = maps.Clone(r.CharsetDefaultCollations)
+	r.CharsetAliases = maps.Clone(r.CharsetAliases)
 	r.Tables = slices.Clone(r.Tables)
 	for i := range r.Tables {
 		r.Tables[i].Declaration = r.Tables[i].Declaration.Clone()
@@ -87,6 +101,20 @@ type TableCreation struct {
 	Observed                  []schemaext.FacetRecord
 	ColumnPrimaryKeys         []string
 	ColumnPrimaryKeysPrepared bool
+	// Collation is the default collation a read of the created table
+	// reports, on a target whose tables hold one, and empty where the owner
+	// predicts none. It replaces the projected table's collation only where
+	// it is not empty.
+	Collation string
+	// ColumnCollations maps a declared column that names no collation to
+	// the collation a read of the created table reports for it, the one it
+	// inherits. A column it leaves out keeps the collation it declares.
+	ColumnCollations map[string]string
+	// ColumnTypes maps a declared column the target stores under another
+	// type to the type a read of the created table reports for it: MySQL and
+	// MariaDB store `varchar(10) CHARACTER SET binary` as varbinary(10). A
+	// column it leaves out keeps the type it declares.
+	ColumnTypes map[string]string
 }
 
 // TableCreationResult explicitly completes the whole batch, including an empty
@@ -107,6 +135,8 @@ func (r TableCreationResult) Clone() TableCreationResult {
 		r.Tables[i].Facets = slices.Clone(r.Tables[i].Facets)
 		r.Tables[i].Observed = slices.Clone(r.Tables[i].Observed)
 		r.Tables[i].ColumnPrimaryKeys = slices.Clone(r.Tables[i].ColumnPrimaryKeys)
+		r.Tables[i].ColumnCollations = maps.Clone(r.Tables[i].ColumnCollations)
+		r.Tables[i].ColumnTypes = maps.Clone(r.Tables[i].ColumnTypes)
 	}
 	return r
 }
@@ -172,6 +202,12 @@ func validateTableCreation(input TableCreationInput, output TableCreation, seman
 	if len(output.ColumnPrimaryKeys) != 0 && !output.ColumnPrimaryKeysPrepared {
 		return fmt.Errorf("%w: projected column keys have no completion receipt", ErrInvalid)
 	}
+	if err := validateCreationCollations(input, output.ColumnCollations); err != nil {
+		return err
+	}
+	if err := validateCreationTypes(input, output.ColumnTypes); err != nil {
+		return err
+	}
 	columns := make(map[string]bool)
 	for _, field := range input.Declaration.Fields {
 		columns[field.Name] = true
@@ -182,6 +218,45 @@ func validateTableCreation(input TableCreationInput, output TableCreation, seman
 			return fmt.Errorf("%w: creation projection names an unknown or duplicate key column", ErrInvalid)
 		}
 		seen[name] = true
+	}
+	return nil
+}
+
+// validateCreationCollations refuses a predicted collation for a column the
+// declaration does not declare, one that declares its own, and an empty one.
+func validateCreationCollations(input TableCreationInput, predicted map[string]string) error {
+	declared := make(map[string]string, len(input.Declaration.Fields))
+	for _, field := range input.Declaration.Fields {
+		declared[field.Name] = field.Collate
+	}
+	for _, name := range slices.Sorted(maps.Keys(predicted)) {
+		own, found := declared[name]
+		switch {
+		case !found:
+			return fmt.Errorf("%w: creation projection names a collation for undeclared column %q", ErrInvalid, name)
+		case own != "":
+			return fmt.Errorf("%w: creation projection names a collation for column %q, which declares its own", ErrInvalid, name)
+		case predicted[name] == "":
+			return fmt.Errorf("%w: creation projection names an empty collation for column %q", ErrInvalid, name)
+		}
+	}
+	return nil
+}
+
+// validateCreationTypes refuses a predicted type for a column the declaration
+// does not declare, and an empty one.
+func validateCreationTypes(input TableCreationInput, predicted map[string]string) error {
+	declared := make(map[string]bool, len(input.Declaration.Fields))
+	for _, field := range input.Declaration.Fields {
+		declared[field.Name] = true
+	}
+	for _, name := range slices.Sorted(maps.Keys(predicted)) {
+		switch {
+		case !declared[name]:
+			return fmt.Errorf("%w: creation projection names a type for undeclared column %q", ErrInvalid, name)
+		case predicted[name] == "":
+			return fmt.Errorf("%w: creation projection names an empty type for column %q", ErrInvalid, name)
+		}
 	}
 	return nil
 }

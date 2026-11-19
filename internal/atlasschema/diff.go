@@ -305,17 +305,23 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 			// once the sources are read and the refusals decided from them
 			// alone are made, so those come first. Two documents compared as
 			// written hold no other connection, so the server behind it also
-			// answers what they are planned for.
-			capabilities := func(ctx context.Context) (capability.Capabilities, error) {
-				documentCaps, err := documentCapabilities(ctx, opts, dialect, fromSet, toSet)
+			// answers what they are planned for, and the character set
+			// defaults a --from document's tables take there.
+			server := func(ctx context.Context) (diffServer, error) {
+				document, err := documentServer(ctx, opts, dialect, fromSet, toSet)
 				if err != nil {
-					return capability.Capabilities{}, err
+					return diffServer{}, err
 				}
-				return diffCapabilities(target, opts.ServerVersion, conn, documentCaps), nil
+				return diffServer{
+					capabilities: diffCapabilities(target, opts.ServerVersion, conn, document.Capabilities),
+					facts: goschematodb.ServerFacts{
+						CharsetDefaultCollations: document.CharsetDefaultCollations, CharsetAliases: document.CharsetAliases,
+					},
+				}, nil
 			}
 			var diffErr error
 			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect,
-				capabilities, devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
+				server, devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
 			return diffErr
 		})
 	if err != nil {
@@ -407,34 +413,49 @@ func diffCapabilities(
 	}
 }
 
-// documentCapabilities opens the dev URL of a diff, unless
-// [DiffOptions.SkipUnusedDevURL] is set, and answers what the dev server can do
-// when the two sides are documents compared as written, which are planned for
-// it. Otherwise it answers nil.
-func documentCapabilities(
+// diffServer is what a schema diff plans for: the capability set, and the
+// character set facts a --from document is projected with.
+type diffServer struct {
+	capabilities capability.Capabilities
+	facts        goschematodb.ServerFacts
+}
+
+// documentServer opens the dev URL of a diff, unless
+// [DiffOptions.SkipUnusedDevURL] is set, and answers, when the two sides are
+// documents compared as written, which are planned for it, what the dev
+// server can do and its session's character set facts. Otherwise it answers
+// none. A --server-version pins the capabilities, not the facts.
+func documentServer(
 	ctx context.Context,
 	opts DiffOptions,
 	dialect string,
 	fromSet, toSet atlassource.Set,
-) (capability.Capabilities, error) {
-	asksDevServer := opts.ServerVersion == "" && !materializesFrom(fromSet, toSet, opts.DevURL) &&
-		!holdsServerForComparison(fromSet, toSet)
+) (devreach.Facts, error) {
+	documents := !materializesFrom(fromSet, toSet, opts.DevURL) && !holdsServerForComparison(fromSet, toSet)
+	asksDevServer := opts.ServerVersion == "" && documents
 	switch {
-	case !opts.SkipUnusedDevURL:
-		devCaps, err := devreach.Server(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout)
-		if err != nil || !asksDevServer {
-			return capability.Capabilities{}, err
+	case !opts.SkipUnusedDevURL && documents:
+		facts, err := devreach.ServerFacts(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout)
+		if err != nil {
+			return devreach.Facts{}, err
 		}
-		return devCaps, nil
+		if !asksDevServer {
+			facts.Capabilities = capability.Capabilities{}
+		}
+		return facts, nil
+	case !opts.SkipUnusedDevURL:
+		_, err := devreach.Server(ctx, dialect, "dev-url", opts.DevURL, opts.ConnectTimeout)
+		return devreach.Facts{}, err
 	case asksDevServer:
 		return devServerVersion(ctx, dialect, opts.DevURL, opts.ConnectTimeout, opts.Diagnostics), nil
 	}
-	return capability.Capabilities{}, nil
+	return devreach.Facts{}, nil
 }
 
-// devServerVersion answers what the server behind devURL can do, for a diff of
-// two documents whose dev URL is not checked ([DiffOptions.SkipUnusedDevURL]),
-// or nil where the dialect default stands. A URL that cannot be opened within
+// devServerVersion answers what the server behind devURL can do and its
+// character set facts, for a diff of two documents whose dev URL is not
+// checked ([DiffOptions.SkipUnusedDevURL]), or none where the dialect default
+// and the descriptor's static facts stand. A URL that cannot be opened within
 // devVersionTimeout answers nil, so the comparison runs as it does with no dev
 // database, and a declaration the default cannot plan is refused by name
 // there. That fallback is noted on diagnostics, when it is not nil, so an
@@ -445,11 +466,11 @@ func devServerVersion(
 	dialect, devURL string,
 	timeout time.Duration,
 	diagnostics io.Writer,
-) capability.Capabilities {
+) devreach.Facts {
 	if timeout <= 0 || timeout > devVersionTimeout {
 		timeout = devVersionTimeout
 	}
-	caps, err := devreach.Server(ctx, dialect, "dev-url", devURL, timeout)
+	facts, err := devreach.ServerFacts(ctx, dialect, "dev-url", devURL, timeout)
 	if err != nil {
 		slog.Debug("could not open the dev URL for its server version; planning for the dialect default",
 			"dialect", dialect, "error", err)
@@ -458,9 +479,9 @@ func devServerVersion(
 				"note: the dev database named in the project file did not answer; planning for the %s default capabilities\n",
 				dialect)
 		}
-		return capability.Capabilities{}
+		return devreach.Facts{}
 	}
-	return caps
+	return facts
 }
 
 // devVersionTimeout bounds the one connection a diff of two documents makes to
@@ -490,9 +511,6 @@ var ErrDevURLRequired = errors.New("--dev-url is required for local schema file 
 func checkDiffSelections(fromErr, toErr error, fromReport, toReport atlasfilter.ExcludeReport, opts DiffOptions) error {
 	if emptySelection(fromErr) && emptySelection(toErr) {
 		return fromErr
-	}
-	if err := atlasfilter.RefuseRewritten(fromReport, toReport); err != nil {
-		return err
 	}
 	unmatched := writtenSelectors(atlasfilter.UnmatchedAcrossStates(fromReport, toReport), opts.ImplicitExclude)
 	stored := atlasfilter.StoredSpellings(fromReport, toReport)
@@ -584,7 +602,7 @@ func diffResolvedStates(
 	conn *dbschema.DatabaseConnection,
 	fromState, toState atlassource.State,
 	dialect string,
-	resolveCapabilities func(context.Context) (capability.Capabilities, error),
+	resolveServer func(context.Context) (diffServer, error),
 	sides devServerSides,
 	opts DiffOptions,
 ) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
@@ -659,7 +677,7 @@ func diffResolvedStates(
 	if err := validateClickHouseRBAC(dialect, to, fromSide.database); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	capabilities, err := resolveCapabilities(ctx)
+	capabilities, fromSide, err := plannedServer(ctx, resolveServer, fromSide, fromState, dialect, opts.Runtime)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
@@ -1200,7 +1218,9 @@ func withMaterializedFromSource(
 }
 
 // materializedState creates a declared state on the dev database, reads it
-// back and returns what was read, with the declaration's coverage record.
+// back and returns what was read, with the declaration's coverage record. A
+// declaration loaded for another dialect than the dev server's is loaded
+// again for the server's ([loadedForAnotherDialect]).
 func materializedState(
 	ctx context.Context,
 	service renderer.SchemaService,
@@ -1226,6 +1246,14 @@ func materializedState(
 	// declaration there.
 	if err := devlock.EnsureDistinct(ctx, devConn, opts.Protected...); err != nil {
 		return atlassource.State{}, err
+	}
+	if server := devConn.Info().Dialect; loadedForAnotherDialect(opts.Dialect, server) {
+		reload := opts
+		reload.Dialect = server
+		declared, err = resolveDiffSource(ctx, set, reload)
+		if err != nil {
+			return atlassource.State{}, err
+		}
 	}
 
 	var state atlassource.State
@@ -1464,6 +1492,51 @@ func withDocumentBaseline(state atlassource.State, side scopedDiffState, dialect
 		side.database = goschematodb.WithDefaultSchemaBaseline(side.database, side.schema, dialect)
 	}
 	return side
+}
+
+// plannedServer resolves the server a diff plans for, and projects a --from
+// document again from its character set facts; see [withDevCharsetFacts]. It
+// returns the server's capabilities and the --from side.
+func plannedServer(
+	ctx context.Context,
+	resolveServer func(context.Context) (diffServer, error),
+	fromSide scopedDiffState,
+	fromState atlassource.State,
+	dialect string,
+	runtime atlassource.StateRuntime,
+) (capability.Capabilities, scopedDiffState, error) {
+	server, err := resolveServer(ctx)
+	if err != nil {
+		return capability.Capabilities{}, fromSide, err
+	}
+	fromSide, err = withDevCharsetFacts(ctx, fromSide, fromState, dialect, runtime, server.facts)
+	return server.capabilities, fromSide, err
+}
+
+// withDevCharsetFacts projects a --from document again from the character set
+// facts the dev server answered, in place of the target descriptor's static
+// table, so its tables hold the defaults that server gives them. The first
+// projection runs before the dev server is opened, since the refusals decided
+// from the sources alone come first; see [DiffReportingChanges]. A side read
+// from a server, or facts that name no defaults, leave side as it is.
+func withDevCharsetFacts(
+	ctx context.Context,
+	side scopedDiffState,
+	state atlassource.State,
+	dialect string,
+	runtime atlassource.StateRuntime,
+	facts goschematodb.ServerFacts,
+) (scopedDiffState, error) {
+	if state.DB != nil || side.database == nil || facts.CharsetDefaultCollations == nil {
+		return side, nil
+	}
+	database, err := goschematodb.ToDBSchemaOn(ctx, side.schema, dialect, runtime, facts)
+	if err != nil {
+		return side, err
+	}
+	database.DatabasePath = side.database.DatabasePath
+	side.database = database
+	return withDocumentBaseline(state, side, dialect), nil
 }
 
 // scopeDiffState projects one resolved comparison side without asking either

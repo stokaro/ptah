@@ -53,6 +53,27 @@ func TestExcludeDatabase_KeepsWhichRolesTheServerHas(t *testing.T) {
 	c.Assert(got.RolesOutOfScopeReason, qt.Equals, "another tenant owns them")
 }
 
+// TestExcludeDatabase_HoldsOutOfScopeEveryViewAndTriggerItLeavesOut leaves out
+// a whole table and a view. The table's columns are not held out of scope: a
+// table out of scope is not changed, so nothing carries them. Its trigger and
+// the view are, since either can name a table the plan writes anew, and the
+// plan has to see them to keep that table's rename from breaking them.
+func TestExcludeDatabase_HoldsOutOfScopeEveryViewAndTriggerItLeavesOut(t *testing.T) {
+	c := qt.New(t)
+	schema := filterFixtureSchema()
+	schema.Views = []catalog.View{{Schema: "auth", Name: "user_emails", Body: "SELECT email FROM auth.users", Options: []string{"security_barrier=true"}}}
+
+	got, err := atlasfilter.ExcludeDatabase(ownerSelections(), schema, []string{"auth.audit_log", "auth.user_emails[type=view]"})
+
+	c.Assert(err, qt.IsNil)
+	got.OutOfScope.Views[0].Options[0] = "security_barrier=false"
+	c.Assert(viewNames(got.Views), qt.HasLen, 0)
+	c.Assert(viewNames(got.OutOfScope.Views), qt.DeepEquals, []string{"auth.user_emails"})
+	c.Assert(triggerNames(got.OutOfScope.Triggers), qt.DeepEquals, []string{"audit_log_updated_at"})
+	c.Assert(tableNames(got.OutOfScope.Tables), qt.HasLen, 0)
+	c.Assert(schema.Views[0].Options, qt.DeepEquals, []string{"security_barrier=true"})
+}
+
 // TestExcludeDatabase_TypeSelectorRemovesOnlyIndexes removes the indexes of
 // one table and the UNIQUE constraint whose index carries its name, which an
 // index selector names as the community binary does. The table and the

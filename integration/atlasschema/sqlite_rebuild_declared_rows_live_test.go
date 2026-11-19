@@ -186,7 +186,7 @@ func TestSQLiteRebuildRefusesADeclaredRowWithoutItsParentLive(t *testing.T) {
 	}))
 
 	c.Assert(err, qt.ErrorMatches,
-		`commit schema apply transaction: sqlite: rebuild left 1 unresolved foreign-key reference\(s\): countries references missing regions`)
+		`commit schema apply transaction: sqlite: rebuild leaves rows that violate a foreign key: 1 row\(s\) of countries violate the foreign key to regions`)
 	c.Assert(rebuildRowsCountries(c, ctx, conn), qt.DeepEquals, []string{"CZ", "SK"})
 	c.Assert(rebuildRowsHasLegacyNote(c, ctx, conn), qt.IsTrue)
 }

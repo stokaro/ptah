@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	_ migrationsplit.Splitter       = (*session)(nil)
-	_ catalog.SchemaTransaction     = (*unitTransaction)(nil)
-	_ dbschema.HistoryStoreProvider = (*unitTransaction)(nil)
+	_ migrationsplit.Splitter          = (*session)(nil)
+	_ catalog.SchemaTransaction        = (*unitTransaction)(nil)
+	_ dbschema.HistoryStoreProvider    = (*unitTransaction)(nil)
+	_ dbschema.RepeatableStoreProvider = (*unitTransaction)(nil)
 )
 
 // splitsMigrations reports whether the engine splits migration bodies. The
@@ -168,8 +169,11 @@ func (u *unitTransaction) ExecuteSQL(ctx context.Context, sql string, args ...an
 }
 
 func (u *unitTransaction) HistoryStore() (dbschema.HistoryStore, error) { return u.tx.HistoryStore() }
-func (u *unitTransaction) Commit() error                                { return u.tx.Commit() }
-func (u *unitTransaction) Rollback() error                              { return u.tx.Rollback() }
+func (u *unitTransaction) RepeatableStore() (dbschema.RepeatableStore, error) {
+	return u.tx.RepeatableStore()
+}
+func (u *unitTransaction) Commit() error   { return u.tx.Commit() }
+func (u *unitTransaction) Rollback() error { return u.tx.Rollback() }
 
 // abortedError marks a failure the provider reported as an abort, so the
 // migrator may run the unit again. Only units.migration-split carries the

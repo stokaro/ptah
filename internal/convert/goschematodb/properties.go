@@ -33,7 +33,7 @@ type Runtime interface {
 // its source properties under creation rules before projecting that state.
 // This is a prediction from a document, not evidence that a table was inspected.
 func prepareSourceTables(ctx context.Context, source *schemamodel.Database, target string, runtime Runtime) (*schemamodel.Database, []schemaprojection.TableCreation, error) {
-	databases, prepared, err := prepareSourceTableSets(ctx, []*schemamodel.Database{source}, target, runtime)
+	databases, prepared, err := prepareSourceTableSets(ctx, []*schemamodel.Database{source}, target, runtime, ServerFacts{})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -42,9 +42,16 @@ func prepareSourceTables(ctx context.Context, source *schemamodel.Database, targ
 
 // prepareSourceTableSets prepares each document as [prepareSourceTables]
 // prepares it alone, with one creation projection for the tables of all of
-// them. It returns the prepared documents and the predicted creations of each
-// document's tables, in input order.
-func prepareSourceTableSets(ctx context.Context, sources []*schemamodel.Database, target string, runtime Runtime) ([]*schemamodel.Database, [][]schemaprojection.TableCreation, error) {
+// them, predicted from facts and the target descriptor's static table where
+// facts names none. It returns the prepared documents and the predicted
+// creations of each document's tables, in input order.
+func prepareSourceTableSets(
+	ctx context.Context,
+	sources []*schemamodel.Database,
+	target string,
+	runtime Runtime,
+	facts ServerFacts,
+) ([]*schemamodel.Database, [][]schemaprojection.TableCreation, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, nil, err
 	}
@@ -54,7 +61,11 @@ func prepareSourceTableSets(ctx context.Context, sources []*schemamodel.Database
 	}
 	semantics := identifier.ForDialect(selected.Name())
 	identities := objectidentity.NewBuilder(semantics)
-	request := schemaprojection.TableCreationRequest{Target: selected.Name(), Identifiers: semantics, Capabilities: capability.ForDialect(selected.Name())}
+	facts = withDescriptorDefaults(facts, selected.Name())
+	request := schemaprojection.TableCreationRequest{
+		Target: selected.Name(), Identifiers: semantics, Capabilities: capability.ForDialect(selected.Name()),
+		CharsetDefaultCollations: facts.CharsetDefaultCollations, CharsetAliases: facts.CharsetAliases,
+	}
 	databases := make([]*schemamodel.Database, len(sources))
 	for i, source := range sources {
 		scoped, err := schemamodel.ScopeToTarget(source, selected)
@@ -144,6 +155,28 @@ func projectedFacetCoverage(source schemaext.Coverage, slots []creationFacetSlot
 		return source, nil
 	}
 	return schemaext.NewCoverage(schemaext.Desired, kinds, subjects)
+}
+
+// applyPredictedCollations sets the default collation, the inherited column
+// collations and the stored column types the target's creation projection
+// predicts, which a read of the created table reports. A column's Collate
+// stays empty, as a read reports it for a column that takes the collation it
+// inherits.
+func applyPredictedCollations(db *catalog.Database, tables []schemaprojection.TableCreation) {
+	for i, table := range tables {
+		if table.Collation != "" {
+			db.Tables[i].Collate = table.Collation
+		}
+		for j := range db.Tables[i].Columns {
+			column := &db.Tables[i].Columns[j]
+			if collation, found := table.ColumnCollations[column.Name]; found {
+				column.EffectiveCollate = collation
+			}
+			if stored, found := table.ColumnTypes[column.Name]; found {
+				column.DataType, column.ColumnType = stored, stored
+			}
+		}
+	}
 }
 
 func applyPreparedColumnKeys(db *catalog.Database, tables []schemaprojection.TableCreation) {

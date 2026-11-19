@@ -206,6 +206,12 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 
 func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	for _, td := range diff.TablesModified {
+		if td.CommentChange != nil {
+			result = append(result, &ast.AlterTableNode{
+				Name:       td.TableName,
+				Operations: []ast.AlterOperation{&ast.SetCommentOperation{Comment: td.CommentChange.Desired, HasCurrent: td.CommentChange.Current != ""}},
+			})
+		}
 		// The column travels WITH the change, on both paths: an addition carries
 		// the column it adds and a modification carries the column it renders
 		// (stokaro/ptah#2315). There is no lookup left to fail.
@@ -220,6 +226,10 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		for _, colDiff := range td.ColumnsModified {
 			if colDiff.Desired.Name == "" {
 				return nil, fmt.Errorf("%w: the diff carries no column definition for %s.%s", ptaherr.ErrInvalidSchemaDiff, td.TableName, colDiff.ColumnName)
+			}
+			result = appendColumnComment(result, td.TableName, colDiff)
+			if colDiff.CommentChange != nil && len(colDiff.Changes) == 0 {
+				continue
 			}
 			col := modelast.FromField(colDiff.Desired, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
 			// The previous default is what lets the renderer remove one: a
@@ -357,4 +367,22 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 func previousColumnNullable(change string) bool {
 	before, _, ok := strings.Cut(change, " -> ")
 	return ok && strings.TrimSpace(before) == "true"
+}
+
+// appendColumnComment plans a column's comment change as a statement of its
+// own. MODIFY COLUMN restates the type and the default and leaves the comment
+// the column holds, so a change planned only as one never reaches the server
+// and is planned again on every apply.
+func appendColumnComment(result []ast.Node, table string, colDiff difftypes.ColumnDiff) []ast.Node {
+	if colDiff.CommentChange == nil {
+		return result
+	}
+	return append(result, &ast.AlterTableNode{
+		Name: table,
+		Operations: []ast.AlterOperation{&ast.SetCommentOperation{
+			Column:     colDiff.ColumnName,
+			Comment:    colDiff.CommentChange.Desired,
+			HasCurrent: colDiff.CommentChange.Current != "",
+		}},
+	})
 }
