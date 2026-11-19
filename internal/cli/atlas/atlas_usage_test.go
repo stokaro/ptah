@@ -139,6 +139,137 @@ func TestAtlasCompatibilityRoots_UnknownCommandMatchesAtlasCE(t *testing.T) {
 	}
 }
 
+// TestAtlasCompatibilityRoot_UnknownCommandBeforeAnyFlag holds the order the
+// community binary decides in: a command it does not register is reported
+// whatever flags surround it, --help and a flag the root does not take
+// included. Each row was measured on the pinned community binary, which
+// printed exactly this diagnostic at exit 1. With cobra's flag parsing left on
+// the root, every row but the bare verb answers `unknown flag` or prints help
+// instead.
+func TestAtlasCompatibilityRoot_UnknownCommandBeforeAnyFlag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		verb string
+	}{
+		{name: "flag after the verbs", args: []string{"security", "scan", "--url", "sqlite://x.db"}, verb: "security"},
+		{name: "flag with an inline value", args: []string{"security", "scan", "--url=sqlite://x.db"}, verb: "security"},
+		{name: "unknown shorthand", args: []string{"security", "-x"}, verb: "security"},
+		{name: "flag before the verb", args: []string{"--url", "sqlite://x.db", "security", "scan"}, verb: "security"},
+		{name: "help after the verb", args: []string{"security", "--help"}, verb: "security"},
+		{name: "short help after the verb", args: []string{"nosuch", "-h"}, verb: "nosuch"},
+		{name: "terminator after the verb", args: []string{"security", "--", "--url"}, verb: "security"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := atlas.NewCompatCommand("ptah-compat")
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs(tt.args)
+
+			err := atlastest.ExecuteAtlasTestCommand(cmd)
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			c.Assert(err, qt.ErrorMatches, `unknown command "`+tt.verb+`" for "atlas"`)
+			c.Assert(stdout.String(), qt.Equals, "")
+			c.Assert(stderr.String(), qt.Equals,
+				"Error: unknown command \""+tt.verb+"\" for \"atlas\"\n"+
+					"Run 'atlas --help' for usage.\n")
+		})
+	}
+}
+
+// TestAtlasCompatibilityRoot_UnknownFlagWhenNoCommandIsNamed is the control
+// for the test above: with no argument the root reads as a command name, the
+// flag is what gets reported. The root reads a flag as taking a value, but a
+// flag that is the last or the second-to-last argument takes nothing, so
+// `--nosuch version` names no command either. Each row was measured on the
+// pinned community binary.
+func TestAtlasCompatibilityRoot_UnknownFlagWhenNoCommandIsNamed(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "lone flag", args: []string{"--nosuch"}, want: "Error: unknown flag: --nosuch\n"},
+		{name: "flag with a value", args: []string{"--url", "sqlite://x.db"}, want: "Error: unknown flag: --url\n"},
+		{name: "flag before a known verb", args: []string{"--nosuch", "version"}, want: "Error: unknown flag: --nosuch\n"},
+		{name: "unknown shorthand", args: []string{"-v"}, want: "Error: unknown shorthand flag: 'v' in -v\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := atlas.NewCompatCommand("ptah-compat")
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs(tt.args)
+
+			err := atlastest.ExecuteAtlasTestCommand(cmd)
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			c.Assert(stdout.String(), qt.Equals, "")
+			c.Assert(stderr.String(), qt.Equals, tt.want)
+		})
+	}
+}
+
+// TestAtlasCompatibilityRoot_HelpWhenNoCommandIsNamed covers the arguments
+// that name no command and no unknown flag. `--help security` reads security
+// as the value of --help, and `--` ends the arguments the root reads as
+// commands, so both print the root's help at exit 0, as the pinned community
+// binary does.
+func TestAtlasCompatibilityRoot_HelpWhenNoCommandIsNamed(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "help", args: []string{"--help"}},
+		{name: "help before a verb", args: []string{"--help", "security"}},
+		{name: "short help before a verb", args: []string{"-h", "security"}},
+		{name: "terminator before a verb", args: []string{"--", "security"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := atlas.NewCompatCommand("atlas")
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs(tt.args)
+
+			err := atlastest.ExecuteAtlasTestCommand(cmd)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(stdout.String(), qt.Contains, "Usage:\n  atlas [command]")
+			c.Assert(stderr.String(), qt.Equals, "")
+		})
+	}
+}
+
+// TestAtlasCompatibilityRoot_CompletesRootFlags covers flag-name completion on
+// a root that parses its own flags. Cobra completes no flag name for such a
+// command by itself, so without the root's completion function the dash below
+// completes to nothing, where the community binary offers --help and -h.
+func TestAtlasCompatibilityRoot_CompletesRootFlags(t *testing.T) {
+	c := qt.New(t)
+	cmd := atlas.NewCompatCommand("ptah-compat")
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{cobra.ShellCompNoDescRequestCmd, "-"})
+
+	err := atlastest.ExecuteAtlasTestCommand(cmd)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout.String(), qt.Equals, "--help\n-h\n:4\n")
+}
+
 func TestAtlasCompatibilityRoot_UnknownCommandQuotesSafely(t *testing.T) {
 	c := qt.New(t)
 	cmd := atlas.NewCompatCommand("ptah-compat")
