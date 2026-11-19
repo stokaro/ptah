@@ -5,11 +5,14 @@ import (
 	"strconv"
 	"strings"
 
+	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/tableref"
 )
 
 // validateDeclaredColumns refuses a column declaration whose meaning no target
@@ -37,9 +40,10 @@ func validateDeclaredColumns(dialect string, database *schemamodel.Database) err
 // validateRelativeTimeDefault refuses a default on a date or time column that
 // the target reads as a moment relative to when it reads it, such as
 // PostgreSQL's 'now' ([defaultlit.RelativeTimeLiteral]). The parser refuses
-// one a CREATE TABLE writes; this refuses one a Go or YAML model declares,
-// and one an ALTER COLUMN ... SET DEFAULT in a schema file sets, which reach
-// the model without the column's type beside them. Measured on PostgreSQL 18,
+// one a CREATE TABLE writes on a built-in type; this refuses one a Go or YAML
+// model declares, one an ALTER COLUMN ... SET DEFAULT in a schema file sets,
+// which reach the model without the column's type beside them, and one on a
+// column typed by a domain ([dateTimeColumnType]). Measured on PostgreSQL 18,
 // the server reads the default once, when it creates the table, so every row
 // gets that moment and every plan changes the column again.
 func validateRelativeTimeDefault(dialect string, database *schemamodel.Database, field schemamodel.Field) error {
@@ -54,7 +58,9 @@ func validateRelativeTimeDefault(dialect string, database *schemamodel.Database,
 			value = "'" + strings.ReplaceAll(value, "'", "''") + "'"
 		}
 	}
-	if !defaultlit.RelativeTimeLiteral(field.Type, value, described.Grammar.Columns.RelativeTimeLiterals) {
+	literals := described.Grammar.Columns.RelativeTimeLiterals
+	if len(literals) == 0 || !defaultlit.RelativeTimeLiteral(value, literals) ||
+		!dateTimeColumnType(field.Type, schemaext.DefinedTypes(database.FeatureObjects)) {
 		return nil
 	}
 	tableName := field.StructName
@@ -71,6 +77,55 @@ func validateRelativeTimeDefault(dialect string, database *schemamodel.Database,
 			field.Name, tableName, value, field.Type,
 		),
 	}
+}
+
+// dateTimeColumnType reports whether columnType is a built-in date or time
+// type ([defaultlit.DateTimeType]), or a domain the model declares over one,
+// directly or through other domains.
+//
+// Any other name holds no moment as far as the model shows: an enum, a domain
+// over text, a type the model does not declare, and a name two domains share.
+// A refusal there would turn away a default the server reads as the string it
+// is, such as 'today' on an enum that has the value.
+func dateTimeColumnType(columnType string, defined []schemaext.DefinedType) bool {
+	spelling := columnType
+	// Each step names a declared domain, so a walk over a chain ends within
+	// as many steps as there are definitions, and a cycle ends with them.
+	for range len(defined) + 1 {
+		if defaultlit.DateTimeType(spelling) {
+			return true
+		}
+		base, ok := declaredDomainBase(spelling, defined)
+		if !ok {
+			return false
+		}
+		spelling = base
+	}
+	return false
+}
+
+// declaredDomainBase returns the base type of the one domain defined declares
+// under the name spelling writes, matched without case, and by schema where
+// spelling names one. A name no domain or two domains answer to has none.
+func declaredDomainBase(spelling string, defined []schemaext.DefinedType) (string, bool) {
+	ref, ok := tableref.Parse(spelling)
+	if !ok {
+		return "", false
+	}
+	base, matches := "", 0
+	for _, definition := range defined {
+		if definition.ID.Kind != objectidentity.KindDomain || len(definition.References) == 0 {
+			continue
+		}
+		name, named := tableref.Parse(definition.ID.Name.Source)
+		schema, _ := tableref.Parse(definition.ID.Schema.Source)
+		if !named || !strings.EqualFold(name.Name, ref.Name) ||
+			ref.Qualified && !strings.EqualFold(schema.Name, ref.Schema) {
+			continue
+		}
+		base, matches = definition.References[0], matches+1
+	}
+	return base, matches == 1
 }
 
 // validateUndeclaredEnum refuses a column typed ENUM that carries its values

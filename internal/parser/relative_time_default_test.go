@@ -36,14 +36,20 @@ func TestParse_RelativeTimeDefault_FailurePath(t *testing.T) {
 	}
 }
 
-// A fixed date or time string, a function, the same word on a text column, and
-// the same word on an engine that declares no such literal stay as written.
+// A fixed date or time string, a function, the same word on a text column, on
+// a type whose name only contains a date or time word, on a type the parser
+// cannot resolve, and on an engine that declares no such literal stay as
+// written. A domain is resolved by the model, which sees its declaration.
 func TestParse_RelativeTimeDefault_HappyPath(t *testing.T) {
 	rows := []struct {
 		name, dialect, column, want string
 	}{
 		{name: "epoch", dialect: "postgres", column: "a timestamptz DEFAULT 'epoch'", want: "'epoch'"},
 		{name: "a text column", dialect: "postgres", column: "a text DEFAULT 'now'", want: "'now'"},
+		{name: "an enum named update_kind", dialect: "postgres", column: "a update_kind DEFAULT 'today'", want: "'today'"},
+		{name: "a type named timeslot", dialect: "postgres", column: "a timeslot DEFAULT 'now'", want: "'now'"},
+		{name: "a type named uptime_state", dialect: "postgres", column: "a uptime_state DEFAULT 'now'", want: "'now'"},
+		{name: "a domain the model resolves", dialect: "postgres", column: "a moment DEFAULT 'now'", want: "'now'"},
 		{name: "MySQL", dialect: "mysql", column: "a varchar(8) DEFAULT 'now'", want: "'now'"},
 		{name: "SQLite", dialect: "sqlite", column: "a datetime DEFAULT 'now'", want: "'now'"},
 		{name: "CockroachDB, which keeps the string", dialect: "cockroachdb", column: "a timestamptz DEFAULT 'now'", want: "'now'"},

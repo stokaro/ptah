@@ -235,13 +235,16 @@ keyword expression, and `DEFAULT CURRENT_TIMESTAMP(3)` keeps its precision.
 `DEFAULT 'NULL'` is a string value and compares as a different default, and
 so does `DEFAULT ''`.
 
-A date or time column with the default `'now'`, `'today'`, `'tomorrow'` or
-`'yesterday'` is refused, with or without a cast and in parentheses, as
-`('now')`. The refusal covers a SQL schema file's `CREATE TABLE` and
+A column of a built-in date or time type, or of a domain the schema declares
+over one, with the default `'now'`, `'today'`, `'tomorrow'` or `'yesterday'`
+is refused, with or without a cast and in parentheses, as `('now')`. The
+refusal covers a SQL schema file's `CREATE TABLE` and
 `ALTER COLUMN ... SET DEFAULT`, and a `default` or `default_expr` in a Go
 struct or a YAML schema. PostgreSQL reads the string once, when it creates
 the table, and stores that moment as the default; write `now()`,
-`CURRENT_TIMESTAMP` or `CURRENT_DATE` instead.
+`CURRENT_TIMESTAMP` or `CURRENT_DATE` instead. On a column of any other
+type the string is the value it spells, so `'today'` on an enum that has the
+value `today` is that value, whatever the enum is named.
 
 On a text column a string is never the expression its characters spell:
 `DEFAULT 'now()'` and `DEFAULT now()` are different defaults, and so are
