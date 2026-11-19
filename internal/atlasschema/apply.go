@@ -45,6 +45,7 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/schemavalidate"
+	"ptah.run/internal/sessiontext"
 	"ptah.run/internal/sqliteforeignkeys"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
@@ -1506,7 +1507,11 @@ func FormatMigrationSQL(statements []string) string {
 	return out.String()
 }
 
-func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor, statements []string) error {
+// executeApplyStatements sends statements to executor, a session of the server
+// info describes. Each is checked as Ptah wrote it and sent as the session
+// reads it ([sessiontext.For]); a failure names it as Ptah wrote it, which is
+// how the plan shows it.
+func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor, info catalog.ServerInfo, statements []string) error {
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
@@ -1515,7 +1520,7 @@ func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor
 		err := checkStatement(ctx, executor, stmt)
 		if err == nil {
 			dispatchwitness.Sending(ctx)
-			err = executor.ExecuteSQL(ctx, stmt)
+			err = executor.ExecuteSQL(ctx, sessiontext.For(info.Dialect, info.Capabilities, stmt))
 		}
 		if err != nil {
 			return statementFailure(stmt, i, len(statements), err)

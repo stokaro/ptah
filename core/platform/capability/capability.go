@@ -1366,6 +1366,21 @@ const (
 	// `DEFAULT CurrentUtcTimestamp()` with `Unsupported type of literal`.
 	ExpressionDefaults Capability = "expression_defaults"
 
+	// NoBackslashEscapes marks a MySQL-family session whose sql_mode names
+	// NO_BACKSLASH_ESCAPES. Such a session reads a backslash in a string
+	// literal as the character, where the default sql_mode reads it as the
+	// start of an escape: measured on MySQL 26.10 and MariaDB 12.3, `'a\\b'`
+	// holds two backslashes there and one under the default sql_mode. Ptah
+	// writes, splits and scans SQL text as the default sql_mode reads it, and a
+	// schema apply sends each statement to a session with this key with every
+	// string literal written as that session reads it, so the server stores
+	// the characters the plan shows.
+	//
+	// No preset holds it, and no renderer reads it. The MySQL-family
+	// connector sets it from @@SESSION.sql_mode when it connects and again on
+	// a pinned session.
+	NoBackslashEscapes Capability = "no_backslash_escapes"
+
 	// CheckConstraints marks a target whose grammar has CHECK at all.
 	//
 	// It is a different question from [CheckConstraintsEnforced], which asks
@@ -2266,6 +2281,9 @@ var registry = map[Capability]spec{
 	ExpressionDefaults: {
 		doc: "a column default may be an expression the server evaluates, not only a literal (MySQL 8.0.13+, MariaDB 10.2+; not YDB)",
 	},
+	NoBackslashEscapes: {
+		doc: "the MySQL-family session's sql_mode names NO_BACKSLASH_ESCAPES, so a schema apply sends each string literal as that session reads it (set from the session, never by a preset)",
+	},
 	CheckConstraints: {
 		doc: "the grammar has CHECK constraints at all, enforced or not (not YDB)",
 	},
@@ -2734,6 +2752,7 @@ func buildMySQL84() Capabilities {
 		AlterColumnDefault:              true,
 		AddColumnWithDefault:            true,
 		ExpressionDefaults:              true,
+		NoBackslashEscapes:              false,
 		CheckConstraints:                true,
 		CreateIndexStatement:            true,
 		IndexCoveringColumns:            false,
@@ -3041,6 +3060,7 @@ func buildMariaDB1011() Capabilities {
 		AlterColumnDefault:              true,
 		AddColumnWithDefault:            true,
 		ExpressionDefaults:              true,
+		NoBackslashEscapes:              false,
 		CheckConstraints:                true,
 		CreateIndexStatement:            true,
 		IndexCoveringColumns:            false,
@@ -3264,6 +3284,7 @@ func buildPostgres16() Capabilities {
 		AlterColumnDefault:              true,
 		AddColumnWithDefault:            true,
 		ExpressionDefaults:              true,
+		NoBackslashEscapes:              false,
 		CheckConstraints:                true,
 		CreateIndexStatement:            true,
 		IndexCoveringColumns:            true,
@@ -3639,6 +3660,7 @@ func buildClickHouse24() Capabilities {
 		AlterColumnDefault:         true,
 		AddColumnWithDefault:       true,
 		ExpressionDefaults:         true,
+		NoBackslashEscapes:         false,
 		CheckConstraints:           true,
 		CreateIndexStatement:       true,
 		IndexCoveringColumns:       false,
@@ -3882,6 +3904,7 @@ func buildSQLite3() Capabilities {
 		AlterColumnDefault:         false,
 		AddColumnWithDefault:       true,
 		ExpressionDefaults:         true,
+		NoBackslashEscapes:         false,
 		CheckConstraints:           true,
 		CreateIndexStatement:       true,
 		IndexCoveringColumns:       false,
@@ -4211,6 +4234,7 @@ func buildSQLServer2022() Capabilities {
 		AlterColumnDefault:         true,
 		AddColumnWithDefault:       true,
 		ExpressionDefaults:         true,
+		NoBackslashEscapes:         false,
 		CheckConstraints:           true,
 		CreateIndexStatement:       true,
 		// INCLUDE on an index, rendered, read back from sys.index_columns and
@@ -4837,6 +4861,7 @@ func buildOracle23() Capabilities {
 		AlterColumnDefault:          true,
 		AddColumnWithDefault:        true,
 		ExpressionDefaults:          true,
+		NoBackslashEscapes:          false,
 		CheckConstraints:            true,
 		CreateIndexStatement:        true,
 		IndexCoveringColumns:        false,

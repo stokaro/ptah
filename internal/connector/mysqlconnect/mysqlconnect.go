@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/cabundle"
 	"ptah.run/internal/connector"
 	"ptah.run/internal/dbschema/mysql"
+	"ptah.run/internal/sqlmode"
 	"ptah.run/internal/sqlrunner"
 )
 
@@ -224,17 +225,51 @@ func (Service) NewWriter(
 	return mysql.NewMySQLWriterForRunner(runner, opened.DB, info.Schema, info.Dialect, info.Version)
 }
 
-// RefineSession reads the foreign-key reference policy of the pinned session,
-// which MySQL lets a session change.
+// Refine reads the sql_mode a session of the connection starts with, which
+// decides how the server reads a backslash in a string literal.
+func (Service) Refine(
+	ctx context.Context,
+	opened *connector.Pool,
+	_ connector.Request,
+	_ catalog.ServerInfo,
+	caps capability.Capabilities,
+) (capability.Capabilities, error) {
+	return refineSQLModeCapabilities(caps, func(destination ...any) error {
+		return opened.DB.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode").Scan(destination...)
+	})
+}
+
+// RefineSession reads the foreign-key reference policy and the sql_mode of
+// the pinned session, both of which MySQL lets a session change.
 func (Service) RefineSession(
 	ctx context.Context,
 	session *sql.Conn,
 	info catalog.ServerInfo,
 	caps, baseline capability.Capabilities,
 ) (capability.Capabilities, error) {
-	return refineMySQLForeignKeyCapabilities(info.Dialect, caps, baseline, func(destination ...any) error {
+	refined, err := refineMySQLForeignKeyCapabilities(info.Dialect, caps, baseline, func(destination ...any) error {
 		return session.QueryRowContext(ctx, "SELECT @@SESSION.restrict_fk_on_non_standard_key").Scan(destination...)
 	})
+	if err != nil {
+		return capability.Capabilities{}, err
+	}
+	return refineSQLModeCapabilities(refined, func(destination ...any) error {
+		return session.QueryRowContext(ctx, "SELECT @@SESSION.sql_mode").Scan(destination...)
+	})
+}
+
+// refineSQLModeCapabilities sets [capability.NoBackslashEscapes] to whether
+// the sql_mode scan reads names NO_BACKSLASH_ESCAPES. A session in that mode
+// reads a backslash in a string literal as the character, so a schema apply
+// rewrites each literal it sends there (internal/sessiontext). A failed read
+// fails the refinement: a guess would store the wrong characters on one of
+// the two kinds of session.
+func refineSQLModeCapabilities(caps capability.Capabilities, scan func(...any) error) (capability.Capabilities, error) {
+	var sqlMode string
+	if err := scan(&sqlMode); err != nil {
+		return capability.Capabilities{}, fmt.Errorf("query sql_mode: %w", err)
+	}
+	return caps.With(capability.NoBackslashEscapes, sqlmode.Has(sqlMode, sqlmode.NoBackslashEscapes)), nil
 }
 
 // refineMySQLForeignKeyCapabilities decides, on a MySQL release line that requires

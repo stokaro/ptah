@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"net/url"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -74,6 +75,44 @@ func TestApplyKeepsAnEscapedLiteralDefaultE2E(t *testing.T) {
 	}
 }
 
+// TestApplyKeepsAnEscapedLiteralDefaultWithoutBackslashEscapesE2E applies
+// the model to MariaDB through a session whose sql_mode names
+// NO_BACKSLASH_ESCAPES, where the server reads a backslash in a string as the
+// character. The apply sends each backslash once there, the server stores the
+// characters the model declares, and the second apply plans nothing.
+func TestApplyKeepsAnEscapedLiteralDefaultWithoutBackslashEscapesE2E(t *testing.T) {
+	c := qt.New(t)
+	database := withoutBackslashEscapes(c, mysqlFamilyScratchURL(c, dbtarget.MariaDBAdmin, "escaped_default"))
+
+	got := applyEscapedLiteralModel(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyEnumField), escapedLiteralMySQLRead)
+
+	c.Assert(got, qt.Equals, "615C62,69745C27733B78,697427733B78,NULL,635C64,656E756D2827655C5C66272C27672729")
+}
+
+// TestApplyStoresAnEscapedLiteralOnMySQLE2E applies the model to MySQL once
+// under each sql_mode and reads what the server stored in hexadecimal: the
+// characters the model declares under both. The default mode reads `'a\\b'`
+// as a, a backslash and b, and NO_BACKSLASH_ESCAPES reads `'a\b'` so.
+func TestApplyStoresAnEscapedLiteralOnMySQLE2E(t *testing.T) {
+	const want = "615C62,69745C27733B78,697427733B78,NULL,635C64,656E756D2827655C5C66272C27672729"
+	t.Run("the default sql_mode", func(t *testing.T) {
+		c := qt.New(t)
+		database := mysqlFamilyScratchURL(c, dbtarget.MySQLAdmin, "escaped_default")
+
+		got := applyOnceAndRead(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyEnumField), escapedLiteralMySQLRead)
+
+		c.Assert(got, qt.Equals, want)
+	})
+	t.Run("NO_BACKSLASH_ESCAPES", func(t *testing.T) {
+		c := qt.New(t)
+		database := withoutBackslashEscapes(c, mysqlFamilyScratchURL(c, dbtarget.MySQLAdmin, "escaped_default"))
+
+		got := applyOnceAndRead(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyEnumField), escapedLiteralMySQLRead)
+
+		c.Assert(got, qt.Equals, want)
+	})
+}
+
 // TestApplyKeepsAnEscapedLiteralDefaultOnPostgreSQLE2E is the control on an
 // engine that reads a backslash in a string as itself: the same model stores
 // the same characters, and the second apply plans nothing.
@@ -120,6 +159,36 @@ func applyEscapedLiteralModel(c *qt.C, database string, model declaredModel, rea
 	var got string
 	c.Assert(conn.QueryRowContext(c.Context(), read).Scan(&got), qt.IsNil)
 	return got
+}
+
+// applyOnceAndRead applies model to database once, asserts that it succeeds,
+// inserts a row that takes every default, and returns what read answers for
+// it.
+func applyOnceAndRead(c *qt.C, database string, model declaredModel, read string) string {
+	c.Helper()
+	created := applyModel(c, database, model)
+	c.Assert(created.ExitCode, qt.Equals, 0, historyComment(created))
+	conn, err := dbschema.ConnectToDatabase(c.Context(), database)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(c.Context(), "INSERT INTO notes (id) VALUES (1)")
+	c.Assert(err, qt.IsNil)
+	var got string
+	c.Assert(conn.QueryRowContext(c.Context(), read).Scan(&got), qt.IsNil)
+	return got
+}
+
+// withoutBackslashEscapes returns database with a query parameter the driver
+// sets on every session it opens, adding NO_BACKSLASH_ESCAPES to the
+// server's sql_mode.
+func withoutBackslashEscapes(c *qt.C, database string) string {
+	c.Helper()
+	parsed, err := url.Parse(database)
+	c.Assert(err, qt.IsNil)
+	query := parsed.Query()
+	query.Set("sql_mode", "CONCAT(@@sql_mode,',NO_BACKSLASH_ESCAPES')")
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 // mysqlFamilyScratchURL creates an empty database on engine's server and

@@ -705,7 +705,7 @@ func (dc *DatabaseConnection) WithSession(
 		baselineCapabilities,
 	)
 	if err != nil {
-		return fmt.Errorf("detect pinned-session foreign-key reference policy: %w", err)
+		return fmt.Errorf("refine the pinned session's capabilities: %w", err)
 	}
 	scoped := *dc
 	scoped.info.Capabilities = sessionCapabilities

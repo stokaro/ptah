@@ -672,7 +672,7 @@ func withMaterializedDevSchema(
 		if err := devclean.DatabaseRealmKeeping(ctx, materializedConn, baseline); err != nil {
 			return fmt.Errorf("reset dev database: %w", err)
 		}
-		if err := executeApplyStatements(ctx, materializedConn.Writer(), statements); err != nil {
+		if err := executeApplyStatements(ctx, materializedConn.Writer(), materializedConn.Info(), statements); err != nil {
 			return fmt.Errorf("materialize schema on dev database: %w", err)
 		}
 		return consume(materializedConn, baseline)

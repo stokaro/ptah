@@ -36,20 +36,20 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 	}
 	switch mode {
 	case migrator.MigrationTxModeNone:
-		return executeApplyUnits(ctx, conn.Writer(), prepared, statements)
+		return executeApplyUnits(ctx, conn.Writer(), conn.Info(), prepared, statements)
 	case migrator.MigrationTxModeFile, migrator.MigrationTxModeAll:
 		if !sqliterebuild.OpensTransaction(conn) {
 			// A server that refuses a schema statement inside a transaction
 			// runs the batch without one in every mode, native units as well
 			// as SQL; the SQL path reaches the same answer through
 			// sqliterebuild.BeginTransaction.
-			return executeApplyUnits(ctx, conn.Writer(), prepared, statements)
+			return executeApplyUnits(ctx, conn.Writer(), conn.Info(), prepared, statements)
 		}
 		tx, err := beginUnitTransaction(ctx, conn, statements)
 		if err != nil {
 			return fmt.Errorf("begin schema apply transaction: %w", err)
 		}
-		if err := executeApplyUnits(ctx, tx, prepared, statements); err != nil {
+		if err := executeApplyUnits(ctx, tx, conn.Info(), prepared, statements); err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
 				return errors.Join(err, rollbackErr)
 			}
@@ -128,7 +128,13 @@ func validateApplyUnits(ctx context.Context, executor catalog.SchemaExecutor, un
 	return ctx.Err()
 }
 
-func executeApplyUnits(ctx context.Context, executor catalog.SchemaExecutor, units []renderer.Fragment, statements []string) error {
+func executeApplyUnits(
+	ctx context.Context,
+	executor catalog.SchemaExecutor,
+	info catalog.ServerInfo,
+	units []renderer.Fragment,
+	statements []string,
+) error {
 	if err := validateApplyUnits(ctx, executor, units, statements); err != nil {
 		return err
 	}
@@ -138,7 +144,7 @@ func executeApplyUnits(ctx context.Context, executor catalog.SchemaExecutor, uni
 		// a lock lost since the validation above.
 		return typed.ExecuteUnits(ctx, units)
 	}
-	return executeApplyStatements(ctx, executor, statements)
+	return executeApplyStatements(ctx, executor, info, statements)
 }
 
 func beginUnitTransaction(ctx context.Context, conn *dbschema.DatabaseConnection, statements []string) (catalog.SchemaTransaction, error) {

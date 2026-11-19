@@ -557,10 +557,14 @@ SQL:
   clauses on one column the last is kept.
 - A Go or YAML literal default, a column, table or index comment and an enum
   value are written with each backslash doubled and each quote doubled, so
-  `a\b` stores those three characters under the default `sql_mode`. A text
-  default is compared by the string it stores, so `'it\'s'` and `'it''s'` are
-  one default. A literal `NULL` on a text column is the string `'NULL'`; a
-  schema file writes SQL `NULL` without quotes.
+  `a\b` stores those three characters under the default `sql_mode`. A plan, a
+  saved plan file and a migration file are written that way whatever the
+  server's `sql_mode`. `schema apply` reads the `sql_mode` of the session it
+  applies on, and where it names `NO_BACKSLASH_ESCAPES` it sends each string
+  literal with every backslash once, so the server stores the same
+  characters. `migrations up` sends a migration file as written, so a file
+  Ptah generated stores what it declares on a session that keeps backslash
+  escapes.
 
 ## Table options
 
