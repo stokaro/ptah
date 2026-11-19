@@ -738,15 +738,18 @@ func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile migra
 }
 
 // duplicateAtlasMigrationError refuses a second file carrying the same
-// direction of one version, such as 20260101000000_a.sql beside
-// 20260101000000_b.sql, and names both files. Keeping either would leave the
-// other unapplied, and nothing in the directory says which one the author
-// meant.
+// direction of one revision, such as 20260101000000_a.sql beside
+// 20260101000000_b.sql, and names both files. It is the refusal discovery
+// gives a Ptah-format directory ([migrationfile.DuplicateFileError]); an Atlas
+// revision's identity is known only here, where converted layouts and
+// repeatable files have been read.
 func duplicateAtlasMigrationError(direction, previousPath string, migrationFile migrationfile.File) error {
-	return fmt.Errorf(
-		"duplicate Atlas %s migration for version %s: %s and %s",
-		direction, migrationFile.RevisionVersion(), previousPath, migrationFile.Path,
-	)
+	return &migrationfile.DuplicateFileError{
+		Format:    migrationfile.DirFormatAtlas,
+		Direction: direction,
+		Version:   migrationFile.RevisionVersion(),
+		Files:     []string{previousPath, migrationFile.Path},
+	}
 }
 
 func (p *FSMigrationProvider) loadAtlasDown(parts *atlasParts, migrationFile migrationfile.File) error {

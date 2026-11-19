@@ -219,6 +219,80 @@ func TestMigrationDirectoryReadsWhole_AFileTheReadingLeavesOut_FailurePath(t *te
 	}
 }
 
+// Two files for one direction of one version, added to a directory whose
+// first migration is applied, refuse every command that reads the directory,
+// before anything runs, so the database keeps exactly what the first up made.
+// Lint reports both files under MF105P at error severity and exits 1, with a
+// dev database or without one. Without the refusal, up applies the file that
+// sorts last as version 2, exits 0 and never runs the other, status counts no
+// pending migration, down rolls version 1 back, and lint exits 0. Nothing here
+// depends on an engine beyond reading back that nothing ran, so SQLite is
+// enough.
+func TestMigrationDirectoryReadsWhole_TwoFilesForOneDirectionOfAVersion_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   map[string]string
+		refusal string
+		refused []string
+	}{
+		{
+			name: "two up files",
+			files: map[string]string{
+				"0000000002_b.up.sql":   "CREATE TABLE tb (id INTEGER);\n",
+				"0000000002_b.down.sql": "DROP TABLE tb;\n",
+				"0000000002_c.up.sql":   "CREATE TABLE tc (id INTEGER);\n",
+			},
+			refusal: "duplicate up migration for version 2: 0000000002_b.up.sql and 0000000002_c.up.sql",
+			refused: []string{"migrations/0000000002_b.up.sql", "migrations/0000000002_c.up.sql"},
+		},
+		{
+			name: "two down files",
+			files: map[string]string{
+				"0000000002_b.up.sql":   "CREATE TABLE tb (id INTEGER);\n",
+				"0000000002_b.down.sql": "DROP TABLE tb;\n",
+				"0000000002_c.down.sql": "DROP TABLE ta;\n",
+			},
+			refusal: "duplicate down migration for version 2: 0000000002_b.down.sql and 0000000002_c.down.sql",
+			refused: []string{"migrations/0000000002_b.down.sql", "migrations/0000000002_c.down.sql"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := readsWholeDirectory(c, ptahPair(nil))
+			first := readsWholePtah(c, dir, "up")
+			applied := sqliteTables(c, filepath.Join(dir, "app.db"))
+			for name, body := range test.files {
+				c.Assert(os.WriteFile(filepath.Join(dir, "migrations", name), []byte(body), 0o600), qt.IsNil)
+			}
+
+			up := readsWholePtah(c, dir, "up")
+			down := readsWholePtah(c, dir, "down", "--confirm")
+			status := readsWholePtah(c, dir, "status")
+			checkpoint := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()},
+				"migrations", "checkpoint", "--migrations-dir", "migrations", "--shadow-db", "sqlite://shadow.db")
+			refused, lintExit := refusedByLint(c, dir)
+			devRefused, devLintExit := refusedByLint(c, dir, devLint...)
+
+			c.Assert(first.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", first.Stdout, first.Stderr))
+			c.Assert(applied, qt.Contains, "ta")
+			c.Assert(up.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", up.Stdout, up.Stderr))
+			c.Assert(up.Stderr, qt.Contains, test.refusal)
+			c.Assert(down.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", down.Stdout, down.Stderr))
+			c.Assert(down.Stderr, qt.Contains, test.refusal)
+			c.Assert(status.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", status.Stdout, status.Stderr))
+			c.Assert(status.Stderr, qt.Contains, test.refusal)
+			c.Assert(checkpoint.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", checkpoint.Stdout, checkpoint.Stderr))
+			c.Assert(checkpoint.Stderr, qt.Contains, test.refusal)
+			c.Assert(sqliteTables(c, filepath.Join(dir, "app.db")), qt.DeepEquals, applied)
+			c.Assert(lintExit, qt.Equals, 1)
+			c.Assert(refused, qt.DeepEquals, test.refused)
+			c.Assert(devLintExit, qt.Equals, 1)
+			c.Assert(devRefused, qt.DeepEquals, test.refused)
+		})
+	}
+}
+
 // A file at the top of the directory that is not SQL, and a SQL file one
 // level down, which belongs to another directory, refuse nothing: the pair
 // applies and lint reports no file.

@@ -240,8 +240,10 @@ type File struct {
 	// RunRefusal says why a run refuses the directory for this file, and what
 	// to do about it, or is empty when a run reads the file. The migrator's
 	// reading of the directory leaves the file out at its top level (see
-	// [migrationfile.UnreadFilesError]), or the revision table the run records
-	// versions in cannot keep the version the file spells (see
+	// [migrationfile.UnreadFilesError]), or another file of a Ptah-format
+	// directory carries the file's version and direction (see
+	// [migrationfile.DuplicateFileError]), or the revision table the run
+	// records versions in cannot keep the version the file spells (see
 	// [Options.AtlasRevisionTable]). The Atlas profile marks no file.
 	RunRefusal string
 	// NoTransaction reports whether file-scoped directives opt this migration
@@ -1129,7 +1131,9 @@ func withOwners(files []File, owners sqlext.Set) {
 // to do about each, so lint and a run agree on which files stop the run.
 //
 // A file the migrator's reading leaves out at the top of the directory is
-// refused by that reading, and the reading is the migrator's own. An Atlas
+// refused by that reading, and the reading is the migrator's own; so is each
+// file of a Ptah-format directory that shares its version and direction with
+// another. An Atlas
 // file whose version the numeric revision table cannot keep, such as
 // R__x.sql, is refused by the predicate the migrator's guard asks, unless the
 // run records versions in the Atlas revision table.
@@ -1147,6 +1151,15 @@ func markRunRefusals(files []File, fsys fs.FS, format migrationfile.DirFormat, o
 			if slices.Contains(unread.Files, files[i].Name) {
 				files[i].RunRefusal = "the directory's format does not read this file name, so a run refuses the directory " +
 					"rather than leave the file unapplied; " + unread.Remedy
+			}
+		}
+		return
+	}
+	if duplicate, ok := errors.AsType[*migrationfile.DuplicateFileError](err); ok {
+		for i := range files {
+			if slices.Contains(duplicate.Files, files[i].Name) {
+				files[i].RunRefusal = duplicate.Error() + ", so a run refuses the directory rather than apply one of " +
+					"these files and leave the rest unapplied; give each file its own version"
 			}
 		}
 		return

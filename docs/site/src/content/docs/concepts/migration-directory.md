@@ -90,6 +90,16 @@ reports the same finding and replays nothing, since a run would not start. A
 file one level down belongs to another directory, such as a template a
 migration includes, and is left alone.
 
+Two files for one direction of one version are refused the same way, naming
+both: `0000000002_a.up.sql` beside `0000000002_b.up.sql`, or a
+`.checkpoint.up.sql` beside an ordinary up file of its version. A run that
+kept one would never apply the other, and nothing in the directory says which
+one the author meant. `ptah migrations lint` reports each of the files under
+`MF105P`. An Atlas-format directory with two such files is refused when a
+command loads its migrations, as `duplicate Atlas up migration for version
+...`. Lint does not report that case, because an Atlas revision's identity is
+known only once the migrations load.
+
 Atlas-format directories use `atlas.sum` as their integrity file and can be
 tracked with Atlas revision-table metadata (`--revision-format atlas`). On
 PostgreSQL, through a URL that sets no `search_path`, that table lives in the

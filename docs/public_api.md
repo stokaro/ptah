@@ -4421,7 +4421,9 @@ migration directory and its files mean, with no database and no execution.
 CLI spelling) and returns `File` values. A directory is read whole: a SQL file
 at its top level that the format does not read fails `Discover` with an
 `*UnreadFilesError`, whose `Files` names each one and whose `Remedy` says how
-to resolve one such file.
+to resolve one such file. A directory read in the Ptah format with more than
+one file for one direction of one version fails it with a
+`*DuplicateFileError`, whose `Files` names each of them.
 
 `ParseFileName` and `ParseAtlasFileName` read one name; `FileName`, `CheckpointFileName`, and
 `NextVersion` produce names for writers. `ParseDirectives` and `ParseTimeouts`
