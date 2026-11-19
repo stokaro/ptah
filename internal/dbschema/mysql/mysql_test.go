@@ -205,7 +205,7 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	})
 	reader := NewMySQLReader(db.SQL, "app")
 
-	tables, err := reader.readTables(t.Context(), "app", literalsUnquoted)
+	tables, err := reader.readTables(t.Context(), "app", literalsUnquoted, expressionsEscaped)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.QueryCount(), qt.Equals, 2)
@@ -315,6 +315,7 @@ func TestApplyMySQLColumnMetadataKeepsGeneratedExpressionWithoutExtra(t *testing
 	err := applyMySQLColumnMetadata(
 		&col,
 		literalsUnquoted,
+		expressionsEscaped,
 		sql.NullString{String: "default", Valid: true},
 		sql.NullInt64{Int64: 255, Valid: true},
 		sql.NullInt64{Int64: 10, Valid: true},

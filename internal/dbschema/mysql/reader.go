@@ -16,6 +16,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/internal/dbschema/mysql/catalogtext"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
@@ -58,36 +59,41 @@ type checkConstraintClauses struct {
 	columnLevel map[constraintKey]bool
 }
 
-// checkClauseForm is how the server writes CHECK_CLAUSE in
-// information_schema.CHECK_CONSTRAINTS.
-type checkClauseForm uint8
+// expressionForm is how the server writes an expression in
+// information_schema.CHECK_CONSTRAINTS.CHECK_CLAUSE and in
+// information_schema.COLUMNS.GENERATION_EXPRESSION.
+type expressionForm uint8
 
 const (
-	// checkClausesEscaped is MySQL's: the condition is escaped once more than
-	// SQL, as [catalogExpressionSQL] says. Measured on MySQL 8.4.13 and 26.10,
-	// `CHECK (c <> 'it''s')` reports `(`c` <> _utf8mb4\'it\\\'s\')`, where
-	// SHOW CREATE TABLE prints `(`c` <> _utf8mb4'it\'s')`. A session under
-	// NO_BACKSLASH_ESCAPES reads the same clause.
-	checkClausesEscaped checkClauseForm = iota
-	// checkClausesAsSQL is MariaDB's: the condition is SQL. Measured on MariaDB
-	// 11.8.9, the same CHECK reports `` `c` <> 'it\'s' ``.
-	checkClausesAsSQL
+	// expressionsEscaped is MySQL's: the expression is escaped and encoded
+	// once more than SQL, as [catalogtext.SQL] says. Measured on MySQL
+	// 8.4.13 and 26.10, `CHECK (c <> 'it''s')` reports
+	// `(`c` <> _utf8mb4\'it\\\'s\')`, where SHOW CREATE TABLE prints
+	// `(`c` <> _utf8mb4'it\'s')`. A session under NO_BACKSLASH_ESCAPES reads
+	// the same clause.
+	expressionsEscaped expressionForm = iota
+	// expressionsAsSQL is MariaDB's: the expression is SQL. Measured on MariaDB
+	// 11.8.9, the same CHECK reports `` `c` <> 'it\'s' ``, and on MariaDB 12.3
+	// `GENERATED ALWAYS AS (concat(c, 'it''s', 'é'))` reports
+	// ``concat(`c`,'it\'s','é')``.
+	expressionsAsSQL
 )
 
-// checkClauses answers how the server the account is on writes CHECK_CLAUSE.
-func (a sessionAccount) checkClauses() checkClauseForm {
+// expressions answers how the server the account is on writes CHECK_CLAUSE
+// and GENERATION_EXPRESSION.
+func (a sessionAccount) expressions() expressionForm {
 	if a.mariaDB {
-		return checkClausesAsSQL
+		return expressionsAsSQL
 	}
-	return checkClausesEscaped
+	return expressionsEscaped
 }
 
-// sql answers a clause the catalog reported in form as SQL.
-func (form checkClauseForm) sql(clause string) string {
-	if form == checkClausesEscaped {
-		return catalogExpressionSQL(clause)
+// sql answers an expression the catalog reported in form as SQL.
+func (form expressionForm) sql(expression string) string {
+	if form == expressionsEscaped {
+		return catalogtext.SQL(expression)
 	}
-	return clause
+	return expression
 }
 
 // constraintKey identifies one constraint within a read.
@@ -411,7 +417,7 @@ func (r *Reader) readDatabase(
 	}
 
 	// Read tables
-	tables, err := r.readTables(ctx, dbName, account.defaultLiterals())
+	tables, err := r.readTables(ctx, dbName, account.defaultLiterals(), account.expressions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to read tables: %w", err)
 	}
@@ -436,7 +442,7 @@ func (r *Reader) readDatabase(
 	}
 
 	// Read constraints
-	constraints, err := r.readConstraints(ctx, dbName, foreignSchema, account.checkClauses())
+	constraints, err := r.readConstraints(ctx, dbName, foreignSchema, account.expressions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to read constraints: %w", err)
 	}
@@ -526,8 +532,13 @@ func carryPrimaryKeyMethod(schema *catalog.Database) {
 
 // readTables reads all tables and their columns using bulk information_schema
 // queries.
-func (r *Reader) readTables(ctx context.Context, dbName string, literals defaultLiterals) ([]catalog.Table, error) {
-	columnsByTable, err := r.readColumnsByTable(ctx, dbName, literals)
+func (r *Reader) readTables(
+	ctx context.Context,
+	dbName string,
+	literals defaultLiterals,
+	expressions expressionForm,
+) ([]catalog.Table, error) {
+	columnsByTable, err := r.readColumnsByTable(ctx, dbName, literals, expressions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read columns: %w", err)
 	}
@@ -594,7 +605,12 @@ func charsetOfCollation(collation string) string {
 	return charset
 }
 
-func (r *Reader) readColumnsByTable(ctx context.Context, dbName string, literals defaultLiterals) (map[string][]catalog.Column, error) {
+func (r *Reader) readColumnsByTable(
+	ctx context.Context,
+	dbName string,
+	literals defaultLiterals,
+	expressions expressionForm,
+) (map[string][]catalog.Column, error) {
 	query := `
 		SELECT
 			TABLE_NAME,
@@ -665,6 +681,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string, literals
 		if err := applyMySQLColumnMetadata(
 			&col,
 			literals,
+			expressions,
 			defaultValue,
 			characterMaxLength,
 			numericPrecision,
@@ -688,6 +705,7 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string, literals
 func applyMySQLColumnMetadata(
 	col *catalog.Column,
 	literals defaultLiterals,
+	expressions expressionForm,
 	defaultValue sql.NullString,
 	characterMaxLength,
 	numericPrecision,
@@ -735,7 +753,7 @@ func applyMySQLColumnMetadata(
 		settings.OnUpdate = mysqlUpdateExpression(extra.String)
 	}
 	if generatedExpression.Valid && generatedExpression.String != "" {
-		expression := generatedExpression.String
+		expression := expressions.sql(generatedExpression.String)
 		col.GeneratedExpression = &expression
 	}
 	var err error
@@ -884,34 +902,11 @@ func mariaDBFunctionAliases() map[string]string {
 // spelling the catalog reports: measured on MySQL 8.4 and 26.10, `DEFAULT
 // uuid()` answers ERROR 1064 and `DEFAULT now()` on a varchar ERROR 1067.
 func generatedDefault(col *catalog.Column, value string) string {
-	expression := catalogExpressionSQL(value)
+	expression := catalogtext.SQL(value)
 	if (storesMySQLTime(col) && isMySQLCurrentTime(expression)) || normalize.Expression(expression) != expression {
 		return expression
 	}
 	return "(" + expression + ")"
-}
-
-// catalogExpressionSQL answers an expression MySQL's information_schema
-// reports, as SQL. MySQL escapes the expressions it reports in COLUMN_DEFAULT,
-// STATISTICS.EXPRESSION and CHECK_CONSTRAINTS.CHECK_CLAUSE once more, as the
-// body of a string literal: each backslash is doubled and each quote follows a
-// backslash. It writes no other escape, so a backslash before a backslash or a
-// quote stands for the second byte, and any other backslash is kept. Measured
-// on MySQL 8.4.13 and 26.10, a tab in a string is reported as a tab and a
-// double quote as a double quote.
-func catalogExpressionSQL(value string) string {
-	if !strings.Contains(value, `\`) {
-		return value
-	}
-	var b strings.Builder
-	b.Grow(len(value))
-	for i := 0; i < len(value); i++ {
-		if value[i] == '\\' && i+1 < len(value) && (value[i+1] == '\'' || value[i+1] == '\\') {
-			i++
-		}
-		b.WriteByte(value[i])
-	}
-	return b.String()
 }
 
 // hasGeneratedDefault reports whether a column's EXTRA marks its default as an
@@ -1610,7 +1605,7 @@ func addIndexKeyPart(index *catalog.Index, row indexKeyPartRow, indexType string
 			return
 		}
 		// Only MySQL reports EXPRESSION, escaped as its other expressions are.
-		index.Parts = append(index.Parts, catalog.IndexPart{Expr: catalogExpressionSQL(row.expression.String), Desc: desc})
+		index.Parts = append(index.Parts, catalog.IndexPart{Expr: catalogtext.SQL(row.expression.String), Desc: desc})
 		return
 	}
 	index.Columns = append(index.Columns, row.column.String)
@@ -1674,7 +1669,7 @@ func (r *Reader) readConstraints(
 	ctx context.Context,
 	dbName string,
 	foreignSchema foreignSchemaRule,
-	form checkClauseForm,
+	form expressionForm,
 ) ([]catalog.Constraint, error) {
 	checkClauses, err := r.readCheckConstraintClauses(ctx, dbName, form)
 	if err != nil {
@@ -1910,7 +1905,7 @@ const checkConstraintType = "CHECK"
 
 // readCheckConstraintClauses reads every CHECK condition of dbName as SQL, the
 // server writing CHECK_CLAUSE in form.
-func (r *Reader) readCheckConstraintClauses(ctx context.Context, dbName string, form checkClauseForm) (checkConstraintClauses, error) {
+func (r *Reader) readCheckConstraintClauses(ctx context.Context, dbName string, form expressionForm) (checkConstraintClauses, error) {
 	clauses := checkConstraintClauses{
 		byTableName: make(map[constraintKey]string),
 		byName:      make(map[string]string),
@@ -1982,7 +1977,7 @@ func isMissingCheckConstraintsTable(err error) bool {
 	return strings.Contains(strings.ToUpper(mysqlErr.Message), "CHECK_CONSTRAINTS")
 }
 
-func (r *Reader) readTableAwareCheckConstraintClauses(ctx context.Context, dbName string, form checkClauseForm, clauses *checkConstraintClauses) error {
+func (r *Reader) readTableAwareCheckConstraintClauses(ctx context.Context, dbName string, form expressionForm, clauses *checkConstraintClauses) error {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT CONSTRAINT_NAME, TABLE_NAME, CHECK_CLAUSE, LEVEL
 		FROM information_schema.CHECK_CONSTRAINTS
@@ -2004,7 +1999,7 @@ func (r *Reader) readTableAwareCheckConstraintClauses(ctx context.Context, dbNam
 	return rows.Err()
 }
 
-func (r *Reader) readNameOnlyCheckConstraintClauses(ctx context.Context, dbName string, form checkClauseForm, clauses map[string]string) error {
+func (r *Reader) readNameOnlyCheckConstraintClauses(ctx context.Context, dbName string, form expressionForm, clauses map[string]string) error {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT CONSTRAINT_NAME, CHECK_CLAUSE
 		FROM information_schema.CHECK_CONSTRAINTS

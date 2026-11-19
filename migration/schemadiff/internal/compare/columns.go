@@ -2374,7 +2374,13 @@ func generatedColumnDiff(
 	}
 	genKind := strings.ToUpper(strings.TrimSpace(genCol.GeneratedKind))
 	dbKind := strings.ToUpper(strings.TrimSpace(dbCol.GeneratedKind))
-	if genExpr == dbExpr && genKind == dbKind {
+	// MySQL 26.10 and MariaDB 12.3 store a string in the expression with a
+	// backslash before a quote, and MySQL with the session's introducer, so
+	// without the reading by grouping a column with a string in its
+	// expression is modified on every apply.
+	sameExpression := genExpr == dbExpr ||
+		dbCol.GeneratedExpression != nil && expressionsGroupAlike(declared, *dbCol.GeneratedExpression, dialect)
+	if sameExpression && genKind == dbKind {
 		return ""
 	}
 	return fmt.Sprintf("%s %s -> %s %s", dbKind, dbExpr, genKind, genExpr)
