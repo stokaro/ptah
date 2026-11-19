@@ -150,6 +150,7 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 		{name: "an unquoted literal with a space against the catalog a model makes", dialect: platform.Postgres, columnType: "text", literal: "a b", reported: "'a b'"},
 		{name: "an unquoted literal with a quote against a catalog", dialect: platform.Postgres, columnType: "text", literal: "it's", reported: "'it''s'::text"},
 		{name: "an empty literal against a catalog", dialect: platform.MySQL, columnType: "varchar(16)", literal: "", set: true, reported: "''"},
+		{name: "ClickHouse, a quote escaped with a backslash", dialect: platform.ClickHouse, columnType: "String", literal: `'it\'s;x'`, reported: `'it\'s;x'`},
 		{name: "MySQL, an expression against itself", dialect: platform.MySQL, columnType: "varchar(30)", expression: "(1 + 2)", reported: "(1 + 2)"},
 		{name: "PostgreSQL, a cast literal", dialect: platform.Postgres, columnType: "varchar(30)", literal: "'a'", reported: "'a'::character varying"},
 		{name: "PostgreSQL, an expression that is a string", dialect: platform.Postgres, columnType: "text", expression: "('a')", reported: "'a'::text"},

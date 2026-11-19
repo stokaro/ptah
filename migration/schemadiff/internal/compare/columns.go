@@ -1128,7 +1128,7 @@ func columnDefaultChange(
 // written.
 func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported, typeName, dialect string) (comparedDeclared, comparedReported string) {
 	if genCol.DefaultSet || genCol.Default != "" {
-		return defaultlit.AsRead(typeName, declared), reported
+		return literalAsRead(declared, typeName, dialect), reported
 	}
 	if genCol.DefaultExpr == "" {
 		return declared, reported
@@ -1208,6 +1208,18 @@ func SequenceReferenceNames(expression, dialect string) []string {
 		return nil
 	}
 	return sequenceref.Names(expression, rules)
+}
+
+// literalAsRead is a declared literal as the catalog reports it
+// ([defaultlit.AsRead]). A literal that is one string under the dialect's
+// escapes keeps its spelling: ClickHouse reads the quote behind a backslash in
+// `'it\'s'` as part of the string, and quoted a second time the literal is a
+// different value from the one the server reports.
+func literalAsRead(declared, typeName, dialect string) string {
+	if dialectlexer.Options(dialect).BackslashEscapes && defaultlit.IsEscapedSQLLiteral(strings.TrimSpace(declared)) {
+		return declared
+	}
+	return defaultlit.AsRead(typeName, declared)
 }
 
 // columnDefaultsEqual compares both values under the desired column type.
