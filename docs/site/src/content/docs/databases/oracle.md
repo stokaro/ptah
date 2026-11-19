@@ -138,9 +138,11 @@ A SQL schema file read with `--dialect oracle` keeps `SYSDATE`,
 `UID`, `SESSIONTIMEZONE`, `DBTIMEZONE`, `ORA_INVOKING_USER` and
 `ORA_INVOKING_USERID` as a default expression, written bare. A quoted
 `'SYSDATE'` stays a string. Oracle calls each without parentheses and answers
-`ORA-03077`, `ORA-30088` or `ORA-04044` to an empty argument list, so a
-default such as `SYSDATE()` is refused before anything is planned, and the
-refusal names the bare spelling. A precision, as in `SYSTIMESTAMP(3)`, is
+`ORA-03077`, `ORA-30088` or `ORA-04044` to an empty argument list, and
+`ORA-00920` or `ORA-00907` to one inside a parenthesized default. A default
+such as `SYSDATE()`, `SYSDATE ()` or `(SYSDATE() + 1)` is refused before
+anything is planned, and the refusal writes the default with the bare
+spelling, `(SYSDATE + 1)`. A precision, as in `SYSTIMESTAMP(3)`, is
 kept, and so is `SESSIONTIMEZONE()`, which Oracle calls.
 
 A default that reads a sequence, `seq.NEXTVAL` or `seq.CURRVAL`, is kept as an
