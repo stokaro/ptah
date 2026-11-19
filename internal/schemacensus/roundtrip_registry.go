@@ -267,7 +267,6 @@ var roundTripGaps = []Unreached{
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Field.Collate", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.DefaultSet",
 		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlite", "sqlserver", "yugabytedb"},

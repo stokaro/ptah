@@ -28,11 +28,13 @@ import (
 	"ptah.run/internal/columnsemantics"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/constraintowner"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/pgcollation"
 	"ptah.run/internal/pgname"
+	"ptah.run/internal/precedence"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/sqlservertype"
@@ -612,10 +614,21 @@ func columnsWithDesiredDomains(
 // compared ignoring ASCII case, and a declaration of the descriptor's
 // InheritedCollation is a column that declares none, since the catalog reports
 // none declared for it: `COLLATE BINARY` on SQLite.
+//
+// Where the descriptor states InheritedCollationVaries, a column that declares
+// a collation is compared with the one it holds, and a column that declares
+// none is not compared ([declaredCollationHolds]).
 func columnCollationChange(desired schemamodel.Field, current catalog.Column, dialect string) string {
 	facts := columnFactsOf(dialect)
 	if !facts.Collations {
 		return ""
+	}
+	if facts.InheritedCollationVaries {
+		held := heldCollation(current)
+		if declaredCollationHolds(desired.Collate, desired.Type, held, facts.CollationNames) {
+			return ""
+		}
+		return held + " -> " + desired.Collate
 	}
 	change := current.Collate + " -> " + desired.Collate
 	if qualifiedCollations.Get(dialect) {
@@ -632,6 +645,64 @@ func columnCollationChange(desired schemamodel.Field, current catalog.Column, di
 		return ""
 	}
 	return change
+}
+
+// heldCollation is the collation current compares with: the one the catalog
+// reports for the column whether it declared it or took it from its table, or
+// the one it declares where nothing reports that.
+func heldCollation(current catalog.Column) string {
+	if current.EffectiveCollate != "" {
+		return current.EffectiveCollate
+	}
+	return current.Collate
+}
+
+// declaredCollationHolds reports whether a column of type declaredType,
+// holding the collation held, keeps the collation declared, on a target whose
+// descriptor states InheritedCollationVaries. A column that declares none
+// holds whatever it holds: MySQL gives a column without a COLLATE its table's
+// default collation, or the default collation of the character set the
+// column names, and a change planned against either would restate the same
+// column on every run. `CHARACTER SET utf8mb4` in a table whose default is
+// utf8mb4_bin gives utf8mb4_0900_ai_ci on MySQL 8.4.
+//
+// A declared name is resolved as names says the server stores it, then
+// compared ignoring ASCII case, as both servers find a collation.
+func declaredCollationHolds(declared, declaredType, held string, names descriptor.CollationNames) bool {
+	if declared == "" || (names.CharsetDefault != "" && strings.EqualFold(declared, names.CharsetDefault)) {
+		return true
+	}
+	if held == "" && len(names.Types) > 0 && !slices.Contains(names.Types, collatedTypeName(declaredType)) {
+		return true
+	}
+	declared, held = storedCollation(declared, names), storedCollation(held, names)
+	if strings.EqualFold(declared, held) {
+		return true
+	}
+	charset, _, named := strings.Cut(held, "_")
+	return names.WithoutCharset && named && strings.EqualFold(charset+"_"+declared, held)
+}
+
+// storedCollation is the name the server stores collation under: a collation
+// named after a character set alias takes the character set's stored name.
+func storedCollation(collation string, names descriptor.CollationNames) string {
+	charset, rest, named := strings.Cut(collation, "_")
+	stored, aliased := names.CharsetAliases[strings.ToLower(charset)]
+	if !named || !aliased {
+		return collation
+	}
+	return stored + "_" + rest
+}
+
+// collatedTypeName is the first word of a declared type, in lower case and
+// without its size: `varchar` for `VARCHAR(20)`, `national` for `NATIONAL
+// CHAR(3)`.
+func collatedTypeName(declaredType string) string {
+	name := strings.ToLower(strings.TrimSpace(declaredType))
+	if end := strings.IndexAny(name, "( \t"); end >= 0 {
+		name = name[:end]
+	}
+	return name
 }
 
 // qualifiedCollationHolds reports whether the collation declared, in the
@@ -899,7 +970,7 @@ func columnDefaultChange(
 		if normalize.IsDefaultExpr(dbDefault) {
 			idxName = "default_expr"
 		}
-		declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault)
+		declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault, dialect)
 		if !columnDefaultsEqual(declared, reported, genType, dialect,
 			genCol.Default == "" && genCol.DefaultExpr != "") {
 			return idxName, fmt.Sprintf("%s -> %s", dbDefault, genDefault)
@@ -916,11 +987,28 @@ func columnDefaultChange(
 // with them, the declaration differs from the table it built on every run, and
 // SQLite rebuilds the table for it each time. A literal keeps its text, so a
 // string default `(x)` stays a different value from `x`.
-func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported string) (comparedDeclared, comparedReported string) {
+//
+// Where the dialect's descriptor names an operator precedence, both are then
+// compared as the operations it groups ([precedence.Canonical]). MySQL stores
+// `(2 * 3 + 1)` as `((2 * 3) + 1)`, and without the reading every apply plans
+// the column again. Either side the precedence cannot read leaves both as
+// written.
+func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported, dialect string) (comparedDeclared, comparedReported string) {
 	if genCol.Default != "" || genCol.DefaultExpr == "" {
 		return declared, reported
 	}
-	return normalize.Expression(declared), normalize.Expression(reported)
+	declared, reported = normalize.Expression(declared), normalize.Expression(reported)
+	scheme := comparisonOf(dialect).OperatorPrecedence
+	if scheme == "" {
+		return declared, reported
+	}
+	lexing := dialectlexer.Options(dialect)
+	groupedDeclared, declaredRead := precedence.Canonical(declared, scheme, lexing)
+	groupedReported, reportedRead := precedence.Canonical(reported, scheme, lexing)
+	if !declaredRead || !reportedRead {
+		return declared, reported
+	}
+	return groupedDeclared, groupedReported
 }
 
 // columnDefaultsEqual compares both values under the desired column type.

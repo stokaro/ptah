@@ -153,6 +153,19 @@ SQL:
   `MODIFY COLUMN`. A key column is restated `NOT NULL` without `PRIMARY KEY`,
   because both engines refuse a `MODIFY COLUMN ... PRIMARY KEY` on a table that
   has a key (`ERROR 1068`); the same holds for a key column whose type changes.
+- An expression default is compared as the operations its operators group,
+  by the precedence both engines share, and read back as an expression on
+  every column type. MySQL 26.10 stores `(2 * 3 + 1)` as ``((2 * 3) + 1)``,
+  `(a + b * 2)` as ``(`a` + (`b` * 2))``, `(CURRENT_TIMESTAMP + INTERVAL 1
+  DAY)` as `(now() + interval 1 day)` and `(concat('a', 'b'))` as
+  `concat(_utf8mb4'a',_utf8mb4'b')`. MariaDB 12.3 writes `7 % 4` as
+  `7 MOD 4` and `NOW()` as `current_timestamp()`. Each pair is one default,
+  so a second apply plans nothing, and `db read` writes the default in
+  parentheses. A parenthesis that changes the grouping is part of the
+  default: `((1 + 2) * 3)` and `(1 + 2 * 3)` differ. An expression that holds
+  `NOT`, `IS`, `IN`, `CASE`, a qualified name or another character set
+  introducer is compared as written, and so is one the server rewrites
+  further: MySQL stores `(NOT 1 + 1)` as `(0 = (1 + 1))`.
 - `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
   MariaDB type. Both engines take one auto-increment column per table, and only
@@ -584,6 +597,36 @@ changes for another reason is rewritten with `MODIFY COLUMN`, and that
 statement writes the declared settings. A database read reports a character
 set for every text column, inherited ones included, and an export writes what
 it read.
+
+## Column collations
+
+A column's `COLLATE` is written on the column, in `CREATE TABLE` and in
+`MODIFY COLUMN`, and compared with the collation the column holds. A read
+reports that collation whether the column declares it or takes it from its
+table, so `COLLATE utf8mb4_unicode_ci` on a column of a table whose default is
+`utf8mb4_unicode_ci` is no change. Names compare ignoring case, and
+`COLLATE 'utf8mb4_bin'` is the same name as `COLLATE utf8mb4_bin`. A changed
+collation is planned as `MODIFY COLUMN`, which restates the column with the
+declared collation and its declared character set.
+
+A name the server stores under another name is compared as the stored name.
+Both servers store a collation of the `utf8` character set under `utf8mb3`,
+so `COLLATE utf8_bin` holds as `utf8mb3_bin`. MariaDB also takes a collation
+without its character set, so `COLLATE uca1400_ai_ci` on a `utf8mb4` column
+holds as `utf8mb4_uca1400_ai_ci`, and `COLLATE DEFAULT`, which selects the
+default collation of the column's character set and is compared as no
+collation. Both servers accept a collation on a type that holds none, such as
+`int COLLATE utf8mb4_bin`, and keep none, so such a collation is not compared.
+
+A column that declares no collation is not compared. The server gives it its
+table's default collation, or the default collation of a character set the
+column names: `CHARACTER SET utf8mb4` in a table whose default is
+`utf8mb4_unicode_ci` gives `utf8mb4_0900_ai_ci` on MySQL 8.4 and
+`utf8mb4_uca1400_ai_ci` on MariaDB 12.3. Ptah cannot tell which collation that
+is without asking the server, so a column that holds a collation the schema
+file does not name keeps it, and no change is planned. The Atlas community
+binary v1.3.0 plans a `MODIFY COLUMN` for such a column. To change it back,
+declare the collation the column should hold.
 
 ## FULLTEXT parser
 

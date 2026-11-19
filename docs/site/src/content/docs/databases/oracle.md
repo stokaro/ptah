@@ -133,6 +133,16 @@ The column read uses `CHAR_USED` to keep `VARCHAR2(100)` and `VARCHAR2(100 CHAR)
 distinct. A change between byte and character length semantics is reported even
 when the numeric length matches.
 
+A SQL schema file read with `--dialect oracle` keeps `SYSDATE`,
+`SYSTIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIMESTAMP`, `LOCALTIMESTAMP`, `USER`,
+`UID`, `SESSIONTIMEZONE`, `DBTIMEZONE`, `ORA_INVOKING_USER` and
+`ORA_INVOKING_USERID` as a default expression, written bare. A quoted
+`'SYSDATE'` stays a string. Oracle calls each without parentheses and answers
+`ORA-03077`, `ORA-30088` or `ORA-04044` to an empty argument list, so a
+default such as `SYSDATE()` is refused before anything is planned, and the
+refusal names the bare spelling. A precision, as in `SYSTIMESTAMP(3)`, is
+kept, and so is `SESSIONTIMEZONE()`, which Oracle calls.
+
 ## What the 23 and 21 lines do differently
 
 The `IF [NOT] EXISTS` guards are a 23-line feature. On 21 they are refused, and

@@ -84,7 +84,7 @@ func TestParser_ColumnCollationOnAnotherDialect(t *testing.T) {
 		want    string
 	}{
 		{dialect: "cockroachdb", sql: `CREATE TABLE t (a STRING COLLATE "en_US");`, want: `"en_US"`},
-		{dialect: "mysql", sql: `CREATE TABLE t (a varchar(10) COLLATE utf8mb4_bin);`, want: "utf8mb4_bin"},
+		{dialect: "yugabytedb", sql: `CREATE TABLE t (a text COLLATE "C");`, want: `"C"`},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {
@@ -95,6 +95,35 @@ func TestParser_ColumnCollationOnAnotherDialect(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
 		})
+	}
+}
+
+// TestParser_MySQLColumnCollation_HappyPath pins the MySQL family's spelling:
+// the name unquoted from a string or a backquoted identifier, both of which
+// MySQL 8.4 and MariaDB 11.8 take after COLLATE, in the case it is written.
+func TestParser_MySQLColumnCollation_HappyPath(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{name: "a bare name keeps its case", sql: `CREATE TABLE t (a varchar(10) COLLATE UTF8MB4_bin);`, want: "UTF8MB4_bin"},
+		{name: "a single-quoted name", sql: `CREATE TABLE t (a varchar(10) COLLATE 'utf8mb4_bin');`, want: "utf8mb4_bin"},
+		{name: "a double-quoted name", sql: `CREATE TABLE t (a varchar(10) COLLATE "utf8mb4_bin");`, want: "utf8mb4_bin"},
+		{name: "a backquoted name", sql: "CREATE TABLE t (a varchar(10) COLLATE `utf8mb4_bin`);", want: "utf8mb4_bin"},
+		{name: "after a constraint", sql: `CREATE TABLE t (a varchar(10) NOT NULL COLLATE utf8mb4_bin);`, want: "utf8mb4_bin"},
+	}
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				got, err := parsedColumnCollation(c, dialect, test.sql)
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(got, qt.Equals, test.want)
+			})
+		}
 	}
 }
 
