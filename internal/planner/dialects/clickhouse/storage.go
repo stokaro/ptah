@@ -173,10 +173,16 @@ func commonColumns(builder objectidentity.Builder, nodes []ast.Node) (plangraph.
 			name, action = operation.Column.Name, plangraph.Alter
 		case *ast.DropColumnOperation:
 			name, action = operation.ColumnName, plangraph.Drop
+		case *ast.SetCommentOperation:
+			name, action = operation.Column, plangraph.Alter
 		default:
 			return common, nil, fmt.Errorf("%w: unexpected common column operation %T", schemaext.ErrInvalidValue, operation)
 		}
 		step.Effects = []plangraph.Effect{{Subject: step.Parent, Action: plangraph.Read}, {Subject: builder.Column(alter.Name, name), Action: action}}
+		if name == "" {
+			// A table's own comment alters the table, not a column of it.
+			step.Effects = []plangraph.Effect{{Subject: step.Parent, Action: plangraph.Alter}}
+		}
 		steps = append(steps, step)
 		common.Steps = append(common.Steps, plangraph.Step[[]ast.Node]{ID: step.ID, Payload: []ast.Node{node}, Effects: slices.Clone(step.Effects), Transaction: step.Transaction})
 		if i > 0 {
