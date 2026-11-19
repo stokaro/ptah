@@ -33,6 +33,9 @@ type memoryRecord struct {
 	lostClaim bool
 	// raceWinner is a run that claims the identity just before this run does.
 	raceWinner string
+	// goneOnRemove deletes the row just before a removal reaches it, as
+	// another run would, so the removal finds none.
+	goneOnRemove bool
 }
 
 func (r *memoryRecord) Read(context.Context, dbschema.MigrationMetadataTable) (dbschema.RepeatableSnapshot, error) {
@@ -95,6 +98,9 @@ func (r *memoryRecord) Fail(_ context.Context, _ dbschema.MigrationMetadataTable
 }
 
 func (r *memoryRecord) Remove(_ context.Context, _ dbschema.MigrationMetadataTable, identity string) (bool, error) {
+	if r.goneOnRemove {
+		delete(r.rows, identity)
+	}
 	_, found := r.rows[identity]
 	delete(r.rows, identity)
 	r.removed = append(r.removed, identity)
@@ -232,6 +238,24 @@ func TestProviderRepeatables_RepairRemovesTheRow(t *testing.T) {
 	c.Assert(owner.record.rows, qt.HasLen, 0)
 }
 
+// A removal that finds no row, although the read under the same lock found
+// one, is an error: the repair reports the identity as not recorded rather
+// than claiming a removal the provider did not make.
+func TestProviderRepeatables_RepairRefusesARowThatIsGone(t *testing.T) {
+	c := qt.New(t)
+	owner := newRecordSession(1 << 20)
+	c.Assert(providerRepeatableMigrator(c, owner, providerRepeatableDirectory).MigrateUp(c.Context()), qt.IsNil)
+	owner.record.goneOnRemove = true
+
+	record, err := providerRepeatableMigrator(c, owner, providerRepeatableDirectory).RemoveRepeatableRecord(c.Context(),
+		migrator.RemoveRepeatableRecordOptions{Identity: "user_names", Force: true})
+
+	c.Assert(err, qt.ErrorIs, migrator.ErrRepeatableNotRecorded)
+	c.Assert(err, qt.ErrorMatches, `failed to delete the row of repeatable migration user_names: .*: the record holds no row for it`)
+	c.Assert(record, qt.IsNil)
+	c.Assert(owner.record.removed, qt.DeepEquals, []string{"user_names"})
+}
+
 // A provider that keeps no record refuses the directory before anything runs,
 // and the refusal carries the provider's reason.
 func TestProviderRepeatables_RefusesAProviderWithoutTheRecord(t *testing.T) {
@@ -247,6 +271,8 @@ func TestProviderRepeatables_RefusesAProviderWithoutTheRecord(t *testing.T) {
 		`unsupported feature: provider metadata.fixture keeps no record of repeatable migrations`)
 	c.Assert(owner.statements, qt.Equals, 0)
 	c.Assert(owner.history, qt.HasLen, 0)
+	c.Assert(owner.exists, qt.IsFalse)
+	c.Assert(owner.log.prepared, qt.IsFalse)
 }
 
 // A content longer than the provider's record keeps is refused before

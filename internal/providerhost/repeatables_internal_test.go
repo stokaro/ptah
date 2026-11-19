@@ -52,6 +52,23 @@ func TestRepeatableStore_HappyPath(t *testing.T) {
 	})
 }
 
+// A migration split into units runs each unit in a transaction of its own, and
+// the unit's handle hands out the store bound to that transaction: the
+// completion carries its ID, and every other write is refused there.
+func TestRepeatableStore_UnitTransaction(t *testing.T) {
+	c := qt.New(t)
+	owner := repeatableSession([]string{provider.RepeatableRecordFeature}, []string{provider.RepeatableRecordFeature})
+	store, err := (&unitTransaction{tx: &transaction{session: owner, id: "unit"}}).RepeatableStore()
+	c.Assert(err, qt.IsNil)
+	table := dbschema.MigrationMetadataTable{Schema: "main", Name: "_revisions_repeatable"}
+	completion, err := store.(repeatableStore).completionScope(table)
+	c.Assert(err, qt.IsNil)
+	c.Assert(completion.GetTransactionId(), qt.Equals, "unit")
+	scope, err := store.(repeatableStore).scope(table)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(scope, qt.IsNil)
+}
+
 func TestRepeatableStore_FailurePath(t *testing.T) {
 	refusal := `unsupported feature: provider example.org/fixture keeps no record of repeatable migrations for engine fixture, ` +
 		`because it does not list sessions.repeatable-record \(contract 25.44\); install a provider release that lists it`

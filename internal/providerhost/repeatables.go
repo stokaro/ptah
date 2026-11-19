@@ -143,7 +143,7 @@ func (r repeatableStore) ReadBody(ctx context.Context, table dbschema.MigrationM
 }
 
 func (r repeatableStore) Claim(ctx context.Context, table dbschema.MigrationMetadataTable, claim dbschema.RepeatableClaim) error {
-	if claim.AttemptOrder <= 0 || claim.AttemptOrder > math.MaxUint32 {
+	if claim.AttemptOrder <= 0 || int64(claim.AttemptOrder) > math.MaxUint32 {
 		return fmt.Errorf("invalid repeatable migration attempt order %d", claim.AttemptOrder)
 	}
 	seconds, nanos, err := metadataTimestamp(claim.AttemptedAt)

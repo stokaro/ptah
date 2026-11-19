@@ -21,6 +21,17 @@ type repeatableState struct {
 	rows        map[string]repeatableRow
 }
 
+// refuseRepeatableDirectory refuses a directory that holds repeatable
+// migrations on a target that cannot run them, before a run creates the
+// revision table or reads anything; see [Migrator.refuseRepeatablesHere].
+func (m *Migrator) refuseRepeatableDirectory() error {
+	source, ok := m.migrationProvider.(repeatableSource)
+	if !ok || !source.loadsRepeatableMigrations() || len(source.repeatableMigrations()) == 0 {
+		return nil
+	}
+	return m.refuseRepeatablesHere()
+}
+
 // readRepeatableState reads the repeatable migrations of the provider and
 // every row of their record, including rows no file of the directory carries
 // any more. It returns nil when the provider does not load repeatable
@@ -63,8 +74,17 @@ func (m *Migrator) readRepeatableState(ctx context.Context) (*repeatableState, e
 // and the revision table keeps the shape that contract defines.
 func (m *Migrator) refuseRepeatablesHere() error {
 	if store, err := m.conn.HistoryStore(); err != nil || store != nil {
-		if _, err := m.conn.RepeatableStore(); err != nil {
-			return &RepeatableMigrationsUnsupportedError{Dialect: m.connectionDialect(), Reason: err.Error(), Err: err}
+		repeatables, refusal := m.conn.RepeatableStore()
+		if refusal == nil && repeatables == nil {
+			// A provider connection with no record and no reason for it: the
+			// history store's error, or the absence itself, refuses the run.
+			refusal = err
+			if refusal == nil {
+				refusal = errors.New("the provider connection returned no record of repeatable migrations")
+			}
+		}
+		if refusal != nil {
+			return &RepeatableMigrationsUnsupportedError{Dialect: m.connectionDialect(), Reason: refusal.Error(), Err: refusal}
 		}
 		return nil
 	}

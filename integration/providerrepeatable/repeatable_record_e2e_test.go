@@ -299,7 +299,7 @@ func TestProviderRepeatableRecordE2E_FailurePath(t *testing.T) {
 			c.Assert(result.ExitCode, qt.Not(qt.Equals), 0)
 			c.Assert(document.Error.Message, qt.Equals, providerRefusal)
 			c.Assert(document.Applied, qt.HasLen, 0)
-			c.Assert(r.tables(c), qt.HasLen, 0)
+			c.Assert(r.query(c, `SELECT name FROM sqlite_master WHERE type = 'table'`), qt.HasLen, 0)
 		})
 	}
 

@@ -1988,10 +1988,21 @@ func validateMigrateUpOptions(opts MigrateUpOptions) error {
 	return nil
 }
 
-func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) error {
-	// Initialize the migrations table
+// prepareUp refuses a directory the target cannot run before it changes
+// anything, then creates the revision table.
+func (m *Migrator) prepareUp(ctx context.Context) error {
+	if err := m.refuseRepeatableDirectory(); err != nil {
+		return err
+	}
 	if err := m.Initialize(ctx); err != nil {
 		return fmt.Errorf("failed to initialize migrations table: %w", err)
+	}
+	return nil
+}
+
+func (m *Migrator) migrateUpLocked(ctx context.Context, opts MigrateUpOptions) error {
+	if err := m.prepareUp(ctx); err != nil {
+		return err
 	}
 	if !opts.AllowDirty {
 		if err := m.failIfDirty(ctx); err != nil {
