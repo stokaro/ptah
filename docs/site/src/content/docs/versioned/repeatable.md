@@ -69,7 +69,7 @@ Ptah versioned file, so a directory of repeatable migrations alone needs
 `--dir-format ptah`. In the Atlas format, `R__<name>.sql` is the one-time
 version `R`, as Atlas reads it. `R` is not a number: the directory runs over
 the Atlas revision table (`--revision-format atlas`), and lint reports the file
-under `MF104P` without that flag. `ptah-compat` reads it as a repeatable
+under `MF105P` without that flag. `ptah-compat` reads it as a repeatable
 migration when asked; see [The compatibility surface](#the-compatibility-surface).
 
 ## What an up run does

@@ -56,7 +56,7 @@ func TestMigrationGate_AnAtlasRepeatableOverTheAtlasTable_HappyPath(t *testing.T
 // A gate that blocks on the migration-form family judges R__r.sql for the
 // Atlas revision table the run records versions in, which keeps the version
 // R, so it reports no refusal and up applies both files. Judged for Ptah's
-// table, the gate would refuse the plan under MF104P for a file the run
+// table, the gate would refuse the plan under MF105P for a file the run
 // applies.
 func TestMigrationGate_AnAtlasRepeatableUnderAMigrationFormGate_HappyPath(t *testing.T) {
 	c := qt.New(t)

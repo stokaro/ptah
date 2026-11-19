@@ -51,7 +51,7 @@ func TestAnalyzeWithPolicy_AtlasRepeatableOverTheNumericTable_FailurePath(t *tes
 		migrationlintgate.Pending{Versions: []int64{1, 2}}, policy, "")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(gateSites(findings), qt.DeepEquals, []string{"R__x.sql:0:MF104P", "R__x.sql:1:DS101"})
+	c.Assert(gateSites(findings), qt.DeepEquals, []string{"R__x.sql:0:MF105P", "R__x.sql:1:DS101"})
 }
 
 // A plan that has applied R__x.sql already hands the gate 1 alone, and the

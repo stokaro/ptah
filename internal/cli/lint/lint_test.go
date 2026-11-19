@@ -209,7 +209,7 @@ func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
 	for _, f := range report.Findings {
 		rules[f.Rule]++
 	}
-	for _, want := range []string{"BC103", "DS101", "BC104", "DS102", "DS103", "BC101", "MF101P", "MF102P", "MF104P", "PG101", "PG102", "MY101"} {
+	for _, want := range []string{"BC103", "DS101", "BC104", "DS102", "DS103", "BC101", "MF101P", "MF102P", "MF105P", "PG101", "PG102", "MY101"} {
 		c.Assert(rules[want] >= 1, qt.IsTrue,
 			qt.Commentf("expected at least one %s hit; got rule tally %v", want, rules))
 	}
@@ -224,7 +224,7 @@ func TestRunLint_GitHubActionsFormatAnnotatesFileAndLine(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(stdout, qt.Contains, "::error file=testdata/bad/0000000002_bad_stuff.up.sql,line=2::DS101:")
 	c.Assert(stdout, qt.Contains, "::warning file=testdata/bad/0000000002_bad_stuff.up.sql,line=10::PG101:")
-	c.Assert(stdout, qt.Contains, "::error file=testdata/bad/misnamed.sql::MF104P:")
+	c.Assert(stdout, qt.Contains, "::error file=testdata/bad/misnamed.sql::MF105P:")
 }
 
 func TestRunLint_SARIFFormat(t *testing.T) {
@@ -1043,8 +1043,8 @@ func TestRunLint_FailOnThresholds(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 
 	// error (default): warnings alone do not fail. misnamed.sql is an error
-	// too, MF104P, since the migrator refuses the directory for it.
-	stdout, _, err = execute("--dir", "testdata/bad", "--disable", "DS", "--disable", "MF104P")
+	// too, MF105P, since the migrator refuses the directory for it.
+	stdout, _, err = execute("--dir", "testdata/bad", "--disable", "DS", "--disable", "MF105P")
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "PG101")
 }

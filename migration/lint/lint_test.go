@@ -217,13 +217,13 @@ func TestLintFS_MigrationFormRules(t *testing.T) {
 		"0000000001_orphan.up.sql":  "CREATE TABLE t (id INT);\n",         // MF101P: no down
 		"0000000002_empty.up.sql":   "-- only comments; nothing to run\n", // MF102P
 		"0000000002_empty.down.sql": "-- nothing\n",
-		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // MF104P: the migrator refuses the directory
+		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // MF105P: the migrator refuses the directory
 		"shared/misnamed.sql":       "CREATE TABLE stray (id INT);\n", // MF103: a file of another directory
 	})
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(sortedRulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P", "MF103", "MF104P"})
+	c.Assert(sortedRulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P", "MF103", "MF105P"})
 	for _, f := range findings {
 		c.Assert(f.Line, qt.Equals, 0, qt.Commentf("file-level findings carry no line: %v", f))
 	}
@@ -1022,22 +1022,40 @@ func TestLintFS_CaseVariantSQLFilesStopTheRun(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF104P"},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF105P"},
 		qt.Commentf("a case-variant file the migrator refuses the directory for is reported instead of vanishing"))
 }
 
-// refusedFiles names the files the findings report under MF104P, in order.
+// refusedFiles names the files the findings report under MF105P, in order.
 func refusedFiles(findings []lint.Finding) []string {
 	files := make([]string, 0, len(findings))
 	for _, finding := range findings {
-		if finding.Rule == "MF104P" {
+		if finding.Rule == "MF105P" {
 			files = append(files, finding.File)
 		}
 	}
 	return files
 }
 
-// TestLintFS_FilesTheMigratorRefusesTheDirectoryFor reports under MF104P each
+// The Atlas code MF104 reports a nullable column made non-nullable, and a
+// selector matches every rule code it prefixes once its aliases expand.
+// Disabling MF104 leaves the refusal of a file a run refuses the directory for
+// reported, which a rule code MF104 prefixes would lose.
+func TestLintFS_DisablingAtlasMF104KeepsTheRunRefusal(t *testing.T) {
+	c := qt.New(t)
+	fsys := fixture(map[string]string{
+		"0000000001_a.up.sql":   "CREATE TABLE a (id INT);\n",
+		"0000000001_a.down.sql": "DROP TABLE a;\n",
+		"notes.sql":             "CREATE TABLE notes (id INT);\n",
+	})
+
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"MF104"}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(refusedFiles(findings), qt.DeepEquals, []string{"notes.sql"})
+}
+
+// TestLintFS_FilesTheMigratorRefusesTheDirectoryFor reports under MF105P each
 // file the migrator's reading leaves out at the top of the directory, which a
 // run refuses the directory for, whichever grammar its name resembles. The
 // Atlas profile reports none: the community binary runs every top-level file.
@@ -1074,7 +1092,7 @@ func TestLintFS_FilesTheMigratorRefusesTheDirectoryFor(t *testing.T) {
 	}
 }
 
-// TestLintFS_VersionsTheNumericRevisionTableCannotKeep reports under MF104P
+// TestLintFS_VersionsTheNumericRevisionTableCannotKeep reports under MF105P
 // each Atlas file whose version Ptah's revision table, which records numbers,
 // cannot keep, as the migrator's guard refuses the directory for it: R__x.sql,
 // the version R, and under positions a version such as v1. The Atlas revision

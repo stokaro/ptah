@@ -1274,7 +1274,7 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
-			Code:     "MF104P",
+			Code:     "MF105P",
 			Title:    "file a run refuses the directory for",
 			Severity: SeverityError,
 			CheckFile: func(file *File) []Finding {
@@ -1282,7 +1282,7 @@ func migrationFormRules() []Rule {
 					return nil
 				}
 				return []Finding{{
-					Rule:     "MF104P",
+					Rule:     "MF105P",
 					Title:    "file a run refuses the directory for",
 					Severity: SeverityError,
 					File:     file.Path,
@@ -1295,7 +1295,7 @@ func migrationFormRules() []Rule {
 			Title:    "non-conventional file name",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
-				// MF104P reports a file a run refuses the directory for.
+				// MF105P reports a file a run refuses the directory for.
 				if file.WellFormedName || file.RunRefusal != "" {
 					return nil
 				}

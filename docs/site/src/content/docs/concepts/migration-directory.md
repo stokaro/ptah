@@ -85,7 +85,7 @@ such a file too. A run that left such a file out would never apply it and
 would report the directory applied. Every command that reads the directory
 refuses it, `migrations ls` and `migrations hash` included, so a listing or a
 sum never describes a directory a run refuses. `ptah migrations lint` reports
-the file under `MF104P` at error severity and exits 1. With `--dev-url` it
+the file under `MF105P` at error severity and exits 1. With `--dev-url` it
 reports the same finding and replays nothing, since a run would not start. A
 file one level down belongs to another directory, such as a template a
 migration includes, and is left alone.
@@ -113,9 +113,10 @@ directory that holds such a version runs over the Atlas revision table
 (`--revision-format atlas`), which records the version as text. A native
 revision table stores numbers, and each row is matched to the file that
 carries the number, so it refuses that directory. `R__view.sql` is such a
-version, `R`. `ptah migrations lint` reports such a file under `MF104P`; it
-reads the revision table a run uses from `--revision-format` or
-`migration.revision_format`, and reports nothing for the Atlas table.
+version, `R`, and so is `V1__init.sql`, `V1`. `ptah migrations lint` reports
+every such file under `MF105P`. It reads the revision table a run uses from
+`--revision-format`, `migration.revision_format` or `PTAH_REVISION_FORMAT`,
+and reports nothing for the Atlas table.
 
 Commands name such a file by the version it spells, `--to-version v1` and
 `--version 00` included. A
