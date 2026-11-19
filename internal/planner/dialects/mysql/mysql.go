@@ -2768,9 +2768,11 @@ func (p *Planner) addNonForeignKeyConstraintsWithTables(
 		}
 		key := add.Identity
 		info, modified := removalByTableName[key]
-		if _, dropped := droppedForModify[key]; modified && !dropped && add.Type == "CHECK" && constraint.Name != "" &&
-			checksAddedFirst.Get(p.targetDialect()) {
+		if _, dropped := droppedForModify[key]; !dropped && p.addsCheckFirst(add, modified) {
 			droppedForModify[key] = struct{}{}
+			if leftover, left := leftoverOfReplacement(add, removalByTableName, semantics); left {
+				result = p.appendScopedDrop(result, leftover, droppedForModify, semantics)
+			}
 			result = append(result, p.replacedCheck(add, constraint, p.dropConstraintNode(info))...)
 			handled[semantics.IndexIdentityKey(add.Name)] = struct{}{}
 			continue
@@ -3011,6 +3013,7 @@ func (p *Planner) removeConstraints(
 		droppedTables[semantics.QualifiedTableIdentityKey(t)] = struct{}{}
 	}
 
+	leftovers := p.replacementLeftovers(diff, semantics)
 	dropped := make(map[constraintHostKey]struct{})
 	for _, info := range foreignKeysFirst(diff.ConstraintsRemoved) {
 		if info.TableName == "" {
@@ -3027,6 +3030,10 @@ func (p *Planner) removeConstraints(
 		if _, preDropped := bracketDropped[key]; preDropped {
 			// A column-type change already dropped this foreign key before the
 			// column modifications (issue #694); do not drop it a second time.
+			continue
+		}
+		if _, left := leftovers[key]; left {
+			// The replacement that stopped and left it drops it first.
 			continue
 		}
 		nameIdentity := semantics.IndexIdentityKey(info.Name)

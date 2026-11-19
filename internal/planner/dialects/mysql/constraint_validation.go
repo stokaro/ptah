@@ -3,10 +3,13 @@ package mysql
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/internal/descriptortable"
 )
 
@@ -30,6 +33,59 @@ func validateConstraints(result []ast.Node, diff *difftypes.SchemaDiff) []ast.No
 var checksAddedFirst = descriptortable.New(func(described descriptor.Dialect) bool {
 	return described.Grammar.Constraints.CheckAddedFirst
 })
+
+// addsCheckFirst reports whether the plan replaces the CHECK add is paired
+// with by adding the new one first. modified reports whether the diff removes
+// a constraint of add's identity.
+func (p *Planner) addsCheckFirst(add difftypes.ConstraintAdditionInfo, modified bool) bool {
+	return modified && add.Type == "CHECK" && add.Name != "" && add.CheckExpression != "" &&
+		p.capabilities().Has(capability.CheckConstraintsEnforced) && checksAddedFirst.Get(p.targetDialect())
+}
+
+// leftoverOfReplacement answers the removal of the CHECK that holds the
+// temporary name of add's replacement on add's table.
+//
+// A replacement that stops after its ADD leaves that CHECK beside the old one.
+// The comparison removes it as a CHECK nobody declared, and the removals come
+// after the additions, so the next plan adds the new CHECK under a name the
+// table already holds and fails with ORA-02264 on every run. Its drop goes
+// first instead. The old CHECK is still on the table then, so the table holds
+// a CHECK at every step. The removal names no condition, and the plan drops
+// the CHECK whatever its condition, so the name alone recognizes it: it is the
+// table and the declared name hashed, which nobody writes by hand.
+//
+// The removal pass asks the same question through
+// [Planner.replacementLeftovers], so the CHECK is dropped once.
+func leftoverOfReplacement(
+	add difftypes.ConstraintAdditionInfo,
+	removals map[constraintHostKey]difftypes.ConstraintRemovalInfo,
+	semantics identifier.Semantics,
+) (difftypes.ConstraintRemovalInfo, bool) {
+	identity := add.Identity
+	identity.Name = semantics.IndexIdentityKey(replacementName(add.TableName, add.Name))
+	info, left := removals[identity]
+	return info, left && strings.EqualFold(info.Type, "CHECK")
+}
+
+// replacementLeftovers answers the removals the additions drop ahead of their
+// replacement; see [leftoverOfReplacement].
+func (p *Planner) replacementLeftovers(diff *difftypes.SchemaDiff, semantics identifier.Semantics) map[constraintHostKey]struct{} {
+	removals := make(map[constraintHostKey]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemoved))
+	for _, info := range diff.ConstraintsRemoved {
+		removals[info.Identity] = info
+	}
+	leftovers := make(map[constraintHostKey]struct{})
+	for _, add := range diff.ConstraintsAdded {
+		_, modified := removals[add.Identity]
+		if !p.addsCheckFirst(add, modified) {
+			continue
+		}
+		if info, left := leftoverOfReplacement(add, removals, semantics); left {
+			leftovers[info.Identity] = struct{}{}
+		}
+	}
+	return leftovers
+}
 
 // replacedCheck answers the statements that replace the named CHECK the
 // removal info describes with the one add describes, keeping a CHECK on the
