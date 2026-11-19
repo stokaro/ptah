@@ -361,9 +361,6 @@ func (w Words) describe(node ast.Node) (change, bool) {
 		if name, ok := droppedDatabase(raw.SQL); ok {
 			return change{verb: drop, kind: kindSchema, name: name, words: w.family}, true
 		}
-		if name, ok := recollatedTable(raw.SQL); ok {
-			return change{verb: modify, kind: kindTable, name: name, words: w.family}, true
-		}
 	}
 	c, ok := describe(node)
 	c.words = w.family
@@ -402,57 +399,6 @@ func droppedDatabase(statement string) (string, bool) {
 		return "", false
 	}
 	return strings.ReplaceAll(name, "``", "`"), true
-}
-
-// recollatedTable is the table a MySQL-family plan's `ALTER TABLE ... COLLATE`
-// names, without its database. The planner writes the change of a table's
-// default collation as raw SQL, a quoted name and the collation, with no other
-// form to read.
-func recollatedTable(statement string) (string, bool) {
-	quoted, ok := strings.CutPrefix(statement, "ALTER TABLE ")
-	if !ok {
-		return "", false
-	}
-	end := strings.LastIndex(quoted, " COLLATE ")
-	if end < 0 {
-		return "", false
-	}
-	return lastQuotedIdentifier(quoted[:end])
-}
-
-// lastQuotedIdentifier is the last part of a name written as backquoted
-// identifiers joined by dots, with a doubled backquote read as one, and false
-// for text of any other shape.
-func lastQuotedIdentifier(text string) (string, bool) {
-	for {
-		rest, ok := strings.CutPrefix(text, "`")
-		if !ok {
-			return "", false
-		}
-		var name strings.Builder
-		at := 0
-		for {
-			closing := strings.IndexByte(rest[at:], '`')
-			if closing < 0 {
-				return "", false
-			}
-			name.WriteString(rest[at : at+closing])
-			at += closing + 1
-			if at < len(rest) && rest[at] == '`' {
-				name.WriteByte('`')
-				at++
-				continue
-			}
-			break
-		}
-		text = rest[at:]
-		if text == "" {
-			return name.String(), true
-		}
-		if text, ok = strings.CutPrefix(text, "."); !ok {
-			return "", false
-		}
-	}
 }
 
 // scope is what qualifies the name of an object a statement changes: the

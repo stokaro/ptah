@@ -566,6 +566,8 @@ func (p *Planner) modifyExistingColumns(
 			HasPreviousNullable:    colDiff.Changes["nullable"] != "",
 			PreviousDefault:        previousDefault,
 			HasPreviousDefault:     defaultChanged,
+			PreviousCharset:        previousCharset(colDiff.CharsetChange),
+			Charset:                newCharset(colDiff.CharsetChange),
 			// Stated although MODIFY restates the whole column, because the
 			// statement cannot say what changed: it repeats NOT NULL on a
 			// type change as on a nullability change, and migration/safety
@@ -951,17 +953,108 @@ func appendColumnComment(result []ast.Node, table string, colDiff difftypes.Colu
 	})
 }
 
-// appendTableCollation emits the change of the table's default collation, if
-// it has one. It goes before the table's column statements: a column added or
-// restated without a collation takes the table's default at the moment its
-// statement runs, so a column reset to the table's collation after this
-// statement takes the new one. The statement itself leaves every existing
-// column's collation as it is.
-func appendTableCollation(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
-	if tableDiff.CollationChange == nil {
-		return result
+// tableCollationNode is the change of the table's default collation, with
+// its default character set where that changes too, and nil where the diff
+// carries none. It goes before the table's column statements: a column added
+// or restated without a collation takes the table's default at the moment its
+// statement runs, so a column reset to the table's collation after it takes
+// the new one. The option itself leaves every existing column's collation as
+// it is; [withTableCollation] joins it with the column statements that follow.
+func tableCollationNode(tableDiff difftypes.TableDiff) *ast.AlterTableNode {
+	change := tableDiff.CollationChange
+	if change == nil {
+		return nil
 	}
-	return append(result, ast.NewRawSQL("ALTER TABLE "+lockTableName(tableDiff.TableName)+" COLLATE "+tableDiff.CollationChange.Desired))
+	option := &ast.SetTableCollationOperation{Collation: change.Desired}
+	if change.Charset != nil {
+		option.Charset = change.Charset.Desired
+	}
+	return &ast.AlterTableNode{Name: tableDiff.TableName, Operations: []ast.AlterOperation{option}}
+}
+
+// withTableCollation is the in-place statements of one table, inPlace, with
+// the change of its default collation, collation, joined with the column
+// statements that follow it into one ALTER TABLE: the run of statements of
+// the table that each add or restate a column, or set the table's comment,
+// and carry no clause of their own. The comments that describe them go ahead
+// of it, in order. One statement is what the community binary writes, and it
+// matters where a column's character set changes with its table's: the server
+// converts the column's values under the new default, and a value it cannot
+// convert, `'x😀'` into latin1, fails the statement with Error 1366 before
+// the table's default changes. As two statements, the first changes the
+// default and the second fails, and the table is left half changed.
+func withTableCollation(collation *ast.AlterTableNode, inPlace []ast.Node) []ast.Node {
+	if collation == nil {
+		return inPlace
+	}
+	var comments []ast.Node
+	joined := 0
+	for _, node := range inPlace {
+		if comment, ok := node.(*ast.CommentNode); ok {
+			comments = append(comments, comment)
+			joined++
+			continue
+		}
+		alter, ok := node.(*ast.AlterTableNode)
+		if !ok || !joinsTableCollation(collation.Name, alter) {
+			break
+		}
+		collation.Operations = append(collation.Operations, alter.Operations...)
+		joined++
+	}
+	// Comments after the last statement joined stay where they are, ahead of
+	// the statement they describe.
+	for joined > 0 {
+		if _, ok := inPlace[joined-1].(*ast.CommentNode); !ok {
+			break
+		}
+		joined--
+		comments = comments[:len(comments)-1]
+	}
+	if len(collation.Operations) > 1 {
+		collation.OneStatement = slices.Clone(collation.Operations)
+	}
+	return slices.Concat(comments, []ast.Node{collation}, inPlace[joined:])
+}
+
+// joinsTableCollation reports whether alter, a statement on table, joins the
+// change of the table's default collation: one that adds or restates columns,
+// or sets the table's own comment, with no clause the statement holds for
+// itself.
+func joinsTableCollation(table string, alter *ast.AlterTableNode) bool {
+	if alter.Name != table || len(alter.OneStatement) > 0 || alter.Algorithm != "" || alter.Lock != "" {
+		return false
+	}
+	for _, operation := range alter.Operations {
+		switch op := operation.(type) {
+		case *ast.AddColumnOperation, *ast.ModifyColumnOperation:
+		case *ast.SetCommentOperation:
+			if op.Column != "" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return len(alter.Operations) > 0
+}
+
+// previousCharset is the character set a column holds before a change of its
+// collation gives it another, empty where nothing changes it.
+func previousCharset(change *difftypes.CharsetChange) string {
+	if change == nil {
+		return ""
+	}
+	return change.Current
+}
+
+// newCharset is the character set a change of a column's collation gives it,
+// empty where nothing changes it.
+func newCharset(change *difftypes.CharsetChange) string {
+	if change == nil {
+		return ""
+	}
+	return change.Desired
 }
 
 // appendTableComment emits the table's comment transition, if it has one.
@@ -1001,7 +1094,7 @@ func (p *Planner) modifyExistingTables(
 		// column to change anything about it, and MODIFY COLUMN already
 		// carries the comment -- which is why only the table half is emitted
 		// here while PostgreSQL emits both (stokaro/ptah#2168).
-		inPlace := appendTableComment(appendTableCollation(nil, tableDiff), tableDiff)
+		inPlace := appendTableComment(nil, tableDiff)
 
 		// Add new columns
 		inPlace = p.addNewTableColumns(inPlace, &tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics, keys)
@@ -1011,6 +1104,8 @@ func (p *Planner) modifyExistingTables(
 		if err != nil {
 			return result, nil, err
 		}
+
+		inPlace = withTableCollation(tableCollationNode(tableDiff), inPlace)
 
 		// Remove columns (dangerous!)
 		drops, err := p.removeColumns(nil, &tableDiff, keys)

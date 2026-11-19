@@ -103,6 +103,7 @@ These categories count a setting or a part of an object rather than the object:
 
 | Category | Severity | What it counts |
 | --- | --- | --- |
+| `column_charsets_converted` | destructive | Column modifications that change a column's character set with its collation, on MySQL and MariaDB. The server converts every value, and fails on a character the new character set cannot hold, or loses it where the session is not strict. Each is one of the `columns_modified` as well. |
 | `column_identities_removed` | destructive | Columns that lose an identity and take none. The server drops the identity's sequence, and an insert that leaves the column out fails. Each is one of the `columns_modified` as well. |
 | `column_types_narrowed` | destructive | Column modifications whose new type cannot hold every value of the old one: a shorter string, a smaller text or blob type, fewer bytes or bits, a smaller integer, decimal or float, fewer enum members, or a temporal type with a lower precision, a smaller range or fewer fields. Each is one of the `columns_modified` as well. |
 | `comments_changed` | safe | Comments the plan writes in place on tables, indexes, constraints and the other objects that take a comment through a statement of their own. A column's comment is counted under `columns_modified`. |

@@ -227,6 +227,7 @@ func nodeKindZeroValues() map[string]ast.Node {
 		"RevokeRoleMembershipNode":                &ast.RevokeRoleMembershipNode{},
 		"SetCommentOperation":                     &ast.SetCommentOperation{},
 		"SetConstraintCommentOperation":           &ast.SetConstraintCommentOperation{},
+		"SetTableCollationOperation":              &ast.SetTableCollationOperation{},
 		"StatementList":                           &ast.StatementList{},
 		"UpsertNode":                              &ast.UpsertNode{},
 		"ValidateConstraintOperation":             &ast.ValidateConstraintOperation{},

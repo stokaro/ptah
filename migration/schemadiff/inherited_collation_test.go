@@ -186,6 +186,54 @@ func TestCompareInheritedCollation_ChangesTheTableDefault(t *testing.T) {
 	}
 }
 
+// TestCompareInheritedCollation_ChangesTheTableCharset compares a table whose
+// declared default collation belongs to another character set. The table's
+// change and the reset of its column carry both character sets, which the
+// planner writes and safety rates. A column that names its own character set
+// keeps it, and carries none.
+func TestCompareInheritedCollation_ChangesTheTableCharset(t *testing.T) {
+	c := qt.New(t)
+
+	diff := compareInherited(c, "mysql",
+		"CREATE TABLE t (id int PRIMARY KEY, c varchar(20)) DEFAULT CHARSET=latin1 COLLATE=latin1_bin;",
+		"CREATE TABLE t (id int PRIMARY KEY, c varchar(20)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;",
+		heldCollations{table: "utf8mb4_bin", column: "utf8mb4_bin"}, mysqlCharsetDefaults)
+
+	c.Assert(diff.TablesModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].CollationChange, qt.DeepEquals, &difftypes.CollationChange{Current: "utf8mb4_bin", Desired: "latin1_bin",
+		Charset: &difftypes.CharsetChange{Current: "utf8mb4", Desired: "latin1"}})
+	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].CharsetChange, qt.DeepEquals, &difftypes.CharsetChange{Current: "utf8mb4", Desired: "latin1"})
+}
+
+// TestCompareInheritedCollation_KeepsTheCharset is the control: a change of
+// collation within one character set, and one whose character set the read
+// does not report, carry no character set change.
+func TestCompareInheritedCollation_KeepsTheCharset(t *testing.T) {
+	tests := []struct {
+		name     string
+		defaults map[string]string
+	}{
+		{name: "a read that reports the character sets", defaults: mysqlCharsetDefaults},
+		{name: "a read that reports none"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := compareInherited(c, "mysql",
+				"CREATE TABLE t (id int PRIMARY KEY, c varchar(20)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;",
+				"CREATE TABLE t (id int PRIMARY KEY, c varchar(20)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;",
+				heldCollations{table: "utf8mb4_bin", column: "utf8mb4_bin"}, test.defaults)
+
+			c.Assert(diff.TablesModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].CollationChange.Charset, qt.IsNil)
+			c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].ColumnsModified[0].CharsetChange, qt.IsNil)
+		})
+	}
+}
+
 // TestCompareInheritedCollation_KeepsTheTableDefault is the control: a table
 // that holds its declared default, written in another case, is not changed,
 // and neither is one whose declaration names no default.

@@ -165,6 +165,12 @@ var countedCategories = slices.Concat(kindCategories(), []countedCategory{
 	{name: "column_types_narrowed", severity: Destructive, count: func(d *difftypes.SchemaDiff) int {
 		return sumTables(d, func(table difftypes.TableDiff) int { return narrowedTypes(table.ColumnsModified) })
 	}},
+	// Counted again for the same reason: the server converts every value of
+	// the column, and a character the new character set cannot hold fails
+	// the statement or is lost.
+	{name: "column_charsets_converted", severity: Destructive, count: func(d *difftypes.SchemaDiff) int {
+		return sumTables(d, func(table difftypes.TableDiff) int { return convertedCharsets(table.ColumnsModified) })
+	}},
 	// A column's identity goes with its sequence, as a removed sequence does.
 	{name: "column_identities_removed", severity: Destructive, count: func(d *difftypes.SchemaDiff) int {
 		return sumTables(d, func(table difftypes.TableDiff) int { return removedIdentities(table.ColumnsModified) })

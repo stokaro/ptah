@@ -162,7 +162,7 @@ own measurement conditions.
 | [A COLLATE on a SQLite index key](#a-collate-on-a-sqlite-index-key) | reads the key with its collation, so a change of it is planned | reads the column alone, reports the change as synced, and plans the index without it |
 | [A COLLATE on a SQLite column](#a-collate-on-a-sqlite-column) | `schema inspect` writes the collation a column declares, in every format, and `schema diff` and `schema apply` plan a change of it | writes none, so the document describes a column that compares as BINARY, and reports the schemas synced |
 | [A COLLATE on a PostgreSQL column](#a-collate-on-a-postgresql-column) | `schema diff` and `schema apply` plan a change of a column's collation | report the schemas synced |
-| [A changed MySQL table collation](#a-changed-mysql-table-collation) | plans the table's `COLLATE` before the reset of the column that takes it, so one apply converges | plans the table's `COLLATE` alone; the column keeps the old collation until a second apply |
+| [A changed MySQL table collation](#a-changed-mysql-table-collation) | plans the table's `COLLATE` in one statement with the reset of the column that takes it, so one apply converges | does the same with `--dev-url`; without it, plans the table's `COLLATE` alone, and the column keeps the old collation until a second apply |
 
 ## A `--config` selection naming more than one file
 
@@ -1913,20 +1913,22 @@ comparing differently from the declaration, and nothing says so.
 
 **Current boundary.** A column that names no collation takes its table's
 default collation. `ptah-compat schema apply` plans a changed table default as
-`ALTER TABLE ... COLLATE`, and then resets each column that takes it and holds
-the old one, so one apply converges. The pinned community binary v1.3.0 plans
-the table's `COLLATE` alone. `ALTER TABLE ... COLLATE` leaves the collation of
-every existing column as it is, so the column keeps the old collation after
-the apply, and only the next plan resets it. Measured on 2026-11-19 on MySQL
-8.4 and MariaDB 11.8, on a table `retable (id int PRIMARY KEY, n varchar(20))`
-with `COLLATE=utf8mb4_bin`, against an HCL document declaring
+`ALTER TABLE ... COLLATE` in one statement with the reset of each column that
+takes it and holds the old one, so one apply converges, with or without
+`--dev-url`. The pinned community binary v1.3.0 plans the same statement when
+it is given `--dev-url`. Without it, the binary plans the table's `COLLATE`
+alone. `ALTER TABLE ... COLLATE` leaves the collation of every existing column
+as it is, so the column keeps the old collation after the apply, and only the
+next plan resets it. Measured on 2026-11-19 on MySQL 8.4 and MariaDB 11.8, on
+a table `retable (id int PRIMARY KEY, n varchar(20))` with
+`COLLATE=utf8mb4_bin`, against an HCL document declaring
 `collate = "utf8mb4_general_ci"` on the table and no collation on `n`:
 
-| Step | Binary | `ptah-compat` |
+| Step | Binary without `--dev-url` | Binary with `--dev-url`, and `ptah-compat` |
 | --- | --- | --- |
-| first `schema apply` | ``ALTER TABLE `retable` COLLATE utf8mb4_general_ci;`` | the same statement, then ``ALTER TABLE `retable` MODIFY COLUMN `n` varchar(20) NULL;`` |
+| first `schema apply` | ``ALTER TABLE `retable` COLLATE utf8mb4_general_ci;`` | ``ALTER TABLE `retable` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;`` |
 | `n` after it | `utf8mb4_bin` | `utf8mb4_general_ci` |
-| second `schema apply --dry-run` | ``ALTER TABLE `retable` MODIFY COLUMN `n` varchar(20) NULL;`` | `Schema is synced, no changes to be made` |
+| second `schema apply --dry-run` | ``ALTER TABLE `retable` MODIFY COLUMN `n` varchar(20) NULL;`` | no change planned |
 
 `ptah-compat` qualifies each table with its database, which the table above
 leaves out. A plan that needs a second apply describes a state the first apply

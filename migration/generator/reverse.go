@@ -454,13 +454,22 @@ func priorTables(prior *schemamodel.Database) []schemamodel.Table {
 }
 
 // reverseCollationChange swaps the sides of a table's default collation
-// change, so the rollback restores the collation the database had; nil stays
-// nil.
+// change, and of the character set change it carries, so the rollback
+// restores the collation the database had; nil stays nil.
 func reverseCollationChange(change *difftypes.CollationChange) *difftypes.CollationChange {
 	if change == nil {
 		return nil
 	}
-	return &difftypes.CollationChange{Current: change.Desired, Desired: change.Current}
+	return &difftypes.CollationChange{Current: change.Desired, Desired: change.Current, Charset: reverseCharsetChange(change.Charset)}
+}
+
+// reverseCharsetChange swaps the sides of a character set change, so the
+// rollback restores the character set the database had; nil stays nil.
+func reverseCharsetChange(change *difftypes.CharsetChange) *difftypes.CharsetChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.CharsetChange{Current: change.Desired, Desired: change.Current}
 }
 
 // reverseCommentChange swaps the two sides of a comment transition, so the

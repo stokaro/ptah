@@ -152,9 +152,9 @@ func convergesInOneApply(c *qt.C, scratch mysqlScratch, database string, apply f
 // TestSchemaApplyResetsAnInheritedMySQLCollationE2E applies a declaration that
 // leaves column collations to the server. A column that holds another
 // collation than the one it inherits from its table is reset; a changed table
-// default is planned before the reset of the column that takes it, so one
-// apply converges; and a column that takes its collation from its own
-// character set is left alone.
+// default is planned in one statement with the reset of the column that takes
+// it, so one apply converges; and a column that takes its collation from its
+// own character set is left alone.
 func TestSchemaApplyResetsAnInheritedMySQLCollationE2E(t *testing.T) {
 	for _, engine := range inheritedCollationEngines {
 		t.Run(engine.name, func(t *testing.T) {
@@ -168,8 +168,7 @@ func TestSchemaApplyResetsAnInheritedMySQLCollationE2E(t *testing.T) {
 				return runPtahNative(c, "schema", "apply", "--db-url", url, "--schema-file", schema, extra)
 			}, []string{
 				"ALTER TABLE `reset` MODIFY COLUMN `a` varchar(20);",
-				"ALTER TABLE `retable` COLLATE utf8mb4_general_ci;",
-				"ALTER TABLE `retable` MODIFY COLUMN `n` varchar(20);",
+				"ALTER TABLE `retable` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20);",
 			})
 		})
 	}
@@ -194,8 +193,7 @@ func TestCompatSchemaApplyResetsAnInheritedMySQLCollationE2E(t *testing.T) {
 				return applied.Stdout
 			}, []string{
 				"ALTER TABLE `reset` MODIFY COLUMN `a` varchar(20) NULL;",
-				"ALTER TABLE `retable` COLLATE utf8mb4_general_ci;",
-				"ALTER TABLE `retable` MODIFY COLUMN `n` varchar(20) NULL;",
+				"ALTER TABLE `retable` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;",
 			})
 		})
 	}
@@ -204,51 +202,82 @@ func TestCompatSchemaApplyResetsAnInheritedMySQLCollationE2E(t *testing.T) {
 // TestInheritedMySQLCollationOnTheCommunityBinaryE2E holds the measurement
 // ptah-compat is compared with: the pinned community binary, on the same HCL
 // document and the same tables. It resets the column of reset and leaves
-// latin alone, as ptah-compat does. It plans the change of retable's default
-// collation alone, so the column keeps utf8mb4_bin after the apply, and only
-// the next plan resets it: two applies where ptah-compat needs one.
-// ptah-compat does not copy that order, because a plan that leaves the column
-// on the old collation describes a state the apply does not reach.
+// latin alone, as ptah-compat does. Given a dev database, it plans the change
+// of retable's default collation in one statement with the reset of its
+// column, as ptah-compat does, and converges in one apply. Without one, it
+// plans the table's change alone, so the column keeps utf8mb4_bin after the
+// apply, and only the next plan resets it: two applies where ptah-compat
+// needs one. ptah-compat does not copy that plan, because it describes a
+// state the apply does not reach.
 func TestInheritedMySQLCollationOnTheCommunityBinaryE2E(t *testing.T) {
 	reference := atlasReferenceBinary(t)
-	for _, engine := range inheritedCollationEngines {
-		t.Run(engine.name, func(t *testing.T) {
-			c := qt.New(t)
-			scratch := newMySQLFamilyScratch(c, engine.engine)
-			database, url := scratch.builtFrom(c, inheritedCollationBefore)
-			parsed, err := atlasurl.ParseMySQLURL(url)
-			c.Assert(err, qt.IsNil)
-			address := parsed.URL()
-			address.Scheme = "mysql"
-			schema := filepath.Join(c.TempDir(), "schema.hcl")
-			c.Assert(os.WriteFile(schema, []byte(inheritedCollationHCL(database)), 0o600), qt.IsNil)
-			apply := []string{"schema", "apply", "-u", address.String(), "--to", "file://" + filepath.ToSlash(schema)}
-			community := func(extra string) string {
-				output, err := exec.CommandContext(c.Context(), reference, append(apply, extra)...).CombinedOutput() // #nosec G204 G702 -- operator-provided pinned reference binary
-				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				return string(output)
-			}
-
-			planned := community("--dry-run")
-
-			c.Assert(plannedAlters(planned, database), qt.DeepEquals, []string{
+	tests := []struct {
+		name    string
+		withDev bool
+		planned []string
+		held    map[string]string
+		again   []string
+	}{
+		{
+			name:    "with a dev database",
+			withDev: true,
+			planned: []string{
+				"ALTER TABLE `reset` MODIFY COLUMN `a` varchar(20) NULL;",
+				"ALTER TABLE `retable` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;",
+			},
+			held: inheritedCollationWant,
+		},
+		{
+			name: "without a dev database",
+			planned: []string{
 				"ALTER TABLE `reset` MODIFY COLUMN `a` varchar(20) NULL;",
 				"ALTER TABLE `retable` COLLATE utf8mb4_general_ci;",
-			}, qt.Commentf("%s", planned))
-
-			applied := community("--auto-approve")
-
-			c.Assert(heldInheritedCollations(c, scratch, database), qt.DeepEquals, map[string]string{
+			},
+			held: map[string]string{
 				"reset":   "utf8mb4_unicode_ci utf8mb4_unicode_ci",
 				"retable": "utf8mb4_general_ci utf8mb4_bin",
 				"latin":   "utf8mb4_unicode_ci latin1_swedish_ci",
-			}, qt.Commentf("%s", applied))
-			again := community("--dry-run")
-			c.Assert(plannedAlters(again, database), qt.DeepEquals, []string{
-				"ALTER TABLE `retable` MODIFY COLUMN `n` varchar(20) NULL;",
-			}, qt.Commentf("%s", again))
-		})
+			},
+			again: []string{"ALTER TABLE `retable` MODIFY COLUMN `n` varchar(20) NULL;"},
+		},
 	}
+	for _, engine := range inheritedCollationEngines {
+		for _, test := range tests {
+			t.Run(engine.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+				scratch := newMySQLFamilyScratch(c, engine.engine)
+				database, url := scratch.builtFrom(c, inheritedCollationBefore)
+				_, devURL := scratch.database(c, "collation_dev")
+				schema := filepath.Join(c.TempDir(), "schema.hcl")
+				c.Assert(os.WriteFile(schema, []byte(inheritedCollationHCL(database)), 0o600), qt.IsNil)
+				apply := []string{"schema", "apply", "-u", referenceMySQLURL(c, url), "--to", "file://" + filepath.ToSlash(schema)}
+				apply = append(apply, map[bool][]string{true: {"--dev-url", referenceMySQLURL(c, devURL)}}[test.withDev]...)
+				community := func(extra string) string {
+					output, err := exec.CommandContext(c.Context(), reference, append(apply, extra)...).CombinedOutput() // #nosec G204 G702 -- operator-provided pinned reference binary
+					c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+					return string(output)
+				}
+
+				planned := community("--dry-run")
+
+				c.Assert(plannedAlters(planned, database), qt.DeepEquals, test.planned, qt.Commentf("%s", planned))
+				applied := community("--auto-approve")
+				c.Assert(heldInheritedCollations(c, scratch, database), qt.DeepEquals, test.held, qt.Commentf("%s", applied))
+				again := community("--dry-run")
+				c.Assert(plannedAlters(again, database), qt.DeepEquals, test.again, qt.Commentf("%s", again))
+			})
+		}
+	}
+}
+
+// referenceMySQLURL is url in the mysql:// form the community binary reads.
+func referenceMySQLURL(c *qt.C, url string) string {
+	c.Helper()
+	parsed, err := atlasurl.ParseMySQLURL(url)
+	c.Assert(err, qt.IsNil)
+	address := parsed.URL()
+	address.Scheme = "mysql"
+	return address.String()
 }
 
 // TestSchemaApplyReadsWhatUTF8NamesInTheSessionE2E declares utf8_bin on two
@@ -326,6 +355,78 @@ func TestSchemaApplyReadsTheSessionDefaultOfUTF8MB4E2E(t *testing.T) {
 			planned := runPtahNative(c, "schema", "apply", "--db-url", url+test.query, "--schema-file", schema, "--dry-run")
 
 			c.Assert(plannedAlters(planned, database), qt.DeepEquals, test.planned, qt.Commentf("%s", planned))
+		})
+	}
+}
+
+// tableCharsetHeld reads the default collation of table t of database, the
+// collation of its column c, and the bytes of c in its one row, in hex.
+func tableCharsetHeld(c *qt.C, scratch mysqlScratch, database string) []string {
+	c.Helper()
+	var table, column, value string
+	err := scratch.admin.QueryRowContext(c.Context(), `
+		SELECT t.TABLE_COLLATION, c.COLLATION_NAME, (SELECT HEX(c) FROM `+"`"+database+"`"+`.t)
+		FROM information_schema.TABLES t JOIN information_schema.COLUMNS c
+		  ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME
+		WHERE t.TABLE_SCHEMA = ? AND t.TABLE_NAME = 't' AND c.COLUMN_NAME = 'c'`, database).Scan(&table, &column, &value)
+	c.Assert(err, qt.IsNil)
+	return []string{table, column, value}
+}
+
+// TestSchemaApplyConvertsATableCharsetE2E declares a latin1 table in utf8mb4.
+// The table's character set and collation are planned in one statement with
+// the reset of the column that takes them, the column's value is converted,
+// and one apply converges.
+func TestSchemaApplyConvertsATableCharsetE2E(t *testing.T) {
+	for _, engine := range inheritedCollationEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, engine.engine)
+			database, url := scratch.builtFrom(c, "CREATE TABLE t (id int PRIMARY KEY, c varchar(20)) DEFAULT CHARSET=latin1 COLLATE=latin1_bin;\n"+
+				"INSERT INTO t VALUES (1, 'abc');")
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(
+				"CREATE TABLE t (id int PRIMARY KEY, c varchar(20) NULL) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;\n"), 0o600), qt.IsNil)
+			args := []string{"schema", "apply", "--db-url", url, "--schema-file", schema}
+
+			planned := runPtahNative(c, append(args, "--dry-run")...)
+
+			c.Assert(plannedAlters(planned, database), qt.DeepEquals,
+				[]string{"ALTER TABLE `t` CHARSET utf8mb4, COLLATE utf8mb4_bin, MODIFY COLUMN `c` varchar(20);"}, qt.Commentf("%s", planned))
+			applied := runPtahNative(c, append(args, "--auto-approve")...)
+			c.Assert(tableCharsetHeld(c, scratch, database), qt.DeepEquals, []string{"utf8mb4_bin", "utf8mb4_bin", "616263"}, qt.Commentf("%s", applied))
+			c.Assert(runPtahNative(c, append(args, "--dry-run")...), qt.Equals, "Schema is synced, no changes to be made.\n")
+		})
+	}
+}
+
+// TestSchemaApplyConvertsATableCharsetE2E_FailurePath declares a utf8mb4 table
+// in latin1 while its column holds `x😀`, which latin1 cannot hold. The
+// comparison rates the conversion destructive. The apply fails with Error 1366
+// on the one statement that changes the table and its column, so the table
+// keeps its default, the column its collation, and the row its value.
+// Planned as two statements, the first changes the table's default before the
+// second fails.
+func TestSchemaApplyConvertsATableCharsetE2E_FailurePath(t *testing.T) {
+	for _, engine := range inheritedCollationEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, engine.engine)
+			database, url := scratch.builtFrom(c, "CREATE TABLE t (id int PRIMARY KEY, c varchar(20)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;\n"+
+				"INSERT INTO t VALUES (1, 'x😀');")
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(
+				"CREATE TABLE t (id int PRIMARY KEY, c varchar(20) NULL) DEFAULT CHARSET=latin1 COLLATE=latin1_bin;\n"), 0o600), qt.IsNil)
+
+			drift, err := runPtahNativeWithError("schema", "drift", "--db-url", url, "--schema-file", schema, "--exit-code=false")
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", drift))
+			applied, err := runPtahNativeWithError("schema", "apply", "--db-url", url, "--schema-file", schema, "--auto-approve")
+
+			c.Assert(drift, qt.Contains, "- column_charsets_converted: 1 (destructive)\n")
+			c.Assert(err, qt.ErrorMatches, `(?s).*Error 1366.*`)
+			c.Assert(tableCharsetHeld(c, scratch, database), qt.DeepEquals, []string{"utf8mb4_bin", "utf8mb4_bin", "78F09F9880"}, qt.Commentf("%s", applied))
+			c.Assert(plannedAlters(applied, database), qt.DeepEquals,
+				[]string{"ALTER TABLE `t` CHARSET latin1, COLLATE latin1_bin, MODIFY COLUMN `c` varchar(20);"}, qt.Commentf("%s", applied))
 		})
 	}
 }

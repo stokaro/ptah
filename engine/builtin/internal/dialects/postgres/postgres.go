@@ -488,6 +488,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.RenameTableOperation,
 		*ast.RenameTypeOperation,
 		*ast.SetCommentOperation,
+		*ast.SetTableCollationOperation,
 		*ast.SetConstraintCommentOperation:
 		return r.nodeNeedsParent(node)
 

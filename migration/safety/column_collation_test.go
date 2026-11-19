@@ -55,6 +55,26 @@ func TestAssess_ACollationChange(t *testing.T) {
 	}
 }
 
+// TestAssess_ACharsetConversion rates a modification that changes the
+// column's character set destructive, whatever else it changes: the server
+// converts every value, and a character the new character set cannot hold
+// fails the statement or is lost.
+func TestAssess_ACharsetConversion(t *testing.T) {
+	c := qt.New(t)
+	column := ast.NewColumn("c", "varchar(20)")
+	column.Nullable = true
+
+	got := safety.Assess([]ast.Node{modifyColumn(&ast.ModifyColumnOperation{
+		Column: column, Changed: ast.ColumnProperties{Collation: true}, HasChanged: true,
+		PreviousCharset: "utf8mb4", Charset: "latin1",
+	})})
+
+	c.Assert(got, qt.HasLen, 1)
+	c.Assert(got[0].Severity, qt.Equals, safety.Destructive)
+	c.Assert(got[0].Reason, qt.Equals, "the column's character set changes from utf8mb4 to latin1: the server converts every value, "+
+		"and the statement fails on a character latin1 cannot hold, or loses it where the session is not strict")
+}
+
 // TestAssessSQL_AStatementThatSetsACollation rates a statement by its words
 // where it writes the collation of a column that holds rows, on each spelling
 // a target writes. The words cannot say whether the collation changes, so the
@@ -102,7 +122,11 @@ func TestAssessSQL_AStatementThatSetsATableCollation(t *testing.T) {
 		target    string
 		statement string
 	}{
-		{name: "the statement a plan writes", target: "mysql", statement: "ALTER TABLE `t` COLLATE utf8mb4_bin"},
+		{name: "alone", target: "mysql", statement: "ALTER TABLE `t` COLLATE utf8mb4_bin"},
+		{name: "the statement a plan writes", target: "mysql", statement: "ALTER TABLE `t` COLLATE utf8mb4_bin, MODIFY COLUMN `n` varchar(20)"},
+		{name: "a character set a plan writes", target: "mariadb",
+			statement: "ALTER TABLE `t` CHARSET latin1, COLLATE latin1_bin, MODIFY COLUMN `n` varchar(20)"},
+		{name: "after a column clause", target: "mysql", statement: "ALTER TABLE t ADD COLUMN m int, DEFAULT COLLATE = utf8mb4_bin"},
 		{name: "with an equals sign", target: "mariadb", statement: "ALTER TABLE t DEFAULT COLLATE=utf8mb4_bin;"},
 		{name: "a character set", target: "mysql", statement: "ALTER TABLE t DEFAULT CHARSET = latin1;"},
 		{name: "CHARACTER SET and COLLATE", target: "mysql", statement: "ALTER TABLE t CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;"},
@@ -141,6 +165,8 @@ func TestAssessSQL_ACollateThatChangesNoColumn(t *testing.T) {
 		{name: "a COLLATE in a COMMENT", target: "mysql", statement: "ALTER TABLE `t` MODIFY COLUMN `a` varchar(30) COMMENT 'sort COLLATE x';"},
 		{name: "a COLLATE in a DEFAULT", target: "mysql", statement: "ALTER TABLE `t` MODIFY COLUMN `a` varchar(30) DEFAULT 'p COLLATE q';"},
 		{name: "a COLLATE in a table comment", target: "mysql", statement: "ALTER TABLE `t` COMMENT 'uses COLLATE x';"},
+		{name: "a new column's character set beside a table comment", target: "mysql",
+			statement: "ALTER TABLE `t` ADD COLUMN `m` varchar(20) CHARACTER SET latin1, COMMENT 'x';"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -878,6 +878,8 @@ func classifyAlterOperation(op ast.AlterOperation) (Severity, string) {
 		return classifyReplaceIndex(o)
 	case *ast.AlterIndexVisibilityOperation:
 		return Warning, "ALTER INDEX changes which index the optimizer can use, and so query plans"
+	case *ast.SetTableCollationOperation:
+		return Warning, tableCollationReason
 	default:
 		return Safe, "does not remove data or tighten constraints"
 	}
@@ -928,6 +930,11 @@ func classifyModifyColumn(op *ast.ModifyColumnOperation) (Severity, string) {
 func lostByModification(op *ast.ModifyColumnOperation) string {
 	if op.RemovesCheckProtection {
 		return "MODIFY COLUMN removes an existing CHECK protection"
+	}
+	if op.PreviousCharset != "" && op.Charset != "" {
+		return fmt.Sprintf("the column's character set changes from %s to %s: the server converts every value, "+
+			"and the statement fails on a character %s cannot hold, or loses it where the session is not strict",
+			op.PreviousCharset, op.Charset, op.Charset)
 	}
 	if from, to, ok := typechange.VectorDimensionChange(op.PreviousType, op.Column.Type); ok {
 		return fmt.Sprintf(
@@ -1106,26 +1113,40 @@ func collationReason(sql string, known nodeKnowledge) string {
 }
 
 // setsTableCollation reports whether statement changes the default collation
-// of a MySQL or MariaDB table: an ALTER TABLE with a COLLATE, CHARSET or
-// CHARACTER SET table option, which also selects the character set's default
-// collation, and no clause that adds, alters, modifies, changes, retypes or
-// converts a column. An option may be written `COLLATE x` or `COLLATE=x`. The
-// clauses are read as [alterTableClauses] splits them, so the word inside a
-// string literal, such as a table comment, is not an option.
+// of a MySQL or MariaDB table: an ALTER TABLE with a clause of table options
+// that names a COLLATE, CHARSET or CHARACTER SET option, which also selects
+// the character set's default collation. The clause may stand alone or beside
+// clauses that change columns, as in the statement a plan writes for a table
+// and the columns that take its default:
+// `ALTER TABLE t COLLATE utf8mb4_bin, MODIFY COLUMN n varchar(20)`. An option
+// may be written `COLLATE x` or `COLLATE=x`. The clauses are read as
+// [alterTableClauses] splits them, so the word inside a string literal, such
+// as a table comment, is not an option.
 func setsTableCollation(statement string) bool {
-	option := false
 	for i, clause := range alterTableClauses(statement) {
 		if i == 0 && len(clause) > 0 {
 			clause = clause[1:]
 		}
-		for j, word := range clause {
-			if isTableOptionWord(word, "COLLATE") || isTableOptionWord(word, "CHARSET") ||
-				word == "CHARACTER" && j+1 < len(clause) && isTableOptionWord(clause[j+1], "SET") {
-				option = true
-			}
-			if slices.Contains([]string{"ADD", "ALTER", "MODIFY", "CHANGE", "TYPE", "CONVERT"}, word) {
-				return false
-			}
+		if namesCollationOption(clause) {
+			return true
+		}
+	}
+	return false
+}
+
+// namesCollationOption reports whether clause is a clause of table options
+// that names a collation or a character set. A clause that adds, alters,
+// modifies, changes, retypes or converts a column is not one: its COLLATE or
+// CHARACTER SET is the column's.
+func namesCollationOption(clause []string) bool {
+	option := false
+	for j, word := range clause {
+		if slices.Contains([]string{"ADD", "ALTER", "MODIFY", "CHANGE", "TYPE", "CONVERT"}, word) {
+			return false
+		}
+		if isTableOptionWord(word, "COLLATE") || isTableOptionWord(word, "CHARSET") ||
+			word == "CHARACTER" && j+1 < len(clause) && isTableOptionWord(clause[j+1], "SET") {
+			option = true
 		}
 	}
 	return option
@@ -1452,6 +1473,18 @@ func narrowedTypes(columns []difftypes.ColumnDiff) int {
 		}
 	}
 	return narrowed
+}
+
+// convertedCharsets counts the columns whose character set changes with
+// their collation.
+func convertedCharsets(columns []difftypes.ColumnDiff) int {
+	converted := 0
+	for _, column := range columns {
+		if column.CharsetChange != nil {
+			converted++
+		}
+	}
+	return converted
 }
 
 // removedIdentities counts the columns that lose an identity and take none, whose

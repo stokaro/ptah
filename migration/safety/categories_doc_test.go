@@ -51,9 +51,10 @@ func TestDriftPage_TheTablesAreFound(t *testing.T) {
 }
 
 // reportedCategories is every category ClassifySchemaDiff reports for a diff
-// holding one change in one place, with its severity, and the two categories
-// a zero entry cannot reach: a FORCE turned on, and a vector dimension
-// changed. A feature category is reported as its generic name.
+// holding one change in one place, with its severity, and the categories a
+// zero entry cannot reach: a FORCE turned on, a vector dimension changed, a
+// type narrowed, an identity removed, and a character set converted. A feature
+// category is reported as its generic name.
 func reportedCategories() map[string]safety.Severity {
 	diffs := []*difftypes.SchemaDiff{
 		{RLSForceChanged: difftypes.RLSForceChanges{schemamodel.RLSEnabledTable{Forced: true}}},
@@ -66,6 +67,10 @@ func reportedCategories() map[string]safety.Severity {
 		{TablesModified: []difftypes.TableDiff{{ColumnsModified: []difftypes.ColumnDiff{
 			{Changes: map[string]string{"identity": "always -> "}},
 		}}}},
+		{TablesModified: []difftypes.TableDiff{{ColumnsModified: []difftypes.ColumnDiff{{
+			Changes:       map[string]string{"collation": "utf8mb4_bin -> latin1_bin"},
+			CharsetChange: &difftypes.CharsetChange{Current: "utf8mb4", Desired: "latin1"},
+		}}}}},
 	}
 	for _, slot := range changeSlots() {
 		diffs = append(diffs, slot.diff)

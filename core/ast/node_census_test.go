@@ -127,6 +127,7 @@ var nodeCensus = []censusRow{
 	{node: &ast.ReplaceIndexOperation{}},
 	{node: &ast.RenameTableOperation{}},
 	{node: &ast.SetCommentOperation{}},
+	{node: &ast.SetTableCollationOperation{}},
 	{node: &ast.SetConstraintCommentOperation{}},
 
 	// The type definitions and the ALTER TYPE operations. Each is rendered

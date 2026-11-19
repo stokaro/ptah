@@ -1953,6 +1953,14 @@ type ColumnDiff struct {
 	// displayed transition only when no such answer is available.
 	PreviousType string `json:"previous_type,omitempty"`
 
+	// CharsetChange carries the change of the column's character set that a
+	// change of its collation makes, and is nil where the character set stays
+	// or the comparison cannot name both sides. A server converts every value
+	// the column holds to the new character set, so the change can fail on a
+	// value, or lose characters. The `collation` entry of Changes carries the
+	// collations.
+	CharsetChange *CharsetChange `json:"charset_change,omitzero"`
+
 	// CommentChange carries the column's comment transition, and is nil when
 	// the comment is unchanged.
 	//
@@ -2059,6 +2067,19 @@ type CollationChange struct {
 	// Current is the collation the database holds.
 	Current string `json:"current"`
 	// Desired is the collation the declaration resolves to.
+	Desired string `json:"desired"`
+	// Charset carries the change of the table's default character set that
+	// the change of collation makes, and is nil where the character set stays
+	// or the comparison cannot name both sides.
+	Charset *CharsetChange `json:"charset,omitzero"`
+}
+
+// CharsetChange is the transition of a character set, named as the server
+// stores it.
+type CharsetChange struct {
+	// Current is the character set the database holds.
+	Current string `json:"current"`
+	// Desired is the character set the declaration resolves to.
 	Desired string `json:"desired"`
 }
 

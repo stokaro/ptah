@@ -667,20 +667,33 @@ carries an attribute that selects a collation of its own, such as
 `varchar(20) BINARY`.
 
 A table's default collation is compared too, where the declaration names it or
-names the table's character set. A changed one is planned as
-`ALTER TABLE ... COLLATE`, which leaves the collation of every existing column
-as it is, and it comes before the table's column statements, so a column reset
-to the table's collation takes the new one and one apply converges. The Atlas
-community binary v1.3.0 plans the same reset of a column, and plans a changed
-table default alone: its column keeps the old collation after the apply, and
-only the next plan resets it. Ptah does not copy that order, because the apply
-would not reach the state the plan describes. A change of a table's default
-collation is rated a warning, because a column added or restated without a
-collation takes it.
+names the table's character set. A changed one is planned in one statement
+with the reset of each column that takes it,
+``ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20)``,
+which names the character set too where it changes:
+``ALTER TABLE `t` CHARSET latin1, COLLATE latin1_bin, MODIFY COLUMN `n` varchar(20)``.
+The table option alone leaves the collation of every existing column as it
+is. In the same statement the server gives a reset column the new default, so
+one apply converges. The Atlas community binary v1.3.0 plans the same
+statement when it is given a dev database, and the table option alone without
+one; see
+[A changed MySQL table collation](../../atlas/retained-divergences/#a-changed-mysql-table-collation).
+A change of a table's default collation is rated a warning, because a column
+added or restated without a collation takes it.
 
-Both comparisons need a side read from a server. A diff of two schema files
-compares neither an inherited collation nor a table's default collation,
-because neither file holds a collation the server gave.
+A change of a column's character set converts every value the column holds,
+and is rated destructive: a character the new character set cannot hold fails
+the statement with Error 1366, or is lost where the session is not strict.
+`ptah schema drift` reports it as `column_charsets_converted`. The table's
+change and the column resets are one statement, so a value that fails the
+conversion leaves the table's default and its columns as they were.
+
+A diff of two schema files has no server to read collations from. It compares
+a column's collation where either file declares one, and gives a column that
+declares none in the desired file its table's default collation from that
+file. It does not compare a table's default collation, a column that declares
+no collation in either file, or a column that names a character set and no
+collation in the desired file.
 
 ## FULLTEXT parser
 
