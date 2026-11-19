@@ -107,6 +107,9 @@ func TestCanonical_DifferentGroupingsDiffer(t *testing.T) {
 		{name: "another unit", left: "now() + INTERVAL 1 DAY", right: "now() + INTERVAL 1 HOUR"},
 		{name: "an INTERVAL subtracted", left: "now() - INTERVAL 1 DAY", right: "now() + INTERVAL 1 DAY"},
 		{name: "CURDATE and NOW", left: "curdate()", right: "now()"},
+		{name: "CURRENT_DATE and CURRENT_TIME", left: "CURRENT_DATE", right: "CURRENT_TIME"},
+		{name: "% binds as tightly as *", left: "7 % 4 * 2", right: "7 % (4 * 2)"},
+		{name: "* binds as tightly as %", left: "2 * 7 % 4", right: "2 * (7 % 4)"},
 		{name: "strings in another case", left: "'a'", right: "'A'"},
 	}
 
@@ -159,6 +162,9 @@ func TestCanonical_FailurePath(t *testing.T) {
 		{name: "a row", expression: "(1, 2)", scheme: precedence.MySQLOperators},
 		{name: "an executable comment", expression: "1 /*!80000 + 2 */", scheme: precedence.MySQLOperators},
 		{name: "empty", expression: " ", scheme: precedence.MySQLOperators},
+		{name: "a minus before an integer above the Int64 range", expression: "-(18446744073709551615)", scheme: precedence.MySQLOperators},
+		{name: "a minus before a wide integer with a leading zero", expression: "1 - -018446744073709551615", scheme: precedence.MySQLOperators},
+		{name: "a minus before a number padded past 19 digits", expression: "-00000000000000000001", scheme: precedence.MySQLOperators},
 	}
 
 	for _, test := range tests {

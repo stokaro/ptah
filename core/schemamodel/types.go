@@ -531,8 +531,8 @@ type Constraint struct {
 	ForeignColumns []string // Referenced column names for composite foreign keys
 	OnDelete       string   // ON DELETE action
 	OnUpdate       string   // ON UPDATE action
-	// Deferrable marks a FOREIGN KEY, UNIQUE or PRIMARY KEY constraint whose check
-	// may be postponed to the end of a transaction. See
+	// Deferrable marks a FOREIGN KEY, UNIQUE, PRIMARY KEY or CHECK constraint
+	// whose check may be postponed to the end of a transaction. See
 	// [ptah.run/core/ast.ForeignKeyRef.Deferrable] and
 	// [ptah.run/core/ast.ConstraintNode.Deferrable]. A target without the
 	// capability refuses a deferrable constraint rather than write it plain.

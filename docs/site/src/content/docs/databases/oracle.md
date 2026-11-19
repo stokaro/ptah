@@ -28,12 +28,14 @@ ptah schema diff --from oracle://user:pass@host:1521/FREEPDB1 --to live.hcl
 Schemas are synced, no changes to be made.
 ```
 
-Comparing a **declared file** against a live Oracle catalog does not converge
-yet. Tables, columns and indexes fold across the case difference between a
-declaration and the catalog; constraint names do not, so an unnamed `CHECK`
-declared as `orders_total_check` and stored as `ORDERS_TOTAL_CHECK` is dropped
-and re-added on each apply. Tracked by
-[#1875](https://github.com/stokaro/ptah/issues/1875).
+A **declared file** converges too. Names fold across the case difference
+between a declaration and the catalog, constraint names included, so a
+`CHECK` declared on a column is named `orders_total_check`, stored as
+`ORDERS_TOTAL_CHECK` and matched on the next run. An unnamed `CHECK` declared on
+the table is named by Oracle, `SYS_C<n>`, with a number no file can predict.
+Oracle keeps its condition as written, so the comparison matches it to the
+unnamed declaration by that condition, ignoring case and spacing, and a second
+plan is empty. A changed condition is a drop and an add.
 
 ## Identifiers and type mappings
 
@@ -105,8 +107,12 @@ the two names agree.
 An `--exclude` or `--include` selector matches the stored spelling exactly,
 without quotes: `orders` selects the table created as `"orders"`, and `ORDERS`
 selects the one created unquoted. It matches the same way on both sides of a
-plan, including a desired side read from a database or declared quoted in a
-SQL file. A selector written with quotes matches nothing.
+plan, including a desired side read from a database or declared in a SQL
+file, where a bare `orders` is the table stored as `ORDERS` and is selected by
+`ORDERS`. A selector written with quotes matches nothing. A report names such
+a table the same way a statement does, `APP."orders"`. A selector that names
+nothing as written, where its upper-case spelling names a table, is reported
+with that spelling: `"orders" (the stored name is "ORDERS")`.
 
 Two type mappings are worth knowing because Oracle has no direct equivalent:
 `BOOLEAN` becomes `NUMBER(1)`, with `true` and `false` written as `1` and `0`,
@@ -138,9 +144,11 @@ A SQL schema file read with `--dialect oracle` keeps `SYSDATE`,
 `UID`, `SESSIONTIMEZONE`, `DBTIMEZONE`, `ORA_INVOKING_USER` and
 `ORA_INVOKING_USERID` as a default expression, written bare. A quoted
 `'SYSDATE'` stays a string. Oracle calls each without parentheses and answers
-`ORA-03077`, `ORA-30088` or `ORA-04044` to an empty argument list, so a
-default such as `SYSDATE()` is refused before anything is planned, and the
-refusal names the bare spelling. A precision, as in `SYSTIMESTAMP(3)`, is
+`ORA-03077`, `ORA-30088` or `ORA-04044` to an empty argument list, and
+`ORA-00920` or `ORA-00907` to one inside a parenthesized default. A default
+such as `SYSDATE()`, `SYSDATE ()` or `(SYSDATE() + 1)` is refused before
+anything is planned, and the refusal writes the default with the bare
+spelling, `(SYSDATE + 1)`. A precision, as in `SYSTIMESTAMP(3)`, is
 kept, and so is `SESSIONTIMEZONE()`, which Oracle calls.
 
 A default that reads a sequence, `seq.NEXTVAL` or `seq.CURRVAL`, is kept as an
@@ -307,15 +315,33 @@ Go export preserves synonym names, schemas, targets, and declaration comments.
 The exported annotation binds the alias to Oracle and SQL Server. Export refuses
 incomplete coverage and an explicit target scope the annotation cannot preserve.
 
-## Keys that defer their check
+## Constraints that defer their check
 
-A primary key and a `UNIQUE` can be `DEFERRABLE`, with `INITIALLY DEFERRED`
-or `INITIALLY IMMEDIATE`, as a foreign key can. Ptah writes the clause and
+A primary key, a `UNIQUE` and a table's `CHECK` can be `DEFERRABLE`, with
+`INITIALLY DEFERRED` or `INITIALLY IMMEDIATE`, as a foreign key can. Ptah writes the clause and
 reads it back from `ALL_CONSTRAINTS`, measured on Oracle Free 23. A primary
 key Oracle named itself is compared through the table's column flags, which
 cannot defer, so a deferrable one is compared as the table's key instead.
 Name a deferrable `UNIQUE`: Oracle names an unnamed one `SYS_C<n>`, which
-differs in every database. A change of deferral is a drop and an add.
+differs in every database. A change of deferral is a drop and an add. A key
+that is not deferrable reads back with no deferral clause, so `schema inspect`
+writes it as the server stores it and the file compares clean with the account
+it came from.
+
+A `CHECK` written on a column takes a deferral clause as a table's does, and
+one that defers is compared as a table's `CHECK`. Oracle fixes a `CHECK`'s
+deferrability when it creates it, so one whose deferral differs from the
+declaration is replaced. The plan adds the new `CHECK` before it drops the old
+one: a named one under a temporary name, renamed to the declared name after the
+drop. Oracle commits each statement, so a row that refuses the new `CHECK`
+stops the plan with the old one still in place.
+
+No declaration disables a `CHECK` or a foreign key, or leaves its rows
+unchecked, so the parser refuses `DISABLE` and `NOVALIDATE`. One the account
+holds `DISABLE`d, or `ENABLE NOVALIDATE`d, whose definition is the one declared
+is enabled in place with `ALTER TABLE ... ENABLE VALIDATE CONSTRAINT`. A row
+the constraint refuses fails the statement, with `ORA-02293` for a `CHECK` and
+`ORA-02298` for a foreign key, and the constraint stays as it was.
 
 ## Functions and procedures
 

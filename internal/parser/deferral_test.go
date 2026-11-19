@@ -359,3 +359,84 @@ func columnNames(table *ast.CreateTableNode) []string {
 	}
 	return names
 }
+
+// TestParse_CheckDeferral_HappyPath reads a deferral clause after a table's
+// CHECK on Oracle, whose descriptor keeps it: Oracle Free 23.26 creates
+// `CHECK (n > 0) DEFERRABLE INITIALLY DEFERRED` deferrable. PostgreSQL
+// refuses the same clause; TestParse_Deferral_FailurePath holds that row.
+func TestParse_CheckDeferral_HappyPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		sql        string
+		deferrable bool
+		initially  string
+	}{
+		{name: "deferred", sql: "CREATE TABLE c (n NUMBER, CONSTRAINT ck CHECK (n > 0) DEFERRABLE INITIALLY DEFERRED);", deferrable: true, initially: "deferred"},
+		{name: "INITIALLY DEFERRED alone", sql: "CREATE TABLE c (n NUMBER, CHECK (n > 0) INITIALLY DEFERRED);", deferrable: true, initially: "deferred"},
+		{name: "deferrable", sql: "CREATE TABLE c (n NUMBER, CHECK (n > 0) DEFERRABLE);", deferrable: true},
+		{name: "not deferrable", sql: "CREATE TABLE c (n NUMBER, CHECK (n > 0) NOT DEFERRABLE);"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Oracle), parser.WithSQL(exclusionParserRuntime(c).SQL())).Parse()
+
+			c.Assert(err, qt.IsNil)
+			table := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(table.Constraints, qt.HasLen, 1)
+			c.Assert(table.Constraints[0].Type, qt.Equals, ast.CheckConstraint)
+			c.Assert(table.Constraints[0].Deferrable, qt.Equals, test.deferrable)
+			c.Assert(table.Constraints[0].Initially, qt.Equals, test.initially)
+		})
+	}
+}
+
+// TestParse_ColumnCheckDeferral_HappyPath reads a deferral clause after a
+// column's CHECK on Oracle, which keeps it as it keeps one after a table's:
+// Oracle Free 23.26 creates `n NUMBER CHECK (n > 0) DEFERRABLE INITIALLY
+// DEFERRED` deferred. A CHECK that defers becomes the table's CHECK under the
+// name the column gave it, which is where the model keeps the clause; one
+// that does not stays on the column. PostgreSQL refuses the clause after a
+// column's CHECK; TestParse_Deferral_FailurePath holds that row.
+func TestParse_ColumnCheckDeferral_HappyPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		sql         string
+		constraints []*ast.ConstraintNode
+		columnCheck string
+	}{
+		{
+			name: "deferred",
+			sql:  "CREATE TABLE c (n NUMBER CHECK (n > 0) DEFERRABLE INITIALLY DEFERRED);",
+			constraints: []*ast.ConstraintNode{{
+				Type: ast.CheckConstraint, Expression: "n > 0", Deferrable: true, Initially: "deferred",
+			}},
+		},
+		{
+			name: "named and deferrable",
+			sql:  "CREATE TABLE c (n NUMBER CONSTRAINT ck CHECK (n > 0) DEFERRABLE);",
+			constraints: []*ast.ConstraintNode{{
+				Type: ast.CheckConstraint, Name: "ck", Expression: "n > 0", Deferrable: true,
+			}},
+		},
+		{
+			name:        "not deferrable",
+			sql:         "CREATE TABLE c (n NUMBER CHECK (n > 0) NOT DEFERRABLE);",
+			constraints: make([]*ast.ConstraintNode, 0),
+			columnCheck: "n > 0",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.Oracle), parser.WithSQL(exclusionParserRuntime(c).SQL())).Parse()
+
+			c.Assert(err, qt.IsNil)
+			table := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(table.Constraints, qt.DeepEquals, test.constraints)
+			c.Assert(table.Columns[0].Check, qt.Equals, test.columnCheck)
+		})
+	}
+}

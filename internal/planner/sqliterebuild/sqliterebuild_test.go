@@ -153,6 +153,11 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// carry comments, so a SQLite table cannot have one to converge
 		// (stokaro/ptah#2168).
 		"CommentChange": false,
+		// SQLite has no table default collation: a collation is a column's
+		// own, and the comparison compares a table's default only where the
+		// target's preparation resolves one, which only the MySQL family's
+		// does. A SQLite table cannot have one to converge.
+		"CollationChange": false,
 		// The table as the declaration holds it, which the rebuild renders FROM
 		// rather than a change it has to converge. It is present on every
 		// modification, including the ones ALTER TABLE expresses in place, so a

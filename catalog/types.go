@@ -133,6 +133,30 @@ type Database struct {
 	// the dialect. Like RolesOutOfScope it is never serialized.
 	RolesOutOfScopeReason string `json:"-"`
 
+	// CharsetDefaultCollations is a server fact: the collation the server
+	// gives a column or a table that names a character set and no collation,
+	// keyed by the character set's name in lower case. A MySQL or MariaDB
+	// read takes it from information_schema.CHARACTER_SETS, where MariaDB
+	// reports the defaults its character_set_collations setting chooses:
+	// utf8mb4 maps to utf8mb4_0900_ai_ci on MySQL 8.4 and to
+	// utf8mb4_uca1400_ai_ci on MariaDB 11.8. On MySQL the utf8mb4 entry is
+	// the session's default_collation_for_utf8mb4, which CHARACTER_SETS does
+	// not follow. Other readers leave it nil.
+	//
+	// It describes no object, so it is never serialized. A comparison that
+	// does not find a character set here leaves a column that inherits from
+	// it uncompared.
+	CharsetDefaultCollations map[string]string `json:"-"`
+
+	// CharsetAliases is a server fact: the character set each alias names in
+	// the session the read ran in, keyed by the alias in lower case. A MySQL
+	// or MariaDB read asks the server what utf8 names: utf8mb3 on MySQL 8.4,
+	// and on MariaDB utf8mb3 where old_mode holds UTF8_IS_UTF8MB3, its
+	// default, and utf8mb4 where it does not. Other readers leave it nil, and
+	// a comparison then reads the aliases the dialect's descriptor states.
+	// Like CharsetDefaultCollations, it is never serialized.
+	CharsetAliases map[string]string `json:"-"`
+
 	// NotDescribed records what this read did not look at, so a comparator can
 	// tell an object the database does not have from one the reader was never
 	// asked about. The zero value claims the read covered everything; see
@@ -913,9 +937,23 @@ type Constraint struct {
 	// `cannot drop inherited constraint` to one on this table. Only readers that
 	// can ask the catalog (pg_constraint) set it.
 	Inherited bool `json:"inherited,omitempty"`
-	// Deferrable reports a foreign key whose check may be postponed to the end
-	// of a transaction, read from pg_constraint.condeferrable.
+	// Deferrable reports a constraint whose check may be postponed to the end
+	// of a transaction, read from pg_constraint.condeferrable on PostgreSQL
+	// and from ALL_CONSTRAINTS.DEFERRABLE on Oracle, where a CHECK may defer
+	// too.
 	Deferrable bool `json:"deferrable,omitempty"`
+	// Disabled reports a constraint the server keeps and checks no row
+	// against, as Oracle's DISABLE does, read from ALL_CONSTRAINTS.STATUS.
+	// No declaration states a disabled constraint, so a disabled CHECK or
+	// foreign key whose definition matches the declared one is planned
+	// enabled in place, where the target takes ENABLE VALIDATE CONSTRAINT.
+	Disabled bool `json:"disabled,omitempty"`
+	// GeneratedName reports that the server chose the constraint's name
+	// because its declaration gave none, as Oracle names an unnamed CHECK
+	// SYS_C008933. A comparison pairs such a CHECK with an unnamed declared
+	// CHECK on the same table whose condition is the same, so the declaration
+	// that created it plans nothing on the next run. The Oracle reader sets it.
+	GeneratedName bool `json:"generated_name,omitempty"`
 	// Initially is the default timing of a deferrable check -- "deferred" or
 	// "immediate" -- read from pg_constraint.condeferred. It is empty for a
 	// constraint that is not deferrable, so a schema that never asked for one
@@ -931,7 +969,8 @@ type Constraint struct {
 	NotEnforced bool `json:"not_enforced,omitempty"`
 	// NotValid reports a CHECK or foreign key the server has not validated
 	// against the rows the table held when it was added, as
-	// pg_get_constraintdef marks it with NOT VALID. A constraint declared NOT
+	// pg_get_constraintdef marks it with NOT VALID and Oracle's
+	// ALL_CONSTRAINTS.VALIDATED with NOT VALIDATED. A constraint declared NOT
 	// ENFORCED is not reported here, though PostgreSQL 18.6 records it with
 	// convalidated false, because VALIDATE CONSTRAINT refuses it.
 	NotValid    bool    `json:"not_valid,omitempty"`

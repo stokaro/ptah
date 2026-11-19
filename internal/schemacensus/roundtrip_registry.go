@@ -382,7 +382,6 @@ var roundTripGaps = []Unreached{
 		Directions: []Direction{ToCatalog},
 		Reason:     gapComparison,
 	},
-	{Field: "schemamodel.Table.Collate", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Table.Engine", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapToCatalog},
 	{Field: "schemamodel.Table.Facets", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Table.Overrides", Dialects: []string{"mysql"}, Directions: nil, Reason: gapComparison},

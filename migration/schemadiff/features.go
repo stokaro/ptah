@@ -31,7 +31,7 @@ func comparisonIdentifiers(desired *schemamodel.Database, current *catalog.Datab
 	if !opts.IdentifierSemantics.IsZero() && !opts.IdentifierSemantics.Equal(candidate) {
 		return identifier.Semantics{}, fmt.Errorf("%w: invalid identifier semantics snapshot", ptaherr.ErrInvalidSchemaDiff)
 	}
-	if err := identifiervalidation.ValidateCoverage(candidate, collectIdentifierNames(desired, current, candidate.DefaultSchema)); err != nil {
+	if err := identifiervalidation.ValidateCoverage(candidate, collectIdentifierNames(desired, current, candidate.DefaultSchema, opts.Dialect)); err != nil {
 		return identifier.Semantics{}, err
 	}
 	if err := identifiervalidation.ValidateTarget(desired, opts.Dialect, candidate); err != nil {

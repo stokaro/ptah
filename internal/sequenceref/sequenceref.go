@@ -32,8 +32,72 @@ type Rules struct {
 	NextValue []string
 	// Fold is the case the dialect stores an unquoted name in.
 	Fold identifier.Fold
+	// Key answers the name a stored schema or sequence name compares by, such
+	// as the equivalence class a server's collation puts it in, so two
+	// spellings of one sequence read alike. Nil compares the stored names as
+	// they are.
+	Key func(name string) string
 	// Lexing reads the expression as the dialect writes it.
 	Lexing lexer.Options
+}
+
+// segment is one part of an expression as [scan] reads it: a token kept as
+// written, or a sequence reference, with its name parts as the catalog stores
+// them.
+type segment struct {
+	// text is the token, for a segment that is not a reference.
+	text string
+	// names are the stored schema and sequence names of a reference, the
+	// pseudocolumn included where it ends in one.
+	names []string
+	// clause reports a reference through rules.NextValue.
+	clause bool
+	// reference reports that the segment is a reference.
+	reference bool
+}
+
+// scan reads expression into its segments. [Canonical] writes them and
+// [Names] lists their names, so the names a caller asks a server about are
+// the ones the comparison keys.
+func scan(expression string, rules Rules) []segment {
+	tokens := significantTokens(expression, rules.Lexing)
+	segments := make([]segment, 0, len(tokens))
+	for index := 0; index < len(tokens); index++ {
+		if clause, parts := nextValueAt(tokens, index, rules.NextValue); parts > 0 {
+			name := tokens[index+len(clause) : index+len(clause)+2*parts-1]
+			segments = append(segments, segment{names: storedNames(name, rules.Fold), clause: true, reference: true})
+			index += len(clause) + 2*parts - 2
+			continue
+		}
+		parts := referenceAt(tokens, index, rules.Pseudocolumns)
+		if parts == 0 {
+			segments = append(segments, segment{text: tokens[index].Value})
+			continue
+		}
+		segments = append(segments, segment{names: storedNames(tokens[index:index+2*parts-1], rules.Fold), reference: true})
+		index += 2*parts - 2
+	}
+	return segments
+}
+
+// Names returns the stored schema and sequence names each sequence reference
+// in expression spells, in the order written, without a pseudocolumn. A
+// caller that keys names through rules.Key asks its server about these.
+func Names(expression string, rules Rules) []string {
+	if len(rules.Pseudocolumns) == 0 && len(rules.NextValue) == 0 {
+		return nil
+	}
+	var names []string
+	for _, part := range scan(expression, rules) {
+		switch {
+		case !part.reference:
+		case part.clause:
+			names = append(names, part.names...)
+		default:
+			names = append(names, part.names[:len(part.names)-1]...)
+		}
+	}
+	return names
 }
 
 // Canonical returns expression with each sequence reference written as the
@@ -57,28 +121,27 @@ type Rules struct {
 // schema is kept as written, as SQL Server keeps it: `next value for seq` and
 // `NEXT VALUE FOR [seq]` are one reference, and `NEXT VALUE FOR dbo.seq` is
 // another.
+//
+// Where rules.Key is set, each schema and sequence name is written as its
+// key, so under a key that folds case `NEXT VALUE FOR S` and `NEXT VALUE FOR
+// [s]` are one reference too.
 func Canonical(expression string, rules Rules, schema string) (canonical string, found bool) {
 	if len(rules.Pseudocolumns) == 0 && len(rules.NextValue) == 0 {
 		return expression, false
 	}
-	tokens := significantTokens(expression, rules.Lexing)
-	words := make([]string, 0, len(tokens))
-	for index := 0; index < len(tokens); index++ {
-		if clause, parts := nextValueAt(tokens, index, rules.NextValue); parts > 0 {
+	segments := scan(expression, rules)
+	words := make([]string, 0, len(segments))
+	for _, part := range segments {
+		switch {
+		case !part.reference:
+			words = append(words, part.text)
+		case part.clause:
 			found = true
-			name := tokens[index+len(clause) : index+len(clause)+2*parts-1]
-			words = append(words, strings.Join(rules.NextValue, " "), storedReference(name, rules.Fold, ""))
-			index += len(clause) + 2*parts - 2
-			continue
+			words = append(words, strings.Join(rules.NextValue, " "), storedReference(part, rules.Key, schema))
+		default:
+			found = true
+			words = append(words, storedReference(part, rules.Key, schema))
 		}
-		parts := referenceAt(tokens, index, rules.Pseudocolumns)
-		if parts == 0 {
-			words = append(words, tokens[index].Value)
-			continue
-		}
-		found = true
-		words = append(words, storedReference(tokens[index:index+2*parts-1], rules.Fold, schema))
-		index += 2*parts - 2
 	}
 	return strings.Join(words, " "), found
 }
@@ -157,21 +220,48 @@ func isNamePart(tok lexer.Token) bool {
 		(tok.Type == lexer.TokenString && strings.HasPrefix(tok.Value, `"`))
 }
 
-// storedReference writes the reference tokens spell, every second token a
-// dot, as its stored names, each quoted, leaving out a schema equal to schema.
-func storedReference(tokens []lexer.Token, fold identifier.Fold, schema string) string {
+// storedNames reads the reference tokens spell, every second token a dot, as
+// its stored names.
+func storedNames(tokens []lexer.Token, fold identifier.Fold) []string {
 	names := make([]string, 0, (len(tokens)+1)/2)
 	for index := 0; index < len(tokens); index += 2 {
 		names = append(names, storedPart(tokens[index].Value, fold))
 	}
-	if len(names) == 3 && names[0] == schema {
-		names = names[1:]
+	return names
+}
+
+// storedReference writes the stored names of a reference, each quoted and
+// keyed by key where it is set, leaving out a schema equal to schema. The
+// last name of a reference through a pseudocolumn is the pseudocolumn, which
+// is written as it is stored. A reference through the clause has at most two
+// names, so it keeps its schema, as SQL Server keeps it.
+func storedReference(part segment, key func(string) string, schema string) string {
+	keyed := slices.Clone(part.names)
+	last := len(keyed)
+	if !part.clause {
+		last--
 	}
-	quoted := make([]string, len(names))
-	for index, name := range names {
+	for index := range last {
+		if key != nil {
+			keyed[index] = key(keyed[index])
+		}
+	}
+	if len(keyed) == 3 && keyed[0] == keyOf(schema, key) {
+		keyed = keyed[1:]
+	}
+	quoted := make([]string, len(keyed))
+	for index, name := range keyed {
 		quoted[index] = `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
 	return strings.Join(quoted, ".")
+}
+
+// keyOf answers name keyed by key, or name where key is nil.
+func keyOf(name string, key func(string) string) string {
+	if key == nil {
+		return name
+	}
+	return key(name)
 }
 
 // storedPart is the name the catalog stores for one part: the text inside

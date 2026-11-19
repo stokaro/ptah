@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasurl"
@@ -64,33 +65,88 @@ import (
 // timeout is the error, wrapped as `connect to --<flag>: ...`. A timeout of
 // zero leaves the deadline of ctx, if any, as the only bound.
 func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Duration) (capability.Capabilities, error) {
+	facts, err := reach(ctx, dialect, flag, devURL, timeout, nil)
+	return facts.Capabilities, err
+}
+
+// Facts is what a dev server answers for two schema files planned for it.
+type Facts struct {
+	// Capabilities is what the server can do, as [Server] answers it.
+	Capabilities capability.Capabilities
+	// CharsetDefaultCollations and CharsetAliases are the character set facts
+	// of the session the URL opens, in the shape of
+	// [ptah.run/catalog.Database.CharsetDefaultCollations] and
+	// [ptah.run/catalog.Database.CharsetAliases]. A prediction of what the
+	// server builds from a schema file reads them in place of the dialect
+	// descriptor's static table. They are nil where nothing was connected to,
+	// and where the dialect's descriptor states no character set defaults or
+	// its reader cannot read them alone.
+	CharsetDefaultCollations map[string]string
+	CharsetAliases           map[string]string
+}
+
+// ServerFacts opens devURL as [Server] does and answers its capabilities and,
+// over the same connection, the session's character set facts. A failed read
+// of the facts is the error, wrapped as `read the character sets of
+// --<flag>: ...`.
+func ServerFacts(ctx context.Context, dialect, flag, devURL string, timeout time.Duration) (Facts, error) {
+	return reach(ctx, dialect, flag, devURL, timeout, func(ctx context.Context, conn *dbschema.DatabaseConnection, facts Facts) (Facts, error) {
+		described, _ := platform.Lookup(conn.Info().Dialect)
+		reader, reads := conn.Reader().(charsetFactsReader)
+		if described.Columns.CollationNames.CharsetDefaults == nil || !reads {
+			return facts, nil
+		}
+		var err error
+		facts.CharsetDefaultCollations, facts.CharsetAliases, err = reader.ReadCharsetFacts(ctx)
+		if err != nil {
+			return Facts{}, fmt.Errorf("read the character sets of --%s: %w", flag, err)
+		}
+		return facts, nil
+	})
+}
+
+// charsetFactsReader reads its session's character set facts without reading
+// a schema; the MySQL-family reader is one.
+type charsetFactsReader interface {
+	ReadCharsetFacts(ctx context.Context) (defaults, aliases map[string]string, err error)
+}
+
+// reach is [Server] where read is nil. Where it is not, read adds to the
+// capabilities what it reads over the connection reach opened, and is not
+// called where reach opens none.
+func reach(
+	ctx context.Context,
+	dialect, flag, devURL string,
+	timeout time.Duration,
+	read func(context.Context, *dbschema.DatabaseConnection, Facts) (Facts, error),
+) (Facts, error) {
 	if strings.TrimSpace(devURL) == "" {
-		return capability.Capabilities{}, nil
+		return Facts{}, nil
 	}
 	if engine, provisioned := devdocker.ExternalEngine(ctx, devURL); provisioned {
 		if dialect != "" && !devdocker.SameEngine(engine, dialect) {
-			return capability.Capabilities{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", engine, dialect)
+			return Facts{}, fmt.Errorf("--dev-url dialect %q does not match --url dialect %q", engine, dialect)
 		}
-		return capability.Capabilities{}, nil
+		return Facts{}, nil
 	}
 	switch {
 	case devdocker.IsURL(devURL):
 		spec, err := devdocker.Parse(devURL)
 		if err != nil {
-			return capability.Capabilities{}, err
+			return Facts{}, err
 		}
 		_, tag, tagged := strings.Cut(spec.Image, ":")
 		resolution := capability.ResolveServerVersion(dialect, tag)
 		if !tagged || !resolution.Recognized {
-			return capability.Capabilities{}, nil
+			return Facts{}, nil
 		}
-		return resolution.Capabilities, nil
+		return Facts{Capabilities: resolution.Capabilities}, nil
 	case atlasurl.NamesAFile(devURL):
-		return capability.Capabilities{}, nil
+		return Facts{}, nil
 	}
 	if dialect != "" {
 		if err := providerurl.ValidateDialectMatch(ctx, devURL, dialect); err != nil {
-			return capability.Capabilities{}, err
+			return Facts{}, err
 		}
 	}
 	if timeout > 0 {
@@ -100,8 +156,12 @@ func Server(ctx context.Context, dialect, flag, devURL string, timeout time.Dura
 	}
 	conn, err := dbschema.ConnectToServer(ctx, devURL)
 	if err != nil {
-		return capability.Capabilities{}, fmt.Errorf("connect to --%s: %w", flag, err)
+		return Facts{}, fmt.Errorf("connect to --%s: %w", flag, err)
 	}
 	defer func() { _ = conn.Close() }()
-	return conn.Info().Capabilities, nil
+	facts := Facts{Capabilities: conn.Info().Capabilities}
+	if read == nil {
+		return facts, nil
+	}
+	return read(ctx, conn, facts)
 }

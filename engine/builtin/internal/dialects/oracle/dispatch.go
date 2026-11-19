@@ -190,6 +190,7 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 		*ast.AddIndexOperation,
 		*ast.RenameTableOperation,
 		*ast.SetCommentOperation,
+		*ast.SetTableCollationOperation,
 		*ast.SetConstraintCommentOperation,
 		*ast.AddEnumValueOperation,
 		*ast.RenameEnumValueOperation,

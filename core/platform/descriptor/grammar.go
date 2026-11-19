@@ -205,6 +205,21 @@ type ConstraintGrammar struct {
 	// a table's PRIMARY KEY, UNIQUE, FOREIGN KEY or CHECK, which the
 	// constraint then reads as unnamed, as the MySQL family takes it.
 	SymbolOptional bool `json:"symbol_optional,omitempty"`
+	// EnableValidate reports that ALTER TABLE ... ENABLE [VALIDATE]
+	// CONSTRAINT name checks every row against a CHECK or foreign key the
+	// server holds disabled, or enabled without validating its rows, and
+	// enforces it from then on, as Oracle's does. A row that fails the check
+	// refuses the statement and leaves the constraint as it was. A plan
+	// brings such a constraint to the declared state with the statement,
+	// where without it the constraint is dropped and added again.
+	EnableValidate bool `json:"enable_validate,omitempty"`
+	// CheckAddedFirst reports that a plan replacing a named CHECK whose
+	// definition changed adds the new CHECK under a temporary name, drops the
+	// old one, and renames the new one to the declared name, for an engine
+	// that commits each schema statement apart. Dropped first, a refused ADD
+	// leaves the table with neither CHECK. Without it the old CHECK is
+	// dropped before the new one is added.
+	CheckAddedFirst bool `json:"check_added_first,omitempty"`
 }
 
 // Enforcement is where ENFORCED and NOT ENFORCED may follow a constraint.
@@ -248,6 +263,12 @@ type Deferral struct {
 	// LoneInitiallyRefusal says why INITIALLY is refused where no [NOT]
 	// DEFERRABLE comes before it.
 	LoneInitiallyRefusal string `json:"lone_initially_refusal,omitempty"`
+	// Checks reports that a table's CHECK takes a deferral clause after it
+	// and keeps it, as Oracle's does: `CONSTRAINT c CHECK (n > 0) DEFERRABLE
+	// INITIALLY DEFERRED` creates a CHECK whose rows are checked at commit.
+	// Without it, a clause that defers a CHECK is refused, as PostgreSQL
+	// refuses one.
+	Checks bool `json:"checks,omitempty"`
 }
 
 // KeyGrammar states how the engine reads a key or an index declared in a
@@ -673,6 +694,8 @@ func validateConstraintGrammar(grammar Grammar) error {
 		return errors.New("MATCH PARTIAL cannot be both built and refused")
 	case deferral.Refusal != "" && (deferral.KeyRefusal != "" || deferral.LoneInitiallyRefusal != ""):
 		return errors.New("a deferral refusal leaves no deferral clause to refuse after a key or before DEFERRABLE")
+	case deferral.Checks && (deferral.Refusal != "" || deferral.KeyRefusal != ""):
+		return errors.New("a deferral clause after a CHECK cannot be both kept and refused")
 	default:
 		return nil
 	}

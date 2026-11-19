@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/objectidentity"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
@@ -61,6 +62,17 @@ type Scope struct {
 	// columns NOT NULL, as the comparison does. Empty answers as the
 	// comparison answers for a dialect it does not know: a key column is NOT
 	// NULL.
+	//
+	// It also decides how a generated state's names meet a selector. On a
+	// target whose descriptor states an UnquotedFold, a generated state,
+	// converted from a read or declared in a SQL file, spells names the way a
+	// statement does: `"orders"` for the table stored as orders, and orders
+	// or ORDERS for the one stored as ORDERS. A selector meets the stored
+	// name on the generated side, so one selector leaves the same table from
+	// both. A read reports stored names as they are, on every target, so its
+	// names meet a selector as written. Empty, and on every other target, a
+	// generated name meets a selector as written too: a PostgreSQL table
+	// stored as "q", with its quotes, is excluded by the selector "q" alone.
 	Dialect string
 	// ForeignKeyIndexes is the target's rule for the index its server built
 	// for a foreign key, which the database side leaves out with a foreign
@@ -119,6 +131,11 @@ type Scope struct {
 // against: nothing on a realm-scoped run, the connection's schema otherwise.
 func (s Scope) patternScopeSchema() string {
 	return Naming{DefaultSchema: s.DefaultSchema, RealmRelative: s.RealmRelativePatterns}.patternScope()
+}
+
+// fold is the UnquotedFold of the scope's dialect; see [Scope.Dialect].
+func (s Scope) fold() identifier.Fold {
+	return unquotedFold(s.Dialect)
 }
 
 // Positive reports whether the scope carries a positive selection. A scope
@@ -345,6 +362,10 @@ type UnmatchedExcludeError struct {
 	// Sources names where the run read each selector. The message names that
 	// source, and a selector it does not map is named as --exclude's.
 	Sources ExcludeSources
+	// Stored maps a selector to the spelling that names an object, which the
+	// message gives beside it; see [ExcludeReport.Stored] and
+	// [StoredSpellings]. Nil gives none.
+	Stored map[string]string
 }
 
 // Error names the selectors grouped by their source, in the order each source
@@ -361,9 +382,23 @@ func (e *UnmatchedExcludeError) Error() string {
 	}
 	parts := make([]string, 0, len(selections))
 	for _, selection := range selections {
-		parts = append(parts, selection+" matched no objects: "+quoteSelectors(grouped[selection]))
+		parts = append(parts, selection+" matched no objects: "+e.quoteSelectors(grouped[selection]))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// quoteSelectors quotes each of selectors, followed by the stored spelling
+// that names an object where e knows one.
+func (e *UnmatchedExcludeError) quoteSelectors(selectors []string) string {
+	quoted := make([]string, 0, len(selectors))
+	for _, selector := range selectors {
+		if stored, found := e.Stored[selector]; found {
+			quoted = append(quoted, fmt.Sprintf("%q (the stored name is %q)", selector, stored))
+			continue
+		}
+		quoted = append(quoted, fmt.Sprintf("%q", selector))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // ErrUnmatchedExclude is the sentinel every [UnmatchedExcludeError] matches
@@ -582,8 +617,11 @@ func ScopeGeneratedSelectionReport(
 	db *schemamodel.Database,
 	scope Scope,
 ) (*schemamodel.Database, ScopeReports, error) {
-	return scopeReport(db, scope, ExcludeGeneratedScopeReport,
-		(*scopeSelection).projectGenerated, validateGeneratedScope)
+	project := func(selection *scopeSelection, db *schemamodel.Database) (*schemamodel.Database, error) {
+		selection.fold = scope.fold()
+		return selection.projectGenerated(db)
+	}
+	return scopeReport(db, scope, ExcludeGeneratedScopeReport, project, validateGeneratedScope)
 }
 
 // scopeReport is the composition order both projections follow, with the three
@@ -684,6 +722,10 @@ type scopeSelection struct {
 	required     []objectidentity.ID
 	// vocabulary is the run's owners' selector types.
 	vocabulary vocabulary
+	// fold is the UnquotedFold of a projected generated state, which spells
+	// its names as a statement does; see storedSpelling. Empty meets every
+	// name as written.
+	fold identifier.Fold
 }
 
 // emptySelectionError reports an include selection that matched nothing.
@@ -739,10 +781,14 @@ func (s *scopeSelection) schemaAllowed(schema string) bool {
 // object: the bare name and the effective-schema-qualified name.
 func (s *scopeSelection) nameCandidates(schema, name string) []string {
 	name = strings.TrimSpace(name)
+	if s.fold != "" {
+		schema, name = storedSpelling(schema, s.fold), storedSpelling(name, s.fold)
+	}
+	schema = s.effectiveSchema(schema)
 	if name == "" {
 		return nil
 	}
-	qualified := catalog.QualifyTableName(s.effectiveSchema(schema), name)
+	qualified := catalog.QualifyTableName(schema, name)
 	if qualified == name {
 		return []string{name}
 	}

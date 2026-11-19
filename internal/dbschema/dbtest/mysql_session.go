@@ -18,7 +18,9 @@ var MySQLAllGrants = []string{"GRANT ALL PRIVILEGES ON *.* TO `root`@`%` WITH GR
 
 // MySQLSession answers the questions a MySQL-family reader asks about its own
 // session, as an account holding grants on a server of version, and hands every
-// other question to next.
+// other question to next. The character set facts are MySQL 8.4's: utf8mb4 and
+// latin1 with their default collations, the default_collation_for_utf8mb4 a
+// fresh session holds, and utf8 naming utf8mb3.
 func MySQLSession(version string, grants []string, next QueryHandler) QueryHandler {
 	return func(query string, args []driver.NamedValue) (QueryResult, error) {
 		switch {
@@ -35,6 +37,18 @@ func MySQLSession(version string, grants []string, next QueryHandler) QueryHandl
 			return QueryResult{Columns: []string{"Grants"}, Rows: rows}, nil
 		case strings.HasPrefix(strings.TrimSpace(query), "SHOW VARIABLES WHERE Variable_name IN ('partial_revokes'"):
 			return QueryResult{Columns: []string{"Variable_name", "Value"}}, nil
+		case strings.Contains(query, "FROM information_schema.CHARACTER_SETS"):
+			return QueryResult{
+				Columns: []string{"CHARACTER_SET_NAME", "DEFAULT_COLLATE_NAME"},
+				Rows:    [][]driver.Value{{"utf8mb4", "utf8mb4_0900_ai_ci"}, {"latin1", "latin1_swedish_ci"}},
+			}, nil
+		case strings.TrimSpace(query) == "SHOW SESSION VARIABLES LIKE 'default_collation_for_utf8mb4'":
+			return QueryResult{
+				Columns: []string{"Variable_name", "Value"},
+				Rows:    [][]driver.Value{{"default_collation_for_utf8mb4", "utf8mb4_0900_ai_ci"}},
+			}, nil
+		case strings.TrimSpace(query) == "SELECT CHARSET(CONVERT('' USING utf8))":
+			return QueryResult{Columns: []string{"CHARSET(CONVERT('' USING utf8))"}, Rows: [][]driver.Value{{"utf8mb3"}}}, nil
 		case strings.TrimSpace(query) == "SHOW PRIVILEGES":
 			return QueryResult{
 				Columns: []string{"Privilege", "Context", "Comment"},

@@ -126,6 +126,7 @@ These packages are intended for application and tool embedders:
 - `ptah.run/dialect/mysql/mysqldiff`
 - `ptah.run/dialect/mysql/mysqllint`
 - `ptah.run/dialect/mysql/mysqlplan`
+- `ptah.run/dialect/mysql/mysqlprepare`
 - `ptah.run/dialect/mysql/mysqlrender`
 - `ptah.run/dialect/mysql/mysqlreport`
 - `ptah.run/dialect/mysql/mysqlroutine`
@@ -2315,6 +2316,35 @@ rules that kind in the declared index's `Type`, and the diff keeps the type the
 source wrote. The runtime rejects a kind for an index the table does not
 declare, and an input that already states kinds.
 
+A prepared table's `InheritedCollations` may state the collation a declared
+column that names none takes on the target, keyed by the column's name, and
+`DefaultCollation` the table's default collation as the target resolves the
+declaration. The column comparison compares an inherited collation as if the
+column declared it, and the table comparison reports a changed default in
+`difftypes.TableDiff.CollationChange`; the declaration keeps naming no
+collation. The runtime rejects a collation for a column the table does not
+declare or that declares its own, an empty one, and an input that already
+states either field.
+
+A prepared table's `StoredTypes` may state the type the target stores a
+declared column as, keyed by the column's name, where a read reports another
+type than the declared one: MySQL and MariaDB store `varchar(10) CHARACTER SET
+binary` as `varbinary(10)`. The column comparison accepts a current column of
+the declared type or of the stored one, and the declaration keeps its type.
+The runtime rejects a stored type for a column the table does not declare, an
+empty one, and an input that already states the field.
+
+`Request.CharsetDefaultCollations` and
+`Request.CharsetAliases` carry the server facts of the same names on
+`catalog.Database`: the collation each character set takes where a declaration
+names no collation, and the character set an alias such as `utf8` names in the
+session the read used. Both are nil where the read reports none.
+`mysqlprepare.Service` resolves both fields for MySQL and MariaDB from those
+facts and the declaration's table and column character sets, falling back to
+the target descriptor's aliases where the read reports none, states the stored
+type of each character column of the binary character set, and refuses any
+other target.
+
 `Target.Lowering` selects `schemapreparation.Lowering`. It rewrites the whole
 desired schema into the shape the target's reader reports it in before a
 comparison reads it, such as a YDB UNIQUE constraint as the unique index the
@@ -2421,6 +2451,19 @@ they may describe creation defaults absent from the source. Duplicate or invente
 owners, changed identity spelling, excluded kinds, and new bindings are refused.
 The runtime validates keys, model ownership, and codecs. Missing services, partial replies, errors, and cancellation
 return no prediction. `IdentityCreations` explicitly selects no additional effects.
+
+`TableCreationRequest.CharsetDefaultCollations` and
+`TableCreationRequest.CharsetAliases` carry the character set facts of the
+server the tables are predicted for, in the shape of the `catalog.Database`
+fields of the same names: a dev database's read where the caller has one, or
+the defaults the target descriptor states in
+`descriptor.CollationNames.CharsetDefaults`. `TableCreation.Collation` is the
+default collation a read of the created table reports, and
+`TableCreation.ColumnCollations` the collation each declared column that names
+none takes. Document projection sets them on the projected table and its
+columns, so a comparison against a document sees a changed default collation
+as it does against a read. The runtime refuses a predicted collation for a
+column the table does not declare or that declares its own, and an empty one.
 
 `TableCreation.Observed` holds what a CREATE of the declaration leaves that its
 declared values do not convert to, because it depends on the table rather than
@@ -5140,8 +5183,8 @@ omits it renders user-typed columns as the bare names the author wrote.
 
 `SchemaDiff.DeclaredForeignKeys` carries every foreign key the schema the plan
 runs against holds, once and off the wire. The MySQL family cannot `MODIFY` a
-column a foreign key references, so a column type change drops that column's
-keys and puts them back; the keys themselves are unchanged, which is why the
+column a foreign key references, so a change of a column's type or collation
+drops that column's keys and puts them back; the keys themselves are unchanged, which is why the
 diff's own change lists never name them. The field is direction-dependent in a
 way the other three are not read for: a rollback drops and restores what the
 PRE-CHANGE database held, so the reversal fills it from the introspected schema

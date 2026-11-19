@@ -198,7 +198,7 @@ func (p *constraintProjection) validate(changes []difftypes.ConstraintValidation
 		if constraint.NotEnforced || (constraint.Type != "CHECK" && constraint.Type != "FOREIGN KEY") {
 			return fmt.Errorf("cannot project validation of ineligible constraint %q", change.Name)
 		}
-		constraint.NotValid = false
+		constraint.NotValid, constraint.Disabled = false, false
 	}
 	return nil
 }

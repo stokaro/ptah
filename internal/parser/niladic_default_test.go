@@ -51,6 +51,22 @@ func TestParse_NiladicDefault_HappyPath(t *testing.T) {
 			name: "Oracle, SESSIONTIMEZONE()", dialect: "oracle",
 			column: "a VARCHAR2(64) DEFAULT SESSIONTIMEZONE()", wantExpression: "SESSIONTIMEZONE()",
 		},
+		{
+			name: "Oracle, SYSDATE in parentheses", dialect: "oracle",
+			column: "a DATE DEFAULT (SYSDATE + 1)", wantExpression: "(SYSDATE + 1)",
+		},
+		{
+			name: "Oracle, a precision in parentheses", dialect: "oracle",
+			column: "a TIMESTAMP DEFAULT (SYSTIMESTAMP(3))", wantExpression: "(SYSTIMESTAMP(3))",
+		},
+		{
+			name: "Oracle, SYSDATE() in a string", dialect: "oracle",
+			column: "a VARCHAR2(10) DEFAULT ('SYSDATE()')", wantExpression: "('SYSDATE()')",
+		},
+		{
+			name: "PostgreSQL, a call in parentheses", dialect: "postgres",
+			column: "a date DEFAULT (CURRENT_DATE())", wantExpression: "(CURRENT_DATE())",
+		},
 		{name: "PostgreSQL, SYSDATE", dialect: "postgres", column: "a text DEFAULT SYSDATE", wantValue: "SYSDATE"},
 		{
 			name: "CockroachDB, current_date()", dialect: "cockroachdb",
@@ -75,12 +91,13 @@ func TestParse_NiladicDefault_HappyPath(t *testing.T) {
 }
 
 // Oracle answers ORA-03077 to SYSDATE() and USER(), ORA-30088 to
-// SYSTIMESTAMP() and ORA-04044 to DBTIMEZONE(). The default is refused at the
-// parenthesis, and the refusal names the bare spelling as written.
-// SESSIONTIMEZONE(), which Oracle calls, passes.
+// SYSTIMESTAMP() and ORA-04044 to DBTIMEZONE(), and ORA-00920 to (SYSDATE()).
+// The default is refused at the parenthesis, past a space or a comment, in
+// parentheses or not, and the refusal writes the default with the bare
+// spelling as written. SESSIONTIMEZONE(), which Oracle calls, passes.
 func TestParse_NiladicDefault_FailurePath(t *testing.T) {
 	const oracle = `Oracle Free 23\.26 calls it without parentheses and answers ORA-03077, ORA-30088 or ORA-04044 ` +
-		`to an empty argument list`
+		`to an empty argument list, and ORA-00920 or ORA-00907 to one inside a parenthesized default`
 	rows := []struct {
 		name, column, wantErr string
 	}{
@@ -103,6 +120,34 @@ func TestParse_NiladicDefault_FailurePath(t *testing.T) {
 		{
 			name: "DBTIMEZONE()", column: "a VARCHAR2(64) DEFAULT DBTIMEZONE()",
 			wantErr: `line 1, column 61: expected default value: DBTIMEZONE\(\) writes an empty argument list: write DEFAULT DBTIMEZONE; ` + oracle,
+		},
+		{
+			name: "a space before the list", column: "a DATE DEFAULT SYSDATE ()",
+			wantErr: `line 1, column 51: expected default value: SYSDATE\(\) writes an empty argument list: write DEFAULT SYSDATE; ` + oracle,
+		},
+		{
+			name: "a comment before the list", column: "a DATE DEFAULT SYSDATE /* c */ ()",
+			wantErr: `line 1, column 59: expected default value: SYSDATE\(\) writes an empty argument list: write DEFAULT SYSDATE; ` + oracle,
+		},
+		{
+			name: "a comment inside the list", column: "a DATE DEFAULT SYSDATE(/* c */)",
+			wantErr: `line 1, column 50: expected default value: SYSDATE\(\) writes an empty argument list: write DEFAULT SYSDATE; ` + oracle,
+		},
+		{
+			name: "in parentheses", column: "a DATE DEFAULT (SYSDATE())",
+			wantErr: `line 1, column 51: expected default value: SYSDATE\(\) writes an empty argument list: write DEFAULT \(SYSDATE\); ` + oracle,
+		},
+		{
+			name: "in parentheses, with a space", column: "a DATE DEFAULT (SYSDATE ())",
+			wantErr: `line 1, column 52: expected default value: SYSDATE\(\) writes an empty argument list: write DEFAULT \(SYSDATE\); ` + oracle,
+		},
+		{
+			name: "in parentheses, an operand", column: "a DATE DEFAULT (SYSDATE() + 1)",
+			wantErr: `line 1, column 51: expected default value: SYSDATE\(\) writes an empty argument list: write DEFAULT \(SYSDATE \+ 1\); ` + oracle,
+		},
+		{
+			name: "in parentheses, two calls", column: "a NUMBER DEFAULT (UID() + uid( ))",
+			wantErr: `line 1, column 49: expected default value: UID\(\) writes an empty argument list: write DEFAULT \(UID \+ uid\); ` + oracle,
 		},
 		{
 			name: "USER()", column: "a VARCHAR2(128) DEFAULT USER()",

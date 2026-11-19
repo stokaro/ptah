@@ -188,6 +188,14 @@ type CollationNames struct {
 	// 8.4 and MariaDB 11.8. A collation named after the alias is stored under
 	// the other name, so `COLLATE utf8_bin` holds as utf8mb3_bin.
 	CharsetAliases map[string]string `json:"charset_aliases,omitempty"`
+	// CharsetDefaults maps each character set name the server stores, in
+	// lower case, to its default collation on the newest release line the
+	// dialect is tested on, with no session setting changing it. A
+	// prediction with no server to ask reads it, as a diff of two schema
+	// files with no dev database does; a server's own read takes its place
+	// wherever there is one, because a session setting or an older release
+	// line selects another default.
+	CharsetDefaults map[string]string `json:"charset_defaults,omitempty"`
 	// WithoutCharset reports that a collation may be named without its
 	// character set and takes the column's: `COLLATE uca1400_ai_ci` on a
 	// utf8mb4 column of MariaDB 11.8 holds as utf8mb4_uca1400_ai_ci.

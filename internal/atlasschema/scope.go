@@ -126,7 +126,12 @@ func (s LiveSelection) applyCounted(
 	if err != nil {
 		return nil, nil, err
 	}
-	reportUnmatchedExclude(s.Diagnostics, atlasfilter.UnmatchedAcrossStates(scoped.currentReports.Exclude, scoped.desiredReports.Exclude), s.ExcludeSources)
+	reportUnmatchedExclude(
+		s.Diagnostics,
+		atlasfilter.UnmatchedAcrossStates(scoped.currentReports.Exclude, scoped.desiredReports.Exclude),
+		s.ExcludeSources,
+		atlasfilter.StoredSpellings(scoped.currentReports.Exclude, scoped.desiredReports.Exclude),
+	)
 	if emptySelection(scoped.currentErr) && emptySelection(scoped.desiredErr) && on.empty == refuseEmpty {
 		return nil, nil, scoped.currentErr
 	}
@@ -271,11 +276,11 @@ func reportEmptySelection(diagnostics io.Writer, err error) {
 // from. Silence is the one answer this must never give: an exclude selector
 // that named nothing left the object in the output, and the output alone
 // cannot say whether that was the schema or the selector.
-func reportUnmatchedExclude(diagnostics io.Writer, selectors []string, sources atlasfilter.ExcludeSources) {
+func reportUnmatchedExclude(diagnostics io.Writer, selectors []string, sources atlasfilter.ExcludeSources, stored map[string]string) {
 	if diagnostics == nil || len(selectors) == 0 {
 		return
 	}
-	fmt.Fprintf(diagnostics, "Warning: %s.\n", (&atlasfilter.UnmatchedExcludeError{Selectors: selectors, Sources: sources}).Error())
+	fmt.Fprintf(diagnostics, "Warning: %s.\n", (&atlasfilter.UnmatchedExcludeError{Selectors: selectors, Sources: sources, Stored: stored}).Error())
 }
 
 // refuseUnmatchedExclude turns unmatched --exclude selectors into the error
@@ -290,11 +295,11 @@ func reportUnmatchedExclude(diagnostics io.Writer, selectors []string, sources a
 // writes --exclude to keep an object out of the plan, and a selector that
 // named nothing means the plan is free to change it. Diff and inspect warn
 // instead, which is the split #1113 recorded for the --include side.
-func refuseUnmatchedExclude(selectors []string, sources atlasfilter.ExcludeSources) error {
+func refuseUnmatchedExclude(selectors []string, sources atlasfilter.ExcludeSources, stored map[string]string) error {
 	if len(selectors) == 0 {
 		return nil
 	}
-	return UnmatchedExcludeRefusal("schema apply", &atlasfilter.UnmatchedExcludeError{Selectors: selectors, Sources: sources})
+	return UnmatchedExcludeRefusal("schema apply", &atlasfilter.UnmatchedExcludeError{Selectors: selectors, Sources: sources, Stored: stored})
 }
 
 // UnmatchedExcludeRefusal words the [atlasfilter.UnmatchedExcludeError] err

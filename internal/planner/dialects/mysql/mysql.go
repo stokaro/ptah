@@ -566,6 +566,8 @@ func (p *Planner) modifyExistingColumns(
 			HasPreviousNullable:    colDiff.Changes["nullable"] != "",
 			PreviousDefault:        previousDefault,
 			HasPreviousDefault:     defaultChanged,
+			PreviousCharset:        previousCharset(colDiff.CharsetChange),
+			Charset:                newCharset(colDiff.CharsetChange),
 			// Stated although MODIFY restates the whole column, because the
 			// statement cannot say what changed: it repeats NOT NULL on a
 			// type change as on a nullability change, and migration/safety
@@ -951,6 +953,114 @@ func appendColumnComment(result []ast.Node, table string, colDiff difftypes.Colu
 	})
 }
 
+// tableCollationNode is the change of the table's default collation, with
+// its default character set where that changes too, and nil where the diff
+// carries none. It goes before the table's column statements: a column added
+// or restated without a collation takes the table's default at the moment its
+// statement runs, so a column reset to the table's collation after it takes
+// the new one. The option itself leaves every existing column's collation as
+// it is; [withTableCollation] joins it with the column statements that follow.
+func tableCollationNode(tableDiff difftypes.TableDiff) *ast.AlterTableNode {
+	change := tableDiff.CollationChange
+	if change == nil {
+		return nil
+	}
+	option := &ast.SetTableCollationOperation{Collation: change.Desired}
+	if change.Charset != nil {
+		option.Charset = change.Charset.Desired
+	}
+	return &ast.AlterTableNode{Name: tableDiff.TableName, Operations: []ast.AlterOperation{option}}
+}
+
+// withTableCollation is the in-place statements of one table, inPlace, with
+// the change of its default collation that tableDiff carries joined with the
+// column statements that follow it into one ALTER TABLE: the run of
+// statements of the table that each add or restate a column, or set the
+// table's comment, and carry no clause of their own. The statements that
+// restate a column are written in the order the table holds the columns, as
+// the community binary writes them; see [inHeldColumnOrder]. The comments
+// that describe the statements go ahead of it, in the same order. One
+// statement is what the community binary writes, and it
+// matters where a column's character set changes with its table's: the server
+// converts the column's values under the new default, and a value it cannot
+// convert, `'x😀'` into latin1, fails the statement with Error 1366 before
+// the table's default changes. As two statements, the first changes the
+// default and the second fails, and the table is left half changed.
+func withTableCollation(tableDiff difftypes.TableDiff, inPlace []ast.Node) []ast.Node {
+	collation := tableCollationNode(tableDiff)
+	if collation == nil {
+		return inPlace
+	}
+	var (
+		statements []joinedStatement
+		described  []ast.Node
+		joined     int
+	)
+	for at, node := range inPlace {
+		if comment, ok := node.(*ast.CommentNode); ok {
+			described = append(described, comment)
+			continue
+		}
+		alter, ok := node.(*ast.AlterTableNode)
+		if !ok || !joinsTableCollation(collation.Name, alter) {
+			break
+		}
+		statements = append(statements, joinedStatement{comments: described, alter: alter})
+		described, joined = nil, at+1
+	}
+	// Comments after the last statement joined stay where they are, ahead of
+	// the statement they describe.
+	var comments []ast.Node
+	for _, statement := range inHeldColumnOrder(statements, tableDiff.Current.Table.Columns) {
+		comments = append(comments, statement.comments...)
+		collation.Operations = append(collation.Operations, statement.alter.Operations...)
+	}
+	if len(collation.Operations) > 1 {
+		collation.OneStatement = slices.Clone(collation.Operations)
+	}
+	return slices.Concat(comments, []ast.Node{collation}, inPlace[joined:])
+}
+
+// joinsTableCollation reports whether alter, a statement on table, joins the
+// change of the table's default collation: one that adds or restates columns,
+// or sets the table's own comment, with no clause the statement holds for
+// itself.
+func joinsTableCollation(table string, alter *ast.AlterTableNode) bool {
+	if alter.Name != table || len(alter.OneStatement) > 0 || alter.Algorithm != "" || alter.Lock != "" {
+		return false
+	}
+	for _, operation := range alter.Operations {
+		switch op := operation.(type) {
+		case *ast.AddColumnOperation, *ast.ModifyColumnOperation:
+		case *ast.SetCommentOperation:
+			if op.Column != "" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return len(alter.Operations) > 0
+}
+
+// previousCharset is the character set a column holds before a change of its
+// collation gives it another, empty where nothing changes it.
+func previousCharset(change *difftypes.CharsetChange) string {
+	if change == nil {
+		return ""
+	}
+	return change.Current
+}
+
+// newCharset is the character set a change of a column's collation gives it,
+// empty where nothing changes it.
+func newCharset(change *difftypes.CharsetChange) string {
+	if change == nil {
+		return ""
+	}
+	return change.Desired
+}
+
 // appendTableComment emits the table's comment transition, if it has one.
 func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
 	if tableDiff.CommentChange == nil {
@@ -998,6 +1108,8 @@ func (p *Planner) modifyExistingTables(
 		if err != nil {
 			return result, nil, err
 		}
+
+		inPlace = withTableCollation(tableDiff, inPlace)
 
 		// Remove columns (dangerous!)
 		drops, err := p.removeColumns(nil, &tableDiff, keys)
@@ -1323,10 +1435,16 @@ func declaredForeignKeys(diff *difftypes.SchemaDiff) []affectedForeignKey {
 	return candidates
 }
 
-// columnTypeChangesByTable returns the columns whose SQL type is changing in
-// this diff, keyed table -> set of column names. Only "type" changes are
-// collected; nullability, default, uniqueness, and similar changes do not
-// disturb a foreign key's referential type match.
+// foreignKeyBlockingColumnChangesByTable returns the columns whose change a
+// foreign key over them refuses, keyed table -> set of column names: a change
+// of the SQL type, a change of the collation, and a removal. A collation
+// change counts because the server compares the two ends' collations as part
+// of their type: MySQL 8.4 and 26.10 answer `MODIFY COLUMN code varchar(10)
+// COLLATE utf8mb4_bin` on either end with Error 3780, and MariaDB 11.8 and
+// 12.3 with Error 1832, whichever end changes first. A change of a column's
+// character set is a change of its collation. Nullability, default,
+// uniqueness, and similar changes do not disturb a foreign key's referential
+// type match.
 func foreignKeyBlockingColumnChangesByTable(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
@@ -1335,7 +1453,7 @@ func foreignKeyBlockingColumnChangesByTable(
 	for _, tableDiff := range diff.TablesModified {
 		tableIdentity := semantics.QualifiedTableIdentityKey(tableDiff.TableName)
 		for _, colDiff := range tableDiff.ColumnsModified {
-			if strings.TrimSpace(colDiff.Changes["type"]) == "" {
+			if strings.TrimSpace(colDiff.Changes["type"]) == "" && strings.TrimSpace(colDiff.Changes["collation"]) == "" {
 				continue
 			}
 			columns := result[tableIdentity]
@@ -2008,6 +2126,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err != nil {
 		return nil, err
 	}
+	result = validateConstraints(result, diff)
 
 	// 5.6. Add field-level foreign keys for new tables after referenced
 	// unique indexes and constraints have been created.
@@ -2635,7 +2754,15 @@ func (p *Planner) addNonForeignKeyConstraintsWithTables(
 			continue
 		}
 		key := add.Identity
-		if info, modified := removalByTableName[key]; modified {
+		info, modified := removalByTableName[key]
+		if _, dropped := droppedForModify[key]; modified && !dropped && add.Type == "CHECK" && constraint.Name != "" &&
+			checksAddedFirst.Get(p.targetDialect()) {
+			droppedForModify[key] = struct{}{}
+			result = append(result, p.replacedCheck(add, constraint, p.dropConstraintNode(info))...)
+			handled[semantics.IndexIdentityKey(add.Name)] = struct{}{}
+			continue
+		}
+		if modified {
 			result = p.appendScopedDrop(result, info, droppedForModify, semantics)
 		}
 		result = p.dropIndexRebuiltAsConstraint(result, add, rebuiltIndexes)
@@ -2722,6 +2849,8 @@ func (p *Planner) constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *
 			Type:        ast.CheckConstraint,
 			Name:        add.Name,
 			Expression:  add.CheckExpression,
+			Deferrable:  add.Deferrable,
+			Initially:   add.Initially,
 			NotEnforced: add.NotEnforced,
 		}
 	case "UNIQUE":

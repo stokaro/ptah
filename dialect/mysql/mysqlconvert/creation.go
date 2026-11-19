@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/internal/mysqlcollation"
 	"ptah.run/internal/mysqlindex"
 )
 
@@ -21,9 +22,18 @@ import (
 const RowFormatProperty = "row_format"
 
 // CreationService predicts what a CREATE TABLE of a declaration leaves on
-// MySQL and MariaDB that the declared values do not convert to: whether each
-// index and the primary key keep a KEY_BLOCK_SIZE hint. That depends on the
-// table's row format, which a conversion of one index's value cannot see.
+// MySQL and MariaDB that the declared values do not convert to.
+//
+// The table's default collation and the collation of each column that names
+// none are the server's choice: the collation the table names, or else the
+// default of the character set it or the column names, read from the
+// request's character set facts. A read of the created table reports them,
+// so a table projected from a schema file holds them too, and a comparison
+// against it sees a changed default as it does against a read.
+//
+// Whether each index and the primary key keep a KEY_BLOCK_SIZE hint depends
+// on the table's row format, which a conversion of one index's value cannot
+// see.
 // MariaDB keeps the hint on every table; MySQL only on a table declared
 // ROW_FORMAT=COMPRESSED. An index or a key gets the observation where it says
 // more than its absence, as the reader gives one (see
@@ -33,10 +43,11 @@ const RowFormatProperty = "row_format"
 // zero value is ready for concurrent use.
 type CreationService struct{}
 
-// ProjectTableCreations returns, for each table in order, the block-size
-// observation of each of its indexes and of its primary key. Another target wraps
-// ptaherr.ErrUnsupportedDialect; an invalid declared hint wraps
-// schemaext.ErrInvalidValue. Errors and cancellation return no partial result.
+// ProjectTableCreations returns, for each table in order, its predicted
+// collations and the block-size observation of each of its indexes and of its
+// primary key. Another target wraps ptaherr.ErrUnsupportedDialect; an invalid
+// declared hint or owner setting wraps schemaext.ErrInvalidValue. Errors and
+// cancellation return no partial result.
 func (CreationService) ProjectTableCreations(ctx context.Context, request schemaprojection.TableCreationRequest) (schemaprojection.TableCreationResult, error) {
 	if ctx == nil {
 		return schemaprojection.TableCreationResult{}, fmt.Errorf("%w: creation projection requires a context", schemaprojection.ErrInvalid)
@@ -48,12 +59,18 @@ func (CreationService) ProjectTableCreations(ctx context.Context, request schema
 		return schemaprojection.TableCreationResult{}, fmt.Errorf("%w: MySQL creation projection on %q", ptaherr.ErrUnsupportedDialect, request.Target)
 	}
 	builder := objectidentity.NewBuilder(request.Identifiers)
+	server := mysqlcollation.Server{Defaults: request.CharsetDefaultCollations, Aliases: request.CharsetAliases}
 	result := schemaprojection.TableCreationResult{Complete: true, Tables: make([]schemaprojection.TableCreation, len(request.Tables))}
 	for i, table := range request.Tables {
 		if err := ctx.Err(); err != nil {
 			return schemaprojection.TableCreationResult{}, err
 		}
 		result.Tables[i].Subject = table.Subject
+		collations, err := mysqlcollation.Resolve(request.Target, table.Declaration.Table, table.Declaration.Fields, server)
+		if err != nil {
+			return schemaprojection.TableCreationResult{}, fmt.Errorf("table %q: %w", table.Declaration.Table.Name, err)
+		}
+		result.Tables[i].Collation, result.Tables[i].ColumnCollations = collations.Default, collations.Inherited
 		retained := mysqlindex.KeepsBlockSize(request.Target, table.Declaration.Table.Overrides[request.Target][RowFormatProperty])
 		holders := make([]holder, 0, len(table.Declaration.Indexes)+1)
 		for _, index := range table.Declaration.Indexes {

@@ -214,6 +214,9 @@ func reverseFeatureTableState(
 	if table.CommentChange != nil {
 		current.Table.Comment = table.CommentChange.Desired
 	}
+	if table.CollationChange != nil {
+		current.Table.Collate = table.CollationChange.Desired
+	}
 	if len(recovery) == 0 {
 		return current, nil
 	}

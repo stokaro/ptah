@@ -175,7 +175,9 @@ END;`,
 		// answers ORA-03077 to SYSDATE, CURRENT_DATE, USER, UID,
 		// ORA_INVOKING_USER and ORA_INVOKING_USERID, ORA-30088 to
 		// SYSTIMESTAMP, LOCALTIMESTAMP and CURRENT_TIMESTAMP, and ORA-04044
-		// to DBTIMEZONE, and calls SESSIONTIMEZONE().
+		// to DBTIMEZONE, and calls SESSIONTIMEZONE(). Inside a parenthesized
+		// default, (SYSDATE()) and (USER()) answer ORA-00920 and
+		// (CURRENT_DATE()) ORA-00907.
 		Grammar: descriptor.Grammar{
 			Columns: descriptor.ColumnGrammar{
 				TimestampLocalTimeZone: true,
@@ -189,11 +191,24 @@ END;`,
 					"SYSTIMESTAMP", "LOCALTIMESTAMP", "CURRENT_TIMESTAMP", "DBTIMEZONE",
 				},
 				EmptyCallRefusal: "Oracle Free 23.26 calls it without parentheses and answers ORA-03077, " +
-					"ORA-30088 or ORA-04044 to an empty argument list",
+					"ORA-30088 or ORA-04044 to an empty argument list, and ORA-00920 or ORA-00907 to one " +
+					"inside a parenthesized default",
 				// Oracle Free 23.26 takes seq.NEXTVAL and seq.CURRVAL as a
 				// default, and stores an unqualified one qualified and quoted,
 				// "APP"."SEQ"."NEXTVAL"; a qualified one is stored as written.
 				SequencePseudocolumns: []string{"NEXTVAL", "CURRVAL"},
+			},
+			// Oracle Free 23.26 creates `CHECK (n > 0) DEFERRABLE INITIALLY
+			// DEFERRED` deferrable and reports it so in USER_CONSTRAINTS.
+			// ENABLE VALIDATE CONSTRAINT over a row the CHECK refuses
+			// answers ORA-02293 and leaves the constraint DISABLED. Each
+			// statement commits apart, so a CHECK dropped before a refused
+			// ADD is gone; ADD under another name, DROP and RENAME
+			// CONSTRAINT keep one CHECK in place at every step.
+			Constraints: descriptor.ConstraintGrammar{
+				Deferral:        descriptor.Deferral{Checks: true},
+				EnableValidate:  true,
+				CheckAddedFirst: true,
 			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},

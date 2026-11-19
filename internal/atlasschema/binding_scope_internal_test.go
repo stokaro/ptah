@@ -13,7 +13,6 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
-	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/selectext"
@@ -159,7 +158,8 @@ func ownerSelections() selectext.Set {
 }
 
 // noCapabilities answers what a diff of two documents with no dev database
-// plans for: nothing beyond the dialect.
-func noCapabilities(context.Context) (capability.Capabilities, error) {
-	return capability.Capabilities{}, nil
+// plans for: nothing beyond the dialect, and the descriptor's character set
+// defaults.
+func noCapabilities(context.Context) (diffServer, error) {
+	return diffServer{}, nil
 }
