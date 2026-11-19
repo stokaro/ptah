@@ -124,6 +124,15 @@ const (
 	// covered by the servers the other engines name (stokaro/ptah#3885).
 	MySQLDevServer
 	MariaDBDevServer
+	// MariaDB118 is a MariaDB 11.8 server, reached with an account that may
+	// create and drop databases.
+	//
+	// It is an engine of its own because the release line is what it is for.
+	// MariaDB 10.11, 11.4 and 11.8 refuse a foreign key dropped and added
+	// under one name in one ALTER TABLE with errno 121, and the 12.3 server
+	// MariaDB names accepts the statement. A statement shape that merges the
+	// pair passes against MariaDB and fails against this server.
+	MariaDB118
 )
 
 // source is where one engine's address comes from.
@@ -245,6 +254,10 @@ var sources = map[Engine]source{
 		canonical: "MARIADB_DEV_SERVER_URL",
 		scheme:    []string{"mariadb", "mysql"},
 	},
+	MariaDB118: {
+		canonical: "MARIADB_11_8_TEST_URL",
+		scheme:    []string{"mariadb", "mysql"},
+	},
 }
 
 // String names the engine as its canonical variable does.
@@ -363,6 +376,7 @@ var engineNames = map[Engine]string{
 	PostgreSQLAlias:   "PostgreSQL database reached through the pooler under another name",
 	MySQLDevServer:    "second MySQL server",
 	MariaDBDevServer:  "second MariaDB server",
+	MariaDB118:        "MariaDB 11.8 server with an administrative account",
 }
 
 // DriverDSN returns the address in the form a raw database/sql driver parses,
@@ -437,7 +451,7 @@ func LookupDriverDSN(engine Engine) (string, error) {
 // driver.
 func driverForm(engine Engine, address string) string {
 	switch engine {
-	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin, MySQLDevServer, MariaDBDevServer:
+	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin, MySQLDevServer, MariaDBDevServer, MariaDB118:
 		return mysqlNetworkDSN(address)
 	case MySQLSocket, MariaDBSocket:
 		// The socket form is Ptah's to read, so it is read by the parser Ptah
@@ -509,7 +523,7 @@ func Engines() []Engine {
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
 		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
-		MySQLDevServer, MariaDBDevServer,
+		MySQLDevServer, MariaDBDevServer, MariaDB118,
 	}
 }
 
