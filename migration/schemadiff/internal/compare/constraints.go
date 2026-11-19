@@ -225,6 +225,7 @@ func pairedConstraints(
 		semantics,
 	)
 	pairNumberedForeignKeys(genConstraints, dbConstraints, dialect, semantics)
+	pairGeneratedNameChecks(genConstraints, dbConstraints)
 
 	return genConstraints, dbConstraints
 }
@@ -361,12 +362,23 @@ func appendConstraintAddition(
 	})
 }
 
-// needsValidation reports whether the database holds NOT VALID a CHECK or
-// foreign key the declaration holds validated. The other direction is no
-// change: a declaration that allows NOT VALID is satisfied by a constraint the
-// server has validated, and one it has not.
+// needsValidation reports whether the database holds NOT VALID, or
+// disabled, a CHECK or foreign key the declaration holds validated. The other
+// direction is no change: a declaration that allows NOT VALID is satisfied by
+// a constraint the server has validated, and one it has not.
+//
+// No declaration disables a constraint, so a disabled one whose definition
+// matches is planned enabled rather than replaced. Oracle answers ORA-02293 to
+// ENABLE VALIDATE over a row the CHECK refuses and leaves it disabled, where a
+// drop and an add commit apart and lose the constraint when the add fails.
 func needsValidation(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
-	return dbConstraint.NotValid && !genConstraint.NotValid
+	if genConstraint.NotValid {
+		return false
+	}
+	if dbConstraint.Disabled && (strings.EqualFold(dbConstraint.Type, "CHECK") || strings.EqualFold(dbConstraint.Type, "FOREIGN KEY")) {
+		return true
+	}
+	return dbConstraint.NotValid
 }
 
 // constraintDefinitionsChanged compares constraint definitions between generated and database schemas
@@ -556,6 +568,13 @@ func checkConstraintChanged(
 	// enforceability of constraint`), so a difference is a drop and an add
 	// (stokaro/ptah#3853).
 	if genConstraint.NotEnforced != dbConstraint.NotEnforced {
+		return true
+	}
+	// So is one the server checks at commit: Oracle fixes a CHECK's
+	// deferrability when it creates it, and answers ORA-03049 to MODIFY
+	// CONSTRAINT ... DEFERRABLE. A CHECK the server keeps disabled is the
+	// same constraint, which needsValidation plans enabled in place.
+	if deferralChanged(genConstraint, dbConstraint) {
 		return true
 	}
 	dbClause := getStringValue(dbConstraint.CheckClause)

@@ -6451,6 +6451,11 @@ func (p *Parser) parseAlterOperation(table string) ([]ast.AlterOperation, error)
 		return oneOperation(p.parseRenameOperation())
 	case "VALIDATE":
 		return oneOperation(p.parseValidateConstraintOperation())
+	case "ENABLE":
+		if !p.target.grammar.Constraints.EnableValidate {
+			return nil, ptaherr.At(p.current.Start, fmt.Errorf("unsupported ALTER operation: %s", operation))
+		}
+		return oneOperation(p.parseEnableConstraintOperation())
 	case "REPLICA":
 		if _, after, _ := p.namedWords(0, 1); len(after) == 1 && strings.EqualFold(after[0], "IDENTITY") {
 			return nil, p.refuseReplicaIdentity(table)
@@ -6509,6 +6514,35 @@ func (p *Parser) parseValidateConstraintOperation() (ast.AlterOperation, error) 
 	}
 	if !p.target.takesNotValid() {
 		return nil, ptaherr.At(start, fmt.Errorf("VALIDATE CONSTRAINT: the %s dialect takes no VALIDATE CONSTRAINT", dialectName(p.dialect)))
+	}
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected constraint name: %w", err)
+	}
+	return &ast.ValidateConstraintOperation{ConstraintName: name}, nil
+}
+
+// parseEnableConstraintOperation reads ENABLE [VALIDATE] CONSTRAINT name,
+// which Oracle takes to check every row against a disabled or unvalidated
+// CHECK or foreign key and to enforce it from then on, as VALIDATE CONSTRAINT
+// completes one on the PostgreSQL family. ENABLE NOVALIDATE enforces the
+// constraint without checking the rows the table holds, a state no
+// declaration states, and is refused.
+func (p *Parser) parseEnableConstraintOperation() (ast.AlterOperation, error) {
+	p.advance()
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("NOVALIDATE") {
+		return nil, ptaherr.At(p.current.Start, errors.New(
+			"ENABLE NOVALIDATE CONSTRAINT leaves the rows the table holds unchecked, a state no declaration states; "+
+				"write ENABLE VALIDATE CONSTRAINT"))
+	}
+	if p.current.MatchIdentifierValue("VALIDATE") {
+		p.advance()
+		p.skipWhitespace()
+	}
+	if err := p.expect(lexer.TokenIdentifier, "CONSTRAINT"); err != nil {
+		return nil, fmt.Errorf("expected CONSTRAINT after ENABLE: %w", err)
 	}
 	p.skipWhitespace()
 	name, err := p.expectIdentifier()

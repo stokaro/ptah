@@ -767,12 +767,13 @@ func selectApplyStates(ctx context.Context, dialect string, current *catalog.Dat
 	// message restores the permissive one. Callers that only compute a plan
 	// say so instead.
 	unmatched := atlasfilter.UnmatchedAcrossStates(currentReports.Exclude, desiredReports.Exclude)
+	stored := atlasfilter.StoredSpellings(currentReports.Exclude, desiredReports.Exclude)
 	if opts.RefuseUnmatchedExclude {
-		if err := refuseUnmatchedExclude(unmatched, opts.ExcludeSources); err != nil {
+		if err := refuseUnmatchedExclude(unmatched, opts.ExcludeSources, stored); err != nil {
 			return nil, nil, err
 		}
 	} else {
-		reportUnmatchedExclude(opts.Diagnostics, unmatched, opts.ExcludeSources)
+		reportUnmatchedExclude(opts.Diagnostics, unmatched, opts.ExcludeSources, stored)
 	}
 	// An --include selection that matched neither the database nor the desired
 	// state leaves nothing to apply. Reported as a synced schema it is a verb

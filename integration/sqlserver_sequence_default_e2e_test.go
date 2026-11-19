@@ -56,3 +56,34 @@ func TestApplySQLServerSequenceDefaultE2E(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.Equals, "1,1,1,1,NEXT VALUE FOR ptah_s")
 }
+
+// TestApplySQLServerSequenceNameCaseE2E applies sqlServerSequenceDefaultSchema,
+// then a file whose defaults name the same sequence and schema in another
+// case. SQL Server stores each reference as written, so the account holds
+// NEXT VALUE FOR [ptah_s] and [dbo].[ptah_s], and its default collation,
+// SQL_Latin1_General_CP1_CI_AS, reads PTAH_S and DBO as the sequence and the
+// schema it holds. The second file plans nothing. Compared as stored, it
+// plans every default it spells in another case.
+func TestApplySQLServerSequenceNameCaseE2E(t *testing.T) {
+	c := qt.New(t)
+	database := sqlServerIdentityScratchDatabase(c)
+	first := filepath.Join(c.TempDir(), "first.sql")
+	c.Assert(os.WriteFile(first, []byte(sqlServerSequenceDefaultSchema), 0o600), qt.IsNil)
+	second := filepath.Join(c.TempDir(), "second.sql")
+	c.Assert(os.WriteFile(second, []byte("CREATE SEQUENCE ptah_s AS bigint START WITH 1;\n"+
+		"CREATE TABLE seqd (\n"+
+		"  id int PRIMARY KEY,\n"+
+		"  a bigint DEFAULT (NEXT VALUE FOR PTAH_S),\n"+
+		"  b bigint DEFAULT (next value for DBO.Ptah_S),\n"+
+		"  c bigint DEFAULT NEXT VALUE FOR PTAH_S,\n"+
+		"  d bigint DEFAULT (NEXT VALUE FOR [DBO].[PTAH_S]),\n"+
+		"  t varchar(30) DEFAULT 'NEXT VALUE FOR ptah_s'\n"+
+		");\n"), 0o600), qt.IsNil)
+
+	applied := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", first, "--auto-approve")
+	recased := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", second, "--auto-approve")
+
+	c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
+	c.Assert(recased.ExitCode, qt.Equals, 0, historyComment(recased))
+	c.Assert(recased.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+}

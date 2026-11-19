@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/catalog"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
@@ -166,4 +167,56 @@ func TestCompareWithDatabaseInfo_SQLServerNextValueDefault_Changed(t *testing.T)
 			c.Assert(changedDefaults(diff), qt.DeepEquals, []string{"n"})
 		})
 	}
+}
+
+// sqlServerCollatedSequenceDefault compares a declared default reading the
+// sequence S with one SQL Server holds as NEXT VALUE FOR [s], under semantics
+// a server with collation answered: S and s in one class where it folds case,
+// in two where it does not.
+func sqlServerCollatedSequenceDefault(c *qt.C, semantics identifier.Semantics) *difftypes.SchemaDiff {
+	c.Helper()
+	held := "(NEXT VALUE FOR [s])"
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "things", Name: "things", Schema: "dbo"}},
+		Fields: []schemamodel.Field{
+			{StructName: "things", Name: "id", Type: "INT", Primary: true},
+			{StructName: "things", Name: "n", Type: "BIGINT", Nullable: true, DefaultExpr: "(NEXT VALUE FOR S)"},
+		},
+	}
+	table := catalog.Table{Name: "things", Schema: "dbo", Type: "BASE TABLE", Columns: []catalog.Column{
+		{Name: "id", DataType: "int", UDTName: "int", IsNullable: "NO", IsPrimaryKey: true},
+		{Name: "n", DataType: "bigint", UDTName: "bigint", IsNullable: "YES", ColumnDefault: &held},
+	}}
+	diff, err := schemadiff.CompareWithDatabaseInfo(c.Context(), desired, &catalog.Database{Tables: []catalog.Table{table}},
+		catalog.ServerInfo{Dialect: "sqlserver", Schema: "dbo", IdentifierSemantics: semantics}, nil, must.Must(builtin.New()))
+	c.Assert(err, qt.IsNil)
+	return diff
+}
+
+// SQL Server stores NEXT VALUE FOR S as written, as NEXT VALUE FOR [S], and
+// reads it as the sequence s under its default collation,
+// SQL_Latin1_General_CP1_CI_AS. A default held as NEXT VALUE FOR [s], which a
+// statement that wrote s left, reads the same sequence, so the comparison
+// plans nothing. Compared as stored, the declared S plans the default again.
+func TestCompareWithDatabaseInfo_SQLServerNextValueName_CaseInsensitive(t *testing.T) {
+	c := qt.New(t)
+	semantics := resolvedSQLServerSemantics("SQL_Latin1_General_CP1_CI_AS",
+		[]string{"dbo"}, []string{"things"}, []string{"id"}, []string{"n"}, []string{"S", "s"})
+
+	diff := sqlServerCollatedSequenceDefault(c, semantics)
+
+	c.Assert(changedDefaults(diff), qt.HasLen, 0)
+}
+
+// The control: under Latin1_General_CS_AS, S and s are two sequences, and a
+// default reading S fails with Msg 208 while only s exists, so the comparison
+// plans the default.
+func TestCompareWithDatabaseInfo_SQLServerNextValueName_CaseSensitive(t *testing.T) {
+	c := qt.New(t)
+	semantics := resolvedSQLServerSemantics("Latin1_General_CS_AS",
+		[]string{"dbo"}, []string{"things"}, []string{"id"}, []string{"n"}, []string{"S"}, []string{"s"})
+
+	diff := sqlServerCollatedSequenceDefault(c, semantics)
+
+	c.Assert(changedDefaults(diff), qt.DeepEquals, []string{"n"})
 }

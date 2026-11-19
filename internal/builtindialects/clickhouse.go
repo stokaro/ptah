@@ -142,6 +142,10 @@ func clickHouse() descriptor.Dialect {
 		// Comparison: what comparing a declaration with a catalog reads.
 		Comparison: descriptor.Comparison{
 			NullableTypes: true,
+			// ClickHouse stores a default with every operation it groups in
+			// parentheses, 1 + 2 * 3 as 1 + (2 * 3), so a default is compared
+			// as the operations internal/precedence reads.
+			OperatorPrecedence: "clickhouse-operators",
 		},
 
 		// An enum column is an Enum8, or an Enum16 past 127 values.

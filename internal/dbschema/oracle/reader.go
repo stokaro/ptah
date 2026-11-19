@@ -403,6 +403,8 @@ SELECT c.constraint_name,
        NVL(c.delete_rule, ' '),
        c.deferrable,
        c.deferred,
+       c.status,
+       c.validated,
        col.column_name,
        col.position
 FROM all_constraints c
@@ -459,11 +461,13 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 			deleteRule string
 			deferrable string
 			deferred   string
+			status     string
+			validated  string
 			columnName sql.NullString
 			position   sql.NullInt64
 		)
 		if err := rows.Scan(&name, &kind, &desired, &table, &condition, &refName,
-			&deleteRule, &deferrable, &deferred, &columnName, &position); err != nil {
+			&deleteRule, &deferrable, &deferred, &status, &validated, &columnName, &position); err != nil {
 			return nil, nil, err
 		}
 		if carriedOnColumns(desired, kind, deferrable) {
@@ -474,6 +478,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 		if !seen {
 			constraints = append(constraints, r.newConstraint(constraintRow{
 				name:       name,
+				generated:  desired,
 				kind:       kind,
 				table:      table,
 				condition:  condition,
@@ -481,6 +486,8 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 				deleteRule: deleteRule,
 				deferrable: deferrable,
 				deferred:   deferred,
+				status:     status,
+				validated:  validated,
 			}, referenced))
 			at = len(constraints) - 1
 			index[name] = at
@@ -498,6 +505,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 // constraintRow is one ALL_CONSTRAINTS row, before its columns are joined on.
 type constraintRow struct {
 	name       string
+	generated  string
 	kind       string
 	table      string
 	condition  string
@@ -505,6 +513,8 @@ type constraintRow struct {
 	deleteRule string
 	deferrable string
 	deferred   string
+	status     string
+	validated  string
 }
 
 // newConstraint builds the constraint a row describes.
@@ -515,12 +525,27 @@ type constraintRow struct {
 // a table and a column list.
 func (r *Reader) newConstraint(row constraintRow, referenced map[string]referencedKey) catalog.Constraint {
 	constraint := catalog.Constraint{
-		Name:       row.name,
-		TableName:  row.table,
-		Schema:     r.schema,
-		Type:       constraintTypeWord(row.kind),
-		Deferrable: row.deferrable == "DEFERRABLE",
-		Initially:  initiallyWord(row.deferred),
+		Name:          row.name,
+		TableName:     row.table,
+		Schema:        r.schema,
+		Type:          constraintTypeWord(row.kind),
+		Deferrable:    row.deferrable == "DEFERRABLE",
+		Disabled:      row.status == "DISABLED",
+		GeneratedName: row.generated == "GENERATED NAME",
+	}
+	// A CHECK or foreign key enabled NOVALIDATE enforces itself on new rows
+	// and has not checked the rows the table held, as PostgreSQL's NOT VALID
+	// has not. A disabled one is NOT VALIDATED too.
+	if row.kind == "C" || row.kind == "R" {
+		constraint.NotValid = row.validated == "NOT VALIDATED"
+	}
+	// Oracle reports DEFERRED as IMMEDIATE for a constraint that is NOT
+	// DEFERRABLE, and the model leaves Initially empty there. Copied across,
+	// the timing turns into DEFERRABLE INITIALLY IMMEDIATE wherever the read
+	// is written out, as schema inspect writes it, and the file then differs
+	// from the account it was read from by a key it cannot defer.
+	if constraint.Deferrable {
+		constraint.Initially = initiallyWord(row.deferred)
 	}
 	switch row.kind {
 	case "C":

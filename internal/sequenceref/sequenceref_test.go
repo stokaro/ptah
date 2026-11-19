@@ -1,6 +1,7 @@
 package sequenceref_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -185,6 +186,61 @@ func TestCanonical_DistinctNextValues(t *testing.T) {
 			c.Assert(leftFound, qt.IsTrue)
 			c.Assert(rightFound, qt.IsTrue)
 			c.Assert(left, qt.Not(qt.Equals), right)
+		})
+	}
+}
+
+// TestCanonical_Key writes each schema and sequence name as the key Rules.Key
+// answers for it, so a key that folds case reads two spellings of one
+// sequence alike, as SQL Server's default collation reads them. A
+// pseudocolumn is written as it is stored.
+func TestCanonical_Key(t *testing.T) {
+	rows := []struct {
+		name, expression, want string
+		rules                  sequenceref.Rules
+	}{
+		{name: "a clause", expression: "NEXT VALUE FOR [S]", want: `NEXT VALUE FOR "s"`, rules: sqlServer()},
+		{name: "a qualified clause", expression: "NEXT VALUE FOR [DBO].[S]", want: `NEXT VALUE FOR "dbo"."s"`, rules: sqlServer()},
+		{name: "a pseudocolumn", expression: "SEQ.NEXTVAL", want: `"seq"."NEXTVAL"`, rules: oracle()},
+		{name: "the held schema", expression: `"APP"."SEQ"."NEXTVAL"`, want: `"seq"."NEXTVAL"`, rules: oracle()},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			rules := row.rules
+			rules.Key = strings.ToLower
+
+			got, found := sequenceref.Canonical(row.expression, rules, "app")
+
+			c.Assert(found, qt.IsTrue)
+			c.Assert(got, qt.Equals, row.want)
+		})
+	}
+}
+
+// TestNames lists the stored schema and sequence names each reference spells,
+// without a pseudocolumn, which are the names a caller asks its server to
+// key. A string spells no reference, and rules naming neither a pseudocolumn
+// nor a clause read none.
+func TestNames(t *testing.T) {
+	rows := []struct {
+		name, expression string
+		rules            sequenceref.Rules
+		want             []string
+	}{
+		{name: "two clauses", expression: "NEXT VALUE FOR dbo.S + NEXT VALUE FOR [t]", rules: sqlServer(), want: []string{"dbo", "S", "t"}},
+		{name: "a qualified pseudocolumn", expression: "app.seq.NEXTVAL", rules: oracle(), want: []string{"APP", "SEQ"}},
+		{name: "a quoted sequence", expression: `"Seq".nextval`, rules: oracle(), want: []string{"Seq"}},
+		{name: "a string", expression: "'NEXT VALUE FOR s'", rules: sqlServer()},
+		{name: "no rules", expression: "NEXT VALUE FOR s", rules: sequenceref.Rules{Lexing: dialectlexer.Options("postgres")}},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := sequenceref.Names(row.expression, row.rules)
+
+			c.Assert(got, qt.DeepEquals, row.want)
 		})
 	}
 }

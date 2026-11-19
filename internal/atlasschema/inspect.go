@@ -263,7 +263,7 @@ func renderInspectSchema(
 	}
 	// Inspection looks at exactly one state, so its own report is already the
 	// across-states answer.
-	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(excludeReport), opts.ExcludeSources)
+	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(excludeReport), opts.ExcludeSources, atlasfilter.StoredSpellings(excludeReport))
 	// Reported from the SCOPED schema, which is the document the operator
 	// receives. Emitting it before the projection let the note describe a
 	// rendering that selection had already changed -- `--include users` can

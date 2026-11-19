@@ -1,8 +1,9 @@
 // Package precedence reads an SQL expression by an engine's operator
 // precedence and prints the operations it groups, so that two spellings of one
 // expression compare equal. MySQL stores the default (2 * 3 + 1) as
-// ((2 * 3) + 1); read by MySQL's precedence both are 2 * 3 + 1, while
-// (1 + 2) * 3 keeps the parentheses that make it a different expression.
+// ((2 * 3) + 1), and ClickHouse stores 2 * 3 + 1 as (2 * 3) + 1; read by the
+// engine's precedence both are 2 * 3 + 1, while (1 + 2) * 3 keeps the
+// parentheses that make it a different expression.
 //
 // The schema comparison in migration/schemadiff reads an expression default
 // through it where a dialect's descriptor names a precedence
@@ -22,6 +23,12 @@ import (
 // that shares the table names it without an edit here.
 const MySQLOperators = "mysql-operators"
 
+// ClickHouseOperators names the operator table ClickHouse groups an
+// expression by, from the priority its Operators reference page gives each
+// operator, checked against what formatQuerySingleLine prints on ClickHouse
+// 24.10 and 26.10, which agree on every form the table reads.
+const ClickHouseOperators = "clickhouse-operators"
+
 // Canonical returns expression printed as the operations it groups under
 // scheme, and true. The text is a comparison key, not SQL to run: it keeps a
 // parenthesis only where the grouping needs one, puts one space around each
@@ -34,10 +41,11 @@ const MySQLOperators = "mysql-operators"
 //
 // It returns "" and false when scheme names no precedence this package holds,
 // or when expression holds anything outside the operators, literals, names and
-// function calls it reads, such as NOT, IS, IN, CASE, a qualified name or
-// another character set introducer. A caller then compares the expression as
-// written, because reading a construct by the wrong grouping could make two
-// different expressions equal.
+// function calls its table reads, such as IN, CASE, a qualified name or
+// another character set introducer, and on MySQL NOT and IS. A minus before an
+// integer above 9223372036854775807 is not read either. A caller then compares
+// the expression as written, because reading a construct by the wrong grouping
+// could make two different expressions equal.
 func Canonical(expression, scheme string, lexing lexer.Options) (string, bool) {
 	table, known := schemes[scheme]
 	if !known {
@@ -67,6 +75,18 @@ type table struct {
 	binary map[string]int
 	// prefix maps a prefix operator to its precedence.
 	prefix map[string]int
+	// prefixWords maps a prefix operator written as a word, in upper case,
+	// to its precedence. Its operand is every operation that binds tighter.
+	prefixWords map[string]int
+	// postfix maps the words of a postfix operator, in upper case and joined
+	// by one space, to its precedence.
+	postfix map[string]int
+	// calledPrefix holds the prefix words a release of the engine reads as a
+	// function call when a parenthesis follows them: ClickHouse 24.10 reads
+	// NOT (a) IS NULL as (NOT a) IS NULL, and 26.10 as NOT (a IS NULL). The
+	// reader takes such a word before a parenthesis only where the group is
+	// the whole operand, which every release reads alike.
+	calledPrefix map[string]bool
 	// spelling maps an operator synonym to the spelling the key prints.
 	spelling map[string]string
 	// symbols lists the operators written with symbols, longest first, so
@@ -95,6 +115,17 @@ type table struct {
 	// server writes before a string literal of a session that did not write
 	// one. A string written right after one of them is that string.
 	introducers map[string]bool
+	// doubleQuotedNames reports that double quotes delimit a name, not a
+	// string.
+	doubleQuotedNames bool
+	// functionCase reports that the engine tells function names apart by
+	// case, so the key keeps a name as written instead of in lower case.
+	functionCase bool
+	// decimalNumbers reports that the engine stores a number as its decimal
+	// value: ClickHouse writes 010 as 10, 1.50 as 1.5, 1.0 as 1. and -0 as 0,
+	// though not -(0), which is negate over the literal. The key writes a
+	// number that way.
+	decimalNumbers bool
 }
 
 var schemes = map[string]*table{
@@ -159,6 +190,42 @@ var schemes = map[string]*table{
 		// concat(_utf8mb4'a',_utf8mb4'b') for a session in utf8mb4, the
 		// character set Ptah's driver connects with.
 		introducers: wordSet("_utf8mb4"),
+	},
+	// ClickHouse's Operators page lists the operators by priority, and
+	// formatQuerySingleLine prints how a release groups an expression.
+	// ClickHouse 24.10 and 26.10 print 1 + (2 * 3), (a - b) - c,
+	// (1 + 2) > 2, (a = 1) IS NULL, NOT (a IS NULL), NOT (a = 1),
+	// (NOT a) AND b and (a = 1) OR ((b = 2) AND (c = 3)), so NOT binds looser
+	// than IS NULL, which binds looser than the comparisons. Both store a
+	// default as that text. BETWEEN and || are written back as other
+	// expressions, (a >= 1) AND (a <= 3) and concat(a, b), and IN, LIKE, the
+	// lambda arrow and the ternary operator are not read.
+	ClickHouseOperators: {
+		binary: map[string]int{
+			"OR":  1,
+			"AND": 2,
+			"=":   5, "==": 5, "!=": 5, "<>": 5, "<": 5, ">": 5, "<=": 5, ">=": 5,
+			"+": 6, "-": 6,
+			"*": 7, "/": 7, "%": 7,
+		},
+		prefix:       map[string]int{"-": 8},
+		prefixWords:  map[string]int{"NOT": 3},
+		postfix:      map[string]int{"IS NULL": 4, "IS NOT NULL": 4},
+		calledPrefix: wordSet("NOT"),
+		spelling:     map[string]string{"==": "=", "<>": "!="},
+		symbols: []string{
+			"==", "!=", "<>", "<=", ">=",
+			"=", "<", ">", "+", "-", "*", "/", "%",
+		},
+		keywords: wordSet(
+			"AND", "OR", "NOT", "IS", "LIKE", "ILIKE", "IN", "GLOBAL", "BETWEEN",
+			"CASE", "WHEN", "THEN", "ELSE", "END", "INTERVAL", "DIV", "MOD",
+			"AS", "EXISTS", "SELECT", "DISTINCT", "ALL", "ANY", "FROM", "WITH",
+		),
+		literals:          wordSet("NULL", "TRUE", "FALSE"),
+		doubleQuotedNames: true,
+		functionCase:      true,
+		decimalNumbers:    true,
 	},
 }
 
@@ -243,6 +310,11 @@ func (r *tokens) add(tok lexer.Token) bool {
 	case lexer.TokenWhitespace, lexer.TokenComment:
 		return true
 	case lexer.TokenString:
+		if r.table.doubleQuotedNames && strings.HasPrefix(tok.Value, `"`) {
+			name, ok := lexer.StringValue(tok.Value, r.lexing)
+			r.list = append(r.list, token{kind: kindName, text: name})
+			return ok
+		}
 		literal, ok := stringLiteral(tok, r.lexing)
 		if !ok {
 			return false
@@ -255,6 +327,9 @@ func (r *tokens) add(tok lexer.Token) bool {
 		return true
 	case lexer.TokenIdentifier:
 		next, ok := identifierToken(tok.Value)
+		if ok && next.kind == kindLiteral && r.table.decimalNumbers {
+			next.text = decimalNumber(next.text)
+		}
 		r.list = append(r.list, next)
 		r.wordEnd = tok.End
 		return ok
@@ -329,6 +404,21 @@ func identifierToken(value string) (token, bool) {
 	}
 }
 
+// decimalNumber writes the number value, which [isNumber] accepts, as its
+// decimal value: no leading zero before another digit, and no trailing zero
+// after the decimal point, which stays where value has one.
+func decimalNumber(value string) string {
+	whole, fraction, point := strings.Cut(value, ".")
+	whole = strings.TrimLeft(whole, "0")
+	if whole == "" {
+		whole = "0"
+	}
+	if !point {
+		return whole
+	}
+	return whole + "." + strings.TrimRight(fraction, "0")
+}
+
 // isNumber reports whether value is digits with at most one decimal point.
 func isNumber(value string) bool {
 	whole, fraction, _ := strings.Cut(value, ".")
@@ -376,11 +466,24 @@ func (r *reader) peek() (token, bool) {
 // expression reads operations whose operators bind at least as tightly as
 // minimum, and returns their text and the precedence of the outermost one.
 func (r *reader) expression(minimum int) (text string, precedence int, ok bool) {
-	text, precedence, ok = r.unary()
+	return r.operations(minimum, minimum)
+}
+
+// operations is [reader.expression] whose first operand is read as the
+// operand of an operator that needs at least first: the operand of a prefix
+// word may open with that word again, as NOT NOT a does.
+func (r *reader) operations(minimum, first int) (text string, precedence int, ok bool) {
+	text, precedence, ok = r.unary(first)
 	if !ok {
 		return "", 0, false
 	}
 	for {
+		if operator, bound, words := r.postfix(); words > 0 && bound >= minimum {
+			r.pos += words
+			text = enclose(text, precedence, bound) + " " + operator
+			precedence = bound
+			continue
+		}
 		operator, bound, found := r.binary()
 		if !found || bound < minimum {
 			return text, precedence, true
@@ -419,22 +522,110 @@ func (r *reader) binary() (operator string, precedence int, found bool) {
 	return operator, precedence, found
 }
 
-// unary reads a prefix operator and its operand, or an atom.
-func (r *reader) unary() (text string, precedence int, ok bool) {
+// postfix returns the postfix operator whose words start at the reader's
+// position, its precedence and how many words it spans, without consuming
+// it, and 0 words where none starts there.
+func (r *reader) postfix() (operator string, precedence, words int) {
+	var spelled []string
+	for index := r.pos; index < len(r.tokens) && len(spelled) < 3; index++ {
+		tok := r.tokens[index]
+		if tok.kind != kindWord && (tok.kind != kindLiteral || !r.table.literals[strings.ToUpper(tok.text)]) {
+			break
+		}
+		spelled = append(spelled, strings.ToUpper(tok.text))
+		if bound, found := r.table.postfix[strings.Join(spelled, " ")]; found {
+			operator, precedence, words = strings.Join(spelled, " "), bound, len(spelled)
+		}
+	}
+	return operator, precedence, words
+}
+
+// unary reads a prefix operator and its operand, or an atom, as the operand
+// of an operator that needs at least minimum.
+func (r *reader) unary(minimum int) (text string, precedence int, ok bool) {
 	tok, more := r.peek()
 	if !more {
 		return "", 0, false
+	}
+	if tok.kind == kindWord {
+		if bound, isPrefix := r.table.prefixWords[strings.ToUpper(tok.text)]; isPrefix {
+			return r.prefixWord(strings.ToUpper(tok.text), bound, minimum)
+		}
 	}
 	bound, isPrefix := r.table.prefix[tok.text]
 	if tok.kind != kindSymbol || !isPrefix {
 		return r.atom()
 	}
 	r.pos++
-	operand, operandBound, ok := r.unary()
+	// ClickHouse folds a minus written right before a number into the
+	// literal, and reads one before anything else, a group included, as
+	// negate: -0 is the UInt8 literal 0, while -(0) and - -0 are negate(0),
+	// an Int16 that makes -(0) + 18446744073709551614 an Int64 -2.
+	next, _ := r.peek()
+	folded := next.kind == kindLiteral
+	operand, operandBound, ok := r.unary(bound)
 	if !ok {
 		return "", 0, false
 	}
+	if tok.text == "-" && folded && operand == "0" && r.table.decimalNumbers {
+		return operand, atomPrecedence, true
+	}
+	if tok.text == "-" && aboveInt64(operand) {
+		return "", 0, false
+	}
 	return tok.text + enclose(operand, operandBound, bound), bound, true
+}
+
+// aboveInt64 reports whether text is an integer literal above
+// 9223372036854775807, counting one written with more digits than that as
+// above it. A minus written right before such a literal and one written before
+// a group around it read differently: ClickHouse 24.10 and 26.10 fold
+// -18446744073709551615 into one Float64 literal, -18446744073709552000, and
+// read -(18446744073709551615) as negate over the UInt64, which wraps to 1.
+// One key for both spellings would make the two defaults equal, so neither is
+// read and the caller compares them as written.
+func aboveInt64(text string) bool {
+	if text == "" || !allDigits(text) {
+		return false
+	}
+	const largest = "9223372036854775807"
+	return len(text) > len(largest) || len(text) == len(largest) && text > largest
+}
+
+// prefixWord reads the operand of the prefix word operator, whose precedence
+// is bound, and which the reader is at. An operator that needs more than
+// bound cannot take it as an operand without a parenthesis, so the reading
+// stops there rather than guess how the engine groups it. Before a
+// parenthesis, a word of [table.calledPrefix] is read only where the group is
+// its whole operand.
+func (r *reader) prefixWord(word string, bound, minimum int) (text string, precedence int, ok bool) {
+	if minimum > bound {
+		return "", 0, false
+	}
+	r.pos++
+	next, more := r.peek()
+	if more && next.kind == kindOpen && r.table.calledPrefix[word] {
+		group, groupBound, ok := r.atom()
+		if !ok || r.bindsTighter(bound) {
+			return "", 0, false
+		}
+		return word + " " + enclose(group, groupBound, bound+1), bound, true
+	}
+	operand, operandBound, ok := r.operations(bound+1, bound)
+	if !ok {
+		return "", 0, false
+	}
+	return word + " " + enclose(operand, operandBound, bound+1), bound, true
+}
+
+// bindsTighter reports whether the operator at the reader's position binds
+// tighter than bound.
+func (r *reader) bindsTighter(bound int) bool {
+	if _, precedence, words := r.postfix(); words > 0 {
+		return precedence > bound
+	}
+	_, precedence, found := r.binary()
+	return found && precedence > bound
 }
 
 // atom reads a literal, a name, a function call or a parenthesized group.
@@ -483,6 +674,9 @@ func (r *reader) word(word string) (text string, precedence int, ok bool) {
 		return "", 0, false
 	case !opens:
 		return quoteName(word), atomPrecedence, true
+	}
+	if r.table.functionCase {
+		return r.call(word)
 	}
 	return r.call(strings.ToLower(word))
 }
