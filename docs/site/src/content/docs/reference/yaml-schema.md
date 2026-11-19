@@ -325,7 +325,9 @@ author order. Top-level maps render deterministically by sorted key.
 | `platform` / `overrides` | Dialect-specific overrides. |
 
 An explicit `default: ""` declares an empty string literal. Omitting `default`
-or setting it to YAML `null` declares no literal default.
+or setting it to YAML `null` declares no literal default. On a text column a
+literal default is a string: `default: now()` stores the five characters, and a
+column whose default is the call `now()` is changed to the string.
 
 If `enum` is provided and `type` is empty or `ENUM`, Ptah creates a generated
 enum type name and uses that type for the column.

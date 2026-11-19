@@ -99,6 +99,35 @@ func RenderEscaped(value string, quote func(string) string) string {
 	return quote(value)
 }
 
+// StoresText reports whether a column type holds characters, in any dialect's
+// spelling: a char, text, clob or string type, or a MySQL ENUM or SET. A
+// literal default on such a column is a string, which every renderer writes in
+// quotes and every catalog reports in quotes.
+func StoresText(columnType string) bool {
+	name := strings.ToLower(columnType)
+	return strings.Contains(name, "char") || strings.Contains(name, "text") ||
+		strings.Contains(name, "clob") || strings.Contains(name, "string") ||
+		strings.HasPrefix(name, "enum(") || strings.HasPrefix(name, "set(")
+}
+
+// AsRead returns a literal default the way a catalog reports it for a column of
+// columnType. On a column that [StoresText], a value not already written as a
+// literal is quoted, each quote inside it doubled, so the bare `x` a struct tag
+// declares reads as the `'x'` the catalog holds, and stays a different default
+// from an expression spelled `x`. A value already written as a literal is
+// returned trimmed, the way [Render] passes it through. On any other column the
+// value is returned as written.
+func AsRead(columnType, value string) string {
+	if !StoresText(columnType) {
+		return value
+	}
+	trimmed := strings.TrimSpace(value)
+	if IsSQLLiteral(trimmed) {
+		return trimmed
+	}
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
 // Typed returns value ready to follow `DEFAULT` in the form the column's own
 // type takes, which for a number or a boolean is no quotes at all, and quotes
 // any other value with quote unless it is already a literal.

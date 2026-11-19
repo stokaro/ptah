@@ -14,7 +14,9 @@ import (
 // A string default and an expression default are different defaults on a text
 // column, even where the expression's text is the string's characters: one
 // inserts `1 + 2`, the other inserts 3. A quoted literal differs from an
-// expression the catalog reports, and an expression from a quoted string.
+// expression the catalog reports, and an expression from a quoted string. A
+// literal a struct tag or a YAML document declares without quotes is a string
+// too, so it differs from an expression spelled with the same characters.
 func TestColumns_AStringDefaultIsNoExpression(t *testing.T) {
 	rows := []struct {
 		name, dialect, columnType string
@@ -58,6 +60,21 @@ func TestColumns_AStringDefaultIsNoExpression(t *testing.T) {
 			want: map[string]string{"default_expr": "(uuid()) -> 'uuid()'"},
 		},
 		{
+			name: "MySQL, a bare literal against the expression", dialect: platform.MySQL, columnType: "varchar(30)",
+			literal: "1 + 2", reported: "(1 + 2)",
+			want: map[string]string{"default_expr": "(1 + 2) -> 1 + 2"},
+		},
+		{
+			name: "MySQL, a bare literal against the expression it spells", dialect: platform.MySQL, columnType: "varchar(30)",
+			literal: "(1 + 2)", reported: "(1 + 2)",
+			want: map[string]string{"default_expr": "(1 + 2) -> (1 + 2)"},
+		},
+		{
+			name: "MySQL, a bare literal against a call", dialect: platform.MySQL, columnType: "varchar(30)",
+			literal: "now()", reported: "(now())",
+			want: map[string]string{"default_expr": "(now()) -> now()"},
+		},
+		{
 			name: "MySQL, an expression that is a string against the expression", dialect: platform.MySQL, columnType: "varchar(30)",
 			expression: "('1 + 2')", reported: "(1 + 2)",
 			want: map[string]string{"default_expr": "(1 + 2) -> ('1 + 2')"},
@@ -71,6 +88,16 @@ func TestColumns_AStringDefaultIsNoExpression(t *testing.T) {
 			name: "MariaDB, a declared string against the expression", dialect: platform.MariaDB, columnType: "varchar(30)",
 			literal: "'1 + 2'", reported: "1 + 2",
 			want: map[string]string{"default_expr": "1 + 2 -> '1 + 2'"},
+		},
+		{
+			name: "MariaDB, a bare literal against the expression", dialect: platform.MariaDB, columnType: "varchar(30)",
+			literal: "1 + 2", reported: "1 + 2",
+			want: map[string]string{"default_expr": "1 + 2 -> 1 + 2"},
+		},
+		{
+			name: "PostgreSQL, a bare literal against the call it spells", dialect: platform.Postgres, columnType: "varchar(30)",
+			literal: "now()", reported: "now()",
+			want: map[string]string{"default_expr": "now() -> now()"},
 		},
 		{
 			name: "PostgreSQL, a call as a string", dialect: platform.Postgres, columnType: "text",
@@ -87,6 +114,11 @@ func TestColumns_AStringDefaultIsNoExpression(t *testing.T) {
 			expression: "(1 + 2)", reported: "'1 + 2'",
 			want: map[string]string{"default": "'1 + 2' -> (1 + 2)"},
 		},
+		{
+			name: "SQLite, a bare literal against the expression it spells", dialect: platform.SQLite, columnType: "TEXT",
+			literal: "(1 + 2)", reported: "(1 + 2)",
+			want: map[string]string{"default_expr": "(1 + 2) -> (1 + 2)"},
+		},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -101,10 +133,10 @@ func TestColumns_AStringDefaultIsNoExpression(t *testing.T) {
 	}
 }
 
-// A string compared with a string, a number with a number, a literal a model
-// writes without quotes, and a column that does not store text are compared
-// as before: the quotes and the casts a catalog adds are its spelling of the
-// same default.
+// A string compared with a string, a number with a number, and a column that
+// does not store text are compared as values: the quotes and the casts a
+// catalog adds are its spelling of the same default. A literal a model declares
+// without quotes is that string, and the catalog a model makes holds it quoted.
 func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 	rows := []struct {
 		name, dialect, columnType string
@@ -114,8 +146,10 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 	}{
 		{name: "MySQL, a quoted literal", dialect: platform.MySQL, columnType: "varchar(30)", literal: "'1 + 2'", reported: "'1 + 2'"},
 		{name: "MySQL, an unquoted literal", dialect: platform.MySQL, columnType: "varchar(30)", literal: "abc", reported: "'abc'"},
-		{name: "an unquoted literal against the catalog a model makes", dialect: platform.MySQL, columnType: "varchar(16)", literal: "x", reported: "x"},
-		{name: "an unquoted literal with a space against the catalog a model makes", dialect: platform.Postgres, columnType: "text", literal: "a b", reported: "a b"},
+		{name: "an unquoted literal against the catalog a model makes", dialect: platform.MySQL, columnType: "varchar(16)", literal: "x", reported: "'x'"},
+		{name: "an unquoted literal with a space against the catalog a model makes", dialect: platform.Postgres, columnType: "text", literal: "a b", reported: "'a b'"},
+		{name: "an unquoted literal with a quote against a catalog", dialect: platform.Postgres, columnType: "text", literal: "it's", reported: "'it''s'::text"},
+		{name: "an empty literal against a catalog", dialect: platform.MySQL, columnType: "varchar(16)", literal: "", set: true, reported: "''"},
 		{name: "MySQL, an expression against itself", dialect: platform.MySQL, columnType: "varchar(30)", expression: "(1 + 2)", reported: "(1 + 2)"},
 		{name: "PostgreSQL, a cast literal", dialect: platform.Postgres, columnType: "varchar(30)", literal: "'a'", reported: "'a'::character varying"},
 		{name: "PostgreSQL, an expression that is a string", dialect: platform.Postgres, columnType: "text", expression: "('a')", reported: "'a'::text"},

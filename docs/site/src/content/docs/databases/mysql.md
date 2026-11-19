@@ -177,6 +177,8 @@ SQL:
   either direction, and the same holds for `'now()'` and `(now())`. MySQL
   reports both of those as `now()` and tells them apart by
   `DEFAULT_GENERATED` in `EXTRA`, and `db read` writes the string in quotes.
+  A `default` in a Go struct or a YAML schema is such a string, so
+  `default="1 + 2"` against a column that holds `(1 + 2)` changes it too.
 - `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
   MariaDB type. Both engines take one auto-increment column per table, and only

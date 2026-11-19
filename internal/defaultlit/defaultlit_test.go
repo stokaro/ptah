@@ -159,3 +159,56 @@ func TestRender_ABackslashEscapesNothing(t *testing.T) {
 
 	c.Assert(defaultlit.Render(`'it\'s'`, quote), qt.Equals, `'''it\''s'''`)
 }
+
+func TestStoresText(t *testing.T) {
+	tests := []struct {
+		name       string
+		columnType string
+		want       bool
+	}{
+		{name: "a varchar", columnType: "varchar(30)", want: true},
+		{name: "the long spelling", columnType: "character varying(30)", want: true},
+		{name: "a text type in capitals", columnType: "TEXT", want: true},
+		{name: "an Oracle CLOB", columnType: "CLOB", want: true},
+		{name: "a ClickHouse String", columnType: "String", want: true},
+		{name: "a MySQL ENUM", columnType: "enum('a','b')", want: true},
+		{name: "a MySQL SET", columnType: "set('a','b')", want: true},
+		{name: "an integer", columnType: "integer", want: false},
+		{name: "a timestamp", columnType: "timestamp", want: false},
+		{name: "a jsonb", columnType: "jsonb", want: false},
+		{name: "a varbinary", columnType: "varbinary(16)", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(defaultlit.StoresText(tt.columnType), qt.Equals, tt.want)
+		})
+	}
+}
+
+// AsRead writes a literal the way a catalog reports it, so a bare value a
+// struct tag declares on a text column reads as a string and not as an
+// expression with the same characters.
+func TestAsRead(t *testing.T) {
+	tests := []struct {
+		name, columnType, value string
+		want                    string
+	}{
+		{name: "a bare value on a varchar", columnType: "varchar(30)", value: "1 + 2", want: "'1 + 2'"},
+		{name: "a call on a text column", columnType: "text", value: "now()", want: "'now()'"},
+		{name: "a quote inside the value", columnType: "text", value: "it's", want: "'it''s'"},
+		{name: "spaces around the value", columnType: "text", value: " a ", want: "' a '"},
+		{name: "an empty value", columnType: "varchar(8)", value: "", want: "''"},
+		{name: "a literal the SQL parser kept", columnType: "varchar(30)", value: "'x'", want: "'x'"},
+		{name: "a literal with a cast", columnType: "text", value: "'x'::text", want: "'x'::text"},
+		{name: "a value on an enum", columnType: "enum('a','b')", value: "a", want: "'a'"},
+		{name: "a number on an integer", columnType: "integer", value: "7", want: "7"},
+		{name: "a date on a date column", columnType: "date", value: "2020-01-01", want: "2020-01-01"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(defaultlit.AsRead(tt.columnType, tt.value), qt.Equals, tt.want)
+		})
+	}
+}

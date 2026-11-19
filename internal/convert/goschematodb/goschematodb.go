@@ -24,6 +24,7 @@ import (
 	"ptah.run/internal/columnkey"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/convert/features"
+	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/objectowner"
 	"ptah.run/internal/routineargs"
 	"ptah.run/internal/schemaprep"
@@ -364,7 +365,11 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		IdentityIncrement: field.IdentityIncrement,
 	}
 	if field.DefaultSet {
-		column.ColumnDefault = new(field.Default)
+		// A literal is held as a catalog reports it ([defaultlit.AsRead]): the
+		// bare `x` a struct tag declares on a text column is the string `'x'`.
+		// Held bare, a description of the literal `1 + 2` reads like the
+		// expression `(1 + 2)`, and a comparison takes the two for one default.
+		column.ColumnDefault = new(defaultlit.AsRead(field.Type, field.Default))
 	} else if field.DefaultExpr != "" {
 		column.ColumnDefault = new(field.DefaultExpr)
 	}
