@@ -5746,6 +5746,28 @@ read results are discarded. Preparation inside a transaction validates existing
 storage and refuses to create it. Published-module adoption and official-engine
 qualification remain required under #4204.
 
+### Provider record of repeatable migrations
+
+`DatabaseConnection.RepeatableStore` selects the record of repeatable
+migrations a provider keeps. SQL-backed connections return nil and keep the
+record in their own table. A provider session that does not negotiate
+`sessions.repeatable-record` for its engine refuses with
+`ptaherr.ErrUnsupportedFeature`, and the error names the provider, the engine
+and the feature. A store an execution handle returns writes only completions,
+inside that handle's transaction; every other operation runs on the session.
+
+`RepeatableRow` carries one identity's stored facts and `RepeatableSnapshot`
+the whole record, with `Exists` false when the record has no storage yet.
+Reading creates nothing; `Prepare` creates the storage or validates it.
+`RepeatableClaim`, `RepeatableCompletion` and `RepeatableFailure` are the
+writes the common migrator makes; each changes one row or nothing. A write that
+meets another row than the one it expected returns `*RepeatableConflictError`,
+which names the run that holds the row, and changed nothing. `Remove` reports
+whether it deleted a row. No store retries an uncertain write: the migrator
+settles it by reading the row back. `MaxBodyBytes` is the longest content a
+completion carries, and the migrator refuses a longer file before anything
+runs, with `migration/migrator.RepeatableBodyTooLongError`.
+
 ### Provider-owned storage reservations
 
 `catalog.Database.ReservedNames` records positively identified operational

@@ -97,13 +97,14 @@ Ptah starts a provider only when it offers these services, and every provider ha
 
 ### Sessions, execution and locks
 
-Transactions, revision storage, the migration log and locks back the migration commands and `ptah schema apply`.
+Transactions, revision storage, the migration log, the record of repeatable migrations and locks back the migration commands and `ptah schema apply`.
 
 | Feature | Service | README section | ADR |
 | --- | --- | --- | --- |
 | `sessions.transactions` | `Transactions` | [Session transactions](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#session-transactions) | — |
 | `sessions.history` | `History` | [Revision storage](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#revision-storage) | — |
 | `sessions.migration-metadata` | `Metadata` | [Migration logs and tags](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#migration-logs-and-tags) | — |
+| `sessions.repeatable-record` | `Repeatables` | [Repeatable migration record](https://github.com/stokaro/ptah/blob/provider-sdk/v0.43.0/provider-sdk/README.md#repeatable-migration-record) | 0125 |
 | `sessions.locks` | `Locks` | [Session-owned locks](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#session-owned-locks) | — |
 | `sessions.statements` | `Statements` | [Operator statements](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#operator-statements) | 0038 |
 | `sessions.typed-arguments` | — | [Typed arguments](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#typed-arguments) | 0058 |

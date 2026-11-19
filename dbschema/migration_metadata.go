@@ -28,6 +28,9 @@ type MigrationLogRecord struct {
 	Checksum    string
 	At          time.Time
 	Error       string
+	// Repeatable is the identity of the repeatable migration the event is
+	// about, with Version 0; empty for an event about a version.
+	Repeatable string
 }
 
 // MigrationTagRecord is a movable directory-state label, not a revision row.

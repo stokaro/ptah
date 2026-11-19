@@ -138,6 +138,10 @@ var hostFeatures = []string{
 	// --rotate-secret; see target.planningPolicy and writtenRequests.
 	provider.PlanningPolicyFeature,
 	provider.PlanningStatementStyleFeature,
+	// The migrator keeps the record of repeatable migrations, and the
+	// identity a log entry about one carries, in a provider's store; see
+	// session.RepeatableStore.
+	provider.RepeatableRecordFeature,
 	// Lifecycle operations may surround common changes; see commonPlanner.schedule.
 	provider.PlanningLifecycleFeature,
 	// A planning service that owns the tables of its engine without a table

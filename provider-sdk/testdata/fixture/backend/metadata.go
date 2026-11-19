@@ -21,7 +21,8 @@ func metadataDDL(table string, kind protocol.MetadataScope_Kind) string {
 		return "CREATE TABLE " + table + " (tag VARCHAR(255) NOT NULL PRIMARY KEY, version BIGINT NOT NULL, recorded_at TIMESTAMP NOT NULL)"
 	}
 	return "CREATE TABLE " + table + " (run_id VARCHAR(64) NOT NULL, seq BIGINT NOT NULL, operation VARCHAR(32) NOT NULL, version BIGINT NOT NULL, state VARCHAR(32) NOT NULL, " +
-		"actor VARCHAR(256) NULL, actor_source VARCHAR(32) NOT NULL, checksum VARCHAR(64) NULL, logged_at TIMESTAMP NOT NULL, error TEXT NULL, PRIMARY KEY (run_id, seq))"
+		"actor VARCHAR(256) NULL, actor_source VARCHAR(32) NOT NULL, checksum VARCHAR(64) NULL, logged_at TIMESTAMP NOT NULL, error TEXT NULL, " +
+		"repeatable VARCHAR(255) NULL, PRIMARY KEY (run_id, seq))"
 }
 func metadataTable(scope *protocol.MetadataScope) (string, error) {
 	if scope.GetSchema() != "" && scope.GetSchema() != "main" {
@@ -200,8 +201,9 @@ func mutateMetadata(ctx context.Context, runner historyRunner, table string, req
 	switch mutation := request.Mutation.(type) {
 	case *protocol.MutateMetadataRequest_AppendLog:
 		row := mutation.AppendLog
-		_, err := runner.ExecContext(ctx, "INSERT INTO "+table+" (run_id,seq,operation,version,state,actor,actor_source,checksum,logged_at,error) VALUES (?,?,?,?,?,?,?,?,?,?)",
-			row.RunId, row.Sequence, row.Operation, row.Version, row.State, row.Actor, row.ActorSource, row.Checksum, time.Unix(row.AtSeconds, int64(row.AtNanos)).UTC().Format(time.RFC3339Nano), row.Error)
+		_, err := runner.ExecContext(ctx, "INSERT INTO "+table+" (run_id,seq,operation,version,state,actor,actor_source,checksum,logged_at,error,repeatable) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+			row.RunId, row.Sequence, row.Operation, row.Version, row.State, row.Actor, row.ActorSource, row.Checksum, time.Unix(row.AtSeconds, int64(row.AtNanos)).UTC().Format(time.RFC3339Nano), row.Error,
+			row.Repeatable)
 		return false, err
 	case *protocol.MutateMetadataRequest_PutTag:
 		row := mutation.PutTag

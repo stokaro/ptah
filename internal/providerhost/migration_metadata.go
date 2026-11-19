@@ -160,7 +160,7 @@ func metadataWireLog(row dbschema.MigrationLogRecord) (*protocol.MigrationLogRec
 		return nil, err
 	}
 	result := &protocol.MigrationLogRecord{RunId: row.RunID, Sequence: row.Seq, Operation: row.Operation, Version: row.Version, State: row.State,
-		Actor: row.Actor, ActorSource: row.ActorSource, Checksum: row.Checksum, AtSeconds: seconds, AtNanos: nanos, Error: row.Error}
+		Actor: row.Actor, ActorSource: row.ActorSource, Checksum: row.Checksum, AtSeconds: seconds, AtNanos: nanos, Error: row.Error, Repeatable: row.Repeatable}
 	return result, provider.ValidateMigrationLogRecord(result)
 }
 func metadataWireTag(row dbschema.MigrationTagRecord) (*protocol.MigrationTagRecord, error) {
@@ -173,7 +173,8 @@ func metadataWireTag(row dbschema.MigrationTagRecord) (*protocol.MigrationTagRec
 }
 func metadataLog(row *protocol.MigrationLogRecord) dbschema.MigrationLogRecord {
 	return dbschema.MigrationLogRecord{RunID: row.GetRunId(), Seq: row.GetSequence(), Operation: row.GetOperation(), Version: row.GetVersion(), State: row.GetState(),
-		Actor: row.GetActor(), ActorSource: row.GetActorSource(), Checksum: row.GetChecksum(), At: time.Unix(row.GetAtSeconds(), int64(row.GetAtNanos())).UTC(), Error: row.GetError()}
+		Actor: row.GetActor(), ActorSource: row.GetActorSource(), Checksum: row.GetChecksum(), At: time.Unix(row.GetAtSeconds(), int64(row.GetAtNanos())).UTC(), Error: row.GetError(),
+		Repeatable: row.GetRepeatable()}
 }
 func metadataTag(row *protocol.MigrationTagRecord) dbschema.MigrationTagRecord {
 	return dbschema.MigrationTagRecord{Name: row.GetName(), Version: row.GetVersion(), RecordedAt: time.Unix(row.GetRecordedAtSeconds(), int64(row.GetRecordedAtNanos())).UTC()}

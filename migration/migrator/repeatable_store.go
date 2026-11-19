@@ -74,6 +74,12 @@ func (m *Migrator) repeatableIdentity() string {
 // another role owns is refused before it is read, as the revision table is,
 // because a SELECT on it can run what its owner attached to it.
 func (m *Migrator) readRepeatableRows(ctx context.Context) (map[string]repeatableRow, error) {
+	if store, err := m.conn.RepeatableStore(); err != nil || store != nil {
+		if err != nil {
+			return nil, err
+		}
+		return m.readProviderRepeatables(ctx, store)
+	}
 	rows := make(map[string]repeatableRow)
 	name := m.repeatableTableName()
 	exists, err := m.metadataTableExists(ctx, name)
@@ -143,6 +149,15 @@ func (m *Migrator) scanRepeatableRow(scanner rowScanner) (repeatableRow, error) 
 // The template takes {table}, {engine} and {object}, the literal SQL Server's
 // existence guard reads.
 func (m *Migrator) ensureRepeatableTable(ctx context.Context) error {
+	if store, err := m.conn.RepeatableStore(); err != nil || store != nil {
+		if err != nil {
+			return err
+		}
+		if err := store.Prepare(ctx, m.providerRepeatableTable()); err != nil {
+			return fmt.Errorf("failed to create the repeatable migration record: %w", err)
+		}
+		return nil
+	}
 	ddl := expandTableStatement(
 		m.revisionTable().CreateRepeatables,
 		m.repeatableTable(),
@@ -166,6 +181,12 @@ func (m *Migrator) ensureRepeatableTable(ctx context.Context) error {
 // a body is kept is the row's hasBody, never these bytes, so an empty body
 // reads as kept whatever slice the driver returns for it.
 func (m *Migrator) readRepeatableBody(ctx context.Context, identity string) ([]byte, error) {
+	if store, err := m.conn.RepeatableStore(); err != nil || store != nil {
+		if err != nil {
+			return nil, err
+		}
+		return m.readProviderRepeatableBody(ctx, store, identity)
+	}
 	query := sqlutil.Rebind(m.connectionDialect(), "SELECT body FROM "+m.repeatableTable()+" WHERE "+m.repeatableIdentity()+" = ?")
 	var body []byte
 	if err := m.conn.QueryRowContext(ctx, query, identity).Scan(&body); err != nil {
@@ -212,6 +233,12 @@ func (m *Migrator) markRepeatableAttempt(ctx context.Context, attempt repeatable
 // it lost, so there the row is updated by its key alone and nothing decides
 // between two runs that read the same record.
 func (m *Migrator) writeRepeatableAttempt(ctx context.Context, attempt repeatableAttempt) error {
+	if store, err := m.conn.RepeatableStore(); err != nil || store != nil {
+		if err != nil {
+			return err
+		}
+		return m.claimProviderRepeatable(ctx, store, attempt)
+	}
 	repeatable := attempt.repeatable
 	dialect := m.connectionDialect()
 	now := nativeRevisionTimestamp(time.Now())
@@ -271,6 +298,12 @@ func (m *Migrator) settleRepeatableClaim(ctx context.Context, identity string, c
 // repeatableRowRunID reads the run ID of the record's row for identity, and
 // whether there is one.
 func (m *Migrator) repeatableRowRunID(ctx context.Context, identity string) (string, bool, error) {
+	if store, err := m.conn.RepeatableStore(); err != nil || store != nil {
+		if err != nil {
+			return "", false, err
+		}
+		return m.providerRepeatableRunID(ctx, store, identity)
+	}
 	query := sqlutil.Rebind(m.connectionDialect(),
 		"SELECT run_id FROM "+m.repeatableTable()+" WHERE "+m.repeatableIdentity()+" = ?")
 	var runID sql.NullString
@@ -294,6 +327,12 @@ func (m *Migrator) completeRepeatableOn(
 	conn *dbschema.DatabaseConnection,
 	repeatable *repeatableMigration,
 ) error {
+	if store, err := conn.RepeatableStore(); err != nil || store != nil {
+		if err != nil {
+			return err
+		}
+		return m.completeProviderRepeatable(ctx, store, repeatable)
+	}
 	query, args := m.repeatableCompletion(repeatable)
 	return executeSQLOn(ctx, conn, sqlutil.Rebind(m.connectionDialect(), query), args...)
 }
@@ -328,6 +367,12 @@ func (m *Migrator) refuseRepeatablesOverQuerySize(
 	state *repeatableState,
 	work []RepeatableWork,
 ) error {
+	if store, err := m.conn.RepeatableStore(); err != nil || store != nil {
+		if err != nil {
+			return err
+		}
+		return refuseRepeatablesOverBodyLimit(store, state, work)
+	}
 	table := m.revisionTable()
 	if table.QuerySizeLimit == "" || len(work) == 0 {
 		return nil
@@ -390,6 +435,12 @@ func inlinedLiteralLength(value string) int {
 func (m *Migrator) failRepeatable(ctx context.Context, repeatable *repeatableMigration, failure error) error {
 	durable, cancel := durableRevisionWriteContext(ctx)
 	defer cancel()
+	if store, err := m.conn.RepeatableStore(); err != nil || store != nil {
+		if err != nil {
+			return err
+		}
+		return m.failProviderRepeatable(durable, store, repeatable, failure)
+	}
 	query := m.repeatableUpdate("state = ?, error = ?", "")
 	return executeSQLOn(durable, m.conn, sqlutil.Rebind(m.connectionDialect(), query),
 		RepeatableStateFailed, failure.Error(), repeatable.identity)

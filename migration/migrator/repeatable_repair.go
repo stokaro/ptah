@@ -84,6 +84,27 @@ func (m *Migrator) RemoveRepeatableRecord(
 	return removed, nil
 }
 
+// deleteRepeatableRow deletes the record's row of identity. On a provider a
+// removal that found no row is an error, as the row was read under the same
+// lock a moment before.
+func (m *Migrator) deleteRepeatableRow(ctx context.Context, identity string) error {
+	if store, err := m.conn.RepeatableStore(); err != nil || store != nil {
+		if err != nil {
+			return err
+		}
+		removed, err := store.Remove(ctx, m.providerRepeatableTable(), identity)
+		if err != nil {
+			return err
+		}
+		if !removed {
+			return fmt.Errorf("%w: the record holds no row for it", ErrRepeatableNotRecorded)
+		}
+		return nil
+	}
+	query := "DELETE FROM " + m.repeatableTable() + " WHERE " + m.repeatableIdentity() + " = ?"
+	return executeSQLOn(ctx, m.conn, sqlutil.Rebind(m.connectionDialect(), query), identity)
+}
+
 func (m *Migrator) removeRepeatableRecordLocked(
 	ctx context.Context,
 	opts RemoveRepeatableRecordOptions,
@@ -116,8 +137,7 @@ func (m *Migrator) removeRepeatableRecordLocked(
 	if repeatable != nil {
 		record = state.record(repeatable)
 	}
-	query := "DELETE FROM " + m.repeatableTable() + " WHERE " + m.repeatableIdentity() + " = ?"
-	if err := executeSQLOn(ctx, m.conn, sqlutil.Rebind(m.connectionDialect(), query), opts.Identity); err != nil {
+	if err := m.deleteRepeatableRow(ctx, opts.Identity); err != nil {
 		return nil, fmt.Errorf("failed to delete the row of repeatable migration %s: %w", opts.Identity, err)
 	}
 	m.logger.Info("Removed a repeatable migration record", "identity", opts.Identity, "table", m.repeatableTable(),

@@ -54,20 +54,19 @@ func (m *Migrator) readRepeatableState(ctx context.Context) (*repeatableState, e
 //
 // An engine is refused when its descriptor states no record table, which is
 // how an engine on which the path is not measured leaves it out. A connection
-// through a provider session is refused because the record is a table read and
-// written with SQL, which such a session does not expose; a history store that
-// fails to open is that kind of connection too. The revision format is not a
-// reason: the record is a table of its own beside the revision table, named
-// after it, so under the Atlas-compatible format it sits beside
-// atlas_schema_revisions and the revision table keeps the shape that contract
-// defines.
+// through a provider session keeps the record in the provider's store, and is
+// refused when the provider keeps none for the engine; the refusal names the
+// provider and the feature it does not list. A history store that fails to
+// open is that kind of connection too. The revision format is not a reason:
+// the record is a table of its own beside the revision table, named after it,
+// so under the Atlas-compatible format it sits beside atlas_schema_revisions
+// and the revision table keeps the shape that contract defines.
 func (m *Migrator) refuseRepeatablesHere() error {
 	if store, err := m.conn.HistoryStore(); err != nil || store != nil {
-		return &RepeatableMigrationsUnsupportedError{
-			Dialect: m.connectionDialect(),
-			Reason: "this connection reaches the database through a provider rather than a database/sql driver, " +
-				"and the record of repeatable migrations is a table Ptah reads and writes with SQL",
+		if _, err := m.conn.RepeatableStore(); err != nil {
+			return &RepeatableMigrationsUnsupportedError{Dialect: m.connectionDialect(), Reason: err.Error(), Err: err}
 		}
+		return nil
 	}
 	if m.revisionTable().CreateRepeatables == "" {
 		return &RepeatableMigrationsUnsupportedError{
