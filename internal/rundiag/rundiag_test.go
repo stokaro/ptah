@@ -500,3 +500,80 @@ func TestAtlasOmittedBlocks_SummaryNamesTheVariableTheRecordsShare(t *testing.T)
 		})
 	}
 }
+
+// gadgets is a category for these tests alone whose objects are each a
+// warning of their own.
+var gadgets = &rundiag.Category{Name: "gadget", Each: true}
+
+// A category whose objects are each a warning writes every object's own line,
+// in the order raised, and the same object raised twice once.
+func TestReport_EachObjectIsAWarningOfItsOwn(t *testing.T) {
+	c := qt.New(t)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+
+	for _, key := range []string{"b", "a", "b"} {
+		c.Assert(rundiag.Warn(ctx, &out, gadgets, record(key)), qt.IsNil)
+	}
+	report.Flush()
+
+	c.Assert(out.String(), qt.Equals, "warning: widget b\nwarning: widget a\n")
+}
+
+// Settled, a category whose objects are each a warning writes each line now,
+// and an object raised again in the run is not written again.
+func TestSettle_WritesEachObjectOfAnEachCategory(t *testing.T) {
+	c := qt.New(t)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+
+	c.Assert(rundiag.Warn(ctx, &out, gadgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, gadgets, record("b")), qt.IsNil)
+	rundiag.Settle(ctx, gadgets)
+	settled := out.String()
+	c.Assert(rundiag.Warn(ctx, &out, gadgets, record("a")), qt.IsNil)
+	report.Flush()
+
+	c.Assert(settled, qt.Equals, "warning: widget a\nwarning: widget b\n")
+	c.Assert(out.String(), qt.Equals, settled)
+}
+
+// With a JSON log, each object of such a category is a log record of its own,
+// carrying its own fields.
+func TestReport_EachObjectIsARecordOfItsOwnWhenTheLogIsJSON(t *testing.T) {
+	c := qt.New(t)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedAtDebugLevel, Records: true})
+	ctx := rundiag.With(context.Background(), report)
+	var out bytes.Buffer
+
+	c.Assert(rundiag.Warn(ctx, &out, gadgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &out, gadgets, record("b")), qt.IsNil)
+	report.Flush()
+
+	var keys []string
+	for line := range strings.SplitSeq(strings.TrimSpace(out.String()), "\n") {
+		var logged map[string]any
+		c.Assert(json.Unmarshal([]byte(line), &logged), qt.IsNil)
+		c.Assert(logged["category"], qt.Equals, "gadget")
+		c.Assert(logged["count"], qt.Equals, float64(1))
+		keys = append(keys, logged["key"].(string))
+	}
+	c.Assert(keys, qt.DeepEquals, []string{"a", "b"})
+}
+
+// Drained, each object of such a category is a warning of its own.
+func TestDrain_ReturnsEachObjectOfAnEachCategoryApart(t *testing.T) {
+	c := qt.New(t)
+	report := rundiag.New(rundiag.Options{Listing: rundiag.ListedInToolResult})
+	ctx := rundiag.With(context.Background(), report)
+
+	c.Assert(rundiag.Warn(ctx, &bytes.Buffer{}, gadgets, record("a")), qt.IsNil)
+	c.Assert(rundiag.Warn(ctx, &bytes.Buffer{}, gadgets, record("b")), qt.IsNil)
+
+	c.Assert(report.Drain(), qt.DeepEquals, []rundiag.Warning{
+		{Category: "gadget", Count: 1, Message: "widget a", Objects: []string{"widget a"}},
+		{Category: "gadget", Count: 1, Message: "widget b", Objects: []string{"widget b"}},
+	})
+}

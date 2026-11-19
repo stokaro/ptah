@@ -218,6 +218,22 @@ Change or drop the dependent, or declare it, and run the command again. No
 setting selects another spelling. The MySQL-family, SQLite, SQL Server, Oracle
 and ClickHouse planners keep the guards they write.
 
+### Declarations the statements leave out
+
+A planned statement can leave out a declaration the database has no clause
+for, such as a MySQL table option on SQLite or an index storage parameter on
+MySQL. `schema apply`, its dry run, `schema plan`, `schema compare` and `schema
+diff` print one warning on standard error for each, before the plan, in the
+words `ptah schema render` uses:
+
+```text
+warning: sqlite: table users: table option ENGINE=InnoDB was skipped (unsupported)
+```
+
+The rest of the plan runs. A warning names a declaration that a planned
+statement leaves out, so a run that plans no statement prints none, even when
+the schema still declares what the database cannot hold.
+
 ## Apply with approval
 
 Without `--dry-run`, the command shows the same plan and asks for confirmation

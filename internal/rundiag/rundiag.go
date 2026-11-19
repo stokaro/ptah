@@ -34,8 +34,15 @@ import (
 type Category struct {
 	// Name identifies the category in the debug log.
 	Name string
-	// Summary is the warning for several objects; it is given them.
+	// Summary is the warning for several objects; it is given them. A
+	// category whose objects are each a warning of their own has none.
 	Summary func(records []Record) string
+	// Each writes every object as a warning of its own, with its own line,
+	// rather than one summary for several. It is for objects that each ask
+	// the reader for a decision of their own and that a run raises few of,
+	// such as a declaration a planned statement leaves out: a count would
+	// hide which declaration the reader has to act on.
+	Each bool
 }
 
 // A Record is one object of a category.
@@ -263,8 +270,15 @@ func Settle(ctx context.Context, category *Category) {
 	}
 }
 
-// write writes target's objects at debug level and then its warning.
+// write writes target's objects at debug level and then its warning, or for
+// a category whose objects are each a warning, each object's warning.
 func (r *Report) write(target *bucket) {
+	if target.category.Each {
+		for _, record := range target.records {
+			r.write(&bucket{category: &Category{Name: target.category.Name}, out: target.out, records: []Record{record}})
+		}
+		return
+	}
 	r.mu.Lock()
 	records, logger, listing := r.records, r.logger, r.listing
 	r.mu.Unlock()
@@ -341,7 +355,7 @@ func (r *Report) Drain() []Warning {
 	r.mu.Unlock()
 	log := cmp.Or(logger, slog.Default())
 	warnings := make([]Warning, 0, len(buckets))
-	for _, target := range buckets {
+	for _, target := range eachObjectApart(buckets) {
 		message, _ := summary(target, listing)
 		if message == "" {
 			continue
@@ -357,6 +371,22 @@ func (r *Report) Drain() []Warning {
 		})
 	}
 	return warnings
+}
+
+// eachObjectApart is buckets with each object of a category whose objects are
+// each a warning in a bucket of its own, in the order the objects were raised.
+func eachObjectApart(buckets []*bucket) []*bucket {
+	apart := make([]*bucket, 0, len(buckets))
+	for _, target := range buckets {
+		if !target.category.Each {
+			apart = append(apart, target)
+			continue
+		}
+		for _, record := range target.records {
+			apart = append(apart, &bucket{category: target.category, out: target.out, records: []Record{record}})
+		}
+	}
+	return apart
 }
 
 // Shared returns the value every record holds for the attribute key, and

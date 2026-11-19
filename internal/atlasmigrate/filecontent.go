@@ -14,6 +14,8 @@ import (
 	"ptah.run/internal/atlaschange"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/filetx"
+	"ptah.run/internal/omissionnote"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/sqlscript"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/planner"
@@ -473,6 +475,10 @@ func renderMigrationStatements(
 	if err != nil {
 		return nil, err
 	}
+	// What the statements leave out is a warning on the run's stream, as on
+	// every other plan path. The file itself carries no comment for it: its
+	// bytes are what the community binary writes and hashes into atlas.sum.
+	omissionnote.Report(ctx, rundiag.Stream(ctx), output.Omissions)
 	planned, err := planner.RenderedPlan{Request: request, Result: output, Dialect: target}.PlannedStatements()
 	if err != nil {
 		return nil, err

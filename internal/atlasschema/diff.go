@@ -41,9 +41,11 @@ import (
 	"ptah.run/internal/devdocker"
 	"ptah.run/internal/devlock"
 	"ptah.run/internal/devreach"
+	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/readscope"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemavalidate"
 	"ptah.run/internal/servertarget"
@@ -904,6 +906,7 @@ func planChanges(
 	if err != nil {
 		return nil, planner.RenderedPlan{}, err
 	}
+	omissionnote.Report(ctx, rundiag.Stream(ctx), plan.Result.Omissions)
 	statements, err := plan.Statements()
 	if err != nil {
 		return nil, planner.RenderedPlan{}, err

@@ -389,11 +389,13 @@ the length of a column type the engine does not have. A provider that lists
 `render.omissions` reports each one, and Ptah carries it into the render's
 result as it carries a built-in engine's: a caller that must not lose anything,
 such as a comparison probe, refuses the rendering, an embedder of the engine
-runtime reads the list beside the statements, and `ptah schema render` names
-each one in a `note:` line on stderr. A provider without the feature renders
-what it can and reports nothing. `ptah schema validate --no-skipped` reports
-the omitted declarations the provider's own validation names, so a provider
-that reports render omissions names the same ones there.
+runtime reads the list beside the statements, and `ptah schema render` and
+each command that renders a plan name each one in a `warning:` line on stderr.
+A file `ptah migrations generate` writes carries the same lines as comments. A
+provider without the feature renders what it can and reports nothing. `ptah
+schema validate --no-skipped` reports the omitted declarations the provider's
+own validation names, so a provider that reports render omissions names the
+same ones there.
 
 Declared rows (`//ptah:schema:data`) and seed files reach a provider through
 four services. The host keeps the row diff, the order across tables, protected

@@ -226,10 +226,10 @@ matters because the targets are not equally talkative: the PostgreSQL family
 names a dropped table option on a `skipped` comment and SQLite, SQL Server and
 Oracle drop the same option without a word. A check built on the comment would
 report the quiet targets as the strict ones. `ptah schema render` reads the same
-decisions, names each one in a `note:` line on stderr, and still exits `0`:
+decisions, names each one in a warning on stderr, and still exits `0`:
 
 ```text
-note: sqlite: table users: table option ENGINE=InnoDB was skipped (unsupported)
+warning: sqlite: table users: table option ENGINE=InnoDB was skipped (unsupported)
 ```
 
 A render the target refuses outright fails this mode too, as a `schema` problem

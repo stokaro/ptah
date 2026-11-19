@@ -10,9 +10,10 @@
 //
 // A record here is what makes that answer readable by a program. It is not a
 // finding: `ptah schema validate --no-skipped` maps a record into the problem
-// model that verb already reports, and `ptah schema render` names each one in
-// a note on stderr, so this package adds a vocabulary rather than a fifth
-// analysis result shape.
+// model that verb already reports, and `ptah schema render` and every command
+// that renders a plan name each one in a warning on stderr
+// ([ptah.run/internal/omissionnote]), so this package adds a vocabulary rather
+// than a fifth analysis result shape.
 //
 // A comment answered with a `-- text` line is recorded too. The server stores
 // none of it, so the render looks like it kept the text while the database has

@@ -16,7 +16,9 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/planstyle"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/txrequire"
 	"ptah.run/migration/diffpolicy"
 	"ptah.run/migration/migrationfile"
@@ -307,7 +309,7 @@ func renderGeneratedDownMigrationSQL(
 	header := fmt.Sprintf(
 		"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n",
 		time.Now().Format(time.RFC3339),
-	)
+	) + leftOut(ctx, output.Omissions)
 	directives := generatedDirectiveOptions{skipTimeouts: plan.Reverse.RequiresNoTransaction}
 	return withGeneratedTimeoutDirectivesForOptions(
 		header+joinScriptStatements(statements, plan.Dialect),
@@ -356,7 +358,7 @@ func renderGeneratedMigrationSQL(
 		return "", nil
 	}
 	header := fmt.Sprintf("-- Migration generated from schema differences\n-- Generated on: %s\n-- Direction: %s\n\n",
-		time.Now().Format(time.RFC3339), direction)
+		time.Now().Format(time.RFC3339), direction) + leftOut(ctx, rawSQL.Omissions)
 	return withGeneratedTimeoutDirectivesForOptions(header+joinScriptStatements(statements, dialect), dialect, directiveOpts), nil
 }
 
@@ -406,4 +408,17 @@ func generatedStatements(output renderer.Result, dialect string) ([]string, erro
 		}
 	}
 	return statements, nil
+}
+
+// leftOut raises a run warning for each declaration the statements of a
+// generated file leave out, and returns the same text as comments that open the
+// file's statements, so a reviewer who reads only the file sees it too. It is
+// empty when the statements leave nothing out.
+func leftOut(ctx context.Context, omissions []renderer.Omission) string {
+	omissionnote.Report(ctx, rundiag.Stream(ctx), omissions)
+	comments := omissionnote.Comments(omissions)
+	if len(comments) == 0 {
+		return ""
+	}
+	return strings.Join(comments, "\n") + "\n\n"
 }
