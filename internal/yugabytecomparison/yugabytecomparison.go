@@ -1,6 +1,6 @@
 // Package yugabytecomparison holds the rules YugabyteDB gives the shared
-// schema comparison ([schemacomparison.Rules]): how an index definition reads
-// on YugabyteDB. The built-in runtime registers them on its YugabyteDB target,
+// schema comparison ([schemacomparison.Rules]): how an index definition and
+// two catalog forms of a generated column's expression read on YugabyteDB. The built-in runtime registers them on its YugabyteDB target,
 // so the shared comparison holds no YugabyteDB knowledge of its own.
 package yugabytecomparison
 
@@ -11,11 +11,36 @@ import (
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/postgrescomparison"
 )
 
 // Rules returns YugabyteDB's comparison rules.
 func Rules() schemacomparison.Rules {
-	return schemacomparison.Rules{Indexes: Indexes{}}
+	return schemacomparison.Rules{Indexes: Indexes{}, GeneratedExpressions: GeneratedExpressions{}}
+}
+
+// GeneratedExpressions reads YugabyteDB generated column expressions.
+//
+// Spelling returns an expression as the shared comparison already reduced it,
+// so a declaration nobody spelled is compared as written. ResolvedSpelling
+// reads two catalog forms as PostgreSQL does: YugabyteDB 2026.1 prints a
+// stored expression with the pg_get_expr of PostgreSQL 15, and over a varchar
+// column it stores `coalesce(title, 'x')` and `coalesce(title::text, 'x')` with
+// the same casts PostgreSQL adds.
+type GeneratedExpressions struct{}
+
+var _ schemacomparison.ResolvedGeneratedExpressions = GeneratedExpressions{}
+
+// Spelling returns expression unchanged.
+func (GeneratedExpressions) Spelling(expression string) string {
+	return expression
+}
+
+// ResolvedSpelling returns expression without the casts that cannot change a
+// value, as [postgrescomparison.GeneratedExpressions.ResolvedSpelling] reads
+// it.
+func (GeneratedExpressions) ResolvedSpelling(expression string) string {
+	return postgrescomparison.GeneratedExpressions{}.ResolvedSpelling(expression)
 }
 
 // Indexes compares YugabyteDB index definitions.

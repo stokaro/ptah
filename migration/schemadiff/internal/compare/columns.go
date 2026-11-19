@@ -2220,6 +2220,13 @@ func generatedExpressionIsRewritten(dialect string) bool {
 // to compare against, so on a rewriting target both leave the expression
 // uncompared, and on every other target both leave today's textual comparison
 // alone. An arm that separated them would be an arm nothing could reach.
+//
+// A resolved declaration and the catalog are two catalog forms. Where the
+// target's rule reads those more strictly
+// ([schemacomparison.ResolvedGeneratedExpressions]), both sides are read with
+// it: a declaration nobody spelled lacks the casts the server inserts, so the
+// target's ordinary rule may fold casts that can change a value, and two
+// catalog forms need no such fold.
 func generatedColumnDiff(
 	genCol schemamodel.Field,
 	dbCol catalog.Column,
@@ -2228,11 +2235,18 @@ func generatedColumnDiff(
 	spelling schemacomparison.GeneratedExpressions,
 ) string {
 	declared := genCol.GeneratedExpression
+	spell := func(expression string) string { return normalizeGeneratedExpression(expression, spelling) }
 	switch {
 	case resolution != nil && resolution.Resolved:
 		// The server's own spelling of the declaration, so the two sides are
-		// compared as like with like.
+		// compared as like with like, and a target that reads two catalog
+		// forms more strictly reads them so.
 		declared = resolution.Expression
+		if resolved, strict := spelling.(schemacomparison.ResolvedGeneratedExpressions); strict {
+			spell = func(expression string) string {
+				return resolved.ResolvedSpelling(normalize.Expression(expression))
+			}
+		}
 	case generatedExpressionIsRewritten(dialect):
 		// A rewriting target with no usable answer. Reporting the textual
 		// difference here is what plans a MODIFY that changes nothing on every
@@ -2241,10 +2255,10 @@ func generatedColumnDiff(
 		return generatedKindDiff(genCol, dbCol)
 	}
 
-	genExpr := normalizeGeneratedExpression(declared, spelling)
+	genExpr := spell(declared)
 	dbExpr := ""
 	if dbCol.GeneratedExpression != nil {
-		dbExpr = normalizeGeneratedExpression(*dbCol.GeneratedExpression, spelling)
+		dbExpr = spell(*dbCol.GeneratedExpression)
 	}
 	genKind := strings.ToUpper(strings.TrimSpace(genCol.GeneratedKind))
 	dbKind := strings.ToUpper(strings.TrimSpace(dbCol.GeneratedKind))

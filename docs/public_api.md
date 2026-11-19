@@ -2419,7 +2419,11 @@ The index rules decide when an index is the declared one:
   so the comparison does not drop it.
 
 `Rules.GeneratedExpressions` gives a generated column's expression the spelling
-both sides share on the target, and a reported change quotes that spelling.
+both sides share on the target, and a reported change quotes that spelling. A
+rule that also implements `schemacomparison.ResolvedGeneratedExpressions` reads
+both sides with `ResolvedSpelling` when a dev database spelled the declaration,
+so it folds only what cannot change the column's values.
+
 `Rules.Views` compares view and materialized view queries in place of the
 shared reading. `Rules.ViewQueries` decides them instead, in one batch of
 `ViewQueryPair` values: each declared view the comparison matches with a held

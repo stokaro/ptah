@@ -143,6 +143,59 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 			spelling:   postgrescomparison.GeneratedExpressions{},
 			want:       "",
 		},
+		{
+			// PostgreSQL 16 and 18 store `coalesce(title, 'x')` over a varchar
+			// column with a cast the declaration does not hold.
+			name:       "a PostgreSQL declaration the server spelled holds its casts",
+			dialect:    platform.Postgres,
+			declared:   "coalesce(title, 'x')",
+			stored:     "(COALESCE(title, 'x'::character varying))::text",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("(COALESCE(title, 'x'::character varying))::text"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "",
+		},
+		{
+			name:       "a cast to text on one side is the same expression",
+			dialect:    platform.Postgres,
+			declared:   "coalesce(title::text, 'x')",
+			stored:     "(COALESCE(title, 'x'::character varying))::text",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("COALESCE((title)::text, 'x'::text)"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "",
+		},
+		{
+			name:       "a cast that rounds on one side still reports",
+			dialect:    platform.Postgres,
+			declared:   "amount::integer",
+			stored:     "amount",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("(amount)::integer"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "VIRTUAL amount -> VIRTUAL amount::integer",
+		},
+		{
+			name:       "a cast that truncates on one side still reports",
+			dialect:    platform.Postgres,
+			declared:   "title::varchar(3)",
+			stored:     "title",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("(title)::character varying(3)"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "VIRTUAL title -> VIRTUAL title::charactervarying(3)",
+		},
+		{
+			// Without a server the declaration lacks the casts PostgreSQL
+			// inserts, so every cast is folded, as the target's rule says.
+			name:       "a PostgreSQL declaration nobody spelled folds every cast",
+			dialect:    platform.Postgres,
+			declared:   "amount::integer",
+			stored:     "amount",
+			storedKind: "VIRTUAL",
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "",
+		},
 	}
 
 	for _, test := range tests {

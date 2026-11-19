@@ -127,6 +127,37 @@ func TestGeneratedExpressions_Spelling(t *testing.T) {
 	}
 }
 
+// TestGeneratedExpressions_ResolvedSpelling reads two catalog forms of a
+// generated column's expression: a cast to text or to an unbounded varchar
+// goes with the parentheses around its operand, and every cast that can
+// change a value stays.
+func TestGeneratedExpressions_ResolvedSpelling(t *testing.T) {
+	tests := []struct {
+		name       string
+		expression string
+		want       string
+	}{
+		{name: "a cast to text around a call", expression: "(COALESCE(title, 'x'::character varying))::text", want: "coalesce(title,'x')"},
+		{name: "a cast to text inside the call", expression: "COALESCE((title)::text, 'x'::text)", want: "coalesce(title,'x')"},
+		{name: "a cast to varchar with no length", expression: "(code)::varchar || 'x'", want: "code||'x'"},
+		{name: "a cast that rounds stays", expression: "(amount)::integer", want: "amount::integer"},
+		{name: "a cast that truncates stays", expression: "(title)::character varying(3)", want: "title::charactervarying(3)"},
+		{name: "a cast that drops the time stays", expression: "(ts)::date", want: "ts::date"},
+		{name: "a literal's type stays", expression: "to_tsvector('simple'::regconfig, title)", want: "to_tsvector('simple'::regconfig,title)"},
+		{name: "an array cast stays", expression: "(tags)::text[]", want: "tags::text[]"},
+		{name: "an operator keeps its own parentheses", expression: "(((n + 1))::text || 'x')", want: "((n+1)||'x')"},
+		{name: "a function keeps its arguments' parentheses", expression: "lower(name)::text", want: "lower(name)"},
+		{name: "a row keeps its parentheses", expression: "(a, b)::text", want: "(a,b)"},
+		{name: "a cast inside a string is text", expression: "'a::text' || (name)::text", want: "'a::text'||name"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(postgrescomparison.GeneratedExpressions{}.ResolvedSpelling(test.expression), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestRules pins the rules PostgreSQL registers: its index options and its
 // generated expressions, and nothing it leaves to the shared comparison.
 func TestRules(t *testing.T) {

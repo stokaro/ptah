@@ -250,15 +250,25 @@ different defaults, and so are `'1 + 2'` and `(1 + 2)`.
 | routine `f(x int)` body `BEGIN ATOMIC SELECT count(*) FROM t WHERE a > x; END` | `... FROM t WHERE (t.a > f.x); END` |
 
 When a comparison has a connection, Ptah asks that server to spell each declared
-column type and default, CHECK, `EXCLUDE` element list and predicate, policy
-clause, index expression and predicate, trigger WHEN condition, domain, and
-routine argument list and result the way its catalog does. It creates a temporary object inside a transaction that is rolled back,
+column type and default, generated column expression, CHECK, `EXCLUDE` element
+list and predicate, policy clause, index expression and predicate, trigger WHEN
+condition, domain, and routine argument list and result the way its catalog
+does. It creates a temporary object inside a transaction that is rolled back,
 reads the stored form, and compares like with like. A column is asked only when
 its default is declared or its type is not written the way the catalog reports
 it. A routine is asked when it declares arguments or a result and the database
 holds a routine of that name. Its temporary copy has the declared arguments and
 return type, and a body the server does not check, because the signature does
 not depend on the body.
+
+A generated column is asked on a temporary table that has the columns of the
+table the database holds. The server adds casts the declaration does not
+write. Over a `varchar` column, `coalesce(title, '')` is stored as
+`(COALESCE(title, ''::character varying))::text`, and `coalesce(title::text, '')`
+as `COALESCE((title)::text, ''::text)`. Between two stored forms Ptah folds a
+cast to `text`, and to `varchar` with no length, so these two compare equal.
+Every other cast is a change: `amount::integer` rounds a numeric column, and
+`title::varchar(3)` truncates.
 
 A routine with a SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is
 asked with its body too, a procedure without arguments included. PostgreSQL

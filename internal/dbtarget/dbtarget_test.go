@@ -91,6 +91,13 @@ func TestLookup_FailurePath(t *testing.T) {
 			engine:  dbtarget.ClickHouse,
 			set:     func(t *testing.T) { t.Setenv("CLICKHOUSE_URL", "postgres://localhost/x") },
 			wantErr: `CLICKHOUSE_URL carries scheme "postgres", which CLICKHOUSE_URL does not speak; it names clickhouse`,
+		}, {
+			// The scheme is what this package can check about the address;
+			// which release line answers it is the workflow's to configure.
+			name:    "another engine's address for the PostgreSQL 16 server",
+			engine:  dbtarget.PostgreSQL16,
+			set:     func(t *testing.T) { t.Setenv("POSTGRES_16_TEST_URL", "mysql://root@localhost/x") },
+			wantErr: `POSTGRES_16_TEST_URL carries scheme "mysql", which POSTGRES_16_TEST_URL does not speak; it names postgres or postgresql`,
 		},
 	}
 

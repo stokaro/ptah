@@ -80,7 +80,14 @@ func TestMigrationsLintPrefersTheDeclaredServerVersionOverTheDevDatabaseLive(t *
 // tables in it, and whether this one passed would depend on which ran first.
 func postgresScratchDevURL(c *qt.C, prefix string) string {
 	c.Helper()
-	adminURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	return postgresScratchURLOn(c, dbtarget.PostgreSQL, prefix)
+}
+
+// postgresScratchURLOn is [postgresScratchDevURL] on the server engine names,
+// for a test that runs on more than one PostgreSQL release line.
+func postgresScratchURLOn(c *qt.C, engine dbtarget.Engine, prefix string) string {
+	c.Helper()
+	adminURL := dbtarget.URL(c, engine)
 	admin, err := sql.Open("pgx", adminURL)
 	c.Assert(err, qt.IsNil)
 	name := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
