@@ -183,7 +183,9 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 		Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
 	},
 	platform.SQLServer: {
-		Columns:    descriptor.ColumnGrammar{IdentityProperty: true, CurrentTimestampNiladic: true},
+		Columns: descriptor.ColumnGrammar{
+			IdentityProperty: true, CurrentTimestampNiladic: true, NextValueClause: "NEXT VALUE FOR",
+		},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 		Indexes:    descriptor.IndexGrammar{DropNamesTable: true},
 		AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},
@@ -224,6 +226,7 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 				"SYSDATE", "SYSTIMESTAMP", "USER", "UID", "SESSIONTIMEZONE", "DBTIMEZONE",
 				"ORA_INVOKING_USER", "ORA_INVOKING_USERID",
 			},
+			SequencePseudocolumns: []string{"NEXTVAL", "CURRVAL"},
 		},
 		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},

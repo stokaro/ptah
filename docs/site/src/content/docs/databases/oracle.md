@@ -143,6 +143,15 @@ default such as `SYSDATE()` is refused before anything is planned, and the
 refusal names the bare spelling. A precision, as in `SYSTIMESTAMP(3)`, is
 kept, and so is `SESSIONTIMEZONE()`, which Oracle calls.
 
+A default that reads a sequence, `seq.NEXTVAL` or `seq.CURRVAL`, is kept as an
+expression too, with or without a schema and with the sequence name bare or
+quoted, as in `app.seq.NEXTVAL` or `"Seq".NEXTVAL`; `'seq.NEXTVAL'` stays a
+string. Oracle stores an unqualified reference qualified and quoted, as
+`"APP"."SEQ"."NEXTVAL"`, and a qualified one as written. The comparison reads
+each by the names Oracle stores, leaving out a schema that is the table's own,
+so a second apply plans nothing, and `schema inspect` writes the stored form
+back as an expression.
+
 ## What the 23 and 21 lines do differently
 
 The `IF [NOT] EXISTS` guards are a 23-line feature. On 21 they are refused, and

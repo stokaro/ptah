@@ -29,6 +29,7 @@ import (
 	routinebuiltin "ptah.run/internal/routineext/builtin"
 	"ptah.run/internal/routineext/compound"
 	"ptah.run/internal/sourcepos"
+	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/viewcolumns"
 )
@@ -3869,6 +3870,109 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	return &ast.DefaultValue{Value: value, ValueSet: true}, nil
 }
 
+// sequenceReferenceTokens returns how many tokens the default at the cursor
+// spends reading a sequence pseudocolumn the dialect's descriptor names among
+// [descriptor.ColumnGrammar.SequencePseudocolumns], and 0 where it reads none.
+// The reference is a sequence name, optionally after a schema and a dot, then
+// a dot and the pseudocolumn, each part bare or double-quoted and written
+// without spaces, as in seq.NEXTVAL, app."Seq".CURRVAL or the
+// "APP"."SEQ"."NEXTVAL" Oracle stores. An argument list after it makes the
+// words a call instead. It leaves the parser where it is.
+//
+// Read as a value, seq.NEXTVAL renders as the string 'seq.NEXTVAL', and a
+// default starting with a double-quoted name is refused at the dot.
+func (p *Parser) sequenceReferenceTokens() int {
+	pseudocolumns := p.target.grammar.Columns.SequencePseudocolumns
+	if len(pseudocolumns) == 0 || !isNamePartToken(p.current) {
+		return 0
+	}
+	scan := *p.lexer
+	last := p.current
+	for parts, tokens := 1, 1; ; parts, tokens = parts+1, tokens+2 {
+		dot := scan.NextToken()
+		if !dot.MatchOperatorValue(".") {
+			if parts < 2 || dot.MatchOperatorValue("(") || !slices.Contains(pseudocolumns, storedNamePart(last.Value)) {
+				return 0
+			}
+			return tokens
+		}
+		part := scan.NextToken()
+		if parts == 3 || !isNamePartToken(part) {
+			return 0
+		}
+		last = part
+	}
+}
+
+// nextValueTokens returns how many tokens the default at the cursor spends
+// reading a sequence's next value through the clause the dialect's descriptor
+// names in [descriptor.ColumnGrammar.NextValueClause], and 0 where it reads
+// none. The clause's words are separated by space, and the sequence name
+// follows them, optionally after a schema and a dot, each part bare,
+// bracketed or double-quoted, as in NEXT VALUE FOR dbo.seq or the
+// NEXT VALUE FOR [dbo].[seq] SQL Server stores. It leaves the parser where it
+// is.
+//
+// Read as a value, NEXT is a word and VALUE is refused as a column attribute.
+func (p *Parser) nextValueTokens() int {
+	words := strings.Fields(p.target.grammar.Columns.NextValueClause)
+	if len(words) == 0 || p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, words[0]) {
+		return 0
+	}
+	scan := *p.lexer
+	tokens := 1
+	significant := func() lexer.Token {
+		for {
+			tok := scan.NextToken()
+			tokens++
+			if tok.Type != lexer.TokenWhitespace && tok.Type != lexer.TokenComment {
+				return tok
+			}
+		}
+	}
+	for _, word := range words[1:] {
+		if tok := significant(); tok.Type != lexer.TokenIdentifier || !strings.EqualFold(tok.Value, word) {
+			return 0
+		}
+	}
+	if !isNamePartToken(significant()) {
+		return 0
+	}
+	if dot := scan.NextToken(); !dot.MatchOperatorValue(".") {
+		return tokens
+	}
+	if !isNamePartToken(scan.NextToken()) {
+		return 0
+	}
+	return tokens + 2
+}
+
+// readSequenceReference reads the tokens [Parser.sequenceReferenceTokens] or
+// [Parser.nextValueTokens] counted, and keeps them as the expression written.
+func (p *Parser) readSequenceReference(tokens int) *ast.DefaultValue {
+	start := p.current.Start
+	for range tokens {
+		p.advance()
+	}
+	return &ast.DefaultValue{Expression: p.input[start:p.previous.End]}
+}
+
+// isNamePartToken reports whether tok is a name a reference may hold: a bare
+// identifier or a double-quoted one.
+func isNamePartToken(tok lexer.Token) bool {
+	return tok.Type == lexer.TokenIdentifier || isDoubleQuotedIdentifierToken(tok)
+}
+
+// storedNamePart is the upper-case spelling of a bare name part and the text
+// inside the quotes of a double-quoted one, which is how a pseudocolumn is
+// matched: "NEXTVAL" is NEXTVAL, and "nextval" is no pseudocolumn.
+func storedNamePart(part string) string {
+	if strings.HasPrefix(part, `"`) {
+		return sqlident.UnquoteDoubleQuoted(part)
+	}
+	return strings.ToUpper(part)
+}
+
 // refuseEmptyNiladicCall refuses name followed by an empty argument list,
 // with the parser at its opening parenthesis, where the dialect's descriptor
 // names name among [descriptor.ColumnGrammar.EmptyCallFunctions]. The refusal
@@ -3971,6 +4075,13 @@ func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 			return nil, err
 		}
 		return p.extendDefaultExpression(value, start)
+	}
+
+	if tokens := p.sequenceReferenceTokens(); tokens > 0 {
+		return p.extendDefaultExpression(p.readSequenceReference(tokens), start)
+	}
+	if tokens := p.nextValueTokens(); tokens > 0 {
+		return p.extendDefaultExpression(p.readSequenceReference(tokens), start)
 	}
 
 	var value *ast.DefaultValue
