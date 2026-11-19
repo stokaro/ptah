@@ -71,8 +71,13 @@ func validateReservedObject(engine string, record *protocol.ReservedObject) erro
 	switch record.GetPurpose() {
 	case protocol.ReservedObject_HISTORY, protocol.ReservedObject_LOCK, protocol.ReservedObject_LOG, protocol.ReservedObject_TAG, protocol.ReservedObject_SEEDS,
 		protocol.ReservedObject_REPEATABLE:
+	case protocol.ReservedObject_PURPOSE_UNSPECIFIED:
+		return fmt.Errorf("%w: reserved object %s has no purpose", ErrProtocol, source.GetName())
 	default:
-		return fmt.Errorf("%w: invalid reserved object purpose", ErrProtocol)
+		// Every defined purpose is accepted above, so the value comes from a
+		// provider built with a newer SDK than this one.
+		return fmt.Errorf("%w: reserved object %s has purpose %d, which this provider SDK does not define; "+
+			"a provider that reports it needs a host built with a newer provider SDK", ErrProtocol, source.GetName(), int32(record.GetPurpose()))
 	}
 	if !slices.Contains(record.GetConflictKinds(), source.GetKind()) {
 		return fmt.Errorf("%w: reservation excludes its own kind", ErrProtocol)
