@@ -12,8 +12,14 @@ import (
 // directory format, ordered ascending by Version and deterministically ordered
 // within a version, so two runs over the same filesystem return the same
 // order. An empty format behaves as [DirFormatAuto]. In auto mode Ptah files
-// win when present, so a directory holding a Ptah history beside a stray
-// single-file .sql still selects the Ptah files.
+// win when present.
+//
+// A directory is read whole. A SQL file at its top level that the selection
+// leaves out, such as notes.sql beside a Ptah history or v2_b.sql beside
+// 1_a.sql in auto mode, refuses the directory with an [UnreadFilesError]
+// naming it, rather than a selection a run would apply without it. A file
+// below the top level is a file of another directory, such as a template a
+// migration includes, and is left alone when the format does not read it.
 //
 // A directory with no .sql files at all returns an empty result and no error.
 // A directory whose candidate .sql files match no name grammar the format
@@ -48,6 +54,24 @@ const (
 	// version.
 	rReadAsRepeatable
 )
+
+// UnreadFilesError is the refusal [Discover] returns for a directory whose
+// reading leaves out a SQL file at its top level, rather than a selection
+// without it. A migration directory is read whole: a file left out is a
+// migration its author wrote and a run would never apply, while the command
+// reported the directory applied.
+type UnreadFilesError struct {
+	// Files are the files the reading leaves out, as paths relative to the
+	// directory, in the order the walk met them.
+	Files   []string
+	message string
+}
+
+// Error names the files the reading leaves out and how to make the directory
+// readable.
+func (e *UnreadFilesError) Error() string {
+	return e.message
+}
 
 // discovered is what one walk of a migration directory found: the versioned
 // files of the format it resolved to, and the repeatable migrations, which a
@@ -140,6 +164,8 @@ func discover(fsys fs.FS, format DirFormat, reading rReading) (discovered, error
 		if err := refuseOmittedAtlasFiles(sqlFiles, files, repeatables); err != nil {
 			return discovered{}, err
 		}
+	} else if err := refuseUnreadFiles(sqlFiles, files, repeatables); err != nil {
+		return discovered{}, err
 	}
 	sortDiscovered(files)
 	assignOrderKeys(files)
@@ -219,7 +245,7 @@ func refuseUnreadAtlasFiles(sqlFiles []string, atlasFiles []File) error {
 	for _, file := range atlasFiles {
 		read[file.Path] = struct{}{}
 	}
-	var unread []string
+	var unread, described []string
 	for _, p := range sqlFiles {
 		if _, ok := read[p]; ok || path.Base(p) != p {
 			continue
@@ -228,17 +254,18 @@ func refuseUnreadAtlasFiles(sqlFiles []string, atlasFiles []File) error {
 		if _, err := ParseAtlasFileName(p); err != nil && strings.HasPrefix(version, ".") {
 			return err
 		}
-		unread = append(unread, fmt.Sprintf("%s (version %q)", p, version))
+		unread = append(unread, p)
+		described = append(described, fmt.Sprintf("%s (version %q)", p, version))
 	}
 	if len(unread) == 0 {
 		return nil
 	}
-	return fmt.Errorf(
+	return &UnreadFilesError{Files: unread, message: fmt.Sprintf(
 		"Atlas migration files Ptah cannot run: %s. Atlas runs every SQL file at the top level of the "+
 			"directory, under the text before the first underscore of its name, so Ptah refuses the "+
 			"directory rather than leave these files unapplied",
-		strings.Join(unread, ", "),
-	)
+		strings.Join(described, ", "),
+	)}
 }
 
 // refuseOmittedAtlasFiles refuses a directory Atlas governs whose selection
@@ -247,6 +274,51 @@ func refuseUnreadAtlasFiles(sqlFiles []string, atlasFiles []File) error {
 // v1_x.sql as no migration, while Atlas runs all three, so without this
 // refusal the pair applies and the directory reports itself applied.
 func refuseOmittedAtlasFiles(sqlFiles []string, files []File, repeatables []RepeatableFile) error {
+	omitted := omittedTopLevelFiles(sqlFiles, files, repeatables)
+	if len(omitted) == 0 {
+		return nil
+	}
+	return &UnreadFilesError{Files: omitted, message: fmt.Sprintf(
+		"migration files the selected format does not read: %s. atlas.sum covers them and Atlas runs every "+
+			"SQL file at the top level of the directory, so Ptah refuses the directory rather than leave them "+
+			"unapplied; read it with --dir-format atlas, or remove them from the directory",
+		strings.Join(omitted, ", "),
+	)}
+}
+
+// refuseUnreadFiles refuses a directory read in the Ptah format, or in auto
+// mode with no atlas.sum, whose selection leaves out a SQL file at its top
+// level, such as notes.sql beside a Ptah pair or v2_b.sql beside 1_a.sql. A
+// migration directory is read whole: a file left out is a migration its
+// author wrote and the run never applies, while the command reports the
+// directory applied. The refusal names the grammar that selected the files. A
+// nested file is a file of another directory, such as a template a migration
+// includes, and is left alone.
+func refuseUnreadFiles(sqlFiles []string, files []File, repeatables []RepeatableFile) error {
+	omitted := omittedTopLevelFiles(sqlFiles, files, repeatables)
+	if len(omitted) == 0 {
+		return nil
+	}
+	if !isAtlasSelection(files) {
+		return &UnreadFilesError{Files: omitted, message: fmt.Sprintf(
+			"migration files the Ptah format does not read: %s. Ptah reads a migration directory whole, so it refuses "+
+				"the directory rather than leave them unapplied; name each NNNNNNNNNN_<name>.up.sql, "+
+				"NNNNNNNNNN_<name>.down.sql or R__<name>.sql, or move it out of the directory",
+			strings.Join(omitted, ", "),
+		)}
+	}
+	return &UnreadFilesError{Files: omitted, message: fmt.Sprintf(
+		"migration files format detection does not read: %s. The directory reads as Atlas migrations, and Atlas runs "+
+			"every SQL file at the top level of the directory, so Ptah refuses the directory rather than leave them "+
+			"unapplied; read it with --dir-format atlas, or move them out of the directory",
+		strings.Join(omitted, ", "),
+	)}
+}
+
+// omittedTopLevelFiles returns the SQL files at the top level of a directory
+// that neither the selected files nor the repeatable migrations hold, in
+// walk order.
+func omittedTopLevelFiles(sqlFiles []string, files []File, repeatables []RepeatableFile) []string {
 	selected := make(map[string]struct{}, len(files)+len(repeatables))
 	for _, file := range files {
 		selected[file.Path] = struct{}{}
@@ -260,15 +332,7 @@ func refuseOmittedAtlasFiles(sqlFiles []string, files []File, repeatables []Repe
 			omitted = append(omitted, p)
 		}
 	}
-	if len(omitted) == 0 {
-		return nil
-	}
-	return fmt.Errorf(
-		"migration files the selected format does not read: %s. atlas.sum covers them and Atlas runs every "+
-			"SQL file at the top level of the directory, so Ptah refuses the directory rather than leave them "+
-			"unapplied; read it with --dir-format atlas, or remove them from the directory",
-		strings.Join(omitted, ", "),
-	)
+	return omitted
 }
 
 // readsRepeatables reports whether a walk resolved to the Ptah format, the

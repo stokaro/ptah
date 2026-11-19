@@ -4407,7 +4407,9 @@ Ptah behavior is the zero-value default.
 `migration/migrationfile` is the migration file-layout toolkit: what a
 migration directory and its files mean, with no database and no execution.
 `Discover` walks a filesystem in a `DirFormat` (`ParseDirFormat` normalizes the
-CLI spelling) and returns `File` values; `ParseFileName` and
+CLI spelling) and returns `File` values. A directory is read whole: a SQL file
+at its top level that the format does not read fails `Discover` with an
+`*UnreadFilesError`, whose `Files` names each one. `ParseFileName` and
 `ParseAtlasFileName` read one name; `FileName`, `CheckpointFileName`, and
 `NextVersion` produce names for writers. `ParseDirectives` and `ParseTimeouts`
 read the `-- +ptah` directive header, `ParseFileTxMode` and `ParseUp` resolve a

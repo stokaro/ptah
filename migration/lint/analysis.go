@@ -236,6 +236,11 @@ type File struct {
 	// strictNameRe comment), or names a repeatable migration the migrator
 	// runs.
 	WellFormedName bool
+	// Unread reports that the migrator's reading of the directory leaves this
+	// file out at its top level, so a run refuses the directory rather than
+	// apply it; see [migrationfile.UnreadFilesError]. The Atlas profile marks
+	// no file.
+	Unread bool
 	// NoTransaction reports whether file-scoped directives opt this migration
 	// out of the migrator's transaction wrapper, or the migration runs without
 	// one because its directory's runner sends its one statement alone; see
@@ -611,6 +616,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		files = append(files, file)
 	}
 	keyAtlasFilesByPosition(files, snapshot, dirFormat)
+	markUnreadFiles(files, snapshot, dirFormat, opts.Compatibility)
 	split, err := splitFiles(ctx, runtime, opts.Dialect, files)
 	if err != nil {
 		return Analysis{}, err
@@ -1107,6 +1113,25 @@ type Runtime interface {
 func withOwners(files []File, owners sqlext.Set) {
 	for i := range files {
 		files[i].owners = owners
+	}
+}
+
+// markUnreadFiles marks the files the migrator's reading of the directory
+// leaves out at its top level, which that reading refuses the directory for.
+// The reading is the migrator's own, so lint and a run agree on which files
+// stop the run. The Atlas profile marks none: the community binary runs every
+// SQL file at the top level, and ptah-compat reads the directory in the Atlas
+// format, which names its own refusals.
+func markUnreadFiles(files []File, fsys fs.FS, format migrationfile.DirFormat, profile CompatibilityProfile) {
+	if profile == CompatibilityProfileAtlas {
+		return
+	}
+	var unread *migrationfile.UnreadFilesError
+	if _, err := migrationfile.Discover(fsys, format); !errors.As(err, &unread) {
+		return
+	}
+	for i := range files {
+		files[i].Unread = slices.Contains(unread.Files, files[i].Name)
 	}
 }
 

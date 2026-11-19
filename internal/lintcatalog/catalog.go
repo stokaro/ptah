@@ -403,6 +403,12 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDB:     YDBApplies,
 		YDBNote: "the migration directory's files",
 	},
+	"MF105P": {
+		Summary:    "a file at the top of the migration directory is one the directory's format does not read, so a run refuses the directory",
+		NativeOnly: true,
+		YDB:        YDBApplies,
+		YDBNote:    "the migration directory's files",
+	},
 	"BC101": {
 		Summary:    "a rename retires a name deployed code still refers to",
 		AtlasCode:  "BC101",

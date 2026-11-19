@@ -211,12 +211,13 @@ func TestLintFS_MigrationFormRules(t *testing.T) {
 		"0000000001_orphan.up.sql":  "CREATE TABLE t (id INT);\n",         // MF101P: no down
 		"0000000002_empty.up.sql":   "-- only comments; nothing to run\n", // MF102P
 		"0000000002_empty.down.sql": "-- nothing\n",
-		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // MF103
+		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // MF105P: the migrator refuses the directory
+		"shared/misnamed.sql":       "CREATE TABLE stray (id INT);\n", // MF103: a file of another directory
 	})
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P", "MF103"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P", "MF105P", "MF103"})
 	for _, f := range findings {
 		c.Assert(f.Line, qt.Equals, 0, qt.Commentf("file-level findings carry no line: %v", f))
 	}
@@ -1002,7 +1003,7 @@ func TestLintFS_PromptPlaceholdersDoNotSelectTemplateRendering(t *testing.T) {
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "BC103", "DS101"})
 }
 
-func TestLintFS_CaseVariantSQLFilesGetNamingWarning(t *testing.T) {
+func TestLintFS_CaseVariantSQLFilesStopTheRun(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fixture(map[string]string{
@@ -1013,8 +1014,56 @@ func TestLintFS_CaseVariantSQLFilesGetNamingWarning(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF103"},
-		qt.Commentf("a case-variant file the migrator will not run earns a naming warning instead of vanishing"))
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF105P"},
+		qt.Commentf("a case-variant file the migrator refuses the directory for is reported instead of vanishing"))
+}
+
+// refusedFiles names the files the findings report under MF105P, in order.
+func refusedFiles(findings []lint.Finding) []string {
+	files := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		if finding.Rule == "MF105P" {
+			files = append(files, finding.File)
+		}
+	}
+	return files
+}
+
+// TestLintFS_FilesTheMigratorRefusesTheDirectoryFor reports under MF105P each
+// file the migrator's reading leaves out at the top of the directory, which a
+// run refuses the directory for, whichever grammar its name resembles. The
+// Atlas profile reports none: the community binary runs every top-level file.
+func TestLintFS_FilesTheMigratorRefusesTheDirectoryFor(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   map[string]string
+		profile lint.CompatibilityProfile
+		want    []string
+	}{
+		{"an Atlas name beside a Ptah pair", map[string]string{
+			"0000000001_a.up.sql":   "CREATE TABLE a (id INT);\n",
+			"0000000001_a.down.sql": "DROP TABLE a;\n",
+			"20240101_seed.sql":     "CREATE TABLE seed (id INT);\n",
+		}, lint.CompatibilityProfileNative, []string{"20240101_seed.sql"}},
+		{"a version auto-detection does not read beside a numbered file", map[string]string{
+			"1_a.sql":  "CREATE TABLE a (id INT);\n",
+			"v2_b.sql": "CREATE TABLE b (id INT);\n",
+		}, lint.CompatibilityProfileNative, []string{"v2_b.sql"}},
+		{"the Atlas profile", map[string]string{
+			"1_a.sql":  "CREATE TABLE a (id INT);\n",
+			"v2_b.sql": "CREATE TABLE b (id INT);\n",
+		}, lint.CompatibilityProfileAtlas, make([]string, 0)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(test.files), lint.Options{Compatibility: test.profile})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(refusedFiles(findings), qt.DeepEquals, test.want)
+		})
+	}
 }
 
 func TestLintFS_DialectGating(t *testing.T) {

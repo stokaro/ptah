@@ -212,12 +212,18 @@ func TestMigrateCheckpointCommand_RefusesAtlasIntoUnhashedPtahDirectory(t *testi
 	tests := []struct {
 		name  string
 		extra []string
+		files map[string]string
 	}{
 		{name: "explicit atlas", extra: []string{"--dir-format", "atlas"}},
 		// The native default is ptah, so the explicit spelling is the only way
 		// to reach this natively; the compat surface reaches it unflagged,
 		// which is covered in internal/cli/atlas.
 		{name: "atlas with a description", extra: []string{"--dir-format", "atlas", "--description", "snap"}},
+		// The Ptah-format reading refuses this directory for the Atlas file,
+		// so the guard reads names rather than the directory.
+		{name: "beside an Atlas file", extra: []string{"--dir-format", "atlas"}, files: map[string]string{
+			"20250801000001_init.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+		}},
 	}
 
 	for _, tt := range tests {
@@ -225,6 +231,7 @@ func TestMigrateCheckpointCommand_RefusesAtlasIntoUnhashedPtahDirectory(t *testi
 			c := qt.New(t)
 			dir := t.TempDir()
 			seedMigrations(c, dir) // ptah pair, deliberately NEVER hashed
+			writeMigrationFiles(c, dir, tt.files)
 			shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
 
 			args := append([]string{"--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite"}, tt.extra...)

@@ -1274,11 +1274,30 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
+			Code:     "MF105P",
+			Title:    "file the migrator does not read",
+			Severity: SeverityError,
+			CheckFile: func(file *File) []Finding {
+				if !file.Unread {
+					return nil
+				}
+				return []Finding{{
+					Rule:     "MF105P",
+					Title:    "file the migrator does not read",
+					Severity: SeverityError,
+					File:     file.Path,
+					Message: "the directory's format does not read this file name, so the migrator refuses the directory " +
+						"rather than leave the file unapplied; give it a name the format reads, or move it out of the directory",
+				}}
+			},
+		},
+		{
 			Code:     "MF103",
 			Title:    "non-conventional file name",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
-				if file.WellFormedName {
+				// MF105P reports a file the migrator refuses the directory for.
+				if file.WellFormedName || file.Unread {
 					return nil
 				}
 				message := "file name does not match NNNNNNNNNN_description.(up|down).sql; the migrator will not pick it up"
