@@ -4,7 +4,9 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
+	"slices"
 	"strings"
 
 	"ptah.run/catalog"
@@ -14,12 +16,14 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
+	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/routinebody"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/tableidentity"
 	"ptah.run/internal/tableref"
@@ -107,38 +111,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
-	// A target that decides CHECK equivalence itself is asked during the
-	// comparison, after its lowering; see withTargetCheckDecisions. Its server
-	// spells no CHECK here.
-	var checks map[string]config.CheckExpression
-	if rules.Checks == nil {
-		checks, err = resolveCheckExpressions(ctx, conn, desired, database, info.Dialect, semantics)
-		if err != nil {
-			return nil, Diagnostics{}, err
-		}
-	}
-	indexes, err := resolveIndexExpressions(ctx, conn, desired, database, semantics)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	// A column batch owner supplies the offline type and default facts. Domain
-	// identities retain common comparison ownership and need no spelling probe.
-	var columns map[string]config.ColumnSpelling
-	if rules.ColumnService == nil {
-		columns, err = resolveColumnSpellings(ctx, conn, desired, database, semantics, runtime)
-	}
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	triggers, err := resolveTriggerConditions(ctx, conn, desired, database, semantics)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	arguments, err := resolveRoutineArguments(ctx, conn, desired, database, semantics, runtime)
-	if err != nil {
-		return nil, Diagnostics{}, err
-	}
-	views, err := resolveViewBodies(ctx, conn, desired, database)
+	resolved, err := resolveExpressions(ctx, conn, desired, database, info, rules, heldGeneratedExpressions(opts), runtime)
 	if err != nil {
 		return nil, Diagnostics{}, err
 	}
@@ -146,18 +119,59 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	// the options carrying the maps that have something in them. The copy is
 	// what keeps the caller's options untouched, which matters because a
 	// caller may compare twice with one value.
-	opts = withResolvedExpressions(opts, resolvedExpressions{
-		checks:    checks,
-		indexes:   indexes,
-		columns:   columns,
-		triggers:  triggers,
-		arguments: arguments,
-		views:     views,
-	})
+	opts = withResolvedExpressions(opts, resolved)
 
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
 		ctx, desired, database, info, opts, runtime,
 	)
+}
+
+// resolveExpressions asks the server how it spells each declared expression
+// the comparison reads, one resolver per family.
+func resolveExpressions(
+	ctx context.Context,
+	conn Connection,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	info catalog.ServerInfo,
+	rules schemacomparison.Rules,
+	heldGenerated map[string]config.GeneratedExpression,
+	runtime DatabaseRuntime,
+) (resolvedExpressions, error) {
+	semantics := info.IdentifierSemantics
+	var resolved resolvedExpressions
+	var err error
+	// A target that decides CHECK equivalence itself is asked during the
+	// comparison, after its lowering; see withTargetCheckDecisions. Its server
+	// spells no CHECK here.
+	if rules.Checks == nil {
+		if resolved.checks, err = resolveCheckExpressions(ctx, conn, desired, database, info.Dialect, semantics); err != nil {
+			return resolvedExpressions{}, err
+		}
+	}
+	if resolved.indexes, err = resolveIndexExpressions(ctx, conn, desired, database, semantics); err != nil {
+		return resolvedExpressions{}, err
+	}
+	if resolved.generated, err = resolveGeneratedExpressions(ctx, conn, desired, database, semantics, heldGenerated); err != nil {
+		return resolvedExpressions{}, err
+	}
+	// A column batch owner supplies the offline type and default facts. Domain
+	// identities retain common comparison ownership and need no spelling probe.
+	if rules.ColumnService == nil {
+		if resolved.columns, err = resolveColumnSpellings(ctx, conn, desired, database, semantics, runtime); err != nil {
+			return resolvedExpressions{}, err
+		}
+	}
+	if resolved.triggers, err = resolveTriggerConditions(ctx, conn, desired, database, semantics); err != nil {
+		return resolvedExpressions{}, err
+	}
+	if resolved.arguments, err = resolveRoutineArguments(ctx, conn, desired, database, semantics, runtime); err != nil {
+		return resolvedExpressions{}, err
+	}
+	if resolved.views, err = resolveViewBodies(ctx, conn, desired, database); err != nil {
+		return resolvedExpressions{}, err
+	}
+	return resolved, nil
 }
 
 // resolvedExpressions collects what the resolvers above answered, so the
@@ -165,6 +179,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 type resolvedExpressions struct {
 	checks    map[string]config.CheckExpression
 	indexes   map[string]config.IndexExpression
+	generated map[string]config.GeneratedExpression
 	columns   map[string]config.ColumnSpelling
 	triggers  map[string]config.TriggerCondition
 	arguments map[string]config.RoutineArguments
@@ -174,8 +189,8 @@ type resolvedExpressions struct {
 // empty reports that no server answered for anything, which is every offline
 // comparison and every target whose engine rewrites nothing.
 func (r resolvedExpressions) empty() bool {
-	return len(r.checks) == 0 &&
-		len(r.indexes) == 0 && len(r.columns) == 0 &&
+	return len(r.checks) == 0 && len(r.indexes) == 0 &&
+		len(r.generated) == 0 && len(r.columns) == 0 &&
 		len(r.triggers) == 0 && len(r.arguments) == 0 && len(r.views) == 0
 }
 
@@ -200,6 +215,20 @@ func withResolvedExpressions(
 	}
 	if len(resolved.indexes) > 0 {
 		merged.IndexExpressions = resolved.indexes
+	}
+	if len(resolved.generated) > 0 {
+		// A caller may hold answers from another server already: `ptah
+		// compare` asks a dev database about Oracle's columns. Those stay.
+		generated := maps.Clone(merged.GeneratedExpressions)
+		if generated == nil {
+			generated = make(map[string]config.GeneratedExpression, len(resolved.generated))
+		}
+		for key, answer := range resolved.generated {
+			if _, held := generated[key]; !held {
+				generated[key] = answer
+			}
+		}
+		merged.GeneratedExpressions = generated
 	}
 	if len(resolved.columns) > 0 {
 		merged.ColumnSpellings = resolved.columns
@@ -789,6 +818,183 @@ func reconcileCheckSpellings(
 		}
 	}
 	return nil
+}
+
+// heldGeneratedExpressions is the generated expressions the caller's options
+// already answer, which the comparison does not ask the target about again.
+func heldGeneratedExpressions(opts *config.CompareOptions) map[string]config.GeneratedExpression {
+	if opts == nil {
+		return nil
+	}
+	return opts.GeneratedExpressions
+}
+
+// ResolveGeneratedExpressions asks conn how it stores the expression of every
+// declared generated column that database also holds as a generated column,
+// and returns the answers keyed as [config.CompareOptions.GeneratedExpressions]
+// reads them.
+//
+// It is for a caller that holds a dev database beside the target. Put in the
+// options, the answers spell the declarations there, and
+// [CompareWithDatabase] asks the target only about the columns they leave out
+// or the dev server refused, so a target role without the TEMP privilege
+// needs it only for those. The probe is a temporary table that carries the
+// columns database reports, in a transaction that is rolled back, so conn
+// needs those column types and nothing else.
+//
+// Only a server whose descriptor names the pg-catalog probes is asked; on
+// every other dialect the result is nil. An answer with Resolved false is a
+// column the server refused to spell.
+func ResolveGeneratedExpressions(
+	ctx context.Context,
+	conn Connection,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+) (map[string]config.GeneratedExpression, error) {
+	if desired == nil || database == nil {
+		return nil, nil
+	}
+	if conn == nil {
+		return nil, fmt.Errorf("resolve generated expressions: database connection is nil")
+	}
+	info := conn.Info()
+	semantics, err := conn.ResolveIdentifierSemantics(ctx, collectIdentifierNames(desired, database, info.Schema, info.Dialect))
+	if err != nil {
+		return nil, fmt.Errorf("resolve generated expressions: %w", err)
+	}
+	probes := generatedColumnProbes(info, desired, database, semantics)
+	if len(probes) == 0 {
+		return nil, nil
+	}
+	resolved, _, err := dbexprprobe.ResolveGeneratedColumns(ctx, conn, probes)
+	if err != nil {
+		return nil, fmt.Errorf("resolve generated expressions: %w", err)
+	}
+	return resolved, nil
+}
+
+// resolveGeneratedExpressions asks the server how it stores the expression of
+// every declared generated column that the database holds as a generated
+// column too, apart from those held already answers.
+//
+// Only those, for the reason [resolveCheckExpressions] gives: a column being
+// added carries its declaration into the ALTER statement unchanged, and a
+// column that stops or starts being generated is a change whatever the
+// expression says.
+//
+// The probe table carries the LIVE table's other columns, for the reason
+// [resolveCheckExpressions] gives: the stored form depends on the types the
+// expression is parsed against. A plan that changes the type of a column the
+// expression reads rebuilds the generated column as declared whatever this
+// answers.
+//
+// A column the server refuses to spell is compared as written, and the run
+// says so once, before the plan it informs: the refusal is usually a role
+// without the TEMP privilege, and a comparison of the declaration against the
+// stored form reports a change nobody made.
+func resolveGeneratedExpressions(
+	ctx context.Context,
+	conn Connection,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+	held map[string]config.GeneratedExpression,
+) (map[string]config.GeneratedExpression, error) {
+	if desired == nil || database == nil {
+		return nil, nil
+	}
+	probes := slices.DeleteFunc(generatedColumnProbes(conn.Info(), desired, database, semantics),
+		func(probe dbexprprobe.GeneratedColumnProbe) bool {
+			_, answered := held[probe.Key]
+			return answered
+		})
+	if len(probes) == 0 {
+		return nil, nil
+	}
+	resolved, refusals, err := dbexprprobe.ResolveGeneratedColumns(ctx, conn, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	warnUnspelledGeneratedColumns(ctx, refusals)
+	return resolved, nil
+}
+
+// warnUnspelledGeneratedColumns raises one warning for the generated columns
+// the server refused to spell, and writes it now rather than when the run
+// ends, since the plan that follows depends on it.
+func warnUnspelledGeneratedColumns(ctx context.Context, refusals []dbexprprobe.GeneratedColumnRefusal) {
+	if len(refusals) == 0 {
+		return
+	}
+	stream := rundiag.Stream(ctx)
+	for _, refusal := range refusals {
+		column := strings.Join(slices.DeleteFunc([]string{refusal.Schema, refusal.Table, refusal.Column},
+			func(part string) bool { return part == "" }), ".")
+		_ = rundiag.Warn(ctx, stream, rundiag.UnspelledGeneratedColumns, rundiag.Record{
+			Key: refusal.Key,
+			Line: fmt.Sprintf("generated column %s is compared as written, not in the form the server stores: "+
+				"the server refused the temporary table that spells it: %v", column, refusal.Reason),
+			Attrs: []slog.Attr{slog.String("column", column), slog.String("reason", refusal.Reason.Error())},
+		})
+	}
+	rundiag.Settle(ctx, rundiag.UnspelledGeneratedColumns)
+}
+
+// generatedColumnProbes builds a probe for every declared generated column
+// that database holds as a generated column too, keyed for info's dialect.
+func generatedColumnProbes(
+	info catalog.ServerInfo,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) []dbexprprobe.GeneratedColumnProbe {
+	held := make(map[string]catalog.Table, len(database.Tables))
+	for _, table := range database.Tables {
+		held[exprkey.TableParts(semantics, table.Schema, table.Name)] = table
+	}
+	var probes []dbexprprobe.GeneratedColumnProbe
+	for _, table := range desired.Tables {
+		live, exists := held[exprkey.TableParts(semantics, table.Schema, table.Name)]
+		if !exists {
+			continue
+		}
+		for _, field := range generatedschema.FieldsForTable(desired, table) {
+			probe, ok := generatedColumnProbe(live, field, semantics)
+			if !ok {
+				continue
+			}
+			probe.Key = exprkey.Generated(info.Dialect, table.Schema, table.Name, field.Name)
+			probe.Schema = cmp.Or(live.Schema, info.Schema)
+			probes = append(probes, probe)
+		}
+	}
+	return probes
+}
+
+// generatedColumnProbe builds the probe for one declared generated column
+// from the live table that holds it, or reports that the live column is
+// absent or not generated.
+func generatedColumnProbe(
+	live catalog.Table,
+	field schemamodel.Field,
+	semantics identifier.Semantics,
+) (dbexprprobe.GeneratedColumnProbe, bool) {
+	if strings.TrimSpace(field.GeneratedExpression) == "" {
+		return dbexprprobe.GeneratedColumnProbe{}, false
+	}
+	identity := semantics.ColumnIdentityKey(field.Name)
+	probe := dbexprprobe.GeneratedColumnProbe{Table: live.Name, Expression: field.GeneratedExpression}
+	for _, column := range live.Columns {
+		if semantics.ColumnIdentityKey(column.Name) != identity {
+			probe.Columns = append(probe.Columns, dbexprprobe.CheckProbeColumn{Name: column.Name, Type: column.RawType()})
+			continue
+		}
+		if strings.TrimSpace(column.GeneratedKind) == "" {
+			return dbexprprobe.GeneratedColumnProbe{}, false
+		}
+		probe.Column, probe.Type = column.Name, column.RawType()
+	}
+	return probe, probe.Column != ""
 }
 
 // resolveIndexExpressions normalizes the declared expression and predicate of

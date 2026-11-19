@@ -2222,6 +2222,14 @@ func generatedExpressionIsRewritten(dialect string) bool {
 // to compare against, so on a rewriting target both leave the expression
 // uncompared, and on every other target both leave today's textual comparison
 // alone. An arm that separated them would be an arm nothing could reach.
+//
+// A resolved declaration and the catalog are two forms the same server
+// printed, so they are compared exactly, with only the whitespace outside
+// quotes collapsed. The target's rule is not applied to them: it exists to
+// bridge a declaration nobody spelled and the catalog, and a rule that drops a
+// cast hides a change the cast makes. Measured on PostgreSQL 18, `(a < b)` and
+// `(a::text < b::text)` over two integers are stored as two expressions, and
+// with a=9 and b=10 they answer t and f.
 func generatedColumnDiff(
 	genCol schemamodel.Field,
 	dbCol catalog.Column,
@@ -2230,11 +2238,15 @@ func generatedColumnDiff(
 	spelling schemacomparison.GeneratedExpressions,
 ) string {
 	declared := genCol.GeneratedExpression
+	spell := func(expression string) string { return normalizeGeneratedExpression(expression, spelling) }
 	switch {
 	case resolution != nil && resolution.Resolved:
 		// The server's own spelling of the declaration, so the two sides are
 		// compared as like with like.
 		declared = resolution.Expression
+		spell = func(expression string) string {
+			return collapseWhitespaceOutsideQuotedSQL(normalize.Expression(expression))
+		}
 	case generatedExpressionIsRewritten(dialect):
 		// A rewriting target with no usable answer. Reporting the textual
 		// difference here is what plans a MODIFY that changes nothing on every
@@ -2243,10 +2255,10 @@ func generatedColumnDiff(
 		return generatedKindDiff(genCol, dbCol)
 	}
 
-	genExpr := normalizeGeneratedExpression(declared, spelling)
+	genExpr := spell(declared)
 	dbExpr := ""
 	if dbCol.GeneratedExpression != nil {
-		dbExpr = normalizeGeneratedExpression(*dbCol.GeneratedExpression, spelling)
+		dbExpr = spell(*dbCol.GeneratedExpression)
 	}
 	genKind := strings.ToUpper(strings.TrimSpace(genCol.GeneratedKind))
 	dbKind := strings.ToUpper(strings.TrimSpace(dbCol.GeneratedKind))

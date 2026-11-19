@@ -133,6 +133,15 @@ const (
 	// MariaDB names accepts the statement. A statement shape that merges the
 	// pair passes against MariaDB and fails against this server.
 	MariaDB118
+	// PostgreSQL16 is a PostgreSQL 16 server, reached with an account that
+	// may create and drop databases.
+	//
+	// It is an engine of its own because the release line is what it is for.
+	// PostgreSQL 16 has no ALTER COLUMN SET EXPRESSION, which arrived in 17,
+	// so a changed generated column takes another path there than on the 18
+	// server PostgreSQL names. A plan that reports a change nobody made shows
+	// as a statement on 18 and as a manual-migration warning on 16.
+	PostgreSQL16
 )
 
 // source is where one engine's address comes from.
@@ -258,6 +267,10 @@ var sources = map[Engine]source{
 		canonical: "MARIADB_11_8_TEST_URL",
 		scheme:    []string{"mariadb", "mysql"},
 	},
+	PostgreSQL16: {
+		canonical: "POSTGRES_16_TEST_URL",
+		scheme:    []string{"postgres", "postgresql"},
+	},
 }
 
 // String names the engine as its canonical variable does.
@@ -377,6 +390,7 @@ var engineNames = map[Engine]string{
 	MySQLDevServer:    "second MySQL server",
 	MariaDBDevServer:  "second MariaDB server",
 	MariaDB118:        "MariaDB 11.8 server with an administrative account",
+	PostgreSQL16:      "PostgreSQL 16 server with an administrative account",
 }
 
 // DriverDSN returns the address in the form a raw database/sql driver parses,
@@ -523,7 +537,7 @@ func Engines() []Engine {
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
 		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
 		MySQLSocket, MariaDBSocket, PostgreSQLAliased, PostgreSQLAlias,
-		MySQLDevServer, MariaDBDevServer, MariaDB118,
+		MySQLDevServer, MariaDBDevServer, MariaDB118, PostgreSQL16,
 	}
 }
 

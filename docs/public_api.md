@@ -2620,6 +2620,14 @@ session that also reports the server's `Info` and resolves identifier
 semantics. A `dbschema.DatabaseConnection` implements it, and the comparison
 does not link the schema readers through it. A nil `Connection` is refused.
 
+`schemadiff.ResolveGeneratedExpressions` asks a `Connection`, usually a dev
+database, how it stores each declared generated column that the current state
+also holds as generated. Only PostgreSQL and YugabyteDB are asked; elsewhere the
+result is nil. Put in `config.CompareOptions.GeneratedExpressions`, the answers
+are what `CompareWithDatabase` compares, and the comparison asks its own
+connection only about the columns they leave out. An answer with `Resolved`
+false is a column the server refused to spell.
+
 `schemaext.ComparisonRequest.DeclaredRelations` and
 `schemaext.ObjectComparisonRequest.DeclaredRelations` name the tables, views and
 materialized views the desired schema declares, each identity's kind saying

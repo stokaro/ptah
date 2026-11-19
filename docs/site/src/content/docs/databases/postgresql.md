@@ -251,15 +251,31 @@ string, whatever its characters spell; `default_expr` declares the expression.
 | routine `f(x int)` body `BEGIN ATOMIC SELECT count(*) FROM t WHERE a > x; END` | `... FROM t WHERE (t.a > f.x); END` |
 
 When a comparison has a connection, Ptah asks that server to spell each declared
-column type and default, CHECK, `EXCLUDE` element list and predicate, policy
-clause, index expression and predicate, trigger WHEN condition, domain, and
-routine argument list and result the way its catalog does. It creates a temporary object inside a transaction that is rolled back,
+column type and default, generated column expression, CHECK, `EXCLUDE` element
+list and predicate, policy clause, index expression and predicate, trigger WHEN
+condition, domain, and routine argument list and result the way its catalog
+does. It creates a temporary object inside a transaction that is rolled back,
 reads the stored form, and compares like with like. A column is asked only when
 its default is declared or its type is not written the way the catalog reports
 it. A routine is asked when it declares arguments or a result and the database
 holds a routine of that name. Its temporary copy has the declared arguments and
 return type, and a body the server does not check, because the signature does
 not depend on the body.
+
+A generated column is asked on a temporary table that has the columns of the
+table the database holds. The server adds casts the declaration does not
+write: over a `varchar` column, `coalesce(title, '')` is stored as
+`(COALESCE(title, ''::character varying))::text`. The two stored forms are then
+compared exactly, apart from whitespace, so a cast written on one side only is
+a change. Over a `char(5)` column, `octet_length(c)` counts the padding and
+`octet_length(c::text)` does not.
+
+The temporary table needs the `TEMPORARY` privilege on the database. With
+`--dev-url`, `schema apply` and `schema plan` ask the dev database first, so the
+target needs the privilege only for a table whose column types the dev database
+does not have, such as an enum. A generated column no server could spell is
+compared as written, and the run prints one warning that names it and the
+server's answer.
 
 A routine with a SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is
 asked with its body too, a procedure without arguments included. PostgreSQL

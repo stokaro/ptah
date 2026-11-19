@@ -41,6 +41,9 @@ func TestResolversRefuseANilConnection(t *testing.T) {
 
 	_, err = dbexprprobe.ResolveColumnSpellings(ctx, nil, []dbexprprobe.ColumnSpellingProbe{{Table: "t"}})
 	c.Assert(err, qt.ErrorMatches, `resolve column spellings: database connection is nil`)
+
+	_, _, err = dbexprprobe.ResolveGeneratedColumns(ctx, nil, []dbexprprobe.GeneratedColumnProbe{{Key: "k"}})
+	c.Assert(err, qt.ErrorMatches, `resolve generated expressions: database connection is nil`)
 }
 
 // TestResolversAnswerNilForAnEmptyProbeList pins the no-work fast path: no
@@ -58,6 +61,11 @@ func TestResolversAnswerNilForAnEmptyProbeList(t *testing.T) {
 	columns, err := dbexprprobe.ResolveColumnSpellings(ctx, conn, nil)
 	c.Assert(err, qt.IsNil)
 	c.Assert(columns, qt.IsNil)
+
+	generated, refusals, err := dbexprprobe.ResolveGeneratedColumns(ctx, conn, nil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(generated, qt.IsNil)
+	c.Assert(refusals, qt.IsNil)
 }
 
 // TestResolversAnswerNilForADialectThatStoresWhatItWasGiven pins the dialect
@@ -92,6 +100,13 @@ func TestResolversAnswerNilForADialectThatStoresWhatItWasGiven(t *testing.T) {
 			Columns: []dbexprprobe.ColumnSpellingColumn{{Key: "t.a", Name: "a"}}}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(columns, qt.IsNil)
+
+	generated, refusals, err := dbexprprobe.ResolveGeneratedColumns(ctx, conn,
+		[]dbexprprobe.GeneratedColumnProbe{{Key: "t.g", Table: "t", Column: "g", Type: "integer", Expression: "a * 2",
+			Columns: []dbexprprobe.CheckProbeColumn{{Name: "a", Type: "integer"}}}})
+	c.Assert(err, qt.IsNil)
+	c.Assert(generated, qt.IsNil)
+	c.Assert(refusals, qt.IsNil)
 }
 
 // TestGeneratedExpressionProbeTable pins the two facts the name exists for:

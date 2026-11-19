@@ -143,6 +143,72 @@ func TestGeneratedColumnDiff_UsesTheServerSpellingWhereItHasOne(t *testing.T) {
 			spelling:   postgrescomparison.GeneratedExpressions{},
 			want:       "",
 		},
+		{
+			// PostgreSQL 16 and 18 store `coalesce(title, 'x')` over a varchar
+			// column with a cast the declaration does not hold.
+			name:       "a PostgreSQL declaration the server spelled holds its casts",
+			dialect:    platform.Postgres,
+			declared:   "coalesce(title, 'x')",
+			stored:     "(COALESCE(title, 'x'::character varying))::text",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("(COALESCE(title, 'x'::character varying))::text"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "",
+		},
+		{
+			name:       "two server spellings differing in whitespace alone are one expression",
+			dialect:    platform.Postgres,
+			declared:   "coalesce(title, 'x')",
+			stored:     "COALESCE(title, 'x')",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("COALESCE(title,\n  'x')"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "",
+		},
+		{
+			name:       "whitespace inside a literal is part of the expression",
+			dialect:    platform.Postgres,
+			declared:   "coalesce(title, 'a  b')",
+			stored:     "COALESCE(title, 'a b')",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("COALESCE(title, 'a  b')"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "VIRTUAL COALESCE(title,'a b') -> VIRTUAL COALESCE(title,'a  b')",
+		},
+		{
+			// A cast to text on one side is another stored expression: over
+			// char(5), octet_length(c) counts the padding and
+			// octet_length(c::text) does not.
+			name:       "a cast to text on one side reports",
+			dialect:    platform.Postgres,
+			declared:   "octet_length(c::text)",
+			stored:     "octet_length(c)",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("octet_length((c)::text)"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "VIRTUAL octet_length(c) -> VIRTUAL octet_length((c)::text)",
+		},
+		{
+			name:       "a cast that rounds on one side reports",
+			dialect:    platform.Postgres,
+			declared:   "amount::integer",
+			stored:     "amount",
+			storedKind: "VIRTUAL",
+			resolution: resolvedAs("(amount)::integer"),
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "VIRTUAL amount -> VIRTUAL (amount)::integer",
+		},
+		{
+			// Without a server the declaration lacks the casts PostgreSQL
+			// inserts, so every cast is folded, as the target's rule says.
+			name:       "a PostgreSQL declaration nobody spelled folds every cast",
+			dialect:    platform.Postgres,
+			declared:   "amount::integer",
+			stored:     "amount",
+			storedKind: "VIRTUAL",
+			spelling:   postgrescomparison.GeneratedExpressions{},
+			want:       "",
+		},
 	}
 
 	for _, test := range tests {

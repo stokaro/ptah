@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/config"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/planext"
 	"ptah.run/core/plangraph"
@@ -27,6 +28,7 @@ import (
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/internal/dbexprprobe"
 	"ptah.run/internal/dbreset"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devlock"
@@ -629,6 +631,9 @@ func computeApplyPlan(
 	// [DiffPolicy.CompareOptions].
 	compareOpts := opts.Policy.CompareOptions()
 	withSecretRotation(compareOpts, opts.Policy)
+	if err := spellGeneratedColumnsOnDev(ctx, opts.DevURL, info.Dialect, compareOpts, desired, current); err != nil {
+		return applyComputation{}, err
+	}
 	compared, undecided, err := schemadiff.CompareWithDatabaseReportingUndecidedAdditions(ctx, conn, desired, current, compareOpts, opts.Runtime)
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("compare database schema: %w", comparisonRefusal(err))
@@ -1578,6 +1583,52 @@ func checkStatement(ctx context.Context, executor catalog.SchemaExecutor, stmt s
 // reportSkipped writes one line for each object the comparison left out
 // because the target does not serve its model and its owner skips it there,
 // as a plan writes it.
+// spellGeneratedColumnsOnDev asks the dev database devURL names how it stores
+// each declared generated column the current state also holds, and puts the
+// answers it resolved in opts. The comparison then asks the target only about
+// the columns the dev server refused, so a target role without the TEMP
+// privilege needs it only for those. The dev server is asked first because it
+// is the database a run may create objects in; the probe there carries the
+// current table's column types, so a type only the target has, such as an
+// enum, is refused on the dev server and asked of the target.
+//
+// Nothing is asked without a dev URL, on a dialect whose server is not asked
+// how it stores a generated expression, or when the desired state declares no
+// generated column.
+func spellGeneratedColumnsOnDev(
+	ctx context.Context,
+	devURL, dialect string,
+	opts *config.CompareOptions,
+	desired *schemamodel.Database,
+	current *catalog.Database,
+) error {
+	if strings.TrimSpace(devURL) == "" || !dbexprprobe.SpellsGeneratedColumns(dialect) || desired == nil ||
+		!slices.ContainsFunc(desired.Fields, func(field schemamodel.Field) bool { return strings.TrimSpace(field.GeneratedExpression) != "" }) {
+		return nil
+	}
+	dev, err := dbschema.ConnectToDatabase(ctx, devURL)
+	if err != nil {
+		return fmt.Errorf("connect to --dev-url: %w", err)
+	}
+	defer dbschema.CloseAndWarn(dev)
+	answers, err := schemadiff.ResolveGeneratedExpressions(ctx, dev, desired, current)
+	if err != nil {
+		return err
+	}
+	for key, answer := range answers {
+		if !answer.Resolved {
+			continue
+		}
+		if opts.GeneratedExpressions == nil {
+			opts.GeneratedExpressions = make(map[string]config.GeneratedExpression, len(answers))
+		}
+		if _, held := opts.GeneratedExpressions[key]; !held {
+			opts.GeneratedExpressions[key] = answer
+		}
+	}
+	return nil
+}
+
 // ReportUnmanagedOwnerPrivileges writes one line for each declared object whose
 // owner lacks privileges PostgreSQL gives an owner by default, which the desired
 // state does not manage. Ptah plans nothing for them, and the line keeps a

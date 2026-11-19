@@ -85,6 +85,17 @@
       "enabled": false
     },
     {
+      "description": "The postgres-16 integration service is pinned to 16 deliberately: PostgreSQL 16 has no ALTER COLUMN SET EXPRESSION, so a changed generated column takes the manual-migration path there, and the generated-expression test points its rows at both 16 and the 18 service. A 17.x tag removes that coverage without failing anything. Matching on the current value freezes only that pin; the tag names a line, so the server still takes each 16 patch release.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "postgres"
+      ],
+      "matchCurrentValue": "16",
+      "enabled": false
+    },
+    {
       "description": "Update indirect Go dependencies",
       "matchManagers": [
         "gomod"
