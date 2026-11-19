@@ -42,8 +42,9 @@ type Migration struct {
 	// SameNamedForeignKeysApart reports that a release line of the engine
 	// refuses one ALTER TABLE that drops a foreign key and adds one of the
 	// same name, so a generated migration drops the key in a statement of its
-	// own ahead of the one that adds it back. MySQL 8.4 answers ERROR 1826,
-	// and MariaDB 10.11, 11.4 and 11.8 answer ERROR 1005 with errno 121.
+	// own ahead of the one that adds it back. MySQL answers ERROR 1826, as
+	// measured on 8.4 and 26.10, and MariaDB 10.11, 11.4 and 11.8 answer
+	// ERROR 1005 with errno 121.
 	// MariaDB 12.3 takes the statement, and the fact holds for every line of
 	// the engine, so a migration generated for one runs on another.
 	SameNamedForeignKeysApart bool `json:"same_named_foreign_keys_apart,omitempty"`

@@ -117,9 +117,11 @@ const (
 	phaseDropped
 )
 
-// The parts of what a plan does to one table it changes.
+// The parts of what a plan does to one table it changes. Zero is no part: a step of
+// another phase, or of a rollback, which takes its place from what it undoes.
 const (
-	partIndexDrops = iota
+	partSwappedKeyDrops = iota + 1
+	partIndexDrops
 	partOperations
 	partIndexes
 	partComments
@@ -307,8 +309,12 @@ func (how arrangement) forwardPlaces(diff *difftypes.SchemaDiff) func(run []*ste
 	return func(run []*step) {
 		created := newTablesOf(run)
 		needed := neededByAnotherTable(run)
+		swapped := how.swappedKeyDrops(run)
 		for _, s := range run {
 			s.place = how.forwardPlace(s, created, needed, columns)
+			if swapped[s] {
+				s.place.part, s.place.class, s.place.column = partSwappedKeyDrops, 0, 0
+			}
 		}
 		changed := changedTableDepths(run)
 		for _, s := range run {
@@ -317,6 +323,25 @@ func (how arrangement) forwardPlaces(diff *difftypes.SchemaDiff) func(run []*ste
 			}
 		}
 	}
+}
+
+// swappedKeyDrops is the drops of the foreign keys a run adds back to their table under
+// the same name, on an engine that refuses the drop and the add in one statement. The
+// community binary writes those drops as a statement of their own, ahead of the table's
+// other changes, which it writes together with the keys it adds back.
+func (how arrangement) swappedKeyDrops(run []*step) map[*step]bool {
+	swapped := make(map[*step]bool)
+	if !how.sameNamedKeysApart {
+		return swapped
+	}
+	for _, dropped := range run {
+		if slices.ContainsFunc(run, func(added *step) bool {
+			return tableKey(added.table) == tableKey(dropped.table) && swapsForeignKey(how, dropped, added)
+		}) {
+			swapped[dropped] = true
+		}
+	}
+	return swapped
 }
 
 // neededByAnotherTable is the steps a step on another table has to follow.
@@ -677,6 +702,11 @@ func (how arrangement) statements(order []*step) []ast.Node {
 
 func (how arrangement) together(group []*step, next *step) bool {
 	if next.operation == nil || tableKey(next.table) != tableKey(group[0].table) {
+		return false
+	}
+	// A statement that drops a key its table takes back under the same name holds no
+	// other change.
+	if (group[0].place.part == partSwappedKeyDrops) != (next.place.part == partSwappedKeyDrops) {
 		return false
 	}
 	return !slices.ContainsFunc(group, func(member *step) bool { return how.keptApart(member, next) })
