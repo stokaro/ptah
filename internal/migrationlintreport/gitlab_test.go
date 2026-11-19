@@ -33,6 +33,25 @@ func renderGitLab(c *qt.C, report migrationlintreport.Report) []gitlabEntry {
 	return entries
 }
 
+func TestWrite_GitLabDescriptionCarriesTheRuleName_HappyPath(t *testing.T) {
+	c := qt.New(t)
+
+	entries := renderGitLab(c, migrationlintreport.Report{
+		Findings: []migrationlint.Finding{{
+			Rule:     "DS102",
+			Name:     "destructive/drop-column",
+			Severity: migrationlint.SeverityError,
+			File:     "migrations/0001_init.up.sql",
+			Line:     7,
+			Message:  "drops a column",
+		}},
+	})
+
+	c.Assert(entries, qt.HasLen, 1)
+	c.Assert(entries[0].CheckName, qt.Equals, "DS102")
+	c.Assert(entries[0].Description, qt.Equals, "DS102 destructive/drop-column: drops a column")
+}
+
 func TestWrite_GitLabMapsEverySeverity_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string

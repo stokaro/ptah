@@ -421,11 +421,8 @@ func sqlLintSeverities(ctx context.Context) (map[string]sqllint.Severity, error)
 func sqlLintSeveritiesFrom(rules map[string]migrationlint.RuleConfig) map[string]sqllint.Severity {
 	severities := make(map[string]sqllint.Severity)
 	for _, code := range sqllint.CatalogIDs() {
-		keys := []string{code}
-		if name := lintnames.SQL().Name(code); name != "" {
-			category := lintnames.CategoryOf(name)
-			keys = append(keys, name, category, category+"/")
-		}
+		names := lintnames.SQL()
+		keys := append(names.SpecificKeys(code), names.GroupKeys(code)...)
 		for _, key := range keys {
 			if rule, ok := rules[key]; ok && rule.Severity != "" {
 				severities[code] = sqllint.Severity(rule.Severity)

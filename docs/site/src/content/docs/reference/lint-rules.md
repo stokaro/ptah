@@ -824,12 +824,32 @@ CREATE INDEX idx_users_email ON users (email);
 ```
 
 When several `rules:` keys govern one rule, the rule's code wins, then its
-name, then an Atlas code, then its category, then the longest code prefix. A
-`ptah:nolint` comment that names a rule name or category migration lint does
-not have is refused, with the file and the line, rather than silencing
-nothing.
+name, then an Atlas code, then its category, then the longest code prefix.
+
+A `ptah:nolint` comment is a list of selectors followed by a reason. The
+selectors come first. The reason starts at the first word that is not a
+selector, or after a `--` separator, and nothing in it selects a rule:
+
+```sql
+-- ptah:nolint BC103 destructive on purpose, see https://example.com/ticket/ABC-1
+-- ptah:nolint DS101, locking/ -- reviewed with the DBA
+```
+
+A selector is an upper-case code or family prefix (`DS102`, `DS`), codes joined
+by slashes (`DS101/DS102`), a rule name, or a category written with a slash
+(`locking/`). A bare category (`locking`) is a selector only as the first word,
+because a lower-case word later in the line is more likely prose. In the first
+example above, `destructive` is part of the reason and hides nothing. A comment
+with a reason and no selector silences no rule, and one with neither silences
+every rule.
+
+The comment is refused, with the file and the line, when a word is clearly
+meant as a name and is wrong: its first segment is a declared category
+(`locking/typo`), or it is one lower-case word ending in a slash (`lockin/`).
+Any other word holding a slash, such as a URL, `and/or` or `w/o`, is part of the
+reason.
 
 `ptah sql lint` takes less. It reads only the severities the `rules:` section
 of the same file sets for its own rules, keyed by code, name or category, and
 honors no `nolint` comment. Its one control is `--disable`, repeatable, taking
-a code, a family prefix, a Ptah rule name or a category.
+a code, a family prefix, a Ptah rule name or a category. A code is written in upper case, and a selector that names no rule is refused, as in `ptah migrations lint --disable`.

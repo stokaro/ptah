@@ -1718,7 +1718,7 @@ func writeGitLab(w io.Writer, report Report) error {
 		occurrence := seen[key]
 		seen[key] = occurrence + 1
 		entries = append(entries, gitlabFinding{
-			Description: fmt.Sprintf("%s: %s", finding.Rule, finding.Message),
+			Description: fmt.Sprintf("%s: %s", strings.TrimSpace(finding.Rule+" "+finding.Name), finding.Message),
 			CheckName:   finding.Rule,
 			Fingerprint: gitlabFingerprint(finding, occurrence),
 			Severity:    gitlabSeverity(finding.Severity),

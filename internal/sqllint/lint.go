@@ -182,7 +182,7 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	if opts.Owner == nil && !opts.SQL.Selected() {
 		return nil, sqlext.ErrUnselected
 	}
-	if err := refuseUnknownNames(opts.DisabledRules); err != nil {
+	if err := refuseUnknownSelectors(opts.DisabledRules); err != nil {
 		return nil, err
 	}
 	if err := refuseUnsilenceable(opts.DisabledRules); err != nil {
@@ -623,17 +623,23 @@ func refuseUnsilenceable(disabled []string) error {
 	return nil
 }
 
-// refuseUnknownNames rejects a --disable selector written as a Ptah rule name
-// or category that names no rule this linter reports. Matched against
-// nothing, it would read as a rule turned off.
-func refuseUnknownNames(disabled []string) error {
+// refuseUnknownSelectors rejects a --disable selector that names no rule this
+// linter reports, by the validation `migrations lint` applies: a code or code
+// prefix in upper case, or a Ptah rule name or category the linter holds.
+// Matched against nothing, a selector would read as a rule turned off, and a
+// lower-case or slash-joined code would be accepted and ignored.
+func refuseUnknownSelectors(disabled []string) error {
 	for _, item := range disabled {
 		item = strings.TrimSpace(item)
-		if !lintnames.IsSelector(item) {
+		if err := lintnames.SQL().ValidateSelector(item); err != nil {
+			return fmt.Errorf("--disable %w", err)
+		}
+		if item == "" || lintnames.IsSelector(item) {
 			continue
 		}
-		if _, err := lintnames.SQL().Resolve(item); err != nil {
-			return fmt.Errorf("--disable %w", err)
+		if !slices.ContainsFunc(CatalogIDs(), func(id string) bool { return strings.HasPrefix(id, item) }) {
+			return fmt.Errorf("--disable %q matches no rule code `ptah sql lint` reports; the codes are %s",
+				item, strings.Join(CatalogIDs(), ", "))
 		}
 	}
 	return nil
@@ -641,7 +647,7 @@ func refuseUnknownNames(disabled []string) error {
 
 // ruleDisabled reports whether a selector in disabled selects ruleID: a Ptah
 // rule name or category by [lintnames.Table.Selects], and anything else as a
-// code or code prefix, compared without regard to case.
+// code or code prefix.
 func ruleDisabled(ruleID string, disabled []string) bool {
 	for _, item := range disabled {
 		item = strings.TrimSpace(item)
@@ -651,11 +657,7 @@ func ruleDisabled(ruleID string, disabled []string) bool {
 			}
 			continue
 		}
-		item = strings.ToUpper(item)
-		if item == "" {
-			continue
-		}
-		if strings.EqualFold(item, ruleID) || strings.HasPrefix(ruleID, item) {
+		if item != "" && strings.HasPrefix(ruleID, item) {
 			return true
 		}
 	}

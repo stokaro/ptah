@@ -242,6 +242,56 @@ func TestNameSelectors_NoLintSelectsByNameAndCategory(t *testing.T) {
 	}
 }
 
+// TestNameSelectors_NoLintReasonNeverSelects pins the directive grammar: the
+// selectors come first and the reason starts at the first word that is not
+// one, or after `--`. A category, a name or a code in the reason, and a word
+// holding a slash, select nothing, and refuse nothing.
+func TestNameSelectors_NoLintReasonNeverSelects(t *testing.T) {
+	rows := []struct {
+		name      string
+		directive string
+		want      []string
+	}{
+		{name: "no reason", directive: "ptah:nolint BC103", want: []string{"MF101P", "DS101"}},
+		{name: "a category in the reason", directive: "ptah:nolint BC103 destructive on purpose", want: []string{"MF101P", "DS101"}},
+		{name: "a category after a separator", directive: "ptah:nolint BC103 -- destructive/", want: []string{"MF101P", "DS101"}},
+		{name: "a name in the reason", directive: "ptah:nolint BC103 because destructive/drop-table", want: []string{"MF101P", "DS101"}},
+		{name: "a code in the reason", directive: "ptah:nolint BC103 because DS101 is wrong", want: []string{"MF101P", "DS101"}},
+		{name: "a code after a separator", directive: "ptah:nolint BC103 -- DS101", want: []string{"MF101P", "DS101"}},
+		{name: "a URL", directive: "ptah:nolint BC103 see https://example.com/ticket/ABC-1", want: []string{"MF101P", "DS101"}},
+		{name: "and/or", directive: "ptah:nolint BC103 this and/or that", want: []string{"MF101P", "DS101"}},
+		{name: "a slash word right after the code", directive: "ptah:nolint BC103 dba/ops", want: []string{"MF101P", "DS101"}},
+		{name: "a URL right after the code", directive: "ptah:nolint BC103 https://example.com/ticket/ABC-1", want: []string{"MF101P", "DS101"}},
+		{name: "w/o", directive: "ptah:nolint BC103 w/o review", want: []string{"MF101P", "DS101"}},
+		{name: "slashes before the text", directive: "ptah:nolint BC103 // dba/ops", want: []string{"MF101P", "DS101"}},
+		{name: "a diff header", directive: "ptah:nolint BC103 --- a/b", want: []string{"MF101P", "DS101"}},
+		{name: "a text and no selector", directive: "ptah:nolint reviewed by dba/ops", want: []string{"MF101P", "BC103", "DS101"}},
+		{name: "a bare category as the first word", directive: "ptah:nolint destructive", want: []string{"MF101P", "BC103"}},
+		{name: "a name beside a code", directive: "ptah:nolint BC103 destructive/drop-table on purpose", want: []string{"MF101P"}},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
+				fixture(map[string]string{"0000000001_drop.up.sql": "-- " + row.directive + "\nDROP TABLE users;\n"}),
+				lint.Options{Dialect: "postgres", DirFormat: migrationfile.DirFormatPtah})
+			c.Assert(err, qt.IsNil)
+			c.Assert(rulesOf(findings), qt.DeepEquals, row.want)
+		})
+	}
+}
+
+// TestNameSelectors_NoLintRefusesAWrongCategoryName refuses a word that is
+// meant as a name of a declared category and is wrong, even beside a reason.
+func TestNameSelectors_NoLintRefusesAWrongCategoryName(t *testing.T) {
+	c := qt.New(t)
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
+		fixture(map[string]string{"0000000001_drop.up.sql": "-- ptah:nolint BC103 locking/typo\nDROP TABLE users;\n"}),
+		lint.Options{Dialect: "postgres", DirFormat: migrationfile.DirFormatPtah})
+	c.Assert(err, qt.ErrorMatches, `.*ptah:nolint: "locking/typo" is not the name of a migration lint rule; .*`)
+	c.Assert(findings, qt.IsNil)
+}
+
 // TestNameSelectors_NoLintRefusesAnUnknownName refuses a directive naming a
 // rule migration lint does not have, at the statement it sits above. Read as
 // a family, the misspelling would silence nothing and say nothing.

@@ -125,7 +125,6 @@ func TestDisableRefusesTheParsePathCodes(t *testing.T) {
 		{name: "the parse error's own code", disabled: []string{"SQL001"}, covers: "SQL001"},
 		{name: "the unmodeled statement's own code", disabled: []string{"SQL002"}, covers: "SQL002"},
 		{name: "the family prefix, which covers both", disabled: []string{"SQL"}, covers: "SQL001"},
-		{name: "lower case, since selectors are folded", disabled: []string{"sql001"}, covers: "SQL001"},
 		{name: "the parse error's category", disabled: []string{"correctness"}, covers: "SQL001"},
 		{name: "the unmodeled statement's name", disabled: []string{"coverage/unsupported-statement"}, covers: "SQL002"},
 		{
@@ -147,6 +146,40 @@ func TestDisableRefusesTheParsePathCodes(t *testing.T) {
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, row.covers)
 			c.Assert(err.Error(), qt.Contains, "could not be analyzed")
+		})
+	}
+}
+
+// TestDisableRefusesAnUnknownSelector refuses a selector that names no rule,
+// by the validation `migrations lint --disable` applies. Each of these
+// matched nothing before, so the flag was accepted and the finding stayed.
+func TestDisableRefusesAnUnknownSelector(t *testing.T) {
+	rows := []struct {
+		name     string
+		disabled string
+		wantErr  string
+	}{
+		{name: "a category in the wrong case", disabled: "Design", wantErr: `--disable "Design" must start with an uppercase.*`},
+		{name: "a word", disabled: "foo", wantErr: `--disable "foo" must start with an uppercase.*`},
+		{name: "codes joined by a slash", disabled: "DDL001/DDL002", wantErr: `--disable "DDL001/DDL002" must start with an uppercase.*`},
+		{name: "a lower-case code", disabled: "ddl001", wantErr: `--disable "ddl001" must start with an uppercase.*`},
+		{name: "a lower-case parse path code", disabled: "sql001", wantErr: `--disable "sql001" must start with an uppercase.*`},
+		{name: "a code no rule has", disabled: "ZZ999", wantErr: `--disable "ZZ999" matches no rule code .*`},
+		{name: "a name no rule has", disabled: "design/nothing", wantErr: `--disable "design/nothing" is not the name of a SQL lint rule; .*`},
+		{name: "a category that is not declared", disabled: "desing/", wantErr: `--disable "desing/" is not a rule category; .*`},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings, err := sqllint.LintSource(t.Context(),
+				sqllint.Source{Name: "probe.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, DisabledRules: []string{row.disabled}},
+			)
+
+			c.Assert(err, qt.ErrorMatches, row.wantErr)
+			c.Assert(findings, qt.IsNil)
 		})
 	}
 }

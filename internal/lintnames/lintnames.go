@@ -170,6 +170,28 @@ func (t Table) Name(code string) string { return t.names[code] }
 // Codes returns every code the table names, sorted.
 func (t Table) Codes() []string { return slices.Sorted(maps.Keys(t.names)) }
 
+// SpecificKeys returns the keys that name the rule alone, most specific
+// first: its code, then its name. A `rules:` section looks these up before it
+// looks up a group. The name is left out for a code the table does not name.
+func (t Table) SpecificKeys(code string) []string {
+	if name := t.names[code]; name != "" {
+		return []string{code, name}
+	}
+	return []string{code}
+}
+
+// GroupKeys returns the keys that name the rule's category, written as
+// `locking` and as `locking/`. It is empty for a code the table does not name.
+// Every linter that reads a `rules:` section resolves a category key through
+// this one function, so the two spellings cannot drift apart.
+func (t Table) GroupKeys(code string) []string {
+	category := CategoryOf(t.names[code])
+	if category == "" {
+		return nil
+	}
+	return []string{category, category + "/"}
+}
+
 // Selects reports whether a name-space selector selects the rule code: the
 // selector is the rule's name, or the category its name begins with. A
 // selector written as a code selects nothing here; see [IsSelector].
@@ -219,6 +241,69 @@ func (t Table) Resolve(selector string) ([]string, error) {
 		return nil, fmt.Errorf("%q is not a rule category; the categories are %s", selector, categoryList())
 	}
 	return nil, fmt.Errorf("%q is a category that holds no %s rule", selector, t.linter)
+}
+
+// MeantAsSelector reports whether a word of a nolint directive's free-form
+// line is written as a rule name or category with a slash, so that a wrong one
+// is an error rather than prose. A word is meant as a selector when its first
+// segment is a declared category, or it is one lower-case segment and a
+// slash. A bare category is not: the caller decides where one may stand. A
+// URL, `and/or` and `dba/ops` are none of these.
+func MeantAsSelector(word string) bool {
+	if _, declared := CategoryFor(word); declared {
+		return false
+	}
+	category, rest, found := strings.Cut(word, "/")
+	if !found {
+		return false
+	}
+	if _, declared := CategoryFor(category); declared {
+		return true
+	}
+	return rest == "" && WellFormedSegment(category)
+}
+
+// WellFormedSegment reports whether segment is one lower-case name segment:
+// letters and digits joined by single hyphens.
+func WellFormedSegment(segment string) bool { return segmentPattern.MatchString(segment) }
+
+var segmentPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+
+// IsCode reports whether word is spelled as a rule code or a code prefix: an
+// upper-case ASCII letter followed by upper-case letters and digits.
+func IsCode(word string) bool {
+	for index, value := range word {
+		if value >= 'A' && value <= 'Z' {
+			continue
+		}
+		if index > 0 && value >= '0' && value <= '9' {
+			continue
+		}
+		return false
+	}
+	return word != ""
+}
+
+// ValidateSelector judges a selector written in a flag or a configuration
+// file, the way every linter does before it runs. A selector is a code or a
+// code prefix, spelled in upper case, or a name or category the table holds.
+// Anything else is refused: matched against nothing it would read as a rule
+// turned off. Whether a code or prefix reaches a rule is the caller's to
+// judge; it knows the rules the run registers.
+//
+// The error begins with the quoted selector, so a caller prefixes it with the
+// place the selector was written.
+func (t Table) ValidateSelector(selector string) error {
+	switch {
+	case selector == "", IsCode(selector):
+		return nil
+	case IsSelector(selector):
+		_, err := t.Resolve(selector)
+		return err
+	default:
+		return fmt.Errorf("%q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits, "+
+			"or be a rule name or category, such as %s or %s", selector, t.example, CategoryOf(t.example))
+	}
 }
 
 // categoryList joins the declared category names for a refusal.

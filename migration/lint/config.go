@@ -440,14 +440,8 @@ func selectorMatchesRule(selector string, rules []Rule) bool {
 // turned off.
 func validateRuleSelectors(selectors []string) error {
 	for _, selector := range selectors {
-		switch {
-		case selector == "":
-		case lintnames.IsSelector(selector):
-			if err := validateNameSelector(lintnames.Migration(), selector); err != nil {
-				return err
-			}
-		case !isCanonicalRuleCode(selector):
-			return invalidRuleSelectorError(selector)
+		if err := lintnames.Migration().ValidateSelector(selector); err != nil {
+			return fmt.Errorf("rule selector %w", err)
 		}
 	}
 	return nil

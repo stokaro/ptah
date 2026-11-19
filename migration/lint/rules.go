@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/lintkit"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/tableref"
 )
 
@@ -161,18 +162,7 @@ func validateRule(rule Rule) error {
 	return nil
 }
 
-func isCanonicalRuleCode(code string) bool {
-	for index, value := range code {
-		if value >= 'A' && value <= 'Z' {
-			continue
-		}
-		if index > 0 && value >= '0' && value <= '9' {
-			continue
-		}
-		return false
-	}
-	return code != ""
-}
+func isCanonicalRuleCode(code string) bool { return lintnames.IsCode(code) }
 
 func validateRules(rules []Rule) error {
 	seen := make(map[string]struct{}, len(rules))

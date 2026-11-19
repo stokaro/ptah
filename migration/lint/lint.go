@@ -580,12 +580,9 @@ func ruleConfigForCode(code string, configs map[string]RuleConfig, registered ma
 	if len(configs) == 0 {
 		return RuleConfig{}, false
 	}
-	if config, ok := configs[code]; ok {
-		return config, true
-	}
-	// The rule's Ptah name is as specific as its code.
-	if name := lintnames.Migration().Name(code); name != "" {
-		if config, ok := configs[name]; ok {
+	names := lintnames.Migration()
+	for _, key := range names.SpecificKeys(code) {
+		if config, ok := configs[key]; ok {
 			return config, true
 		}
 	}
@@ -600,11 +597,9 @@ func ruleConfigForCode(code string, configs map[string]RuleConfig, registered ma
 	// A category key governs every rule named under it, and is preferred to
 	// a code prefix: both name a group, and the category is the one written
 	// in the native vocabulary.
-	if category := lintnames.CategoryOf(lintnames.Migration().Name(code)); category != "" {
-		for _, key := range []string{category, category + "/"} {
-			if config, ok := configs[key]; ok {
-				return config, true
-			}
+	for _, key := range names.GroupKeys(code) {
+		if config, ok := configs[key]; ok {
+			return config, true
 		}
 	}
 	// A prefix key governs the codes it selects; a key that is itself a
@@ -818,10 +813,14 @@ func parseNoLintDirective(
 	if !strings.HasPrefix(trimmed, "--") && !strings.HasPrefix(trimmed, "#") {
 		return nil, nil
 	}
-	if rules, ok, err := parseNoLintMarker(comment, "ptah:nolint", nativeNoLintTargets(registered)); ok {
+	if rules, ok, err := parseNoLintMarker(comment, "ptah:nolint", func(rest string) ([]atlaslint.Target, error) {
+		return parsePtahNoLint(rest, registered)
+	}); ok {
 		return rules, err
 	}
-	rules, _, err := parseNoLintMarker(comment, "atlas:nolint", codeNoLintTargets(atlasNoLintTargets(compatibility)))
+	rules, _, err := parseNoLintMarker(comment, "atlas:nolint", func(rest string) ([]atlaslint.Target, error) {
+		return parseNoLintRules(rest, codeNoLintTargets(atlasNoLintTargets(compatibility)))
+	})
 	return rules, err
 }
 
@@ -894,7 +893,7 @@ func parseAtlasNoLintLine(line string) ([]atlaslint.Target, bool) {
 func parseNoLintMarker(
 	comment,
 	marker string,
-	targets noLintTargets,
+	parse func(rest string) ([]atlaslint.Target, error),
 ) ([]atlaslint.Target, bool, error) {
 	idx := strings.Index(strings.ToLower(comment), marker)
 	if idx < 0 {
@@ -904,7 +903,7 @@ func parseNoLintMarker(
 	if rest != "" && !isNoLintSeparator(rune(rest[0])) {
 		return nil, false, nil
 	}
-	rules, err := parseNoLintRules(rest, targets)
+	rules, err := parse(rest)
 	return rules, true, err
 }
 
@@ -946,34 +945,98 @@ func codeNoLintTargets(targets func(string) []atlaslint.Target) noLintTargets {
 	}
 }
 
-// nativeNoLintTargets resolves a `ptah:nolint` word. A Ptah rule name or
-// category selects the rules [SelectorSelects] gives it, and one migration
-// lint does not know is refused. A code is judged against the codes this run
-// registers (declared rules included): `ptah:nolint DS102` silences that rule
-// and no other, `ptah:nolint MF101` leaves MF101P reported, and a selector
-// that is not a code names its family, so `ptah:nolint DS` silences every
-// data-safety rule.
-func nativeNoLintTargets(registered map[string]struct{}) noLintTargets {
-	codes := codeNoLintTargets(func(entry string) []atlaslint.Target {
-		if _, exact := registered[entry]; exact {
-			return []atlaslint.Target{atlaslint.CodeTarget(entry)}
+// parsePtahNoLint reads the selectors of a `ptah:nolint` directive.
+//
+// The directive is a run of selectors followed by free text. The selectors
+// come first and the text starts at the first word that is not one, or at a
+// word beginning with `--`; nothing after that point selects a rule, so a
+// word in the reason can never widen the suppression. A selector is:
+//
+//   - a code or code prefix, written in upper case (`DS102`, `DS`);
+//   - several upper-case codes joined by slashes (`DS101/DS102`);
+//   - a Ptah rule name or a category written with a slash (`locking/`);
+//   - a bare category (`locking`), as the first word only, because a lower-case
+//     word later in a line is as likely prose as a selector.
+//
+// A word is refused when it is clearly meant as a name and is wrong: its first
+// segment is a declared category (`locking/typo`), or it is one lower-case word
+// ending in a slash (`lockin/`). Any other word holding a slash, such as a URL
+// or `and/or`, is free text. A directive with no selector and no text
+// suppresses every rule; one with text and no selector suppresses none.
+//
+// A code is judged against the codes this run registers (declared rules
+// included): `ptah:nolint DS102` silences that rule and no other,
+// `ptah:nolint MF101` leaves MF101P reported, and a prefix names its family,
+// so `ptah:nolint DS` silences every data-safety rule.
+func parsePtahNoLint(rest string, registered map[string]struct{}) ([]atlaslint.Target, error) {
+	rest = strings.TrimSpace(rest)
+	if rest == "" {
+		return []atlaslint.Target{atlaslint.FamilyTarget("")}, nil
+	}
+	words := strings.FieldsFunc(rest, func(r rune) bool { return r != '/' && isNoLintSeparator(r) })
+	rules := make([]atlaslint.Target, 0, len(words))
+	for position, word := range words {
+		var (
+			resolved   []atlaslint.Target
+			isSelector bool
+			err        error
+		)
+		if _, bare := lintnames.CategoryFor(word); bare && position == 0 {
+			resolved, isSelector, err = resolveNoLintName(word)
+		} else {
+			resolved, isSelector, err = ptahNoLintWord(word, registered)
 		}
-		return []atlaslint.Target{atlaslint.FamilyTarget(entry)}
-	})
-	return func(word string) ([]atlaslint.Target, error) {
-		if !lintnames.IsSelector(word) {
-			return codes(word)
-		}
-		selected, err := lintnames.Migration().Resolve(word)
 		if err != nil {
 			return nil, fmt.Errorf("ptah:nolint: %w", err)
 		}
-		rules := make([]atlaslint.Target, 0, len(selected))
-		for _, code := range selected {
-			rules = append(rules, atlaslint.CodeTarget(code))
+		if !isSelector {
+			break
 		}
-		return rules, nil
+		rules = append(rules, resolved...)
 	}
+	return rules, nil
+}
+
+// ptahNoLintWord reads one word of a `ptah:nolint` directive. It reports false
+// for the word where the free text starts.
+func ptahNoLintWord(word string, registered map[string]struct{}) ([]atlaslint.Target, bool, error) {
+	if lintnames.IsCode(word) {
+		return noLintCodeTarget(word, registered), true, nil
+	}
+	if parts := strings.Split(word, "/"); len(parts) > 1 && !slices.ContainsFunc(parts, func(part string) bool { return !lintnames.IsCode(part) && part != "" }) {
+		var rules []atlaslint.Target
+		for _, part := range parts {
+			if part != "" {
+				rules = append(rules, noLintCodeTarget(part, registered)...)
+			}
+		}
+		return rules, len(rules) > 0, nil
+	}
+	if !lintnames.MeantAsSelector(word) {
+		return nil, false, nil
+	}
+	return resolveNoLintName(word)
+}
+
+// resolveNoLintName resolves a rule name or category, and refuses one that
+// selects no rule migration lint has.
+func resolveNoLintName(word string) ([]atlaslint.Target, bool, error) {
+	selected, err := lintnames.Migration().Resolve(word)
+	if err != nil {
+		return nil, true, err
+	}
+	rules := make([]atlaslint.Target, 0, len(selected))
+	for _, code := range selected {
+		rules = append(rules, atlaslint.CodeTarget(code))
+	}
+	return rules, true, nil
+}
+
+func noLintCodeTarget(code string, registered map[string]struct{}) []atlaslint.Target {
+	if _, exact := registered[code]; exact {
+		return []atlaslint.Target{atlaslint.CodeTarget(code)}
+	}
+	return []atlaslint.Target{atlaslint.FamilyTarget(code)}
 }
 
 func isNoLintSeparator(r rune) bool {

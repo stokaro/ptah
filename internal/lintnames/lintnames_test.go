@@ -198,3 +198,16 @@ func TestMigration_NamesEveryRuleAnOfficialProviderPublishes(t *testing.T) {
 	c.Assert(unnamed, qt.HasLen, 0)
 	c.Assert(unselected, qt.HasLen, 0)
 }
+
+// TestTable_KeysOrderASection fixes the keys a `rules:` section is read with:
+// the code and the name name the rule alone, and the category keys name its
+// group. A code the table does not name has a code key and no group.
+func TestTable_KeysOrderASection(t *testing.T) {
+	c := qt.New(t)
+	names := lintnames.Migration()
+
+	c.Assert(names.SpecificKeys("DS101"), qt.DeepEquals, []string{"DS101", "destructive/drop-table"})
+	c.Assert(names.GroupKeys("DS101"), qt.DeepEquals, []string{"destructive", "destructive/"})
+	c.Assert(names.SpecificKeys("XX101"), qt.DeepEquals, []string{"XX101"})
+	c.Assert(names.GroupKeys("XX101"), qt.HasLen, 0)
+}
