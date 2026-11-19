@@ -187,11 +187,9 @@ SQL:
   `DEFAULT 'a\\b'` replays as the three characters it stores, and a control
   character as its escape, so `DEFAULT 'a\nb'` replays with its line feed.
   A quote escaped with a backslash and a doubled quote compare as one
-  character. A read in a session whose `sql_mode` names
-  `NO_BACKSLASH_ESCAPES` refuses a string default holding a backslash and
-  names the column, because the backslash is the character in that session
-  and Ptah reads a backslash in a string as an escape; read from a session
-  without that mode.
+  character. The catalog reports a default the same way under every
+  `sql_mode`, so a read in a session whose `sql_mode` names
+  `NO_BACKSLASH_ESCAPES` writes the same file.
 - A schema file may write a default as a bit string (`b'101'`, `0b101`), a
   hexadecimal string (`X'6A'`, `0x6a`), a string with a character set
   introducer (`_utf8mb4'x'`) or `N`, adjacent strings (`'a' 'b'`) or a
@@ -592,7 +590,9 @@ SQL:
   literal with every backslash once, so the server stores the same
   characters. `migrations up` sends a migration file as written, so a file
   Ptah generated stores what it declares on a session that keeps backslash
-  escapes.
+  escapes. A text default is compared by the string it stores, so `'it\'s'`
+  and `'it''s'` are one default. A literal `NULL` on a text column is the
+  string `'NULL'`; a schema file writes SQL `NULL` without quotes.
 
 ## Table options
 

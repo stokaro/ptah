@@ -70,3 +70,45 @@ func TestDBReadReplaysABackslashInAStringDefaultE2E(t *testing.T) {
 		})
 	}
 }
+
+// enumValueSchema holds an enum whose values carry a backslash and a quote:
+// e\f and g'h under MySQL's default sql_mode.
+const enumValueSchema = "CREATE TABLE notes (\n" +
+	"  id int PRIMARY KEY,\n" +
+	"  e enum('e\\\\f','g''h') DEFAULT 'g''h'\n" +
+	");\n"
+
+// TestIntrospectWritesAnEnumValueAsTheServerStoresItE2E creates the enum,
+// runs `ptah introspect`, and reads the enum declaration it writes. The
+// catalog writes each value inside the column type as a string literal, with
+// the backslash doubled and the quote doubled, so a read that only trims the
+// quotes off each piece declares both values with a character too many.
+func TestIntrospectWritesAnEnumValueAsTheServerStoresItE2E(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "mysql", engine: dbtarget.MySQLAdmin},
+		{name: "mariadb", engine: dbtarget.MariaDBAdmin},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, test.engine)
+			name, _ := scratch.database(c, "enum_values")
+			database := replaceMySQLDatabaseName(c, scratch.adminURL, name)
+			schema := filepath.Join(c.TempDir(), "schema.sql")
+			c.Assert(os.WriteFile(schema, []byte(enumValueSchema), 0o600), qt.IsNil)
+			created := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", schema, "--auto-approve")
+			out := filepath.Join(c.TempDir(), "models")
+
+			introspected := runPtahIn(c, "introspect", "--db-url", database, "--out", out, "--single-file")
+
+			c.Assert(created.ExitCode, qt.Equals, 0, historyComment(created))
+			c.Assert(introspected.ExitCode, qt.Equals, 0, historyComment(introspected))
+			source, err := os.ReadFile(filepath.Join(out, "schema.go"))
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(source), qt.Contains, `//ptah:schema:enum name="notes_e" values="e\\f,g'h"`)
+		})
+	}
+}
