@@ -492,6 +492,11 @@ func (r *Reader) readDatabase(
 	if err != nil {
 		return nil, err
 	}
+	partitioned, err := r.readPartitionedTables(ctx, dbName)
+	if err != nil {
+		return nil, err
+	}
+	schema.UnmodeledObjects = append(schema.UnmodeledObjects, partitioned...)
 
 	// Reconcile per-column flags after all catalog metadata is loaded.
 	// information_schema.STATISTICS carries primary-key membership even when

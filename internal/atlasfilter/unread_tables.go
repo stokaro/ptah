@@ -22,10 +22,24 @@ func (s *exclusionState) noteRemovalBlockers(blockers []catalog.RemovalBlocker) 
 	}
 }
 
-// An object of a kind Ptah does not model is outside the description for the same
-// reason, so a selector that names one is not reported as matching nothing.
-func (s *exclusionState) noteUnmodeledObjects(objects []catalog.UnmodeledObject) {
-	for _, object := range objects {
-		s.matches(object.Kind, s.nameCandidates(object.Schema, object.Name)...)
-	}
+// An object of a kind Ptah does not model is outside the description, and a
+// report names it so that nobody reads the report as covering it. A selection
+// that leaves the object out says the run is not about it, so the report does
+// not name it either: the object leaves when a selector names it or the schema
+// it names, and a property of a table leaves with the table. A record of every
+// object of a kind names no object, so only its schema can take it out. No
+// schema selector takes out an object that names no schema: a read of one
+// MySQL database names none, since the database is the read's, and a
+// PostgreSQL role setting is in no schema. A selector that names an object
+// here is matched, so it is not reported as matching nothing.
+func (s *exclusionState) filterUnmodeledObjects(objects []catalog.UnmodeledObject) []catalog.UnmodeledObject {
+	return keep(objects, func(object catalog.UnmodeledObject) bool {
+		if object.Table != "" {
+			return !s.tableExcluded(object.Schema, object.Table)
+		}
+		if object.Schema != "" && s.schemaExcluded(object.Schema) {
+			return false
+		}
+		return object.Name == "" || !s.matches(object.Kind, s.nameCandidates(object.Schema, object.Name)...)
+	})
 }

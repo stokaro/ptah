@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/internal/mysqlpartition"
 )
 
 // Service decodes and encodes table options as string-valued platform
@@ -24,13 +25,17 @@ func tableProperties(table *mysqlschema.DesiredTable) map[string]*string {
 }
 
 // Definitions returns independent property ownership declarations: the keys
-// engine, auto_increment and charset. Go annotations prefix the keys with
-// platform.mysql. or platform.mariadb.; YAML places them in the target's
-// platform group. A table's common engine, the bare `engine` of a
-// declaration, stays common: an engine stated here is written over it.
+// engine, auto_increment and charset, and partition_by, which the owner claims
+// only to refuse it, since Ptah does not model MySQL partitioning. Go
+// annotations prefix the keys with platform.mysql. or platform.mariadb.; YAML
+// places them in the target's platform group. A table's common engine, the
+// bare `engine` of a declaration, stays common: an engine stated here is
+// written over it.
 func Definitions() []schemaext.PropertyDefinition {
 	var table mysqlschema.DesiredTable
-	return []schemaext.PropertyDefinition{{Kind: mysqlschema.TableKind, Keys: slices.Sorted(maps.Keys(tableProperties(&table)))}}
+	keys := append(slices.Collect(maps.Keys(tableProperties(&table))), mysqlpartition.Property)
+	slices.Sort(keys)
+	return []schemaext.PropertyDefinition{{Kind: mysqlschema.TableKind, Keys: keys}}
 }
 
 func validateRequest(ctx context.Context, target string, format, expected schemaext.PropertyFormat) error {
@@ -69,6 +74,9 @@ func (Service) DecodeProperties(ctx context.Context, request schemaext.PropertyD
 		table := &mysqlschema.DesiredTable{}
 		properties := tableProperties(table)
 		for _, key := range slices.Sorted(maps.Keys(fragment.Properties)) {
+			if key == mysqlpartition.Property {
+				return nil, mysqlpartition.Refusal("platform property " + key)
+			}
 			target, known := properties[key]
 			if !known {
 				return nil, fmt.Errorf("%w: unknown MySQL table property %q", schemaext.ErrInvalidValue, key)

@@ -61,7 +61,9 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 				// No selection keeps the table, and the filter keeps the record.
 				UnreadTables: []catalog.UnreadTable{{Identity: objectidentity.NewBuilder(identifier.ForDialect("postgres")).TablePartsVerbatim("public", "rep"),
 					Reason: "rep is a replica table"}},
-				UnmodeledObjects: []catalog.UnmodeledObject{{Kind: "event", Name: "e_a", Reason: "nothing compares it"}},
+				// Every scope keeps the table, so every scope keeps its partitioning.
+				UnmodeledObjects: []catalog.UnmodeledObject{{Kind: "table partitioning", Schema: "public", Name: "kept", Table: "kept",
+					Reason: "nothing compares it"}},
 			}
 
 			got, err := atlasfilter.ScopeDatabase(schema, test.scope)

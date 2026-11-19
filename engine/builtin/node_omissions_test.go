@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dialect/clickhouse/chschema"
@@ -45,11 +46,12 @@ func lostNodeProperties(c *qt.C, database *schemamodel.Database, dialect string)
 // TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedTablePartition
 // pins a declared partitioning.
 //
-// Only the PostgreSQL family renders PARTITION BY, so every other target
-// creates one ordinary table where the author declared a partitioned one: every
+// Only the PostgreSQL family renders PARTITION BY, so the other targets below
+// create one ordinary table where the author declared a partitioned one: every
 // row lands in the same place and no partition can be detached. ClickHouse is in
 // the list even though it has a PARTITION BY of its own, because this renderer
-// does not read the declared spec.
+// does not read the declared spec. MySQL and MariaDB refuse it instead; see
+// [TestGetOrderedCreateStatementsReportingOmissions_RefusesATablePartitionOnMySQL].
 func TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedTablePartition(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -57,8 +59,6 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedTablePartitio
 		want    []string
 	}{
 		{name: "postgres writes it", dialect: platform.Postgres, want: nil},
-		{name: "mysql drops it", dialect: platform.MySQL, want: []string{"table partition"}},
-		{name: "mariadb drops it", dialect: platform.MariaDB, want: []string{"table partition"}},
 		{name: "sqlite drops it", dialect: platform.SQLite, want: []string{"table partition"}},
 		{name: "sql server drops it", dialect: platform.SQLServer, want: []string{"table partition"}},
 		{name: "oracle drops it", dialect: platform.Oracle, want: []string{"table partition"}},
@@ -75,6 +75,32 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesADroppedTablePartitio
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(lostNodeProperties(c, database, test.dialect), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestGetOrderedCreateStatementsReportingOmissions_RefusesATablePartitionOnMySQL
+// renders a declared partitioning for MySQL and MariaDB, which have a
+// partition grammar Ptah does not model. Dropped, it would create one ordinary
+// table and compare as synced with one, so the render refuses it and returns
+// no statements.
+func TestGetOrderedCreateStatementsReportingOmissions_RefusesATablePartitionOnMySQL(t *testing.T) {
+	database := nodeSchema()
+	database.Tables[0].Facets = must.Must(schemaext.NewFacets(&pgtable.DesiredPartition{
+		Type:  "RANGE",
+		Parts: []pgtable.PartitionPart{{Name: "day"}},
+	}))
+
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, omissions, err := builtin.GetOrderedCreateStatementsReportingOmissions(database, dialect, capability.ForDialect(dialect))
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `.*table partition on `+dialect+`: Ptah does not model MySQL or MariaDB partitioning \(stokaro/ptah#6357\).*`)
+			c.Assert(statements, qt.IsNil)
+			c.Assert(omissions, qt.IsNil)
 		})
 	}
 }

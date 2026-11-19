@@ -8,9 +8,11 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/ast"
 	"ptah.run/core/goschema"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/engine/builtin"
@@ -74,4 +76,25 @@ func TestMySQLTableOptions_AreNotChangedOnATableThatExists(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.HasChanges(), qt.IsFalse)
+}
+
+// TestMySQLRenderer_RefusesAPartitionOption renders a table that holds a
+// PARTITION BY among its options, as a document read with no target holds it,
+// for MySQL and MariaDB. Written as an option it would read PARTITION_BY=,
+// which no server parses, and Ptah does not model MySQL partitioning, so the
+// render refuses it by name.
+func TestMySQLRenderer_RefusesAPartitionOption(t *testing.T) {
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			table := ast.NewCreateTable("sales").AddColumn(ast.NewColumn("id", "INT"))
+			table.SetOption("PARTITION_BY", "HASH (id) PARTITIONS 2")
+
+			sql, err := builtin.RenderSQL(dialect, table)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `.*table "sales": unsupported feature: PARTITION BY: Ptah does not model MySQL or MariaDB partitioning \(stokaro/ptah#6357\).*`)
+			c.Assert(sql, qt.Equals, "")
+		})
+	}
 }

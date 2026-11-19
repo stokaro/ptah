@@ -6278,14 +6278,15 @@ func isCreateTableOptionBoundary(option string) bool {
 
 // clickHouseTableClauses are the MergeTree clauses that follow the column list,
 // keyed by the option name [ast.CreateTableNode] carries them under -- which is
-// the name the ClickHouse renderer reads them back out of. The renderer has
-// written all six since the dialect was added; nothing read them.
+// the name the ClickHouse renderer reads them back out of.
 //
-// They are accepted for every dialect rather than gated on ClickHouse. At this
-// position -- after the column list, where table options live -- no other
-// dialect this parser supports spells anything the same way, and the parser is
-// reached with no dialect at all on paths that only classify a file. Gating
-// would refuse a valid ClickHouse file for want of a flag.
+// They are accepted for every dialect rather than gated on ClickHouse, because
+// the parser is reached with no dialect at all on paths that only classify a
+// file, and gating would refuse a valid ClickHouse file for want of a flag. A
+// dialect that spells one of them at this position -- after the column list,
+// where table options live -- with another meaning claims it through its owner
+// first: PostgreSQL reads PARTITION BY as its partition key, and MySQL and
+// MariaDB refuse it, since Ptah does not model their partitioning.
 var clickHouseTableClauses = map[string]string{
 	"ORDER_BY":     "ORDER BY",
 	"PARTITION_BY": "PARTITION BY",

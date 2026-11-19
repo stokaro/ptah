@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/internal/mysqlpartition"
 )
 
 // ValidateTableFacets checks the table values the MySQL-family renderer
@@ -40,7 +41,15 @@ func TableOptions(facets schemaext.Facets) (*mysqlschema.DesiredTable, error) {
 // they are, ENGINE, AUTO_INCREMENT and CHARSET, over options that already hold
 // them: a declared option is the one written. options is not changed, and a
 // table without the facet returns a copy of it.
+//
+// An option named PARTITION_BY, which a SQL document that names no target
+// carries for a PARTITION BY clause, is refused with an error wrapping
+// [ptaherr.ErrUnsupportedFeature]: Ptah does not model MySQL or MariaDB
+// partitioning, and written as an option the clause is one no server parses.
 func CreateTableOptions(facets schemaext.Facets, options map[string]string) (map[string]string, error) {
+	if _, declared := options[mysqlpartition.Option]; declared {
+		return nil, mysqlpartition.Refusal("PARTITION BY")
+	}
 	result := make(map[string]string, len(options)+3)
 	maps.Copy(result, options)
 	declared, err := TableOptions(facets)

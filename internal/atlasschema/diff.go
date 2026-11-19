@@ -725,9 +725,10 @@ func diffResolvedStates(
 		definer.WarnUnnamedViews(opts.Diagnostics, compared, dialect)
 	}
 	// Neither side's objects of a kind Ptah does not model reach the comparison,
-	// so a report that the two match says nothing about them.
-	unmodelednote.Report(ctx, opts.Diagnostics, "--from", fromState.DB)
-	unmodelednote.Report(ctx, opts.Diagnostics, "--to", toState.DB)
+	// so a report that the two match says nothing about them. Each side is the
+	// scoped one, so an object the selection left out is not named.
+	unmodelednote.Report(ctx, opts.Diagnostics, "--from", fromSide.database)
+	unmodelednote.Report(ctx, opts.Diagnostics, "--to", toSide.database)
 	// Apply the planned-change half of target validation to offline comparisons
 	// as well. A table both sides name and describe
 	// differently is rebuilt by the SQLite planner, which destroys a module's

@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/mysqlpartition"
 )
 
 // PartitionService converts and compares partition facets using captured data.
@@ -147,10 +148,15 @@ func partitionChangeError(subject objectidentity.ID) error {
 // RefuseForeignPartition checks a target's policy for a present declaration.
 // Supported targets and targets that report an omission return nil. Targets
 // with a different partition grammar return ErrUnsupportedFeature by name.
+// MySQL and MariaDB have a partition grammar Ptah does not model, so they
+// refuse rather than create one ordinary table where a partitioned one was
+// declared.
 func RefuseForeignPartition(target string) error {
 	switch platform.NormalizeDialect(target) {
-	case platform.Postgres, platform.YugabyteDB, platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle, platform.ClickHouse:
+	case platform.Postgres, platform.YugabyteDB, platform.SQLite, platform.SQLServer, platform.Oracle, platform.ClickHouse:
 		return nil
+	case platform.MySQL, platform.MariaDB:
+		return mysqlpartition.Refusal("table partition on " + target)
 	case platform.CockroachDB:
 		return fmt.Errorf("%w: PostgreSQL PARTITION BY cannot be rendered on %s", ptaherr.ErrUnsupportedFeature, target)
 	default:

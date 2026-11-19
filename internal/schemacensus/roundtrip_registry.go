@@ -413,13 +413,13 @@ func RoundTripExemptions() []Unreached { return slices.Clone(roundTripExemptions
 
 var roundTripExemptions = []Unreached{
 	{Field: "pgtable.PartitionMember.Bound", Dialects: []string{"postgres", "yugabytedb"}, Reason: "a changed bound is compared once a connected server normalizes it; without one the owner leaves the change undecided"},
-	{Field: "pgtable.DesiredPartition.Type", Dialects: []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
+	{Field: "pgtable.DesiredPartition.Type", Dialects: []string{"clickhouse", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
 	{Field: "pgtable.DesiredPartition.Type", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
-	{Field: "pgtable.DesiredPartition.Parts", Dialects: []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
+	{Field: "pgtable.DesiredPartition.Parts", Dialects: []string{"clickhouse", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
 	{Field: "pgtable.DesiredPartition.Parts", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
-	{Field: "pgtable.PartitionPart.Name", Dialects: []string{"clickhouse", "mariadb", "mysql", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
+	{Field: "pgtable.PartitionPart.Name", Dialects: []string{"clickhouse", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
 	{Field: "pgtable.PartitionPart.Name", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
-	{Field: "pgtable.PartitionPart.Expr", Dialects: []string{"mariadb", "mysql", "oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
+	{Field: "pgtable.PartitionPart.Expr", Dialects: []string{"oracle", "sqlite", "sqlserver"}, Reason: "the target reports PostgreSQL partition declarations as omitted and does not manage their keys"},
 	{Field: "pgtable.PartitionPart.Expr", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
 	{Field: "pgtable.PartitionPart.Collation", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},
 	{Field: "pgtable.PartitionPart.OperatorClass", Dialects: []string{"postgres", "yugabytedb"}, Reason: "partition keys cannot change in place; the owner refuses a changed key or requests connected normalization"},

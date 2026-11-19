@@ -13,6 +13,7 @@ import (
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/mysqlpartition"
 )
 
 // The names of the owner's SQL patterns, which each claim carries back.
@@ -22,6 +23,12 @@ const (
 	sqlOnUpdate     = "on-update"
 	sqlBlockSize    = "key-block-size"
 	sqlWithParser   = "parser"
+	sqlPartitionBy  = "partition-by"
+	// sqlAlterPartition opens the name of each pattern that claims an ALTER
+	// TABLE statement whose first operation changes or maintains the table's
+	// partitions. The rest of the name is the operation's opening words, which
+	// the refusal names it by.
+	sqlAlterPartition = "alter-partition: "
 )
 
 // SQL is the owner's contribution to the SQL frontend.
@@ -41,6 +48,18 @@ const (
 // while the others add nothing. An option ends where the element's next
 // option begins, so the patterns list no stop words of their own.
 //
+// A table's `PARTITION BY` in a MySQL or MariaDB document is claimed and
+// refused, because Ptah does not model MySQL partitioning: read as any other
+// option, it would be created as one ordinary table and compared as synced
+// with a table that has none. So is an ALTER TABLE statement that opens with
+// an operation that changes or maintains a table's partitions
+// ([partitionOperations]), which the grammar would refuse as an operation it
+// does not know, or as a column named PARTITION. The claim is a statement
+// rather than an ALTER TABLE operation, because a statement is what the owner
+// may claim on MariaDB, a target another provider registers; an operation
+// later in the statement is refused by the grammar. A document that names no
+// target leaves them to the grammar every target shares.
+//
 // Its claim is [BlockSizeCoverage]: a MySQL or MariaDB document states every
 // index's block size, so an index it declares without one has none.
 func SQL() sqlext.Extension {
@@ -48,13 +67,14 @@ func SQL() sqlext.Extension {
 		Owner:   mysqlschema.Owner,
 		Targets: mysqlschema.Targets(),
 		Facets:  []schemaext.Kind{mysqlschema.ColumnSettingsKind, mysqlschema.IndexBlockSizeKind, mysqlschema.IndexKind},
-		Patterns: []sqlext.Pattern{
+		Patterns: append([]sqlext.Pattern{
 			{Name: sqlCharset, Site: sqlext.ColumnOption, Words: []string{"CHARSET"}},
 			{Name: sqlCharacterSet, Site: sqlext.ColumnOption, Words: []string{"CHARACTER", "SET"}},
 			{Name: sqlOnUpdate, Site: sqlext.ColumnOption, Words: []string{"ON", "UPDATE"}},
 			{Name: sqlBlockSize, Site: sqlext.IndexOption, Words: []string{"KEY_BLOCK_SIZE"}},
 			{Name: sqlWithParser, Site: sqlext.IndexOption, Words: []string{"WITH", "PARSER"}},
-		},
+			{Name: sqlPartitionBy, Site: sqlext.TableOption, Words: []string{"PARTITION", "BY"}, Targeted: true},
+		}, partitionOperations()...),
 		Parser:   sqlParser{},
 		Coverage: func(sqlext.CoverageRequest) (schemaext.Coverage, error) { return BlockSizeCoverage() },
 	}
@@ -107,7 +127,31 @@ type elementOptions struct {
 }
 
 // read reads one claim onto the options of its element.
+// partitionOperations claims an ALTER TABLE statement whose first operation
+// changes or maintains the table's partitions on MySQL or MariaDB, by the
+// operation's opening words, in a document that names either target.
+func partitionOperations() []sqlext.Pattern {
+	operations := [][]string{
+		{"PARTITION", "BY"}, {"REMOVE", "PARTITIONING"}, {"ADD", "PARTITION"}, {"DROP", "PARTITION"},
+		{"TRUNCATE", "PARTITION"}, {"COALESCE", "PARTITION"}, {"REORGANIZE", "PARTITION"}, {"EXCHANGE", "PARTITION"},
+		{"ANALYZE", "PARTITION"}, {"CHECK", "PARTITION"}, {"OPTIMIZE", "PARTITION"}, {"REBUILD", "PARTITION"},
+		{"REPAIR", "PARTITION"}, {"DISCARD", "PARTITION"}, {"IMPORT", "PARTITION"}, {"CONVERT", "PARTITION"},
+		{"CONVERT", "TABLE"},
+	}
+	patterns := make([]sqlext.Pattern, 0, len(operations))
+	for _, words := range operations {
+		patterns = append(patterns, sqlext.Pattern{
+			Name: sqlAlterPartition + strings.Join(words, " "), Site: sqlext.Statement, Words: []string{"ALTER", "TABLE"},
+			AfterName: words, Targeted: true,
+		})
+	}
+	return patterns
+}
+
 func (e *elementOptions) read(target string, claim sqlext.Claim) error {
+	if operation, ok := strings.CutPrefix(claim.Pattern, sqlAlterPartition); ok {
+		return ptaherr.At(claim.Offset, mysqlpartition.Refusal(operation+" on table "+alteredTable(target, claim)))
+	}
 	switch claim.Pattern {
 	case sqlCharset, sqlCharacterSet, sqlOnUpdate:
 		settings, err := readColumnOption(target, claim, e.column)
@@ -123,6 +167,8 @@ func (e *elementOptions) read(target string, claim sqlext.Claim) error {
 		name, err := readParser(target, claim)
 		e.parser = name
 		return err
+	case sqlPartitionBy:
+		return ptaherr.At(claim.Offset, mysqlpartition.Refusal("PARTITION BY on table "+claim.Subject))
 	default:
 		return fmt.Errorf("%w: MySQL SQL pattern %q", schemaext.ErrInvalidValue, claim.Pattern)
 	}
@@ -242,6 +288,21 @@ func unquoteBackticks(name string) string {
 		return name
 	}
 	return strings.ReplaceAll(name[1:len(name)-1], "``", "`")
+}
+
+// alteredTable is the table an ALTER TABLE statement claim names, as the
+// statement writes it.
+func alteredTable(target string, claim sqlext.Claim) string {
+	tokens := newOptionTokens(target, claim)
+	tokens.skipSpace()
+	tokens.next()
+	tokens.next()
+	first, last := tokens.current(), tokens.current()
+	for tokens.next(); tokens.current().Value == "."; tokens.next() {
+		tokens.next()
+		last = tokens.current()
+	}
+	return claim.Text[first.Start:last.End]
 }
 
 // optionTokens is a claimed option as the frontend's lexer reads it for the

@@ -56,6 +56,9 @@ func (s *scopeSelection) projectDatabase(db *catalog.Database) (*catalog.Databas
 		return s.tableKept(keptTables, schema, table)
 	})
 
+	out.UnmodeledObjects = keep(db.UnmodeledObjects, func(object catalog.UnmodeledObject) bool {
+		return s.unmodeledKept(keptTables, object)
+	})
 	s.projectDatabaseTopLevel(db, out, keptTables, features.roles)
 	s.projectDatabaseSupport(db, out)
 	extensionSchemas, err := s.projectExtensions(&out.FeatureObjects, &out.FeatureCoverage)
@@ -220,6 +223,30 @@ func (s *scopeSelection) tableIdentity(schema, table string) tableIdentity {
 // package's normalization into a message about the author's schema.
 func (s *scopeSelection) tableID(schema, table string) objectidentity.ID {
 	return exactIdentities.TableParts(s.effectiveSchema(schema), table)
+}
+
+// unmodeledKept reports whether the selection keeps an object of a kind Ptah
+// does not model, so that a report names it: a property of a table stays with
+// the table, and an object of its own stays when the schema it names is in the
+// selection and an include selector names it. A record of every object of a
+// kind names no object, so only its schema decides, and the schema scope
+// leaves an object that names no schema alone, as the exclusion does. Keeping
+// one is not a match: a selection that names only an object Ptah does not
+// model has still selected nothing to compare.
+func (s *scopeSelection) unmodeledKept(kept map[tableIdentity]struct{}, object catalog.UnmodeledObject) bool {
+	if object.Table != "" {
+		return s.tableKept(kept, object.Schema, object.Table)
+	}
+	if object.Schema != "" && !s.schemaAllowed(object.Schema) {
+		return false
+	}
+	if object.Name == "" || len(s.selectors) == 0 {
+		return true
+	}
+	names := s.nameCandidates(object.Schema, object.Name)
+	return slices.ContainsFunc(s.selectors, func(selector resourcePattern) bool {
+		return selector.matches(object.Kind, names...)
+	})
 }
 
 func (s *scopeSelection) tableKept(kept map[tableIdentity]struct{}, schema, table string) bool {

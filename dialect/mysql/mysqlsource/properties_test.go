@@ -19,7 +19,8 @@ func decode(ctx context.Context, target string, properties map[string]string) ([
 }
 
 // TestDefinitions_ClaimTheOptions pins the vocabulary: the three option keys,
-// and no common attribute taken over.
+// partition_by, which is claimed to be refused, and no common attribute taken
+// over.
 func TestDefinitions_ClaimTheOptions(t *testing.T) {
 	c := qt.New(t)
 
@@ -27,7 +28,7 @@ func TestDefinitions_ClaimTheOptions(t *testing.T) {
 
 	c.Assert(definitions, qt.HasLen, 1)
 	c.Assert(definitions[0].Kind, qt.Equals, mysqlschema.TableKind)
-	c.Assert(definitions[0].Keys, qt.DeepEquals, []string{"auto_increment", "charset", "engine"})
+	c.Assert(definitions[0].Keys, qt.DeepEquals, []string{"auto_increment", "charset", "engine", "partition_by"})
 	c.Assert(definitions[0].Absorbs, qt.HasLen, 0)
 }
 
@@ -77,6 +78,8 @@ func TestDecodeProperties_FailurePath(t *testing.T) {
 			wantErr: `desired model "ptah.run/mysql/table": invalid feature value: MySQL engine "MergeTree\(\)" is not a name .*`},
 		{name: "another target", target: "postgres", properties: map[string]string{"charset": "utf8"},
 			wantErr: `unsupported database dialect: MySQL source target "postgres"`},
+		{name: "a partitioning", target: "mariadb", properties: map[string]string{"engine": "InnoDB", "partition_by": "HASH (id) PARTITIONS 2"},
+			wantErr: `unsupported feature: platform property partition_by: Ptah does not model MySQL or MariaDB partitioning \(stokaro/ptah#6357\); .*`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

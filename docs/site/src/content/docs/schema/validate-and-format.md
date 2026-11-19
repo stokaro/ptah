@@ -299,13 +299,17 @@ Some declarations belong to a whole object rather than to a column or an index:
 
 | Property | Kept by | Dropped by |
 | --- | --- | --- |
-| Table partitioning | the PostgreSQL family | every other target |
+| Table partitioning | the PostgreSQL family | SQLite, SQL Server, Oracle, ClickHouse |
 | Unlogged table | PostgreSQL | every other built-in target |
 | Schema character set and collation | the MySQL family | PostgreSQL, SQL Server, ClickHouse |
 | Role comment | PostgreSQL, YugabyteDB | CockroachDB, the MySQL family, SQL Server, Oracle, ClickHouse |
 
 Losing the partitioning produces one ordinary table where a partitioned one was
-declared. SQLite and Oracle report a schema and a role as unsupported objects
+declared. The MySQL family refuses a partitioning instead of dropping it, from
+every source: Ptah does not model MySQL or MariaDB partitioning
+([stokaro/ptah#6357](https://github.com/stokaro/ptah/issues/6357)), and an
+existing table without partitions would otherwise compare as synced. CockroachDB
+refuses it too. SQLite and Oracle report a schema and a role as unsupported objects
 outright, so they name the loss already and add no second line about a property.
 
 A generated key reports the values it loses, not the spelling. Every target

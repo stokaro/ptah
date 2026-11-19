@@ -1513,6 +1513,15 @@
   },
   {
     "area": "Schema sources",
+    "feature": "MySQL and MariaDB `PARTITION BY` in a desired schema",
+    "ptah": "no",
+    "atlas_oss": "no",
+    "atlas_pro": "unknown",
+    "note": "Not modeled (stokaro/ptah#6357): refused by name from SQL, Go, YAML and HCL, and a table partitioned outside Ptah reads with a warning. The community binary writes an option the server refuses.",
+    "evidence": "Measured 2026-11-19, pinned community binary v1.4.0 against MySQL 26.10 and MariaDB 12.3: `schema apply --to file://schema.sql --dev-url` writes `) ... partitioned;` and the server answers ERROR 1064; against a table that exists without partitions it reports the schema synced; `schema inspect` of a partitioned table writes no partitioning; an HCL `partition` block on MySQL fails to parse. ptah and ptah-compat refuse the declaration before sending a statement, and name a table partitioned outside Ptah on `db read`, `schema apply`, `schema compare` and `schema diff`. integration/mysql_partition_refusal_e2e_test.go."
+  },
+  {
+    "area": "Schema sources",
     "feature": "HCL table and column child blocks",
     "ptah": "yes",
     "atlas_oss": "partial",
