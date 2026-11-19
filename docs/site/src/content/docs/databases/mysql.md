@@ -1414,10 +1414,13 @@ ones it created; see
 
 The server checks a view's query when the view is created, so a view has to be
 created after every view it reads. Ptah reads the body of each view the plan
-adds or replaces, and creates a view after the views of the plan it names,
-whatever order the schema file or the names give. `depends_on` adds an order
-the body does not show. A name inside a string is not a reference, and a string
-is read as the server reads it: `"x\"y"` is one string.
+adds or replaces, and creates a view after the views of the plan it reads,
+whatever order the schema file or the names give. A name is a read where a
+relation can appear, as after `FROM` or a `JOIN`; a column alias, a table alias
+or a common table expression that has the name of another view is not.
+`depends_on` adds an order the body does not show. A name inside a string is
+not a reference, and a string is read as the server reads it: `"x\"y"` is one
+string.
 
 Views the plan adds that read one another in a ring are refused before anything
 is applied, because no order creates them:

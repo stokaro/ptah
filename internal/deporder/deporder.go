@@ -744,9 +744,22 @@ func newViewLikeGraph(objects []ViewLike, dialect string, scope orderScope) view
 	bareNameCounts := viewLikeBareNameCounts(idsByName)
 	for i, object := range objects {
 		id := viewLikeID(object, i)
+		// A query reads a view where a relation can appear, and calls a
+		// routine anywhere an expression can. A routine's body writes
+		// relations in more places than a query reads them. Both are read
+		// whole.
+		var reads *relationReads
+		if !object.Routine {
+			read := relationsReadBy(object.Body, dialect)
+			reads = &read
+		}
 		for candidateName, candidateIDs := range idsByName {
+			scoped := reads
+			if graph.anyRoutine(candidateIDs) {
+				scoped = nil
+			}
 			if candidateName == object.Name ||
-				!referencesViewLikeIdentifier(object.Body, candidateName, dialect, scope, bareNameCounts) {
+				!referencesViewLikeIdentifier(object.Body, candidateName, dialect, scope, bareNameCounts, scoped) {
 				continue
 			}
 			graph.reads[id] = append(graph.reads[id], candidateIDs...)
@@ -754,6 +767,11 @@ func newViewLikeGraph(objects []ViewLike, dialect string, scope orderScope) view
 		graph.reads[id] = append(graph.reads[id], declaredViewLikeEdges(object, idsByName)...)
 	}
 	return graph
+}
+
+// anyRoutine reports that one of ids is a routine.
+func (g viewLikeGraph) anyRoutine(ids []string) bool {
+	return slices.ContainsFunc(ids, func(id string) bool { return g.byID[id].Routine })
 }
 
 func (g viewLikeGraph) ordered(ids []string) []ViewLike {
@@ -828,7 +846,18 @@ func viewLikeBareNameCounts(idsByName map[string][]string) map[string]int {
 // reaches the object's schema, or where no other object of the set has that
 // bare name. The dialect's quoted spellings are asked too, which is what reads
 // a SQL Server name in brackets.
-func referencesViewLikeIdentifier(body, name, dialect string, scope orderScope, bareNameCounts map[string]int) bool {
+//
+// reads, when it is not nil, keeps the test to the names body reads as
+// relations ([relationsReadBy]): `SELECT n AS b_v FROM t` does not read a
+// view b_v, and two views whose aliases name each other are no cycle. A
+// routine's body passes nil, since it writes relations in more places than a
+// query reads them, such as INSERT INTO and UPDATE.
+func referencesViewLikeIdentifier(
+	body, name, dialect string,
+	scope orderScope,
+	bareNameCounts map[string]int,
+	reads *relationReads,
+) bool {
 	if dialect == "" {
 		return ReferencesIdentifier(body, name)
 	}
@@ -837,55 +866,65 @@ func referencesViewLikeIdentifier(body, name, dialect string, scope orderScope, 
 	if !ok {
 		return ReferencesIdentifier(body, name)
 	}
+	var positions []bool
+	names := func() []dottedName { return codeNames(body, dialect) }
+	if reads != nil {
+		positions = reads.positions
+		names = func() []dottedName { return reads.names }
+	}
 	if ref.Qualified && referencesIdentifierSpellings(body, []string{
 		name,
 		tableref.Canonical(ref.Schema, ref.Name),
 		sqlident.Qualified(dialect, ref.Schema, ref.Name),
-	}, dialect) {
+	}, dialect, positions) {
 		return true
 	}
 	if !ref.Qualified && referencesIdentifierSpellings(body, []string{
 		name,
 		tableref.Canonical("", ref.Name),
 		sqlident.Quote(dialect, ref.Name),
-	}, dialect) {
+	}, dialect, positions) {
 		return true
 	}
-	if namesRead(codeNames(body, dialect), ref, scope.resolution()) {
+	if namesRead(names(), ref, scope.resolution()) {
 		return true
 	}
 
 	if bareNameCounts[strings.ToLower(ref.Name)] != 1 {
 		return false
 	}
-	return referencesUnqualifiedIdentifier(body, ref.Name, dialect)
+	return referencesUnqualifiedIdentifier(body, ref.Name, dialect, positions)
 }
 
-func referencesIdentifierSpellings(body string, spellings []string, dialect string) bool {
+// The spelling tests below take positions, the bytes of the lowered body a
+// match may start at, or nil for any byte.
+
+func referencesIdentifierSpellings(body string, spellings []string, dialect string, positions []bool) bool {
 	for _, spelling := range spellings {
-		if referencesIdentifierSpelling(body, spelling, dialect) {
+		if referencesIdentifierSpelling(body, spelling, dialect, positions) {
 			return true
 		}
 	}
 	return false
 }
 
-func referencesUnqualifiedIdentifier(body, name, dialect string) bool {
-	return referencesUnquotedIdentifierSpelling(body, name, dialect) ||
-		referencesIdentifierSpelling(body, tableref.Canonical("", name), dialect) ||
-		referencesIdentifierSpelling(body, sqlident.Quote(dialect, name), dialect)
+func referencesUnqualifiedIdentifier(body, name, dialect string, positions []bool) bool {
+	return referencesUnquotedIdentifierSpelling(body, name, dialect, positions) ||
+		referencesIdentifierSpelling(body, tableref.Canonical("", name), dialect, positions) ||
+		referencesIdentifierSpelling(body, sqlident.Quote(dialect, name), dialect, positions)
 }
 
-func referencesIdentifierSpelling(body, spelling, dialect string) bool {
-	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, hasStandaloneIdentifierBoundaries)
+func referencesIdentifierSpelling(body, spelling, dialect string, positions []bool) bool {
+	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, positions, hasStandaloneIdentifierBoundaries)
 }
 
-func referencesUnquotedIdentifierSpelling(body, spelling, dialect string) bool {
-	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, hasUnquotedIdentifierBoundaries)
+func referencesUnquotedIdentifierSpelling(body, spelling, dialect string, positions []bool) bool {
+	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, positions, hasUnquotedIdentifierBoundaries)
 }
 
 func referencesIdentifierSpellingWithBoundary(
 	body, spelling, dialect string,
+	positions []bool,
 	hasBoundaries func(string, int, int) bool,
 ) bool {
 	body = strings.ToLower(body)
@@ -902,7 +941,8 @@ func referencesIdentifierSpellingWithBoundary(
 		}
 		index += start
 		end := index + len(spelling)
-		if spanIsCode(masks.code, index, end) &&
+		if (positions == nil || index < len(positions) && positions[index]) &&
+			spanIsCode(masks.code, index, end) &&
 			hasBoundaries(body, index, end) &&
 			spanMatchesIdentifierQuoting(body, spelling, masks, index, end) {
 			return true

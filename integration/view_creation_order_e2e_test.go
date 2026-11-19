@@ -127,6 +127,46 @@ func TestViewCycleIsRefusedByNameE2E(t *testing.T) {
 	}
 }
 
+// TestViewsWhoseNamesReadNoViewApplyE2E declares two views whose aliases, or
+// whose common table expressions, carry the name of the other view. Neither
+// view reads the other, so the server creates both in any order, and the run
+// applies them. Read as references, the names close a ring, and the run
+// refuses the schema as a cycle. The next run is not planned here: MariaDB
+// stores a common table expression in a form its comparison does not read
+// back, which has nothing to do with the order.
+func TestViewsWhoseNamesReadNoViewApplyE2E(t *testing.T) {
+	shapes := []struct {
+		name string
+		a, b string
+	}{
+		{name: "column aliases", a: "SELECT n AS b_v FROM t", b: "SELECT n AS a_v FROM t"},
+		{name: "table aliases", a: "SELECT b_v.n FROM t b_v", b: "SELECT a_v.n FROM t a_v"},
+		{
+			name: "common table expressions",
+			a:    "WITH b_v AS (SELECT n FROM t) SELECT n FROM b_v",
+			b:    "WITH a_v AS (SELECT n FROM t) SELECT n FROM a_v",
+		},
+	}
+	for _, engine := range viewOrderEngines {
+		for _, shape := range shapes {
+			t.Run(engine.name+"/"+shape.name, func(t *testing.T) {
+				c := qt.New(t)
+				database := engine.url(c)
+				schema := writeViewOrderSchema(c, fmt.Sprintf("CREATE TABLE t (n %s);\n"+
+					"CREATE VIEW a_v AS %s;\n"+
+					"CREATE VIEW b_v AS %s;\n", engine.number, shape.a, shape.b))
+
+				applied := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file", schema, "--auto-approve")
+				c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
+
+				var views int
+				c.Assert(connectDevDialect(c, database).QueryRowContext(c.Context(), engine.viewCount).Scan(&views), qt.IsNil)
+				c.Assert(views, qt.Equals, 2)
+			})
+		}
+	}
+}
+
 // TestViewReadingAViewAfterADoubleQuotedStringAppliesE2E puts a double-quoted
 // string holding an escaped quote before the view the body reads. MySQL and
 // MariaDB read "x\"y" as the string x"y, so the name after it is a relation

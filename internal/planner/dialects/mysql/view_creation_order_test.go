@@ -63,6 +63,25 @@ func TestPlanner_GenerateMigrationAST_CreatesAViewAfterTheViewsItReads(t *testin
 			later:   "VIEW a_v AS",
 		},
 		{
+			// Each alias names the other view, and neither view reads it.
+			name: "views whose column aliases name each other keep the diff's order",
+			diff: &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{
+				{Name: "a_v", Body: "SELECT n AS b_v FROM t"},
+				{Name: "b_v", Body: "SELECT n AS a_v FROM t"},
+			}},
+			earlier: "VIEW a_v AS",
+			later:   "VIEW b_v AS",
+		},
+		{
+			name: "views whose common table expressions name each other keep the diff's order",
+			diff: &difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{
+				{Name: "a_v", Body: "WITH b_v AS (SELECT n FROM t) SELECT n FROM b_v"},
+				{Name: "b_v", Body: "WITH a_v AS (SELECT n FROM t) SELECT n FROM a_v"},
+			}},
+			earlier: "VIEW a_v AS",
+			later:   "VIEW b_v AS",
+		},
+		{
 			// a_v reads b_v, which exists already, so a_v can be created
 			// first; b_v then reads the a_v that exists.
 			name: "a ring through a replaced view keeps the diff's order",

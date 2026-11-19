@@ -185,11 +185,11 @@ func namesObject(text, object, dialect string, scope orderScope) bool {
 		return false
 	}
 	bareNameCounts := map[string]int{strings.ToLower(viewLikeBareName(object)): 1}
-	if referencesViewLikeIdentifier(text, object, dialect, scope, bareNameCounts) {
+	if referencesViewLikeIdentifier(text, object, dialect, scope, bareNameCounts, nil) {
 		return true
 	}
 	inDefaultSchema, ok := defaultSchemaSpelling(object, scope)
-	return ok && referencesViewLikeIdentifier(text, inDefaultSchema, dialect, scope, bareNameCounts)
+	return ok && referencesViewLikeIdentifier(text, inDefaultSchema, dialect, scope, bareNameCounts, nil)
 }
 
 // defaultSchemaSpelling is object qualified with scope's default schema, for

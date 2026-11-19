@@ -355,8 +355,11 @@ incomplete coverage and an explicit target scope the annotation cannot preserve.
 
 The server checks a view's query when the view is created. Ptah creates each
 view the plan adds or replaces after the views of the plan its body reads, or
-that `depends_on` names. Views the plan adds that read one another in a ring
-are refused by name before anything is applied, because no order creates them.
+that `depends_on` names. A name is a read where a relation can appear, as after
+`FROM` or a `JOIN`; a column alias, a table alias or a common table expression
+that has the name of another view is not. Views the plan adds that read one
+another in a ring are refused by name before anything is applied, because no
+order creates them.
 
 ## Constraints that defer their check
 
