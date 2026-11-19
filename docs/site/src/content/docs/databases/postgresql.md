@@ -240,16 +240,34 @@ keyword expression, and `DEFAULT CURRENT_TIMESTAMP(3)` keeps its precision.
 `DEFAULT 'NULL'` is a string value and compares as a different default, and
 so does `DEFAULT ''`.
 
-A column of a built-in date or time type, or of a domain the schema declares
-over one, with the default `'now'`, `'today'`, `'tomorrow'` or `'yesterday'`
-is refused, with or without a cast and in parentheses, as `('now')`. The
-refusal covers a SQL schema file's `CREATE TABLE` and
+PostgreSQL reads a date or time default of `'now'`, `'today'`, `'tomorrow'` or
+`'yesterday'` once, when it creates the table or the domain, and stores that
+moment as the default. Ptah refuses such a default, with or without a cast, as
+`'now'::date`, `CAST('now' AS date)`, `date('today')` or `$$now$$`, in
+parentheses, as `('now')`, with a time beside the word, as `'tomorrow 10:00'`,
+and inside a longer expression, as `'tomorrow'::date + 1`; write `now()`, `CURRENT_TIMESTAMP` or
+`CURRENT_DATE` instead. It is refused:
+
+- on a column of a built-in date or time type, written plain or quoted, as
+  `"pg_catalog"."timestamptz"`. A quoted name keeps its case, so `"Timestamp"`
+  is a type somebody created;
+- on a column of a domain the schema declares over such a type;
+- on an array of such a type, with an array default that holds one of the
+  words, as `'{now}'`, `ARRAY['today']::date[]` or `ARRAY['today', CURRENT_DATE]`.
+  An `ARRAY['today']` with no cast and no element of another type is a
+  `text[]`, which the server refuses with its own type error;
+- as a domain's own default, as `CREATE DOMAIN moment AS timestamp DEFAULT 'now'`;
+- on a type name that domains in more than one schema answer to, when any of
+  them holds a date or time, since the server takes the one its search path
+  finds first. Qualify the name with the domain's schema.
+
+The refusal covers a SQL schema file's `CREATE TABLE`, `CREATE DOMAIN` and
 `ALTER COLUMN ... SET DEFAULT`, and a `default` or `default_expr` in a Go
-struct or a YAML schema. PostgreSQL reads the string once, when it creates
-the table, and stores that moment as the default; write `now()`,
-`CURRENT_TIMESTAMP` or `CURRENT_DATE` instead. On a column of any other
-type the string is the value it spells, so `'today'` on an enum that has the
-value `today` is that value, whatever the enum is named.
+struct or a YAML schema. A word cast to a string type first, as
+`('now'::text)::date`, is not refused: the server keeps that cast in the
+default and converts the text for each row. On a column of any other type the
+string is the value it spells, so `'today'` on an enum that has the value `today` is that value,
+whatever the enum is named.
 
 On a text column a string is never the expression its characters spell:
 `DEFAULT 'now()'` and `DEFAULT now()` are different defaults, and so are

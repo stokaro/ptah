@@ -61,6 +61,21 @@ func TestGetOrderedCreateStatements_ARelativeTimeDefaultIsRefused_FailurePath(t 
 			field:   schemamodel.Field{Type: "timestamptz", DefaultExpr: "'now'::timestamptz"},
 			wantErr: `column "a" of table "t": DEFAULT 'now'::timestamptz on a timestamptz` + tail,
 		},
+		{
+			name: "a quoted qualified type", dialect: platform.Postgres,
+			field:   schemamodel.Field{Type: `"pg_catalog"."timestamptz"`, Default: "now", DefaultSet: true},
+			wantErr: `column "a" of table "t": DEFAULT 'now' on a "pg_catalog"."timestamptz"` + tail,
+		},
+		{
+			name: "an array literal", dialect: platform.Postgres,
+			field:   schemamodel.Field{Type: "timestamp[]", Default: "{epoch,now}", DefaultSet: true},
+			wantErr: `column "a" of table "t": DEFAULT '\{epoch,now\}' on a timestamp\[\]` + tail,
+		},
+		{
+			name: "an ARRAY constructor", dialect: platform.Postgres,
+			field:   schemamodel.Field{Type: "date ARRAY", DefaultExpr: "ARRAY['today']::date[]"},
+			wantErr: `column "a" of table "t": DEFAULT ARRAY\['today'\]::date\[\] on a date ARRAY` + tail,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -89,6 +104,9 @@ func TestGetOrderedCreateStatements_ARelativeTimeDefaultIsRefused_HappyPath(t *t
 		{name: "an undeclared type named timeslot", dialect: platform.Postgres, field: schemamodel.Field{Type: "timeslot", DefaultExpr: "'now'"}},
 		{name: "CockroachDB", dialect: platform.CockroachDB, field: schemamodel.Field{Type: "timestamptz", Default: "now", DefaultSet: true}},
 		{name: "MySQL", dialect: platform.MySQL, field: schemamodel.Field{Type: "datetime", DefaultExpr: "'now'"}},
+		{name: "a quoted created type", dialect: platform.Postgres, field: schemamodel.Field{Type: `"Timestamp"`, Default: "now", DefaultSet: true}},
+		{name: "an array of fixed moments", dialect: platform.Postgres, field: schemamodel.Field{Type: "timestamptz[]", Default: "{epoch}", DefaultSet: true}},
+		{name: "a text array", dialect: platform.Postgres, field: schemamodel.Field{Type: "text[]", Default: "{now}", DefaultSet: true}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -171,6 +189,16 @@ func TestGetOrderedCreateStatements_ARelativeTimeDefaultOnADomainIsRefused(t *te
 				"CREATE TABLE events (id int PRIMARY KEY, at app.day DEFAULT 'today');\n",
 			wantErr: `column "at" of table "(public\.)?events": DEFAULT 'today' on a app\.day` + tail,
 		},
+		{
+			name:    "an array of a domain over a timestamp",
+			source:  "CREATE DOMAIN moment AS timestamp;\nCREATE TABLE events (id int PRIMARY KEY, at moment[] DEFAULT '{now}');\n",
+			wantErr: `column "at" of table "(public\.)?events": DEFAULT '\{now\}' on a (public\.)?moment\[\]` + tail,
+		},
+		{
+			name:    "a domain over a timestamp array",
+			source:  "CREATE DOMAIN moments AS timestamptz[];\nCREATE TABLE events (id int PRIMARY KEY, at moments DEFAULT '{today}');\n",
+			wantErr: `column "at" of table "(public\.)?events": DEFAULT '\{today\}' on a (public\.)?moments` + tail,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -186,6 +214,103 @@ func TestGetOrderedCreateStatements_ARelativeTimeDefaultOnADomainIsRefused(t *te
 			c.Assert(statements, qt.IsNil)
 		})
 	}
+}
+
+// A type name domains in more than one schema answer to is refused when any
+// of them holds a moment, whichever schema declares it: the server takes the
+// one its search path finds first, which the model does not know.
+func TestGetOrderedCreateStatements_ARelativeTimeDefaultOnASharedDomainNameIsRefused(t *testing.T) {
+	const want = `column "at" of table "(public\.)?events": DEFAULT 'now' on a moment column may be read once, when the ` +
+		`table is created: more than one domain answers to moment, and one holds a date or time, so every row would ` +
+		`get that moment; qualify the type with the schema of the domain meant, or write a function the server calls ` +
+		`for each row, such as now\(\) or CURRENT_DATE`
+	tests := []struct{ name, source string }{
+		{
+			name: "the first over a timestamp",
+			source: "CREATE SCHEMA a;\nCREATE SCHEMA b;\nCREATE DOMAIN a.moment AS timestamp;\nCREATE DOMAIN b.moment AS text;\n" +
+				"CREATE TABLE events (id int PRIMARY KEY, at moment DEFAULT 'now');\n",
+		},
+		{
+			name: "the second over a timestamp",
+			source: "CREATE SCHEMA a;\nCREATE SCHEMA b;\nCREATE DOMAIN a.moment AS text;\nCREATE DOMAIN b.moment AS timestamp;\n" +
+				"CREATE TABLE events (id int PRIMARY KEY, at moment DEFAULT 'now');\n",
+		},
+		{
+			name: "one over a domain over a timestamp",
+			source: "CREATE SCHEMA a;\nCREATE SCHEMA b;\nCREATE DOMAIN instant AS timestamptz;\n" +
+				"CREATE DOMAIN a.moment AS text;\nCREATE DOMAIN b.moment AS instant;\n" +
+				"CREATE TABLE events (id int PRIMARY KEY, at moment DEFAULT 'now');\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.source), platform.Postgres, nil,
+				sqlschema.Options{Owners: builtintest.Runtime().SQL()})
+			c.Assert(err, qt.IsNil)
+
+			statements, err := builtin.GetOrderedCreateStatements(&database, platform.Postgres)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, want)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// A domain whose own default is a relative time literal on the date or time
+// type it resolves to is refused, as a SQL schema or a Go model declares it:
+// the server reads the default when it creates the domain.
+func TestGetOrderedCreateStatements_ARelativeTimeDomainDefaultIsRefused(t *testing.T) {
+	const tail = ` domain is read once, when the domain is created, so every row gets that moment and every plan ` +
+		`changes the domain again; write a function the server calls for each row, such as now\(\) or CURRENT_DATE`
+	tests := []struct{ name, source, wantErr string }{
+		{
+			name:    "a literal",
+			source:  "CREATE DOMAIN moment AS timestamp DEFAULT 'now';\n",
+			wantErr: `domain "moment": DEFAULT 'now' on a timestamp` + tail,
+		},
+		{
+			name:    "a cast in parentheses",
+			source:  "CREATE DOMAIN day AS date DEFAULT ('today'::date);\n",
+			wantErr: `domain "day": DEFAULT \('today'::date\) on a date` + tail,
+		},
+		{
+			name:    "a domain over a domain over a timestamptz",
+			source:  "CREATE DOMAIN instant AS timestamptz;\nCREATE DOMAIN moment AS instant DEFAULT 'now';\n",
+			wantErr: `domain "moment": DEFAULT 'now' on a instant` + tail,
+		},
+		{
+			name:    "an array",
+			source:  "CREATE DOMAIN moments AS timestamp[] DEFAULT '{now}';\n",
+			wantErr: `domain "moments": DEFAULT '\{now\}' on a timestamp\[\]` + tail,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database, _, err := sqlschema.ReadWith(t.Context(), []byte(test.source), platform.Postgres, nil,
+				sqlschema.Options{Owners: builtintest.Runtime().SQL()})
+			c.Assert(err, qt.IsNil)
+
+			statements, err := builtin.GetOrderedCreateStatements(&database, platform.Postgres)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+	t.Run("a Go model", func(t *testing.T) {
+		c := qt.New(t)
+		database, err := goschema.ParseSource(builtintest.Annotations(), "events.go", relativeTimeGoDomainDefaultSource)
+		c.Assert(err, qt.IsNil)
+
+		statements, err := builtin.GetOrderedCreateStatements(&database, platform.Postgres)
+
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+		c.Assert(err, qt.ErrorMatches, `domain "moment": DEFAULT 'now' on a TIMESTAMP`+tail)
+		c.Assert(statements, qt.IsNil)
+	})
 }
 
 // A domain a Go model declares over a timestamp is resolved the same way.
@@ -221,14 +346,22 @@ func TestGetOrderedCreateStatements_AStringDefaultOnATypeThatHoldsNoMomentRender
 				"CREATE TABLE events (id int PRIMARY KEY, kind update_day DEFAULT 'today');\n",
 		},
 		{
-			name: "a name two domains share, the first over a timestamp",
-			source: "CREATE SCHEMA a;\nCREATE SCHEMA b;\nCREATE DOMAIN a.moment AS timestamp;\nCREATE DOMAIN b.moment AS text;\n" +
+			name: "a name two domains share, both over text",
+			source: "CREATE SCHEMA a;\nCREATE SCHEMA b;\nCREATE DOMAIN a.moment AS text;\nCREATE DOMAIN b.moment AS varchar(8);\n" +
 				"CREATE TABLE events (id int PRIMARY KEY, at moment DEFAULT 'now');\n",
 		},
 		{
-			name: "a name two domains share, the second over a timestamp",
-			source: "CREATE SCHEMA a;\nCREATE SCHEMA b;\nCREATE DOMAIN a.moment AS text;\nCREATE DOMAIN b.moment AS timestamp;\n" +
-				"CREATE TABLE events (id int PRIMARY KEY, at moment DEFAULT 'now');\n",
+			name: "a shared name qualified with the schema of the domain over text",
+			source: "CREATE SCHEMA a;\nCREATE SCHEMA b;\nCREATE DOMAIN a.moment AS timestamp;\nCREATE DOMAIN b.moment AS text;\n" +
+				"CREATE TABLE events (id int PRIMARY KEY, at b.moment DEFAULT 'now');\n",
+		},
+		{
+			name:   "a domain over a timestamp whose default is a function",
+			source: "CREATE DOMAIN moment AS timestamp DEFAULT now();\nCREATE TABLE events (id int PRIMARY KEY, at moment);\n",
+		},
+		{
+			name:   "a domain over text whose default is now",
+			source: "CREATE DOMAIN label AS text DEFAULT 'now';\nCREATE TABLE events (id int PRIMARY KEY, at label);\n",
 		},
 	}
 	for _, test := range tests {
@@ -270,6 +403,12 @@ type Event struct {
 	//ptah:schema:field name="at" type="moment" default="now"
 	At string
 }
+`
+
+const relativeTimeGoDomainDefaultSource = `package events
+
+//ptah:schema:domain name="moment" type="TIMESTAMP" default="now"
+type MomentDomain struct{}
 `
 
 const relativeTimeGoEnumSource = `package events
