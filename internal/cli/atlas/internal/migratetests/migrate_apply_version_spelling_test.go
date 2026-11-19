@@ -35,6 +35,33 @@ func TestCompatMigrateApply_OneVersionSpelledTwoWaysRefuses(t *testing.T) {
 	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.HasLen, 0)
 }
 
+// TestCompatMigrateApply_DuplicateVersionRefuses pins a retained divergence.
+// Measured on the community binary v1.3.0 and v1.4.0, two files spelling the
+// same version, 20260101000000_a.sql beside 20260101000000_b.sql, make
+// `migrate apply` run the first file, record its revision and panic with
+// exit 2; the next apply exits 0 with nothing to execute, so the second file
+// never runs. ptah-compat refuses the directory before any migration runs and
+// names both files.
+func TestCompatMigrateApply_DuplicateVersionRefuses(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	dir := writeConvertedApplyDir(c, filepath.Join(root, "migrations"), map[string]string{
+		"20260101000000_a.sql": "CREATE TABLE duplicate_a (id INTEGER PRIMARY KEY);\n",
+		"20260101000000_b.sql": "CREATE TABLE duplicate_b (id INTEGER PRIMARY KEY);\n",
+	})
+	hashOut, hashErrOut, hashErr := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
+	c.Assert(hashErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", hashOut, hashErrOut))
+	dbPath := filepath.Join(root, "apply.db")
+
+	stdout, stderr, err := compatApply(dir, dbPath)
+
+	c.Assert(err, qt.ErrorMatches, `error registering migrations: duplicate Atlas up migration for version 20260101000000: `+
+		`20260101000000_a\.sql and 20260101000000_b\.sql`)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "Error: "+err.Error()+"\n")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.HasLen, 0)
+}
+
 // TestCompatMigrateApply_RevisionSpelledApartFromItsFileRefuses pins the other
 // retained divergence on spelling. A history recorded 1 and 2 meets a
 // directory that spells 001, 002 and a new 003. The pinned community binary

@@ -142,6 +142,7 @@ own measurement conditions.
 | [The AUTOINCREMENT mark of a rebuilt SQLite table](#the-autoincrement-mark-of-a-rebuilt-sqlite-table) | keeps the mark, so a deleted key is not handed out again | rebuilds the table with the mark at the largest key it copies |
 | [A SQLite file that sets `legacy_alter_table`](#a-sqlite-file-that-sets-legacy_alter_table) | gives each file the setting the connection held before the run | leaves the setting as one file set it for the files after it |
 | [One version spelled two ways](#one-version-spelled-two-ways) | refuses the directory and names both files | applies both files as two revisions |
+| [Two files for one version](#two-files-for-one-version) | refuses the directory before anything runs and names both files | runs the first file, records its revision and crashes with exit `2`; the second file never runs |
 | [A revision spelled apart from its file](#a-revision-spelled-apart-from-its-file) | refuses the history and prints the statements that respell the rows | compares versions as text and leaves a new file unapplied |
 | [A Liquibase rollback written by `migrate diff`](#a-liquibase-rollback-written-by-migrate-diff) | writes `--rollback <SQL>`, which Liquibase runs | writes `--rollback: <SQL>`, which Liquibase reads as a comment |
 | [A database outside a one-database URL](#a-database-outside-a-one-database-url) | refuses a document that declares another database, or puts an object in one | reads a SQL file that creates the other database first as synced, and drops what it puts there |
@@ -1209,6 +1210,42 @@ that nothing reaches the database, and the migrator's own tests pin the same
 refusal for a pair of up and down files spelled apart.
 
 **Tracking.** [`stokaro/ptah#3532`](https://github.com/stokaro/ptah/issues/3532)
+
+## Two files for one version
+
+**Type.** Deliberate divergence
+
+**Current boundary.** `ptah-compat` refuses an Atlas directory where two files
+carry the same version, such as `20260101000000_a.sql` beside
+`20260101000000_b.sql`, and names both files. The pinned community binary runs
+the first file and then crashes.
+
+Measured on SQLite on 2026-11-19 with the community binary v1.3.0 and v1.4.0,
+with the directory hashed by that binary:
+
+| | community binary v1.3.0 and v1.4.0 | `ptah-compat` |
+| --- | --- | --- |
+| `migrate apply` | exit `2`, `panic: runtime error: index out of range [0] with length 0` on stderr, after it ran `20260101000000_a.sql` | exit `1`, `Error: error registering migrations: duplicate Atlas up migration for version 20260101000000: 20260101000000_a.sql and 20260101000000_b.sql` |
+| revision rows afterwards | `20260101000000`, description `a` | none, and no revision table |
+| a second `migrate apply` | exit `0`, `No migration files to execute` | exit `1`, the same refusal |
+| `migrate status` afterwards | exit `0`, `Migration Status: OK`, no pending files | exit `1`, the same refusal |
+
+On that binary the second file never runs, and nothing says so: the revision row
+covers the version, so the next apply has nothing to do and `migrate status`
+reports `OK`. Nothing in the directory says which file the author meant, so
+`ptah-compat` refuses instead of choosing, as it does for
+[one version spelled two ways](#one-version-spelled-two-ways). `migrate hash`
+and `migrate validate` without `--dev-url` accept the directory on both
+binaries, because they read the files' checksums and run nothing. Giving one
+of the files a version of its own gives a directory both binaries apply the
+same way.
+
+`TestCompatMigrateApply_DuplicateVersionRefuses` pins the refusal and that
+nothing reaches the database. `TestAtlasDuplicateVersion_FailurePath` pins the
+migrator's refusal for two up files, two down files, and a down file beside a
+txtar down section.
+
+**Tracking.** [`stokaro/ptah#6324`](https://github.com/stokaro/ptah/issues/6324)
 
 ## A revision spelled apart from its file
 

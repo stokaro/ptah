@@ -171,8 +171,11 @@ type FSProviderOption func(*FSMigrationProvider)
 
 type atlasParts struct {
 	migration *Migration
-	hasUp     bool
-	hasDown   bool
+	// upPath and downPath name the files the up and down migrations came
+	// from, empty until one is loaded, so a second file for the same
+	// direction is refused with both names.
+	upPath   string
+	downPath string
 }
 
 // WithStatementInterceptor makes every loaded migration consult the given
@@ -592,10 +595,10 @@ func (p *FSMigrationProvider) loadAtlas(files []migrationfile.File) error {
 func completeAtlasMigrations(partsByRevision map[string]*atlasParts) ([]*Migration, error) {
 	migrations := make([]*Migration, 0, len(partsByRevision))
 	for _, parts := range partsByRevision {
-		if !parts.hasUp {
+		if parts.upPath == "" {
 			return nil, fmt.Errorf("Atlas migration version %s has down migration but no up migration", parts.migration.RevisionVersion())
 		}
-		if !parts.hasDown {
+		if parts.downPath == "" {
 			parts.migration.downUnavailable = true
 			parts.migration.Down = func(_ context.Context, _ *dbschema.DatabaseConnection) error {
 				return &AtlasDownNotImplementedError{
@@ -680,13 +683,13 @@ func (p *FSMigrationProvider) recordAtlasHashes(
 func (p *FSMigrationProvider) loadAtlasFile(parts *atlasParts, migrationFile migrationfile.File) error {
 	switch migrationFile.Direction {
 	case "up":
-		if parts.hasUp {
-			return fmt.Errorf("duplicate Atlas up migration for version %s", migrationFile.RevisionVersion())
+		if parts.upPath != "" {
+			return duplicateAtlasMigrationError("up", parts.upPath, migrationFile)
 		}
 		return p.loadAtlasUp(parts, migrationFile)
 	case "down":
-		if parts.hasDown {
-			return fmt.Errorf("duplicate Atlas down migration for version %s", migrationFile.RevisionVersion())
+		if parts.downPath != "" {
+			return duplicateAtlasMigrationError("down", parts.downPath, migrationFile)
 		}
 		return p.loadAtlasDown(parts, migrationFile)
 	default:
@@ -716,7 +719,7 @@ func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile migra
 		if err != nil {
 			return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
 		}
-		setAtlasUp(parts, up)
+		setAtlasUp(parts, up, migrationFile.Path)
 		return nil
 	}
 
@@ -724,14 +727,26 @@ func (p *FSMigrationProvider) loadAtlasUp(parts *atlasParts, migrationFile migra
 	if err != nil {
 		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
 	}
-	setAtlasUp(parts, atlasFile.up)
+	setAtlasUp(parts, atlasFile.up, migrationFile.Path)
 	if atlasFile.hasDown {
-		if parts.hasDown {
-			return fmt.Errorf("duplicate Atlas down migration for version %d", migrationFile.Version)
+		if parts.downPath != "" {
+			return duplicateAtlasMigrationError("down", parts.downPath, migrationFile)
 		}
-		setAtlasDown(parts, atlasFile.down)
+		setAtlasDown(parts, atlasFile.down, migrationFile.Path)
 	}
 	return nil
+}
+
+// duplicateAtlasMigrationError refuses a second file carrying the same
+// direction of one version, such as 20260101000000_a.sql beside
+// 20260101000000_b.sql, and names both files. Keeping either would leave the
+// other unapplied, and nothing in the directory says which one the author
+// meant.
+func duplicateAtlasMigrationError(direction, previousPath string, migrationFile migrationfile.File) error {
+	return fmt.Errorf(
+		"duplicate Atlas %s migration for version %s: %s and %s",
+		direction, migrationFile.RevisionVersion(), previousPath, migrationFile.Path,
+	)
 }
 
 func (p *FSMigrationProvider) loadAtlasDown(parts *atlasParts, migrationFile migrationfile.File) error {
@@ -739,13 +754,13 @@ func (p *FSMigrationProvider) loadAtlasDown(parts *atlasParts, migrationFile mig
 	if err != nil {
 		return fmt.Errorf("failed to load Atlas migration %s: %w", migrationFile.Path, err)
 	}
-	setAtlasDown(parts, down)
+	setAtlasDown(parts, down, migrationFile.Path)
 	return nil
 }
 
-func setAtlasUp(parts *atlasParts, up sqlMigrationFile) {
+func setAtlasUp(parts *atlasParts, up sqlMigrationFile, sourcePath string) {
 	setMigrationUp(parts.migration, up)
-	parts.hasUp = true
+	parts.upPath = sourcePath
 }
 
 func setMigrationUp(migration *Migration, up sqlMigrationFile) {
@@ -774,9 +789,9 @@ func setMigrationUp(migration *Migration, up sqlMigrationFile) {
 	migration.upSourcePath = up.sourcePath
 }
 
-func setAtlasDown(parts *atlasParts, down sqlMigrationFile) {
+func setAtlasDown(parts *atlasParts, down sqlMigrationFile, sourcePath string) {
 	setMigrationDown(parts.migration, down)
-	parts.hasDown = true
+	parts.downPath = sourcePath
 }
 
 func setMigrationDown(migration *Migration, down sqlMigrationFile) {
