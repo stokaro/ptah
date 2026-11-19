@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/schemacomparison"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -229,12 +230,13 @@ func nullsFirst(order string, desc bool) bool {
 type GeneratedExpressions struct{}
 
 // Spelling returns expression without its `::type` casts, folded the way a
-// catalog reprints an expression ([normalize.CatalogExpression]). Only a
-// single quote opens a string on PostgreSQL; a double-quoted token is a name.
-// A backslash escapes the next byte only in an E'...' string, so `'p\'` is a
-// whole string and the text after it is read as SQL.
+// catalog reprints an expression ([normalize.CatalogExpression]), with quoted
+// text ended as PostgreSQL's descriptor states. Only a single quote opens a
+// string on PostgreSQL; a double-quoted token is a name. A backslash escapes
+// the next byte only in an E'...' string, so `'p\'` is a whole string and the
+// text after it is read as SQL.
 func (GeneratedExpressions) Spelling(expression string) string {
-	return normalize.CatalogExpression(stripTypeCasts(expression), normalize.Quoting{EscapeStrings: true})
+	return normalize.CatalogExpression(stripTypeCasts(expression), normalize.QuotingOf(platform.Postgres))
 }
 
 // stripTypeCasts removes every `::type` cast outside quoted text, the type's

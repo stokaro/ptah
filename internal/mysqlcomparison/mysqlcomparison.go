@@ -29,7 +29,7 @@ import (
 func Rules(dialect string) schemacomparison.Rules {
 	return schemacomparison.Rules{
 		Indexes:              Indexes{dialect: dialect},
-		GeneratedExpressions: GeneratedExpressions{},
+		GeneratedExpressions: GeneratedExpressions{quoting: normalize.QuotingOf(dialect)},
 		ForeignKeyIndexes:    foreignKeyIndexes.Get(dialect),
 	}
 }
@@ -165,18 +165,19 @@ func reportedParts(index catalog.Index) []catalog.IndexPart {
 // The catalog prints the expression back in its own spelling: names in
 // backticks, without spaces, and `lcase(` for a declared `lower(`. Both sides
 // are reduced to that spelling with the quoting and the case folded.
-type GeneratedExpressions struct{}
+type GeneratedExpressions struct {
+	// quoting is where quoted text ends on the dialect, as its descriptor
+	// states it: on both engines a double-quoted token is a string, as a
+	// single-quoted one is, and a backslash escapes the next byte in either.
+	// The zero value reads the SQL standard.
+	quoting normalize.Quoting
+}
 
 // Spelling returns expression folded the way a catalog reprints an expression
 // ([normalize.CatalogExpression]), with `lcase(` read as `lower(`.
-func (GeneratedExpressions) Spelling(expression string) string {
-	return normalize.RenameFunction(normalize.CatalogExpression(expression, quoting), "lcase", "lower", quoting)
+func (g GeneratedExpressions) Spelling(expression string) string {
+	return normalize.RenameFunction(normalize.CatalogExpression(expression, g.quoting), "lcase", "lower", g.quoting)
 }
-
-// quoting is how both engines end quoted text under their default SQL mode: a
-// double-quoted token is a string, as a single-quoted one is, and a backslash
-// escapes the next byte in either.
-var quoting = normalize.Quoting{Strings: `'"`, BackslashEscapes: true}
 
 // ForeignKeyIndexes finds the index MySQL or MariaDB built for a foreign key.
 type ForeignKeyIndexes struct {

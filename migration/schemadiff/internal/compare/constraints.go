@@ -226,7 +226,7 @@ func pairedConstraints(
 		semantics,
 	)
 	pairNumberedForeignKeys(genConstraints, dbConstraints, dialect, semantics)
-	pairGeneratedNameChecks(genConstraints, dbConstraints, quotingOf(dialect))
+	pairGeneratedNameChecks(genConstraints, dbConstraints, normalize.QuotingOf(dialect))
 
 	return genConstraints, dbConstraints
 }
@@ -399,7 +399,7 @@ func constraintDefinitionsChanged(
 	// Type-specific comparisons
 	switch genConstraint.Type {
 	case "CHECK":
-		return checkConstraintChanged(genConstraint, dbConstraint, checkExpressionsOf(opts), quotingOf(dialect), semantics)
+		return checkConstraintChanged(genConstraint, dbConstraint, checkExpressionsOf(opts), normalize.QuotingOf(dialect), semantics)
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint, semantics)
 	case "PRIMARY KEY":
