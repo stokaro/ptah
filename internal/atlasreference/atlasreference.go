@@ -26,10 +26,23 @@ import "os"
 // spelling are fourteen places for a rename to miss one.
 const EnvVar = "PTAH_ATLAS_REFERENCE"
 
-// Version is the only build the conformance runs trust. A different build may
-// have changed the very rules under test, so comparing against it would report
+// Release is the tag of the pinned community build. It must equal the
+// `version` line of scripts/atlas-ce-reference.lock, which decides what CI
+// builds; a test holds the two together, and Renovate moves both in one pull
+// request.
+const Release = "v1.4.0"
+
+// Version is the only build the conformance runs trust: the first line
+// `atlas version` prints for the pinned build. A different build may have
+// changed the very rules under test, so comparing against it would report
 // divergences that are really version drift.
-const Version = "atlas community version v1.3.0"
+const Version = "atlas community version " + Release
+
+// OperatorVersion is the operator_version the pinned build writes into each
+// revision row it applies. A suite that reads a row the reference wrote
+// compares against this rather than a literal, so a repin moves every such
+// expectation with the lock.
+const OperatorVersion = "Atlas CLI " + Release
 
 // Binary returns the configured path and whether one was configured at all.
 //

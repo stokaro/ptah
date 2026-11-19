@@ -11,9 +11,9 @@
 # lock, re-run, and review the resulting diff, because any change in the sums is
 # a change in what Atlas considers a migration.
 #
-#   oracle:  ptah-atlas-conformance/bin/atlas
-#   version: atlas community version v1.3.0
-#   date:    2026-08-03
+#   oracle:  the build scripts/build-atlas-ce-reference.sh produces
+#   version: the one scripts/atlas-ce-reference.lock names, checked below
+#   last regenerated: 2026-11-19, atlas community version v1.4.0
 #
 # A system-wide `atlas` on PATH is frequently a different build, so the
 # oracle is invoked by absolute path and

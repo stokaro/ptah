@@ -202,16 +202,18 @@ derived rather than restated here.
 
 `atlas migrate ls`, `atlas migrate show`, `atlas schema stats`,
 `atlas schema validate`, `atlas script` and `atlas cloud` appear in current
-Atlas documentation but are entirely absent from the pinned conformance Atlas CE
-v1.3.0 binary (each resolves to `unknown command`, not a community-version abort
-stub), so they are outside the CLI-surface parity target today.
+Atlas documentation but are not registered in the pinned conformance Atlas CE
+binary. `script` and `cloud` answer `unknown command` at exit 1; the four
+subcommands print the help of their command group at exit 0, as that binary
+does for any subcommand it does not register. None is a community-version abort
+stub, so they are outside the CLI-surface parity target today.
 
 Outside the parity target is not the same as unbuilt. All four are
 implemented, as native verbs with a compatibility spelling each; the pin decides
 what the `cli-surface` tier measures, and `PTAH_ATLAS_STRICT_COMPAT=1` is where
 that measurement happens, so none of them is registered under the strict
-profile. Triage outcome, to revisit when the
-conformance Atlas pin advances past v1.3.0:
+profile. Triage outcome, to revisit when a pinned build registers one of
+them:
 
 | Atlas verb | Current Atlas docs behavior | Triage |
 | --- | --- | --- |
@@ -222,7 +224,7 @@ conformance Atlas pin advances past v1.3.0:
 | `script loop\|query\|exec` | Declare data operations as code: transactional mutations, masked queries, batched loops. | Being implemented best-effort from published information ([`stokaro/ptah#1017`](https://github.com/stokaro/ptah/issues/1017)). |
 | `cloud` | Manage registry repositories, databases and deployment history from the terminal. | Being implemented as a pointer rather than a command group ([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)). |
 
-### The two v1.3.0 verb groups, and why absence from the pin is not a verdict
+### The two unregistered verb groups, and why absence from the pin is not a verdict
 
 Neither group is registered in the pinned binary: `atlas script` and `atlas
 cloud` each answer `unknown command`, the same way a nonsense root verb does. So
@@ -2702,8 +2704,8 @@ make conformance
 
 The repository's Atlas-reference workflow independently rebuilds Atlas CE from an
 immutable source archive, verifies that the release tag resolves to the locked
-commit, checks the committed SHA-256 digest and exact
-`atlas community version v1.3.0` output, then runs the migration-directory
+commit, checks the committed SHA-256 digest and the exact
+`atlas community version` line for the locked tag, then runs the migration-directory
 query, migrate-apply interoperability, and Flyway revision-identity controls,
 runs the differential migration-sum tests, and regenerates the committed corpus.
 Reproduce that reference locally:

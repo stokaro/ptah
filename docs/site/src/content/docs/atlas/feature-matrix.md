@@ -60,8 +60,8 @@ Each table has the same columns. **Ptah**, **CE**, and **Pro** carry one symbol
 each:
 
 - **Ptah** — the native `ptah` binary plus the separate `ptah-compat` drop-in.
-- **CE** — the pinned Atlas community binary, version 1.3.0, which the
-  conformance harness runs against. The pin itself lives in
+- **CE** — the pinned Atlas community binary, which the conformance harness
+  runs against. The pin, version included, lives in
   `scripts/atlas-ce-reference.lock`, which is what a bump changes.
 - **Pro** — capabilities Atlas keeps outside its community build, per the
   [Atlas feature availability](https://atlasgo.io/features) page and
