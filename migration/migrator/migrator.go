@@ -2887,7 +2887,7 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		startedAt[key] = time.Now()
 		plan := plans[key]
 		migrationCtx := withMigrationResume(ctx, plan.resumeFrom)
-		if err := m.applyUpMigrationInExistingTransaction(migrationCtx, txConn, migration, startedAt[key]); err != nil {
+		if err := m.applyUpMigrationInBatch(migrationCtx, txConn, tx, migration, startedAt[key]); err != nil {
 			evidence := m.batchRollbackEvidence(migrationCtx, body, migrations[:index], plans, migration, err, bodyStopped)
 			err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback(), tx)
 			if m.batchLeftStatements(ctx, evidence) {
@@ -2924,6 +2924,23 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 	m.logBatchOutcome(ctx, started, MigrationLogApplied, nil)
 	m.logger.Info("Applied migrations in one transaction", "count", len(migrations))
 	return checksDeferred, nil
+}
+
+// applyUpMigrationInBatch applies one migration of a batch in the batch's
+// transaction, then gives the transaction's connection back the settings the
+// migration changed, so the next migration in the batch runs under the
+// settings the batch began with; see [sessionSettingsResetter].
+func (m *Migrator) applyUpMigrationInBatch(
+	ctx context.Context,
+	txConn *dbschema.DatabaseConnection,
+	tx catalog.SchemaTransaction,
+	migration *Migration,
+	startedAt time.Time,
+) error {
+	if err := m.applyUpMigrationInExistingTransaction(ctx, txConn, migration, startedAt); err != nil {
+		return err
+	}
+	return resetSessionSettings(ctx, tx)
 }
 
 // logBatchStart opens a log entry for every migration the batch will attempt.

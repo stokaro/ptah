@@ -697,11 +697,19 @@ func (p *Planner) rebuildTable(
 	if named {
 		nodes = append(nodes,
 			ast.NewDescriptiveComment("Leave the views and triggers that name "+table.QualifiedName()+" as they are during the rename"),
+			ast.NewDescriptiveComment("The plan cannot read the connection's legacy_alter_table, so it sets it off after the rename; "+
+				"Ptah puts back the value it found when it runs the plan"),
 			ast.NewRawSQL(legacyAlterOn),
 		)
 	}
+	nodes = append(nodes, createNode)
+	if keepsSequence(slices.Concat(observed.Table.Columns, carried.columns), createNode) {
+		nodes = append(nodes,
+			ast.NewDescriptiveComment("Keep the AUTOINCREMENT high-water mark of "+table.QualifiedName()+" through the rebuild"),
+			ast.NewRawSQL(rebuild.KeepSequence()),
+		)
+	}
 	nodes = append(nodes,
-		createNode,
 		ast.NewRawSQL(rebuild.CopyRows(quoteIdentifierList(copiedColumnNames(columns)), copiedColumnSelectList(columns))),
 		ast.NewDropTable(table.QualifiedName()),
 		ast.NewRawSQL(rebuild.Rename()),
@@ -819,6 +827,16 @@ func removedTableNameCollides(removed []string, target schemamodel.Table, name s
 
 func qualifyLikeTable(table schemamodel.Table, name string) string {
 	return schemamodel.QualifyTableName(table.Schema, name)
+}
+
+// keepsSequence reports whether the rebuild has an AUTOINCREMENT high-water
+// mark to keep: a live column of the table has AUTOINCREMENT, in scope or kept
+// out of it by a selector, so sqlite_sequence may hold its mark, and the
+// rebuilt table has one too, declared or carried, so the mark still means
+// something. See [sqliterebuild.CopyStatement.KeepSequence].
+func keepsSequence(observed []catalog.Column, rebuilt *ast.CreateTableNode) bool {
+	live := slices.ContainsFunc(observed, func(column catalog.Column) bool { return column.IsAutoIncrement })
+	return live && slices.ContainsFunc(rebuilt.Columns, func(column *ast.ColumnNode) bool { return column.AutoInc })
 }
 
 // copiedColumn is one column of the rebuilt table that carries data over from

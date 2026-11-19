@@ -31,7 +31,9 @@ import (
 // DISTINCT or anything after its FROM but an alias leaves rows behind, and a
 // copy into a table other than the one created just before it is not a
 // rebuild. The statements a YDB rebuild writes beside its steps are skipped,
-// because each writes no row and moves no table (see [rebuildAside]).
+// because each writes no row and moves no table, and so is the row a SQLite
+// rebuild writes into sqlite_sequence to keep the old table's AUTOINCREMENT
+// mark (see [rebuildAside]).
 //
 // A copy that keeps every row still loses a column whose values it does not
 // write into the column of the same name. The INSERT pairs its columns with
@@ -301,15 +303,21 @@ func ydbSwap(statements []lintext.Statement, steps []int, scratch, old string) (
 	return rebuildMatch{drop: steps[2], renames: []int{steps[0], steps[1]}}, true
 }
 
-// rebuildAside reports a statement a YDB rebuild writes beside its steps,
-// each of which writes no row and moves no table: an index setting of the
+// rebuildAside reports a statement a rebuild writes beside its steps. Those a
+// YDB rebuild writes write no row and move no table: an index setting of the
 // copy, after it is created, a changefeed dropped from the old table before
 // it moves, since YDB moves no table that carries one, a changefeed added to
 // the copy once it holds the name, and a change of a changefeed's topic,
 // which adds its consumers. The YDB provider writes each as a statement of
-// its own.
+// its own. A SQLite rebuild writes a row into sqlite_sequence, SQLite's own
+// table of AUTOINCREMENT marks, between the copy's CREATE TABLE and the copy;
+// it moves no table and writes no row of the table rebuilt.
 func rebuildAside(stmt *lintext.Statement) bool {
 	w := stmt.Words
+	if HasWordPrefix(w, "INSERT", "INTO") {
+		into, _ := TableRefAt(w, stmt.SourceWords, 2)
+		return sameTableRef(into.Normalized, "SQLITE_SEQUENCE")
+	}
 	if HasWordPrefix(w, "ALTER", "TOPIC") {
 		return true
 	}

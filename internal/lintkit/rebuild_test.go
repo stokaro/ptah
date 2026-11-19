@@ -194,6 +194,37 @@ func TestRebuildCandidates_ListsEveryDropThatEndsARebuild(t *testing.T) {
 	c.Assert(lintkit.RebuildCandidates(file), qt.DeepEquals, []int{2, 6})
 }
 
+// A SQLite rebuild of a table with AUTOINCREMENT keeps the old table's mark
+// with a row it writes into sqlite_sequence between the copy's CREATE TABLE
+// and the copy. That row is no step of the rebuild and writes no row of users,
+// so the DROP TABLE still ends a rebuild, with or without a schema. A write to
+// users in the same place is not skipped, and the drop is a drop.
+func TestRebuilds_SkipsTheRowThatKeepsTheAutoincrementMark(t *testing.T) {
+	tests := []struct {
+		name, between string
+		want          map[int]bool
+	}{
+		{name: "the mark", want: map[int]bool{3: true},
+			between: "INSERT INTO sqlite_sequence (name, seq) SELECT 'users_tmp', seq FROM sqlite_sequence WHERE name = 'users'"},
+		{name: "the mark of a table in a schema", want: map[int]bool{3: true},
+			between: `INSERT INTO "aux".sqlite_sequence (name, seq) SELECT 'users_tmp', seq FROM "aux".sqlite_sequence WHERE name = 'users'`},
+		{name: "a row of the table rebuilt", want: make(map[int]bool),
+			between: "INSERT INTO users (id, name) VALUES (9, 'z')"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			file := lintscan.Split("CREATE TABLE users_tmp (id integer PRIMARY KEY AUTOINCREMENT, name text);\n"+
+				test.between+";\n"+
+				"INSERT INTO users_tmp (id, name) SELECT id, name FROM users;\n"+
+				"DROP TABLE users;\n"+
+				"ALTER TABLE users_tmp RENAME TO users;\n", lintscan.ForDialect("sqlite"))
+
+			c.Assert(lintkit.Rebuilds(file, columnsOf(usersColumns)).Drops, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // A replacement names, in the order the old table reports them, the columns
 // whose values its copy does not write into the column of the same name.
 func TestRebuildChanges_NamesTheLostColumns(t *testing.T) {

@@ -423,3 +423,46 @@ func TestSQLiteRebuildKeepsWhatNamesTheTableE2E(t *testing.T) {
 		})
 	}
 }
+
+// sqliteSerialLive holds kinds with an AUTOINCREMENT key whose third row is
+// deleted, so sqlite_sequence keeps 3 while the largest key is 2.
+const sqliteSerialLive = "CREATE TABLE kinds (id INTEGER PRIMARY KEY AUTOINCREMENT, name text, extra text);\n" +
+	"CREATE TABLE other (x int);\n" +
+	"INSERT INTO kinds (name, extra) VALUES ('a', 'one'), ('b', 'two'), ('c', 'three');\n" +
+	"DELETE FROM kinds WHERE id = 3;\n"
+
+// TestSQLiteRebuildKeepsTheAutoincrementMarkE2E rebuilds a table whose
+// AUTOINCREMENT key handed out 3 and lost it to a DELETE. The copy alone
+// leaves sqlite_sequence at 2, the largest key it copies, and the next insert
+// would take 3 again. Both binaries keep the mark at 3, for a declared key and
+// for one an exclude selector carries, and the next insert takes 4.
+func TestSQLiteRebuildKeepsTheAutoincrementMarkE2E(t *testing.T) {
+	tests := []struct {
+		name, desired, exclude string
+	}{
+		{name: "a declared key", desired: "CREATE TABLE kinds (id INTEGER PRIMARY KEY AUTOINCREMENT, name text);\nCREATE TABLE other (x int);\n",
+			exclude: "other"},
+		{name: "a key out of scope", desired: "CREATE TABLE kinds (name text);\nCREATE TABLE other (x int);\n", exclude: "kinds.id[type=column]"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			native := newSQLiteCarryFixture(c, sqliteSerialLive, test.desired)
+			compat := newSQLiteCarryFixture(c, sqliteSerialLive, test.desired)
+
+			nativeApplied := native.apply(c, test.exclude, "--auto-approve")
+			compatApplied := compat.compatApply(c, test.exclude)
+			planned := native.apply(c, test.exclude, "--dry-run")
+
+			c.Assert(nativeApplied.ExitCode, qt.Equals, 0, historyComment(nativeApplied))
+			c.Assert(nativeApplied.Stdout, qt.Contains, "INSERT INTO sqlite_sequence")
+			c.Assert(native.scalar(c, "SELECT 1", "SELECT seq FROM sqlite_sequence WHERE name = 'kinds'"), qt.Equals, "3")
+			c.Assert(native.scalar(c, "INSERT INTO kinds (name) VALUES ('d')", "SELECT max(id) FROM kinds"), qt.Equals, "4")
+			c.Assert(compatApplied.ExitCode, qt.Equals, 0, historyComment(compatApplied))
+			c.Assert(compat.scalar(c, "SELECT 1", "SELECT seq FROM sqlite_sequence WHERE name = 'kinds'"), qt.Equals, "3")
+			c.Assert(compat.scalar(c, "INSERT INTO kinds (name) VALUES ('d')", "SELECT max(id) FROM kinds"), qt.Equals, "4")
+			c.Assert(planned.ExitCode, qt.Equals, 0, historyComment(planned))
+			c.Assert(planned.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+		})
+	}
+}

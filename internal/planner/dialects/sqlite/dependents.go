@@ -22,9 +22,11 @@ import (
 // TABLE page names this pragma for the procedure a rebuild follows.
 //
 // The pragma takes effect inside a transaction, unlike foreign_keys, so it
-// stays in the plan where it is needed. The apply path puts back the value it
-// found when the transaction ends (internal/dbschema/sqlite), since a failure
-// between the pair would leave it on.
+// stays in the plan where it is needed. The plan cannot read the value the
+// connection held, so it writes off after the rename; the SQLite writer puts
+// back the value it found when the transaction ends (internal/dbschema/sqlite),
+// and `migrations up` does after each file, so neither the pair nor a failure
+// between them changes how a later rename on the connection treats views.
 const (
 	legacyAlterOn  = "PRAGMA legacy_alter_table = on;"
 	legacyAlterOff = "PRAGMA legacy_alter_table = off;"

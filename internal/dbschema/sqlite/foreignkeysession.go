@@ -196,7 +196,10 @@ func (w *Writer) BeginTransactionWithoutForeignKeys(ctx context.Context) (catalo
 		session.restore()
 		return nil, fmt.Errorf("sqlite: begin rebuild transaction: %w", err)
 	}
-	return &transactionWriter{beginContext: ctx, tx: tx, schema: w.schema, session: session}, nil
+	return &transactionWriter{
+		beginContext: ctx, tx: tx, schema: w.schema, session: session,
+		rename: renameSetting{found: legacyAlter, known: true},
+	}, nil
 }
 
 func releaseError(release func() error) error {
