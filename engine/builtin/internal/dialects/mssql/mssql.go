@@ -1213,19 +1213,24 @@ func renderColumnForAlter(column *ast.ColumnNode) (string, error) {
 }
 
 func appendDefault(parts *[]string, column *ast.ColumnNode) {
-	if value, ok := defaultSQL(column.Default); ok {
+	if value, ok := defaultSQL(column.Type, column.Default); ok {
 		*parts = append(*parts, "DEFAULT", value)
 	}
 }
 
-// defaultSQL spells a default the way DEFAULT takes it, or reports false for
-// none. CREATE TABLE and ADD DEFAULT ... FOR both write it through here, so a
-// default set by a migration reads back the way one created with the table
-// does.
-func defaultSQL(value *ast.DefaultValue) (string, bool) {
+// defaultSQL spells a default of a column of columnType the way DEFAULT takes
+// it, or reports false for none: a literal beside a number type as a number,
+// where [sqlservertype.BareNumber] says it is one, and any other literal
+// quoted. CREATE TABLE and ADD DEFAULT ... FOR both write it through here, so
+// a default set by a migration reads back the way one created with the table
+// does. ADD DEFAULT carries no column type, so the planner hands it a number
+// as an expression.
+func defaultSQL(columnType string, value *ast.DefaultValue) (string, bool) {
 	switch {
 	case value == nil:
 		return "", false
+	case value.HasLiteral() && sqlservertype.BareNumber(columnType, value.Value):
+		return strings.TrimSpace(value.Value), true
 	case value.HasLiteral():
 		return renderDefaultLiteral(value.Value), true
 	case value.Expression != "":

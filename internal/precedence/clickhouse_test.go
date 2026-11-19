@@ -67,6 +67,35 @@ func TestCanonical_ClickHouse_HappyPath(t *testing.T) {
 		{name: "IS NOT NULL after NOT and a comparison", declared: "NOT a = 1 IS NOT NULL", stored: "NOT ((a = 1) IS NOT NULL)", want: "NOT `a` = 1 IS NOT NULL"},
 		{name: "a negated integer at the top of the Int64 range", declared: "-9223372036854775807", stored: "-9223372036854775807", want: "-9223372036854775807"},
 		{name: "an integer above the Int64 range", declared: "18446744073709551615 + 1", stored: "18446744073709551615 + 1", want: "18446744073709551615 + 1"},
+		{name: "BETWEEN", declared: "x BETWEEN 1 AND 3", stored: "(x >= 1) AND (x <= 3)", want: "`x` >= 1 AND `x` <= 3"},
+		{name: "NOT BETWEEN", declared: "x NOT BETWEEN 1 AND 3", stored: "(x < 1) OR (x > 3)", want: "`x` < 1 OR `x` > 3"},
+		{name: "BETWEEN before AND", declared: "x BETWEEN 1 AND 3 AND y", stored: "((x >= 1) AND (x <= 3)) AND y", want: "`x` >= 1 AND `x` <= 3 AND `y`"},
+		{name: "BETWEEN before OR", declared: "x BETWEEN 1 AND 3 OR y", stored: "((x >= 1) AND (x <= 3)) OR y", want: "`x` >= 1 AND `x` <= 3 OR `y`"},
+		{name: "NOT BETWEEN before AND", declared: "x NOT BETWEEN 1 AND 3 AND y", stored: "((x < 1) OR (x > 3)) AND y", want: "(`x` < 1 OR `x` > 3) AND `y`"},
+		{name: "BETWEEN bounds that add and multiply", declared: "x BETWEEN 1 + 1 AND 3 * 2", stored: "(x >= (1 + 1)) AND (x <= (3 * 2))", want: "`x` >= 1 + 1 AND `x` <= 3 * 2"},
+		{name: "BETWEEN after addition", declared: "x + 1 BETWEEN 1 AND 3", stored: "((x + 1) >= 1) AND ((x + 1) <= 3)", want: "`x` + 1 >= 1 AND `x` + 1 <= 3"},
+		{name: "NOT before BETWEEN", declared: "NOT x BETWEEN 1 AND 3", stored: "NOT ((x >= 1) AND (x <= 3))", want: "NOT (`x` >= 1 AND `x` <= 3)"},
+		{name: "IS NULL after BETWEEN", declared: "x BETWEEN 1 AND 3 IS NULL", stored: "((x >= 1) AND (x <= 3)) IS NULL", want: "(`x` >= 1 AND `x` <= 3) IS NULL"},
+		{name: "a comparison in the upper bound", declared: "x BETWEEN 1 AND 3 = 1", stored: "(x >= 1) AND (x <= (3 = 1))", want: "`x` >= 1 AND `x` <= (3 = 1)"},
+		{name: "a comparison in the lower bound", declared: "x BETWEEN a = 1 AND 3", stored: "(x >= (a = 1)) AND (x <= 3)", want: "`x` >= (`a` = 1) AND `x` <= 3"},
+		{name: "a comparison before BETWEEN", declared: "a = x BETWEEN 1 AND 3", stored: "((a = x) >= 1) AND ((a = x) <= 3)", want: "`a` = `x` >= 1 AND `a` = `x` <= 3"},
+		{name: "a negative bound", declared: "x BETWEEN -1 AND 3", stored: "(x >= -1) AND (x <= 3)", want: "`x` >= -1 AND `x` <= 3"},
+		{name: "grouped bounds", declared: "x BETWEEN (1) AND (3)", stored: "(x >= (1)) AND (x <= (3))", want: "`x` >= 1 AND `x` <= 3"},
+		{name: "IN and NOT IN after OR", declared: "a IN (1, 2) OR b NOT IN (3)", stored: "(a IN (1, 2)) OR (b NOT IN (3))", want: "`a` IN (1, 2) OR `b` NOT IN (3)"},
+		{name: "LIKE and NOT LIKE after AND", declared: "s LIKE 'a%' AND s NOT LIKE 'b%'", stored: "(s LIKE 'a%') AND (s NOT LIKE 'b%')", want: "`s` LIKE 'a%' AND `s` NOT LIKE 'b%'"},
+		{name: "IN of one value", declared: "a IN 1", stored: "a IN (1)", want: "`a` IN (1)"},
+		{name: "IN of a sum", declared: "a IN 1 + 2", stored: "a IN (1 + 2)", want: "`a` IN (1 + 2)"},
+		// ClickHouse 24.10 prints a IN (1 + 2) for this one.
+		{name: "IN of a group and a sum", declared: "a IN (1) + 2", stored: "a IN ((1) + 2)", want: "`a` IN (1 + 2)"},
+		{name: "IN after an addition", declared: "a + 1 NOT IN (2, 3)", stored: "(a + 1) NOT IN (2, 3)", want: "`a` + 1 NOT IN (2, 3)"},
+		{name: "IN after a minus", declared: "-a IN (1)", stored: "(-a) IN (1)", want: "-`a` IN (1)"},
+		{name: "IN beside a comparison", declared: "a IN (1, 2) = b IN (3)", stored: "((a IN (1, 2)) = b) IN (3)", want: "`a` IN (1, 2) = `b` IN (3)"},
+		{name: "IN twice", declared: "a IN (1, 2) IN (1)", stored: "(a IN (1, 2)) IN (1)", want: "`a` IN (1, 2) IN (1)"},
+		{name: "a comparison after NOT IN", declared: "a NOT IN (1) = 0", stored: "(a NOT IN (1)) = 0", want: "`a` NOT IN (1) = 0"},
+		{name: "a comparison after LIKE", declared: "s LIKE 'a' = 1", stored: "(s LIKE 'a') = 1", want: "`s` LIKE 'a' = 1"},
+		{name: "NOT before IN", declared: "NOT a IN (1)", stored: "NOT (a IN (1))", want: "NOT `a` IN (1)"},
+		{name: "IN after IS NULL", declared: "a IS NULL IN (1)", stored: "(a IS NULL) IN (1)", want: "(`a` IS NULL) IN (1)"},
+		{name: "LIKE of a call", declared: "s LIKE concat('a', '%')", stored: "s LIKE concat('a', '%')", want: "`s` LIKE concat('a', '%')"},
 	}
 
 	for _, test := range tests {
@@ -109,6 +138,14 @@ func TestCanonical_ClickHouse_DistinctExpressions(t *testing.T) {
 		// 18446744073709551614.
 		{name: "a negated zero in parentheses", left: "-(0) + 18446744073709551614", right: "0 + 18446744073709551614"},
 		{name: "a minus before a negative zero", left: "- -0 + a", right: "-0 + a"},
+		{name: "BETWEEN and NOT BETWEEN", left: "x BETWEEN 1 AND 3", right: "x NOT BETWEEN 1 AND 3"},
+		{name: "an AND inside the upper bound", left: "x BETWEEN 1 AND (3 AND y)", right: "x BETWEEN 1 AND 3 AND y"},
+		{name: "IN and NOT IN", left: "a IN (1, 2)", right: "a NOT IN (1, 2)"},
+		{name: "LIKE and NOT LIKE", left: "s LIKE 'a'", right: "s NOT LIKE 'a'"},
+		{name: "a list and a sum", left: "a IN (1, 2)", right: "a IN (1 + 2)"},
+		{name: "a comparison inside IN", left: "a IN (1 = 1)", right: "a IN 1 = 1"},
+		{name: "a group around IN after a comparison", left: "a = (b IN (1))", right: "a = b IN (1)"},
+		{name: "IN around NOT", left: "(NOT a) IN (1)", right: "NOT a IN (1)"},
 	}
 
 	for _, test := range tests {
@@ -126,11 +163,13 @@ func TestCanonical_ClickHouse_DistinctExpressions(t *testing.T) {
 }
 
 // TestCanonical_ClickHouse_FailurePath pins the expressions the ClickHouse
-// table does not read. NOT before a group followed by IS NULL or an
+// table does not read. NOT before a group followed by IS NULL, IN, LIKE or an
 // arithmetic operator is read as a call by ClickHouse 24.10 and as the start
 // of NOT's operand by 26.10, and a prefix NOT after an operator that binds
-// tighter has no grouping the table can state. ClickHouse writes BETWEEN and
-// || back as other expressions. A minus before an integer above the Int64
+// tighter has no grouping the table can state. BETWEEN after an operand that
+// binds no tighter, or with a bound that does not, is not read, nor is a list
+// after IN before an operator that binds tighter, and ClickHouse writes || back
+// as another expression and IN () as IN tuple(). A minus before an integer above the Int64
 // range means one value written right before the integer and another written
 // before a group around it.
 func TestCanonical_ClickHouse_FailurePath(t *testing.T) {
@@ -142,9 +181,21 @@ func TestCanonical_ClickHouse_FailurePath(t *testing.T) {
 		{name: "NOT before a group and an addition", expression: "NOT (1) + 2"},
 		{name: "NOT after a comparison", expression: "a = NOT b"},
 		{name: "NOT after a negation", expression: "-NOT a"},
-		{name: "BETWEEN", expression: "a BETWEEN 1 AND 3"},
-		{name: "IN", expression: "a IN (1, 2)"},
-		{name: "LIKE", expression: "a LIKE 'x'"},
+		{name: "BETWEEN after IS NULL", expression: "a IS NULL BETWEEN 1 AND 2"},
+		{name: "BETWEEN twice", expression: "x BETWEEN 1 AND 3 BETWEEN 0 AND 1"},
+		{name: "BETWEEN without AND", expression: "x BETWEEN 1 OR 3"},
+		{name: "BETWEEN with NOT in a bound", expression: "x BETWEEN NOT 1 AND 3"},
+		{name: "BETWEEN with IS NULL in a bound", expression: "x BETWEEN a IS NULL AND 3"},
+		{name: "BETWEEN without an upper bound", expression: "x BETWEEN 1 AND"},
+		{name: "NOT before a group and IN", expression: "NOT (a) IN (1)"},
+		{name: "NOT before a group and LIKE", expression: "NOT (s) LIKE 'a'"},
+		{name: "a list before an addition", expression: "a IN (1, 2) + 3"},
+		{name: "IN of nothing", expression: "a IN ()"},
+		{name: "IN of a list in a group", expression: "a IN ((1, 2))"},
+		{name: "IN without an operand", expression: "a IN"},
+		{name: "NOT twice before IN", expression: "a NOT NOT IN (1)"},
+		{name: "ILIKE", expression: "s ILIKE 'x'"},
+		{name: "GLOBAL IN", expression: "a GLOBAL IN (1)"},
 		{name: "concatenation", expression: "a || b"},
 		{name: "a lambda", expression: "arrayMap(x -> x + 1, a)"},
 		{name: "a ternary", expression: "a ? 1 : 2"},

@@ -25,7 +25,7 @@ func (r *Renderer) writeAlterColumn(table string, op *ast.AlterColumnOperation) 
 	case ast.AlterColumnDropDefault:
 		r.w.WriteLine(defaultConstraintBatch(table, op.ColumnName, ""))
 	case ast.AlterColumnSetDefault:
-		value, _ := defaultSQL(op.Default)
+		value, _ := defaultSQL("", op.Default)
 		r.w.WriteLine(defaultConstraintBatch(table, op.ColumnName, fmt.Sprintf("ALTER TABLE %s ADD DEFAULT %s FOR %s;",
 			escapeQualifiedIdentifier(table),
 			value,

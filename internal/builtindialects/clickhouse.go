@@ -173,9 +173,21 @@ func clickHouse() descriptor.Dialect {
 		// Nullable(T), Array(T), LowCardinality(T) and Map(K, V) take bare
 		// type names, so a type argument equal to a column name is ordinary.
 		// ClickHouse's MODIFY COLUMN is not measured, so it is not read as
-		// MySQL's.
+		// MySQL's. A default reads every comparison and predicate without
+		// parentheses, and == as =, on 24.10 and 26.10. IS [NOT] DISTINCT
+		// FROM is read as 26.10 reads it: 24.10 answers a syntax error to IS
+		// DISTINCT FROM and refuses IS NOT DISTINCT FROM outside JOIN ON when
+		// the plan applies.
 		Grammar: descriptor.Grammar{
-			Columns:    descriptor.ColumnGrammar{TypeArgumentsAreTypes: true, StoredStringDefaults: true, StoredStringEscapes: true},
+			Columns: descriptor.ColumnGrammar{
+				TypeArgumentsAreTypes: true, StoredStringDefaults: true, StoredStringEscapes: true,
+				DefaultPredicates: descriptor.DefaultPredicates{
+					Refusal: "ClickHouse 24.10 and 26.10 have no shift operator and answer a syntax error at << and >>; " +
+						"write bitShiftLeft(a, b) or bitShiftRight(a, b)",
+					Comparison: true, DoubleEquals: true, DistinctFrom: true, Is: true,
+					Logical: true, Between: true, In: true, Like: true,
+				},
+			},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 			Forms:      clickHouseStatementForms(),
 		},

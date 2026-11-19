@@ -104,17 +104,11 @@ type ColumnGrammar struct {
 	// writes the parenthesized form, DEFAULT (5 - 2), before the sentence.
 	// Empty reads the operator into the default.
 	DefaultOperatorRefusal string `json:"default_operator_refusal,omitempty"`
-	// DefaultPredicateRefusal says why a default whose operator expression
-	// continues with IS, AND or OR outside parentheses is refused, as in
-	// DEFAULT 1 + 2 IS NOT NULL, for an engine that reads no such predicate
-	// there. Empty reads the predicate into the default, with the NOT and the
-	// NULL after IS as its operands.
-	DefaultPredicateRefusal string `json:"default_predicate_refusal,omitempty"`
-	// DefaultDistinctFrom reports that IS [NOT] DISTINCT FROM continues an
-	// operator default where DefaultPredicateRefusal refuses every other
-	// predicate. A grammar that sets it without DefaultPredicateRefusal is
-	// refused, since nothing would read it.
-	DefaultDistinctFrom bool `json:"default_distinct_from,omitempty"`
+	// DefaultPredicates states which comparisons and predicates a default
+	// written without parentheses reads, as in DEFAULT a = 1 OR b = 3, for an
+	// engine that reads some of them there and answers a syntax error to the
+	// rest. The zero value reads every one.
+	DefaultPredicates DefaultPredicates `json:"default_predicates,omitzero"`
 	// DefaultPipesRefusal says why a default that holds ||, in parentheses or
 	// without, is refused, for an engine that reads || by the session's SQL
 	// mode: as OR under one mode and as concatenation under another. The
@@ -160,6 +154,41 @@ type ColumnGrammar struct {
 	// finds: a bare name, or the schema and the name each quoted. Without it
 	// the name is kept as written.
 	QualifiedCollations bool `json:"qualified_collations,omitempty"`
+}
+
+// DefaultPredicates states which comparisons and predicates an engine reads
+// in a default written without parentheses: after the first operand, or
+// before it for a NOT. With Refusal empty the engine reads every form, each
+// with the operands after it, and the fields that name a form are not set.
+// With Refusal set, a form no field names is refused at its operator or word.
+type DefaultPredicates struct {
+	// Refusal says why a form the other fields leave out is refused, as
+	// PostgreSQL answers a syntax error to DEFAULT 1 IS NULL. Empty reads
+	// every form.
+	Refusal string `json:"refusal,omitempty"`
+	// Comparison reads =, <>, !=, <, >, <=, >= and <=>, as in DEFAULT 1 + 1 = 2.
+	Comparison bool `json:"comparison,omitempty"`
+	// DoubleEquals reads == as a comparison, as in DEFAULT a == 1.
+	DoubleEquals bool `json:"double_equals,omitempty"`
+	// Shift reads the shifts << and >>, as in DEFAULT 1 << 2.
+	Shift bool `json:"shift,omitempty"`
+	// DistinctFrom reads IS [NOT] DISTINCT FROM.
+	DistinctFrom bool `json:"distinct_from,omitempty"`
+	// Is reads IS [NOT] NULL and every other IS test but DISTINCT FROM.
+	Is bool `json:"is,omitempty"`
+	// Logical reads AND and OR, and a NOT before an operand.
+	Logical bool `json:"logical,omitempty"`
+	// Between reads [NOT] BETWEEN low AND high.
+	Between bool `json:"between,omitempty"`
+	// In reads [NOT] IN (list).
+	In bool `json:"in,omitempty"`
+	// Like reads [NOT] LIKE.
+	Like bool `json:"like,omitempty"`
+}
+
+// readsSome reports whether the fields name a form the engine reads.
+func (p DefaultPredicates) readsSome() bool {
+	return p.Comparison || p.DoubleEquals || p.Shift || p.DistinctFrom || p.Is || p.Logical || p.Between || p.In || p.Like
 }
 
 // ColumnConstraint is which column constraint a CONSTRAINT keyword may
@@ -676,8 +705,8 @@ func validateColumnGrammar(grammar Grammar) error {
 		return errors.New("a MODIFY column constraint kind needs a column constraint kind")
 	case (grammar.Columns.EmptyCallRefusal == "") != (len(grammar.Columns.EmptyCallFunctions) == 0):
 		return errors.New("empty call functions and an empty call refusal are set together")
-	case grammar.Columns.DefaultDistinctFrom && grammar.Columns.DefaultPredicateRefusal == "":
-		return errors.New("a default that reads IS DISTINCT FROM needs a default predicate refusal")
+	case grammar.Columns.DefaultPredicates.readsSome() && grammar.Columns.DefaultPredicates.Refusal == "":
+		return errors.New("default predicates that name the forms read need a refusal of the others")
 	default:
 		return nil
 	}

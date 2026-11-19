@@ -255,6 +255,18 @@ func IsDatetime(declaredType string) bool {
 	return mapped == "DATE" || strings.HasPrefix(mapped, "TIMESTAMP")
 }
 
+// IsNumeric reports whether declaredType becomes a number type on Oracle:
+// NUMBER, FLOAT, BINARY_FLOAT or BINARY_DOUBLE. A boolean, which becomes
+// NUMBER(1), counts as one.
+func IsNumeric(declaredType string) bool {
+	switch Base(Map(declaredType)) {
+	case "NUMBER", "FLOAT", "BINARY_FLOAT", "BINARY_DOUBLE":
+		return true
+	default:
+		return false
+	}
+}
+
 // Base returns the declared type without its argument list, upper-cased.
 //
 // It is exported because a caller that needs to recognize a declared type --

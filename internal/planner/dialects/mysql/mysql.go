@@ -33,6 +33,7 @@ import (
 	"ptah.run/internal/planner/keyrelease"
 	"ptah.run/internal/planner/schemaprecondition"
 	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sqlservertype"
 	"ptah.run/internal/tablelookup"
 )
 
@@ -645,10 +646,22 @@ func sqlServerColumnChange(table string, modify *ast.ModifyColumnOperation) []as
 		nodes = append(nodes, alter(&ast.AlterColumnOperation{
 			ColumnName: column.Name,
 			Action:     ast.AlterColumnSetDefault,
-			Default:    column.Default,
+			Default:    sqlServerSetDefault(column),
 		}))
 	}
 	return nodes
+}
+
+// sqlServerSetDefault answers the default ADD DEFAULT ... FOR sets on column.
+// The statement names no type, so a literal the column's type takes as a
+// number, by [sqlservertype.BareNumber], goes as an expression the renderer
+// writes bare, as CREATE TABLE writes it. Quoted, DEFAULT -1 is stored as the
+// string ('-1') where CREATE TABLE stored ((-1)).
+func sqlServerSetDefault(column *ast.ColumnNode) *ast.DefaultValue {
+	if column.Default.HasLiteral() && sqlservertype.BareNumber(column.Type, column.Default.Value) {
+		return &ast.DefaultValue{Expression: strings.TrimSpace(column.Default.Value)}
+	}
+	return column.Default
 }
 
 // findGeneratedTable resolves the declared table a TableDiff names.

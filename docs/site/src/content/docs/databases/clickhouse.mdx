@@ -519,18 +519,21 @@ nothing:
 | `a + 1 IS NOT NULL AND NOT b = 1` | `((a + 1) IS NOT NULL) AND (NOT (b = 1))` |
 | `a <> 1` | `a != 1` |
 | `1.50 * a` | `1.5 * a` |
+| `a IN 1 OR s NOT LIKE 'x%'` | `(a IN (1)) OR (s NOT LIKE 'x%')` |
 
 A parenthesis that changes the grouping is part of the default: `(1 + 2) * 3`
 and `1 + 2 * 3` differ.
 
 Some expressions are compared as written and may plan again. ClickHouse
-rewrites `x BETWEEN 1 AND 2` as `(x >= 1) AND (x <= 2)` and `||` as
-`concat()`, so an expression that holds `BETWEEN`, `IN`, `LIKE`, `||`, a cast,
-a lambda, an array or a qualified name is not read. Neither is `NOT (a)`
-followed by a tighter operator, which ClickHouse 24.10 and 26.10 group
-differently. In a SQL schema file, a default that starts with a comparison,
-or with a minus before a name, a call or a parenthesis, is written in
-parentheses: `DEFAULT (a = 1 OR b = 3)`, `DEFAULT (-a * b)`.
+rewrites `||` as `concat()`, so an expression that holds `||`, `ILIKE`,
+`GLOBAL IN`, a cast, a lambda, an array or a qualified name is not read.
+Neither is `NOT (a)` followed by a tighter operator, which ClickHouse 24.10 and
+26.10 group differently.
+
+ClickHouse has no shift operator, so a default that holds `<<` or `>>` is
+refused when the file is read; `bitShiftLeft(a, b)` and `bitShiftRight(a, b)`
+are the functions. `DEFAULT NOT NULL` is the default `NOT NULL`, which is NULL,
+on a nullable column.
 
 A default the declaration takes away is removed with its own statement, written
 before the one that states the type:
