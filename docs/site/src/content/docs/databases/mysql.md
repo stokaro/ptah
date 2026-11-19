@@ -774,6 +774,14 @@ holds one. `ptah-compat` writes the change between two of them as the binary
 does, `COLLATE utf8mb4_uca1400_ai_ci` without `CHARSET utf8mb4`. The collation
 names its character set, so the server makes the same change.
 
+Where the other side is not a UCA 14.0.0 collation, `ptah-compat` writes the
+character set the collation names, and a column that takes the table's new
+collation is restated without a character set, so it takes the collation the
+table declares. The binary writes the dev database's character set on the
+table and `CHARSET utf8mb3` on the column, which MariaDB can refuse, or which
+gives the column the default collation of `utf8mb3`; see
+[A MariaDB table changed to a UCA 14.0.0 collation](../../atlas/retained-divergences/#a-mariadb-table-changed-to-a-uca-1400-collation).
+
 A foreign key stands on the collation of both its ends, so the server refuses
 a change of either end's collation while the key stands: MySQL with Error 3780
 and MariaDB with Error 1832. Ptah drops the key, changes both ends, and adds
@@ -815,7 +823,10 @@ MySQL or MariaDB, and the server can. A `schema diff` or `schema inspect` that
 creates a schema file on the dev database reads the file again for the dev
 server's dialect where the URL named the other, so the table options the file
 states, such as `COLLATE=utf8mb4_unicode_ci`, reach the tables it creates, as
-`schema apply` and `migrations generate` read a file from the start.
+`schema apply` and `migrations generate` read a file from the start. The second
+read resolves the source again: a desired schema that a `data "external_schema"`
+program writes runs that program a second time, so the program has to print the
+same schema on each run and change nothing else.
 
 ## FULLTEXT parser
 

@@ -167,6 +167,8 @@ own measurement conditions.
 | [A COLLATE on a PostgreSQL column](#a-collate-on-a-postgresql-column) | `schema diff` and `schema apply` plan a change of a column's collation | report the schemas synced |
 | [A changed MySQL table collation](#a-changed-mysql-table-collation) | plans the table's `COLLATE` in one statement with the reset of the column that takes it, so one apply converges | does the same with `--dev-url`; without it, plans the table's `COLLATE` alone, and the column keeps the old collation until a second apply |
 | [A foreign key over a changed collation](#a-foreign-key-over-a-changed-collation) | drops the foreign key, changes both ends, and adds the key back, so one apply converges | plans a bare `MODIFY COLUMN` of each end, which the server refuses while the key stands |
+| [A foreign key taken back under its name over a retyped column](#a-foreign-key-taken-back-under-its-name-over-a-retyped-column) | drops the key before the referenced column changes, so the file applies | changes the referenced column first, which the server refuses while the key stands |
+| [A MariaDB table changed to a UCA 14.0.0 collation](#a-mariadb-table-changed-to-a-uca-1400-collation) | writes the character set the collation names on the table, restates a column that takes it without one, and converges in one apply | writes the dev database's character set beside a collation of another, which MariaDB refuses, and gives such a column the character set's default collation |
 
 ## A `--config` selection naming more than one file
 
@@ -2106,6 +2108,69 @@ default, or from a character set each names.
 
 **Evidence.** `internal/planner/dialects/mysql/fk_collation_test.go`,
 `integration/mysql_foreign_key_collation_e2e_test.go`
+
+## A foreign key taken back under its name over a retyped column
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** MySQL and MariaDB refuse a change of a referenced
+column's type while a foreign key stands on it. Where a plan drops a foreign
+key and adds it back under the same name, and the column it references changes
+type, `ptah-compat migrate diff` and `schema diff` drop the key first, in a
+statement of its own, then change both ends, then add the key back. The pinned
+community binary v1.3.0 changes the referenced column first, and the server
+refuses that statement. Measured with `--dev-url` on MySQL 8.4 and MariaDB
+11.8, from `p (id int PRIMARY KEY)` and
+`a (id int PRIMARY KEY, p_id int, CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id))`
+to `p.id bigint`, `a.p_id bigint`, a new column `a.x` and `ON DELETE CASCADE`
+on `fk`:
+
+| Step | Binary | `ptah-compat` |
+| --- | --- | --- |
+| first statement | ``ALTER TABLE `p` MODIFY COLUMN `id` bigint NOT NULL;`` | ``ALTER TABLE `a` DROP FOREIGN KEY `fk`;`` |
+| last statement | ``ALTER TABLE `a` MODIFY COLUMN `p_id` bigint NULL, ADD COLUMN `x` int NULL, ADD CONSTRAINT `fk` ...;`` | ``ALTER TABLE `a` ADD COLUMN `x` int NULL, ADD CONSTRAINT `fk` ...;`` |
+| apply | the first statement fails with Error 3780 on MySQL and Error 1833 on MariaDB | applies, and the key stands with `ON DELETE CASCADE` |
+
+Both binaries write the drop of the key as a statement of its own.
+
+**Evidence.** `internal/planshape/order_test.go`,
+`integration/atlas_migrate_diff_statement_order_e2e_test.go`
+
+## A MariaDB table changed to a UCA 14.0.0 collation
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** MariaDB lists its UCA 14.0.0 collations, such as
+`utf8mb3_uca1400_ai_ci`, with no character set, and the pinned community
+binary v1.3.0 reads the character set of a table that holds one as the
+schema's. A change of a table's default to such a collation, with a column
+that names no collation and so takes the table's, is planned differently in
+two places:
+
+- The table's `CHARSET`. Where the other side is not a UCA 14.0.0
+  collation, `ptah-compat` writes the character set the collation names. The
+  binary writes the dev database's character set, which can be another, and
+  MariaDB refuses the statement with Error 1253.
+- The column. `ptah-compat` restates it without a character set, so it takes
+  the collation the table declares. The binary adds `CHARSET utf8mb3`, which
+  gives the column the default collation of `utf8mb3`. Where the table
+  declares that default, the result is the same; where it declares another,
+  the column holds the default, and every later plan restates it.
+
+Measured with `--dev-url` on MariaDB 11.8 and 12.3, on
+`t (id int PRIMARY KEY, n varchar(20) NULL)`:
+
+| Table default, from and to | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `utf8mb4` to `utf8` | ``ALTER TABLE `t` COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) CHARSET utf8mb3 NULL;`` | the same without `CHARSET utf8mb3`; `n` holds `utf8mb3_uca1400_ai_ci` after either |
+| `utf8mb4` to `utf8` with `COLLATE=utf8mb3_uca1400_as_cs` | ``ALTER TABLE `t` COLLATE utf8mb3_uca1400_as_cs, MODIFY COLUMN `n` varchar(20) CHARSET utf8mb3 NULL;``, after which `n` holds `utf8mb3_uca1400_ai_ci` and the next plan restates it | the same without `CHARSET utf8mb3`; `n` holds `utf8mb3_uca1400_as_cs`, and the next plan is empty |
+| `latin1` to `utf8` | ``ALTER TABLE `t` CHARSET utf8mb4, COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) CHARSET utf8mb3 NULL;``, which fails with Error 1253 | ``ALTER TABLE `t` CHARSET utf8mb3, COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) NULL;``, which applies |
+
+`ptah-compat` qualifies the table with its database, which the table above
+leaves out. Between two UCA 14.0.0 collations both binaries write the table's
+`COLLATE` without `CHARSET`, since the collation names its character set.
+
+**Evidence.** `integration/mariadb_uca_collation_change_e2e_test.go`
 
 ## Not on this page
 

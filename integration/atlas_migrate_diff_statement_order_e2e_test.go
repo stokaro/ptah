@@ -293,6 +293,24 @@ CREATE TABLE c (id int PRIMARY KEY, p_id int, CONSTRAINT fk FOREIGN KEY (p_id) R
 CREATE TABLE c (id int PRIMARY KEY, p_id int, CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id) ON DELETE CASCADE);
 `,
 	},
+	{
+		name: "fk action change and a column added to its table", engines: []string{"postgres", "mysql", "mariadb", "mariadb-11.8"},
+		from: `CREATE TABLE p (id int PRIMARY KEY);
+CREATE TABLE c (id int PRIMARY KEY, p_id int, CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id));
+`,
+		to: `CREATE TABLE p (id int PRIMARY KEY);
+CREATE TABLE c (id int PRIMARY KEY, p_id int, x int, CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id) ON DELETE CASCADE);
+`,
+	},
+	{
+		name: "fk action change and both ends retyped", engines: []string{"postgres", "mysql", "mariadb", "mariadb-11.8"},
+		from: `CREATE TABLE p (id int PRIMARY KEY);
+CREATE TABLE c (id int PRIMARY KEY, p_id int, CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id));
+`,
+		to: `CREATE TABLE p (id bigint PRIMARY KEY);
+CREATE TABLE c (id int PRIMARY KEY, p_id bigint, x int, CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id) ON DELETE CASCADE);
+`,
+	},
 	// A table only an index statement touches.
 	{
 		name: "drop fk on z and unique index on a", engines: []string{"postgres"},

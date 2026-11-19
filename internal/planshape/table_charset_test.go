@@ -57,3 +57,34 @@ func TestApply_WritesTheCharsetOfATableCollationAsTheCatalogReadsIt(t *testing.T
 		})
 	}
 }
+
+// TestAlignRollback_WritesTheCharsetOfATableCollationAsTheCatalogReadsIt is the
+// rollback of a forward plan that changes a table's default collation from
+// utf8mb3_uca1400_ai_ci to utf8mb4_uca1400_ai_ci. A catalog read names the
+// character set of neither side on MariaDB, so the rollback writes the
+// collation alone, as the forward plan does. A side the read names keeps the
+// character set.
+func TestAlignRollback_WritesTheCharsetOfATableCollationAsTheCatalogReadsIt(t *testing.T) {
+	for _, test := range []struct {
+		name, dialect, current, desired string
+		charset, wantCharset            string
+	}{
+		{"both sides unread on MariaDB", "mariadb", "utf8mb4_uca1400_ai_ci", "utf8mb3_uca1400_ai_ci", "utf8mb3", ""},
+		{"both sides of a mysql URL that names MariaDB", "mysql", "utf8mb4_uca1400_ai_ci", "utf8mb3_uca1400_ai_ci", "utf8mb3", ""},
+		{"the restored side read on MariaDB", "mariadb", "utf8mb4_uca1400_ai_ci", "latin1_swedish_ci", "latin1", "latin1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			forward, _ := tableCollationPlan(test.desired, test.current, "utf8mb4")
+			rollback, diff := tableCollationPlan(test.current, test.desired, test.charset)
+
+			aligned := planshape.AlignRollback(test.dialect, forward, rollback, diff)
+
+			c.Assert(aligned, qt.HasLen, 1)
+			alter := aligned[0].(*ast.AlterTableNode)
+			c.Assert(alter.Operations, qt.DeepEquals, []ast.AlterOperation{
+				&ast.SetTableCollationOperation{Charset: test.wantCharset, Collation: test.desired},
+			})
+		})
+	}
+}

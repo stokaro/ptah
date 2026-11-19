@@ -1799,10 +1799,12 @@ only where it can show that nothing depends on their order:
 - Added columns keep the order the declaration gives them, since that is the order the
   table holds them in, as a table created from the declaration does.
 - Two changes the server refuses in one statement stay in two, on MySQL and MariaDB:
-  a foreign key dropped and added under one name, which MySQL 8.4 refuses with
-  `ERROR 1826` and MariaDB 10.11 to 11.8 with `errno: 121`, and a foreign key of a
+  a foreign key dropped and added under one name, which MySQL 8.4 and 26.10 refuse
+  with `ERROR 1826` and MariaDB 10.11 to 11.8 with `errno: 121`, and a foreign key of a
   table to itself and the change it references. MariaDB 12.3 takes the first pair in
   one statement, and the file is written for every release line, so it keeps two.
+  The drop of such a key is a statement of its own, ahead of the table's other
+  changes, which go together with the key added back.
 
 Some differences stay, on purpose:
 
@@ -1823,6 +1825,10 @@ Some differences stay, on purpose:
   catalog read lists them in.
 - A check over a column that changes type stays in place, where the binary drops it
   and adds it again.
+- A foreign key dropped and added under one name, whose referenced column changes
+  type, is dropped before that column changes. The binary changes the referenced
+  column first, which MySQL 8.4 refuses with `ERROR 3780` while the key stands; see
+  [A foreign key taken back under its name over a retyped column](../retained-divergences/#a-foreign-key-taken-back-under-its-name-over-a-retyped-column).
 - A comment above an `ALTER TABLE` with `SET NOT NULL`, or with an `ADD COLUMN` for
   a `NOT NULL` column with no default, says which rows would stop the statement. The
   binary writes no comment there. Strict mode writes it too.

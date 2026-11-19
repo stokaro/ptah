@@ -303,6 +303,99 @@ func TestApply_KeepsApartWhatTheServerRefusesTogether_HappyPath(t *testing.T) {
 	}
 }
 
+// TestApply_DropsAKeyItsTableTakesBackInAStatementOfItsOwn_HappyPath is a foreign key
+// dropped and added under one name beside other changes of its table. On the MySQL family
+// the drop is a statement of its own, ahead of the table's other changes, which go into one
+// statement with the key added back, as the community binary writes them. A key dropped
+// under a name the table does not take back goes with the other changes. PostgreSQL takes
+// every change in one statement.
+func TestApply_DropsAKeyItsTableTakesBackInAStatementOfItsOwn_HappyPath(t *testing.T) {
+	withColumn := func() []ast.Node {
+		return []ast.Node{
+			alter("c", addColumn("x")),
+			alter("c", dropConstraint("fk")),
+			alter("c", addKey(foreignKeyTo("fk", "p_id", "p", "id"))),
+		}
+	}
+	withAnotherKey := func() []ast.Node {
+		return []ast.Node{
+			alter("c", dropColumn("y")),
+			alter("c", dropConstraint("fk")),
+			alter("c", dropConstraint("old")),
+			alter("c", addKey(foreignKeyTo("fk", "p_id", "p", "id"))),
+			alter("c", addKey(foreignKeyTo("fk2", "q_id", "p", "id"))),
+		}
+	}
+	twoKeys := func() []ast.Node {
+		return []ast.Node{
+			alter("c", addColumn("z")),
+			alter("c", dropConstraint("fk")),
+			alter("c", dropConstraint("fk2")),
+			alter("c", addKey(foreignKeyTo("fk", "p_id", "p", "id"))),
+			alter("c", addKey(foreignKeyTo("fk2", "q_id", "p", "id"))),
+		}
+	}
+	// The referenced column is retyped, so the key has to go before p changes and
+	// the referencing column with it. Measured on MySQL 8.4: the community binary
+	// writes `ALTER TABLE p MODIFY COLUMN id bigint` first, which the server refuses
+	// with ERROR 3780 while the key stands, and drops the key in a statement of its
+	// own.
+	retyped := func() []ast.Node {
+		return []ast.Node{
+			alter("c", dropConstraint("fk")),
+			alter("c", modifyColumn("p_id", "bigint")),
+			alter("p", modifyColumn("id", "bigint")),
+			alter("c", addColumn("x")),
+			alter("c", addKey(foreignKeyTo("fk", "p_id", "p", "id"))),
+		}
+	}
+	keys := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{changedTable("c", []catalog.Constraint{
+		observedForeignKey("c", "fk", "p_id", "p", "id"),
+		observedForeignKey("c", "fk2", "q_id", "p", "id"),
+		observedForeignKey("c", "old", "q_id", "p", "id"),
+	}), changedTable("p", nil)}}
+	tests := []struct {
+		name    string
+		dialect string
+		nodes   func() []ast.Node
+		want    []string
+	}{
+		{
+			name: "a column added on MySQL", dialect: platform.MySQL, nodes: withColumn,
+			want: []string{"c: drop constraint fk", "c: add x, add constraint fk"},
+		},
+		{
+			name: "a column added on MariaDB", dialect: platform.MariaDB, nodes: withColumn,
+			want: []string{"c: drop constraint fk", "c: add x, add constraint fk"},
+		},
+		{
+			name: "a column added on PostgreSQL", dialect: platform.Postgres, nodes: withColumn,
+			want: []string{"c: add x, drop constraint fk, add constraint fk"},
+		},
+		{
+			name: "a key dropped under a name the table does not take back on MySQL", dialect: platform.MySQL, nodes: withAnotherKey,
+			want: []string{"c: drop constraint fk", "c: drop y, drop constraint old, add constraint fk, add constraint fk2"},
+		},
+		{
+			name: "two keys taken back on MariaDB", dialect: platform.MariaDB, nodes: twoKeys,
+			want: []string{"c: drop constraint fk, drop constraint fk2", "c: add z, add constraint fk, add constraint fk2"},
+		},
+		{
+			name: "a key the change of another table needs gone on MySQL", dialect: platform.MySQL, nodes: retyped,
+			want: []string{"c: drop constraint fk", "c: modify p_id", "p: modify id", "c: add x, add constraint fk"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := planshape.Apply(test.dialect, test.nodes(), keys)
+
+			c.Assert(planOf(got), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 // TestApply_LeavesWhatItCannotShowIsFree_FailurePath is a statement whose dependencies the
 // plan does not settle. It ends the run, so nothing moves over it.
 func TestApply_LeavesWhatItCannotShowIsFree_FailurePath(t *testing.T) {
