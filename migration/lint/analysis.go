@@ -22,6 +22,7 @@ import (
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/repeatableset"
+	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlsyntax"
 	"ptah.run/migration/migrationfile"
 )
@@ -236,11 +237,13 @@ type File struct {
 	// strictNameRe comment), or names a repeatable migration the migrator
 	// runs.
 	WellFormedName bool
-	// Unread reports that the migrator's reading of the directory leaves this
-	// file out at its top level, so a run refuses the directory rather than
-	// apply it; see [migrationfile.UnreadFilesError]. The Atlas profile marks
-	// no file.
-	Unread bool
+	// RunRefusal says why a run refuses the directory for this file, and what
+	// to do about it, or is empty when a run reads the file. The migrator's
+	// reading of the directory leaves the file out at its top level (see
+	// [migrationfile.UnreadFilesError]), or the revision table the run records
+	// versions in cannot keep the version the file spells (see
+	// [Options.AtlasRevisionTable]). The Atlas profile marks no file.
+	RunRefusal string
 	// NoTransaction reports whether file-scoped directives opt this migration
 	// out of the migrator's transaction wrapper, or the migration runs without
 	// one because its directory's runner sends its one statement alone; see
@@ -616,7 +619,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		files = append(files, file)
 	}
 	keyAtlasFilesByPosition(files, snapshot, dirFormat)
-	markUnreadFiles(files, snapshot, dirFormat, opts.Compatibility)
+	markRunRefusals(files, snapshot, dirFormat, opts)
 	split, err := splitFiles(ctx, runtime, opts.Dialect, files)
 	if err != nil {
 		return Analysis{}, err
@@ -1116,23 +1119,59 @@ func withOwners(files []File, owners sqlext.Set) {
 	}
 }
 
-// markUnreadFiles marks the files the migrator's reading of the directory
-// leaves out at its top level, which that reading refuses the directory for.
-// The reading is the migrator's own, so lint and a run agree on which files
-// stop the run. The Atlas profile marks none: the community binary runs every
-// SQL file at the top level, and ptah-compat reads the directory in the Atlas
-// format, which names its own refusals.
-func markUnreadFiles(files []File, fsys fs.FS, format migrationfile.DirFormat, profile CompatibilityProfile) {
-	if profile == CompatibilityProfileAtlas {
+// markRunRefusals marks the files a run refuses the directory for, with what
+// to do about each, so lint and a run agree on which files stop the run.
+//
+// A file the migrator's reading leaves out at the top of the directory is
+// refused by that reading, and the reading is the migrator's own. An Atlas
+// file whose version the numeric revision table cannot keep, such as
+// R__x.sql, is refused by the predicate the migrator's guard asks, unless the
+// run records versions in the Atlas revision table.
+//
+// The Atlas profile marks none: the community binary runs every SQL file at
+// the top level and records every version as text, and ptah-compat reads the
+// directory in the Atlas format, which names its own refusals.
+func markRunRefusals(files []File, fsys fs.FS, format migrationfile.DirFormat, opts Options) {
+	if opts.Compatibility == CompatibilityProfileAtlas {
 		return
 	}
-	var unread *migrationfile.UnreadFilesError
-	if _, err := migrationfile.Discover(fsys, format); !errors.As(err, &unread) {
+	discovered, err := migrationfile.Discover(fsys, format)
+	if unread, ok := errors.AsType[*migrationfile.UnreadFilesError](err); ok {
+		for i := range files {
+			if slices.Contains(unread.Files, files[i].Name) {
+				files[i].RunRefusal = "the directory's format does not read this file name, so a run refuses the directory " +
+					"rather than leave the file unapplied; " + unread.Remedy
+			}
+		}
 		return
 	}
-	for i := range files {
-		files[i].Unread = slices.Contains(unread.Files, files[i].Name)
+	if err != nil || opts.AtlasRevisionTable {
+		return
 	}
+	positioned := migrationfile.AtlasKeyedByPosition(discovered)
+	for _, file := range discovered {
+		if file.Format != migrationfile.DirFormatAtlas ||
+			!revisiontable.NumericTableRefuses(file.RevisionVersion(), file.Repeatable, positioned) {
+			continue
+		}
+		for i := range files {
+			if files[i].Name == file.Path {
+				files[i].RunRefusal = numericTableRefusal(file)
+			}
+		}
+	}
+}
+
+// numericTableRefusal is what a run refusing file over the numeric revision
+// table says to do, worded as the migrator's refusal is.
+func numericTableRefusal(file migrationfile.File) string {
+	refusal := fmt.Sprintf("Ptah's revision table records numbers and cannot keep this file's version, %q, so a run refuses "+
+		"the directory; use the Atlas revision table (--revision-format atlas)", file.RevisionVersion())
+	if file.Repeatable {
+		refusal += ", or Ptah's file names, under which R__<name>.sql is a repeatable migration; " +
+			"a directory of repeatable migrations alone is read in Ptah's format with --dir-format ptah"
+	}
+	return refusal
 }
 
 // keyAtlasFilesByPosition gives each Atlas file of a directory whose files run

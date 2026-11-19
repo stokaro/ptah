@@ -4409,8 +4409,10 @@ migration directory and its files mean, with no database and no execution.
 `Discover` walks a filesystem in a `DirFormat` (`ParseDirFormat` normalizes the
 CLI spelling) and returns `File` values. A directory is read whole: a SQL file
 at its top level that the format does not read fails `Discover` with an
-`*UnreadFilesError`, whose `Files` names each one. `ParseFileName` and
-`ParseAtlasFileName` read one name; `FileName`, `CheckpointFileName`, and
+`*UnreadFilesError`, whose `Files` names each one and whose `Remedy` says how
+to resolve one such file.
+
+`ParseFileName` and `ParseAtlasFileName` read one name; `FileName`, `CheckpointFileName`, and
 `NextVersion` produce names for writers. `ParseDirectives` and `ParseTimeouts`
 read the `-- +ptah` directive header, `ParseFileTxMode` and `ParseUp` resolve a
 file's transaction mode across both directive families, `MisplacedDirectives`

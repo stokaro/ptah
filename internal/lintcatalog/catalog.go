@@ -403,8 +403,8 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDB:     YDBApplies,
 		YDBNote: "the migration directory's files",
 	},
-	"MF105P": {
-		Summary:    "a file at the top of the migration directory is one the directory's format does not read, so a run refuses the directory",
+	"MF104P": {
+		Summary:    "a run refuses the migration directory for this file: the directory's format does not read its name, or the revision table cannot keep its version",
 		NativeOnly: true,
 		YDB:        YDBApplies,
 		YDBNote:    "the migration directory's files",

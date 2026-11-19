@@ -96,7 +96,8 @@ func TestAtlasRepeatableOverANumericTable_FailurePath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*Atlas migration R__r\.sql has version "R", which a revision table that records `+
 		`numbers cannot keep; use the Atlas revision table \(--revision-format atlas\), or Ptah's file names, under `+
-		`which R__<name>\.sql is a repeatable migration`)
+		`which R__<name>\.sql is a repeatable migration; a directory of repeatable migrations alone is read in Ptah's `+
+		`format with --dir-format ptah`)
 	c.Assert(statusErr, qt.ErrorMatches, `(?s).*Atlas migration R__r\.sql has version "R".*`)
 }
 

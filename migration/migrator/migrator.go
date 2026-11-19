@@ -1503,17 +1503,13 @@ func (m *Migrator) refuseNumberlessVersionsInANumericTable() error {
 	}
 	positions := m.hasAtlasPositions()
 	for _, migration := range m.migrationProvider.Migrations() {
-		if !positions && !migration.atlasRepeatable {
-			continue
-		}
-		if _, err := strconv.ParseInt(migration.atlasRevisionVersion, 10, 64); err == nil &&
-			strings.Trim(migration.atlasRevisionVersion, "0123456789") == "" &&
-			strings.Trim(migration.atlasRevisionVersion, "0") != "" {
+		if !revisiontable.NumericTableRefuses(migration.atlasRevisionVersion, migration.atlasRepeatable, positions) {
 			continue
 		}
 		remedy := "use the Atlas revision table (--revision-format atlas)"
 		if migration.atlasRepeatable {
-			remedy += ", or Ptah's file names, under which R__<name>.sql is a repeatable migration"
+			remedy += ", or Ptah's file names, under which R__<name>.sql is a repeatable migration; " +
+				"a directory of repeatable migrations alone is read in Ptah's format with --dir-format ptah"
 		}
 		return fmt.Errorf(
 			"Atlas migration %s has version %q, which a revision table that records numbers cannot keep; %s",
