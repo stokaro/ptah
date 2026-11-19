@@ -55,6 +55,26 @@ func TestSchemaApplyRefusesARelativeTimeDefaultE2E(t *testing.T) {
 			want:   `on a timestamp column is read once, when the table is created`,
 		},
 		{
+			name:   "a time beside the word",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at timestamp DEFAULT 'tomorrow 10:00');",
+			want:   `on a timestamp column is read once, when the table is created`,
+		},
+		{
+			name:   "arithmetic on the word",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at date DEFAULT 'tomorrow'::date + 1);",
+			want:   `on a date column is read once, when the table is created`,
+		},
+		{
+			name:   "a function-style cast",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at date DEFAULT date('today'));",
+			want:   `on a date column is read once, when the table is created`,
+		},
+		{
+			name:   "a dollar-quoted string",
+			source: "CREATE TABLE notes (id int PRIMARY KEY, at timestamp DEFAULT $$now$$);",
+			want:   `on a timestamp column is read once, when the table is created`,
+		},
+		{
 			name:   "a timestamp cast to a date",
 			source: "CREATE TABLE notes (id int PRIMARY KEY, at date DEFAULT ('now'::timestamp)::date);",
 			want:   `DEFAULT ('now'::timestamp)::date on a date column is read once, when the table is created`,

@@ -3,38 +3,103 @@ package defaultlit
 import (
 	"slices"
 	"strings"
+	"unicode"
 )
 
-// RelativeTimeLiteral reports whether value, a default written as SQL, is a
-// string that literals names: a date and time input the engine reads as a
+// RelativeTimeLiteral reports whether value, a default written as SQL, holds
+// a string that literals names: a date and time input the engine reads as a
 // moment relative to when it reads it, such as PostgreSQL's 'now'. literals is
 // in upper case, as the dialect descriptor states it, and the string is
-// matched without case and surrounding spaces.
+// matched as [relativeTimeWord] says.
 //
 // The string may carry casts and parentheses, in either order: `'now'`,
 // `'now'::timestamptz`, `('now')` and `('now')::timestamptz` are each the
 // literal, because the engine folds each of them when it creates the table.
 // A string cast to a string type first, as in `('now'::text)::date`, is not:
 // the engine keeps that cast in the default and converts the text each time
-// it evaluates it, so every row gets its own moment. For any value that is
-// not one quoted string the answer is false. Only a column that holds a
-// moment reads the string as one, so a caller asks [DateTimeType] about the
-// column first.
+// it evaluates it, so every row gets its own moment. Inside a longer
+// expression, such as `'tomorrow'::date + 1`, the engine folds the string the
+// same way, so such a string counts unless a string cast follows it
+// ([embeddedRelativeTime]). Measured on PostgreSQL 18. Only a column that
+// holds a moment reads the string as one, so a caller asks [DateTimeType]
+// about the column first.
 func RelativeTimeLiteral(value string, literals []string) bool {
 	if len(literals) == 0 {
 		return false
 	}
 	text, cast := unwrap(value)
-	return !stringType(cast) && relativeTimeString(text, literals)
-}
-
-// relativeTimeString reports whether text is one quoted string whose contents
-// literals names ([relativeTimeWord]).
-func relativeTimeString(text string, literals []string) bool {
-	if len(text) < 2 || text[0] != '\'' || text[len(text)-1] != '\'' || strings.Contains(text[1:len(text)-1], "'") {
+	if stringType(cast) {
 		return false
 	}
-	return relativeTimeWord(text[1:len(text)-1], literals)
+	return relativeTimeString(text, literals) || embeddedRelativeTime(text, literals)
+}
+
+// relativeTimeString reports whether text is one string literal
+// ([plainString]) whose contents literals names ([relativeTimeWord]).
+func relativeTimeString(text string, literals []string) bool {
+	contents, ok := plainString(text)
+	return ok && relativeTimeWord(contents, literals)
+}
+
+// embeddedRelativeTime reports whether text, an expression, holds a string
+// literal whose contents literals names and that the engine does not read as
+// text: one followed by no cast, or by a cast to a type other than a string
+// type, and not written as a string type's literal (text 'now'). The engine
+// folds such a string when it creates the table, as in 'tomorrow'::date + 1 or
+// coalesce(NULL, 'now'::timestamp).
+func embeddedRelativeTime(text string, literals []string) bool {
+	double := false
+	for i := 0; i < len(text); i++ {
+		ch := text[i]
+		if ch == '"' {
+			double = !double
+		}
+		if double {
+			continue
+		}
+		end := literalEnd(text, i)
+		if end < 0 {
+			continue
+		}
+		contents, _ := plainString(text[i:end])
+		if relativeTimeWord(contents, literals) && !stringType(castAfter(text[end:])) && !stringType(typeBefore(text[:i])) &&
+			!nationalString(text[:i]) {
+			return true
+		}
+		i = end - 1
+	}
+	return false
+}
+
+// nationalString reports whether before ends in the N of a national string,
+// N'now', which the engine types as character, not as a date.
+func nationalString(before string) bool {
+	return (strings.HasSuffix(before, "N") || strings.HasSuffix(before, "n")) &&
+		(len(before) == 1 || !identifierByte(before[len(before)-2]))
+}
+
+// castAfter returns the type a :: right after a literal names, or "".
+func castAfter(rest string) string {
+	rest = strings.TrimLeft(rest, " ")
+	if !strings.HasPrefix(rest, "::") {
+		return ""
+	}
+	parts, _, ok := identifierParts(rest[2:])
+	if !ok {
+		return ""
+	}
+	return strings.Join(parts, ".")
+}
+
+// typeBefore returns the bare word right before a literal, the type of a
+// typed literal such as text 'now', or "".
+func typeBefore(before string) string {
+	before = strings.TrimRight(before, " ")
+	start := len(before)
+	for start > 0 && identifierByte(before[start-1]) {
+		start--
+	}
+	return before[start:]
 }
 
 // RelativeTimeArrayLiteral reports whether value, a default written as SQL for
@@ -109,7 +174,8 @@ func keepsText(element string) bool {
 	if nested, ok := arrayConstructor(text); ok {
 		return !slices.ContainsFunc(splitTopLevel(nested), func(inner string) bool { return !keepsText(inner) })
 	}
-	return strings.EqualFold(text, "NULL") || quotedString(text)
+	_, literal := plainString(text)
+	return strings.EqualFold(text, "NULL") || literal
 }
 
 // quotedString reports whether text is one quoted string, where a doubled
@@ -294,8 +360,9 @@ func identifierPart(text string) (part, rest string, ok bool) {
 // `('now'::text)::date` becomes `'now'` and text, and
 // `ARRAY['today']::date[]` becomes `ARRAY['today']` and date[]. A cast is
 // written with ::, as CAST(x AS type), or as a type before a string, as
-// date 'today'. A COLLATE clause makes what it follows text, so it reads as
-// a cast to text.
+// date 'today', or as a type name called like a function, as date('today').
+// A COLLATE clause is removed and leaves the type as it is: measured on
+// PostgreSQL 18, ('now' COLLATE "C")::date stores the moment of CREATE TABLE.
 func unwrap(value string) (text, innermost string) {
 	text = strings.TrimSpace(value)
 	for {
@@ -304,7 +371,7 @@ func unwrap(value string) (text, innermost string) {
 			continue
 		}
 		if operand, ok := collated(text); ok {
-			text, innermost = operand, "text"
+			text = operand
 			continue
 		}
 		if cast := outerCast(text); cast > 0 {
@@ -312,6 +379,10 @@ func unwrap(value string) (text, innermost string) {
 			continue
 		}
 		if operand, typeName, ok := castCall(text); ok {
+			text, innermost = operand, typeName
+			continue
+		}
+		if operand, typeName, ok := functionCast(text); ok {
 			text, innermost = operand, typeName
 			continue
 		}
@@ -339,6 +410,26 @@ func castCall(text string) (operand, typeName string, ok bool) {
 	return strings.TrimSpace(inner[:as]), strings.TrimSpace(inner[as+len("AS"):]), true
 }
 
+// functionCast reads text as a built-in date, time or string type called like
+// a function, as date('today') or text('now'), which the engine reads as a
+// cast of its argument to that type.
+func functionCast(text string) (operand, typeName string, ok bool) {
+	open := strings.IndexByte(text, '(')
+	if open <= 0 || !enclosed(text[open:]) {
+		return "", "", false
+	}
+	name := strings.TrimSpace(text[:open])
+	for i := range len(name) {
+		if !identifierByte(name[i]) || name[i] == '$' {
+			return "", "", false
+		}
+	}
+	if !DateTimeType(name) && !stringType(name) {
+		return "", "", false
+	}
+	return strings.TrimSpace(text[open+1 : len(text)-1]), name, true
+}
+
 // collated reads text as operand COLLATE name.
 func collated(text string) (string, bool) {
 	at := lastTopLevelWord(text, "COLLATE")
@@ -354,17 +445,13 @@ func collated(text string) (string, bool) {
 
 // typedLiteral reads text as a type name before a string, as date 'today',
 // and returns the type and the string. A one-letter prefix written against
-// the quote makes a kind of string, not a type: E'now' is the string 'now',
-// with no type, which PostgreSQL 18 reads once on a timestamp column as it
-// reads 'now'. A bit string (B'1', X'1') or a national string (N'now') is not
-// read.
+// the quote makes a kind of string, not a type: E'now' is a string
+// ([plainString]), and a bit string (B'1', X'1') or a national string
+// (N'now') is not read.
 func typedLiteral(text string) (typeName, literal string, ok bool) {
 	quote := strings.IndexByte(text, '\'')
 	if quote <= 0 || !quotedString(text[quote:]) {
 		return "", "", false
-	}
-	if quote == 1 && (text[0] == 'E' || text[0] == 'e') {
-		return "", text[quote:], true
 	}
 	typeName = strings.TrimSpace(text[:quote])
 	if typeName == "" || !isTypeName(typeName) || !identifierByte(typeName[0]) && typeName[0] != '"' ||
@@ -405,24 +492,41 @@ func identifierByte(ch byte) bool {
 
 // outerCast returns where the outermost cast of text begins, or -1 where text
 // does not end in one: a :: and a type name after a string, a parenthesis, a
-// bracket or another cast, so the cast in 'now'::timestamp::date that names
-// date is found, and the :: in a longer expression is not.
+// bracket, one bare word such as NULL or CURRENT_DATE, or another cast, so the
+// cast in 'now'::timestamp::date that names date is found, and the :: in a
+// longer expression is not.
 func outerCast(text string) int {
 	cast := strings.LastIndex(text, "::")
 	if cast <= 0 || !isTypeName(text[cast+2:]) {
 		return -1
 	}
 	before := strings.TrimSpace(text[:cast])
-	if before != "" && (strings.IndexByte("')]", before[len(before)-1]) >= 0 || outerCast(before) > 0) {
+	if before != "" && (strings.IndexByte("')]", before[len(before)-1]) >= 0 || bareWord(before) || outerCast(before) > 0) {
 		return cast
 	}
 	return -1
 }
 
-// relativeTimeWord reports whether text, the contents of a string, is a word
-// literals names, matched without case and surrounding spaces.
+// bareWord reports whether text is one bare word, such as NULL, CURRENT_DATE
+// or 1.
+func bareWord(text string) bool {
+	for i := range len(text) {
+		if !identifierByte(text[i]) {
+			return false
+		}
+	}
+	return text != ""
+}
+
+// relativeTimeWord reports whether text, the contents of a string, holds a
+// word literals names, matched without case as a whole run of letters. The
+// engine's date and time reader skips punctuation and reads a time beside the
+// word: measured on PostgreSQL 18, 'tomorrow 10:00' and 'now,' each store the
+// moment of CREATE TABLE. A string that holds the word beside another word,
+// such as 'epoch now', is one the engine refuses with its own error.
 func relativeTimeWord(text string, literals []string) bool {
-	return slices.Contains(literals, strings.ToUpper(strings.TrimSpace(text)))
+	words := strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsLetter(r) })
+	return slices.ContainsFunc(words, func(word string) bool { return slices.Contains(literals, strings.ToUpper(word)) })
 }
 
 // arrayConstructor returns what an ARRAY[...] constructor holds between its

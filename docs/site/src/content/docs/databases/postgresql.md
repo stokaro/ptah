@@ -243,8 +243,9 @@ so does `DEFAULT ''`.
 PostgreSQL reads a date or time default of `'now'`, `'today'`, `'tomorrow'` or
 `'yesterday'` once, when it creates the table or the domain, and stores that
 moment as the default. Ptah refuses such a default, with or without a cast, as
-`'now'::date`, `CAST('now' AS date)` or `E'now'`, and in parentheses, as
-`('now')`; write `now()`, `CURRENT_TIMESTAMP` or
+`'now'::date`, `CAST('now' AS date)`, `date('today')` or `$$now$$`, in
+parentheses, as `('now')`, with a time beside the word, as `'tomorrow 10:00'`,
+and inside a longer expression, as `'tomorrow'::date + 1`; write `now()`, `CURRENT_TIMESTAMP` or
 `CURRENT_DATE` instead. It is refused:
 
 - on a column of a built-in date or time type, written plain or quoted, as
