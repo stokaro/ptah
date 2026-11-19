@@ -501,6 +501,31 @@ not wrapped in a second `Nullable`, which ClickHouse refuses. A `Nullable` insid
 an array, a map or a tuple makes the elements nullable and not the column, so
 `Array(Nullable(Int32))` is a column that is never NULL itself.
 
+An expression default is compared as the operations its operators group, by
+ClickHouse's precedence. The server stores a default with every operation it
+groups in parentheses. Each pair below is one default, so a second apply plans
+nothing:
+
+| Declared | Stored by ClickHouse 26.10 |
+| --- | --- |
+| `1 + 2 * 3` | `1 + (2 * 3)` |
+| `a - b - c` | `(a - b) - c` |
+| `a + 1 IS NOT NULL AND NOT b = 1` | `((a + 1) IS NOT NULL) AND (NOT (b = 1))` |
+| `a <> 1` | `a != 1` |
+| `1.50 * a` | `1.5 * a` |
+
+A parenthesis that changes the grouping is part of the default: `(1 + 2) * 3`
+and `1 + 2 * 3` differ.
+
+Some expressions are compared as written and may plan again. ClickHouse
+rewrites `x BETWEEN 1 AND 2` as `(x >= 1) AND (x <= 2)` and `||` as
+`concat()`, so an expression that holds `BETWEEN`, `IN`, `LIKE`, `||`, a cast,
+a lambda, an array or a qualified name is not read. Neither is `NOT (a)`
+followed by a tighter operator, which ClickHouse 24.10 and 26.10 group
+differently. In a SQL schema file, a default that starts with a comparison,
+or with a minus before a name, a call or a parenthesis, is written in
+parentheses: `DEFAULT (a = 1 OR b = 3)`, `DEFAULT (-a * b)`.
+
 A default the declaration takes away is removed with its own statement, written
 before the one that states the type:
 
