@@ -113,5 +113,5 @@ modernc.org/strutil v1.2.1 h1:UneZBkQA+DX2Rp35KcM69cSsNES9ly8mQWD71HKlOA0=
 modernc.org/strutil v1.2.1/go.mod h1:EHkiggD70koQxjVdSBM3JKM7k6L0FbGE5eymy9i3B9A=
 modernc.org/token v1.1.0 h1:Xl7Ap9dKaEs5kLoOQeQmPWevfnk/DM5qcLcYlA8ys6Y=
 modernc.org/token v1.1.0/go.mod h1:UGzOrNV1mAFSEB63lOFHIpNRUVMvYTc6yu1SMY/XTDM=
-ptah.run/provider-sdk v0.40.0 h1:kG6Drnz2ojptcs61KzQaGYVYrtTe8tFc1T3MxYKOY54=
-ptah.run/provider-sdk v0.40.0/go.mod h1:V+l0tR8sq3zrfwB7lQQ2qE/Ad6v7O9Nr4soeNsiRKaw=
+ptah.run/provider-sdk v0.42.0 h1:3fpwFUdk5O4jNHYJE0GRPKqc5/8oPerC3HI485GSVfQ=
+ptah.run/provider-sdk v0.42.0/go.mod h1:nh6zEeXnQcbEJCb7MrZk96JX6A+59jD+e3w28AeH0Zs=

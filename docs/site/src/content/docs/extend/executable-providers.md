@@ -538,6 +538,12 @@ replays a migration directory on it, and `ptah-compat schema plan lint` and
 - `database.dev-replay-guard` judges each statement the host runs on the dev
   database and refuses one whose effects reach past it. Without the guard the
   host runs nothing there.
+- `database.dev-replay-trust` carries the operator's
+  [trust in the SQL](../../concepts/database-urls-and-dev-databases/#sql-you-trust)
+  to the guard and to each dev session the host opens for the run, and the
+  provider lifts the refusals it judges trust may lift. The host refuses a run
+  that declares trust before the replay when the provider does not declare the
+  feature.
 - The host tells the dev database from the target by the database each session
   reports, since it reads no provider address. It does the same for a provider
   of an engine Ptah also builds in: the built-in engine's way of naming a dev

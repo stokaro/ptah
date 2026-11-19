@@ -1,6 +1,7 @@
 package testutils
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,7 +89,28 @@ func BuildFixtureProviderRelease(c *qt.C, command string, release FixtureRelease
 		build = append(build, "-ldflags="+strings.Join(linkFlags, " "))
 	}
 	runBuildCommand(c, dir, "go", append(build, "./cmd/"+command)...)
+	launchOnce(c, binary)
 	return binary
+}
+
+// launchOnce runs a new executable once, with no environment and no
+// arguments, so the operating system's check of a file it has never launched
+// happens here rather than inside the provider startup timeout of the command
+// under test. Without a host the fixture stops at its first check, and how it
+// stops does not matter; only a launch that failed is reported.
+//
+// On macOS the first launch of a new file waits for the system's malware
+// check: measured under a load average of about 50, a fresh copy of the
+// devdb-lint fixture took 0.85 to 6.7 s to reach main on its first launch and
+// 0.02 s on its second. A first launch longer than the host's ten-second
+// startup timeout fails the command before the provider runs at all.
+func launchOnce(c *qt.C, binary string) {
+	c.Helper()
+	command := exec.CommandContext(c.Context(), binary)
+	command.Env = make([]string, 0)
+	err := command.Run()
+	_, exited := errors.AsType[*exec.ExitError](err)
+	c.Assert(err == nil || exited, qt.IsTrue, qt.Commentf("launch %s: %v", binary, err))
 }
 
 // hostModule is the module path of Ptah itself, which an independent provider

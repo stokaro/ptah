@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
 	"ptah.run/internal/inputapproval"
+	"ptah.run/internal/replaytrust"
 	protocol "ptah.run/provider-sdk/protocol/experimental"
 	"ptah.run/provider-sdk/provider"
 	providerruntime "ptah.run/provider-sdk/runtime"
@@ -31,11 +32,22 @@ type session struct {
 	closeErr  error
 }
 
+// Open opens a provider session on request.Address. A dev URL whose run
+// trusts the SQL it executes there ([replaytrust.Trusted]) opens a session for
+// trusted SQL, so the provider's own checks at execution lift what its replay
+// guard lifts under trust. An engine that does not negotiate
+// [provider.ReplayTrustFeature] is refused for such a URL before anything runs
+// on it: the operator asked for trust, and dropping the answer would replay
+// under a policy they did not choose.
 func (t *target) Open(ctx context.Context, request dbschema.NativeRequest) (dbschema.NativeSession, error) {
 	if err := checkProviderAddress(request.Address); err != nil {
 		return nil, err
 	}
-	remote, err := t.host.client.Open(ctx, &protocol.OpenRequest{Engine: t.engine.GetId(), Address: request.Address})
+	trusted := replaytrust.Trusted(request.Address)
+	if trusted && !t.negotiated(provider.ReplayTrustFeature) {
+		return nil, t.untrustedProvider()
+	}
+	remote, err := t.host.client.Open(ctx, &protocol.OpenRequest{Engine: t.engine.GetId(), Address: request.Address, TrustedSql: trusted})
 	if err != nil {
 		return nil, err
 	}
@@ -49,6 +61,16 @@ func (t *target) Open(ctx context.Context, request dbschema.NativeRequest) (dbsc
 		return nil, errors.Join(err, t.host.client.CloseSession(cleanup, remote.GetId()))
 	}
 	return &session{target: t, remote: remote, address: request.Address, info: info}, nil
+}
+
+// untrustedProvider is the refusal of trusted dev SQL by a provider whose
+// engine does not negotiate [provider.ReplayTrustFeature]. It names what the
+// operator can change: the provider, or the trust.
+func (t *target) untrustedProvider() error {
+	return fmt.Errorf("%w: provider %s does not accept trusted SQL for engine %s (%s, contract 25.43), so it would replay "+
+		"under its default confinement; install a provider release that supports it, or run without --%s and %s",
+		ptaherr.ErrUnsupportedFeature, t.host.description.GetProviderId(), t.engine.GetId(), provider.ReplayTrustFeature,
+		replaytrust.FlagName, replaytrust.EnvVar)
 }
 
 func (t *target) sessionInfo(remote *protocol.Session) (catalog.ServerInfo, error) {
