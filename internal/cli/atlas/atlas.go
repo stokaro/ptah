@@ -284,6 +284,14 @@ func newAtlasCommand(use, short, long string, policy atlascompatpolicy.Policy) *
 		return nil
 	}
 	cmdutil.ConfigureCommandArgs(cmd, atlasRootArgs)
+	// The root reads its own flags, in atlasRootArgs, so that it can name an
+	// unknown command before it looks at any flag. Without this, cobra parses
+	// the root's flags first and answers `unknown flag: --url` for `security
+	// scan --url ...`, a line that never names the verb the community binary
+	// reports. Subcommands are found before any flag is parsed and keep their
+	// own parsing; the root takes no flag but --help.
+	cmd.DisableFlagParsing = true
+	cmd.ValidArgsFunction = completeAtlasRootFlags
 	schemaCommand := newAtlasSchemaCommand(policy)
 	migrateCommand := newAtlasMigrateCommand(policy)
 	cmd.AddCommand(newAtlasVersionCommand())
@@ -463,16 +471,93 @@ func atlasMigrateForwardVerbs() []atlasVerb {
 	}
 }
 
+// atlasRootArgs decides what the root does with the arguments no subcommand
+// claimed, in the order the community binary decides it: an unknown command
+// first, whatever flags come before or after it, --help included; then a flag
+// the root does not take; then help. It receives the arguments unparsed,
+// because the root disables cobra's flag parsing.
 func atlasRootArgs(cmd *cobra.Command, args []string) error {
-	if len(args) == 0 {
-		return nil
+	if verb, ok := firstRootOperand(args); ok {
+		return unknownAtlasRootCommand(cmd, verb)
 	}
+	if err := cmd.Flags().Parse(args); err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			return err
+		}
+		return cmd.FlagErrorFunc()(cmd, err)
+	}
+	if help, err := cmd.Flags().GetBool("help"); err == nil && help {
+		return pflag.ErrHelp
+	}
+	return nil
+}
 
-	unknownErr := fmt.Errorf("unknown command %q for %q", args[0], "atlas")
+// firstRootOperand returns the first argument the root reads as a command name.
+//
+// It reads every flag as one that takes a value, so `--url x security` names
+// `security` and `--help security` names nothing. Each rule here is measured on
+// the pinned community binary: `atlas --help security` prints help at exit 0
+// while `atlas security --help` refuses the command at exit 1. A flag that is
+// the last or the second-to-last argument ends the scan without taking the
+// argument after it, so `--nosuch version` names no command and reports the
+// flag. `--` ends the scan too, so `atlas -- security` prints help.
+func firstRootOperand(args []string) (string, bool) {
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
+		switch {
+		case arg == "--":
+			return "", false
+		case strings.HasPrefix(arg, "-") && !strings.Contains(arg, "=") &&
+			(strings.HasPrefix(arg, "--") || len(arg) == 2):
+			if len(args) <= 1 {
+				return "", false
+			}
+			args = args[1:]
+		case arg != "" && !strings.HasPrefix(arg, "-"):
+			return arg, true
+		}
+	}
+	return "", false
+}
+
+// completeAtlasRootFlags offers the root's own flags for a word that starts
+// with a dash. Cobra leaves flag-name completion to a command that parses its
+// own flags, so without this `ptah-compat -<TAB>` offers nothing where the
+// community binary offers --help and -h. Subcommand names are completed by
+// cobra before this runs.
+func completeAtlasRootFlags(cmd *cobra.Command, _ []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	if !strings.HasPrefix(toComplete, "-") {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	cmd.InitDefaultHelpFlag()
+	var completions []cobra.Completion
+	cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
+		if flag.Hidden {
+			return
+		}
+		names := []string{"--" + flag.Name}
+		if flag.Shorthand != "" {
+			names = append(names, "-"+flag.Shorthand)
+		}
+		for _, name := range names {
+			if strings.HasPrefix(name, toComplete) {
+				completions = append(completions, cobra.CompletionWithDesc(name, flag.Usage))
+			}
+		}
+	})
+	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// unknownAtlasRootCommand prints the community binary's diagnostic for a
+// command it does not register, with the suggestions and the native pointer,
+// and returns the error at the compatibility exit code.
+func unknownAtlasRootCommand(cmd *cobra.Command, verb string) error {
+	unknownErr := fmt.Errorf("unknown command %q for %q", verb, "atlas")
 	var diagnostic strings.Builder
 	fmt.Fprintf(&diagnostic, "%s: %s\n", cmdutil.ErrorPrefix(cmd), unknownErr)
 
-	suggestions := cmd.SuggestionsFor(args[0])
+	suggestions := cmd.SuggestionsFor(verb)
 	if len(suggestions) > 0 {
 		diagnostic.WriteString("\nDid you mean this?\n")
 		for _, suggestion := range suggestions {
@@ -481,7 +566,7 @@ func atlasRootArgs(cmd *cobra.Command, args []string) error {
 		diagnostic.WriteString("\n")
 	}
 	diagnostic.WriteString("Run 'atlas --help' for usage.\n")
-	diagnostic.WriteString(nativeEquivalentFor(args[0]))
+	diagnostic.WriteString(nativeEquivalentFor(verb))
 
 	if _, err := fmt.Fprint(cmd.ErrOrStderr(), diagnostic.String()); err != nil {
 		return exitcode.New(atlasErrorExitCode, fmt.Errorf("%w: write diagnostic: %w", unknownErr, err))

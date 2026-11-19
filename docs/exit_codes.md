@@ -367,7 +367,12 @@ This normalization applies only to the compatibility tree; equivalent native
 Ptah command failures keep exit code `2`.
 
 An unknown root command exits `1` and writes Atlas's `unknown command`
-diagnostic plus `atlas --help` guidance to stderr. Atlas CE treats an extra
+diagnostic plus `atlas --help` guidance to stderr. It is reported before any
+flag, whatever flags come before or after it, `--help` included, as Atlas CE
+reports it: an unknown `security` verb followed by `--url` is reported as
+`unknown command "security"`, not as `unknown flag: --url`. An unknown root
+flag is reported as `unknown flag` only when no argument names a command.
+Atlas CE treats an extra
 token under the `migrate` or `schema` command group differently: it prints that
 group's help to stdout and exits `0`. Both compatibility surfaces preserve this
 distinction. The same group behavior applies to `completion`; an extra token
