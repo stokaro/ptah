@@ -67,6 +67,20 @@ func TestCanonical_ClickHouse_HappyPath(t *testing.T) {
 		{name: "IS NOT NULL after NOT and a comparison", declared: "NOT a = 1 IS NOT NULL", stored: "NOT ((a = 1) IS NOT NULL)", want: "NOT `a` = 1 IS NOT NULL"},
 		{name: "a negated integer at the top of the Int64 range", declared: "-9223372036854775807", stored: "-9223372036854775807", want: "-9223372036854775807"},
 		{name: "an integer above the Int64 range", declared: "18446744073709551615 + 1", stored: "18446744073709551615 + 1", want: "18446744073709551615 + 1"},
+		{name: "BETWEEN", declared: "x BETWEEN 1 AND 3", stored: "(x >= 1) AND (x <= 3)", want: "`x` >= 1 AND `x` <= 3"},
+		{name: "NOT BETWEEN", declared: "x NOT BETWEEN 1 AND 3", stored: "(x < 1) OR (x > 3)", want: "`x` < 1 OR `x` > 3"},
+		{name: "BETWEEN before AND", declared: "x BETWEEN 1 AND 3 AND y", stored: "((x >= 1) AND (x <= 3)) AND y", want: "`x` >= 1 AND `x` <= 3 AND `y`"},
+		{name: "BETWEEN before OR", declared: "x BETWEEN 1 AND 3 OR y", stored: "((x >= 1) AND (x <= 3)) OR y", want: "`x` >= 1 AND `x` <= 3 OR `y`"},
+		{name: "NOT BETWEEN before AND", declared: "x NOT BETWEEN 1 AND 3 AND y", stored: "((x < 1) OR (x > 3)) AND y", want: "(`x` < 1 OR `x` > 3) AND `y`"},
+		{name: "BETWEEN bounds that add and multiply", declared: "x BETWEEN 1 + 1 AND 3 * 2", stored: "(x >= (1 + 1)) AND (x <= (3 * 2))", want: "`x` >= 1 + 1 AND `x` <= 3 * 2"},
+		{name: "BETWEEN after addition", declared: "x + 1 BETWEEN 1 AND 3", stored: "((x + 1) >= 1) AND ((x + 1) <= 3)", want: "`x` + 1 >= 1 AND `x` + 1 <= 3"},
+		{name: "NOT before BETWEEN", declared: "NOT x BETWEEN 1 AND 3", stored: "NOT ((x >= 1) AND (x <= 3))", want: "NOT (`x` >= 1 AND `x` <= 3)"},
+		{name: "IS NULL after BETWEEN", declared: "x BETWEEN 1 AND 3 IS NULL", stored: "((x >= 1) AND (x <= 3)) IS NULL", want: "(`x` >= 1 AND `x` <= 3) IS NULL"},
+		{name: "a comparison in the upper bound", declared: "x BETWEEN 1 AND 3 = 1", stored: "(x >= 1) AND (x <= (3 = 1))", want: "`x` >= 1 AND `x` <= (3 = 1)"},
+		{name: "a comparison in the lower bound", declared: "x BETWEEN a = 1 AND 3", stored: "(x >= (a = 1)) AND (x <= 3)", want: "`x` >= (`a` = 1) AND `x` <= 3"},
+		{name: "a comparison before BETWEEN", declared: "a = x BETWEEN 1 AND 3", stored: "((a = x) >= 1) AND ((a = x) <= 3)", want: "`a` = `x` >= 1 AND `a` = `x` <= 3"},
+		{name: "a negative bound", declared: "x BETWEEN -1 AND 3", stored: "(x >= -1) AND (x <= 3)", want: "`x` >= -1 AND `x` <= 3"},
+		{name: "grouped bounds", declared: "x BETWEEN (1) AND (3)", stored: "(x >= (1)) AND (x <= (3))", want: "`x` >= 1 AND `x` <= 3"},
 	}
 
 	for _, test := range tests {
@@ -109,6 +123,8 @@ func TestCanonical_ClickHouse_DistinctExpressions(t *testing.T) {
 		// 18446744073709551614.
 		{name: "a negated zero in parentheses", left: "-(0) + 18446744073709551614", right: "0 + 18446744073709551614"},
 		{name: "a minus before a negative zero", left: "- -0 + a", right: "-0 + a"},
+		{name: "BETWEEN and NOT BETWEEN", left: "x BETWEEN 1 AND 3", right: "x NOT BETWEEN 1 AND 3"},
+		{name: "an AND inside the upper bound", left: "x BETWEEN 1 AND (3 AND y)", right: "x BETWEEN 1 AND 3 AND y"},
 	}
 
 	for _, test := range tests {
@@ -126,11 +142,12 @@ func TestCanonical_ClickHouse_DistinctExpressions(t *testing.T) {
 }
 
 // TestCanonical_ClickHouse_FailurePath pins the expressions the ClickHouse
-// table does not read. NOT before a group followed by IS NULL or an
-// arithmetic operator is read as a call by ClickHouse 24.10 and as the start
-// of NOT's operand by 26.10, and a prefix NOT after an operator that binds
-// tighter has no grouping the table can state. ClickHouse writes BETWEEN and
-// || back as other expressions. A minus before an integer above the Int64
+// table does not read. NOT before a group followed by IS NULL or an arithmetic
+// operator is read as a call by ClickHouse 24.10 and as the start of NOT's
+// operand by 26.10, and a prefix NOT after an operator that binds tighter has
+// no grouping the table can state. BETWEEN after an operand that binds no
+// tighter, or with a bound that does not, is not read, and ClickHouse writes
+// || back as another expression. A minus before an integer above the Int64
 // range means one value written right before the integer and another written
 // before a group around it.
 func TestCanonical_ClickHouse_FailurePath(t *testing.T) {
@@ -142,7 +159,12 @@ func TestCanonical_ClickHouse_FailurePath(t *testing.T) {
 		{name: "NOT before a group and an addition", expression: "NOT (1) + 2"},
 		{name: "NOT after a comparison", expression: "a = NOT b"},
 		{name: "NOT after a negation", expression: "-NOT a"},
-		{name: "BETWEEN", expression: "a BETWEEN 1 AND 3"},
+		{name: "BETWEEN after IS NULL", expression: "a IS NULL BETWEEN 1 AND 2"},
+		{name: "BETWEEN twice", expression: "x BETWEEN 1 AND 3 BETWEEN 0 AND 1"},
+		{name: "BETWEEN without AND", expression: "x BETWEEN 1 OR 3"},
+		{name: "BETWEEN with NOT in a bound", expression: "x BETWEEN NOT 1 AND 3"},
+		{name: "BETWEEN with IS NULL in a bound", expression: "x BETWEEN a IS NULL AND 3"},
+		{name: "BETWEEN without an upper bound", expression: "x BETWEEN 1 AND"},
 		{name: "IN", expression: "a IN (1, 2)"},
 		{name: "LIKE", expression: "a LIKE 'x'"},
 		{name: "concatenation", expression: "a || b"},

@@ -16,19 +16,21 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 	described := head("alpha")
 	described.Grammar = descriptor.Grammar{
 		Columns: descriptor.ColumnGrammar{
-			TimestampLocalTimeZone:  true,
-			CurrentTimeKeywords:     true,
-			NiladicFunctions:        []string{"SYSDATE", "USER"},
-			EmptyCallFunctions:      []string{"SYSDATE"},
-			EmptyCallRefusal:        "alpha refuses SYSDATE()",
-			SequencePseudocolumns:   []string{"NEXTVAL"},
-			NextValueClause:         "NEXT VALUE FOR",
-			DefaultOperatorRefusal:  "alpha takes an expression default only in parentheses",
-			DefaultPredicateRefusal: "alpha reads no predicate in a default",
-			DefaultDistinctFrom:     true,
-			DefaultPipesRefusal:     "alpha reads || by the session's SQL mode",
-			SecondCheckRefusal:      "alpha takes one CHECK on a column",
-			ReferencesRefusal:       "what alpha builds depends on its release",
+			TimestampLocalTimeZone: true,
+			CurrentTimeKeywords:    true,
+			NiladicFunctions:       []string{"SYSDATE", "USER"},
+			EmptyCallFunctions:     []string{"SYSDATE"},
+			EmptyCallRefusal:       "alpha refuses SYSDATE()",
+			SequencePseudocolumns:  []string{"NEXTVAL"},
+			NextValueClause:        "NEXT VALUE FOR",
+			DefaultOperatorRefusal: "alpha takes an expression default only in parentheses",
+			DefaultPredicates: descriptor.DefaultPredicates{
+				Refusal:      "alpha reads no predicate in a default",
+				DistinctFrom: true,
+			},
+			DefaultPipesRefusal: "alpha reads || by the session's SQL mode",
+			SecondCheckRefusal:  "alpha takes one CHECK on a column",
+			ReferencesRefusal:   "what alpha builds depends on its release",
 			Constraint: descriptor.ColumnConstraint{
 				Define: descriptor.ConstraintKindReferences,
 				Modify: descriptor.ConstraintKindCheck,
@@ -262,8 +264,13 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 		},
 		{
 			name:    "IS DISTINCT FROM without a predicate refusal",
-			dialect: with(func(g *descriptor.Grammar) { g.Columns.DefaultDistinctFrom = true }),
-			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a default that reads IS DISTINCT FROM needs a default predicate refusal`,
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.DefaultPredicates.DistinctFrom = true }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: default predicates that name the forms read need a refusal of the others`,
+		},
+		{
+			name:    "a comparison without a predicate refusal",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.DefaultPredicates.Comparison = true }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: default predicates that name the forms read need a refusal of the others`,
 		},
 		{
 			name:    "a MATCH PARTIAL without the clause",

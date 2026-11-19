@@ -517,9 +517,9 @@ func TestParse_DefaultOperatorPredicate_HappyPath(t *testing.T) {
 // predicate in a default at all. Each answers a syntax error, and the default
 // is refused at the word.
 func TestParse_DefaultOperatorPredicate_FailurePath(t *testing.T) {
-	const postgres = `PostgreSQL 18 reads no IS test but IS \[NOT\] DISTINCT FROM, and no AND or OR, in a default written ` +
-		`without parentheses, and answers a syntax error there; write the whole expression in parentheses, as ` +
-		`DEFAULT \(1 \+ 2 IS NOT NULL\)`
+	const postgres = `PostgreSQL 18 reads a comparison and IS \[NOT\] DISTINCT FROM in a default written without ` +
+		`parentheses, and answers a syntax error to every other IS test, to AND, OR and NOT, and to BETWEEN, IN and LIKE ` +
+		`there; write the whole expression in parentheses, as DEFAULT \(1 \+ 2 IS NOT NULL\)`
 	rows := []struct {
 		name, dialect, column, wantErr string
 	}{
@@ -545,12 +545,211 @@ func TestParse_DefaultOperatorPredicate_FailurePath(t *testing.T) {
 		},
 		{
 			name: "SQL Server, IS NOT NULL", dialect: "sqlserver", column: "b bit DEFAULT 1 + 2 IS NOT NULL",
-			wantErr: `line 1, column 45: expected default value: 1 \+ 2 continues with IS outside parentheses: SQL Server 2025 takes ` +
-				`no predicate as a default, in parentheses or without, and answers Msg 156, Incorrect syntax near the keyword`,
+			wantErr: `line 1, column 45: expected default value: 1 \+ 2 continues with IS outside parentheses: ` + sqlServerPredicates,
 		},
 		{
 			name: "SQL Server, IS DISTINCT FROM", dialect: "sqlserver", column: "b bit DEFAULT 1 + 2 IS DISTINCT FROM 3",
-			wantErr: `line 1, column 45: expected default value: 1 \+ 2 continues with IS outside parentheses: SQL Server 2025 .*`,
+			wantErr: `line 1, column 45: expected default value: 1 \+ 2 continues with IS outside parentheses: SQL Server .*`,
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parseAs(row.dialect, "CREATE TABLE t (id int, "+row.column+", m int);")
+
+			c.Assert(err, qt.ErrorMatches, row.wantErr)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// sqlServerPredicates is the refusal SQL Server's descriptor states for every
+// comparison and predicate in a default.
+const sqlServerPredicates = `SQL Server takes no comparison or predicate as a default, in parentheses or without: ` +
+	`SQL Server 2022 answers Msg 102, Incorrect syntax near '=', at a comparison, and SQL Server 2022 and 2025 ` +
+	`answer Msg 156, Incorrect syntax near the keyword, at a predicate word`
+
+// A default continues after its first operand with a comparison, IS, AND, OR,
+// BETWEEN, IN or LIKE, and opens with a NOT or with a sign before a name, a
+// call or a parenthesis, on the engines that read each form without
+// parentheses: ClickHouse 24.10 and 26.10 read every one, Oracle Free 23.26
+// every one but IS DISTINCT FROM, and the PostgreSQL family a comparison and
+// IS DISTINCT FROM. A NOT before BETWEEN, IN or LIKE is the predicate's, and
+// a NOT NULL after a complete predicate is the column's.
+func TestParse_DefaultContinuation_HappyPath(t *testing.T) {
+	rows := []struct {
+		name, dialect, column string
+		wantExpression        string
+		wantNullable          bool
+	}{
+		{name: "ClickHouse, OR", dialect: "clickhouse", column: "v UInt8 DEFAULT a = 1 OR b = 3", wantExpression: "a = 1 OR b = 3"},
+		{name: "ClickHouse, BETWEEN", dialect: "clickhouse", column: "v UInt8 DEFAULT x BETWEEN 1 AND 3", wantExpression: "x BETWEEN 1 AND 3"},
+		{
+			name: "ClickHouse, BETWEEN, then AND", dialect: "clickhouse",
+			column: "v UInt8 DEFAULT x BETWEEN 1 AND 3 AND y", wantExpression: "x BETWEEN 1 AND 3 AND y",
+		},
+		{
+			name: "ClickHouse, NOT BETWEEN, then NOT NULL", dialect: "clickhouse",
+			column: "v UInt8 DEFAULT x NOT BETWEEN 1 AND 3 NOT NULL", wantExpression: "x NOT BETWEEN 1 AND 3",
+		},
+		{name: "ClickHouse, NOT", dialect: "clickhouse", column: "v UInt8 DEFAULT NOT a", wantExpression: "NOT a"},
+		{
+			name: "ClickHouse, NOT before a comparison and AND", dialect: "clickhouse",
+			column: "v UInt8 DEFAULT NOT a = 1 AND b", wantExpression: "NOT a = 1 AND b",
+		},
+		{name: "ClickHouse, NOT IN", dialect: "clickhouse", column: "v UInt8 DEFAULT 1 NOT IN (1, 2)", wantExpression: "1 NOT IN (1, 2)"},
+		{name: "ClickHouse, NOT LIKE", dialect: "clickhouse", column: "v UInt8 DEFAULT 'a' NOT LIKE 'b'", wantExpression: "'a' NOT LIKE 'b'"},
+		{name: "ClickHouse, <>", dialect: "clickhouse", column: "v UInt8 DEFAULT 1 <> 2", wantExpression: "1 <> 2"},
+		{name: "ClickHouse, ==", dialect: "clickhouse", column: "v UInt8 DEFAULT a == 2", wantExpression: "a == 2"},
+		{name: "ClickHouse, IS NULL", dialect: "clickhouse", column: "v UInt8 DEFAULT 1 IS NULL", wantExpression: "1 IS NULL"},
+		{name: "ClickHouse, a minus before a name", dialect: "clickhouse", column: "v Int64 DEFAULT -a", wantExpression: "-a"},
+		{
+			name: "ClickHouse, a minus before a call", dialect: "clickhouse",
+			column: "v Int64 DEFAULT -plus(a, 1)", wantExpression: "-plus(a, 1)",
+		},
+		{name: "ClickHouse, a minus before a group", dialect: "clickhouse", column: "v Int64 DEFAULT -(1)", wantExpression: "-(1)"},
+		{name: "ClickHouse, a minus before a name, then *", dialect: "clickhouse", column: "v Int64 DEFAULT -a * b", wantExpression: "-a * b"},
+		{name: "Oracle, OR", dialect: "oracle", column: "v boolean DEFAULT 1 = 1 OR 1 = 2", wantExpression: "1 = 1 OR 1 = 2", wantNullable: true},
+		{name: "Oracle, NOT", dialect: "oracle", column: "v boolean DEFAULT NOT 1 = 2", wantExpression: "NOT 1 = 2", wantNullable: true},
+		{name: "Oracle, IS NOT NULL", dialect: "oracle", column: "v boolean DEFAULT 1 IS NOT NULL", wantExpression: "1 IS NOT NULL", wantNullable: true},
+		{
+			name: "Oracle, NOT BETWEEN", dialect: "oracle",
+			column: "v boolean DEFAULT 1 NOT BETWEEN 0 AND 3", wantExpression: "1 NOT BETWEEN 0 AND 3", wantNullable: true,
+		},
+		{name: "Oracle, IN", dialect: "oracle", column: "v boolean DEFAULT 1 IN (1, 2)", wantExpression: "1 IN (1, 2)", wantNullable: true},
+		{name: "Oracle, LIKE", dialect: "oracle", column: "v boolean DEFAULT 'a' LIKE 'b'", wantExpression: "'a' LIKE 'b'", wantNullable: true},
+		{name: "Oracle, a minus before a call", dialect: "oracle", column: "v number DEFAULT -abs(1)", wantExpression: "-abs(1)", wantNullable: true},
+		{name: "PostgreSQL, <", dialect: "postgres", column: "v boolean DEFAULT 1 < 2", wantExpression: "1 < 2", wantNullable: true},
+		{name: "PostgreSQL, = after +, then NOT NULL", dialect: "postgres", column: "v boolean DEFAULT 1 + 1 = 2 NOT NULL", wantExpression: "1 + 1 = 2"},
+		{name: "PostgreSQL, >=", dialect: "postgres", column: "v boolean DEFAULT 1 >= 2", wantExpression: "1 >= 2", wantNullable: true},
+		{
+			name: "PostgreSQL, IS DISTINCT FROM", dialect: "postgres",
+			column: "v boolean DEFAULT 1 IS DISTINCT FROM 2", wantExpression: "1 IS DISTINCT FROM 2", wantNullable: true,
+		},
+		{name: "PostgreSQL, a minus before a call", dialect: "postgres", column: "v int DEFAULT -abs(1)", wantExpression: "-abs(1)", wantNullable: true},
+		{name: "PostgreSQL, a minus before a group", dialect: "postgres", column: "v int DEFAULT - (1)", wantExpression: "-(1)", wantNullable: true},
+		{name: "CockroachDB, <>", dialect: "cockroachdb", column: "v bool DEFAULT 1 <> 2", wantExpression: "1 <> 2", wantNullable: true},
+		{name: "YugabyteDB, !=", dialect: "yugabytedb", column: "v boolean DEFAULT 1 != 2", wantExpression: "1 != 2", wantNullable: true},
+		{name: "SQL Server, a minus before a call", dialect: "sqlserver", column: "v int DEFAULT -abs(1)", wantExpression: "-abs(1)", wantNullable: true},
+		// SQL Server 2022 stores 1 + 1 << 2 as left_shift((1)+(1),(2)), and
+		// PostgreSQL 18 as ((1 + 1) << 2): << is no comparison.
+		{name: "SQL Server, a shift after +", dialect: "sqlserver", column: "v int DEFAULT 1 + 1 << 2", wantExpression: "1 + 1 << 2", wantNullable: true},
+		{name: "PostgreSQL, a shift after +", dialect: "postgres", column: "v int DEFAULT 1 + 1 << 2", wantExpression: "1 + 1 << 2", wantNullable: true},
+		{name: "no dialect, OR", dialect: "", column: "v boolean DEFAULT a = 1 OR b = 3", wantExpression: "a = 1 OR b = 3", wantNullable: true},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			table := thirdColumnTable(c, row.dialect, row.column)
+
+			c.Assert(table.Columns[1].Default, qt.IsNotNil)
+			c.Assert(table.Columns[1].Default.Expression, qt.Equals, row.wantExpression)
+			c.Assert(table.Columns[1].Default.Value, qt.Equals, "")
+			c.Assert(table.Columns[1].Nullable, qt.Equals, row.wantNullable)
+		})
+	}
+}
+
+// Each engine refuses the forms it answers a syntax error to without
+// parentheses: the PostgreSQL family every IS test but IS DISTINCT FROM, AND,
+// OR, NOT, BETWEEN, IN and LIKE, SQL Server every comparison and predicate,
+// and Oracle IS DISTINCT FROM. The default is refused at the operator or the
+// word. MySQL, MariaDB and SQLite take any of them, and a sign before a name,
+// a call or a parenthesis, only in parentheses, measured on MySQL 26.10,
+// MariaDB 12.3 and SQLite 3.51, and the refusal writes that form.
+func TestParse_DefaultContinuation_FailurePath(t *testing.T) {
+	const postgres = `PostgreSQL 18 reads a comparison and IS \[NOT\] DISTINCT FROM in a default written without parentheses, .*`
+	const mysql = `MySQL 26\.10 takes an expression default only in parentheses .*`
+	rows := []struct {
+		name, dialect, column, wantErr string
+	}{
+		{
+			name: "PostgreSQL, NOT", dialect: "postgres", column: "v boolean DEFAULT NOT true",
+			wantErr: `line 1, column 43: expected default value: the default opens with NOT outside parentheses: ` + postgres,
+		},
+		{
+			name: "PostgreSQL, IS NULL", dialect: "postgres", column: "v boolean DEFAULT 1 IS NULL",
+			wantErr: `line 1, column 45: expected default value: 1 continues with IS outside parentheses: ` + postgres,
+		},
+		{
+			name: "PostgreSQL, BETWEEN", dialect: "postgres", column: "v boolean DEFAULT 1 BETWEEN 0 AND 3",
+			wantErr: `line 1, column 45: expected default value: 1 continues with BETWEEN outside parentheses: ` + postgres,
+		},
+		{
+			name: "PostgreSQL, NOT IN", dialect: "postgres", column: "v boolean DEFAULT 1 NOT IN (1, 2)",
+			wantErr: `line 1, column 45: expected default value: 1 continues with NOT IN outside parentheses: ` + postgres,
+		},
+		{
+			name: "PostgreSQL, IN after +", dialect: "postgres", column: "v boolean DEFAULT 1 + 1 IN (2, 3)",
+			wantErr: `line 1, column 49: expected default value: 1 \+ 1 continues with IN outside parentheses: ` + postgres,
+		},
+		{
+			name: "PostgreSQL, LIKE", dialect: "postgres", column: "v boolean DEFAULT 'a' LIKE 'b'",
+			wantErr: `line 1, column 47: expected default value: 'a' continues with LIKE outside parentheses: ` + postgres,
+		},
+		{
+			name: "PostgreSQL, OR after a comparison", dialect: "postgres", column: "v boolean DEFAULT 1 = 1 OR 1 = 2",
+			wantErr: `line 1, column 49: expected default value: 1 = 1 continues with OR outside parentheses: ` + postgres,
+		},
+		{
+			name: "CockroachDB, IS NULL", dialect: "cockroachdb", column: "v bool DEFAULT 1 IS NULL",
+			wantErr: `line 1, column 42: expected default value: 1 continues with IS outside parentheses: CockroachDB v26\.4\.1 .*`,
+		},
+		{
+			name: "YugabyteDB, BETWEEN", dialect: "yugabytedb", column: "v boolean DEFAULT 1 BETWEEN 0 AND 3",
+			wantErr: `line 1, column 45: expected default value: 1 continues with BETWEEN outside parentheses: YugabyteDB 2026\.1\.2 .*`,
+		},
+		{
+			name: "SQL Server, =", dialect: "sqlserver", column: "v bit DEFAULT 1 = 1",
+			wantErr: `line 1, column 41: expected default value: 1 continues with = outside parentheses: ` + sqlServerPredicates,
+		},
+		{
+			name: "SQL Server, <>", dialect: "sqlserver", column: "v bit DEFAULT 1 <> 2",
+			wantErr: `line 1, column 41: expected default value: 1 continues with <> outside parentheses: SQL Server .*`,
+		},
+		{
+			name: "SQL Server, = after +", dialect: "sqlserver", column: "v bit DEFAULT 1 + 1 = 2",
+			wantErr: `line 1, column 45: expected default value: 1 \+ 1 continues with = outside parentheses: SQL Server .*`,
+		},
+		{
+			name: "SQL Server, NOT", dialect: "sqlserver", column: "v bit DEFAULT NOT 1 = 2",
+			wantErr: `line 1, column 39: expected default value: the default opens with NOT outside parentheses: SQL Server .*`,
+		},
+		{
+			name: "Oracle, IS DISTINCT FROM", dialect: "oracle", column: "v boolean DEFAULT 1 IS DISTINCT FROM 2",
+			wantErr: `line 1, column 45: expected default value: 1 continues with IS outside parentheses: Oracle Free 23\.26 reads ` +
+				`no IS \[NOT\] DISTINCT FROM and answers ORA-00908, Unexpected token DISTINCT after IS or IS NOT, in a default and in a query`,
+		},
+		{
+			name: "MySQL, a comparison", dialect: "mysql", column: "v int DEFAULT 1 = 1",
+			wantErr: `line 1, column 41: expected default value: 1 = 1 is an operator expression outside parentheses: write DEFAULT \(1 = 1\); ` + mysql,
+		},
+		{
+			name: "MySQL, NOT", dialect: "mysql", column: "v int DEFAULT NOT a",
+			wantErr: `line 1, column 39: expected default value: NOT a is an operator expression outside parentheses: write DEFAULT \(NOT a\); ` + mysql,
+		},
+		{
+			name: "MySQL, BETWEEN", dialect: "mysql", column: "v int DEFAULT x BETWEEN 1 AND 3",
+			wantErr: `line 1, column 41: expected default value: x BETWEEN 1 AND 3 is an operator expression outside parentheses: ` +
+				`write DEFAULT \(x BETWEEN 1 AND 3\); ` + mysql,
+		},
+		{
+			name: "MySQL, a minus before a name", dialect: "mysql", column: "v int DEFAULT -a",
+			wantErr: `line 1, column 39: expected default value: -a is an operator expression outside parentheses: write DEFAULT \(-a\); ` + mysql,
+		},
+		{
+			name: "MySQL, a minus before a group", dialect: "mysql", column: "v int DEFAULT -(1) NOT NULL",
+			wantErr: `line 1, column 39: expected default value: -\(1\) is an operator expression outside parentheses: write DEFAULT \(-\(1\)\); ` + mysql,
+		},
+		{
+			name: "MariaDB, IS NULL", dialect: "mariadb", column: "v int DEFAULT 1 IS NULL",
+			wantErr: `line 1, column 41: expected default value: 1 IS NULL is an operator expression outside parentheses: write DEFAULT \(1 IS NULL\); MariaDB 12\.3 .*`,
+		},
+		{
+			name: "SQLite, a minus before a call", dialect: "sqlite", column: "v int DEFAULT -abs(1)",
+			wantErr: `line 1, column 39: expected default value: -abs\(1\) is an operator expression outside parentheses: write DEFAULT \(-abs\(1\)\); SQLite 3\.54 .*`,
 		},
 	}
 	for _, row := range rows {

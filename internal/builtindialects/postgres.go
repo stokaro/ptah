@@ -267,10 +267,13 @@ func postgres() descriptor.Dialect {
 				CurrentTimeKeywords:  true,
 				StoredStringDefaults: true,
 				QualifiedCollations:  true,
-				DefaultPredicateRefusal: "PostgreSQL 18 reads no IS test but IS [NOT] DISTINCT FROM, and no AND or OR, in a default " +
-					"written without parentheses, and answers a syntax error there; write the whole expression in " +
-					"parentheses, as DEFAULT (1 + 2 IS NOT NULL)",
-				DefaultDistinctFrom: true,
+				DefaultPredicates: descriptor.DefaultPredicates{
+					Refusal: "PostgreSQL 18 reads a comparison and IS [NOT] DISTINCT FROM in a default written without " +
+						"parentheses, and answers a syntax error to every other IS test, to AND, OR and NOT, and to BETWEEN, " +
+						"IN and LIKE there; write the whole expression in parentheses, as DEFAULT (1 + 2 IS NOT NULL)",
+					Comparison:   true,
+					DistinctFrom: true,
+				},
 			},
 			Constraints: descriptor.ConstraintGrammar{
 				TableNotNull: true,

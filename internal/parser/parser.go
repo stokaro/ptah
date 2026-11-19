@@ -4083,6 +4083,12 @@ func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	if tokens := p.nextValueTokens(); tokens > 0 {
 		return p.extendDefaultExpression(p.readSequenceReference(tokens), start)
 	}
+	if p.current.MatchIdentifierValue("NOT") && !p.nextWordIs("NULL") {
+		return p.parseNegatedDefault(start)
+	}
+	if p.signedOperandFollows() {
+		return p.parseSignedDefault(start)
+	}
 
 	var value *ast.DefaultValue
 	var err error
@@ -4132,8 +4138,9 @@ func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
 
 // extendDefaultExpression reads the rest of a default that continues with a
 // binary operator after its first operand, such as `now() + interval '1 day'`
-// or `'X-' || gen_random_uuid()::text`. The operators are those of
-// [isDefaultBinaryOperator].
+// or `'X-' || gen_random_uuid()::text`, or with a comparison or a predicate,
+// such as `a = 1 OR b = 3` or `x BETWEEN 1 AND 3`. The operators and words are
+// those of [Parser.defaultContinues].
 //
 // The expression ends at a comma or a closing parenthesis outside any group,
 // and at a word that opens a column clause written after a complete operand:
@@ -4155,15 +4162,15 @@ func (p *Parser) parseParenthesizedDefault() (*ast.DefaultValue, error) {
 // An engine whose descriptor sets [descriptor.ColumnGrammar.DefaultOperatorRefusal]
 // takes the expression only in parentheses. The default is refused at its
 // first operator once the whole expression is read, so the refusal can show
-// the parenthesized form without the clause or gate after it. One that sets
-// [descriptor.ColumnGrammar.DefaultPredicateRefusal] refuses IS, AND and OR
-// where they continue the expression. One that sets
+// the parenthesized form without the clause or gate after it. One whose
+// [descriptor.ColumnGrammar.DefaultPredicates] leave a comparison or a
+// predicate out refuses it where it continues the expression. One that sets
 // [descriptor.ColumnGrammar.DefaultPipesRefusal] refuses a default from start
 // on that holds ||, in parentheses or without.
 func (p *Parser) extendDefaultExpression(value *ast.DefaultValue, start int) (*ast.DefaultValue, error) {
 	end := p.current.Start
 	p.skipWhitespace()
-	if !isDefaultBinaryOperator(p.current) {
+	if !p.defaultContinues() {
 		return value, p.refuseDefaultPipes(strings.TrimSpace(p.input[start:end]), start, end)
 	}
 	operator := p.current
@@ -4180,6 +4187,14 @@ func (p *Parser) extendDefaultExpression(value *ast.DefaultValue, start int) (*a
 	if err != nil {
 		return nil, err
 	}
+	return p.operatorDefault(first, expression, operator, start)
+}
+
+// operatorDefault answers the operator default expression, read from start
+// with first as its first operand, or refuses it at operator, its first
+// operator, where the dialect takes such a default only in parentheses or
+// reads || by the session's SQL mode.
+func (p *Parser) operatorDefault(first, expression string, operator lexer.Token, start int) (*ast.DefaultValue, error) {
 	if err := p.refuseDefaultPipes(expression, start, p.current.Start); err != nil {
 		return nil, err
 	}
@@ -4189,6 +4204,71 @@ func (p *Parser) extendDefaultExpression(value *ast.DefaultValue, start int) (*a
 			expression, p.withoutAtomGroup(first)+expression[len(strings.TrimSpace(first)):], refusal))
 	}
 	return &ast.DefaultValue{Expression: expression}, nil
+}
+
+// parseNegatedDefault reads a default that opens with NOT, as in
+// `DEFAULT NOT a`, from the NOT at the cursor and at start to where
+// [Parser.endsDefaultExpression] ends it. The NOT is a logical operator, so a
+// dialect whose [descriptor.ColumnGrammar.DefaultPredicates] leave logical
+// operators out refuses it.
+func (p *Parser) parseNegatedDefault(start int) (*ast.DefaultValue, error) {
+	operator := p.current
+	expression, err := p.readDefaultOperands("")
+	if err != nil {
+		return nil, err
+	}
+	return p.operatorDefault("", expression, operator, start)
+}
+
+// signedOperandFollows reports whether the cursor is at a sign written before
+// a name, a call or a parenthesis rather than before a number, and leaves the
+// parser where it is.
+func (p *Parser) signedOperandFollows() bool {
+	if !p.current.MatchOperatorValue("-") && !p.current.MatchOperatorValue("+") {
+		return false
+	}
+	scan := *p.lexer
+	next := nextSignificantToken(&scan)
+	return next.Type == lexer.TokenIdentifier && !isNumeric(next.Value) || next.MatchOperatorValue("(")
+}
+
+// parseSignedDefault reads a default that opens with a sign written before a
+// name, a call or a parenthesis, as in `DEFAULT -a`, `DEFAULT -abs(b)` or
+// `DEFAULT -(1)`, from the sign at the cursor and at start, as an expression.
+// Read as a value, `-a` would be written as the string '-a'. A dialect whose
+// descriptor sets [descriptor.ColumnGrammar.DefaultOperatorRefusal] reads a
+// sign outside parentheses only before a number, so the default is refused
+// at the sign where no operator continues it.
+func (p *Parser) parseSignedDefault(start int) (*ast.DefaultValue, error) {
+	sign := p.current
+	p.advance()
+	p.skipWhitespace()
+	var operand *ast.DefaultValue
+	var err error
+	if p.current.MatchOperatorValue("(") {
+		operand, err = p.parseParenthesizedDefault()
+	} else {
+		operand, err = p.handleFunctionCallOrKeyword()
+	}
+	if err != nil {
+		return nil, err
+	}
+	text := operand.Expression
+	if text == "" {
+		text = operand.Value
+	}
+	value := &ast.DefaultValue{Expression: sign.Value + text}
+	if refusal := p.target.grammar.Columns.DefaultOperatorRefusal; refusal != "" {
+		// The space skipped here is still the token before the operator,
+		// which the expression keeps.
+		p.skipWhitespace()
+		if !p.defaultContinues() {
+			return nil, ptaherr.At(sign.Start, fmt.Errorf(
+				"%s is an operator expression outside parentheses: write DEFAULT (%s); %s",
+				value.Expression, value.Expression, refusal))
+		}
+	}
+	return p.extendDefaultExpression(value, start)
 }
 
 // withoutAtomGroup answers the first operand of an operator default as the
@@ -4348,21 +4428,27 @@ func closesAtEnd(text string, options lexer.Options) bool {
 
 // readDefaultOperands reads an operator default from the operator at the
 // cursor to where [Parser.endsDefaultExpression] ends it, and answers the
-// whole expression with read, the text of the first operand, in front.
+// whole expression with read, the text of the first operand, in front. read
+// is empty before a NOT that opens the default.
 func (p *Parser) readDefaultOperands(read string) (string, error) {
 	var expr strings.Builder
 	expr.WriteString(read)
+	operand := strings.TrimSpace(read) != ""
 	depth := 0
-	operand := false
 	space := false
+	forms := defaultForms{}
 	for !p.isAtEnd() && p.current.Type != lexer.TokenSemicolon {
 		if p.endsDefaultExpression(&depth, operand) {
 			break
 		}
-		if depth == 0 && operand && isDefaultPredicateWord(p.current) {
-			if err := p.refuseDefaultPredicate(strings.TrimSpace(expr.String())); err != nil {
+		if depth == 0 {
+			form, word := forms.at(p, operand)
+			if err := p.refuseDefaultForm(strings.TrimSpace(expr.String()), form, word); err != nil {
 				return "", err
 			}
+		}
+		if p.current.Type != lexer.TokenWhitespace && p.current.Type != lexer.TokenComment {
+			forms.previous = p.current
 		}
 
 		switch p.current.Type {
@@ -4406,25 +4492,183 @@ func (p *Parser) endsDefaultExpression(depth *int, operand bool) bool {
 			}
 		}
 	}
-	return *depth == 0 && operand && p.currentIsColumnPart()
+	// A NOT before BETWEEN, IN or LIKE negates the predicate; before
+	// anything else it opens the column's NOT NULL.
+	return *depth == 0 && operand && p.currentIsColumnPart() && !p.negatedPredicateFollows()
 }
 
-// refuseDefaultPredicate refuses the IS, AND or OR at the cursor, which
-// continues the operator default read so far, where the dialect's descriptor
-// says the engine reads no such predicate in a default, and answers nil
-// everywhere else. IS [NOT] DISTINCT FROM passes where the descriptor sets
-// [descriptor.ColumnGrammar.DefaultDistinctFrom].
-func (p *Parser) refuseDefaultPredicate(read string) error {
-	columns := p.target.grammar.Columns
-	if columns.DefaultPredicateRefusal == "" {
+// negatedPredicateFollows reports whether the cursor is at a NOT that
+// [negatedPredicateWord] follows, and leaves the parser where it is.
+func (p *Parser) negatedPredicateFollows() bool {
+	if !p.current.MatchIdentifierValue("NOT") {
+		return false
+	}
+	scan := *p.lexer
+	return negatedPredicateWord(nextSignificantToken(&scan))
+}
+
+// negatedPredicateWord reports whether token is BETWEEN, IN or LIKE, the
+// predicates a NOT written after their first operand negates.
+func negatedPredicateWord(token lexer.Token) bool {
+	return token.MatchIdentifierValue("BETWEEN") || token.MatchIdentifierValue("IN") || token.MatchIdentifierValue("LIKE")
+}
+
+// defaultForm is a comparison or a predicate a default written without
+// parentheses may hold, one per field of [descriptor.DefaultPredicates].
+type defaultForm int
+
+const (
+	noDefaultForm defaultForm = iota
+	comparisonForm
+	distinctFromForm
+	isForm
+	logicalForm
+	betweenForm
+	inForm
+	likeForm
+)
+
+// readBy reports whether an engine that states predicates reads the form in
+// a default written without parentheses.
+func (f defaultForm) readBy(predicates descriptor.DefaultPredicates) bool {
+	if predicates.Refusal == "" {
+		return true
+	}
+	switch f {
+	case comparisonForm:
+		return predicates.Comparison
+	case distinctFromForm:
+		return predicates.DistinctFrom
+	case isForm:
+		return predicates.Is
+	case logicalForm:
+		return predicates.Logical
+	case betweenForm:
+		return predicates.Between
+	case inForm:
+		return predicates.In
+	case likeForm:
+		return predicates.Like
+	default:
+		return true
+	}
+}
+
+// defaultForms names the form each token of a default opens, as
+// [Parser.readDefaultOperands] reads it outside any group.
+type defaultForms struct {
+	// previous is the last token read that is not whitespace or a comment.
+	previous lexer.Token
+	// between counts the BETWEEN predicates whose AND is still to come, so
+	// that AND is the predicate's and not a logical operator.
+	between int
+}
+
+// at answers the form the token at the cursor opens and how the refusal
+// spells it: a comparison operator, IS, AND, OR, BETWEEN, IN, LIKE, or a NOT
+// before an operand or before BETWEEN, IN or LIKE. operand reports that a
+// complete operand precedes the token. Any other token opens no form.
+func (f *defaultForms) at(p *Parser, operand bool) (defaultForm, string) {
+	token := p.current
+	switch {
+	case token.Type == lexer.TokenOperator:
+		return f.comparisonAt(p)
+	case token.MatchIdentifierValue("IS") && operand:
+		if p.distinctFromFollows() {
+			return distinctFromForm, "IS"
+		}
+		return isForm, "IS"
+	case token.MatchIdentifierValue("AND") && f.between > 0:
+		f.between--
+		return noDefaultForm, ""
+	case token.MatchIdentifierValue("AND") || token.MatchIdentifierValue("OR"):
+		return logicalForm, strings.ToUpper(token.Value)
+	case token.MatchIdentifierValue("NOT") && f.previous.MatchIdentifierValue("IS"):
+		return noDefaultForm, ""
+	case token.MatchIdentifierValue("NOT") && operand:
+		scan := *p.lexer
+		form, word := f.predicateWord(nextSignificantToken(&scan))
+		return form, "NOT " + word
+	case token.MatchIdentifierValue("NOT"):
+		return logicalForm, "NOT"
+	case negatedPredicateWord(token):
+		if token.MatchIdentifierValue("BETWEEN") {
+			f.between++
+		}
+		return f.predicateWord(token)
+	default:
+		return noDefaultForm, ""
+	}
+}
+
+// predicateWord answers the form of the BETWEEN, IN or LIKE token and its
+// spelling in upper case.
+func (f *defaultForms) predicateWord(token lexer.Token) (defaultForm, string) {
+	word := strings.ToUpper(token.Value)
+	switch word {
+	case "BETWEEN":
+		return betweenForm, word
+	case "IN":
+		return inForm, word
+	case "LIKE":
+		return likeForm, word
+	default:
+		return noDefaultForm, ""
+	}
+}
+
+// comparisonAt answers comparisonForm and the operator's spelling where the
+// operator at the cursor opens one of =, ==, <>, !=, <, >, <=, >= and <=>,
+// which the lexer emits one character at a time. A character that continues
+// the operator before it opens nothing, and so does a run that spells
+// another operator, such as the shift <<.
+func (f *defaultForms) comparisonAt(p *Parser) (defaultForm, string) {
+	token := p.current
+	if !isComparisonCharacter(token) ||
+		isComparisonCharacter(f.previous) && f.previous.End == token.Start {
+		return noDefaultForm, ""
+	}
+	var spelled strings.Builder
+	spelled.WriteString(token.Value)
+	scan := *p.lexer
+	for end := token.End; ; {
+		next := scan.NextToken()
+		if !isComparisonCharacter(next) || next.Start != end {
+			break
+		}
+		spelled.WriteString(next.Value)
+		end = next.End
+	}
+	switch spelled.String() {
+	case "=", "==", "<>", "!=", "<", ">", "<=", ">=", "<=>":
+		return comparisonForm, spelled.String()
+	default:
+		return noDefaultForm, ""
+	}
+}
+
+// isComparisonCharacter reports whether token is one of the characters a
+// comparison operator is written with.
+func isComparisonCharacter(token lexer.Token) bool {
+	return token.MatchOperatorValue("=") || token.MatchOperatorValue("<") ||
+		token.MatchOperatorValue(">") || token.MatchOperatorValue("!")
+}
+
+// refuseDefaultForm refuses the token at the cursor, which opens form,
+// spelled word, in the default read so far, where the dialect's
+// [descriptor.ColumnGrammar.DefaultPredicates] leave the form out, and
+// answers nil everywhere else.
+func (p *Parser) refuseDefaultForm(read string, form defaultForm, word string) error {
+	predicates := p.target.grammar.Columns.DefaultPredicates
+	if form.readBy(predicates) {
 		return nil
 	}
-	if columns.DefaultDistinctFrom && p.current.MatchIdentifierValue("IS") && p.distinctFromFollows() {
-		return nil
+	if read == "" {
+		return ptaherr.At(p.current.Start, fmt.Errorf(
+			"the default opens with %s outside parentheses: %s", word, predicates.Refusal))
 	}
 	return ptaherr.At(p.current.Start, fmt.Errorf(
-		"%s continues with %s outside parentheses: %s",
-		read, strings.ToUpper(p.current.Value), columns.DefaultPredicateRefusal))
+		"%s continues with %s outside parentheses: %s", read, word, predicates.Refusal))
 }
 
 // distinctFromFollows reports whether the IS at the cursor opens IS [NOT]
@@ -4451,17 +4695,40 @@ func nextSignificantToken(scan *lexer.Lexer) lexer.Token {
 	}
 }
 
-// isDefaultPredicateWord reports whether token is IS, AND or OR, the words
-// that continue an operator default with a predicate.
-func isDefaultPredicateWord(token lexer.Token) bool {
-	return token.MatchIdentifierValue("IS") || token.MatchIdentifierValue("AND") || token.MatchIdentifierValue("OR")
+// asksForOperand reports whether token is a word an operand follows in a
+// default: IS, AND, OR, NOT, or a word of [negatedPredicateWord]. A clause
+// word after one is that operand, as NOT and NULL are in `1 + 2 IS NOT NULL`.
+func asksForOperand(token lexer.Token) bool {
+	return token.MatchIdentifierValue("IS") || token.MatchIdentifierValue("AND") ||
+		token.MatchIdentifierValue("OR") || token.MatchIdentifierValue("NOT") || negatedPredicateWord(token)
 }
 
-// asksForOperand reports whether token is a word an operand follows in a
-// default: a predicate word of [isDefaultPredicateWord], or NOT. A clause word
-// after one is that operand, as NOT and NULL are in `1 + 2 IS NOT NULL`.
-func asksForOperand(token lexer.Token) bool {
-	return isDefaultPredicateWord(token) || token.MatchIdentifierValue("NOT")
+// defaultContinues reports whether the token at the cursor continues a default
+// after its first operand: a binary operator of [isDefaultBinaryOperator], a
+// comparison operator, IS, AND, OR, BETWEEN, IN or LIKE, or a NOT before
+// BETWEEN, IN or LIKE. A NOT before anything else opens the column's NOT
+// NULL.
+func (p *Parser) defaultContinues() bool {
+	token := p.current
+	switch {
+	case isDefaultBinaryOperator(token):
+		return true
+	case isComparisonCharacter(token):
+		form, _ := (&defaultForms{}).comparisonAt(p)
+		return form == comparisonForm
+	case token.MatchIdentifierValue("IS") || token.MatchIdentifierValue("AND") || token.MatchIdentifierValue("OR"):
+		return true
+	default:
+		return negatedPredicateWord(token) || p.negatedPredicateFollows()
+	}
+}
+
+// nextWordIs reports whether the next token after the cursor that is not
+// whitespace or a comment is the word, and leaves the parser where it is.
+func (p *Parser) nextWordIs(word string) bool {
+	scan := *p.lexer
+	next := nextSignificantToken(&scan)
+	return next.MatchIdentifierValue(word)
 }
 
 // currentIsColumnPart reports whether the token at the cursor belongs to the

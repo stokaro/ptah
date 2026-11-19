@@ -194,6 +194,20 @@ END;`,
 				// default, and stores an unqualified one qualified and quoted,
 				// "APP"."SEQ"."NEXTVAL"; a qualified one is stored as written.
 				SequencePseudocolumns: []string{"NEXTVAL", "CURRVAL"},
+				// Oracle Free 23.26 reads every other form without
+				// parentheses: DEFAULT 1 = 1 OR 1 = 2, NOT 1 = 2, 1 IS NOT
+				// NULL, 1 NOT BETWEEN 0 AND 3, 1 NOT IN (1, 2) and 'a' NOT
+				// LIKE 'b' each create a BOOLEAN column.
+				DefaultPredicates: descriptor.DefaultPredicates{
+					Refusal: "Oracle Free 23.26 reads no IS [NOT] DISTINCT FROM and answers ORA-00908, " +
+						"Unexpected token DISTINCT after IS or IS NOT, in a default and in a query",
+					Comparison: true,
+					Is:         true,
+					Logical:    true,
+					Between:    true,
+					In:         true,
+					Like:       true,
+				},
 			},
 			// Oracle Free 23.26 creates `CHECK (n > 0) DEFERRABLE INITIALLY
 			// DEFERRED` deferrable and reports it so in USER_CONSTRAINTS.
