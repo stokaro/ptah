@@ -68,7 +68,7 @@ func TestCompatAtlasSetTextOrderE2E(t *testing.T) {
 
 // TestCompatAtlasSetTextOrderMatchesTheCommunityBinaryE2E holds both sets,
 // the rows they leave and the status report after them to the pinned
-// community binary v1.3.0.
+// community binary.
 func TestCompatAtlasSetTextOrderMatchesTheCommunityBinaryE2E(t *testing.T) {
 	reference := atlasReferenceBinary(t)
 	for _, tt := range setTextOrderCases {

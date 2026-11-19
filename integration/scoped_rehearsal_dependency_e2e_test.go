@@ -91,7 +91,7 @@ CREATE POLICY "tasks_default_admin_write_insert" ON "public"."tasks" AS PERMISSI
 `
 
 // scopedRehearsalUID is one function in a schema of its own, which the view
-// and default rows reference from public. Atlas CE v1.3.0 models a column
+// and default rows reference from public. Atlas CE models a column
 // default and plans these rows under --exclude; it does not model a view, and
 // it refuses --include.
 const scopedRehearsalUID = `CREATE SCHEMA rebase;

@@ -19,7 +19,7 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
-// The Atlas-compatible binary is quiet: the pinned Atlas CE v1.3.0 binary
+// The Atlas-compatible binary is quiet: the pinned Atlas CE binary
 // writes nothing to stderr for a dry run, and `--format` consumers redirect
 // stderr into stdout (`2>&1 | jq`), which the conformance harness's
 // atlas-cli-report-format probe does. The dry-run revision-state fix

@@ -283,7 +283,7 @@ const referenceParentAlone = "CREATE TABLE parent (id bigint PRIMARY KEY, code t
 
 // TestSchemaDiffChecksTheWholeDocumentOfEitherSide_FailurePathE2E puts the
 // foreign-key fault on each side and excludes one of its two tables. The
-// community binary v1.3.0 creates each document whole on its dev database, so
+// pinned community binary creates each document whole on its dev database, so
 // it exits 1 with the server's 42830 in every row, whatever --exclude selects.
 // The rule reads the placed document, not the selection, so each row is
 // refused: checked on the selection, the parent rows plan a child with no key

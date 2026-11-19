@@ -13,7 +13,7 @@ import (
 
 // TestInspect_SQLCreationPlan_HappyPath writes, for the `sql` helper, the plan
 // that creates the inspected schema on a new database, as the pinned community
-// binary v1.3.0 does: a change comment over each statement, the foreign key
+// binary does: a change comment over each statement, the foreign key
 // inside the CREATE TABLE of the table that holds it, and that table after the
 // one it references. The bytes are those of `schema diff` from an empty
 // database to this one.

@@ -53,7 +53,7 @@ func TestAtlasLinearity_NumericByDefault(t *testing.T) {
 
 // TestAtlasLinearity_HappyPath applies, under the string rule, a file whose
 // number is below the applied mark and whose version string sorts above it:
-// the pinned community binary v1.3.0 applies 3__x.sql after
+// the pinned community binary applies 3__x.sql after
 // 20260101000000_ts.sql.
 func TestAtlasLinearity_HappyPath(t *testing.T) {
 	c := qt.New(t)

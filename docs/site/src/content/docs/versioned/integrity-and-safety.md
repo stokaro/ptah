@@ -190,7 +190,7 @@ tampered directory and re-hash it on the way out, so the tampering would end up
 inside a directory that verifies clean — the laundering shape recorded for
 `migrate import` in [#1095](https://github.com/stokaro/ptah/issues/1095). All
 six verbs refuse before anything is written, which is what the pinned Atlas
-community binary v1.3.0 does on the same directory.
+community binary does on the same directory.
 
 The fuller compatibility surface also gates formatted `migrate down`. Its
 default policy matches native Ptah: an unhashed directory is allowed, a stale

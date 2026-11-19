@@ -482,7 +482,7 @@ func TestInspectLive_RealmScopeUnclean(t *testing.T) {
 // TestInspectLive_TimescaleDBRealmClean runs the gate against the extension
 // that found stokaro/ptah#3533. One CREATE EXTENSION timescaledb adds seven
 // schemas and the tables of the extension's catalog, and the pinned binary
-// v1.3.0 applies against that database through a plain URL: none of it is the
+// applies against that database through a plain URL: none of it is the
 // user's.
 func TestInspectLive_TimescaleDBRealmClean(t *testing.T) {
 	c := qt.New(t)

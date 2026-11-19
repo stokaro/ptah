@@ -30,7 +30,7 @@ func modifiedColumnOn(table string, desired schemamodel.Field, changes map[strin
 // name PostgreSQL gives the same UNIQUE inside CREATE TABLE. Without it the
 // plan reports `unique: false -> true` and adds nothing, so every later
 // comparison reports it again (stokaro/ptah#3649). Each statement is what
-// Atlas CE v1.3.0 writes for the same change, spelled as Ptah spells it.
+// Atlas CE writes for the same change, spelled as Ptah spells it.
 func TestGenerateSchemaDiffSQLStatements_ColumnGainsUnique(t *testing.T) {
 	tests := []struct {
 		name    string

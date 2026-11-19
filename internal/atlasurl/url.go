@@ -43,7 +43,7 @@ type dockerImage struct {
 // dockerImages are the engines a `docker://<engine>/...` URL may name: the
 // images every descriptor states (descriptor.Atlas.DockerImages), each with
 // the dialect that claims it. They are matched as written: the pinned
-// community binary v1.3.0 refuses `docker://POSTGRES/...` and
+// community binary refuses `docker://POSTGRES/...` and
 // `docker://Postgres/...` with `unsupported docker image`. An engine that
 // binary answers `unknown driver` for, such as ClickHouse, claims no image.
 //
@@ -321,7 +321,7 @@ func ValidateDialectMatch(rawURL, targetDialect string) error {
 // A scheme selects a driver, not a server. `mysql://`, `mariadb://` and
 // `maria://` open the same MySQL driver, and whether the server behind them
 // is MySQL or MariaDB only the server says, in its version banner. The pinned
-// community binary v1.3.0 reads them that way: its `schema inspect` output was
+// community binary reads them that way: its `schema inspect` output was
 // byte-identical through all three schemes against MariaDB 11.8.9 and against
 // MySQL 8.4.11, and it accepts any pair of them for a target and its dev
 // database (stokaro/ptah#3756). Held to the spelling, a comparison refuses a

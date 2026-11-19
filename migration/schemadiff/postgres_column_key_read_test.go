@@ -15,7 +15,7 @@ import (
 // TABLE into the named key, which is what the server builds; the comparison
 // then reads a pair that is still in the model as two keys. Measured on
 // PostgreSQL 18.6: the first file builds `uq_a` alone, and the other two build
-// `c_a_key` and `uq_a`. Atlas CE v1.3.0 reports the first synced with a
+// `c_a_key` and `uq_a`. Atlas CE reports the first synced with a
 // database that holds only `uq_a`, and plans `ADD CONSTRAINT c_a_key` for the
 // other two.
 func TestCompare_PostgresColumnKeyBesideANamedUniqueFromSQL(t *testing.T) {

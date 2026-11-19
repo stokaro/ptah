@@ -13,7 +13,7 @@ import (
 )
 
 // TestConnectToDatabase_DialsTheSocketOfASocketURL opens each socket spelling
-// the pinned community binary v1.3.0 accepts, pointed at a socket nothing
+// the pinned community binary accepts, pointed at a socket nothing
 // listens on.
 //
 // An address the connector read fails at dial, naming the socket. One it did

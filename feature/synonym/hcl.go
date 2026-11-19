@@ -75,7 +75,7 @@ type hclEncoder struct{}
 // file and `schema apply --to` that file planned DROP SYNONYM for every
 // synonym on the server, through Ptah's own output (stokaro/ptah#1031). It is
 // written on the compatibility surface too: the pinned Atlas community binary
-// v1.3.0 answers `unknown driver "sqlserver"`, so there is no document of its
+// answers `unknown driver "sqlserver"`, so there is no document of its
 // to mirror, and on a dialect it does speak it drops a top-level block it
 // does not model at exit 0.
 func (hclEncoder) EncodeHCL(ctx context.Context, request hclext.EncodeRequest) (hclext.EncodeResult, error) {

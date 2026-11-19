@@ -96,7 +96,7 @@ func TestSchemaInspectReadsAMySQLServerE2E(t *testing.T) {
 
 // TestSchemaInspectNamesAReferenceInTheKeysOwnDatabaseAloneE2E writes a
 // foreign key to a table of its own database as the table's name, the way the
-// pinned community binary v1.3.0 writes it, and one to another database with
+// pinned community binary writes it, and one to another database with
 // that database, which the community binary drops.
 func TestSchemaInspectNamesAReferenceInTheKeysOwnDatabaseAloneE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {
@@ -116,7 +116,7 @@ func TestSchemaInspectNamesAReferenceInTheKeysOwnDatabaseAloneE2E(t *testing.T) 
 
 // mysqlServerRefusals are commands that read or change one database. Each
 // refuses a URL naming no database before it connects, and says what to write
-// instead: the pinned community binary v1.3.0 reads that URL as the whole
+// instead: the pinned community binary reads that URL as the whole
 // server, and these commands do not yet (stokaro/ptah#3789).
 var mysqlServerRefusals = []struct {
 	name string

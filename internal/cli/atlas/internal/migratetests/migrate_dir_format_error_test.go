@@ -71,7 +71,7 @@ func newDirFormatFixture(c *qt.C) dirFormatFixture {
 // TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb pins stokaro/ptah#1235
 // cell 9.8 as the CLASS it is.
 //
-// `unknown dir format "bogus"` is the pinned community binary v1.3.0's answer
+// `unknown dir format "bogus"` is the pinned community binary's answer
 // on every path where it reaches migration-directory layout resolution. Ptah
 // gave it on two of them, because the adaptation was a block inside the
 // `migrate hash` / `migrate validate` wrapper rather than a property of the

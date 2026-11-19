@@ -18,7 +18,7 @@ const setNotNull = "-- POSTGRES: SET NOT NULL fails if any row of \"t\" holds NU
 // value its type suggests. Every row but the last is a type that has one: 0,
 // 0.0, the empty string, false, CURRENT_TIMESTAMP, CURRENT_DATE or
 // CURRENT_TIME. Written into every NULL row, it makes a change the server
-// refuses report success. Atlas CE v1.3.0 writes SET NOT NULL alone and the
+// refuses report success. Atlas CE writes SET NOT NULL alone and the
 // server fails it with SQLSTATE 23502 (stokaro/ptah#3648).
 func TestPostgres_SetNotNull_InventsNoBackfillValue(t *testing.T) {
 	tests := []struct {
@@ -87,7 +87,7 @@ func TestPostgres_RestatedNotNullColumn_InventsNoBackfillValue(t *testing.T) {
 }
 
 // An operation that asks to omit the fill gets SET NOT NULL alone even when
-// the column declares a default, which is what Atlas CE v1.3.0 writes; the
+// the column declares a default, which is what Atlas CE writes; the
 // comment says why the statement can fail. With no default the comment is the
 // one a column without a default always gets.
 func TestPostgres_SetNotNull_OmittedBackfill(t *testing.T) {

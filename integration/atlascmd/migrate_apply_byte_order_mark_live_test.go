@@ -19,7 +19,7 @@ import (
 // Files that start with a UTF-8 byte order mark apply through `migrate
 // apply`, and the `-- atlas:txmode none` behind the mark holds: PostgreSQL
 // refuses CREATE INDEX CONCURRENTLY inside a transaction. The pinned
-// community binary v1.3.0 sends the mark to the server and fails on the first
+// community binary sends the mark to the server and fails on the first
 // file; the mark is the file's encoding, so Ptah does not copy that.
 func TestMigrateApplyRunsFilesThatStartWithAByteOrderMarkLivePostgres(t *testing.T) {
 	c := qt.New(t)

@@ -429,7 +429,7 @@ func (k atlasLeafValueKind) want() string {
 	}
 }
 
-// accepts reports whether value is one the pinned community binary v1.3.0 takes
+// accepts reports whether value is one the pinned community binary takes
 // for this kind. A null value never reaches here: the caller returns first,
 // because null is accepted for every kind in the table.
 func (k atlasLeafValueKind) accepts(value cty.Value) bool {

@@ -37,7 +37,7 @@ func cascadeChanges(c *qt.C, drop string, count lint.ChangeCount, columns []lint
 // A DROP SEQUENCE ... CASCADE changes every table whose column defaults name
 // the sequence, one change per table and statement, and the community count
 // counts those changes and not the sequence. Each row's count is the one the
-// pinned community binary v1.3.0 reports on PostgreSQL 18 for the same
+// pinned community binary reports on PostgreSQL 18 for the same
 // directory, except where the row says the count is Ptah's own.
 func TestAnalyzeFS_ChangeCountOfASequenceCascade(t *testing.T) {
 	tests := []struct {
@@ -186,7 +186,7 @@ func TestAnalyzeFS_ChangeCountOfASequenceCascade(t *testing.T) {
 // and the statement count counts the sequence alone: it reads the changes the
 // statement's words express. A sequence outside the reviewed schema counts
 // nothing itself, and the Atlas count still counts the table it cascades to,
-// as the pinned community binary v1.3.0 counts 1 on PostgreSQL 18 under a
+// as the pinned community binary counts 1 on PostgreSQL 18 under a
 // search_path of public.
 func TestAnalyzeFS_SequenceCascadeUnderTheOtherCounts(t *testing.T) {
 	tests := []struct {

@@ -461,7 +461,7 @@ ALTER TABLE ptah_ref_untouched_137 OWNER TO ptah_ref_owner_137;`)
 // reporting by readRoles. Leaving the bootstrap superuser in made this guard
 // fail against any connection that IS the bootstrap superuser -- the grantor
 // of every GRANT it runs -- while the document it produces names no such role
-// and the pinned Atlas community binary v1.3.0 reads it at exit 0. That is a
+// and the pinned Atlas community binary reads it at exit 0. That is a
 // property of who connected, not of the description, and a guard that fails on
 // a legitimate connection is a guard that gets switched off.
 func rolesNamedByDescription(schema *catalog.Database) []string {

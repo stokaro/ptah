@@ -12,7 +12,7 @@ import (
 // both sides of the comparison, on the full compatibility surface.
 //
 // WHY AN ENVIRONMENT VARIABLE AND NOT A FLAG. The pinned community binary
-// registers no --exclude on `migrate diff`: v1.3.0 answers `Error: unknown
+// registers no --exclude on `migrate diff`: it answers `Error: unknown
 // flag: --exclude` and exits 1, and the Atlas CLI reference lists no such flag
 // for the command either. A flag here is one neither edition has, and the
 // conformance `cli-surface` tier, which asserts flag parity with the pinned

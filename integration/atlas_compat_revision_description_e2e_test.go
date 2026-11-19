@@ -48,8 +48,9 @@ const (
 // revisionDescriptionVarying matches the Applied fields that differ between two
 // runs of the same directory and are blanked before a byte comparison:
 // ExecutedAt and ExecutionTime are when and how long the run took, and
-// OperatorVersion names the binary that wrote the row ("Atlas CLI v1.3.0" or
-// "Ptah"). Every other byte of the list is compared, field order and
+// OperatorVersion names the binary that wrote the row: "Ptah", or "Atlas CLI"
+// followed by the pinned release, as `atlasreference.OperatorVersion` spells
+// it. Every other byte of the list is compared, field order and
 // "Description":"" included.
 var revisionDescriptionVarying = regexp.MustCompile(`"(ExecutedAt|ExecutionTime|OperatorVersion)":("[^"]*"|[0-9]+)`)
 
@@ -148,7 +149,7 @@ func compatRevisionDescriptions(c *qt.C, dir string) revisionDescriptionObservat
 
 // TestCompatMigrateRevisionDescriptionE2E applies the directory with the
 // shipped ptah-compat on SQLite and holds the revision table, Pending and
-// Applied to what the pinned community binary v1.3.0 records and prints for
+// Applied to what the pinned community binary records and prints for
 // the same directory.
 func TestCompatMigrateRevisionDescriptionE2E(t *testing.T) {
 	c := qt.New(t)

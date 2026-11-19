@@ -28,7 +28,7 @@ CREATE TABLE exclude_keep (
 
 // TestSchemaDiffWarnsWhenAnExcludeSelectorMatchedNothing is the read-only half
 // of the fail-open decision in stokaro/ptah#933. The pinned community binary
-// v1.3.0 exits 0 and says nothing for `--exclude nosuchobject`; matching that
+// exits 0 and says nothing for `--exclude nosuchobject`; matching that
 // silence is the one thing Ptah declines to copy, because a selector that
 // protected nothing is indistinguishable from one that worked.
 //
@@ -126,7 +126,7 @@ func TestSchemaApplyRefusesAnExcludeSelectorThatMatchedNothing(t *testing.T) {
 // the column gap the refusal exposed.
 //
 // `--exclude exclude_keep --exclude exclude_keep.id` names two objects that both
-// exist, and the pinned community binary v1.3.0 exits 0 for it. Ptah exited 1
+// exist, and the pinned community binary exits 0 for it. Ptah exited 1
 // with `the --exclude selection matched no objects: "exclude_keep.id"`, because
 // filterTables `continue`s on a table match and never reaches filterColumns, so
 // the column pattern was never asked. A refusal that is right about the general

@@ -35,7 +35,7 @@ const patternScopeBase = "postgres://127.0.0.1:5432/db?sslmode=disable"
 // TestScopeInspectSchema_TakesThePatternScopeFromTheURL pins the wiring.
 //
 // Both rows connect to the same database as the same user and describe the same
-// state; only the URL differs, and the pinned community binary v1.3.0 answers
+// state; only the URL differs, and the pinned community binary answers
 // them differently for it. Ptah answered both the bound way, because the
 // connection's schema was handed to the depth rule whatever the run described
 // (stokaro/ptah#1703).

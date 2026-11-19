@@ -42,11 +42,11 @@ type MigrateLintOptions struct {
 	// migration was read from, for a layout converted in memory. A report gives
 	// such a file the source file's name where FileNames names none, its text,
 	// and the source line of every finding and diagnostic position, which is
-	// how the pinned community binary v1.3.0 reports a Liquibase, Flyway or
+	// how the pinned community binary reports a Liquibase, Flyway or
 	// golang-migrate directory. A key the map lacks is reported as analyzed.
 	Sources map[int64]MigrateLintSource
 	// NameOrder lists the files by file name, byte for byte, as the pinned
-	// community binary v1.3.0 lists an Atlas directory: 10_b.sql before
+	// community binary lists an Atlas directory: 10_b.sql before
 	// 9_a.sql, v1_x.sql after both. Without it the files are listed by
 	// version, as a layout converted from a tool that orders by version is.
 	NameOrder bool
@@ -85,7 +85,7 @@ type MigrateLintIntegrity struct {
 type MigrateLint struct {
 	// URL is the address of a report published elsewhere. Ptah publishes no
 	// report, so it is always empty. It exists because the pinned community
-	// binary v1.3.0 hands a template the same empty field, and a template that
+	// binary hands a template the same empty field, and a template that
 	// names `.URL` must evaluate rather than fail the run.
 	URL string   `json:"URL,omitempty"`
 	Env atlasEnv `json:"Env"`
@@ -106,7 +106,7 @@ type MigrateLint struct {
 // schema left after the last one was replayed. Both are HCL without Ptah's
 // generated-code marker, framed the way `schema inspect` frames its document
 // on this surface. Both are empty when the replay did not finish, and JSON
-// leaves an empty field out: the pinned community binary v1.3.0 prints `{}`
+// leaves an empty field out: the pinned community binary prints `{}`
 // for `{{ json .Schema }}` after an atlas.sum failure and after a replay that
 // failed.
 type MigrateLintSchema struct {
@@ -125,7 +125,7 @@ type MigrateLintFile struct {
 	Name string `json:"Name,omitempty"`
 	Text string `json:"Text,omitempty"`
 	// Reports is the analyzer-grouped view of this file's diagnostics, the
-	// shape the pinned community binary v1.3.0 exposes to a `--format`
+	// shape the pinned community binary exposes to a `--format`
 	// template. Findings below is Ptah's own richer per-finding record and is
 	// kept alongside it: compatibility adds the documented model, it does not
 	// remove a capability (AGENTS.md).
@@ -133,7 +133,7 @@ type MigrateLintFile struct {
 	// Error says why the file failed: the replay error a failed replay stopped
 	// at, or the headline of every report that holds an error-severity
 	// diagnostic, joined with "; ". The second is how the pinned community
-	// binary v1.3.0 words an analyzer error: `destructive changes detected` for
+	// binary words an analyzer error: `destructive changes detected` for
 	// a DROP TABLE.
 	Error      string                  `json:"Error,omitempty"`
 	Findings   []migrationlint.Finding `json:"Findings,omitempty"`
@@ -175,7 +175,7 @@ type MigrateLintSuggestedFix struct {
 	// TextEdit is the change the fix makes to the file. Every fix Ptah suggests
 	// is advice and makes none, so it is nil. The field is part of the model a
 	// template reads: `{{ .SuggestedFixes }}` prints it as `<nil>` on the pinned
-	// community binary v1.3.0, and a template that names `.TextEdit` evaluates.
+	// community binary and a template that names `.TextEdit` evaluates.
 	TextEdit *MigrateLintTextEdit `json:"TextEdit,omitempty"`
 }
 
@@ -230,7 +230,7 @@ func (r MigrateLint) DiagnosticsCount() int {
 // which is how a template turns a diagnostic's Pos into a line number:
 // `{{ $file.Line .Pos }}`. An offset of len(Text) is the end of the text and
 // is accepted. An offset outside Text is an error, so the template fails and
-// the run exits 1, as on the pinned community binary v1.3.0. That binary words
+// the run exits 1, as on the pinned community binary. That binary words
 // the failure as the Go runtime's slice-bounds panic; this one names the
 // offset and the file.
 func (f MigrateLintFile) Line(pos int) (int, error) {
@@ -242,7 +242,7 @@ func (f MigrateLintFile) Line(pos int) (int, error) {
 
 // SuggestedFixes returns every fix the file's diagnostics suggest, in report
 // and diagnostic order, or nil when none does. A nil result prints as `[]` and
-// encodes as `null`, which is what the pinned community binary v1.3.0 prints
+// encodes as `null`, which is what the pinned community binary prints
 // for a file with no fix.
 func (f MigrateLintFile) SuggestedFixes() []MigrateLintSuggestedFix {
 	var fixes []MigrateLintSuggestedFix

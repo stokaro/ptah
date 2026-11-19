@@ -39,7 +39,7 @@ var errNoSQLMigrationFiles = errors.New("no *.sql migration files found")
 // an empty set analyzes to an empty result with no branch of its own.
 //
 // An empty migration directory analyzes to nothing on the Atlas-compatible
-// surface, where the pinned community binary v1.3.0 exits 0 with no output for
+// surface, where the pinned community binary exits 0 with no output for
 // `migrate lint --latest 1` on one.
 //
 // The native profile keeps the refusal: `ptah migrations lint` names a

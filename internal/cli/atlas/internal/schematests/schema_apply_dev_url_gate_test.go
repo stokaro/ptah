@@ -119,7 +119,7 @@ func TestSchemaApplyDryRunAndApplyAgreeOnADevDatabase(t *testing.T) {
 
 // TestSchemaApplyRequiresDevURLForNonDatabaseSource is the regression test for
 // stokaro/ptah#940 item D: `schema apply --to file://…` with no --dev-url at all
-// planned and APPLIED, where the pinned community binary v1.3.0 exits 1 with
+// planned and APPLIED, where the pinned community binary exits 1 with
 // `--dev-url cannot be empty`. It is the branch item A's fix cannot reach,
 // because an empty dev URL makes the rehearsal a no-op.
 func TestSchemaApplyRequiresDevURLForNonDatabaseSource(t *testing.T) {

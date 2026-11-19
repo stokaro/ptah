@@ -14,7 +14,7 @@ import (
 // the keys of `c` PostgreSQL 18.6 built from each, read back from pg_constraint
 // as `name(type)`. The server builds identical declarations of one CREATE TABLE
 // as one key: the primary key where there is one, otherwise the first, under
-// the first name the declarations give. Atlas CE v1.3.0 reports each file
+// the first name the declarations give. Atlas CE reports each file
 // synced with the database it built. The rows marked control are keys the
 // server builds apart, and a native apply to an empty database has to build
 // them apart too.

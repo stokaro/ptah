@@ -165,7 +165,7 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 // implicit, so an inspected IR arrives with no schema anywhere. HCL has no such
 // notion: a file with no `schema` block and no `schema =` on its tables is not
 // an under-specified schema, it is an invalid one. The pinned Atlas community
-// binary v1.3.0 refuses it with
+// binary refuses it with
 //
 //	specutil: failed converting to *schema.Realm: cannot extract schema name
 //	for table "t": schemahcl: type "schema" was not found in nil
@@ -362,7 +362,7 @@ type renderer struct {
 // labeled with this name.
 //
 // A `role.<name>` traversal names a BLOCK, so without one it is an HCL variable
-// reference with nothing behind it and the pinned Atlas community binary v1.3.0
+// reference with nothing behind it and the pinned Atlas community binary
 // refuses the whole file with `There is no variable named "role"`. Every render
 // writes a block for every role in the IR, so the IR is the list of labels.
 //
@@ -535,7 +535,7 @@ func (r *renderer) schemaFor(schema string) string {
 // The set is COLLECTED from the rendered body rather than predicted from the
 // IR, and that is the whole point. Predicting it has now been wrong three
 // times, each time in the same direction and each time reaching the pinned
-// Atlas community binary v1.3.0 as `There is no variable named "schema"`: the
+// Atlas community binary as `There is no variable named "schema"`: the
 // first version declared only the default and missed a table outside it, the
 // second missed the enum block's own reference, and the third missed the
 // `permission { for = schema.public }` that every PostgreSQL database has --
@@ -1104,7 +1104,7 @@ func (r *renderer) renderPrimaryKey(slot ownerSlot, table schemamodel.Table, fie
 }
 
 // renderPrimaryKeyMethod writes a primary key's access method as the pinned
-// community binary v1.3.0 does, `type = HASH` (stokaro/ptah#3853).
+// community binary does, `type = HASH` (stokaro/ptah#3853).
 func renderPrimaryKeyMethod(r *renderer, method string) {
 	if mysqlindex.Method(method) != "" {
 		r.rawAttr(2, "type", "HASH")
@@ -1290,7 +1290,7 @@ func (r *renderer) renderIndex(slot ownerSlot, index schemamodel.Index) {
 	r.stringAttr(2, "comment", index.Comment)
 	r.stringAttr(2, "ops", index.Operator)
 	r.boolPtrAttr(2, "nulls_distinct", index.NullsDistinct)
-	// The pinned community binary v1.3.0 has no attribute for an index the
+	// The pinned community binary has no attribute for an index the
 	// optimizer does not use: its `schema inspect` writes an INVISIBLE index
 	// as a visible one and says nothing. The index is written, and the loss
 	// is reported, because applying the document back makes it visible and

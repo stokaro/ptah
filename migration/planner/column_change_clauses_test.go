@@ -33,7 +33,7 @@ func oneModifiedColumn(desired schemamodel.Field, changes map[string]string) *di
 // The first row is stokaro/ptah#3645 as measured. Restating the column for a
 // default-only change writes `ALTER COLUMN TYPE boolean` for a boolean column,
 // a NULL backfill in a DO block, `SET NOT NULL` for a column that is NOT NULL,
-// and then the `SET DEFAULT` that was asked for; Atlas CE v1.3.0 writes the
+// and then the `SET DEFAULT` that was asked for; Atlas CE writes the
 // last statement alone. The comment comes before the statements it describes:
 // after them, a plan that ends on a column change would end on a comment that
 // describes nothing below it.

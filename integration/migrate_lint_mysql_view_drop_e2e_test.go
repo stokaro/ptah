@@ -17,7 +17,7 @@ import (
 // database, a version that drops a table an earlier version's view reads.
 // The replay leaves a view the server can no longer open, and the cleanup
 // after the replay has to drop it: both surfaces report the drop, exit 1 for
-// the finding, and leave the dev database empty. The community binary v1.3.0
+// the finding, and leave the dev database empty. The pinned community binary
 // reports `-- L1: Dropping table "t"` (DS102) and exits 1 there on MySQL 8.4.
 // On MariaDB 12.3 it reports no diagnostic for this drop and exits 0, with
 // the view and without it, where ptah-compat reports the drop on both engines.

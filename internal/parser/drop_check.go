@@ -16,7 +16,7 @@ import (
 // ck` and `DROP CHECK IF EXISTS ck` answer ERROR 1064 (42000), and `DROP
 // CONSTRAINT ck` drops the check. Without the refusal the clause is read, and
 // `schema apply` plans `c` without `ck` from a MariaDB schema file the server
-// refuses to run, where Atlas CE v1.3.0 refuses the file with the server's
+// refuses to run, where Atlas CE refuses the file with the server's
 // error (stokaro/ptah#3894).
 //
 // The renderer asks capability.DropCheckClause before it writes the spelling,

@@ -365,7 +365,7 @@ env "local" {
 // This is Ptah's own spelling, like the sibling in
 // [TestParseAtlasHCLSchemaVarsRefusesOnlyEvaluatedAmbiguity]: a data source's
 // `url` is a list of file:// URLs here and can be indexed, while the pinned
-// Atlas community binary v1.3.0 mints one opaque URL per data source. The rule
+// Atlas community binary mints one opaque URL per data source. The rule
 // it pins is the one that IS oracle-backed at the top level, in
 // [TestParseAtlasHCLSchemaVarsFollowsTheConditionalBranch].
 func TestParseAtlasHCLSchemaVarsFollowsAConditionalUnderAnIndex(t *testing.T) {

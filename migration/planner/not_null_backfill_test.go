@@ -16,7 +16,7 @@ import (
 // A column made NOT NULL with no default is planned as SET NOT NULL and the
 // comment saying it fails on a NULL row. Filled with a value its type
 // suggests, 0 for an integer, a NULL row is rewritten and the plan reports
-// success where the server and Atlas CE v1.3.0 refuse (stokaro/ptah#3648).
+// success where the server and Atlas CE refuse (stokaro/ptah#3648).
 func TestGenerateSchemaDiffSQLStatements_SetNotNullWithoutDefault(t *testing.T) {
 	c := qt.New(t)
 	desired := schemamodel.Field{Name: "qty", Type: "INTEGER", StructName: "Flag"}

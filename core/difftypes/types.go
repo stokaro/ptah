@@ -836,7 +836,7 @@ type SchemaDiff struct {
 	// table users requires it (SQLSTATE 2BP01)`, measured on 17.10, so its
 	// planner drops the constraint instead. MySQL and MariaDB are the opposite
 	// case -- a unique key and its index are one catalog row that `DROP INDEX`
-	// drops, which is what the pinned community binary v1.3.0 plans there -- so
+	// drops, which is what the pinned community binary plans there -- so
 	// their planners ignore the list and their plans are unchanged by it.
 	//
 	// The list is not PostgreSQL-only, because the down direction needs it on

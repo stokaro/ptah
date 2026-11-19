@@ -58,7 +58,7 @@ func mysqlFamilyBuiltDatabase(c *qt.C, engine dbtarget.Engine, sql string) strin
 // and another UNIQUE over the same column. Measured on MySQL 8.4.11 and
 // 26.7.0, MariaDB 11.8.9 and 12.3.3 and PostgreSQL 18, each builds two keys,
 // except a named key over the column alone in one CREATE TABLE on PostgreSQL,
-// which builds that key alone. Atlas CE v1.3.0 reports each file synced with
+// which builds that key alone. Atlas CE reports each file synced with
 // the database it built. Read as the column's own, the second key is planned
 // as an ADD on every run (stokaro/ptah#3764).
 var columnUniqueBesideAnotherUnique = []struct {

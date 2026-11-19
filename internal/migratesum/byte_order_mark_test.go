@@ -12,7 +12,7 @@ import (
 
 // A sum covers a migration file's bytes, byte order mark included, although
 // the migrator removes the mark before it runs the file. The atlas.sum values
-// are the ones the pinned community binary v1.3.0 writes for the same files,
+// are the ones the pinned community binary writes for the same files,
 // so the two sums stay byte-identical; the ptah.sum value for the repeatable
 // is the digest the run records for it.
 func TestComputeWithFormat_HashesTheByteOrderMark(t *testing.T) {

@@ -150,7 +150,7 @@ func boundaryCases() []boundaryCase {
 
 			// FIXED (#1264): the database has two schemas and the document now
 			// describes both, which is this row's stated target and what the
-			// pinned Atlas community binary v1.3.0 renders for the same URL.
+			// pinned Atlas community binary renders for the same URL.
 			// A reader never asked about `extra` and `extra.b` leaves them
 			// absent, and nothing downstream can tell that from "the database
 			// has no schema `extra`".

@@ -16,7 +16,7 @@ import (
 // ends with the foreign keys the schema file builds on an empty database, and
 // the plan drops the key it does not declare. Excusing a live key because its
 // column declares one adds the declared key beside it and never drops the live
-// one, so the table holds two (stokaro/ptah#3718). Atlas CE v1.3.0 ends every
+// one, so the table holds two (stokaro/ptah#3718). Atlas CE ends every
 // row with the same keys.
 //
 // The rows whose ON DELETE changes are the controls: their definitions differ

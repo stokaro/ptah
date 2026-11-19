@@ -163,7 +163,7 @@ func TestAtlasStrictCompatRefusesTheMigrateDiffExcludeVariable_FailurePathE2E(t 
 
 // TestAtlasCompatMigrateDiffReadsTheEnvExclude_HappyPathE2E covers the Atlas
 // spelling of the selection, which both profiles honor. The pinned community
-// binary v1.3.0 reads the same project and writes both tables: it accepts the
+// binary reads the same project and writes both tables: it accepts the
 // list on this command and leaves the table it names in the file. Strict mode
 // keeps the list rather than drop what the author wrote.
 func TestAtlasCompatMigrateDiffReadsTheEnvExclude_HappyPathE2E(t *testing.T) {

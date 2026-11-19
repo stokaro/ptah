@@ -21,7 +21,7 @@ import (
 // column: a database holding it diffs as synced against a document without
 // it, a document holding it is planned again on every run, and a --to database
 // whose foreign key references it is planned as a foreign key over an index
-// with the column's collation. The community binary v1.3.0 does the first and
+// with the column's collation. The pinned community binary does the first and
 // the third. SQLite needs no server, so the rows run on every platform.
 
 // sqliteCollationParent declares parent with code in the default BINARY
@@ -133,7 +133,7 @@ func TestSchemaDiffRefusesAForeignKeyOverACollatedKey_FailurePathE2E(t *testing.
 // TestSchemaDiffReadsACollatedKeyInAnySpelling_HappyPathE2E diffs a database
 // whose index spells the collated key one way against a document that spells
 // it another. sqlite3 3.51.0 reports column code and collation NOCASE in
-// pragma_index_xinfo for every row, and the community binary v1.3.0 reports
+// pragma_index_xinfo for every row, and the pinned community binary reports
 // each pair synced; so does the first run here.
 func TestSchemaDiffReadsACollatedKeyInAnySpelling_HappyPathE2E(t *testing.T) {
 	const parent = `CREATE TABLE parent (id INTEGER PRIMARY KEY, code TEXT NOT NULL, "my code" TEXT);` + "\n"

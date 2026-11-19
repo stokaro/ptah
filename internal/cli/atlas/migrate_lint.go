@@ -30,7 +30,7 @@ const atlasMigrateLintFindingError = "lint findings exceed the failure threshold
 // atlasLintWithoutDevURLEnvVar re-enables linting a migration directory with no
 // dev database.
 //
-// The pinned community binary v1.3.0 marks --dev-url required on this verb and
+// The pinned community binary marks --dev-url required on this verb and
 // exits 1 with `required flag(s) "dev-url" not set` before it looks at the
 // directory, so the compatibility surface refuses the same invocation by
 // default: a pipeline written against that binary must not get a clean report
@@ -596,7 +596,7 @@ func atlasMigrateLintScopeGiven(
 		return true
 	}
 	// An explicit zero clears a configured lint.latest. With no usable Git
-	// selector it therefore names no scope, matching Atlas CE v1.3.0.
+	// selector it therefore names no scope, matching Atlas CE.
 	if latestChanged {
 		return false
 	}
@@ -654,7 +654,7 @@ func requireAtlasMigrateLintScope(
 // database-free analysis instead.
 //
 // It is called BEFORE [requireAtlasMigrateLintScope], and the order is measured
-// rather than chosen. On the pinned Atlas community binary v1.3.0, an argv
+// rather than chosen. On the pinned Atlas community binary an argv
 // missing both answers the dev-url sentence:
 //
 //	$ atlas migrate lint --dir file://migrations

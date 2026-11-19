@@ -663,7 +663,7 @@ Atlas-compatible commands under `ptah-compat schema ...` and
 `atlas.hcl` is an error on both binaries. `--var` only **supplies values** to a
 project file and names none: with `--var` and neither `-c` nor `--env`, the
 command reads no project file, whether or not `./atlas.hcl` exists. This holds
-on every verb, as on the pinned Atlas community binary v1.3.0
+on every verb, as on the pinned Atlas community binary
 ([#1241](https://github.com/stokaro/ptah/issues/1241) item 12).
 
 Not requiring a project file is not the same as not reading the flag. The

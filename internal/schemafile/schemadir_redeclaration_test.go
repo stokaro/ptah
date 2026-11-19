@@ -17,7 +17,7 @@ import (
 // directory whose files both declare `users` produced a desired state that
 // appears in neither file and loaded without complaint. Through `ptah-compat`
 // that was exit 0 -- and on `schema apply`, an exit 0 that really wrote the
-// merged table -- where the pinned Atlas community binary v1.3.0 exits 1 with
+// merged table -- where the pinned Atlas community binary exits 1 with
 //
 //	read state from "2_b.sql": executing statement: "CREATE TABLE users (...)":
 //	table users already exists

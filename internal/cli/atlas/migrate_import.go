@@ -119,7 +119,7 @@ func runAtlasMigrateImport(
 // because their `ignore` is true.
 //
 // Liquibase never runs or records such a changeset, so leaving it out keeps
-// the history, and the import succeeds. Atlas CE v1.3.0 copies a formatted-SQL
+// the history, and the import succeeds. Atlas CE copies a formatted-SQL
 // file whole and would run it; saying which changesets were left out is what
 // keeps that difference from being a silent one. It goes to stderr, like the
 // dropped rollbacks.

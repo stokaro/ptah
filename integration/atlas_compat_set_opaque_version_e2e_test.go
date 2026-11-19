@@ -29,7 +29,7 @@ func prepareSetOpaqueVersion(c *qt.C, dir string, run versionOrderRun) {
 }
 
 // TestCompatMigrateSetOpaqueVersion_HappyPath sets a native Atlas directory to
-// its version R, which the pinned community binary v1.3.0 accepts and which
+// its version R, which the pinned community binary accepts and which
 // marks 2_more.sql and R__view.sql applied.
 func TestCompatMigrateSetOpaqueVersion_HappyPath(t *testing.T) {
 	c := qt.New(t)

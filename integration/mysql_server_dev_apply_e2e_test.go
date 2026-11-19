@@ -14,7 +14,7 @@ import (
 )
 
 // schema apply beside a whole MySQL or MariaDB dev server, a --dev-url that
-// names no database (stokaro/ptah#3885). The pinned community binary v1.3.0
+// names no database (stokaro/ptah#3885). The pinned community binary
 // plans on such a server; Ptah plans the same, and rehearses the plan there
 // before it touches the target. Every test ends with the dev server empty.
 

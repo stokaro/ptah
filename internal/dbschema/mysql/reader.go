@@ -293,7 +293,7 @@ func (r *Reader) readServer(ctx context.Context, account sessionAccount) (*catal
 // serverDatabases lists the user databases a whole-server read covers, by
 // name, with the character set and collation each was created with. A name
 // [Reader.SetSchemas] gave that the server does not hold is left out, as the
-// pinned community binary v1.3.0 leaves it out: `--schema nope` describes
+// pinned community binary leaves it out: `--schema nope` describes
 // nothing and succeeds.
 func (r *Reader) serverDatabases(ctx context.Context) ([]catalog.Schema, error) {
 	query := `

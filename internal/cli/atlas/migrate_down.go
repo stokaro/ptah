@@ -222,7 +222,7 @@ func runAtlasMigrateDownFormat(
 	//
 	// It was the one verb that read a NATIVE Atlas directory, executed SQL from
 	// it, and sat outside the stokaro/ptah#974 gate. That was never a parity
-	// decision — the pinned community binary v1.3.0 answers
+	// decision — the pinned community binary answers
 	// `'atlas migrate down' is not supported by the community version`, so
 	// there is no oracle behavior to match and compatibility policy (b) applies:
 	// matching is the floor, not the ceiling. Refusing here cannot break policy

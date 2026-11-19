@@ -38,7 +38,7 @@ const (
 
 // KeepAtlasRefusedBlocksEnvVar restores the full set of blocks Ptah models on
 // the Atlas-compatible surface, including the ones the pinned Atlas community
-// binary v1.3.0 refuses.
+// binary refuses.
 //
 // It is an environment variable and not a flag on purpose. The conformance
 // cli-surface tier asserts that `ptah-compat` registers exactly the flags the
@@ -492,7 +492,7 @@ func (r *renderer) documentRequiresExtension(name string) bool {
 // [resolveTable], so the two cannot answer differently. An index whose table
 // this render does not write is reported as an orphan and emitted nowhere, so
 // counting it keeps an extension block for an index the file does not contain,
-// and the pinned Atlas community binary v1.3.0 refuses ANY postgres file
+// and the pinned Atlas community binary refuses ANY postgres file
 // declaring an extension block. That is the false positive [documentNamesAny]
 // names: the whole result this suppression exists to produce, spent on nothing.
 // The shape is ordinary rather than hypothetical -- a materialized view's index

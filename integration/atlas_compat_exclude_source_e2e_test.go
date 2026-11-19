@@ -24,7 +24,7 @@ const excludeSourceProject = `env "local" {
 
 // TestAtlasCompatExcludeSourceE2E runs the shipped ptah-compat over a project
 // whose atlas.hcl env lists an exclude selector that matches nothing. The
-// pinned community binary v1.3.0 exits 0 and prints nothing about it. Ptah
+// pinned community binary exits 0 and prints nothing about it. Ptah
 // keeps its warning on inspect and its refusal on apply, and names the file
 // the selector came from, since the command line carries no --exclude.
 func TestAtlasCompatExcludeSourceE2E(t *testing.T) {

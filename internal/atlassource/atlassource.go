@@ -164,7 +164,7 @@ type ProjectEnv struct {
 // The distinction is measured, not stylistic. With
 // `data "hcl_schema" "app" { paths = ["s.hcl"] vars = { tenant = "acme" } }`
 // and `env "local" { src = data.hcl_schema.app.url }`, on the pinned Atlas
-// community binary v1.3.0 and exit codes read from unpiped invocations:
+// community binary and exit codes read from unpiped invocations:
 //
 //	schema apply --env local --dry-run                        -> 0, DEFAULT 'acme'
 //	schema apply --env local --to file://s.hcl --dry-run       -> 1, missing value for required variable "tenant"

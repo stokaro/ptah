@@ -716,7 +716,7 @@ func TestPinDialect_ConflictBetweenSides(t *testing.T) {
 
 // TestPinDialect_MySQLFamilySpellingsAgree pins a MySQL-family dev URL beside a
 // source spelled as the other member of the family. The schemes do not say
-// whether a server is MySQL or MariaDB, and the pinned community binary v1.3.0
+// whether a server is MySQL or MariaDB, and the pinned community binary
 // accepts any pair of them (stokaro/ptah#3756).
 func TestPinDialect_MySQLFamilySpellingsAgree(t *testing.T) {
 	tests := []struct {

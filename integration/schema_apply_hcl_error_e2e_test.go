@@ -69,7 +69,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 		c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
 	})
 
-	// Cell 9.13's second half. The pinned community binary v1.3.0 echoes the
+	// Cell 9.13's second half. The pinned community binary echoes the
 	// --to path in the form it was given, and every form above is absolute, so
 	// the rows here are the ones the absolute cases cannot see.
 	t.Run("compat relative --to reports the relative path", func(t *testing.T) {

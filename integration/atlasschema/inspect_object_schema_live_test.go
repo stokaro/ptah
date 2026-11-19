@@ -56,7 +56,7 @@ func TestInspectLive_EveryObjectKindKeepsItsSchema(t *testing.T) {
 		// never names.
 		setup []string
 		// omitRefused mirrors the Atlas-compatible surface, which leaves out
-		// the block types the pinned Atlas community binary v1.3.0 refuses. A
+		// the block types the pinned Atlas community binary refuses. A
 		// row about one of those kinds turns it off, or there is no block to
 		// carry a schema.
 		omitRefused bool

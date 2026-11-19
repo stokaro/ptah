@@ -113,7 +113,7 @@ func AnalyzerSuppressionTargets(selector string) ([]Target, bool) {
 // two code spaces overlap with different meanings.
 //
 // Unknown selectors resolve to a target that matches no rule and are otherwise
-// silent, matching atlas community version v1.3.0: `-- atlas:nolint
+// silent, matching the pinned community binary: `-- atlas:nolint
 // totally_bogus_selector` above a DROP COLUMN leaves DS103 reported and exits 1
 // there without printing anything about the selector.
 func NativeSuppressionTargets(selector string) []Target {

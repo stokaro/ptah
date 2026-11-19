@@ -784,7 +784,7 @@ retired B20.
 
 A single repeatable target follows retired versioned history even
 though its exact identity is empty. This is deliberately safer
-than Atlas CE v1.3.0: CE exits `0` but deletes the retired versioned row,
+than Atlas CE: CE exits `0` but deletes the retired versioned row,
 while Ptah exits `0` and keeps both revision identities. Rows that do not
 distinguish those roles, including ordinary Atlas CE applied rows, refuse
 before any revision row changes instead of guessing from token bytes.
@@ -1220,7 +1220,7 @@ migration directory.
 Bare `--format hcl`, `--format sql`, and `--format json` write those literal
 words. They add no line feed, and database contents do not change the values.
 Surrounding whitespace is also preserved: `--format ' hcl '` writes hex
-`20 68 63 6c 20`, with no line feed. Those literal cases match Atlas CE v1.3.0.
+`20 68 63 6c 20`, with no line feed. Those literal cases match Atlas CE.
 Native `ptah schema inspect --format hcl|sql|json` keeps its rendered
 shorthands.
 

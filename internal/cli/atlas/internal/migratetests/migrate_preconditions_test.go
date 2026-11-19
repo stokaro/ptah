@@ -450,7 +450,7 @@ func TestCompatCommand_SchemaApplyAcceptsEitherFlagAlone(t *testing.T) {
 // `--auto-approve` alone became a refusal for anyone who had exported
 // PTAH_DRY_RUN — measured on 2026-08-08, exit 1 with `[auto-approve dry-run]
 // were all set` for a command line carrying neither pair. The pinned community
-// binary v1.3.0 exits 0 on that same command line and has no such variable, so
+// binary exits 0 on that same command line and has no such variable, so
 // the refusal was not parity; PTAH_DRY_RUN is a documented Ptah capability on
 // this surface, so it was also a capability removed to buy compatibility.
 //

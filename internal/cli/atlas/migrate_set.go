@@ -310,7 +310,7 @@ func prepareAtlasMigrateSet(
 //
 // A native Atlas directory also has versions that are not numbers, such as the
 // R of R__view.sql or the 00 of 00_x.sql. opaque maps each to the order key it
-// runs under, so `migrate set R` sets what the pinned community binary v1.3.0
+// runs under, so `migrate set R` sets what the pinned community binary
 // sets there. Where the directory runs under positions a number is no key, so
 // only a version a file carries resolves. An operand that is neither one of
 // those nor a positive number names no file either, and the binary answers

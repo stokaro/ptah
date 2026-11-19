@@ -33,7 +33,7 @@ func (r *renderer) renderSequences() {
 		}
 		// A quoted string, not the bare word `bigint`. Bare, it is an HCL
 		// variable reference with nothing behind it and the pinned Atlas
-		// community binary v1.3.0 refuses the whole file with `There is no
+		// community binary refuses the whole file with `There is no
 		// variable named "bigint"`. Quoted, the file evaluates and that binary
 		// gets as far as its own feature gap -- `postgres: sequences are not
 		// supported by this version` -- which is the signal that nothing in this
@@ -602,7 +602,7 @@ func (r *renderer) renderGrants() {
 // It is a block of its own rather than a `permission` with a flag, because the
 // two say opposite things and a reader that missed the flag would grant what
 // the document revokes. `from` names the role for the same reason the SQL
-// statement does. The pinned Atlas community binary v1.3.0 drops a top-level
+// statement does. The pinned Atlas community binary drops a top-level
 // block it does not model and carries on at exit 0, as it does for
 // `default_privilege`, so the block costs that binary nothing.
 func (r *renderer) renderRevokedGrants() {
@@ -833,7 +833,7 @@ func (r *renderer) roleTargets(value string) string {
 //
 // PUBLIC is written as a quoted string rather than the bare word it is in SQL.
 // Bare, it is an HCL variable reference with nothing to resolve it to, and the
-// pinned Atlas community binary v1.3.0 refuses the whole file with
+// pinned Atlas community binary refuses the whole file with
 // `There is no variable named "PUBLIC"` -- it drops a block whose name it does
 // not model, but only after the body evaluates (stokaro/ptah#1234).
 //

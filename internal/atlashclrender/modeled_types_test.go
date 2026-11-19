@@ -35,7 +35,7 @@ func TestModeledColumnTypesReturnsSnapshot(t *testing.T) {
 //
 // A type that came out of a database carries no record of how it was written,
 // so the dialect's modeled set decides. The pinned Atlas community binary
-// v1.3.0 accepts a modeled name written bare and refuses every other spelling
+// accepts a modeled name written bare and refuses every other spelling
 // of an unmodeled one -- both the bare identifier and the quoted string -- so
 // the only two outputs that read back are the ones asserted here.
 //

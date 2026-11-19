@@ -36,7 +36,7 @@ func TestNormalizeDialect_MySQLFamilyAliases_HappyPath(t *testing.T) {
 		" Maria ":   platform.MariaDB,
 		"MARIA":     platform.MariaDB,
 		" MariaDB ": platform.MariaDB,
-		// The socket transports the pinned community binary v1.3.0 opens.
+		// The socket transports the pinned community binary opens.
 		"mysql+unix":   platform.MySQL,
 		"mariadb+unix": platform.MariaDB,
 		"maria+unix":   platform.MariaDB,
@@ -49,7 +49,7 @@ func TestNormalizeDialect_MySQLFamilyAliases_HappyPath(t *testing.T) {
 }
 
 // TestNormalizeDialect_MySQLFamilyAliases_FailurePath pins spellings the
-// pinned community binary v1.3.0 refuses with `unknown driver`, so accepting
+// pinned community binary refuses with `unknown driver`, so accepting
 // `maria` did not widen the family into a prefix match.
 func TestNormalizeDialect_MySQLFamilyAliases_FailurePath(t *testing.T) {
 	c := qt.New(t)

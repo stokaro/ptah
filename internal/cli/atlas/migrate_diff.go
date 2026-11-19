@@ -134,7 +134,7 @@ diff policy values.` + atlasMigrateDiffExcludeHelp(policy) + atlasMigrateDiffInc
 	// ConfigureCommandArgs assigns cmd.Args unconditionally, so a
 	// `Args: cobra.MaximumNArgs(1)` field was overwritten with nil and this verb
 	// silently accepted every extra positional. `migrate diff --to … one two`
-	// exited 0 where the pinned community binary v1.3.0 exits 1 with
+	// exited 0 where the pinned community binary exits 1 with
 	// `accepts at most 1 arg(s), received 2` (stokaro/ptah#1231 case 8); the
 	// message below is cobra's own, which is where that binary's comes from too.
 	cmdutil.ConfigureCommandArgs(cmd, cobra.MaximumNArgs(1))

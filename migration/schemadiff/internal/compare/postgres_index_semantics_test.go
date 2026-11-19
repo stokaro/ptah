@@ -398,7 +398,7 @@ func mixedDatabaseIndex() catalog.Index {
 //
 // Buying detection by rebuilding every index on every apply would be worse than
 // the bug it fixes, so each row here is a pair the pinned community binary
-// v1.3.0 reported as "Schemas are synced, no changes to be made." on live
+// reported as "Schemas are synced, no changes to be made." on live
 // PostgreSQL 17.10 and Ptah must agree.
 func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 	tests := []struct {

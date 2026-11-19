@@ -272,7 +272,7 @@ func statusRevision(c *qt.C, version int64, token, description string) migrator.
 }
 
 // TestWriteMigrateStatusFormat_ListsInTheCommunityBinaryOrder holds the lists
-// to the order the pinned community binary v1.3.0 prints after applying
+// to the order the pinned community binary prints after applying
 // 10_b.sql and then 1_a.sql: Available and Pending by file name, byte for
 // byte, so R__view.sql is last, and Applied by version string, not in the
 // order the rows were written.

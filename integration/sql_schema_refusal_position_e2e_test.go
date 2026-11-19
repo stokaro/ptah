@@ -16,7 +16,7 @@ import (
 const refusedOnLine6 = "-- Каталог: таблицы\nCREATE TABLE заказы (\n  note TEXT DEFAULT 'one\ntwo'\n);\nCREATE TABLE e1 PARTITION BY RANGE (a);\n"
 
 // TestSQLSchemaRefusalNamesTheLineE2E drives the two programs over one file: both
-// name its line and column, and neither writes a byte offset. Atlas CE v1.3.0 has
+// name its line and column, and neither writes a byte offset. Atlas CE has
 // no sentence to match here: it runs the statement on the dev database and
 // repeats the server's answer, with no place in the file. `ptah-compat` reads
 // the file first, so it says what `ptah` says.

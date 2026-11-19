@@ -86,7 +86,7 @@ func (f foreignKeySelectorFixture) compatDiff(c *qt.C, exclude string) clirun.Re
 // under the key's name or, for a key written without one, under its column's.
 // The index leaves the comparison with the key, so no surface reports it.
 // Kept, it is planned for a DROP INDEX the server refuses with ERROR 1553
-// while the key stands; the community binary v1.3.0 plans that statement for
+// while the key stands; the pinned community binary plans that statement for
 // `[type=fk]` on both engines.
 func TestExcludeLeavesOutTheIndexAServerBuiltForAForeignKeyE2E(t *testing.T) {
 	for _, engine := range foreignKeySelectorEngines {
@@ -190,8 +190,8 @@ func TestExcludeEveryConstraintKeepsTheIndexAForeignKeyStandsOnE2E(t *testing.T)
 // foreign key under a selector that names the key as `[type=fk]`, the type
 // the community binary names a foreign key by, through both binaries. Each
 // binary keeps the key and the index the server built for it, read back from
-// the catalog, and a run that follows finds nothing to do. The community
-// binary v1.3.0 keeps the key under these selectors and plans the index's
+// the catalog, and a run that follows finds nothing to do. The pinned community
+// binary keeps the key under these selectors and plans the index's
 // DROP INDEX, which the server refuses with ERROR 1553.
 func TestExcludeNamesAForeignKeyAsFkE2E(t *testing.T) {
 	for _, engine := range foreignKeySelectorEngines {

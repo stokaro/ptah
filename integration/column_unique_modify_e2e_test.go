@@ -15,7 +15,7 @@ import (
 // key whatever keys the column already has. Measured on MySQL 8.4.11 and
 // MariaDB 11.8.9, a column that keeps its UNIQUE while its type, nullability
 // or default changes, planned with the clause, ends with a second key, `x_2`,
-// which the next comparison drops. Atlas CE v1.3.0 restates the column without
+// which the next comparison drops. Atlas CE restates the column without
 // the clause and its next comparison is synced (stokaro/ptah#3857). A column
 // that gains its UNIQUE is the control: the clause is what adds its key. want is the statement each engine is planned;
 // keys are the keys of c other than the primary key once the plan is applied.

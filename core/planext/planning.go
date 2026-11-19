@@ -184,7 +184,7 @@ type Options struct {
 	//
 	// The zero value keeps the fill, which only a PostgreSQL-family plan
 	// writes: the value is the author's own, and the UPDATE is in the plan for
-	// review. Atlas CE v1.3.0 writes no fill, and ptah-compat sets this under
+	// review. Atlas CE writes no fill, and ptah-compat sets this under
 	// its strict Community Edition policy to plan what that binary plans.
 	OmitNullBackfill bool
 	// AllowTableRebuild plans a change the target cannot make in place as an

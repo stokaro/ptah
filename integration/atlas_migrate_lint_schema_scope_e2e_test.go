@@ -57,7 +57,7 @@ func withLintE2ESearchPath(c *qt.C, dbURL, schema string) string {
 //     `search_path` reports both drops and exits 1, which is the row that fails
 //     if the filter ever stops depending on the dev URL.
 //
-// Verified against the pinned community binary v1.3.0 on PostgreSQL 16: every
+// Verified against the pinned community binary on PostgreSQL 16: every
 // `want` below is that binary's report byte for byte, with only the two elapsed
 // durations redacted, and every `wantExitOne` its exit status.
 func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
@@ -258,7 +258,7 @@ func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
 			// scope and the run is silent. Under the constant they would be in
 			// scope and the run would report two DS102 and exit 1.
 			//
-			// The pinned community binary v1.3.0 answers exactly this: rc=0,
+			// The pinned community binary answers exactly this: rc=0,
 			// `-- no diagnostics found`, `-- 1 version ok`.
 			name:       "the reviewed schema is the URL's value, not a constant",
 			setupSQL:   "CREATE SCHEMA app;",

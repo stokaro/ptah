@@ -72,7 +72,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 	// The atlas.sum integrity gate refuses a directory that already holds a
-	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// migration and no checksum, exactly as the pinned community binary
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
 	_, hashErr := migratesum.WriteWithFormat(migrationsDir, migrationfile.DirFormatAtlas)

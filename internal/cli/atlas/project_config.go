@@ -49,7 +49,7 @@ type atlasProjectFlagValues struct {
 
 // readsProject reports whether the invocation reads a project file at all.
 //
-// The pinned community binary v1.3.0 reads one only when --env or --config
+// The pinned community binary reads one only when --env or --config
 // names it. Without either, the flags and their defaults are the whole
 // configuration: an ./atlas.hcl beside the command is not opened, so its env
 // blocks, its top-level blocks and even a syntax error in it change nothing.
@@ -729,7 +729,7 @@ func atlasVarFlagValues(cmd *cobra.Command) ([]string, error) {
 const atlasVarFlagSpelling = "--" + atlasVarFlagName
 
 // validateAtlasVarFlagValue refuses a --var value whose syntax the pinned Atlas
-// community binary v1.3.0 refuses, at the point the value is READ rather than
+// community binary refuses, at the point the value is READ rather than
 // at the point a project file consumes it.
 //
 // Where the check runs is the whole point. That binary parses --var while
@@ -1490,7 +1490,7 @@ func atlasFlagShorthand(flags []atlasargs.Flag, name string) string {
 // A file --config names without --env is loaded with no env selected, and it
 // returns the zero value too: an env:// reference has no environment to read,
 // so it takes the same refusal as a run with no project file. The pinned
-// community binary v1.3.0 refuses it as well, with `cannot use env://
+// community binary refuses it as well, with `cannot use env://
 // variables without selecting an environment`.
 func atlasSourceProjectEnv(
 	cmd *cobra.Command,
@@ -1520,7 +1520,7 @@ func atlasSourceProjectEnv(
 //
 // Only these carry an atlas.hcl `data "hcl_schema"` variable scope. A URL the
 // operator typed keeps flag-variable precedence even when it names the same
-// file, because that is what the pinned Atlas community binary v1.3.0 does:
+// file, because that is what the pinned Atlas community binary does:
 // `schema apply --env local --to file://s.hcl --dry-run` exits 1 with `missing
 // value for required variable "tenant"` where the same env with no --to exits 0
 // and plans `DEFAULT 'acme'`. See [ptah.run/internal/atlassource.ProjectEnv.SuppliedSource].
@@ -1596,7 +1596,7 @@ func withAtlasSchemaModeExcludes(values []string, cfg projectconfig.Config) []st
 //
 // The precedence is measured, not assumed. Against a PostgreSQL database
 // holding schemas `one`, `two` and `public`, on the pinned Atlas community
-// binary v1.3.0:
+// binary:
 //
 //	schemas = ["one"]              schema inspect --env local             -> one
 //	schemas = ["one","two"]        schema inspect --env local             -> one, two

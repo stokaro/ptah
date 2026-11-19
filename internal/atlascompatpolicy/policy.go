@@ -85,7 +85,7 @@ func (p Policy) IgnoreUnknownHCLNames() bool {
 //
 // Full compatibility keeps the fill Ptah plans on PostgreSQL: the value is the
 // author's own declaration and the UPDATE is in the plan for review. Strict CE
-// mode plans what Atlas CE v1.3.0 plans, which is SET NOT NULL alone, so the
+// mode plans what Atlas CE plans, which is SET NOT NULL alone, so the
 // statement fails on a NULL row there as it does on the pinned binary.
 func (p Policy) FillsNullRowsWithDefault() bool {
 	return !p.strictCE
@@ -97,7 +97,7 @@ func (p Policy) FillsNullRowsWithDefault() bool {
 // Both policies count the way the community binary does, a large first file
 // included. Full compatibility counts every kind of object Ptah models, a view
 // or a trigger among them, where strict CE mode counts only the kinds Atlas CE
-// v1.3.0 reads off the dev database, so the number is the pinned binary's.
+// reads off the dev database, so the number is the pinned binary's.
 func (p Policy) LintChangeCount() migrationlint.ChangeCount {
 	if p.strictCE {
 		return migrationlint.ChangeCountAtlasCommunity

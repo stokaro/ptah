@@ -18,7 +18,7 @@ import (
 //
 // A catalog does not repeat the schema on objects the engine treats it as
 // implicit for, so an inspected IR arrives with no schema anywhere. HCL has no
-// such notion, and the pinned Atlas community binary v1.3.0 refuses the result
+// such notion, and the pinned Atlas community binary refuses the result
 // with `cannot extract schema name for table "t"`.
 //
 // Both halves are needed and each row says which. A `schema = schema.public`
@@ -206,7 +206,7 @@ func TestRenderWritesPermissionBodiesThatEvaluate(t *testing.T) {
 // Every PostgreSQL database carries `GRANT USAGE ON SCHEMA public TO PUBLIC`,
 // so the first row is what an EMPTY database renders as. Its `permission` block
 // says `for = schema.public` with nothing to resolve it to, and the pinned
-// Atlas community binary v1.3.0 refuses the file with `There is no variable
+// Atlas community binary refuses the file with `There is no variable
 // named "schema"` -- with no table anywhere to predict the declaration from.
 //
 // The last row is the control that keeps this from being satisfied by

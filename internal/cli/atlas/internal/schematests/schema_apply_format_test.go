@@ -50,7 +50,7 @@ func TestSchemaApplySupportsFormat(t *testing.T) {
 // stokaro/ptah#940 item C regression test: on the command line
 // `--format '{{ json . }}'` exits 1 at template-parse time with
 // `function "json" not defined` unless the helper is registered, where the
-// pinned community binary v1.3.0 renders the document and exits 0.
+// pinned community binary renders the document and exits 0.
 func TestSchemaApplyFormatRendersJSON(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -516,8 +516,8 @@ func TestSchemaApplyUsesAtlasProjectDiffSkipDropColumnAndIndex(t *testing.T) {
 
 // TestSchemaApplyUsesAtlasProjectDiffSkipBesideAPlannedChange pins the plan a
 // skip leaves something in: the column is added, b and t_a stay, and the plan
-// opens with the comment for each change it left out. The community binary
-// v1.3.0 plans the same single ADD COLUMN, without the comment.
+// opens with the comment for each change it left out. The pinned community binary
+// plans the same single ADD COLUMN, without the comment.
 func TestSchemaApplyUsesAtlasProjectDiffSkipBesideAPlannedChange(t *testing.T) {
 	atlastest.AllowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)

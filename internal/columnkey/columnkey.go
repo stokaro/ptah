@@ -142,7 +142,7 @@ func Taken(dialect string, databases []*schemamodel.Database, table schemamodel.
 
 // Same reports whether the server of dialect reads two key names as one. MySQL
 // and MariaDB compare index names without case, so a key named `X` over x is
-// the column's own there; Atlas CE v1.3.0 renames it to `x`, which changes
+// the column's own there; Atlas CE renames it to `x`, which changes
 // nothing the server tells apart. Other engines compare the names as written.
 func Same(dialect, a, b string) bool {
 	if naming(dialect) == descriptor.ColumnKeyAfterColumn {

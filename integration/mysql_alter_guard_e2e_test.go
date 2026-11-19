@@ -63,7 +63,7 @@ func runAlterGuard(c *qt.C, engine dbtarget.Engine, clause string) alterGuardRun
 
 // TestSchemaApplyRefusesAMySQLAlterGuardE2E runs a schema file ending in an
 // ALTER TABLE guard on MySQL, which answers ERROR 1064 to every one, and plans
-// it: Ptah refuses the file too, naming the guard. Atlas CE v1.3.0 refuses
+// it: Ptah refuses the file too, naming the guard. Atlas CE refuses
 // such a file with the server's error. Without the refusal the guard is read,
 // and the plan leaves out the object it names (stokaro/ptah#3877).
 func TestSchemaApplyRefusesAMySQLAlterGuardE2E(t *testing.T) {

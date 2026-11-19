@@ -16,7 +16,7 @@ import (
 // TestAtlasFailureError pins what the Atlas revision table's `error` column
 // records (stokaro/ptah#1196 item 1).
 //
-// The pinned community binary v1.3.0 records the database's own message and
+// The pinned community binary records the database's own message and
 // nothing else. Ptah recorded the chain it built on the way up, whose first
 // line carried a `failed to execute migration SQL:` prefix and whose second
 // repeated the statement that `error_stmt` already holds in full.

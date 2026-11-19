@@ -177,7 +177,7 @@ func TestRenderSchemaInspect_HCLSplitRendersTxtar(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	// The file name carries the schema because the table declares one. That
 	// declaration is not cosmetic: without it the rendered HCL is invalid and
-	// the pinned Atlas community binary v1.3.0 refuses the whole document
+	// the pinned Atlas community binary refuses the whole document
 	// (stokaro/ptah#1234). Qualifying the name is also what keeps two tables of
 	// the same name in different schemas from colliding on one path, which
 	// validateUniqueSchemaInspectArchivePaths would otherwise reject.

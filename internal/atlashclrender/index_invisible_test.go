@@ -15,7 +15,7 @@ import (
 
 // TestRender_IndexInvisible writes an index hidden from the optimizer, and
 // reports that the document leaves the visibility out: the pinned community
-// binary v1.3.0 has no attribute for it, and its own `schema inspect` writes
+// binary has no attribute for it, and its own `schema inspect` writes
 // such an index as a visible one without a word (stokaro/ptah#3853).
 func TestRender_IndexInvisible(t *testing.T) {
 	c := qt.New(t)

@@ -94,7 +94,7 @@ func TestSchemaTestEnvSrcAppliesTheSchemaTheEnvNames(t *testing.T) {
 // issue asks for: -u must answer an env:// reference the way --to does, so a
 // run that names no env resolves on both or on neither. A file --config names
 // without --env selects no environment, so it resolves on neither, as on the
-// pinned community binary v1.3.0, which refuses `--to env://src` there with
+// pinned community binary which refuses `--to env://src` there with
 // `cannot use env:// variables without selecting an environment`.
 func TestSchemaTestEnvSrcMatchesTheDesiredStateFlags(t *testing.T) {
 	c := qt.New(t)

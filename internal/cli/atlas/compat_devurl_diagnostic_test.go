@@ -140,7 +140,7 @@ type compatDevURLRow struct {
 }
 
 // compatDevURLChecksumGuidance is the standard-output block the integrity
-// refusal prints, byte-identical on the pinned community binary v1.3.0.
+// refusal prints, byte-identical on the pinned community binary.
 const compatDevURLChecksumGuidance = "You have a checksum error in your migration directory.\n" +
 	"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n"
 

@@ -102,7 +102,7 @@ func TestLiquibaseChangesetAttributesE2E_FailurePath(t *testing.T) {
 // surface, which reads Liquibase through the same recognizer. A numbered file
 // with runInTransaction:false -- the form `ptah-compat migrate diff` writes for
 // a statement that cannot run in a transaction -- applies; the pinned community
-// binary v1.3.0 runs it in a transaction, and the VACUUM fails there. An
+// binary runs it in a transaction, and the VACUUM fails there. An
 // ignored changeset in a conventional file is left out of the import and named.
 func TestLiquibaseChangesetAttributesCompatE2E_HappyPath(t *testing.T) {
 	c := qt.New(t)

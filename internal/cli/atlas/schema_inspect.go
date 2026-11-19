@@ -308,7 +308,7 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 	return nil
 }
 
-// atlasSchemaInspectCompatibilityFormat preserves the pinned Atlas CE v1.3.0
+// atlasSchemaInspectCompatibilityFormat preserves the pinned Atlas CE
 // interpretation of shorthand-looking template text. Exact bare hcl/sql/json
 // and their whitespace-wrapped forms remain literal text, byte for byte.
 // Explicit helper calls still reach the shared renderer.
@@ -361,7 +361,7 @@ func atlasInspectOmitsRefusedBlocks() (bool, error) {
 // validateAtlasSchemaInspectOptions settles this verb's --url before any source
 // is resolved.
 //
-// Three measured answers, not one. On the pinned community binary v1.3.0 an
+// Three measured answers, not one. On the pinned community binary an
 // absent --url is the plural required-flag refusal; an explicitly empty one
 // gets past that check and is answered `missing scheme` by the desired-state
 // layer -- this verb's URL names a source, not a connection, so it carries no

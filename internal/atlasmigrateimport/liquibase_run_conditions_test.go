@@ -13,7 +13,7 @@ import (
 // A numbered Liquibase file is copied whole, and a copy of a changeset
 // Liquibase runs on one database only, or runs again after its first run, runs
 // everywhere, once (stokaro/ptah#3713). The conversion refuses it by name, as
-// the changeset parser does; the pinned community binary v1.3.0 copies it and
+// the changeset parser does; the pinned community binary copies it and
 // applies it everywhere. Direct apply and import both read through LoadFS.
 func TestLoadFSLiquibaseNumberedRunConditions_FailurePath(t *testing.T) {
 	tests := []struct {
@@ -96,7 +96,7 @@ func TestLoadFSLiquibaseNumberedRunConditions_HappyPath(t *testing.T) {
 // A file whose changesets all set runInTransaction to false converts to a
 // no-transaction Atlas migration. `ptah-compat migrate diff` writes that
 // attribute for a statement that cannot run in a transaction, and Atlas CE
-// v1.3.0 reads it as nothing: its apply of such a file fails with "cannot
+// reads it as nothing: its apply of such a file fails with "cannot
 // VACUUM from within a transaction" on SQLite (stokaro/ptah#3714).
 func TestLoadFSLiquibaseNumberedNoTransaction_HappyPath(t *testing.T) {
 	c := qt.New(t)
@@ -164,7 +164,7 @@ func TestImportLiquibaseChangesetAttributes_HappyPath(t *testing.T) {
 
 // A numbered file is copied with only the lines Liquibase reads: an
 // --ignoreLines directive and the lines it skips are left out, where Atlas CE
-// v1.3.0 copies them and runs them (stokaro/ptah#3727).
+// copies them and runs them (stokaro/ptah#3727).
 func TestLoadFSLiquibaseNumberedIgnoreLines_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	source := fstest.MapFS{

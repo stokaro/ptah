@@ -246,7 +246,7 @@ func TestExcludeNamesNoKeyByTheNameADeclarationPredictsE2E(t *testing.T) {
 // it, and the declaration's, under the name PostgreSQL gives a column's
 // UNIQUE. The comparison pairs a UNIQUE by its name, so the two are different
 // constraints and a selector leaves out the one it names. The plan creates or
-// drops the other, as the community binary v1.3.0 plans.
+// drops the other, as the pinned community binary plans.
 func TestExcludeNamesAUniqueByItsOwnNameE2E(t *testing.T) {
 	tests := []struct {
 		exclude, want string

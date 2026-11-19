@@ -167,7 +167,7 @@ func TestLiquibaseImportRunConditionsE2E_HappyPath(t *testing.T) {
 
 // TestLiquibaseImportRunConditionsCompatE2E_FailurePath covers the
 // compatibility import, which reads Liquibase through the same parser. The
-// pinned community binary v1.3.0 copies this changelog as it is and applies it
+// pinned community binary copies this changelog as it is and applies it
 // on SQLite, creating the table the changeset reserves for MySQL; refusing it is
 // deliberately stricter.
 func TestLiquibaseImportRunConditionsCompatE2E_FailurePath(t *testing.T) {
@@ -196,7 +196,7 @@ func TestLiquibaseImportRunConditionsCompatE2E_FailurePath(t *testing.T) {
 // compatibility surface's one-file conversion, which reads a directory of
 // numbered formatted-SQL files by copying each file whole (stokaro/ptah#3713).
 // A copy of a changeset Liquibase runs on MySQL alone runs everywhere, and the
-// pinned community binary v1.3.0 imports and applies it; the conversion refuses
+// pinned community binary imports and applies it; the conversion refuses
 // it on import and on direct apply, which read the directory the same way.
 func TestLiquibaseNumberedRunConditionsCompatE2E_FailurePath(t *testing.T) {
 	c := qt.New(t)

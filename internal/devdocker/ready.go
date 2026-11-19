@@ -37,7 +37,7 @@ func Connectable(ctx context.Context, rawURL string) error {
 // creates the database when `pg_database` has no row for it, since `CREATE
 // DATABASE` there has no IF NOT EXISTS form; everywhere else, as on the MySQL
 // family, it runs `CREATE DATABASE IF NOT EXISTS`, which is what the pinned
-// community binary v1.3.0 runs on an image the URL names.
+// community binary runs on an image the URL names.
 func CreateDatabase(ctx context.Context, serverURL, dialect, database string) (err error) {
 	conn, err := dbschema.ConnectToServer(ctx, serverURL)
 	if err != nil {

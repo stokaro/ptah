@@ -14,7 +14,7 @@ import (
 )
 
 // singleStatementTriggerFile is a MySQL trigger whose body is one statement,
-// which MySQL and MariaDB run and Atlas CE v1.3.0 reports synced with the
+// which MySQL and MariaDB run and Atlas CE reports synced with the
 // database the file builds (stokaro/ptah#3915).
 const singleStatementTriggerFile = "CREATE TABLE a (id int PRIMARY KEY, n int);\n" +
 	"CREATE TRIGGER tr BEFORE INSERT ON a FOR EACH ROW SET NEW.n = NEW.id;\n"

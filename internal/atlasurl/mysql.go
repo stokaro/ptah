@@ -25,7 +25,7 @@ import (
 //	mysql+unix://user:pass@/run/mysqld/mysqld.sock?database=app
 //
 // In the socket form the path is the socket, and the database is the
-// `database` query parameter. The pinned community binary v1.3.0 opens that
+// `database` query parameter. The pinned community binary opens that
 // form for `mysql+unix`, `maria+unix` and `mariadb+unix` on every verb that
 // takes a database URL (stokaro/ptah#3755). A reader that took the database
 // from the path would read the socket path instead, and the endpoint check that

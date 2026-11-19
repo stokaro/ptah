@@ -10,7 +10,7 @@ import (
 // atlasFailureError is what the Atlas revision table's `error` column records
 // for a failed migration.
 //
-// The pinned Atlas community binary v1.3.0 records the database's own message
+// The pinned Atlas community binary records the database's own message
 // and nothing else. Ptah records the chain it built on the way up, which on
 // SQLite reads
 //

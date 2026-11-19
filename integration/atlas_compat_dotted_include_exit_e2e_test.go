@@ -41,7 +41,7 @@ func runDottedIncludeDiff(fromPath, toPath, devPath, selector string) (stdout, s
 }
 
 // TestAtlasCompatDottedIncludeMissFailsE2E pins the stokaro/ptah#933 safety
-// decision at the filesystem and command boundary. The pinned CE v1.3.0 binary
+// decision at the filesystem and command boundary. The pinned CE binary
 // refuses --include as non-community, so it provides no selector-semantic
 // answer. Ptah's full surface retains the Pro-like flag but refuses a selector
 // that meets neither side instead of reporting a false synced result to CI.

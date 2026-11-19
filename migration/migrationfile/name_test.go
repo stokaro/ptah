@@ -332,7 +332,7 @@ func TestParseFileName_RevisionVersionIsTheNumber(t *testing.T) {
 
 // TestParseAtlasFileName_VersionIsTheTextBeforeTheFirstUnderscore reads the
 // version of a name whose version is not a decimal number above zero as the
-// pinned community binary v1.3.0 records it: the text before the first
+// pinned community binary records it: the text before the first
 // underscore, whatever it holds. Such a file carries no number, so Version is
 // 0, and reading the leading digits would record 1.x.sql as version 1.
 func TestParseAtlasFileName_VersionIsTheTextBeforeTheFirstUnderscore(t *testing.T) {
@@ -393,7 +393,7 @@ func TestParseAtlasFileNameForAutoDetection_ReadsTheLeadingDigits(t *testing.T) 
 
 // TestParseAtlasFileName_VerbatimDescriptionIsTheCommunityBinarys pins the
 // description each name records in atlas_schema_revisions, as the pinned
-// community binary v1.3.0 records it after `migrate apply` on SQLite: the text
+// community binary records it after `migrate apply` on SQLite: the text
 // after the first underscore, verbatim, so a second underscore stays.
 func TestParseAtlasFileName_VerbatimDescriptionIsTheCommunityBinarys(t *testing.T) {
 	tests := []struct {

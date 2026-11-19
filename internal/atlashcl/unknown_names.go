@@ -240,7 +240,7 @@ func (p *parser) droppedSchemaRoot() (cty.Value, bool) {
 // Repeated labels are KEPT rather than folded, which is what makes the count
 // usable as a count. `schemamodel.Finalize` deduplicates schemas by name, so a
 // document declaring `schema "main"` twice has one schema in the IR and two
-// blocks here -- and two is the number the pinned Atlas community binary v1.3.0
+// blocks here -- and two is the number the pinned Atlas community binary
 // counts: that document is refused against a schema-limited URL with
 // `cannot use HCL with more than 1 schema`, exactly as a document naming two
 // different schemas is.

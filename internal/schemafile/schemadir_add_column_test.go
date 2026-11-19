@@ -21,7 +21,7 @@ func fieldNames(db *schemamodel.Database) []string {
 
 // A schema directory is one script run in file order, so a later file may add
 // a column to a table an earlier file created. The column reaches the table:
-// the pinned Atlas community binary v1.3.0 executes the files in order and has
+// the pinned Atlas community binary executes the files in order and has
 // the column, and the directory loaded here without it (stokaro/ptah#3562).
 func TestLoadPathAddsAColumnFromALaterFile_HappyPath(t *testing.T) {
 	c := qt.New(t)

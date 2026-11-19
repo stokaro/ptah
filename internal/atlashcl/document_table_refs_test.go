@@ -55,7 +55,7 @@ table "users" {
 // spellings a single-column foreign key can arrive in.
 //
 // The first row is the one that made this code exist: it is the pinned Atlas
-// community binary v1.3.0's OWN inspect output for a cross-schema foreign key,
+// community binary's OWN inspect output for a cross-schema foreign key,
 // and a reader that drops the schema reads it as `users(id)`, silently. The
 // multi-column form of the same key never lost it, because schemamodel.Finalize
 // resolves a Constraint's ForeignTable and nothing resolved a Field's Foreign.

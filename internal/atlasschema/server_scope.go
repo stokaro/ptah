@@ -22,7 +22,7 @@ import (
 // runs on a whole dev server, which is claimed empty and emptied again; a dev
 // database is claimed alone, and a server plan rehearsed there would reach the
 // other databases of its server (stokaro/ptah#3789, stokaro/ptah#3885). Where
-// the pinned community binary v1.3.0 refuses the pair it is refused in its
+// the pinned community binary refuses the pair it is refused in its
 // words; see [RefuseServerDevDatabase].
 var ErrServerDevDatabase = errors.New(
 	"a dev database beside a whole MySQL or MariaDB server is refused: the plan creates and drops databases, " +
