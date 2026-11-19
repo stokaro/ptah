@@ -1156,6 +1156,12 @@
       "claimed_by": null
     },
     {
+      "id": "gopkg-dialect-mysql-mysqlprepare",
+      "kind": "public-package",
+      "surface": "ptah.run/dialect/mysql/mysqlprepare",
+      "claimed_by": null
+    },
+    {
       "id": "gopkg-dialect-mysql-mysqlrender",
       "kind": "public-package",
       "surface": "ptah.run/dialect/mysql/mysqlrender",
