@@ -14,7 +14,6 @@ import (
 	"ptah.run/internal/constraintowner"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/mysqlindex"
-	"ptah.run/internal/normalize"
 )
 
 // Constraints compares constraint definitions between generated and database schemas.
@@ -226,7 +225,7 @@ func pairedConstraints(
 		semantics,
 	)
 	pairNumberedForeignKeys(genConstraints, dbConstraints, dialect, semantics)
-	pairGeneratedNameChecks(genConstraints, dbConstraints, normalize.QuotingOf(dialect))
+	pairGeneratedNameChecks(genConstraints, dbConstraints, dialect)
 
 	return genConstraints, dbConstraints
 }
@@ -399,7 +398,7 @@ func constraintDefinitionsChanged(
 	// Type-specific comparisons
 	switch genConstraint.Type {
 	case "CHECK":
-		return checkConstraintChanged(genConstraint, dbConstraint, checkExpressionsOf(opts), normalize.QuotingOf(dialect), semantics)
+		return checkConstraintChanged(genConstraint, dbConstraint, checkExpressionsOf(opts), dialect, semantics)
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint, semantics)
 	case "PRIMARY KEY":
@@ -562,7 +561,7 @@ func checkConstraintChanged(
 	genConstraint schemamodel.Constraint,
 	dbConstraint catalog.Constraint,
 	checks map[string]config.CheckExpression,
-	quoting normalize.Quoting,
+	dialect string,
 	semantics identifier.Semantics,
 ) bool {
 	// A CHECK the server does not enforce is another constraint from one it
@@ -584,12 +583,12 @@ func checkConstraintChanged(
 		return false
 	}
 	if resolved, ok := resolvedCheckExpression(checks, genConstraint, semantics); ok {
-		return resolved.Differs || normalizeCheckExpression(resolved.Expression, quoting) != normalizeCheckExpression(dbClause, quoting)
+		return resolved.Differs || !checkExpressionsAlike(resolved.Expression, dbClause, dialect)
 	}
 	if checkExpressionHasUnsupportedRewrite(genConstraint.CheckExpression, dbClause) {
 		return false
 	}
-	return normalizeCheckExpression(genConstraint.CheckExpression, quoting) != normalizeCheckExpression(dbClause, quoting)
+	return !checkExpressionsAlike(genConstraint.CheckExpression, dbClause, dialect)
 }
 
 // resolvedCheckExpression looks up the server's spelling of one declared

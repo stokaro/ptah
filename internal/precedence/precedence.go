@@ -5,10 +5,13 @@
 // engine's precedence both are 2 * 3 + 1, while (1 + 2) * 3 keeps the
 // parentheses that make it a different expression.
 //
-// The schema comparison in migration/schemadiff reads an expression default
-// through it where a dialect's descriptor names a precedence
-// (descriptor.Comparison.OperatorPrecedence). It reads the text with the lexer
-// options its caller gives it.
+// The schema comparison in migration/schemadiff reads an expression default,
+// a CHECK condition and a generated column's expression through it where a
+// dialect's descriptor names a precedence
+// (descriptor.Comparison.OperatorPrecedence). A CHECK and a generated
+// expression are read this way only in addition to the text comparison: two
+// expressions that group alike are the same, and two that do not are compared
+// as before. It reads the text with the lexer options its caller gives it.
 package precedence
 
 import (
@@ -39,6 +42,14 @@ const ClickHouseOperators = "clickhouse-operators"
 // DAY) as d + INTERVAL 1 DAY, and a string as its value in single quotes
 // without the introducer the server adds for the session.
 //
+// On MySQL and MariaDB it writes NOT over an operation as the operation it
+// negates, as both servers store it: NOT (a = 1) as a <> 1, NOT (a IS NULL)
+// as a IS NOT NULL, NOT (c LIKE 'x') as c NOT LIKE 'x', NOT (a = 1 AND b = 2)
+// as a <> 1 OR b <> 2, and ! as NOT. It writes a IN (1) as a = 1,
+// x REGEXP y as regexp_like(x, y), a AND (b AND c) as a AND b AND c, a
+// character set introducer other than the session's in front of its string,
+// and X'41', 0x41 and b'01000001' each as 0x41.
+//
 // On ClickHouse it writes x BETWEEN low AND high as x >= low AND x <= high,
 // and x NOT BETWEEN low AND high as x < low OR x > high, as the server stores
 // them. It reads [NOT] IN and [NOT] LIKE with the comparisons, and writes the
@@ -46,11 +57,11 @@ const ClickHouseOperators = "clickhouse-operators"
 //
 // It returns "" and false when scheme names no precedence this package holds,
 // or when expression holds anything outside the operators, literals, names and
-// function calls its table reads, such as CASE, a qualified name or another
-// character set introducer, and on MySQL NOT, IS, BETWEEN, IN and LIKE. A
-// minus before an integer above 9223372036854775807 is not read either. A caller then compares
-// the expression as written, because reading a construct by the wrong grouping
-// could make two different expressions equal.
+// function calls its table reads, such as CASE, a qualified name, LIKE with
+// ESCAPE, or on ClickHouse a character set introducer. A minus before an
+// integer above 9223372036854775807 is not read either. A caller then
+// compares the expression as written, because reading a construct by the
+// wrong grouping could make two different expressions equal.
 func Canonical(expression, scheme string, lexing lexer.Options) (string, bool) {
 	table, known := schemes[scheme]
 	if !known {
@@ -61,11 +72,11 @@ func Canonical(expression, scheme string, lexing lexer.Options) (string, bool) {
 		return "", false
 	}
 	r := reader{tokens: tokens, table: table}
-	text, _, ok := r.expression(0)
+	op, ok := r.expression(0)
 	if !ok || r.pos != len(r.tokens) {
 		return "", false
 	}
-	return text, true
+	return op.text, true
 }
 
 // atomPrecedence is the precedence of a literal, a name, a function call and a
@@ -129,6 +140,38 @@ type table struct {
 	// server writes before a string literal of a session that did not write
 	// one. A string written right after one of them is that string.
 	introducers map[string]bool
+	// keepsIntroducers reports that a word of the form _charset before a
+	// string, with or without whitespace between, is a character set
+	// introducer, and that the key keeps one outside introducers in front of
+	// the string in lower case: _binary 'a' is _binary'a'.
+	keepsIntroducers bool
+	// nationalIntroducer is the introducer N'...' stands for, or empty where
+	// the table does not read N'...'.
+	nationalIntroducer string
+	// binaryLiterals reports that X'...', 0x..., B'...' and 0b... are
+	// literals of bytes, which the key writes as 0x and two lower-case
+	// hexadecimal digits a byte, and X'' where there are none.
+	binaryLiterals bool
+	// pushesNot reports that the server stores NOT over an operation as the
+	// operation it negates: a comparison as its complement, IS x as IS NOT x,
+	// [NOT] LIKE, [NOT] IN and [NOT] BETWEEN as the other form, AND and OR by
+	// De Morgan's laws, and NOT over NOT over a truth value as that value. The
+	// key writes NOT that way too, and ! as NOT.
+	pushesNot bool
+	// associative holds the binary operators the key writes without
+	// parentheses around a right operand of the same operator: a AND (b AND
+	// c) is a AND b AND c.
+	associative map[string]bool
+	// keepsBetween reports that the server stores [NOT] BETWEEN as written,
+	// rather than as the comparisons [betweenComparisons] holds.
+	keepsBetween bool
+	// singleMemberIn reports that IN takes a parenthesized list only, and
+	// that a list of one is the comparison with its member: a IN (1) is
+	// a = 1, and a NOT IN (1) is a <> 1.
+	singleMemberIn bool
+	// regexpCalls reports that x REGEXP y and x RLIKE y read at the
+	// precedence of IN and are the call regexp_like(x, y).
+	regexpCalls bool
 	// doubleQuotedNames reports that double quotes delimit a name, not a
 	// string.
 	doubleQuotedNames bool
@@ -156,17 +199,37 @@ var schemes = map[string]*table{
 			"*": 11, "/": 11, "DIV": 11, "%": 11, "MOD": 11,
 			"^": 12,
 		},
-		prefix:   map[string]int{"-": 13, "~": 13, "!": 14},
-		spelling: map[string]string{"MOD": "%", "!=": "<>"},
+		prefix:      map[string]int{"-": 13, "~": 13, "!": 14},
+		prefixWords: map[string]int{"NOT": 4},
+		postfix: map[string]int{
+			"IS NULL": 6, "IS NOT NULL": 6,
+			"IS TRUE": 6, "IS NOT TRUE": 6,
+			"IS FALSE": 6, "IS NOT FALSE": 6,
+		},
+		between:        5,
+		membership:     6,
+		keepsBetween:   true,
+		singleMemberIn: true,
+		regexpCalls:    true,
+		// MySQL 26.10 and MariaDB 12.3 store NOT (a = 1) as a <> 1,
+		// NOT (a = 1 AND b = 2) as a <> 1 OR b <> 2, NOT (a IS NULL) as
+		// a IS NULL, NOT (c NOT LIKE 'x') as c LIKE 'x', !(a > 0) as a <= 0
+		// and NOT NOT (a = 1) as a = 1. MySQL stores NOT (c LIKE 'x') as
+		// not((c like 'x')) where MariaDB stores c NOT LIKE 'x', and both
+		// store NOT (a <=> 1) with the NOT.
+		pushesNot: true,
+		// Both store a AND b AND c, with AND, OR and XOR each joining all its
+		// operands at one level.
+		associative: wordSet("AND", "OR", "XOR"),
+		spelling:    map[string]string{"MOD": "%", "!=": "<>"},
 		symbols: []string{
 			"<=>",
 			"<=", ">=", "<>", "!=", "<<", ">>",
 			"=", "<", ">", "|", "&", "+", "-", "*", "/", "%", "^", "~", "!",
 		},
 		keywords: wordSet(
-			// Operators and constructs the table does not read. NOT and
-			// BETWEEN bind between the comparisons and AND, and a prefix word
-			// written before a parenthesis is no function call.
+			// Operators, and constructs the table does not read. A prefix
+			// word written before a parenthesis is no function call.
 			"AND", "OR", "XOR", "DIV", "MOD", "NOT", "IS", "LIKE", "IN",
 			"BETWEEN", "CASE", "WHEN", "THEN", "ELSE", "END", "INTERVAL",
 			"BINARY", "COLLATE", "REGEXP", "RLIKE", "SOUNDS", "MEMBER", "OF",
@@ -202,8 +265,13 @@ var schemes = map[string]*table{
 		shifts: map[string]string{"date_add": "+", "date_sub": "-"},
 		// MySQL 26.10 stores concat('a', 'b') as
 		// concat(_utf8mb4'a',_utf8mb4'b') for a session in utf8mb4, the
-		// character set Ptah's driver connects with.
-		introducers: wordSet("_utf8mb4"),
+		// character set Ptah's driver connects with. It stores
+		// _binary 'a' as _binary'a', N'a' as _utf8mb3'a', X'4a' and 0x4A each
+		// as 0x4a, 0xABC as 0x0abc, 0b101 as 0x05 and b'100000000' as 0x0100.
+		introducers:        wordSet("_utf8mb4"),
+		keepsIntroducers:   true,
+		nationalIntroducer: "_utf8mb3",
+		binaryLiterals:     true,
 	},
 	// ClickHouse's Operators page lists the operators by priority, and
 	// formatQuerySingleLine prints how a release groups an expression.
@@ -339,17 +407,17 @@ func (r *tokens) add(tok lexer.Token) bool {
 			r.list = append(r.list, token{kind: kindName, text: name})
 			return ok
 		}
-		literal, ok := stringLiteral(tok, r.lexing)
-		if !ok {
-			return false
-		}
-		last := len(r.list) - 1
-		if last >= 0 && r.list[last].kind == kindWord && r.table.introducers[strings.ToLower(r.list[last].text)] && r.wordEnd == tok.Start {
-			r.list = r.list[:last]
-		}
+		literal, ok := r.prefixedString(tok)
 		r.list = append(r.list, literal)
-		return true
+		return ok
 	case lexer.TokenIdentifier:
+		if r.followsZero(tok) {
+			// The lexer reads 0x41 as 0 and x41.
+			literal, ok := radixLiteral(tok.Value)
+			r.list[len(r.list)-1] = literal
+			r.wordEnd = tok.End
+			return ok
+		}
 		next, ok := identifierToken(tok.Value)
 		if ok && next.kind == kindLiteral && r.table.decimalNumbers {
 			next.text = decimalNumber(next.text)
@@ -366,15 +434,137 @@ func (r *tokens) add(tok lexer.Token) bool {
 	}
 }
 
-// stringLiteral reads a string token as the literal the key prints: its value,
-// in single quotes with a quote doubled, so that a quote escaped with a
-// backslash and a doubled quote give one key where the lexer reads both.
-func stringLiteral(tok lexer.Token, lexing lexer.Options) (token, bool) {
-	value, ok := lexer.StringValue(tok.Value, lexing)
+// prefixedString reads the string token tok, together with the word before it
+// that makes it another literal, as the literal the key prints, and removes
+// such a word from the list.
+//
+// A string is its value, in single quotes with a quote doubled, so that a
+// quote escaped with a backslash and a doubled quote give one key where the
+// lexer reads both. Written right after X or B on a table that reads
+// [table.binaryLiterals], it is bytes; right after N, a string with the
+// table's [table.nationalIntroducer]; and after one of [table.introducers],
+// the string itself. On a table that [table.keepsIntroducers], another
+// introducer stays in front of it, and whitespace may separate any
+// introducer from its string, as MySQL 26.10 reads _binary 'a'.
+func (r *tokens) prefixedString(tok lexer.Token) (token, bool) {
+	value, ok := lexer.StringValue(tok.Value, r.lexing)
 	if !ok {
 		return token{}, false
 	}
-	return token{kind: kindLiteral, text: "'" + strings.ReplaceAll(value, "'", "''") + "'"}, true
+	literal := token{kind: kindLiteral, text: "'" + strings.ReplaceAll(value, "'", "''") + "'"}
+	last := len(r.list) - 1
+	if last < 0 || r.list[last].kind != kindWord {
+		return literal, true
+	}
+	word := strings.ToLower(r.list[last].text)
+	adjacent := r.wordEnd == tok.Start
+	introduced := adjacent || r.table.keepsIntroducers
+	switch {
+	case r.table.binaryLiterals && adjacent && word == "x":
+		r.list = r.list[:last]
+		return hexLiteral(value)
+	case r.table.binaryLiterals && adjacent && word == "b":
+		r.list = r.list[:last]
+		return bitLiteral(value)
+	case r.table.nationalIntroducer != "" && adjacent && word == "n":
+		r.list = r.list[:last]
+		literal.text = r.table.nationalIntroducer + literal.text
+	case r.table.introducers[word] && introduced:
+		r.list = r.list[:last]
+	case r.table.keepsIntroducers && isIntroducer(word):
+		r.list = r.list[:last]
+		literal.text = word + literal.text
+	}
+	return literal, true
+}
+
+// isIntroducer reports whether word, in lower case, is spelled as a character
+// set introducer: an underscore and the name of a character set.
+func isIntroducer(word string) bool {
+	name, found := strings.CutPrefix(word, "_")
+	if !found || name == "" {
+		return false
+	}
+	for i := range len(name) {
+		ch := name[i]
+		if (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') && ch != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// followsZero reports whether the identifier tok, written right after the
+// literal 0, makes it a literal of bytes on a table that reads them: 0x41 or
+// 0b0101. MySQL 26.10 reads 0X41 as a name, so only a lower-case x or b does.
+func (r *tokens) followsZero(tok lexer.Token) bool {
+	last := len(r.list) - 1
+	if !r.table.binaryLiterals || last < 0 || r.wordEnd != tok.Start {
+		return false
+	}
+	previous := r.list[last]
+	return previous.kind == kindLiteral && previous.text == "0" &&
+		(strings.HasPrefix(tok.Value, "x") || strings.HasPrefix(tok.Value, "b"))
+}
+
+// radixLiteral reads what follows the 0 of 0x41 or 0b0101 as the literal of
+// bytes the key prints.
+func radixLiteral(value string) (token, bool) {
+	if digits, hex := strings.CutPrefix(value, "x"); hex && digits != "" {
+		if len(digits)%2 == 1 {
+			digits = "0" + digits
+		}
+		return hexLiteral(digits)
+	}
+	digits, _ := strings.CutPrefix(value, "b")
+	if digits == "" {
+		return token{}, false
+	}
+	return bitLiteral(digits)
+}
+
+// hexLiteral reads the digits of X'...' as the literal of bytes the key
+// prints. MySQL refuses an odd number of digits there, and so does the key.
+func hexLiteral(digits string) (token, bool) {
+	if len(digits)%2 == 1 {
+		return token{}, false
+	}
+	for i := range len(digits) {
+		if !isHexDigit(digits[i]) {
+			return token{}, false
+		}
+	}
+	if digits == "" {
+		return token{kind: kindLiteral, text: "X''"}, true
+	}
+	return token{kind: kindLiteral, text: "0x" + strings.ToLower(digits)}, true
+}
+
+func isHexDigit(ch byte) bool {
+	return ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'f' || ch >= 'A' && ch <= 'F'
+}
+
+// bitLiteral reads the digits of B'...' as the literal of bytes the key
+// prints: the bits padded with zeros on the left to whole bytes. MySQL 26.10
+// stores b'0101' as 0x05 and b'100000000' as 0x0100. No bits are not read.
+func bitLiteral(bits string) (token, bool) {
+	if bits == "" || strings.Trim(bits, "01") != "" {
+		return token{}, false
+	}
+	if extra := len(bits) % 8; extra != 0 {
+		bits = strings.Repeat("0", 8-extra) + bits
+	}
+	const hexDigits = "0123456789abcdef"
+	var b strings.Builder
+	b.WriteString("0x")
+	for i := 0; i < len(bits); i += 4 {
+		nibble := 0
+		for _, bit := range bits[i : i+4] {
+			nibble = nibble<<1 | int(bit-'0')
+		}
+		b.WriteByte(hexDigits[nibble])
+	}
+	return token{kind: kindLiteral, text: b.String()}, true
 }
 
 // isSymbol reports whether value is one character an operator of the table is
@@ -471,6 +661,45 @@ func punctuation(value string) (token, bool) {
 	}
 }
 
+// operation is what the reader read: the text the key prints for it, the
+// precedence of its outermost operator, and how it reads under NOT.
+type operation struct {
+	text       string
+	precedence int
+	// truth reports that the operation answers true, false or NULL, as a
+	// comparison does, so that NOT over NOT over it is the operation itself.
+	truth bool
+	// negation returns the operation NOT over this one is stored as on a table
+	// that pushes NOT into the operation ([table.pushesNot]). Nil means NOT is
+	// written before it.
+	negation func() operation
+}
+
+// enclosed returns the operation's text, in parentheses where its precedence
+// is below least, the precedence its place in the expression needs.
+func (op operation) enclosed(least int) string {
+	return enclose(op.text, op.precedence, least)
+}
+
+// atomOperation is a literal, a name, a function call or an INTERVAL, which
+// no operator splits.
+func atomOperation(text string) operation {
+	return operation{text: text, precedence: atomPrecedence}
+}
+
+// complements maps a comparison to the one NOT over it is stored as, after
+// [reader.spell].
+var complements = map[string]string{
+	"=": "<>", "<>": "=", "<": ">=", ">=": "<", ">": "<=", "<=": ">",
+}
+
+// deMorgan maps a logical operator to the one NOT over it joins the negated
+// operands with.
+var deMorgan = map[string]string{"AND": "OR", "OR": "AND"}
+
+// truthOperators holds the binary operators that answer true, false or NULL.
+var truthOperators = wordSet("=", "<>", "!=", "<", ">", "<=", ">=", "<=>", "AND", "OR", "XOR")
+
 // reader parses tokens by precedence climbing and prints each operation as it
 // closes, so a parenthesized group adds nothing of its own: the printer adds
 // the parentheses an operand needs.
@@ -488,59 +717,105 @@ func (r *reader) peek() (token, bool) {
 }
 
 // expression reads operations whose operators bind at least as tightly as
-// minimum, and returns their text and the precedence of the outermost one.
-func (r *reader) expression(minimum int) (text string, precedence int, ok bool) {
+// minimum.
+func (r *reader) expression(minimum int) (operation, bool) {
 	return r.operations(minimum, minimum)
 }
 
 // operations is [reader.expression] whose first operand is read as the
 // operand of an operator that needs at least first: the operand of a prefix
 // word may open with that word again, as NOT NOT a does.
-func (r *reader) operations(minimum, first int) (text string, precedence int, ok bool) {
-	text, precedence, ok = r.unary(first)
+func (r *reader) operations(minimum, first int) (operation, bool) {
+	left, ok := r.unary(first)
 	if !ok {
-		return "", 0, false
+		return operation{}, false
 	}
 	for {
 		if operator, bound, words := r.postfix(); words > 0 && bound >= minimum {
 			r.pos += words
-			text = enclose(text, precedence, bound) + " " + operator
-			precedence = bound
+			left = r.postfixOperation(operator, bound, left)
 			continue
 		}
 		if comparisons, words := r.betweenAt(); words > 0 && r.table.between >= minimum {
 			r.pos += words
-			text, precedence, ok = r.betweenBounds(text, precedence, comparisons)
-			if !ok {
-				return "", 0, false
+			if left, ok = r.betweenBounds(left, comparisons); !ok {
+				return operation{}, false
 			}
 			continue
 		}
 		if operator, words := r.membershipAt(); words > 0 && r.table.membership >= minimum {
 			r.pos += words
-			text, precedence, ok = r.membership(text, precedence, operator)
-			if !ok {
-				return "", 0, false
+			if left, ok = r.membership(left, operator); !ok {
+				return operation{}, false
 			}
 			continue
 		}
 		operator, bound, found := r.binary()
 		if !found || bound < minimum {
-			return text, precedence, true
+			return left, true
 		}
 		r.pos++
-		right, rightBound, ok := r.expression(bound + 1)
+		right, ok := r.expression(bound + 1)
 		if !ok {
-			return "", 0, false
+			return operation{}, false
 		}
-		if operator == "+" && isInterval(text, precedence) && !isInterval(right, rightBound) {
+		if operator == "+" && isInterval(left) && !isInterval(right) {
 			// INTERVAL 1 DAY + d is d + INTERVAL 1 DAY, which is how both
 			// servers store it.
-			text, precedence, right, rightBound = right, rightBound, text, precedence
+			left, right = right, left
 		}
-		text = enclose(text, precedence, bound) + " " + r.spell(operator) + " " + enclose(right, rightBound, bound+1)
-		precedence = bound
+		left = r.binaryOperation(r.spell(operator), bound, left, right)
 	}
+}
+
+// binaryOperation writes left operator right, where operator, as spelled,
+// binds at bound.
+func (r *reader) binaryOperation(operator string, bound int, left, right operation) operation {
+	if r.table.pushesNot && (operator == "=" || operator == "<>") && left.text == "0" {
+		// MySQL 26.10 stores NOT a as 0 = a, where MariaDB 12.3 stores
+		// a = 0, so 0 compared for equality is written on the right.
+		left, right = right, left
+	}
+	rightLeast := bound + 1
+	if r.table.associative[operator] {
+		rightLeast = bound
+	}
+	op := operation{
+		text:       left.enclosed(bound) + " " + operator + " " + right.enclosed(rightLeast),
+		precedence: bound,
+		truth:      truthOperators[operator],
+	}
+	if complement, found := complements[operator]; found {
+		op.negation = func() operation { return r.binaryOperation(complement, bound, left, right) }
+	}
+	if joined, found := deMorgan[operator]; found {
+		op.negation = func() operation {
+			return r.binaryOperation(joined, r.table.binary[joined], r.not(left), r.not(right))
+		}
+	}
+	return op
+}
+
+// not returns NOT over op as the table stores it. Where the table pushes NOT
+// into the operation, that is op's negation where op has one, op = 0 where op
+// is no truth value, and NOT written before op otherwise. Elsewhere it is NOT
+// written before op.
+func (r *reader) not(op operation) operation {
+	switch {
+	case r.table.pushesNot && op.negation != nil:
+		return op.negation()
+	case r.table.pushesNot && !op.truth:
+		// MySQL 26.10 stores NOT a, NOT abs(a) and NOT (a + 1) as 0 = a,
+		// 0 = abs(a) and 0 = (a + 1), and NOT NOT a as 0 <> a. MariaDB 12.3
+		// stores NOT a as a = 0, and NOT abs(a) as !abs(a).
+		return r.binaryOperation("=", r.table.binary["="], op, atomOperation("0"))
+	}
+	bound := r.table.prefixWords["NOT"]
+	negated := operation{text: "NOT " + op.enclosed(bound+1), precedence: bound, truth: true}
+	if r.table.pushesNot {
+		negated.negation = func() operation { return op }
+	}
+	return negated
 }
 
 // binary returns the binary operator at the reader's position and its
@@ -562,18 +837,28 @@ func (r *reader) binary() (operator string, precedence int, found bool) {
 	return operator, precedence, found
 }
 
-// betweenComparisons are the comparisons an engine stores for a BETWEEN:
-// operand below low, join, operand above high.
+// betweenComparisons are how an engine stores a BETWEEN: the words it keeps
+// on a table that keeps them ([table.keepsBetween]), and otherwise the
+// comparisons operand below low, join, operand above high.
 type betweenComparisons struct {
+	written            string
 	below, above, join string
 }
 
 var (
 	// withinBounds is what x BETWEEN low AND high is stored as.
-	withinBounds = betweenComparisons{below: ">=", above: "<=", join: "AND"}
+	withinBounds = betweenComparisons{written: "BETWEEN", below: ">=", above: "<=", join: "AND"}
 	// outsideBounds is what x NOT BETWEEN low AND high is stored as.
-	outsideBounds = betweenComparisons{below: "<", above: ">", join: "OR"}
+	outsideBounds = betweenComparisons{written: "NOT BETWEEN", below: "<", above: ">", join: "OR"}
 )
+
+// negation returns the comparisons of the BETWEEN NOT over this one is.
+func (c betweenComparisons) negation() betweenComparisons {
+	if c == withinBounds {
+		return outsideBounds
+	}
+	return withinBounds
+}
 
 // betweenAt reports how many words of BETWEEN or NOT BETWEEN start at the
 // reader's position, and the comparisons they stand for, without consuming
@@ -599,40 +884,56 @@ func (r *reader) betweenAt() (betweenComparisons, int) {
 }
 
 // betweenBounds reads the bounds of the BETWEEN whose words the reader has
-// consumed, after the operand operand, whose precedence is bound, and writes
-// the comparisons the engine stores for it: operand >= low AND operand <= high
-// for [withinBounds], operand < low OR operand > high for [outsideBounds]. An
-// operand that binds no tighter than BETWEEN, such as a IS NULL or another
-// BETWEEN, is not read, since no measurement says how the engine groups it.
-func (r *reader) betweenBounds(operand string, bound int, comparisons betweenComparisons) (text string, precedence int, ok bool) {
+// consumed, after operand, and writes the operation. An operand that binds no
+// tighter than BETWEEN, such as a IS NULL or another BETWEEN, is not read,
+// since no measurement says how the engine groups it.
+func (r *reader) betweenBounds(operand operation, comparisons betweenComparisons) (operation, bool) {
 	between := r.table.between
-	if bound <= between {
-		return "", 0, false
+	if operand.precedence <= between {
+		return operation{}, false
 	}
-	low, lowBound, ok := r.expression(between + 1)
+	low, ok := r.expression(between + 1)
 	if !ok {
-		return "", 0, false
+		return operation{}, false
 	}
 	if and, more := r.peek(); !more || and.kind != kindWord || !strings.EqualFold(and.text, "AND") {
-		return "", 0, false
+		return operation{}, false
 	}
 	r.pos++
-	high, highBound, ok := r.expression(between + 1)
+	high, ok := r.expression(between + 1)
 	if !ok {
-		return "", 0, false
+		return operation{}, false
 	}
-	below, above, join := comparisons.below, comparisons.above, comparisons.join
-	compared := r.table.binary[below]
-	joined := r.table.binary[join]
-	lower := enclose(operand, bound, compared) + " " + below + " " + enclose(low, lowBound, compared+1)
-	upper := enclose(operand, bound, compared) + " " + above + " " + enclose(high, highBound, compared+1)
-	return lower + " " + join + " " + upper, joined, true
+	return r.betweenOperation(operand, low, high, comparisons), true
+}
+
+// betweenOperation writes the BETWEEN of operand within or outside low and
+// high as the engine stores it: as written on a table that keeps it, and
+// otherwise as operand >= low AND operand <= high for [withinBounds] and
+// operand < low OR operand > high for [outsideBounds].
+func (r *reader) betweenOperation(operand, low, high operation, comparisons betweenComparisons) operation {
+	if !r.table.keepsBetween {
+		below := r.binaryOperation(comparisons.below, r.table.binary[comparisons.below], operand, low)
+		above := r.binaryOperation(comparisons.above, r.table.binary[comparisons.above], operand, high)
+		return r.binaryOperation(comparisons.join, r.table.binary[comparisons.join], below, above)
+	}
+	least := r.table.between + 1
+	return operation{
+		text: operand.enclosed(least) + " " + comparisons.written + " " +
+			low.enclosed(least) + " AND " + high.enclosed(least),
+		precedence: r.table.between,
+		truth:      true,
+		negation: func() operation {
+			return r.betweenOperation(operand, low, high, comparisons.negation())
+		},
+	}
 }
 
 // membershipAt returns the operator whose words start at the reader's
-// position, IN, NOT IN, LIKE or NOT LIKE, and how many words it spans,
-// without consuming it. It answers 0 words where none starts there or the
-// table does not read them.
+// position, IN, LIKE, and REGEXP or RLIKE where the table reads them as calls
+// ([table.regexpCalls]), each with or without NOT before it, and how many
+// words it spans, without consuming it. It answers 0 words where none starts
+// there or the table does not read them.
 func (r *reader) membershipAt() (operator string, words int) {
 	if r.table.membership == 0 {
 		return "", 0
@@ -646,7 +947,7 @@ func (r *reader) membershipAt() (operator string, words int) {
 		word := strings.ToUpper(tok.text)
 		spelled = append(spelled, word)
 		switch {
-		case word == "IN" || word == "LIKE":
+		case word == "IN" || word == "LIKE" || r.table.regexpCalls && (word == "REGEXP" || word == "RLIKE"):
 			return strings.Join(spelled, " "), len(spelled)
 		case word != "NOT":
 			return "", 0
@@ -655,38 +956,90 @@ func (r *reader) membershipAt() (operator string, words int) {
 	return "", 0
 }
 
-// membership reads the right operand of operator, one of IN, NOT IN, LIKE and
-// NOT LIKE, whose words the reader has consumed, after the left operand left,
-// whose precedence is bound, and writes the operation.
-func (r *reader) membership(left string, bound int, operator string) (text string, precedence int, ok bool) {
+// membership reads the right operand of operator, which [reader.membershipAt]
+// returned and whose words the reader has consumed, after the left operand
+// left, and writes the operation.
+func (r *reader) membership(left operation, operator string) (operation, bool) {
 	level := r.table.membership
-	var right string
-	if strings.HasSuffix(operator, "IN") {
-		right, ok = r.members()
-	} else {
-		var rightBound int
-		right, rightBound, ok = r.expression(level + 1)
-		right = enclose(right, rightBound, level+1)
+	name, negated := strings.CutPrefix(operator, "NOT ")
+	switch name {
+	case "IN":
+		list, single, ok := r.members()
+		switch {
+		case !ok:
+			return operation{}, false
+		case single != nil:
+			// MySQL 26.10 and MariaDB 12.3 store a IN (1) as a = 1, and
+			// a NOT IN (1) as a <> 1.
+			comparison := "="
+			if negated {
+				comparison = "<>"
+			}
+			return r.binaryOperation(comparison, r.table.binary[comparison], left, *single), true
+		}
+		return r.memberOperation(operator, left, list), true
+	case "REGEXP", "RLIKE":
+		pattern, ok := r.expression(level + 1)
+		if !ok {
+			return operation{}, false
+		}
+		call := atomOperation("regexp_like(" + left.text + ", " + pattern.text + ")")
+		if negated {
+			return r.not(call), true
+		}
+		return call, true
 	}
+	right, ok := r.expression(level + 1)
 	if !ok {
-		return "", 0, false
+		return operation{}, false
 	}
-	return enclose(left, bound, level) + " " + operator + " " + right, level, true
+	return r.memberOperation(operator, left, right.enclosed(level+1)), true
+}
+
+// memberOperation writes left operator right, where operator is IN or LIKE,
+// with or without NOT before it.
+func (r *reader) memberOperation(operator string, left operation, right string) operation {
+	return operation{
+		text:       left.enclosed(r.table.membership) + " " + operator + " " + right,
+		precedence: r.table.membership,
+		truth:      true,
+		negation:   func() operation { return r.memberOperation(negatedOperator(operator), left, right) },
+	}
+}
+
+// negatedOperator returns NOT operator, and operator without its NOT where it
+// has one.
+func negatedOperator(operator string) string {
+	if positive, negated := strings.CutPrefix(operator, "NOT "); negated {
+		return positive
+	}
+	return "NOT " + operator
 }
 
 // members reads the operand of IN and writes it in parentheses: a list of two
-// or more where a parenthesized list follows IN, and otherwise every
-// operation that binds tighter than IN, so that a IN 1 + 2, a IN (1 + 2) and
-// a IN (1) + 2 give one key, as ClickHouse 24.10 and 26.10 read them. A list
-// before an operator that binds tighter is not read, since no measurement
-// says how the engine groups it.
-func (r *reader) members() (string, bool) {
+// or more where a parenthesized list follows IN. On a table that reads a list
+// of one as its member ([table.singleMemberIn]) it returns that member, and
+// IN takes nothing else. Elsewhere it is every operation that binds tighter
+// than IN, so that a IN 1 + 2, a IN (1 + 2) and a IN (1) + 2 give one key, as
+// ClickHouse 24.10 and 26.10 read them. A list before an operator that binds
+// tighter is not read, since no measurement says how the engine groups it.
+func (r *reader) members() (list string, single *operation, ok bool) {
 	level := r.table.membership
 	if list, ok := r.list(); ok {
-		return list, !r.bindsTighter(level)
+		return list, nil, !r.bindsTighter(level)
 	}
-	operand, _, ok := r.expression(level + 1)
-	return "(" + operand + ")", ok
+	if r.table.singleMemberIn {
+		if !r.consume(kindOpen) {
+			return "", nil, false
+		}
+		member, ok := r.expression(0)
+		if !ok || !r.consume(kindClose) || r.bindsTighter(level) {
+			return "", nil, false
+		}
+		return "", &member, true
+	}
+	operand, ok := r.expression(level + 1)
+	return "(" + operand.text + ")", nil, ok
 }
 
 // list reads the parenthesized list of two or more expressions at the
@@ -699,11 +1052,11 @@ func (r *reader) list() (string, bool) {
 	}
 	var items []string
 	for {
-		item, _, ok := r.expression(0)
+		item, ok := r.expression(0)
 		if !ok {
 			break
 		}
-		items = append(items, item)
+		items = append(items, item.text)
 		if r.consume(kindClose) {
 			if len(items) > 1 {
 				return "(" + strings.Join(items, ", ") + ")", true
@@ -736,12 +1089,29 @@ func (r *reader) postfix() (operator string, precedence, words int) {
 	return operator, precedence, words
 }
 
+// postfixOperation writes operand operator, where operator binds at bound.
+// NOT over IS x is IS NOT x, and NOT over IS NOT x is IS x, where the table
+// reads both.
+func (r *reader) postfixOperation(operator string, bound int, operand operation) operation {
+	op := operation{text: operand.enclosed(bound) + " " + operator, precedence: bound, truth: true}
+	complement, negates := strings.CutPrefix(operator, "IS NOT ")
+	if negates {
+		complement = "IS " + complement
+	} else if rest, is := strings.CutPrefix(operator, "IS "); is {
+		complement, negates = "IS NOT "+rest, true
+	}
+	if negates && r.table.postfix[complement] == bound {
+		op.negation = func() operation { return r.postfixOperation(complement, bound, operand) }
+	}
+	return op
+}
+
 // unary reads a prefix operator and its operand, or an atom, as the operand
 // of an operator that needs at least minimum.
-func (r *reader) unary(minimum int) (text string, precedence int, ok bool) {
+func (r *reader) unary(minimum int) (operation, bool) {
 	tok, more := r.peek()
 	if !more {
-		return "", 0, false
+		return operation{}, false
 	}
 	if tok.kind == kindWord {
 		if bound, isPrefix := r.table.prefixWords[strings.ToUpper(tok.text)]; isPrefix {
@@ -759,17 +1129,21 @@ func (r *reader) unary(minimum int) (text string, precedence int, ok bool) {
 	// an Int16 that makes -(0) + 18446744073709551614 an Int64 -2.
 	next, _ := r.peek()
 	folded := next.kind == kindLiteral
-	operand, operandBound, ok := r.unary(bound)
+	operand, ok := r.unary(bound)
 	if !ok {
-		return "", 0, false
+		return operation{}, false
 	}
-	if tok.text == "-" && folded && operand == "0" && r.table.decimalNumbers {
-		return operand, atomPrecedence, true
+	switch {
+	case tok.text == "-" && folded && operand.text == "0" && r.table.decimalNumbers:
+		return atomOperation(operand.text), true
+	case tok.text == "-" && aboveInt64(operand.text):
+		return operation{}, false
+	case tok.text == "!" && r.table.pushesNot:
+		// ! is NOT that binds tighter: MySQL 26.10 and MariaDB 12.3 store
+		// !(a > 0) as a <= 0.
+		return r.not(operand), true
 	}
-	if tok.text == "-" && aboveInt64(operand) {
-		return "", 0, false
-	}
-	return tok.text + enclose(operand, operandBound, bound), bound, true
+	return operation{text: tok.text + operand.enclosed(bound), precedence: bound}, true
 }
 
 // aboveInt64 reports whether text is an integer literal above
@@ -793,25 +1167,25 @@ func aboveInt64(text string) bool {
 // bound cannot take it as an operand without a parenthesis, so the reading
 // stops there rather than guess how the engine groups it. Before a
 // parenthesis, a word of [table.calledPrefix] is read only where the group is
-// its whole operand.
-func (r *reader) prefixWord(word string, bound, minimum int) (text string, precedence int, ok bool) {
+// its whole operand. NOT is the one prefix word a table holds.
+func (r *reader) prefixWord(word string, bound, minimum int) (operation, bool) {
 	if minimum > bound {
-		return "", 0, false
+		return operation{}, false
 	}
 	r.pos++
 	next, more := r.peek()
 	if more && next.kind == kindOpen && r.table.calledPrefix[word] {
-		group, groupBound, ok := r.atom()
+		group, ok := r.atom()
 		if !ok || r.bindsTighter(bound) {
-			return "", 0, false
+			return operation{}, false
 		}
-		return word + " " + enclose(group, groupBound, bound+1), bound, true
+		return r.not(group), true
 	}
-	operand, operandBound, ok := r.operations(bound+1, bound)
+	operand, ok := r.operations(bound+1, bound)
 	if !ok {
-		return "", 0, false
+		return operation{}, false
 	}
-	return word + " " + enclose(operand, operandBound, bound+1), bound, true
+	return r.not(operand), true
 }
 
 // bindsTighter reports whether the operator at the reader's position binds
@@ -828,51 +1202,51 @@ func (r *reader) bindsTighter(bound int) bool {
 }
 
 // atom reads a literal, a name, a function call or a parenthesized group.
-func (r *reader) atom() (text string, precedence int, ok bool) {
+func (r *reader) atom() (operation, bool) {
 	tok, more := r.peek()
 	if !more {
-		return "", 0, false
+		return operation{}, false
 	}
 	r.pos++
 	switch tok.kind {
 	case kindLiteral:
-		return tok.text, atomPrecedence, true
+		return atomOperation(tok.text), true
 	case kindName:
 		if next, more := r.peek(); more && next.kind == kindOpen {
-			return "", 0, false
+			return operation{}, false
 		}
-		return quoteName(tok.text), atomPrecedence, true
+		return atomOperation(quoteName(tok.text)), true
 	case kindWord:
 		return r.word(tok.text)
 	case kindOpen:
-		text, precedence, ok = r.expression(0)
+		group, ok := r.expression(0)
 		if !ok || !r.consume(kindClose) {
-			return "", 0, false
+			return operation{}, false
 		}
-		return text, precedence, true
+		return group, true
 	default:
-		return "", 0, false
+		return operation{}, false
 	}
 }
 
 // word reads a bare word: a literal, an INTERVAL, a function call or a name.
-func (r *reader) word(word string) (text string, precedence int, ok bool) {
+func (r *reader) word(word string) (operation, bool) {
 	upper := strings.ToUpper(word)
 	opens := r.consume(kindOpen)
 	switch {
 	case r.table.literals[upper] && !opens:
-		return upper, atomPrecedence, true
+		return atomOperation(upper), true
 	case upper == "INTERVAL" && r.table.units != nil:
 		if opens {
 			r.pos--
 		}
 		return r.interval()
 	case r.table.niladic[upper] != "" && !opens:
-		return r.table.niladic[upper] + "()", atomPrecedence, true
+		return atomOperation(r.table.niladic[upper] + "()"), true
 	case r.table.keywords[upper] || r.table.literals[upper]:
-		return "", 0, false
+		return operation{}, false
 	case !opens:
-		return quoteName(word), atomPrecedence, true
+		return atomOperation(quoteName(word)), true
 	}
 	if r.table.functionCase {
 		return r.call(word)
@@ -882,55 +1256,56 @@ func (r *reader) word(word string) (text string, precedence int, ok bool) {
 
 // call reads the arguments of a call of the function name, whose opening
 // parenthesis the reader has consumed.
-func (r *reader) call(name string) (text string, precedence int, ok bool) {
-	var arguments []string
-	var bounds []int
+func (r *reader) call(name string) (operation, bool) {
+	var arguments []operation
 	if !r.consume(kindClose) {
 		for {
-			argument, bound, ok := r.expression(0)
+			argument, ok := r.expression(0)
 			if !ok {
-				return "", 0, false
+				return operation{}, false
 			}
 			arguments = append(arguments, argument)
-			bounds = append(bounds, bound)
 			if r.consume(kindClose) {
 				break
 			}
 			if !r.consume(kindComma) {
-				return "", 0, false
+				return operation{}, false
 			}
 		}
 	}
-	if operator, shifts := r.table.shifts[name]; shifts && len(arguments) == 2 && isInterval(arguments[1], bounds[1]) {
-		bound := r.table.binary[operator]
-		return enclose(arguments[0], bounds[0], bound) + " " + operator + " " + arguments[1], bound, true
+	if operator, shifts := r.table.shifts[name]; shifts && len(arguments) == 2 && isInterval(arguments[1]) {
+		return r.binaryOperation(operator, r.table.binary[operator], arguments[0], arguments[1]), true
 	}
 	if synonym, found := r.table.synonyms[name]; found {
 		name = synonym
 	}
-	return name + "(" + strings.Join(arguments, ", ") + ")", atomPrecedence, true
+	texts := make([]string, len(arguments))
+	for i, argument := range arguments {
+		texts[i] = argument.text
+	}
+	return atomOperation(name + "(" + strings.Join(texts, ", ") + ")"), true
 }
 
 // interval reads the expression and the unit of an INTERVAL, whose keyword the
 // reader has consumed.
-func (r *reader) interval() (text string, precedence int, ok bool) {
-	amount, bound, ok := r.expression(0)
+func (r *reader) interval() (operation, bool) {
+	amount, ok := r.expression(0)
 	if !ok {
-		return "", 0, false
+		return operation{}, false
 	}
 	unit, more := r.peek()
 	if !more || unit.kind != kindWord || !r.table.units[strings.ToUpper(unit.text)] {
-		return "", 0, false
+		return operation{}, false
 	}
 	r.pos++
-	return "INTERVAL " + enclose(amount, bound, atomPrecedence) + " " + strings.ToUpper(unit.text), atomPrecedence, true
+	return atomOperation("INTERVAL " + amount.enclosed(atomPrecedence) + " " + strings.ToUpper(unit.text)), true
 }
 
-// isInterval reports whether an operand's text is an INTERVAL. No other atom
-// the key prints begins with the word: a name is quoted, a function name is
-// in lower case and a literal word is NULL, TRUE or FALSE.
-func isInterval(text string, precedence int) bool {
-	return precedence == atomPrecedence && strings.HasPrefix(text, "INTERVAL ")
+// isInterval reports whether an operand is an INTERVAL. No other atom the key
+// prints begins with the word: a name is quoted, a function name is in lower
+// case and a literal word is NULL, TRUE or FALSE.
+func isInterval(op operation) bool {
+	return op.precedence == atomPrecedence && strings.HasPrefix(op.text, "INTERVAL ")
 }
 
 func (r *reader) consume(want kind) bool {

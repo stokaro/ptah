@@ -100,12 +100,20 @@ func (n *checkExpressionNormalizer) skipLiteralCast(ch byte) bool {
 	return true
 }
 
+// checkCharsetIntroducerFollows reports whether expr holds a character set
+// introducer at start: an underscore, a character set name and a string, with
+// or without whitespace before the string. MySQL 26.10 and MariaDB 12.3 read
+// `_binary 'ab'` as `_binary'ab'`, and store the CHECK `b <> _binary 'ab'` on a
+// varbinary column as `b <> _binary'ab'`.
 func checkCharsetIntroducerFollows(expr string, start int) bool {
 	i := start + 1
 	if i >= len(expr) || !isCheckCharsetNameStart(rune(expr[i])) {
 		return false
 	}
 	for i < len(expr) && isCheckCharsetNameChar(rune(expr[i])) {
+		i++
+	}
+	for i < len(expr) && unicode.IsSpace(rune(expr[i])) {
 		i++
 	}
 	return i < len(expr) && expr[i] == '\''

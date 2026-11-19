@@ -115,7 +115,7 @@ func TestReadColumns_SeparatesNoDefaultFromADefaultOfNull(t *testing.T) {
 			}
 			reader := NewMySQLReader(columnsDB(c, [][]driver.Value{row}).SQL, "app")
 
-			columnsByTable, err := reader.readColumnsByTable(t.Context(), "app", test.literals)
+			columnsByTable, err := reader.readColumnsByTable(t.Context(), "app", test.literals, expressionsEscaped)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(columnsByTable["customers"], qt.HasLen, 1)

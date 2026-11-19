@@ -432,9 +432,9 @@ func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T)
 // byte-identity contract: without --format, the wrapped verb's execution
 // output is exactly the output from a pre-approved native
 // `ptah migrations down` run. The native invocation selects
-// --revision-format atlas explicitly because the forward injects that default
-// itself, so both runs perform the same real rollback against the Atlas
-// revision table.
+// --revision-format atlas and --dir-format atlas explicitly because the forward
+// injects both itself, so both runs read the same directory and perform the
+// same real rollback against the Atlas revision table.
 func TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -476,6 +476,7 @@ func TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T
 			"--migrations-dir", migrationsDir,
 			"--target", "1",
 			"--revision-format", "atlas",
+			"--dir-format", "atlas",
 			"--confirm",
 		})
 		err := cmd.Execute()

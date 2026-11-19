@@ -208,12 +208,19 @@ func TestColumns_AnExpressionDefaultIsComparedByPrecedence(t *testing.T) {
 			want:     map[string]string{"default_expr": "(1 - (2 - 3)) -> (1 - 2 - 3)"},
 		},
 		{
-			// NOT is outside the table, so the text is compared as written.
-			name:     "an expression the precedence does not read",
+			name:     "MySQL writes NOT over a number as a comparison with 0",
 			dialect:  platform.MySQL,
 			declared: "(NOT 1 + 1)",
 			reported: "(0 = (1 + 1))",
-			want:     map[string]string{"default_expr": "(0 = (1 + 1)) -> (NOT 1 + 1)"},
+			want:     make(map[string]string),
+		},
+		{
+			// CASE is outside the table, so the text is compared as written.
+			name:     "an expression the precedence does not read",
+			dialect:  platform.MySQL,
+			declared: "(CASE WHEN 1 > 0 THEN 2 ELSE 3 END + 1)",
+			reported: "((case when (1 > 0) then 2 else 3 end) + 1)",
+			want:     map[string]string{"default_expr": "((case when (1 > 0) then 2 else 3 end) + 1) -> (CASE WHEN 1 > 0 THEN 2 ELSE 3 END + 1)"},
 		},
 		{
 			// SQLite stores a default as written, and its descriptor names no

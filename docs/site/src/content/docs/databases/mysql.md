@@ -167,10 +167,12 @@ SQL:
   `default_expr` in a Go struct or a YAML schema is written by the same rule,
   so `default_expr="1 + 2"` renders `DEFAULT (1 + 2)`. A
   parenthesis that changes the grouping is part of the default:
-  `((1 + 2) * 3)` and `(1 + 2 * 3)` differ. An expression that holds
-  `NOT`, `IS`, `IN`, `CASE`, a qualified name or another character set
-  introducer is compared as written, and so is one the server rewrites
-  further: MySQL stores `(NOT 1 + 1)` as `(0 = (1 + 1))`.
+  `((1 + 2) * 3)` and `(1 + 2 * 3)` differ. `NOT`, `IS`, `IN`, `BETWEEN`,
+  `LIKE` and `REGEXP` are read the way the server writes them back: MySQL
+  stores `(NOT 1 + 1)` as `(0 = (1 + 1))`, and the two are one default. An
+  expression that holds
+  `CASE`, `LIKE ... ESCAPE`, `IS UNKNOWN` or a qualified name is compared as
+  written.
 - A string default is not an expression default, even where its characters
   spell the expression. `DEFAULT '1 + 2'` stores five characters and
   `DEFAULT (1 + 2)` stores 3, so a plan between the two changes the column in
@@ -437,7 +439,46 @@ SQL:
   MariaDB reports the condition as SQL, `` `c` <> 'it\'s' ``, and Ptah reads it
   as reported. The comparison reads each string by the value it stands for, so
   `'it''s'`, `'it\'s'` and `"it's"` are one string, and so are `'x\ty'` and the
-  same string holding a tab.
+  same string holding a tab. A generated column's expression and an expression
+  default are read the same way.
+- MySQL's `information_schema` also reports a character beyond ASCII in these
+  expressions encoded once more: each byte of its UTF-8 form arrives as a
+  character of its own, so `CHECK (c <> 'é')` holds
+  ``(`c` <> _utf8mb4\'Ã©\')``. Ptah takes that layer off where what is left is
+  UTF-8, and keeps the text as reported where it is not. A string written in
+  another character set, such as `_latin1 x'e9'`, is reported with one layer
+  and read as reported. MariaDB reports each character as it is, apart from
+  the `CHECK_CLAUSE` case below.
+- A `CHECK` condition and a generated column's expression are compared as
+  written first, and where the text differs, as the operations their
+  operators group, by the precedence an expression default is read with.
+  MySQL 26.10 stores `CHECK (id between 1 and 10 and c is not null)` as
+  ``((`id` between 1 and 10) and (`c` is not null))``, `CHECK (NOT a OR id >
+  0)` as ``((0 = `a`) or (`id` > 0))``, `CHECK (c NOT LIKE 'x%')` as
+  ``(not((`c` like _utf8mb4'x%')))`` and `CHECK (b <> X'41')` as
+  ``(`b` <> 0x41)``. MariaDB 12.3 writes `NOT a` as `` `a` = 0 `` and keeps
+  `X'41'` compared with a `varbinary` column. Each pair is one condition, so a
+  second apply plans nothing, and a
+  changed value is still a change. A condition holding `CASE` or
+  `LIKE ... ESCAPE` is compared as written, and so is one the server rewrites
+  further: MariaDB stores `CHECK (NOT TRUE)` as `0`. Each of these plans the
+  condition again on every run.
+- MariaDB converts a hexadecimal, bit, national or other character set string
+  in a `CHECK` to the character set of the column it is compared with, and
+  stores the string that results. Measured on MariaDB 12.3 with a `utf8mb4`
+  `varchar` column, `x <> x'41'`, `x <> 0x41` and `x <> b'1000001'` are stored
+  as `` `x` <> 'A' ``, and `x <> N'abc'` as `` `x` <> 'abc' ``. The stored
+  condition compares by the column's collation rather than by bytes: under
+  `utf8mb4_uca1400_ai_ci` it refuses the value `'a'`, which `'a' <> x'41'` in a
+  query accepts. The declaration and the condition the server enforces differ,
+  and Ptah cannot tell a declared `x'41'` from a declared `'A'` in what the
+  server reports. It compares such a `CHECK` as written, so the `CHECK` is
+  planned again on every run. Write the string the server stores, `x <> 'A'`,
+  and the `CHECK` converges and states the condition the server enforces.
+- MariaDB reports `CHECK_CLAUSE` in `utf8mb3`, so a character beyond U+FFFF
+  reads as one `?` per byte of its UTF-8 form, while `SHOW CREATE TABLE`
+  prints it whole. A `CHECK` holding such a character, such as U+1F600, is
+  compared as reported and planned again on every run.
 - A `CHECK` written on a column may name only that column on MySQL.
   `CREATE TABLE c (a int, b int CHECK (b > a))` is
   `ERROR 3813 (HY000): Column check constraint ... references other column`
