@@ -442,16 +442,6 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         `'a\nb\tc\0d\Ze\rf\bg'`,
 		},
 		{
-			// Under NO_BACKSLASH_ESCAPES a control character is written as
-			// the byte, which the session reads as itself.
-			name:         "a MySQL string holding a quote and a line feed without backslash escapes",
-			columnType:   "varchar(30)",
-			dataType:     "varchar",
-			defaultValue: "it's\nhere",
-			literals:     literalsUnquotedVerbatim,
-			want:         "'it''s\nhere'",
-		},
-		{
 			// Measured on MySQL 26.10: DEFAULT '' reports an empty value and
 			// no default reports SQL NULL.
 			name:         "a MySQL empty string",
@@ -620,30 +610,7 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 				DataType:   test.dataType,
 			}
 
-			got, err := normalizeMySQLColumnDefault(col, test.defaultValue, test.extra, test.literals)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, test.want)
-		})
-	}
-}
-
-// Under NO_BACKSLASH_ESCAPES a literal holding a backslash is refused: the
-// backslash is the character there, and written as it is the description
-// cannot be parsed back. 'p\' ends at the quote behind the backslash for a
-// reader that takes the backslash as an escape.
-func TestNormalizeMySQLColumnDefault_ABackslashWithoutBackslashEscapes_FailurePath(t *testing.T) {
-	for _, value := range []string{`a\b`, `p\`} {
-		t.Run(value, func(t *testing.T) {
-			c := qt.New(t)
-			col := &catalog.Column{Name: "c", ColumnType: "varchar(30)", DataType: "varchar"}
-
-			got, err := normalizeMySQLColumnDefault(col, value, "", literalsUnquotedVerbatim)
-
-			c.Assert(err, qt.ErrorMatches, `the default ".*" holds a backslash, and the session's sql_mode names NO_BACKSLASH_ESCAPES, `+
-				`under which the backslash is the character; Ptah reads a backslash in a string as an escape, so connect with a `+
-				`sql_mode that leaves out NO_BACKSLASH_ESCAPES to read this column`)
-			c.Assert(got, qt.Equals, "")
+			c.Assert(normalizeMySQLColumnDefault(col, test.defaultValue, test.extra, test.literals), qt.Equals, test.want)
 		})
 	}
 }

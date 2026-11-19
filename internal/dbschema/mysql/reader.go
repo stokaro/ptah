@@ -662,10 +662,7 @@ func applyMySQLColumnMetadata(
 	generatedExpression sql.NullString,
 ) error {
 	if defaultValue.Valid && !isAbsentColumnDefault(defaultValue.String, literals) {
-		defaultSQL, err := normalizeMySQLColumnDefault(col, defaultValue.String, extra.String, literals)
-		if err != nil {
-			return err
-		}
+		defaultSQL := normalizeMySQLColumnDefault(col, defaultValue.String, extra.String, literals)
 		col.ColumnDefault = &defaultSQL
 	}
 	if characterMaxLength.Valid {
@@ -775,27 +772,19 @@ type defaultLiterals uint8
 const (
 	// literalsUnquoted is MySQL's: a literal is written without quotes, and
 	// EXTRA says DEFAULT_GENERATED for an expression default. The literal is
-	// the stored value, so a backslash in it is written back escaped, as
-	// MySQL's default sql_mode reads one.
+	// the stored value under every sql_mode, so a backslash in it is written
+	// back escaped, as Ptah reads one.
 	literalsUnquoted defaultLiterals = iota
 	// literalsQuoted is MariaDB's: a literal is written in quotes, so a value
 	// without them is an expression, a number or a keyword.
 	literalsQuoted
-	// literalsUnquotedVerbatim is MySQL's under NO_BACKSLASH_ESCAPES, where a
-	// backslash in a string literal is the character. Ptah writes and reads a
-	// backslash as an escape, so a literal holding one is refused rather than
-	// read; any other literal is written back as it is.
-	literalsUnquotedVerbatim
 )
 
 // defaultLiterals answers how the server the account is on writes a literal
 // default.
 func (a sessionAccount) defaultLiterals() defaultLiterals {
-	switch {
-	case a.mariaDB:
+	if a.mariaDB {
 		return literalsQuoted
-	case a.noBackslashEscapes:
-		return literalsUnquotedVerbatim
 	}
 	return literalsUnquoted
 }
@@ -815,32 +804,26 @@ func (a sessionAccount) defaultLiterals() defaultLiterals {
 // as the three characters quote, x, quote reports `'x'`, and the read writes it
 // back with each of those quotes doubled.
 //
-// A literal holding a backslash, read in a session whose sql_mode names
-// NO_BACKSLASH_ESCAPES, is refused: the backslash is the character there,
-// and a description holding it as written cannot be parsed or compared,
-// since both read a backslash as an escape.
-func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string, literals defaultLiterals) (string, error) {
+// The catalog's answer does not depend on the session's sql_mode: measured on
+// MySQL 26.10 and MariaDB 12.3, a session under NO_BACKSLASH_ESCAPES reads
+// the same COLUMN_DEFAULT as one under the default mode, so the read writes
+// the same description in both.
+func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string, literals defaultLiterals) string {
 	value := strings.TrimSpace(defaultValue)
 	switch {
 	case literals == literalsQuoted && !isQuotedMySQLDefault(value):
-		return normalize.FunctionAliases(defaultValue, mariaDBFunctionAliases(), true), nil
+		return normalize.FunctionAliases(defaultValue, mariaDBFunctionAliases(), true)
 	case literals == literalsQuoted:
-		return defaultValue, nil
+		return defaultValue
 	case value != "" && hasGeneratedDefault(extra):
-		return generatedDefault(col, value), nil
+		return generatedDefault(col, value)
 	case value != "" && !mysqlDefaultNeedsLiteralQuotes(col, value):
 		// An empty answer is the empty string on every column: MySQL 26.10
 		// reports `DEFAULT ''` on a varbinary as an empty value too, and no
 		// default as SQL NULL.
-		return defaultValue, nil
-	case literals == literalsUnquotedVerbatim && strings.Contains(defaultValue, `\`):
-		return "", fmt.Errorf("the default %q holds a backslash, and the session's sql_mode names "+
-			"NO_BACKSLASH_ESCAPES, under which the backslash is the character; Ptah reads a backslash in a string as an "+
-			"escape, so connect with a sql_mode that leaves out NO_BACKSLASH_ESCAPES to read this column", defaultValue)
-	case literals == literalsUnquotedVerbatim:
-		return "'" + strings.ReplaceAll(defaultValue, "'", "''") + "'", nil
+		return defaultValue
 	}
-	return quoteMySQLDefaultLiteral(defaultValue), nil
+	return quoteMySQLDefaultLiteral(defaultValue)
 }
 
 // mariaDBFunctionAliases are the function names MariaDB prints in place of
