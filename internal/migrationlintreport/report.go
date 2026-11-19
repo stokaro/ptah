@@ -1803,9 +1803,16 @@ func sarifRules(findings []lint.Finding) ([]sarifRule, map[string]int) {
 	for i, code := range codes {
 		indexes[code] = i
 		finding := byCode[code]
+		// SARIF's name is the rule's readable identifier, which the Ptah
+		// name is; the title stays the short description, and serves as the
+		// name of a rule that has no Ptah name.
+		name := finding.Name
+		if name == "" {
+			name = finding.Title
+		}
 		rules = append(rules, sarifRule{
 			ID:               code,
-			Name:             finding.Title,
+			Name:             name,
 			ShortDescription: sarifMessage{Text: finding.Title},
 			DefaultConfig:    sarifDefaultConfig{Level: sarifLevel(finding.Severity)},
 		})
@@ -1896,7 +1903,7 @@ func writeGitHubActions(w io.Writer, report Report) {
 			level = "error"
 		}
 		file := escapeGHProperty(finding.File)
-		message := escapeGHData(fmt.Sprintf("%s: %s", finding.Rule, finding.Message))
+		message := escapeGHData(fmt.Sprintf("%s: %s", strings.TrimSpace(finding.Rule+" "+finding.Name), finding.Message))
 		if finding.Line > 0 {
 			fmt.Fprintf(w, "::%s file=%s,line=%d::%s\n", level, file, finding.Line, message)
 			continue

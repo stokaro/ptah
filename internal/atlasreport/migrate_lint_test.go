@@ -155,6 +155,34 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 	c.Assert(report.Files[0].Findings[2].Rule, qt.Equals, "MF103")
 }
 
+// TestWriteMigrateLintFormat_JSONCarriesNoPtahRuleName renders a dropped
+// table, whose native finding carries the Ptah name destructive/drop-table,
+// through the template a `--format '{{ json .Files }}'` run takes. The name is
+// native vocabulary: the compatibility report prints the Atlas code alone.
+func TestWriteMigrateLintFormat_JSONCarriesNoPtahRuleName(t *testing.T) {
+	c := qt.New(t)
+	fsys := fstest.MapFS{
+		"1_drop.sql": {Data: []byte("DROP TABLE users;\n")},
+	}
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
+		Dialect:       "sqlite",
+	})
+	c.Assert(err, qt.IsNil)
+	var out bytes.Buffer
+
+	err = atlasreport.WriteMigrateLintFormat(&out, `{{ json .Files }}`, atlasreport.MigrateLintOptions{
+		Analysis: &analysis,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(analysis.Findings(), qt.Not(qt.HasLen), 0)
+	c.Assert(analysis.Findings()[0].Name, qt.Equals, "destructive/drop-table")
+	c.Assert(out.String(), qt.Contains, `"rule":"DS102"`)
+	c.Assert(out.String(), qt.Not(qt.Contains), `destructive/drop-table`)
+}
+
 func TestNewMigrateLint_OrdersMigrationsByVersion(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{

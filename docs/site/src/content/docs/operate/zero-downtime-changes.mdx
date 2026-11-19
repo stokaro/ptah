@@ -268,9 +268,9 @@ ptah migrations lint --dir ./migrations --dialect postgres
 ```
 
 ```text
-migrations/0000000002_unsafe.down.sql:1 [warning] PG106: DROP INDEX without CONCURRENTLY blocks writes while PostgreSQL removes the index; use DROP INDEX CONCURRENTLY outside a transaction for populated tables (index dropped with a table lock)
-migrations/0000000002_unsafe.up.sql:1 [warning] PG101: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
-migrations/0000000002_unsafe.up.sql:2 [warning] PG303: SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it (column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, and SET NOT NULL afterwards, which then scans nothing (not-null validation scans existing rows)
+migrations/0000000002_unsafe.down.sql:1 [warning] PG106 locking/drop-index: DROP INDEX without CONCURRENTLY blocks writes while PostgreSQL removes the index; use DROP INDEX CONCURRENTLY outside a transaction for populated tables (index dropped with a table lock)
+migrations/0000000002_unsafe.up.sql:1 [warning] PG101 locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
+migrations/0000000002_unsafe.up.sql:2 [warning] PG303 locking/set-not-null: SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it (column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, and SET NOT NULL afterwards, which then scans nothing (not-null validation scans existing rows)
 
 3 finding(s).
 ```

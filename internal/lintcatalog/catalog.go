@@ -26,6 +26,7 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/providerpublished"
 	"ptah.run/internal/sqllint"
 	"ptah.run/migration/lint"
@@ -104,9 +105,10 @@ type Entry struct {
 	Code string
 	// Name is the rule's Ptah name, `category/name`: two lowercase segments of
 	// letters and digits joined by single hyphens, the first a declared
-	// [Category]. Native Ptah does not report it yet: it is the name the rule
-	// takes when the native surface moves off Atlas-shaped codes, declared
-	// beside the code and the Atlas check so the three are one correspondence.
+	// [lintnames.Category]. It is read from internal/lintnames. Native Ptah
+	// reports it beside the code and accepts it, or its category, wherever a
+	// selector names a rule; the code stays the rule's identity in findings
+	// and in ptah-compat.
 	//
 	// Rules share a name only as one hazard: rules of one linter under one
 	// name are checked on dialects that do not overlap, and every rule under a
@@ -176,8 +178,6 @@ const (
 
 // ruleMeta is everything about a rule that no registry can carry.
 type ruleMeta struct {
-	// Name is the rule's Ptah name; see [Entry.Name].
-	Name string
 	// Summary is the one-line meaning.
 	Summary string
 	// AtlasCode names the Atlas analyzer check the rule reports, and is empty
@@ -206,153 +206,126 @@ type ruleMeta struct {
 // directions.
 var migrationRuleMeta = map[string]ruleMeta{
 	"BC103": {
-		Name:      "rollout/drop-table",
 		Summary:   "dropping a table retires a name deployed clients still query, which is a rollout break a backup does not mitigate",
 		AtlasCode: "BC103",
 		YDB:       YDBApplies,
 		YDBNote:   "`DROP TABLE`",
 	},
 	"BC104": {
-		Name:      "rollout/drop-column",
 		Summary:   "dropping a column retires a name deployed clients still select and insert, whether or not the column held rows",
 		AtlasCode: "BC104",
 		YDB:       YDBApplies,
 		YDBNote:   "`ALTER TABLE ... DROP COLUMN`",
 	},
 	"PG108": {
-		Name:      "locking/partitioned-index",
 		Summary:   "an index on a partitioned table locks the parent and every partition at once, and CONCURRENTLY is refused there",
 		AtlasCode: "PG108",
 	},
 	"PG109": {
-		Name:      "locking/add-exclusion-constraint",
 		Summary:   "adding an EXCLUDE constraint holds an ACCESS EXCLUSIVE lock while it builds the index and validates every row",
 		AtlasCode: "PG109",
 	},
 	"PG312": {
-		Name:      "locking/replace-primary-key",
 		Summary:   "replacing a primary key builds the new unique index under an ACCESS EXCLUSIVE lock",
 		AtlasCode: "PG312",
 	},
 	"PG314": {
-		Name:      "rollout/weaken-replica-identity",
 		Summary:   "REPLICA IDENTITY FULL or NOTHING changes what logical replication can carry for the table",
 		AtlasCode: "PG314",
 	},
 	"PG320": {
-		Name:      "design/disable-autovacuum",
 		Summary:   "disabling autovacuum leaves dead rows for nothing to reclaim; the statement is cheap and the cost is paid later",
 		AtlasCode: "PG320",
 	},
 	"MY137": {
-		Name:      "rewrite/replace-primary-key",
 		Summary:   "replacing a primary key rebuilds the table and every secondary index that stores it as a row pointer",
 		AtlasCode: "MY137",
 	},
 	"MY138": {
-		Name:      "rewrite/change-engine",
 		Summary:   "changing the storage engine copies the table and blocks writes for the duration",
 		AtlasCode: "MY138",
 	},
 	"MY139": {
-		Name:      "rewrite/change-partitioning",
 		Summary:   "a partitioning change rewrites every row and accepts no ALGORITHM or LOCK clause to soften it",
 		AtlasCode: "MY139",
 	},
 	"MY140": {
-		Name:      "rewrite/add-stored-generated-column",
 		Summary:   "adding a STORED generated column computes a value for every row, copying the table and blocking writes",
 		AtlasCode: "MY140",
 	},
 	"MY141": {
-		Name:      "locking/add-auto-increment-column",
 		Summary:   "adding an AUTO_INCREMENT column rebuilds the table in place and still blocks writes",
 		AtlasCode: "MY141",
 	},
 	"MY143": {
-		Name:      "rewrite/modify-generated-column",
 		Summary:   "changing a STORED generated column recomputes it for every row, copying the table and blocking writes",
 		AtlasCode: "MY143",
 	},
 	"MY144": {
-		Name:      "locking/add-check",
 		Summary:   "adding a CHECK constraint validates every existing row, and one that fails the predicate fails the migration",
 		AtlasCode: "MY144",
 	},
 	"MY145": {
-		Name:      "locking/enforce-check",
 		Summary:   "enforcing a CHECK constraint revalidates every row; unenforcing one stops the server refusing the values it was there to refuse",
 		AtlasCode: "MY145",
 	},
 	"MY146": {
-		Name:      "destructive/drop-system-versioning",
 		Summary:   "DROP SYSTEM VERSIONING deletes every historical row version permanently, and no rollback restores it",
 		AtlasCode: "MY146",
 	},
 	"MY147": {
-		Name:      "rewrite/set-not-null",
 		Summary:   "declaring a column NOT NULL rebuilds the table; whether an existing NULL fails the statement is DD103's question",
 		AtlasCode: "MY147",
 	},
 	"DD103": {
-		Name:    "data-dependent/set-not-null",
 		Summary: "a nullable column made NOT NULL fails on a row holding NULL, or rewrites it to the type's default",
 	},
 	"DD102": {
-		Name:    "correctness/immutable-calls-volatile",
 		Summary: "a routine declared immutable calls something whose result changes between two calls with the same arguments",
 		YDB:     YDBNoSuchStatement,
 		YDBNote: "YQL stores no routine",
 	},
 	"DS101": {
-		Name: "destructive/drop-table",
-		Summary: "DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; " +
-			"a rename reports here on the compatibility surface, retiring the old name without moving the rows. " +
-			"The native surface leaves out the drop that ends a table rebuild, whose copy keeps every row under the old name",
+		Summary: "DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and its rows. " +
+			"On the compatibility surface a rename reports here, retiring the old name without moving the rows. " +
+			"The native surface skips the drop that ends a table rebuild, whose copy keeps every row",
 		AtlasCode: "DS102",
 		YDB:       YDBApplies,
 		YDBNote:   "`DROP TABLE`",
 	},
 	"DS110P": {
-		Name: "dependency/drop-column-in-use",
 		Summary: "a column a view or routine still reads is dropped, and the finding names what breaks; " +
 			"a view dropped or rebuilt with a plain projection before the column drop is left out",
 		YDB:     YDBNeedsDevDatabase,
 		YDBNote: "what reads a column comes from a dev database replay",
 	},
 	"DS102": {
-		Name:      "destructive/drop-column",
 		Summary:   "DROP COLUMN destroys the column and every value stored in it; an IF EXISTS drop of a column the dev database shows absent is not reported",
 		AtlasCode: "DS103",
 		YDB:       YDBApplies,
 		YDBNote:   "`ALTER TABLE ... DROP COLUMN`",
 	},
 	"DS103": {
-		Name:    "data-dependent/alter-column-type",
 		Summary: "a column type change can truncate or reject existing values and may rewrite the table under a lock; a clause that restates the column's current type, as the dev database records it, is not reported",
 		YDB:     YDBNoSuchStatement,
 		YDBNote: "YQL changes no column type; `ALTER COLUMN ... TYPE` is a syntax error",
 	},
 	"DS104": {
-		Name:    "integrity/drop-not-null",
 		Summary: "DROP NOT NULL removes a column-level data protection",
 		YDB:     YDBApplies,
 		YDBNote: "`ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL`",
 	},
 	"DS105": {
-		Name:    "integrity/drop-untyped-constraint",
 		Summary: "an untyped DROP CONSTRAINT removes a data protection the SQL does not name",
 		YDB:     YDBNoSuchStatement,
 		YDBNote: "YDB has no named constraint to drop",
 	},
 	"DS106": {
-		Name:    "destructive/remove-enum-value",
 		Summary: "removing an enum value can invalidate rows that still hold it",
 		YDB:     YDBNoSuchStatement,
 		YDBNote: "YDB has no enum type",
 	},
 	"DS107": {
-		Name: "destructive/drop-object",
 		// Broader than Atlas DS101, which is the schema drop alone: this rule
 		// also fires on DROP TYPE, EXTENSION, FUNCTION, PROCEDURE, TRIGGER,
 		// ROLE, and POLICY, and on YDB on DROP USER, DROP GROUP, DROP TOPIC,
@@ -367,116 +340,97 @@ var migrationRuleMeta = map[string]ruleMeta{
 			"coordination resources are lost with their objects",
 	},
 	"AC101": {
-		Name:    "coverage/routine-body",
 		Summary: "the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does",
 		YDB:     YDBNoSuchStatement,
 		YDBNote: "YQL stores no routine",
 	},
 	"AC102": {
-		Name:    "coverage/unparsed-statement",
 		Summary: "the SQL parser could not read a statement and no server ran it, so a clean result says nothing about it",
 		YDB:     YDBProviderReads,
 		YDBNote: "the rule is about Ptah's SQL parser, and YQL is read by its provider",
 	},
 	"ON101": {
-		Name:    "online/unproven",
 		Summary: "the statement is outside the set measured to take no lock conflicting with reads and writes on PostgreSQL",
 	},
 	"ON102": {
-		Name:    "online/unproven",
 		Summary: "the statement does not ask MySQL or MariaDB to apply it without blocking writes, so the server was never given the chance to refuse",
 	},
 	"ON103": {
-		Name:    "online/lock-held-across-scan",
 		Summary: "a statement validates a constraint behind a lock an earlier statement in the same transaction took, so the scan runs with readers and writers waiting",
 	},
 	"DS108": {
-		Name:    "destructive/truncate-table",
 		Summary: "TRUNCATE deletes every row in the table",
 		YDB:     YDBApplies,
 		YDBNote: "`TRUNCATE TABLE`, on lines with `truncate_table`",
 	},
 	"DS109": {
-		Name:    "security/disable-row-level-security",
 		Summary: "DISABLE ROW LEVEL SECURITY removes an access-control protection",
 		YDB:     YDBNoSuchStatement,
 		YDBNote: "YDB has no row-level security",
 	},
 	"DS111P": {
-		Name:    "security/no-force-row-level-security",
 		Summary: "NO FORCE ROW LEVEL SECURITY exempts the table owner from every policy on the table",
 		YDB:     YDBNoSuchStatement,
 		YDBNote: "YDB has no row-level security",
 	},
 	"CD101": {
-		Name:      "integrity/drop-foreign-key",
 		Summary:   "dropping a foreign key removes referential-integrity enforcement",
 		AtlasCode: "CD101",
 		YDB:       YDBNoSuchStatement,
 		YDBNote:   "YDB has no foreign key",
 	},
 	"CD102": {
-		Name:      "integrity/drop-check",
 		Summary:   "dropping a check constraint removes a value-validation guarantee",
 		AtlasCode: "CD102",
 		YDB:       YDBNoSuchStatement,
 		YDBNote:   "YDB has no `CHECK` constraint",
 	},
 	"CD103": {
-		Name:      "integrity/drop-primary-key",
 		Summary:   "dropping a primary key removes row identity and can break replication",
 		AtlasCode: "CD103",
 		YDB:       YDBNoSuchStatement,
 		YDBNote:   "YDB cannot drop a primary key",
 	},
 	"DD101": {
-		Name:      "data-dependent/add-not-null-column",
 		Summary:   "adding a NOT NULL column without a default fails or blocks on a populated table",
 		AtlasCode: "MF103",
 		YDB:       YDBReplaced,
 		YDBNote:   "`YD103`, since YDB refuses a NOT NULL column without a default even on an empty table",
 	},
 	"MF101P": {
-		Name:    "file-form/missing-down",
 		Summary: "no matching .down.sql exists, so a failed deploy cannot be rolled back mechanically",
 		YDB:     YDBApplies,
 		YDBNote: "the migration directory's files",
 	},
 	"MF102P": {
-		Name:    "file-form/empty-migration",
 		Summary: "the migration carries no executable statements",
 		YDB:     YDBApplies,
 		YDBNote: "the migration directory's files",
 	},
 	"MF101": {
-		Name:      "data-dependent/add-unique-index",
 		Summary:   "a unique index built over existing rows fails on the first duplicate",
 		AtlasCode: "MF101",
 		YDB:       YDBApplies,
 		YDBNote:   "`ADD INDEX ... UNIQUE` where the target adds one to an existing table; `YD101` replaces it where it does not",
 	},
 	"MF102": {
-		Name:      "data-dependent/rebuild-index-as-unique",
 		Summary:   "an index dropped and rebuilt as unique fails on the first duplicate and leaves the table without it",
 		AtlasCode: "MF102",
 		YDB:       YDBApplies,
 		YDBNote:   "`DROP INDEX` then `ADD INDEX ... UNIQUE`, where the target adds one; `YD101` replaces it where it does not",
 	},
 	"MF103": {
-		Name:    "file-form/file-name",
 		Summary: "the file name does not follow the migration file-name convention",
 		YDB:     YDBApplies,
 		YDBNote: "the migration directory's files",
 	},
 	"MF105P": {
-		Name:       "file-form/refused-file",
 		Summary:    "a run refuses the migration directory for this file: the directory's format does not read its name, another file carries its version and direction, or the revision table cannot keep its version",
 		NativeOnly: true,
 		YDB:        YDBApplies,
 		YDBNote:    "the migration directory's files",
 	},
 	"BC101": {
-		Name:       "rollout/rename",
 		Summary:    "a rename retires a name deployed code still refers to",
 		AtlasCode:  "BC101",
 		NativeOnly: true,
@@ -484,378 +438,299 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDBNote:    "`ALTER TABLE ... RENAME TO`",
 	},
 	"PG101": {
-		Name:      "locking/create-index",
 		Summary:   "CREATE INDEX without CONCURRENTLY blocks writes for the whole build",
 		AtlasCode: "PG101",
 	},
 	"PG102": {
-		Name:    "transaction/add-enum-value",
 		Summary: "ALTER TYPE ... ADD VALUE cannot run inside a transaction before PostgreSQL 12, and the value stays unusable in the same transaction after it",
 	},
 	"PG103": {
-		Name:      "transaction/concurrent-index",
 		Summary:   "CONCURRENTLY cannot run inside the migration's transaction",
 		AtlasCode: "PG103",
 	},
 	"PG103P": {
-		Name:    "transaction/per-chunk-index",
 		Summary: "a TimescaleDB per-chunk index build cannot run inside the migration's transaction",
 	},
 	"PG104": {
-		Name:      "locking/add-primary-key",
 		Summary:   "adding a primary key takes an ACCESS EXCLUSIVE lock and can scan existing rows",
 		AtlasCode: "PG104",
 	},
 	"PG105": {
-		Name:      "locking/add-unique-constraint",
 		Summary:   "adding a unique constraint takes an ACCESS EXCLUSIVE lock and validates rows",
 		AtlasCode: "PG105",
 	},
 	"PG106": {
-		Name:      "locking/drop-index",
 		Summary:   "DROP INDEX without CONCURRENTLY blocks writes while the index is removed",
 		AtlasCode: "PG102",
 	},
 	"PG110": {
-		Name:      "design/column-alignment",
 		Summary:   "the declared column order can waste tuple padding",
 		AtlasCode: "PG110",
 	},
 	"PG301": {
-		Name:      "rewrite/alter-column-type",
 		Summary:   "a column type change PostgreSQL cannot prove safe rewrites the table and its indexes",
 		AtlasCode: "PG301",
 	},
 	"PG301P": {
-		Name:    "rewrite/in-place-column-change",
 		Summary: "an ALTER COLUMN TYPE the dev database shows PostgreSQL applies as a catalog edit, with no rewrite, rebuild or scan; info only",
 	},
 	"PG302": {
-		Name:      "rewrite/volatile-default",
 		Summary:   "a volatile DEFAULT on an added column rewrites or evaluates every existing row",
 		AtlasCode: "PG302",
 	},
 	"PG303": {
-		Name:      "locking/set-not-null",
 		Summary:   "SET NOT NULL scans the table to validate existing rows",
 		AtlasCode: "PG303",
 	},
 	"PG304": {
-		Name:      "locking/add-primary-key-on-nullable",
 		Summary:   "a primary key over nullable columns sets them NOT NULL and scans every row on top of the index build",
 		AtlasCode: "PG304",
 	},
 	"PG305": {
-		Name:      "locking/add-check",
 		Summary:   "adding a CHECK constraint validates existing rows and can hold locks",
 		AtlasCode: "PG305",
 	},
 	"PG306": {
-		Name:      "locking/add-foreign-key",
 		Summary:   "adding a foreign key validates existing rows and can block writes on both tables",
 		AtlasCode: "PG306",
 	},
 	"PG307": {
-		Name:      "rewrite/set-persistence",
 		Summary:   "changing LOGGED or UNLOGGED rewrites the table under heavyweight locks",
 		AtlasCode: "PG307",
 	},
 	"PG308": {
-		Name:      "locking/create-trigger",
 		Summary:   "CREATE TRIGGER takes a SHARE ROW EXCLUSIVE lock and can block writes",
 		AtlasCode: "PG308",
 	},
 	"PG309": {
-		Name:      "rewrite/add-stored-generated-column",
 		Summary:   "adding a STORED generated column computes and stores a value for every row",
 		AtlasCode: "PG309",
 	},
 	"PG310": {
-		Name:      "rewrite/add-identity-column",
 		Summary:   "adding an identity column can rewrite existing rows",
 		AtlasCode: "PG310",
 	},
 	"PG312P": {
-		Name:    "security/definer-without-search-path",
 		Summary: "a SECURITY DEFINER routine that does not pin search_path resolves unqualified names through the caller's",
 	},
 	"PG401P": {
-		Name:       "naming/identifier-too-long",
 		Summary:    "a name longer than the 63 bytes PostgreSQL keeps, which the server cuts with a notice and stores under its first bytes",
 		NativeOnly: true,
 	},
 	"PG402P": {
-		Name:       "naming/identifier-collision",
 		Summary:    "a name PostgreSQL cuts to a name already in use where it refuses the second declaration, so the migration fails when it runs",
 		NativeOnly: true,
 	},
 	"PG311": {
-		Name:      "rewrite/set-access-method",
 		Summary:   "changing a table's access method rewrites the table",
 		AtlasCode: "PG311",
 	},
 	"SA101": {
-		Name:      "security/dynamic-sql-from-value",
 		Summary:   "a routine builds and runs a statement from a value it does not quote",
 		AtlasCode: "SA101",
 		YDB:       YDBNoSuchStatement,
 		YDBNote:   "YQL stores no routine",
 	},
 	"NM101": {
-		Name:      "naming/schema-name",
 		Summary:   "a schema this migration creates or renames to violates the configured naming convention",
 		AtlasCode: "NM101",
 		YDB:       YDBNoSuchStatement,
 		YDBNote:   "YDB has no schema to create",
 	},
 	"NM102": {
-		Name:      "naming/table-name",
 		Summary:   "a table this migration creates or renames to violates the configured naming convention",
 		AtlasCode: "NM102",
 		YDB:       YDBApplies,
 		YDBNote:   "`CREATE TABLE` and `RENAME TO`, judged on the unquoted path",
 	},
 	"NM103": {
-		Name:      "naming/column-name",
 		Summary:   "a column this migration declares, adds, or renames to violates the configured naming convention",
 		AtlasCode: "NM103",
 		YDB:       YDBApplies,
 		YDBNote:   "the columns of `CREATE TABLE` and `ADD COLUMN`",
 	},
 	"NM104": {
-		Name:      "naming/index-name",
 		Summary:   "an index or unique key this migration names violates the configured naming convention",
 		AtlasCode: "NM104",
 		YDB:       YDBApplies,
 		YDBNote:   "`INDEX` in `CREATE TABLE`, `ADD INDEX` and `RENAME INDEX`",
 	},
 	"NM105": {
-		Name:      "naming/foreign-key-name",
 		Summary:   "a foreign key this migration names violates the configured naming convention",
 		AtlasCode: "NM105",
 		YDB:       YDBNoSuchStatement,
 		YDBNote:   "YDB has no foreign key",
 	},
 	"NM106": {
-		Name:      "naming/check-name",
 		Summary:   "a check constraint this migration names violates the configured naming convention",
 		AtlasCode: "NM106",
 		YDB:       YDBNoSuchStatement,
 		YDBNote:   "YDB has no `CHECK` constraint",
 	},
 	"MY101": {
-		Name:    "locking/blocking-alter-table",
 		Summary: "this ALTER TABLE form usually rebuilds the table and blocks writes for the duration",
 	},
 	"MY102": {
-		Name:      "side-effect/inline-reference",
 		Summary:   "an inline REFERENCES clause on a column is ignored by MySQL and enforced by MariaDB",
 		AtlasCode: "MY102",
 	},
 	"MY110": {
-		Name:      "rewrite/remove-enum-value",
 		Summary:   "removing an ENUM member copies the table, and a row still holding it fails the copy in strict mode",
 		AtlasCode: "MY110",
 	},
 	"MY111": {
-		Name:      "rewrite/reorder-enum-values",
 		Summary:   "reordering ENUM members renumbers every row and copies the table",
 		AtlasCode: "MY111",
 	},
 	"MY112": {
-		Name:      "rewrite/insert-enum-value",
 		Summary:   "inserting an ENUM member before the end renumbers the members after it and copies the table",
 		AtlasCode: "MY112",
 	},
 	"MY113": {
-		Name:      "rewrite/widen-enum",
 		Summary:   "growing an ENUM past 255 members widens each value to two bytes and copies the table",
 		AtlasCode: "MY113",
 	},
 	"MY120": {
-		Name:      "rewrite/remove-set-member",
 		Summary:   "removing a SET member copies the table, and a row still holding it fails the copy in strict mode",
 		AtlasCode: "MY120",
 	},
 	"MY121": {
-		Name:      "rewrite/reorder-set-members",
 		Summary:   "reordering SET members renumbers every row and copies the table",
 		AtlasCode: "MY121",
 	},
 	"MY122": {
-		Name:      "rewrite/insert-set-member",
 		Summary:   "inserting a SET member before the end renumbers the members after it and copies the table",
 		AtlasCode: "MY122",
 	},
 	"MY123": {
-		Name:      "rewrite/widen-set",
 		Summary:   "growing a SET across a multiple of eight members adds a byte to each value and copies the table",
 		AtlasCode: "MY123",
 	},
 	"MY130": {
-		Name:      "rewrite/alter-column-type",
 		Summary:   "a column type change InnoDB cannot apply in place copies the table and blocks writes",
 		AtlasCode: "MY130",
 	},
 	"MY130P": {
-		Name:    "rewrite/in-place-column-change",
 		Summary: "a MODIFY, CHANGE or CONVERT the dev database shows InnoDB applies without copying the table, and by which algorithm; info only",
 	},
 	"MY131": {
-		Name:      "locking/add-foreign-key",
 		Summary:   "adding a foreign key can copy or lock the table and block writes",
 		AtlasCode: "MY131",
 	},
 	"MY132": {
-		Name:      "rewrite/add-primary-key",
 		Summary:   "adding a primary key rebuilds the table in place around the new clustered index",
 		AtlasCode: "MY132",
 	},
 	"MY133": {
-		Name:      "rewrite/drop-primary-key",
 		Summary:   "dropping a primary key without adding one in the same statement copies the table",
 		AtlasCode: "MY133",
 	},
 	"MY136": {
-		Name:      "rewrite/convert-charset",
 		Summary:   "converting a table's character set re-encodes its columns and copies the table",
 		AtlasCode: "MY136",
 	},
 	"MY134": {
-		Name:      "locking/add-fulltext-index",
 		Summary:   "adding a FULLTEXT index can rebuild the table and block writes",
 		AtlasCode: "MY134",
 	},
 	"MY135": {
-		Name:      "locking/add-spatial-index",
 		Summary:   "adding a SPATIAL index can rebuild the table and block writes",
 		AtlasCode: "MY135",
 	},
 	"LT101": {
-		Name:      "rewrite/set-not-null",
 		Summary:   "SQLite cannot enforce NOT NULL on existing nullable data without a rebuild",
 		AtlasCode: "LT101",
 	},
 	"TX101": {
-		Name:      "transaction/mixed-statements",
 		Summary:   "the migration mixes statements that cannot share one transaction",
 		AtlasCode: "TX101",
 	},
 	"TX201": {
-		Name:      "transaction/explicit-transaction",
 		Summary:   "a statement that controls transaction state, which the migrator refuses in a wrapped file and in one that runs without a transaction; a golang-migrate file on PostgreSQL, up or down, is read as the migrator runs it",
 		AtlasCode: "TX201",
 	},
 	"SP101": {
-		Name:    "data-dependent/set-not-null",
 		Summary: "SET NOT NULL on Spanner validates every existing row in a schema change, and a row holding NULL fails it and leaves the column nullable",
 	},
 	"SP102": {
-		Name:    "side-effect/drop-row-deletion-policy",
 		Summary: "`ALTER TABLE ... DROP TTL` drops a table's row deletion policy, so rows the policy would delete stay",
 	},
 	"YD101": {
-		Name:    "capability/unique-index-on-existing-table",
 		Summary: "a unique index added to a table that exists, which a YDB line without `unique_index_on_existing_table` refuses",
 	},
 	"YD102": {
-		Name:    "transaction/scheme-and-data-in-one-query",
 		Summary: "a block or an action call that runs a scheme statement and a statement reading or writing a table in one query, which YDB refuses whole",
 	},
 	"YD103": {
-		Name:    "ydb/add-column-form",
 		Summary: "an `ADD COLUMN` YDB refuses: NOT NULL without a default on every line, or a default where `add_column_with_default` is false",
 	},
 	"YD104": {
-		Name:    "dependency/drop-indexed-column",
 		Summary: "a `DROP COLUMN` of a column an index keys or covers, or the TTL reads, which YDB refuses until the index or the TTL is gone",
 	},
 	"YD105": {
-		Name:    "side-effect/reset-min-partition-count",
 		Summary: "turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it; silent where the directory's own migrations left the minimum at 1",
 	},
 	"YD106": {
-		Name:    "dependency/drop-table-read-by-view",
 		Summary: "a `DROP TABLE` or `ALTER TABLE ... RENAME TO` of a table a view reads: YDB keeps the view, which reads its table by path, and every read of the view fails",
 	},
 	"YD107": {
-		Name:    "side-effect/widen-serial-sequence",
 		Summary: "an `ALTER SEQUENCE` on a 16-bit or 32-bit Serial's sequence, which raises its maximum to the Int64 maximum, so the column wraps to negative values without an error",
 	},
 	"YD108": {
-		Name:    "side-effect/replay-sequence-restart",
 		Summary: "an `ALTER SEQUENCE` without a `RESTART` on a sequence an earlier statement restarted, which YDB replays, so the next insert takes a key a row holds",
 	},
 	"YD109": {
-		Name:    "dependency/rename-table-with-changefeed",
 		Summary: "a `RENAME TO` of a table that carries a changefeed, which YDB refuses until every changefeed is dropped",
 	},
 	"YD110": {
-		Name:    "side-effect/revoke-grant-option",
 		Summary: "`REVOKE GRANT OPTION FOR` on YDB takes the permission it names as well, since YDB keeps the grant option as the permission `ydb.access.grant`",
 	},
 	"YD111": {
-		Name:    "side-effect/dropped-principal-keeps-permissions",
 		Summary: "`DROP USER` or `DROP GROUP` on YDB leaves the principal's permissions behind, and a principal created later under the name holds them",
 	},
 	"YD113": {
-		Name:    "side-effect/reset-topic-setting",
 		Summary: "an `ALTER TOPIC` that resets a topic setting, or a consumer setting other than its availability period, which YDB 26.2 accepts and keeps as it was, and 25.1 refuses",
 	},
 	"YD114": {
-		Name:    "side-effect/ignored-topic-setting",
 		Summary: "a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know",
 	},
 	"YD120": {
-		Name:    "destructive/drop-default-resource-pool",
 		Summary: "`DROP RESOURCE POOL default` on YDB, after which every query of the database fails with `Resource pool default not found`",
 	},
 	"YD121": {
-		Name:    "destructive/drop-backup-collection",
 		Summary: "`DROP BACKUP COLLECTION` deletes every backup the collection holds, and stops a YDB 25.1 server",
 	},
 	"YD122": {
-		Name:    "capability/analyze",
 		Summary: "`ANALYZE` in a migration, which YDB refuses unless `EnableColumnStatistics` is on, and on 25.1 refuses on a row table",
 	},
 	"YD115": {
-		Name:    "side-effect/drop-replication-without-failover",
 		Summary: "a `DROP ASYNC REPLICATION` without `CASCADE` of a replication not failed over, whose replica tables YDB keeps read-only for good",
 	},
 	"YD116": {
-		Name:    "security/secret-in-clear",
 		Summary: "a password or a token written in clear in an async replication or a transfer, which YDB keeps without reading it back while the migration file holds it",
 	},
 	"YD118": {
-		Name:    "side-effect/reset-partition-size",
 		Summary: "turning auto partitioning by size on resets the partition size to 2048 MB unless the same statement sets it",
 	},
 	"YD119": {
-		Name:    "side-effect/implicit-column-family",
 		Summary: "an `ALTER TABLE` that names a column family the table does not have, which YDB creates with its own settings rather than refusing, and YQL cannot drop",
 	},
 	"YD130": {
-		Name:    "capability/vector-index",
 		Summary: "a vector index a YDB line does not build: any where `vector_indexes` is false, and one over bit vectors where `vector_bit_type` is false",
 	},
 	"YD131": {
-		Name:    "side-effect/vector-index-misses-writes",
 		Summary: "rows written into a table holding a vector index on a YDB line where `vector_index_maintained_on_write` is false, which the index does not find",
 	},
 	"YD140": {
-		Name:    "security/secret-value-in-migration",
 		Summary: "a secret's value written into the migration: a `CREATE SECRET` or `ALTER SECRET` whose value is not a `$PTAH_SECRET_...` reference, or a statement on the deprecated `OBJECT ... (TYPE SECRET)`",
 	},
 	"YD141": {
-		Name:    "security/deprecated-secret-object",
 		Summary: "an external data source that names its credential by a deprecated secret object (`..._SECRET_NAME`), whose value the database administrator reads in clear",
 	},
 	"YD160": {
-		Name:    "destructive/discard-streaming-query-state",
 		Summary: "replacing a streaming query or changing its body discards checkpoint state that rollback cannot restore",
 	},
 	"YD150": {
-		Name:    "side-effect/orphaned-comment",
 		Summary: "a dropped or renamed column or index whose comment stays on the YDB table as an attribute under its old name",
 	},
 }
@@ -864,39 +739,30 @@ var migrationRuleMeta = map[string]ruleMeta{
 // only native ptah reaches.
 var sqlRuleMeta = map[string]ruleMeta{
 	"DDL002": {
-		Name:    "correctness/index-on-undeclared-column",
 		Summary: "an index names a column the schema does not declare",
 	},
 	"DDL003": {
-		Name:    "naming/identifier-too-long",
 		Summary: "a name longer than the identifier limit of a server that cuts long names, which stores the object under its first bytes",
 	},
 	"DDL004": {
-		Name:    "naming/identifier-collision",
 		Summary: "a name the server cuts to a name already in use where it refuses the second declaration",
 	},
 	"SQL001": {
-		Name:    "correctness/syntax-error",
 		Summary: "the statement is malformed or opens with words no engine Ptah reads has, so no rule could inspect it",
 	},
 	"SQL002": {
-		Name:    "coverage/unsupported-statement",
 		Summary: "nothing read the statement, which a server may still accept: the parser holds no grammar for it, or steps over it as it does a SELECT",
 	},
 	"DDL001": {
-		Name:    "design/no-primary-key",
 		Summary: "the created table declares no primary key",
 	},
 	"CAP001": {
-		Name:    "capability/missing",
 		Summary: "the statement needs a capability the target server version does not have",
 	},
 	"SQL004": {
-		Name:    "coverage/unanalyzed-statements",
 		Summary: "the file carried statement kinds no rule examined, so a clean result would not mean it was checked",
 	},
 	"SQL003": {
-		Name:    "coverage/dynamic-sql",
 		Summary: "a routine body builds SQL at run time, so static analysis of that routine stops there",
 	},
 }
@@ -1119,7 +985,7 @@ func migrationEntriesFrom(rules []lint.Rule) ([]Entry, error) {
 		identity := atlaslint.RuleForNativeCode(rule.Code)
 		entries = append(entries, Entry{
 			Code:           rule.Code,
-			Name:           meta.Name,
+			Name:           lintnames.Migration().Name(rule.Code),
 			Owner:          ownerOf(rule.Code, providerOwned),
 			Kind:           KindMigration,
 			Title:          rule.Title,
@@ -1136,6 +1002,9 @@ func migrationEntriesFrom(rules []lint.Rule) ([]Entry, error) {
 		})
 	}
 	if err := checkOrphans(migrationRuleMeta, declared, "migration lint"); err != nil {
+		return nil, err
+	}
+	if err := checkNameOrphans(lintnames.Migration(), declared, "migration lint"); err != nil {
 		return nil, err
 	}
 	return entries, nil
@@ -1159,7 +1028,7 @@ func sqlEntriesFrom(ids []string) ([]Entry, error) {
 		declared[id] = struct{}{}
 		entries = append(entries, Entry{
 			Code:      id,
-			Name:      meta.Name,
+			Name:      lintnames.SQL().Name(id),
 			Owner:     OwnerHost,
 			Kind:      KindSQL,
 			Title:     sqllint.CatalogTitle(id),
@@ -1170,6 +1039,9 @@ func sqlEntriesFrom(ids []string) ([]Entry, error) {
 		})
 	}
 	if err := checkOrphans(sqlRuleMeta, declared, "SQL lint"); err != nil {
+		return nil, err
+	}
+	if err := checkNameOrphans(lintnames.SQL(), declared, "SQL lint"); err != nil {
 		return nil, err
 	}
 	return entries, nil
@@ -1191,6 +1063,22 @@ func checkOrphans(meta map[string]ruleMeta, declared map[string]struct{}, surfac
 	return fmt.Errorf("the catalog documents %s rule(s) %s that no longer exist: remove the catalog entry or restore the rule", surface, strings.Join(orphans, ", "))
 }
 
+// checkNameOrphans fails when internal/lintnames names a rule no registry
+// produces. A name nothing reports is a selector that resolves to a code no
+// run has, so `--disable` would accept it and silence nothing.
+func checkNameOrphans(names lintnames.Table, declared map[string]struct{}, surface string) error {
+	var orphans []string
+	for _, code := range names.Codes() {
+		if _, ok := declared[code]; !ok {
+			orphans = append(orphans, code)
+		}
+	}
+	if len(orphans) == 0 {
+		return nil
+	}
+	return fmt.Errorf("internal/lintnames names %s rule(s) %s that no longer exist: remove the name or restore the rule", surface, strings.Join(orphans, ", "))
+}
+
 // NonConforming returns the entries whose identifiers do not follow the suffix
 // convention, in catalog order.
 func NonConforming(entries []Entry) []Entry {
@@ -1207,8 +1095,9 @@ func NonConforming(entries []Entry) []Entry {
 // with no family, a rule claiming an Atlas identifier that Atlas does not
 // document, an Atlas check mapped onto a rule that does not exist, a set of
 // non-conforming identifiers that differs from the pinned one, a rule whose
-// Ptah name breaks the naming rule (see [Category] and [Entry.Name]), and a
-// declared category no rule uses.
+// Ptah name breaks the naming rule (see [lintnames.Category] and
+// [Entry.Name]), a declared category no rule uses, and a name
+// internal/lintnames declares for a code no registry produces.
 func Validate(entries []Entry) error {
 	codes := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {

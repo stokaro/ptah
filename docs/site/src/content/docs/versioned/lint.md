@@ -36,7 +36,7 @@ ptah migrations lint --dir ./migrations --dialect sqlite
 A finding names the file, line, rule, and remediation (exit `1`):
 
 ```text
-migrations/0000000003_drop_users.up.sql:1 [error] DS101: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead (table dropped)
+migrations/0000000003_drop_users.up.sql:1 [error] DS101 destructive/drop-table: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead (table dropped)
 
 1 finding(s).
 ```
@@ -157,8 +157,8 @@ Useful controls:
   and `PG301P`, say where the state shows a column change applied in place,
   and by which algorithm, so quiet cost rules read as a judgment rather than
   as a rule that did not look.
-- `--disable DS101` (or a family such as `MY`) skips rules ad hoc; a
-  committed `.ptah-lint.yaml` does it persistently and adds per-rule
+- `--disable DS101` (or a family such as `MY`, a rule name, or a category)
+  skips rules ad hoc; a committed `.ptah-lint.yaml` does it persistently and adds per-rule
   severity and path scoping — see below.
 - `--provider-config` selects an
   [executable provider](../../extend/executable-providers/), which splits and
@@ -205,16 +205,17 @@ rules:
   config parsing (exit `2`). See [Which server the run plans
   against](#which-server-the-run-plans-against).
 - `disabled-rules` lists rule codes (`DS101`) or family prefixes (`MY`) to
-  skip entirely; entries merge with `--disable` flags. Selectors and custom
-  rule codes use uppercase ASCII letters and digits and start with a letter.
-  A selector that is a rule's own code selects that rule alone, and any other
-  selector is a prefix: `MF101` disables the unique-index check and leaves
-  the missing-down rule `MF101P` running, while `MF` disables both and `PG3`
-  disables every `PG3xx` rule. The same rule decides a `ptah:nolint`
-  selector.
-- `rules` keys name an exact code or a family prefix; the most specific key
-  wins, so a `DS102` entry beats a `DS` entry, and a key that is a code
-  governs that code alone.
+  skip entirely; entries merge with `--disable` flags. Code selectors and
+  custom rule codes use uppercase ASCII letters and digits and start with a
+  letter. A selector that is a rule's own code selects that rule alone, and
+  any other code selector is a prefix: `MF101` disables the unique-index
+  check and leaves the missing-down rule `MF101P` running, while `MF`
+  disables both and `PG3` disables every `PG3xx` rule. A [rule name or
+  category](../../reference/lint-rules/#rule-names-and-categories) works too
+  and matches exactly. The same rules decide a `ptah:nolint` selector.
+- `rules` keys name a code, a family prefix, a rule name or a category; the
+  most specific key wins, so a `DS102` entry beats a `DS` entry, and a key
+  that is a code governs that code alone.
 - `severity` accepts `info`, `warning` or `error` and replaces the rule's
   default severity on its findings — the level that `--fail-on` and the
   apply-time destructive gate below evaluate. Only `error` gates: a rule set to
@@ -223,7 +224,7 @@ rules:
   "surface this, never block on it" without the alternatives being loud enough
   to fail or absent from the report entirely. In SARIF the three levels are
   `note`, `warning` and `error`. Any other value fails config parsing (exit
-  `2`), so the vocabulary gained a level rather than becoming permissive.
+  `2`).
 - `exclude` lists slash-separated path globs (`**` crosses directory
   levels) where the rule is skipped. Prefer paths relative to the migration
   directory, such as `legacy/**`; these match regardless of how `--dir` was
@@ -232,9 +233,7 @@ rules:
   `--dir migrations`, and need not match an absolute `--dir` path. Patterns
   must already be normalized: repeated separators, `.` or `..` segments, and
   trailing separators are configuration errors rather than being rewritten
-  into a broader match. Empty patterns and malformed glob syntax are also
-  errors; Ptah reports the rule and pattern instead of silently weakening the
-  policy.
+  into a broader match.
 
 - `gate` names the rule families whose error-severity findings refuse
   `ptah migrations up`, beyond the `DS` family the apply gate always blocks
@@ -248,8 +247,8 @@ rules:
   [The online mode](../online-mode/).
 
 Configuration decoding is strict. Unknown keys, misspelled keys such as
-`severty`, lowercase or whitespace-padded selectors, selectors that match no
-registered rule, unsupported dialects or severities, empty or malformed
+`severty`, lowercase codes, whitespace-padded selectors, selectors that match
+no registered rule, unsupported dialects or severities, empty or malformed
 or non-normalized exclusion globs, and multiple YAML documents fail before
 linting or migration execution instead of silently weakening policy.
 
@@ -415,8 +414,9 @@ ALTER TABLE users DROP COLUMN archived_note;
 The directive suppresses only the named rules, and only for the statement
 directly below it — a blank line between the comment and the statement
 detaches the two. List several codes separated by spaces or commas, name a
-family (`DS`), or write a bare `-- ptah:nolint` to silence every rule for
-that one statement.
+family (`DS`), a rule name or a category, or write a bare `-- ptah:nolint`
+to silence every rule for that one statement. A rule name or category that
+does not exist fails the run.
 
 `-- atlas:nolint DS102` is accepted as an alias with the same
 statement-scoped behavior, so a directory shared with Atlas tooling keeps
@@ -432,8 +432,7 @@ The `atlas:` spelling follows Atlas's matching rule rather than Ptah's, so a
 code selector there matches one code exactly: `-- ptah:nolint DS` silences
 the data-safety family and `-- atlas:nolint DS` silences nothing. An
 unrecognized `atlas:nolint` selector is accepted and silences nothing,
-without a warning; `.ptah-lint.yaml` `disabled-rules` stays strict and
-rejects a selector matching no registered rule. Whole-file `atlas:nolint`
+without a warning. Whole-file `atlas:nolint`
 headers take effect only on the Atlas-compatible surface — see
 [Atlas migrate commands](../../atlas/migrate-commands/).
 

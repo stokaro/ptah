@@ -10,7 +10,7 @@
           "rules": [
             {
               "id": "BC103",
-              "name": "dropped table breaks deployed code",
+              "name": "rollout/drop-table",
               "shortDescription": {
                 "text": "dropped table breaks deployed code"
               },
@@ -20,7 +20,7 @@
             },
             {
               "id": "DS101",
-              "name": "table dropped",
+              "name": "destructive/drop-table",
               "shortDescription": {
                 "text": "table dropped"
               },

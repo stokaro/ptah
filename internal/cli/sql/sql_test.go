@@ -380,3 +380,65 @@ func TestSQLLint_ByteOrderMarkIsNotSQL(t *testing.T) {
 		c.Assert(stdout, qt.Contains, "No SQL lint findings.")
 	})
 }
+
+// TestSQLLint_PolicySetsSeverityByName reads `.ptah-lint.yaml` from the
+// working directory: a `rules:` key may be the rule's code, its Ptah name or
+// its category, and a key naming the one rule beats a category.
+func TestSQLLint_PolicySetsSeverityByName(t *testing.T) {
+	rows := []struct {
+		name   string
+		policy string
+		want   string
+	}{
+		{name: "the rule's name", policy: "rules:\n  design/no-primary-key:\n    severity: error\n", want: "error DDL001 design/no-primary-key: "},
+		{name: "the rule's category", policy: "rules:\n  design:\n    severity: error\n", want: "error DDL001 design/no-primary-key: "},
+		{name: "the category with a slash", policy: "rules:\n  design/:\n    severity: error\n", want: "error DDL001 design/no-primary-key: "},
+		{
+			name:   "a code beats the category",
+			policy: "rules:\n  design:\n    severity: error\n  DDL001:\n    severity: info\n",
+			want:   "info DDL001 design/no-primary-key: ",
+		},
+		{
+			name:   "a name beats the category",
+			policy: "rules:\n  design:\n    severity: info\n  design/no-primary-key:\n    severity: error\n",
+			want:   "error DDL001 design/no-primary-key: ",
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			c := qt.New(t)
+			c.Assert(os.WriteFile(filepath.Join(dir, ".ptah-lint.yaml"), []byte(row.policy), 0o600), qt.IsNil)
+			path := writeSQLFile(c, dir, "schema.sql", "CREATE TABLE users (email TEXT NOT NULL);")
+
+			stdout, _, _ := execute("lint", "--dialect", "postgres", path)
+
+			c.Assert(stdout, qt.Contains, row.want)
+		})
+	}
+}
+
+// TestSQLLint_DisableByName silences a rule by its Ptah name, and refuses a
+// name the linter does not have with exit code 2.
+func TestSQLLint_DisableByName(t *testing.T) {
+	c := qt.New(t)
+	path := writeSQLFile(c, t.TempDir(), "schema.sql", "CREATE TABLE users (email TEXT NOT NULL);")
+
+	stdout, stderr, err := execute("lint", "--dialect", "postgres", "--disable", "design/no-primary-key", path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stderr, qt.Equals, "")
+	c.Assert(stdout, qt.Contains, "No SQL lint findings.")
+}
+
+func TestSQLLint_DisableByName_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	path := writeSQLFile(c, t.TempDir(), "schema.sql", "CREATE TABLE users (email TEXT NOT NULL);")
+
+	stdout, stderr, err := execute("lint", "--dialect", "postgres", "--disable", "design/no-primary", path)
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Contains, `--disable "design/no-primary" is not the name of a SQL lint rule`)
+}

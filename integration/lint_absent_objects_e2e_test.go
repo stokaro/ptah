@@ -260,8 +260,10 @@ var mysqlAbsentObjectRows = []absentObjectRow{
 var compatRuleCode = regexp.MustCompile(`(?:-- L\d+ \[|analyzers#)([A-Z]+\d+P?)\b`)
 
 // nativeRuleCode matches a rule a `ptah migrations lint` report names, as in
-// `migrations/2_head.sql:1 [error] DS107: ...`.
-var nativeRuleCode = regexp.MustCompile(`(?m)^\S+:\d+ \[[a-z]+\] ([A-Z]+\d+P?):`)
+// `migrations/2_head.sql:1 [error] DS107 destructive/drop-object: ...`. The
+// rule's name after the code is optional, since a rule with no Ptah name
+// prints its code alone.
+var nativeRuleCode = regexp.MustCompile(`(?m)^\S+:\d+ \[[a-z]+\] ([A-Z]+\d+P?)(?: [a-z0-9/-]+)?:`)
 
 // ruleCodes returns the rules a report names, each once, in code order, and
 // nil for none.

@@ -56,15 +56,15 @@ func TestNativeLint_WithNoDevDatabase(t *testing.T) {
 	}{
 		{
 			name: "text that is no SQL", up: garbage, down: "SELECT 1;\n",
-			wantLine: "d/1_x.up.sql:1 [info] AC102: the SQL parser could not read this statement (unsupported table option: BOGUS)",
+			wantLine: "d/1_x.up.sql:1 [info] AC102 coverage/unparsed-statement: the SQL parser could not read this statement (unsupported table option: BOGUS)",
 		},
 		{
 			name: "SQL the parser does not model", up: validUnmodeled, down: "SELECT 1;\n",
-			wantLine: "d/1_x.up.sql:3 [info] AC102: the SQL parser could not read this statement (unsupported SQL statement: EXPLAIN)",
+			wantLine: "d/1_x.up.sql:3 [info] AC102 coverage/unparsed-statement: the SQL parser could not read this statement (unsupported SQL statement: EXPLAIN)",
 		},
 		{
 			name: "a down file", up: parsed, down: "DROP TABEL ok;\n",
-			wantLine: "d/1_x.down.sql:1 [info] AC102: the SQL parser could not read this statement (unsupported DROP target: TABEL)",
+			wantLine: "d/1_x.down.sql:1 [info] AC102 coverage/unparsed-statement: the SQL parser could not read this statement (unsupported DROP target: TABEL)",
 		},
 	}
 	for _, test := range tests {
@@ -256,5 +256,5 @@ func TestSQLLint_RefusesAStatementItCouldNotRead(t *testing.T) {
 	run := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: project}, "sql", "lint", "--dialect", "sqlite", "d/1_x.up.sql")
 
 	c.Assert(run.ExitCode, qt.Equals, 1, qt.Commentf("stdout: %s\nstderr: %s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, "error SQL002: the SQL parser does not read this statement, which a server may still accept: unsupported table option: BOGUS")
+	c.Assert(run.Stdout, qt.Contains, "error SQL002 coverage/unsupported-statement: the SQL parser does not read this statement, which a server may still accept: unsupported table option: BOGUS")
 }

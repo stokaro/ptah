@@ -57,7 +57,7 @@ func TestNativeMigrationsLintAdvisesTheHypertableRemedyE2E(t *testing.T) {
 			base:   events + "SELECT create_hypertable('events', 'happened_at');\n",
 			change: "CREATE INDEX events_kind_idx ON events (kind, happened_at DESC);\n",
 			want: []string{
-				"] PG101: ",
+				"] PG101 locking/create-index: ",
 				"CREATE INDEX on the hypertable events blocks writes to it and to every chunk",
 				"WITH (timescaledb.transaction_per_chunk) in a no_transaction migration",
 			},
@@ -67,7 +67,7 @@ func TestNativeMigrationsLintAdvisesTheHypertableRemedyE2E(t *testing.T) {
 			name:    "control: the same index on the table left ordinary",
 			base:    events,
 			change:  "CREATE INDEX events_kind_idx ON events (kind, happened_at DESC);\n",
-			want:    []string{"] PG101: ", "use CREATE INDEX CONCURRENTLY outside a transaction"},
+			want:    []string{"] PG101 locking/create-index: ", "use CREATE INDEX CONCURRENTLY outside a transaction"},
 			wantNot: []string{"on the hypertable"},
 		},
 		{
@@ -75,7 +75,7 @@ func TestNativeMigrationsLintAdvisesTheHypertableRemedyE2E(t *testing.T) {
 			base: events + "SELECT create_hypertable('events', 'happened_at');\n",
 			change: "-- atlas:txmode none\n\n" +
 				"CREATE INDEX events_kind_idx ON events (kind, happened_at DESC) WITH (timescaledb.transaction_per_chunk);\n",
-			wantNot: []string{"] PG101: "},
+			wantNot: []string{"] PG101 locking/create-index: "},
 		},
 	}
 

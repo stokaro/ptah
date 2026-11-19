@@ -19,6 +19,7 @@ import (
 	"ptah.run/internal/filetx"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/lintkit"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/lintscan"
 	"ptah.run/internal/migrationsnapshot"
 	"ptah.run/internal/repeatableset"
@@ -107,7 +108,13 @@ type FindingContext struct {
 
 // Finding is one rule hit in one migration file.
 type Finding struct {
-	Rule     string   `json:"rule"`
+	// Rule is the code of the rule that reported the finding, its identity.
+	Rule string `json:"rule"`
+	// Name is the rule's Ptah name, such as `destructive/drop-table`, and
+	// empty for a rule that has none: one a configuration declares, or one a
+	// third-party provider publishes. It is the spelling a selector may use
+	// beside the code; [SelectorSelects] says how a name matches.
+	Name     string   `json:"name,omitempty"`
 	Title    string   `json:"title"`
 	Severity Severity `json:"severity"`
 	File     string   `json:"file"`
@@ -628,7 +635,9 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		return Analysis{}, err
 	}
 	withOwners(files, runtime.SQL())
-	attachStatements(files, split, opts, target, registered, scope)
+	if err := attachStatements(files, split, opts, target, registered, scope); err != nil {
+		return Analysis{}, err
+	}
 	markAloneOutsideATransaction(files, opts)
 	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target, registered)
 	if err != nil {
@@ -643,6 +652,9 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		}
 		file := cloneFile(files[i])
 		findings = append(findings, scope.keepFindings(file.scopeExcluded, runRules(&file, opts, rules))...)
+	}
+	for i := range findings {
+		findings[i].Name = lintnames.Migration().Name(findings[i].Rule)
 	}
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
@@ -1003,7 +1015,8 @@ func unjudgedStatements(files []File, split splitOutcome) []UnjudgedStatement {
 
 // attachStatements gives each file that holds statements its share of a
 // split, reads the suppression directives above each statement, and models
-// an up file's schema changes.
+// an up file's schema changes. It refuses a directive naming a rule name or
+// category migration lint does not know, at the statement it sits above.
 func attachStatements(
 	files []File,
 	split splitOutcome,
@@ -1011,7 +1024,7 @@ func attachStatements(
 	target Target,
 	registered map[string]struct{},
 	scope schemaScope,
-) {
+) error {
 	dialect, compatibility, unparsed := opts.Dialect, opts.Compatibility, opts.Unparsed
 	opening := openingFile(files)
 	next := 0
@@ -1026,7 +1039,11 @@ func attachStatements(
 			file.contract = append(file.contract, statement)
 			var suppressed []atlaslint.Target
 			for _, comment := range statement.Comments {
-				suppressed = append(suppressed, parseNoLintDirective(comment, compatibility, registered)...)
+				rules, err := parseNoLintDirective(comment, compatibility, registered)
+				if err != nil {
+					return fmt.Errorf("%s: the comment above line %d: %w", file.Path, statement.Line, err)
+				}
+				suppressed = append(suppressed, rules...)
 			}
 			var routine *RoutineDefinition
 			if statement.Routine != nil {
@@ -1055,6 +1072,7 @@ func attachStatements(
 			file.stateDecided, file.changed = changes.decided, changes.all
 		}
 	}
+	return nil
 }
 
 // unparsedReason returns why the parser could not read a statement in scope, and

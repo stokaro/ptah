@@ -106,6 +106,7 @@ func TestLintSource_IdentifierTruncatedFinding(t *testing.T) {
 
 	c.Assert(findings, qt.DeepEquals, []sqllint.Finding{{
 		Rule:     sqllint.RuleIdentifierTruncated,
+		Name:     "naming/identifier-too-long",
 		Title:    "Identifier longer than the server keeps",
 		Severity: sqllint.SeverityWarning,
 		File:     "schema.sql",
@@ -251,6 +252,7 @@ func TestLintSource_IdentifierCollisionFinding(t *testing.T) {
 
 	c.Assert(findings, qt.DeepEquals, []sqllint.Finding{{
 		Rule:     sqllint.RuleIdentifierCollision,
+		Name:     "naming/identifier-collision",
 		Title:    "Identifiers the server stores as one",
 		Severity: sqllint.SeverityError,
 		File:     "schema.sql",

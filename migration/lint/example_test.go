@@ -39,9 +39,9 @@ func ExampleLintFS() {
 	}
 
 	// Output:
-	// 0000000001_drop_email.up.sql:1 [warning] BC104: dropping a column retires a name application versions already deployed against the old schema still select and insert, so each of them starts failing the moment this migration commits, whether or not the column held any rows; deploy readers that no longer use the column first, then drop it in a later release (dropped column breaks deployed code)
-	// 0000000001_drop_email.up.sql:1 [error] DS102: DROP COLUMN permanently deletes the column's data; deploy readers that no longer use the column first, then drop it in a later release (column dropped)
-	// 0000000001_drop_email.up.sql:2 [warning] PG101: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
+	// 0000000001_drop_email.up.sql:1 [warning] BC104 rollout/drop-column: dropping a column retires a name application versions already deployed against the old schema still select and insert, so each of them starts failing the moment this migration commits, whether or not the column held any rows; deploy readers that no longer use the column first, then drop it in a later release (dropped column breaks deployed code)
+	// 0000000001_drop_email.up.sql:1 [error] DS102 destructive/drop-column: DROP COLUMN permanently deletes the column's data; deploy readers that no longer use the column first, then drop it in a later release (column dropped)
+	// 0000000001_drop_email.up.sql:2 [warning] PG101 locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
 }
 
 // ExampleAnalyzeFS reaches for the richer result: prepared files carrying the

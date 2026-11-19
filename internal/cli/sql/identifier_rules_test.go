@@ -26,8 +26,8 @@ func TestSQLLint_IdentifierRulesInText(t *testing.T) {
 	stdout, _, err := execute("lint", "--dialect", "postgres", path)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(stdout, qt.Contains, "schema.sql:2:14: warning DDL003: index ")
-	c.Assert(stdout, qt.Contains, "schema.sql:3:16: error DDL004: index ")
+	c.Assert(stdout, qt.Contains, "schema.sql:2:14: warning DDL003 naming/identifier-too-long: index ")
+	c.Assert(stdout, qt.Contains, "schema.sql:3:16: error DDL004 naming/identifier-collision: index ")
 }
 
 // The JSON report read from stdin carries the same findings, with the

@@ -124,7 +124,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&devURL, "dev-url", "", "Dev database URL used to clean and replay migrations and infer the lint dialect")
 	cmd.Flags().StringVar(&gitBase, gitBaseFlag, "", "Run analysis against the base Git branch")
 	cmd.Flags().StringVar(&gitDir, gitDirFlag, ".", "Repository working directory for --git-base")
-	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DS101 or MY (repeatable)")
+	cmd.Flags().StringArrayVar(&disabled, "disable", nil, "Disable rules by code, family, Ptah rule name or category, for example DS101, MY, destructive/drop-table or locking (repeatable)")
 	cmd.Flags().StringVar(&failOn, "fail-on", failOnError, "Failure threshold controlling the exit code: error, any or none")
 	cmd.Flags().UintVar(&latest, latestFlag, 0, "Lint only the latest N migration versions")
 	cmd.Flags().BoolVar(&attach, attachFlag, false, "Attach the canonical JSON lint report to an OCI migration artifact")

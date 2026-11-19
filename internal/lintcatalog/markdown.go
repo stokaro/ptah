@@ -7,11 +7,13 @@ import (
 	"strings"
 
 	"ptah.run/core/lintext"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/migrationlintgate"
 	"ptah.run/internal/sqllint"
 )
 
-// WriteMarkdown renders the whole enumeration: the families, both rule tables,
+// WriteMarkdown renders the whole enumeration: the rule-name categories, the
+// families, both rule tables with each rule's code and Ptah name,
 // what the compatibility surface prints where it differs, every Atlas analyzer
 // check with Ptah's status on it, and the identifiers that predate the naming
 // convention.
@@ -42,6 +44,7 @@ func WriteMarkdownFrom(w io.Writer, runtime lintext.Runtime) error {
 	slices.SortStableFunc(sorted, func(a, b Entry) int { return strings.Compare(a.Code, b.Code) })
 
 	sections := []func(io.Writer, []Entry) error{
+		writeCategories,
 		writeFamilies,
 		writeMigrationRules,
 		writeYDBVerdicts,
@@ -57,6 +60,32 @@ func WriteMarkdownFrom(w io.Writer, runtime lintext.Runtime) error {
 		}
 	}
 	return nil
+}
+
+// writeCategories lists the categories a rule name begins with, each with the
+// number of rules named under it, since a category is a selector and the
+// count is how much it selects.
+func writeCategories(w io.Writer, entries []Entry) error {
+	var out strings.Builder
+	out.WriteString("## Rule names and categories\n\n")
+	out.WriteString("Every rule has a code and a Ptah name, `category/name`. Findings report both. A selector " +
+		"in `--disable`, `disabled-rules`, a `rules:` key or a `ptah:nolint` comment may be the code, the name, " +
+		"or a category written as `locking` or `locking/`, which selects every rule named under it. A name " +
+		"matches exactly, never as a prefix, and a name or category no rule has is refused. One name may cover " +
+		"several codes: a hazard checked on two engines, or read by both linters.\n\n")
+	out.WriteString("| Category | Rules | What it covers |\n| --- | --- | --- |\n")
+	for _, category := range lintnames.Categories() {
+		count := 0
+		for _, entry := range entries {
+			if entry.Category() == category.Name {
+				count++
+			}
+		}
+		fmt.Fprintf(&out, "| `%s` | %d | %s |\n", category.Name, count, category.Summary)
+	}
+	out.WriteString("\n")
+	_, err := io.WriteString(w, out.String())
+	return err
 }
 
 func writeFamilies(w io.Writer, _ []Entry) error {
@@ -183,19 +212,29 @@ func writeSQLRules(w io.Writer, entries []Entry) error {
 
 // ruleTable renders one group of rules.
 //
-// Four columns, not six. The documentation site refuses a table wider than its
-// reading column, and a six-column table of short unbreakable tokens overflowed
-// it by 57px: the dialect restriction moved into the group heading and the
-// default severity into [writeSeverities], both still generated.
+// Four columns. The documentation site caps a cell at eight lines. A rule
+// name is one unbreakable token of up to 47 characters, and in a column of
+// its own it squeezes the meaning column until the longest meanings run past
+// the cap, so the name sits under the code in the rule's cell. The wrapper
+// keeps a phone from scrolling the page, since the name sets the cell's
+// minimum width. The dialect restriction lives in the group heading and the default
+// severity in [writeSeverities], both still generated.
 func ruleTable(rules []Entry) string {
 	var out strings.Builder
+	out.WriteString(wideTableOpen)
 	out.WriteString("| Rule | Meaning | Surface | Origin |\n| --- | --- | --- | --- |\n")
 	for _, rule := range rules {
-		fmt.Fprintf(&out, "| `%s` | %s | %s | %s |\n",
-			rule.Code, rule.Summary, rule.SurfaceLabel(), rule.Origin())
+		fmt.Fprintf(&out, "| %s | %s | %s | %s |\n",
+			ruleCell(rule), rule.Summary, rule.SurfaceLabel(), rule.Origin())
 	}
-	out.WriteString("\n")
+	out.WriteString(wideTableClose)
 	return out.String()
+}
+
+// ruleCell is a rule's code with its Ptah name on the line below. Every rule
+// the catalog documents has a name, so the cell always carries both.
+func ruleCell(rule Entry) string {
+	return fmt.Sprintf("`%s`<br>`%s`", rule.Code, rule.Name)
 }
 
 // writeSeverities states the default severities as a sentence, generated from
@@ -215,9 +254,8 @@ func writeSeverities(w io.Writer, entries []Entry) error {
 	out.WriteString("## Default severities\n\n")
 	fmt.Fprintf(&out,
 		"%d rules report at error severity by default: %s. The other %d default to warning or info. "+
-			"A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` "+
-			"reads the same file "+
-			"and now reads the `rules:` severities it sets for %s, so the severities above are the defaults. "+
+			"A committed `.ptah-lint.yaml` replaces either, per rule, per family or per category. `ptah sql lint` "+
+			"reads the `rules:` severities the same file sets for %s, so the severities above are the defaults. "+
 			"`--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the "+
 			"file could not be analyzed, and a run that analyzed nothing must not report clean.\n\n",
 		len(errors), strings.Join(errors, ", "), warnings,

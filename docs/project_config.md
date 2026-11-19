@@ -123,7 +123,7 @@ env:
 | `migration.mysqldump_to` | Directory for a MySQL/MariaDB pre-migration SQL dump |
 | `migration.webhook` | URL that receives migration metadata before `migrations up` or `migrations down`; it must return HTTP 200 |
 | `lint.dialect` | Default lint dialect |
-| `lint.disabled-rules` | Default lint disabled rule codes or families |
+| `lint.disabled-rules` | Default lint disabled rule codes, families, Ptah rule names or categories |
 | `lint.latest` | Default latest revision-key changeset for `migrations lint` |
 | `online_ddl.tool` | Automatic online-DDL tool for MySQL/MariaDB: `ghost` or `pt-osc` |
 | `online_ddl.threshold_rows` | Estimated row threshold that activates automatic routing |

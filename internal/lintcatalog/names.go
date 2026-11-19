@@ -2,69 +2,12 @@ package lintcatalog
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
-	"strings"
 
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/providerhost"
 	"ptah.run/internal/providerpublished"
 )
-
-// Category is the hazard class a rule's Ptah name begins with: the part before
-// the slash in `destructive/drop-table`.
-//
-// A category names what the statement risks, not the engine it runs on; the
-// engine is the rule's [Entry.Dialects]. An engine category is the one
-// exception: a rule an executable provider publishes for a hazard only its
-// engine has may be named under the engine, as `ydb/add-column-form` is.
-type Category struct {
-	// Name is the first segment of every rule name in the category.
-	Name string
-	// Summary is the one-line description of the hazard the category covers.
-	Summary string
-	// Engine is the only dialect whose rules the category may hold, for an
-	// engine category, and empty for a hazard category.
-	Engine string
-}
-
-// categories declares every category a rule name may begin with. [Validate]
-// refuses a rule whose category is missing here and a category no rule uses.
-var categories = []Category{
-	{Name: "capability", Summary: "the target server version lacks a capability the statement needs"},
-	{Name: "correctness", Summary: "the statement is wrong as written: malformed, naming a column the schema does not declare, " +
-		"or declaring a property its body breaks"},
-	{Name: "coverage", Summary: "something the linter did not read, so a clean result does not mean it was checked"},
-	{Name: "data-dependent", Summary: "the statement succeeds, fails or changes values depending on the rows the table already holds"},
-	{Name: "dependency", Summary: "the statement drops or renames something another object still uses"},
-	{Name: "design", Summary: "a schema choice that applies cleanly and costs later, in row padding, table bloat or rows with no key to address them by; " +
-		"silencing it hides advice, never a statement that fails or blocks"},
-	{Name: "destructive", Summary: "the statement deletes rows, values, objects or history for good"},
-	{Name: "file-form", Summary: "the migration file or its directory does not have the form the run reads"},
-	{Name: "integrity", Summary: "the statement removes a constraint or a NOT NULL the database enforces on the data"},
-	{Name: "locking", Summary: "the statement holds a lock that blocks reads or writes while it runs"},
-	{Name: "naming", Summary: "a name breaks the configured convention, or is longer than the server keeps"},
-	{Name: "online", Summary: "online mode, which the user selects, could not prove the statement runs without a lock that blocks reads or writes; " +
-		"its rules fire only in that mode, so --disable locking leaves them on"},
-	{Name: "rewrite", Summary: "the statement rewrites or copies every row of the table; an info rule here reports that the rewrite was checked for and is absent"},
-	{Name: "rollout", Summary: "the change breaks a client or a consumer deployed against the current schema"},
-	{Name: "security", Summary: "the statement weakens access control, or writes a secret or an unquoted value into SQL"},
-	{Name: "side-effect", Summary: "the statement resets, ignores or leaves behind something its text does not show; " +
-		"silenced, a migration can succeed and leave the database different from what it says"},
-	{Name: "transaction", Summary: "the statement cannot run, or runs differently, inside the migration's transaction or query"},
-	{Name: "ydb", Summary: "a statement form only YDB refuses", Engine: "ydb"},
-}
-
-// Categories returns every declared category, ordered by name.
-func Categories() []Category { return slices.Clone(categories) }
-
-// categoryFor returns the declared category called name.
-func categoryFor(name string) (Category, bool) {
-	index := slices.IndexFunc(categories, func(category Category) bool { return category.Name == name })
-	if index < 0 {
-		return Category{}, false
-	}
-	return categories[index], true
-}
 
 // Owner says who publishes a rule.
 type Owner string
@@ -78,27 +21,12 @@ const (
 	OwnerProvider Owner = "provider"
 )
 
-// namePattern is the grammar of a Ptah rule name: two lowercase segments,
-// each a run of letters and digits joined by single hyphens, with a slash
-// between them. It cannot match an Atlas check code, which is upper case.
-//
-// The second segment follows the SQL spelling of the statement it reports, so
-// a rule about NO FORCE ROW LEVEL SECURITY is
-// `security/no-force-row-level-security`, not a paraphrase of it.
-var namePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*/[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
-
 // Category returns the category segment of the rule's Ptah name, or the empty
 // string when the name has no slash.
-func (e Entry) Category() string {
-	category, _, found := strings.Cut(e.Name, "/")
-	if !found {
-		return ""
-	}
-	return category
-}
+func (e Entry) Category() string { return lintnames.CategoryOf(e.Name) }
 
 // nameProblems returns every way entries break the naming rule [Entry.Name]
-// and [Category] state. A dialect list that is empty means every dialect, so a
+// and [lintnames.Category] state. A dialect list that is empty means every dialect, so a
 // rule for every dialect shares its name with no other rule of its linter.
 func nameProblems(entries []Entry) []string {
 	var problems []string
@@ -113,10 +41,10 @@ func entryNameProblems(entry Entry) []string {
 	switch {
 	case entry.Name == "":
 		return []string{fmt.Sprintf("rule %s has no Ptah name", entry.Code)}
-	case !namePattern.MatchString(entry.Name):
+	case !lintnames.WellFormed(entry.Name):
 		return []string{fmt.Sprintf("rule %s is named %q, which is not two lowercase hyphenated segments joined by a slash", entry.Code, entry.Name)}
 	}
-	category, declared := categoryFor(entry.Category())
+	category, declared := lintnames.CategoryFor(entry.Category())
 	switch {
 	case !declared:
 		return []string{fmt.Sprintf("rule %s is named %s, whose category %q is not declared", entry.Code, entry.Name, entry.Category())}
@@ -161,7 +89,7 @@ func disjointDialects(a, b []string) bool {
 // which is a declaration nothing is held to.
 func unusedCategoryProblems(entries []Entry) []string {
 	var problems []string
-	for _, category := range categories {
+	for _, category := range lintnames.Categories() {
 		if !slices.ContainsFunc(entries, func(entry Entry) bool { return entry.Category() == category.Name }) {
 			problems = append(problems, fmt.Sprintf("category %s is declared and names no rule", category.Name))
 		}

@@ -319,9 +319,24 @@ func TestOnlineMode_RefusesAPolicyThatSoftensIt(t *testing.T) {
 			wantErr: `.*disabled-rules names "ON".*`,
 		},
 		{
+			name:    "the category disabled",
+			config:  "dialect: postgres\nonline: require\ndisabled-rules: [online]\n",
+			wantErr: `.*disabled-rules names "online".*`,
+		},
+		{
+			name:    "the category disabled with a slash",
+			config:  "dialect: postgres\nonline: require\ndisabled-rules: [online/]\n",
+			wantErr: `.*disabled-rules names "online/".*`,
+		},
+		{
 			name:    "a rule dropped below blocking",
 			config:  "dialect: postgres\nonline: require\nrules:\n  ON101:\n    severity: warning\n",
 			wantErr: `.*rules.ON101 sets severity "warning".*`,
+		},
+		{
+			name:    "a rule dropped below blocking by its name",
+			config:  "dialect: postgres\nonline: require\nrules:\n  online/lock-held-across-scan:\n    severity: warning\n",
+			wantErr: `.*rules.online/lock-held-across-scan sets severity "warning".*`,
 		},
 		{
 			name:    "paths excluded from it",
@@ -342,6 +357,20 @@ func TestOnlineMode_RefusesAPolicyThatSoftensIt(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
+}
+
+// TestOnlineMode_KeepsAPolicyThatDisablesLocking is the control for the
+// category rows above: the online rules are named under their own category,
+// so disabling locking leaves the mode's findings in force.
+func TestOnlineMode_KeepsAPolicyThatDisablesLocking(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(c.TempDir(), ".ptah-lint.yaml")
+	c.Assert(os.WriteFile(path, []byte("dialect: postgres\nonline: require\ndisabled-rules: [locking]\n"), 0o600), qt.IsNil)
+
+	cfg, err := lint.LoadConfig(builtintest.Runtime(), path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DisabledRules, qt.DeepEquals, []string{"locking"})
 }
 
 // The standalone lint and the apply gate read the same policy, or the two

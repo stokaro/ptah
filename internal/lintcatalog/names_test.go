@@ -141,27 +141,6 @@ func TestValidateRefusesABrokenName(t *testing.T) {
 	}
 }
 
-// TestCategoriesAreDeclaredOnce reads the category declaration: each category
-// has one entry and a summary, and an engine category is named for its
-// engine.
-func TestCategoriesAreDeclaredOnce(t *testing.T) {
-	c := qt.New(t)
-	categories := lintcatalog.Categories()
-	names := make([]string, 0, len(categories))
-	for _, category := range categories {
-		names = append(names, category.Name)
-	}
-	unsummarized := slices.DeleteFunc(slices.Clone(categories), func(category lintcatalog.Category) bool { return category.Summary != "" })
-	misnamed := slices.DeleteFunc(slices.Clone(categories), func(category lintcatalog.Category) bool {
-		return category.Engine == "" || category.Engine == category.Name
-	})
-
-	c.Assert(slices.IsSorted(names), qt.IsTrue, qt.Commentf("categories are declared in name order: %v", names))
-	c.Assert(slices.Compact(slices.Clone(names)), qt.DeepEquals, names)
-	c.Assert(unsummarized, qt.HasLen, 0)
-	c.Assert(misnamed, qt.HasLen, 0)
-}
-
 // TestShippedRulesHaveTheirOwner reads who publishes each rule: a rule an
 // official provider's recorded catalog publishes is the provider's, and every
 // other rule, SQL lint's included, is the host's.

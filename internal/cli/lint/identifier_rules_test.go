@@ -33,11 +33,11 @@ func TestRunLint_IdentifierRulesInEveryFormat(t *testing.T) {
 		format string
 		want   []string
 	}{
-		{format: "text", want: []string{"0000000001_init.up.sql:2 [warning] PG401P: index ", "0000000002_index.up.sql:2 [error] PG402P: index "}},
+		{format: "text", want: []string{"0000000001_init.up.sql:2 [warning] PG401P naming/identifier-too-long: index ", "0000000002_index.up.sql:2 [error] PG402P naming/identifier-collision: index "}},
 		{format: "json", want: []string{`"rule": "PG401P"`, `"rule": "PG402P"`}},
 		{format: "sarif", want: []string{`"ruleId": "PG401P"`, `"ruleId": "PG402P"`}},
 		{format: "github-actions", want: []string{
-			"0000000001_init.up.sql,line=2::PG401P: index ", "::error file=", "0000000002_index.up.sql,line=2::PG402P: index ",
+			"0000000001_init.up.sql,line=2::PG401P naming/identifier-too-long: index ", "::error file=", "0000000002_index.up.sql,line=2::PG402P naming/identifier-collision: index ",
 		}},
 		{format: "gitlab", want: []string{`"check_name": "PG401P"`, `"check_name": "PG402P"`}},
 	}
@@ -101,9 +101,11 @@ func identifierVerdicts(report string) []string {
 	var verdicts []string
 	for line := range strings.Lines(report) {
 		_, verdict, found := strings.Cut(line, " [")
-		code, _, _ := strings.Cut(verdict, ":")
-		if found && (strings.HasSuffix(code, "PG401P") || strings.HasSuffix(code, "PG402P")) {
-			verdicts = append(verdicts, "["+code)
+		head, _, _ := strings.Cut(verdict, ":")
+		severity, rule, _ := strings.Cut(head, "] ")
+		code, _, _ := strings.Cut(rule, " ")
+		if found && (code == "PG401P" || code == "PG402P") {
+			verdicts = append(verdicts, "["+severity+"] "+code)
 		}
 	}
 	return verdicts

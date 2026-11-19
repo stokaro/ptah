@@ -4387,7 +4387,10 @@ dialect default, `Analysis.Target` reports which, and `Target.Named` separates
 a server that was named from a default that was assumed.
 
 Configuration decoding rejects unknown keys and noncanonical rule selectors,
-including selectors with leading or trailing whitespace. It also rejects
+including selectors with leading or trailing whitespace. A selector may be a
+rule code, a code prefix, a Ptah rule name such as `destructive/drop-table`,
+or a category such as `locking`; a name or category no rule has is refused,
+and `Finding.Name` carries the rule's name beside its code. It also rejects
 unsupported dialects and empty, malformed, or non-normalized exclusion globs
 instead of silently weakening the effective policy. `LoadConfig` and
 `LoadConfigFS` take the runtime, because a `gate` family is checked against its

@@ -75,6 +75,30 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 			disabled: []string{"DDL001"},
 			want:     make([]string, 0),
 		},
+		{
+			name:     "table without a primary key, its name disabled",
+			sql:      "CREATE TABLE users (email TEXT NOT NULL);",
+			disabled: []string{"design/no-primary-key"},
+			want:     make([]string, 0),
+		},
+		{
+			name:     "table without a primary key, its category disabled",
+			sql:      "CREATE TABLE users (email TEXT NOT NULL);",
+			disabled: []string{"design"},
+			want:     make([]string, 0),
+		},
+		{
+			name:     "table without a primary key, its category disabled with a slash",
+			sql:      "CREATE TABLE users (email TEXT NOT NULL);",
+			disabled: []string{"design/"},
+			want:     make([]string, 0),
+		},
+		{
+			name:     "table without a primary key, another category disabled",
+			sql:      "CREATE TABLE users (email TEXT NOT NULL);",
+			disabled: []string{"naming"},
+			want:     []string{"DDL001"},
+		},
 	}
 
 	for _, row := range rows {
@@ -102,6 +126,8 @@ func TestDisableRefusesTheParsePathCodes(t *testing.T) {
 		{name: "the unmodeled statement's own code", disabled: []string{"SQL002"}, covers: "SQL002"},
 		{name: "the family prefix, which covers both", disabled: []string{"SQL"}, covers: "SQL001"},
 		{name: "lower case, since selectors are folded", disabled: []string{"sql001"}, covers: "SQL001"},
+		{name: "the parse error's category", disabled: []string{"correctness"}, covers: "SQL001"},
+		{name: "the unmodeled statement's name", disabled: []string{"coverage/unsupported-statement"}, covers: "SQL002"},
 		{
 			// Refused for the one selector that covers a parse-path code, even
 			// when another selector in the same flag is fine.
@@ -134,4 +160,64 @@ func TestDisableStillReachesAnOpinionRule(t *testing.T) {
 
 	c.Assert(reportedCodes(t, "CREATE TABLE users (email TEXT NOT NULL);", []string{"DDL001"}),
 		qt.DeepEquals, make([]string, 0))
+}
+
+// TestDisableRefusesAnUnknownName refuses a selector written as a Ptah name or
+// category that names no rule this linter reports. The first row begins a
+// real name, which a prefix match would accept.
+func TestDisableRefusesAnUnknownName(t *testing.T) {
+	rows := []struct {
+		name     string
+		disabled string
+		wantErr  string
+	}{
+		{
+			name:     "the beginning of a name",
+			disabled: "design/no-primary",
+			wantErr: `--disable "design/no-primary" is not the name of a SQL lint rule; ` +
+				`a name is a category and a rule joined by a slash, such as design/no-primary-key`,
+		},
+		{
+			name:     "a name only migration lint has",
+			disabled: "locking/set-not-null",
+			wantErr:  `--disable "locking/set-not-null" is not the name of a SQL lint rule; .*`,
+		},
+		{
+			name:     "a category that is not declared",
+			disabled: "desig/",
+			wantErr:  `--disable "desig/" is not a rule category; the categories are capability, correctness, .*`,
+		},
+		{
+			name:     "a category this linter has no rule in",
+			disabled: "online",
+			wantErr:  `--disable "online" is a category that holds no SQL lint rule`,
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings, err := sqllint.LintSource(t.Context(),
+				sqllint.Source{Name: "probe.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
+				sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres, DisabledRules: []string{row.disabled}},
+			)
+
+			c.Assert(err, qt.ErrorMatches, row.wantErr)
+			c.Assert(findings, qt.IsNil)
+		})
+	}
+}
+
+// TestFindingsCarryTheRuleName reads the Ptah name on a finding.
+func TestFindingsCarryTheRuleName(t *testing.T) {
+	c := qt.New(t)
+
+	findings, err := sqllint.LintSource(c.Context(),
+		sqllint.Source{Name: "probe.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
+		sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert([]string{findings[0].Rule, findings[0].Name}, qt.DeepEquals, []string{"DDL001", "design/no-primary-key"})
 }

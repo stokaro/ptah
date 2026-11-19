@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -23,6 +22,7 @@ import (
 	"ptah.run/internal/cli/internal/exitcode"
 	"ptah.run/internal/cli/internal/providercommand"
 	"ptah.run/internal/cli/internal/serverversion"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/migrationlintreport"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sqllint"
@@ -103,7 +103,7 @@ migration directory specific.`,
 	serverversion.Register(flags, &version)
 	flags.StringVar(&format, "format", formatText, "Output format: text or json")
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
-	flags.StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DDL001 or CAP (repeatable)")
+	flags.StringArrayVar(&disabled, "disable", nil, "Disable rules by code, family, Ptah rule name or category, for example DDL001, CAP, design/no-primary-key or naming (repeatable)")
 	cmdutil.ConfigureCommandArgs(cmd, cobra.ArbitraryArgs)
 	return providercommand.Configure(cmd, func(cmd *cobra.Command, err error) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), format, err.Error())
@@ -339,7 +339,7 @@ func writeSQLLintText(w io.Writer, report sqlLintReport) error {
 			finding.Line,
 			finding.Column,
 			finding.Severity,
-			finding.Rule,
+			strings.TrimSpace(finding.Rule+" "+finding.Name),
 			finding.Message,
 		); err != nil {
 			return err
@@ -410,13 +410,28 @@ func sqlLintSeverities(ctx context.Context) (map[string]sqllint.Severity, error)
 	if err != nil {
 		return nil, err
 	}
-	reported := sqllint.CatalogIDs()
+	return sqlLintSeveritiesFrom(cfg.Rules), nil
+}
+
+// sqlLintSeveritiesFrom resolves the `rules:` entries that set a severity to
+// the codes this linter reports. A key is a code, a Ptah rule name or a
+// category; the more specific key wins, so a rule's code or name overrides
+// its category. An entry for a rule only migration lint reports is left to
+// migration lint.
+func sqlLintSeveritiesFrom(rules map[string]migrationlint.RuleConfig) map[string]sqllint.Severity {
 	severities := make(map[string]sqllint.Severity)
-	for code, rule := range cfg.Rules {
-		if rule.Severity == "" || !slices.Contains(reported, code) {
-			continue
+	for _, code := range sqllint.CatalogIDs() {
+		keys := []string{code}
+		if name := lintnames.SQL().Name(code); name != "" {
+			category := lintnames.CategoryOf(name)
+			keys = append(keys, name, category, category+"/")
 		}
-		severities[code] = sqllint.Severity(rule.Severity)
+		for _, key := range keys {
+			if rule, ok := rules[key]; ok && rule.Severity != "" {
+				severities[code] = sqllint.Severity(rule.Severity)
+				break
+			}
+		}
 	}
-	return severities, nil
+	return severities
 }

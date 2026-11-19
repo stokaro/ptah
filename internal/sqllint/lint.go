@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/sqlutil"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/parser"
 	"ptah.run/internal/servertarget"
 	"ptah.run/internal/sourcepos"
@@ -123,7 +124,10 @@ type Bodies interface {
 }
 
 type Finding struct {
-	Rule         string   `json:"rule"`
+	Rule string `json:"rule"`
+	// Name is the rule's Ptah name, such as `design/no-primary-key`, the
+	// spelling a --disable selector may use beside the code.
+	Name         string   `json:"name,omitempty"`
 	Title        string   `json:"title"`
 	Severity     Severity `json:"severity"`
 	File         string   `json:"file,omitempty"`
@@ -178,6 +182,9 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	if opts.Owner == nil && !opts.SQL.Selected() {
 		return nil, sqlext.ErrUnselected
 	}
+	if err := refuseUnknownNames(opts.DisabledRules); err != nil {
+		return nil, err
+	}
 	if err := refuseUnsilenceable(opts.DisabledRules); err != nil {
 		return nil, err
 	}
@@ -193,7 +200,7 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 		if err != nil {
 			return nil, err
 		}
-		return applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities), nil
+		return finish(findings, opts), nil
 	}
 	var items []sourceItem
 	for _, statement := range splitSourceStatements(source, opts.Dialect) {
@@ -233,7 +240,17 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	if len(unanalyzedKinds) > 0 {
 		findings = append(findings, statementsNotAnalyzedFinding(source, opts, unanalyzedKinds))
 	}
-	return applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities), nil
+	return finish(findings, opts), nil
+}
+
+// finish drops the findings of disabled rules, applies the policy's
+// severities, and names each finding's rule.
+func finish(findings []Finding, opts Options) []Finding {
+	findings = applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities)
+	for i := range findings {
+		findings[i].Name = lintnames.SQL().Name(findings[i].Rule)
+	}
+	return findings
 }
 
 // applySeverities replaces the severity of every finding a policy names.
@@ -589,7 +606,8 @@ var unsilenceableRules = []string{RuleParseError, RuleUnsupportedStatement}
 // visible to the user." So the third option is the right one -- neither ignored
 // nor obeyed, but refused, with the reason.
 //
-// Prefix selectors are checked too: `--disable SQL` covers SQL001.
+// Prefix selectors are checked too, `--disable SQL` covers SQL001, and so are
+// names: `--disable correctness` covers it by its category.
 func refuseUnsilenceable(disabled []string) error {
 	for _, item := range disabled {
 		for _, rule := range unsilenceableRules {
@@ -605,9 +623,35 @@ func refuseUnsilenceable(disabled []string) error {
 	return nil
 }
 
+// refuseUnknownNames rejects a --disable selector written as a Ptah rule name
+// or category that names no rule this linter reports. Matched against
+// nothing, it would read as a rule turned off.
+func refuseUnknownNames(disabled []string) error {
+	for _, item := range disabled {
+		item = strings.TrimSpace(item)
+		if !lintnames.IsSelector(item) {
+			continue
+		}
+		if _, err := lintnames.SQL().Resolve(item); err != nil {
+			return fmt.Errorf("--disable %w", err)
+		}
+	}
+	return nil
+}
+
+// ruleDisabled reports whether a selector in disabled selects ruleID: a Ptah
+// rule name or category by [lintnames.Table.Selects], and anything else as a
+// code or code prefix, compared without regard to case.
 func ruleDisabled(ruleID string, disabled []string) bool {
 	for _, item := range disabled {
-		item = strings.ToUpper(strings.TrimSpace(item))
+		item = strings.TrimSpace(item)
+		if lintnames.IsSelector(item) {
+			if lintnames.SQL().Selects(item, ruleID) {
+				return true
+			}
+			continue
+		}
+		item = strings.ToUpper(item)
 		if item == "" {
 			continue
 		}

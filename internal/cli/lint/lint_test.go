@@ -222,9 +222,9 @@ func TestRunLint_GitHubActionsFormatAnnotatesFileAndLine(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(stdout, qt.Contains, "::error file=testdata/bad/0000000002_bad_stuff.up.sql,line=2::DS101:")
-	c.Assert(stdout, qt.Contains, "::warning file=testdata/bad/0000000002_bad_stuff.up.sql,line=10::PG101:")
-	c.Assert(stdout, qt.Contains, "::error file=testdata/bad/misnamed.sql::MF105P:")
+	c.Assert(stdout, qt.Contains, "::error file=testdata/bad/0000000002_bad_stuff.up.sql,line=2::DS101 destructive/drop-table:")
+	c.Assert(stdout, qt.Contains, "::warning file=testdata/bad/0000000002_bad_stuff.up.sql,line=10::PG101 locking/create-index:")
+	c.Assert(stdout, qt.Contains, "::error file=testdata/bad/misnamed.sql::MF105P file-form/refused-file:")
 }
 
 func TestRunLint_SARIFFormat(t *testing.T) {
@@ -1267,4 +1267,83 @@ func validSARIFLevel(level string) bool {
 	default:
 		return false
 	}
+}
+
+// writeDropFixture writes one migration that drops a table, which reports
+// DS101 (destructive/drop-table) and BC103 (rollout/drop-table).
+func writeDropFixture(c *qt.C) string {
+	dir := c.TempDir()
+	writeLintTestFile(c, dir, "0000000001_drop.up.sql", "DROP TABLE users;\n")
+	writeLintTestFile(c, dir, "0000000001_drop.down.sql", "CREATE TABLE users (id INT);\n")
+	return dir
+}
+
+// TestRunLint_TextAndJSONCarryTheRuleName reads the Ptah name beside the
+// code in both report formats.
+func TestRunLint_TextAndJSONCarryTheRuleName(t *testing.T) {
+	c := qt.New(t)
+	dir := writeDropFixture(c)
+
+	text, _, err := execute("--dir", dir, "--dir-format", "ptah", "--fail-on", "none")
+	c.Assert(err, qt.IsNil)
+	jsonOut, _, err := execute("--dir", dir, "--dir-format", "ptah", "--fail-on", "none", "--format", "json")
+	c.Assert(err, qt.IsNil)
+
+	var report struct {
+		Findings []migrationlint.Finding `json:"findings"`
+	}
+	c.Assert(json.Unmarshal([]byte(jsonOut), &report), qt.IsNil)
+	names := make(map[string]string)
+	for _, finding := range report.Findings {
+		names[finding.Rule] = finding.Name
+	}
+	c.Assert(text, qt.Contains, "0000000001_drop.up.sql:1 [error] DS101 destructive/drop-table: DROP TABLE permanently deletes")
+	c.Assert(names, qt.DeepEquals, map[string]string{"BC103": "rollout/drop-table", "DS101": "destructive/drop-table"})
+	c.Assert(jsonOut, qt.Contains, `"name": "destructive/drop-table"`)
+}
+
+// TestRunLint_DisableByName disables by Ptah name and by category, from the
+// flag and from the policy file.
+func TestRunLint_DisableByName(t *testing.T) {
+	rows := []struct {
+		name   string
+		args   []string
+		policy string
+		want   []string
+	}{
+		{name: "a name on the flag", args: []string{"--disable", "destructive/drop-table"}, policy: "{}\n", want: []string{"BC103"}},
+		{name: "a category on the flag", args: []string{"--disable", "rollout"}, policy: "{}\n", want: []string{"DS101"}},
+		{name: "a name in disabled-rules", policy: "disabled-rules: [rollout/drop-table]\n", want: []string{"DS101"}},
+		{name: "a category in disabled-rules", policy: "disabled-rules: [destructive/]\n", want: []string{"BC103"}},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeDropFixture(c)
+			writeLintTestFile(c, dir, migrationlint.ConfigFileName, row.policy)
+
+			stdout, _, err := execute(append([]string{"--dir", dir, "--dir-format", "ptah", "--fail-on", "none", "--format", "json"}, row.args...)...)
+
+			c.Assert(err, qt.IsNil)
+			var report struct {
+				Findings []migrationlint.Finding `json:"findings"`
+			}
+			c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+			c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, row.want)
+		})
+	}
+}
+
+// TestRunLint_DisableByName_FailurePath refuses a name migration lint does not
+// have, at exit 2, before reporting anything.
+func TestRunLint_DisableByName_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dir := writeDropFixture(c)
+
+	stdout, stderr, err := execute("--dir", dir, "--dir-format", "ptah", "--disable", "destructive/drop")
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(reportStream(stdout, stderr), qt.Contains,
+		`rule selector "destructive/drop" is not the name of a migration lint rule; `+
+			`a name is a category and a rule joined by a slash, such as locking/set-not-null`)
 }

@@ -1562,8 +1562,9 @@ func scanPrincipalDrop(w []string, target Target) bool {
 }
 
 // Describe renders one finding as a single human-readable line naming the
-// file, the line when the finding has one, the severity, the rule code, the
-// message and the rule title. File-level findings — naming and pairing — carry
+// file, the line when the finding has one, the severity, the rule code with
+// the rule's Ptah name beside it when it has one, the message and the rule
+// title. File-level findings — naming and pairing — carry
 // no line number and render without one.
 //
 // The line is meant to be read, not parsed: consume [Finding] itself when the
@@ -1573,5 +1574,14 @@ func Describe(f Finding) string {
 	if f.Line > 0 {
 		location = fmt.Sprintf("%s:%d", f.File, f.Line)
 	}
-	return fmt.Sprintf("%s [%s] %s: %s (%s)", location, f.Severity, f.Rule, f.Message, f.Title)
+	return fmt.Sprintf("%s [%s] %s: %s (%s)", location, f.Severity, ruleLabel(f), f.Message, f.Title)
+}
+
+// ruleLabel is the rule as a line of text names it: the code, and the Ptah
+// name beside it when the rule has one.
+func ruleLabel(f Finding) string {
+	if f.Name == "" {
+		return f.Rule
+	}
+	return f.Rule + " " + f.Name
 }

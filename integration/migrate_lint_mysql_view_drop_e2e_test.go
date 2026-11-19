@@ -63,7 +63,7 @@ func TestMigrateLintDropOfATableAViewReadsE2E(t *testing.T) {
 				"migrations", "lint", "--dir", dir, "--dev-url", dev, "--latest", "1")
 
 			c.Assert(exitStatusOf(c, err), qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(stdout, qt.Contains, "20240102000000_drop.sql:1 [error] DS101: DROP TABLE permanently deletes table t")
+			c.Assert(stdout, qt.Contains, "20240102000000_drop.sql:1 [error] DS101 destructive/drop-table: DROP TABLE permanently deletes table t")
 			c.Assert(mysqlDatabaseObjects(c, scratch, devName), qt.Equals, 0)
 		})
 	}

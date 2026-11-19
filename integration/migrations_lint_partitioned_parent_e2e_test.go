@@ -56,17 +56,17 @@ func TestNativeMigrationsLintReadsAnEarlierPartitionedParentE2E(t *testing.T) {
 			base:   partitioned,
 			change: "CREATE INDEX m_value ON measurements (value);\n",
 			want: []string{
-				"] PG108: building this index takes a SHARE lock on measurements and on every one of its partitions",
+				"] PG108 locking/partitioned-index: building this index takes a SHARE lock on measurements and on every one of its partitions",
 				"attach it to a parent index created with ON ONLY",
 			},
-			wantNot: []string{"] PG101: "},
+			wantNot: []string{"] PG101 locking/create-index: "},
 		},
 		{
 			name:    "control: the same index on the table left ordinary",
 			base:    "CREATE TABLE measurements (id bigint NOT NULL, taken_on date NOT NULL, value int);\n",
 			change:  "CREATE INDEX m_value ON measurements (value);\n",
-			want:    []string{"] PG101: CREATE INDEX without CONCURRENTLY blocks writes"},
-			wantNot: []string{"] PG108: "},
+			want:    []string{"] PG101 locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes"},
+			wantNot: []string{"] PG108 locking/partitioned-index: "},
 		},
 		{
 			name: "the remedy PG108 names",
@@ -77,7 +77,7 @@ func TestNativeMigrationsLintReadsAnEarlierPartitionedParentE2E(t *testing.T) {
 				"ALTER INDEX m_value ATTACH PARTITION m_value_2025;\n" +
 				"CREATE INDEX CONCURRENTLY m_value_2026 ON measurements_2026 (value);\n" +
 				"ALTER INDEX m_value ATTACH PARTITION m_value_2026;\n",
-			wantNot: []string{"] PG101: ", "] PG108: "},
+			wantNot: []string{"] PG101 locking/create-index: ", "] PG108 locking/partitioned-index: "},
 		},
 	}
 

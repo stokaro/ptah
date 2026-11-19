@@ -208,6 +208,15 @@ The suffix marks an extension of someone else's family, not authorship. The
 identifiers chosen before the convention existed are counted and listed at the
 bottom of this page rather than left for a reader to notice.
 
+Every rule also has a Ptah name, `category/name`, such as
+`destructive/drop-table`. The category names the hazard, not the engine, so
+one name can cover the same hazard on two engines, and a name can appear once
+in each linter. The rule tables give both spellings, and findings carry both:
+the text report prints the name after the code, and the JSON report has a
+`name` field beside `rule`. Wherever a selector names a rule, the name and its
+category work as well as the code; [Rule names and
+categories](#rule-names-and-categories) says how they match.
+
 ## How the analysis is performed
 
 Three kinds of analyzer are worth telling apart, because they fail differently
@@ -301,6 +310,31 @@ PostgreSQL `DROP TABLE t SELECT 1` also exits `1`: the parser refuses the
 trailing clause instead of treating `SELECT` as a second statement.
 
 <!-- BEGIN GENERATED LINT RULES -->
+## Rule names and categories
+
+Every rule has a code and a Ptah name, `category/name`. Findings report both. A selector in `--disable`, `disabled-rules`, a `rules:` key or a `ptah:nolint` comment may be the code, the name, or a category written as `locking` or `locking/`, which selects every rule named under it. A name matches exactly, never as a prefix, and a name or category no rule has is refused. One name may cover several codes: a hazard checked on two engines, or read by both linters.
+
+| Category | Rules | What it covers |
+| --- | --- | --- |
+| `capability` | 4 | the target server version lacks a capability the statement needs |
+| `correctness` | 3 | the statement is wrong as written: malformed, naming a column the schema does not declare, or declaring a property its body breaks |
+| `coverage` | 5 | something the linter did not read, so a clean result does not mean it was checked |
+| `data-dependent` | 6 | the statement succeeds, fails or changes values depending on the rows the table already holds |
+| `dependency` | 4 | the statement drops or renames something another object still uses |
+| `design` | 3 | a schema choice that applies cleanly and costs later, in row padding, table bloat or rows with no key to address them by; silencing it hides advice, never a statement that fails or blocks |
+| `destructive` | 9 | the statement deletes rows, values, objects or history for good |
+| `file-form` | 4 | the migration file or its directory does not have the form the run reads |
+| `integrity` | 5 | the statement removes a constraint or a NOT NULL the database enforces on the data |
+| `locking` | 19 | the statement holds a lock that blocks reads or writes while it runs |
+| `naming` | 10 | a name breaks the configured convention, or is longer than the server keeps |
+| `online` | 3 | online mode, which the user selects, could not prove the statement runs without a lock that blocks reads or writes; its rules fire only in that mode, so `--disable locking` leaves them on |
+| `rewrite` | 27 | the statement rewrites or copies every row of the table; an info rule here reports that the rewrite was checked for and is absent |
+| `rollout` | 4 | the change breaks a client or a consumer deployed against the current schema |
+| `security` | 7 | the statement weakens access control, or writes a secret or an unquoted value into SQL |
+| `side-effect` | 14 | the statement resets, ignores or leaves behind something its text does not show; silenced, a migration can succeed and leave the database different from what it says |
+| `transaction` | 6 | the statement cannot run, or runs differently, inside the migration's transaction or query |
+| `ydb` | 1 | a statement form only YDB refuses |
+
 ## Identifier families
 
 An identifier's prefix says whose namespace it lives in. Atlas owns a prefix when the Atlas analyzer documentation uses it; the rest are Ptah's.
@@ -333,183 +367,227 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ### Every dialect
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `AC101` | the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does | both | Ptah |
-| `AC102` | the SQL parser could not read a statement and no server ran it, so a clean result says nothing about it | both | Ptah |
-| `BC101` | a rename retires a name deployed code still refers to | native only | Atlas |
-| `BC103` | dropping a table retires a name deployed clients still query, which is a rollout break a backup does not mitigate | both | Atlas |
-| `BC104` | dropping a column retires a name deployed clients still select and insert, whether or not the column held rows | both | Atlas |
-| `CD101` | dropping a foreign key removes referential-integrity enforcement | both | Atlas |
-| `CD102` | dropping a check constraint removes a value-validation guarantee | both | Atlas |
-| `CD103` | dropping a primary key removes row identity and can break replication | both | Atlas |
-| `DD101` | adding a NOT NULL column without a default fails or blocks on a populated table | both | Atlas |
-| `DD102` | a routine declared immutable calls something whose result changes between two calls with the same arguments | both | Ptah |
-| `DS101` | DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows. The native surface leaves out the drop that ends a table rebuild, whose copy keeps every row under the old name | both | Atlas |
-| `DS102` | DROP COLUMN destroys the column and every value stored in it; an IF EXISTS drop of a column the dev database shows absent is not reported | both | Atlas |
-| `DS103` | a column type change can truncate or reject existing values and may rewrite the table under a lock; a clause that restates the column's current type, as the dev database records it, is not reported | both | Ptah |
-| `DS104` | DROP NOT NULL removes a column-level data protection | both | Ptah |
-| `DS105` | an untyped DROP CONSTRAINT removes a data protection the SQL does not name | both | Ptah |
-| `DS106` | removing an enum value can invalidate rows that still hold it | both | Ptah |
-| `DS107` | dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, coordination node, or streaming query removes behavior or data; an IF EXISTS drop of a type or a trigger the dev database shows absent removes nothing and is not reported | both | Ptah |
-| `DS108` | TRUNCATE deletes every row in the table | both | Ptah |
-| `DS109` | DISABLE ROW LEVEL SECURITY removes an access-control protection | both | Ptah |
-| `DS110P` | a column a view or routine still reads is dropped, and the finding names what breaks; a view dropped or rebuilt with a plain projection before the column drop is left out | both | Ptah |
-| `DS111P` | NO FORCE ROW LEVEL SECURITY exempts the table owner from every policy on the table | both | Ptah |
-| `MF101` | a unique index built over existing rows fails on the first duplicate | both | Atlas |
-| `MF101P` | no matching .down.sql exists, so a failed deploy cannot be rolled back mechanically | both | Ptah |
-| `MF102` | an index dropped and rebuilt as unique fails on the first duplicate and leaves the table without it | both | Atlas |
-| `MF102P` | the migration carries no executable statements | both | Ptah |
-| `MF103` | the file name does not follow the migration file-name convention | both | Ptah |
-| `MF105P` | a run refuses the migration directory for this file: the directory's format does not read its name, another file carries its version and direction, or the revision table cannot keep its version | native only | Ptah |
-| `NM101` | a schema this migration creates or renames to violates the configured naming convention | both | Atlas |
-| `NM102` | a table this migration creates or renames to violates the configured naming convention | both | Atlas |
-| `NM103` | a column this migration declares, adds, or renames to violates the configured naming convention | both | Atlas |
-| `NM104` | an index or unique key this migration names violates the configured naming convention | both | Atlas |
-| `NM105` | a foreign key this migration names violates the configured naming convention | both | Atlas |
-| `NM106` | a check constraint this migration names violates the configured naming convention | both | Atlas |
-| `SA101` | a routine builds and runs a statement from a value it does not quote | both | Atlas |
+| `AC101`<br>`coverage/routine-body` | the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does | both | Ptah |
+| `AC102`<br>`coverage/unparsed-statement` | the SQL parser could not read a statement and no server ran it, so a clean result says nothing about it | both | Ptah |
+| `BC101`<br>`rollout/rename` | a rename retires a name deployed code still refers to | native only | Atlas |
+| `BC103`<br>`rollout/drop-table` | dropping a table retires a name deployed clients still query, which is a rollout break a backup does not mitigate | both | Atlas |
+| `BC104`<br>`rollout/drop-column` | dropping a column retires a name deployed clients still select and insert, whether or not the column held rows | both | Atlas |
+| `CD101`<br>`integrity/drop-foreign-key` | dropping a foreign key removes referential-integrity enforcement | both | Atlas |
+| `CD102`<br>`integrity/drop-check` | dropping a check constraint removes a value-validation guarantee | both | Atlas |
+| `CD103`<br>`integrity/drop-primary-key` | dropping a primary key removes row identity and can break replication | both | Atlas |
+| `DD101`<br>`data-dependent/add-not-null-column` | adding a NOT NULL column without a default fails or blocks on a populated table | both | Atlas |
+| `DD102`<br>`correctness/immutable-calls-volatile` | a routine declared immutable calls something whose result changes between two calls with the same arguments | both | Ptah |
+| `DS101`<br>`destructive/drop-table` | DROP TABLE, and on MariaDB CREATE OR REPLACE TABLE, destroys the table and its rows. On the compatibility surface a rename reports here, retiring the old name without moving the rows. The native surface skips the drop that ends a table rebuild, whose copy keeps every row | both | Atlas |
+| `DS102`<br>`destructive/drop-column` | DROP COLUMN destroys the column and every value stored in it; an IF EXISTS drop of a column the dev database shows absent is not reported | both | Atlas |
+| `DS103`<br>`data-dependent/alter-column-type` | a column type change can truncate or reject existing values and may rewrite the table under a lock; a clause that restates the column's current type, as the dev database records it, is not reported | both | Ptah |
+| `DS104`<br>`integrity/drop-not-null` | DROP NOT NULL removes a column-level data protection | both | Ptah |
+| `DS105`<br>`integrity/drop-untyped-constraint` | an untyped DROP CONSTRAINT removes a data protection the SQL does not name | both | Ptah |
+| `DS106`<br>`destructive/remove-enum-value` | removing an enum value can invalidate rows that still hold it | both | Ptah |
+| `DS107`<br>`destructive/drop-object` | dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, coordination node, or streaming query removes behavior or data; an IF EXISTS drop of a type or a trigger the dev database shows absent removes nothing and is not reported | both | Ptah |
+| `DS108`<br>`destructive/truncate-table` | TRUNCATE deletes every row in the table | both | Ptah |
+| `DS109`<br>`security/disable-row-level-security` | DISABLE ROW LEVEL SECURITY removes an access-control protection | both | Ptah |
+| `DS110P`<br>`dependency/drop-column-in-use` | a column a view or routine still reads is dropped, and the finding names what breaks; a view dropped or rebuilt with a plain projection before the column drop is left out | both | Ptah |
+| `DS111P`<br>`security/no-force-row-level-security` | NO FORCE ROW LEVEL SECURITY exempts the table owner from every policy on the table | both | Ptah |
+| `MF101`<br>`data-dependent/add-unique-index` | a unique index built over existing rows fails on the first duplicate | both | Atlas |
+| `MF101P`<br>`file-form/missing-down` | no matching .down.sql exists, so a failed deploy cannot be rolled back mechanically | both | Ptah |
+| `MF102`<br>`data-dependent/rebuild-index-as-unique` | an index dropped and rebuilt as unique fails on the first duplicate and leaves the table without it | both | Atlas |
+| `MF102P`<br>`file-form/empty-migration` | the migration carries no executable statements | both | Ptah |
+| `MF103`<br>`file-form/file-name` | the file name does not follow the migration file-name convention | both | Ptah |
+| `MF105P`<br>`file-form/refused-file` | a run refuses the migration directory for this file: the directory's format does not read its name, another file carries its version and direction, or the revision table cannot keep its version | native only | Ptah |
+| `NM101`<br>`naming/schema-name` | a schema this migration creates or renames to violates the configured naming convention | both | Atlas |
+| `NM102`<br>`naming/table-name` | a table this migration creates or renames to violates the configured naming convention | both | Atlas |
+| `NM103`<br>`naming/column-name` | a column this migration declares, adds, or renames to violates the configured naming convention | both | Atlas |
+| `NM104`<br>`naming/index-name` | an index or unique key this migration names violates the configured naming convention | both | Atlas |
+| `NM105`<br>`naming/foreign-key-name` | a foreign key this migration names violates the configured naming convention | both | Atlas |
+| `NM106`<br>`naming/check-name` | a check constraint this migration names violates the configured naming convention | both | Atlas |
+| `SA101`<br>`security/dynamic-sql-from-value` | a routine builds and runs a statement from a value it does not quote | both | Atlas |
+
+</div>
 
 ### mariadb
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `MY146` | DROP SYSTEM VERSIONING deletes every historical row version permanently, and no rollback restores it | both | Atlas |
+| `MY146`<br>`destructive/drop-system-versioning` | DROP SYSTEM VERSIONING deletes every historical row version permanently, and no rollback restores it | both | Atlas |
+
+</div>
 
 ### mysql
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `MY145` | enforcing a CHECK constraint revalidates every row; unenforcing one stops the server refusing the values it was there to refuse | both | Atlas |
+| `MY145`<br>`locking/enforce-check` | enforcing a CHECK constraint revalidates every row; unenforcing one stops the server refusing the values it was there to refuse | both | Atlas |
+
+</div>
 
 ### mysql, mariadb
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `MY101` | this ALTER TABLE form usually rebuilds the table and blocks writes for the duration | both | Ptah |
-| `MY102` | an inline REFERENCES clause on a column is ignored by MySQL and enforced by MariaDB | both | Atlas |
-| `MY110` | removing an ENUM member copies the table, and a row still holding it fails the copy in strict mode | both | Atlas |
-| `MY111` | reordering ENUM members renumbers every row and copies the table | both | Atlas |
-| `MY112` | inserting an ENUM member before the end renumbers the members after it and copies the table | both | Atlas |
-| `MY113` | growing an ENUM past 255 members widens each value to two bytes and copies the table | both | Atlas |
-| `MY120` | removing a SET member copies the table, and a row still holding it fails the copy in strict mode | both | Atlas |
-| `MY121` | reordering SET members renumbers every row and copies the table | both | Atlas |
-| `MY122` | inserting a SET member before the end renumbers the members after it and copies the table | both | Atlas |
-| `MY123` | growing a SET across a multiple of eight members adds a byte to each value and copies the table | both | Atlas |
-| `MY130` | a column type change InnoDB cannot apply in place copies the table and blocks writes | both | Atlas |
-| `MY130P` | a MODIFY, CHANGE or CONVERT the dev database shows InnoDB applies without copying the table, and by which algorithm; info only | both | Ptah |
-| `MY131` | adding a foreign key can copy or lock the table and block writes | both | Atlas |
-| `MY132` | adding a primary key rebuilds the table in place around the new clustered index | both | Atlas |
-| `MY133` | dropping a primary key without adding one in the same statement copies the table | both | Atlas |
-| `MY134` | adding a FULLTEXT index can rebuild the table and block writes | both | Atlas |
-| `MY135` | adding a SPATIAL index can rebuild the table and block writes | both | Atlas |
-| `MY136` | converting a table's character set re-encodes its columns and copies the table | both | Atlas |
-| `MY137` | replacing a primary key rebuilds the table and every secondary index that stores it as a row pointer | both | Atlas |
-| `MY138` | changing the storage engine copies the table and blocks writes for the duration | both | Atlas |
-| `MY139` | a partitioning change rewrites every row and accepts no ALGORITHM or LOCK clause to soften it | both | Atlas |
-| `MY140` | adding a STORED generated column computes a value for every row, copying the table and blocking writes | both | Atlas |
-| `MY141` | adding an AUTO_INCREMENT column rebuilds the table in place and still blocks writes | both | Atlas |
-| `MY143` | changing a STORED generated column recomputes it for every row, copying the table and blocking writes | both | Atlas |
-| `MY144` | adding a CHECK constraint validates every existing row, and one that fails the predicate fails the migration | both | Atlas |
-| `MY147` | declaring a column NOT NULL rebuilds the table; whether an existing NULL fails the statement is DD103's question | both | Atlas |
-| `ON102` | the statement does not ask MySQL or MariaDB to apply it without blocking writes, so the server was never given the chance to refuse | both | Ptah |
+| `MY101`<br>`locking/blocking-alter-table` | this ALTER TABLE form usually rebuilds the table and blocks writes for the duration | both | Ptah |
+| `MY102`<br>`side-effect/inline-reference` | an inline REFERENCES clause on a column is ignored by MySQL and enforced by MariaDB | both | Atlas |
+| `MY110`<br>`rewrite/remove-enum-value` | removing an ENUM member copies the table, and a row still holding it fails the copy in strict mode | both | Atlas |
+| `MY111`<br>`rewrite/reorder-enum-values` | reordering ENUM members renumbers every row and copies the table | both | Atlas |
+| `MY112`<br>`rewrite/insert-enum-value` | inserting an ENUM member before the end renumbers the members after it and copies the table | both | Atlas |
+| `MY113`<br>`rewrite/widen-enum` | growing an ENUM past 255 members widens each value to two bytes and copies the table | both | Atlas |
+| `MY120`<br>`rewrite/remove-set-member` | removing a SET member copies the table, and a row still holding it fails the copy in strict mode | both | Atlas |
+| `MY121`<br>`rewrite/reorder-set-members` | reordering SET members renumbers every row and copies the table | both | Atlas |
+| `MY122`<br>`rewrite/insert-set-member` | inserting a SET member before the end renumbers the members after it and copies the table | both | Atlas |
+| `MY123`<br>`rewrite/widen-set` | growing a SET across a multiple of eight members adds a byte to each value and copies the table | both | Atlas |
+| `MY130`<br>`rewrite/alter-column-type` | a column type change InnoDB cannot apply in place copies the table and blocks writes | both | Atlas |
+| `MY130P`<br>`rewrite/in-place-column-change` | a MODIFY, CHANGE or CONVERT the dev database shows InnoDB applies without copying the table, and by which algorithm; info only | both | Ptah |
+| `MY131`<br>`locking/add-foreign-key` | adding a foreign key can copy or lock the table and block writes | both | Atlas |
+| `MY132`<br>`rewrite/add-primary-key` | adding a primary key rebuilds the table in place around the new clustered index | both | Atlas |
+| `MY133`<br>`rewrite/drop-primary-key` | dropping a primary key without adding one in the same statement copies the table | both | Atlas |
+| `MY134`<br>`locking/add-fulltext-index` | adding a FULLTEXT index can rebuild the table and block writes | both | Atlas |
+| `MY135`<br>`locking/add-spatial-index` | adding a SPATIAL index can rebuild the table and block writes | both | Atlas |
+| `MY136`<br>`rewrite/convert-charset` | converting a table's character set re-encodes its columns and copies the table | both | Atlas |
+| `MY137`<br>`rewrite/replace-primary-key` | replacing a primary key rebuilds the table and every secondary index that stores it as a row pointer | both | Atlas |
+| `MY138`<br>`rewrite/change-engine` | changing the storage engine copies the table and blocks writes for the duration | both | Atlas |
+| `MY139`<br>`rewrite/change-partitioning` | a partitioning change rewrites every row and accepts no ALGORITHM or LOCK clause to soften it | both | Atlas |
+| `MY140`<br>`rewrite/add-stored-generated-column` | adding a STORED generated column computes a value for every row, copying the table and blocking writes | both | Atlas |
+| `MY141`<br>`locking/add-auto-increment-column` | adding an AUTO_INCREMENT column rebuilds the table in place and still blocks writes | both | Atlas |
+| `MY143`<br>`rewrite/modify-generated-column` | changing a STORED generated column recomputes it for every row, copying the table and blocking writes | both | Atlas |
+| `MY144`<br>`locking/add-check` | adding a CHECK constraint validates every existing row, and one that fails the predicate fails the migration | both | Atlas |
+| `MY147`<br>`rewrite/set-not-null` | declaring a column NOT NULL rebuilds the table; whether an existing NULL fails the statement is DD103's question | both | Atlas |
+| `ON102`<br>`online/unproven` | the statement does not ask MySQL or MariaDB to apply it without blocking writes, so the server was never given the chance to refuse | both | Ptah |
+
+</div>
 
 ### mysql, mariadb, clickhouse, sqlserver
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `DD103` | a nullable column made NOT NULL fails on a row holding NULL, or rewrites it to the type's default | both | Ptah |
+| `DD103`<br>`data-dependent/set-not-null` | a nullable column made NOT NULL fails on a row holding NULL, or rewrites it to the type's default | both | Ptah |
+
+</div>
 
 ### postgres
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `ON101` | the statement is outside the set measured to take no lock conflicting with reads and writes on PostgreSQL | both | Ptah |
-| `ON103` | a statement validates a constraint behind a lock an earlier statement in the same transaction took, so the scan runs with readers and writers waiting | both | Ptah |
-| `PG101` | CREATE INDEX without CONCURRENTLY blocks writes for the whole build | both | Atlas |
-| `PG102` | ALTER TYPE ... ADD VALUE cannot run inside a transaction before PostgreSQL 12, and the value stays unusable in the same transaction after it | both | Ptah |
-| `PG103` | CONCURRENTLY cannot run inside the migration's transaction | both | Atlas |
-| `PG103P` | a TimescaleDB per-chunk index build cannot run inside the migration's transaction | both | Ptah |
-| `PG104` | adding a primary key takes an ACCESS EXCLUSIVE lock and can scan existing rows | both | Atlas |
-| `PG105` | adding a unique constraint takes an ACCESS EXCLUSIVE lock and validates rows | both | Atlas |
-| `PG106` | DROP INDEX without CONCURRENTLY blocks writes while the index is removed | both | Atlas |
-| `PG108` | an index on a partitioned table locks the parent and every partition at once, and CONCURRENTLY is refused there | both | Atlas |
-| `PG109` | adding an EXCLUDE constraint holds an ACCESS EXCLUSIVE lock while it builds the index and validates every row | both | Atlas |
-| `PG110` | the declared column order can waste tuple padding | both | Atlas |
-| `PG301` | a column type change PostgreSQL cannot prove safe rewrites the table and its indexes | both | Atlas |
-| `PG301P` | an ALTER COLUMN TYPE the dev database shows PostgreSQL applies as a catalog edit, with no rewrite, rebuild or scan; info only | both | Ptah |
-| `PG302` | a volatile DEFAULT on an added column rewrites or evaluates every existing row | both | Atlas |
-| `PG304` | a primary key over nullable columns sets them NOT NULL and scans every row on top of the index build | both | Atlas |
-| `PG305` | adding a CHECK constraint validates existing rows and can hold locks | both | Atlas |
-| `PG306` | adding a foreign key validates existing rows and can block writes on both tables | both | Atlas |
-| `PG307` | changing LOGGED or UNLOGGED rewrites the table under heavyweight locks | both | Atlas |
-| `PG308` | CREATE TRIGGER takes a SHARE ROW EXCLUSIVE lock and can block writes | both | Atlas |
-| `PG309` | adding a STORED generated column computes and stores a value for every row | both | Atlas |
-| `PG310` | adding an identity column can rewrite existing rows | both | Atlas |
-| `PG311` | changing a table's access method rewrites the table | both | Atlas |
-| `PG312` | replacing a primary key builds the new unique index under an ACCESS EXCLUSIVE lock | both | Atlas |
-| `PG312P` | a SECURITY DEFINER routine that does not pin search_path resolves unqualified names through the caller's | both | Ptah |
-| `PG314` | REPLICA IDENTITY FULL or NOTHING changes what logical replication can carry for the table | both | Atlas |
-| `PG320` | disabling autovacuum leaves dead rows for nothing to reclaim; the statement is cheap and the cost is paid later | both | Atlas |
-| `PG401P` | a name longer than the 63 bytes PostgreSQL keeps, which the server cuts with a notice and stores under its first bytes | native only | Ptah |
-| `PG402P` | a name PostgreSQL cuts to a name already in use where it refuses the second declaration, so the migration fails when it runs | native only | Ptah |
-| `TX101` | the migration mixes statements that cannot share one transaction | both | Atlas |
+| `ON101`<br>`online/unproven` | the statement is outside the set measured to take no lock conflicting with reads and writes on PostgreSQL | both | Ptah |
+| `ON103`<br>`online/lock-held-across-scan` | a statement validates a constraint behind a lock an earlier statement in the same transaction took, so the scan runs with readers and writers waiting | both | Ptah |
+| `PG101`<br>`locking/create-index` | CREATE INDEX without CONCURRENTLY blocks writes for the whole build | both | Atlas |
+| `PG102`<br>`transaction/add-enum-value` | ALTER TYPE ... ADD VALUE cannot run inside a transaction before PostgreSQL 12, and the value stays unusable in the same transaction after it | both | Ptah |
+| `PG103`<br>`transaction/concurrent-index` | CONCURRENTLY cannot run inside the migration's transaction | both | Atlas |
+| `PG103P`<br>`transaction/per-chunk-index` | a TimescaleDB per-chunk index build cannot run inside the migration's transaction | both | Ptah |
+| `PG104`<br>`locking/add-primary-key` | adding a primary key takes an ACCESS EXCLUSIVE lock and can scan existing rows | both | Atlas |
+| `PG105`<br>`locking/add-unique-constraint` | adding a unique constraint takes an ACCESS EXCLUSIVE lock and validates rows | both | Atlas |
+| `PG106`<br>`locking/drop-index` | DROP INDEX without CONCURRENTLY blocks writes while the index is removed | both | Atlas |
+| `PG108`<br>`locking/partitioned-index` | an index on a partitioned table locks the parent and every partition at once, and CONCURRENTLY is refused there | both | Atlas |
+| `PG109`<br>`locking/add-exclusion-constraint` | adding an EXCLUDE constraint holds an ACCESS EXCLUSIVE lock while it builds the index and validates every row | both | Atlas |
+| `PG110`<br>`design/column-alignment` | the declared column order can waste tuple padding | both | Atlas |
+| `PG301`<br>`rewrite/alter-column-type` | a column type change PostgreSQL cannot prove safe rewrites the table and its indexes | both | Atlas |
+| `PG301P`<br>`rewrite/in-place-column-change` | an ALTER COLUMN TYPE the dev database shows PostgreSQL applies as a catalog edit, with no rewrite, rebuild or scan; info only | both | Ptah |
+| `PG302`<br>`rewrite/volatile-default` | a volatile DEFAULT on an added column rewrites or evaluates every existing row | both | Atlas |
+| `PG304`<br>`locking/add-primary-key-on-nullable` | a primary key over nullable columns sets them NOT NULL and scans every row on top of the index build | both | Atlas |
+| `PG305`<br>`locking/add-check` | adding a CHECK constraint validates existing rows and can hold locks | both | Atlas |
+| `PG306`<br>`locking/add-foreign-key` | adding a foreign key validates existing rows and can block writes on both tables | both | Atlas |
+| `PG307`<br>`rewrite/set-persistence` | changing LOGGED or UNLOGGED rewrites the table under heavyweight locks | both | Atlas |
+| `PG308`<br>`locking/create-trigger` | CREATE TRIGGER takes a SHARE ROW EXCLUSIVE lock and can block writes | both | Atlas |
+| `PG309`<br>`rewrite/add-stored-generated-column` | adding a STORED generated column computes and stores a value for every row | both | Atlas |
+| `PG310`<br>`rewrite/add-identity-column` | adding an identity column can rewrite existing rows | both | Atlas |
+| `PG311`<br>`rewrite/set-access-method` | changing a table's access method rewrites the table | both | Atlas |
+| `PG312`<br>`locking/replace-primary-key` | replacing a primary key builds the new unique index under an ACCESS EXCLUSIVE lock | both | Atlas |
+| `PG312P`<br>`security/definer-without-search-path` | a SECURITY DEFINER routine that does not pin search_path resolves unqualified names through the caller's | both | Ptah |
+| `PG314`<br>`rollout/weaken-replica-identity` | REPLICA IDENTITY FULL or NOTHING changes what logical replication can carry for the table | both | Atlas |
+| `PG320`<br>`design/disable-autovacuum` | disabling autovacuum leaves dead rows for nothing to reclaim; the statement is cheap and the cost is paid later | both | Atlas |
+| `PG401P`<br>`naming/identifier-too-long` | a name longer than the 63 bytes PostgreSQL keeps, which the server cuts with a notice and stores under its first bytes | native only | Ptah |
+| `PG402P`<br>`naming/identifier-collision` | a name PostgreSQL cuts to a name already in use where it refuses the second declaration, so the migration fails when it runs | native only | Ptah |
+| `TX101`<br>`transaction/mixed-statements` | the migration mixes statements that cannot share one transaction | both | Atlas |
+
+</div>
 
 ### postgres, cockroachdb, yugabytedb
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `PG303` | SET NOT NULL scans the table to validate existing rows | both | Atlas |
+| `PG303`<br>`locking/set-not-null` | SET NOT NULL scans the table to validate existing rows | both | Atlas |
+
+</div>
 
 ### postgres, mysql, mariadb, clickhouse, sqlite, sqlserver, cockroachdb, yugabytedb
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `TX201` | a statement that controls transaction state, which the migrator refuses in a wrapped file and in one that runs without a transaction; a golang-migrate file on PostgreSQL, up or down, is read as the migrator runs it | both | Atlas |
+| `TX201`<br>`transaction/explicit-transaction` | a statement that controls transaction state, which the migrator refuses in a wrapped file and in one that runs without a transaction; a golang-migrate file on PostgreSQL, up or down, is read as the migrator runs it | both | Atlas |
+
+</div>
 
 ### spanner
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `SP101` | SET NOT NULL on Spanner validates every existing row in a schema change, and a row holding NULL fails it and leaves the column nullable | both | Ptah |
-| `SP102` | `ALTER TABLE ... DROP TTL` drops a table's row deletion policy, so rows the policy would delete stay | both | Ptah |
+| `SP101`<br>`data-dependent/set-not-null` | SET NOT NULL on Spanner validates every existing row in a schema change, and a row holding NULL fails it and leaves the column nullable | both | Ptah |
+| `SP102`<br>`side-effect/drop-row-deletion-policy` | `ALTER TABLE ... DROP TTL` drops a table's row deletion policy, so rows the policy would delete stay | both | Ptah |
+
+</div>
 
 ### sqlite
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `LT101` | SQLite cannot enforce NOT NULL on existing nullable data without a rebuild | both | Atlas |
+| `LT101`<br>`rewrite/set-not-null` | SQLite cannot enforce NOT NULL on existing nullable data without a rebuild | both | Atlas |
+
+</div>
 
 ### ydb
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `YD101` | a unique index added to a table that exists, which a YDB line without `unique_index_on_existing_table` refuses | both | Ptah |
-| `YD102` | a block or an action call that runs a scheme statement and a statement reading or writing a table in one query, which YDB refuses whole | both | Ptah |
-| `YD103` | an `ADD COLUMN` YDB refuses: NOT NULL without a default on every line, or a default where `add_column_with_default` is false | both | Ptah |
-| `YD104` | a `DROP COLUMN` of a column an index keys or covers, or the TTL reads, which YDB refuses until the index or the TTL is gone | both | Ptah |
-| `YD105` | turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it; silent where the directory's own migrations left the minimum at 1 | both | Ptah |
-| `YD106` | a `DROP TABLE` or `ALTER TABLE ... RENAME TO` of a table a view reads: YDB keeps the view, which reads its table by path, and every read of the view fails | both | Ptah |
-| `YD107` | an `ALTER SEQUENCE` on a 16-bit or 32-bit Serial's sequence, which raises its maximum to the Int64 maximum, so the column wraps to negative values without an error | both | Ptah |
-| `YD108` | an `ALTER SEQUENCE` without a `RESTART` on a sequence an earlier statement restarted, which YDB replays, so the next insert takes a key a row holds | both | Ptah |
-| `YD109` | a `RENAME TO` of a table that carries a changefeed, which YDB refuses until every changefeed is dropped | both | Ptah |
-| `YD110` | `REVOKE GRANT OPTION FOR` on YDB takes the permission it names as well, since YDB keeps the grant option as the permission `ydb.access.grant` | both | Ptah |
-| `YD111` | `DROP USER` or `DROP GROUP` on YDB leaves the principal's permissions behind, and a principal created later under the name holds them | both | Ptah |
-| `YD113` | an `ALTER TOPIC` that resets a topic setting, or a consumer setting other than its availability period, which YDB 26.2 accepts and keeps as it was, and 25.1 refuses | both | Ptah |
-| `YD114` | a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know | both | Ptah |
-| `YD115` | a `DROP ASYNC REPLICATION` without `CASCADE` of a replication not failed over, whose replica tables YDB keeps read-only for good | both | Ptah |
-| `YD116` | a password or a token written in clear in an async replication or a transfer, which YDB keeps without reading it back while the migration file holds it | both | Ptah |
-| `YD118` | turning auto partitioning by size on resets the partition size to 2048 MB unless the same statement sets it | both | Ptah |
-| `YD119` | an `ALTER TABLE` that names a column family the table does not have, which YDB creates with its own settings rather than refusing, and YQL cannot drop | both | Ptah |
-| `YD120` | `DROP RESOURCE POOL default` on YDB, after which every query of the database fails with `Resource pool default not found` | both | Ptah |
-| `YD121` | `DROP BACKUP COLLECTION` deletes every backup the collection holds, and stops a YDB 25.1 server | both | Ptah |
-| `YD122` | `ANALYZE` in a migration, which YDB refuses unless `EnableColumnStatistics` is on, and on 25.1 refuses on a row table | both | Ptah |
-| `YD130` | a vector index a YDB line does not build: any where `vector_indexes` is false, and one over bit vectors where `vector_bit_type` is false | both | Ptah |
-| `YD131` | rows written into a table holding a vector index on a YDB line where `vector_index_maintained_on_write` is false, which the index does not find | both | Ptah |
-| `YD140` | a secret's value written into the migration: a `CREATE SECRET` or `ALTER SECRET` whose value is not a `$PTAH_SECRET_...` reference, or a statement on the deprecated `OBJECT ... (TYPE SECRET)` | both | Ptah |
-| `YD141` | an external data source that names its credential by a deprecated secret object (`..._SECRET_NAME`), whose value the database administrator reads in clear | both | Ptah |
-| `YD150` | a dropped or renamed column or index whose comment stays on the YDB table as an attribute under its old name | both | Ptah |
-| `YD160` | replacing a streaming query or changing its body discards checkpoint state that rollback cannot restore | both | Ptah |
+| `YD101`<br>`capability/unique-index-on-existing-table` | a unique index added to a table that exists, which a YDB line without `unique_index_on_existing_table` refuses | both | Ptah |
+| `YD102`<br>`transaction/scheme-and-data-in-one-query` | a block or an action call that runs a scheme statement and a statement reading or writing a table in one query, which YDB refuses whole | both | Ptah |
+| `YD103`<br>`ydb/add-column-form` | an `ADD COLUMN` YDB refuses: NOT NULL without a default on every line, or a default where `add_column_with_default` is false | both | Ptah |
+| `YD104`<br>`dependency/drop-indexed-column` | a `DROP COLUMN` of a column an index keys or covers, or the TTL reads, which YDB refuses until the index or the TTL is gone | both | Ptah |
+| `YD105`<br>`side-effect/reset-min-partition-count` | turning auto partitioning by size or by load on resets the minimum partition count to 1 unless the same statement sets it; silent where the directory's own migrations left the minimum at 1 | both | Ptah |
+| `YD106`<br>`dependency/drop-table-read-by-view` | a `DROP TABLE` or `ALTER TABLE ... RENAME TO` of a table a view reads: YDB keeps the view, which reads its table by path, and every read of the view fails | both | Ptah |
+| `YD107`<br>`side-effect/widen-serial-sequence` | an `ALTER SEQUENCE` on a 16-bit or 32-bit Serial's sequence, which raises its maximum to the Int64 maximum, so the column wraps to negative values without an error | both | Ptah |
+| `YD108`<br>`side-effect/replay-sequence-restart` | an `ALTER SEQUENCE` without a `RESTART` on a sequence an earlier statement restarted, which YDB replays, so the next insert takes a key a row holds | both | Ptah |
+| `YD109`<br>`dependency/rename-table-with-changefeed` | a `RENAME TO` of a table that carries a changefeed, which YDB refuses until every changefeed is dropped | both | Ptah |
+| `YD110`<br>`side-effect/revoke-grant-option` | `REVOKE GRANT OPTION FOR` on YDB takes the permission it names as well, since YDB keeps the grant option as the permission `ydb.access.grant` | both | Ptah |
+| `YD111`<br>`side-effect/dropped-principal-keeps-permissions` | `DROP USER` or `DROP GROUP` on YDB leaves the principal's permissions behind, and a principal created later under the name holds them | both | Ptah |
+| `YD113`<br>`side-effect/reset-topic-setting` | an `ALTER TOPIC` that resets a topic setting, or a consumer setting other than its availability period, which YDB 26.2 accepts and keeps as it was, and 25.1 refuses | both | Ptah |
+| `YD114`<br>`side-effect/ignored-topic-setting` | a topic or consumer setting YDB accepts and keeps nothing of, such as a storage limit or a codec it does not know | both | Ptah |
+| `YD115`<br>`side-effect/drop-replication-without-failover` | a `DROP ASYNC REPLICATION` without `CASCADE` of a replication not failed over, whose replica tables YDB keeps read-only for good | both | Ptah |
+| `YD116`<br>`security/secret-in-clear` | a password or a token written in clear in an async replication or a transfer, which YDB keeps without reading it back while the migration file holds it | both | Ptah |
+| `YD118`<br>`side-effect/reset-partition-size` | turning auto partitioning by size on resets the partition size to 2048 MB unless the same statement sets it | both | Ptah |
+| `YD119`<br>`side-effect/implicit-column-family` | an `ALTER TABLE` that names a column family the table does not have, which YDB creates with its own settings rather than refusing, and YQL cannot drop | both | Ptah |
+| `YD120`<br>`destructive/drop-default-resource-pool` | `DROP RESOURCE POOL default` on YDB, after which every query of the database fails with `Resource pool default not found` | both | Ptah |
+| `YD121`<br>`destructive/drop-backup-collection` | `DROP BACKUP COLLECTION` deletes every backup the collection holds, and stops a YDB 25.1 server | both | Ptah |
+| `YD122`<br>`capability/analyze` | `ANALYZE` in a migration, which YDB refuses unless `EnableColumnStatistics` is on, and on 25.1 refuses on a row table | both | Ptah |
+| `YD130`<br>`capability/vector-index` | a vector index a YDB line does not build: any where `vector_indexes` is false, and one over bit vectors where `vector_bit_type` is false | both | Ptah |
+| `YD131`<br>`side-effect/vector-index-misses-writes` | rows written into a table holding a vector index on a YDB line where `vector_index_maintained_on_write` is false, which the index does not find | both | Ptah |
+| `YD140`<br>`security/secret-value-in-migration` | a secret's value written into the migration: a `CREATE SECRET` or `ALTER SECRET` whose value is not a `$PTAH_SECRET_...` reference, or a statement on the deprecated `OBJECT ... (TYPE SECRET)` | both | Ptah |
+| `YD141`<br>`security/deprecated-secret-object` | an external data source that names its credential by a deprecated secret object (`..._SECRET_NAME`), whose value the database administrator reads in clear | both | Ptah |
+| `YD150`<br>`side-effect/orphaned-comment` | a dropped or renamed column or index whose comment stays on the YDB table as an attribute under its old name | both | Ptah |
+| `YD160`<br>`destructive/discard-streaming-query-state` | replacing a streaming query or changing its body discards checkpoint state that rollback cannot restore | both | Ptah |
+
+</div>
 
 ### What the rules for every dialect do on YDB
 
@@ -556,21 +634,25 @@ A YDB run reads migrations as YQL. The `YD` family above is YDB's own, and every
 
 9 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them. A file of an executable provider's engine, such as YDB, is read from the statement facts of the provider's split and can report `SQL002`, `DDL001`, `CAP001` and `SQL004` only.
 
+<div class="ptah-wide-table">
+
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `CAP001` | the statement needs a capability the target server version does not have | native only | Ptah |
-| `DDL001` | the created table declares no primary key | native only | Ptah |
-| `DDL002` | an index names a column the schema does not declare | native only | Ptah |
-| `DDL003` | a name longer than the identifier limit of a server that cuts long names, which stores the object under its first bytes | native only | Ptah |
-| `DDL004` | a name the server cuts to a name already in use where it refuses the second declaration | native only | Ptah |
-| `SQL001` | the statement is malformed or opens with words no engine Ptah reads has, so no rule could inspect it | native only | Ptah |
-| `SQL002` | nothing read the statement, which a server may still accept: the parser holds no grammar for it, or steps over it as it does a SELECT | native only | Ptah |
-| `SQL003` | a routine body builds SQL at run time, so static analysis of that routine stops there | native only | Ptah |
-| `SQL004` | the file carried statement kinds no rule examined, so a clean result would not mean it was checked | native only | Ptah |
+| `CAP001`<br>`capability/missing` | the statement needs a capability the target server version does not have | native only | Ptah |
+| `DDL001`<br>`design/no-primary-key` | the created table declares no primary key | native only | Ptah |
+| `DDL002`<br>`correctness/index-on-undeclared-column` | an index names a column the schema does not declare | native only | Ptah |
+| `DDL003`<br>`naming/identifier-too-long` | a name longer than the identifier limit of a server that cuts long names, which stores the object under its first bytes | native only | Ptah |
+| `DDL004`<br>`naming/identifier-collision` | a name the server cuts to a name already in use where it refuses the second declaration | native only | Ptah |
+| `SQL001`<br>`correctness/syntax-error` | the statement is malformed or opens with words no engine Ptah reads has, so no rule could inspect it | native only | Ptah |
+| `SQL002`<br>`coverage/unsupported-statement` | nothing read the statement, which a server may still accept: the parser holds no grammar for it, or steps over it as it does a SELECT | native only | Ptah |
+| `SQL003`<br>`coverage/dynamic-sql` | a routine body builds SQL at run time, so static analysis of that routine stops there | native only | Ptah |
+| `SQL004`<br>`coverage/unanalyzed-statements` | the file carried statement kinds no rule examined, so a clean result would not mean it was checked | native only | Ptah |
+
+</div>
 
 ## Default severities
 
-40 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DDL004`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MF105P`, `MY146`, `ON101`, `ON102`, `ON103`, `PG402P`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD116`, `YD120`, `YD121`, `YD130`, `YD140`. The other 94 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `DDL003`, `DDL004`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+40 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DDL004`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `DS111P`, `MF105P`, `MY146`, `ON101`, `ON102`, `ON103`, `PG402P`, `SQL001`, `SQL002`, `YD101`, `YD102`, `YD103`, `YD104`, `YD106`, `YD107`, `YD108`, `YD109`, `YD110`, `YD113`, `YD114`, `YD116`, `YD120`, `YD121`, `YD130`, `YD140`. The other 94 default to warning or info. A committed `.ptah-lint.yaml` replaces either, per rule, per family or per category. `ptah sql lint` reads the `rules:` severities the same file sets for `CAP001`, `DDL001`, `DDL002`, `DDL003`, `DDL004`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
@@ -723,6 +805,31 @@ single statement is silenced with a `ptah:nolint` comment, and the
 compatibility surface accepts `atlas:nolint` with the analyzer names and codes
 it prints.
 
-`ptah sql lint` takes none of that. It reads no policy file, honors no
-`nolint` comment, and offers one control: `--disable`, repeatable, taking a
-code or a family prefix. Its severities are the defaults listed above.
+A selector in each of those places is a code, a family prefix, a Ptah rule
+name or a category:
+
+```yaml
+# .ptah-lint.yaml
+disabled-rules:
+  - rewrite                 # every rule named under the category
+  - locking/set-not-null    # one rule, by its name
+rules:
+  destructive/drop-column:
+    severity: warning
+```
+
+```sql
+-- ptah:nolint locking/create-index
+CREATE INDEX idx_users_email ON users (email);
+```
+
+When several `rules:` keys govern one rule, the rule's code wins, then its
+name, then an Atlas code, then its category, then the longest code prefix. A
+`ptah:nolint` comment that names a rule name or category migration lint does
+not have is refused, with the file and the line, rather than silencing
+nothing.
+
+`ptah sql lint` takes less. It reads only the severities the `rules:` section
+of the same file sets for its own rules, keyed by code, name or category, and
+honors no `nolint` comment. Its one control is `--disable`, repeatable, taking
+a code, a family prefix, a Ptah rule name or a category.

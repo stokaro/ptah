@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/core/schemaext"
 	"ptah.run/internal/lintdialect"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/servertarget"
 )
 
@@ -278,8 +279,12 @@ func validateOnlineSelectors(cfg *Config) error {
 }
 
 // selectorTouchesOnline reports whether a rule selector names the ON family or
-// a rule in it.
+// a rule in it, by code or by Ptah name.
 func selectorTouchesOnline(selector string) bool {
+	if lintnames.IsSelector(selector) {
+		codes, _ := lintnames.Migration().Resolve(selector)
+		return slices.ContainsFunc(codes, func(code string) bool { return strings.HasPrefix(code, OnlineFamily) })
+	}
 	return strings.HasPrefix(selector, OnlineFamily)
 }
 
@@ -325,21 +330,8 @@ func (c *Config) GateFamilies() []string {
 func validateRuleConfigs(configs map[string]RuleConfig) error {
 	for _, code := range slices.Sorted(maps.Keys(configs)) {
 		rule := configs[code]
-		if !isCanonicalRuleCode(code) {
-			if rule.Declares() {
-				// A declared rule's code is not decoration: it is what reports
-				// print, what `--disable` selects, and what a `nolint`
-				// directive names. A second naming shape would make a family
-				// prefix such as `DS` ambiguous against a rule that merely
-				// starts with those letters.
-				return fmt.Errorf(
-					"lint rule %q: a declared rule needs a code in the same form as every other "+
-						"rule -- uppercase ASCII letters and digits, such as %q -- because the code "+
-						"is what findings print and what --disable and nolint select; "+
-						"put the readable name in `title`",
-					code, suggestedRuleCode(code))
-			}
-			return invalidRuleSelectorError(code)
+		if err := validateRuleConfigKey(code, rule, configs); err != nil {
+			return err
 		}
 		switch rule.Severity {
 		case "", SeverityInfo, SeverityWarning, SeverityError:
@@ -353,6 +345,42 @@ func validateRuleConfigs(configs map[string]RuleConfig) error {
 		}
 	}
 	return nil
+}
+
+// validateRuleConfigKey refuses a `rules:` key that is neither a code nor a
+// Ptah rule name or category migration lint knows, and a category written in
+// both of its spellings.
+func validateRuleConfigKey(code string, rule RuleConfig, configs map[string]RuleConfig) error {
+	switch {
+	case lintnames.IsSelector(code) && !rule.Declares():
+		// `ptah sql lint` reads the section's severities too, so a name
+		// either linter holds is a name the file may carry.
+		if err := validateNameSelector(lintnames.Any(), code); err != nil {
+			return err
+		}
+		if category, found := strings.CutSuffix(code, "/"); found {
+			if _, twice := configs[category]; twice {
+				return fmt.Errorf("lint rules %q and %q name one category; keep one of them", category, code)
+			}
+		}
+		return nil
+	case isCanonicalRuleCode(code):
+		return nil
+	case rule.Declares():
+		// A declared rule's code is not decoration: it is what reports
+		// print, what `--disable` selects, and what a `nolint`
+		// directive names. A second naming shape would make a family
+		// prefix such as `DS` ambiguous against a rule that merely
+		// starts with those letters.
+		return fmt.Errorf(
+			"lint rule %q: a declared rule needs a code in the same form as every other "+
+				"rule -- uppercase ASCII letters and digits, such as %q -- because the code "+
+				"is what findings print and what --disable and nolint select; "+
+				"put the readable name in `title`",
+			code, suggestedRuleCode(code))
+	default:
+		return invalidRuleSelectorError(code)
+	}
 }
 
 func validateExcludePattern(pattern string) error {
@@ -388,7 +416,14 @@ func validateConfiguredRuleSelectors(rules []Rule, opts Options) error {
 // The Atlas spelling counts. A user reading the Atlas documentation writes
 // PG301, and refusing it as unknown told them their code does not exist when
 // what it does not have is a rule of its own (stokaro/ptah#1631).
+//
+// A Ptah name or category reaches a rule it selects by [SelectorSelects], so
+// a name the run registers no rule for, such as a provider's rule linted
+// without the provider, is refused here as a code would be.
 func selectorMatchesRule(selector string, rules []Rule) bool {
+	if lintnames.IsSelector(selector) {
+		return slices.ContainsFunc(rules, func(rule Rule) bool { return lintnames.Migration().Selects(selector, rule.Code) })
+	}
 	for _, candidate := range expandAtlasCodeSelectors([]string{selector}) {
 		for _, rule := range rules {
 			if strings.HasPrefix(rule.Code, candidate) {
@@ -399,17 +434,37 @@ func selectorMatchesRule(selector string, rules []Rule) bool {
 	return false
 }
 
+// validateRuleSelectors refuses a selector that is neither a rule code nor a
+// Ptah rule name or category migration lint knows. A misspelled name is
+// refused rather than matched against nothing, which would read as a rule
+// turned off.
 func validateRuleSelectors(selectors []string) error {
 	for _, selector := range selectors {
-		if selector != "" && !isCanonicalRuleCode(selector) {
+		switch {
+		case selector == "":
+		case lintnames.IsSelector(selector):
+			if err := validateNameSelector(lintnames.Migration(), selector); err != nil {
+				return err
+			}
+		case !isCanonicalRuleCode(selector):
 			return invalidRuleSelectorError(selector)
 		}
 	}
 	return nil
 }
 
+// validateNameSelector refuses a Ptah rule name or category that selects no
+// rule in names.
+func validateNameSelector(names lintnames.Table, selector string) error {
+	if _, err := names.Resolve(selector); err != nil {
+		return fmt.Errorf("rule selector %w", err)
+	}
+	return nil
+}
+
 func invalidRuleSelectorError(selector string) error {
-	return fmt.Errorf("rule selector %q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits", selector)
+	return fmt.Errorf("rule selector %q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits, "+
+		"or be a rule name or category, such as locking/set-not-null or locking", selector)
 }
 
 // servedBy is the target resolver of a lint runtime that serves targets, such

@@ -602,8 +602,12 @@ func sameMigrateLintFile(sourcePath, findingPath string) bool {
 	return cleanFinding == strings.TrimPrefix(path.Clean(sourcePath), "./")
 }
 
+// atlasMigrateLintFinding is a finding as the compatibility surface reports
+// it: under the Atlas identity of its rule, and without the Ptah rule name,
+// which is native vocabulary.
 func atlasMigrateLintFinding(finding migrationlint.Finding) migrationlint.Finding {
 	finding.Rule = atlaslint.RuleForNativeCode(finding.Rule).Code
+	finding.Name = ""
 	return finding
 }
 

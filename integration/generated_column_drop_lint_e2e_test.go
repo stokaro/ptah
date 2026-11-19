@@ -83,7 +83,7 @@ func TestMigrationsLintReadsWhetherARegeneratedColumnWasGeneratedE2E(t *testing.
 			linted := runPtahIn(c, "migrations", "lint", "--dir", dir, "--dev-url", postgresScratchDevURL(c, "ptah_regenerated_lint"))
 
 			c.Assert(linted.ExitCode, qt.Equals, row.exit, historyComment(linted))
-			c.Assert(strings.Count(linted.Stdout+linted.Stderr, "] DS102:"), qt.Equals, row.drops, historyComment(linted))
+			c.Assert(strings.Count(linted.Stdout+linted.Stderr, "] DS102 destructive/drop-column:"), qt.Equals, row.drops, historyComment(linted))
 		})
 	}
 }

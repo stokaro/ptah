@@ -46,5 +46,5 @@ func TestSQLLintNamesTheSameLineE2E(t *testing.T) {
 	out, err := runPtahNativeWithError("sql", "lint", file, "--dialect", "postgres")
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(out, qt.Matches, `(?s).*schema\.sql:6:17: error SQL001: expected '\(' after table name: expected Operator, got Identifier\n.*`)
+	c.Assert(out, qt.Matches, `(?s).*schema\.sql:6:17: error SQL001 correctness/syntax-error: expected '\(' after table name: expected Operator, got Identifier\n.*`)
 }

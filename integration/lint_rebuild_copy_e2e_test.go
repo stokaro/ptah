@@ -71,7 +71,7 @@ func TestMigrationsLintReportsACopyThatChangesValuesE2E(t *testing.T) {
 			got := lintRebuildCopy(c, test.createColumns, test.copyStatement)
 
 			c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-			c.Assert(got.Stdout, qt.Contains, "migrations/2.sql:3 [error] DS101: DROP TABLE permanently deletes table items")
+			c.Assert(got.Stdout, qt.Contains, "migrations/2.sql:3 [error] DS101 destructive/drop-table: DROP TABLE permanently deletes table items")
 		})
 	}
 }
