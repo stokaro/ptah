@@ -32,7 +32,7 @@ func TestSchemaInspectExplicitSQLTemplateWritesExactTerminatedStatement(t *testi
 
 	out, err := runCompatInspect(dbPath, "--format", `{{ sql . }}`)
 
-	// The plan that creates the table, as the pinned community binary v1.3.0
+	// The plan that creates the table, as the pinned community binary
 	// writes it: a change comment, then one statement on one line.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Equals, "-- Create \"users\" table\nCREATE TABLE \"users\" (\"id\" integer NULL, PRIMARY KEY (\"id\"));\n")

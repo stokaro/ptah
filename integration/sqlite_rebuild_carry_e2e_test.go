@@ -145,7 +145,7 @@ func (f sqliteCarryFixture) compatDiff(c *qt.C, exclude string) clirun.Result {
 // leaves parts of kinds out, under a selector that keeps one of them, through
 // both binaries. Each binary keeps the part the selector names and the rows,
 // drops the parts it does not name, and a run that follows finds nothing to
-// do. The community binary v1.3.0 drops the column, the index, the trigger and
+// do. The pinned community binary drops the column, the index, the trigger and
 // the CHECK under these selectors, and with `kinds.code_len[type=check]` its
 // apply fails on `no such index`.
 //

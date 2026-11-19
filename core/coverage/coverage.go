@@ -38,7 +38,7 @@
 //	// ptah:not-described schema "extra"
 //
 // A comment is invisible to every reader of the document except Ptah -- the
-// pinned Atlas community binary v1.3.0 reads a document carrying these lines at
+// pinned Atlas community binary reads a document carrying these lines at
 // exit 0 -- and the same grammar works in HCL (`//` or `#`) and in SQL (`--`),
 // so one encoding covers every serialized desired-state format.
 //

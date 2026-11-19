@@ -215,7 +215,7 @@ var schemaApplyNewTargetSources = []struct {
 // TestCompatSchemaApplyRefusesADirtyDevDatabaseWithoutCreatingTheTarget runs
 // schema apply at a SQLite target file that does not exist yet, with the dev
 // database holding keep_me. Opening a SQLite URL creates its file, and the
-// pinned binary v1.3.0 refuses before it touches a file target, so no target
+// pinned binary refuses before it touches a file target, so no target
 // file appears. Without the check ahead of the connection, the refusal leaves
 // an empty target file behind (stokaro/ptah#3955).
 func TestCompatSchemaApplyRefusesADirtyDevDatabaseWithoutCreatingTheTarget(t *testing.T) {

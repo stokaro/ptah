@@ -570,7 +570,7 @@ env "local" {
 //
 // The last two rows are the scope controls. `review` is decoded under `lint`
 // and nowhere else, `add_index` under `diff.skip` and nowhere else: the pinned
-// community binary v1.3.0 answers 0 for `migration { review = 1 }` and for
+// community binary answers 0 for `migration { review = 1 }` and for
 // `lint { add_index = { k = "v" } }`, so a check keyed on the name alone rather
 // than on the scope would refuse a project file that binary reads. The
 // `frobnicate9` rows are the nonsense controls that keep the silences
@@ -1419,7 +1419,7 @@ env "local" {
 //
 // The list rows are the other half. A null ELEMENT also carries cty.String, and
 // a null LIST answers true to CanIterateElements because that answer comes from
-// the type. The pinned community binary v1.3.0 refuses a null element --
+// the type. The pinned community binary refuses a null element --
 // `cannot read attribute … as string list: null value is not allowed`, exit 1
 // -- so `env.include`, `env.migration.exclude`, `env.exclude`, `env.schemas`
 // and `env.src` fed a list holding one are a rule (a) hole or a crash.
@@ -1834,7 +1834,7 @@ env "local" {
 //
 // The lint.review case is the one that separates a decoded name from a
 // tolerated one: null is accepted for every name in atlasDecodedLeafAttributes,
-// on the pinned community binary v1.3.0 and here, so `lint.review` given the
+// on the pinned community binary and here, so `lint.review` given the
 // same typed null that TestParseAtlasProjectConfigRefusesTypedNullDecodedValues
 // refuses still parses.
 //

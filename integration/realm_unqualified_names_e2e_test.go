@@ -98,7 +98,7 @@ func TestSchemaApplyPlacesAnUnqualifiedNameWhereTheDevDatabaseResolvesIt_HappyPa
 // applies `CREATE TABLE notes` where the plan would create the table in one
 // reading of the name and drop the table the other reading names, with its
 // row. With a dev database the name is read as public, and the target holds
-// notes in its current schema; the pinned community binary v1.3.0 plans that
+// notes in its current schema; the pinned community binary plans that
 // move, and drops the role's whole schema with it. Without one the name is read
 // as the role's schema, and the target holds public.notes, where the community
 // binary reads it. The apply is refused, and the row is read back where it was.

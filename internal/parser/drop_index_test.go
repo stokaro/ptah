@@ -41,7 +41,7 @@ func shapeOfDropIndex(node *ast.DropIndexNode) dropIndexShape {
 // Before this, `parseDropStatement` refused every target but TABLE, so
 // `DROP INDEX app.idx` came back as `unsupported DROP target: INDEX at position
 // 5` and contributed no schema change to `migration/lint` in any schema -- the
-// community binary v1.3.0 counts one for the reviewed schema.
+// pinned community binary counts one for the reviewed schema.
 //
 // The two grammars are what the rows are really about. PostgreSQL and SQLite
 // name the index in its own namespace and no table; MySQL, MariaDB, SQL Server

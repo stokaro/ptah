@@ -131,7 +131,7 @@ func comparePostgres(desired *schemamodel.Database, current *catalog.Database) *
 // The key declared on the column is compared by the name it carries, so the
 // comparison adds it when the database holds no key of that name. A database
 // key excused because its column declares a key is never dropped, and the table
-// ends with two foreign keys where the declaration has one. Atlas CE v1.3.0
+// ends with two foreign keys where the declaration has one. Atlas CE
 // plans the same drop and add for each renamed row.
 //
 // The rows where the name matches are the controls. A key that is the declared

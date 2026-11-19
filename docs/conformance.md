@@ -728,7 +728,7 @@ Two formatted-SQL constructs are read as Liquibase reads them, on the numbered
 copy and on the path that splits changesets. Measured 2026-09-26 on SQLite with
 a numbered `1_ignore.sql` holding an `--ignoreLines:start` ... `--ignoreLines:end`
 block around `CREATE TABLE ignored_block` and an `--ignoreLines:1` before
-`CREATE TABLE ignored_count`: Atlas CE v1.3.0 `migrate apply` creates both
+`CREATE TABLE ignored_count`: Atlas CE `migrate apply` creates both
 tables, and Liquibase 5.0.4 creates neither; `ptah-compat migrate apply` creates
 neither, since the copy leaves out the directive and the lines it skips. A
 property reference such as `${tbl}`, which Liquibase fills in from its
@@ -741,12 +741,12 @@ warning about dropped rollbacks. Measured 2026-09-26 on SQLite with a numbered `
 that creates `accounts`, then holds a block whose line
 `DROP TABLE accounts; /* accounts first */ DROP TABLE ledgers;` carries a
 comment of its own, then creates `ledgers`: Liquibase 5.0.4 `update` creates
-both tables. Atlas CE v1.3.0 `migrate apply` ends the comment at `first */`,
+both tables. Atlas CE `migrate apply` ends the comment at `first */`,
 runs `DROP TABLE ledgers;` as up SQL and exits 1 with `no such table: ledgers`.
 `ptah-compat migrate apply` creates both tables.
 
 `migrate diff` into the Liquibase layout writes each rollback line as
-`--rollback <SQL>`, where Atlas CE v1.3.0 writes `--rollback: <SQL>`, and it
+`--rollback <SQL>`, where Atlas CE writes `--rollback: <SQL>`, and it
 does so under `PTAH_ATLAS_STRICT_COMPAT=1` too. Liquibase 5.0.4 reads a rollback
 line only with one blank after the keyword, so the colon makes the line a
 comment in the changeset's SQL. Measured 2026-09-26 on SQLite, with a diff that
@@ -1042,7 +1042,7 @@ One retained divergence, recorded rather than chased:
 
 `schema diff` between two local schema files places both files' unqualified
 names in the dev database's current schema when the dev URL pins no
-`search_path`, as Atlas CE v1.3.0 does: `schema diff --from file://schema.sql
+`search_path`, as Atlas CE does: `schema diff --from file://schema.sql
 --to file://schema2.sql --dev-url docker://postgres/16/dev` writes
 `"public"."users"` on both binaries. A `docker://` dev URL places the names in
 `public` without starting a container, and a `postgres://` one is connected to
@@ -1154,7 +1154,7 @@ binaries still differ, the difference is recorded rather than matched:
 ## PostgreSQL Introspection: Index and Domain Attributes
 
 Reading a live PostgreSQL database once lost nine attributes that the pinned
-Atlas CE v1.3.0 binary preserves. All nine are now read. Measured on PostgreSQL
+Atlas CE binary preserves. All nine are now read. Measured on PostgreSQL
 17.10 by diffing an empty database against a source database with each binary,
 replaying the emitted SQL into a fresh database with
 `psql -v ON_ERROR_STOP=1` and reading psql's own exit status, then re-diffing
@@ -1478,7 +1478,7 @@ The MySQL family is the other case. There the comment is part of the index
 definition, kept in `STATISTICS.INDEX_COMMENT`, and no statement changes it in
 place, so the comparator compares it and a change rebuilds the index. Ptah
 writes the rebuild as one statement, `ALTER TABLE t DROP INDEX k, ADD INDEX k
-(...) COMMENT '...'`. CE v1.3.0 writes the drop and the add as two statements,
+(...) COMMENT '...'`. CE writes the drop and the add as two statements,
 and MySQL 8.4.11 refuses the drop alone on an index a foreign key needs with
 `ERROR 1553`, so we are stricter here, deliberately.
 
@@ -1515,13 +1515,13 @@ A column comment between two of a changed table's column changes would split the
 
 An index of a new table that has to wait for a view or a routine the plan creates
 comes after that statement, and the table's comments follow the index there. CE
-v1.3.0 writes neither a view nor a routine, so this order has no reference.
+writes neither a view nor a routine, so this order has no reference.
 
 Other files keep each comment right after the statement it describes, so a new
 table's comments follow its `CREATE TABLE` and an index's follow its `CREATE
 INDEX`. That holds for a `ptah-compat migrate diff` down file that recreates a
 table the up file drops, for the plan file `ptah-compat schema plan` writes, and for
-the native `ptah` files. CE v1.3.0 writes the recreated table of a down file with
+the native `ptah` files. CE writes the recreated table of a down file with
 its indexes first and its comments after them.
 
 ### Attributes of the same family that are still dropped
@@ -2230,7 +2230,7 @@ declaration behind it stays an ordinary type name.
 ## Output shape: twelve cells from the #1235 register
 
 [`stokaro/ptah#1235`](https://github.com/stokaro/ptah/issues/1235) registers 51
-places where `ptah-compat` and the pinned community binary v1.3.0 agree on the
+places where `ptah-compat` and the pinned community binary agree on the
 exit code and disagree on the bytes. Twelve of them are closed here. Every row was
 measured with each binary in its own directory, every exit code read from an
 unpiped invocation.

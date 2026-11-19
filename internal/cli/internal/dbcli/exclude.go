@@ -23,7 +23,7 @@ import (
 // [EffectiveString] resolves. A project list names objects something else
 // owns, and a flag that replaced it would turn a one-off `--exclude` into a
 // plan that creates or drops every object the file protects. The pinned
-// Atlas community binary v1.3.0 does replace `env.exclude` with `--exclude`,
+// Atlas community binary does replace `env.exclude` with `--exclude`,
 // and the compatibility surface keeps that rule. A run that must compare an
 // object the project excludes selects an env whose `exclude` is empty, or
 // another config file.

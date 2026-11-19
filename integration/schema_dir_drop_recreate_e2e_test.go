@@ -13,7 +13,7 @@ import (
 
 // schemaDirDropRecreateFiles is a schema directory whose later file drops the
 // table the earlier file created and creates it again. The files run in order,
-// so PostgreSQL 18.6 builds users with both columns, and Atlas CE v1.3.0 exits
+// so PostgreSQL 18.6 builds users with both columns, and Atlas CE exits
 // 0 on the directory. Without the replay the reader refuses it as a second
 // declaration of users (stokaro/ptah#3914).
 var schemaDirDropRecreateFiles = []struct {

@@ -283,7 +283,7 @@ func TestSchemaInspectSQLiteSQLReplaysTheSourceIndexSet(t *testing.T) {
 // `{{ json . }}` reports nullability as SQLite reports it, with the key column
 // of a rowid table nullable unless the DDL said otherwise.
 //
-// The pinned Atlas community v1.3.0 binary answers `"null": true` for the first
+// The pinned Atlas community binary answers `"null": true` for the first
 // row's `id` and omits the key for the second row's, which is what those rows
 // assert. `null` is omitted rather than written false when the column is NOT
 // NULL, so the assertion reads the key's presence.

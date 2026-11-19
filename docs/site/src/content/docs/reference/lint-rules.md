@@ -240,7 +240,7 @@ transaction state in either mode: `BEGIN`, `START TRANSACTION`, `COMMIT`,
 statement that opens each such block, in an up file and in a down file, on every
 engine the migrator applies, so the failure shows before a deploy. A run that
 names no dialect reads the statements with the generic grammar and reports
-them the same way. The pinned Atlas community binary v1.3.0 lints
+them the same way. The pinned Atlas community binary lints
 such a file clean and applies a `txmode none` one, so `ptah-compat` is stricter
 here ([Compatibility differences](../../atlas/retained-divergences/#a-txmode-none-file-that-controls-its-own-transaction)).
 

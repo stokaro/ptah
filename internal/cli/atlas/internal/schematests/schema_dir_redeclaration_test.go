@@ -12,7 +12,7 @@ import (
 
 // redeclaringDir is the fixture both verbs are measured on: two files, the
 // second declaring a table the first already declared. The pinned Atlas
-// community binary v1.3.0 exits 1 on it, on `schema diff` and on `schema apply`
+// community binary exits 1 on it, on `schema diff` and on `schema apply`
 // alike, because it executes the files in filename order against the dev
 // database and the engine refuses the second CREATE TABLE.
 func redeclaringDir(c *qt.C) string {

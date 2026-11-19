@@ -19,7 +19,7 @@ import (
 )
 
 // A dev database URL is opened by every command that is given one, whether or
-// not the command needs the database. The pinned community binary v1.3.0
+// not the command needs the database. The pinned community binary
 // opens it on every `schema diff` and `schema apply`, and a URL nothing answers
 // on fails the run there:
 //

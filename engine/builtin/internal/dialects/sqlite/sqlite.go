@@ -83,7 +83,7 @@ func (r *Renderer) renderCreateSchema(node *ast.CreateSchemaNode) error {
 	if node.Name == defaultSchema {
 		// `main` is where the connection already is, so there is nothing to
 		// create and nothing to refuse. An introspected SQLite database
-		// describes it as a schema — the pinned Atlas community binary v1.3.0
+		// describes it as a schema — the pinned Atlas community binary
 		// renders `schema "main" {}` in HCL and no statement at all in SQL —
 		// and turning that into a "not supported" comment would put a refusal
 		// in the output for something the author never asked for

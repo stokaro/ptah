@@ -81,7 +81,7 @@ func tableNames(schema *catalog.Database) []string {
 // database, and the databases [mysql.Reader.SetSchemas] names when it names
 // some (stokaro/ptah#3789). A session that selected a database reads that
 // database with no schema on its tables, whatever the list says, as the pinned
-// community binary v1.3.0 reads a URL naming one.
+// community binary reads a URL naming one.
 func TestReader_ReadsAWholeServer_HappyPath(t *testing.T) {
 	tests := []struct {
 		name        string

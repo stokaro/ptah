@@ -2410,7 +2410,7 @@ func (r *Renderer) writeColumnDefaultChange(tableName string, column *ast.Column
 // A column with no declared default is not filled. A value chosen by the
 // column's type, such as 0, false, CURRENT_TIMESTAMP or the empty string, is
 // data nobody wrote: filled with it, a change the server refuses reports
-// success and leaves the rows rewritten. Atlas CE v1.3.0 lets the statement
+// success and leaves the rows rewritten. Atlas CE lets the statement
 // fail with SQLSTATE 23502, and so does this (stokaro/ptah#3648). Nor is a
 // column whose operation asks to omit the fill, which is how ptah-compat plans
 // under PTAH_ATLAS_STRICT_COMPAT=1: Atlas CE writes no fill even where the

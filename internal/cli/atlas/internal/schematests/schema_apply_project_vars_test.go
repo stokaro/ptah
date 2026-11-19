@@ -74,7 +74,7 @@ func TestSchemaApplyScopesHCLSchemaVarsToProjectSources(t *testing.T) {
 // of the table in [TestSchemaApplyScopesHCLSchemaVarsToProjectSources]: a --to
 // the operator typed carries no project scope, so a schema file with a required
 // variable and no --var has no value to read and the run fails, exactly as the
-// pinned Atlas community binary v1.3.0 fails it.
+// pinned Atlas community binary fails it.
 func TestSchemaApplyRefusesExplicitToOutsideTheProjectVarScope(t *testing.T) {
 	c := qt.New(t)
 	t.Chdir(t.TempDir())
@@ -140,7 +140,7 @@ func TestSchemaInspectAppliesProjectVarsThroughEnvSrc(t *testing.T) {
 // them and so were the last loader the scope did not reach.
 //
 // There is no oracle row here: `schema plan` is not supported by the pinned
-// Atlas community binary v1.3.0 at all, which answers `'atlas schema plan' is
+// Atlas community binary at all, which answers `'atlas schema plan' is
 // not supported by the community version`. What this pins is that the verb
 // agrees with the verbs that DO have one. Measured on a ptah-compat built from
 // this branch, against the fixture below whose variable has a default so both

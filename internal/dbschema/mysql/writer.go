@@ -557,7 +557,7 @@ func (w *Writer) selectedDatabase(ctx context.Context, conn *sql.Conn) (string, 
 // checks that none is left (stokaro/ptah#3789).
 //
 // The claim refused a server holding any user database, so each one here is
-// the run's own, created by its replay. The pinned community binary v1.3.0
+// the run's own, created by its replay. The pinned community binary
 // drops the databases in name order, and its cleanup stops, leaving the dev
 // server dirty for the next run, when a database another one references
 // comes first: error 3730 on MySQL 8.4.11 and 1451 on MariaDB 11.8.9.

@@ -87,7 +87,7 @@ func TestSchemaApplyGivesAColumnTheKeyNameAnIndexLeavesE2E(t *testing.T) {
 }
 
 // TestMigrateDiffGivesAColumnTheKeyNameAnIndexLeavesE2E writes the migration
-// that makes x UNIQUE beside the index, as Atlas CE v1.3.0 writes it, and
+// that makes x UNIQUE beside the index, as Atlas CE writes it, and
 // diffs the directory again: the directory replays on the dev database with
 // the new migration in it, and is synced with the schema file
 // (stokaro/ptah#3859).

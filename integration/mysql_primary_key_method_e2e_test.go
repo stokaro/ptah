@@ -136,7 +136,7 @@ func TestSchemaApplyRebuildsAPrimaryKeyForItsMethodE2E(t *testing.T) {
 
 // TestDescriptionsCarryAPrimaryKeyMethodE2E reads a MariaDB database whose key
 // is HASH, natively as SQL and through ptah-compat as HCL, where the pinned
-// community binary v1.3.0 writes `type = HASH`. The SQL description applied to
+// community binary writes `type = HASH`. The SQL description applied to
 // an empty database builds the same key.
 func TestDescriptionsCarryAPrimaryKeyMethodE2E(t *testing.T) {
 	c := qt.New(t)

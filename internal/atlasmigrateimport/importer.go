@@ -636,7 +636,7 @@ func loadConventionalLiquibaseImportEntries(
 
 	// atlas.sum orders entries lexically, and Ptah executes a hashed Atlas
 	// directory in that order. Pad every version to the width of the final
-	// version so 10 never sorts before 2. Atlas CE v1.3.0 accepts the resulting
+	// version so 10 never sorts before 2. Atlas CE accepts the resulting
 	// leading-zero versions and executes 01..11 in that order.
 	width := len(strconv.Itoa(len(changesets)))
 	entries := make([]Entry, 0, len(changesets))
@@ -2279,7 +2279,7 @@ func dbmateDirective(line string) (string, bool) {
 // attribute the copy cannot carry -- one that makes Liquibase run it on some
 // databases only, run it again, or never run it -- is refused here as the
 // changeset parser refuses it; liquibaserun is the one recognizer both use.
-// Atlas CE v1.3.0 copies such a file and applies it everywhere, and refusing it
+// Atlas CE copies such a file and applies it everywhere, and refusing it
 // is deliberately stricter. The parser's other refusals are about splitting a
 // file -- a header with no changeset, SQL before the first one -- and a copy
 // loses nothing there, so they do not apply: `ptah-compat migrate new` writes a
@@ -2287,13 +2287,13 @@ func dbmateDirective(line string) (string, bool) {
 //
 // A file whose changesets all set runInTransaction to false, which is how
 // `ptah-compat migrate diff` writes a no-transaction migration in this layout,
-// becomes a no-transaction Atlas migration. Atlas CE v1.3.0 reads the attribute
+// becomes a no-transaction Atlas migration. Atlas CE reads the attribute
 // as nothing and runs such a file in a transaction, where a statement like
 // VACUUM fails; this conversion carries it, and the converted bytes gain the
 // Atlas directive for that reason.
 //
 // The copy holds only the lines Liquibase reads: an `--ignoreLines` directive
-// and the lines it skips are left out. Atlas CE v1.3.0 copies them and runs
+// and the lines it skips are left out. Atlas CE copies them and runs
 // them, and Liquibase never does.
 func liquibaseSQL(name string, data []byte) ([]byte, error) {
 	scanned, err := liquibaserun.ScanFormattedSQL(name, string(data))

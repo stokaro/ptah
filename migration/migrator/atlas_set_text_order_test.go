@@ -32,7 +32,7 @@ func setAtlasRevision(c *qt.C, rule func(*migrator.Migrator) *migrator.Migrator)
 }
 
 // TestSetRevision_TextOrderKeepsWhatSortsBelowTheBoundary orders the set as
-// text under the string rule, as the pinned community binary v1.3.0 does: 10
+// text under the string rule, as the pinned community binary does: 10
 // sorts below 2 as text, so a set to 2 keeps it.
 func TestSetRevision_TextOrderKeepsWhatSortsBelowTheBoundary(t *testing.T) {
 	c := qt.New(t)

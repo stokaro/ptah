@@ -121,7 +121,7 @@ func Enums(desired *schemamodel.Database, current *catalog.Database, diff *difft
 //
 // Both halves are load-bearing and each was measured. Without the first, an
 // `enum` block's `schema = schema.public` -- which is mandatory, the pinned
-// Atlas community binary v1.3.0 having no reading for a block without one --
+// Atlas community binary having no reading for a block without one --
 // did not match the read's blank, and a `schema inspect` document applied back
 // to its own database planned
 //

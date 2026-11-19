@@ -68,7 +68,7 @@ const retainedEditedBody = "CREATE TABLE rt_early (id INTEGER PRIMARY KEY, note 
 
 // TestCompatCommand_AnEditedAppliedFileIsRefused pins item 6.
 //
-// The pinned community binary v1.3.0 records the same checksum and never
+// The pinned community binary records the same checksum and never
 // compares it, so applying the edited directory is exit 0 and prints
 // "No migration files to execute". Ptah compares it and refuses.
 //
@@ -390,7 +390,7 @@ func TestCompatCommand_AZeroProgressFailureLeavesNoDirtyRowUnderTheDefaultTxMode
 // TestCompatCommand_AZeroProgressFailureUnderTxModeNoneStillRefuses pins the
 // half of item 1 that is retained.
 //
-// The pinned community binary v1.3.0 keeps its row in this mode too and resumes
+// The pinned community binary keeps its row in this mode too and resumes
 // from it, so the repaired retry is exit 0 there and exit 1 here. The row is
 // kept because applied=0 is not proof that nothing happened when no transaction
 // wrapped the body: --tx-mode none exists so that statements which cannot run

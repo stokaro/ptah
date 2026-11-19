@@ -828,7 +828,7 @@ the copy goes on deciding the key after the export changes it. Where only
 `NOT VALID` differs, the warning names the directive that allows it instead.
 
 The directive is a Ptah addition. Atlas reads it as a SQL comment: the pinned
-community binary v1.3.0 accepts a file that carries it, and has no equivalent
+community binary accepts a file that carries it, and has no equivalent
 setting.
 
 ## Object comments

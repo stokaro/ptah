@@ -100,7 +100,7 @@ func runMigrateDiffInto(c *qt.C, dir string) []string {
 // TestMigrateDiffStampsTheUTCTimestampVersion pins the version spelling
 // `migrate diff` writes (stokaro/ptah#1218).
 //
-// Both rows were divergences from the pinned community binary v1.3.0, and they
+// Both rows were divergences from the pinned community binary and they
 // were different divergences, which is why one row would not have found the
 // other:
 //

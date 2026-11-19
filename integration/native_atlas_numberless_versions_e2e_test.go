@@ -457,7 +457,7 @@ func TestNativeAutoFormatOverAnAtlasSumRefusesANumberlessVersion_FailurePath(t *
 // v1_x.sql, removes v1_x.sql and rehashes. The row v1 names no file, and
 // status and a set to 1 read it without a numeric cast of v1, which a strict
 // dialect refuses: status names v1 as the current version, and the set removes
-// the row, as the pinned community binary v1.3.0 does on the same history.
+// the row, as the pinned community binary does on the same history.
 func TestAtlasRemovedNumberlessFileStaysReadableE2E(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()

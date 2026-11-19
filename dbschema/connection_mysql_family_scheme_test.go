@@ -18,7 +18,7 @@ import (
 // earlier, as an invalid URL or an unsupported dialect: net/url refuses the
 // unix() form, so the connector has to know the scheme is a MySQL-family one
 // before it parses anything, and has to know it again to hand the driver the
-// address without its scheme. The pinned community binary v1.3.0 opens
+// address without its scheme. The pinned community binary opens
 // `maria://` on every verb that takes a database URL (stokaro/ptah#3744).
 func TestConnectToDatabase_ReachesTheMySQLDriverForEveryMariaDBSpelling(t *testing.T) {
 	tests := []struct {
@@ -46,7 +46,7 @@ func TestConnectToDatabase_ReachesTheMySQLDriverForEveryMariaDBSpelling(t *testi
 
 // TestConnectToDatabase_RefusesAMariaDBSpellingTheCommunityBinaryRefuses keeps
 // the spelling a scheme of its own rather than a prefix: the pinned community
-// binary v1.3.0 answers `unknown driver "maria+tcp"`.
+// binary answers `unknown driver "maria+tcp"`.
 func TestConnectToDatabase_RefusesAMariaDBSpellingTheCommunityBinaryRefuses(t *testing.T) {
 	c := qt.New(t)
 

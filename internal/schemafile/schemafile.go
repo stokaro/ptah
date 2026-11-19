@@ -135,7 +135,7 @@ type Options struct {
 	// re-spelled as `--var` text.
 	//
 	// [LoadSources] sets it per source, which is the whole point: the pinned
-	// Atlas community binary v1.3.0 scopes a data source's vars to the files
+	// Atlas community binary scopes a data source's vars to the files
 	// that data source selects and passes no `--var` into them at all.
 	VarValues map[string]string
 
@@ -637,7 +637,7 @@ func parseSchemaFile(ctx context.Context, resolved string, opts Options) (*schem
 // schema DIRECTORY may hold.
 //
 // A directory is deliberately narrower than a single file, which also accepts
-// .yaml and .yml: the pinned Atlas community binary v1.3.0 reads a directory of
+// .yaml and .yml: the pinned Atlas community binary reads a directory of
 // .sql or of .hcl and reports `contains neither SQL nor HCL files` otherwise,
 // and this surface must not accept a directory that binary refuses. A YAML
 // schema is still a schema source — one file at a time.

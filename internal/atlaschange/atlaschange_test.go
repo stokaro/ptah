@@ -13,7 +13,7 @@ import (
 	"ptah.run/internal/sqliteforeignkeys"
 )
 
-// The rows name a statement the way the pinned community binary v1.3.0 names
+// The rows name a statement the way the pinned community binary names
 // it in a golang-migrate file, and the forward change a rollback statement of
 // that kind undoes. The wording of tables, columns, indexes, enum types and
 // schemas is the binary's own; the objects it does not plan follow the same
@@ -286,7 +286,7 @@ func rebuildPlan() []ast.Node {
 }
 
 // TestForward_NamesAnEnginesChangesInItsWords_HappyPath pins the wording that
-// differs per engine. The rows are what the pinned community binary v1.3.0
+// differs per engine. The rows are what the pinned community binary
 // writes on each engine it has a driver for; `integration/atlasreference`
 // compares these words with the binary's own.
 func TestForward_NamesAnEnginesChangesInItsWords_HappyPath(t *testing.T) {

@@ -168,7 +168,7 @@ func TestRenderCrossSchemaReferencesRoundTripToTheSameIR(t *testing.T) {
 // same expression, so a quoted name is not a spelling available there at all,
 // and the other two are rendered the same way because Ptah's reader has to
 // agree with itself. A `permission` target and a `trigger`'s `on` are quoted,
-// because the pinned Atlas community binary v1.3.0 evaluates those two without
+// because the pinned Atlas community binary evaluates those two without
 // resolving them and reads a quoted name at exit 0 where it refuses every
 // traversal to a block the document does not declare -- `for = "gone"` exit 0
 // against `for = table.gone` exit 1 `Unsupported attribute; This object does

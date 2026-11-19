@@ -96,7 +96,7 @@ const (
 	atlasDirFormatDefault = "atlas"
 	// atlasDefaultMigrationDirURL is the migration directory every verb that
 	// documents a `--dir` default falls back to. The pinned community binary
-	// v1.3.0 prints `(default "file://migrations")` on `migrate apply`,
+	// prints `(default "file://migrations")` on `migrate apply`,
 	// `migrate new`, `migrate diff`, `migrate status`, `migrate set`,
 	// `migrate lint`, `migrate hash` and `migrate validate`; Ptah honored it
 	// on some and not others (stokaro/ptah#1241 items 2 and 3), so the value
@@ -1968,7 +1968,7 @@ func atlasSchemaValidateNativeCommand() *cobra.Command {
 // atlasSchemaValidateVerb mirrors the native `schema validate` onto the
 // Atlas-compatible surface.
 //
-// The pinned community binary v1.3.0 has no such verb, so it is registered
+// The pinned community binary has no such verb, so it is registered
 // beside the other verbs that binary does not carry and is community-gated in
 // strict mode. There is no flag oracle for it on the community surface, so the
 // flag set is the native one, named here rather than guessed at

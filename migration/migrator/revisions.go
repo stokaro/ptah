@@ -1238,8 +1238,8 @@ func (m *Migrator) recordRetiredAtlasIdentities(versions []string, mappings []at
 // under when no file carries it: one above every key of the directory, in the
 // text order of such versions. A removed file ran after every file that
 // remains or before some of them; nothing records which, and above every key
-// is where a set to a remaining file removes its row, as the community binary
-// v1.3.0 removes it.
+// is where a set to a remaining file removes its row, as the pinned community binary
+// removes it.
 func (m *Migrator) recordedAtlasIdentityKey(identity string) (int64, bool) {
 	index := slices.Index(m.recordedAtlasIdentities, identity)
 	if index < 0 {

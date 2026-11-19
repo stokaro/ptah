@@ -13,7 +13,7 @@ import (
 )
 
 // The counts and findings below are the ones the pinned community binary
-// v1.3.0 reports for the same directory under `migrate lint --dev-url ...
+// reports for the same directory under `migrate lint --dev-url ...
 // --latest 1`, where the binary reads the kind of object: an enum type on
 // PostgreSQL, and a table's columns. It reads no view, trigger or sequence, so
 // the Atlas count of a change to one of them is Ptah's own, and so is DS107.

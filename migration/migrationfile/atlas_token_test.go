@@ -11,7 +11,7 @@ import (
 
 // TestParseAtlasFileName_KeepsTheWholeVersionToken reads the version of a name
 // whose version is not a number from the whole name, direction suffix and
-// all, as the pinned community binary v1.3.0 records it: v1.up.sql is v1.up,
+// all, as the pinned community binary records it: v1.up.sql is v1.up,
 // and v2.down.sql runs as a migration of its own. A numbered name keeps its
 // direction, as an importer writes 1_a.up.sql and 1_a.down.sql.
 func TestParseAtlasFileName_KeepsTheWholeVersionToken(t *testing.T) {
@@ -112,7 +112,7 @@ func TestDiscover_OrderKeys(t *testing.T) {
 // TestDiscover_FailurePath_AnAtlasGovernedFileTheSelectionLeavesOut refuses a
 // directory Atlas governs whose selection leaves a top-level file out. Beside
 // atlas.sum, auto mode reads the Ptah pair as Ptah files and v1_x.sql as no
-// migration, and the pinned community binary v1.3.0 runs all three; read with
+// migration, and the pinned community binary runs all three; read with
 // Atlas repeatables, R__view.sql is a repeatable and _x.sql is version "",
 // which no command can name.
 func TestDiscover_FailurePath_AnAtlasGovernedFileTheSelectionLeavesOut(t *testing.T) {

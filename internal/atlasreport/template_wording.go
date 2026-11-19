@@ -6,7 +6,7 @@ import "fmt"
 // template is parsed under, which Go's text/template quotes in every error,
 // and the sentence a parse or execution failure is wrapped in.
 //
-// The pinned community binary v1.3.0 names every template "format". A parse
+// The pinned community binary names every template "format". A parse
 // failure reads `parse log format: …` on `schema inspect`, `schema diff` and
 // `schema apply`, and `parse format: …` on `migrate lint`, `migrate status`,
 // `migrate apply` and `migrate diff`. An execution failure is the template's

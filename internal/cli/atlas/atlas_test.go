@@ -2667,7 +2667,7 @@ CREATE TABLE users (
 
 	c.Assert(err, qt.IsNil)
 	// No trailing period: this is the byte-exact form the pinned community
-	// binary v1.3.0 writes for `schema apply` (stokaro/ptah#1235 finding 9.4).
+	// binary writes for `schema apply` (stokaro/ptah#1235 finding 9.4).
 	// Its `schema diff` answer keeps its period and already matched.
 	c.Assert(secondOut.String(), qt.Equals, "Schema is synced, no changes to be made\n")
 }
@@ -3445,7 +3445,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 	// The atlas.sum integrity gate refuses a directory that already holds a
-	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// migration and no checksum, exactly as the pinned community binary
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
 	hashAtlasApplyDir(c, migrationsDir)
@@ -3518,7 +3518,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 	// The atlas.sum integrity gate refuses a directory that already holds a
-	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// migration and no checksum, exactly as the pinned community binary
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
 	hashAtlasApplyDir(c, migrationsDir)
@@ -3581,7 +3581,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 	// The atlas.sum integrity gate refuses a directory that already holds a
-	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// migration and no checksum, exactly as the pinned community binary
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
 	hashAtlasApplyDir(c, migrationsDir)
@@ -3631,7 +3631,7 @@ CREATE TABLE users (
 );
 `), 0o600), qt.IsNil)
 	// The atlas.sum integrity gate refuses a directory that already holds a
-	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// migration and no checksum, exactly as the pinned community binary
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
 	hashAtlasApplyDir(c, migrationsDir)
@@ -3693,7 +3693,7 @@ CREATE TABLE old_users (
 );
 `), 0o600), qt.IsNil)
 	// The atlas.sum integrity gate refuses a directory that already holds a
-	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// migration and no checksum, exactly as the pinned community binary
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
 	hashAtlasApplyDir(c, migrationsDir)
@@ -3745,7 +3745,7 @@ CREATE TABLE old_users (
 );
 `), 0o600), qt.IsNil)
 	// The atlas.sum integrity gate refuses a directory that already holds a
-	// migration and no checksum, exactly as the pinned community binary v1.3.0
+	// migration and no checksum, exactly as the pinned community binary
 	// does (stokaro/ptah#1086), so the fixture has to be a directory a real
 	// caller could diff against.
 	hashAtlasApplyDir(c, migrationsDir)
@@ -3918,7 +3918,7 @@ CREATE TABLE users (
 	// The refusal comes from the shared atlas.sum gate, running BEFORE the dev
 	// database is touched, so it is byte-identical to
 	// what `migrate apply`, `migrate status` and `migrate validate` print on
-	// the same directory -- and to what the pinned community binary v1.3.0
+	// the same directory -- and to what the pinned community binary
 	// prints, which puts the guidance block on stdout and `Error: checksum
 	// mismatch` on stderr. Reverting the gate returns the library verifier's
 	// "migration directory checksum verification failed" wording, which reaches

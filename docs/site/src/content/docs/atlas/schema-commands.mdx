@@ -76,7 +76,7 @@ Atlas rejects SQLite for this verb at runtime. Ptah does not: its reader handles
 SQLite like any other dialect, and refusing would copy a limitation this
 implementation does not have.
 
-The pinned Atlas community binary v1.3.0 registers no `stats` verb under
+The pinned Atlas community binary registers no `stats` verb under
 `schema`, so the verb is unavailable under `PTAH_ATLAS_STRICT_COMPAT`.
 
 ## Inspect a schema source
@@ -116,7 +116,7 @@ not the helper's bare name, renders HCL, SQL, or JSON:
 | `--format ' json '` | literal ` json ` (hex `20 6a 73 6f 6e 20`, no line feed) |
 | `--format ' hcl '` | literal ` hcl ` (hex `20 68 63 6c 20`, no line feed) |
 
-The literal rows match Atlas CE v1.3.0 for empty and populated SQLite databases.
+The literal rows match Atlas CE for empty and populated SQLite databases.
 Native `ptah schema inspect --format hcl|sql|json` keeps its rendered
 shorthands.
 
@@ -365,7 +365,7 @@ schema "public" {
 
 `schema "app"` and every object in it — tables, enums, sequences, views, the
 grants that ride them — leave together. That is what the pinned Atlas community
-binary v1.3.0 does for the same selector in the same scope: with `--exclude app`
+binary does for the same selector in the same scope: with `--exclude app`
 it plans drops for `public` only, and removing the selector from that run adds
 exactly one line, `DROP SCHEMA "app" CASCADE;`. `--exclude app[type=schema]`
 names the same schema explicitly.
@@ -703,7 +703,7 @@ The four commands that consume a desired-schema document — `schema diff`,
 separately, and all four now report the database above as synced.
 
 The lines are HCL comments, so they change nothing for any other reader: the
-pinned Atlas community binary v1.3.0 reads a document carrying them at exit 0
+pinned Atlas community binary reads a document carrying them at exit 0
 and prints byte-identical output to the same document without them.
 
 Split exports carry the header too, into **every** member. `write` puts the
@@ -1581,7 +1581,7 @@ native surface.
 The rule holds in the other direction too. A plain `integer` column against a
 desired schema that declares `waypoint` and types the column with it is planned
 as `ALTER TABLE "t" ALTER COLUMN "a" TYPE waypoint`, which is what the pinned
-Atlas community binary v1.3.0 plans for the same pair. The desired side must
+Atlas community binary plans for the same pair. The desired side must
 declare the domain for this: a bare type name that no `CREATE DOMAIN` in the
 desired schema introduces is an ordinary type name, and every schema source
 Ptah reads carries the declaration alongside the column.
@@ -1605,7 +1605,7 @@ see, on `schema apply` and `schema diff` alike:
   database's name selects anything. SQLite has the single schema `main`. An HCL
   document may declare a schema the names leave out, and the run narrows the
   document to the selection. Under `PTAH_ATLAS_STRICT_COMPAT=1` the document is
-  refused instead, as the pinned community binary v1.3.0 refuses it: `schema
+  refused instead, as the pinned community binary refuses it: `schema
   "app" from paths ["schema.hcl"] is not requested (all schemas in HCL must be
   requested)`.
 - `--include` picks top-level resources inside that universe with Atlas-style
@@ -2110,7 +2110,7 @@ fetches no stylesheet, font, script or image, and a database URL is reduced to
 its scheme and host before it is written into the file, so a password does not
 travel with a document somebody attaches to a review.
 
-The pinned Atlas community binary v1.3.0 does not register the flag: `atlas
+The pinned Atlas community binary does not register the flag: `atlas
 schema inspect --url ... --web` answers `unknown flag: --web`. So there is no
 community behavior this diverges from, and `PTAH_ATLAS_STRICT_COMPAT=1` answers
 `unknown flag` here too. `migrate lint --web` stays unregistered.

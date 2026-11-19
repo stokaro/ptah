@@ -17,7 +17,7 @@ import (
 // Reverted to the source-text reader, every row in the four tests below fails on
 // `err` being non-nil with `index on column contains unsupported reference
 // "(column.n)"` (and the row's own text for the others); the pinned Atlas
-// community binary v1.3.0 plans all of them at exit 0. The `columns = [...]`
+// community binary plans all of them at exit 0. The `columns = [...]`
 // rows are not part of the #1182 regression -- the list reader reads source
 // text -- and they go red the same way, which is why they are here.
 //
@@ -234,7 +234,7 @@ table "t" {
 
 // A conditional whose condition cannot be decided is still refused, and the
 // admission rule for a `variable` is what decides it. Each row below is a
-// variable shape the pinned Atlas community binary v1.3.0 refuses the whole file
+// variable shape the pinned Atlas community binary refuses the whole file
 // for, so admitting any of them would make Ptah plan a file that binary will not
 // load -- the one direction this parser may never take.
 //

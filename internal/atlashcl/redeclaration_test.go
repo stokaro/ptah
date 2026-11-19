@@ -395,7 +395,7 @@ trigger "users_touch" {
 // TestParse_ReadsADocumentTheBinaryReadsAtExitZero is what keeps the refusal in
 // TestParse_RefusesARedeclaredObject from being a cheaper, wronger rule. Each
 // row is a document with two declarations that are NOT the same object, or one
-// whose repeat the pinned Atlas community binary v1.3.0 reads at exit 0:
+// whose repeat the pinned Atlas community binary reads at exit 0:
 // schemas repeat legitimately, `users` and `Users` reach DDL quoted and are two
 // relations, one name in two schemas is two tables, a column, index or
 // constraint name belongs to its table, and `view`, `materialized`, `role`,
@@ -645,7 +645,7 @@ func TestParse_UnlabeledCheckConstraintsAreNamedApart(t *testing.T) {
 }
 
 // TestParse_StrictRedeclarationsEnvVarRefusesWhatTheBinaryReads covers the four
-// kinds whose repeat the pinned Atlas community binary v1.3.0 reads at exit 0.
+// kinds whose repeat the pinned Atlas community binary reads at exit 0.
 //
 // The default is parity with that binary, which is the compatibility floor. The
 // variable is the half above the floor: Ptah MODELS views, materialized views,

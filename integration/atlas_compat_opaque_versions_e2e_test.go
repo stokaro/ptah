@@ -40,7 +40,7 @@ func TestCompatAtlasRevisionIdentityE2E(t *testing.T) {
 
 // TestCompatAtlasRevisionIdentityMatchesTheCommunityBinaryE2E holds the status
 // report, the refusal, and the run under --exec-order non-linear to the pinned
-// community binary v1.3.0 on the same history.
+// community binary on the same history.
 func TestCompatAtlasRevisionIdentityMatchesTheCommunityBinaryE2E(t *testing.T) {
 	c := qt.New(t)
 	reference := atlasReferenceBinary(t)
@@ -127,7 +127,7 @@ func TestCompatAtlasOpaqueVersionsE2E(t *testing.T) {
 
 // TestCompatAtlasOpaqueVersionsMatchTheCommunityBinaryE2E holds each run, and
 // the status report after a 2_b.sql is added, to the pinned community binary
-// v1.3.0. 2_b.sql sorts above 1.x.sql, 1-x_y.sql, 1a_x.sql and 00_x.sql, so it
+// . 2_b.sql sorts above 1.x.sql, 1-x_y.sql, 1a_x.sql and 00_x.sql, so it
 // is pending, and below v1_x.sql and x_y.sql, so it is out of order.
 func TestCompatAtlasOpaqueVersionsMatchTheCommunityBinaryE2E(t *testing.T) {
 	reference := atlasReferenceBinary(t)
@@ -259,7 +259,7 @@ func TestCompatAtlasOpaqueVersionOperandsE2E(t *testing.T) {
 }
 
 // TestCompatAtlasOpaqueVersionOperandsMatchTheCommunityBinaryE2E holds migrate
-// set and --baseline, which the pinned community binary v1.3.0 has, to it on
+// set and --baseline, which the pinned community binary has, to it on
 // the same directory. It has no --to-version.
 func TestCompatAtlasOpaqueVersionOperandsMatchTheCommunityBinaryE2E(t *testing.T) {
 	reference := atlasReferenceBinary(t)
@@ -295,7 +295,7 @@ func TestCompatAtlasOpaqueVersionOperandsMatchTheCommunityBinaryE2E(t *testing.T
 }
 
 // TestCompatAtlasOpaqueVersionOperandNamingNoFile_FailurePath refuses migrate
-// set 3 over the same directory, as the pinned community binary v1.3.0 does:
+// set 3 over the same directory, as the pinned community binary does:
 // the four files run under the positions 1 to 4, and no file carries the
 // version 3.
 func TestCompatAtlasOpaqueVersionOperandNamingNoFile_FailurePath(t *testing.T) {
@@ -376,7 +376,7 @@ var setRefusalCases = []struct {
 
 // TestCompatAtlasSetRefusalLeavesTheRevisionTable_FailurePath refuses each
 // invocation after connecting, and the revision table exists afterwards with
-// no row in it. The pinned community binary v1.3.0 creates the table as soon
+// no row in it. The pinned community binary creates the table as soon
 // as it connects, before it reads the positionals.
 func TestCompatAtlasSetRefusalLeavesTheRevisionTable_FailurePath(t *testing.T) {
 	for _, tt := range setRefusalCases {
@@ -397,7 +397,7 @@ func TestCompatAtlasSetRefusalLeavesTheRevisionTable_FailurePath(t *testing.T) {
 }
 
 // TestCompatAtlasSetRefusalMatchesTheCommunityBinary_FailurePath holds each
-// refusal to the pinned community binary v1.3.0: the same exit code and
+// refusal to the pinned community binary: the same exit code and
 // message, and the same tables and rows afterwards.
 func TestCompatAtlasSetRefusalMatchesTheCommunityBinary_FailurePath(t *testing.T) {
 	reference := atlasReferenceBinary(t)
@@ -492,7 +492,7 @@ func TestCompatAtlasSetBehindAHigherFileE2E(t *testing.T) {
 
 // TestCompatAtlasSetBehindAHigherFileOnTheCommunityBinaryE2E measures the
 // retained divergence. On the same directories the pinned community binary
-// v1.3.0 exits 0 and records only the files that come before the first file
+// exits 0 and records only the files that come before the first file
 // sorting above the target, so `set 1` prints nothing and records no row, and
 // the version the operator named is dropped in silence.
 func TestCompatAtlasSetBehindAHigherFileOnTheCommunityBinaryE2E(t *testing.T) {
@@ -521,7 +521,7 @@ func TestCompatAtlasSetBehindAHigherFileOnTheCommunityBinaryE2E(t *testing.T) {
 // of 9_a.sql, 10_b.sql and 11_c.sql. An Atlas directory runs and is listed by
 // file name, so the two are 11_c.sql and 9_a.sql, and .Schema.Current is the
 // schema 11_c.sql starts from: 10_b.sql has run and 11_c.sql has not, as on
-// the pinned community binary v1.3.0. Read before 9_a.sql, the first by
+// the pinned community binary. Read before 9_a.sql, the first by
 // number, it would hold t_11_c too.
 func TestCompatAtlasLintSchemaStartsAtTheFirstListedFileE2E(t *testing.T) {
 	c := qt.New(t)

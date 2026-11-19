@@ -260,7 +260,7 @@ func TestRealmSchemas_PostgresFamilyQueryExcludesSystemSchemas(t *testing.T) {
 
 // TestRealmSchemas_MySQLFamilyListsTheUserDatabases lists a whole server's
 // databases in byte order, and asks for the user databases alone: the server's
-// own are left out by name, as the pinned community binary v1.3.0 leaves them
+// own are left out by name, as the pinned community binary leaves them
 // out (stokaro/ptah#3789).
 func TestRealmSchemas_MySQLFamilyListsTheUserDatabases(t *testing.T) {
 	for _, dialect := range []string{"mysql", "mariadb"} {

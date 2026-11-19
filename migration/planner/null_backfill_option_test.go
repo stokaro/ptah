@@ -16,7 +16,7 @@ import (
 
 // OmitNullBackfill plans a column made NOT NULL without the fill from its
 // declared default. The PostgreSQL plan then writes SET NOT NULL and
-// SET DEFAULT as Atlas CE v1.3.0 does, where the default plan fills the NULL
+// SET DEFAULT as Atlas CE does, where the default plan fills the NULL
 // rows first. MySQL's MODIFY never fills and reads nothing from the option.
 func TestGenerateSchemaDiffSQLStatementsWithOptions_OmitNullBackfill(t *testing.T) {
 	const header = "-- Add/modify columns for table: flags\n" +

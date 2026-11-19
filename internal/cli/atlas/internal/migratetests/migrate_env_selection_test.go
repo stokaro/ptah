@@ -32,7 +32,7 @@ func writeEnvSelectionProject(c *qt.C, name, project string) {
 // TestMigrateVerbsSelectNoEnvWithoutEnvFlag_FailurePath holds the defect
 // stokaro/ptah#5999 names: selecting a lone env in ./atlas.hcl that no flag
 // names makes `migrate apply` with no --url migrate the env's database at exit
-// 0. The pinned community binary v1.3.0 reads an env only when --env names it,
+// 0. The pinned community binary reads an env only when --env names it,
 // so every row fails the way that binary fails, and prod.db, which any read of
 // the env would create, stays absent.
 func TestMigrateVerbsSelectNoEnvWithoutEnvFlag_FailurePath(t *testing.T) {
@@ -182,7 +182,7 @@ func TestMigrateLintProjectLogSelection_HappyPath(t *testing.T) {
 const unparsableProject = "env \"x\" {\n  url =\n"
 
 // TestMigrateLintUnnamedProjectFileIsNotParsed_HappyPath holds that a file no
-// flag names is not even parsed: the pinned community binary v1.3.0 runs this
+// flag names is not even parsed: the pinned community binary runs this
 // lint at exit 0 beside a project file with a syntax error.
 func TestMigrateLintUnnamedProjectFileIsNotParsed_HappyPath(t *testing.T) {
 	c := qt.New(t)
@@ -202,7 +202,7 @@ func TestMigrateLintUnnamedProjectFileIsNotParsed_HappyPath(t *testing.T) {
 
 // TestMigrateLintNamedProjectFileIsParsed_FailurePath is the control for the
 // test above: the same file named with --config is parsed and refused, as on
-// the pinned community binary v1.3.0.
+// the pinned community binary.
 func TestMigrateLintNamedProjectFileIsParsed_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	t.Chdir(t.TempDir())

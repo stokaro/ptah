@@ -128,7 +128,7 @@ func (r *Reader) readContinuousAggregatesForSchema(ctx context.Context,
 // run. A plan that creates it emits CREATE VIEW with the rewritten body, which
 // names a relation in a schema the extension owns.
 //
-// The pinned Atlas community binary v1.3.0 describes neither the aggregate nor
+// The pinned Atlas community binary describes neither the aggregate nor
 // its schema on the same database, which is the same answer arrived at from
 // the other side.
 func withoutContinuousAggregates(

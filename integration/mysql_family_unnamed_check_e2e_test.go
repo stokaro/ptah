@@ -52,7 +52,7 @@ var (
 // 8.4.11 and 26.7.0 name them `<table>_chk_<n>` in the order the file writes
 // them; MariaDB 11.8.9 names a column's CHECK after the column and a table's
 // `CONSTRAINT_<n>`. Left unnamed in the model, each compares unequal to the
-// database the same file built (stokaro/ptah#3741). Atlas CE v1.3.0 reports
+// database the same file built (stokaro/ptah#3741). Atlas CE reports
 // each synced.
 var mysqlFamilyUnnamedChecks = []struct {
 	name   string

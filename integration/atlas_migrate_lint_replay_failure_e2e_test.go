@@ -41,7 +41,7 @@ env "log_count" {
 // writeRowidAliasProject writes the migrations of that fixture. Its base
 // renames a column to oid, which the SQLite Ptah bundles refuses -- since
 // SQLite 3.54 no column may be renamed to a rowid alias -- and the SQLite the
-// community binary v1.3.0 bundles, 3.49.1, accepts.
+// pinned community binary bundles, 3.49.1, accepts.
 func writeRowidAliasProject(c *qt.C) string {
 	c.Helper()
 	root := c.TempDir()

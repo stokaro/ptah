@@ -14,7 +14,7 @@ import (
 // builds the same keys, under the same names, as it builds from the clause
 // written without the keyword. Read with the kind taken for the symbol,
 // `CONSTRAINT UNIQUE KEY uq (b)` is a plain index `uq` and the file plans to
-// make it one (stokaro/ptah#3730). Atlas CE v1.3.0 reports each row synced.
+// make it one (stokaro/ptah#3730). Atlas CE reports each row synced.
 //
 // The foreign keys written this way are rows of mysqlUnnamedForeignKeys, where
 // the numbering they share with the other unnamed keys is asserted.

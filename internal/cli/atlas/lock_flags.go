@@ -18,7 +18,7 @@ import (
 //	                     the default is used (atlas_migrate_execute)
 //	--skip-lock          skip acquiring a database advisory lock
 //
-// The pinned Atlas community binary v1.3.0 registers neither, on any verb —
+// The pinned Atlas community binary registers neither, on any verb —
 // `migrate apply --lock-name x` and `schema apply --skip-lock` both answer
 // `unknown flag`, with `--dry-run` answering present on the same run and
 // `--frobnicate-nonsense` answering unknown. So this is Pro surface adopted

@@ -293,7 +293,7 @@ func storageParamsCatalog() pgIndexCatalog {
 
 // unrepresentableStorageParamsCatalog is the same index with fillfactor as
 // well. fillfactor has no slot on the Atlas-compatible HCL surface -- neither
-// Ptah's writer nor the pinned community binary v1.3.0 emits one -- so
+// Ptah's writer nor the pinned community binary emits one -- so
 // recording it would make the index differ from its own inspected document on
 // every run. The reader keeps the parameter the chain can carry and drops the
 // one it cannot, rather than keeping both or neither.

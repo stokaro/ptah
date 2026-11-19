@@ -21,7 +21,7 @@ import (
 //
 // Liquibase 5.0.4 ran the same two changesets on SQLite and did the same:
 // rollback-count --count=1 recreated widgets, and a second one dropped it. The
-// `--rollback: <SQL>` spelling the pinned community binary v1.3.0 writes is a
+// `--rollback: <SQL>` spelling the pinned community binary writes is a
 // comment to Liquibase, so the changeset had no rollback and rollback-count
 // refused it (stokaro/ptah#3752).
 func TestLiquibaseDiffRollbackE2E_HappyPath(t *testing.T) {

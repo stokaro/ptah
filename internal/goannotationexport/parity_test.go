@@ -154,7 +154,7 @@ func TestExport_HappyPath_PreservesGoAnnotationSemantics(t *testing.T) {
 	c.Assert(fields["app.users.metadata"].Overrides["mysql"]["type"], qt.Equals, "JSON")
 	// The annotation writes ref="app.accounts(id)" and the export writes
 	// `ref_columns = [table.accounts.column.id]`, because an HCL reference names
-	// a block by its label and the pinned Atlas community binary v1.3.0 refuses
+	// a block by its label and the pinned Atlas community binary refuses
 	// `table.app.accounts` outright. The target is unchanged: `accounts` is
 	// declared once in this document, in `app`, which is also the schema of the
 	// table holding the field, so every reader -- including the DDL path, via

@@ -107,7 +107,7 @@ wibble "p" {
 //
 // `schema = schema.main` on a modeled block is read from source text and never
 // reaches the evaluation check, and a dropped body naming a declared schema is
-// exit 0 on the pinned Atlas community binary v1.3.0 and here (stokaro/ptah#927).
+// exit 0 on the pinned Atlas community binary and here (stokaro/ptah#927).
 // A fix that reported the new message for every `schema.` traversal would take
 // both of these down.
 func TestSchemaReferenceStillResolvesWhereItIsRead(t *testing.T) {

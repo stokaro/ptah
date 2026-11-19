@@ -1165,7 +1165,7 @@ func effectiveLatest(
 	projectSelectors projectLintSelectorUse,
 ) (int, bool) {
 	if atlasExplicitLatestZero(opts) {
-		// Atlas CE v1.3.0 treats an explicit --latest 0 as an absent latest
+		// Atlas CE treats an explicit --latest 0 as an absent latest
 		// selector. The flag still suppresses project lint.latest, while a Git
 		// selector remains eligible to select the changeset.
 		return 0, false
@@ -1449,7 +1449,7 @@ func latestMigrationSelection(
 	selection := latestMigrationSelectionFromFiles(files, latest, nameOrder)
 	if len(selection.versionKeys) == 0 && len(files) == 0 {
 		// An empty migration directory selects no versions rather than failing.
-		// The pinned Atlas community binary v1.3.0 exits 0 with no output for
+		// The pinned Atlas community binary exits 0 with no output for
 		// `migrate lint --latest 1` on one, which is the shape a repository
 		// linting its migrations in CI has before the first migration exists
 		// (stokaro/ptah#1241, adjacent to item 7).

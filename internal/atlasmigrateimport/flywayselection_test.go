@@ -725,7 +725,7 @@ func TestLoadFSFlywayDescriptionEndingInDown_KnownDivergence(t *testing.T) {
 // with them their tokens. The comparison then has no mark for any applied
 // version, reports "none", and passes every pending file — which is how
 // `V2__a.sql` applied plus `B3__base.sql` and `R__r.sql` added came to exit 0
-// here while the pinned community binary v1.3.0 exits 1 with `migration files
+// here while the pinned community binary exits 1 with `migration files
 // B3__base.sql, R__r.sql were added out of order`. The tokens of the squashed
 // files are therefore recovered from the directory as it stood before the
 // baseline, which is the only shape their revision rows can have come from.

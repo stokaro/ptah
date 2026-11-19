@@ -73,7 +73,7 @@ func TestScopeOnDevServer_HappyPath(t *testing.T) {
 }
 
 // TestScopeOnDevServer_FailurePath refuses one database beside a document
-// declaring several, in the sentence the pinned community binary v1.3.0 gives
+// declaring several, in the sentence the pinned community binary gives
 // `schema apply` for the pair, naming the flag whose URL is limited.
 func TestScopeOnDevServer_FailurePath(t *testing.T) {
 	rows := []struct {

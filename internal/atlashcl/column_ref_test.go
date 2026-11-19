@@ -22,7 +22,7 @@ import (
 // gone, and the partition row is the only one another layer catches -- the
 // postgres renderer rejects it with `postgres partition key cannot be empty`,
 // at render time and without naming the attribute. The pinned Atlas community
-// binary v1.3.0 exits 1 on all five.
+// binary exits 1 on all five.
 func TestParseRefusesAColumnAttributeThatCannotNameAColumn(t *testing.T) {
 	tests := []struct {
 		name  string

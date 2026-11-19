@@ -52,7 +52,7 @@ func TestAtlasRevisionDescription_PtahsByDefault(t *testing.T) {
 }
 
 // TestAtlasRevisionDescription_VerbatimWhenSelected records the description
-// the pinned community binary v1.3.0 records for the same files, which
+// the pinned community binary records for the same files, which
 // ptah-compat selects.
 func TestAtlasRevisionDescription_VerbatimWhenSelected(t *testing.T) {
 	c := qt.New(t)

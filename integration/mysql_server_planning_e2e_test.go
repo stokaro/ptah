@@ -233,7 +233,7 @@ func TestSchemaApplyRefusesADevDatabaseBesideAMySQLServerE2E(t *testing.T) {
 
 // TestSchemaCleanRefusesAMySQLServerE2E refuses the cleanup of a whole server
 // without PTAH_ALLOW_SERVER_CLEAN, dry run included, and lists the databases
-// it would drop, where the pinned community binary v1.3.0 drops every one of
+// it would drop, where the pinned community binary drops every one of
 // them at exit 0 (stokaro/ptah#3789). The runs are dry runs because the server
 // is shared with every other test: a refusal that stopped working drops
 // nothing.
@@ -367,7 +367,7 @@ func TestCompatSchemaCommandsRefuseAMySQLServerBesideOneDatabaseE2E(t *testing.T
 }
 
 // TestCompatSchemaApplyTakesAMySQLServerAsTheDesiredStateE2E applies a whole
-// server to itself, as the pinned community binary v1.3.0 applies one server
+// server to itself, as the pinned community binary applies one server
 // to another: the desired state is every database the server holds, so
 // nothing is planned.
 func TestCompatSchemaApplyTakesAMySQLServerAsTheDesiredStateE2E(t *testing.T) {

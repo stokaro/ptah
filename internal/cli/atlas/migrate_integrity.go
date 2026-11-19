@@ -118,7 +118,7 @@ func newAtlasMigrateIntegrityCommand(
 		// the native command's own validator, which answers with the native
 		// wording and does not say where the value belongs. Refusing
 		// a trailing positional is a deliberate divergence from the pinned
-		// community binary v1.3.0, which accepts one and silently discards it,
+		// community binary which accepts one and silently discards it,
 		// and a divergence is only defensible when the refusal is more useful
 		// than the acceptance (stokaro/ptah#1241 item 13).
 		//

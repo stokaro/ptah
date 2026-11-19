@@ -114,7 +114,7 @@ func TestSchemaApplyRehearsesAStoredBodyOnADeclaredDevServerE2E(t *testing.T) {
 
 // TestSchemaApplyRehearsesAStoredBodyOnAProvisionedDevServerE2E starts the
 // whole dev server from a `docker+` URL that names no database, which the
-// pinned community binary v1.3.0 also plans a realm beside. The server is the
+// pinned community binary also plans a realm beside. The server is the
 // run's own without the declaration, and the procedure is rehearsed and
 // applied.
 func TestSchemaApplyRehearsesAStoredBodyOnAProvisionedDevServerE2E(t *testing.T) {

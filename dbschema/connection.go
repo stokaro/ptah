@@ -60,7 +60,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 // [ReadSchemaWithSchemasContext] for reading some of them. Every other URL
 // connects exactly as ConnectToDatabase connects it.
 //
-// The pinned Atlas community binary v1.3.0 reads such a URL the same way
+// The pinned Atlas community binary reads such a URL the same way
 // (stokaro/ptah#3789).
 func ConnectToServer(ctx context.Context, dbURL string) (*DatabaseConnection, error) {
 	return connect(ctx, dbURL, ServerScope)

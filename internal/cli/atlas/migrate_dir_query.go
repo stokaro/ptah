@@ -95,7 +95,7 @@ func atlasDirFormatSpelling(query url.Values) string {
 // dirQueryStrictEnvVar turns the report below into a refusal.
 //
 // WHY AN ENVIRONMENT VARIABLE AND NOT A FLAG. The pinned community binary
-// v1.3.0 registers no flag for this on any migrate verb, so registering one
+// registers no flag for this on any migrate verb, so registering one
 // here would put a non-Atlas flag on the compatibility surface and break the
 // conformance `cli-surface` tier, which asserts flag parity against that
 // binary. An environment variable is invisible to the help surface, which is

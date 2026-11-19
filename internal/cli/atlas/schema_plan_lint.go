@@ -34,7 +34,7 @@ const atlasSchemaPlanLintFailOnErrorEnvVar = "PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR
 // atlasPlanLintFailOnError is the declaration of the variable, made once, on
 // the verb that owns it. See [ptah.run/internal/envbool].
 // It is [ptah.run/internal/envbool.Gated]: the pinned community binary
-// v1.3.0 refuses the whole `schema plan` path, so failing a plan review on a
+// refuses the whole `schema plan` path, so failing a plan review on a
 // lint finding is behavior it does not have at all.
 var atlasPlanLintFailOnError = envbool.New(atlasSchemaPlanLintFailOnErrorEnvVar, false, envbool.Gated)
 

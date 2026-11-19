@@ -10,8 +10,8 @@ import (
 
 // TestRead_HappyPath reads the spellings SQLite accepts for one collated key.
 // Each is the same key to sqlite3 3.51.0, which reports column code and
-// collation NOCASE in pragma_index_xinfo for all of them, and the community
-// binary v1.3.0 reports a database holding any of them synced with a document
+// collation NOCASE in pragma_index_xinfo for all of them, and the pinned community
+// binary reports a database holding any of them synced with a document
 // that writes `code COLLATE NOCASE`. libsql is SQLite's descriptor under
 // another name.
 func TestRead_HappyPath(t *testing.T) {

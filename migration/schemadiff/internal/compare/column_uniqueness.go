@@ -60,7 +60,7 @@ type columnUniqueness struct {
 // [columnkey.Named] names, the database holds it only under the name the
 // server gives it; see [readColumnKeys]. A key over the column under another
 // name leaves the column without its own, so the comparison adds it, as Atlas
-// CE v1.3.0 does (stokaro/ptah#3723).
+// CE does (stokaro/ptah#3723).
 //
 // Beside such an object the column's key is a second key, compared rather than
 // left out. Measured on MySQL 8.4.11 and 26.7.0, MariaDB 11.8.9 and 12.3.3 and

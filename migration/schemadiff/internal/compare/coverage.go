@@ -20,7 +20,7 @@ import (
 //   - the DESIRED state's limits gate REMOVALS. An object the database has and
 //     a description does not name is a removal only when that description
 //     claimed to describe such objects. `ptah-compat schema inspect` omits the
-//     block types the pinned Atlas community binary v1.3.0 refuses to read, so
+//     block types the pinned Atlas community binary refuses to read, so
 //     applying that document back to the database it came from plans
 //     `DROP EXTENSION` unless the limits are read -- a presentation decision
 //     become deletion intent.

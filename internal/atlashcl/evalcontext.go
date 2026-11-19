@@ -71,7 +71,7 @@ func newEvalContext(
 // parseVarOverrides turns --var values into the override map.
 //
 // One occurrence carries comma-separated assignments, matching the pinned Atlas
-// community binary v1.3.0: `--var a=1,b=2` sets both. Repeating the flag for one
+// community binary: `--var a=1,b=2` sets both. Repeating the flag for one
 // name collects a list, which then fails the variable's declared scalar type the
 // way that binary fails it ("variable \"v\": string required").
 // ParseVarOverrides decodes the `--var` grammar into values.

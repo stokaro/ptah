@@ -42,7 +42,7 @@ func outOfOrderStatusOptions(c *qt.C) atlasreport.MigrateStatusOptions {
 }
 
 // TestWriteMigrateStatusFormat_OutOfOrderLeavesPending holds the report to
-// what the pinned community binary v1.3.0 prints for that directory: the late
+// what the pinned community binary prints for that directory: the late
 // file leaves Pending, Next is absent, and Error is the apply refusal.
 func TestWriteMigrateStatusFormat_OutOfOrderLeavesPending(t *testing.T) {
 	c := qt.New(t)

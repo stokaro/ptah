@@ -500,7 +500,7 @@ func TestPlanFromSchemaAcceptsNilSchema(t *testing.T) {
 // TestPlanFromObjectsDropsAWholeServerDatabaseByDatabase is the cleanup of a
 // whole MySQL-family server: every user database dropped whole, and every
 // foreign key one database keeps into another (stokaro/ptah#3789). The pinned
-// community binary v1.3.0 drops the databases alone and stops at the first one
+// community binary drops the databases alone and stops at the first one
 // another database's key references; the order the keys go first in is the
 // execution order, which the report does not show.
 func TestPlanFromObjectsDropsAWholeServerDatabaseByDatabase(t *testing.T) {

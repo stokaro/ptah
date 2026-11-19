@@ -276,7 +276,7 @@ func TestNewMigrateLint_LoadStepCountsReplayedFiles(t *testing.T) {
 
 // TestWriteMigrateLintText_SummaryCountsAnAtlasSQLiteReplacementOnce drives the
 // SQLite table replacement from the analysis to the summary line, the line
-// the conformance probe compares. The pinned community binary v1.3.0 prints
+// the conformance probe compares. The pinned community binary prints
 // "1 schema change" for the `new_users` replacement and "4 schema changes" for
 // the same steps under the name users_tmp.
 func TestWriteMigrateLintText_SummaryCountsAnAtlasSQLiteReplacementOnce(t *testing.T) {

@@ -526,7 +526,7 @@ func (p *Planner) modifyExistingColumns(
 		// that keeps its UNIQUE while its type changes gains a second key,
 		// `x_2`, and the next comparison plans it away. So the statement says
 		// UNIQUE only when this change gives the column its UNIQUE. Atlas CE
-		// v1.3.0 restates the column without it (stokaro/ptah#3857).
+		// restates the column without it (stokaro/ptah#3857).
 		if _, uniqueChanged := colDiff.Changes["unique"]; !uniqueChanged {
 			field.Unique = false
 		}
@@ -1574,7 +1574,7 @@ func (p *Planner) addNewIndexes(
 		// statement: `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`. MySQL
 		// 8.4.11 refuses a DROP INDEX alone on an index a foreign key needs
 		// (ERROR 1553) and takes the pair, and the pair leaves no moment
-		// without the index. The pinned community binary v1.3.0 writes the
+		// without the index. The pinned community binary writes the
 		// two as separate statements and fails there (stokaro/ptah#3853).
 		if p.replacesIndexInOneStatement(removals, ref, semantics) {
 			_, ownedByConstraint := constraintBacked[removals[0]]

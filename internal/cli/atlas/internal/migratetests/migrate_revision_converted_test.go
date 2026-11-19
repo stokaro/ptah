@@ -29,7 +29,7 @@ const (
 	revisionConvertedFirst  = "V1__first.sql"
 	revisionConvertedSecond = "V2__second.sql"
 	// revisionConvertedFirstToken is the version the FIRST file spells: what
-	// Flyway calls it, what the pinned community binary v1.3.0 calls it, and
+	// Flyway calls it, what the pinned community binary calls it, and
 	// what `migrate set` takes here.
 	revisionConvertedFirstToken = "1"
 )
@@ -174,7 +174,7 @@ func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 // migrations rather than one.
 //
 // The operand is the Flyway version TOKEN, not the int64 ordering key it
-// converts to. The pinned community binary v1.3.0 refuses that key, so Ptah
+// converts to. The pinned community binary refuses that key, so Ptah
 // does not accept it either, and there is no projection helper for reading one
 // back out of the importer.
 func TestCompatMigrateSet_ConvertedDirWritesConvertedVersion(t *testing.T) {

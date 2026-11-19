@@ -361,7 +361,7 @@ has no lint pass to skip, so --skip-lint changes nothing there.`,
 	cmd.MarkFlagsMutuallyExclusive(atlasFileFlagName, "to")
 	// --dry-run and --auto-approve contradict each other: one asks for the plan
 	// and no execution, the other for execution with no prompt. The pinned
-	// community binary v1.3.0 refuses the pair at exit 1 while Ptah printed the
+	// community binary refuses the pair at exit 1 while Ptah printed the
 	// plan at exit 0 (stokaro/ptah#1231 case 5). Nothing is lost by refusing:
 	// --auto-approve had no effect on a run that executes nothing, so the pair
 	// never reached a behavior that --dry-run alone does not have.
@@ -432,7 +432,7 @@ func withAtlasSchemaApplyPolicy(
 
 // checkAtlasSchemaApplyDevURL refuses a --dev-url naming no driver before
 // anything is contacted, then one of a dialect other than --url's, and then one
-// nothing answers on. The pinned community binary v1.3.0 opens the dev database
+// nothing answers on. The pinned community binary opens the dev database
 // on every `schema apply` it is given one, whatever --to names, and fails
 // before it plans; see [devreach]. A --url whose scheme names no dialect skips
 // the dialect check, and the connection to --url refuses it next.
@@ -599,7 +599,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		return cmdutil.Fail(cmd, err)
 	}
 	// A SQLite --url names a file, and opening it creates the file. The pinned
-	// community binary v1.3.0 checks the dev database before it touches a file
+	// community binary checks the dev database before it touches a file
 	// target: a dev database that holds a table is refused and no target file
 	// appears, even when the target's directory does not exist. A server target
 	// is contacted first there, and in checkAtlasApplyTarget (stokaro/ptah#3955).
@@ -669,7 +669,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 				return "", writeAtlasSchemaApplyFormat(cmd, opts, conn.Info().Dialect, nil)
 			}
 			// No trailing period, and only on this verb. The pinned community binary
-			// v1.3.0 writes `Schema is synced, no changes to be made\n` here -- 40
+			// writes `Schema is synced, no changes to be made\n` here -- 40
 			// bytes against Ptah's 41, read back with xxd and wc -c from an unpiped
 			// second `schema apply --auto-approve` over a synced SQLite database --
 			// while its `schema diff` answer, `Schemas are synced, no changes to be
@@ -1420,7 +1420,7 @@ func validateAtlasSchemaApplyOptions(
 	projectEnv atlassource.ProjectEnv,
 ) error {
 	// Plural, and tested on the value rather than on cobra's Changed bit: the
-	// pinned community binary v1.3.0 answers `--url ""` here the same way it
+	// pinned community binary answers `--url ""` here the same way it
 	// answers an absent one, which is what separates this verb from
 	// `schema clean`. See internal/cli/atlas/compat_url_diagnostic.go.
 	if strings.TrimSpace(opts.url) == "" {

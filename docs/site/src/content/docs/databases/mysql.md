@@ -146,7 +146,7 @@ SQL:
   A changed secondary-index comment rebuilds the index in one statement: `ALTER TABLE t DROP INDEX k,
   ADD INDEX k (...) COMMENT '...'`. MySQL 8.4.11 refuses a `DROP INDEX` alone on
   an index a foreign key needs (`ERROR 1553`) and takes the pair. Atlas CE
-  v1.3.0 writes the drop and the add as two statements. Primary-key replacements
+  writes the drop and the add as two statements. Primary-key replacements
   also use one `ALTER TABLE` so `AUTO_INCREMENT` and incoming foreign keys
   keep their supporting index.
 - A column's `AUTO_INCREMENT` is compared, and a change is written as
@@ -765,7 +765,7 @@ is. In the same statement the server gives a reset column the new default, so
 one apply converges. A change of a table's default collation is rated a
 warning, because a column added or restated without a collation takes it.
 
-The Atlas community binary v1.3.0 plans the same statement when it is given a
+The pinned Atlas community binary plans the same statement when it is given a
 dev database, and the table option alone without one; see
 [A changed MySQL table collation](../../atlas/retained-divergences/#a-changed-mysql-table-collation).
 MariaDB lists its UCA 14.0.0 collations, such as `utf8mb4_uca1400_ai_ci`, with

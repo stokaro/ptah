@@ -29,7 +29,7 @@ func TestEnumsWithSemantics_SchemaIdentity(t *testing.T) {
 	}{
 		{
 			// The `schema inspect` round trip. An enum block always writes its
-			// schema, the pinned Atlas community binary v1.3.0 having no
+			// schema, the pinned Atlas community binary having no
 			// reading for a block without one, so the document says `public`
 			// where the read says nothing. Compared raw this planned a CREATE
 			// and a DROP of the same type.

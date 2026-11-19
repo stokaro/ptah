@@ -147,7 +147,7 @@ func nextAvailableAtlasVersion(names []string, version int64) (int64, error) {
 // migration in names already occupies. It is the rule `migrate new` writes an
 // Atlas-layout migration with, and it does NOT bump past the newest migration.
 //
-// Two measurements settle that. The pinned community binary v1.3.0 stamps the
+// Two measurements settle that. The pinned community binary stamps the
 // current UTC second and nothing else: into a directory holding
 // `29991231235959_future.sql` it writes today's version, sorting BELOW the
 // migration already there. And `migrate diff` in this binary does the same
@@ -287,7 +287,7 @@ func isAtlasMigrationNameChar(r rune) bool {
 // The check is a round trip rather than a list of banned suffixes, so a later
 // change to that grammar cannot reopen the hole silently.
 //
-// This refusal is stricter than the pinned community binary v1.3.0, which
+// This refusal is stricter than the pinned community binary which
 // writes `<version>_x.down.sql` at exit 0 and reads it back as a pending
 // migration at exit 0. Ptah refusing to WRITE it does not fix Ptah's reader:
 // that binary can still hand us such a directory, and `migrate status` still

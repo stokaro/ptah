@@ -30,7 +30,7 @@ import (
 // `ALTER TABLE "users" DROP CONSTRAINT IF EXISTS "users_pkey"`, applied it,
 // exited 0 and printed "Schema apply completed successfully" -- the primary key
 // was gone and the third apply then reported "Schema is synced". The pinned
-// Atlas community binary v1.3.0 reports "Schema is synced, no changes to be
+// Atlas community binary reports "Schema is synced, no changes to be
 // made" on the second apply of both.
 //
 // The removal rows are the control and they carry the weight: a fix that simply

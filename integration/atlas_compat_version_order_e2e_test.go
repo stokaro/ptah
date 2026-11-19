@@ -101,7 +101,7 @@ func revisionTableVersions(c *qt.C, path string) []string {
 
 // TestCompatAtlasLinearityByVersionString_HappyPath applies a file whose
 // number is below the applied mark but whose version string sorts above it.
-// The pinned community binary v1.3.0 applies 3__x.sql after
+// The pinned community binary applies 3__x.sql after
 // 20260101000000_ts.sql, because "3" sorts above "20260101000000".
 func TestCompatAtlasLinearityByVersionString_HappyPath(t *testing.T) {
 	c := qt.New(t)
@@ -117,7 +117,7 @@ func TestCompatAtlasLinearityByVersionString_HappyPath(t *testing.T) {
 
 // TestCompatAtlasLinearityByVersionString_FailurePath refuses a file that
 // sorts before an applied file by name. 10_b.sql added after 1_a.sql is
-// refused by the pinned community binary v1.3.0 as well. 10_b.sql added after
+// refused by the pinned community binary as well. 10_b.sql added after
 // 9_a.sql is refused here and nowhere else: the binary neither applies nor
 // refuses it, so it never runs and the apply exits 0.
 func TestCompatAtlasLinearityByVersionString_FailurePath(t *testing.T) {
@@ -252,7 +252,7 @@ func observeExecutedAt(c *qt.C, dir string, runner func(env []string) versionOrd
 }
 
 // TestCompatAtlasExecutedAtKeepsTheWriterOffsetE2E holds executed_at to what
-// the pinned community binary v1.3.0 writes on SQLite: the writer's local time
+// the pinned community binary writes on SQLite: the writer's local time
 // with its offset, printed back with that offset whatever zone reads it.
 func TestCompatAtlasExecutedAtKeepsTheWriterOffsetE2E(t *testing.T) {
 	c := qt.New(t)

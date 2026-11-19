@@ -22,7 +22,7 @@ func unreadAtlasFiles() fstest.MapFS {
 
 // TestDiscover_AtlasFormatReadsAVersionThatIsNotANumber reads v1_x.sql as
 // version v1 in an Atlas-format directory, as the pinned community binary
-// v1.3.0 runs it. Left out, the file would never run and the directory would
+// runs it. Left out, the file would never run and the directory would
 // read as applied.
 func TestDiscover_AtlasFormatReadsAVersionThatIsNotANumber(t *testing.T) {
 	c := qt.New(t)
@@ -38,7 +38,7 @@ func TestDiscover_AtlasFormatReadsAVersionThatIsNotANumber(t *testing.T) {
 
 // TestDiscover_FailurePath_AnAtlasFileWithAnEmptyVersion refuses an
 // Atlas-format directory holding _x.sql, which the pinned community binary
-// v1.3.0 runs as version "" and Ptah cannot address.
+// runs as version "" and Ptah cannot address.
 func TestDiscover_FailurePath_AnAtlasFileWithAnEmptyVersion(t *testing.T) {
 	c := qt.New(t)
 	fsys := unreadAtlasFiles()

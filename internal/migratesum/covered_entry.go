@@ -32,7 +32,7 @@ type coveredDirectoryError struct {
 // do about it.
 //
 // The exit code, the stream layout and the checksum preamble around this
-// message match the pinned community binary v1.3.0 exactly; the wording
+// message match the pinned community binary exactly; the wording
 // deliberately does not. That binary reports
 // `sql/migrate: read file "2_evil.sql": read /abs/2_evil.sql: is a directory`,
 // which states the fault without naming the fix — and a checksum tool cannot

@@ -9,7 +9,7 @@ import (
 
 // This file holds the ONE place the compatibility surface turns a rejected
 // migration-directory format into the diagnostic the pinned community binary
-// v1.3.0 prints for it.
+// prints for it.
 //
 // It exists because the rejection has nine CE-comparable call sites and had
 // one adapter.
@@ -34,7 +34,7 @@ import (
 // more useful semantic diagnostic there.
 
 // atlasUnknownDirFormatDisplayError renders a rejected migration-directory
-// format the way the pinned community binary v1.3.0 renders it.
+// format the way the pinned community binary renders it.
 //
 // Unwrap keeps the semantic chain — the command, the spelling that carried the
 // value, and [atlasmigrate.UnknownDirFormatError] with the list of accepted

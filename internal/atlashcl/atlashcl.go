@@ -61,7 +61,7 @@ type Options struct {
 	// It reports blocks rather than schemas because those are two different
 	// numbers and the caller needs the first: `schemamodel.Finalize` folds two
 	// `schema "main"` blocks into one schema, and the pinned Atlas community
-	// binary v1.3.0 counts that document as two. See [declaredSchemaBlocks].
+	// binary counts that document as two. See [declaredSchemaBlocks].
 	//
 	// The recorder fires for a document that parses, whatever the caller then
 	// does with the count. Deciding what "too many" means needs facts this
@@ -82,7 +82,7 @@ type Options struct {
 	// comma-separated list of name=value assignments.
 	//
 	// A name with no matching variable block is ignored, matching the pinned
-	// Atlas community binary v1.3.0: `--var nosuch=1` against a file declaring
+	// Atlas community binary: `--var nosuch=1` against a file declaring
 	// `variable "v"` still fails with `missing value for required variable
 	// "v"` rather than complaining about the unused override.
 	Vars []string
@@ -98,7 +98,7 @@ type Options struct {
 	//
 	// An entry here wins over the same name in Vars. Nothing in Ptah sets both
 	// today -- a schema file selected by a data source takes that block's vars
-	// and no `--var` at all, which is what the pinned community binary v1.3.0
+	// and no `--var` at all, which is what the pinned community binary
 	// does -- but the rule has to be stated for the field to mean anything.
 	VarValues map[string]string
 
@@ -284,7 +284,7 @@ func parseSchemaDocument(ctx context.Context, data []byte, filename string, opts
 // description, and with it the document's coverage of the owners' models. The
 // account is part of the document. It rides in the leading comment header
 // rather than in a block, because it has to survive being read by tools that
-// are not Ptah -- the pinned Atlas community binary v1.3.0 reads a document
+// are not Ptah -- the pinned Atlas community binary reads a document
 // carrying it at exit 0 -- and because a block would need a name that binary
 // refuses.
 func (p *parser) readHeader() error {
@@ -1531,7 +1531,7 @@ type primaryKeySpec struct {
 	parts   []schemamodel.PrimaryKeyPart
 	include []string
 	// method is the `type` attribute, HASH or empty; see [mysqlindex.Method].
-	// The pinned community binary v1.3.0 writes `type = HASH` for a MariaDB
+	// The pinned community binary writes `type = HASH` for a MariaDB
 	// primary key built USING HASH (stokaro/ptah#3853).
 	method string
 }
@@ -2256,7 +2256,7 @@ func (p *parser) targetNames(block *hclsyntax.Block, label string) (schemamodel.
 // optionalBool reads an optional bool attribute of block: fallback where the
 // block leaves it out or writes null, its value where it writes a bool. Any
 // other value is refused, positioned at the attribute. The pinned community
-// binary v1.3.0 refuses `null = "true"` with `bool value is required`, and
+// binary refuses `null = "true"` with `bool value is required`, and
 // reading such a value as absent, as this reader did, dropped what the author
 // wrote. label names the block in the refusal.
 func (p *parser) optionalBool(block *hclsyntax.Block, name, label string, fallback bool) (bool, error) {
@@ -2467,7 +2467,7 @@ func (p *parser) typeReferenceName(raw string) (string, bool) {
 // The type itself is always the reduced SQL text, so the DDL Ptah renders stays
 // valid -- issue #1106. The second result is what a writer needs to put the
 // call back: `sql("USER_DEFINED")` is the only spelling of an engine type Atlas
-// does not model that the pinned Atlas community binary v1.3.0 accepts, and it
+// does not model that the pinned Atlas community binary accepts, and it
 // refuses the bare identifier Ptah would otherwise write back
 // ("Unknown column.type; There is no type named \"USER_DEFINED\"").
 func (p *parser) columnTypeName(block *hclsyntax.Block, attr *hclsyntax.Attribute) (string, bool, error) {
@@ -2546,7 +2546,7 @@ func (p *parser) stringListAttr(block *hclsyntax.Block, attrName string) ([]stri
 // table that accepts exactly one row -- sqlite indexes every row on the same
 // constant, so the second INSERT fails on a uniqueness rule the schema never
 // asked for. The primary_key form dropped the key without a word. The pinned
-// Atlas community binary v1.3.0 refuses all of it: `expected value to be a
+// Atlas community binary refuses all of it: `expected value to be a
 // *Ref, got: *schemahcl.RawExpr`.
 //
 // The refusal is narrower than the blanket one rejected when sql() reduction

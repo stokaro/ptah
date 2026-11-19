@@ -155,7 +155,7 @@ sections carry the detail.
 banners: HCL by default, or HCL, SQL, and JSON through their explicit helper
 templates. Bare `--format hcl`, `--format sql`, and `--format json` write the
 literal value with no line feed. Surrounding whitespace is also preserved byte
-for byte. Those literal cases match Atlas CE v1.3.0.
+for byte. Those literal cases match Atlas CE.
 
 Custom templates use the supported inspect helpers. HCL/SQL split-write file
 exports use the documented Atlas split strategies: per object by default,

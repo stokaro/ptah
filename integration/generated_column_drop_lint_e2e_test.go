@@ -88,12 +88,12 @@ func TestMigrationsLintReadsWhetherARegeneratedColumnWasGeneratedE2E(t *testing.
 	}
 }
 
-// compatDropLintRows are the compatibility lint runs. atlas v1.3.0 reads a
-// drop and an add of one column in one ALTER TABLE as a change of the column
-// and reports the drop where the add is a statement of its own, and refuses
-// the one-statement form over a stored column; the compatibility surface
-// reports both forms over a stored column and the two-statement form over a
-// generated one.
+// compatDropLintRows are the compatibility lint runs. The pinned community
+// binary reads a drop and an add of one column in one ALTER TABLE as a change
+// of the column and reports the drop where the add is a statement of its own,
+// and refuses the one-statement form over a stored column; the compatibility
+// surface reports both forms over a stored column and the two-statement form
+// over a generated one.
 var compatDropLintRows = []struct {
 	name   string
 	total  string

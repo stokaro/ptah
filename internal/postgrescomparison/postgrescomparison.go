@@ -186,7 +186,7 @@ func reportedKeys(index catalog.Index) []keyOptions {
 //
 // A hand-written source that spells the default out -- `ops = text_ops` on a
 // text column -- is the one case where this diverges from the pinned community
-// binary v1.3.0, which resolves type defaults and reported "Schemas are synced"
+// binary which resolves type defaults and reported "Schemas are synced"
 // for that fixture on PostgreSQL 17.10 where Ptah plans a rebuild. Ptah does
 // not resolve default operator classes, and inventing the resolution from a
 // version-pinned catalog table would be worse than the churn: the alternative
