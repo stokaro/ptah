@@ -62,8 +62,13 @@ func DevCheckSpellings(
 			if err != nil {
 				return err
 			}
-			if err := executeApplyStatements(ctx, conn.Writer(), statements); err != nil {
-				return fmt.Errorf("add CHECK constraints on dev database: %w", err)
+			for i, statement := range statements {
+				// Sent past the plan's executor, whose error carries the
+				// statement, and the probe's statement names nothing the author
+				// wrote.
+				if _, err := conn.ExecContext(ctx, statement); err != nil {
+					return &atlascheckform.Refusal{Probe: probes[i], Err: err}
+				}
 			}
 			probed, err := dbschema.ReadSchemaWithSchemasContext(readscope.Authored(ctx), conn, nil)
 			if err != nil {

@@ -42,8 +42,8 @@ func declaredChecks() *schemamodel.Database {
 // server rewrites a CHECK.
 var declaredProbes = []atlascheckform.Probe{
 	{Table: "t", Expression: "qty > 0", Name: "ptah_check_probe_1"},
-	{Table: "t", Expression: "lo < 10", Name: "ptah_check_probe_2"},
-	{Schema: "app", Table: "u", Expression: "c <> 'x'", Name: "ptah_check_probe_3"},
+	{Table: "t", Expression: "lo < 10", Declared: "lo_ck", Name: "lo_ck"},
+	{Schema: "app", Table: "u", Expression: "c <> 'x'", Declared: "c_ck", Name: "c_ck"},
 }
 
 func TestPlan(t *testing.T) {
@@ -68,8 +68,7 @@ func TestPlan(t *testing.T) {
 	}
 }
 
-// A CHECK the diff does not write is left out, and the probes are numbered
-// among themselves.
+// A CHECK the diff does not write is left out.
 func TestPlan_OnlyWhatTheDiffWrites(t *testing.T) {
 	c := qt.New(t)
 
@@ -80,8 +79,89 @@ func TestPlan_OnlyWhatTheDiffWrites(t *testing.T) {
 	})
 
 	c.Assert(got, qt.DeepEquals, []atlascheckform.Probe{
-		{Schema: "app", Table: "u", Expression: "c <> 'x'", Name: "ptah_check_probe_1"},
+		{Schema: "app", Table: "u", Expression: "c <> 'x'", Declared: "c_ck", Name: "c_ck"},
 	})
+}
+
+// A probe takes a name of its own where its CHECK has none, and where another
+// probe already uses the declared name in any case: MariaDB names a CHECK once
+// per table, and MySQL once per database.
+func TestPlan_NamesAProbeWhereTheDeclaredNameIsTaken(t *testing.T) {
+	c := qt.New(t)
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t"}, {StructName: "U", Name: "u"}},
+		Fields: []schemamodel.Field{
+			{StructName: "T", Name: "a", Type: "int"},
+			{StructName: "U", Name: "b", Type: "int"},
+		},
+		Constraints: []schemamodel.Constraint{
+			{StructName: "T", Type: "CHECK", CheckExpression: "a > 1"},
+			{StructName: "T", Name: "k", Type: "CHECK", CheckExpression: "a > 0"},
+			{StructName: "U", Name: "K", Type: "CHECK", CheckExpression: "b > 0"},
+			{StructName: "U", Name: "ptah_check_probe_3", Type: "CHECK", CheckExpression: "b > 1"},
+		},
+	}
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{
+		{TableName: "t", Type: "CHECK", CheckExpression: "a > 1"},
+		{Name: "k", TableName: "t", Type: "CHECK", CheckExpression: "a > 0"},
+		{Name: "K", TableName: "u", Type: "CHECK", CheckExpression: "b > 0"},
+		{Name: "ptah_check_probe_3", TableName: "u", Type: "CHECK", CheckExpression: "b > 1"},
+	}}
+
+	got := atlascheckform.Plan(platform.MariaDB, desired, diff)
+
+	c.Assert(got, qt.DeepEquals, []atlascheckform.Probe{
+		{Table: "t", Expression: "a > 1", Name: "ptah_check_probe_1"},
+		{Table: "t", Expression: "a > 0", Declared: "k", Name: "k"},
+		{Table: "u", Expression: "b > 0", Declared: "K", Name: "ptah_check_probe_3"},
+		{Table: "u", Expression: "b > 1", Declared: "ptah_check_probe_3", Name: "ptah_check_probe_4"},
+	})
+}
+
+// serverError is an answer worded the way a server words it, which an error
+// string written in Go would not be.
+type serverError string
+
+func (e serverError) Error() string { return string(e) }
+
+// errDisallowedFunction is how MySQL refuses a CHECK that calls now(), naming
+// the constraint it was asked to add.
+const errDisallowedFunction = serverError(
+	"Error 3815 (HY000): An expression of a check constraint 'ptah_check_probe_1' contains disallowed function: now.")
+
+// A refusal names the declared CHECK and its table, keeps the server's
+// message, and never names a probe's own constraint.
+func TestRefusal(t *testing.T) {
+	tests := []struct {
+		name  string
+		probe atlascheckform.Probe
+		err   error
+		want  string
+	}{
+		{
+			name:  "a named CHECK",
+			probe: atlascheckform.Probe{Table: "t", Expression: "nosuchfn(qty) > 0", Declared: "qty_ck", Name: "qty_ck"},
+			err:   serverError("Error 1305 (42000): FUNCTION dev.nosuchfn does not exist"),
+			want:  `the dev database refuses CHECK "qty_ck" of table "t": Error 1305 (42000): FUNCTION dev.nosuchfn does not exist`,
+		},
+		{
+			name:  "an unnamed CHECK of a table in a schema",
+			probe: atlascheckform.Probe{Schema: "app", Table: "t", Expression: "d < now()", Name: "ptah_check_probe_1"},
+			err:   errDisallowedFunction,
+			want: `the dev database refuses the unnamed CHECK of table "app.t": Error 3815 (HY000): ` +
+				`An expression of a check constraint 'unnamed' contains disallowed function: now.`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := &atlascheckform.Refusal{Probe: test.probe, Err: test.err}
+
+			c.Assert(err.Error(), qt.Equals, test.want)
+			c.Assert(err, qt.ErrorIs, test.err)
+		})
+	}
 }
 
 func TestPlan_NothingToAsk(t *testing.T) {
@@ -188,8 +268,8 @@ func TestStatements_HappyPath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, []string{
 		"ALTER TABLE `dev`.`t` ADD CONSTRAINT `ptah_check_probe_1` CHECK (qty > 0)",
-		"ALTER TABLE `dev`.`t` ADD CONSTRAINT `ptah_check_probe_2` CHECK (lo < 10)",
-		"ALTER TABLE `app`.`u` ADD CONSTRAINT `ptah_check_probe_3` CHECK (c <> 'x')",
+		"ALTER TABLE `dev`.`t` ADD CONSTRAINT `lo_ck` CHECK (lo < 10)",
+		"ALTER TABLE `app`.`u` ADD CONSTRAINT `c_ck` CHECK (c <> 'x')",
 	})
 }
 
@@ -246,8 +326,8 @@ func probedClauses(qty, lo, c string) *catalog.Database {
 	return &catalog.Database{Constraints: []catalog.Constraint{
 		{Name: "qty_ck", Type: "CHECK", CheckClause: new("(`qty` > 0)")},
 		{Name: "PTAH_CHECK_PROBE_1", Type: "CHECK", CheckClause: new(qty)},
-		{Name: "ptah_check_probe_2", Type: "CHECK", CheckClause: new(lo)},
-		{Name: "ptah_check_probe_3", Type: "CHECK", CheckClause: new(c)},
+		{Name: "lo_ck", Type: "CHECK", CheckClause: new(lo)},
+		{Name: "c_ck", Type: "CHECK", CheckClause: new(c)},
 	}}
 }
 
@@ -406,7 +486,7 @@ func TestRead_FailurePath(t *testing.T) {
 
 			got, err := atlascheckform.Read(platform.MySQL, declaredProbes[1:2], test.read)
 
-			c.Assert(err, qt.ErrorMatches, `check probe ptah_check_probe_2: the dev database reports no CHECK of that name`)
+			c.Assert(err, qt.ErrorMatches, `check probe lo_ck: the dev database reports no CHECK of that name`)
 			respelled := addedChecks()
 			got.Respell(respelled)
 			c.Assert(respelled, qt.DeepEquals, addedChecks())
