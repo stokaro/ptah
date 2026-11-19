@@ -32,8 +32,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-
-	"ptah.run/core/ast"
 )
 
 // Reason names why a declaration did not reach the output.
@@ -499,16 +497,3 @@ const (
 	// VIEW.
 	MaterializedViewKind = "materialized view"
 )
-
-// Properties a whole node can declare and a target decline to carry.
-const (
-	// PartitionProperty is a table's partitioning. Losing it produces one
-	// ordinary table where the author declared a partitioned one, so every row
-	// lands in the same place and a partition-wise plan is not available.
-	PartitionProperty = "partition"
-)
-
-// RecordLostTableStorage records partitioning a CREATE TABLE declares
-// on a target that cannot carry it.
-func (s *Sink) RecordLostTableStorage(node *ast.CreateTableNode) {
-}

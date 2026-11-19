@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/dialect/mysql/mysqlschema"
@@ -58,4 +59,16 @@ func TestCreateTableOptions_FailurePath(t *testing.T) {
 			c.Assert(got, qt.HasLen, 0)
 		})
 	}
+}
+
+// A PARTITION BY read as an option, from a document that names no target, is
+// refused rather than written as PARTITION_BY=, which no server parses.
+func TestCreateTableOptions_RefusesAPartitionOption(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := mysqlrender.CreateTableOptions(schemaext.Facets{}, map[string]string{"ENGINE": "InnoDB", "PARTITION_BY": "HASH (id) PARTITIONS 2"})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `unsupported feature: PARTITION BY: Ptah does not model MySQL or MariaDB partitioning \(stokaro/ptah#6357\); .*`)
+	c.Assert(got, qt.IsNil)
 }

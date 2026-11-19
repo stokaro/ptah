@@ -177,7 +177,7 @@ func excludeDatabase(
 	filtered.Grants = state.filterGrants(filtered.Grants, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
 	state.noteReservedNames(filtered.ReservedNames)
 	state.noteUnreadTables(filtered.UnreadTables)
-	state.noteUnmodeledObjects(filtered.UnmodeledObjects)
+	filtered.UnmodeledObjects = state.filterUnmodeledObjects(filtered.UnmodeledObjects)
 	state.noteRemovalBlockers(filtered.RemovalBlockers)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
@@ -2421,8 +2421,8 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		// filter cannot change that: dropping the record would let a declared
 		// table at it plan a CREATE TABLE the database rejects.
 		UnreadTables: slices.Clone(schema.UnreadTables),
-		// An event is still in the database whatever a filter keeps, and the
-		// report names it because nothing compares it.
+		// The filters narrow these to the run's selection; see
+		// [exclusionState.filterUnmodeledObjects].
 		UnmodeledObjects: slices.Clone(schema.UnmodeledObjects),
 		// An object that blocks a table's removal is still in the database
 		// whatever a filter keeps, and a plan that drops a table the filter

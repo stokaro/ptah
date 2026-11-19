@@ -73,6 +73,12 @@ type InspectOptions struct {
 	// server roles outside the rendered schema scope. Other diagnostics keep
 	// using Diagnostics.
 	SuppressRoleCoverageNote bool
+	// reportUnmodeled names the objects of a kind Ptah does not model that the
+	// scoped schema holds. Only [Inspect] sets it: it reads a database the
+	// operator named, where the file and migration-directory sources read a
+	// dev database they materialized, whose cluster objects answer nothing
+	// they asked.
+	reportUnmodeled bool
 	// OmitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
 	// which leaves out the top-level block types the pinned Atlas community
 	// binary refuses as a feature -- unless something else in the document
@@ -180,9 +186,8 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	// A table the read found and left out is in no rendered document, as
 	// through the built-in engines; the note is the only place it shows.
 	unreadtables.Report(opts.Diagnostics, schema)
-	// An object of a kind Ptah does not model is in no rendered document either.
-	unmodelednote.Report(ctx, opts.Diagnostics, "the database", schema)
 	validatedOpts := opts
+	validatedOpts.reportUnmodeled = true
 	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil
 	return renderInspectSchema(ctx, schema, conn.Info(), validatedOpts)
@@ -289,6 +294,12 @@ func renderInspectSchema(
 	// From the scoped schema too, so a table a selector left out is not named
 	// (stokaro/ptah#3771).
 	hashshard.ReportUndescribed(opts.Diagnostics, schema)
+	// An object of a kind Ptah does not model is in no rendered document
+	// either, and from the scoped schema an object a selector left out is not
+	// named.
+	if opts.reportUnmodeled {
+		unmodelednote.Report(ctx, opts.Diagnostics, "the database", schema)
+	}
 	dbsch, err := dbschematogo.ConvertDBSchemaToGoSchema(ctx, schema, info.Dialect, opts.Runtime)
 	if err != nil {
 		return InspectResult{}, err

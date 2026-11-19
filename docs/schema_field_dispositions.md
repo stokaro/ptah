@@ -182,13 +182,13 @@ migration nobody asked for.
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
 | `pgtable.PartitionMember.Bound` | `postgres`, `yugabytedb` | both | a changed bound is compared once a connected server normalizes it; without one the owner leaves the change undecided |
-| `pgtable.DesiredPartition.Type` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
+| `pgtable.DesiredPartition.Type` | `clickhouse`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
 | `pgtable.DesiredPartition.Type` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
-| `pgtable.DesiredPartition.Parts` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
+| `pgtable.DesiredPartition.Parts` | `clickhouse`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
 | `pgtable.DesiredPartition.Parts` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
-| `pgtable.PartitionPart.Name` | `clickhouse`, `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
+| `pgtable.PartitionPart.Name` | `clickhouse`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
 | `pgtable.PartitionPart.Name` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
-| `pgtable.PartitionPart.Expr` | `mariadb`, `mysql`, `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
+| `pgtable.PartitionPart.Expr` | `oracle`, `sqlite`, `sqlserver` | both | the target reports PostgreSQL partition declarations as omitted and does not manage their keys |
 | `pgtable.PartitionPart.Expr` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
 | `pgtable.PartitionPart.Collation` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |
 | `pgtable.PartitionPart.OperatorClass` | `postgres`, `yugabytedb` | both | partition keys cannot change in place; the owner refuses a changed key or requests connected normalization |

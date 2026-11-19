@@ -712,6 +712,46 @@ leaves out the ones its schema block states, as the Atlas community binary
 writes them; SQL writes both on every table, and JSON lists both on every
 table.
 
+## Table partitioning
+
+Ptah does not model MySQL or MariaDB partitioning
+([stokaro/ptah#6357](https://github.com/stokaro/ptah/issues/6357)): nothing
+renders or compares partitions. A declaration that partitions a table is
+refused by name rather than created as one ordinary table, or compared as
+synced with a table that has no partitions:
+
+- `PARTITION BY` in a `CREATE TABLE` of a SQL schema file read for MySQL or
+  MariaDB, and an `ALTER TABLE` that opens with a partition operation, such as
+  `PARTITION BY`, `ADD PARTITION` or `REMOVE PARTITIONING`;
+- the `partition_by` platform property of a Go annotation or a YAML table;
+- an HCL table's `partition` block.
+
+```text illustration
+unsupported feature: PARTITION BY on table sales: Ptah does not model MySQL or MariaDB partitioning (stokaro/ptah#6357); leave it out of the desired schema and manage the partitions outside Ptah
+```
+
+A table partitioned outside Ptah is read and compared without its partitions,
+so a schema that declares it without them reports synced. The read names the
+table rather than let that read as covering the partitions, in the same places
+it names an [event](#events): `schema compare` lists it under the report, and
+`db read`, `schema apply` and `schema diff` warn on standard error:
+
+```text illustration
+warning: table partitioning "sales" in the database is left out: Ptah does not model MySQL or MariaDB partitioning (stokaro/ptah#6357), so no comparison sees the partitions, and SQL written from this read creates the table without them
+```
+
+The read does not refuse the table. A change Ptah plans for it, such as
+`ADD COLUMN`, keeps its partitions, because the server keeps them through the
+change. SQL that `db read` writes from the read creates the table without
+partitions. A run whose `--exclude` or `--include` leaves the table out does
+not name it, since the run is not about that table.
+
+`ptah-compat` refuses the same declarations. The community binary writes a SQL
+file's clause as an option the server refuses with ERROR 1064, reports a table
+that exists without partitions as synced, and fails to parse a MySQL HCL
+table's `partition` block. We are stricter here, deliberately: a declaration Ptah cannot
+carry out is refused rather than lost.
+
 ## A column default with an operator
 
 MySQL and MariaDB take an expression default only in parentheses. MySQL 26.10
@@ -1425,8 +1465,11 @@ only shows them. A run that does not depend on them can say so with
 `--exclude '*[type=event]'`, as for any other kind, and nothing reads or reports
 events then. This whole-kind selector does not warn that it matched no objects,
 even when the account cannot list events. A selector naming one event, such as
-`--exclude 'e_tick[type=event]'`, counts as a match and leaves the report as it
-is: the database still holds the event, and no selection changes that.
+`--exclude 'e_tick[type=event]'`, counts as a match and takes that event out of
+the report, since the run is not about it. An `--include` selection leaves out
+of the report every event it does not name. An event is not something to
+compare, so an `--include` that names only events matched no objects, and
+`schema apply` refuses it as it refuses any empty selection.
 
 ## Dev-database cleanup privileges
 

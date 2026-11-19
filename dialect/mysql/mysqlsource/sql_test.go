@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlext"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/dialect/mysql/mysqlsource"
@@ -157,4 +158,66 @@ func TestSQL_AnOptionEndsAtAClauseOfAConstraint(t *testing.T) {
 			c.Assert(statements, qt.IsNil)
 		})
 	}
+}
+
+// A MySQL or MariaDB document's PARTITION BY is claimed by the owner and
+// refused by name, since Ptah does not model MySQL partitioning. Read as the
+// grammar every target shares, it would land among the table options as
+// PARTITION_BY and render as PARTITION_BY=, which no server parses.
+func TestSQL_RefusesPartitionBy(t *testing.T) {
+	const sql = "CREATE TABLE sales (id int NOT NULL, region varchar(10) NOT NULL, PRIMARY KEY (id, region)) " +
+		"PARTITION BY LIST COLUMNS(region) (PARTITION p_east VALUES IN ('east'), PARTITION p_west VALUES IN ('west'));"
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parseMySQL(dialect, sql)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `.*PARTITION BY on table sales: Ptah does not model MySQL or MariaDB partitioning \(stokaro/ptah#6357\).*`)
+			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// An ALTER TABLE that opens with an operation on the table's partitions is
+// refused with the same message, naming the operation and the table as the
+// statement writes it.
+func TestSQL_RefusesAnAlterTableOfPartitions(t *testing.T) {
+	const create = "CREATE TABLE app.sales (id int NOT NULL, PRIMARY KEY (id));\n"
+	rows := []struct{ name, alter, wantErr string }{
+		{name: "PARTITION BY", alter: "ALTER TABLE app.sales PARTITION BY HASH (id) PARTITIONS 2;", wantErr: `PARTITION BY on table app\.sales`},
+		{name: "REMOVE PARTITIONING", alter: "ALTER TABLE app.sales REMOVE PARTITIONING;", wantErr: `REMOVE PARTITIONING on table app\.sales`},
+		{name: "ADD PARTITION", alter: "ALTER TABLE app.sales ADD PARTITION (PARTITION p2);", wantErr: `ADD PARTITION on table app\.sales`},
+		{name: "DROP PARTITION", alter: "ALTER TABLE `app`.`sales` DROP PARTITION p0;", wantErr: "DROP PARTITION on table `app`\\.`sales`"},
+		{name: "a maintenance operation", alter: "ALTER TABLE app.sales OPTIMIZE PARTITION p0;", wantErr: `OPTIMIZE PARTITION on table app\.sales`},
+		{name: "CONVERT TABLE", alter: "ALTER TABLE app.sales CONVERT TABLE old TO PARTITION p2 VALUES LESS THAN (40);", wantErr: `CONVERT TABLE on table app\.sales`},
+	}
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		for _, row := range rows {
+			t.Run(dialect+"/"+row.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				statements, err := parseMySQL(dialect, create+row.alter)
+
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				c.Assert(err, qt.ErrorMatches, `.*`+row.wantErr+`: Ptah does not model MySQL or MariaDB partitioning \(stokaro/ptah#6357\).*`)
+				c.Assert(statements, qt.IsNil)
+			})
+		}
+	}
+}
+
+// A document that names no target is read with every owner's syntax that is
+// not bound to a target, and the PARTITION BY of a ClickHouse table is one, so
+// the owner's refusal is bound to MySQL and MariaDB documents and leaves this
+// one to the shared grammar.
+func TestSQL_LeavesPartitionByOfADocumentWithoutATarget(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := parseMySQL("", "CREATE TABLE hits (d Date) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY d;")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	c.Assert(statements.Statements[0].(*ast.CreateTableNode).Options["PARTITION_BY"], qt.Equals, "toYYYYMM(d)")
 }

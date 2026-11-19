@@ -243,10 +243,6 @@ func (r *Renderer) renderCreateTable(node *ast.CreateTableNode) error {
 			},
 		)
 	}
-	// Only the PostgreSQL family renders a PARTITION BY clause, so a
-	// declared partitioning produces one ordinary table here: every row
-	// lands in the same place.
-	r.sink.RecordLostTableStorage(node)
 	if node.SelectBody != "" {
 		return unsupportedFeaturef("CREATE TABLE AS SELECT is not supported")
 	}

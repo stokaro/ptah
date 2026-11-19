@@ -14,6 +14,11 @@ type UnmodeledObject struct {
 	// Name names the object. It is empty on a record of every object of Kind in
 	// Schema, which is the honest answer when the read could not list them.
 	Name string `json:"name,omitempty"`
+	// Table names the table in Schema the object is a property of, such as a
+	// MySQL table's partitioning. A selection that leaves the table out leaves
+	// the object out with it. It is empty on an object of its own, which a
+	// selection names by Kind and Name.
+	Table string `json:"table,omitempty"`
 	// Reason says why nothing compares the object, in the reader's words: one
 	// line, which a report prints after its name.
 	Reason string `json:"reason"`
