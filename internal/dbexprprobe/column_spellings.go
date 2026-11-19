@@ -3,6 +3,7 @@ package dbexprprobe
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,9 @@ type ColumnSpellingProbe struct {
 	// Table is the probe table the statements create, as a regclass the server
 	// resolves: a pg_temp name, so the table is temporary.
 	Table string
+	// Schema and Declared name the declared table the probe stands for. They
+	// are never sent to the server; a refusal carries them.
+	Schema, Declared string
 	// Statement creates Table with every column below, as the renderer writes
 	// a CREATE TABLE for them.
 	Statement string
@@ -55,75 +59,105 @@ func SupportsColumnSpellings(dialect string) bool {
 // The declaration is put through the same rewrite: a temporary table with the
 // declared columns is created, format_type and pg_get_expr read its columns
 // back, and the transaction is rolled back. A column the server refuses is
-// returned with Resolved false. Other dialects, and a connection pinned to a
-// session with a transaction open, return nil, for the reasons
+// returned with Resolved false, and the server's answer is returned among the
+// refusals, so the caller can say why the column is compared as written.
+//
+// A server that offers no temporary table at all, as CockroachDB by default,
+// answers every probe with the same refusal. That answer is about the server,
+// not about a column, so its columns are returned with Resolved false and none
+// of them is a refusal: on such a server every default is compared by its
+// value, as on a server that spells none. Other dialects, and a connection
+// pinned to a session with a transaction open, return nil, for the reasons
 // [ResolveCheckExpressions] gives.
 func ResolveColumnSpellings(
 	ctx context.Context,
 	conn Session,
 	probes []ColumnSpellingProbe,
-) (map[string]config.ColumnSpelling, error) {
+) (map[string]config.ColumnSpelling, []ColumnSpellingRefusal, error) {
 	if conn == nil {
-		return nil, fmt.Errorf("resolve column spellings: database connection is nil")
+		return nil, nil, fmt.Errorf("resolve column spellings: database connection is nil")
 	}
 	if len(probes) == 0 || !SupportsColumnSpellings(conn.Info().Dialect) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	resolved := make(map[string]config.ColumnSpelling)
+	var refusals []ColumnSpellingRefusal
 	ran, err := conn.WithRolledBackTransaction(ctx, "resolve column spellings", func(ctx context.Context, tx *sql.Tx) error {
 		for _, probe := range probes {
-			if err := resolveColumnSpellingProbe(ctx, tx, probe, resolved); err != nil {
+			refused, err := resolveColumnSpellingProbe(ctx, tx, probe, resolved)
+			if err != nil {
 				return err
 			}
+			refusals = append(refusals, refused...)
 		}
 		return nil
 	})
 	if err != nil || !ran {
-		return nil, err
+		return nil, nil, err
 	}
-	return resolved, nil
+	return resolved, refusals, nil
+}
+
+// ColumnSpellingRefusal is a column whose probe the server refused.
+type ColumnSpellingRefusal struct {
+	// Key is the column's key.
+	Key string
+	// Schema, Table and Column name the declared column.
+	Schema, Table, Column string
+	// Reason is the server's answer to the statement it refused.
+	Reason error
 }
 
 // resolveColumnSpellingProbe answers every column of one probe, from the
 // table's statement when the server takes it and column by column when it
-// does not.
+// does not, and returns the columns the server refused.
 func resolveColumnSpellingProbe(
 	ctx context.Context,
 	tx *sql.Tx,
 	probe ColumnSpellingProbe,
 	resolved map[string]config.ColumnSpelling,
-) error {
+) ([]ColumnSpellingRefusal, error) {
 	keys := make(map[string]string, len(probe.Columns))
 	for _, column := range probe.Columns {
 		keys[column.Name] = column.Key
 	}
-	answered, err := readColumnSpellings(ctx, tx, probe.Table, probe.Statement, keys, resolved)
-	if err != nil || answered {
-		return err
+	refused, err := readColumnSpellings(ctx, tx, probe.Table, probe.Statement, keys, resolved)
+	if err != nil || refused == nil {
+		return nil, err
 	}
-	for _, column := range probe.Columns {
-		answered, err := readColumnSpellings(
-			ctx, tx, column.Table, column.Statement, map[string]string{column.Name: column.Key}, resolved)
-		if err != nil {
-			return err
-		}
-		if !answered {
+	if temporaryTablesUnavailable(refused) {
+		for _, column := range probe.Columns {
 			resolved[column.Key] = config.ColumnSpelling{}
 		}
+		return nil, nil
 	}
-	return nil
+	var refusals []ColumnSpellingRefusal
+	for _, column := range probe.Columns {
+		refused, err := readColumnSpellings(
+			ctx, tx, column.Table, column.Statement, map[string]string{column.Name: column.Key}, resolved)
+		if err != nil {
+			return nil, err
+		}
+		if refused != nil {
+			resolved[column.Key] = config.ColumnSpelling{}
+			refusals = append(refusals, ColumnSpellingRefusal{
+				Key: column.Key, Schema: probe.Schema, Table: probe.Declared, Column: column.Name, Reason: refused,
+			})
+		}
+	}
+	return refusals, nil
 }
 
 // readColumnSpellings creates one probe table and reads its columns back into
-// resolved, under keys. It reports false, with no error, when the server
-// refused the statement.
+// resolved, under keys. refused is the server's answer when it refused the
+// statement, and nil when the probe ran; err is a failure of the transaction.
 func readColumnSpellings(
 	ctx context.Context,
 	tx *sql.Tx,
 	table, statement string,
 	keys map[string]string,
 	resolved map[string]config.ColumnSpelling,
-) (bool, error) {
+) (refused, err error) {
 	const query = `
 		SELECT a.attname, format_type(a.atttypid, a.atttypmod), COALESCE(pg_get_expr(d.adbin, d.adrelid), '')
 		FROM pg_attribute a
@@ -148,6 +182,18 @@ func readColumnSpellings(
 		}
 		return rows.Err()
 	}
-	return runProbe(ctx, tx, "resolve column spellings", table, "ptah_column_probe",
+	return runRefusableProbe(ctx, tx, "resolve column spellings", table, "ptah_column_probe",
 		postgresSavepoints, []string{statement}, read)
+}
+
+// experimentalFeature is the SQLSTATE CockroachDB answers with for a feature
+// a cluster setting has not turned on, such as a temporary table:
+// `temporary tables are only supported experimentally`.
+const experimentalFeature = "XCEXF"
+
+// temporaryTablesUnavailable reports that refused is the server saying it
+// offers no temporary table, rather than refusing one declaration or one role.
+func temporaryTablesUnavailable(refused error) bool {
+	var state interface{ SQLState() string }
+	return errors.As(refused, &state) && state.SQLState() == experimentalFeature
 }

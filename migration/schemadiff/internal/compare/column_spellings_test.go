@@ -127,3 +127,78 @@ func TestColumnSpellings_ADifferentOrMissingSpellingStillPlans(t *testing.T) {
 		})
 	}
 }
+
+// A declared default the server spells otherwise than the catalog holds it is
+// read by the value it stands for, so two spellings of one value are the same
+// default. The second row is the catalog after ALTER COLUMN TYPE, which keeps
+// the default as the old type spelled it.
+func TestColumnSpellings_ADefaultSpelledOtherwiseIsReadByValue(t *testing.T) {
+	tests := []struct {
+		name           string
+		declaredType   string
+		declared       string
+		spelled        string
+		liveType, live string
+	}{
+		{
+			name: "a cast to text on a varchar column", declaredType: "varchar(10)", declared: "'x'::text",
+			spelled: "'x'::text", liveType: "character varying(10)", live: "'x'::character varying",
+		},
+		{
+			name: "a default kept from the old type", declaredType: "text", declared: "'x'",
+			spelled: "'x'::text", liveType: "text", live: "'x'::character varying",
+		},
+		{
+			name: "a cast of an integer to bigint", declaredType: "bigint", declared: "(0::bigint)",
+			spelled: "'0'::bigint", liveType: "bigint", live: "0",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, current := spelledTable(test.declaredType, test.declared, test.liveType, test.live)
+
+			diff := spellingsDiff(desired, current, map[string]config.ColumnSpelling{
+				spelledColumnKey: {Type: test.liveType, Default: test.spelled, Resolved: true},
+			})
+
+			c.Assert(diff.TablesModified, qt.HasLen, 0)
+		})
+	}
+}
+
+// A declared default the server spells otherwise than the catalog holds it,
+// with a cast that changes the value, is another default.
+func TestColumnSpellings_ADefaultSpelledOtherwiseWithAnotherValueIsAChange(t *testing.T) {
+	tests := []struct {
+		name           string
+		declaredType   string
+		declared       string
+		spelled        string
+		liveType, live string
+	}{
+		{
+			name: "a cast that rounds", declaredType: "numeric", declared: "(1.5::integer)",
+			spelled: "(1.5)::integer", liveType: "numeric", live: "1.5",
+		},
+		{
+			name: "a length that truncates", declaredType: "varchar(10)", declared: "'abcd'::varchar(3)",
+			spelled: "'abcd'::character varying(3)", liveType: "character varying(10)", live: "'abcd'::character varying",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			desired, current := spelledTable(test.declaredType, test.declared, test.liveType, test.live)
+
+			diff := spellingsDiff(desired, current, map[string]config.ColumnSpelling{
+				spelledColumnKey: {Type: test.liveType, Default: test.spelled, Resolved: true},
+			})
+
+			c.Assert(diff.TablesModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
+			c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes, qt.DeepEquals,
+				map[string]string{"default_expr": test.live + " -> " + test.declared})
+		})
+	}
+}
