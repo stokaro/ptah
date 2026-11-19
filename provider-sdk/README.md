@@ -78,10 +78,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.44. Each released SDK speaks one contract:
+speaks contract 25.45. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.44.0` | 25.45 |
 | `provider-sdk/v0.43.0` | 25.44 |
 | `provider-sdk/v0.42.0` | 25.43 |
 | `provider-sdk/v0.41.0` | 25.42 |
@@ -211,6 +212,7 @@ returns to 0.
   Contract 25.42 adds [provider-owned server advisories](#provider-owned-server-advisories).
   Contract 25.43 adds [trusted replay SQL](#trusted-replay-sql).
   Contract 25.44 adds the [repeatable migration record](#repeatable-migration-record).
+  Contract 25.45 adds the [reserved repeatable migration record](#reserved-repeatable-migration-record).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -262,10 +264,10 @@ does not oblige a peer to use it.
   `schema.view-query-context`, `models.declared-facets`,
   `schema.read-sql-undeclared`, `schema.removal-blockers`,
   `models.current-context`, `schema.not-described`,
-  `security.advisory-snapshot` and `database.dev-replay-trust`. The embedding
-  store's
-  calls,
-  `PrepareCommonObjects`, `ReverseChanges` and `ReportValues` are new, and each
+  `security.advisory-snapshot`, `database.dev-replay-trust`,
+  `sessions.repeatable-record` and `schema.reserved-repeatable-record`. The
+  embedding store's calls, `PrepareCommonObjects`, `ReverseChanges` and
+  `ReportValues` are new, and each
   comes with an addition to `Engine`, so a host lists the feature to receive
   any of them. `SplitMigration` is new too, and comes with the abort flags of
   `Execution` and `TransactionResult`, so a host lists `units.migration-split`
@@ -1524,7 +1526,7 @@ normalized identities. Requests and bindings are limited to 4,096 entries, with
 at most 4,096 namespaces across all bindings.
 
 `Schema.reserved_objects` records positively identified provider-owned history,
-lock, log, or tag storage. Providers validate native ownership and layout before
+lock, log, tag, seed ledger or repeatable migration record storage. Providers validate native ownership and layout before
 omitting it from managed observations. A familiar name alone is insufficient.
 Each record supplies source and normalized identities and every object kind
 that shares the name. Reservations must include their own kind. Native conflict
@@ -1813,6 +1815,24 @@ only its `session_id`, not the engine, so whether the session's engine keeps
 the record is the provider's check, made on every call: a call on a session
 whose engine does not list the feature is refused before it reads or writes
 anything.
+
+### Reserved repeatable migration record
+
+[ADR 0125](../docs/adr/0125-a-provider-keeps-the-record-of-repeatable-migrations.md),
+under Amendments, decides this feature. Under
+`schema.reserved-repeatable-record` a read reports the
+[repeatable migration record](#repeatable-migration-record) in
+`Schema.reserved_objects` with the purpose `REPEATABLE`, as it reports the
+revision table with `HISTORY` and the log with `LOG`. The host leaves the
+record out of every comparison, so a plan never drops it, and refuses a
+declaration of a table of its name. The provider and each engine that keeps
+the record list the two-way feature beside `sessions.repeatable-record`.
+
+The SDK refuses the engine's feature without the provider's or without the
+engine's `sessions.repeatable-record`, and drops it in negotiation where the
+record is negotiated away. It refuses a `REPEATABLE` reservation in a read
+that did not negotiate the feature, on the client and on the server, so a host
+that does not list it never receives the purpose.
 
 A provider that lists the feature owes each of these guarantees, and its live
 tests exercise them against the engine:

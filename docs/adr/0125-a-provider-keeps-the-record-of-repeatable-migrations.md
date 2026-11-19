@@ -143,3 +143,66 @@ lists the feature.
 - **Keep the body outside the record, addressed by digest.** It saves bytes
   only when two identities hold the same content, and needs a second store
   with its own ownership check.
+
+## Amendments
+
+### Contract 25.45: a read reserves the record
+
+A provider reports the storage it keeps for itself as reserved objects of a
+read, each with a purpose, and the host leaves them out of every comparison and
+refuses a declaration that takes their names. Under contract 25.44 the purposes
+are the revision table, the lock, the log, the tags and the seed ledger. None
+is this record, so a provider that keeps it has three choices, and each one is
+wrong:
+
+- Report it as a table of the schema. `schema apply` of a declaration without
+  it plans `DROP TABLE` of the record, the shape
+  [ADR 0095](0095-a-read-reserves-the-seed-ledger.md) measured for the seed
+  ledger, and applying the plan loses what every repeatable migration last
+  applied. A declaration of a table of its name is compared with the record
+  and altered.
+- Report it under another purpose. The host's refusal of a declaration that
+  takes the name then names storage the table is not.
+- Leave it out of the read. A plan never drops it, but a declaration of a
+  table of its name plans a `CREATE TABLE` that the engine refuses part way
+  through a plan, where Ptah could have refused it before anything ran.
+
+The built-in engines have none of these problems: their readers leave
+`<revision table>_repeatable` out by name, beside the revision table and its
+log.
+
+So `ReservedObject.Purpose` gains `REPEATABLE`, under the two-way feature
+`schema.reserved-repeatable-record`. The record is the provider's own storage,
+as the revision table and the log are, so a read reports it the way it reports
+them, after the provider has checked the record's ownership and layout. The
+host leaves it out of every comparison and refuses a declaration of a table of
+its name with a message that names the record. The provider and each engine
+that keeps the record list the feature beside `sessions.repeatable-record`.
+
+The SDK enforces the negotiation on both transport boundaries:
+
+- `ValidateDescription` refuses the engine's feature without the provider's or
+  without the engine's `sessions.repeatable-record`.
+- `NegotiatedDescription` drops the engine's feature where negotiation takes
+  the record away, so the two stay together.
+- Inspection refuses a `REPEATABLE` reservation in a read that did not
+  negotiate the feature. A host that does not list it, which includes every
+  host built on an SDK older than contract 25.45, never receives the purpose,
+  and a provider reports the record to such a host as it did under 25.44.
+
+The SDK tests `TestReservedRepeatableRecord_HappyPath` and
+`TestReservedRepeatableRecord_FailurePath` in `provider-sdk/provider` cover
+each rule. The conformance suite's memory provider keeps no revision table and
+so no record, and does not exercise the purpose.
+
+Two alternatives were considered and rejected:
+
+- **Leave the record out by name on the host.** The host could drop a table
+  named `<revision table>_repeatable` from every provider read. The provider
+  owns the record's layout and its name, and a table of that name in a
+  provider's database could be the user's. ADR 0095 rejected the same
+  approach for the seed ledger.
+- **Reuse `LOG`.** Both tables sit beside the revision table, and the host
+  treats every purpose the same way in a comparison. The purpose is also the
+  noun a refusal names, and a refusal that calls the record the migration log
+  sends the reader to the wrong table.
