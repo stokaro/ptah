@@ -340,7 +340,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDBNote: "`ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL`",
 	},
 	"DS105": {
-		Name:    "integrity/drop-constraint",
+		Name:    "integrity/drop-untyped-constraint",
 		Summary: "an untyped DROP CONSTRAINT removes a data protection the SQL does not name",
 		YDB:     YDBNoSuchStatement,
 		YDBNote: "YDB has no named constraint to drop",
@@ -536,7 +536,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "PG302",
 	},
 	"PG303": {
-		Name:      "data-dependent/set-not-null",
+		Name:      "locking/set-not-null",
 		Summary:   "SET NOT NULL scans the table to validate existing rows",
 		AtlasCode: "PG303",
 	},
@@ -653,17 +653,17 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "MY102",
 	},
 	"MY110": {
-		Name:      "rewrite/remove-enum-member",
+		Name:      "rewrite/remove-enum-value",
 		Summary:   "removing an ENUM member copies the table, and a row still holding it fails the copy in strict mode",
 		AtlasCode: "MY110",
 	},
 	"MY111": {
-		Name:      "rewrite/reorder-enum-members",
+		Name:      "rewrite/reorder-enum-values",
 		Summary:   "reordering ENUM members renumbers every row and copies the table",
 		AtlasCode: "MY111",
 	},
 	"MY112": {
-		Name:      "rewrite/insert-enum-member",
+		Name:      "rewrite/insert-enum-value",
 		Summary:   "inserting an ENUM member before the end renumbers the members after it and copies the table",
 		AtlasCode: "MY112",
 	},
@@ -732,7 +732,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "MY135",
 	},
 	"LT101": {
-		Name:      "data-dependent/set-not-null",
+		Name:      "rewrite/set-not-null",
 		Summary:   "SQLite cannot enforce NOT NULL on existing nullable data without a rebuild",
 		AtlasCode: "LT101",
 	},
@@ -876,7 +876,7 @@ var sqlRuleMeta = map[string]ruleMeta{
 		Summary: "a name the server cuts to a name already in use where it refuses the second declaration",
 	},
 	"SQL001": {
-		Name:    "parse/syntax-error",
+		Name:    "correctness/syntax-error",
 		Summary: "the statement is malformed or opens with words no engine Ptah reads has, so no rule could inspect it",
 	},
 	"SQL002": {
