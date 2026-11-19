@@ -978,4 +978,11 @@ v0.29.5 ptah.run/core/ast
 # compare, and Comparison.ForeignKeyIgnoresStandaloneUniqueIndex described a
 # refusal SQLite does not make. Nothing else read it. Pre-v1, so no
 # compatibility is owed.
+#
+# A dialect's column grammar names the functions a default calls without
+# parentheses (ColumnGrammar.NiladicFunctions), which is what keeps Oracle's
+# DEFAULT SYSDATE an expression rather than the string 'SYSDATE'. The slice
+# field makes ColumnGrammar no longer comparable with ==, as the grammar's other
+# sections that hold lists already are; nothing in Ptah compares it by value.
+# Pre-v1, so no compatibility is owed.
 v0.32.0 ptah.run/core/platform/descriptor

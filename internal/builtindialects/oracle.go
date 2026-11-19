@@ -168,9 +168,29 @@ END;`,
 
 		// Grammar: how the shared DDL parser reads the engine's DDL.
 		// Oracle reserves INDEX in a table body (ORA-03050), has domains, and
-		// has a MODIFY that changes only the attributes it states.
+		// has a MODIFY that changes only the attributes it states. Oracle Free
+		// 23.26 takes each niladic function below as a default, written bare;
+		// it answers ORA-00904 to SESSIONTIMESTAMP, ROWID and ORA_ROWSCN, and
+		// ORA-00976 to ROWNUM and LEVEL. With an empty argument list it
+		// answers ORA-03077 to SYSDATE, CURRENT_DATE, USER, UID,
+		// ORA_INVOKING_USER and ORA_INVOKING_USERID, ORA-30088 to
+		// SYSTIMESTAMP, LOCALTIMESTAMP and CURRENT_TIMESTAMP, and ORA-04044
+		// to DBTIMEZONE, and calls SESSIONTIMEZONE().
 		Grammar: descriptor.Grammar{
-			Columns:    descriptor.ColumnGrammar{TimestampLocalTimeZone: true},
+			Columns: descriptor.ColumnGrammar{
+				TimestampLocalTimeZone: true,
+				CurrentTimeKeywords:    true,
+				NiladicFunctions: []string{
+					"SYSDATE", "SYSTIMESTAMP", "USER", "UID", "SESSIONTIMEZONE", "DBTIMEZONE",
+					"ORA_INVOKING_USER", "ORA_INVOKING_USERID",
+				},
+				EmptyCallFunctions: []string{
+					"SYSDATE", "CURRENT_DATE", "USER", "UID", "ORA_INVOKING_USER", "ORA_INVOKING_USERID",
+					"SYSTIMESTAMP", "LOCALTIMESTAMP", "CURRENT_TIMESTAMP", "DBTIMEZONE",
+				},
+				EmptyCallRefusal: "Oracle Free 23.26 calls it without parentheses and answers ORA-03077, " +
+					"ORA-30088 or ORA-04044 to an empty argument list",
+			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 			Statements: descriptor.StatementGrammar{UserTypes: true},

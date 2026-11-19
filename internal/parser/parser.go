@@ -3818,6 +3818,9 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 
 	// Check if it's a function call
 	if p.current.Type == lexer.TokenOperator && p.current.Value == "(" {
+		if err := p.refuseEmptyNiladicCall(value); err != nil {
+			return nil, err
+		}
 		return p.parseDefaultFunctionCall(start)
 	}
 
@@ -3832,6 +3835,10 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	}
 	// A precision such as CURRENT_TIMESTAMP(3) was already read as a call.
 	if p.isNiladicCurrentTimeKeyword(upperValue) {
+		return &ast.DefaultValue{Expression: value}, nil
+	}
+	// Read as a value, Oracle's SYSDATE would render as the string 'SYSDATE'.
+	if slices.Contains(p.target.grammar.Columns.NiladicFunctions, upperValue) {
 		return &ast.DefaultValue{Expression: value}, nil
 	}
 
@@ -3860,6 +3867,31 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 
 	// Regular identifier/keyword
 	return &ast.DefaultValue{Value: value, ValueSet: true}, nil
+}
+
+// refuseEmptyNiladicCall refuses name followed by an empty argument list,
+// with the parser at its opening parenthesis, where the dialect's descriptor
+// names name among [descriptor.ColumnGrammar.EmptyCallFunctions]. The refusal
+// names the bare spelling. A precision, as in SYSTIMESTAMP(3), passes.
+func (p *Parser) refuseEmptyNiladicCall(name string) error {
+	columns := p.target.grammar.Columns
+	if !slices.Contains(columns.EmptyCallFunctions, strings.ToUpper(name)) || !p.emptyArgumentListFollows() {
+		return nil
+	}
+	return ptaherr.At(p.current.Start, fmt.Errorf(
+		"%s() writes an empty argument list: write DEFAULT %s; %s", name, name, columns.EmptyCallRefusal))
+}
+
+// emptyArgumentListFollows reports whether the opening parenthesis at the
+// cursor closes before any argument, and leaves the parser where it is.
+func (p *Parser) emptyArgumentListFollows() bool {
+	scan := *p.lexer
+	for {
+		token := scan.NextToken()
+		if token.Type != lexer.TokenWhitespace && token.Type != lexer.TokenComment {
+			return token.MatchOperatorValue(")")
+		}
+	}
 }
 
 // isNiladicCurrentTimeKeyword keeps the SQL Server CURRENT_TIMESTAMP rule
