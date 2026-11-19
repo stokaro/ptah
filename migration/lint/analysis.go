@@ -590,6 +590,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 	// Validated above, so a second compile cannot fail here.
 	naming, _ := compileNamingConfig(opts.Naming)
 	opts.RuleConfigs = withNamingSeverity(opts.RuleConfigs, opts.Naming)
+	orderKeys := orderKeysOf(snapshot, dirFormat)
 	files := make([]File, 0, len(names))
 	for _, name := range names {
 		file, err := prepareFile(
@@ -610,6 +611,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 			registered,
 			naming,
 			repeatables,
+			orderKeys,
 		)
 		if err != nil {
 			return Analysis{}, err
@@ -618,7 +620,6 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		file.generatedAtStart = generatedAtStart[file.Version]
 		files = append(files, file)
 	}
-	keyAtlasFilesByPosition(files, snapshot, dirFormat)
 	markRunRefusals(files, snapshot, dirFormat, opts)
 	split, err := splitFiles(ctx, runtime, opts.Dialect, files)
 	if err != nil {
@@ -808,6 +809,7 @@ func prepareFile(
 	registered map[string]struct{},
 	naming *namingPolicy,
 	repeatables map[string]struct{},
+	orderKeys map[string]int64,
 ) (File, error) {
 	raw := sources[name]
 	base := path.Base(name)
@@ -829,16 +831,20 @@ func prepareFile(
 		atlasFormat = parsed.Format == migrationfile.DirFormatAtlas
 		repeatable = parsed.Repeatable
 	}
+	// The selection, the starting state and the dependents are keyed by the
+	// key the migrator runs the file under; pairing reads the number the name
+	// spells, which both halves of a migration share.
+	key := runKey(orderKeys, name, version)
 	file := File{
 		Target:          target,
 		Path:            path.Join(pathPrefix, name),
 		Name:            name,
 		Source:          raw,
 		SQL:             migrationfile.SQLText(raw),
-		Version:         version,
+		Version:         key,
 		RevisionVersion: revisionVersion,
 		Repeatable:      repeatable,
-		Selected:        selectionIncludes(selection, name, version, revisionVersion, hasVersion, repeatables),
+		Selected:        selectionIncludes(selection, name, key, revisionVersion, hasVersion, repeatables),
 		Direction:       direction,
 		// The migrator executes whatever its parser classifies as up, so
 		// lint must follow it; the suffix check keeps hazard scanning for
@@ -850,8 +856,8 @@ func prepareFile(
 		dialect:        dialect,
 		registered:     registered,
 		naming:         naming,
-		baseline:       baseline[version],
-		dependents:     dependents[version],
+		baseline:       baseline[key],
+		dependents:     dependents[key],
 	}
 	if compatibility == CompatibilityProfileAtlas {
 		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw)
@@ -1174,25 +1180,34 @@ func numericTableRefusal(file migrationfile.File) string {
 	return refusal
 }
 
-// keyAtlasFilesByPosition gives each Atlas file of a directory whose files run
-// under their positions the key the migrator runs it under, read with the
-// discovery the migrator reads the directory with. A starting schema the replay
-// reads is keyed by that key, so without it v1_x.sql, whose name spells no
-// number, would ask for no starting schema and report no missing one. A
-// directory discovery refuses keeps the versions the names spell; the
-// migrator refuses it before anything runs.
-func keyAtlasFilesByPosition(files []File, fsys fs.FS, format migrationfile.DirFormat) {
+// runKey is the key orderKeys gives name, or version, the number its name
+// spells, where discovery gave it none.
+func runKey(orderKeys map[string]int64, name string, version int64) int64 {
+	if key, ok := orderKeys[name]; ok {
+		return key
+	}
+	return version
+}
+
+// orderKeysOf returns, by path, the key the migrator runs each file of the
+// directory under, [migrationfile.File.OrderKey], read with the discovery the
+// migrator reads the directory with. The apply gate selects pending files by
+// that key, and a starting schema the replay reads is keyed by it. It differs
+// from the number a name spells for R__x.sql in the Atlas format, which runs
+// above every numbered file, and for every Atlas file of a directory keyed by
+// position, such as one holding v1_x.sql. Keyed by the number it spells,
+// R__x.sql would be version 0, which no pending set holds, so up would run its
+// statements unjudged; and v1_x.sql would ask for no starting schema and
+// report no missing one. A directory discovery refuses has no keys and keeps
+// the versions the names spell; the migrator refuses it before anything runs.
+func orderKeysOf(fsys fs.FS, format migrationfile.DirFormat) map[string]int64 {
 	discovered, err := migrationfile.Discover(fsys, format)
-	if err != nil || !migrationfile.AtlasKeyedByPosition(discovered) {
-		return
+	if err != nil {
+		return nil
 	}
 	keys := make(map[string]int64, len(discovered))
 	for _, file := range discovered {
 		keys[file.Path] = file.OrderKey
 	}
-	for i := range files {
-		if key, ok := keys[files[i].Name]; ok {
-			files[i].Version = key
-		}
-	}
+	return keys
 }
