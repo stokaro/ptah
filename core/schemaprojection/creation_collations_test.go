@@ -27,13 +27,14 @@ func collationCreation() (schemaprojection.TableCreationRequest, schemaprojectio
 	}
 	result := schemaprojection.TableCreationResult{Complete: true, Tables: []schemaprojection.TableCreation{{
 		Subject: subject, Collation: "utf8mb4_bin", ColumnCollations: map[string]string{"name": "utf8mb4_bin"},
+		ColumnTypes: map[string]string{"code": "varbinary(8)"},
 	}}}
 	return request, result
 }
 
 // TestAcceptTableCreations_KeepsPredictedCollations proves an accepted result
-// carries the predicted collations in its own copy, and that a request clone
-// owns the server facts it carries.
+// carries the predicted collations and stored types in its own copy, and that
+// a request clone owns the server facts it carries.
 func TestAcceptTableCreations_KeepsPredictedCollations(t *testing.T) {
 	c := qt.New(t)
 	request, result := collationCreation()
@@ -43,8 +44,11 @@ func TestAcceptTableCreations_KeepsPredictedCollations(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(accepted.Tables[0].Collation, qt.Equals, "utf8mb4_bin")
 	c.Assert(accepted.Tables[0].ColumnCollations, qt.DeepEquals, map[string]string{"name": "utf8mb4_bin"})
+	c.Assert(accepted.Tables[0].ColumnTypes, qt.DeepEquals, map[string]string{"code": "varbinary(8)"})
 	result.Tables[0].ColumnCollations["name"] = "changed"
+	result.Tables[0].ColumnTypes["code"] = "changed"
 	c.Assert(accepted.Tables[0].ColumnCollations["name"], qt.Equals, "utf8mb4_bin")
+	c.Assert(accepted.Tables[0].ColumnTypes["code"], qt.Equals, "varbinary(8)")
 	clone := request.Clone()
 	clone.CharsetDefaultCollations["utf8mb4"] = "changed"
 	clone.CharsetAliases["utf8"] = "changed"
@@ -69,6 +73,31 @@ func TestAcceptTableCreations_RefusesPredictedCollations(t *testing.T) {
 			c := qt.New(t)
 			request, result := collationCreation()
 			result.Tables[0].ColumnCollations = row.collations
+
+			accepted, err := schemaprojection.AcceptTableCreations(request, result)
+
+			c.Assert(err, qt.ErrorIs, schemaprojection.ErrInvalid)
+			c.Assert(err, qt.ErrorMatches, row.wantErr)
+			c.Assert(accepted, qt.DeepEquals, schemaprojection.TableCreationResult{})
+		})
+	}
+}
+
+func TestAcceptTableCreations_RefusesPredictedTypes(t *testing.T) {
+	for _, row := range []struct {
+		name    string
+		types   map[string]string
+		wantErr string
+	}{
+		{name: "an undeclared column", types: map[string]string{"other": "varbinary(8)"},
+			wantErr: `.*type for undeclared column "other"`},
+		{name: "an empty type", types: map[string]string{"code": ""},
+			wantErr: `.*empty type for column "code"`},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			request, result := collationCreation()
+			result.Tables[0].ColumnTypes = row.types
 
 			accepted, err := schemaprojection.AcceptTableCreations(request, result)
 

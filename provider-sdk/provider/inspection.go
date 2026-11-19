@@ -87,7 +87,8 @@ func InspectionValues(description *protocol.Description, request *protocol.Inspe
 func validateInspectedTables(description *protocol.Description, engine *protocol.Engine, snapshot *protocol.Schema) error {
 	for _, check := range []func(*protocol.Description, *protocol.Engine, *protocol.Schema) error{
 		validateInspectedColumns, validateInspectedPrimaryKeys, validateInspectedIndexes, validateInspectedIndexNulls, validateInspectedConstraints,
-		validateUnreadTables, validateInspectedSeedReservations, validateInspectedIndexPredicates, validateInspectedRemovalBlockers,
+		validateUnreadTables, validateInspectedSeedReservations, validateInspectedRepeatableRecordReservations, validateInspectedIndexPredicates,
+		validateInspectedRemovalBlockers,
 	} {
 		if err := check(description, engine, snapshot); err != nil {
 			return err

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -38,17 +39,20 @@ table "t" {
 // schemaFileCollationRows are two schema files that differ only in a
 // collation a server decides: the table's default collation, which the
 // column n takes, written in SQL and in HCL, the same with three columns
-// whose names sort in another order than the table holds them, and the
-// character set of a column that names no collation. community is the plan
-// the pinned community binary prints, by engine, and compat the plan
-// ptah-compat prints; both name the same change, and the binary spells the
-// column's collation where ptah-compat spells its character set.
+// whose names sort in another order than the table holds them, the
+// character set of a column that names no collation, and a table's character
+// set from utf8 to utf8mb4. community is the plan the pinned community binary
+// prints, by engine, and compat the plan ptah-compat prints; both name the
+// same change, and the binary spells the column's collation where ptah-compat
+// spells its character set. MariaDB 11.8 and 12.3 give utf8mb3 and utf8mb4
+// UCA 14.0.0 collations, which they list with no character set, so the
+// table's change is written as the collation alone.
 var schemaFileCollationRows = []struct {
 	name      string
 	file      string
 	from, to  string
 	community map[string][]string
-	compat    []string
+	compat    map[string][]string
 }{
 	{
 		name: "a table collation in SQL",
@@ -59,7 +63,10 @@ var schemaFileCollationRows = []struct {
 			"MySQL":   {"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
 			"MariaDB": {"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
 		},
-		compat: []string{"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+		compat: map[string][]string{
+			"MySQL":   {"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+			"MariaDB": {"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+		},
 	},
 	{
 		name: "a table collation in HCL",
@@ -70,7 +77,10 @@ var schemaFileCollationRows = []struct {
 			"MySQL":   {"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
 			"MariaDB": {"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
 		},
-		compat: []string{"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+		compat: map[string][]string{
+			"MySQL":   {"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+			"MariaDB": {"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+		},
 	},
 	{
 		name: "columns in the order the table holds them",
@@ -83,7 +93,10 @@ var schemaFileCollationRows = []struct {
 			"MySQL":   {heldOrderPlan},
 			"MariaDB": {heldOrderPlan},
 		},
-		compat: []string{heldOrderPlan},
+		compat: map[string][]string{
+			"MySQL":   {heldOrderPlan},
+			"MariaDB": {heldOrderPlan},
+		},
 	},
 	{
 		name: "a column character set",
@@ -94,7 +107,24 @@ var schemaFileCollationRows = []struct {
 			"MySQL":   {"ALTER TABLE `t` MODIFY COLUMN `c` varchar(20) NULL COLLATE utf8mb4_0900_ai_ci;"},
 			"MariaDB": {"ALTER TABLE `t` MODIFY COLUMN `c` varchar(20) NULL COLLATE utf8mb4_uca1400_ai_ci;"},
 		},
-		compat: []string{"ALTER TABLE `t` MODIFY COLUMN `c` varchar(20) CHARACTER SET utf8mb4 NULL;"},
+		compat: map[string][]string{
+			"MySQL":   {"ALTER TABLE `t` MODIFY COLUMN `c` varchar(20) CHARACTER SET utf8mb4 NULL;"},
+			"MariaDB": {"ALTER TABLE `t` MODIFY COLUMN `c` varchar(20) CHARACTER SET utf8mb4 NULL;"},
+		},
+	},
+	{
+		name: "a table character set read as utf8",
+		file: "schema.sql",
+		from: "CREATE TABLE t (id int PRIMARY KEY, n varchar(20) NULL) DEFAULT CHARSET=utf8;\n",
+		to:   "CREATE TABLE t (id int PRIMARY KEY, n varchar(20) NULL) DEFAULT CHARSET=utf8mb4;\n",
+		community: map[string][]string{
+			"MySQL":   {"ALTER TABLE `t` CHARSET utf8mb4, COLLATE utf8mb4_0900_ai_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+			"MariaDB": {"ALTER TABLE `t` COLLATE utf8mb4_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+		},
+		compat: map[string][]string{
+			"MySQL":   {"ALTER TABLE `t` CHARSET utf8mb4, COLLATE utf8mb4_0900_ai_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+			"MariaDB": {"ALTER TABLE `t` COLLATE utf8mb4_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
+		},
 	},
 }
 
@@ -134,7 +164,7 @@ func TestCompatSchemaDiffComparesMySQLCollationsOfTwoFilesE2E(t *testing.T) {
 					"schema", "diff", "--from", from, "--to", to, "--dev-url", devURL)
 
 				c.Assert(diffed.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", diffed.Stdout, diffed.Stderr))
-				c.Assert(plannedAlters(diffed.Stdout, "app"), qt.DeepEquals, row.compat, qt.Commentf("%s", diffed.Stdout))
+				c.Assert(plannedAlters(diffed.Stdout, "app"), qt.DeepEquals, row.compat[engine.name], qt.Commentf("%s", diffed.Stdout))
 			})
 		}
 	}
@@ -188,6 +218,49 @@ func TestSchemaDiffOfAMySQLFileWithItselfE2E(t *testing.T) {
 				c.Assert(native.Stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", community))
 				c.Assert(string(community), qt.Equals, "Schemas are synced, no changes to be made.\n")
+			})
+		}
+	}
+}
+
+// tableCollationFile names a table collation that two columns take, a third
+// column that names its own, and a fourth of another type that holds one.
+const tableCollationFile = "CREATE TABLE t (id int PRIMARY KEY, a varchar(10) NULL, b varchar(10) COLLATE utf8mb4_bin NULL, " +
+	"e text NULL, f char(3) NULL) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;\n"
+
+// TestSchemaDiffOfAMySQLFileWithTheDatabaseBuiltFromItE2E diffs a schema file
+// with a database the server built from it, through URLs spelled with each
+// MySQL-family scheme, on ptah-compat and the native binary. A scheme cannot
+// tell MySQL from MariaDB, so on one of the two servers the file is first read
+// for the other dialect; it is read again for the dev server's, which keeps
+// the table collation, and the plan is empty. An inspection of the file on the
+// dev database reports the table's collation and the three columns that take
+// it.
+func TestSchemaDiffOfAMySQLFileWithTheDatabaseBuiltFromItE2E(t *testing.T) {
+	for _, engine := range inheritedCollationEngines {
+		for _, scheme := range []string{"mysql", "mariadb"} {
+			t.Run(engine.name+"/"+scheme, func(t *testing.T) {
+				c := qt.New(t)
+				scratch := newMySQLFamilyScratch(c, engine.engine)
+				_, built := scratch.builtFrom(c, tableCollationFile)
+				_, devURL := scratch.database(c, "collation_dev")
+				schema := filepath.Join(c.TempDir(), "schema.sql")
+				c.Assert(os.WriteFile(schema, []byte(tableCollationFile), 0o600), qt.IsNil)
+				dev := scheme + strings.TrimPrefix(devURL, "mysql")
+				args := []string{"schema", "diff", "--from", "file://" + filepath.ToSlash(schema),
+					"--to", scheme + strings.TrimPrefix(built, "mysql"), "--dev-url", dev}
+
+				compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: c.TempDir()}, args...)
+				native := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()}, args...)
+				inspected := clirun.Run(c, clirun.Compat, clirun.Options{Dir: c.TempDir()},
+					"schema", "inspect", "--url", "file://"+filepath.ToSlash(schema), "--dev-url", dev)
+
+				c.Assert(compat.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
+				c.Assert(compat.Stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
+				c.Assert(native.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", native.Stdout, native.Stderr))
+				c.Assert(native.Stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
+				c.Assert(inspected.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", inspected.Stdout, inspected.Stderr))
+				c.Assert(strings.Count(inspected.Stdout, `collate = "utf8mb4_unicode_ci"`), qt.Equals, 4, qt.Commentf("%s", inspected.Stdout))
 			})
 		}
 	}
@@ -266,6 +339,65 @@ func TestSchemaApplyKeepsABinaryCharacterSetColumnE2E(t *testing.T) {
 			c.Assert(plannedAlters(runPtahNative(c, append(args, "--dry-run")...), database), qt.DeepEquals,
 				[]string{"ALTER TABLE `b` MODIFY COLUMN `v` varchar(20) CHARACTER SET binary;"})
 		})
+	}
+}
+
+// binaryCharsetFile and binaryTypeFile declare one table a server stores the
+// same way: MySQL and MariaDB store a character column of the binary
+// character set as the binary type of the same length. longerBinaryFile
+// differs from both in one length.
+const (
+	binaryCharsetFile = "CREATE TABLE t (id int PRIMARY KEY, c varchar(10) CHARACTER SET binary NULL, " +
+		"d text CHARACTER SET binary NULL, e char(4) CHARACTER SET binary NULL);\n"
+	binaryTypeFile   = "CREATE TABLE t (id int PRIMARY KEY, c varbinary(10) NULL, d blob NULL, e binary(4) NULL);\n"
+	longerBinaryFile = "CREATE TABLE t (id int PRIMARY KEY, c varbinary(20) NULL, d blob NULL, e binary(4) NULL);\n"
+)
+
+// TestSchemaDiffOfBinaryCharacterSetFilesE2E diffs two schema files a server
+// stores the same way, in both directions, on ptah-compat, the native binary
+// and the pinned community binary. The --from file is projected as a read of
+// the tables it creates reports them, with the binary type a binary character
+// column is stored as, so each direction is synced. A length that differs is
+// still a change.
+func TestSchemaDiffOfBinaryCharacterSetFilesE2E(t *testing.T) {
+	reference := atlasReferenceBinary(t)
+	rows := []struct {
+		name     string
+		from, to string
+		native   []string
+		compat   []string
+	}{
+		{name: "a binary character set to the binary type", from: binaryCharsetFile, to: binaryTypeFile},
+		{name: "the binary type to a binary character set", from: binaryTypeFile, to: binaryCharsetFile},
+		{
+			name:   "a binary character set to a longer binary type",
+			from:   binaryCharsetFile,
+			to:     longerBinaryFile,
+			native: []string{"ALTER TABLE `t` MODIFY COLUMN `c` varbinary(20);"},
+			compat: []string{"ALTER TABLE `t` MODIFY COLUMN `c` varbinary(20) NULL;"},
+		},
+	}
+	for _, engine := range inheritedCollationEngines {
+		for _, row := range rows {
+			t.Run(engine.name+"/"+row.name, func(t *testing.T) {
+				c := qt.New(t)
+				scratch := newMySQLFamilyScratch(c, engine.engine)
+				_, devURL := scratch.database(c, "binary_dev")
+				from, to := writeSchemaFiles(c, "schema.sql", row.from, row.to)
+				args := []string{"schema", "diff", "--from", from, "--to", to}
+
+				native := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()}, append(args, "--dev-url", devURL)...)
+				compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: c.TempDir()}, append(args, "--dev-url", devURL)...)
+				community, err := exec.CommandContext(c.Context(), reference, append(args, "--dev-url", referenceMySQLURL(c, devURL))...).CombinedOutput() // #nosec G204 G702 -- operator-provided pinned reference binary
+
+				c.Assert(native.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", native.Stdout, native.Stderr))
+				c.Assert(plannedAlters(native.Stdout, ""), qt.DeepEquals, row.native, qt.Commentf("%s", native.Stdout))
+				c.Assert(compat.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
+				c.Assert(plannedAlters(compat.Stdout, ""), qt.DeepEquals, row.compat, qt.Commentf("%s", compat.Stdout))
+				c.Assert(err, qt.IsNil, qt.Commentf("%s", community))
+				c.Assert(plannedAlters(string(community), ""), qt.DeepEquals, row.compat, qt.Commentf("%s", community))
+			})
+		}
 	}
 }
 

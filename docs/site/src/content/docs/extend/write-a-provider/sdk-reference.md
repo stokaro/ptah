@@ -103,6 +103,8 @@ Transactions, revision storage, the migration log and locks back the migration c
 | --- | --- | --- | --- |
 | `sessions.transactions` | `Transactions` | [Session transactions](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#session-transactions) | — |
 | `sessions.history` | `History` | [Revision storage](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#revision-storage) | — |
+| `sessions.repeatable-record` | `Repeatables` | [Repeatable migration record](https://github.com/stokaro/ptah/blob/provider-sdk/v0.43.0/provider-sdk/README.md#repeatable-migration-record) | 0125 |
+| `schema.reserved-repeatable-record` | — | [Reserved repeatable migration record](https://github.com/stokaro/ptah/blob/provider-sdk/v0.44.0/provider-sdk/README.md#reserved-repeatable-migration-record) | 0125 |
 | `sessions.migration-metadata` | `Metadata` | [Migration logs and tags](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#migration-logs-and-tags) | — |
 | `sessions.locks` | `Locks` | [Session-owned locks](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#session-owned-locks) | — |
 | `sessions.statements` | `Statements` | [Operator statements](https://github.com/stokaro/ptah/blob/provider-sdk/v0.40.0/provider-sdk/README.md#operator-statements) | 0038 |

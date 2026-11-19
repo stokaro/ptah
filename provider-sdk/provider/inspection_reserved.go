@@ -69,7 +69,8 @@ func validateReservedObject(engine string, record *protocol.ReservedObject) erro
 		return fmt.Errorf("%w: invalid reserved object identity", ErrProtocol)
 	}
 	switch record.GetPurpose() {
-	case protocol.ReservedObject_HISTORY, protocol.ReservedObject_LOCK, protocol.ReservedObject_LOG, protocol.ReservedObject_TAG, protocol.ReservedObject_SEEDS:
+	case protocol.ReservedObject_HISTORY, protocol.ReservedObject_LOCK, protocol.ReservedObject_LOG, protocol.ReservedObject_TAG, protocol.ReservedObject_SEEDS,
+		protocol.ReservedObject_REPEATABLE:
 	default:
 		return fmt.Errorf("%w: invalid reserved object purpose", ErrProtocol)
 	}

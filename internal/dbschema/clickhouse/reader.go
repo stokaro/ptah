@@ -493,6 +493,9 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 			IsNullable:         nullable,
 			IsPrimaryKey:       inPrimaryKey != 0,
 			OrdinalPosition:    position,
+			// Without the comment a column that declares one differs from
+			// its own table on every comparison.
+			Comment: comment,
 		}
 		// ClickHouse columns can have several flavours of default
 		// (DEFAULT, MATERIALIZED, ALIAS, EPHEMERAL). Only the plain DEFAULT

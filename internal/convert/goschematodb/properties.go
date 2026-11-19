@@ -157,18 +157,23 @@ func projectedFacetCoverage(source schemaext.Coverage, slots []creationFacetSlot
 	return schemaext.NewCoverage(schemaext.Desired, kinds, subjects)
 }
 
-// applyPredictedCollations sets the default collation and the inherited
-// column collations the target's creation projection predicts, which a read
-// of the created table reports. A column's Collate stays empty, as a read
-// reports it for a column that takes the collation it inherits.
+// applyPredictedCollations sets the default collation, the inherited column
+// collations and the stored column types the target's creation projection
+// predicts, which a read of the created table reports. A column's Collate
+// stays empty, as a read reports it for a column that takes the collation it
+// inherits.
 func applyPredictedCollations(db *catalog.Database, tables []schemaprojection.TableCreation) {
 	for i, table := range tables {
 		if table.Collation != "" {
 			db.Tables[i].Collate = table.Collation
 		}
 		for j := range db.Tables[i].Columns {
-			if collation, found := table.ColumnCollations[db.Tables[i].Columns[j].Name]; found {
-				db.Tables[i].Columns[j].EffectiveCollate = collation
+			column := &db.Tables[i].Columns[j]
+			if collation, found := table.ColumnCollations[column.Name]; found {
+				column.EffectiveCollate = collation
+			}
+			if stored, found := table.ColumnTypes[column.Name]; found {
+				column.DataType, column.ColumnType = stored, stored
 			}
 		}
 	}

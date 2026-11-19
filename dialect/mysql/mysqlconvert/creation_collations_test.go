@@ -80,3 +80,25 @@ func TestCreationService_PredictsNoCollationWithoutDefaults(t *testing.T) {
 	c.Assert(result.Tables[0].Collation, qt.Equals, "")
 	c.Assert(result.Tables[0].ColumnCollations, qt.IsNil)
 }
+
+// TestCreationService_PredictsTheStoredTypes predicts the type a read of the
+// created table reports for each character column of the binary character
+// set, the binary type of the same length, and leaves the other columns out.
+func TestCreationService_PredictsTheStoredTypes(t *testing.T) {
+	for _, target := range []string{"mysql", "mariadb"} {
+		t.Run(target, func(t *testing.T) {
+			c := qt.New(t)
+			request := collationCreation(target, "", nil)
+			binary := must.Must(schemaext.NewFacets(&mysqlschema.DesiredColumnSettings{Charset: "binary"}))
+			request.Tables[0].Declaration.Fields = append(request.Tables[0].Declaration.Fields,
+				schemamodel.Field{Name: "v", Type: "varchar(10)", Facets: binary},
+				schemamodel.Field{Name: "b", Type: "text", Facets: binary})
+
+			result, err := mysqlconvert.CreationService{}.ProjectTableCreations(t.Context(), request)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(result.Tables, qt.HasLen, 1)
+			c.Assert(result.Tables[0].ColumnTypes, qt.DeepEquals, map[string]string{"v": "varbinary(10)", "b": "blob"})
+		})
+	}
+}
