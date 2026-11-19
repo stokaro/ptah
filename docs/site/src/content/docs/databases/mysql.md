@@ -609,7 +609,10 @@ SQL:
   `schema apply`, its declared rows, `--dry-run`, and what a dev database
   builds for `schema diff` and for the `--dev-url` rehearsal. Text Ptah writes
   for later is written for the default `sql_mode` whatever the session's: a
-  migration file, a saved plan file and the statements `schema diff` prints.
+  migration file from `migrations generate`, `migrations data`,
+  `migrations checkpoint` or `ptah-compat migrate diff`, a saved plan file, and
+  the SQL that `schema diff`, `migrations plan`, `schema compare`, `db read` and
+  `schema inspect` print.
 - SQL a user wrote is sent byte for byte: a view or routine body from a schema
   file, the plan's SQL after `--edit`, and a migration file. `schema apply`
   cuts the `--edit` text into statements the way the session reads it, so the
@@ -627,9 +630,10 @@ SQL:
   without a backslash runs on either session.
 - `ptah-compat` writes these literals the same way, so on a
   `NO_BACKSLASH_ESCAPES` session it stores the declared value. The community
-  binary writes each backslash doubled on every session, which stores two
-  where the declaration holds one. We are stricter here, deliberately: that
-  spelling changes the data the user declared.
+  binary stores four backslashes where the declaration holds one (measured
+  with the community binary v1.3.0 and v1.4.0). We are stricter here,
+  deliberately: that spelling changes the data the user declared; see
+  [Compatibility differences](../../atlas/retained-divergences/#a-backslash-on-a-no_backslash_escapes-session).
 
 ## Table options
 

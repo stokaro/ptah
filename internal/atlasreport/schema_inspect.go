@@ -22,6 +22,7 @@ import (
 	"ptah.run/core/schemaproperties"
 	"ptah.run/dialect/mysql/mysqlschema"
 	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/dbmlrender"
 	"ptah.run/internal/facetsplit"
 	"ptah.run/internal/rundiag"
@@ -569,8 +570,10 @@ func (r *SchemaInspectReport) MarshalSQL(indent ...string) (string, error) {
 		}
 		return NewSchemaDiff(SchemaDiffOptions{Dialect: r.info.Dialect, Changes: changes}).MarshalSQL(indent...)
 	}
+	// The SQL is printed and run later, on a session nobody knows yet, so it
+	// is written for the default sql_mode; see [backslashmode.ForLater].
 	rendered, err := renderer.RenderSchema(r.ctx, r.runtime, renderer.SchemaRequest{
-		Target: r.info.Dialect, Schema: r.sqlSource(), Capabilities: r.info.Capabilities,
+		Target: r.info.Dialect, Schema: r.sqlSource(), Capabilities: backslashmode.ForLater(r.info.Capabilities),
 		Identifiers: r.info.IdentifierSemantics, DatabasePath: r.databasePath,
 	})
 	if err != nil {

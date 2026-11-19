@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/planstyle"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -166,8 +167,11 @@ func planCreation(
 	if !compared.HasChanges() {
 		return nil, nil
 	}
+	// The plan is printed as the inspected database's SQL and run later, on a
+	// session nobody knows yet, so it is written for the default sql_mode; see
+	// [backslashmode.ForLater].
 	changes, plan, err := planChanges(ctx, runtime, compared, info.Dialect, planext.Options{
-		Capabilities: info.Capabilities,
+		Capabilities: backslashmode.ForLater(info.Capabilities),
 		Statements:   planstyle.Statements,
 		Shape:        planext.StatementShapeCatalog,
 	})

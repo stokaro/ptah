@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -595,5 +596,153 @@ func TestSchemaDiffPrintsDefaultModeLiteralsE2E(t *testing.T) {
 			c.Assert(diff.Stdout, qt.Contains, `COMMENT 'c\\d'`, historyComment(diff))
 			c.Assert(diff.Stdout, qt.Contains, `enum('x\\y','z')`, historyComment(diff))
 		})
+	}
+}
+
+// TestMigrationsDataWritesDefaultModeLiteralsE2E generates a data migration
+// from declared rows whose values hold a backslash, one of them last and one
+// before a quote and a semicolon, through a session under
+// NO_BACKSLASH_ESCAPES, and runs it up through a session under the default
+// sql_mode. The migration is run later, by a session the generator cannot
+// name, so it is written for the default sql_mode: the database stores the
+// characters the rows declare.
+func TestMigrationsDataWritesDefaultModeLiteralsE2E(t *testing.T) {
+	for _, row := range noBackslashEscapesEngines {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := mysqlFamilyScratchURL(c, row.engine, "data_rows")
+			root := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(backslashRowsEntities), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(root, "paths.yaml"),
+				[]byte("- name: 'C:\\temp\\x'\n  note: 'a\\b'\n- name: 'q'\n  note: 'it\\''s;x'\n- name: 'z'\n  note: 'x\\'\n"), 0o600), qt.IsNil)
+			dir := filepath.Join(c.TempDir(), "migrations")
+
+			created := runPtahIn(c, "schema", "apply", "--db-url", database, "--schema-file",
+				writeNoBackslashEscapesSchema(c, "CREATE TABLE paths (name varchar(40) PRIMARY KEY, note varchar(40) NOT NULL);\n"), "--auto-approve")
+			generated := runPtahIn(c, "migrations", "data", "--db-url", withSQLMode(c, database, noBackslashEscapesMode), "--root-dir", root,
+				"--migrations-dir", dir)
+			up := runPtahIn(c, "migrations", "up", "--db-url", database, "--migrations-dir", dir)
+
+			c.Assert(created.ExitCode, qt.Equals, 0, historyComment(created))
+			c.Assert(generated.ExitCode, qt.Equals, 0, historyComment(generated))
+			c.Assert(up.ExitCode, qt.Equals, 0, historyComment(up))
+			c.Assert(readNoBackslashEscapes(c, database, backslashRowsRead), qt.Equals, "433A5C74656D705C78:615C62,71:69745C27733B78,7A:785C")
+		})
+	}
+}
+
+// backslashRowsMigration creates paths and inserts rows whose values hold a
+// backslash, spelled for a session under NO_BACKSLASH_ESCAPES. A migration
+// cut for that session runs only without a transaction.
+const backslashRowsMigration = "-- atlas:txmode none\n\n" +
+	"CREATE TABLE paths (name varchar(40) PRIMARY KEY, note varchar(40) NOT NULL);\n" +
+	"INSERT INTO paths VALUES ('C:\\temp', 'a\\b');\n"
+
+// TestMigrationsCheckpointWritesDefaultModeDataRowsE2E checkpoints a
+// directory whose rows hold a backslash, replayed into a shadow database
+// through a session under NO_BACKSLASH_ESCAPES, and bootstraps a database
+// from the checkpoint through a session under the default sql_mode. The
+// checkpoint is run later, by a session the generator cannot name, so its rows
+// are written for the default sql_mode: the database stores the characters
+// the shadow read.
+func TestMigrationsCheckpointWritesDefaultModeDataRowsE2E(t *testing.T) {
+	for _, row := range noBackslashEscapesEngines {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_paths.up.sql"), []byte(backslashRowsMigration), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_paths.down.sql"), []byte("DROP TABLE paths;\n"), 0o600), qt.IsNil)
+			shadow := withSQLMode(c, mysqlFamilyScratchURL(c, row.engine, "shadow"), noBackslashEscapesMode)
+			database := mysqlFamilyScratchURL(c, row.engine, "bootstrapped")
+
+			checkpoint := runPtahIn(c, "migrations", "checkpoint", "--shadow-db", shadow, "--migrations-dir", dir, "--data-table", "paths")
+			up := runPtahIn(c, "migrations", "up", "--db-url", database, "--migrations-dir", dir)
+
+			c.Assert(checkpoint.ExitCode, qt.Equals, 0, historyComment(checkpoint))
+			c.Assert(up.ExitCode, qt.Equals, 0, historyComment(up))
+			c.Assert(readNoBackslashEscapes(c, database, backslashRowsRead), qt.Equals, "433A5C74656D70:615C62")
+		})
+	}
+}
+
+// backslashLiteralRead reads the default of notes.a from an inserted row, the
+// comment of notes.a and the type of notes.e, in hexadecimal.
+const backslashLiteralRead = "SELECT CONCAT_WS(',', HEX(a), " +
+	"(SELECT HEX(COLUMN_COMMENT) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notes' AND COLUMN_NAME = 'a'), " +
+	"(SELECT HEX(COLUMN_TYPE) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notes' AND COLUMN_NAME = 'e')) FROM notes"
+
+// TestCompatMigrateDiffWritesDefaultModeLiteralsE2E writes a migration file
+// with ptah-compat from a schema file whose literals hold a backslash,
+// planned on a dev database whose session is under NO_BACKSLASH_ESCAPES, and
+// applies it through a session under the default sql_mode. The file is run
+// later, by a session the diff cannot name, so it is written for the default
+// sql_mode: the database stores the characters the schema file declares.
+func TestCompatMigrateDiffWritesDefaultModeLiteralsE2E(t *testing.T) {
+	for _, row := range noBackslashEscapesEngines {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := "file://" + filepath.ToSlash(filepath.Join(c.TempDir(), "migrations"))
+			dev := withSQLMode(c, mysqlFamilyScratchURL(c, row.engine, "dev"), noBackslashEscapesMode)
+			database := mysqlFamilyScratchURL(c, row.engine, "diffed")
+
+			diff := clirun.Run(c, clirun.Compat, clirun.Options{Dir: c.TempDir()}, "migrate", "diff", "--dir", dir,
+				"--to", "file://"+writeNoBackslashEscapesSchema(c, backslashLiteralSchema), "--dev-url", dev)
+			applied := clirun.Run(c, clirun.Compat, clirun.Options{Dir: c.TempDir()}, "migrate", "apply", "--dir", dir, "-u", database)
+
+			c.Assert(diff.ExitCode, qt.Equals, 0, historyComment(diff))
+			c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
+			c.Assert(insertDefaultsAndRead(c, database, backslashLiteralRead), qt.Equals, "615C62,635C64,656E756D2827785C5C79272C277A2729")
+		})
+	}
+}
+
+// printedSQLCommands are commands that print SQL a reader runs later, each with
+// the binary that runs it and whether the database it reads holds the table
+// already. {db} is that database.
+var printedSQLCommands = []struct {
+	name   string
+	binary clirun.Target
+	built  bool
+	args   []string
+}{
+	{name: "migrations plan", binary: clirun.Ptah, args: []string{"migrations", "plan", "--db-url", "{db}", "--schema-file", "{schema}"}},
+	{name: "schema compare", binary: clirun.Ptah, args: []string{"schema", "compare", "--db-url", "{db}", "--schema-file", "{schema}"}},
+	{name: "db read", binary: clirun.Ptah, built: true, args: []string{"db", "read", "--db-url", "{db}"}},
+	{name: "schema inspect", binary: clirun.Ptah, built: true, args: []string{"schema", "inspect", "--db-url", "{db}", "--format", "sql"}},
+	{name: "compat schema inspect", binary: clirun.Compat, built: true, args: []string{"schema", "inspect", "-u", "{db}", "--format", "{{ sql . }}"}},
+}
+
+// TestPrintedSQLIsWrittenForTheDefaultModeE2E runs each of
+// [printedSQLCommands] through a session under NO_BACKSLASH_ESCAPES, against a
+// database that is empty or built from a schema file whose literals hold a
+// backslash. The SQL is run later, by a session the command cannot name, so it
+// is written for the default sql_mode, with each backslash doubled.
+func TestPrintedSQLIsWrittenForTheDefaultModeE2E(t *testing.T) {
+	for _, engine := range noBackslashEscapesEngines {
+		for _, command := range printedSQLCommands {
+			t.Run(engine.name+"/"+command.name, func(t *testing.T) {
+				c := qt.New(t)
+				databases := map[bool]func() string{
+					false: func() string { return mysqlFamilyScratchURL(c, engine.engine, "printed") },
+					true: func() string {
+						_, database := newMySQLFamilyScratch(c, engine.engine).builtFrom(c, backslashLiteralSchema)
+						return database
+					},
+				}
+				replacer := strings.NewReplacer("{db}", withSQLMode(c, databases[command.built](), noBackslashEscapesMode),
+					"{schema}", writeNoBackslashEscapesSchema(c, backslashLiteralSchema))
+				args := make([]string, 0, len(command.args))
+				for _, arg := range command.args {
+					args = append(args, replacer.Replace(arg))
+				}
+
+				printed := clirun.Run(c, command.binary, clirun.Options{Dir: c.TempDir()}, args...)
+
+				c.Assert(printed.ExitCode, qt.Equals, 0, historyComment(printed))
+				c.Assert(printed.Stdout, qt.Contains, `DEFAULT 'a\\b'`, historyComment(printed))
+				c.Assert(printed.Stdout, qt.Contains, `COMMENT 'c\\d'`, historyComment(printed))
+				c.Assert(printed.Stdout, qt.Contains, `enum('x\\y','z')`, historyComment(printed))
+			})
+		}
 	}
 }

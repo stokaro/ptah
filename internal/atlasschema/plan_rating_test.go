@@ -10,6 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
@@ -312,4 +314,25 @@ func TestWritePlanRating(t *testing.T) {
 			c.Assert(out.String(), qt.Equals, test.want)
 		})
 	}
+}
+
+// TestPlanFileRating_RatesAClauseAfterAStringWithoutBackslashEscapes rates
+// edited text a session under NO_BACKSLASH_ESCAPES receives. There the string
+// 'x\' ends at its second quote, so the statement drops a column after it.
+// Each statement is cut as the session reads it and judged on its words with
+// the dialect's default rule, which reads the backslash as an escape; the
+// rating still names the drop.
+func TestPlanFileRating_RatesAClauseAfterAStringWithoutBackslashEscapes(t *testing.T) {
+	c := qt.New(t)
+	const statement = `ALTER TABLE notes COMMENT = 'x\', DROP COLUMN a`
+	session := catalog.ServerInfo{Dialect: "mysql", Capabilities: capability.ForDialect("mysql").With(capability.NoBackslashEscapes, true)}
+	cut := atlasschema.SplitApplyStatements(statement+";\n", session)
+	c.Assert(cut, qt.DeepEquals, []string{statement})
+
+	got, err := atlasschema.PlanFile{Statements: []atlasschema.PlanStatement{{SQL: cut[0]}}}.Rating(context.Background(), must.Must(builtin.New()), "mysql")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.DeepEquals, atlasschema.PlanRating{Severity: safety.Destructive, Total: 1, Statements: []atlasschema.RatedStatement{
+		{Position: 1, Text: statement, Severity: safety.Destructive, Reason: "DROP COLUMN removes existing column data"},
+	}})
 }

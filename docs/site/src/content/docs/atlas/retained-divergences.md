@@ -167,6 +167,7 @@ own measurement conditions.
 | [A COLLATE on a PostgreSQL column](#a-collate-on-a-postgresql-column) | `schema diff` and `schema apply` plan a change of a column's collation | report the schemas synced |
 | [A changed MySQL table collation](#a-changed-mysql-table-collation) | plans the table's `COLLATE` in one statement with the reset of the column that takes it, so one apply converges | does the same with `--dev-url`; without it, plans the table's `COLLATE` alone, and the column keeps the old collation until a second apply |
 | [A foreign key over a changed collation](#a-foreign-key-over-a-changed-collation) | drops the foreign key, changes both ends, and adds the key back, so one apply converges | plans a bare `MODIFY COLUMN` of each end, which the server refuses while the key stands |
+| [A backslash on a `NO_BACKSLASH_ESCAPES` session](#a-backslash-on-a-no_backslash_escapes-session) | writes a literal for the session that runs it, so the server stores the declared value | stores four backslashes where the declaration holds one |
 
 ## A `--config` selection naming more than one file
 
@@ -2106,6 +2107,33 @@ default, or from a character set each names.
 
 **Evidence.** `internal/planner/dialects/mysql/fk_collation_test.go`,
 `integration/mysql_foreign_key_collation_e2e_test.go`
+
+## A backslash on a `NO_BACKSLASH_ESCAPES` session
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** A MySQL or MariaDB session whose `sql_mode` names
+`NO_BACKSLASH_ESCAPES` reads a backslash in a string as the character.
+`ptah-compat schema apply` writes a declared default, comment, enum value and
+declared row for the session that runs it, so the server stores the characters
+the declaration holds. The pinned community binary stores four backslashes
+where the declaration holds one. Measured on 2026-11-19 with the community
+binary v1.4.0 on MySQL 26.10, and with v1.3.0 the same way, with `--dev-url`
+on a session under the same `sql_mode`, against a SQL file declaring
+`a varchar(20) DEFAULT 'a\\b'`:
+
+| Step | Binary | `ptah-compat` |
+| --- | --- | --- |
+| the column in the plan | ``DEFAULT "a\\\\b"`` | ``DEFAULT 'a\b'`` |
+| the default an inserted row takes, in hexadecimal | `615C5C5C5C62` | `615C62` |
+
+On a database the binary created, `ptah-compat schema apply` plans the column's
+default back to the declared value. SQL `ptah-compat` writes for later, such
+as a migration file or `schema diff` output, is written for the default
+`sql_mode`; see [MySQL](../../databases/mysql/).
+
+**Evidence.** `integration/backslash_escapes_session_e2e_test.go`,
+`integration/escaped_literal_apply_e2e_test.go`
 
 ## Not on this page
 

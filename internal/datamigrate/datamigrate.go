@@ -28,6 +28,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/dataorder"
 	"ptah.run/internal/managedrows"
 	"ptah.run/internal/protectedtable"
@@ -163,7 +164,9 @@ func Generate(ctx context.Context, conn *dbschema.DatabaseConnection, opts Optio
 		dialect = conn.Info().Dialect
 	}
 	orderByDependency(inspected.desired, inspected.diffs)
-	return composeByPhase(ctx, inspected.diffs, dialect, opts.Data, conn.Info().Capabilities)
+	// The migration runs later, on a session nobody knows yet, so its literals
+	// are written for the default sql_mode; see [backslashmode.ForLater].
+	return composeByPhase(ctx, inspected.diffs, dialect, opts.Data, backslashmode.ForLater(conn.Info().Capabilities))
 }
 
 // TableDrift is how far one managed table's live rows sit from its
