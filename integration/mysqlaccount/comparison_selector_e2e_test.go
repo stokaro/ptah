@@ -209,8 +209,9 @@ func TestAComparisonVerbSelectorNamingOneObjectVouchesForNoOtherE2E(t *testing.T
 // TestAComparisonVerbSelectorOnEventsE2E covers what each selector does to the part
 // of a report that names an object nothing compares. A selector leaving out every
 // event leaves the read with nothing to report, for an account that cannot list
-// them too. A selector naming one event matches it, so nothing warns, and it stays
-// named, as on every verb: the database still holds it and no selection changes that.
+// them too. A selector naming one event matches it, so nothing warns, and takes it
+// out of the report, as on every verb: the run is not about that event. Without a
+// selector the event is named.
 func TestAComparisonVerbSelectorOnEventsE2E(t *testing.T) {
 	const reads = "GRANT SELECT, SHOW VIEW, TRIGGER ON {db}.* TO {account}"
 	for _, s := range servers() {
@@ -244,6 +245,22 @@ func TestAComparisonVerbSelectorOnEventsE2E(t *testing.T) {
 				}
 			})
 
+			t.Run("no selector", func(t *testing.T) {
+				c := qt.New(t)
+
+				got := drift(c, address, file, "--format", "json")
+
+				c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+				var document driftDocument
+				c.Assert(json.Unmarshal([]byte(got.Stdout), &document), qt.IsNil)
+				c.Assert(document.Drift, qt.IsFalse)
+				c.Assert(notCompared(document), qt.DeepEquals, []string{"event  e_tick"})
+
+				compared := comparisonVerbs()[1].run(c, address, file)
+				c.Assert(compared.ExitCode, qt.Equals, 0)
+				c.Assert(compared.Stdout, qt.Contains, "event \"e_tick\": Ptah does not model events")
+			})
+
 			t.Run("one event named", func(t *testing.T) {
 				c := qt.New(t)
 
@@ -254,12 +271,13 @@ func TestAComparisonVerbSelectorOnEventsE2E(t *testing.T) {
 				var document driftDocument
 				c.Assert(json.Unmarshal([]byte(got.Stdout), &document), qt.IsNil)
 				c.Assert(document.Drift, qt.IsFalse)
-				c.Assert(notCompared(document), qt.DeepEquals, []string{"event  e_tick"})
+				c.Assert(notCompared(document), qt.HasLen, 0)
 
 				compared := comparisonVerbs()[1].run(c, address, file, "--exclude", "e_tick[type=event]")
 				c.Assert(compared.ExitCode, qt.Equals, 0)
 				c.Assert(compared.Stderr, qt.Not(qt.Contains), "matched no objects")
-				c.Assert(compared.Stdout, qt.Contains, "event \"e_tick\": Ptah does not model events")
+				c.Assert(compared.Stdout, qt.Contains, "No schema differences detected.\n")
+				c.Assert(compared.Stdout, qt.Not(qt.Contains), "e_tick")
 			})
 		})
 	}

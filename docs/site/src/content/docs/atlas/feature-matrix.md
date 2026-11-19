@@ -107,7 +107,7 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 207 capabilities below:
+Across the 208 capabilities below:
 
 | Reading | Count |
 | --- | --- |
