@@ -613,11 +613,18 @@ CREATE TABLE events (
 Go annotations and YAML declare the kind with `generated` and
 `generated_kind`, such as `generated="price * qty" generated_kind="MATERIALIZED"`.
 `STORED` is read as `MATERIALIZED`, `VIRTUAL` as `ALIAS`, and an expression
-without a kind as `MATERIALIZED`. Both sources need an expression, so an
-`EPHEMERAL` column without one is declared in SQL. Ptah writes that column as
-`EPHEMERAL defaultValueOfTypeName('String')`, which ClickHouse 24.10 and 26.10
-read the same as a bare `EPHEMERAL`: a column created with the bare keyword
-refuses any other kind later, with `Syntax error (after altering table)`.
+without a kind as `MATERIALIZED`. `generated_kind="EPHEMERAL"` stands without
+`generated`, as the bare keyword does in SQL; any other kind without an
+expression is refused. Ptah writes an `EPHEMERAL` column without an expression
+as `EPHEMERAL defaultValueOfTypeName('String')`, which ClickHouse 24.10 and
+26.10 read the same as a bare `EPHEMERAL`: a column created with the bare
+keyword refuses any other kind later, with
+`Syntax error (after altering table)`.
+
+These kinds are Ptah's own. The community Atlas binary has no ClickHouse
+driver and refuses a `clickhouse://` URL with `unknown driver "clickhouse"`, so
+`ptah-compat` offers them as a native capability, not as a matched Atlas
+contract.
 
 The expression is compared as the operations its operators group, the way a
 default is, so `price * qty + 1` matches the stored `(price * qty) + 1`. A

@@ -2,11 +2,13 @@ package builtin
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"ptah.run/core/objectidentity"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -33,8 +35,39 @@ func validateDeclaredColumns(dialect string, database *schemamodel.Database) err
 		if err := validateRelativeTimeDefault(dialect, database, field); err != nil {
 			return err
 		}
+		if err := validateBareGeneratedKind(dialect, field); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// validateBareGeneratedKind refuses a generated kind declared without the
+// expression that computes the column, where the target's grammar does not let
+// the kind stand alone ([descriptor.ComputedKind.ExpressionOptional]), which
+// the DDL parser reads too. ClickHouse's EPHEMERAL does, and the renderer
+// writes the expression ClickHouse reports for it. Every renderer writes a
+// generated clause only for an expression, so any other kind without one
+// would render a plain column.
+func validateBareGeneratedKind(dialect string, field schemamodel.Field) error {
+	kind := strings.ToUpper(strings.TrimSpace(field.GeneratedKind))
+	if kind == "" || strings.TrimSpace(field.GeneratedExpression) != "" {
+		return nil
+	}
+	described, _ := platform.Lookup(dialect)
+	if slices.ContainsFunc(described.Grammar.Columns.ComputedKinds, func(computed descriptor.ComputedKind) bool {
+		return computed.Keyword == kind && computed.ExpressionOptional
+	}) {
+		return nil
+	}
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"column %q declares generated kind %s without a generated expression, and %s takes that kind only with one",
+			field.Name, kind, dialect,
+		),
+	}
 }
 
 // validateRelativeTimeDefault refuses a default on a date or time column that

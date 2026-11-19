@@ -158,7 +158,8 @@ func TestApplyClickHouseComputedColumnsE2E(t *testing.T) {
 }
 
 // clickHouseComputedEntity declares the computed kinds through Go
-// annotations, with the portable VIRTUAL among them.
+// annotations, with the portable VIRTUAL among them, and an EPHEMERAL column
+// declared without an expression.
 const clickHouseComputedEntity = "package entities\n\n" +
 	"//ptah:schema:table name=\"gcc\" platform.clickhouse.engine=\"MergeTree\" platform.clickhouse.order_by=\"id\"\n" +
 	"type Gcc struct {\n" +
@@ -168,10 +169,12 @@ const clickHouseComputedEntity = "package entities\n\n" +
 	"\t//ptah:schema:field name=\"l\" type=\"Int64\" not_null=\"true\" generated=\"a + 1 * 3\" generated_kind=\"ALIAS\"\n\tL int64\n" +
 	"\t//ptah:schema:field name=\"e\" type=\"Int64\" not_null=\"true\" generated=\"7\" generated_kind=\"EPHEMERAL\"\n\tE int64\n" +
 	"\t//ptah:schema:field name=\"v\" type=\"Int64\" not_null=\"true\" generated=\"a + 1\" generated_kind=\"VIRTUAL\"\n\tV int64\n" +
+	"\t//ptah:schema:field name=\"b\" type=\"Int64\" not_null=\"true\" generated_kind=\"EPHEMERAL\"\n\tB int64\n" +
 	"}\n"
 
 // clickHouseComputedDocument declares the computed kinds in a YAML schema,
-// with the portable `stored: true` among them.
+// with the portable `stored: true` among them, and an EPHEMERAL column
+// declared without an expression.
 const clickHouseComputedDocument = "tables:\n" +
 	"  gcc:\n" +
 	"    platform:\n" +
@@ -184,12 +187,15 @@ const clickHouseComputedDocument = "tables:\n" +
 	"      m: {type: Int64, not_null: true, generated: a * 2, generated_kind: MATERIALIZED, comment: twice a}\n" +
 	"      l: {type: Int64, not_null: true, generated: a + 1 * 3, generated_kind: ALIAS}\n" +
 	"      e: {type: Int64, not_null: true, generated: \"7\", generated_kind: EPHEMERAL}\n" +
-	"      v: {type: Int64, not_null: true, generated: a + 1, stored: true}\n"
+	"      v: {type: Int64, not_null: true, generated: a + 1, stored: true}\n" +
+	"      b: {type: Int64, not_null: true, generated_kind: EPHEMERAL}\n"
 
 // TestApplyClickHouseComputedColumnsFromGoAndYAMLE2E declares the computed
 // kinds through Go annotations and a YAML schema. Each source creates the
-// columns it names, STORED as MATERIALIZED and VIRTUAL as ALIAS, and a second
-// apply plans nothing.
+// columns it names, STORED as MATERIALIZED and VIRTUAL as ALIAS, and EPHEMERAL
+// without an expression with the one ClickHouse reports for it, and a second
+// apply plans nothing. With the bare kind dropped, column b is an ordinary
+// one.
 func TestApplyClickHouseComputedColumnsFromGoAndYAMLE2E(t *testing.T) {
 	c := qt.New(t)
 	for _, server := range clickHouseServers(c) {
@@ -208,8 +214,14 @@ func TestApplyClickHouseComputedColumnsFromGoAndYAMLE2E(t *testing.T) {
 				source []string
 				want   string
 			}{
-				{name: "Go", source: []string{"--root-dir", entities}, want: "m MATERIALIZED a * 2 -- twice a; l ALIAS a + (1 * 3); e EPHEMERAL 7; v ALIAS a + 1"},
-				{name: "YAML", source: []string{"--schema-file", document}, want: "m MATERIALIZED a * 2 -- twice a; l ALIAS a + (1 * 3); e EPHEMERAL 7; v MATERIALIZED a + 1"},
+				{
+					name: "Go", source: []string{"--root-dir", entities},
+					want: "m MATERIALIZED a * 2 -- twice a; l ALIAS a + (1 * 3); e EPHEMERAL 7; v ALIAS a + 1; b EPHEMERAL defaultValueOfTypeName('Int64')",
+				},
+				{
+					name: "YAML", source: []string{"--schema-file", document},
+					want: "m MATERIALIZED a * 2 -- twice a; l ALIAS a + (1 * 3); e EPHEMERAL 7; v MATERIALIZED a + 1; b EPHEMERAL defaultValueOfTypeName('Int64')",
+				},
 			}
 			for _, source := range sources {
 				t.Run(source.name, func(t *testing.T) {
