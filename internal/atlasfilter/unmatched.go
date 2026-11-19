@@ -73,3 +73,24 @@ func UnmatchedAcrossStates(reports ...ExcludeReport) []string {
 	}
 	return unmatched
 }
+
+// StoredSpellings merges the [ExcludeReport.Stored] spellings of reports, one
+// report for each state the command filtered, for the
+// [UnmatchedExcludeError.Stored] of the selectors [UnmatchedAcrossStates]
+// returns. A selector two reports spell keeps the first report's spelling.
+// It returns nil where no report spells a selector.
+func StoredSpellings(reports ...ExcludeReport) map[string]string {
+	var stored map[string]string
+	for _, report := range reports {
+		for selector, spelling := range report.Stored {
+			if _, seen := stored[selector]; seen {
+				continue
+			}
+			if stored == nil {
+				stored = make(map[string]string)
+			}
+			stored[selector] = spelling
+		}
+	}
+	return stored
+}

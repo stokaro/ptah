@@ -1351,8 +1351,9 @@ type SchemaDiff struct {
 	ConstraintCommentsChanged []ConstraintCommentChange `json:"constraint_comments_changed"`
 
 	// ConstraintsValidated names the CHECK and foreign key constraints the
-	// database holds NOT VALID and the declaration holds validated, which a
-	// plan completes with VALIDATE CONSTRAINT. A constraint this diff adds, or
+	// database holds NOT VALID or disabled and the declaration holds
+	// validated, which a plan completes with VALIDATE CONSTRAINT, or on
+	// Oracle with ENABLE VALIDATE CONSTRAINT. A constraint this diff adds, or
 	// drops and adds again, is not here. The reverse, a declaration that allows
 	// NOT VALID against a validated constraint, is no change: the rows already
 	// passed the check the declaration lets the server skip.

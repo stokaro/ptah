@@ -1517,6 +1517,8 @@ func constraintDefinition(constraint *ast.ConstraintNode, structName, tableName,
 			Type:            "CHECK",
 			Table:           ownerTable,
 			CheckExpression: constraint.Expression,
+			Deferrable:      constraint.Deferrable,
+			Initially:       constraint.Initially,
 			NotEnforced:     constraint.NotEnforced,
 			NotValid:        constraint.NotValid,
 		}, true

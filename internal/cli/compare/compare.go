@@ -366,7 +366,7 @@ func writeComparison(
 ) {
 	undecidednote.Report(ctx, errOut, undecided, "the database", "the desired schema")
 	reportSkipped(errOut, diff)
-	categories := diffreport.Categories(diff)
+	categories := diffreport.CategoriesFor(diff, dialect)
 	switch {
 	case len(categories) == 0 && !undecided.Empty():
 		fmt.Fprintf(out, "No differences planned, but %s:\n", undecidednote.Summary(undecided))

@@ -173,5 +173,5 @@ func ReportUnmatched(w io.Writer, sources ExcludeSources, reports ...ExcludeRepo
 	if w == nil || len(selectors) == 0 {
 		return
 	}
-	fmt.Fprintf(w, "Warning: %s.\n", (&UnmatchedExcludeError{Selectors: selectors, Sources: sources}).Error())
+	fmt.Fprintf(w, "Warning: %s.\n", (&UnmatchedExcludeError{Selectors: selectors, Sources: sources, Stored: StoredSpellings(reports...)}).Error())
 }

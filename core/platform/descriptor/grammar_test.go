@@ -297,6 +297,20 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a deferral refusal leaves .*`,
 		},
 		{
+			name: "a kept CHECK deferral beside a refusal",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Constraints.Deferral = descriptor.Deferral{Refusal: "alpha has none", Checks: true}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a deferral clause after a CHECK cannot be both kept and refused`,
+		},
+		{
+			name: "a kept CHECK deferral beside a key refusal",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Constraints.Deferral = descriptor.Deferral{KeyRefusal: "alpha takes one after a foreign key", Checks: true}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a deferral clause after a CHECK cannot be both kept and refused`,
+		},
+		{
 			name:    "an undeclared index keyword",
 			dialect: with(func(g *descriptor.Grammar) { g.Keys.IndexKeywords = []string{"index"} }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: index keyword "index" is not one of .*`,
