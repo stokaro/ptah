@@ -164,6 +164,8 @@ SQL:
   parentheses. Only a current-time function on a `DATETIME` or `TIMESTAMP`
   column stays bare: MySQL 8.4 and 26.10 refuse `DEFAULT uuid()` with
   `ERROR 1064` and `DEFAULT now()` on a `VARCHAR` with `ERROR 1067`. A
+  `default_expr` in a Go struct or a YAML schema is written by the same rule,
+  so `default_expr="1 + 2"` renders `DEFAULT (1 + 2)`. A
   parenthesis that changes the grouping is part of the default:
   `((1 + 2) * 3)` and `(1 + 2 * 3)` differ. An expression that holds
   `NOT`, `IS`, `IN`, `CASE`, a qualified name or another character set
