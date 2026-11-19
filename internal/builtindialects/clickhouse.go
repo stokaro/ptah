@@ -146,6 +146,17 @@ func clickHouse() descriptor.Dialect {
 			// parentheses, 1 + 2 * 3 as 1 + (2 * 3), so a default is compared
 			// as the operations internal/precedence reads.
 			OperatorPrecedence: "clickhouse-operators",
+			// A column computed from an expression is MATERIALIZED unless the
+			// declaration names ALIAS or EPHEMERAL, and the renderer writes a
+			// portable STORED as MATERIALIZED and VIRTUAL as ALIAS.
+			// system.columns reports the kind the server created.
+			DefaultGeneratedKind: "MATERIALIZED",
+			StoredGeneratedKind:  "MATERIALIZED",
+			VirtualGeneratedKind: "ALIAS",
+			// Measured on 24.10 and 26.10, `MODIFY COLUMN m REMOVE
+			// MATERIALIZED` and `REMOVE ALIAS` leave an ordinary column, and a
+			// MODIFY COLUMN that names only the type keeps the expression.
+			GeneratedColumnsBecomePlain: true,
 		},
 
 		// An enum column is an Enum8, or an Enum16 past 127 values.
@@ -187,6 +198,7 @@ func clickHouse() descriptor.Dialect {
 					Comparison: true, DoubleEquals: true, DistinctFrom: true, Is: true,
 					Logical: true, Between: true, In: true, Like: true,
 				},
+				ComputedKinds: clickHouseComputedKinds(),
 			},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
 			Forms:      clickHouseStatementForms(),
@@ -205,6 +217,19 @@ func clickHouse() descriptor.Dialect {
 		// Migrations: the engine's reading decides a migration file's
 		// directives when its dialect is unknown.
 		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
+	}
+}
+
+// clickHouseComputedKinds are the clauses that give a ClickHouse column its
+// value in place of a DEFAULT. Measured on 24.10 and 26.10, MATERIALIZED and
+// ALIAS refuse a clause without an expression, and EPHEMERAL takes one or
+// none: `e Int64 EPHEMERAL` reports the expression
+// defaultValueOfTypeName('Int64').
+func clickHouseComputedKinds() []descriptor.ComputedKind {
+	return []descriptor.ComputedKind{
+		{Keyword: "MATERIALIZED"},
+		{Keyword: "ALIAS"},
+		{Keyword: "EPHEMERAL", ExpressionOptional: true},
 	}
 }
 

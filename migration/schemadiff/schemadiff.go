@@ -138,7 +138,7 @@ func compareReportingUndecidedAdditions(
 		diff.IdentifierSemantics = &stored
 	}
 	desired, database = normalizeInlineEnumsForCompare(desired, database, opts)
-	desired = normalizeGeneratedColumnsForCompare(desired, opts)
+	desired, database = normalizeGeneratedColumnsForCompare(desired, database, opts)
 	// A materialized view whose storage parameters the source cannot state
 	// takes the ones the database holds, before anything reads the
 	// declaration.
@@ -342,27 +342,65 @@ func normalizeInlineEnumsForCompare(
 	return &normalizedGenerated, &normalizedDatabase
 }
 
+// normalizeGeneratedColumnsForCompare returns desired and database with each
+// generated kind as the target creates it ([createdGeneratedKind]), so a
+// declaration that leaves the kind to the target, or names it portably,
+// compares equal to the column the target built. The catalog side is read the
+// same way because a catalog the server did not write, such as one converted
+// from a declaration or read from an HCL file, may state no kind, or STORED
+// where the server reports MATERIALIZED. Without it a schema file compared
+// with itself plans a change of kind for each such column.
 func normalizeGeneratedColumnsForCompare(
 	desired *schemamodel.Database,
+	database *catalog.Database,
 	opts *config.CompareOptions,
-) *schemamodel.Database {
+) (*schemamodel.Database, *catalog.Database) {
 	if desired == nil || opts == nil {
-		return desired
+		return desired, database
 	}
 
-	defaultKind := defaultGeneratedColumnKind(platform.NormalizeDialect(opts.Dialect))
-	if defaultKind == "" {
-		return desired
+	facts := comparisons.Get(platform.NormalizeDialect(opts.Dialect))
+	if facts.DefaultGeneratedKind == "" && facts.StoredGeneratedKind == "" && facts.VirtualGeneratedKind == "" {
+		return desired, database
 	}
 	normalizedGenerated := *desired
 	normalizedGenerated.Fields = append([]schemamodel.Field(nil), desired.Fields...)
 	for i := range normalizedGenerated.Fields {
 		field := &normalizedGenerated.Fields[i]
-		if field.GeneratedExpression != "" && field.GeneratedKind == "" {
-			field.GeneratedKind = defaultKind
+		field.GeneratedKind = createdGeneratedKind(field.GeneratedKind, field.GeneratedExpression != "", facts)
+	}
+	if database == nil {
+		return &normalizedGenerated, database
+	}
+	normalizedDatabase := *database
+	normalizedDatabase.Tables = slices.Clone(database.Tables)
+	for t := range normalizedDatabase.Tables {
+		table := &normalizedDatabase.Tables[t]
+		table.Columns = slices.Clone(table.Columns)
+		for c := range table.Columns {
+			column := &table.Columns[c]
+			generated := column.GeneratedExpression != nil && strings.TrimSpace(*column.GeneratedExpression) != ""
+			column.GeneratedKind = createdGeneratedKind(column.GeneratedKind, generated, facts)
 		}
 	}
-	return &normalizedGenerated
+	return &normalizedGenerated, &normalizedDatabase
+}
+
+// createdGeneratedKind is the generated kind the server creates for a column
+// stated with kind, as facts state it: the target's default for a generated
+// column, one that holds an expression, stated without a kind, and the
+// target's own name for STORED or VIRTUAL. Any other kind is the stated one.
+func createdGeneratedKind(kind string, generated bool, facts descriptor.Comparison) string {
+	switch upper := strings.ToUpper(strings.TrimSpace(kind)); {
+	case upper == "" && generated && facts.DefaultGeneratedKind != "":
+		return facts.DefaultGeneratedKind
+	case upper == "STORED" && facts.StoredGeneratedKind != "":
+		return facts.StoredGeneratedKind
+	case upper == "VIRTUAL" && facts.VirtualGeneratedKind != "":
+		return facts.VirtualGeneratedKind
+	default:
+		return kind
+	}
 }
 
 // comparisons holds what each descriptor of the process registry states about
@@ -372,12 +410,6 @@ func normalizeGeneratedColumnsForCompare(
 var comparisons = descriptortable.New(func(described descriptor.Dialect) descriptor.Comparison {
 	return described.Comparison
 })
-
-// defaultGeneratedColumnKind is the storage a generated column declared
-// without one gets on dialect, as its descriptor states it.
-func defaultGeneratedColumnKind(dialect string) string {
-	return comparisons.Get(dialect).DefaultGeneratedKind
-}
 
 // validateDeclaredBeforeComparison applies every refusal a declaration must
 // meet before anything is compared, and returns nil when there is nothing to

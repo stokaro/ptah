@@ -76,6 +76,8 @@ func TestValue(t *testing.T) {
 		{name: "stored", column: ast.ColumnNode{Name: "c", GeneratedExpression: "a + 1", GeneratedKind: "STORED"}, keyword: "MATERIALIZED", expression: "a + 1"},
 		{name: "virtual", column: ast.ColumnNode{Name: "c", GeneratedExpression: "a + 1", GeneratedKind: "virtual"}, keyword: "ALIAS", expression: "a + 1"},
 		{name: "computed wins over a default", column: ast.ColumnNode{Name: "c", GeneratedExpression: "a + 1", Default: &ast.DefaultValue{Expression: "0"}}, keyword: "MATERIALIZED", expression: "a + 1"},
+		{name: "ephemeral", column: ast.ColumnNode{Name: "e", GeneratedExpression: "5", GeneratedKind: "EPHEMERAL"}, keyword: "EPHEMERAL", expression: "5"},
+		{name: "ephemeral without an expression", column: ast.ColumnNode{Name: "e", GeneratedKind: "EPHEMERAL"}, keyword: "EPHEMERAL"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -94,10 +96,38 @@ func TestDefinition(t *testing.T) {
 	}{
 		{name: "plain", column: "n", typ: "Int32", want: "n Int32"},
 		{name: "default and comment", column: "s", typ: "String", keyword: "DEFAULT", expression: "'x'", notes: "it's s", want: "s String DEFAULT 'x' COMMENT 'it''s s'"},
+		{name: "ephemeral", column: "e", typ: "Int64", keyword: "EPHEMERAL", expression: "5", want: "e Int64 EPHEMERAL 5"},
+		{
+			name: "ephemeral without an expression takes the type's default", column: "e", typ: "Nullable(Int64)", keyword: "EPHEMERAL", notes: "c",
+			want: "e Nullable(Int64) EPHEMERAL defaultValueOfTypeName('Nullable(Int64)') COMMENT 'c'",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(chcolumn.Definition(test.column, test.typ, test.keyword, test.expression, test.notes), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestKnownKind accepts the kinds ClickHouse has a clause for and the portable
+// spellings it maps onto them, and nothing else.
+func TestKnownKind(t *testing.T) {
+	for _, test := range []struct {
+		kind string
+		want bool
+	}{
+		{kind: "", want: true},
+		{kind: "MATERIALIZED", want: true},
+		{kind: "alias", want: true},
+		{kind: "EPHEMERAL", want: true},
+		{kind: "STORED", want: true},
+		{kind: " virtual ", want: true},
+		{kind: "PERSISTED", want: false},
+		{kind: "GENERATED", want: false},
+	} {
+		t.Run(test.kind, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(chcolumn.KnownKind(test.kind), qt.Equals, test.want)
 		})
 	}
 }

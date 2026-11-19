@@ -1979,6 +1979,14 @@ type ColumnDiff struct {
 	// collations.
 	CharsetChange *CharsetChange `json:"charset_change,omitzero"`
 
+	// PreviousGeneratedKind is the generated kind of the column the comparison
+	// changes the generation of, as the catalog names it, and empty for a
+	// column that is not generated or whose generation holds. A renderer reads
+	// it where the statement depends on the kind the column has: ClickHouse
+	// makes a MATERIALIZED column ordinary with REMOVE MATERIALIZED, and an
+	// EPHEMERAL one with a DEFAULT it then removes.
+	PreviousGeneratedKind string `json:"previous_generated_kind,omitempty"`
+
 	// CommentChange carries the column's comment transition, and is nil when
 	// the comment is unchanged.
 	//

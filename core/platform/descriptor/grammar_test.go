@@ -228,6 +228,25 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: next value clause "NEXT  VALUE FOR" is not words separated by one space`,
 		},
 		{
+			name:    "a computed kind in lower case",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.ComputedKinds = []descriptor.ComputedKind{{Keyword: "alias"}} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: computed kind "alias" is not one upper-case word`,
+		},
+		{
+			name: "a computed kind stated twice",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Columns.ComputedKinds = []descriptor.ComputedKind{{Keyword: "ALIAS"}, {Keyword: "ALIAS", ExpressionOptional: true}}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: computed kind "ALIAS" is written twice`,
+		},
+		{
+			name: "a computed kind without a word",
+			dialect: with(func(g *descriptor.Grammar) {
+				g.Columns.ComputedKinds = []descriptor.ComputedKind{{ExpressionOptional: true}}
+			}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: computed kind "" is not one upper-case word`,
+		},
+		{
 			name:    "an empty call refusal without functions",
 			dialect: with(func(g *descriptor.Grammar) { g.Columns.EmptyCallRefusal = "alpha refuses SYSDATE()" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: empty call functions and an empty call refusal are set together`,

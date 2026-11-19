@@ -427,7 +427,7 @@ var directives = []Directive{
 			attr("unique", "Adds a single-column unique constraint.", valueBoolean, false, true),
 			attr("unique_expr", "Uniqueness over an expression. Not implemented: rendering refuses a column that declares it.", valueSQL, false, false),
 			attr("generated", "Generated column expression.", valueSQL, false, false),
-			attr("generated_kind", "Generated column kind, such as STORED or VIRTUAL.", valueString, false, false),
+			attr("generated_kind", "Generated column kind: STORED or VIRTUAL, and on ClickHouse MATERIALIZED, ALIAS or EPHEMERAL.", valueString, false, false),
 			attr("stored", "Shortcut controlling generated column storage.", valueBoolean, false, false),
 			attr("default", "Literal column default.", valueString, false, false),
 			attr("default_expr", "SQL default expression.", valueSQL, false, false),

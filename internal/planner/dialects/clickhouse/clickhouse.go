@@ -239,16 +239,17 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 			result = append(result, &ast.AlterTableNode{
 				Name: td.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
-					Column:              col,
-					PreviousType:        columnchange.PreviousType(colDiff),
-					TypeNarrows:         colDiff.TypeNarrows,
-					TypeNarrowingKnown:  colDiff.PreviousType != "",
-					PreviousNullable:    previousColumnNullable(colDiff.Changes["nullable"]),
-					HasPreviousNullable: colDiff.Changes["nullable"] != "",
-					PreviousDefault:     previousDefault,
-					HasPreviousDefault:  defaultChanged,
-					Changed:             columnchange.Properties(colDiff),
-					HasChanged:          true,
+					Column:                col,
+					PreviousType:          columnchange.PreviousType(colDiff),
+					TypeNarrows:           colDiff.TypeNarrows,
+					TypeNarrowingKnown:    colDiff.PreviousType != "",
+					PreviousNullable:      previousColumnNullable(colDiff.Changes["nullable"]),
+					HasPreviousNullable:   colDiff.Changes["nullable"] != "",
+					PreviousDefault:       previousDefault,
+					HasPreviousDefault:    defaultChanged,
+					PreviousGeneratedKind: colDiff.PreviousGeneratedKind,
+					Changed:               columnchange.Properties(colDiff),
+					HasChanged:            true,
 				}},
 			})
 		}

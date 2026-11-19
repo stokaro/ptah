@@ -85,7 +85,7 @@ func TestRenderModifyColumn_HappyPath(t *testing.T) {
 			name: "a computed column takes no DEFAULT",
 			caps: capability.ClickHouse2411(),
 			node: modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull().SetDefault("7").SetGenerated("a + 1", "MATERIALIZED"), false),
-			want: "ALTER TABLE asn MODIFY COLUMN n Int32;\n",
+			want: "ALTER TABLE asn MODIFY COLUMN n Int32 MATERIALIZED a + 1;\n",
 		},
 		{
 			// MODIFY COLUMN fails its mutation for one on 26.3 and later and
@@ -102,7 +102,7 @@ func TestRenderModifyColumn_HappyPath(t *testing.T) {
 			name: "an ALIAS column made NOT NULL",
 			caps: capability.ClickHouse2411(),
 			node: modifyColumn(ast.NewColumn("n", "INTEGER").SetNotNull().SetGenerated("a + 1", "ALIAS"), true),
-			want: "ALTER TABLE asn MODIFY COLUMN n Int32;\n",
+			want: "ALTER TABLE asn MODIFY COLUMN n Int32 ALIAS a + 1;\n",
 		},
 	}
 

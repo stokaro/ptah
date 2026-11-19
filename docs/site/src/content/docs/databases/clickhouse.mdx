@@ -590,6 +590,56 @@ nullable `s`, cannot back a non-nullable column on any line: reading a row
 where it yields NULL fails. An `ALIAS` column stores nothing, and
 `MODIFY COLUMN` changes its type on every line.
 
+### Computed columns
+
+A ClickHouse column takes its value from one of `DEFAULT`, `MATERIALIZED`,
+`ALIAS` and `EPHEMERAL`. A `MATERIALIZED` column is computed and stored when a
+row is inserted. An `ALIAS` column is computed when it is read and stores
+nothing. An `EPHEMERAL` column stores nothing either: an insert may name it, and
+the expressions of the other columns read it.
+
+```sql title="schema.sql"
+CREATE TABLE events (
+  id UInt64,
+  price Int64,
+  qty Int64,
+  total Int64 MATERIALIZED price * qty,
+  doubled Int64 ALIAS total * 2,
+  raw String EPHEMERAL,
+  tag String DEFAULT upper(raw)
+) ENGINE = MergeTree ORDER BY id;
+```
+
+Go annotations and YAML declare the kind with `generated` and
+`generated_kind`, such as `generated="price * qty" generated_kind="MATERIALIZED"`.
+`STORED` is read as `MATERIALIZED`, `VIRTUAL` as `ALIAS`, and an expression
+without a kind as `MATERIALIZED`. Both sources need an expression, so an
+`EPHEMERAL` column without one is declared in SQL. Ptah writes that column as
+`EPHEMERAL defaultValueOfTypeName('String')`, which ClickHouse 24.10 and 26.10
+read the same as a bare `EPHEMERAL`: a column created with the bare keyword
+refuses any other kind later, with `Syntax error (after altering table)`.
+
+The expression is compared as the operations its operators group, the way a
+default is, so `price * qty + 1` matches the stored `(price * qty) + 1`. A
+changed kind or expression is one `MODIFY COLUMN`. A column made ordinary loses
+its kind first, because a `MODIFY COLUMN` that names only a type keeps it:
+
+| Change | Statements |
+| --- | --- |
+| Another kind or expression | `MODIFY COLUMN total Int64 ALIAS price * qty` |
+| `MATERIALIZED` or `ALIAS` to ordinary | `MODIFY COLUMN total REMOVE MATERIALIZED`, then `MODIFY COLUMN total Int64` |
+| `EPHEMERAL` to ordinary | `MODIFY COLUMN raw String DEFAULT defaultValueOfTypeName('String')`, `MODIFY COLUMN raw REMOVE DEFAULT`, then `MODIFY COLUMN raw String` |
+
+`EPHEMERAL` has no `REMOVE`, and `REMOVE DEFAULT` refuses an `EPHEMERAL`
+column, so the column becomes a `DEFAULT` one first. A column another
+column's expression reads stays readable throughout.
+
+ClickHouse does not compute the rows already stored again. A `MATERIALIZED`
+column whose expression changes, or which becomes ordinary, keeps the values it
+stored. An `ALIAS` or `EPHEMERAL` column made ordinary reads its type's default
+for those rows, such as `0`, and an `EPHEMERAL` column made `MATERIALIZED`
+computes its expression for them.
+
 ## Views and materialized views
 
 Plain views participate in the complete render, plan, and introspection cycle.

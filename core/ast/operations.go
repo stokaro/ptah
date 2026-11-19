@@ -123,6 +123,13 @@ type ModifyColumnOperation struct {
 	// [ColumnProperties.Identity] is named: a column with one takes SET GENERATED,
 	// and a column without one takes ADD GENERATED.
 	PreviousIdentity string
+	// PreviousGeneratedKind is the generated kind the column holds before a
+	// modification that changes its generation, such as MATERIALIZED, and
+	// empty when it has none or its generation holds. The ClickHouse renderer
+	// reads it: a MODIFY COLUMN that names only the type keeps a MATERIALIZED,
+	// ALIAS or EPHEMERAL expression, so making the column ordinary takes a
+	// statement of its own, which depends on the kind.
+	PreviousGeneratedKind string
 	// Changed names the properties the modification changes. It is read only
 	// when HasChanged is set.
 	//

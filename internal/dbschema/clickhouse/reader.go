@@ -497,14 +497,11 @@ func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[str
 			// its own table on every comparison.
 			Comment: comment,
 		}
-		// ClickHouse columns can have several flavours of default
-		// (DEFAULT, MATERIALIZED, ALIAS, EPHEMERAL). Only the plain DEFAULT
-		// flavour is a schema-level default value comparable to the other
-		// dialects' notion of ColumnDefault. The MATERIALIZED / ALIAS /
-		// EPHEMERAL kinds round-trip through GeneratedKind +
-		// GeneratedExpression so the schema read is lossless; the planner
-		// currently ignores those columns until the annotation-side surface
-		// for declaring them is wired through goschema.
+		// A ClickHouse column takes its value from one of DEFAULT,
+		// MATERIALIZED, ALIAS and EPHEMERAL. Only DEFAULT is a default in the
+		// sense the other dialects have; the other kinds are read as the
+		// column's generated kind and expression, which the comparison and
+		// the planner read on their own.
 		switch defaultKind {
 		case "DEFAULT":
 			if defaultExpr != "" {

@@ -112,13 +112,14 @@ func Nullable(col *ast.ColumnNode) bool {
 }
 
 // Value returns the keyword and the expression that give a column its value:
-// DEFAULT with a declared default, or MATERIALIZED or ALIAS with a computed
-// expression. Both are empty for a column that declares neither. A computed
-// column has no DEFAULT: the keyword takes its place, and ClickHouse refuses a
-// column that carries both.
+// DEFAULT with a declared default, or MATERIALIZED, ALIAS or EPHEMERAL with a
+// computed expression. Both are empty for a column that declares neither, and
+// the expression is empty for an EPHEMERAL column declared without one. A
+// computed column has no DEFAULT: the keyword takes its place, and ClickHouse
+// refuses a column that carries both.
 func Value(col *ast.ColumnNode) (keyword, expression string) {
 	switch {
-	case col.GeneratedExpression != "":
+	case col.GeneratedExpression != "" || col.GeneratedKind != "":
 		return ComputedKeyword(col.GeneratedKind), col.GeneratedExpression
 	case col.Default != nil && col.Default.Expression != "":
 		return "DEFAULT", col.Default.Expression
@@ -152,22 +153,68 @@ func Value(col *ast.ColumnNode) (keyword, expression string) {
 // An unnamed kind takes MATERIALIZED rather than ALIAS, because the two differ
 // in whether the data EXISTS. A column guessed into ALIAS is absent from every
 // part on disk, and finding that out means noticing a query got cheaper.
+//
+// EPHEMERAL passes through: the column holds nothing and its expression only
+// feeds the other columns' expressions when a row is inserted.
 func ComputedKeyword(kind string) string {
 	switch strings.ToUpper(strings.TrimSpace(kind)) {
 	case "ALIAS", "VIRTUAL":
 		return "ALIAS"
+	case "EPHEMERAL":
+		return "EPHEMERAL"
 	default:
 		return "MATERIALIZED"
 	}
 }
 
+// KnownKind reports whether kind is a generated kind ClickHouse has a clause
+// for: MATERIALIZED, ALIAS and EPHEMERAL, the portable STORED and VIRTUAL
+// [ComputedKeyword] maps onto them, or none. Any other kind would be written as
+// MATERIALIZED and compared as itself, so the renderer refuses it.
+func KnownKind(kind string) bool {
+	switch strings.ToUpper(strings.TrimSpace(kind)) {
+	case "", "MATERIALIZED", "ALIAS", "EPHEMERAL", "STORED", "VIRTUAL":
+		return true
+	default:
+		return false
+	}
+}
+
+// Clause returns the clause that gives a column of type typ its value, as
+// [Value] returns its parts, or "" for a column without one.
+//
+// An EPHEMERAL column declared without an expression is written with the one
+// ClickHouse reports for it, defaultValueOfTypeName of its type. Measured on
+// 24.10 and 26.10, both spellings report that expression in system.columns,
+// and only the written one can change later: on a column created as a bare
+// `e Int64 EPHEMERAL`, MODIFY COLUMN to MATERIALIZED, ALIAS or DEFAULT fails
+// with `Syntax error (after altering table)` and changes nothing, and 24.10
+// reads `EPHEMERAL COMMENT 'c'` as an expression named COMMENT and refuses the
+// statement.
+func Clause(keyword, expression, typ string) string {
+	if keyword == "" {
+		return ""
+	}
+	if keyword == "EPHEMERAL" && expression == "" {
+		expression = TypeDefault(typ)
+	}
+	return keyword + " " + expression
+}
+
+// TypeDefault is the expression for the default value of type typ, as
+// ClickHouse reports it for an EPHEMERAL column declared without one:
+// `defaultValueOfTypeName('Int64')`.
+func TypeDefault(typ string) string {
+	return "defaultValueOfTypeName(" + StringLiteral(typ) + ")"
+}
+
 // Definition joins a column definition as CREATE TABLE and ADD COLUMN take it:
-// the name, the type, the keyword and expression [Value] returns when keyword
-// is not empty, and the comment when it is not empty.
+// the name, the type, the clause [Clause] writes for keyword and expression,
+// and the comment when it is not empty.
 func Definition(name, typ, keyword, expression, comment string) string {
 	parts := []string{name, typ}
-	if keyword != "" {
-		parts = append(parts, keyword, expression)
+	if clause := Clause(keyword, expression, typ); clause != "" {
+		parts = append(parts, clause)
 	}
 	if comment != "" {
 		parts = append(parts, "COMMENT", StringLiteral(comment))
