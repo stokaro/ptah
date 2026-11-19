@@ -162,22 +162,6 @@ type GeneratedExpressions interface {
 	Spelling(expression string) string
 }
 
-// ResolvedGeneratedExpressions is a [GeneratedExpressions] that reads two
-// catalog forms of one generated column's expression more strictly than a
-// declaration against a catalog form.
-//
-// A declaration lacks the casts the server inserts when it stores an
-// expression, so Spelling may have to fold casts that can change a value.
-// Where a server has spelled the declaration, both sides carry the server's
-// casts, and the shared comparison reads both with ResolvedSpelling instead.
-type ResolvedGeneratedExpressions interface {
-	GeneratedExpressions
-	// ResolvedSpelling returns expression, as the target's catalog writes it,
-	// in the spelling two catalog forms of one expression share. It folds
-	// only what cannot change the column's values.
-	ResolvedSpelling(expression string) string
-}
-
 // Views compares view queries on one target.
 type Views interface {
 	// QueryEqual reports whether desired and current are one query on the

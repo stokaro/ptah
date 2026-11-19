@@ -3,10 +3,14 @@
 package integration_test
 
 import (
+	"context"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -17,10 +21,12 @@ import (
 // PostgreSQL stores a generated column's expression parsed and prints it with
 // the casts its parser inserted. Over a varchar column, `coalesce("title", '')`
 // is stored as `(COALESCE(title, ''::character varying))::text`, a text which
-// no declaration spells. Each test here holds a table in a live database and a
-// schema file, and runs three paths on PostgreSQL 18 and 16: `ptah schema apply
-// --dry-run`, `ptah-compat schema apply --dry-run`, and `ptah-compat migrate
-// diff` over a directory whose one migration creates the live table.
+// no declaration spells. So the server spells the declaration, and the two
+// stored forms are compared exactly. Each test here holds a table in a live
+// database and a schema file, and runs three paths on PostgreSQL 18 and 16:
+// `ptah schema apply --dry-run`, `ptah-compat schema apply --dry-run`, and
+// `ptah-compat migrate diff` over a directory whose one migration creates the
+// live table.
 //
 // PostgreSQL 17 added ALTER COLUMN SET EXPRESSION. So a changed expression is
 // that statement on 18 and a manual-migration warning on 16, and the same
@@ -46,6 +52,13 @@ var storedFormServers = []struct {
 func storedFormTable(expression string) string {
 	return `CREATE TABLE "public"."prices" ("id" integer PRIMARY KEY, "title" varchar(100), "amount" numeric(10,2), ` +
 		`"derived" text GENERATED ALWAYS AS (` + expression + `) STORED);` + "\n"
+}
+
+// storedFormDerived is public.prices with columns and the column derived of
+// derivedType, generated from expression.
+func storedFormDerived(columns, derivedType, expression string) string {
+	return `CREATE TABLE "public"."prices" ("id" integer PRIMARY KEY, ` + columns + `, ` +
+		`"derived" ` + derivedType + ` GENERATED ALWAYS AS (` + expression + `) STORED);` + "\n"
 }
 
 // storedFormTSVector is public.prices as the report that found the defect
@@ -119,9 +132,7 @@ func storedFormMigrateDiff(c *qt.C, engine dbtarget.Engine, live, desired string
 }
 
 // storedFormUnchanged are tables whose declaration and live form are one
-// expression in PostgreSQL's stored form. A cast to text over a varchar column
-// is stored the same with or without the cast in the declaration, so a cast on
-// one side only is no change.
+// expression in PostgreSQL's stored form.
 var storedFormUnchanged = []struct {
 	name    string
 	live    string
@@ -133,14 +144,9 @@ var storedFormUnchanged = []struct {
 		desired: storedFormTSVector(`"title"`, "B"),
 	},
 	{
-		name:    "a cast to text in the declaration only",
-		live:    storedFormTSVector(`"title"`, "B"),
-		desired: storedFormTSVector(`"title"::text`, "B"),
-	},
-	{
-		name:    "a cast to text in the live table only",
+		name:    "identical inputs with a cast to text",
 		live:    storedFormTSVector(`"title"::text`, "B"),
-		desired: storedFormTSVector(`"title"`, "B"),
+		desired: storedFormTSVector(`"title"::text`, "B"),
 	},
 }
 
@@ -180,10 +186,12 @@ func TestGeneratedExpressionInStoredFormPlansNothingE2E(t *testing.T) {
 	}
 }
 
-// storedFormChanged are real changes of the expression. A cast that can
-// change a value is a change even when it is the only difference: amount is
-// numeric(10,2), which a cast to integer rounds, and a cast to varchar(3)
-// truncates title.
+// storedFormChanged are real changes of the expression. A cast on one side is
+// another stored expression, and a change even when it is the only
+// difference: amount is numeric(10,2), which a cast to integer rounds, a cast
+// to varchar(3) truncates title, octet_length counts the padding of a char(5)
+// and not of its text, and two integers compare as numbers and their texts as
+// text, so 9 < 10 holds and '9' < '10' does not.
 var storedFormChanged = []struct {
 	name    string
 	live    string
@@ -193,6 +201,26 @@ var storedFormChanged = []struct {
 		name:    "another weight",
 		live:    storedFormTSVector(`"title"`, "B"),
 		desired: storedFormTSVector(`"title"`, "A"),
+	},
+	{
+		name:    "a cast to text in the declaration only",
+		live:    storedFormTSVector(`"title"`, "B"),
+		desired: storedFormTSVector(`"title"::text`, "B"),
+	},
+	{
+		name:    "a cast to text in the live table only",
+		live:    storedFormTSVector(`"title"::text`, "B"),
+		desired: storedFormTSVector(`"title"`, "B"),
+	},
+	{
+		name:    "a cast to text that drops the padding of a char",
+		live:    storedFormDerived(`"c" char(5)`, "integer", `octet_length("c")`),
+		desired: storedFormDerived(`"c" char(5)`, "integer", `octet_length("c"::text)`),
+	},
+	{
+		name:    "casts to text that compare two integers as text",
+		live:    storedFormDerived(`"a" integer, "b" integer`, "boolean", `"a" < "b"`),
+		desired: storedFormDerived(`"a" integer, "b" integer`, "boolean", `"a"::text < "b"::text`),
 	},
 	{
 		name:    "a cast that rounds",
@@ -320,6 +348,77 @@ func TestGeneratedExpressionInStoredFormOnYugabyteDBE2E(t *testing.T) {
 
 			c.Assert(planned.ExitCode, qt.Equals, 0, historyComment(planned))
 			c.Assert(planned.Stdout, qt.Contains, "manual migration required.")
+		})
+	}
+}
+
+// noTempRoleURL returns database's address for a new role that may connect
+// and read but may not create a temporary table there, which is the privilege
+// the probe that spells a generated column needs. The role is dropped when the
+// test ends.
+func noTempRoleURL(c *qt.C, database string) string {
+	c.Helper()
+	parsed, err := url.Parse(database)
+	c.Assert(err, qt.IsNil)
+	name := strings.TrimPrefix(parsed.Path, "/")
+	role := fmt.Sprintf("ptah_no_temp_%d", time.Now().UnixNano())
+	const password = "no-temp-password"
+	execPostgresFamilySQL(c, c.Context(), database, fmt.Sprintf(
+		`REVOKE TEMPORARY ON DATABASE %[1]q FROM PUBLIC; CREATE ROLE %[2]q LOGIN PASSWORD '%[3]s'; `+
+			`GRANT CONNECT ON DATABASE %[1]q TO %[2]q; GRANT USAGE ON SCHEMA public TO %[2]q; `+
+			`GRANT SELECT ON ALL TABLES IN SCHEMA public TO %[2]q`, name, role, password))
+	c.Cleanup(func() {
+		execPostgresFamilySQL(c, context.Background(), database, fmt.Sprintf(`DROP OWNED BY %[1]q; DROP ROLE %[1]q`, role))
+	})
+	parsed.User = url.UserPassword(role, password)
+	return parsed.String()
+}
+
+// TestGeneratedExpressionWithoutTheTempPrivilegeE2E connects as a role that
+// may not create a temporary table. Without a dev database the target cannot
+// spell the declaration, so the run warns, names the column, and compares the
+// declaration as written, which plans the change nobody made. With a dev
+// database the declaration is spelled there, and the unchanged table plans
+// nothing and warns about nothing.
+func TestGeneratedExpressionWithoutTheTempPrivilegeE2E(t *testing.T) {
+	const warning = "warning: generated column public.prices.search_vector is compared as written, " +
+		"not in the form the server stores: the server refused the temporary table that spells it: " +
+		"ERROR: permission denied to create temporary tables in database"
+	table := storedFormTSVector(`"title"`, "B")
+	for _, server := range storedFormServers {
+		t.Run(server.name+"/ptah", func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newStoredFormFixture(c, server.engine, table, table)
+			fixture.database = noTempRoleURL(c, fixture.database)
+
+			planned := fixture.dryRun(c)
+
+			c.Assert(planned.ExitCode, qt.Equals, 0, historyComment(planned))
+			c.Assert(planned.Stderr, qt.Contains, warning)
+			c.Assert(planned.Stdout, qt.Contains, server.changed)
+		})
+		t.Run(server.name+"/ptah-with-dev-url", func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newStoredFormFixture(c, server.engine, table, table)
+			fixture.database = noTempRoleURL(c, fixture.database)
+
+			planned := runPtahIn(c, "schema", "apply", "--db-url", fixture.database, "--schema-file", fixture.schema,
+				"--dev-url", postgresScratchURLOn(c, server.engine, "ptah_generated_stored_dev"), "--dry-run")
+
+			c.Assert(planned.ExitCode, qt.Equals, 0, historyComment(planned))
+			c.Assert(planned.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
+			c.Assert(planned.Stderr, qt.Not(qt.Contains), "compared as written")
+		})
+		t.Run(server.name+"/ptah-compat-with-dev-url", func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newStoredFormFixture(c, server.engine, table, table)
+			fixture.database = noTempRoleURL(c, fixture.database)
+
+			planned := fixture.compatDryRun(c)
+
+			c.Assert(planned.ExitCode, qt.Equals, 0, historyComment(planned))
+			c.Assert(planned.Stdout, qt.Equals, "Schema is synced, no changes to be made\n")
+			c.Assert(planned.Stderr, qt.Not(qt.Contains), "compared as written")
 		})
 	}
 }

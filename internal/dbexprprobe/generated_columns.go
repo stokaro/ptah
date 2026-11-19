@@ -60,9 +60,11 @@ type GeneratedColumnProbe struct {
 // function the reader uses, and the transaction is rolled back. The target
 // table is never touched.
 //
-// A probe the server refuses -- an expression that does not parse, a column
-// the live table does not have -- is returned with Resolved false rather than
-// omitted, for the reason [ResolveCheckExpressions] gives.
+// A probe the server refuses -- an expression that does not parse, a type the
+// server does not have, a role that may not create a temporary table -- is
+// returned with Resolved false rather than omitted, for the reason
+// [ResolveCheckExpressions] gives, and the server's answer is returned among
+// the refusals, so the caller can say why the column is compared as written.
 //
 // Only a server whose descriptor names the pg-catalog probes is asked; every
 // other dialect returns nil. Oracle's generated columns are resolved by
@@ -73,16 +75,57 @@ func ResolveGeneratedColumns(
 	ctx context.Context,
 	conn Session,
 	probes []GeneratedColumnProbe,
-) (map[string]config.GeneratedExpression, error) {
+) (map[string]config.GeneratedExpression, []GeneratedColumnRefusal, error) {
 	if conn == nil {
-		return nil, fmt.Errorf("resolve generated expressions: database connection is nil")
+		return nil, nil, fmt.Errorf("resolve generated expressions: database connection is nil")
 	}
 	if len(probes) == 0 || !isPostgresFamily(conn.Info().Dialect) {
-		return nil, nil
+		return nil, nil, nil
 	}
-	return resolveProbes(ctx, conn, "resolve generated expressions", probes,
+	answers, err := resolveProbes(ctx, conn, "resolve generated expressions", probes,
 		func(probe GeneratedColumnProbe) string { return probe.Key },
 		resolveOnePostgresGeneratedColumn)
+	if err != nil || answers == nil {
+		return nil, nil, err
+	}
+	resolved := make(map[string]config.GeneratedExpression, len(answers))
+	var refusals []GeneratedColumnRefusal
+	for _, probe := range probes {
+		answer, asked := answers[probe.Key]
+		if !asked {
+			continue
+		}
+		resolved[probe.Key] = answer.expression
+		if answer.refusal != nil {
+			refusals = append(refusals, GeneratedColumnRefusal{
+				Key: probe.Key, Schema: probe.Schema, Table: probe.Table, Column: probe.Column, Reason: answer.refusal,
+			})
+		}
+	}
+	return resolved, refusals, nil
+}
+
+// SpellsGeneratedColumns reports that [ResolveGeneratedColumns] asks a server
+// of dialect, so a caller can tell whether a connection is worth opening.
+func SpellsGeneratedColumns(dialect string) bool {
+	return isPostgresFamily(dialect)
+}
+
+// GeneratedColumnRefusal is a generated column whose probe the server refused.
+type GeneratedColumnRefusal struct {
+	// Key is the probe's key.
+	Key string
+	// Schema, Table and Column name the column as the probe did.
+	Schema, Table, Column string
+	// Reason is the server's answer to the statement it refused.
+	Reason error
+}
+
+// generatedColumnAnswer is what one probe answered: the stored expression,
+// and the server's refusal where there is none.
+type generatedColumnAnswer struct {
+	expression config.GeneratedExpression
+	refusal    error
 }
 
 // resolveOnePostgresGeneratedColumn creates one probe table and reads the
@@ -96,10 +139,10 @@ func resolveOnePostgresGeneratedColumn(
 	tx *sql.Tx,
 	index int,
 	probe GeneratedColumnProbe,
-) (config.GeneratedExpression, error) {
+) (generatedColumnAnswer, error) {
 	expression := strings.TrimSpace(probe.Expression)
 	if expression == "" || strings.TrimSpace(probe.Column) == "" || strings.TrimSpace(probe.Type) == "" {
-		return config.GeneratedExpression{}, nil
+		return generatedColumnAnswer{}, nil
 	}
 
 	columns := make([]string, 0, len(probe.Columns)+1)
@@ -122,12 +165,12 @@ func resolveOnePostgresGeneratedColumn(
 		WHERE d.adrelid = $1::regclass AND a.attname = $2`
 
 	var stored string
-	ok, err := runProbe(ctx, tx, "resolve generated expressions", probe.Key, "ptah_generated_probe",
+	refusal, err := runRefusableProbe(ctx, tx, "resolve generated expressions", probe.Key, "ptah_generated_probe",
 		postgresSavepoints, statements, func(ctx context.Context, tx *sql.Tx) error {
 			return tx.QueryRowContext(ctx, query, relation.regclass, probe.Column).Scan(&stored)
 		})
-	if err != nil || !ok {
-		return config.GeneratedExpression{}, err
+	if err != nil || refusal != nil {
+		return generatedColumnAnswer{refusal: refusal}, err
 	}
-	return config.GeneratedExpression{Expression: strings.TrimSpace(stored), Resolved: true}, nil
+	return generatedColumnAnswer{expression: config.GeneratedExpression{Expression: strings.TrimSpace(stored), Resolved: true}}, nil
 }

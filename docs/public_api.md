@@ -2419,11 +2419,7 @@ The index rules decide when an index is the declared one:
   so the comparison does not drop it.
 
 `Rules.GeneratedExpressions` gives a generated column's expression the spelling
-both sides share on the target, and a reported change quotes that spelling. A
-rule that also implements `schemacomparison.ResolvedGeneratedExpressions` reads
-both sides with `ResolvedSpelling` when a dev database spelled the declaration,
-so it folds only what cannot change the column's values.
-
+both sides share on the target, and a reported change quotes that spelling.
 `Rules.Views` compares view and materialized view queries in place of the
 shared reading. `Rules.ViewQueries` decides them instead, in one batch of
 `ViewQueryPair` values: each declared view the comparison matches with a held
@@ -2623,6 +2619,14 @@ A `dbschema.DatabaseConnection` is a probe session.
 session that also reports the server's `Info` and resolves identifier
 semantics. A `dbschema.DatabaseConnection` implements it, and the comparison
 does not link the schema readers through it. A nil `Connection` is refused.
+
+`schemadiff.ResolveGeneratedExpressions` asks a `Connection`, usually a dev
+database, how it stores each declared generated column that the current state
+also holds as generated. Only PostgreSQL and YugabyteDB are asked; elsewhere the
+result is nil. Put in `config.CompareOptions.GeneratedExpressions`, the answers
+are what `CompareWithDatabase` compares, and the comparison asks its own
+connection only about the columns they leave out. An answer with `Resolved`
+false is a column the server refused to spell.
 
 `schemaext.ComparisonRequest.DeclaredRelations` and
 `schemaext.ObjectComparisonRequest.DeclaredRelations` name the tables, views and

@@ -128,24 +128,39 @@ func runProbe(
 	statements []string,
 	read func(ctx context.Context, tx *sql.Tx) error,
 ) (bool, error) {
+	refusal, err := runRefusableProbe(ctx, tx, label, key, savepoint, marks, statements, read)
+	return err == nil && refusal == nil, err
+}
+
+// runRefusableProbe is [runProbe] for a caller that reports a refusal. refusal
+// is the server's answer to the statement it refused, and nil when the probe
+// ran; err is a failure of the transaction itself.
+func runRefusableProbe(
+	ctx context.Context,
+	tx *sql.Tx,
+	label, key, savepoint string,
+	marks savepointSyntax,
+	statements []string,
+	read func(ctx context.Context, tx *sql.Tx) error,
+) (refusal, err error) {
 	if _, err := tx.ExecContext(ctx, marks.save(savepoint)); err != nil {
-		return false, fmt.Errorf("%s: savepoint: %w", label, err)
+		return nil, fmt.Errorf("%s: savepoint: %w", label, err)
 	}
 	for _, statement := range statements {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
+		if _, refused := tx.ExecContext(ctx, statement); refused != nil {
 			if _, rollbackErr := tx.ExecContext(ctx, marks.rollback(savepoint)); rollbackErr != nil {
-				return false, fmt.Errorf("%s: roll back to savepoint after %q: %w", label, key, rollbackErr)
+				return nil, fmt.Errorf("%s: roll back to savepoint after %q: %w", label, key, rollbackErr)
 			}
-			return false, nil
+			return refused, nil
 		}
 	}
 	if err := read(ctx, tx); err != nil {
-		return false, fmt.Errorf("%s: read back %q: %w", label, key, err)
+		return nil, fmt.Errorf("%s: read back %q: %w", label, key, err)
 	}
 	if _, err := tx.ExecContext(ctx, marks.rollback(savepoint)); err != nil {
-		return false, fmt.Errorf("%s: release probe: %w", label, err)
+		return nil, fmt.Errorf("%s: release probe: %w", label, err)
 	}
-	return true, nil
+	return nil, nil
 }
 
 // probeFunc is one engine's way of putting a declaration through the server and

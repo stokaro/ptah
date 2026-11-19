@@ -36,6 +36,20 @@ var (
 		},
 	}
 
+	// UnspelledGeneratedColumns is a declared generated column the server
+	// refused to spell, so its expression is compared as written rather than
+	// in the form the server stores. The probe that spells it creates a
+	// temporary table, and a role without the TEMP privilege is refused. Its
+	// records carry the column as the "column" attribute and the server's
+	// answer as the "reason" attribute.
+	UnspelledGeneratedColumns = &Category{
+		Name: "unspelled-generated-column",
+		Summary: func(records []Record) string {
+			return fmt.Sprintf("%d generated columns are compared as written, not in the form the server stores: "+
+				"the server refused the temporary table that spells each of them", len(records))
+		},
+	}
+
 	// IgnoredProjectSettings is an atlas.hcl name the community binary
 	// accepts without acting on.
 	IgnoredProjectSettings = &Category{

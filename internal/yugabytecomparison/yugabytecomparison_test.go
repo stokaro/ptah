@@ -110,17 +110,3 @@ func TestRules_RegistersIndexesAlone(t *testing.T) {
 	c.Assert(rules.Views, qt.IsNil)
 	c.Assert(rules.Routines, qt.IsNil)
 }
-
-// TestGeneratedExpressions reads a declaration as written, and two catalog
-// forms without the casts that cannot change a value. YugabyteDB 2026.1.2
-// stores `setweight(to_tsvector('simple', coalesce(title, 'x')), 'B')` over a
-// varchar column as the first row's expression.
-func TestGeneratedExpressions(t *testing.T) {
-	c := qt.New(t)
-	rule := yugabytecomparison.GeneratedExpressions{}
-
-	c.Assert(rule.Spelling("coalesce(title::text, 'x')"), qt.Equals, "coalesce(title::text, 'x')")
-	c.Assert(rule.ResolvedSpelling(`setweight(to_tsvector('simple'::regconfig, (COALESCE(title, 'x'::character varying))::text), 'B'::"char")`),
-		qt.Equals, rule.ResolvedSpelling(`setweight(to_tsvector('simple'::regconfig, COALESCE((title)::text, 'x'::text)), 'B'::"char")`))
-	c.Assert(rule.ResolvedSpelling("(amount)::integer"), qt.Equals, "amount::integer")
-}

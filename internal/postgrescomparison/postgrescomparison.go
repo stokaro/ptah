@@ -228,28 +228,11 @@ func nullsFirst(order string, desc bool) bool {
 // to the expression with the casts removed and the catalog's spelling folded.
 type GeneratedExpressions struct{}
 
-var _ schemacomparison.ResolvedGeneratedExpressions = GeneratedExpressions{}
-
 // Spelling returns expression without its `::type` casts, folded the way a
 // catalog reprints an expression ([normalize.CatalogExpression]). Only a
 // single quote opens a string on PostgreSQL; a double-quoted token is a name.
 func (GeneratedExpressions) Spelling(expression string) string {
 	return normalize.CatalogExpression(stripTypeCasts(expression), "'")
-}
-
-// ResolvedSpelling returns expression, as pg_get_expr prints it, without the
-// casts that cannot change a value: a cast to text, and to character varying
-// with no length. The parentheses PostgreSQL prints around such a cast's
-// operand go with it. Every other cast stays, since `amount::integer` rounds,
-// `title::varchar(3)` truncates and `ts::date` drops the time. The result is
-// folded as [GeneratedExpressions.Spelling] folds it.
-//
-// Over a varchar column, `coalesce(title::text, 'x')` is stored as
-// `COALESCE((title)::text, 'x'::text)`, and `coalesce(title, 'x')` as
-// `(COALESCE(title, 'x'::character varying))::text`. Both read as
-// `coalesce(title,'x')`.
-func (GeneratedExpressions) ResolvedSpelling(expression string) string {
-	return normalize.CatalogExpression(stripTextCasts(expression), "'")
 }
 
 // stripTypeCasts removes every `::type` cast outside quoted text, the type's
@@ -288,101 +271,6 @@ func stripTypeCasts(expression string) string {
 		b.WriteByte(ch)
 	}
 	return b.String()
-}
-
-// stripTextCasts removes each cast [GeneratedExpressions.ResolvedSpelling]
-// names, outside quoted text, and the parentheses that group the cast's
-// operand. A parenthesis that opens a function's arguments stays, and so does
-// one around a list, which is a row.
-func stripTextCasts(expression string) string {
-	out := make([]byte, 0, len(expression))
-	var opened []int
-	lastOpen, lastClose := -1, -1
-	inString, inIdentifier := false, false
-	for i := 0; i < len(expression); i++ {
-		ch := expression[i]
-		switch {
-		case ch == '\'' && !inIdentifier:
-			inString = !inString
-		case ch == '"' && !inString:
-			inIdentifier = !inIdentifier
-		case inString || inIdentifier:
-		case ch == ':' && i+1 < len(expression) && expression[i+1] == ':':
-			end := skipTypeCast(expression, i)
-			if !preservesValue(expression, i+2, end) {
-				out = append(out, expression[i:end]...)
-				i = end - 1
-				lastClose = -1
-				continue
-			}
-			if lastClose == len(out) && groupsAnOperand(out, lastOpen) {
-				out = append(out[:lastOpen], out[lastOpen+1:len(out)-1]...)
-			}
-			i = end - 1
-			lastClose = -1
-			continue
-		case ch == '(':
-			opened = append(opened, len(out))
-		case ch == ')' && len(opened) > 0:
-			lastOpen = opened[len(opened)-1]
-			opened = opened[:len(opened)-1]
-			out = append(out, ch)
-			lastClose = len(out)
-			continue
-		}
-		out = append(out, ch)
-	}
-	return string(out)
-}
-
-// preservesValue reports that the cast whose type is expression[start:end]
-// cannot change a value: it names text, or character varying with no length,
-// and no array follows it.
-func preservesValue(expression string, start, end int) bool {
-	if end < len(expression) && expression[end] == '[' {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(expression[start:end])) {
-	case "text", "character varying", "varchar":
-		return true
-	default:
-		return false
-	}
-}
-
-// groupsAnOperand reports that the parenthesis at out[open], closed by the
-// last byte of out, groups one expression: no name comes before it, as one
-// does before a function's arguments, and no comma separates what it holds at
-// its own depth, as one does in a row.
-func groupsAnOperand(out []byte, open int) bool {
-	if open < 0 {
-		return false
-	}
-	before := open - 1
-	for before >= 0 && out[before] == ' ' {
-		before--
-	}
-	if before >= 0 && (out[before] == '"' || out[before] != ' ' && isTypeCastCharacter(out[before])) {
-		return false
-	}
-	depth := 0
-	inString, inIdentifier := false, false
-	for _, ch := range out[open+1 : len(out)-1] {
-		switch {
-		case ch == '\'' && !inIdentifier:
-			inString = !inString
-		case ch == '"' && !inString:
-			inIdentifier = !inIdentifier
-		case inString || inIdentifier:
-		case ch == '(':
-			depth++
-		case ch == ')':
-			depth--
-		case ch == ',' && depth == 0:
-			return false
-		}
-	}
-	return true
 }
 
 // skipTypeCast returns the position after the cast that starts at

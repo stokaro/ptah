@@ -263,12 +263,18 @@ not depend on the body.
 
 A generated column is asked on a temporary table that has the columns of the
 table the database holds. The server adds casts the declaration does not
-write. Over a `varchar` column, `coalesce(title, '')` is stored as
-`(COALESCE(title, ''::character varying))::text`, and `coalesce(title::text, '')`
-as `COALESCE((title)::text, ''::text)`. Between two stored forms Ptah folds a
-cast to `text`, and to `varchar` with no length, so these two compare equal.
-Every other cast is a change: `amount::integer` rounds a numeric column, and
-`title::varchar(3)` truncates.
+write: over a `varchar` column, `coalesce(title, '')` is stored as
+`(COALESCE(title, ''::character varying))::text`. The two stored forms are then
+compared exactly, apart from whitespace, so a cast written on one side only is
+a change. Over a `char(5)` column, `octet_length(c)` counts the padding and
+`octet_length(c::text)` does not.
+
+The temporary table needs the `TEMPORARY` privilege on the database. With
+`--dev-url`, `schema apply` and `schema plan` ask the dev database first, so the
+target needs the privilege only for a table whose column types the dev database
+does not have, such as an enum. A generated column no server could spell is
+compared as written, and the run prints one warning that names it and the
+server's answer.
 
 A routine with a SQL-standard body, `BEGIN ATOMIC ... END` or `RETURN ...`, is
 asked with its body too, a procedure without arguments included. PostgreSQL

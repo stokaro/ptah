@@ -392,9 +392,7 @@ what a catalog adds to a stored predicate, such as the brackets SQL Server
 writes around every name. `ForeignKeyIndexes` finds the index a server builds
 for a foreign key, as MySQL and MariaDB do, so a plan never drops it.
 `GeneratedExpressions` gives a generated column's expression the spelling a
-declaration and the catalog share. `ResolvedGeneratedExpressions` adds the
-stricter spelling for two catalog forms, read when a dev database spelled the
-declaration.
+declaration and the catalog share.
 
 `Target.Creations` selects `schemaprojection.TableCreationService` for source
 files used as current state. It predicts CREATE defaults and column keys.
