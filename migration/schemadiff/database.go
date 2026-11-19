@@ -73,7 +73,7 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err := sqlitevirtual.ValidateToggle(info.Dialect); err != nil {
 		return nil, Diagnostics{}, err
 	}
-	names := collectIdentifierNames(desired, database, info.Schema)
+	names := collectIdentifierNames(desired, database, info.Schema, info.Dialect)
 	target, err := runtime.ResolveTarget(info.Dialect)
 	if err != nil {
 		return nil, Diagnostics{}, err
@@ -988,11 +988,40 @@ func answersUnderDeclaredIdentities(declared, answered schemaext.Objects, target
 func collectIdentifierNames(
 	desired *schemamodel.Database,
 	database *catalog.Database,
-	defaultSchema string,
+	defaultSchema, dialect string,
 ) []string {
 	names := []string{defaultSchema}
 	names = appendGeneratedIdentifierNames(names, desired)
-	return appendDatabaseIdentifierNames(names, database)
+	names = appendDatabaseIdentifierNames(names, database)
+	return appendSequenceReferenceNames(names, desired, database, dialect)
+}
+
+// appendSequenceReferenceNames adds the schema and sequence names the column
+// defaults on both sides read a sequence through. A default compares a
+// reference by the class the server puts each name in, and a name nobody
+// asked about keeps its spelling, so a declared NEXT VALUE FOR S and a stored
+// NEXT VALUE FOR [s] differ on a server that reads them as one sequence.
+func appendSequenceReferenceNames(
+	names []string,
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	dialect string,
+) []string {
+	if desired != nil {
+		for _, field := range desired.Fields {
+			names = append(names, compare.SequenceReferenceNames(field.DefaultExpr, dialect)...)
+		}
+	}
+	if database != nil {
+		for _, table := range database.Tables {
+			for _, column := range table.Columns {
+				if column.ColumnDefault != nil {
+					names = append(names, compare.SequenceReferenceNames(*column.ColumnDefault, dialect)...)
+				}
+			}
+		}
+	}
+	return names
 }
 
 func appendGeneratedIdentifierNames(
