@@ -37,11 +37,12 @@ table "t" {
 
 // schemaFileCollationRows are two schema files that differ only in a
 // collation a server decides: the table's default collation, which the
-// column n takes, written in SQL and in HCL, and the character set of a
-// column that names no collation. community is the plan the pinned community
-// binary prints, by engine, and compat the plan ptah-compat prints; both name
-// the same change, and the binary spells the column's collation where
-// ptah-compat spells its character set.
+// column n takes, written in SQL and in HCL, the same with three columns
+// whose names sort in another order than the table holds them, and the
+// character set of a column that names no collation. community is the plan
+// the pinned community binary prints, by engine, and compat the plan
+// ptah-compat prints; both name the same change, and the binary spells the
+// column's collation where ptah-compat spells its character set.
 var schemaFileCollationRows = []struct {
 	name      string
 	file      string
@@ -72,6 +73,19 @@ var schemaFileCollationRows = []struct {
 		compat: []string{"ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;"},
 	},
 	{
+		name: "columns in the order the table holds them",
+		file: "schema.sql",
+		from: "CREATE TABLE t (id int PRIMARY KEY, zeta varchar(20) NULL, alpha varchar(20) NULL, mid varchar(10) NULL) " +
+			"DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;\n",
+		to: "CREATE TABLE t (id int PRIMARY KEY, zeta varchar(20) NULL, alpha varchar(20) NULL, mid varchar(10) NULL) " +
+			"DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;\n",
+		community: map[string][]string{
+			"MySQL":   {heldOrderPlan},
+			"MariaDB": {heldOrderPlan},
+		},
+		compat: []string{heldOrderPlan},
+	},
+	{
 		name: "a column character set",
 		file: "schema.sql",
 		from: "CREATE TABLE t (id int PRIMARY KEY, c varchar(20) CHARACTER SET latin1 NULL) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;\n",
@@ -83,6 +97,12 @@ var schemaFileCollationRows = []struct {
 		compat: []string{"ALTER TABLE `t` MODIFY COLUMN `c` varchar(20) CHARACTER SET utf8mb4 NULL;"},
 	},
 }
+
+// heldOrderPlan is the plan of a changed table collation that resets three
+// columns, which writes their MODIFY COLUMN clauses in the order the table
+// holds them rather than in name order.
+const heldOrderPlan = "ALTER TABLE `t` COLLATE utf8mb4_general_ci, MODIFY COLUMN `zeta` varchar(20) NULL, " +
+	"MODIFY COLUMN `alpha` varchar(20) NULL, MODIFY COLUMN `mid` varchar(10) NULL;"
 
 // writeSchemaFiles writes from and to as two files named name in their own
 // directories, and returns their file:// addresses.
