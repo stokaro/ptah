@@ -73,15 +73,18 @@ func NewWithCapabilities(dialect string, buf *bufwriter.Writer, caps capability.
 	}
 }
 
-// escapeValue properly escapes a string value for use in SQL
+// escapeValue writes value as a string literal the target session reads as
+// value; see [mysqlrender.QuoteString].
 func (r *Renderer) escapeValue(value string) string {
-	return mysqlrender.QuoteString(value)
+	return mysqlrender.QuoteString(value, r.caps)
 }
 
 func (r *Renderer) renderDefaultLiteral(column *ast.ColumnNode) string {
 	value := strings.TrimSpace(column.Default.Value)
+	// A default already in its quotes, as a schema file writes one, is held in
+	// the default sql_mode's spelling.
 	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
-		return value
+		return mysqlrender.RespellStrings(value, r.caps)
 	}
 	if literal, ok := renderBooleanDefaultLiteral(column.Type, value); ok {
 		return literal
@@ -621,7 +624,7 @@ func (r *Renderer) indexDefinition(node *ast.IndexNode, placement string) ([]str
 	if err := mysqlrender.ValidateIndexParts(r.dialect, index); err != nil {
 		return nil, err
 	}
-	return mysqlrender.IndexDefinition(r.dialect, index, placement), nil
+	return mysqlrender.IndexDefinition(r.dialect, r.caps, index, placement), nil
 }
 
 // hiddenIndexWord is how the dialect says whether the optimizer uses an
@@ -1073,9 +1076,16 @@ func (r *Renderer) namesColumnCheckAfterColumn(column *ast.ColumnNode) bool {
 	return r.dialect == "mariadb" && column.CheckName != "" && strings.EqualFold(column.CheckName, column.Name)
 }
 
+// renderColumnType is the type column is written with. An ENUM or SET type
+// carries its values as literals in the default sql_mode's spelling, as the
+// catalog reports them, and is written for the target session.
 func (r *Renderer) renderColumnType(column *ast.ColumnNode, columnType string) string {
 	if r.isMariaDBJSONColumn(column) {
 		return "longtext"
+	}
+	lower := strings.ToLower(strings.TrimSpace(columnType))
+	if strings.HasPrefix(lower, "enum") || strings.HasPrefix(lower, "set") {
+		return mysqlrender.RespellStrings(columnType, r.caps)
 	}
 	return columnType
 }
@@ -1200,7 +1210,7 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		if err != nil {
 			return "", err
 		}
-		return "  " + strings.Join(mysqlrender.IndexDefinition(r.dialect, key, ""), " "), nil
+		return "  " + strings.Join(mysqlrender.IndexDefinition(r.dialect, r.caps, key, ""), " "), nil
 	case ast.UniqueConstraint:
 		if constraint.Name != "" {
 			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", escapeIdentifier(constraint.Name), renderMySQLConstraintColumns(constraint)), nil
@@ -1290,10 +1300,10 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []string) (string, error) {
 	var parts []string
 
-	// Handle enum types inline for MariaDB
-	columnType := column.Type
+	// Handle enum types inline for MariaDB. The values are quoted for the
+	// target session here, so the type is not written again for it.
+	columnType := r.renderColumnType(column, column.Type)
 	if len(enumValues) > 0 {
-		// Convert to MariaDB ENUM syntax
 		quotedValues := make([]string, len(enumValues))
 		for i, value := range enumValues {
 			quotedValues[i] = r.escapeValue(value)
@@ -1302,7 +1312,6 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 	}
 
 	// Column name and type
-	columnType = r.renderColumnType(column, columnType)
 	parts = append(parts, fmt.Sprintf("  %s %s", escapeIdentifier(column.Name), columnType))
 	parts = r.appendColumnCharsetCollate(parts, column)
 
@@ -1320,7 +1329,7 @@ func (r *Renderer) visitAlterTableWithEnums(node *ast.AlterTableNode, enums map[
 		return err
 	}
 	prefix := "ALTER TABLE " + escapeQualifiedIdentifier(node.Name) + " "
-	return r.w.WriteAlterTable(node, prefix, r.dialect, func(operations []ast.AlterOperation) error {
+	return r.w.WriteAlterTable(node, prefix, r.dialect, r.caps, func(operations []ast.AlterOperation) error {
 		return r.writeAlterTableOperations(node, operations, enums)
 	})
 }

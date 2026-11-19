@@ -98,6 +98,51 @@ func TestRenderStatementsContext_HappyPath_WithoutOwnerOrChanges(t *testing.T) {
 	c.Assert(owner.writes, qt.IsNil)
 }
 
+// Without a write service, a string literal is written as the session reads
+// it: a MySQL session whose sql_mode names NO_BACKSLASH_ESCAPES takes each
+// backslash once, in an inserted value and in an update's key alike, and a
+// session without the key takes it doubled.
+func TestRenderStatementsContext_HappyPath_ForTheSession(t *testing.T) {
+	diff := &datadiff.DataDiff{
+		Table: "paths", Keys: []string{"name"}, ColumnTypes: map[string]string{"name": "VARCHAR(30)", "note": "VARCHAR(30)"},
+		Inserts: []datadiff.Row{{"name": `C:\temp\x`, "note": "it's"}},
+		Updates: []datadiff.RowUpdate{{Key: map[string]any{"name": `D:\y`},
+			Desired: datadiff.Row{"name": `D:\y`, "note": `n\1`}, Live: datadiff.Row{"name": `D:\y`, "note": "old"}}},
+	}
+	tests := []struct {
+		name string
+		caps capability.Capabilities
+		want []string
+	}{
+		{
+			name: "NO_BACKSLASH_ESCAPES",
+			caps: capability.ForDialect("mysql").With(capability.NoBackslashEscapes, true),
+			want: []string{
+				"INSERT INTO `paths` (`name`, `note`) VALUES ('C:\\temp\\x', 'it''s');",
+				"UPDATE `paths` SET `note` = 'n\\1' WHERE `name` = 'D:\\y';",
+			},
+		},
+		{
+			name: "the default sql_mode",
+			caps: capability.ForDialect("mysql"),
+			want: []string{
+				"INSERT INTO `paths` (`name`, `note`) VALUES ('C:\\\\temp\\\\x', 'it''s');",
+				"UPDATE `paths` SET `note` = 'n\\\\1' WHERE `name` = 'D:\\\\y';",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			up, _, err := datadiff.RenderStatementsContext(c.Context(), diff, "mysql", dataext.Services{}, test.caps)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(up, qt.DeepEquals, test.want)
+		})
+	}
+}
+
 func TestRenderStatementsContext_FailurePath(t *testing.T) {
 	refused := errors.New("the owner refuses the batch")
 	tests := []struct {

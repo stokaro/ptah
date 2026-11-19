@@ -17,6 +17,8 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/plangraph"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -27,6 +29,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/devreach"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/planeffect"
@@ -360,6 +363,10 @@ func PreparePlanFileReportingUndecided(
 		// with the same value. A literal that drops it leaves the flag accepted,
 		// dialect-checked and then read by nothing.
 		DevURL: opts.DevURL,
+		// A saved plan runs later, on a session it cannot name, so its literals
+		// are spelled for the default sql_mode, and applying it refuses a
+		// session that reads them differently; see [VerifyPlanTarget].
+		forLater: true,
 		// A saved plan fingerprints local desired-state files; URL sources
 		// stay a `schema plan` follow-up gap.
 		LocalFilesOnly: true,
@@ -689,12 +696,14 @@ func classifyPlanStatements(
 // [PreparePlanFile] records carry a planner's report of what it left out, and an
 // operator who opened the editor and quit without typing anything must not lose
 // it.
-func splitPlanStatements(sqlText, dialect string) []string {
-	raw := sqlutil.SplitSQLStatementsForDialect(sqlText, dialect)
+//
+// caps is the session the text is cut for; see [SplitApplyStatements].
+func splitPlanStatements(sqlText, dialect string, caps capability.Capabilities) []string {
+	raw := sqlutil.SplitSQLStatementsForSession(sqlText, dialect, caps)
 	statements := make([]string, 0, len(raw))
 	for _, statement := range raw {
 		statement = strings.TrimSpace(statement)
-		if strings.TrimSpace(sqlutil.StripCommentsForDialect(statement, dialect)) == "" {
+		if strings.TrimSpace(sqlutil.StripCommentsForSession(statement, dialect, caps)) == "" {
 			continue
 		}
 		statements = append(statements, statement)
@@ -747,7 +756,17 @@ func splitPlanStatements(sqlText, dialect string) []string {
 //
 // The runtime's owners judge the statements as they judge a planned one; an
 // error judging them returns no plan.
+//
+// The text is cut as the default sql_mode reads it, which is the mode a saved
+// plan is written for; see [ApplyOptions.forLater].
 func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runtime, sqlText string) (PlanFile, error) {
+	return p.withStatementsFromSQL(ctx, runtime, sqlText, capability.Capabilities{})
+}
+
+// withStatementsFromSQL is [PlanFile.WithStatementsFromSQL] with the text cut
+// for a session with caps, as the rating of edited text a session is about to
+// run needs.
+func (p PlanFile) withStatementsFromSQL(ctx context.Context, runtime safety.Runtime, sqlText string, caps capability.Capabilities) (PlanFile, error) {
 	if p.HasInputReferences() {
 		return PlanFile{}, fmt.Errorf("edited SQL with approved execution inputs needs a new provider plan")
 	}
@@ -755,7 +774,7 @@ func (p PlanFile) WithStatementsFromSQL(ctx context.Context, runtime safety.Runt
 	// Keeping positional notes too would duplicate them or attach them to
 	// a different statement after the edit.
 	p.Annotations = nil
-	statements, destructive, err := classifyPlanStatements(ctx, runtime, splitPlanStatements(sqlText, p.Dialect), p.Dialect, nil, nil, nil)
+	statements, destructive, err := classifyPlanStatements(ctx, runtime, splitPlanStatements(sqlText, p.Dialect, caps), p.Dialect, nil, nil, nil)
 	if err != nil {
 		return PlanFile{}, err
 	}
@@ -1009,6 +1028,24 @@ func DecodePlanFile(contents []byte, path string) (PlanFile, string, error) {
 	return plan, digest.FromBytes(contents).String(), nil
 }
 
+// refusePlanAcrossBackslashModes refuses a plan the session reads differently
+// from the session it was written for; see [backslashmode.ReadDifferently].
+// A saved plan is written for the default sql_mode by construction (see
+// [ApplyOptions.forLater]) and runs as written, so on a session whose sql_mode
+// names NO_BACKSLASH_ESCAPES a statement that holds a backslash would store
+// other characters than the plan declares. The plan records no mode: it could
+// only ever record the default one.
+func refusePlanAcrossBackslashModes(plan PlanFile, session catalog.ServerInfo) error {
+	written := backslashmode.ForLater(session.Capabilities)
+	if !backslashmode.ReadDifferently(written, session.Capabilities, plan.StatementSQL()) {
+		return nil
+	}
+	return fmt.Errorf("%w: the plan is written for a session whose sql_mode %s, the session's sql_mode %s, "+
+		"and a statement holds a backslash, which the two read differently; apply the desired schema without --plan, "+
+		"or connect with a sql_mode without NO_BACKSLASH_ESCAPES", ptaherr.ErrUnsupportedFeature,
+		backslashmode.Describe(written), backslashmode.Describe(session.Capabilities))
+}
+
 // decodePlanJSON parses and validates the native format_version-1 JSON plan
 // document.
 func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
@@ -1028,7 +1065,9 @@ func decodePlanJSON(contents []byte, path string) (PlanFile, error) {
 // was computed against: the dialects must be compatible and the current
 // schema, filtered with the plan's recorded exclude patterns and with its role
 // memberships narrowed as [rolegraph.ForPlan] says, must match the plan's source
-// fingerprint. The schema is read at the plan's
+// fingerprint. A plan that holds a backslash is refused on a session whose
+// sql_mode names NO_BACKSLASH_ESCAPES, since it is written for the default
+// sql_mode. The schema is read at the plan's
 // [PlanFile.Schemas] when it records a selection, and otherwise at the
 // connection URL's scope together with the plan's [PlanFile.SchemasBeyondURL].
 // A fingerprint mismatch returns *StalePlanError.
@@ -1047,6 +1086,9 @@ func VerifyPlanTarget(ctx context.Context, conn *dbschema.DatabaseConnection, pl
 	if plan.Dialect != "" && !planDialectsCompatible(plan.Dialect, conn.Info().Dialect) {
 		return fmt.Errorf("plan file targets dialect %q, but the --url database dialect is %q",
 			plan.Dialect, conn.Info().Dialect)
+	}
+	if err := refusePlanAcrossBackslashModes(plan, conn.Info()); err != nil {
+		return err
 	}
 
 	current, err := planTargetState(ctx, conn, recordedReadScope(plan), plan.Exclude, runtime)

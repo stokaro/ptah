@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/catalog"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
@@ -236,7 +237,7 @@ func TestPostgreSQLRenderer_SkipCommentNamesStayCommentOnly(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "-- POSTGRES: role app_role DROP TABLE users is not supported by this target; skipped.")
 	c.Assert(sql, qt.Not(qt.Contains), "\nDROP TABLE users")
-	c.Assert(atlasschema.SplitApplyStatements(sql, platform.Postgres), qt.HasLen, 0)
+	c.Assert(atlasschema.SplitApplyStatements(sql, catalog.ServerInfo{Dialect: platform.Postgres}), qt.HasLen, 0)
 }
 
 // withoutRowLevelSecurity is a PostgreSQL preset for a target that models no

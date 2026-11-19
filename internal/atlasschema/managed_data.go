@@ -11,6 +11,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/dataext"
 	"ptah.run/core/manageddata"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dataorder"
@@ -63,9 +64,13 @@ type dataStatement struct {
 // (stokaro/ptah#3252). The rank is dataorder's, which is what the migration
 // body reads, so a plan and a migration cannot disagree about which row goes in
 // first.
+//
+// caps is the capability set the statements are spelled for; see
+// [ApplyOptions.renderCapabilities].
 func managedDataStatements(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	caps capability.Capabilities,
 	runtime dataext.Runtime,
 	desired *schemamodel.Database,
 	current *catalog.Database,
@@ -103,7 +108,7 @@ func managedDataStatements(
 	// and refuse when they moved (stokaro/ptah#3378).
 	var covered []PlanRowSet
 	for _, declaration := range declarations {
-		declared, read, err := managedDataDiff(ctx, conn, services, declaration, desired, current, projectRoots)
+		declared, read, err := managedDataDiff(ctx, conn, caps, services, declaration, desired, current, projectRoots)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -183,6 +188,7 @@ func (e *ProtectedTableError) Error() string {
 func managedDataDiff(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
+	caps capability.Capabilities,
 	services dataext.Services,
 	declaration schemamodel.ManagedData,
 	desired *schemamodel.Database,
@@ -255,7 +261,7 @@ func managedDataDiff(
 	// be cut back into statements at line breaks: a declared value may carry a
 	// newline, which is legal inside a literal and is the byte the script joins
 	// statements with (stokaro/ptah#3278).
-	up, _, err := datadiff.RenderStatementsContext(ctx, diff, conn.Info().Dialect, services, conn.Info().Capabilities)
+	up, _, err := datadiff.RenderStatementsContext(ctx, diff, conn.Info().Dialect, services, caps)
 	if err != nil {
 		return nil, managedrows.Read{}, fmt.Errorf("render managed rows of %s: %w", qualified, err)
 	}

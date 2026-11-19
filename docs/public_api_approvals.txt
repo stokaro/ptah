@@ -1001,3 +1001,10 @@ v0.33.0 ptah.run/core/platform/descriptor
 # Migration.ConstraintsRewriteTable described that refusal, and nothing else
 # read it. Pre-v1, so no compatibility is owed.
 v0.33.0 ptah.run/core/platform/descriptor
+
+# QuoteString and IndexDefinition take the capability set of the session the
+# text is written for. A session whose sql_mode names NO_BACKSLASH_ESCAPES reads
+# a backslash in a string as the character, so a literal written for it keeps
+# each backslash single, and one written for any other session doubles it.
+# Pre-v1, so no compatibility is owed.
+v0.33.0 ptah.run/dialect/mysql/mysqlrender

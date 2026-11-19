@@ -28,6 +28,10 @@ func applyUnits(ctx context.Context, conn *dbschema.DatabaseConnection, mode mig
 	if err != nil {
 		return err
 	}
+	// The statements arrive cut as the session reads them. The checks below,
+	// and the others that read a plan's statements, scan each one with the
+	// dialect's default rule; the backslashmode package says why that cannot
+	// hide a statement on a session whose sql_mode names NO_BACKSLASH_ESCAPES.
 	if err := validateApplyUnits(ctx, conn.Writer(), prepared, statements); err != nil {
 		return err
 	}

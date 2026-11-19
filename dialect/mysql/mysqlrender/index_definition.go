@@ -11,6 +11,8 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/dialect/mysql/mysqlast"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/tableref"
 )
@@ -37,15 +39,59 @@ func QuoteQualifiedIdentifier(identifier string) string {
 	}
 }
 
-// QuoteString writes value as a string literal in single quotes, doubling
-// each backslash and then each single quote inside it. Under MySQL's and
-// MariaDB's default sql_mode a backslash in a string escapes the character
-// after it: measured on MySQL 26.10 and MariaDB 12.3, `'a\b'` stores a and a
-// backspace and `'c\d'` stores cd, where `'a\\b'` stores the three
-// characters. Under NO_BACKSLASH_ESCAPES the doubled backslash is stored
-// twice.
-func QuoteString(value string) string {
-	return "'" + strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), "'", "''") + "'"
+// QuoteString writes value as a string literal in single quotes, as a
+// session with caps reads it, so the session stores value. Each single quote
+// inside it is doubled. Under MySQL's and MariaDB's default sql_mode a
+// backslash in a string escapes the character after it: measured on MySQL
+// 26.10 and MariaDB 12.3, `'a\b'` stores a and a backspace and `'c\d'` stores
+// cd, where `'a\\b'` stores the three characters. So each backslash is doubled
+// too, unless caps has [capability.NoBackslashEscapes]: a session whose
+// sql_mode names NO_BACKSLASH_ESCAPES reads a backslash as itself and stores a
+// doubled one twice.
+//
+// A literal written for a session nobody knows yet, such as one in a
+// migration file, takes caps without that key, which only a live session
+// sets.
+func QuoteString(value string, caps capability.Capabilities) string {
+	if dialectlexer.ForSession(platform.MySQL, caps).BackslashEscapes {
+		value = strings.ReplaceAll(value, `\`, `\\`)
+	}
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+// RespellStrings writes text, SQL that reads as the default sql_mode reads
+// it, as a session with caps reads the same characters. Under
+// [capability.NoBackslashEscapes] each single-quoted string that holds a
+// backslash is written again by [QuoteString], so `'a\\b'` becomes `'a\b'` and
+// the escaped quote in `'it\'s'` two quotes; everything else in text, and all
+// of it for any other session, is returned byte for byte.
+//
+// It is for a literal Ptah holds in its default-mode spelling: a quoted
+// default read from a schema file, and the values of an ENUM or SET column
+// type. SQL a user wrote, such as a view body, is not passed through it.
+func RespellStrings(text string, caps capability.Capabilities) string {
+	if dialectlexer.ForSession(platform.MySQL, caps).BackslashEscapes || !strings.Contains(text, `\`) {
+		return text
+	}
+	opts := dialectlexer.Options(platform.MySQL)
+	tokens := lexer.NewLexerWithOptions(text, opts)
+	var b strings.Builder
+	written := 0
+	for token := tokens.NextToken(); token.Type != lexer.TokenEOF; token = tokens.NextToken() {
+		literal := text[token.Start:token.End]
+		if token.Type != lexer.TokenString || !strings.HasPrefix(literal, "'") || !strings.Contains(literal, `\`) {
+			continue
+		}
+		value, ok := lexer.StringValue(literal, opts)
+		if !ok {
+			continue
+		}
+		b.WriteString(text[written:token.Start])
+		b.WriteString(QuoteString(value, caps))
+		written = token.End
+	}
+	b.WriteString(text[written:])
+	return b.String()
 }
 
 // HiddenIndexWord is how dialect says whether the optimizer uses an index:
@@ -78,14 +124,15 @@ func unquote(identifier string) string {
 }
 
 // IndexDefinition is index from its kind to its options, as CREATE INDEX and
-// ALTER TABLE ... ADD INDEX both write it on dialect, one token group per
-// element. placement is what stands between the name and the key parts: `ON
-// table` for CREATE INDEX, and empty for ADD INDEX. A primary key is written
+// ALTER TABLE ... ADD INDEX both write it on dialect for a session with caps,
+// one token group per element; the comment is quoted by [QuoteString].
+// placement is what stands between the name and the key parts: `ON table`
+// for CREATE INDEX, and empty for ADD INDEX. A primary key is written
 // `PRIMARY KEY` with its parts, as CREATE TABLE and ADD PRIMARY KEY write it,
 // and takes no placement. It is the one writer of a MySQL-family index
 // definition, the primary key's included: the common renderer and the owner's
 // index replacement both use it.
-func IndexDefinition(dialect string, index mysqlast.Index, placement string) []string {
+func IndexDefinition(dialect string, caps capability.Capabilities, index mysqlast.Index, placement string) []string {
 	var parts []string
 	if index.Unique {
 		parts = append(parts, "UNIQUE")
@@ -128,7 +175,7 @@ func IndexDefinition(dialect string, index mysqlast.Index, placement string) []s
 		parts = append(parts, fmt.Sprintf("KEY_BLOCK_SIZE=%d", index.KeyBlockSize))
 	}
 	if index.Comment != "" {
-		parts = append(parts, "COMMENT", QuoteString(index.Comment))
+		parts = append(parts, "COMMENT", QuoteString(index.Comment, caps))
 	}
 	if index.Invisible {
 		parts = append(parts, HiddenIndexWord(dialect, true))
@@ -221,7 +268,7 @@ func renderReplaceIndex(ctx renderer.ExtensionContext, op *mysqlast.ReplaceIndex
 		drop = "PRIMARY KEY"
 	}
 	statement := fmt.Sprintf("ALTER TABLE %s DROP %s, ADD %s", QuoteQualifiedIdentifier(ctx.Parent.Name),
-		drop, strings.Join(IndexDefinition(ctx.Target, op.Index, ""), " "))
+		drop, strings.Join(IndexDefinition(ctx.Target, ctx.Capabilities, op.Index, ""), " "))
 	if algorithm != "" && ctx.Capabilities.Has(capability.AlterTableAlgorithmLock) {
 		statement += ", ALGORITHM=" + strings.ToUpper(algorithm)
 	}

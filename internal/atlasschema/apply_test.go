@@ -9,6 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 	"ptah.run/dbschema"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/atlasschema"
@@ -308,7 +310,7 @@ CREATE TABLE tx_mode_batch_two (id INT);
 GO
 `
 
-	statements := atlasschema.SplitApplyStatements(sqlText, "sqlserver")
+	statements := atlasschema.SplitApplyStatements(sqlText, catalog.ServerInfo{Dialect: "sqlserver"})
 
 	c.Assert(statements, qt.DeepEquals, []string{
 		"CREATE TABLE tx_mode_batch_one (id INT)",
@@ -316,12 +318,42 @@ GO
 	})
 }
 
+// Text a session runs is cut as that session reads it. A session whose
+// sql_mode names NO_BACKSLASH_ESCAPES ends the string after the backslash, so
+// the DROP TABLE behind it is a statement of its own and the comment after it
+// is dropped; the default sql_mode reads the whole tail as one string.
+func TestSplitApplyStatements_ForTheSession(t *testing.T) {
+	const sqlText = "ALTER TABLE t ALTER COLUMN u SET DEFAULT 'a\\'; DROP TABLE t; -- '\n"
+	tests := []struct {
+		name string
+		caps capability.Capabilities
+		want []string
+	}{
+		{
+			name: "NO_BACKSLASH_ESCAPES",
+			caps: capability.ForDialect("mysql").With(capability.NoBackslashEscapes, true),
+			want: []string{"ALTER TABLE t ALTER COLUMN u SET DEFAULT 'a\\'", "DROP TABLE t"},
+		},
+		{
+			name: "the default sql_mode",
+			caps: capability.ForDialect("mysql"),
+			want: []string{"ALTER TABLE t ALTER COLUMN u SET DEFAULT 'a\\'; DROP TABLE t; -- '"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(atlasschema.SplitApplyStatements(sqlText, catalog.ServerInfo{Dialect: "mysql", Capabilities: test.caps}), qt.DeepEquals, test.want)
+		})
+	}
+}
+
 func TestSplitApplyStatements_SQLServerPreservesBracketCommentMarkers(t *testing.T) {
 	c := qt.New(t)
 	sqlText := `CREATE TABLE [owner's--/*value]]x] ([id] INT);
 GO`
 
-	statements := atlasschema.SplitApplyStatements(sqlText, "sqlserver")
+	statements := atlasschema.SplitApplyStatements(sqlText, catalog.ServerInfo{Dialect: "sqlserver"})
 
 	c.Assert(statements, qt.DeepEquals, []string{
 		"CREATE TABLE [owner's--/*value]]x] ([id] INT)",
