@@ -161,7 +161,6 @@ migration nobody asked for.
 | `schemamodel.PrimaryKeyPart.Prefix` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Schema.Name` | `clickhouse`, `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Sequence.Dialects` | `cockroachdb`, `mariadb`, `oracle`, `sqlserver`, `yugabytedb` | to-catalog | both conversions carry it, and the comparison plans nothing when it changes |
-| `schemamodel.Table.Collate` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.Engine` | `mariadb`, `mysql` | both | goschematodb drops it: the catalog is the same with and without it |
 | `schemamodel.Table.Facets` | `mariadb`, `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |
 | `schemamodel.Table.Overrides` | `mysql` | both | both conversions carry it, and the comparison plans nothing when it changes |

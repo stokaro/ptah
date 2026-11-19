@@ -233,6 +233,9 @@ Time defaults keep their SQL syntax: `DEFAULT CURRENT_TIMESTAMP` stays a
 keyword expression, and `DEFAULT CURRENT_TIMESTAMP(3)` keeps its precision.
 `DEFAULT NULL` means SQL null, the same as an omitted default.
 `DEFAULT 'NULL'` is a string value and compares as a different default.
+In a SQL schema file or an HCL document, a string on a text column is never the
+expression its characters spell: `DEFAULT 'now()'` and `DEFAULT now()` are
+different defaults, and so are `'1 + 2'` and `(1 + 2)`.
 
 | Declared | Read back |
 | --- | --- |

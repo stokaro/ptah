@@ -125,13 +125,23 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, err
 	}
+	defaults, aliases, err := r.ReadCharsetFacts(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if !selected.Valid {
-		return r.readServer(ctx, account)
+		server, err := r.readServer(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		server.CharsetDefaultCollations, server.CharsetAliases = defaults, aliases
+		return server, nil
 	}
 	schema, err := r.readDatabase(ctx, account, selected.String, referencedOutside(selected.String))
 	if err != nil {
 		return nil, err
 	}
+	schema.CharsetDefaultCollations, schema.CharsetAliases = defaults, aliases
 	// Roles and their grants are read only where the preset claims them, the
 	// same gate the ClickHouse reader uses. mysql.user and mysql.tables_priv
 	// need a privilege reading a table does not, so an account without it must
@@ -143,6 +153,71 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		}
 	}
 	return schema, nil
+}
+
+// ReadCharsetFacts reads the collation the server gives each character set
+// named without a collation, keyed by the character set in lower case, and
+// the character set utf8 names in this session; see
+// [catalog.Database.CharsetDefaultCollations] and
+// [catalog.Database.CharsetAliases]. The alias is asked of the server rather
+// than read from a setting, so it holds whatever decides it: MariaDB's
+// old_mode, or the alias MySQL fixes. It needs no selected database, and a
+// read of the schema reports the same facts; a caller that predicts a table
+// for this server without reading a schema, such as a diff of two schema
+// files against a dev database, asks for them alone.
+func (r *Reader) ReadCharsetFacts(ctx context.Context) (defaults, aliases map[string]string, err error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT CHARACTER_SET_NAME, DEFAULT_COLLATE_NAME FROM information_schema.CHARACTER_SETS")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read character sets: %w", err)
+	}
+	defer rows.Close()
+	defaults = make(map[string]string)
+	for rows.Next() {
+		var charset, collation string
+		if err := rows.Scan(&charset, &collation); err != nil {
+			return nil, nil, fmt.Errorf("failed to read character sets: %w", err)
+		}
+		defaults[strings.ToLower(charset)] = collation
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to read character sets: %w", err)
+	}
+	if err := r.readUTF8MB4Default(ctx, defaults); err != nil {
+		return nil, nil, err
+	}
+	var utf8 string
+	if err := r.db.QueryRowContext(ctx, "SELECT CHARSET(CONVERT('' USING utf8))").Scan(&utf8); err != nil {
+		return nil, nil, fmt.Errorf("failed to read the character set utf8 names: %w", err)
+	}
+	return defaults, map[string]string{"utf8": strings.ToLower(utf8)}, nil
+}
+
+// readUTF8MB4Default replaces the default collation of utf8mb4 in defaults
+// with MySQL's default_collation_for_utf8mb4 where the session has the
+// variable. A table or a column that names utf8mb4 and no collation takes that
+// variable's value, while information_schema.CHARACTER_SETS keeps reporting
+// utf8mb4_0900_ai_ci. MariaDB has no such variable, and its CHARACTER_SETS
+// reports what its character_set_collations selects, so the query answers no
+// row there and defaults stays as read.
+func (r *Reader) readUTF8MB4Default(ctx context.Context, defaults map[string]string) error {
+	rows, err := r.db.QueryContext(ctx, "SHOW SESSION VARIABLES LIKE 'default_collation_for_utf8mb4'")
+	if err != nil {
+		return fmt.Errorf("failed to read the default collation of utf8mb4: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, collation string
+		if err := rows.Scan(&name, &collation); err != nil {
+			return fmt.Errorf("failed to read the default collation of utf8mb4: %w", err)
+		}
+		if collation != "" {
+			defaults["utf8mb4"] = collation
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to read the default collation of utf8mb4: %w", err)
+	}
+	return nil
 }
 
 // readServer describes the databases a whole-server read covers, each under
@@ -718,7 +793,7 @@ func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string
 	case value == "", literals == literalsQuoted, isQuotedMySQLDefault(value):
 		return defaultValue
 	case hasGeneratedDefault(extra):
-		return generatedDefault(value)
+		return generatedDefault(col, value)
 	case !mysqlDefaultNeedsLiteralQuotes(col, value):
 		return defaultValue
 	}
@@ -732,9 +807,11 @@ func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string
 // `concat(_utf8mb4'a\'b',_utf8mb4'c\\d')` once a backslash before a quote or
 // a backslash is undone. The catalog also drops the parentheses around a call,
 // `curdate()` for `DEFAULT (CURRENT_DATE)`, and the server takes an
-// expression default only in parentheses, so they are put back. A
-// current-time default and uuid() keep the spelling the catalog reports.
-func generatedDefault(value string) string {
+// expression default only in parentheses, so they are put back. Only a
+// current-time function on a DATETIME or TIMESTAMP column keeps the bare
+// spelling the catalog reports: measured on MySQL 8.4 and 26.10, `DEFAULT
+// uuid()` answers ERROR 1064 and `DEFAULT now()` on a varchar ERROR 1067.
+func generatedDefault(col *catalog.Column, value string) string {
 	var b strings.Builder
 	for i := 0; i < len(value); i++ {
 		if value[i] == '\\' && i+1 < len(value) && (value[i+1] == '\'' || value[i+1] == '\\') {
@@ -743,7 +820,7 @@ func generatedDefault(value string) string {
 		b.WriteByte(value[i])
 	}
 	expression := b.String()
-	if isMySQLDefaultExpression(expression) || normalize.Expression(expression) != expression {
+	if (storesMySQLTime(col) && isMySQLCurrentTime(expression)) || normalize.Expression(expression) != expression {
 		return expression
 	}
 	return "(" + expression + ")"
@@ -761,32 +838,47 @@ func isQuotedMySQLDefault(value string) bool {
 			(strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`)))
 }
 
+// mysqlDefaultNeedsLiteralQuotes reports whether a default MySQL reports
+// without DEFAULT_GENERATED is a literal to quote. On a string column every
+// such value is: measured on MySQL 8.4 and 26.10, `DEFAULT 'now()'` on a
+// varchar reports `now()` with an empty EXTRA, where `DEFAULT (now())` reports
+// it with DEFAULT_GENERATED.
 func mysqlDefaultNeedsLiteralQuotes(col *catalog.Column, value string) bool {
-	if isMySQLDefaultExpression(value) {
-		return false
-	}
-
-	typeName := strings.ToLower(col.ColumnType)
-	if typeName == "" {
-		typeName = strings.ToLower(col.DataType)
-	}
+	typeName := mysqlColumnType(col)
 	switch {
+	case strings.Contains(typeName, "date"), strings.Contains(typeName, "time"), strings.Contains(typeName, "year"):
+		return !isMySQLCurrentTime(value)
 	case strings.HasPrefix(typeName, "enum("), strings.HasPrefix(typeName, "set("):
 		return true
 	case strings.Contains(typeName, "char"), strings.Contains(typeName, "text"):
-		return true
-	case strings.Contains(typeName, "date"), strings.Contains(typeName, "time"), strings.Contains(typeName, "year"):
 		return true
 	default:
 		return false
 	}
 }
 
-func isMySQLDefaultExpression(value string) bool {
+// mysqlColumnType returns the column's type in lower case, with its
+// arguments where the catalog reports them.
+func mysqlColumnType(col *catalog.Column) string {
+	if col.ColumnType != "" {
+		return strings.ToLower(col.ColumnType)
+	}
+	return strings.ToLower(col.DataType)
+}
+
+// storesMySQLTime reports whether the column is a DATETIME or a TIMESTAMP,
+// the types that take a current-time default without parentheses.
+func storesMySQLTime(col *catalog.Column) bool {
+	typeName := mysqlColumnType(col)
+	return strings.HasPrefix(typeName, "datetime") || strings.HasPrefix(typeName, "timestamp")
+}
+
+// isMySQLCurrentTime reports whether value calls a current-time function.
+func isMySQLCurrentTime(value string) bool {
 	normalized := strings.TrimSpace(strings.ToUpper(value))
 	normalized = strings.TrimSuffix(normalized, "()")
 	switch normalized {
-	case "NULL", "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIME", "LOCALTIMESTAMP", "NOW", "UUID":
+	case "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIME", "LOCALTIMESTAMP", "NOW":
 		return true
 	default:
 		return strings.HasPrefix(normalized, "CURRENT_TIMESTAMP(") ||

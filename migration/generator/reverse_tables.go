@@ -112,7 +112,8 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			// reversal can swap them. None of them was swapped, or carried at
 			// all: a migration that changed a table's comment rolled back to
 			// "No rollback operations needed" (stokaro/ptah#2418).
-			CommentChange: reverseCommentChange(tableDiff.CommentChange),
+			CommentChange:   reverseCommentChange(tableDiff.CommentChange),
+			CollationChange: reverseCollationChange(tableDiff.CollationChange),
 		}
 	}
 	return reversed
@@ -193,6 +194,7 @@ func reverseColumnDiffs(
 			Changes:        reversedChanges,
 			Desired:        desired,
 			CommentChange:  reverseCommentChange(columnDiff.CommentChange),
+			CharsetChange:  reverseCharsetChange(columnDiff.CharsetChange),
 			SerialSequence: restoredSerialSequence(columnDiff.Changes["default_expr"]),
 			// The rollback alters the same sequence of the same database,
 			// whose restart is replayed by its ALTER as by the forward one.

@@ -48,7 +48,10 @@ func prepareComparisonTables(ctx context.Context, desired *schemamodel.Database,
 	for _, table := range current.Tables {
 		observed[tableidentity.Subject(table.Schema, table.Name, target, semantics).Key()] = table
 	}
-	request := schemapreparation.Request{Target: target, Identifiers: semantics, Capabilities: caps}
+	request := schemapreparation.Request{
+		Target: target, Identifiers: semantics, Capabilities: caps,
+		CharsetDefaultCollations: current.CharsetDefaultCollations, CharsetAliases: current.CharsetAliases,
+	}
 	for _, table := range desired.Tables {
 		subject := tableidentity.Subject(table.Schema, table.Name, target, semantics)
 		captured := schemapreparation.Table{

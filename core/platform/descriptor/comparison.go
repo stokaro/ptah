@@ -135,12 +135,13 @@ type Comparison struct {
 	TemporalDefaultFunctions bool `json:"temporal_default_functions,omitempty"`
 	// OperatorPrecedence names the operator precedence the engine groups an
 	// expression by: "mysql-operators" (internal/precedence's table, which
-	// MySQL and MariaDB share), or empty for none. A declared and a stored
-	// expression default are compared as the operations that precedence
-	// groups, each spelled one way, so a parenthesis it makes redundant or a
-	// synonym the server writes is no difference: MySQL stores (2 * 3 + 1) as
-	// ((2 * 3) + 1), and (1 + 2) * 3 still differs from 1 + 2 * 3. Empty
-	// compares the text.
+	// MySQL and MariaDB share), "clickhouse-operators", or empty for none. A
+	// declared and a stored expression default are compared as the
+	// operations that precedence groups, each spelled one way, so a
+	// parenthesis it makes redundant or a synonym the server writes is no
+	// difference: MySQL stores (2 * 3 + 1) as ((2 * 3) + 1), ClickHouse
+	// stores 2 * 3 + 1 as (2 * 3) + 1, and (1 + 2) * 3 still differs from
+	// 1 + 2 * 3. Empty compares the text.
 	OperatorPrecedence string `json:"operator_precedence,omitempty"`
 	// BareTypes says what a column holds whose type declares no length, precision or
 	// scale. The zero value states nothing, and such a type is compared by its name.

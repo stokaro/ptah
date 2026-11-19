@@ -49,12 +49,47 @@ import (
 // predicate the target's table preparation states for it, the spelling the
 // comparison reads a declared index in, so a document compared with itself
 // plans nothing; a target with indexed tables needs a preparation service.
+//
+// The target's creation projection predicts what the server decides at
+// CREATE, such as a MySQL table's default collation, from the target
+// descriptor's static facts; see [ToDBSchemaOn] for a server's own.
 func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, runtime Runtime) (*catalog.Database, error) {
-	converted, err := ToDBSchemas(ctx, []*schemamodel.Database{db}, dialect, runtime)
+	return ToDBSchemaOn(ctx, db, dialect, runtime, ServerFacts{})
+}
+
+// ServerFacts are the facts of the server a document is projected for that a
+// prediction of its CREATE reads: the default collation of each character set
+// and the character set each alias names, in the shape of
+// [catalog.Database.CharsetDefaultCollations] and
+// [catalog.Database.CharsetAliases]. A caller that read a server, such as a
+// dev database, hands its read. A nil CharsetDefaultCollations selects the
+// target descriptor's static table, and a nil CharsetAliases the descriptor's
+// aliases.
+type ServerFacts struct {
+	CharsetDefaultCollations map[string]string
+	CharsetAliases           map[string]string
+}
+
+// ToDBSchemaOn converts db as [ToDBSchema] does, predicting the server's
+// choices from facts. The result carries the facts the prediction read, the
+// descriptor's table where facts named none, so a comparison against it
+// resolves the other side's declaration from the same facts.
+func ToDBSchemaOn(ctx context.Context, db *schemamodel.Database, dialect string, runtime Runtime, facts ServerFacts) (*catalog.Database, error) {
+	converted, err := toDBSchemasOn(ctx, []*schemamodel.Database{db}, dialect, runtime, facts)
 	if err != nil {
 		return nil, err
 	}
 	return converted[0], nil
+}
+
+// withDescriptorDefaults is facts with the target descriptor's static
+// character set defaults where facts names none.
+func withDescriptorDefaults(facts ServerFacts, target string) ServerFacts {
+	if facts.CharsetDefaultCollations == nil {
+		described, _ := platform.Lookup(target)
+		facts.CharsetDefaultCollations = described.Columns.CollationNames.CharsetDefaults
+	}
+	return facts
 }
 
 // ToDBSchemas converts each database as [ToDBSchema] converts it alone, and
@@ -67,6 +102,11 @@ func ToDBSchema(ctx context.Context, db *schemamodel.Database, dialect string, r
 // in one batch. The result holds one database per input, in order; an error
 // returns none.
 func ToDBSchemas(ctx context.Context, dbs []*schemamodel.Database, dialect string, runtime Runtime) ([]*catalog.Database, error) {
+	return toDBSchemasOn(ctx, dbs, dialect, runtime, ServerFacts{})
+}
+
+// toDBSchemasOn converts dbs as [ToDBSchemas] does, predicting from facts.
+func toDBSchemasOn(ctx context.Context, dbs []*schemamodel.Database, dialect string, runtime Runtime, facts ServerFacts) ([]*catalog.Database, error) {
 	if err := schemaext.RequireRuntime(ctx, runtime); err != nil {
 		return nil, err
 	}
@@ -75,6 +115,7 @@ func ToDBSchemas(ctx context.Context, dbs []*schemamodel.Database, dialect strin
 		return nil, err
 	}
 	dialect = selected.Name()
+	facts = withDescriptorDefaults(facts, dialect)
 	sources := make([]*schemamodel.Database, len(dbs))
 	for i, db := range dbs {
 		if db == nil {
@@ -82,7 +123,7 @@ func ToDBSchemas(ctx context.Context, dbs []*schemamodel.Database, dialect strin
 		}
 		sources[i] = db
 	}
-	declared, prepared, err := prepareSourceTableSets(ctx, sources, dialect, runtime)
+	declared, prepared, err := prepareSourceTableSets(ctx, sources, dialect, runtime, facts)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +135,7 @@ func ToDBSchemas(ctx context.Context, dbs []*schemamodel.Database, dialect strin
 		if err != nil {
 			return nil, err
 		}
+		out.CharsetDefaultCollations, out.CharsetAliases = maps.Clone(facts.CharsetDefaultCollations), maps.Clone(facts.CharsetAliases)
 		outs[i], lowered[i] = out, db
 		parts[i] = features.Part{Objects: db.FeatureObjects, Coverage: db.FeatureCoverage, Destinations: out.FacetSlots()}
 	}
@@ -179,6 +221,7 @@ func describeDatabase(ctx context.Context, db *schemamodel.Database, prepared []
 	applyTablePrimaryKeys(out, db.Tables)
 	applyConstraintPrimaryKeys(out)
 	applyPreparedColumnKeys(out, prepared)
+	applyPredictedCollations(out, prepared)
 	if err := features.RequireFacetPreservation(db.FacetSlots(), out.FacetSlots()); err != nil {
 		return nil, nil, err
 	}

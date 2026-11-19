@@ -55,6 +55,26 @@ func TestAssess_ACollationChange(t *testing.T) {
 	}
 }
 
+// TestAssess_ACharsetConversion rates a modification that changes the
+// column's character set destructive, whatever else it changes: the server
+// converts every value, and a character the new character set cannot hold
+// fails the statement or is lost.
+func TestAssess_ACharsetConversion(t *testing.T) {
+	c := qt.New(t)
+	column := ast.NewColumn("c", "varchar(20)")
+	column.Nullable = true
+
+	got := safety.Assess([]ast.Node{modifyColumn(&ast.ModifyColumnOperation{
+		Column: column, Changed: ast.ColumnProperties{Collation: true}, HasChanged: true,
+		PreviousCharset: "utf8mb4", Charset: "latin1",
+	})})
+
+	c.Assert(got, qt.HasLen, 1)
+	c.Assert(got[0].Severity, qt.Equals, safety.Destructive)
+	c.Assert(got[0].Reason, qt.Equals, "the column's character set changes from utf8mb4 to latin1: the server converts every value, "+
+		"and the statement fails on a character latin1 cannot hold, or loses it where the session is not strict")
+}
+
 // TestAssessSQL_AStatementThatSetsACollation rates a statement by its words
 // where it writes the collation of a column that holds rows, on each spelling
 // a target writes. The words cannot say whether the collation changes, so the
@@ -87,10 +107,49 @@ func TestAssessSQL_AStatementThatSetsACollation(t *testing.T) {
 	}
 }
 
+// tableCollationReason is the reason a change of a table's default collation
+// carries.
+const tableCollationReason = "the statement changes the table's default collation: a column added or restated " +
+	"without a collation takes it, and a unique key on such a column fails where it holds values the new collation finds equal"
+
+// TestAssessSQL_AStatementThatSetsATableCollation rates a change of a MySQL or
+// MariaDB table's default collation, on each spelling of the option: the
+// columns the table holds keep theirs, and a column restated without one
+// takes the new default.
+func TestAssessSQL_AStatementThatSetsATableCollation(t *testing.T) {
+	tests := []struct {
+		name      string
+		target    string
+		statement string
+	}{
+		{name: "alone", target: "mysql", statement: "ALTER TABLE `t` COLLATE utf8mb4_bin"},
+		{name: "the statement a plan writes", target: "mysql", statement: "ALTER TABLE `t` COLLATE utf8mb4_bin, MODIFY COLUMN `n` varchar(20)"},
+		{name: "a character set a plan writes", target: "mariadb",
+			statement: "ALTER TABLE `t` CHARSET latin1, COLLATE latin1_bin, MODIFY COLUMN `n` varchar(20)"},
+		{name: "after a column clause", target: "mysql", statement: "ALTER TABLE t ADD COLUMN m int, DEFAULT COLLATE = utf8mb4_bin"},
+		{name: "with an equals sign", target: "mariadb", statement: "ALTER TABLE t DEFAULT COLLATE=utf8mb4_bin;"},
+		{name: "a character set", target: "mysql", statement: "ALTER TABLE t DEFAULT CHARSET = latin1;"},
+		{name: "CHARACTER SET and COLLATE", target: "mysql", statement: "ALTER TABLE t CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := safety.AssessSQL(c.Context(), must.Must(builtin.New()), test.target, []string{test.statement})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.HasLen, 1)
+			c.Assert(got[0].Severity, qt.Equals, safety.Warning)
+			c.Assert(got[0].Reason, qt.Equals, tableCollationReason)
+		})
+	}
+}
+
 // TestAssessSQL_ACollateThatChangesNoColumn is the control: a COLLATE in a new
-// table, a new column or a table's default options changes no column that
-// holds rows, a TYPE without one says nothing of the collation, and the word
-// inside a string literal is not a COLLATE clause.
+// table or a new column changes no column that holds rows, a COLLATE inside a
+// constraint changes no default, a TYPE without one says nothing of the
+// collation, and the word inside a string literal is not a COLLATE clause or
+// a table option.
 func TestAssessSQL_ACollateThatChangesNoColumn(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -99,11 +158,15 @@ func TestAssessSQL_ACollateThatChangesNoColumn(t *testing.T) {
 	}{
 		{name: "a new table", target: "postgres", statement: `CREATE TABLE t (n text COLLATE "C");`},
 		{name: "a new column", target: "postgres", statement: `ALTER TABLE t ADD COLUMN n text COLLATE "C";`},
-		{name: "a table default", target: "mysql", statement: "ALTER TABLE t COLLATE utf8mb4_bin;"},
+		{name: "a new MySQL column", target: "mysql", statement: "ALTER TABLE t ADD COLUMN n varchar(20) COLLATE utf8mb4_bin;"},
+		{name: "a constraint", target: "postgres", statement: `ALTER TABLE t ADD CONSTRAINT c CHECK (n COLLATE "C" > 'a');`},
 		{name: "a type without one", target: "postgres", statement: `ALTER TABLE t ALTER COLUMN n TYPE varchar(40);`},
 		{name: "a MODIFY without one", target: "mysql", statement: "ALTER TABLE t MODIFY COLUMN n varchar(40);"},
 		{name: "a COLLATE in a COMMENT", target: "mysql", statement: "ALTER TABLE `t` MODIFY COLUMN `a` varchar(30) COMMENT 'sort COLLATE x';"},
 		{name: "a COLLATE in a DEFAULT", target: "mysql", statement: "ALTER TABLE `t` MODIFY COLUMN `a` varchar(30) DEFAULT 'p COLLATE q';"},
+		{name: "a COLLATE in a table comment", target: "mysql", statement: "ALTER TABLE `t` COMMENT 'uses COLLATE x';"},
+		{name: "a new column's character set beside a table comment", target: "mysql",
+			statement: "ALTER TABLE `t` ADD COLUMN `m` varchar(20) CHARACTER SET latin1, COMMENT 'x';"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

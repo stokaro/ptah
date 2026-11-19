@@ -890,6 +890,30 @@ func (r *Renderer) writeSetComment(node *ast.AlterTableNode, op *ast.SetCommentO
 	return nil
 }
 
+// writeTableCollation renders the change of a table's default collation, with
+// its character set where the operation names one, as table options. A name
+// that is not spelled as the server names a character set or a collation, in
+// ASCII letters, digits and underscores, is refused rather than written into
+// the statement.
+func (r *Renderer) writeTableCollation(node *ast.AlterTableNode, op *ast.SetTableCollationOperation) error {
+	options := "COLLATE " + op.Collation
+	if op.Charset != "" {
+		options = "CHARSET " + op.Charset + ", " + options
+	}
+	for _, name := range []string{op.Charset, op.Collation} {
+		if strings.TrimLeft(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != "" {
+			return fmt.Errorf("%w: %s: %q is not a character set or collation name, in the default collation of table %q",
+				ptaherr.ErrInvalidSchemaDiff, r.dialectUpper, name, node.Name)
+		}
+	}
+	if op.Collation == "" {
+		return fmt.Errorf("%w: %s: the default collation change of table %q names no collation",
+			ptaherr.ErrInvalidSchemaDiff, r.dialectUpper, node.Name)
+	}
+	r.writeAlterStatementf(node, "ALTER TABLE %s %s", escapeQualifiedIdentifier(node.Name), options)
+	return nil
+}
+
 // appendColumnComment writes the column's own COMMENT clause.
 //
 // It was written on the ALTER path and not on the CREATE one, so one
@@ -1282,6 +1306,19 @@ func (r *Renderer) appendIndexLines(lines []string, indexes []*ast.IndexNode) ([
 	return lines, nil
 }
 
+// writeColumnStatement writes `ALTER TABLE t <clause> <column>` for a column
+// an ADD COLUMN or a MODIFY COLUMN states in full, with the values of the
+// enum type the column names, if any.
+func (r *Renderer) writeColumnStatement(node *ast.AlterTableNode, clause string, column *ast.ColumnNode, enums map[string][]string) error {
+	line, err := r.renderColumnWithEnums(column, enums[column.Type])
+	if err != nil {
+		return err
+	}
+	// The column renders indented for CREATE TABLE.
+	r.writeAlterStatementf(node, "ALTER TABLE %s %s %s", escapeQualifiedIdentifier(node.Name), clause, strings.TrimPrefix(line, "  "))
+	return nil
+}
+
 func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, operations []ast.AlterOperation, enums map[string][]string) error {
 	for _, operation := range operations {
 		switch op := operation.(type) {
@@ -1291,19 +1328,9 @@ func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, operation
 			}
 
 		case *ast.AddColumnOperation:
-			// Get enum values for this column type
-			var enumValues []string
-			if enums != nil {
-				enumValues = enums[op.Column.Type]
-			}
-
-			line, err := r.renderColumnWithEnums(op.Column, enumValues)
-			if err != nil {
+			if err := r.writeColumnStatement(node, "ADD COLUMN", op.Column, enums); err != nil {
 				return fmt.Errorf("error rendering add column: %w", err)
 			}
-			// Remove the leading spaces from column rendering for ALTER
-			line = strings.TrimPrefix(line, "  ")
-			r.writeAlterStatementf(node, "ALTER TABLE %s ADD COLUMN %s", escapeQualifiedIdentifier(node.Name), line)
 
 		case *ast.AddConstraintOperation:
 			constraintLine, err := r.renderConstraint(op.Constraint)
@@ -1321,23 +1348,18 @@ func (r *Renderer) writeAlterTableOperations(node *ast.AlterTableNode, operation
 			r.writeAlterStatementf(node, "ALTER TABLE %s DROP COLUMN %s", escapeQualifiedIdentifier(node.Name), escapeIdentifier(op.ColumnName))
 
 		case *ast.ModifyColumnOperation:
-			// Get enum values for this column type
-			var enumValues []string
-			if enums != nil {
-				enumValues = enums[op.Column.Type]
-			}
-
 			// MariaDB uses MODIFY COLUMN syntax like MySQL
-			line, err := r.renderColumnWithEnums(op.Column, enumValues)
-			if err != nil {
+			if err := r.writeColumnStatement(node, "MODIFY COLUMN", op.Column, enums); err != nil {
 				return fmt.Errorf("error rendering modify column: %w", err)
 			}
-			// Remove the leading spaces from column rendering for ALTER
-			line = strings.TrimPrefix(line, "  ")
-			r.writeAlterStatementf(node, "ALTER TABLE %s MODIFY COLUMN %s", escapeQualifiedIdentifier(node.Name), line)
 
 		case *ast.SetCommentOperation:
 			if err := r.writeSetComment(node, op); err != nil {
+				return err
+			}
+
+		case *ast.SetTableCollationOperation:
+			if err := r.writeTableCollation(node, op); err != nil {
 				return err
 			}
 

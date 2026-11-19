@@ -133,6 +133,30 @@ type Database struct {
 	// the dialect. Like RolesOutOfScope it is never serialized.
 	RolesOutOfScopeReason string `json:"-"`
 
+	// CharsetDefaultCollations is a server fact: the collation the server
+	// gives a column or a table that names a character set and no collation,
+	// keyed by the character set's name in lower case. A MySQL or MariaDB
+	// read takes it from information_schema.CHARACTER_SETS, where MariaDB
+	// reports the defaults its character_set_collations setting chooses:
+	// utf8mb4 maps to utf8mb4_0900_ai_ci on MySQL 8.4 and to
+	// utf8mb4_uca1400_ai_ci on MariaDB 11.8. On MySQL the utf8mb4 entry is
+	// the session's default_collation_for_utf8mb4, which CHARACTER_SETS does
+	// not follow. Other readers leave it nil.
+	//
+	// It describes no object, so it is never serialized. A comparison that
+	// does not find a character set here leaves a column that inherits from
+	// it uncompared.
+	CharsetDefaultCollations map[string]string `json:"-"`
+
+	// CharsetAliases is a server fact: the character set each alias names in
+	// the session the read ran in, keyed by the alias in lower case. A MySQL
+	// or MariaDB read asks the server what utf8 names: utf8mb3 on MySQL 8.4,
+	// and on MariaDB utf8mb3 where old_mode holds UTF8_IS_UTF8MB3, its
+	// default, and utf8mb4 where it does not. Other readers leave it nil, and
+	// a comparison then reads the aliases the dialect's descriptor states.
+	// Like CharsetDefaultCollations, it is never serialized.
+	CharsetAliases map[string]string `json:"-"`
+
 	// NotDescribed records what this read did not look at, so a comparator can
 	// tell an object the database does not have from one the reader was never
 	// asked about. The zero value claims the read covered everything; see

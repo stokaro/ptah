@@ -20,7 +20,9 @@ import (
 // (concat('a', 'b')) as concat(_utf8mb4'a',_utf8mb4'b'), escaped. MariaDB
 // 12.3 stores (7 % 4 * 2) as (7 MOD 4 * 2), (1+2) as (1 + 2), quotes the
 // column references, writes current_timestamp() and concat('a','b'). q and u
-// hold the parentheses their grouping needs.
+// hold the parentheses their grouping needs. MySQL 8.4 and 26.10 report
+// (uuid()) as uuid(), which the server refuses without the parentheses, and
+// report the string 'now()' as now() beside the expression (now()).
 const precedenceDefaultSchema = "CREATE TABLE tallies (\n" +
 	"  id int PRIMARY KEY,\n" +
 	"  a int DEFAULT 2,\n" +
@@ -33,7 +35,10 @@ const precedenceDefaultSchema = "CREATE TABLE tallies (\n" +
 	"  v int DEFAULT (1+2),\n" +
 	"  w int DEFAULT (-1),\n" +
 	"  e datetime DEFAULT (CURRENT_TIMESTAMP + INTERVAL 1 DAY),\n" +
-	"  t varchar(10) DEFAULT (concat('a', 'b'))\n" +
+	"  t varchar(10) DEFAULT (concat('a', 'b')),\n" +
+	"  g varchar(40) DEFAULT (uuid()),\n" +
+	"  l varchar(30) DEFAULT 'now()',\n" +
+	"  n varchar(30) DEFAULT (now())\n" +
 	");\n"
 
 // TestApplyConvergesOnAPrecedenceDefaultE2E applies precedenceDefaultSchema
@@ -72,9 +77,9 @@ func TestApplyConvergesOnAPrecedenceDefaultE2E(t *testing.T) {
 			_, err = conn.ExecContext(c.Context(), "INSERT INTO tallies (id) VALUES (1)")
 			c.Assert(err, qt.IsNil)
 			var got string
-			err = conn.QueryRowContext(c.Context(), "SELECT CONCAT_WS(',', p, q, r, s, u, v, w, e > NOW(), t) FROM tallies").Scan(&got)
+			err = conn.QueryRowContext(c.Context(), "SELECT CONCAT_WS(',', p, q, r, s, u, v, w, e > NOW(), t, CHAR_LENGTH(g), l, n <> 'now()') FROM tallies").Scan(&got)
 			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, "7,9,6,8,2,3,-1,1,ab")
+			c.Assert(got, qt.Equals, "7,9,6,8,2,3,-1,1,ab,36,now(),1")
 		})
 	}
 }
@@ -125,9 +130,9 @@ func TestDBReadReplaysAnExpressionDefaultE2E(t *testing.T) {
 			_, err = conn.ExecContext(c.Context(), "INSERT INTO tallies (id) VALUES (1)")
 			c.Assert(err, qt.IsNil)
 			var got string
-			err = conn.QueryRowContext(c.Context(), "SELECT CONCAT_WS(',', p, q, r, s, u, v, w, e > NOW(), t) FROM tallies").Scan(&got)
+			err = conn.QueryRowContext(c.Context(), "SELECT CONCAT_WS(',', p, q, r, s, u, v, w, e > NOW(), t, CHAR_LENGTH(g), l, n <> 'now()') FROM tallies").Scan(&got)
 			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, "7,9,6,8,2,3,-1,1,ab")
+			c.Assert(got, qt.Equals, "7,9,6,8,2,3,-1,1,ab,36,now(),1")
 		})
 	}
 }
