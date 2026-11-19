@@ -407,8 +407,11 @@ var hostFeatures = []string{
 }
 
 // StartupTimeout is how long a provider has to finish its handshake: from the
-// launch of the executable to the end of contract negotiation.
-const StartupTimeout = 10 * time.Second
+// launch of the executable to the end of contract negotiation. It only decides
+// how soon a provider that hangs is reported, so it leaves room for the first
+// start of a new executable, which on macOS waits for a code signature scan and
+// can take longer than 10 seconds under load.
+const StartupTimeout = 30 * time.Second
 
 // ErrStartupTimeout reports a provider that did not finish its handshake
 // within [StartupTimeout]. The error also matches [context.DeadlineExceeded].
