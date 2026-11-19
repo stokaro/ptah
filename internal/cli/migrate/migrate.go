@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/cli/internal/secretrotation"
 	"ptah.run/internal/cli/internal/tablerebuild"
 	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/planartifact"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/providerurl"
@@ -358,6 +359,7 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error rendering SQL: %w", err)
 	}
+	omissionnote.Report(cmd.Context(), cmd.ErrOrStderr(), rendered.Omissions)
 
 	fmt.Fprintln(out, "-- Migration generated from schema differences")
 	fmt.Fprintf(out, "-- Generated on: %s\n", "now") // You could add actual timestamp

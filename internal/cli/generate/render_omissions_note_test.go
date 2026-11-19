@@ -26,37 +26,37 @@ const mySQLOptionsSchema = `CREATE TABLE users (
 func renderNotes(stderr string) []string {
 	var notes []string
 	for line := range strings.SplitSeq(stderr, "\n") {
-		if strings.HasPrefix(line, "note: ") {
+		if strings.HasPrefix(line, "warning: ") {
 			notes = append(notes, line)
 		}
 	}
 	return notes
 }
 
-// TestGenerateCommand_NamesWhatTheRenderSkipped pins the note a render writes
-// on stderr for each declaration the target goes on without. PostgreSQL also
-// writes a comment beside the statement; SQLite writes none, so before the
-// note its render dropped the four table options without a word. MySQL keeps
-// every declaration and writes no note.
+// TestGenerateCommand_NamesWhatTheRenderSkipped pins the warning a render
+// writes on stderr for each declaration the target goes on without. PostgreSQL
+// also writes a comment beside the statement; SQLite writes none, so the
+// warning is the only trace of the four table options it drops. MySQL keeps
+// every declaration and writes no warning.
 func TestGenerateCommand_NamesWhatTheRenderSkipped(t *testing.T) {
 	tests := []struct {
 		dialect string
 		want    []string
 	}{
 		{dialect: "postgres", want: []string{
-			"note: postgres: column users.id: auto-increment was skipped (unsupported); " +
+			"warning: postgres: column users.id: auto-increment was skipped (unsupported); " +
 				"declare the column type as SERIAL or BIGSERIAL, or give it an identity clause with identity_generation",
-			"note: postgres: table users: table option AUTO_INCREMENT=100 was skipped (unsupported); " +
+			"warning: postgres: table users: table option AUTO_INCREMENT=100 was skipped (unsupported); " +
 				"declare the start on the key column with identity_start",
-			"note: postgres: table users: table option CHARSET=utf8mb4 was skipped (unsupported)",
-			"note: postgres: table users: table option COLLATE=utf8mb4_bin was skipped (unsupported)",
-			"note: postgres: table users: table option ENGINE=InnoDB was skipped (unsupported)",
+			"warning: postgres: table users: table option CHARSET=utf8mb4 was skipped (unsupported)",
+			"warning: postgres: table users: table option COLLATE=utf8mb4_bin was skipped (unsupported)",
+			"warning: postgres: table users: table option ENGINE=InnoDB was skipped (unsupported)",
 		}},
 		{dialect: "sqlite", want: []string{
-			"note: sqlite: table users: table option AUTO_INCREMENT=100 was skipped (unsupported)",
-			"note: sqlite: table users: table option CHARSET=utf8mb4 was skipped (unsupported)",
-			"note: sqlite: table users: table option COLLATE=utf8mb4_bin was skipped (unsupported)",
-			"note: sqlite: table users: table option ENGINE=InnoDB was skipped (unsupported)",
+			"warning: sqlite: table users: table option AUTO_INCREMENT=100 was skipped (unsupported)",
+			"warning: sqlite: table users: table option CHARSET=utf8mb4 was skipped (unsupported)",
+			"warning: sqlite: table users: table option COLLATE=utf8mb4_bin was skipped (unsupported)",
+			"warning: sqlite: table users: table option ENGINE=InnoDB was skipped (unsupported)",
 		}},
 		{dialect: "mysql"},
 	}
@@ -72,7 +72,7 @@ func TestGenerateCommand_NamesWhatTheRenderSkipped(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("generate stderr:\n%s", stderr))
 			c.Assert(stdout, qt.Contains, "CREATE TABLE")
-			c.Assert(stdout, qt.Not(qt.Contains), "note:")
+			c.Assert(stdout, qt.Not(qt.Contains), "warning:")
 			c.Assert(renderNotes(stderr), qt.DeepEquals, test.want)
 		})
 	}

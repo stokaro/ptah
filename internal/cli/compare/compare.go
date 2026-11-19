@@ -35,6 +35,7 @@ import (
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/devreach"
 	"ptah.run/internal/genexprprobe"
+	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/planstyle"
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
@@ -312,6 +313,7 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}
+	omissionnote.Report(cmd.Context(), cmd.ErrOrStderr(), plan.Result.Omissions)
 	statements, err := comparisonStatements(plan)
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)

@@ -284,6 +284,21 @@ DROP TABLE IF EXISTS "users";
 For a PostgreSQL column comment change, the up file writes the new comment and
 the down file restores the comment the database held before generation.
 
+A statement can leave out a declaration the database has no clause for, such as
+a MySQL table option on SQLite. `migrations plan` and `migrations generate`
+print one warning on standard error for each, in the words `ptah schema render`
+uses, and the file whose statements leave it out opens them with the same text
+as comments, so a reviewer of the file sees it too:
+
+```sql illustration
+-- Migration generated from schema differences
+-- Direction: UP
+
+-- sqlite: table users: table option ENGINE=InnoDB was skipped (unsupported)
+
+CREATE TABLE "users" (
+```
+
 Columns keep their place in both directions. The up file adds new columns in the
 order the declaration gives them, and the down file adds dropped columns back in
 the order the table held them, so the table ends with its columns in the same

@@ -168,6 +168,15 @@ var (
 		},
 	}
 
+	// RenderOmissions is a declaration the render of a planned statement, or of
+	// a schema, goes on without: a property the target keeps only in part, or
+	// an object it has no statement for. Each is a warning of its own, since
+	// each asks for its own decision, and a render raises one only for what it
+	// writes, so a run that plans nothing raises none. Its records carry the
+	// target as the "target" attribute and the omission's reason token as the
+	// "reason" attribute.
+	RenderOmissions = &Category{Name: "render-omission", Each: true}
+
 	// UndecidedObjects is an object a comparison could not decide, so it plans
 	// no change for it: a declared object of a kind the current side does not
 	// describe, or a provider's object it could not compare. Its records carry

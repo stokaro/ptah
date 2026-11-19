@@ -36,6 +36,7 @@ import (
 	"ptah.run/internal/dispatchwitness"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/featureselect"
+	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/planeffect"
 	"ptah.run/internal/planrefusal"
@@ -44,6 +45,7 @@ import (
 	"ptah.run/internal/providerurl"
 	"ptah.run/internal/readscope"
 	"ptah.run/internal/rolepassword"
+	"ptah.run/internal/rundiag"
 	"ptah.run/internal/schemafile"
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
@@ -684,6 +686,7 @@ func computeApplyPlan(
 		if err != nil {
 			return applyComputation{}, fmt.Errorf("generate schema apply operations: %w", err)
 		}
+		omissionnote.Report(ctx, rundiag.Stream(ctx), plan.Result.Omissions)
 		effects := planeffect.Target{
 			Current:       current,
 			DefaultSchema: defaultSchemaOf(info),

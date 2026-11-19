@@ -84,7 +84,7 @@ func TestProviderRenderCommandNamesWhatItLeavesOut(t *testing.T) {
 		want        []string
 	}{
 		{name: "a provider that reports omissions",
-			want: []string{"note: fixture: column accounts.email: type modifier=VARCHAR(255): length 255 was skipped (unsupported)"}},
+			want: []string{"warning: fixture: column accounts.email: type modifier=VARCHAR(255): length 255 was skipped (unsupported)"}},
 		{name: "a provider that predates the feature", environment: []string{"FIXTURE_RENDER_OMISSIONS=off"}},
 	}
 	for _, test := range tests {
@@ -111,7 +111,7 @@ func TestProviderRenderCommandNamesWhatItLeavesOut(t *testing.T) {
 func renderNotes(stderr string) []string {
 	var notes []string
 	for line := range strings.SplitSeq(stderr, "\n") {
-		if strings.HasPrefix(line, "note: ") {
+		if strings.HasPrefix(line, "warning: ") {
 			notes = append(notes, line)
 		}
 	}

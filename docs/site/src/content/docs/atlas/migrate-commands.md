@@ -1595,6 +1595,13 @@ that rebuilds a table writes the same words under `reverse: `. The binary has no
 driver for SQL Server, ClickHouse or Oracle, so those engines take the PostgreSQL
 words.
 
+A statement can leave out a declaration the engine has no clause for, such as a
+MySQL table option on SQLite. `migrate diff` prints one warning on standard
+error for each, as the native commands do:
+`warning: sqlite: table t: table option ENGINE=InnoDB was skipped (unsupported)`.
+The file carries no comment for it, because every comment in the file is a
+change heading in the community binary's words.
+
 In a native Atlas directory the `sql` template helper writes the comment with
 its first letter in upper case, `-- Create "owners" table`, as the community
 binary's helper does. A `--format` template reads the comment as `.Comment`,
