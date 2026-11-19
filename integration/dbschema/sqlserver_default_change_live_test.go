@@ -99,6 +99,9 @@ func storedDefaults(c *qt.C, conn *dbschema.DatabaseConnection, quotedSchema str
 // refused as "SQL Server planner only supports ALTER COLUMN for
 // type/nullability changes" (stokaro/ptah#3650).
 //
+// A number beside a number type is stored as a number, ((7)), whether CREATE
+// TABLE or ADD DEFAULT wrote it, and a string as ('x').
+//
 // The second plan is empty: what the migration set reads back as what was
 // declared, so the next plan does not set it again.
 func TestSQLServerLiveColumnDefaultChangesApply(t *testing.T) {
@@ -151,10 +154,10 @@ func TestSQLServerLiveColumnDefaultChangesApply(t *testing.T) {
 		"note":   "('none')",
 		"flag":   "none",
 		"stamp":  "(getdate())",
-		"code":   "('7')",
+		"code":   "((7))",
 		"legacy": "none",
 		"label":  "('x')",
-		"level":  "('1')",
+		"level":  "((1))",
 	})
 	_, err = conn.ExecContext(c.Context(), "INSERT INTO "+quoted+".[t] (id) VALUES (1)")
 	c.Assert(err, qt.IsNil)

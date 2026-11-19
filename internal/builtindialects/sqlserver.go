@@ -190,10 +190,15 @@ END`,
 			Columns: descriptor.ColumnGrammar{
 				IdentityProperty:        true,
 				CurrentTimestampNiladic: true,
+				// SQL Server 2022 reads a shift in a default and stores
+				// 1 + 1 << 2 as (left_shift((1)+(1),(2))). The operator is
+				// new in SQL Server 2022, so SQL Server 2019 refuses it when
+				// the plan applies.
 				DefaultPredicates: descriptor.DefaultPredicates{
 					Refusal: "SQL Server takes no comparison or predicate as a default, in parentheses or without: " +
 						"SQL Server 2022 answers Msg 102, Incorrect syntax near '=', at a comparison, and SQL Server 2022 " +
 						"and 2025 answer Msg 156, Incorrect syntax near the keyword, at a predicate word",
+					Shift: true,
 				},
 				// SQL Server 2022 takes NEXT VALUE FOR seq as a default, with
 				// or without parentheses, and stores it with the clause in

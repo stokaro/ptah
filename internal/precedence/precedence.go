@@ -41,13 +41,14 @@ const ClickHouseOperators = "clickhouse-operators"
 //
 // On ClickHouse it writes x BETWEEN low AND high as x >= low AND x <= high,
 // and x NOT BETWEEN low AND high as x < low OR x > high, as the server stores
-// them.
+// them. It reads [NOT] IN and [NOT] LIKE with the comparisons, and writes the
+// operand of IN in parentheses, so that a IN 1 + 2 is a IN (1 + 2).
 //
 // It returns "" and false when scheme names no precedence this package holds,
 // or when expression holds anything outside the operators, literals, names and
-// function calls its table reads, such as IN, CASE, a qualified name or
-// another character set introducer, and on MySQL NOT, IS and BETWEEN. A minus before an
-// integer above 9223372036854775807 is not read either. A caller then compares
+// function calls its table reads, such as CASE, a qualified name or another
+// character set introducer, and on MySQL NOT, IS, BETWEEN, IN and LIKE. A
+// minus before an integer above 9223372036854775807 is not read either. A caller then compares
 // the expression as written, because reading a construct by the wrong grouping
 // could make two different expressions equal.
 func Canonical(expression, scheme string, lexing lexer.Options) (string, bool) {
@@ -89,6 +90,11 @@ type table struct {
 	// not read it. Its operand and both bounds are operations that bind
 	// tighter.
 	between int
+	// membership is the precedence of [NOT] IN and [NOT] LIKE, or 0 where the
+	// table does not read them. Each groups to the left with the binary
+	// operators of its precedence, and its right operand is every operation
+	// that binds tighter, or for IN a parenthesized list of two or more.
+	membership int
 	// calledPrefix holds the prefix words a release of the engine reads as a
 	// function call when a parenthesis follows them: ClickHouse 24.10 reads
 	// NOT (a) IS NULL as (NOT a) IS NULL, and 26.10 as NOT (a IS NULL). The
@@ -210,8 +216,12 @@ var schemes = map[string]*table{
 	// a = x BETWEEN 1 AND 3, (x >= 1) AND (x <= (3 = 1)) for
 	// x BETWEEN 1 AND 3 = 1 and ((x >= 1) AND (x <= 3)) IS NULL for
 	// x BETWEEN 1 AND 3 IS NULL, so BETWEEN binds between IS NULL and the
-	// comparisons. || is written back as concat(a, b), and IN, LIKE, the
-	// lambda arrow and the ternary operator are not read.
+	// comparisons. They print (a + 1) IN (2, 3), (s LIKE 'a') = 1,
+	// NOT (a IN (1)) and ((a IN (1, 2)) = b) IN (3) for
+	// a IN (1, 2) = b IN (3), so [NOT] IN and [NOT] LIKE bind with the
+	// comparisons, and a IN (1 + 2) for both a IN 1 + 2 and a IN (1 + 2).
+	// || is written back as concat(a, b), and ILIKE, GLOBAL IN, the lambda
+	// arrow and the ternary operator are not read.
 	ClickHouseOperators: {
 		binary: map[string]int{
 			"OR":  1,
@@ -224,6 +234,7 @@ var schemes = map[string]*table{
 		prefixWords:  map[string]int{"NOT": 3},
 		postfix:      map[string]int{"IS NULL": 4, "IS NOT NULL": 4},
 		between:      5,
+		membership:   6,
 		calledPrefix: wordSet("NOT"),
 		spelling:     map[string]string{"==": "=", "<>": "!="},
 		symbols: []string{
@@ -505,6 +516,14 @@ func (r *reader) operations(minimum, first int) (text string, precedence int, ok
 			}
 			continue
 		}
+		if operator, words := r.membershipAt(); words > 0 && r.table.membership >= minimum {
+			r.pos += words
+			text, precedence, ok = r.membership(text, precedence, operator)
+			if !ok {
+				return "", 0, false
+			}
+			continue
+		}
 		operator, bound, found := r.binary()
 		if !found || bound < minimum {
 			return text, precedence, true
@@ -610,6 +629,95 @@ func (r *reader) betweenBounds(operand string, bound int, comparisons betweenCom
 	return lower + " " + join + " " + upper, joined, true
 }
 
+// membershipAt returns the operator whose words start at the reader's
+// position, IN, NOT IN, LIKE or NOT LIKE, and how many words it spans,
+// without consuming it. It answers 0 words where none starts there or the
+// table does not read them.
+func (r *reader) membershipAt() (operator string, words int) {
+	if r.table.membership == 0 {
+		return "", 0
+	}
+	var spelled []string
+	for index := r.pos; index < len(r.tokens) && index < r.pos+2; index++ {
+		tok := r.tokens[index]
+		if tok.kind != kindWord {
+			return "", 0
+		}
+		word := strings.ToUpper(tok.text)
+		spelled = append(spelled, word)
+		switch {
+		case word == "IN" || word == "LIKE":
+			return strings.Join(spelled, " "), len(spelled)
+		case word != "NOT":
+			return "", 0
+		}
+	}
+	return "", 0
+}
+
+// membership reads the right operand of operator, one of IN, NOT IN, LIKE and
+// NOT LIKE, whose words the reader has consumed, after the left operand left,
+// whose precedence is bound, and writes the operation.
+func (r *reader) membership(left string, bound int, operator string) (text string, precedence int, ok bool) {
+	level := r.table.membership
+	var right string
+	if strings.HasSuffix(operator, "IN") {
+		right, ok = r.members()
+	} else {
+		var rightBound int
+		right, rightBound, ok = r.expression(level + 1)
+		right = enclose(right, rightBound, level+1)
+	}
+	if !ok {
+		return "", 0, false
+	}
+	return enclose(left, bound, level) + " " + operator + " " + right, level, true
+}
+
+// members reads the operand of IN and writes it in parentheses: a list of two
+// or more where a parenthesized list follows IN, and otherwise every
+// operation that binds tighter than IN, so that a IN 1 + 2, a IN (1 + 2) and
+// a IN (1) + 2 give one key, as ClickHouse 24.10 and 26.10 read them. A list
+// before an operator that binds tighter is not read, since no measurement
+// says how the engine groups it.
+func (r *reader) members() (string, bool) {
+	level := r.table.membership
+	if list, ok := r.list(); ok {
+		return list, !r.bindsTighter(level)
+	}
+	operand, _, ok := r.expression(level + 1)
+	return "(" + operand + ")", ok
+}
+
+// list reads the parenthesized list of two or more expressions at the
+// reader's position and writes it, and leaves the reader where it is where
+// no such list starts there.
+func (r *reader) list() (string, bool) {
+	start := r.pos
+	if !r.consume(kindOpen) {
+		return "", false
+	}
+	var items []string
+	for {
+		item, _, ok := r.expression(0)
+		if !ok {
+			break
+		}
+		items = append(items, item)
+		if r.consume(kindClose) {
+			if len(items) > 1 {
+				return "(" + strings.Join(items, ", ") + ")", true
+			}
+			break
+		}
+		if !r.consume(kindComma) {
+			break
+		}
+	}
+	r.pos = start
+	return "", false
+}
+
 // postfix returns the postfix operator whose words start at the reader's
 // position, its precedence and how many words it spans, without consuming
 // it, and 0 words where none starts there.
@@ -711,6 +819,9 @@ func (r *reader) prefixWord(word string, bound, minimum int) (text string, prece
 func (r *reader) bindsTighter(bound int) bool {
 	if _, precedence, words := r.postfix(); words > 0 {
 		return precedence > bound
+	}
+	if _, words := r.membershipAt(); words > 0 {
+		return r.table.membership > bound
 	}
 	_, precedence, found := r.binary()
 	return found && precedence > bound

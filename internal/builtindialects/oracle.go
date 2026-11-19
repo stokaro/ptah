@@ -200,7 +200,9 @@ END;`,
 				// LIKE 'b' each create a BOOLEAN column.
 				DefaultPredicates: descriptor.DefaultPredicates{
 					Refusal: "Oracle Free 23.26 reads no IS [NOT] DISTINCT FROM and answers ORA-00908, " +
-						"Unexpected token DISTINCT after IS or IS NOT, in a default and in a query",
+						"Unexpected token DISTINCT after IS or IS NOT, in a default and in a query; it has no == and no " +
+						"shift, and answers ORA-00936, missing expression, to == and >>, and ORA-03099, unexpected item << " +
+						"in a column definition, to <<",
 					Comparison: true,
 					Is:         true,
 					Logical:    true,

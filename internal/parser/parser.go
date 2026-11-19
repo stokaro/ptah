@@ -4083,7 +4083,7 @@ func (p *Parser) parseDefaultValue() (*ast.DefaultValue, error) {
 	if tokens := p.nextValueTokens(); tokens > 0 {
 		return p.extendDefaultExpression(p.readSequenceReference(tokens), start)
 	}
-	if p.current.MatchIdentifierValue("NOT") && !p.nextWordIs("NULL") {
+	if p.current.MatchIdentifierValue("NOT") {
 		return p.parseNegatedDefault(start)
 	}
 	if p.signedOperandFollows() {
@@ -4210,7 +4210,12 @@ func (p *Parser) operatorDefault(first, expression string, operator lexer.Token,
 // `DEFAULT NOT a`, from the NOT at the cursor and at start to where
 // [Parser.endsDefaultExpression] ends it. The NOT is a logical operator, so a
 // dialect whose [descriptor.ColumnGrammar.DefaultPredicates] leave logical
-// operators out refuses it.
+// operators out refuses it. `DEFAULT NOT NULL` is the operator before NULL
+// too: Oracle Free 23.26 and ClickHouse 24.10 and 26.10 store the default
+// NOT NULL on a nullable column, and PostgreSQL 18, CockroachDB v26.4.1,
+// YugabyteDB 2026.1.2, SQL Server 2022, MySQL 26.10 and MariaDB 12.3 answer
+// a syntax error. Read as the value NOT, the column would take the string
+// 'NOT' and NULL as its nullability.
 func (p *Parser) parseNegatedDefault(start int) (*ast.DefaultValue, error) {
 	operator := p.current
 	expression, err := p.readDefaultOperands("")
@@ -4520,6 +4525,8 @@ type defaultForm int
 const (
 	noDefaultForm defaultForm = iota
 	comparisonForm
+	doubleEqualsForm
+	shiftForm
 	distinctFromForm
 	isForm
 	logicalForm
@@ -4537,6 +4544,10 @@ func (f defaultForm) readBy(predicates descriptor.DefaultPredicates) bool {
 	switch f {
 	case comparisonForm:
 		return predicates.Comparison
+	case doubleEqualsForm:
+		return predicates.DoubleEquals
+	case shiftForm:
+		return predicates.Shift
 	case distinctFromForm:
 		return predicates.DistinctFrom
 	case isForm:
@@ -4565,15 +4576,16 @@ type defaultForms struct {
 }
 
 // at answers the form the token at the cursor opens and how the refusal
-// spells it: a comparison operator, IS, AND, OR, BETWEEN, IN, LIKE, or a NOT
-// before an operand or before BETWEEN, IN or LIKE. operand reports that a
-// complete operand precedes the token. Any other token opens no form.
+// spells it: a comparison operator, a shift, IS, AND, OR, BETWEEN, IN, LIKE,
+// or a NOT before an operand or before BETWEEN, IN or LIKE. operand reports
+// that a complete operand precedes the token, which tells the NOT of NOT
+// BETWEEN from a NOT before an operand. Any other token opens no form.
 func (f *defaultForms) at(p *Parser, operand bool) (defaultForm, string) {
 	token := p.current
 	switch {
 	case token.Type == lexer.TokenOperator:
 		return f.comparisonAt(p)
-	case token.MatchIdentifierValue("IS") && operand:
+	case token.MatchIdentifierValue("IS"):
 		if p.distinctFromFollows() {
 			return distinctFromForm, "IS"
 		}
@@ -4617,11 +4629,11 @@ func (f *defaultForms) predicateWord(token lexer.Token) (defaultForm, string) {
 	}
 }
 
-// comparisonAt answers comparisonForm and the operator's spelling where the
-// operator at the cursor opens one of =, ==, <>, !=, <, >, <=, >= and <=>,
-// which the lexer emits one character at a time. A character that continues
-// the operator before it opens nothing, and so does a run that spells
-// another operator, such as the shift <<.
+// comparisonAt answers the form and the spelling of the operator at the
+// cursor, which the lexer emits one character at a time: comparisonForm for
+// =, <>, !=, <, >, <=, >= and <=>, doubleEqualsForm for ==, and shiftForm for
+// << and >>. A character that continues the operator before it opens
+// nothing, and so does a run that spells no operator.
 func (f *defaultForms) comparisonAt(p *Parser) (defaultForm, string) {
 	token := p.current
 	if !isComparisonCharacter(token) ||
@@ -4640,8 +4652,12 @@ func (f *defaultForms) comparisonAt(p *Parser) (defaultForm, string) {
 		end = next.End
 	}
 	switch spelled.String() {
-	case "=", "==", "<>", "!=", "<", ">", "<=", ">=", "<=>":
+	case "=", "<>", "!=", "<", ">", "<=", ">=", "<=>":
 		return comparisonForm, spelled.String()
+	case "==":
+		return doubleEqualsForm, spelled.String()
+	case "<<", ">>":
+		return shiftForm, spelled.String()
 	default:
 		return noDefaultForm, ""
 	}
@@ -4705,9 +4721,9 @@ func asksForOperand(token lexer.Token) bool {
 
 // defaultContinues reports whether the token at the cursor continues a default
 // after its first operand: a binary operator of [isDefaultBinaryOperator], a
-// comparison operator, IS, AND, OR, BETWEEN, IN or LIKE, or a NOT before
-// BETWEEN, IN or LIKE. A NOT before anything else opens the column's NOT
-// NULL.
+// comparison operator, a shift, IS, AND, OR, BETWEEN, IN or LIKE, or a NOT
+// before BETWEEN, IN or LIKE. A NOT before anything else opens the column's
+// NOT NULL.
 func (p *Parser) defaultContinues() bool {
 	token := p.current
 	switch {
@@ -4715,20 +4731,12 @@ func (p *Parser) defaultContinues() bool {
 		return true
 	case isComparisonCharacter(token):
 		form, _ := (&defaultForms{}).comparisonAt(p)
-		return form == comparisonForm
+		return form != noDefaultForm
 	case token.MatchIdentifierValue("IS") || token.MatchIdentifierValue("AND") || token.MatchIdentifierValue("OR"):
 		return true
 	default:
 		return negatedPredicateWord(token) || p.negatedPredicateFollows()
 	}
-}
-
-// nextWordIs reports whether the next token after the cursor that is not
-// whitespace or a comment is the word, and leaves the parser where it is.
-func (p *Parser) nextWordIs(word string) bool {
-	scan := *p.lexer
-	next := nextSignificantToken(&scan)
-	return next.MatchIdentifierValue(word)
 }
 
 // currentIsColumnPart reports whether the token at the cursor belongs to the

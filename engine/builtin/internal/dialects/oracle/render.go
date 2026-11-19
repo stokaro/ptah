@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/sqlident"
 )
@@ -298,23 +299,28 @@ func nullabilityClause(op *ast.ModifyColumnOperation) string {
 //
 // The type is needed because BOOLEAN maps to NUMBER(1) here -- see
 // oracleFixedTypes -- and the literal beside it has to follow the type it
-// landed on. Measured on 23.26, only the boolean spelling is refused; Oracle
-// converts a quoted number implicitly, so the other quoted literals reach a
-// created table:
+// landed on, and because a number belongs bare beside a number type. Oracle
+// converts a quoted number implicitly, so a quoted literal reaches a created
+// table, but it stores the default as written: DEFAULT '-1' is the string
+// '-1' in USER_TAB_COLUMNS.DATA_DEFAULT, converted on every insert. Measured
+// on 23.26:
 //
-//	qty NUMBER(10) DEFAULT '5'         accepted
-//	price NUMBER(10,2) DEFAULT '0.00'  accepted
+//	qty NUMBER(10) DEFAULT '5'         accepted, stored as '5'
+//	qty NUMBER(10) DEFAULT -1          accepted, stored as -1
 //	note CLOB DEFAULT 'none'           accepted
 //	flag NUMBER(1) DEFAULT 'false'     ORA-01722, unable to convert string value containing 'f' to a number
 //
-// So this narrows to the one case the server refuses rather than rewriting
-// every literal, which would change defaults that already work.
+// A plain number beside a type that is not a number keeps its quotes: on a
+// VARCHAR2 column '007' and 007 are different defaults.
 func renderDefaultLiteral(declaredType, value string) string {
 	value = strings.TrimSpace(value)
 	if literal, ok := renderBooleanDefaultLiteral(declaredType, value); ok {
 		return literal
 	}
 	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
+		return value
+	}
+	if oracletype.IsNumeric(declaredType) && defaultlit.IsPlainNumber(value) {
 		return value
 	}
 	return escapeStringLiteral(value)

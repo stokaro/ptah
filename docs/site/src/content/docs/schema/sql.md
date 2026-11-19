@@ -698,6 +698,16 @@ predicate in a default at all. Ptah refuses those defaults where the server
 does. Oracle and ClickHouse read `DEFAULT 1 + 2 IS NOT NULL` as one
 expression, with the `NOT NULL` belonging to the test.
 
+The shifts `<<` and `>>` are read on PostgreSQL, CockroachDB, YugabyteDB and
+SQL Server, and refused on Oracle and ClickHouse, which have no shift operator.
+`==` is read only on ClickHouse, which stores it as `=`. `DEFAULT NOT NULL`
+declares the default `NOT NULL` on Oracle and ClickHouse, which is NULL, and
+leaves the column nullable; every other engine answers a syntax error, and Ptah
+refuses it. A number written beside a number type, as in `DEFAULT -1` on an
+`INT` column, is written as a number on every engine but ClickHouse, which
+casts a quoted one. Beside a text type it is quoted, so `DEFAULT 007` on a
+`VARCHAR` column is the string `'007'`.
+
 **A PostgreSQL string constant is read in every spelling the server reads.**
 With `--dialect postgres`, a comment, a column or domain default and an enum
 label may each be written as a dollar-quoted string, an `E'...'` escape string,

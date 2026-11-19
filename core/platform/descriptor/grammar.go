@@ -166,8 +166,12 @@ type DefaultPredicates struct {
 	// PostgreSQL answers a syntax error to DEFAULT 1 IS NULL. Empty reads
 	// every form.
 	Refusal string `json:"refusal,omitempty"`
-	// Comparison reads =, <>, !=, <, >, <= and >=, as in DEFAULT 1 + 1 = 2.
+	// Comparison reads =, <>, !=, <, >, <=, >= and <=>, as in DEFAULT 1 + 1 = 2.
 	Comparison bool `json:"comparison,omitempty"`
+	// DoubleEquals reads == as a comparison, as in DEFAULT a == 1.
+	DoubleEquals bool `json:"double_equals,omitempty"`
+	// Shift reads the shifts << and >>, as in DEFAULT 1 << 2.
+	Shift bool `json:"shift,omitempty"`
 	// DistinctFrom reads IS [NOT] DISTINCT FROM.
 	DistinctFrom bool `json:"distinct_from,omitempty"`
 	// Is reads IS [NOT] NULL and every other IS test but DISTINCT FROM.
@@ -184,7 +188,7 @@ type DefaultPredicates struct {
 
 // readsSome reports whether the fields name a form the engine reads.
 func (p DefaultPredicates) readsSome() bool {
-	return p.Comparison || p.DistinctFrom || p.Is || p.Logical || p.Between || p.In || p.Like
+	return p.Comparison || p.DoubleEquals || p.Shift || p.DistinctFrom || p.Is || p.Logical || p.Between || p.In || p.Like
 }
 
 // ColumnConstraint is which column constraint a CONSTRAINT keyword may

@@ -229,18 +229,18 @@ ALTER TABLE ora_posts DROP CONSTRAINT fk_post_author;
 }
 
 // TestBooleanDefaultLiteralIsNumeric pins the default beside a BOOLEAN column,
-// which maps to NUMBER(1) here.
+// which maps to NUMBER(1) here, and beside the number types, where a plain
+// number is written bare and any other type keeps its quotes.
 //
 // It uses a declared literal rather than an Expression, because the two take
 // different arms and only the literal arm quotes. A test that sets Expression
 // exercises the pass-through and says nothing about the arm that renders a
 // declared default.
 //
-// Measured on 23.26 -- Oracle converts a quoted number implicitly, so a quoted
-// numeric default reaches a created table, and only the boolean spelling is
-// refused:
+// Measured on 23.26 -- Oracle converts a quoted number implicitly and stores
+// the default as written, and refuses the boolean spelling:
 //
-//	qty NUMBER(10) DEFAULT '5'      accepted
+//	qty NUMBER(10) DEFAULT '5'      accepted, stored as '5'
 //	flag NUMBER(1) DEFAULT 'false'  ORA-01722, unable to convert string value containing 'f'
 func TestBooleanDefaultLiteralIsNumeric(t *testing.T) {
 	c := qt.New(t)
@@ -250,16 +250,24 @@ func TestBooleanDefaultLiteralIsNumeric(t *testing.T) {
 		Columns: []*ast.ColumnNode{
 			{Name: "off_flag", Type: "BOOLEAN", Default: &ast.DefaultValue{Value: "false"}, Nullable: true},
 			{Name: "on_flag", Type: "BOOL", Default: &ast.DefaultValue{Value: "true"}, Nullable: true},
-			// Not a boolean: the literal stays a literal, because Oracle takes
-			// it and rewriting defaults that already work is not this fix.
 			{Name: "note", Type: "TEXT", Default: &ast.DefaultValue{Value: "none"}, Nullable: true},
+			{Name: "below", Type: "INTEGER", Default: &ast.DefaultValue{Value: "-1"}, Nullable: true},
+			{Name: "price", Type: "DECIMAL(10,2)", Default: &ast.DefaultValue{Value: "0.50"}, Nullable: true},
+			{Name: "ratio", Type: "DOUBLE PRECISION", Default: &ast.DefaultValue{Value: "1e3"}, Nullable: true},
+			{Name: "quoted", Type: "NUMBER(10)", Default: &ast.DefaultValue{Value: "'5'"}, Nullable: true},
+			{Name: "code", Type: "VARCHAR(10)", Default: &ast.DefaultValue{Value: "007"}, Nullable: true},
 		},
 	}
 
 	c.Assert(render(c, capability.Oracle23(), table), qt.Equals, `CREATE TABLE ora_flags (
   off_flag NUMBER(1) DEFAULT 0,
   on_flag NUMBER(1) DEFAULT 1,
-  note CLOB DEFAULT 'none'
+  note CLOB DEFAULT 'none',
+  below NUMBER(10) DEFAULT -1,
+  price NUMBER(10,2) DEFAULT 0.50,
+  ratio BINARY_DOUBLE DEFAULT 1e3,
+  quoted NUMBER(10) DEFAULT '5',
+  code VARCHAR2(10) DEFAULT '007'
 );
 `)
 }

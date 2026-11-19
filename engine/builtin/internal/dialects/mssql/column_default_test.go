@@ -110,19 +110,76 @@ func TestMSSQL_AlterColumnDefault_FailurePath(t *testing.T) {
 
 // CREATE TABLE and ADD DEFAULT spell a default through one function, so a
 // default a migration sets reads back the way one created with the table does.
-// A literal the declaration leaves unquoted is quoted in both.
+// A string literal the declaration leaves unquoted is quoted in both, and a
+// number beside a number type is bare in both: ADD DEFAULT names no type, so
+// the planner hands it the number as an expression.
 func TestMSSQL_AlterColumnDefault_SpellsTheDefaultLikeCreateTable(t *testing.T) {
-	c := qt.New(t)
-	create := &ast.CreateTableNode{Name: "dbo.users", Columns: []*ast.ColumnNode{ast.NewColumn("n", "INT").SetDefault("5")}}
-	set := &ast.AlterTableNode{Name: "dbo.users", Operations: []ast.AlterOperation{&ast.AlterColumnOperation{
-		ColumnName: "n", Action: ast.AlterColumnSetDefault, Default: ast.NewColumn("n", "INT").SetDefault("5").Default,
-	}}}
+	tests := []struct {
+		name        string
+		column      *ast.ColumnNode
+		set         *ast.DefaultValue
+		wantCreated string
+		wantAltered string
+	}{
+		{
+			name:        "a string",
+			column:      ast.NewColumn("n", "NVARCHAR(10)").SetDefault("active"),
+			set:         &ast.DefaultValue{Value: "active"},
+			wantCreated: "[n] NVARCHAR(10) DEFAULT 'active'",
+			wantAltered: "ADD DEFAULT ''active'' FOR [n];",
+		},
+		{
+			name:        "a number",
+			column:      ast.NewColumn("n", "INT").SetDefault("-1"),
+			set:         &ast.DefaultValue{Expression: "-1"},
+			wantCreated: "[n] INT DEFAULT -1",
+			wantAltered: "ADD DEFAULT -1 FOR [n];",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			create := &ast.CreateTableNode{Name: "dbo.users", Columns: []*ast.ColumnNode{test.column}}
+			set := &ast.AlterTableNode{Name: "dbo.users", Operations: []ast.AlterOperation{&ast.AlterColumnOperation{
+				ColumnName: "n", Action: ast.AlterColumnSetDefault, Default: test.set,
+			}}}
 
-	created, err := mssql.New().Render(create)
-	c.Assert(err, qt.IsNil)
-	altered, err := mssql.New().Render(set)
-	c.Assert(err, qt.IsNil)
+			created, err := mssql.New().Render(create)
+			c.Assert(err, qt.IsNil)
+			altered, err := mssql.New().Render(set)
+			c.Assert(err, qt.IsNil)
 
-	c.Assert(created, qt.Contains, "[n] INT DEFAULT '5'")
-	c.Assert(altered, qt.Contains, "ADD DEFAULT ''5'' FOR [n];")
+			c.Assert(created, qt.Contains, test.wantCreated)
+			c.Assert(altered, qt.Contains, test.wantAltered)
+		})
+	}
+}
+
+// TestMSSQL_NumberDefault_HappyPath writes a plain number beside a number type
+// bare, as SQL Server stores DEFAULT -1 as ((-1)), and keeps the quotes beside
+// any other type and on anything that is not a plain number: on an NVARCHAR
+// column '007' and 007 are different defaults.
+func TestMSSQL_NumberDefault_HappyPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		column *ast.ColumnNode
+		want   string
+	}{
+		{name: "a negative integer", column: ast.NewColumn("n", "INTEGER").SetDefault("-1"), want: "[n] INT DEFAULT -1"},
+		{name: "a positive integer", column: ast.NewColumn("n", "BIGINT").SetDefault("5"), want: "[n] BIGINT DEFAULT 5"},
+		{name: "a decimal", column: ast.NewColumn("n", "DECIMAL(5,2)").SetDefault("-1.50"), want: "[n] DECIMAL(5,2) DEFAULT -1.50"},
+		{name: "a number already quoted", column: ast.NewColumn("n", "INT").SetDefault("'5'"), want: "[n] INT DEFAULT '5'"},
+		{name: "a number beside a string type", column: ast.NewColumn("n", "NVARCHAR(10)").SetDefault("007"), want: "[n] NVARCHAR(10) DEFAULT '007'"},
+		{name: "a word beside a number type", column: ast.NewColumn("n", "INT").SetDefault("NaN"), want: "[n] INT DEFAULT 'NaN'"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			created, err := mssql.New().Render(&ast.CreateTableNode{Name: "dbo.t", Columns: []*ast.ColumnNode{test.column}})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(created, qt.Contains, test.want)
+		})
+	}
 }

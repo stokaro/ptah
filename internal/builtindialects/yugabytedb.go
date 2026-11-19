@@ -192,10 +192,12 @@ func yugabyteDB() descriptor.Dialect {
 				CurrentTimeKeywords:  true,
 				StoredStringDefaults: true,
 				DefaultPredicates: descriptor.DefaultPredicates{
-					Refusal: "YugabyteDB 2026.1.2 reads a comparison and IS [NOT] DISTINCT FROM in a default written without " +
-						"parentheses, and answers a syntax error to every other IS test, to AND, OR and NOT, and to BETWEEN, " +
-						"IN and LIKE there; write the whole expression in parentheses, as DEFAULT (1 + 2 IS NOT NULL)",
+					Refusal: "YugabyteDB 2026.1.2 reads a comparison, a shift and IS [NOT] DISTINCT FROM in a default written " +
+						"without parentheses, and answers a syntax error to every other IS test, to AND, OR and NOT, and to " +
+						"BETWEEN, IN and LIKE there; write the whole expression in parentheses, as DEFAULT (1 + 2 IS NOT NULL). " +
+						"It answers operator does not exist to ==, in parentheses too; write =",
 					Comparison:   true,
+					Shift:        true,
 					DistinctFrom: true,
 				},
 			},

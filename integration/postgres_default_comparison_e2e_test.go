@@ -14,9 +14,10 @@ import (
 )
 
 // postgresComparisonDefaultSchema declares the defaults PostgreSQL 18 reads
-// without parentheses beyond arithmetic: a comparison, IS DISTINCT FROM, and
-// a minus before a call or a group. PostgreSQL stores each with the
-// parentheses pg_get_expr prints, such as ((1 + 1) = 2).
+// without parentheses beyond arithmetic: a comparison, a shift, IS DISTINCT
+// FROM, and a minus or a plus before a call or a group. PostgreSQL stores each
+// with the parentheses pg_get_expr prints, such as ((1 + 1) = 2) and
+// ((1 + 1) << 2).
 const postgresComparisonDefaultSchema = "CREATE TABLE marks (\n" +
 	"  id int NOT NULL,\n" +
 	"  lt boolean DEFAULT 1 < 2,\n" +
@@ -24,7 +25,10 @@ const postgresComparisonDefaultSchema = "CREATE TABLE marks (\n" +
 	"  ne boolean DEFAULT 2 <> 2 NOT NULL,\n" +
 	"  distinct_from boolean DEFAULT 1 IS DISTINCT FROM 2,\n" +
 	"  negated_call int DEFAULT -abs(5),\n" +
-	"  negated_group int DEFAULT -(2 + 3)\n" +
+	"  negated_group int DEFAULT -(2 + 3),\n" +
+	"  plus_call int DEFAULT +abs(-5),\n" +
+	"  shift int DEFAULT 1 << 2,\n" +
+	"  sum_shift int DEFAULT 1 + 1 << 2\n" +
 	");\n"
 
 // TestApplyPostgresComparisonDefaultE2E applies postgresComparisonDefaultSchema
@@ -45,6 +49,6 @@ func TestApplyPostgresComparisonDefaultE2E(t *testing.T) {
 	c.Assert(again.ExitCode, qt.Equals, 0, historyComment(again))
 	c.Assert(again.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
 	applyEngineFile(c, database, platform.Postgres, "INSERT INTO marks (id) VALUES (1);\n")
-	read := "SELECT concat_ws(',', lt, sum_eq, ne, distinct_from, negated_call, negated_group) FROM marks"
-	c.Assert(catalogReadBack(c, database, []string{read}), qt.DeepEquals, [][]string{{"t,t,f,t,-5,-5"}})
+	read := "SELECT concat_ws(',', lt, sum_eq, ne, distinct_from, negated_call, negated_group, plus_call, shift, sum_shift) FROM marks"
+	c.Assert(catalogReadBack(c, database, []string{read}), qt.DeepEquals, [][]string{{"t,t,f,t,-5,-5,5,4,8"}})
 }

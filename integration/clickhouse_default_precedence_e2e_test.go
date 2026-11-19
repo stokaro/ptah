@@ -22,6 +22,9 @@ import (
 // grouping needs. ClickHouse 24.10 and 26.10 store a = 1 OR b = 3 as
 // (a = 1) OR (b = 3), c BETWEEN 1 AND 3 as (c >= 1) AND (c <= 3),
 // a NOT BETWEEN 1 AND 3 as (a < 1) OR (a > 3), and NOT a and -a as written.
+// They store a IN (1, 9) OR b NOT IN (3) as (a IN (1, 9)) OR (b NOT IN (3)),
+// a IN 1 as a IN (1), c + 1 IN (2, 3) as (c + 1) IN (2, 3), and
+// t LIKE 'a%' AND t NOT LIKE 'b%' as (t LIKE 'a%') AND (t NOT LIKE 'b%').
 const clickHousePrecedenceDefaultSchema = "CREATE TABLE tallies (\n" +
 	"  id UInt64,\n" +
 	"  a Int64 DEFAULT 9,\n" +
@@ -39,6 +42,11 @@ const clickHousePrecedenceDefaultSchema = "CREATE TABLE tallies (\n" +
 	"  y UInt8 DEFAULT c BETWEEN 1 AND 3,\n" +
 	"  z UInt8 DEFAULT a NOT BETWEEN 1 AND 3,\n" +
 	"  g UInt8 DEFAULT NOT a,\n" +
+	"  t String DEFAULT 'abc',\n" +
+	"  m UInt8 DEFAULT a IN (1, 9) OR b NOT IN (3),\n" +
+	"  h UInt8 DEFAULT b NOT IN (3) OR a IN 1,\n" +
+	"  j UInt8 DEFAULT c + 1 IN (2, 3),\n" +
+	"  l UInt8 DEFAULT t LIKE 'a%' AND t NOT LIKE 'b%',\n" +
 	"  n Int64 DEFAULT -a\n" +
 	") ENGINE = MergeTree ORDER BY id;\n"
 
@@ -47,7 +55,7 @@ const clickHousePrecedenceDefaultSchema = "CREATE TABLE tallies (\n" +
 // second apply plans nothing, which says the comparison reads the spelling
 // the server stores as the default the file declares, and a row that takes
 // every default reads back what the server computed for each. Compared as
-// text, the second apply plans to modify every default but q, u, g and n.
+// text, the second apply plans to modify every default but q, u, g, t and n.
 func TestApplyConvergesOnAClickHousePrecedenceDefaultE2E(t *testing.T) {
 	c := qt.New(t)
 	database := createdDevDialectDatabase(c, dbtarget.URL(c, dbtarget.ClickHouse), "DROP DATABASE IF EXISTS %s SYNC", renameInPath)
@@ -64,6 +72,6 @@ func TestApplyConvergesOnAClickHousePrecedenceDefaultE2E(t *testing.T) {
 	applyEngineFile(c, database, platform.ClickHouse, "INSERT INTO tallies (id) VALUES (1);\n")
 	read := "SELECT concat(toString(p), ',', toString(q), ',', toString(r), ',', toString(s), ',', toString(u), ',', " +
 		"toString(v), ',', toString(w), ',', toString(x), ',', toString(o), ',', toString(y), ',', toString(z), ',', " +
-		"toString(g), ',', toString(n)) FROM tallies"
-	c.Assert(catalogReadBack(c, database, []string{read}), qt.DeepEquals, [][]string{{"7,9,1,4,8,1,1,13.5,1,1,1,0,-9"}})
+		"toString(g), ',', toString(n), ',', toString(m), ',', toString(h), ',', toString(j), ',', toString(l)) FROM tallies"
+	c.Assert(catalogReadBack(c, database, []string{read}), qt.DeepEquals, [][]string{{"7,9,1,4,8,1,1,13.5,1,1,1,0,-9,1,0,1,1"}})
 }

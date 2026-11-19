@@ -12,6 +12,8 @@ package sqlservertype
 import (
 	"regexp"
 	"strings"
+
+	"ptah.run/internal/defaultlit"
 )
 
 var portableTimestamp = regexp.MustCompile(`(?i)^\s*(timestamp|timestamptz)\s*(?:\(\s*([0-9]+)\s*\))?\s*(with(?:out)?\s+time\s+zone)?\s*$`)
@@ -103,6 +105,25 @@ func ServerBuilt(declaredType string) (string, bool) {
 		return replaceTypeName(declaredType, "CHAR"), true
 	default:
 		return "", false
+	}
+}
+
+// BareNumber reports whether value, a column default's literal, is written as
+// a number for a column of declaredType: a plain number beside a type Map
+// turns into a number type. SQL Server stores DEFAULT -1 as ((-1)) and
+// DEFAULT '-1' as ('-1'), a string converted on every insert. Beside any other
+// type the literal keeps its quotes, since on an NVARCHAR column '007' and 007
+// are different defaults.
+//
+// The renderer asks it of a column it creates and the planner of a default it
+// sets on a column that exists, whose ALTER TABLE ... ADD DEFAULT carries no
+// type; one predicate keeps the two statements writing one default one way.
+func BareNumber(declaredType, value string) bool {
+	switch Base(Map(declaredType)) {
+	case "TINYINT", "SMALLINT", "INT", "BIGINT", "DECIMAL", "NUMERIC", "FLOAT", "REAL", "MONEY", "SMALLMONEY":
+		return defaultlit.IsPlainNumber(strings.TrimSpace(value))
+	default:
+		return false
 	}
 }
 
