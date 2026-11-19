@@ -41,6 +41,16 @@ func (q Quoting) OpensString(value string, at int) bool {
 // name opening at value[start], or the last index of value when nothing
 // closes it. A doubled quote is the quote itself.
 func (q Quoting) QuotedEnd(value string, start int) int {
+	if end, closed := q.ClosingQuote(value, start); closed {
+		return end
+	}
+	return len(value) - 1
+}
+
+// ClosingQuote returns the index of the quote that closes the string or quoted
+// name opening at value[start], and false when nothing closes it. A doubled
+// quote is the quote itself.
+func (q Quoting) ClosingQuote(value string, start int) (end int, closed bool) {
 	quote := value[start]
 	backslashes := q.BackslashEscapesIn(value, start)
 	for i := start + 1; i < len(value); i++ {
@@ -51,10 +61,10 @@ func (q Quoting) QuotedEnd(value string, start int) int {
 		case i+1 < len(value) && value[i+1] == quote:
 			i++
 		default:
-			return i
+			return i, true
 		}
 	}
-	return len(value) - 1
+	return 0, false
 }
 
 // BackslashEscapesIn reports whether a backslash escapes the next byte inside

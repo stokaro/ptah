@@ -16,6 +16,7 @@ import (
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/normalize"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
 )
@@ -743,9 +744,22 @@ func newViewLikeGraph(objects []ViewLike, dialect string, scope orderScope) view
 	bareNameCounts := viewLikeBareNameCounts(idsByName)
 	for i, object := range objects {
 		id := viewLikeID(object, i)
+		// A query reads a view where a relation can appear, and calls a
+		// routine anywhere an expression can. A routine's body writes
+		// relations in more places than a query reads them. Both are read
+		// whole.
+		var reads *relationReads
+		if !object.Routine {
+			read := relationsReadBy(object.Body, dialect)
+			reads = &read
+		}
 		for candidateName, candidateIDs := range idsByName {
+			scoped := reads
+			if graph.anyRoutine(candidateIDs) {
+				scoped = nil
+			}
 			if candidateName == object.Name ||
-				!referencesViewLikeIdentifier(object.Body, candidateName, dialect, scope, bareNameCounts) {
+				!referencesViewLikeIdentifier(object.Body, candidateName, dialect, scope, bareNameCounts, scoped) {
 				continue
 			}
 			graph.reads[id] = append(graph.reads[id], candidateIDs...)
@@ -753,6 +767,11 @@ func newViewLikeGraph(objects []ViewLike, dialect string, scope orderScope) view
 		graph.reads[id] = append(graph.reads[id], declaredViewLikeEdges(object, idsByName)...)
 	}
 	return graph
+}
+
+// anyRoutine reports that one of ids is a routine.
+func (g viewLikeGraph) anyRoutine(ids []string) bool {
+	return slices.ContainsFunc(ids, func(id string) bool { return g.byID[id].Routine })
 }
 
 func (g viewLikeGraph) ordered(ids []string) []ViewLike {
@@ -827,7 +846,18 @@ func viewLikeBareNameCounts(idsByName map[string][]string) map[string]int {
 // reaches the object's schema, or where no other object of the set has that
 // bare name. The dialect's quoted spellings are asked too, which is what reads
 // a SQL Server name in brackets.
-func referencesViewLikeIdentifier(body, name, dialect string, scope orderScope, bareNameCounts map[string]int) bool {
+//
+// reads, when it is not nil, keeps the test to the names body reads as
+// relations ([relationsReadBy]): `SELECT n AS b_v FROM t` does not read a
+// view b_v, and two views whose aliases name each other are no cycle. A
+// routine's body passes nil, since it writes relations in more places than a
+// query reads them, such as INSERT INTO and UPDATE.
+func referencesViewLikeIdentifier(
+	body, name, dialect string,
+	scope orderScope,
+	bareNameCounts map[string]int,
+	reads *relationReads,
+) bool {
 	if dialect == "" {
 		return ReferencesIdentifier(body, name)
 	}
@@ -836,55 +866,65 @@ func referencesViewLikeIdentifier(body, name, dialect string, scope orderScope, 
 	if !ok {
 		return ReferencesIdentifier(body, name)
 	}
+	var positions []bool
+	names := func() []dottedName { return codeNames(body, dialect) }
+	if reads != nil {
+		positions = reads.positions
+		names = func() []dottedName { return reads.names }
+	}
 	if ref.Qualified && referencesIdentifierSpellings(body, []string{
 		name,
 		tableref.Canonical(ref.Schema, ref.Name),
 		sqlident.Qualified(dialect, ref.Schema, ref.Name),
-	}, dialect) {
+	}, dialect, positions) {
 		return true
 	}
 	if !ref.Qualified && referencesIdentifierSpellings(body, []string{
 		name,
 		tableref.Canonical("", ref.Name),
 		sqlident.Quote(dialect, ref.Name),
-	}, dialect) {
+	}, dialect, positions) {
 		return true
 	}
-	if namesRead(codeNames(body, dialect), ref, scope.resolution()) {
+	if namesRead(names(), ref, scope.resolution()) {
 		return true
 	}
 
 	if bareNameCounts[strings.ToLower(ref.Name)] != 1 {
 		return false
 	}
-	return referencesUnqualifiedIdentifier(body, ref.Name, dialect)
+	return referencesUnqualifiedIdentifier(body, ref.Name, dialect, positions)
 }
 
-func referencesIdentifierSpellings(body string, spellings []string, dialect string) bool {
+// The spelling tests below take positions, the bytes of the lowered body a
+// match may start at, or nil for any byte.
+
+func referencesIdentifierSpellings(body string, spellings []string, dialect string, positions []bool) bool {
 	for _, spelling := range spellings {
-		if referencesIdentifierSpelling(body, spelling, dialect) {
+		if referencesIdentifierSpelling(body, spelling, dialect, positions) {
 			return true
 		}
 	}
 	return false
 }
 
-func referencesUnqualifiedIdentifier(body, name, dialect string) bool {
-	return referencesUnquotedIdentifierSpelling(body, name, dialect) ||
-		referencesIdentifierSpelling(body, tableref.Canonical("", name), dialect) ||
-		referencesIdentifierSpelling(body, sqlident.Quote(dialect, name), dialect)
+func referencesUnqualifiedIdentifier(body, name, dialect string, positions []bool) bool {
+	return referencesUnquotedIdentifierSpelling(body, name, dialect, positions) ||
+		referencesIdentifierSpelling(body, tableref.Canonical("", name), dialect, positions) ||
+		referencesIdentifierSpelling(body, sqlident.Quote(dialect, name), dialect, positions)
 }
 
-func referencesIdentifierSpelling(body, spelling, dialect string) bool {
-	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, hasStandaloneIdentifierBoundaries)
+func referencesIdentifierSpelling(body, spelling, dialect string, positions []bool) bool {
+	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, positions, hasStandaloneIdentifierBoundaries)
 }
 
-func referencesUnquotedIdentifierSpelling(body, spelling, dialect string) bool {
-	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, hasUnquotedIdentifierBoundaries)
+func referencesUnquotedIdentifierSpelling(body, spelling, dialect string, positions []bool) bool {
+	return referencesIdentifierSpellingWithBoundary(body, spelling, dialect, positions, hasUnquotedIdentifierBoundaries)
 }
 
 func referencesIdentifierSpellingWithBoundary(
 	body, spelling, dialect string,
+	positions []bool,
 	hasBoundaries func(string, int, int) bool,
 ) bool {
 	body = strings.ToLower(body)
@@ -901,7 +941,8 @@ func referencesIdentifierSpellingWithBoundary(
 		}
 		index += start
 		end := index + len(spelling)
-		if spanIsCode(masks.code, index, end) &&
+		if (positions == nil || index < len(positions) && positions[index]) &&
+			spanIsCode(masks.code, index, end) &&
 			hasBoundaries(body, index, end) &&
 			spanMatchesIdentifierQuoting(body, spelling, masks, index, end) {
 			return true
@@ -1140,12 +1181,24 @@ func spanIsCode(code []bool, start, end int) bool {
 // platform.Lookup for each costs more than masking a short one. The lexical
 // facts are shared, so a caller must not modify them.
 var maskFacts = descriptortable.New(func(described descriptor.Dialect) describedMasks {
-	return describedMasks{lexical: described.Lexical, brackets: described.Quoting.Style == descriptor.QuoteBracket}
+	quoting := normalize.QuotingFromDescriptor(described)
+	if described.Name == "" {
+		// A body with no dialect, or one the registry does not know, takes
+		// E'...' as a string with backslash escapes, as the rest of this
+		// PostgreSQL-oriented scanner reads it.
+		quoting = normalize.Quoting{EscapeStrings: true}
+	}
+	return describedMasks{
+		lexical:  described.Lexical,
+		quoting:  quoting,
+		brackets: described.Quoting.Style == descriptor.QuoteBracket,
+	}
 })
 
 // describedMasks is what [maskFacts] holds for one dialect.
 type describedMasks struct {
 	lexical  descriptor.Lexical
+	quoting  normalize.Quoting
 	brackets bool
 }
 
@@ -1159,14 +1212,18 @@ type describedMasks struct {
 // The scanner is PostgreSQL-oriented. It adds the target's nonstandard lexical
 // forms, as its descriptor states them, without changing those rules: the line
 // comments it opens beside -- and /* ... */, such as the #
-// of the MySQL family and ClickHouse's # and //, and the backslash escapes of
-// its strings and of its quoted names. MySQL's catalog writes a view's
-// strings that way, as 'it\'s'. A target whose descriptor names a lexer of
-// its own, or whose provider supplies one, is read by that lexer instead;
-// see [lexerMasks].
+// of the MySQL family and ClickHouse's # and //. Where a string or a quoted
+// name ends is the dialect's [normalize.Quoting]: a backslash escapes in the
+// MySQL family's and ClickHouse's strings, and in an E'...' string only where
+// the dialect has one, and a double-quoted "..." is a string where the dialect
+// reads one. MySQL's catalog writes a view's strings with backslashes, as
+// 'it\'s', and a MySQL view may hold "x\"y". A target whose descriptor names a
+// lexer of its own, or whose provider supplies one, is read by that lexer
+// instead; see [lexerMasks].
 func sqlMasksForDialect(body, dialect string) sqlMasks {
 	facts := maskFacts.Get(dialect)
 	lexical := facts.lexical
+	quoting := facts.quoting
 	brackets := facts.brackets
 	if options := dialectlexer.Options(dialect); options.Scanner != nil {
 		masks := lexerMasks(body, options)
@@ -1193,12 +1250,12 @@ func sqlMasksForDialect(body, dialect string) sqlMasks {
 			i = skipLineComment(body, i)
 		case strings.HasPrefix(body[i:], "/*"):
 			i = skipBlockComment(body, i)
-		case body[i] == '\'':
-			i = skipStringLiteral(body, i, lexical.BackslashEscapes)
+		case quoting.OpensString(body, i):
+			i = quotedEnd(quoting, body, i)
 		case body[i] == '"' || body[i] == '`':
-			end, closeAt := quotedIdentifierEnd(body, i, lexical.IdentifierBackslashEscapes)
+			end := quotedEnd(quoting, body, i)
 			masks.quoteOpen[i] = true
-			if closeAt >= 0 {
+			if closeAt, closed := quoting.ClosingQuote(body, i); closed {
 				masks.quoteClose[closeAt] = true
 			}
 			for ; i < end; i++ {
@@ -1299,48 +1356,14 @@ func skipBlockComment(body string, start int) int {
 	return len(body)
 }
 
-// skipStringLiteral consumes a '...' literal. A doubled quote continues it.
-// PostgreSQL enables backslash escapes for E-prefixed literals; ClickHouse and
-// the MySQL family enable them for ordinary literals, which backslashEscapes
-// carries here.
-func skipStringLiteral(body string, start int, backslashEscapes bool) int {
-	escapes := backslashEscapes || start > 0 && body[start-1] == 'e' &&
-		(start == 1 || !isSQLIdentifierRune(rune(body[start-2])))
-	for i := start + 1; i < len(body); {
-		switch {
-		case escapes && body[i] == '\\' && i+1 < len(body):
-			i += 2
-		case body[i] == '\'' && i+1 < len(body) && body[i+1] == '\'':
-			i += 2
-		case body[i] == '\'':
-			return i + 1
-		default:
-			i++
-		}
+// quotedEnd is the offset after the string or quoted name opening at
+// body[start], as quoting reads it, or the length of body when nothing closes
+// it.
+func quotedEnd(quoting normalize.Quoting, body string, start int) int {
+	if closeAt, closed := quoting.ClosingQuote(body, start); closed {
+		return closeAt + 1
 	}
 	return len(body)
-}
-
-// quotedIdentifierEnd consumes a standard-quoted or backtick-quoted identifier,
-// including doubled closing quotes and, where the target's names take them,
-// backslash escapes, as ClickHouse's do. A MySQL name takes none: `a\` is a
-// name ending in a backslash. It returns both the exclusive end and the
-// closing delimiter offset, or -1 when the identifier is unterminated.
-func quotedIdentifierEnd(body string, start int, backslashEscapes bool) (end, closeAt int) {
-	quote := body[start]
-	for i := start + 1; i < len(body); {
-		switch {
-		case backslashEscapes && body[i] == '\\' && i+1 < len(body):
-			i += 2
-		case body[i] == quote && i+1 < len(body) && body[i+1] == quote:
-			i += 2
-		case body[i] == quote:
-			return i + 1, i
-		default:
-			i++
-		}
-	}
-	return len(body), -1
 }
 
 // skipDollarQuoted consumes a $tag$ ... $tag$ string, reporting false when the

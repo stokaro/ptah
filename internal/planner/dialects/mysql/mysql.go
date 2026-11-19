@@ -1906,6 +1906,23 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 	return result
 }
 
+// refuseUnplannableChanges refuses, before the diff is read further, the
+// changes this planner cannot write for its target: an index changed in place,
+// a feature the target does not host, a role membership, and a change of a
+// serial column's sequence.
+func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
+	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
+		return err
+	}
+	if err := p.refuseUnhostedFeatureChanges(diff); err != nil {
+		return err
+	}
+	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
+		return err
+	}
+	return schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff)
+}
+
 // GenerateMigrationAST generates MySQL-specific migration AST statements from schema differences.
 //
 // This method transforms the schema differences captured in the SchemaDiff into executable
@@ -1989,19 +2006,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		}
 	}()
 
-	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
-		return nil, err
-	}
-	if err := p.refuseUnhostedFeatureChanges(diff); err != nil {
-		return nil, err
-	}
-	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
+	if err := p.refuseUnplannableChanges(diff); err != nil {
 		return nil, err
 	}
 	var result []ast.Node
-	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
-		return nil, err
-	}
 	// One fold, at the door, beside the index resolver that has always been
 	// here. A diff the comparator produced arrives with its identities
 	// resolved; one an embedder built by hand does not, and the zero identity
@@ -2118,8 +2126,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	windows := featurehost.Windows{Creation: len(result)}
 
 	// 4.5. Add and modify views/triggers after tables exist.
-	result = p.addNewViews(result, diff)
-	result = p.modifyExistingViews(result, diff)
+	result, err = p.createViews(result, diff)
+	if err != nil {
+		return nil, err
+	}
 	if err := p.rejectMaterializedViews(diff); err != nil {
 		return nil, err
 	}
@@ -2315,26 +2325,49 @@ func (p *Planner) rejectMaterializedViews(diff *difftypes.SchemaDiff) error {
 	}}}).Err(p.targetDialect())
 }
 
-func (p *Planner) addNewViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+// createViews creates each view the diff adds and replaces each one whose
+// query changed, a view after the views of the set its body reads. MySQL,
+// MariaDB, SQL Server and Oracle check a view's query when it is created, so a
+// view written before a view it reads stops the plan: `CREATE VIEW a AS SELECT
+// n FROM b` before `CREATE VIEW b` fails with "Table 'b' doesn't exist".
+//
+// A replaced view takes part in the order: a new view reading a column the
+// replacement adds follows it. Views the diff adds that read one another in a
+// ring are refused by name, since no order creates them; a ring through a view
+// that exists already is left in the order the diff gives, because the view it
+// reads is there to be read.
+func (p *Planner) createViews(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	dialect := p.targetDialect()
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	nodes := make(map[string]*ast.CreateViewNode, len(diff.ViewsAdded)+len(diff.ViewsModified))
+	added := make([]deporder.ViewLike, 0, len(diff.ViewsAdded))
+	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.ViewsModified))
 	// The view travels WITH the change, so this renders what it was handed
 	// rather than looking the name back up in the desired schema.
 	for _, view := range diff.ViewsAdded {
-		result = append(result, modelast.FromView(view))
+		object := deporder.ViewLike{Name: view.Name, Body: view.Body, DependsOn: view.DependsOn}
+		nodes[view.Name] = modelast.FromView(view)
+		added = append(added, object)
+		objects = append(objects, object)
 	}
-	return result
-}
-
-func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// The view this change leaves behind travels WITH it (stokaro/ptah#2315).
-	for _, viewDiff := range diff.ViewsModified {
-		if viewDiff.Desired.Name == "" {
+	for _, change := range diff.ViewsModified {
+		if change.Desired.Name == "" {
 			continue
 		}
-		view := modelast.FromView(viewDiff.Desired).SetReplace()
-		view.Definer = definer.ViewClauseDefiner(viewDiff, diff.ConnectedAccount, p.targetDialect())
-		result = append(result, view)
+		node := modelast.FromView(change.Desired).SetReplace()
+		node.Definer = definer.ViewClauseDefiner(change, diff.ConnectedAccount, dialect)
+		nodes[change.Desired.Name] = node
+		objects = append(objects, deporder.ViewLike{Name: change.Desired.Name, Body: change.Desired.Body, DependsOn: change.Desired.DependsOn})
 	}
-	return result
+	if ring := deporder.ViewLikeCycleIn(added, dialect, semantics); len(ring) > 0 {
+		return nil, fmt.Errorf("the views %s read one another in a cycle, so none of them can be created first: %s",
+			strings.Join(ring, ", "), strings.Join(append(ring, ring[0]), " reads "))
+	}
+	for _, object := range deporder.ViewLikesForCreateIn(objects, dialect, semantics) {
+		result = append(result, nodes[object.Name])
+	}
+	return result, nil
 }
 
 func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
@@ -2346,7 +2379,7 @@ func (p *Planner) removeViews(result []ast.Node, diff *difftypes.SchemaDiff) []a
 
 // addNewMaterializedViews emits the declared materialized views a diff adds.
 //
-// It runs beside addNewViews rather than inside it because the two produce
+// It runs beside createViews rather than inside it because the two produce
 // different statements, and it is a no-op on every target whose preset does not
 // carry the object: rejectMaterializedViews has already refused those.
 func (p *Planner) addNewMaterializedViews(

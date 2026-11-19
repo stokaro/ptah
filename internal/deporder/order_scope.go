@@ -1,6 +1,7 @@
 package deporder
 
 import (
+	"cmp"
 	"slices"
 
 	"ptah.run/core/platform/identifier"
@@ -16,6 +17,59 @@ import (
 // the reason [ViewLikesForCreateForDialect] gives.
 func ViewLikesForCreateIn(objects []ViewLike, dialect string, semantics identifier.Semantics) []ViewLike {
 	return viewLikesForCreate(objects, dialect, sessionScope(semantics))
+}
+
+// ViewLikeCycleIn returns the names of objects that read one another in a
+// ring, each one reading the next and the last reading the first, with names
+// resolving as [ViewLikesForCreateIn] resolves them. It returns nil when there
+// is no ring. No order creates the objects on a ring one at a time, since each
+// needs the next to exist first, and [ViewLikesForCreateIn] leaves them in the
+// order they arrived. Of several rings it reports the first one a walk of the
+// objects in their given order meets, so the answer is deterministic.
+func ViewLikeCycleIn(objects []ViewLike, dialect string, semantics identifier.Semantics) []string {
+	graph := newViewLikeGraph(objects, dialect, sessionScope(semantics))
+	position := make(map[string]int, len(graph.ids))
+	for i, id := range graph.ids {
+		position[id] = i
+	}
+	const (
+		unvisited = iota
+		walking
+		walked
+	)
+	state := make(map[string]int, len(graph.ids))
+	var path, ring []string
+	var walk func(id string) bool
+	walk = func(id string) bool {
+		state[id] = walking
+		path = append(path, id)
+		reads := slices.Clone(graph.reads[id])
+		slices.SortFunc(reads, func(a, b string) int { return cmp.Compare(position[a], position[b]) })
+		for _, read := range reads {
+			switch {
+			case read == id:
+			case state[read] == walking:
+				ring = slices.Clone(path[slices.Index(path, read):])
+				return true
+			case state[read] == unvisited && walk(read):
+				return true
+			}
+		}
+		path = path[:len(path)-1]
+		state[id] = walked
+		return false
+	}
+	for _, id := range graph.ids {
+		if state[id] != unvisited || !walk(id) {
+			continue
+		}
+		names := make([]string, 0, len(ring))
+		for _, member := range ring {
+			names = append(names, graph.byID[member].Name)
+		}
+		return names
+	}
+	return nil
 }
 
 // ViewLikesForDropIn is [ViewLikesForDropForDialect] with names resolving as
