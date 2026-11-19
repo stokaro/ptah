@@ -139,6 +139,49 @@ func TestCompatMigrateDiffReportsAnOmittedChangeOnceE2E(t *testing.T) {
 	}
 }
 
+// TestCompatSchemaDiffReportsARefusedCheckByItsDeclaredNameE2E plans a CHECK
+// the dev server refuses, as it refuses it to the pinned community binary,
+// which creates the same constraint there. The error names the CHECK as the
+// declaration does, with its table and the server's message, which names the
+// declared constraint too, and the dev database is left empty.
+func TestCompatSchemaDiffReportsARefusedCheckByItsDeclaredNameE2E(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+		want   string
+	}{
+		{
+			name:   "mysql",
+			engine: dbtarget.MySQLAdmin,
+			want: `Error: read CHECK expressions on dev database: the dev database refuses CHECK "qty_ck" of table "t": ` +
+				"Error 3814 (HY000): An expression of a check constraint 'qty_ck' contains disallowed function: `nosuchfn`.\n",
+		},
+		{
+			name:   "mariadb",
+			engine: dbtarget.MariaDBAdmin,
+			want: `Error: read CHECK expressions on dev database: the dev database refuses CHECK "qty_ck" of table "t": ` +
+				"Error 1901 (HY000): Function or expression '`nosuchfn`()' cannot be used in the CHECK clause of `qty_ck`\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scratch := newMySQLFamilyScratch(c, test.engine)
+			devName, dev := scratch.database(c, "ck_dev")
+			root := c.TempDir()
+			from := writeCheckDevFormFile(c, root, "from.sql", checkDevFormFrom)
+			to := writeCheckDevFormFile(c, root, "to.sql",
+				"CREATE TABLE t (id int PRIMARY KEY, c varchar(20), qty int, CONSTRAINT qty_ck CHECK (nosuchfn(qty) > 0));")
+
+			out, err := runCompatVerb("schema", "diff", "--from", "file://"+from, "--to", "file://"+to, "--dev-url", dev)
+
+			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+			c.Assert(out, qt.Equals, test.want)
+			c.Assert(scratch.tableCount(c, devName), qt.Equals, 0)
+		})
+	}
+}
+
 // checkDevForms builds [checkDevFormTo] in a database of its own and answers
 // each CHECK the server reports there, read through the reader every command
 // uses, written in form with the constraint's name, in name order.

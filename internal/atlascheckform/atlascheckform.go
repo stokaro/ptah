@@ -34,21 +34,64 @@ import (
 	"ptah.run/internal/tableref"
 )
 
-// probeNamePrefix starts the name of each constraint a probe adds. The number
-// after it keeps the names apart, since MySQL and MariaDB name a CHECK once
+// probeNamePrefix starts the name a probe adds a CHECK under where the
+// declaration gives it none, or gives it a name another probe already uses.
+// The number after it keeps the names apart, since MySQL names a CHECK once
 // per database rather than once per table.
 const probeNamePrefix = "ptah_check_probe_"
 
 // Probe asks the dev database for one declared CHECK: the expression a table
-// declares, added to that table under a constraint name of the probe's own.
+// declares, added to that table under a constraint name of its own.
 type Probe struct {
 	// Schema and Table name the declared table as the declaration spells them.
 	// Schema is empty where the declaration names none.
 	Schema, Table string
 	// Expression is the declared CHECK without the CHECK keyword.
 	Expression string
-	// Name is the name the probe adds the constraint under.
+	// Declared is the constraint name the declaration gives the CHECK, and
+	// empty where it gives none.
+	Declared string
+	// Name is the name the probe adds the constraint under: Declared where no
+	// other probe uses it, so a refusal the server words with the name names
+	// the author's constraint, and a name of the probe's own otherwise.
 	Name string
+}
+
+// Subject names the declared CHECK a probe asks about, by its declared name
+// and its table, for a message about it.
+func (p Probe) Subject() string {
+	table := p.Table
+	if p.Schema != "" {
+		table = p.Schema + "." + p.Table
+	}
+	if p.Declared == "" {
+		return fmt.Sprintf("the unnamed CHECK of table %q", table)
+	}
+	return fmt.Sprintf("CHECK %q of table %q", p.Declared, table)
+}
+
+// Refusal is the dev server's refusal of a probe's CHECK, reported as a
+// refusal of the declared CHECK: by its declared name and its table, with the
+// server's message, and without the statement the probe sent, which names
+// nothing the author wrote.
+type Refusal struct {
+	// Probe is the probe the server refused.
+	Probe Probe
+	// Err is the server's answer.
+	Err error
+}
+
+func (r *Refusal) Error() string {
+	message := r.Err.Error()
+	if r.Probe.Name != r.Probe.Declared {
+		message = strings.ReplaceAll(message, r.Probe.Name, "unnamed")
+	}
+	return fmt.Sprintf("the dev database refuses %s: %s", r.Probe.Subject(), message)
+}
+
+// Unwrap returns the server's answer.
+func (r *Refusal) Unwrap() error {
+	return r.Err
 }
 
 // Plan returns a probe for each distinct CHECK expression a table of desired
@@ -75,29 +118,38 @@ func Plan(dialect string, desired *schemamodel.Database, diff *difftypes.SchemaD
 	fields := schemamodel.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
 	var probes []Probe
 	seen := make(map[spellingKey]bool)
-	add := func(table schemamodel.Table, expression string) {
+	// MySQL compares CHECK names without regard to case.
+	used := make(map[string]bool)
+	add := func(table schemamodel.Table, expression, declared string) {
 		expression = strings.TrimSpace(expression)
 		key := keyOf(table.Name, expression)
 		if expression == "" || seen[key] || !written[key] {
 			return
 		}
 		seen[key] = true
+		declared = strings.TrimSpace(declared)
+		name := declared
+		for number := len(probes) + 1; name == "" || used[strings.ToLower(name)]; number++ {
+			name = probeNamePrefix + strconv.Itoa(number)
+		}
+		used[strings.ToLower(name)] = true
 		probes = append(probes, Probe{
 			Schema:     table.Schema,
 			Table:      table.Name,
 			Expression: expression,
-			Name:       probeNamePrefix + strconv.Itoa(len(probes)+1),
+			Declared:   declared,
+			Name:       name,
 		})
 	}
 	for _, table := range desired.Tables {
 		for _, field := range fields {
 			if field.StructName == table.StructName {
-				add(table, field.Check)
+				add(table, field.Check, field.CheckName)
 			}
 		}
 		for _, constraint := range schemacapture.ConstraintsFor(desired.Constraints, table) {
 			if isCheck(constraint.Type) {
-				add(table, constraint.CheckExpression)
+				add(table, constraint.CheckExpression, constraint.Name)
 			}
 		}
 	}
