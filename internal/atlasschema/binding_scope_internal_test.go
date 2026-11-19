@@ -82,17 +82,17 @@ func TestDiffResolvedStates_ScopesAPolicyWhole(t *testing.T) {
 			options := test.options
 			options.Runtime = must.Must(builtin.New())
 
-			report, diff, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, noCapabilities, devServerSides{}, options)
+			compared, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, noCapabilities, devServerSides{}, options)
 
 			c.Assert(err, qt.ErrorIs, featureselect.ErrPartialScope)
 			c.Assert(err, qt.ErrorMatches, splitPolicyErr)
-			c.Assert(report.Changes, qt.IsNil)
-			c.Assert(diff, qt.IsNil)
+			c.Assert(compared.diff, qt.IsNil)
+			c.Assert(compared.compared, qt.IsNil)
 		})
 	}
 	t.Run("an exclusion of an unbound table", func(t *testing.T) {
 		c := qt.New(t)
-		_, _, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, noCapabilities, devServerSides{},
+		_, err := diffResolvedStates(t.Context(), nil, read, declared, platform.SQLServer, noCapabilities, devServerSides{},
 			DiffOptions{Exclude: []string{"audit"}, Runtime: must.Must(builtin.New())})
 		c.Assert(err, qt.IsNil)
 	})

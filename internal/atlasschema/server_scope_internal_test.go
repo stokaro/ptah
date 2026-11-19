@@ -18,6 +18,7 @@ import (
 	"ptah.run/catalog"
 	"ptah.run/core/platform"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/atlascheckform"
 	"ptah.run/internal/atlassource"
 	"ptah.run/internal/convert/dbschematogo"
 )
@@ -49,8 +50,11 @@ func serverState(databases ...string) atlassource.State {
 func TestDiffResolvedStates_ComparesTheDatabasesOfTwoServers(t *testing.T) {
 	c := qt.New(t)
 
-	report, _, err := diffResolvedStates(t.Context(), nil, serverState("r1", "r3"), serverState("r1", "r9"),
-		platform.MySQL, noCapabilities, devServerSides{}, DiffOptions{Runtime: must.Must(builtin.New())})
+	options := DiffOptions{Runtime: must.Must(builtin.New())}
+	compared, err := diffResolvedStates(t.Context(), nil, serverState("r1", "r3"), serverState("r1", "r9"),
+		platform.MySQL, noCapabilities, devServerSides{}, options)
+	c.Assert(err, qt.IsNil)
+	report, _, err := compared.plan(t.Context(), options, platform.MySQL, atlascheckform.Spellings{})
 
 	c.Assert(err, qt.IsNil)
 	statements := make([]string, 0, len(report.Changes))
@@ -82,13 +86,13 @@ func TestDiffResolvedStates_RefusesAServerBesideOneDatabase(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report, diff, err := diffResolvedStates(t.Context(), nil, test.from, test.to, platform.MySQL, noCapabilities, devServerSides{}, DiffOptions{Runtime: must.Must(builtin.New())})
+			compared, err := diffResolvedStates(t.Context(), nil, test.from, test.to, platform.MySQL, noCapabilities, devServerSides{}, DiffOptions{Runtime: must.Must(builtin.New())})
 
 			var mismatch *ServerScopeMismatchError
 			c.Assert(err, qt.ErrorAs, &mismatch)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(report.Changes, qt.IsNil)
-			c.Assert(diff, qt.IsNil)
+			c.Assert(compared.diff, qt.IsNil)
+			c.Assert(compared.compared, qt.IsNil)
 		})
 	}
 }

@@ -239,17 +239,21 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	report, changes, err := atlasschema.DiffReportingChanges(cmd.Context(), atlasschema.DiffOptions{
 		Runtime:        runtime,
 		ChangeComments: true,
-		Shape:          planext.StatementShapeCatalog,
-		FromURLs:       opts.fromURLs,
-		ToURLs:         opts.toURLs,
-		DevURL:         opts.devURL,
-		Exclude:        opts.exclude,
-		ExcludeSources: opts.excludeSources,
-		Schemas:        opts.schemas,
-		Include:        opts.include,
-		Policy:         policy,
-		ProjectEnv:     projectEnv,
-		Diagnostics:    cmd.ErrOrStderr(),
+		// The pinned community binary plans from the desired schema as the
+		// dev database holds it, so a CHECK it adds reads as that server
+		// prints it.
+		DevCheckSpelling: true,
+		Shape:            planext.StatementShapeCatalog,
+		FromURLs:         opts.fromURLs,
+		ToURLs:           opts.toURLs,
+		DevURL:           opts.devURL,
+		Exclude:          opts.exclude,
+		ExcludeSources:   opts.excludeSources,
+		Schemas:          opts.schemas,
+		Include:          opts.include,
+		Policy:           policy,
+		ProjectEnv:       projectEnv,
+		Diagnostics:      cmd.ErrOrStderr(),
 
 		DevServerDisposable:       devServerDisposable,
 		IgnoreUnknownHCLNames:     opts.policy.IgnoreUnknownHCLNames(),

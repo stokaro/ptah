@@ -1987,6 +1987,16 @@ as on Atlas. Both reset the dev database first, so a database-URL side must not
 be the dev database: Ptah compares the URLs, then asks each server which
 database the session selected, and refuses before the reset when they match.
 
+On MySQL and MariaDB, a `CHECK` the plan adds from a `--to` schema file or
+directory is written as the dev database reports it, as on Atlas: each column
+name quoted, and on MySQL each string with its character set, so
+`CHECK (c <> 'it''s')` is planned as ``CHECK (`c` <> _utf8mb4'it\'s')``. Once the comparison
+is made, Ptah creates each `--to` table the plan adds a `CHECK` to on the dev
+database, with its columns and keys only, adds each such `CHECK` there, reads
+it back and resets the dev database again. A plan that adds no `CHECK` does
+not touch the dev database for this. The comparison does not change, only the
+text of the statements. Native `ptah schema diff` writes the declared text.
+
 Two database URLs that each name no MySQL or MariaDB database compare two whole
 servers, databases included, as the community binary compares them: a database
 only `--to` holds is created, one only `--from` holds is dropped, and a

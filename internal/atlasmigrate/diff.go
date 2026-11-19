@@ -374,10 +374,6 @@ func generateDiff(
 	devNaming := atlasfilter.ConnectionNaming(info)
 	desiredNaming := devNaming
 	desiredNaming.DefaultSchema = cmp.Or(desiredState.DefaultSchema, devNaming.DefaultSchema)
-	desired, err := filterDiffDesired(ctx, desiredState.Schema, opts.Runtime.Selections(), schemas, exclusion, desiredNaming)
-	if err != nil {
-		return DiffResult{}, err
-	}
 	// The directory is replayed as native Atlas in every case, but a foreign
 	// layout is CONVERTED into that shape first rather than parsed as if it
 	// already were one. The conversion is the same one every reading verb runs
@@ -387,63 +383,34 @@ func generateDiff(
 	if err != nil {
 		return DiffResult{}, err
 	}
-	// The files are planned while the replayed directory is still on the dev
-	// database: whether the migrator would run a file in a transaction depends
-	// on that catalog, and the replay is reset when the callback returns.
-	var (
-		contents []MigrationFileContent
-		synced   bool
-	)
-	if err := runtime.withReplayedSnapshot(
-		ctx,
-		conn,
-		replaySource,
-		migrationfile.DirFormatAtlas,
-		func(replayConn *dbschema.DatabaseConnection, baseline devclean.Baseline) error {
-			// Placed against the connection the comparison runs on, so a name the
-			// desired schema writes without a schema means the schema it is
-			// compared in, and the file names it; see
-			// [atlasschema.PlaceUnqualifiedNames].
-			desired, err := atlasschema.PlaceUnqualifiedNames(replayConn.Info(), desired)
-			if err != nil {
-				return err
-			}
-			compared, err := compareReplayedState(
-				ctx, replayConn, runtime, schemas, devNaming, desired, baseline,
-				comparisonSelection{exclusion: exclusion, inclusion: prepared.inclusion, info: info},
-				opts.Diagnostics, opts.ValidateLiveObject, opts.Policy, opts.Runtime,
-			)
-			if err != nil {
-				return err
-			}
-			current, selected, diff := compared.current, compared.desired, compared.diff
-			// The file carries no comment for a change the policy left out:
-			// the pinned community binary writes the same file without the
-			// change and without a word about it, and the file is what
-			// atlas.sum hashes. The notice goes beside the result instead.
-			diff, omitted := atlasschema.ApplyDiffPolicy(diff, opts.Policy, replayConn.Info().Dialect)
-			atlasschema.ReportOmitted(opts.Diagnostics, omitted)
-			if !diff.HasChanges() {
-				synced = true
-				return nil
-			}
-			planned, err := planDiffFileContents(ctx, diff, selected, current, info, format, opts)
-			if err != nil {
-				return err
-			}
-			contents, err = markFileModeRefusals(ctx, replayConn, opts, planned)
-			return err
-		},
-		diffReplayOptions(opts.DirFormat)...,
-	); err != nil {
+	desired, err := filterDiffDesired(ctx, desiredState.Schema, opts.Runtime.Selections(), schemas, exclusion, desiredNaming)
+	if err != nil {
+		return DiffResult{}, err
+	}
+	planned, err := replayedDiffPlanner{
+		conn:      conn,
+		runtime:   runtime,
+		source:    replaySource,
+		opts:      opts,
+		schemas:   schemas,
+		naming:    devNaming,
+		desired:   desired,
+		selection: comparisonSelection{exclusion: exclusion, inclusion: prepared.inclusion, info: info},
+		format:    format,
+		// A desired state read from a server, or replayed there from a
+		// directory, holds the server's CHECK spelling already.
+		probeChecks: desiredState.Kind != atlassource.KindDatabase && desiredState.Kind != atlassource.KindMigrationDir,
+	}.planWithDevCheckSpellings(ctx)
+	if err != nil {
 		return DiffResult{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return DiffResult{}, err
 	}
-	if synced {
+	if planned.synced {
 		return DiffResult{Synced: true}, nil
 	}
+	contents := planned.contents
 	if err := verifyMigrationDirUnchanged(openedDir.writer, openedDir.snapshots.publication); err != nil {
 		return DiffResult{}, err
 	}

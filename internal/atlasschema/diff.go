@@ -28,6 +28,7 @@ import (
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlaschange"
+	"ptah.run/internal/atlascheckform"
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlassource"
@@ -62,6 +63,14 @@ type DiffOptions struct {
 	// Atlas contract of this verb: `-- Create "users" table`. See
 	// [ptah.run/internal/atlaschange].
 	ChangeComments bool
+	// DevCheckSpelling writes each CHECK the plan adds in the form the dev
+	// database reports, where the dev server's descriptor says the pinned
+	// community binary does ([descriptor.Atlas.CheckSpelling]) and --to is a
+	// declaration. The tables that declare a CHECK are created on the dev
+	// database once the comparison is made, so a run that sets it and names a
+	// dev URL resets that database once more. The comparison is the same either
+	// way; see [atlascheckform].
+	DevCheckSpelling bool
 	// Shape is the statement shape of the plan; see [planext.Options.Shape].
 	Shape    planext.StatementShape
 	FromURLs []string
@@ -274,10 +283,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 		ValidateMigrationSource:   opts.ValidateMigrationSource,
 		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
 	}
-	var (
-		report  atlasreport.SchemaDiff
-		changes *difftypes.SchemaDiff
-	)
+	var compared comparedDiff
 	err = withResolvedDiffSources(ctx, opts.Runtime, fromSet, toSet, resolveOpts,
 		func(fromState, toState atlassource.State, conn *dbschema.DatabaseConnection) error {
 			// A side read from the dev database holds that database's own
@@ -321,14 +327,22 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 				}, nil
 			}
 			var diffErr error
-			report, changes, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect,
+			compared, diffErr = diffResolvedStates(ctx, conn, fromState, toState, dialect,
 				server, devServerSidesOf(opts.DevURL, fromSet, toSet), opts)
 			return diffErr
 		})
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	return report, changes, nil
+	// The plan is made once every source is released, so the dev database a
+	// --from directory was replayed on is free to answer for the CHECKs the
+	// plan writes.
+	spellings, err := diffCheckSpellings(ctx, opts, dialect, toSet.Kind, compared.desired, compared.compared,
+		resolveOpts.Protected)
+	if err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
+	return compared.plan(ctx, opts, dialect, spellings)
 }
 
 // moveToFromContext moves the desired values of a --to side read from a
@@ -610,10 +624,10 @@ func diffResolvedStates(
 	resolveServer func(context.Context) (diffServer, error),
 	sides devServerSides,
 	opts DiffOptions,
-) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
+) (comparedDiff, error) {
 	fromState, toState, err := scopedDiffSides(ctx, conn, opts.Runtime, fromState, toState, dialect, sides, opts.DevURL)
 	if err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 
 	defaultSchema, realmRelative := diffPatternScope(dialect, fromState, toState)
@@ -629,28 +643,28 @@ func diffResolvedStates(
 	scope.Bindings, err = scopeBindings(ctx, opts.Runtime, dialect, scope, generatedSide(fromState.Schema), databaseSide(fromState.DB),
 		generatedSide(toState.Schema), databaseSide(toState.DB))
 	if err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 	if scope.ForeignKeyIndexes, err = scopeForeignKeyIndexes(opts.Runtime, dialect); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 	fromSide, toSide := scopeDiffStates(ctx, fromState, toState, scope, dialect, opts.Runtime)
 	if fromSide.err != nil {
-		return atlasreport.SchemaDiff{}, nil, fromSide.err
+		return comparedDiff{}, fromSide.err
 	}
 	from, fromReport, fromErr := fromSide.schema, fromSide.report, fromSide.selectionErr
 	if toSide.err != nil {
-		return atlasreport.SchemaDiff{}, nil, toSide.err
+		return comparedDiff{}, toSide.err
 	}
 	to, toReport, toErr := toSide.schema, toSide.report, toSide.selectionErr
 	applyExtensionSupportCoverage(to, fromSide.selection, toSide.selection)
 	fromSide = withDocumentBaseline(fromState, fromSide, dialect)
 	if err := checkDiffSelections(fromErr, toErr, fromReport, toReport, opts); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 
 	if err := setDiffRoot(ctx, dialect, opts.DevURL, fromSide.database, opts.Runtime); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 	// A comparison on a held connection runs the SQLite virtual-table guard
 	// itself, and the guard reads the drop policy from here; see
@@ -676,20 +690,20 @@ func diffResolvedStates(
 	// statement before it is rendered.
 	virtualPolicy := opts.Policy.virtualTablePolicy()
 	if err := sqlitevirtual.ValidateComparison(dialect, to, fromSide.database, virtualPolicy); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 
 	if err := validateClickHouseRBAC(dialect, to, fromSide.database); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 	capabilities, fromSide, err := plannedServer(ctx, resolveServer, fromSide, fromState, dialect, opts.Runtime)
 	if err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 	if err := validateDiffDeclarations(
 		ctx, conn, opts.Runtime, fromState, toState, to, fromSide.database, dialect, capabilities,
 	); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 
 	// Both documents and live reads may carry knowledge limits. Preserve them
@@ -701,10 +715,10 @@ func diffResolvedStates(
 	compareOpts.ReplayedCurrent = replaysCurrent(conn, fromState)
 	compared, undecided, err := compareDiffSides(ctx, conn, to, fromSide.database, compareOpts, opts.Runtime)
 	if err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 	if opts.Diagnostics == nil && !undecided.Empty() {
-		return atlasreport.SchemaDiff{}, nil, undecided.Err()
+		return comparedDiff{}, undecided.Err()
 	}
 	undecidednote.Report(ctx, opts.Diagnostics, undecided, "--from", "--to")
 	if compareOpts.ReplayedCurrent {
@@ -721,35 +735,66 @@ func diffResolvedStates(
 	if err := sqlitevirtual.ValidatePlannedChanges(
 		dialect, fromSide.database, compared, virtualPolicy,
 	); err != nil {
-		return atlasreport.SchemaDiff{}, nil, err
+		return comparedDiff{}, err
 	}
 
 	diff, omitted := ApplyDiffPolicy(compared, opts.Policy, dialect)
 	if !diff.HasChanges() {
 		ReportOmitted(opts.Diagnostics, omitted)
 	}
-	changes, err := plannedDiffChanges(ctx, opts, compared, diff, dialect, planext.Options{
-		Capabilities:         capabilities,
-		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
-		OnlineAlter:          opts.Policy.OnlineAlter,
-		ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
-		ConcurrentIndexRefs: declaredConcurrentIndexRefs(
-			opts.Policy, diff, to, fromSide.database, dialect, capabilities,
-		),
-		OmitNullBackfill:    opts.OmitNullBackfill,
-		AllowTableRebuild:   opts.Policy.AllowTableRebuild,
-		TableRebuildRequest: opts.Policy.TableRebuildRequest,
-		SkipChangeKinds:     opts.Policy.SkipChangeKinds,
-		Statements:          planstyle.Statements,
-		Shape:               opts.Shape,
-	})
+	return comparedDiff{
+		compared: compared,
+		diff:     diff,
+		desired:  to,
+		planOptions: planext.Options{
+			Capabilities:         capabilities,
+			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
+			OnlineAlter:          opts.Policy.OnlineAlter,
+			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
+			ConcurrentIndexRefs: declaredConcurrentIndexRefs(
+				opts.Policy, diff, to, fromSide.database, dialect, capabilities,
+			),
+			OmitNullBackfill:    opts.OmitNullBackfill,
+			AllowTableRebuild:   opts.Policy.AllowTableRebuild,
+			TableRebuildRequest: opts.Policy.TableRebuildRequest,
+			SkipChangeKinds:     opts.Policy.SkipChangeKinds,
+			Statements:          planstyle.Statements,
+			Shape:               opts.Shape,
+		},
+		report: atlasreport.SchemaDiffOptions{
+			Dialect: dialect, From: from, To: to,
+			Limits: diffComparisonLimits(fromState, toState, fromSide.database, toSide.database),
+		},
+	}, nil
+}
+
+// comparedDiff is a schema diff compared and not yet planned: the comparison,
+// the comparison with the diff policy applied, the --to declaration it was
+// made against, and what the plan and the report are made with.
+type comparedDiff struct {
+	compared, diff *difftypes.SchemaDiff
+	desired        *schemamodel.Database
+	planOptions    planext.Options
+	report         atlasreport.SchemaDiffOptions
+}
+
+// plan plans the diff, each CHECK it adds written as spellings say, and
+// returns the report with the diff the policy left.
+func (d comparedDiff) plan(
+	ctx context.Context,
+	opts DiffOptions,
+	dialect string,
+	spellings atlascheckform.Spellings,
+) (atlasreport.SchemaDiff, *difftypes.SchemaDiff, error) {
+	respelled := *d.compared
+	spellings.Respell(&respelled)
+	changes, err := plannedDiffChanges(ctx, opts, &respelled, d.diff, dialect, d.planOptions)
 	if err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
-	return atlasreport.NewSchemaDiff(atlasreport.SchemaDiffOptions{
-		Dialect: dialect, From: from, To: to, Changes: changes,
-		Limits: diffComparisonLimits(fromState, toState, fromSide.database, toSide.database),
-	}), diff, nil
+	report := d.report
+	report.Changes = changes
+	return atlasreport.NewSchemaDiff(report), d.diff, nil
 }
 
 // diffComparisonLimits names the source coverage a SQL diff cannot infer from

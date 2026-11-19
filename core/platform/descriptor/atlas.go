@@ -40,7 +40,31 @@ type Atlas struct {
 	// engine's changes in, in a migrate diff file's comments and a plan's
 	// summary. The zero value is the PostgreSQL driver's wording.
 	ChangeWords ChangeWords `json:"change_words,omitempty"`
+	// CheckSpelling is the form the pinned community binary prints a desired
+	// CHECK expression in when it plans a change against a dev database. The
+	// zero value prints it as declared.
+	CheckSpelling CheckSpelling `json:"check_spelling,omitempty"`
 }
+
+// CheckSpelling names the form a compatibility plan writes a desired CHECK
+// expression in. The pinned community binary creates the desired schema on
+// the dev database and plans from what it reads back there, so on an engine
+// whose server rewrites a CHECK, its plan carries the rewrite: MySQL and
+// MariaDB quote each column name, and MySQL adds a character set to each
+// string.
+type CheckSpelling int
+
+const (
+	// DeclaredCheckSpelling writes a CHECK as the desired schema declares it,
+	// the zero value.
+	DeclaredCheckSpelling CheckSpelling = iota
+	// DevCheckSpelling writes a CHECK as the dev database reports it.
+	DevCheckSpelling
+	// DevCheckSpellingUnwrapped writes a CHECK as the dev database reports it,
+	// without the pair of parentheses the server puts around the whole
+	// expression.
+	DevCheckSpellingUnwrapped
+)
 
 // ChangeWords names whose words the pinned community binary uses for an
 // engine's changes. Its drivers word one change differently: the MySQL driver

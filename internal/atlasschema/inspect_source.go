@@ -637,7 +637,21 @@ func withMaterializedDevSchema(
 	}()
 
 	ctx, settle := lock.Guard(ctx)
-	return settle(devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
+	return settle(materializeOnLockedDev(ctx, service, devConn, desired, diag, consume))
+}
+
+// materializeOnLockedDev is [withMaterializedDevSchema] for a caller that
+// holds the dev database's lock already: `migrate diff` holds it across the
+// whole run, and a second acquisition would wait for the first.
+func materializeOnLockedDev(
+	ctx context.Context,
+	service renderer.SchemaService,
+	devConn *dbschema.DatabaseConnection,
+	desired *schemamodel.Database,
+	diag io.Writer,
+	consume migrationreplay.Consumer,
+) error {
+	return devConn.WithSession(ctx, func(materializedConn *dbschema.DatabaseConnection) (resultErr error) {
 		baseline, err := devclean.Claim(ctx, materializedConn)
 		if err != nil {
 			return err
@@ -676,7 +690,7 @@ func withMaterializedDevSchema(
 			return fmt.Errorf("materialize schema on dev database: %w", err)
 		}
 		return consume(materializedConn, baseline)
-	}))
+	})
 }
 
 // loadedForAnotherDialect reports whether a declaration loaded for the dialect
