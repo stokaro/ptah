@@ -177,13 +177,12 @@ func TestDiscoverMigrationFilesAutoDetectsAtlasImportedNames(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
-		"1_initial.down.sql":               &fstest.MapFile{Data: []byte("DROP TABLE users;\n")},
-		"1_initial.up.sql":                 &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
-		"2.10.x-20_description.sql":        &fstest.MapFile{Data: []byte("CREATE TABLE audit (id INT);\n")},
-		"sub/3_partly.sql":                 &fstest.MapFile{Data: []byte("CREATE TABLE logs (id INT);\n")},
-		"sub/4.a_sub.up.sql":               &fstest.MapFile{Data: []byte("CREATE TABLE nested (id INT);\n")},
-		"sub/4.a_sub.down.sql":             &fstest.MapFile{Data: []byte("DROP TABLE nested;\n")},
-		"0000000001_ptah_width_legacy.sql": &fstest.MapFile{Data: []byte("DROP TABLE legacy;\n")},
+		"1_initial.down.sql":        &fstest.MapFile{Data: []byte("DROP TABLE users;\n")},
+		"1_initial.up.sql":          &fstest.MapFile{Data: []byte("CREATE TABLE users (id INT);\n")},
+		"2.10.x-20_description.sql": &fstest.MapFile{Data: []byte("CREATE TABLE audit (id INT);\n")},
+		"sub/3_partly.sql":          &fstest.MapFile{Data: []byte("CREATE TABLE logs (id INT);\n")},
+		"sub/4.a_sub.up.sql":        &fstest.MapFile{Data: []byte("CREATE TABLE nested (id INT);\n")},
+		"sub/4.a_sub.down.sql":      &fstest.MapFile{Data: []byte("DROP TABLE nested;\n")},
 	}
 
 	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAuto)
@@ -198,13 +197,17 @@ func TestDiscoverMigrationFilesAutoDetectsAtlasImportedNames(t *testing.T) {
 	c.Assert(files[5].Path, qt.Equals, "sub/4.a_sub.up.sql")
 }
 
+// TestDiscoverMigrationFilesAutoPrefersPtahWhenPresent selects the Ptah files
+// of a directory that also holds a file of the Atlas shape, one level down
+// where it is a file of another directory, such as a template a migration
+// includes, rather than a migration of this one.
 func TestDiscoverMigrationFilesAutoPrefersPtahWhenPresent(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fstest.MapFS{
-		"0000000001_init.up.sql":       &fstest.MapFile{Data: []byte("CREATE TABLE t (id INT);\n")},
-		"0000000001_init.down.sql":     &fstest.MapFile{Data: []byte("DROP TABLE t;\n")},
-		"20220318104614_atlas_way.sql": &fstest.MapFile{Data: []byte("CREATE TABLE atlas_t (id INT);\n")},
+		"0000000001_init.up.sql":              &fstest.MapFile{Data: []byte("CREATE TABLE t (id INT);\n")},
+		"0000000001_init.down.sql":            &fstest.MapFile{Data: []byte("DROP TABLE t;\n")},
+		"shared/20220318104614_atlas_way.sql": &fstest.MapFile{Data: []byte("CREATE TABLE atlas_t (id INT);\n")},
 	}
 
 	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAuto)
@@ -281,8 +284,15 @@ func TestDiscoverMigrationFilesAtlasSumGovernsSelection(t *testing.T) {
 			wantPaths: []string{"1_a.sql"},
 		},
 		{
-			name:      "auto without atlas.sum keeps the whole tree",
-			fsys:      func() fstest.MapFS { return discoveryAtlasSpreadFS(nil) },
+			// 3_c.SQL is left out: auto mode with no atlas.sum refuses a
+			// top-level file it does not read, which
+			// TestDiscover_FailurePath_AFileTheReadingLeavesOut pins.
+			name: "auto without atlas.sum keeps the whole tree",
+			fsys: func() fstest.MapFS {
+				fsys := discoveryAtlasSpreadFS(nil)
+				delete(fsys, "3_c.SQL")
+				return fsys
+			},
 			format:    migrationfile.DirFormatAuto,
 			wantPaths: []string{"1_a.sql", "sub/2_b.sql"},
 		},

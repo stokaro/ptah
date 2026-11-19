@@ -76,25 +76,26 @@ func TestApply_TheRefusedWriterComposesAgainAndSucceeds(t *testing.T) {
 
 	c.Assert(applied["rolled_back"], qt.IsFalse)
 	after := callTool(c, session, "read_artifact", map[string]any{"artifact": "migrations"})
-	c.Assert(artifactPaths(c, after), qt.Contains, "17000001_a.up.sql")
-	c.Assert(artifactPaths(c, after), qt.Contains, "17000001_b.up.sql",
+	c.Assert(artifactPaths(c, after), qt.Contains, "1700000701_a.up.sql")
+	c.Assert(artifactPaths(c, after), qt.Contains, "1700000702_b.up.sql",
 		qt.Commentf("the writer that was refused never got its change in"))
 }
 
 // previewAdding previews one migration pair named for the tag.
 func previewAdding(c *qt.C, session *mcp.ClientSession, digest any, tag string) map[string]any {
 	c.Helper()
+	version := map[string]string{"a": "1700000701", "b": "1700000702"}[tag]
 	return callTool(c, session, "preview_patch", map[string]any{
 		"artifact":        "migrations",
 		"expected_digest": digest,
 		"summary":         "add " + tag,
 		"changes": []map[string]any{
 			{
-				"path": "17000001_" + tag + ".up.sql", "operation": "create",
+				"path": version + "_" + tag + ".up.sql", "operation": "create",
 				"content": "CREATE TABLE t_" + tag + " (id BIGINT PRIMARY KEY);\n",
 			},
 			{
-				"path": "17000001_" + tag + ".down.sql", "operation": "create",
+				"path": version + "_" + tag + ".down.sql", "operation": "create",
 				"content": "DROP TABLE t_" + tag + ";\n",
 			},
 		},

@@ -65,10 +65,11 @@ CREATE OR REPLACE VIEW account_names AS SELECT id, name FROM accounts;
 ```
 
 `--dir-format auto` reads the Ptah format only when the directory also holds a
-Ptah versioned file. A directory of repeatable migrations alone needs
-`--dir-format ptah`. A directory read in the Atlas format has no repeatable
-migrations on the native surface: Atlas reads `R__<name>.sql` as the one-time
-version `R`, and that reading is kept. `ptah-compat` reads it as a repeatable
+Ptah versioned file, so a directory of repeatable migrations alone needs
+`--dir-format ptah`. In the Atlas format, `R__<name>.sql` is the one-time
+version `R`, as Atlas reads it. `R` is not a number: the directory runs over
+the Atlas revision table (`--revision-format atlas`), and lint reports the file
+under `MF105P` without that flag. `ptah-compat` reads it as a repeatable
 migration when asked; see [The compatibility surface](#the-compatibility-surface).
 
 ## What an up run does

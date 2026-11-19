@@ -677,13 +677,14 @@ func TestNewFSMigrationProvider_DescriptionEndingInUpIsNotAMigration(t *testing.
 		},
 	}
 
+	// Neither file is a migration, so the directory is refused and names
+	// both, rather than read without them or with one read as version 3.
 	provider, err := migrator.NewFSMigrationProvider(fsys)
-	c.Assert(err, qt.IsNil, qt.Commentf("suffix-less files are skipped, not incomplete migrations"))
-	c.Assert(provider, qt.IsNotNil)
 
-	migrations := provider.Migrations()
-	c.Assert(migrations, qt.HasLen, 1)
-	c.Assert(migrations[0].Version, qt.Equals, int64(1))
+	var unread *migrationfile.UnreadFilesError
+	c.Assert(err, qt.ErrorAs, &unread)
+	c.Assert(unread.Files, qt.DeepEquals, []string{"0000000003_cleanup.sql", "0000000004_teardown.sql"})
+	c.Assert(provider, qt.IsNil)
 }
 
 func TestNewFSMigrationProvider_InvalidFiles(t *testing.T) {

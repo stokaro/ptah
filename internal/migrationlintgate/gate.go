@@ -69,6 +69,9 @@ type Policy struct {
 	// dirFormat is the format the apply reads the directory in, which decides
 	// whether an R__<identity>.sql file is a repeatable migration.
 	dirFormat migrationfile.DirFormat
+	// atlasRevisionTable says the apply records versions in the Atlas revision
+	// table; see [lint.Options.AtlasRevisionTable].
+	atlasRevisionTable bool
 }
 
 // Pending is the work an apply selected: the versioned migrations by version,
@@ -246,15 +249,26 @@ func (p Policy) gatesOn(rule string) bool {
 
 func (p Policy) options(pathPrefix string) lint.Options {
 	return lint.Options{
-		Dialect:          p.dialect,
-		Target:           p.target,
-		Disabled:         p.disabled,
-		PathPrefix:       pathPrefix,
-		RuleConfigs:      p.rules,
-		RequireOnline:    p.online,
-		TransactionOwner: p.transactionOwner,
-		DirFormat:        p.dirFormat,
+		Dialect:            p.dialect,
+		Target:             p.target,
+		Disabled:           p.disabled,
+		PathPrefix:         pathPrefix,
+		RuleConfigs:        p.rules,
+		RequireOnline:      p.online,
+		TransactionOwner:   p.transactionOwner,
+		DirFormat:          p.dirFormat,
+		AtlasRevisionTable: p.atlasRevisionTable,
 	}
+}
+
+// WithAtlasRevisionTable returns the policy for an apply that records versions
+// in the Atlas revision table, which keeps the version R that R__x.sql spells
+// in the Atlas format. Judged for Ptah's table, which refuses the directory for
+// that file, the gate would report the file under MF105P although the apply
+// runs it.
+func (p Policy) WithAtlasRevisionTable() Policy {
+	p.atlasRevisionTable = true
+	return p
 }
 
 // WithDirFormat returns the policy reading the directory in the format the

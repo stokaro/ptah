@@ -419,7 +419,7 @@ directory:
 
 | step | pinned community binary v1.3.0 | `ptah-compat` |
 | --- | --- | --- |
-| `migrate apply` | exit `0`, runs both, records `""` and `1` | exit `1`, `Atlas migration files Ptah cannot run: _x.sql (version "")` |
+| `migrate apply` | exit `0`, runs both, records `""` and `1` | exit `1`, `Atlas migration file Ptah cannot run: _x.sql (version "")` |
 | `migrate status` after `2_b.sql` is added | `Current Version: 1`, `2_b.sql` out of order | the same refusal |
 
 No command line can name the empty version: `--to-version`, `--baseline` and

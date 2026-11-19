@@ -246,6 +246,9 @@ func TestBuild_LatestSelectsAtlasBareRepeatableAfterNumericMigrations(t *testing
 		FailOn:    migrationlintreport.FailOnNone,
 		Latest:    1,
 		Changed:   migrationlintreport.ChangedOptions{Latest: true},
+		// The Atlas revision table keeps the version R, which Ptah's refuses
+		// the directory for.
+		AtlasRevisionTable: true,
 	}, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)
@@ -286,6 +289,9 @@ func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
 			GitBase: true,
 			GitDir:  true,
 		},
+		// The Atlas revision table keeps the version 2R, which Ptah's refuses
+		// the directory for.
+		AtlasRevisionTable: true,
 	}, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)

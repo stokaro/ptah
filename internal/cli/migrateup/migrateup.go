@@ -333,6 +333,18 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
+// gatePolicy is policy for the apply these settings describe. The gate judges
+// transaction control the way the run applies the files, reads the directory
+// in the format the run reads it in, which decides what a repeatable migration
+// is, and judges versions for the revision table the run records them in.
+func (s parsedMigrationSettings) gatePolicy(policy migrationlintgate.Policy) migrationlintgate.Policy {
+	policy = policy.WithTransactionOwner(s.runner.TransactionOwner()).WithDirFormat(s.dirFormat)
+	if s.revisionFormat == migrator.RevisionTableFormatAtlas {
+		policy = policy.WithAtlasRevisionTable()
+	}
+	return policy
+}
+
 // parseMigrationSettings reads the settings opts carries, resolved against the
 // project config, into the migrator's types.
 func parseMigrationSettings(opts options) (parsedMigrationSettings, error) {
@@ -661,10 +673,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options, document *migraterun.Do
 	if err != nil {
 		return fmt.Errorf("error loading migration lint policy: %w", err)
 	}
-	// The gate judges transaction control the way the run applies the files,
-	// and reads the directory in the format the run reads it in, which decides
-	// what a repeatable migration is.
-	lintPolicy = lintPolicy.WithTransactionOwner(settings.runner.TransactionOwner()).WithDirFormat(settings.dirFormat)
+	lintPolicy = settings.gatePolicy(lintPolicy)
 	// Before the first migration, because it says which server the gate about
 	// to run planned against.
 	emitLintPolicyVersionNote(emit, lintPolicy)

@@ -577,11 +577,12 @@ func runUp(args ...string) (string, error) {
 	return out.String(), err
 }
 
-// The Ptah revision table keys on the numeric order key, so a repeatable is
-// stored there as a number and the summary has to name it that way. The same
-// file under the Atlas format is the row `R`, and the two summaries differ
-// because the two tables do.
-func TestMigrationsSetNamesAPtahFormatRepeatableByItsNumber(t *testing.T) {
+// The Ptah revision table records numbers, and the Atlas format reads
+// R__view.sql as the version R, so set refuses the directory before it writes
+// a row. Without the refusal the table records the repeatable under the key
+// above every numbered file, 3, and a later status reads R as pending and 3 as
+// a migration with no file.
+func TestMigrationsSetRefusesAnAtlasRepeatableOverTheNumericTable(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := writeAtlasAlwaysRepeatableMigrations(t)
 	dbPath := filepath.Join(t.TempDir(), "set.db")
@@ -591,12 +592,9 @@ func TestMigrationsSetNamesAPtahFormatRepeatableByItsNumber(t *testing.T) {
 		"--dir-format", "atlas",
 	}
 
-	out, err := runSet(append(args, "--version", "3")...)
+	out, err := runSet(append(args, "--version", "2")...)
 
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	// The repeatable takes the next order key in this table, so that is the
-	// row an operator would look up and the name the summary has to give.
-	c.Assert(queryVersions(c, dbPath, "schema_migrations"), qt.DeepEquals, []string{"1", "2", "3"})
-	c.Assert(out, qt.Contains, "+ 3 (view)")
-	c.Assert(out, qt.Not(qt.Contains), "+ R ")
+	c.Assert(err, qt.ErrorMatches, `(?s).*Atlas migration R__view\.sql has version "R", which a revision table that records `+
+		`numbers cannot keep.*`, qt.Commentf("%s", out))
+	assertNoRevisionTable(c, dbPath)
 }
