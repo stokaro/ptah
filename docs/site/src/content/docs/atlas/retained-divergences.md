@@ -2158,17 +2158,47 @@ two places:
   the column holds the default, and every later plan restates it.
 
 Measured with `--dev-url` on MariaDB 11.8 and 12.3, on
-`t (id int PRIMARY KEY, n varchar(20) NULL)`:
+`t (id int PRIMARY KEY, n varchar(20) NULL)`. `ptah-compat` qualifies the
+table with its database, which the statements below leave out. Between two
+UCA 14.0.0 collations both binaries write the table's `COLLATE` without
+`CHARSET`, since the collation names its character set.
 
-| Table default, from and to | Binary | `ptah-compat` |
-| --- | --- | --- |
-| `utf8mb4` to `utf8` | ``ALTER TABLE `t` COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) CHARSET utf8mb3 NULL;`` | the same without `CHARSET utf8mb3`; `n` holds `utf8mb3_uca1400_ai_ci` after either |
-| `utf8mb4` to `utf8` with `COLLATE=utf8mb3_uca1400_as_cs` | ``ALTER TABLE `t` COLLATE utf8mb3_uca1400_as_cs, MODIFY COLUMN `n` varchar(20) CHARSET utf8mb3 NULL;``, after which `n` holds `utf8mb3_uca1400_ai_ci` and the next plan restates it | the same without `CHARSET utf8mb3`; `n` holds `utf8mb3_uca1400_as_cs`, and the next plan is empty |
-| `latin1` to `utf8` | ``ALTER TABLE `t` CHARSET utf8mb4, COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) CHARSET utf8mb3 NULL;``, which fails with Error 1253 | ``ALTER TABLE `t` CHARSET utf8mb3, COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) NULL;``, which applies |
+### `utf8mb4` to `utf8`
 
-`ptah-compat` qualifies the table with its database, which the table above
-leaves out. Between two UCA 14.0.0 collations both binaries write the table's
-`COLLATE` without `CHARSET`, since the collation names its character set.
+The binary writes:
+
+```text
+ALTER TABLE `t` COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) CHARSET utf8mb3 NULL;
+```
+
+`ptah-compat` writes the same without `CHARSET utf8mb3`. After either, `n`
+holds `utf8mb3_uca1400_ai_ci`.
+
+### `utf8mb4` to `utf8` with a collation that is not the default
+
+The table declares `COLLATE=utf8mb3_uca1400_as_cs`. The binary writes:
+
+```text
+ALTER TABLE `t` COLLATE utf8mb3_uca1400_as_cs, MODIFY COLUMN `n` varchar(20) CHARSET utf8mb3 NULL;
+```
+
+After it, `n` holds `utf8mb3_uca1400_ai_ci`, and the next plan restates the
+column. `ptah-compat` writes the same without `CHARSET utf8mb3`; `n` holds
+`utf8mb3_uca1400_as_cs`, and the next plan is empty.
+
+### `latin1` to `utf8`
+
+The binary writes a statement MariaDB refuses with Error 1253:
+
+```text
+ALTER TABLE `t` CHARSET utf8mb4, COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) CHARSET utf8mb3 NULL;
+```
+
+`ptah-compat` writes one that applies:
+
+```text
+ALTER TABLE `t` CHARSET utf8mb3, COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n` varchar(20) NULL;
+```
 
 **Evidence.** `integration/mariadb_uca_collation_change_e2e_test.go`
 
