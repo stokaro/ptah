@@ -241,6 +241,7 @@ func tableColumnsWithSemantics(
 				receipts:             spellings.OwnerColumns.Compared[objectidentity.NewBuilder(semantics).ColumnParts(genTable.Schema, genTable.Name, genCol.Name).Key()],
 				generated:            spellings.GeneratedExpressions,
 				inheritedCollation:   prepared.InheritedCollations[genCol.Name],
+				storedType:           prepared.StoredTypes[genCol.Name],
 				charsetAliases:       spellings.charsetAliases,
 				charsetDefaults:      spellings.charsetDefaults,
 				semantics:            semantics,
@@ -490,6 +491,10 @@ type columnContext struct {
 	// ([schemapreparation.Table.InheritedCollations]), empty where it
 	// resolved none.
 	inheritedCollation string
+	// storedType is the type the target stores the column as, where a read
+	// reports another type than the declared one
+	// ([schemapreparation.Table.StoredTypes]), and empty elsewhere.
+	storedType string
 	// charsetAliases is [catalog.Database.CharsetAliases], nil where the read
 	// reports none.
 	charsetAliases map[string]string
@@ -573,7 +578,8 @@ func columnsWithDesiredDomains(
 	}
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnType]; owned {
 		applyColumnDifference(colDiff.Changes, "type", receipt.Difference)
-	} else if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType {
+	} else if change := columnTypeChange(declared, dbCol, dbRawType, dialect, desiredDomains, ctx.rules); change != "" && !sameType &&
+		!storedAs(ctx.storedType, dbRawType, dialect) {
 		colDiff.Changes["type"] = change
 		colDiff.TypeNarrows = typeChangeNarrows(change, dbRawType, renderedDeclaredType(declared, dialect), dialect)
 		colDiff.PreviousType = strings.TrimSpace(dbRawType)
@@ -1380,6 +1386,14 @@ func columnTypeChange(
 		return portableColumnTypeChange(genCol, dbCol, dbRawType, dialect)
 	}
 	return declaredColumnTypeChange(genCol, dbRawType, dialect)
+}
+
+// storedAs reports whether the current column's type is the type the target
+// stores the declared column as. A read of a server reports that type, and a
+// side projected from a document reports the declared one, so the comparison
+// accepts either.
+func storedAs(stored, current, dialect string) bool {
+	return stored != "" && typeEngineOf(dialect).Same(current, stored)
 }
 
 // nationalCharMatchesCatalog recognizes the fixed-width CHAR column a server

@@ -90,6 +90,15 @@ type Table struct {
 	// where the declaration states neither or the target resolves none, which
 	// leaves the table's default collation uncompared.
 	DefaultCollation string
+	// StoredTypes holds the type the target stores a declared column as,
+	// keyed by the column's declared name, where a read reports another type
+	// than the declared one for the same column: MySQL and MariaDB store
+	// `varchar(10) CHARACTER SET binary` as varbinary(10). It is output-only,
+	// and a target that stores every column as declared leaves it nil. The
+	// column comparison accepts a current column of the declared type or of
+	// the stored one; the source declaration in Desired keeps its type, so a
+	// planned statement restates the column as declared.
+	StoredTypes map[string]string
 }
 
 // Clone returns independent common state and immutable feature snapshots.
@@ -100,6 +109,7 @@ func (t Table) Clone() Table {
 	t.IndexMethods = maps.Clone(t.IndexMethods)
 	t.IndexConditions = maps.Clone(t.IndexConditions)
 	t.InheritedCollations = maps.Clone(t.InheritedCollations)
+	t.StoredTypes = maps.Clone(t.StoredTypes)
 	if t.IndexNulls != nil {
 		nulls := make(map[string][]string, len(t.IndexNulls))
 		for name, orders := range t.IndexNulls {
@@ -143,8 +153,9 @@ func (r Request) Clone() Request {
 // ResolvedFacets may carry resolved values for existing declared facet kinds,
 // IndexMethods the kinds of declared indexes, IndexNulls the NULLS orders of
 // their key parts, IndexConditions their predicates, InheritedCollations the
-// collations of declared columns that name none, and DefaultCollation the
-// table's default collation.
+// collations of declared columns that name none, DefaultCollation the table's
+// default collation, and StoredTypes the types the target stores declared
+// columns as.
 // Complete is required even for an empty batch. Errors discard the whole result.
 type Result struct {
 	Complete bool
@@ -248,8 +259,11 @@ func samePreparedTable(before, after Table, semantics identifier.Semantics) erro
 	if err := acceptCollations(before, after); err != nil {
 		return err
 	}
+	if err := acceptStoredTypes(before, after.StoredTypes); err != nil {
+		return err
+	}
 	before, after = before.Clone(), after.Clone()
-	after.InheritedCollations, after.DefaultCollation = nil, ""
+	after.InheritedCollations, after.DefaultCollation, after.StoredTypes = nil, "", nil
 	if !retainEqualFeatures(&before, &after) {
 		return fmt.Errorf("%w: preparation changed captured features", ErrInvalid)
 	}
@@ -286,6 +300,23 @@ func acceptCollations(source, prepared Table) error {
 			return fmt.Errorf("%w: inherited collation for column %q, which declares its own", ErrInvalid, name)
 		case collation == "":
 			return fmt.Errorf("%w: empty inherited collation for column %q", ErrInvalid, name)
+		}
+	}
+	return nil
+}
+
+// acceptStoredTypes refuses an input that already states stored types, a
+// stored type for a column the table does not declare, and an empty one.
+func acceptStoredTypes(source Table, stored map[string]string) error {
+	if len(source.StoredTypes) != 0 {
+		return fmt.Errorf("%w: preparation input already states stored types", ErrInvalid)
+	}
+	for _, name := range slices.Sorted(maps.Keys(stored)) {
+		switch {
+		case !slices.ContainsFunc(source.Desired.Fields, func(field schemamodel.Field) bool { return field.Name == name }):
+			return fmt.Errorf("%w: stored type for undeclared column %q", ErrInvalid, name)
+		case strings.TrimSpace(stored[name]) == "":
+			return fmt.Errorf("%w: empty stored type for column %q", ErrInvalid, name)
 		}
 	}
 	return nil

@@ -125,7 +125,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, err
 	}
-	defaults, aliases, err := r.readCharsetFacts(ctx)
+	defaults, aliases, err := r.ReadCharsetFacts(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -155,14 +155,17 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	return schema, nil
 }
 
-// readCharsetFacts reads the collation the server gives each character set
+// ReadCharsetFacts reads the collation the server gives each character set
 // named without a collation, keyed by the character set in lower case, and
 // the character set utf8 names in this session; see
 // [catalog.Database.CharsetDefaultCollations] and
 // [catalog.Database.CharsetAliases]. The alias is asked of the server rather
 // than read from a setting, so it holds whatever decides it: MariaDB's
-// old_mode, or the alias MySQL fixes.
-func (r *Reader) readCharsetFacts(ctx context.Context) (defaults, aliases map[string]string, err error) {
+// old_mode, or the alias MySQL fixes. It needs no selected database, and a
+// read of the schema reports the same facts; a caller that predicts a table
+// for this server without reading a schema, such as a diff of two schema
+// files against a dev database, asks for them alone.
+func (r *Reader) ReadCharsetFacts(ctx context.Context) (defaults, aliases map[string]string, err error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT CHARACTER_SET_NAME, DEFAULT_COLLATE_NAME FROM information_schema.CHARACTER_SETS")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read character sets: %w", err)

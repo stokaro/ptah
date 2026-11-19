@@ -973,43 +973,47 @@ func tableCollationNode(tableDiff difftypes.TableDiff) *ast.AlterTableNode {
 }
 
 // withTableCollation is the in-place statements of one table, inPlace, with
-// the change of its default collation, collation, joined with the column
-// statements that follow it into one ALTER TABLE: the run of statements of
-// the table that each add or restate a column, or set the table's comment,
-// and carry no clause of their own. The comments that describe them go ahead
-// of it, in order. One statement is what the community binary writes, and it
+// the change of its default collation that tableDiff carries joined with the
+// column statements that follow it into one ALTER TABLE: the run of
+// statements of the table that each add or restate a column, or set the
+// table's comment, and carry no clause of their own. The statements that
+// restate a column are written in the order the table holds the columns, as
+// the community binary writes them; see [inHeldColumnOrder]. The comments
+// that describe the statements go ahead of it, in the same order. One
+// statement is what the community binary writes, and it
 // matters where a column's character set changes with its table's: the server
 // converts the column's values under the new default, and a value it cannot
 // convert, `'x😀'` into latin1, fails the statement with Error 1366 before
 // the table's default changes. As two statements, the first changes the
 // default and the second fails, and the table is left half changed.
-func withTableCollation(collation *ast.AlterTableNode, inPlace []ast.Node) []ast.Node {
+func withTableCollation(tableDiff difftypes.TableDiff, inPlace []ast.Node) []ast.Node {
+	collation := tableCollationNode(tableDiff)
 	if collation == nil {
 		return inPlace
 	}
-	var comments []ast.Node
-	joined := 0
-	for _, node := range inPlace {
+	var (
+		statements []joinedStatement
+		described  []ast.Node
+		joined     int
+	)
+	for at, node := range inPlace {
 		if comment, ok := node.(*ast.CommentNode); ok {
-			comments = append(comments, comment)
-			joined++
+			described = append(described, comment)
 			continue
 		}
 		alter, ok := node.(*ast.AlterTableNode)
 		if !ok || !joinsTableCollation(collation.Name, alter) {
 			break
 		}
-		collation.Operations = append(collation.Operations, alter.Operations...)
-		joined++
+		statements = append(statements, joinedStatement{comments: described, alter: alter})
+		described, joined = nil, at+1
 	}
 	// Comments after the last statement joined stay where they are, ahead of
 	// the statement they describe.
-	for joined > 0 {
-		if _, ok := inPlace[joined-1].(*ast.CommentNode); !ok {
-			break
-		}
-		joined--
-		comments = comments[:len(comments)-1]
+	var comments []ast.Node
+	for _, statement := range inHeldColumnOrder(statements, tableDiff.Current.Table.Columns) {
+		comments = append(comments, statement.comments...)
+		collation.Operations = append(collation.Operations, statement.alter.Operations...)
 	}
 	if len(collation.Operations) > 1 {
 		collation.OneStatement = slices.Clone(collation.Operations)
@@ -1105,7 +1109,7 @@ func (p *Planner) modifyExistingTables(
 			return result, nil, err
 		}
 
-		inPlace = withTableCollation(tableCollationNode(tableDiff), inPlace)
+		inPlace = withTableCollation(tableDiff, inPlace)
 
 		// Remove columns (dangerous!)
 		drops, err := p.removeColumns(nil, &tableDiff, keys)
