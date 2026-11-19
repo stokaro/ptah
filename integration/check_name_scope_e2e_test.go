@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -56,12 +57,36 @@ var (
 		target:  oracleScratchURL,
 		tables:  "SELECT count(*) FROM user_tables WHERE table_name IN ('T', 'T1', 'T2')",
 	}
+	// checkNameSQLServerCaseSensitive is a database whose collation tells ck
+	// from CK, which the server's default collation does not.
+	checkNameSQLServerCaseSensitive = checkNameEngine{
+		dialect: platform.SQLServer,
+		target:  sqlServerCaseSensitiveDatabase,
+		tables:  "SELECT count(*) FROM sys.tables WHERE name IN ('t', 't1', 't2')",
+	}
 	checkNameSQLServer = checkNameEngine{
 		dialect: platform.SQLServer,
 		target:  func(c *qt.C) string { return sqlServerDevDatabase(c).url },
 		tables:  "SELECT count(*) FROM sys.tables WHERE name IN ('t', 't1', 't2')",
 	}
 )
+
+// sqlServerCaseSensitiveDatabase is a scratch database on SQL Server created
+// with the Latin1_General_100_CS_AS collation.
+func sqlServerCaseSensitiveDatabase(c *qt.C) string {
+	c.Helper()
+	adminURL := dbtarget.URL(c, dbtarget.SQLServer)
+	admin := connectDevDialect(c, adminURL)
+	name := devDialectScratchName()
+	_, err := admin.ExecContext(c.Context(), "CREATE DATABASE "+name+" COLLATE Latin1_General_100_CS_AS")
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, dropErr := admin.ExecContext(context.Background(),
+			"ALTER DATABASE "+name+" SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE "+name)
+		c.Check(dropErr, qt.IsNil)
+	})
+	return replaceSQLServerDatabase(c, adminURL, name)
+}
 
 // writeCheckNameSchema writes schema to a file of its own.
 func writeCheckNameSchema(c *qt.C, schema string) string {
@@ -131,9 +156,9 @@ func TestSchemaApplyRefusesASecondCheckOfANameE2E(t *testing.T) {
 		},
 		{
 			name: "SQL Server, two tables in one schema", engine: checkNameSQLServer,
-			schema: "CREATE TABLE t1 (a int, CONSTRAINT ck CHECK (a > 0));\nCREATE TABLE t2 (a int, CONSTRAINT CK CHECK (a > 0));\n",
-			where:  `table "t1" declares CHECK "ck" and table "t2" CHECK "CK", and the server keeps one CHECK of a name per schema`,
-			server: `mssql: There is already an object named 'CK' in the database.`,
+			schema: "CREATE TABLE t1 (a int, CONSTRAINT ck CHECK (a > 0));\nCREATE TABLE t2 (a int, CONSTRAINT ck CHECK (a > 0));\n",
+			where:  `table "t1" declares CHECK "ck" and table "t2" CHECK "ck", and the server keeps one CHECK of a name per schema`,
+			server: `mssql: There is already an object named 'ck' in the database.`,
 		},
 		{
 			name: "SQL Server, one table", engine: checkNameSQLServer,
@@ -159,35 +184,52 @@ func TestSchemaApplyRefusesASecondCheckOfANameE2E(t *testing.T) {
 	}
 }
 
-// The control: where the server keeps a CHECK name per table, two tables each
+// The controls: where the server keeps a CHECK name per table, two tables each
 // hold a CHECK of one name, and the apply builds both. A validation that read
-// MariaDB or PostgreSQL as keeping a name per schema refuses this schema.
+// MariaDB or PostgreSQL as keeping a name per schema refuses this schema. The
+// other rows are pairs a server accepts and a looser comparison would refuse.
 func TestSchemaApplyKeepsACheckNamePerTableE2E(t *testing.T) {
+	const sameName = "CREATE TABLE t1 (a int, CONSTRAINT ck CHECK (a > 0));\nCREATE TABLE t2 (a int, CONSTRAINT ck CHECK (a < 9));\n"
 	tests := []struct {
 		name   string
 		engine checkNameEngine
+		schema string
 		checks string
+		want   string
 	}{
 		{
-			name: "MariaDB", engine: checkNameMariaDB,
+			name: "MariaDB", engine: checkNameMariaDB, schema: sameName, want: "2",
 			checks: "SELECT count(*) FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'ck'",
 		},
 		{
-			name: "PostgreSQL", engine: checkNamePostgres,
+			name: "PostgreSQL", engine: checkNamePostgres, schema: sameName, want: "2",
 			checks: "SELECT count(*) FROM pg_constraint WHERE contype = 'c' AND conname = 'ck' AND connamespace = 'public'::regnamespace",
+		},
+		{
+			// The server accepts i beside the dotted capital I, so Ptah, which
+			// folds ASCII letters only, does too.
+			name: "MariaDB, i beside the dotted capital I", engine: checkNameMariaDB, want: "2",
+			schema: "CREATE TABLE t (a int, CONSTRAINT `i` CHECK (a > 0), CONSTRAINT `\u0130` CHECK (a < 9));\n",
+			checks: "SELECT count(*) FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 't'",
+		},
+		{
+			// A case-sensitive collation holds ck and CK apart, and Ptah
+			// leaves a difference of case to the server.
+			name: "SQL Server, a case-sensitive collation", engine: checkNameSQLServerCaseSensitive, want: "2",
+			schema: "CREATE TABLE t1 (a int, CONSTRAINT ck CHECK (a > 0));\nCREATE TABLE t2 (a int, CONSTRAINT CK CHECK (a > 0));\n",
+			checks: "SELECT count(*) FROM sys.check_constraints WHERE name IN ('ck', 'CK')",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			target := test.engine.target(c)
-			schema := writeCheckNameSchema(c,
-				"CREATE TABLE t1 (a int, CONSTRAINT ck CHECK (a > 0));\nCREATE TABLE t2 (a int, CONSTRAINT ck CHECK (a < 9));\n")
+			schema := writeCheckNameSchema(c, test.schema)
 
 			out, err := runPtahNativeWithError("schema", "apply", "--db-url", target, "--schema-file", schema, "--auto-approve")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			c.Assert(heldColumns(c, target, test.checks), qt.Equals, "2")
+			c.Assert(heldColumns(c, target, test.checks), qt.Equals, test.want)
 		})
 	}
 }

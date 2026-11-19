@@ -370,12 +370,15 @@ A `UNIQUE` on the table with no name, in a SQL schema file, takes
 takes `<table>_<column>_check`. Each is numbered past a name the schema holds. A `UNIQUE`
 written on a column keeps the name the server gives it.
 
-A `CHECK` name is held once per schema, across its tables, and compared without
-case. Two `CHECK` constraints of one name are refused before any statement runs,
-with the error the server answers: `There is already an object named 'CK' in the
-database.` for two tables, and error 8168 for one. A database with a
-case-sensitive collation holds `ck` and `CK` apart, and Ptah refuses the pair
-there too, because it reads the collation of no database before planning.
+A `CHECK` name is held once per schema, across its tables. Two `CHECK`
+constraints of one name, spelled the same, are refused before any statement
+runs, with the error the server answers: `There is already an object named
+'ck' in the database.` for two tables, and error 8168 for one. Whether `ck` and
+`CK` are one name follows the database collation: the default
+`SQL_Latin1_General_CP1_CI_AS` refuses the pair and `Latin1_General_100_CS_AS`
+accepts it. Ptah compares the names exactly and refuses only what holds under
+every collation, so a pair that differs in case reaches the server, which
+decides.
 
 ## Column defaults
 

@@ -60,6 +60,10 @@ func TestValidateCheckNames_HappyPath(t *testing.T) {
 				checkTable{name: "t3", checks: []string{`"Ck"`}})},
 		{name: "SQL Server keeps a name per schema", dialect: "sqlserver",
 			database: databaseOf(checkTable{schema: "dbo", name: "t", checks: []string{"ck"}}, checkTable{schema: "other", name: "t", checks: []string{"ck"}})},
+		{name: "SQL Server compares names exactly, since a case-sensitive collation accepts ck and CK", dialect: "sqlserver",
+			database: databaseOf(checkTable{name: "t1", checks: []string{"ck"}}, checkTable{name: "t2", checks: []string{"CK"}})},
+		{name: "MariaDB accepts i beside the dotted capital I", dialect: "mariadb",
+			database: databaseOf(checkTable{name: "t", checks: []string{"i", "\u0130"}})},
 		{name: "a dialect that states no scope keeps a name per table", dialect: "sqlite",
 			database: databaseOf(checkTable{name: "t1", checks: []string{"dd"}}, checkTable{name: "t2", checks: []string{"dd"}})},
 		{name: "no database", dialect: "mysql", database: nil},
@@ -120,9 +124,9 @@ func TestValidateCheckNames_FailurePath(t *testing.T) {
 		},
 		{
 			name: "SQL Server across tables", dialect: "sqlserver",
-			database: databaseOf(checkTable{name: "t1", checks: []string{"ck"}}, checkTable{name: "t2", checks: []string{"CK"}}),
-			wantErr: `table "t1" declares CHECK "ck" and table "t2" CHECK "CK", and the server keeps one CHECK of a name per schema: ` +
-				`mssql: There is already an object named 'CK' in the database. (2714)`,
+			database: databaseOf(checkTable{name: "t1", checks: []string{"ck"}}, checkTable{name: "t2", checks: []string{"ck"}}),
+			wantErr: `table "t1" declares CHECK "ck" and table "t2" CHECK "ck", and the server keeps one CHECK of a name per schema: ` +
+				`mssql: There is already an object named 'ck' in the database. (2714)`,
 		},
 		{
 			name: "SQL Server in one table", dialect: "sqlserver",
