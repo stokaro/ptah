@@ -190,6 +190,10 @@ END;`,
 				},
 				EmptyCallRefusal: "Oracle Free 23.26 calls it without parentheses and answers ORA-03077, " +
 					"ORA-30088 or ORA-04044 to an empty argument list",
+				// Oracle Free 23.26 takes seq.NEXTVAL and seq.CURRVAL as a
+				// default, and stores an unqualified one qualified and quoted,
+				// "APP"."SEQ"."NEXTVAL"; a qualified one is stored as written.
+				SequencePseudocolumns: []string{"NEXTVAL", "CURRVAL"},
 			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},

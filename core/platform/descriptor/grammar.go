@@ -76,6 +76,23 @@ type ColumnGrammar struct {
 	// list. A function the engine calls either way, such as Oracle's
 	// SESSIONTIMEZONE, is left out.
 	EmptyCallFunctions []string `json:"empty_call_functions,omitempty"`
+	// SequencePseudocolumns names, in upper case, the pseudocolumns a default
+	// reads from a sequence by writing them after its name, as Oracle's
+	// NEXTVAL and CURRVAL: `seq.NEXTVAL`, `app.seq.CURRVAL` or
+	// `"Seq".NEXTVAL`. A default naming one is kept as the expression
+	// written, and compared with the catalog by the names the catalog
+	// stores, without a schema that names the table's own. Without its name,
+	// the qualified word is read as a literal value, which a renderer writes
+	// as a string.
+	SequencePseudocolumns []string `json:"sequence_pseudocolumns,omitempty"`
+	// NextValueClause names, in upper case and separated by one space, the
+	// words a default writes before a sequence's name to read its next value,
+	// as SQL Server's NEXT VALUE FOR: `NEXT VALUE FOR seq` or
+	// `NEXT VALUE FOR [dbo].[seq]`. A default holding the clause is kept as
+	// the expression written, and compared with the catalog by the name it
+	// reads, each part without its brackets or quotes. Empty reads no such
+	// clause, and a renderer writes NEXT as a literal value.
+	NextValueClause string `json:"next_value_clause,omitempty"`
 	// EmptyCallRefusal says why a default that writes a function of
 	// EmptyCallFunctions with an empty argument list is refused. The parser
 	// names the bare spelling before the sentence. The two fields are set
@@ -621,6 +638,12 @@ func validateColumnGrammar(grammar Grammar) error {
 	if err := validateFunctionNames("empty call function", grammar.Columns.EmptyCallFunctions); err != nil {
 		return err
 	}
+	if err := validateFunctionNames("sequence pseudocolumn", grammar.Columns.SequencePseudocolumns); err != nil {
+		return err
+	}
+	if err := validateClause("next value clause", grammar.Columns.NextValueClause); err != nil {
+		return err
+	}
 	constraint := grammar.Columns.Constraint
 	columnKinds := []string{ConstraintKindCheck, ConstraintKindReferences}
 	switch {
@@ -766,6 +789,21 @@ func validateFunctionNames(label string, names []string) error {
 		}
 		if slices.Contains(names[:i], name) {
 			return fmt.Errorf("%s %q is written twice", label, name)
+		}
+	}
+	return nil
+}
+
+// validateClause refuses a clause that is not upper-case words separated by
+// one space. The empty clause is accepted.
+func validateClause(label, clause string) error {
+	words := strings.Fields(clause)
+	if strings.Join(words, " ") != clause {
+		return fmt.Errorf("%s %q is not words separated by one space", label, clause)
+	}
+	for _, word := range words {
+		if err := validateFunctionNames(label+" word", []string{word}); err != nil {
+			return err
 		}
 	}
 	return nil

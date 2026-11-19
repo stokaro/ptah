@@ -21,6 +21,8 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 			NiladicFunctions:        []string{"SYSDATE", "USER"},
 			EmptyCallFunctions:      []string{"SYSDATE"},
 			EmptyCallRefusal:        "alpha refuses SYSDATE()",
+			SequencePseudocolumns:   []string{"NEXTVAL"},
+			NextValueClause:         "NEXT VALUE FOR",
 			DefaultOperatorRefusal:  "alpha takes an expression default only in parentheses",
 			DefaultPredicateRefusal: "alpha reads no predicate in a default",
 			DefaultDistinctFrom:     true,
@@ -202,6 +204,26 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			name:    "a niladic function stated twice",
 			dialect: with(func(g *descriptor.Grammar) { g.Columns.NiladicFunctions = []string{"USER", "USER"} }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: niladic function "USER" is written twice`,
+		},
+		{
+			name:    "a sequence pseudocolumn in lower case",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.SequencePseudocolumns = []string{"nextval"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: sequence pseudocolumn "nextval" is not one upper-case word`,
+		},
+		{
+			name:    "a sequence pseudocolumn stated twice",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.SequencePseudocolumns = []string{"NEXTVAL", "NEXTVAL"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: sequence pseudocolumn "NEXTVAL" is written twice`,
+		},
+		{
+			name:    "a next value clause in lower case",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.NextValueClause = "next value for" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: next value clause word "next" is not one upper-case word`,
+		},
+		{
+			name:    "a next value clause with two spaces",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.NextValueClause = "NEXT  VALUE FOR" }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: next value clause "NEXT  VALUE FOR" is not words separated by one space`,
 		},
 		{
 			name:    "an empty call refusal without functions",
