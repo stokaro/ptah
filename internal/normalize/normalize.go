@@ -276,6 +276,13 @@ func DefaultValue(defaultValue, typeName string) string {
 		return strings.TrimSpace(cleanValue)
 	}
 
+	// Parentheses around one term group nothing: CockroachDB stores
+	// DEFAULT -1 as (-1).
+	cleanValue = withoutGroupingParentheses(strings.TrimSpace(cleanValue))
+	if array, ok := arrayDefault(cleanValue, typeName); ok {
+		return array
+	}
+
 	// SQL NULL, including a PostgreSQL cast, is no default. Check before
 	// removing quotes so the text 'NULL' remains a different value.
 	if strings.EqualFold(strings.TrimSpace(cleanValue), "NULL") {
@@ -306,11 +313,15 @@ func DefaultValue(defaultValue, typeName string) string {
 
 func normalizeTemporalDefaultExpression(defaultValue, typeName string) string {
 	normalizedType := strings.ToLower(strings.TrimSpace(typeName))
-	if normalizedType != "" && normalizedType != "timestamp" && normalizedType != "timestamptz" {
-		return ""
-	}
 	normalizedValue := strings.ToUpper(strings.TrimSpace(defaultValue))
 	normalizedValue = strings.TrimSuffix(normalizedValue, "()")
+	switch {
+	case normalizedValue == "CURRENT_DATE" && (normalizedType == "" || normalizedType == "date"):
+		// CockroachDB stores CURRENT_DATE as current_date().
+		return normalizedValue
+	case normalizedType != "" && normalizedType != "timestamp" && normalizedType != "timestamptz":
+		return ""
+	}
 	switch normalizedValue {
 	case "CURRENT_TIMESTAMP", "NOW", "LOCALTIME", "LOCALTIMESTAMP":
 		return normalizedValue
