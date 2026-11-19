@@ -23,8 +23,9 @@ has no version, `ptah migrations up` runs it after the versioned migrations, and
 the next run executes it again only when its content changed.
 
 Repeatable migrations run on PostgreSQL, CockroachDB, YugabyteDB, MySQL,
-MariaDB, SQLite, SQL Server, Oracle and ClickHouse. A connection through a
-provider refuses a directory that holds one, before anything changes.
+MariaDB, SQLite, SQL Server, Oracle and ClickHouse, and on an engine reached
+through a provider that keeps their record; see
+[Through a provider](#through-a-provider).
 
 ## Write one
 
@@ -167,6 +168,33 @@ so the migration user must be able to read that table. On a server whose
 access control requires a grant for system tables, give the migration user
 `SELECT` on `system.settings`; without it, every run with a pending repeatable
 migration fails before it starts.
+
+### Through a provider
+
+An engine reached through an executable provider runs repeatable migrations
+when the provider lists `sessions.repeatable-record` for that engine. The
+provider stores the record where its engine keeps data. Ptah decides what each
+row means, as on a built-in engine: which file runs, the claim, a retry and a
+repair. A claim whose outcome the provider cannot confirm, for example because
+the connection dropped after the write, is settled by reading the row back.
+
+The body runs in a transaction when the provider establishes transactional DDL
+for the session, and the write that records the content goes into that
+transaction, so the row and the work commit together. Under `--tx-mode none`,
+under `-- +ptah no_transaction`, or without transactional DDL, the body runs
+without one and its record says `no_transaction=true`.
+
+The record keeps at most 2 MiB (2097152 bytes) of a file. A longer file is
+refused before anything runs, with an error that names the file, its length
+and the limit.
+
+A provider that does not list `sessions.repeatable-record`, or does not list it
+for the engine, refuses a directory that holds a repeatable migration before
+anything changes:
+
+```text
+this directory holds repeatable migrations, which this run cannot execute on ydb: unsupported feature: provider github.com/stokaro/ptah-ydb-plugin keeps no record of repeatable migrations for engine ydb, because it does not list sessions.repeatable-record (contract 25.44); install a provider release that lists it
+```
 
 ## Seal the directory
 
@@ -382,8 +410,9 @@ script. Each refusal below comes before anything changes:
 - **A runner that opens its own transactions.** Under
   `migration.runner: golang-migrate` a repeatable migration would run in a
   transaction Ptah opens, so the run is refused.
-- **A connection through a provider** rather than a built-in driver, which
-  does not expose the SQL the record is kept with.
+- **A provider that keeps no record.** A provider that does not list
+  `sessions.repeatable-record` for the engine; see
+  [Through a provider](#through-a-provider).
 - **A file that asks for a transaction** with `-- atlas:txmode file` on an
   engine that does not roll schema changes back as a unit.
 
@@ -483,7 +512,9 @@ because the community binary has no re-run-on-change semantics.
 
 ## Limits
 
-- Engines reached through a provider do not run repeatable migrations.
+- Through a provider, the record keeps at most 2 MiB of a file, and a
+  provider release that does not list `sessions.repeatable-record` refuses the
+  directory.
 - On ClickHouse nothing decides between two concurrent runs, and a file whose
   record would exceed `max_query_size` is refused.
 - `ptah migrations repair --repeatable` removes a row; nothing marks a
