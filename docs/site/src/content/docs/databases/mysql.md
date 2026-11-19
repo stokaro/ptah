@@ -447,7 +447,8 @@ SQL:
   ``(`c` <> _utf8mb4\'Ã©\')``. Ptah takes that layer off where what is left is
   UTF-8, and keeps the text as reported where it is not. A string written in
   another character set, such as `_latin1 x'e9'`, is reported with one layer
-  and read as reported. MariaDB reports each character as it is.
+  and read as reported. MariaDB reports each character as it is, apart from
+  the `CHECK_CLAUSE` case below.
 - A `CHECK` condition and a generated column's expression are compared as
   written first, and where the text differs, as the operations their
   operators group, by the precedence an expression default is read with.
@@ -456,11 +457,28 @@ SQL:
   0)` as ``((0 = `a`) or (`id` > 0))``, `CHECK (c NOT LIKE 'x%')` as
   ``(not((`c` like _utf8mb4'x%')))`` and `CHECK (b <> X'41')` as
   ``(`b` <> 0x41)``. MariaDB 12.3 writes `NOT a` as `` `a` = 0 `` and keeps
-  `X'41'`. Each pair is one condition, so a second apply plans nothing, and a
+  `X'41'` compared with a `varbinary` column. Each pair is one condition, so a
+  second apply plans nothing, and a
   changed value is still a change. A condition holding `CASE` or
   `LIKE ... ESCAPE` is compared as written, and so is one the server rewrites
   further: MariaDB stores `CHECK (NOT TRUE)` as `0`. Each of these plans the
   condition again on every run.
+- MariaDB converts a hexadecimal, bit, national or other character set string
+  in a `CHECK` to the character set of the column it is compared with, and
+  stores the string that results. Measured on MariaDB 12.3 with a `utf8mb4`
+  `varchar` column, `x <> x'41'`, `x <> 0x41` and `x <> b'1000001'` are stored
+  as `` `x` <> 'A' ``, and `x <> N'abc'` as `` `x` <> 'abc' ``. The stored
+  condition compares by the column's collation rather than by bytes: under
+  `utf8mb4_uca1400_ai_ci` it refuses the value `'a'`, which `'a' <> x'41'` in a
+  query accepts. The declaration and the condition the server enforces differ,
+  and Ptah cannot tell a declared `x'41'` from a declared `'A'` in what the
+  server reports. It compares such a `CHECK` as written, so the `CHECK` is
+  planned again on every run. Write the string the server stores, `x <> 'A'`,
+  and the `CHECK` converges and states the condition the server enforces.
+- MariaDB reports `CHECK_CLAUSE` in `utf8mb3`, so a character beyond U+FFFF
+  reads as one `?` per byte of its UTF-8 form, while `SHOW CREATE TABLE`
+  prints it whole. A `CHECK` holding such a character, such as U+1F600, is
+  compared as reported and planned again on every run.
 - A `CHECK` written on a column may name only that column on MySQL.
   `CREATE TABLE c (a int, b int CHECK (b > a))` is
   `ERROR 3813 (HY000): Column check constraint ... references other column`
