@@ -23,7 +23,6 @@ func migrating() descriptor.Dialect {
 			{Statement: "VACUUM", StartsWith: []string{"VACUUM"}},
 			{Statement: "REINDEX ... CONCURRENTLY", StartsWith: []string{"REINDEX"}, Keywords: []string{"CONCURRENTLY"}},
 		},
-		ConstraintsRewriteTable: true,
 	}
 	return described
 }

@@ -2,6 +2,7 @@ package migrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -32,7 +33,7 @@ const (
 func (m *Migrator) withNoTransactionSession(
 	ctx context.Context,
 	use func(*Migrator) error,
-) error {
+) (resultErr error) {
 	if m.conn.Writer().IsDryRun() || m.noTransactionSession != nil {
 		return use(m)
 	}
@@ -58,6 +59,9 @@ func (m *Migrator) withNoTransactionSession(
 		scoped := *m
 		scoped.noTransactionSession = conn
 		scoped.postgresIndexObservation = nil
+		// The session of an in-memory SQLite database is the database's one
+		// connection, and the next file runs on it.
+		defer func() { resultErr = errors.Join(resultErr, resetSessionSettings(ctx, conn.Writer())) }()
 		if scoped.services().PinnedMetadata {
 			// A database with one physical connection, such as in-memory
 			// SQLite, would deadlock if checkpoints used the pool while that

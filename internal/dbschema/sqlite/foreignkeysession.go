@@ -30,6 +30,11 @@ type foreignKeySession struct {
 	// enabled is the value found before the session took over, which is what
 	// gets put back. A caller that had enforcement off keeps it off.
 	enabled bool
+	// legacyAlter is the legacy_alter_table value found before the session
+	// took over, 0 or 1. A rebuild plan turns it on around a rename and off
+	// after, and a failure between the two would otherwise leave it on for the
+	// next user of the connection.
+	legacyAlter int
 	// ctx belongs to the call that opened the session. Commit and Rollback
 	// carry no context of their own, and the verification and the restore both
 	// have to run somewhere.
@@ -67,11 +72,7 @@ func (s *foreignKeySession) verify(tx *sql.Tx) error {
 	if len(violations) == 0 {
 		return nil
 	}
-	return fmt.Errorf(
-		"sqlite: rebuild left %d unresolved foreign-key reference(s): %s",
-		len(violations),
-		strings.Join(violations, ", "),
-	)
+	return fmt.Errorf("sqlite: rebuild leaves rows that violate a foreign key: %s", strings.Join(violations, ", "))
 }
 
 // restore puts enforcement back the way it was found. It runs on a context
@@ -86,15 +87,20 @@ func (s *foreignKeySession) restore() {
 	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(s.ctx), sessionRestoreTimeout)
 	defer cancel()
 
-	statement := "PRAGMA foreign_keys = 0"
+	foreignKeys := "PRAGMA foreign_keys = 0"
 	if s.enabled {
-		statement = "PRAGMA foreign_keys = 1"
+		foreignKeys = "PRAGMA foreign_keys = 1"
 	}
-	if _, err := s.conn.ExecContext(restoreCtx, statement); err != nil {
-		// The connection is now in a state the pool must not hand out: it
-		// silently skips foreign-key enforcement.
-		slog.Error("sqlite: restore foreign keys after rebuild", "error", err)
-		discardConn(s.conn)
+	statements := []string{foreignKeys, fmt.Sprintf("PRAGMA legacy_alter_table = %d", s.legacyAlter)}
+	for _, statement := range statements {
+		if _, err := s.conn.ExecContext(restoreCtx, statement); err != nil {
+			// The connection is now in a state the pool must not hand out: it
+			// silently skips foreign-key enforcement, or renames tables
+			// without rewriting the views and triggers that name them.
+			slog.Error("sqlite: restore connection settings after rebuild", "statement", statement, "error", err)
+			discardConn(s.conn)
+			break
+		}
 	}
 	if s.release != nil {
 		if err := s.release(); err != nil {
@@ -103,27 +109,41 @@ func (s *foreignKeySession) restore() {
 	}
 }
 
-// collectForeignKeyViolations renders what PRAGMA foreign_key_check reported.
+// collectForeignKeyViolations renders what PRAGMA foreign_key_check reported,
+// one line per referencing table and referenced table with the number of rows
+// that violate the key between them, in the order the check reported them.
 // Its columns are the referencing table, the referencing rowid, the referenced
 // table, and the index of the failing foreign key on the referencing table.
+//
+// A row violates the key when no row of the referenced table matches it, which
+// says nothing about whether that table exists: a carried key over rows the
+// declaration never constrained reports its rows the same way.
 func collectForeignKeyViolations(rows *sql.Rows) ([]string, error) {
-	var violations []string
+	type pair struct{ child, parent string }
+	var order []pair
+	counts := make(map[pair]int)
 	for rows.Next() {
 		var (
-			child     sql.NullString
-			rowID     sql.NullInt64
-			parent    sql.NullString
-			keyIndex  sql.NullInt64
-			renderRow string
+			child    sql.NullString
+			rowID    sql.NullInt64
+			parent   sql.NullString
+			keyIndex sql.NullInt64
 		)
 		if err := rows.Scan(&child, &rowID, &parent, &keyIndex); err != nil {
 			return nil, fmt.Errorf("sqlite: read foreign-key check row: %w", err)
 		}
-		renderRow = fmt.Sprintf("%s references missing %s", child.String, parent.String)
-		violations = append(violations, renderRow)
+		key := pair{child: child.String, parent: parent.String}
+		if counts[key] == 0 {
+			order = append(order, key)
+		}
+		counts[key]++
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("sqlite: read foreign-key check: %w", err)
+	}
+	violations := make([]string, 0, len(order))
+	for _, key := range order {
+		violations = append(violations, fmt.Sprintf("%d row(s) of %s violate the foreign key to %s", counts[key], key.child, key.parent))
 	}
 	return violations, nil
 }
@@ -137,8 +157,10 @@ func collectForeignKeyViolations(rows *sql.Rows) ([]string, error) {
 // measured on SQLite 3.51, `FOREIGN KEY constraint failed` -- so SQLite's own
 // documented procedure disables enforcement around the sequence.
 //
-// Before the commit, PRAGMA foreign_key_check has to pass. Enforcement is put
-// back the way it was found whether the transaction commits or rolls back.
+// Before the commit, PRAGMA foreign_key_check has to pass. Enforcement, and
+// the legacy_alter_table setting a rebuild may turn on around its rename, are
+// put back the way they were found whether the transaction commits or rolls
+// back.
 func (w *Writer) BeginTransactionWithoutForeignKeys(ctx context.Context) (catalog.SchemaTransaction, error) {
 	if w.dryRun {
 		slog.Info("[DRY RUN] Would begin transaction with foreign keys disabled")
@@ -157,6 +179,10 @@ func (w *Writer) BeginTransactionWithoutForeignKeys(ctx context.Context) (catalo
 	if err != nil {
 		return nil, errors.Join(err, releaseError(release))
 	}
+	var legacyAlter int
+	if err := conn.QueryRowContext(ctx, "PRAGMA legacy_alter_table").Scan(&legacyAlter); err != nil {
+		return nil, errors.Join(fmt.Errorf("sqlite: read legacy_alter_table setting: %w", err), releaseError(release))
+	}
 	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
 		return nil, errors.Join(
 			fmt.Errorf("sqlite: disable foreign keys for rebuild: %w", err),
@@ -164,13 +190,16 @@ func (w *Writer) BeginTransactionWithoutForeignKeys(ctx context.Context) (catalo
 		)
 	}
 
-	session := &foreignKeySession{conn: conn, release: release, enabled: enabled, ctx: ctx}
+	session := &foreignKeySession{conn: conn, release: release, enabled: enabled, legacyAlter: legacyAlter, ctx: ctx}
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		session.restore()
 		return nil, fmt.Errorf("sqlite: begin rebuild transaction: %w", err)
 	}
-	return &transactionWriter{beginContext: ctx, tx: tx, schema: w.schema, session: session}, nil
+	return &transactionWriter{
+		beginContext: ctx, tx: tx, schema: w.schema, session: session,
+		rename: renameSetting{found: legacyAlter, known: true},
+	}, nil
 }
 
 func releaseError(release func() error) error {

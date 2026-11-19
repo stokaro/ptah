@@ -139,6 +139,8 @@ own measurement conditions.
 | [An exclude selector that matches nothing](#an-exclude-selector-that-matches-nothing) | warns on `schema inspect` and `schema diff`, refuses `schema apply`, and names the flag or the `atlas.hcl` the selector came from | exits `0` and says nothing |
 | [Leading schema type selector](#leading-schema-type-selector) | keeps the literal answer on every schema source | gives source-dependent answers, leaving the named table in a file diff's plan |
 | [A constraint an exclude selector names](#a-constraint-an-exclude-selector-names) | keeps the constraint and its index under `[type=constraint]`, a wildcard, or a pattern read through the table | accepts the selector and drops the constraint |
+| [The AUTOINCREMENT mark of a rebuilt SQLite table](#the-autoincrement-mark-of-a-rebuilt-sqlite-table) | keeps the mark, so a deleted key is not handed out again | rebuilds the table with the mark at the largest key it copies |
+| [A SQLite file that sets `legacy_alter_table`](#a-sqlite-file-that-sets-legacy_alter_table) | gives each file the setting the connection held before the run | leaves the setting as one file set it for the files after it |
 | [One version spelled two ways](#one-version-spelled-two-ways) | refuses the directory and names both files | applies both files as two revisions |
 | [A revision spelled apart from its file](#a-revision-spelled-apart-from-its-file) | refuses the history and prints the statements that respell the rows | compares versions as text and leaves a new file unapplied |
 | [A Liquibase rollback written by `migrate diff`](#a-liquibase-rollback-written-by-migrate-diff) | writes `--rollback <SQL>`, which Liquibase runs | writes `--rollback: <SQL>`, which Liquibase reads as a comment |
@@ -1046,38 +1048,138 @@ A foreign key on MySQL and MariaDB stands on an index, and the server builds
 one when no index covers the key's columns. The binary excludes the key under
 `[type=fk]` and keeps the index in the plan: `DROP INDEX`, which MySQL 26.10 and
 MariaDB 12.3 refuse with `ERROR 1553` while the key stands, so the apply fails.
-Ptah names the key under `[type=foreign_key]` and leaves the index the server
-built out with it, so the plan is synced. An index the author declared stays in
+Ptah names the key under `[type=fk]`, `[type=foreign_key]` and
+`[type=foreign-key]`, and leaves the index the server built out with it, so the
+plan is synced. An index the author declared stays in
 the plan on both binaries, and the server refuses its removal the same way.
+The binary keeps a foreign key only under `[type=fk]`. Ptah keeps it under all
+three spellings, deliberately, since a selector is written to keep what it
+names.
 
-On SQLite, the binary and `ptah-compat` both fail a selector that names a
-`CHECK`, for different reasons. With the table `kinds` holding a column
-`UNIQUE`, the check `code_len` and the index `kinds_code`, a desired schema that
-declares none of them, and `--exclude 'kinds.code_len[type=check]'`, the binary
-v1.3.0 plans `DROP INDEX kinds_code` twice and leaves the `UNIQUE` in place; its
-`schema apply` fails on the second statement with `no such index: kinds_code`
-and leaves the table as it was. Ptah plans the removal of the `UNIQUE`, and
-SQLite removes it only by writing a new table from the declaration, which would
-not hold the `CHECK` the selector keeps. So `ptah-compat` refuses the selector,
-says why, plans nothing and leaves the table as it is. Excluding the whole table
-works on both.
+On SQLite, a plan changes most of a table by writing a new one from the
+declaration and copying the rows, and the declaration holds nothing a selector
+keeps out of scope. The binary v1.3.0 writes the new table without those parts.
+`ptah-compat` carries each one into the new table from its live definition.
+With the table `kinds(id, name, extra)` holding values in `extra`, the index
+`idx_name` and the trigger `trg_name`, and a desired schema that declares `id`
+and `name`, the selectors answer as follows:
 
-The other selectors over the same table answer as follows:
+- `kinds.extra[type=column]`: the binary applies and the values in `extra` are
+  gone; `ptah-compat` keeps the column, its default and its values.
+- `kinds.idx_name[type=index]` and `kinds.trg_name[type=trigger]`: the binary
+  applies without the index or the trigger; `ptah-compat` keeps it.
 
-- `*[type=constraint]` is refused the same way, since every constraint of a
-  SQLite table stays in scope. The binary writes a new table without the
-  `UNIQUE` and the `CHECK`.
-- `*[type=index]` names the index, so it is not refused, and both binaries
-  write the new table.
+With the table holding a column `UNIQUE`, the check `code_len` and the index
+`kinds_code`, and a desired schema that declares none of them:
+
+- `kinds.code_len[type=check]`: the binary plans `DROP INDEX kinds_code` twice,
+  and its `schema apply` fails on the second statement with
+  `no such index: kinds_code`. `ptah-compat` writes the new table with the
+  `CHECK` and without the `UNIQUE`.
+- `*[type=constraint]`: the binary writes a new table without the `UNIQUE` and
+  the `CHECK`. Every constraint stays out of scope on `ptah-compat`, so nothing
+  of the table changes.
+- `*[type=index]`: the binary writes a new table without the `UNIQUE` and drops
+  the index. `ptah-compat` keeps the index and the `UNIQUE`, which SQLite
+  enforces with an index.
 - `kinds.*` leaves out every column of the table and its constraints with them,
   and both binaries plan nothing.
+
+A column with `AUTOINCREMENT` keeps the keyword on its own `PRIMARY KEY`
+clause where the declaration holds no primary key, and keeps its high-water mark;
+see [The AUTOINCREMENT mark of a rebuilt SQLite table](#the-autoincrement-mark-of-a-rebuilt-sqlite-table).
+A view, or a trigger of another table, that names the rebuilt table stays as it
+is, because the plan renames the new table with `legacy_alter_table` on. The
+plan cannot read the value the connection holds, so it sets the pragma off after
+the rename, and `ptah-compat` puts back the value it found when the transaction
+ends.
+
+Where a part cannot be carried as it stands, `ptah-compat` refuses the plan and
+names the part. A part is refused when it reads a column the new table drops: a
+trigger, a `CHECK`, a generated column, a view, a constraint over the column,
+and an index whose columns, key expression or `WHERE` clause read it. A primary
+key beside the one the declaration holds is refused too, and so is a column with
+`AUTOINCREMENT` beside a declared primary key. With a trigger that reads `extra`
+and a selector that keeps only the trigger, the binary applies and leaves the
+trigger out; `ptah-compat` stops before any change.
 
 **Evidence.** `integration/constraint_selector_e2e_test.go`,
 `integration/exclusion_selector_e2e_test.go`,
 `integration/foreign_key_selector_e2e_test.go`,
 `integration/key_selector_names_e2e_test.go`,
+`integration/sqlite_rebuild_carry_e2e_test.go`,
 `internal/atlasfilter/constraint_selector_test.go`,
-`internal/atlasfilter/foreign_key_backing_test.go`
+`internal/atlasfilter/foreign_key_backing_test.go`,
+`internal/planner/dialects/sqlite/dependents_test.go`,
+`internal/planner/dialects/sqlite/out_of_scope_test.go`
+
+## The AUTOINCREMENT mark of a rebuilt SQLite table
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** SQLite holds the high-water mark of an `AUTOINCREMENT`
+key in `sqlite_sequence`, so a key a deleted row held is not handed out again.
+A rebuild copies the rows into a new table, drops the old table, which deletes
+its mark, and renames the new one, whose mark is the largest key the copy wrote.
+The binary writes the rebuild in those four statements, and a deleted key at the
+top comes back. `ptah-compat` writes
+`INSERT INTO sqlite_sequence (name, seq) SELECT 'new_kinds', seq FROM sqlite_sequence WHERE name = 'kinds';`
+between the `CREATE TABLE` and the copy, under the comment
+`-- Keep the AUTOINCREMENT high-water mark of "kinds"`, wherever the live table
+and the new one both have `AUTOINCREMENT`. A key a selector keeps out of scope
+keeps its mark the same way.
+
+Measured on 2026-11-19 on SQLite with `schema apply` and `migrate apply`. The
+table `kinds(id INTEGER PRIMARY KEY AUTOINCREMENT, name, extra)` holds rows 1 to
+3, row 3 is deleted, and the desired schema drops `extra`.
+
+| | Binary | `ptah-compat` |
+| --- | --- | --- |
+| `sqlite_sequence` row of `kinds` after the rebuild | `3` before, `2` after | `3` before, `3` after |
+| key of the next row | `3`, the key the deleted row held | `4` |
+| `migrate lint` summary over the file `migrate diff` writes | `1 schema change` | `4 schema changes` |
+| `migrate lint` summary over the file `ptah-compat` writes | `4 schema changes` | `4 schema changes` |
+
+The binary counts a rebuild as one change only where exactly one statement
+stands between the `CREATE TABLE` and the `DROP TABLE`, and both binaries count
+the same file the same way. The statement cannot go before the `CREATE TABLE`:
+`sqlite_sequence` exists only once a table with `AUTOINCREMENT` does, and the dev
+database of a run that keeps the key out of scope holds none. It cannot go after
+the `DROP TABLE` either, which deletes the mark it reads.
+
+**Evidence.** `integration/sqlite_rebuild_carry_e2e_test.go`
+(`TestSQLiteRebuildKeepsTheAutoincrementMarkE2E`),
+`internal/planner/dialects/sqlite/sequence_test.go`,
+`internal/planner/sqliterebuild/sqliterebuild_test.go`,
+`internal/lintkit/rebuild_test.go`
+
+## A SQLite file that sets `legacy_alter_table`
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** `PRAGMA legacy_alter_table` belongs to the connection and
+outlives the transaction that set it. With it off, a table rename rewrites the
+views and triggers that name the table; with it on, it leaves them as they are.
+The binary runs a directory's files on one connection, so a file that sets the
+pragma decides how the renames of every later file treat views. `migrate apply`
+on `ptah-compat` reads the value before the first statement that names the
+pragma and puts it back after the file, in every `--tx-mode`, so each file runs
+under the setting the connection held before the run.
+
+Measured on 2026-11-19 on a SQLite file with `migrate apply`. The first file
+holds `PRAGMA legacy_alter_table = on;`, and the second creates `t`, creates the
+view `v` as `SELECT a FROM t`, and renames `t` to `t2`.
+
+| | Binary | `ptah-compat` |
+| --- | --- | --- |
+| exit status | `0` | `0` |
+| text of `v` afterwards | `CREATE VIEW v AS SELECT a FROM t`, a view of a table that no longer exists | `CREATE VIEW v AS SELECT a FROM "t2"` |
+
+A connection that starts with the pragma on, from `?_pragma=legacy_alter_table(1)`
+in the URL, keeps it on for every file, so the second file leaves `v` as written.
+
+**Evidence.** `integration/sqlite_rename_setting_e2e_test.go`,
+`migration/migrator/rename_setting_test.go`
 
 ## One version spelled two ways
 

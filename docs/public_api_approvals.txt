@@ -986,3 +986,10 @@ v0.29.5 ptah.run/core/ast
 # sections that hold lists already are; nothing in Ptah compares it by value.
 # Pre-v1, so no compatibility is owed.
 v0.32.0 ptah.run/core/platform/descriptor
+
+# stokaro/ptah#6289: a SQLite rebuild carries the parts an exclude selector
+# keeps out of scope into the new table, constraints among them, so a selector
+# that names a SQLite constraint is honored rather than refused.
+# Migration.ConstraintsRewriteTable described that refusal, and nothing else
+# read it. Pre-v1, so no compatibility is owed.
+v0.33.0 ptah.run/core/platform/descriptor

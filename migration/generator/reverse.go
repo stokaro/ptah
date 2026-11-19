@@ -323,6 +323,7 @@ func reverseSchemaDiffWithPrior(
 	// A rollback runs against the same database, whose read declined the same
 	// settings.
 	reversed.CurrentNotDescribed = diff.CurrentNotDescribed
+	reversed.CurrentOutOfScope = diff.CurrentOutOfScope
 	// The same database's path and grants: a rollback names an object by the
 	// same absolute path, and a table it rebuilds held the same grants.
 	reversed.CurrentDatabasePath = diff.CurrentDatabasePath

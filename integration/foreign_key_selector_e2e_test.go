@@ -59,6 +59,12 @@ func (f foreignKeySelectorFixture) apply(c *qt.C, exclude string) clirun.Result 
 	return runPtahIn(c, "schema", "apply", "--db-url", f.database, "--schema-file", f.schema, "--exclude", exclude, "--auto-approve")
 }
 
+func (f foreignKeySelectorFixture) compatApply(c *qt.C, exclude string) clirun.Result {
+	c.Helper()
+	return clirun.Run(c, clirun.Compat, clirun.Options{Dir: c.TempDir()}, "schema", "apply",
+		"-u", f.database, "--to", "file://"+filepath.ToSlash(f.schema), "--dev-url", f.dev, "--exclude", exclude, "--auto-approve")
+}
+
 func (f foreignKeySelectorFixture) dryRun(c *qt.C, exclude string) clirun.Result {
 	c.Helper()
 	return runPtahIn(c, "schema", "apply", "--db-url", f.database, "--schema-file", f.schema, "--exclude", exclude, "--dry-run")
@@ -173,6 +179,69 @@ func TestExcludeEveryConstraintKeepsTheIndexAForeignKeyStandsOnE2E(t *testing.T)
 				c.Assert(planned.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
 				c.Assert(compared.ExitCode, qt.Equals, 0, historyComment(compared))
 				c.Assert(comparisonBody(c, compared.Stdout), qt.Equals, includeNoDiffs)
+				c.Assert(diffed.ExitCode, qt.Equals, 0, historyComment(diffed))
+				c.Assert(diffed.Stdout, qt.Equals, includeSynced)
+			})
+		}
+	}
+}
+
+// TestExcludeNamesAForeignKeyAsFkE2E applies a desired schema without the
+// foreign key under a selector that names the key as `[type=fk]`, the type
+// the community binary names a foreign key by, through both binaries. Each
+// binary keeps the key and the index the server built for it, read back from
+// the catalog, and a run that follows finds nothing to do. The community
+// binary v1.3.0 keeps the key under these selectors and plans the index's
+// DROP INDEX, which the server refuses with ERROR 1553.
+func TestExcludeNamesAForeignKeyAsFkE2E(t *testing.T) {
+	for _, engine := range foreignKeySelectorEngines {
+		rows := []struct {
+			name, live, exclude, want string
+		}{
+			{
+				name: "a named key",
+				live: "CREATE TABLE parents (id int NOT NULL, PRIMARY KEY (id));\n" +
+					"CREATE TABLE kids (id int NOT NULL, parent_id int NOT NULL, PRIMARY KEY (id), " +
+					"CONSTRAINT kids_parent_fk FOREIGN KEY (parent_id) REFERENCES parents (id));",
+				exclude: "kids.kids_parent_fk[type=fk]",
+				want:    "kids_parent_fk kids_parent_fk,PRIMARY",
+			},
+			{
+				name: "a key written without a name",
+				live: "CREATE TABLE parents (id int NOT NULL, PRIMARY KEY (id));\n" +
+					"CREATE TABLE kids (id int NOT NULL, parent_id int NOT NULL, PRIMARY KEY (id), " +
+					"FOREIGN KEY (parent_id) REFERENCES parents (id));",
+				exclude: "kids." + engine.unnamedKey + "[type=fk]",
+				want:    engine.unnamedKey + " parent_id,PRIMARY",
+			},
+			{
+				name: "every key",
+				live: "CREATE TABLE parents (id int NOT NULL, PRIMARY KEY (id));\n" +
+					"CREATE TABLE kids (id int NOT NULL, parent_id int NOT NULL, PRIMARY KEY (id), " +
+					"CONSTRAINT kids_parent_fk FOREIGN KEY (parent_id) REFERENCES parents (id));",
+				exclude: "*[type=fk]",
+				want:    "kids_parent_fk kids_parent_fk,PRIMARY",
+			},
+		}
+		for _, row := range rows {
+			t.Run(engine.name+"/"+row.name, func(t *testing.T) {
+				c := qt.New(t)
+				native := newForeignKeySelectorFixture(c, engine, row.live)
+				compat := newForeignKeySelectorFixture(c, engine, row.live)
+
+				nativeApplied := native.apply(c, row.exclude)
+				nativeRead := native.read(c, mySQLKidsKeysAndIndexes)
+				compatApplied := compat.compatApply(c, row.exclude)
+				compatRead := compat.read(c, mySQLKidsKeysAndIndexes)
+				planned := native.dryRun(c, row.exclude)
+				diffed := compat.compatDiff(c, row.exclude)
+
+				c.Assert(nativeApplied.ExitCode, qt.Equals, 0, historyComment(nativeApplied))
+				c.Assert(nativeRead, qt.Equals, row.want)
+				c.Assert(compatApplied.ExitCode, qt.Equals, 0, historyComment(compatApplied))
+				c.Assert(compatRead, qt.Equals, row.want)
+				c.Assert(planned.ExitCode, qt.Equals, 0, historyComment(planned))
+				c.Assert(planned.Stdout, qt.Equals, "Schema is synced, no changes to be made.\n")
 				c.Assert(diffed.ExitCode, qt.Equals, 0, historyComment(diffed))
 				c.Assert(diffed.Stdout, qt.Equals, includeSynced)
 			})

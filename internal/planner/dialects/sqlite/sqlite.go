@@ -655,9 +655,24 @@ func (p *Planner) rebuildTable(
 	if err != nil {
 		return nil, err
 	}
+	semantics := diff.EffectiveIdentifierSemantics(DialectName)
+	carried := outOfScopeOf(diff, *table, semantics)
 
 	createNode := modelast.FromTable(*table, declared.Fields, declared.Enums, DialectName)
 	if err := addInlineConstraints(createNode, *table, declared.Constraints); err != nil {
+		return nil, err
+	}
+	newColumns := rebuiltColumns(declared, carried.columns, semantics)
+	dropped := droppedColumns(observed, newColumns, semantics)
+	carriedCopies, inlineKey, err := carryColumns(createNode, *table, carried, observed.Table.Columns, dropped, semantics)
+	if err != nil {
+		return nil, err
+	}
+	if err := carryConstraints(createNode, *table, carried.constraints, inlineKey, newColumns, dropped, semantics); err != nil {
+		return nil, err
+	}
+	named, err := dependentsOf(diff, *table, dropped, semantics)
+	if err != nil {
 		return nil, err
 	}
 	createNode.Name = qualifyLikeTable(*table, tempName)
@@ -666,6 +681,7 @@ func (p *Planner) rebuildTable(
 	if err != nil {
 		return nil, err
 	}
+	columns = append(columns, carriedCopies...)
 	if len(columns) == 0 {
 		return nil, unsupportedFeaturef(
 			"rebuilding table %s would retain none of its columns, so the rebuilt table has nothing to copy and "+
@@ -677,13 +693,32 @@ func (p *Planner) rebuildTable(
 	rebuild := sqliterebuild.CopyStatement{New: createNode.Name, Old: table.QualifiedName()}
 	nodes := []ast.Node{
 		ast.NewDescriptiveComment("SQLite table rebuild for changes ALTER TABLE cannot express on " + table.QualifiedName()),
-		createNode,
+	}
+	if named {
+		nodes = append(nodes,
+			ast.NewDescriptiveComment("Leave the views and triggers that name "+table.QualifiedName()+" as they are during the rename"),
+			ast.NewDescriptiveComment("The plan cannot read the connection's legacy_alter_table, so it sets it off after the rename; "+
+				"Ptah puts back the value it found when it runs the plan"),
+			ast.NewRawSQL(legacyAlterOn),
+		)
+	}
+	nodes = append(nodes, createNode)
+	if keepsSequence(slices.Concat(observed.Table.Columns, carried.columns), createNode) {
+		nodes = append(nodes,
+			ast.NewDescriptiveComment("Keep the AUTOINCREMENT high-water mark of "+table.QualifiedName()+" through the rebuild"),
+			ast.NewRawSQL(rebuild.KeepSequence()),
+		)
+	}
+	nodes = append(nodes,
 		ast.NewRawSQL(rebuild.CopyRows(quoteIdentifierList(copiedColumnNames(columns)), copiedColumnSelectList(columns))),
 		ast.NewDropTable(table.QualifiedName()),
 		ast.NewRawSQL(rebuild.Rename()),
+	)
+	if named {
+		nodes = append(nodes, ast.NewRawSQL(legacyAlterOff))
 	}
 	nodes = append(nodes, p.recreateTableIndexes(*table, declared.Indexes)...)
-	kept, err := recreateKeptIndexes(declared, observed, diff)
+	kept, err := recreateKeptIndexes(declared, slices.Concat(observed.Indexes, carried.indexes), newColumns, dropped, diff)
 	if err != nil {
 		return nil, err
 	}
@@ -693,7 +728,39 @@ func (p *Planner) rebuildTable(
 		return nil, err
 	}
 	nodes = append(nodes, triggers...)
+	carriedTriggers, err := carryTriggers(*table, carried.triggers, dropped, semantics)
+	if err != nil {
+		return nil, err
+	}
+	nodes = append(nodes, carriedTriggers...)
 	return nodes, nil
+}
+
+// rebuiltColumns is the identity of every column the rebuilt table holds: the
+// declared ones and the ones an exclude selector keeps out of scope.
+func rebuiltColumns(declared schemacapture.TableDeclaration, carried []catalog.Column, semantics identifier.Semantics) map[string]bool {
+	columns := make(map[string]bool, len(declared.Fields)+len(carried))
+	for _, field := range declared.Fields {
+		if field.StructName == declared.Table.StructName {
+			columns[semantics.ColumnIdentityKey(field.Name)] = true
+		}
+	}
+	for _, column := range carried {
+		columns[semantics.ColumnIdentityKey(column.Name)] = true
+	}
+	return columns
+}
+
+// droppedColumns names the columns of the old table the rebuilt one does not
+// hold.
+func droppedColumns(observed schemacapture.TableObservation, kept map[string]bool, semantics identifier.Semantics) map[string]bool {
+	dropped := make(map[string]bool)
+	for _, column := range observed.Table.Columns {
+		if !kept[semantics.ColumnIdentityKey(column.Name)] {
+			dropped[column.Name] = true
+		}
+	}
+	return dropped
 }
 
 // rebuildTableNameAttempts bounds the search below. A schema holding
@@ -760,6 +827,16 @@ func removedTableNameCollides(removed []string, target schemamodel.Table, name s
 
 func qualifyLikeTable(table schemamodel.Table, name string) string {
 	return schemamodel.QualifyTableName(table.Schema, name)
+}
+
+// keepsSequence reports whether the rebuild has an AUTOINCREMENT high-water
+// mark to keep: a live column of the table has AUTOINCREMENT, in scope or kept
+// out of it by a selector, so sqlite_sequence may hold its mark, and the
+// rebuilt table has one too, declared or carried, so the mark still means
+// something. See [sqliterebuild.CopyStatement.KeepSequence].
+func keepsSequence(observed []catalog.Column, rebuilt *ast.CreateTableNode) bool {
+	live := slices.ContainsFunc(observed, func(column catalog.Column) bool { return column.IsAutoIncrement })
+	return live && slices.ContainsFunc(rebuilt.Columns, func(column *ast.ColumnNode) bool { return column.AutoInc })
 }
 
 // copiedColumn is one column of the rebuilt table that carries data over from
@@ -889,12 +966,19 @@ func (p *Planner) recreateTableIndexes(table schemamodel.Table, indexes []schema
 // key. A constraint's automatic index has no text, and the rebuilt table's
 // declaration creates it.
 //
+// An index an exclude selector keeps out of scope is put back the same way:
+// the plan has said nothing about it, so it stays as it is.
+//
 // An index over a column the rebuilt table leaves out cannot be kept, so the
-// plan refuses it by name. An expression key is left to the server, since the
-// columns an expression reads are not recorded.
+// plan refuses it by name. columns is the identity of every column the rebuilt
+// table holds, and dropped names the live columns it leaves out. A key
+// expression and a WHERE clause are read from the stored statement, so an
+// index that reads a dropped column there is refused too, rather than left to
+// fail at CREATE INDEX after the old table is gone.
 func recreateKeptIndexes(
 	declared schemacapture.TableDeclaration,
-	observed schemacapture.TableObservation,
+	observed []catalog.Index,
+	columns, dropped map[string]bool,
 	diff *difftypes.SchemaDiff,
 ) ([]ast.Node, error) {
 	semantics := diff.EffectiveIdentifierSemantics(DialectName)
@@ -905,15 +989,9 @@ func recreateKeptIndexes(
 	for _, ref := range diff.IndexRemovals() {
 		leaving[semantics.IndexIdentityKey(ref.Name)] = true
 	}
-	columns := make(map[string]bool, len(declared.Fields))
-	for _, field := range declared.Fields {
-		if field.StructName == declared.Table.StructName {
-			columns[semantics.ColumnIdentityKey(field.Name)] = true
-		}
-	}
 
 	var nodes []ast.Node
-	for _, index := range observed.Indexes {
+	for _, index := range observed {
 		if index.Definition == "" || leaving[semantics.IndexIdentityKey(index.Name)] {
 			continue
 		}
@@ -921,6 +999,14 @@ func recreateKeptIndexes(
 			if !columns[semantics.ColumnIdentityKey(column)] {
 				return nil, unsupportedFeaturef(
 					"rebuilding table %s cannot keep index %s: the rebuilt table has no column %s. "+
+						"Keep the column, or remove the index in a separate migration first",
+					declared.Table.QualifiedName(), index.Name, column)
+			}
+		}
+		for _, column := range slices.Sorted(maps.Keys(dropped)) {
+			if indexReads(index.Definition, column, semantics) {
+				return nil, unsupportedFeaturef(
+					"rebuilding table %s cannot keep index %s: its statement reads column %s, which the rebuilt table drops. "+
 						"Keep the column, or remove the index in a separate migration first",
 					declared.Table.QualifiedName(), index.Name, column)
 			}

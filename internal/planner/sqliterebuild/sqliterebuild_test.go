@@ -269,6 +269,48 @@ func TestCopyStatement_ReadsBackWhatItWrites_HappyPath(t *testing.T) {
 	}
 }
 
+// TestCopyStatement_KeepsTheSequenceOfTheOldTable pins the statement that
+// gives the new table the old one's AUTOINCREMENT mark: the names are the
+// bare table names sqlite_sequence keys on, as SQL strings, and a table in a
+// schema reads that schema's sqlite_sequence. It is not a copy the rebuild
+// reader takes for its own.
+func TestCopyStatement_KeepsTheSequenceOfTheOldTable(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement sqliterebuild.CopyStatement
+		want      string
+	}{
+		{
+			name:      "a plain table",
+			statement: sqliterebuild.CopyStatement{New: "new_t", Old: "t"},
+			want:      `INSERT INTO sqlite_sequence (name, seq) SELECT 'new_t', seq FROM sqlite_sequence WHERE name = 't';`,
+		},
+		{
+			name:      "a table in a schema",
+			statement: sqliterebuild.CopyStatement{New: "aux.new_t", Old: "aux.t"},
+			want:      `INSERT INTO "aux".sqlite_sequence (name, seq) SELECT 'new_t', seq FROM "aux".sqlite_sequence WHERE name = 't';`,
+		},
+		{
+			name:      "a name holding a quote",
+			statement: sqliterebuild.CopyStatement{New: "new_it's", Old: "it's"},
+			want:      `INSERT INTO sqlite_sequence (name, seq) SELECT 'new_it''s', seq FROM sqlite_sequence WHERE name = 'it''s';`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			written := test.statement.KeepSequence()
+			_, isCopy := sqliterebuild.ReadCopyStatement(written)
+
+			c.Assert(written, qt.Equals, test.want)
+			c.Assert(isCopy, qt.IsFalse)
+			c.Assert(sqliterebuild.ReadSequenceStatement(written, test.statement), qt.IsTrue)
+			c.Assert(sqliterebuild.ReadSequenceStatement(written, sqliterebuild.CopyStatement{New: "new_x", Old: "x"}), qt.IsFalse)
+		})
+	}
+}
+
 // TestReadCopyStatement_ReadsPastTheSelectList_HappyPath is a copy whose select
 // list holds the keyword the reader looks for: a default a rebuild backfills, or
 // a column of that name.

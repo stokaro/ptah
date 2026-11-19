@@ -32,6 +32,10 @@ type Writer struct {
 	conn   *sql.Conn
 	schema string
 	dryRun bool
+	// renameMu guards rename, which a writer pinned to a session keeps for
+	// that session; see [Writer.ResetSessionSettings].
+	renameMu sync.Mutex
+	rename   renameSetting
 }
 
 type transactionWriter struct {
@@ -45,6 +49,10 @@ type transactionWriter struct {
 	// when it borrowed none. It is verified before the commit and given back
 	// after the transaction ends, whichever way it ends.
 	session *foreignKeySession
+	// rename is legacy_alter_table as the connection held it before a
+	// statement of this transaction changed it. It is given back before the
+	// transaction ends, whichever way it ends, and between migration files.
+	rename renameSetting
 }
 
 // NewSQLiteWriter creates a SQLite schema writer.
@@ -105,7 +113,29 @@ func (w *Writer) ExecContext(ctx context.Context, sqlExpr string, args ...any) (
 	if w.db == nil && w.conn == nil {
 		return nil, fmt.Errorf("no database connection")
 	}
+	if w.conn != nil {
+		w.renameMu.Lock()
+		err := w.rename.before(ctx, w.conn, sqlExpr)
+		w.renameMu.Unlock()
+		if err != nil {
+			return nil, err
+		}
+	}
 	return w.execContext(ctx, sqlExpr, args...)
+}
+
+// ResetSessionSettings gives the session this writer is pinned to the
+// legacy_alter_table value it held before a statement through the writer
+// changed it. A migration run that executes files outside a transaction calls
+// it after each file, so one file cannot change how the next one renames. A
+// writer on a pool holds no session, and the call does nothing there.
+func (w *Writer) ResetSessionSettings(ctx context.Context) error {
+	if w.dryRun || w.conn == nil {
+		return nil
+	}
+	w.renameMu.Lock()
+	defer w.renameMu.Unlock()
+	return w.rename.reset(ctx, w.conn)
 }
 
 // BeginTransaction starts a transaction and returns a transaction-scoped writer.
@@ -135,10 +165,40 @@ func (w *transactionWriter) ExecuteSQL(ctx context.Context, sqlExpr string, args
 	if w.tx == nil {
 		return fmt.Errorf("transaction is closed")
 	}
+	if err := w.rename.before(ctx, w.tx, sqlExpr); err != nil {
+		return err
+	}
 	if _, err := w.tx.ExecContext(ctx, sqlExpr, args...); err != nil {
 		return fmt.Errorf("sqlite: SQL execution failed: %w\nSQL: %s", err, sqlExpr)
 	}
 	return nil
+}
+
+// ResetSessionSettings gives the connection the legacy_alter_table value it
+// held before a statement of this transaction changed it. A migration run that
+// applies several files in one transaction calls it after each file, so one
+// file cannot change how the next one renames.
+func (w *transactionWriter) ResetSessionSettings(ctx context.Context) error {
+	if w.dryRun {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.tx == nil {
+		return fmt.Errorf("transaction is closed")
+	}
+	return w.rename.reset(ctx, w.tx)
+}
+
+// settingContext is the context the transaction gives a setting back on.
+// Commit and Rollback carry no context of their own, and the call that began
+// the transaction may be canceled by then.
+func (w *transactionWriter) settingContext() (context.Context, context.CancelFunc) {
+	base := context.Background()
+	if w.beginContext != nil {
+		base = context.WithoutCancel(w.beginContext)
+	}
+	return context.WithTimeout(base, sessionRestoreTimeout)
 }
 
 // Commit commits the transaction.
@@ -164,6 +224,20 @@ func (w *transactionWriter) Commit() error {
 		}
 		return err
 	}
+	ctx, cancel := w.settingContext()
+	defer cancel()
+	if err := w.rename.reset(ctx, w.tx); err != nil {
+		// Committed, the connection would go back to the pool renaming tables
+		// under the rules the transaction left, so the transaction does not
+		// commit.
+		rollbackErr := w.tx.Rollback()
+		w.tx = nil
+		w.session.restore()
+		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			return errors.Join(err, fmt.Errorf("sqlite: roll back transaction: %w", rollbackErr))
+		}
+		return err
+	}
 	err := w.tx.Commit()
 	w.tx = nil
 	w.session.restore()
@@ -181,11 +255,16 @@ func (w *transactionWriter) Rollback() error {
 	if w.tx == nil {
 		return nil
 	}
+	// The setting is the connection's, and a rollback does not undo it, so it
+	// is given back first, while the transaction still holds the connection.
+	ctx, cancel := w.settingContext()
+	defer cancel()
+	resetErr := w.rename.reset(ctx, w.tx)
 	err := w.tx.Rollback()
 	w.canceledRollback = w.beginContext != nil && w.beginContext.Err() != nil
 	w.tx = nil
 	w.session.restore()
-	return err
+	return errors.Join(err, resetErr)
 }
 
 // IsDryRun reports whether dry-run mode is active.

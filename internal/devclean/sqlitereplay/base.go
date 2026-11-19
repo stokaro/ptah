@@ -58,11 +58,22 @@ func createsSQLiteTemporaryTable(tokens []lexer.Token) bool {
 	return len(tokens) > 2 && replay.NormalizedIdentifier(tokens[2]) == "TABLE"
 }
 
+// isRestorableSQLitePragma reports a PRAGMA whose setting belongs to the
+// connection rather than to the database file, so nothing of it outlives the
+// dev connection: foreign_keys, which a table rebuild turns off, and
+// legacy_alter_table, which a rebuild turns on around its rename while a view
+// or a trigger names the table. A setting the file keeps, such as
+// user_version or journal_mode, is not one.
 func isRestorableSQLitePragma(tokens []lexer.Token) bool {
 	if len(tokens) < 2 {
 		return true
 	}
-	return replay.NormalizedIdentifier(tokens[1]) == "FOREIGN_KEYS"
+	switch replay.NormalizedIdentifier(tokens[1]) {
+	case "FOREIGN_KEYS", "LEGACY_ALTER_TABLE":
+		return true
+	default:
+		return false
+	}
 }
 
 func containsQualifiedIdentifier(tokens []lexer.Token, value string) bool {

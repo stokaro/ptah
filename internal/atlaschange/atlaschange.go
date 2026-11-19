@@ -330,12 +330,20 @@ func (w Words) rebuildSteps(plan []ast.Node) map[int]string {
 }
 
 // nameRebuildNeighbors names the statements a rebuild writes around the copy of
-// its rows at position at: the new table before it, the old table's drop and the
-// rename after it.
+// its rows at position at: the new table before it, and between the two the
+// statement that keeps the old table's AUTOINCREMENT mark where there is one,
+// then the old table's drop and the rename after it.
 func nameRebuildNeighbors(steps map[int]string, plan []ast.Node, at int, copied sqliterebuild.CopyStatement) {
-	if at > 0 {
-		if table, ok := plan[at-1].(*ast.CreateTableNode); ok && table.Name == copied.New {
-			steps[at-1] = fmt.Sprintf("create %q table", bare(copied.New))
+	created := at - 1
+	if created >= 0 {
+		if raw, ok := plan[created].(*ast.RawSQLNode); ok && sqliterebuild.ReadSequenceStatement(raw.SQL, copied) {
+			steps[created] = fmt.Sprintf("keep the AUTOINCREMENT high-water mark of %q", bare(copied.Old))
+			created--
+		}
+	}
+	if created >= 0 {
+		if table, ok := plan[created].(*ast.CreateTableNode); ok && table.Name == copied.New {
+			steps[created] = fmt.Sprintf("create %q table", bare(copied.New))
 		}
 	}
 	if at+1 < len(plan) {

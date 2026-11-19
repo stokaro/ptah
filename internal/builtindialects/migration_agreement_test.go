@@ -62,7 +62,7 @@ func TestDescriptors_MigrationAgreesWithTheRetiredSwitches(t *testing.T) {
 			c := qt.New(t)
 			expected, found := want[dialect.Name]
 			c.Assert(found, qt.IsTrue)
-			c.Assert(dialect.Migration, qt.CmpEquals(cmpopts.EquateEmpty(), cmpopts.IgnoreFields(descriptor.Migration{}, "RefusedInTransaction", "ConstraintsRewriteTable", "SameNamedForeignKeysApart")), expected)
+			c.Assert(dialect.Migration, qt.CmpEquals(cmpopts.EquateEmpty(), cmpopts.IgnoreFields(descriptor.Migration{}, "RefusedInTransaction", "SameNamedForeignKeysApart")), expected)
 		})
 	}
 }

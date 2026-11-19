@@ -1,8 +1,6 @@
 package atlasfilter
 
 import (
-	"errors"
-
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexbacking"
@@ -83,20 +81,4 @@ func (k LiveKeys) primary(s *exclusionState, table schemamodel.Table) (string, b
 		}
 	}
 	return "", false
-}
-
-// RefuseRewritten refuses a selector that named a constraint on a target
-// that changes a constraint only by writing a new table, and named nothing in
-// any of reports, one for each state the command filtered. A selector that
-// named an object in one state keeps its meaning there and leaves the
-// constraints in scope; see [ExcludeReport.Rewritten].
-func RefuseRewritten(reports ...ExcludeReport) error {
-	for _, selector := range UnmatchedAcrossStates(reports...) {
-		for _, report := range reports {
-			if refusal, ok := report.Rewritten[selector]; ok {
-				return errors.New(refusal)
-			}
-		}
-	}
-	return nil
 }

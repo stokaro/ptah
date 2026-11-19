@@ -199,7 +199,7 @@ var includeChildRows = []includeChildRow{
 	},
 	{
 		name:       "foreign key",
-		types:      []string{"foreign_key", "foreign-key", "constraint"},
+		types:      []string{"foreign_key", "foreign-key", "fk", "constraint"},
 		desiredSQL: "ALTER TABLE public.notes ADD CONSTRAINT notes_parent_fk FOREIGN KEY (parent_id) REFERENCES public.notes (id);\n",
 		desiredGo:  notesEntity{parentAttributes: ` foreign="notes(id)" foreign_key_name="notes_parent_fk"`},
 	},

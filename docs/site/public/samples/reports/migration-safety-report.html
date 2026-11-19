@@ -139,8 +139,8 @@ td.stmt pre { color: var(--text-dim); }
 <h1>Migration safety report</h1>
 <div class="lede">Planned statements, classified by what they remove or tighten</div>
 <div class="stats">
-<div class="stat"><div class="stat-n">7</div><div class="stat-l">statements</div></div>
-<div class="stat"><div class="stat-n">4</div><div class="stat-l">safe</div></div>
+<div class="stat"><div class="stat-n">8</div><div class="stat-l">statements</div></div>
+<div class="stat"><div class="stat-n">5</div><div class="stat-l">safe</div></div>
 <div class="stat"><div class="stat-n">1</div><div class="stat-l">warning</div></div>
 <div class="stat"><div class="stat-n">2</div><div class="stat-l">destructive</div></div>
 </div>
@@ -173,13 +173,21 @@ td.stmt pre { color: var(--text-dim); }
 <tr>
 <td class="num">3</td>
 <td><span class="tag safe">safe</span></td>
+<td class="name">sqlite_sequence</td>
+<td class="comment">does not remove data or tighten constraints</td>
+<td class="stmt"><pre>INSERT INTO sqlite_sequence (name, seq) SELECT &#39;new_products&#39;, seq FROM sqlite_sequence WHERE name = &#39;products&#39;</pre></td>
+</tr>
+
+<tr>
+<td class="num">4</td>
+<td><span class="tag safe">safe</span></td>
 <td class="name">new_products</td>
 <td class="comment">does not remove data or tighten constraints</td>
 <td class="stmt"><pre>INSERT INTO &#34;new_products&#34; (&#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34;) SELECT &#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34; FROM &#34;products&#34;</pre></td>
 </tr>
 
 <tr>
-<td class="num">4</td>
+<td class="num">5</td>
 <td><span class="tag destructive">destructive</span></td>
 <td class="name">products</td>
 <td class="comment">DROP TABLE removes the table and all rows</td>
@@ -187,7 +195,7 @@ td.stmt pre { color: var(--text-dim); }
 </tr>
 
 <tr>
-<td class="num">5</td>
+<td class="num">6</td>
 <td><span class="tag warning">warning</span></td>
 <td class="name">new_products</td>
 <td class="comment">rename can break deployed readers and writers</td>
@@ -195,7 +203,7 @@ td.stmt pre { color: var(--text-dim); }
 </tr>
 
 <tr>
-<td class="num">6</td>
+<td class="num">7</td>
 <td><span class="tag destructive">destructive</span></td>
 <td class="name">legacy_inventory</td>
 <td class="comment">DROP TABLE removes the table and all rows</td>
@@ -203,7 +211,7 @@ td.stmt pre { color: var(--text-dim); }
 </tr>
 
 <tr>
-<td class="num">7</td>
+<td class="num">8</td>
 <td><span class="tag safe">safe</span></td>
 <td class="name">foreign_keys</td>
 <td class="comment">does not remove data or tighten constraints</td>
