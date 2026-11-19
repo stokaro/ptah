@@ -986,3 +986,11 @@ v0.29.5 ptah.run/core/ast
 # sections that hold lists already are; nothing in Ptah compares it by value.
 # Pre-v1, so no compatibility is owed.
 v0.32.0 ptah.run/core/platform/descriptor
+
+# A dialect's column grammar states the forms a default written without
+# parentheses reads in one field, ColumnGrammar.DefaultPredicates, with the
+# refusal for the forms it leaves out. DefaultPredicateRefusal and
+# DefaultDistinctFrom stated two of those forms apart, and the field replaces
+# them, so a descriptor states each form in one place. Pre-v1, so no
+# compatibility is owed.
+v0.33.0 ptah.run/core/platform/descriptor
