@@ -404,6 +404,7 @@ SELECT c.constraint_name,
        c.deferrable,
        c.deferred,
        c.status,
+       c.validated,
        col.column_name,
        col.position
 FROM all_constraints c
@@ -461,11 +462,12 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 			deferrable string
 			deferred   string
 			status     string
+			validated  string
 			columnName sql.NullString
 			position   sql.NullInt64
 		)
 		if err := rows.Scan(&name, &kind, &desired, &table, &condition, &refName,
-			&deleteRule, &deferrable, &deferred, &status, &columnName, &position); err != nil {
+			&deleteRule, &deferrable, &deferred, &status, &validated, &columnName, &position); err != nil {
 			return nil, nil, err
 		}
 		if carriedOnColumns(desired, kind, deferrable) {
@@ -485,6 +487,7 @@ func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map
 				deferrable: deferrable,
 				deferred:   deferred,
 				status:     status,
+				validated:  validated,
 			}, referenced))
 			at = len(constraints) - 1
 			index[name] = at
@@ -511,6 +514,7 @@ type constraintRow struct {
 	deferrable string
 	deferred   string
 	status     string
+	validated  string
 }
 
 // newConstraint builds the constraint a row describes.
@@ -528,6 +532,12 @@ func (r *Reader) newConstraint(row constraintRow, referenced map[string]referenc
 		Deferrable:    row.deferrable == "DEFERRABLE",
 		Disabled:      row.status == "DISABLED",
 		GeneratedName: row.generated == "GENERATED NAME",
+	}
+	// A CHECK or foreign key enabled NOVALIDATE enforces itself on new rows
+	// and has not checked the rows the table held, as PostgreSQL's NOT VALID
+	// has not. A disabled one is NOT VALIDATED too.
+	if row.kind == "C" || row.kind == "R" {
+		constraint.NotValid = row.validated == "NOT VALIDATED"
 	}
 	// Oracle reports DEFERRED as IMMEDIATE for a constraint that is NOT
 	// DEFERRABLE, and the model leaves Initially empty there. Copied across,

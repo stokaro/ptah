@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/migration/schemadiff"
@@ -104,8 +105,8 @@ func TestCompare_GeneratedNameCheck_NotPaired(t *testing.T) {
 			removed:  []string{"SYS_C008933"},
 		},
 		{
-			name:     "a disabled CHECK",
-			declared: thingsWithCheck("", "id > 0"),
+			name:     "a disabled CHECK of another condition",
+			declared: thingsWithCheck("", "id > 1"),
 			held:     catalog.Constraint{Name: "SYS_C008933", GeneratedName: true, Disabled: true, CheckClause: new("id > 0")},
 			added:    []string{""},
 			removed:  []string{"SYS_C008933"},
@@ -125,20 +126,55 @@ func TestCompare_GeneratedNameCheck_NotPaired(t *testing.T) {
 	}
 }
 
+// TestCompare_GeneratedNameCheck_Disabled compares an unnamed declared CHECK
+// with the CHECK Oracle named SYS_C008933 for it and keeps disabled, or
+// enabled without validating the rows the table held. The two are one CHECK
+// in another state, so the plan enables it and adds and drops nothing. Left
+// unpaired, the declared CHECK is added again, which the rows the disabled
+// CHECK let in refuse with ORA-02293.
+func TestCompare_GeneratedNameCheck_Disabled(t *testing.T) {
+	tests := []struct {
+		name string
+		held catalog.Constraint
+	}{
+		{name: "disabled", held: catalog.Constraint{Disabled: true, NotValid: true}},
+		{name: "enabled without validating", held: catalog.Constraint{NotValid: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			held := test.held
+			held.Name, held.GeneratedName, held.CheckClause = "SYS_C008933", true, new("id > 0")
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(t.Context(), thingsWithCheck("", "id > 0"), thingsHolding(held),
+				oracleRead(), nil, must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsValidated, qt.DeepEquals, []difftypes.ConstraintValidation{{TableName: "APP.THINGS", Name: "SYS_C008933"}})
+		})
+	}
+}
+
 // TestCompare_CheckDeferralAndEnablement compares a declared CHECK named
 // id_pos with the CHECK of that name an Oracle account holds. A CHECK the
-// server checks at commit, or keeps disabled, is another constraint from the
-// one declared, so the plan replaces it; deferral declared as the server holds
-// it plans nothing. Compared by condition alone, every row plans nothing.
+// server checks at commit is another constraint from the one declared, since
+// Oracle fixes a CHECK's deferrability when it creates it, so the plan
+// replaces it; deferral declared as the server holds it plans nothing. A
+// CHECK the server keeps disabled, or enabled without validating its rows, is
+// the declared CHECK in another state, and the plan enables it. Compared by
+// condition alone, every row plans nothing.
 func TestCompare_CheckDeferralAndEnablement(t *testing.T) {
 	tests := []struct {
 		name     string
 		declared schemamodel.Constraint
 		held     catalog.Constraint
-		// added and removed name the CHECKs the plan adds and drops,
-		// joined by commas.
-		added   string
-		removed string
+		// added, removed and validated name the CHECKs the plan adds,
+		// drops and enables, joined by commas.
+		added     string
+		removed   string
+		validated string
 	}{
 		{
 			name:     "a deferred CHECK for a plain one",
@@ -169,9 +205,21 @@ func TestCompare_CheckDeferralAndEnablement(t *testing.T) {
 			removed:  "ID_POS",
 		},
 		{
-			name:     "a disabled CHECK",
+			name:      "a disabled CHECK",
+			declared:  schemamodel.Constraint{},
+			held:      catalog.Constraint{Disabled: true, NotValid: true},
+			validated: "ID_POS",
+		},
+		{
+			name:      "a CHECK enabled without validating",
+			declared:  schemamodel.Constraint{},
+			held:      catalog.Constraint{NotValid: true},
+			validated: "ID_POS",
+		},
+		{
+			name:     "a disabled deferred CHECK for a plain one",
 			declared: schemamodel.Constraint{},
-			held:     catalog.Constraint{Disabled: true},
+			held:     catalog.Constraint{Disabled: true, NotValid: true, Deferrable: true, Initially: "deferred"},
 			added:    "id_pos",
 			removed:  "ID_POS",
 		},
@@ -200,6 +248,11 @@ func TestCompare_CheckDeferralAndEnablement(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			c.Assert(strings.Join(diff.ConstraintsAdded.Names(), ","), qt.Equals, test.added)
 			c.Assert(strings.Join(diff.ConstraintsRemoved.Names(), ","), qt.Equals, test.removed)
+			validated := make([]string, 0, len(diff.ConstraintsValidated))
+			for _, validation := range diff.ConstraintsValidated {
+				validated = append(validated, validation.Name)
+			}
+			c.Assert(strings.Join(validated, ","), qt.Equals, test.validated)
 		})
 	}
 }

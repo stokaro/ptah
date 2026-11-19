@@ -20,10 +20,11 @@ import (
 // So a database CHECK the reader marks [catalog.Constraint.GeneratedName]
 // takes the key of an unnamed declared CHECK of the same table whose condition
 // normalizes to the same text and whose enforcement and deferral are the
-// same, where neither has a counterpart of its own, and which the server has
-// not disabled. A declared condition that differs keeps its own
-// key, so the CHECK is replaced, as any changed CHECK is. A CHECK the author
-// named is never paired this way: its name is part of what was declared.
+// same, where neither has a counterpart of its own. One the server keeps
+// disabled pairs too, and the comparison plans it enabled. A declared
+// condition that differs keeps its own key, so the new CHECK is added and the
+// old one dropped after it. A CHECK the author named is never paired this
+// way: its name is part of what was declared.
 func pairGeneratedNameChecks(
 	genConstraints map[tableMemberKey]schemamodel.Constraint,
 	dbConstraints map[tableMemberKey]catalog.Constraint,
@@ -40,7 +41,7 @@ func pairGeneratedNameChecks(
 			held := dbConstraints[have]
 			if have.table != want.table ||
 				wanted.NotEnforced != held.NotEnforced ||
-				held.Disabled || deferralChanged(wanted, held) ||
+				deferralChanged(wanted, held) ||
 				normalizeCheckExpression(wanted.CheckExpression) != normalizeCheckExpression(getStringValue(held.CheckClause)) {
 				continue
 			}

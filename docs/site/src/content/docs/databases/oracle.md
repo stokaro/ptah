@@ -326,10 +326,20 @@ that is not deferrable reads back with no deferral clause, so `schema inspect`
 writes it as the server stores it and the file compares clean with the account
 it came from.
 
-A `CHECK` written on a column takes no deferral clause; write a deferrable one
-on the table. A `CHECK` whose deferral differs from the declaration is a drop
-and an add, and so is one the account holds `DISABLE`d: no declaration
-disables a `CHECK`, so the plan replaces it with the enabled one declared.
+A `CHECK` written on a column takes a deferral clause as a table's does, and
+one that defers is compared as a table's `CHECK`. Oracle fixes a `CHECK`'s
+deferrability when it creates it, so one whose deferral differs from the
+declaration is replaced. The plan adds the new `CHECK` before it drops the old
+one: a named one under a temporary name, renamed to the declared name after the
+drop. Oracle commits each statement, so a row that refuses the new `CHECK`
+stops the plan with the old one still in place.
+
+No declaration disables a `CHECK` or a foreign key, or leaves its rows
+unchecked, so the parser refuses `DISABLE` and `NOVALIDATE`. One the account
+holds `DISABLE`d, or `ENABLE NOVALIDATE`d, whose definition is the one declared
+is enabled in place with `ALTER TABLE ... ENABLE VALIDATE CONSTRAINT`. A row
+the constraint refuses fails the statement, with `ORA-02293` for a `CHECK` and
+`ORA-02298` for a foreign key, and the constraint stays as it was.
 
 ## Functions and procedures
 

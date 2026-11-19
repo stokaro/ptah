@@ -304,6 +304,7 @@ type columnClauses struct {
 	foreignKey  *ast.ForeignKeyRef
 	unique      bool
 	primary     bool
+	check       string
 	constraints int
 }
 
@@ -314,6 +315,7 @@ func snapshotColumnClauses(table *ast.CreateTableNode, column *ast.ColumnNode) c
 		foreignKey:  column.ForeignKey,
 		unique:      column.Unique,
 		primary:     column.Primary,
+		check:       column.Check,
 		constraints: tableConstraintCount(table),
 	}
 }
@@ -338,6 +340,8 @@ func (b columnClauses) clauseRead(table *ast.CreateTableNode, column *ast.Column
 		return columnClause{key: uniqueElement}
 	case tableConstraintCount(table) > b.constraints:
 		return columnClause{key: tableElementKind(table.Constraints[len(table.Constraints)-1]), onTable: true}
+	case column.Check != b.check:
+		return columnClause{key: checkElement}
 	default:
 		return columnClause{}
 	}
@@ -352,16 +356,22 @@ func (p *Parser) parseColumnDeferral(table *ast.CreateTableNode, column *ast.Col
 	if err != nil {
 		return err
 	}
-	// A column's CHECK takes no deferral clause at all: PostgreSQL 18.6 answers
+	// A column's CHECK takes no deferral clause on PostgreSQL: 18.6 answers
 	// `misplaced NOT DEFERRABLE clause` even where a table's CHECK takes one,
 	// so the one a column moved onto the table is refused as misplaced too.
+	// An engine whose table CHECK keeps a deferral clause keeps one after a
+	// column's CHECK as well: Oracle Free 23.26 creates `a NUMBER CHECK
+	// (a > 0) DEFERRABLE INITIALLY DEFERRED` deferred.
+	checks := clauses.grammar.Checks
 	switch {
 	case last.foreignKey:
 		clauses.applyToForeignKey(column.ForeignKey)
 		return nil
-	case last.onTable && last.key != checkElement:
+	case last.onTable && (last.key != checkElement || checks):
 		return clauses.applyToTableElement(table.Constraints[len(table.Constraints)-1], last.key)
-	case !last.onTable && last.key != "":
+	case !last.onTable && last.key == checkElement && checks:
+		return clauses.liftColumnCheck(table, column)
+	case !last.onTable && last.key != "" && last.key != checkElement:
 		return clauses.liftColumnKey(table, column, last.key)
 	default:
 		return ptaherr.At(clauses.start, fmt.Errorf(
@@ -425,6 +435,32 @@ func (p *Parser) handleColumnUnique(table *ast.CreateTableNode, column *ast.Colu
 		Columns:       []string{column.Name},
 		NullsDistinct: nullsDistinct,
 	})
+	return nil
+}
+
+// liftColumnCheck gives the clauses to a column's own CHECK, on an engine
+// whose CHECK keeps them. A CHECK that defers becomes the table's CHECK, which
+// is where the model keeps the clause, under the name the column gave it. A
+// clause that says what the CHECK is without it changes nothing, and the CHECK
+// stays on the column.
+func (d deferral) liftColumnCheck(table *ast.CreateTableNode, column *ast.ColumnNode) error {
+	constraint := &ast.ConstraintNode{
+		Type:        ast.CheckConstraint,
+		Name:        column.CheckName,
+		Expression:  column.Check,
+		NotEnforced: column.CheckNotEnforced,
+	}
+	if err := d.applyToKey(constraint, checkElement); err != nil || !d.defersChecks() {
+		return err
+	}
+	if table == nil {
+		return ptaherr.At(d.start, fmt.Errorf(
+			"DEFERRABLE CHECK: a column's deferrable CHECK is read as the table's CHECK, "+
+				"and this column has no table to attach it to; add it with ALTER TABLE ... ADD CHECK",
+		))
+	}
+	column.Check, column.CheckName, column.CheckNotEnforced = "", "", false
+	table.AddConstraint(constraint)
 	return nil
 }
 

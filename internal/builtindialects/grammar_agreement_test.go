@@ -228,10 +228,14 @@ var oldParserSwitches = map[string]descriptor.Grammar{
 			},
 			SequencePseudocolumns: []string{"NEXTVAL", "CURRVAL"},
 		},
-		Constraints: descriptor.ConstraintGrammar{Deferral: descriptor.Deferral{Checks: true}},
-		Keys:        descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
-		AlterTable:  descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
-		Statements:  descriptor.StatementGrammar{UserTypes: true},
+		Constraints: descriptor.ConstraintGrammar{
+			Deferral:        descriptor.Deferral{Checks: true},
+			EnableValidate:  true,
+			CheckAddedFirst: true,
+		},
+		Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
+		AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},
+		Statements: descriptor.StatementGrammar{UserTypes: true},
 	},
 }
 

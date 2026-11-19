@@ -920,8 +920,9 @@ type Constraint struct {
 	Deferrable bool `json:"deferrable,omitempty"`
 	// Disabled reports a constraint the server keeps and checks no row
 	// against, as Oracle's DISABLE does, read from ALL_CONSTRAINTS.STATUS.
-	// No declaration states a disabled constraint, so a disabled CHECK
-	// compares as different from every declared one, and a plan replaces it.
+	// No declaration states a disabled constraint, so a disabled CHECK or
+	// foreign key whose definition matches the declared one is planned
+	// enabled in place, where the target takes ENABLE VALIDATE CONSTRAINT.
 	Disabled bool `json:"disabled,omitempty"`
 	// GeneratedName reports that the server chose the constraint's name
 	// because its declaration gave none, as Oracle names an unnamed CHECK
@@ -944,7 +945,8 @@ type Constraint struct {
 	NotEnforced bool `json:"not_enforced,omitempty"`
 	// NotValid reports a CHECK or foreign key the server has not validated
 	// against the rows the table held when it was added, as
-	// pg_get_constraintdef marks it with NOT VALID. A constraint declared NOT
+	// pg_get_constraintdef marks it with NOT VALID and Oracle's
+	// ALL_CONSTRAINTS.VALIDATED with NOT VALIDATED. A constraint declared NOT
 	// ENFORCED is not reported here, though PostgreSQL 18.6 records it with
 	// convalidated false, because VALIDATE CONSTRAINT refuses it.
 	NotValid    bool    `json:"not_valid,omitempty"`

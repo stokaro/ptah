@@ -205,6 +205,21 @@ type ConstraintGrammar struct {
 	// a table's PRIMARY KEY, UNIQUE, FOREIGN KEY or CHECK, which the
 	// constraint then reads as unnamed, as the MySQL family takes it.
 	SymbolOptional bool `json:"symbol_optional,omitempty"`
+	// EnableValidate reports that ALTER TABLE ... ENABLE [VALIDATE]
+	// CONSTRAINT name checks every row against a CHECK or foreign key the
+	// server holds disabled, or enabled without validating its rows, and
+	// enforces it from then on, as Oracle's does. A row that fails the check
+	// refuses the statement and leaves the constraint as it was. A plan
+	// brings such a constraint to the declared state with the statement,
+	// where without it the constraint is dropped and added again.
+	EnableValidate bool `json:"enable_validate,omitempty"`
+	// CheckAddedFirst reports that a plan replacing a named CHECK whose
+	// definition changed adds the new CHECK under a temporary name, drops the
+	// old one, and renames the new one to the declared name, for an engine
+	// that commits each schema statement apart. Dropped first, a refused ADD
+	// leaves the table with neither CHECK. Without it the old CHECK is
+	// dropped before the new one is added.
+	CheckAddedFirst bool `json:"check_added_first,omitempty"`
 }
 
 // Enforcement is where ENFORCED and NOT ENFORCED may follow a constraint.
