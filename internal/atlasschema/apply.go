@@ -47,7 +47,6 @@ import (
 	"ptah.run/internal/schemascope"
 	"ptah.run/internal/schemaselection"
 	"ptah.run/internal/schemavalidate"
-	"ptah.run/internal/sessiontext"
 	"ptah.run/internal/sqliteforeignkeys"
 	"ptah.run/internal/sqlitevirtual"
 	"ptah.run/internal/sqlscript"
@@ -213,6 +212,9 @@ type ApplyPlan struct {
 	// the objects it changes; see [planeffect.Describe]. It is nil when no unit
 	// is described.
 	effects [][]planeffect.Effect
+	// escaped names each string literal the plan renders from the model that
+	// holds a backslash; see [escapedLiterals].
+	escaped []string
 }
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
@@ -1512,11 +1514,7 @@ func FormatMigrationSQL(statements []string) string {
 	return out.String()
 }
 
-// executeApplyStatements sends statements to executor, a session of the server
-// info describes. Each is checked as Ptah wrote it and sent as the session
-// reads it ([sessiontext.For]); a failure names it as Ptah wrote it, which is
-// how the plan shows it.
-func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor, info catalog.ServerInfo, statements []string) error {
+func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor, statements []string) error {
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
@@ -1525,7 +1523,7 @@ func executeApplyStatements(ctx context.Context, executor catalog.SchemaExecutor
 		err := checkStatement(ctx, executor, stmt)
 		if err == nil {
 			dispatchwitness.Sending(ctx)
-			err = executor.ExecuteSQL(ctx, sessiontext.For(info.Dialect, info.Capabilities, stmt))
+			err = executor.ExecuteSQL(ctx, stmt)
 		}
 		if err != nil {
 			return statementFailure(stmt, i, len(statements), err)
@@ -1611,7 +1609,9 @@ func spellGeneratedColumnsOnDev(
 		return fmt.Errorf("connect to --dev-url: %w", err)
 	}
 	defer dbschema.CloseAndWarn(dev)
-	answers, err := schemadiff.ResolveGeneratedExpressions(ctx, dev, desired, current)
+	// A column the dev database refused is left out of the options, so the
+	// comparison asks the target about it and warns if the target refuses too.
+	answers, _, err := schemadiff.ResolveGeneratedExpressions(ctx, dev, desired, current)
 	if err != nil {
 		return err
 	}

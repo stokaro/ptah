@@ -52,7 +52,7 @@ func TestSharedSession_ASecondConnectionSpendsTheFirstConnectionsPreviewToken(t 
 	c.Assert(applied["rolled_back"], qt.IsFalse,
 		qt.Commentf("the second connection could not spend the first connection's token"))
 	after := callTool(c, second, "read_artifact", map[string]any{"artifact": "migrations"})
-	c.Assert(artifactPaths(c, after), qt.Contains, "17000001_a.up.sql")
+	c.Assert(artifactPaths(c, after), qt.Contains, "1700000701_a.up.sql")
 }
 
 // TestSharedSession_ASecondServerOverOneSessionSpendsTheSameToken varies the

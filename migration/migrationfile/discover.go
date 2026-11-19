@@ -12,8 +12,14 @@ import (
 // directory format, ordered ascending by Version and deterministically ordered
 // within a version, so two runs over the same filesystem return the same
 // order. An empty format behaves as [DirFormatAuto]. In auto mode Ptah files
-// win when present, so a directory holding a Ptah history beside a stray
-// single-file .sql still selects the Ptah files.
+// win when present.
+//
+// A directory is read whole. A SQL file at its top level that the selection
+// leaves out, such as notes.sql beside a Ptah history or v2_b.sql beside
+// 1_a.sql in auto mode, refuses the directory with an [UnreadFilesError]
+// naming it, rather than a selection a run would apply without it. A file
+// below the top level is a file of another directory, such as a template a
+// migration includes, and is left alone when the format does not read it.
 //
 // A directory with no .sql files at all returns an empty result and no error.
 // A directory whose candidate .sql files match no name grammar the format
@@ -48,6 +54,66 @@ const (
 	// version.
 	rReadAsRepeatable
 )
+
+// UnreadFilesError is the refusal [Discover] returns for a directory whose
+// reading leaves out a SQL file at its top level, rather than a selection
+// without it. A migration directory is read whole: a file left out is a
+// migration its author wrote and a run would never apply, while the command
+// reported the directory applied.
+type UnreadFilesError struct {
+	// Files are the files the reading leaves out, as paths relative to the
+	// directory, in the order the walk met them.
+	Files []string
+	// Remedy says what to do with one of the files for the directory to be
+	// read, worded for one file, such as reading the directory in another
+	// format or moving the file out of it. The error's message carries it
+	// worded for every file it names.
+	Remedy  string
+	message string
+}
+
+// Error names the files the reading leaves out and how to make the directory
+// readable.
+func (e *UnreadFilesError) Error() string {
+	return e.message
+}
+
+// unreadRefusal is one reading's refusal of the files it leaves out: why the
+// directory is refused, and what to do about it, each worded for the files a
+// refusal names.
+type unreadRefusal struct {
+	reason func(w filesWording, list string) string
+	remedy func(w filesWording) string
+}
+
+// refuse returns the refusal of files, which list names in the message.
+func (r unreadRefusal) refuse(files []string, list string) *UnreadFilesError {
+	w := wordingFor(len(files))
+	return &UnreadFilesError{Files: files, Remedy: r.remedy(wordingFor(1)), message: r.reason(w, list) + "; " + r.remedy(w)}
+}
+
+// filesWording is how a refusal refers to the files it names, so that one file
+// reads as one.
+type filesWording struct {
+	// files is "file" or "files".
+	files string
+	// these is "this file" or "these files".
+	these string
+	// them is "it" or "them".
+	them string
+	// each is "it" or "each".
+	each string
+	// theFiles is "the file" or "the files".
+	theFiles string
+}
+
+// wordingFor returns the wording for n files.
+func wordingFor(n int) filesWording {
+	if n == 1 {
+		return filesWording{files: "file", these: "this file", them: "it", each: "it", theFiles: "the file"}
+	}
+	return filesWording{files: "files", these: "these files", them: "them", each: "each", theFiles: "the files"}
+}
 
 // discovered is what one walk of a migration directory found: the versioned
 // files of the format it resolved to, and the repeatable migrations, which a
@@ -140,6 +206,8 @@ func discover(fsys fs.FS, format DirFormat, reading rReading) (discovered, error
 		if err := refuseOmittedAtlasFiles(sqlFiles, files, repeatables); err != nil {
 			return discovered{}, err
 		}
+	} else if err := refuseUnreadFiles(sqlFiles, files, repeatables); err != nil {
+		return discovered{}, err
 	}
 	sortDiscovered(files)
 	assignOrderKeys(files)
@@ -219,7 +287,7 @@ func refuseUnreadAtlasFiles(sqlFiles []string, atlasFiles []File) error {
 	for _, file := range atlasFiles {
 		read[file.Path] = struct{}{}
 	}
-	var unread []string
+	var unread, described []string
 	for _, p := range sqlFiles {
 		if _, ok := read[p]; ok || path.Base(p) != p {
 			continue
@@ -228,17 +296,25 @@ func refuseUnreadAtlasFiles(sqlFiles []string, atlasFiles []File) error {
 		if _, err := ParseAtlasFileName(p); err != nil && strings.HasPrefix(version, ".") {
 			return err
 		}
-		unread = append(unread, fmt.Sprintf("%s (version %q)", p, version))
+		unread = append(unread, p)
+		described = append(described, fmt.Sprintf("%s (version %q)", p, version))
 	}
 	if len(unread) == 0 {
 		return nil
 	}
-	return fmt.Errorf(
-		"Atlas migration files Ptah cannot run: %s. Atlas runs every SQL file at the top level of the "+
+	return unreadAtlasRefusal.refuse(unread, strings.Join(described, ", "))
+}
+
+// unreadAtlasRefusal refuses Atlas file names Ptah cannot run.
+var unreadAtlasRefusal = unreadRefusal{
+	reason: func(w filesWording, list string) string {
+		return fmt.Sprintf("Atlas migration %s Ptah cannot run: %s. Atlas runs every SQL file at the top level of the "+
 			"directory, under the text before the first underscore of its name, so Ptah refuses the "+
-			"directory rather than leave these files unapplied",
-		strings.Join(unread, ", "),
-	)
+			"directory rather than leave %s unapplied", w.files, list, w.these)
+	},
+	remedy: func(w filesWording) string {
+		return fmt.Sprintf("give %s a version before the first underscore of its name, or move %s out of the directory", w.each, w.them)
+	},
 }
 
 // refuseOmittedAtlasFiles refuses a directory Atlas governs whose selection
@@ -247,6 +323,76 @@ func refuseUnreadAtlasFiles(sqlFiles []string, atlasFiles []File) error {
 // v1_x.sql as no migration, while Atlas runs all three, so without this
 // refusal the pair applies and the directory reports itself applied.
 func refuseOmittedAtlasFiles(sqlFiles []string, files []File, repeatables []RepeatableFile) error {
+	omitted := omittedTopLevelFiles(sqlFiles, files, repeatables)
+	if len(omitted) == 0 {
+		return nil
+	}
+	return omittedAtlasRefusal.refuse(omitted, strings.Join(omitted, ", "))
+}
+
+// omittedAtlasRefusal refuses the files a directory atlas.sum governs holds and
+// the selected format does not read.
+var omittedAtlasRefusal = unreadRefusal{
+	reason: func(w filesWording, list string) string {
+		return fmt.Sprintf("migration %s the selected format does not read: %s. atlas.sum covers %s and Atlas runs every "+
+			"SQL file at the top level of the directory, so Ptah refuses the directory rather than leave %s unapplied",
+			w.files, list, w.them, w.these)
+	},
+	remedy: func(w filesWording) string {
+		return fmt.Sprintf("read the directory with --dir-format atlas, or remove %s from the directory", w.theFiles)
+	},
+}
+
+// refuseUnreadFiles refuses a directory read in the Ptah format, or in auto
+// mode with no atlas.sum, whose selection leaves out a SQL file at its top
+// level, such as notes.sql beside a Ptah pair or v2_b.sql beside 1_a.sql. A
+// migration directory is read whole: a file left out is a migration its
+// author wrote and the run never applies, while the command reports the
+// directory applied. The refusal names the grammar that selected the files. A
+// nested file is a file of another directory, such as a template a migration
+// includes, and is left alone.
+func refuseUnreadFiles(sqlFiles []string, files []File, repeatables []RepeatableFile) error {
+	omitted := omittedTopLevelFiles(sqlFiles, files, repeatables)
+	if len(omitted) == 0 {
+		return nil
+	}
+	if !isAtlasSelection(files) {
+		return unreadPtahRefusal.refuse(omitted, strings.Join(omitted, ", "))
+	}
+	return unreadDetectionRefusal.refuse(omitted, strings.Join(omitted, ", "))
+}
+
+// unreadPtahRefusal refuses the files a directory read in the Ptah format
+// leaves out. Its names are case-sensitive, so 0000000002_b.UP.sql is one of
+// them.
+var unreadPtahRefusal = unreadRefusal{
+	reason: func(w filesWording, list string) string {
+		return fmt.Sprintf("migration %s the Ptah format does not read: %s. Ptah reads a migration directory whole, "+
+			"so it refuses the directory rather than leave %s unapplied", w.files, list, w.these)
+	},
+	remedy: func(w filesWording) string {
+		return fmt.Sprintf("name %s NNNNNNNNNN_<name>.up.sql, NNNNNNNNNN_<name>.down.sql or R__<name>.sql, "+
+			"with .up, .down and .sql in lower case, or move %s out of the directory", w.each, w.them)
+	},
+}
+
+// unreadDetectionRefusal refuses the files format detection leaves out of a
+// directory it reads as Atlas migrations.
+var unreadDetectionRefusal = unreadRefusal{
+	reason: func(w filesWording, list string) string {
+		return fmt.Sprintf("migration %s format detection does not read: %s. The directory reads as Atlas migrations, "+
+			"and Atlas runs every SQL file at the top level of the directory, so Ptah refuses the directory rather "+
+			"than leave %s unapplied", w.files, list, w.these)
+	},
+	remedy: func(w filesWording) string {
+		return fmt.Sprintf("read the directory with --dir-format atlas, or move %s out of the directory", w.theFiles)
+	},
+}
+
+// omittedTopLevelFiles returns the SQL files at the top level of a directory
+// that neither the selected files nor the repeatable migrations hold, in
+// walk order.
+func omittedTopLevelFiles(sqlFiles []string, files []File, repeatables []RepeatableFile) []string {
 	selected := make(map[string]struct{}, len(files)+len(repeatables))
 	for _, file := range files {
 		selected[file.Path] = struct{}{}
@@ -260,15 +406,7 @@ func refuseOmittedAtlasFiles(sqlFiles []string, files []File, repeatables []Repe
 			omitted = append(omitted, p)
 		}
 	}
-	if len(omitted) == 0 {
-		return nil
-	}
-	return fmt.Errorf(
-		"migration files the selected format does not read: %s. atlas.sum covers them and Atlas runs every "+
-			"SQL file at the top level of the directory, so Ptah refuses the directory rather than leave them "+
-			"unapplied; read it with --dir-format atlas, or remove them from the directory",
-		strings.Join(omitted, ", "),
-	)
+	return omitted
 }
 
 // readsRepeatables reports whether a walk resolved to the Ptah format, the

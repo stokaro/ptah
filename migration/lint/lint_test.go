@@ -52,6 +52,12 @@ func rulesOf(findings []lint.Finding) []string {
 	return codes
 }
 
+// sortedRulesOf is rulesOf in sorted order, for an assertion about which rules
+// fire that does not depend on the order the rules are registered in.
+func sortedRulesOf(findings []lint.Finding) []string {
+	return slices.Sorted(slices.Values(rulesOf(findings)))
+}
+
 func TestLintFS_CuratedHazardsProduceExpectedRuleHits(t *testing.T) {
 	c := qt.New(t)
 
@@ -211,12 +217,13 @@ func TestLintFS_MigrationFormRules(t *testing.T) {
 		"0000000001_orphan.up.sql":  "CREATE TABLE t (id INT);\n",         // MF101P: no down
 		"0000000002_empty.up.sql":   "-- only comments; nothing to run\n", // MF102P
 		"0000000002_empty.down.sql": "-- nothing\n",
-		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // MF103
+		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // MF105P: the migrator refuses the directory
+		"shared/misnamed.sql":       "CREATE TABLE stray (id INT);\n", // MF103: a file of another directory
 	})
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P", "MF103"})
+	c.Assert(sortedRulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P", "MF103", "MF105P"})
 	for _, f := range findings {
 		c.Assert(f.Line, qt.Equals, 0, qt.Commentf("file-level findings carry no line: %v", f))
 	}
@@ -248,7 +255,9 @@ func TestLintFS_AtlasImportedFlywayRepeatableIsContentLinted(t *testing.T) {
 		"3R_views.sql":   "DROP TABLE users;\n",
 	})
 
-	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
+	// The Atlas revision table keeps the version 3R, which Ptah's table, which
+	// records numbers, refuses the directory for.
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{AtlasRevisionTable: true})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
 	c.Assert(findings[0].File, qt.Equals, "3R_views.sql")
@@ -1002,7 +1011,7 @@ func TestLintFS_PromptPlaceholdersDoNotSelectTemplateRendering(t *testing.T) {
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "BC103", "DS101"})
 }
 
-func TestLintFS_CaseVariantSQLFilesGetNamingWarning(t *testing.T) {
+func TestLintFS_CaseVariantSQLFilesStopTheRun(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fixture(map[string]string{
@@ -1013,8 +1022,137 @@ func TestLintFS_CaseVariantSQLFilesGetNamingWarning(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF103"},
-		qt.Commentf("a case-variant file the migrator will not run earns a naming warning instead of vanishing"))
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF105P"},
+		qt.Commentf("a case-variant file the migrator refuses the directory for is reported instead of vanishing"))
+}
+
+// refusedFiles names the files the findings report under MF105P, in order.
+func refusedFiles(findings []lint.Finding) []string {
+	files := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		if finding.Rule == "MF105P" {
+			files = append(files, finding.File)
+		}
+	}
+	return files
+}
+
+// The Atlas code MF104 reports a nullable column made non-nullable, and a
+// selector matches every rule code it prefixes once its aliases expand.
+// Disabling MF104 leaves the refusal of a file a run refuses the directory for
+// reported, which a rule code MF104 prefixes would lose.
+func TestLintFS_DisablingAtlasMF104KeepsTheRunRefusal(t *testing.T) {
+	c := qt.New(t)
+	fsys := fixture(map[string]string{
+		"0000000001_a.up.sql":   "CREATE TABLE a (id INT);\n",
+		"0000000001_a.down.sql": "DROP TABLE a;\n",
+		"notes.sql":             "CREATE TABLE notes (id INT);\n",
+	})
+
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"MF104"}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(refusedFiles(findings), qt.DeepEquals, []string{"notes.sql"})
+}
+
+// TestLintFS_FilesTheMigratorRefusesTheDirectoryFor reports under MF105P each
+// file the migrator's reading leaves out at the top of the directory, which a
+// run refuses the directory for, whichever grammar its name resembles. The
+// Atlas profile reports none: the community binary runs every top-level file.
+func TestLintFS_FilesTheMigratorRefusesTheDirectoryFor(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   map[string]string
+		profile lint.CompatibilityProfile
+		want    []string
+	}{
+		{"an Atlas name beside a Ptah pair", map[string]string{
+			"0000000001_a.up.sql":   "CREATE TABLE a (id INT);\n",
+			"0000000001_a.down.sql": "DROP TABLE a;\n",
+			"20240101_seed.sql":     "CREATE TABLE seed (id INT);\n",
+		}, lint.CompatibilityProfileNative, []string{"20240101_seed.sql"}},
+		{"a version auto-detection does not read beside a numbered file", map[string]string{
+			"1_a.sql":  "CREATE TABLE a (id INT);\n",
+			"v2_b.sql": "CREATE TABLE b (id INT);\n",
+		}, lint.CompatibilityProfileNative, []string{"v2_b.sql"}},
+		{"the Atlas profile", map[string]string{
+			"1_a.sql":  "CREATE TABLE a (id INT);\n",
+			"v2_b.sql": "CREATE TABLE b (id INT);\n",
+		}, lint.CompatibilityProfileAtlas, make([]string, 0)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(test.files), lint.Options{Compatibility: test.profile})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(refusedFiles(findings), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestLintFS_VersionsTheNumericRevisionTableCannotKeep reports under MF105P
+// each Atlas file whose version Ptah's revision table, which records numbers,
+// cannot keep, as the migrator's guard refuses the directory for it: R__x.sql,
+// the version R, and under positions a version such as v1. The Atlas revision
+// table keeps them, the Ptah format reads R__x.sql as a repeatable migration,
+// and the Atlas profile reports none.
+func TestLintFS_VersionsTheNumericRevisionTableCannotKeep(t *testing.T) {
+	repeatable := map[string]string{
+		"1_a.sql":  "CREATE TABLE a (id INT);\n",
+		"R__x.sql": "CREATE VIEW x AS SELECT 1;\n",
+	}
+	tests := []struct {
+		name  string
+		files map[string]string
+		opts  lint.Options
+		want  []string
+	}{
+		{"a repeatable over the numeric table", repeatable, lint.Options{}, []string{"R__x.sql"}},
+		{"a repeatable alone", map[string]string{"R__x.sql": "CREATE VIEW x AS SELECT 1;\n"}, lint.Options{}, []string{"R__x.sql"}},
+		{"a version under positions", map[string]string{
+			"1_a.sql":  "CREATE TABLE a (id INT);\n",
+			"v2_b.sql": "CREATE TABLE b (id INT);\n",
+		}, lint.Options{DirFormat: migrationfile.DirFormatAtlas}, []string{"v2_b.sql"}},
+		{"the Atlas revision table", repeatable, lint.Options{AtlasRevisionTable: true}, make([]string, 0)},
+		{"the Ptah format", map[string]string{
+			"0000000001_a.up.sql":   "CREATE TABLE a (id INT);\n",
+			"0000000001_a.down.sql": "DROP TABLE a;\n",
+			"R__x.sql":              "CREATE VIEW x AS SELECT 1;\n",
+		}, lint.Options{}, make([]string, 0)},
+		{"the Atlas profile", repeatable, lint.Options{Compatibility: lint.CompatibilityProfileAtlas}, make([]string, 0)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(test.files), test.opts)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(refusedFiles(findings), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// The finding on a repeatable names the version and every way out, as the
+// migrator's refusal does, and it is an error.
+func TestLintFS_ARepeatableOverTheNumericRevisionTable(t *testing.T) {
+	c := qt.New(t)
+	fsys := fixture(map[string]string{
+		"1_a.sql":  "CREATE TABLE a (id INT);\n",
+		"R__x.sql": "CREATE VIEW x AS SELECT 1;\n",
+	})
+
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(findings, qt.HasLen, 1)
+	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityError)
+	c.Assert(findings[0].Message, qt.Equals, `Ptah's revision table records numbers and cannot keep this file's version, "R", `+
+		`so a run refuses the directory; use the Atlas revision table (--revision-format atlas), or Ptah's file names, `+
+		`under which R__<name>.sql is a repeatable migration; a directory of repeatable migrations alone is read in `+
+		`Ptah's format with --dir-format ptah`)
 }
 
 func TestLintFS_DialectGating(t *testing.T) {

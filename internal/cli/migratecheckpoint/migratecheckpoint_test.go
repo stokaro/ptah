@@ -212,12 +212,18 @@ func TestMigrateCheckpointCommand_RefusesAtlasIntoUnhashedPtahDirectory(t *testi
 	tests := []struct {
 		name  string
 		extra []string
+		files map[string]string
 	}{
 		{name: "explicit atlas", extra: []string{"--dir-format", "atlas"}},
 		// The native default is ptah, so the explicit spelling is the only way
 		// to reach this natively; the compat surface reaches it unflagged,
 		// which is covered in internal/cli/atlas.
 		{name: "atlas with a description", extra: []string{"--dir-format", "atlas", "--description", "snap"}},
+		// The Ptah-format reading refuses this directory for the Atlas file,
+		// so the guard reads names rather than the directory.
+		{name: "beside an Atlas file", extra: []string{"--dir-format", "atlas"}, files: map[string]string{
+			"20250801000001_init.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+		}},
 	}
 
 	for _, tt := range tests {
@@ -225,6 +231,7 @@ func TestMigrateCheckpointCommand_RefusesAtlasIntoUnhashedPtahDirectory(t *testi
 			c := qt.New(t)
 			dir := t.TempDir()
 			seedMigrations(c, dir) // ptah pair, deliberately NEVER hashed
+			writeMigrationFiles(c, dir, tt.files)
 			shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
 
 			args := append([]string{"--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite"}, tt.extra...)
@@ -248,6 +255,25 @@ func TestMigrateCheckpointCommand_RefusesAtlasIntoUnhashedPtahDirectory(t *testi
 			c.Assert(sums, qt.HasLen, 0)
 		})
 	}
+}
+
+// A Ptah migration in a subdirectory is read by the Ptah format, so an Atlas
+// checkpoint beside it is refused as one beside a top-level Ptah migration is.
+func TestMigrateCheckpointCommand_RefusesAtlasBesideANestedPtahFile(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	seedAtlasMigrations(c, dir)
+	c.Assert(os.Mkdir(filepath.Join(dir, "sub"), 0o750), qt.IsNil)
+	writeMigrationFiles(c, dir, map[string]string{"sub/0000000001_n.up.sql": "CREATE TABLE n (id INTEGER PRIMARY KEY);\n"})
+	shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
+
+	out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite", "--dir-format", "atlas")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out, qt.Contains, "holds ptah-format migrations (sub/0000000001_n.up.sql)")
+	written, globErr := filepath.Glob(filepath.Join(dir, "*checkpoint*"))
+	c.Assert(globErr, qt.IsNil)
+	c.Assert(written, qt.HasLen, 0)
 }
 
 func TestMigrateCheckpointCommand_AtlasGuardDoesNotOverfire(t *testing.T) {

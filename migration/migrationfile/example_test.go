@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"testing/fstest"
 
 	"github.com/go-extras/go-kit/must"
@@ -13,18 +14,18 @@ import (
 
 // ExampleDiscover walks a migration directory in auto format. Results come
 // back ascending by Version, in an order two runs over the same filesystem
-// reproduce. Ptah files win in auto mode, so the Atlas-shaped
-// 20240101_seed.sql is not selected, and the stray notes.sql is simply left
-// out rather than failing the walk. A directory whose files match no name
-// grammar at all is refused, which is why the error is worth branching on.
+// reproduce. Ptah files win in auto mode, and the Atlas-shaped file one level
+// down is a file of another directory, such as a template a migration
+// includes. A directory is read whole: a SQL file at its top level that the
+// reading leaves out, such as the stray notes.sql, refuses the walk and is
+// named, since otherwise it would never run.
 func ExampleDiscover() {
 	fsys := fstest.MapFS{
 		"0000000001_create_users.up.sql":   {Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n")},
 		"0000000001_create_users.down.sql": {Data: []byte("DROP TABLE users;\n")},
 		"0000000002_add_email.up.sql":      {Data: []byte("ALTER TABLE users ADD COLUMN email TEXT;\n")},
 		"0000000002_add_email.down.sql":    {Data: []byte("ALTER TABLE users DROP COLUMN email;\n")},
-		"20240101_seed.sql":                {Data: []byte("INSERT INTO users DEFAULT VALUES;\n")},
-		"notes.sql":                        {Data: []byte("-- scratch pad, not a migration\n")},
+		"shared/20240101_seed.sql":         {Data: []byte("INSERT INTO users DEFAULT VALUES;\n")},
 	}
 
 	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAuto)
@@ -36,11 +37,16 @@ func ExampleDiscover() {
 		fmt.Printf("%d %s %s (%s)\n", file.Version, file.Direction, file.Path, file.Name)
 	}
 
+	fsys["notes.sql"] = &fstest.MapFile{Data: []byte("-- scratch pad, not a migration\n")}
+	_, err = migrationfile.Discover(fsys, migrationfile.DirFormatAuto)
+	fmt.Println(err != nil, strings.Contains(err.Error(), "notes.sql"))
+
 	// Output:
 	// 1 down 0000000001_create_users.down.sql (Create Users)
 	// 1 up 0000000001_create_users.up.sql (Create Users)
 	// 2 down 0000000002_add_email.down.sql (Add Email)
 	// 2 up 0000000002_add_email.up.sql (Add Email)
+	// true true
 }
 
 // ExampleParseFileName reads one Ptah migration file name into its

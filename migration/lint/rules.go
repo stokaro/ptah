@@ -1274,11 +1274,29 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
+			Code:     "MF105P",
+			Title:    "file a run refuses the directory for",
+			Severity: SeverityError,
+			CheckFile: func(file *File) []Finding {
+				if file.RunRefusal == "" {
+					return nil
+				}
+				return []Finding{{
+					Rule:     "MF105P",
+					Title:    "file a run refuses the directory for",
+					Severity: SeverityError,
+					File:     file.Path,
+					Message:  file.RunRefusal,
+				}}
+			},
+		},
+		{
 			Code:     "MF103",
 			Title:    "non-conventional file name",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
-				if file.WellFormedName {
+				// MF105P reports a file a run refuses the directory for.
+				if file.WellFormedName || file.RunRefusal != "" {
 					return nil
 				}
 				message := "file name does not match NNNNNNNNNN_description.(up|down).sql; the migrator will not pick it up"

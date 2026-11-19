@@ -311,6 +311,12 @@ type Options struct {
 	// DirFormat selects the migration filename/parser rules used by file-form
 	// linting. Empty uses auto detection.
 	DirFormat migrationfile.DirFormat
+	// AtlasRevisionTable says the run records versions in the Atlas revision
+	// table, which keeps any version an Atlas file spells. The zero value is
+	// Ptah's revision table, which records numbers: a run over it refuses a
+	// directory read in the Atlas format that holds a version such as R, the
+	// one R__x.sql spells, and lint reports the file at error severity.
+	AtlasRevisionTable bool
 	// TransactionOwner says who opens the transaction each migration runs in
 	// when the tool that applies the directory runs it, which the rules about
 	// transaction control read. The zero value is a migrator that wraps each

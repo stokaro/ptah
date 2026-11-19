@@ -158,6 +158,10 @@ type Options struct {
 	// layout of another tool takes it from that layout. The zero value, a
 	// migrator that wraps each file, is right for Ptah's and Atlas's layouts.
 	TransactionOwner lintext.TransactionOwner
+	// AtlasRevisionTable says the run records versions in the Atlas revision
+	// table; see [lint.Options.AtlasRevisionTable]. The zero value is Ptah's
+	// revision table, which a native run writes unless told otherwise.
+	AtlasRevisionTable bool
 	// CaptureSchema asks the replay to also read the dev database before the
 	// first analyzed version and after the last one, and to report the pair as
 	// HCL in [Report.SchemaCurrent] and [Report.SchemaDesired]. Only a caller
@@ -322,8 +326,9 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		RequireOnline: cfg.RequiresOnline(),
 		// The directory reaches this layer in Ptah's or Atlas's layout, so
 		// only the caller knows which tool the files were written for.
-		TransactionOwner: opts.TransactionOwner,
-		ChangeCount:      opts.ChangeCount,
+		TransactionOwner:   opts.TransactionOwner,
+		ChangeCount:        opts.ChangeCount,
+		AtlasRevisionTable: opts.AtlasRevisionTable,
 	})
 	analysis, schemas := outcome.analysis, outcome.schemas
 	findings := analysis.Findings()
@@ -545,6 +550,13 @@ func lintDirectory(
 	if err != nil {
 		return lintOutcome{dialect: dialect}, err
 	}
+	// A run refuses a directory holding a file the analysis marked, before it
+	// replays anything, and so would the replay. The finding the analysis
+	// reports names the file and what to do about it, which the replay's error
+	// would not, so the replay is left out.
+	if refusesRun(analysis) {
+		return lintOutcome{analysis: analysis, dialect: dialect}, nil
+	}
 	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL, opts.Runtime)
 	capture := newReplaySchemaCapture(opts, analysis)
 	server := newServerTargetCollector(lintOptions.Target, deferred, lintOptions.RequireOnline)
@@ -613,6 +625,12 @@ func lintDirectory(
 	// one that belongs to this analysis.
 	reanalyzed, err := lint.AnalyzeFS(ctx, opts.Runtime, fsys, lintOptions)
 	return lintOutcome{reanalyzed, schemas, dialect}, err
+}
+
+// refusesRun reports whether a run refuses the directory for a file the
+// analysis selected; see [lint.File.RunRefusal].
+func refusesRun(analysis lint.Analysis) bool {
+	return slices.ContainsFunc(analysis.SelectedFiles(), func(file lint.File) bool { return file.RunRefusal != "" })
 }
 
 // lintOutcome is what a lint pass produced, including the dialect it settled

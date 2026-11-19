@@ -132,9 +132,9 @@ func TestDiscover_FailurePath_AnAtlasGovernedFileTheSelectionLeavesOut(t *testin
 	files, err := migrationfile.Discover(pair, migrationfile.DirFormatAuto)
 	_, repeatables, repeatableErr := migrationfile.DiscoverAtlasRepeatables(repeatable)
 
-	c.Assert(err, qt.ErrorMatches, `migration files the selected format does not read: v1_x\.sql\. atlas\.sum covers `+
-		`them .*`)
+	c.Assert(err, qt.ErrorMatches, `migration file the selected format does not read: v1_x\.sql\. atlas\.sum covers `+
+		`it .*; read the directory with --dir-format atlas, or remove the file from the directory`)
 	c.Assert(files, qt.IsNil)
-	c.Assert(repeatableErr, qt.ErrorMatches, `Atlas migration files Ptah cannot run: _x\.sql \(version ""\)\..*`)
+	c.Assert(repeatableErr, qt.ErrorMatches, `Atlas migration file Ptah cannot run: _x\.sql \(version ""\)\..*`)
 	c.Assert(repeatables, qt.IsNil)
 }

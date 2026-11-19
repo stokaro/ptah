@@ -163,7 +163,7 @@ func TestCompatAtlasEmptyVersion_FailurePath(t *testing.T) {
 	got := run(append([]string{"migrate", "apply"}, versionOrderTarget...)...)
 
 	c.Assert(got.ExitCode, qt.Equals, 1)
-	c.Assert(got.Stderr, qt.Contains, `Atlas migration files Ptah cannot run: _x.sql (version "").`)
+	c.Assert(got.Stderr, qt.Contains, `Atlas migration file Ptah cannot run: _x.sql (version "").`)
 	c.Assert(sqliteTables(c, filepath.Join(dir, "app.db")), qt.HasLen, 0)
 }
 

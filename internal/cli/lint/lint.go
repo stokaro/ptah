@@ -14,6 +14,7 @@ import (
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
 	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/internal/migrateflags"
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/cli/internal/serverversion"
 	"ptah.run/internal/devdocker"
@@ -24,6 +25,7 @@ import (
 	"ptah.run/internal/ociartifact"
 	migrationlint "ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 const (
@@ -49,6 +51,7 @@ func NewLintCommand() *cobra.Command {
 	var dir string
 	var dirFormat string
 	var runner string
+	var revisionFormat string
 	var dialect string
 	var serverVersion string
 	var format string
@@ -84,23 +87,24 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dbcli.TrustReplaySQL(cmd, trustReplaySQL)
 			return runLint(cmd, runOptions{
-				dir:           dir,
-				dirFormat:     dirFormat,
-				runner:        runner,
-				dialect:       dialect,
-				serverVersion: serverVersion,
-				format:        format,
-				configPath:    configPath,
-				atlasEnv:      atlasEnv,
-				devURL:        devURL,
-				gitBase:       gitBase,
-				gitDir:        gitDir,
-				disabled:      disabled,
-				failOn:        failOn,
-				latest:        latest,
-				attach:        attach,
-				plainHTTP:     plainHTTP,
-				positional:    args,
+				dir:            dir,
+				dirFormat:      dirFormat,
+				runner:         runner,
+				revisionFormat: revisionFormat,
+				dialect:        dialect,
+				serverVersion:  serverVersion,
+				format:         format,
+				configPath:     configPath,
+				atlasEnv:       atlasEnv,
+				devURL:         devURL,
+				gitBase:        gitBase,
+				gitDir:         gitDir,
+				disabled:       disabled,
+				failOn:         failOn,
+				latest:         latest,
+				attach:         attach,
+				plainHTTP:      plainHTTP,
+				positional:     args,
 			})
 		},
 	}
@@ -108,6 +112,8 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Local directory or oci:// reference containing migration files")
 	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	dbcli.RegisterRunnerFlag(cmd.Flags(), &runner)
+	cmd.Flags().StringVar(&revisionFormat, dbcli.RevisionTableFormatFlagName, string(migrator.RevisionTableFormatPtah),
+		"Revision table format a run records versions in: ptah or atlas. A run over ptah refuses an Atlas file whose version is not a number, such as R__<name>.sql")
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: "+lintdialect.Expected+" (empty runs every rule)")
 	serverversion.Register(cmd.Flags(), &serverVersion)
 	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif, gitlab")
@@ -130,23 +136,24 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 }
 
 type runOptions struct {
-	dir           string
-	dirFormat     string
-	runner        string
-	dialect       string
-	serverVersion string
-	format        string
-	configPath    string
-	atlasEnv      string
-	devURL        string
-	gitBase       string
-	gitDir        string
-	disabled      []string
-	failOn        string
-	latest        uint
-	attach        bool
-	plainHTTP     bool
-	positional    []string
+	dir            string
+	dirFormat      string
+	runner         string
+	revisionFormat string
+	dialect        string
+	serverVersion  string
+	format         string
+	configPath     string
+	atlasEnv       string
+	devURL         string
+	gitBase        string
+	gitDir         string
+	disabled       []string
+	failOn         string
+	latest         uint
+	attach         bool
+	plainHTTP      bool
+	positional     []string
 }
 
 func runLint(cmd *cobra.Command, opts runOptions) error {
@@ -208,6 +215,14 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	}
 	reportOpts.DevServerDisposable = devServerDisposable
 	reportOpts.TransactionOwner = runner.TransactionOwner()
+	// A run over Ptah's revision table refuses an Atlas version that is not a
+	// number, which the directory's layout does not say either.
+	revisionFormat, err := migrateflags.ParseRevisionTableFormat(dbcli.EffectiveString(cmd, dbcli.RevisionTableFormatFlagName,
+		opts.revisionFormat, projectCfg.StringValue(projectconfig.StringMigrationRevisionFormat)))
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, opts.failOn, err.Error())
+	}
+	reportOpts.AtlasRevisionTable = revisionFormat == migrator.RevisionTableFormatAtlas
 	// The shared integrity gate. Lint belongs to the class through --dev-url:
 	// migrationlintreport.Build replays the directory's migrations on that
 	// database to validate execution semantics and read baseline schema state.

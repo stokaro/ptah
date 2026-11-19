@@ -51,7 +51,8 @@ ptah.sum
   migrations and again whenever its content changes, and records it in a table
   of its own beside the revision table — see
   [Repeatable migrations](../../versioned/repeatable/). Only the native format
-  has them; an Atlas directory reads the same name as a one-time version.
+  has them; an Atlas directory reads the same name as the one-time version `R`,
+  which runs over the Atlas revision table (`--revision-format atlas`).
 - **A file may start with a UTF-8 byte order mark** (the bytes `EF BB BF`).
   Ptah removes that one mark before it reads the directives, lints the file
   and runs the SQL, so a directive on the first line still applies. A mark
@@ -76,6 +77,19 @@ directories. Format detection is automatic; pass `--dir-format atlas` (or
 ptah migrations validate --dir ./migrations --dir-format atlas
 ```
 
+A directory is read whole. A SQL file at its top level that the format does
+not read refuses the directory, and the refusal names the file: `notes.sql`
+beside Ptah migrations, `v2_b.sql` beside `1_a.sql` under detection, or
+`3_c.SQL`. A Ptah file name is case-sensitive, so `0000000002_b.UP.sql` is
+such a file too. A run that left such a file out would never apply it and
+would report the directory applied. Every command that reads the directory
+refuses it, `migrations ls` and `migrations hash` included, so a listing or a
+sum never describes a directory a run refuses. `ptah migrations lint` reports
+the file under `MF105P` at error severity and exits 1. With `--dev-url` it
+reports the same finding and replays nothing, since a run would not start. A
+file one level down belongs to another directory, such as a template a
+migration includes, and is left alone.
+
 Atlas-format directories use `atlas.sum` as their integrity file and can be
 tracked with Atlas revision-table metadata (`--revision-format atlas`). On
 PostgreSQL, through a URL that sets no `search_path`, that table lives in the
@@ -98,8 +112,14 @@ A version does not have to be a number: `v1_x.sql` is version `v1`. A
 directory that holds such a version runs over the Atlas revision table
 (`--revision-format atlas`), which records the version as text. A native
 revision table stores numbers, and each row is matched to the file that
-carries the number, so it refuses that directory. Commands name such a file by
-the version it spells, `--to-version v1` and `--version 00` included. A
+carries the number, so it refuses that directory. `R__view.sql` is such a
+version, `R`, and so is `V1__init.sql`, `V1`. `ptah migrations lint` reports
+every such file under `MF105P`. It reads the revision table a run uses from
+`--revision-format`, `migration.revision_format` or `PTAH_REVISION_FORMAT`,
+and reports nothing for the Atlas table.
+
+Commands name such a file by the version it spells, `--to-version v1` and
+`--version 00` included. A
 migration tag records a number, so `--to-tag` is refused over such a directory,
 and `ptah migrations checkpoint` refuses a version whose file name would sort
 before an existing file, since the checkpoint would then run before a migration

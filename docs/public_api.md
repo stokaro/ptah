@@ -2626,7 +2626,10 @@ also holds as generated. Only PostgreSQL and YugabyteDB are asked; elsewhere the
 result is nil. Put in `config.CompareOptions.GeneratedExpressions`, the answers
 are what `CompareWithDatabase` compares, and the comparison asks its own
 connection only about the columns they leave out. An answer with `Resolved`
-false is a column the server refused to spell.
+false is a column the server refused to spell, and a
+`schemadiff.GeneratedExpressionRefusal` beside the map carries the server's
+reason. A nil desired schema or database returns no answers, and a nil
+connection is refused.
 
 `schemaext.ComparisonRequest.DeclaredRelations` and
 `schemaext.ObjectComparisonRequest.DeclaredRelations` name the tables, views and
@@ -4415,8 +4418,12 @@ Ptah behavior is the zero-value default.
 `migration/migrationfile` is the migration file-layout toolkit: what a
 migration directory and its files mean, with no database and no execution.
 `Discover` walks a filesystem in a `DirFormat` (`ParseDirFormat` normalizes the
-CLI spelling) and returns `File` values; `ParseFileName` and
-`ParseAtlasFileName` read one name; `FileName`, `CheckpointFileName`, and
+CLI spelling) and returns `File` values. A directory is read whole: a SQL file
+at its top level that the format does not read fails `Discover` with an
+`*UnreadFilesError`, whose `Files` names each one and whose `Remedy` says how
+to resolve one such file.
+
+`ParseFileName` and `ParseAtlasFileName` read one name; `FileName`, `CheckpointFileName`, and
 `NextVersion` produce names for writers. `ParseDirectives` and `ParseTimeouts`
 read the `-- +ptah` directive header, `ParseFileTxMode` and `ParseUp` resolve a
 file's transaction mode across both directive families, `MisplacedDirectives`

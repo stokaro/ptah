@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -386,7 +387,7 @@ func writeAtlasCheckpoint(
 		return nil
 	}
 
-	path, err := generator.WriteAtlasCheckpointFileWithOptions(
+	written, err := generator.WriteAtlasCheckpointFileWithOptions(
 		opts.migrationsDir,
 		version,
 		opts.description,
@@ -396,10 +397,10 @@ func writeAtlasCheckpoint(
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if err := editWrittenCheckpoint(cmd, opts, migrationfile.DirFormatAtlas, migrationsFS, path); err != nil {
+	if err := editWrittenCheckpoint(cmd, opts, migrationfile.DirFormatAtlas, migrationsFS, written); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	fmt.Fprintf(out, "Wrote checkpoint version %d:\n  %s\n", version, path)
+	fmt.Fprintf(out, "Wrote checkpoint version %d:\n  %s\n", version, written)
 	return nil
 }
 
@@ -452,20 +453,42 @@ func checkPtahFileConflict(migrationsDir string, dirFormat migrationfile.DirForm
 	if dirFormat != migrationfile.DirFormatAtlas {
 		return nil
 	}
-	ptahFiles, err := migrationfile.Discover(os.DirFS(migrationsDir), migrationfile.DirFormatPtah)
-	if err != nil || len(ptahFiles) == 0 {
-		// A directory with no readable ptah files is exactly the case this
-		// guard must let through, and migrationfile.Discover reports "nothing
-		// matched this format" as an error, so a failure here is not evidence
-		// of a conflict.
+	ptahFile, err := firstPtahFile(os.DirFS(migrationsDir))
+	if err != nil {
+		return fmt.Errorf("failed to inspect migrations directory: %w", err)
+	}
+	if ptahFile == "" {
 		return nil
 	}
 	return fmt.Errorf(
 		"cannot write %s-format checkpoint files into a directory that holds ptah-format migrations (%s): "+
 			"the checkpoint would be invisible to format auto-detection, which reads the ptah files instead; "+
 			"convert the directory first or pass --%s=%s",
-		dirFormat, ptahFiles[0].Path, dirFormatFlag, migrationfile.DirFormatPtah,
+		dirFormat, ptahFile, dirFormatFlag, migrationfile.DirFormatPtah,
 	)
+}
+
+// firstPtahFile returns the first file under fsys, in walk order, whose base
+// name is a ptah migration file name, or "" when none is. A file in a
+// subdirectory counts, as the Ptah format reads it. It reads names rather than
+// the directory: the Ptah-format reading refuses a directory that also holds
+// Atlas files, which is the directory this guard exists to refuse.
+func firstPtahFile(fsys fs.FS) (string, error) {
+	var found string
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if _, err := migrationfile.ParseFileName(path.Base(p)); err != nil {
+			return nil
+		}
+		found = p
+		return fs.SkipAll
+	})
+	return found, err
 }
 
 // maxMigrationVersion is the largest value the 10-digit NNNNNNNNNN file-name

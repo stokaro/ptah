@@ -73,6 +73,34 @@ func TestAtlasPositions_NumberAboveInt64OverANumericTable_FailurePath(t *testing
 		`"9223372036854775808", which a revision table that records numbers cannot keep.*`)
 }
 
+// TestAtlasRepeatableOverANumericTable_FailurePath refuses R__r.sql beside
+// numbered files over the Ptah revision table, before anything runs. The
+// Atlas format runs it once as the version R, under the key above every
+// numbered file, and the table would record that key: the next status reads
+// R as pending and the key as a migration with no file. Without the refusal
+// the run applies both files and the table holds the rows 1 and 2.
+func TestAtlasRepeatableOverANumericTable_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(c.TempDir(), "app.db")
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	mig, err := migrator.NewFSMigrator(conn, atlasSQLFiles(map[string]string{
+		"1_a.sql":  "CREATE TABLE ta (id int);\n",
+		"R__r.sql": "CREATE TABLE tr (id int);\n",
+	}), migrator.WithMigrationDirFormat(migrationfile.DirFormatAtlas))
+	c.Assert(err, qt.IsNil)
+
+	err = mig.MigrateUp(c.Context())
+	_, statusErr := mig.GetMigrationStatus(c.Context())
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*Atlas migration R__r\.sql has version "R", which a revision table that records `+
+		`numbers cannot keep; use the Atlas revision table \(--revision-format atlas\), or Ptah's file names, under `+
+		`which R__<name>\.sql is a repeatable migration; a directory of repeatable migrations alone is read in Ptah's `+
+		`format with --dir-format ptah`)
+	c.Assert(statusErr, qt.ErrorMatches, `(?s).*Atlas migration R__r\.sql has version "R".*`)
+}
+
 // TestAtlasPositions_SetReadsExecutionOrder sets the revision in a directory
 // holding 1R__rep.sql beside 1_a.sql. The two spell the number 1, so they run
 // under their positions in file-name order, 1R__rep.sql first, and a set
