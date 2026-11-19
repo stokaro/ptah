@@ -808,6 +808,8 @@ func (a sessionAccount) defaultLiterals() defaultLiterals {
 func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string, literals defaultLiterals) string {
 	value := strings.TrimSpace(defaultValue)
 	switch {
+	case literals == literalsQuoted && !isQuotedMySQLDefault(value):
+		return mariaDBFunctionNames(defaultValue)
 	case literals == literalsQuoted, isQuotedMySQLDefault(value):
 		return defaultValue
 	case value != "" && hasGeneratedDefault(extra):
@@ -819,6 +821,57 @@ func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string
 		return defaultValue
 	}
 	return quoteMySQLDefaultLiteral(defaultValue, literals)
+}
+
+// mariaDBFunctions are the function names MariaDB prints in place of the ones
+// a definition wrote: measured on MariaDB 12.3, `DEFAULT (upper('abc'))`
+// reports `ucase('abc')`. Compared with the name the definition wrote, the
+// column plans again on every apply.
+var mariaDBFunctions = map[string]string{"ucase": "upper", "lcase": "lower"}
+
+// mariaDBFunctionNames writes each call in a MariaDB expression default with
+// the name a definition writes, outside quoted strings.
+func mariaDBFunctionNames(expression string) string {
+	var b strings.Builder
+	for i := 0; i < len(expression); i++ {
+		ch := expression[i]
+		if ch == '\'' {
+			end := i + 1
+			for end < len(expression) {
+				if expression[end] == '\\' || (expression[end] == '\'' && end+1 < len(expression) && expression[end+1] == '\'') {
+					end += 2
+					continue
+				}
+				if expression[end] == '\'' {
+					break
+				}
+				end++
+			}
+			end = min(end+1, len(expression))
+			b.WriteString(expression[i:end])
+			i = end - 1
+			continue
+		}
+		if isMySQLWordByte(ch) && (i == 0 || !isMySQLWordByte(expression[i-1])) {
+			end := i
+			for end < len(expression) && isMySQLWordByte(expression[end]) {
+				end++
+			}
+			word := expression[i:end]
+			if name, ok := mariaDBFunctions[strings.ToLower(word)]; ok && end < len(expression) && expression[end] == '(' {
+				word = name
+			}
+			b.WriteString(word)
+			i = end - 1
+			continue
+		}
+		b.WriteByte(ch)
+	}
+	return b.String()
+}
+
+func isMySQLWordByte(ch byte) bool {
+	return ch == '_' || ch == '$' || (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }
 
 // generatedDefault returns an expression default as MySQL's catalog reports

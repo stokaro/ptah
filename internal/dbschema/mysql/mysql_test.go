@@ -458,6 +458,31 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         "''",
 		},
 		{
+			// Measured on MariaDB 12.3 for DEFAULT (upper('abc')).
+			name:         "a MariaDB call it prints by another name",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "ucase('abc')",
+			literals:     literalsQuoted,
+			want:         "upper('abc')",
+		},
+		{
+			name:         "a MariaDB call inside a string keeps its name",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: `concat('ucase(x)', 'it''s', lcase('A\'b'))`,
+			literals:     literalsQuoted,
+			want:         `concat('ucase(x)', 'it''s', lower('A\'b'))`,
+		},
+		{
+			name:         "a MariaDB word that is no call",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "ucase_x(1)",
+			literals:     literalsQuoted,
+			want:         "ucase_x(1)",
+		},
+		{
 			name:         "a MySQL string of one space",
 			columnType:   "varchar(30)",
 			dataType:     "varchar",

@@ -268,12 +268,12 @@ func TestColumns_AnEmptyStringIsNotNoDefault(t *testing.T) {
 		},
 		{
 			name: "no default against no default", dialect: platform.MySQL, columnType: "varchar(10)",
-			want: map[string]string{},
+			want: make(map[string]string),
 		},
 		{
 			name: "an empty string against an empty string", dialect: platform.MariaDB, columnType: "varchar(10)",
 			literal: "''", reported: new("''"),
-			want: map[string]string{},
+			want: make(map[string]string),
 		},
 	}
 	for _, row := range rows {
@@ -281,6 +281,47 @@ func TestColumns_AnEmptyStringIsNotNoDefault(t *testing.T) {
 			c := qt.New(t)
 			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultSet: row.set}
 			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: row.reported}
+
+			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)
+
+			c.Assert(result.Changes, qt.DeepEquals, row.want)
+		})
+	}
+}
+
+// A column that stores bytes holds one default however a catalog writes its
+// bytes: a string, a hexadecimal string and MySQL's 0x form are one default,
+// and a different string is another.
+func TestColumns_ABinaryDefaultIsItsBytes(t *testing.T) {
+	rows := []struct {
+		name, dialect, columnType string
+		literal, expression       string
+		reported                  string
+		want                      map[string]string
+	}{
+		{name: "MariaDB, a string expression against its hexadecimal string", dialect: platform.MariaDB, columnType: "varbinary(8)", expression: "('xy')", reported: "x'7879'", want: make(map[string]string)},
+		{name: "MySQL, a string against its hexadecimal string", dialect: platform.MySQL, columnType: "varbinary(8)", literal: "'xy'", reported: "x'7879'", want: make(map[string]string)},
+		{name: "MySQL, 0x against x", dialect: platform.MySQL, columnType: "varbinary(8)", expression: "0x7879", reported: "x'7879'", want: make(map[string]string)},
+		{name: "MySQL, an introduced string expression against its hexadecimal string", dialect: platform.MySQL, columnType: "varbinary(8)", expression: "('xy')", reported: "(_latin1'xy')", want: make(map[string]string)},
+		{name: "MySQL, an odd count of hexadecimal digits", dialect: platform.MySQL, columnType: "varbinary(8)", expression: "0xabc", reported: "x'0abc'", want: make(map[string]string)},
+		{name: "MariaDB, a hexadecimal number on an int", dialect: platform.MariaDB, columnType: "int", expression: "0x1f", reported: "31", want: make(map[string]string)},
+		{name: "MySQL, a bit number on a bit column", dialect: platform.MySQL, columnType: "bit(3)", expression: "0b110", reported: "b'110'", want: make(map[string]string)},
+		{
+			name: "MySQL, another number on an int", dialect: platform.MySQL, columnType: "int",
+			expression: "0x1f", reported: "30",
+			want: map[string]string{"default_expr": "30 -> 0x1f"},
+		},
+		{
+			name: "MariaDB, another string", dialect: platform.MariaDB, columnType: "varbinary(8)",
+			expression: "('xz')", reported: "x'7879'",
+			want: map[string]string{"default_expr": "x'7879' -> ('xz')"},
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultExpr: row.expression}
+			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: new(row.reported)}
 
 			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)
 

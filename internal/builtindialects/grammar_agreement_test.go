@@ -82,7 +82,8 @@ import (
 var noOldSwitch = cmp.Options{
 	cmpopts.IgnoreFields(descriptor.Grammar{}, "Forms"),
 	cmpopts.IgnoreFields(descriptor.ColumnGrammar{}, "EmptyCallFunctions", "EmptyCallRefusal",
-		"DefaultOperatorRefusal", "DefaultPredicates", "DefaultPipesRefusal"),
+		"DefaultOperatorRefusal", "DefaultPredicates", "DefaultPipesRefusal",
+		"RelativeTimeLiterals"),
 	cmpopts.IgnoreFields(descriptor.IndexGrammar{}, "Storing", "Nonclustered"),
 	cmpopts.IgnoreFields(descriptor.ConstraintGrammar{}, "TableNotNull"),
 }

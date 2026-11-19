@@ -31,6 +31,10 @@ func TestVisitNode_CreateTableEnclosesAnExpressionDefault(t *testing.T) {
 		{name: "a boolean", columnType: "BOOLEAN", expression: "true", want: "`c` BOOLEAN DEFAULT true"},
 		{name: "a quoted string", columnType: "VARCHAR(30)", expression: "'x'", want: "`c` VARCHAR(30) DEFAULT 'x'"},
 		{name: "NULL", columnType: "VARCHAR(30)", expression: "NULL", want: "`c` VARCHAR(30) DEFAULT NULL"},
+		{name: "a bit string", columnType: "BIT(3)", expression: "b'101'", want: "`c` BIT(3) DEFAULT b'101'"},
+		{name: "a hexadecimal string", columnType: "VARBINARY(8)", expression: "x'6a6b'", want: "`c` VARBINARY(8) DEFAULT x'6a6b'"},
+		{name: "a hexadecimal number", columnType: "INT", expression: "0x1f", want: "`c` INT DEFAULT 0x1f"},
+		{name: "a bit number", columnType: "BIT(3)", expression: "0b110", want: "`c` BIT(3) DEFAULT 0b110"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

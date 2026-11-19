@@ -247,6 +247,16 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: computed kind "" is not one upper-case word`,
 		},
 		{
+			name:    "a relative time literal in lower case",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.RelativeTimeLiterals = []string{"now"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: relative time literal "now" is not one upper-case word`,
+		},
+		{
+			name:    "a relative time literal stated twice",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.RelativeTimeLiterals = []string{"NOW", "NOW"} }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: relative time literal "NOW" is written twice`,
+		},
+		{
 			name:    "an empty call refusal without functions",
 			dialect: with(func(g *descriptor.Grammar) { g.Columns.EmptyCallRefusal = "alpha refuses SYSDATE()" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: empty call functions and an empty call refusal are set together`,

@@ -188,6 +188,17 @@ SQL:
   session whose `sql_mode` names `NO_BACKSLASH_ESCAPES` writes the backslash
   as it is, for a target in the same mode. A quote escaped with a backslash
   and a doubled quote compare as one character.
+- A schema file may write a default as a bit string (`b'101'`, `0b101`), a
+  hexadecimal string (`X'6A'`, `0x6a`), a string with a character set
+  introducer (`_utf8mb4'x'`) or `N`, adjacent strings (`'a' 'b'`) or a
+  double-quoted string (`"a"`). Each is read as the literal the server
+  stores. On a `BINARY`, `VARBINARY` or `BLOB` column a string and the
+  hexadecimal string of its bytes are one default, since MySQL reports
+  `DEFAULT 'xy'` as `0x7879` and MariaDB `DEFAULT ('xy')` as `x'7879'`.
+  On an integer column `0x1F` and the `31` the server reports are one
+  default, and on a `BIT` column `0b110` and `b'110'`.
+  MariaDB prints `upper` and `lower` as `ucase` and `lcase`, and the
+  comparison reads them as the names the definition wrote.
 - `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
   MariaDB type. Both engines take one auto-increment column per table, and only

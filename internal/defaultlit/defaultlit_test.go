@@ -235,3 +235,58 @@ func TestAsReadEscaped(t *testing.T) {
 		})
 	}
 }
+
+// A bit or hexadecimal string is a literal in every spelling the MySQL family
+// writes, and a quoted string or a word that starts like one is not.
+func TestIsBinaryString(t *testing.T) {
+	rows := []struct {
+		value string
+		want  bool
+	}{
+		{"b'101'", true},
+		{"B'1'", true},
+		{"x'61'", true},
+		{"X'6A'", true},
+		{"0x61626364", true},
+		{"0b101", true},
+		{"0B1", true},
+		{"0x", true},
+		{"x''", true},
+		{"b'102'", false},
+		{"0b102", false},
+		{"0b", false},
+		{"x'6g'", false},
+		{"'61'", false},
+		{"0", false},
+		{"x61", false},
+		{"bx'1'", false},
+	}
+	for _, row := range rows {
+		t.Run(row.value, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(defaultlit.IsBinaryString(row.value), qt.Equals, row.want)
+		})
+	}
+}
+
+// A hexadecimal string reads as x'..' with lower-case digits, whichever
+// spelling the server reported.
+func TestHexString(t *testing.T) {
+	rows := []struct {
+		value, want string
+	}{
+		{"0x7879", "x'7879'"},
+		{"0X7A", "x'7a'"},
+		{"X'7A'", "x'7a'"},
+		{"0xabc", "x'0abc'"},
+		{"x''", "x''"},
+	}
+	for _, row := range rows {
+		t.Run(row.value, func(t *testing.T) {
+			c := qt.New(t)
+			got, ok := defaultlit.HexString(row.value)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(got, qt.Equals, row.want)
+		})
+	}
+}

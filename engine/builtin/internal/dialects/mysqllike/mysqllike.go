@@ -148,14 +148,14 @@ func mysqlDefaultNeedsLiteralQuotes(columnType, value string) bool {
 // parentheses. MariaDB 12.3 answers ERROR 1064 to `DEFAULT 1 + 2` too, and
 // reports the parenthesized current-time default as it reports the bare one.
 // What the server takes bare stays bare, so the catalog reports it as a
-// literal where it is one: a number, a quoted string, NULL, TRUE or FALSE, a
-// current-time function on a temporal column, and an expression the
-// declaration already encloses.
+// literal where it is one: a number, a quoted string, a bit or hexadecimal
+// string, NULL, TRUE or FALSE, a current-time function on a temporal column,
+// and an expression the declaration already encloses.
 func renderDefaultExpression(columnType, expression string) string {
 	trimmed := strings.TrimSpace(expression)
 	switch {
 	case strings.EqualFold(trimmed, "NULL"), strings.EqualFold(trimmed, "TRUE"), strings.EqualFold(trimmed, "FALSE"),
-		defaultlit.IsPlainNumber(trimmed), defaultlit.IsSQLLiteral(trimmed),
+		defaultlit.IsPlainNumber(trimmed), defaultlit.IsSQLLiteral(trimmed), defaultlit.IsBinaryString(trimmed),
 		isMySQLTemporalDefaultExpression(columnType, trimmed), normalize.Expression(trimmed) != trimmed:
 		return expression
 	}

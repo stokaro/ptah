@@ -1101,15 +1101,6 @@ func columnDefaultChange(
 	return "", ""
 }
 
-// shownDefault is the declared default as a change reports it. An empty
-// literal is shown as the string it is, not as nothing.
-func shownDefault(genCol schemamodel.Field, genDefault, genType string) string {
-	if genDefault == "" && genCol.DefaultSet {
-		return defaultlit.AsRead(genType, genCol.Default)
-	}
-	return genDefault
-}
-
 // sameColumnDefault reports whether the declared default, genDefault as the
 // renderer writes it, and the reported default dbDefault are one default on a
 // column of type genType.
@@ -1148,6 +1139,10 @@ func sameColumnDefault(genCol schemamodel.Field, genDefault, dbDefault, genType,
 func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported, typeName, dialect string) (comparedDeclared, comparedReported string) {
 	if comparisonOf(dialect).DoubleQuotedStrings {
 		declared, reported = quotesDoubled(declared), quotesDoubled(reported)
+		if storesBytes(typeName) {
+			return binaryDefault(declared, dialect), binaryDefault(reported, dialect)
+		}
+		declared, reported = numericLiteralDefault(declared, typeName), numericLiteralDefault(reported, typeName)
 	}
 	if genCol.DefaultSet || genCol.Default != "" {
 		return literalsAsRead(declared, reported, typeName, dialect)
@@ -1277,6 +1272,15 @@ func columnDefaultsEqual(declared, reported, typeName, dialect string, declaredI
 	}
 	return !stringMeetsExpression(declared, reported, typeName) &&
 		normalize.DefaultValue(declared, typeName) == normalize.DefaultValue(reported, typeName)
+}
+
+// shownDefault is the declared default as a change describes it: as declared,
+// and an empty literal as the string it is rather than as nothing.
+func shownDefault(genCol schemamodel.Field, declared, typeName string) string {
+	if declared == "" && genCol.DefaultSet {
+		return defaultlit.AsRead(typeName, genCol.Default)
+	}
+	return declared
 }
 
 // noDefaultMeetsEmptyString reports whether one side has no default and the
