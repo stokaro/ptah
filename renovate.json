@@ -25,6 +25,31 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)[\\s\\S]*?\\n\\s*[a-z][\\w./-]*:(?<currentValue>[^\\s\\\\]+)"
       ]
+    },
+    {
+      "customType": "regex",
+      "description": "The Atlas CE reference build is pinned by scripts/atlas-ce-reference.lock, which no built-in manager reads. This moves the tag and the commit it resolves to, and rewrites the archive URL from the new commit, because the build script refuses a URL that does not address source_commit. It cannot move source_sha256: Renovate has no checksum of a codeload archive, so the pull request fails the build step with `source archive checksum mismatch`, and the `got:` line of that failure is the value to commit. TestRenovate_MovesTheAtlasLock runs this pattern over the lock.",
+      "managerFilePatterns": [
+        "/^scripts/atlas-ce-reference\\.lock$/"
+      ],
+      "matchStrings": [
+        "\\nversion (?<currentValue>v\\d+\\.\\d+\\.\\d+)\\nsource_commit (?<currentDigest>[0-9a-f]{40})\\nsource_url https://codeload\\.github\\.com/ariga/atlas/tar\\.gz/[0-9a-f]{40}\\n"
+      ],
+      "autoReplaceStringTemplate": "\nversion {{{newValue}}}\nsource_commit {{{newDigest}}}\nsource_url https://codeload.github.com/ariga/atlas/tar.gz/{{{newDigest}}}\n",
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "ariga/atlas"
+    },
+    {
+      "customType": "regex",
+      "description": "atlasreference.Release must equal the lock's version, and the reference suites compare the binary's `atlas version` and the revision rows it writes against it. Same datasource and dependency name as the lock manager, so Renovate puts both files in one branch; TestRenovate_MovesTheReleaseWithTheLock runs this pattern over the file.",
+      "managerFilePatterns": [
+        "/^internal/atlasreference/atlasreference\\.go$/"
+      ],
+      "matchStrings": [
+        "\\nconst Release = \"(?<currentValue>v\\d+\\.\\d+\\.\\d+)\"\\n"
+      ],
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "ariga/atlas"
     }
   ],
   "packageRules": [

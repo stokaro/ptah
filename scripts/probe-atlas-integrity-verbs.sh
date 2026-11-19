@@ -12,8 +12,8 @@
 # The reference is pinned. A different Atlas build may have changed the very rules
 # under test, so the version is checked before anything is compared.
 #
-#   reference:  ptah-atlas-conformance/bin/atlas
-#   version: atlas community version v1.3.0
+#   reference:  the build scripts/build-atlas-ce-reference.sh produces
+#   version: the one scripts/atlas-ce-reference.lock names, checked below
 #
 # A system-wide `atlas` on PATH is frequently a different build, so the
 # reference is invoked by absolute path.

@@ -36,7 +36,7 @@ const fileReferenceEnv = atlasreference.EnvVar
 
 // fileReferenceVersion is the only build these verdicts describe. Comparing
 // against another build would report version drift as divergence.
-const fileReferenceVersion = "atlas community version v1.3.0"
+const fileReferenceVersion = atlasreference.Version
 
 // fileReferenceProbeURL is planted outside the config directory. It is a URL scheme
 // so the value can be traced into the binary's own error text: the leak this

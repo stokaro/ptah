@@ -202,16 +202,18 @@ derived rather than restated here.
 
 `atlas migrate ls`, `atlas migrate show`, `atlas schema stats`,
 `atlas schema validate`, `atlas script` and `atlas cloud` appear in current
-Atlas documentation but are entirely absent from the pinned conformance Atlas CE
-v1.3.0 binary (each resolves to `unknown command`, not a community-version abort
-stub), so they are outside the CLI-surface parity target today.
+Atlas documentation but are not registered in the pinned conformance Atlas CE
+binary. `script` and `cloud` answer `unknown command` at exit 1; the four
+subcommands print the help of their command group at exit 0, as that binary
+does for any subcommand it does not register. None is a community-version abort
+stub, so they are outside the CLI-surface parity target today.
 
 Outside the parity target is not the same as unbuilt. All four are
 implemented, as native verbs with a compatibility spelling each; the pin decides
 what the `cli-surface` tier measures, and `PTAH_ATLAS_STRICT_COMPAT=1` is where
 that measurement happens, so none of them is registered under the strict
-profile. Triage outcome, to revisit when the
-conformance Atlas pin advances past v1.3.0:
+profile. Triage outcome, to revisit when a pinned build registers one of
+them:
 
 | Atlas verb | Current Atlas docs behavior | Triage |
 | --- | --- | --- |
@@ -219,37 +221,38 @@ conformance Atlas pin advances past v1.3.0:
 | `migrate show` | Print the contents of one or more migration files. | Implemented: `ptah migrations show` prints a stored migration's SQL with no database, and `ptah-compat migrate show {name \| version}...` forwards to it. |
 | `schema stats` | Inspect database schema statistics in OpenMetrics format. | Implemented: `ptah schema stats` counts the objects in a live schema and writes them as OpenMetrics, and `ptah-compat schema stats inspect` forwards to it. An earlier triage called this out of scope as an observability surface rather than a schema one. |
 | `schema validate` | Check that a schema definition parses and loads, optionally against `--dev-url`. | Implemented: `ptah schema validate` reports a desired schema's structural problems with no database, exiting 0 silently and 1 with one line each, and `ptah-compat schema validate` forwards to it. Not `ptah schema render`, which an earlier triage claimed covered it: render answers whether the schema produces SQL, not what is wrong with it. |
-| `script loop\|query\|exec` | Declare data operations as code: transactional mutations, masked queries, batched loops. | Being implemented best-effort from published information ([`stokaro/ptah#1017`](https://github.com/stokaro/ptah/issues/1017)). |
-| `cloud` | Manage registry repositories, databases and deployment history from the terminal. | Being implemented as a pointer rather than a command group ([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)). |
+| `script loop\|query\|exec` | Declare data operations as code: transactional mutations, masked queries, batched loops. | Implemented outside the strict profile: `ptah-compat script` runs a data operation declared in HCL through its `loop`, `query` and `exec` subcommands, reproduced from published information ([`stokaro/ptah#1017`](https://github.com/stokaro/ptah/issues/1017)). |
+| `cloud` | Manage registry repositories, databases and deployment history from the terminal. | A pointer, not a command group: `ptah-compat cloud` answers `unknown command` at exit 1 and names what Ptah has locally ([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)). |
 
-### The two v1.3.0 verb groups, and why absence from the pin is not a verdict
+### `script` and `cloud` are absent from the pinned binary, and that is not a verdict
 
-Neither group is registered in the pinned binary: `atlas script` and `atlas
-cloud` each answer `unknown command`, the same way a nonsense root verb does. So
-there is no CE behavior for `ptah-compat` to match, and no drop-in gap.
+`atlas script` and `atlas cloud` each answer `unknown command` on the pinned
+binary, the same way a nonsense root verb does. So there is no CE behavior for
+`ptah-compat` to match, and no drop-in gap.
 
 That says what the parity target does not cover. It does not decide whether Ptah
-should have the capability, and this section previously read as though it did —
-recording both as declined. Absence from the pin is a scheduling fact about the
+should have the capability. Absence from the pin is a scheduling fact about the
 compatibility surface, not a reason to leave a capability unbuilt.
 
-Both are being built, each in the shape its issue settled on:
+Each exists in the shape its issue settled on:
 
-- **`script`** — best-effort from published information, since the pinned binary
-  offers nothing to measure against
+- **`script`**: `ptah-compat script` runs a data operation declared in HCL
+  through its `loop`, `query` and `exec` subcommands. It is reproduced from published information, since the pinned
+  binary offers nothing to measure against, and it is registered outside the
+  strict profile only
   ([`stokaro/ptah#1017`](https://github.com/stokaro/ptah/issues/1017)).
-- **`cloud`** — not as a command group. Registering one would end the
-  byte-identical `unknown command` answer for the sake of a message, so the
-  invocation points at the Ptah equivalent and exits non-zero
-  ([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)).
+- **`cloud`**: not a command group. Registering one would end the
+  byte-identical `unknown command` answer for the sake of a message, so
+  `ptah-compat cloud` keeps that answer, exits 1 and points at what Ptah has
+  locally ([`stokaro/ptah#1018`](https://github.com/stokaro/ptah/issues/1018)).
 
 ### `cloud` points at what Ptah has, without becoming a command
 
 Declining the group is not the same as answering nothing. `ptah-compat cloud`
 answers `unknown command "cloud" for "atlas"` at exit 1, byte for byte with the
-pinned binary, and it still does — registering a `cloud` group would have ended
-that for the sake of a message. The pointer is appended to the unknown-command
-diagnostic instead, for that verb only:
+pinned binary. Registering a `cloud` group would end that for the sake of a
+message, so the pointer is appended to the unknown-command diagnostic instead,
+for that verb only:
 
 ```console
 $ ptah-compat cloud database list
@@ -267,8 +270,8 @@ What it does have, locally and with no account:
 ```
 
 The first two lines and the exit code are unchanged, and an unknown command with
-no local answer is unchanged entirely — which the existing unknown-command tests
-pin, and which are the control that this pointer is scoped rather than general.
+no local answer is unchanged entirely. The existing unknown-command tests pin
+that, and they are the control that this pointer is scoped rather than general.
 
 It names what Ptah does **not** have as well. A pointer listing commands without
 saying the rest of the group has no counterpart would read as a full mapping,
@@ -2702,8 +2705,8 @@ make conformance
 
 The repository's Atlas-reference workflow independently rebuilds Atlas CE from an
 immutable source archive, verifies that the release tag resolves to the locked
-commit, checks the committed SHA-256 digest and exact
-`atlas community version v1.3.0` output, then runs the migration-directory
+commit, checks the committed SHA-256 digest and the exact
+`atlas community version` line for the locked tag, then runs the migration-directory
 query, migrate-apply interoperability, and Flyway revision-identity controls,
 runs the differential migration-sum tests, and regenerates the committed corpus.
 Reproduce that reference locally:

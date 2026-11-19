@@ -1,7 +1,7 @@
 # Atlas CE is built as an external black-box test reference. The source archive is
 # addressed by an immutable commit and verified before extraction.
 # Atlas Cloud and commercial binaries are intentionally outside this reference.
-version v1.3.0
-source_commit 9a6bc601212130aaaefcbc8dd36c710baf9716ff
-source_url https://codeload.github.com/ariga/atlas/tar.gz/9a6bc601212130aaaefcbc8dd36c710baf9716ff
-source_sha256 15f14b25db8e32f6fc91343c77a3e624507a1b051f91fecbcfc643cb596c0321
+version v1.4.0
+source_commit e933d0b70620e67e8e0972e47f2c03a1dc38d333
+source_url https://codeload.github.com/ariga/atlas/tar.gz/e933d0b70620e67e8e0972e47f2c03a1dc38d333
+source_sha256 efb9579a31688f840d8a6d0b55d6fec4cd65dcad2faa4e0d9566bf91cf555d38

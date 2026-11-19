@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlasreference"
 	"ptah.run/internal/clirun"
 )
 
@@ -70,7 +71,7 @@ func TestReferencePartialProgressInteroperatesBidirectionally(t *testing.T) {
 			writer:            compat,
 			reader:            reference,
 			applyArgs:         []string{"--tx-mode", "none"},
-			wantFinalOperator: "Atlas CLI v1.3.0",
+			wantFinalOperator: atlasreference.OperatorVersion,
 		},
 		{
 			name:              "global none Atlas to Ptah",
@@ -84,7 +85,7 @@ func TestReferencePartialProgressInteroperatesBidirectionally(t *testing.T) {
 			writer:            compat,
 			reader:            reference,
 			directive:         "-- atlas:txmode none\n\n",
-			wantFinalOperator: "Atlas CLI v1.3.0",
+			wantFinalOperator: atlasreference.OperatorVersion,
 		},
 		{
 			name:              "file directive Atlas to Ptah",

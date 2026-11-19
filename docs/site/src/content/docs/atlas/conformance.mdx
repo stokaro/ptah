@@ -257,10 +257,11 @@ the live runners. This workflow is not counted as a schema-object fixture.
 ## Verbs beyond the CE pin
 
 `atlas migrate ls`, `atlas migrate show`, `atlas schema stats`, and
-`atlas schema validate` appear in current Atlas documentation but are entirely
-absent from the pinned conformance Atlas CE binary — each resolves to
-`unknown command` rather than to a community-version abort stub — so they are
-outside the CLI-surface parity target. Being outside that target is not a
+`atlas schema validate` appear in current Atlas documentation but are not
+registered in the pinned conformance Atlas CE binary. Each prints the help of
+its command group and exits 0, which is what that binary does for any
+subcommand it does not register, rather than a community-version abort stub. So
+they are outside the CLI-surface parity target. Being outside that target is not a
 reason to leave a capability unbuilt: all four are Ptah verbs, reachable
 through the compatibility spelling and omitted only under
 `PTAH_ATLAS_STRICT_COMPAT=1`, which is the profile that mirrors the pin.
@@ -272,8 +273,8 @@ through the compatibility spelling and omitted only under
 | `schema validate` | `ptah-compat schema validate` and native `ptah schema validate` report every structural problem in a desired state without a database. |
 | `schema stats` | `ptah-compat schema stats inspect` and native `ptah schema stats`, which count the objects in a live schema and emit them as OpenMetrics. |
 
-Revisit the classification when the conformance Atlas pin advances.
-[`stokaro/ptah#1618`](https://github.com/stokaro/ptah/issues/1618) tracks it.
+Revisit the classification when a pinned build registers one of them.
+[`stokaro/ptah#1618`](https://github.com/stokaro/ptah/issues/1618) records it.
 
 ## Local commands
 
