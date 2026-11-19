@@ -149,6 +149,10 @@ func LowerEnumColumns(fields []schemamodel.Field, enums []schemamodel.Enum, form
 	default:
 		return fields
 	}
+	escapes := quotesDoubled
+	if form.BackslashEscapes {
+		escapes = backslashesAndQuotesDoubled
+	}
 	lowered := append([]schemamodel.Field(nil), fields...)
 	for i := range lowered {
 		field := &lowered[i]
@@ -159,7 +163,7 @@ func LowerEnumColumns(fields []schemamodel.Field, enums []schemamodel.Enum, form
 		field.Enum = values
 		switch form.Style {
 		case descriptor.EnumColumnType:
-			field.Type = enumColumnType(field.Enum, form.BackslashEscapes)
+			field.Type = enumColumnType(field.Enum, escapes)
 		case descriptor.EnumNumbered:
 			field.Type = ClickHouseEnumType(field.Enum)
 		case descriptor.EnumCheck:
@@ -168,7 +172,7 @@ func LowerEnumColumns(fields []schemamodel.Field, enums []schemamodel.Enum, form
 				column = form.CheckColumn(field.Name)
 			}
 			field.Type = form.CheckType
-			field.Check = inlineEnumCheck(*field, column, form.BackslashEscapes)
+			field.Check = inlineEnumCheck(*field, column, escapes)
 		}
 	}
 	return lowered
@@ -176,8 +180,8 @@ func LowerEnumColumns(fields []schemamodel.Field, enums []schemamodel.Enum, form
 
 // inlineEnumCheck is the CHECK an inline enum column carries, over the
 // column spelled as column, joined to the column's own CHECK where it has one.
-func inlineEnumCheck(field schemamodel.Field, column string, backslashEscapes bool) string {
-	enumCheck := column + " IN (" + strings.Join(quotedEnumValues(field.Enum, backslashEscapes), ", ") + ")"
+func inlineEnumCheck(field schemamodel.Field, column string, escapes *strings.Replacer) string {
+	enumCheck := column + " IN (" + strings.Join(quotedEnumValues(field.Enum, escapes), ", ") + ")"
 	if field.Check != "" {
 		return "(" + field.Check + ") AND " + enumCheck
 	}
@@ -204,20 +208,22 @@ func ClickHouseEnumType(values []string) string {
 
 // enumColumnType is the ENUM column type an enum with values is built as,
 // enum('a','b').
-func enumColumnType(values []string, backslashEscapes bool) string {
-	return "enum(" + strings.Join(quotedEnumValues(values, backslashEscapes), ",") + ")"
+func enumColumnType(values []string, escapes *strings.Replacer) string {
+	return "enum(" + strings.Join(quotedEnumValues(values, escapes), ",") + ")"
 }
 
-// quotedEnumValues writes each value as a string literal with its quotes
-// doubled, and its backslashes too where backslashEscapes says a backslash
-// escapes.
-func quotedEnumValues(values []string, backslashEscapes bool) []string {
+// The escapes a value takes inside a string literal: its quotes doubled, and
+// its backslashes too on a target that reads a backslash as an escape.
+var (
+	quotesDoubled               = strings.NewReplacer("'", "''")
+	backslashesAndQuotesDoubled = strings.NewReplacer(`\`, `\\`, "'", "''")
+)
+
+// quotedEnumValues writes each value as a string literal with escapes.
+func quotedEnumValues(values []string, escapes *strings.Replacer) []string {
 	quoted := make([]string, 0, len(values))
 	for _, value := range values {
-		if backslashEscapes {
-			value = strings.ReplaceAll(value, `\`, `\\`)
-		}
-		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
+		quoted = append(quoted, "'"+escapes.Replace(value)+"'")
 	}
 	return quoted
 }

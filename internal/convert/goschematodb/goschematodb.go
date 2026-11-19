@@ -304,13 +304,19 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 	keyColumns := sqlitekey.KeyColumns(table, fields)
 	described, _ := platform.Lookup(dialect)
 	conversion := described.Conversion
+	// A literal is held as a catalog reports it, with each backslash doubled
+	// where a backslash in a string is an escape, as MySQL reports it.
+	literalAsRead := defaultlit.AsRead
+	if described.Lexical.BackslashEscapes {
+		literalAsRead = defaultlit.AsReadEscaped
+	}
 	out := make([]catalog.Column, 0, len(fields))
 	for i, field := range fields {
 		if sqlitekey.KeyColumnIsNotNull(dialect, table, keyColumns, field) ||
 			autoincrement.NotNull(field, described.Columns) {
 			field.Nullable = false
 		}
-		column := toDBColumn(field, i+1, described.Lexical.BackslashEscapes)
+		column := toDBColumn(field, i+1, literalAsRead)
 		column.IsAutoIncrement = autoincrement.DeclaredOn(field, dialect)
 		// A target that stores a declared type as another reports the one it
 		// stores: Oracle a TEXT column as a CLOB, CockroachDB an INT column at
@@ -332,7 +338,9 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 	return out
 }
 
-func toDBColumn(field schemamodel.Field, ordinal int, backslashEscapes bool) catalog.Column {
+// toDBColumn describes field as a read reports it, with a literal default
+// written by literalAsRead.
+func toDBColumn(field schemamodel.Field, ordinal int, literalAsRead func(columnType, value string) string) catalog.Column {
 	nullable := "NO"
 	if field.Nullable {
 		nullable = "YES"
@@ -369,13 +377,7 @@ func toDBColumn(field schemamodel.Field, ordinal int, backslashEscapes bool) cat
 		// bare `x` a struct tag declares on a text column is the string `'x'`.
 		// Held bare, a description of the literal `1 + 2` reads like the
 		// expression `(1 + 2)`, and a comparison takes the two for one default.
-		// Where a backslash in a string is an escape, it is doubled
-		// ([defaultlit.AsReadEscaped]), as MySQL reports it.
-		read := defaultlit.AsRead
-		if backslashEscapes {
-			read = defaultlit.AsReadEscaped
-		}
-		column.ColumnDefault = new(read(field.Type, field.Default))
+		column.ColumnDefault = new(literalAsRead(field.Type, field.Default))
 	} else if field.DefaultExpr != "" {
 		column.ColumnDefault = new(field.DefaultExpr)
 	}
