@@ -137,6 +137,7 @@ func mariaDB() descriptor.Dialect {
 				CharsetAliases:  map[string]string{"utf8": "utf8mb3"},
 				CharsetDefaults: mariaDBCharsetDefaults(),
 				WithoutCharset:  true, CharsetDefault: "DEFAULT",
+				ListedWithoutCharset: []string{"uca1400_"},
 				Types: []string{
 					"char", "character", "nchar", "national", "varchar", "nvarchar",
 					"tinytext", "text", "mediumtext", "longtext", "enum", "set",
@@ -313,7 +314,7 @@ func mariaDB() descriptor.Dialect {
 
 		// Migrations: the engine's reading decides a migration file's
 		// directives when its dialect is unknown.
-		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
+		Migration: descriptor.Migration{DirectivesWithoutDialect: true, SameNamedForeignKeysApart: true},
 
 		// Reach: none of its own. MariaDB's constructs that reach outside the
 		// database are MySQL's, which MySQL's descriptor states and a scan

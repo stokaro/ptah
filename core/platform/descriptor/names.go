@@ -200,6 +200,14 @@ type CollationNames struct {
 	// character set and takes the column's: `COLLATE uca1400_ai_ci` on a
 	// utf8mb4 column of MariaDB 11.8 holds as utf8mb4_uca1400_ai_ci.
 	WithoutCharset bool `json:"without_charset,omitempty"`
+	// ListedWithoutCharset are the name prefixes, in lower case, of the
+	// collations information_schema.COLLATIONS lists once with no character
+	// set rather than once for each character set: MariaDB 10.11 to 12.3 list
+	// `uca1400_ai_ci` and no `utf8mb4_uca1400_ai_ci`. A catalog read that
+	// names a table's character set through that table finds none for a
+	// collation of such a family. A dialect whose URL scheme may name a server
+	// of another dialect declares that server's families too.
+	ListedWithoutCharset []string `json:"listed_without_charset,omitempty"`
 	// CharsetDefault is the name that selects the default collation of the
 	// column's character set, `DEFAULT` on MariaDB 11.8. A column that
 	// declares it is compared as one that declares none.

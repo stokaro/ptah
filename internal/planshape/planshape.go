@@ -33,14 +33,14 @@ import (
 // the database it runs on is projected from the forward diff, and only the forward
 // plan's statements say all of it.
 func Apply(dialect string, nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
-	form, spelling, ok := catalogRules(dialect)
+	target, spelling, ok := catalogRules(dialect)
 	if !ok {
 		return nodes
 	}
 	facts := newPlanFacts()
 	facts.readDiff(diff)
 	facts.readPlan(nodes)
-	how := arrangementFor(form, facts)
+	how := arrangementFor(target, facts)
 	how.places = how.forwardPlaces(diff)
 	how.created = tablesCreatedBy(nodes)
 	how.absorbs = how.merge && !foreignKeysDeferred(nodes, how.created)
@@ -48,7 +48,7 @@ func Apply(dialect string, nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 	// the MySQL family writes it into the column or the table options. A rollback
 	// keeps its comments where the planner put them, since what it undoes says
 	// nothing about where they go.
-	how.movesComments = form == descriptor.PostgresCatalogForm
+	how.movesComments = target.Atlas.CatalogForm == descriptor.PostgresCatalogForm
 	// Ahead of the respelling, which takes off a name the server gives anyway: the
 	// server gives it only where nothing holds it.
 	nodes = notnullname.Free(arrange(inlineConstraints(nodes), how), diff)
@@ -58,27 +58,29 @@ func Apply(dialect string, nodes []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 	for _, node := range nodes {
 		respell(node, spelling)
 	}
+	withoutUnreadCharsets(nodes, diff, dialect)
 	return nodes
 }
 
-// catalogRules is the form an engine's catalog prints and how it spells a column. It
-// answers false for an engine the community binary has no driver for.
-func catalogRules(dialect string) (descriptor.CatalogForm, columnSpelling, bool) {
+// catalogRules is an engine's descriptor, whose catalog form says what its catalog
+// prints, and how it spells a column. It answers false for an engine the community
+// binary has no driver for.
+func catalogRules(dialect string) (descriptor.Dialect, columnSpelling, bool) {
 	target, ok := platform.Lookup(dialect)
 	if !ok {
-		return descriptor.NoCatalogForm, nil, false
+		return descriptor.Dialect{}, nil, false
 	}
 	switch target.Atlas.CatalogForm {
 	case descriptor.PostgresCatalogForm:
-		return target.Atlas.CatalogForm, postgresSpelling, true
+		return target, postgresSpelling, true
 	case descriptor.MySQLCatalogForm:
-		return target.Atlas.CatalogForm, mysqlSpelling{foreignKeyAction: "NO ACTION"}, true
+		return target, mysqlSpelling{foreignKeyAction: "NO ACTION"}, true
 	case descriptor.MariaDBCatalogForm:
-		return target.Atlas.CatalogForm, mysqlSpelling{foreignKeyAction: "RESTRICT"}, true
+		return target, mysqlSpelling{foreignKeyAction: "RESTRICT"}, true
 	case descriptor.SQLiteCatalogForm:
-		return target.Atlas.CatalogForm, sqliteSpelling, true
+		return target, sqliteSpelling, true
 	default:
-		return descriptor.NoCatalogForm, nil, false
+		return descriptor.Dialect{}, nil, false
 	}
 }
 

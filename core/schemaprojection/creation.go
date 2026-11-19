@@ -110,6 +110,11 @@ type TableCreation struct {
 	// the collation a read of the created table reports for it, the one it
 	// inherits. A column it leaves out keeps the collation it declares.
 	ColumnCollations map[string]string
+	// ColumnTypes maps a declared column the target stores under another
+	// type to the type a read of the created table reports for it: MySQL and
+	// MariaDB store `varchar(10) CHARACTER SET binary` as varbinary(10). A
+	// column it leaves out keeps the type it declares.
+	ColumnTypes map[string]string
 }
 
 // TableCreationResult explicitly completes the whole batch, including an empty
@@ -131,6 +136,7 @@ func (r TableCreationResult) Clone() TableCreationResult {
 		r.Tables[i].Observed = slices.Clone(r.Tables[i].Observed)
 		r.Tables[i].ColumnPrimaryKeys = slices.Clone(r.Tables[i].ColumnPrimaryKeys)
 		r.Tables[i].ColumnCollations = maps.Clone(r.Tables[i].ColumnCollations)
+		r.Tables[i].ColumnTypes = maps.Clone(r.Tables[i].ColumnTypes)
 	}
 	return r
 }
@@ -199,6 +205,9 @@ func validateTableCreation(input TableCreationInput, output TableCreation, seman
 	if err := validateCreationCollations(input, output.ColumnCollations); err != nil {
 		return err
 	}
+	if err := validateCreationTypes(input, output.ColumnTypes); err != nil {
+		return err
+	}
 	columns := make(map[string]bool)
 	for _, field := range input.Declaration.Fields {
 		columns[field.Name] = true
@@ -229,6 +238,24 @@ func validateCreationCollations(input TableCreationInput, predicted map[string]s
 			return fmt.Errorf("%w: creation projection names a collation for column %q, which declares its own", ErrInvalid, name)
 		case predicted[name] == "":
 			return fmt.Errorf("%w: creation projection names an empty collation for column %q", ErrInvalid, name)
+		}
+	}
+	return nil
+}
+
+// validateCreationTypes refuses a predicted type for a column the declaration
+// does not declare, and an empty one.
+func validateCreationTypes(input TableCreationInput, predicted map[string]string) error {
+	declared := make(map[string]bool, len(input.Declaration.Fields))
+	for _, field := range input.Declaration.Fields {
+		declared[field.Name] = true
+	}
+	for _, name := range slices.Sorted(maps.Keys(predicted)) {
+		switch {
+		case !declared[name]:
+			return fmt.Errorf("%w: creation projection names a type for undeclared column %q", ErrInvalid, name)
+		case predicted[name] == "":
+			return fmt.Errorf("%w: creation projection names an empty type for column %q", ErrInvalid, name)
 		}
 	}
 	return nil

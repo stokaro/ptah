@@ -301,6 +301,25 @@ jobs:
         ports:
           - 3317:3306
 
+      # MariaDB 11.8 refuses a foreign key dropped and added under one name in
+      # one ALTER TABLE with errno 121, and the 12.3 service above accepts it.
+      # Only a test pointed at this server sees a statement shape that merges
+      # the pair. Only the tests that ask for dbtarget.MariaDB118 use it.
+      # renovate.json disables updates for this pin: a 12.x tag removes the
+      # coverage without failing anything.
+      mariadb-11-8:
+        image: mariadb:11.8
+        env:
+          MARIADB_ROOT_PASSWORD: root_password
+        options: >-
+          --health-cmd "mariadb-admin ping -h localhost -u root -proot_password"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --tmpfs /var/lib/mysql:rw,noexec,nosuid,size=1024m
+        ports:
+          - 3318:3306
+
       clickhouse:
         image: clickhouse/clickhouse-server:26.10
         env:
@@ -477,13 +496,13 @@ jobs:
           done
           echo "MariaDB is ready!"
 
-          for port in 3316 3317; do
-            echo "Waiting for the dev server on port $port..."
+          for port in 3316 3317 3318; do
+            echo "Waiting for the server on port $port..."
             until mysqladmin ping -h 127.0.0.1 -P "$port" -u root -proot_password --silent; do
-              echo "The dev server on port $port is unavailable - sleeping"
+              echo "The server on port $port is unavailable - sleeping"
               sleep 2
             done
-            echo "The dev server on port $port is ready!"
+            echo "The server on port $port is ready!"
           done
 
           echo "Waiting for ClickHouse..."
@@ -717,6 +736,8 @@ jobs:
           # database.
           MYSQL_DEV_SERVER_URL: "mysql://root:root_password@127.0.0.1:3316/"
           MARIADB_DEV_SERVER_URL: "mariadb://root:root_password@127.0.0.1:3317/"
+          # MariaDB 11.8, with an account that creates the test's databases.
+          MARIADB_11_8_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3318)/mysql"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"

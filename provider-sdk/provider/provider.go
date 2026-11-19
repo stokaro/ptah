@@ -195,6 +195,7 @@ func validateEngineAdditions(description *protocol.Description, engine *protocol
 		validateSQLStatementFactsFeature, validateQueryLexical, validateConnectionCapabilitySource, validateOmissionCounts,
 		validateViewQueryContextEngine, validateDeclaredFacetsFeature, validateSQLUndeclaredFeature, validateRemovalBlockersFeature, validateNotDescribedFeature,
 		validateCurrentContextFeature, validateSecurityAdvisorySnapshot, validateReplayTrustFeature, validateRepeatableRecordFeature,
+		validateReservedRepeatableRecordFeature,
 	} {
 		if err := check(description, engine); err != nil {
 			return err

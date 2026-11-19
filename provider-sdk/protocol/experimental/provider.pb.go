@@ -3294,6 +3294,10 @@ const (
 	// The ledger of the seed files the engine's seed service recorded.
 	// Contract 25.29, under schema.reserved-seeds.
 	ReservedObject_SEEDS ReservedObject_Purpose = 5
+	// The record of repeatable migrations the engine's history keeps beside
+	// the revision table. Contract 25.45, under
+	// schema.reserved-repeatable-record.
+	ReservedObject_REPEATABLE ReservedObject_Purpose = 6
 )
 
 // Enum value maps for ReservedObject_Purpose.
@@ -3305,6 +3309,7 @@ var (
 		3: "LOG",
 		4: "TAG",
 		5: "SEEDS",
+		6: "REPEATABLE",
 	}
 	ReservedObject_Purpose_value = map[string]int32{
 		"PURPOSE_UNSPECIFIED": 0,
@@ -3313,6 +3318,7 @@ var (
 		"LOG":                 3,
 		"TAG":                 4,
 		"SEEDS":               5,
+		"REPEATABLE":          6,
 	}
 )
 
@@ -39817,19 +39823,21 @@ const file_protocol_experimental_provider_proto_rawDesc = "" +
 	"\x06exists\x18\x03 \x01(\bR\x06exists\x12\x1a\n" +
 	"\bcomplete\x18\x04 \x01(\bR\bcomplete\x12B\n" +
 	"\x04logs\x18\x05 \x03(\v2..ptah.provider.experimental.MigrationLogRecordR\x04logs\x12B\n" +
-	"\x04tags\x18\x06 \x03(\v2..ptah.provider.experimental.MigrationTagRecordR\x04tags\"\xf0\x02\n" +
+	"\x04tags\x18\x06 \x03(\v2..ptah.provider.experimental.MigrationTagRecordR\x04tags\"\x80\x03\n" +
 	"\x0eReservedObject\x12=\n" +
 	"\x06object\x18\x01 \x01(\v2%.ptah.provider.experimental.ReferenceR\x06object\x12R\n" +
 	"\x11normalized_object\x18\x02 \x01(\v2%.ptah.provider.experimental.ReferenceR\x10normalizedObject\x12L\n" +
 	"\apurpose\x18\x03 \x01(\x0e22.ptah.provider.experimental.ReservedObject.PurposeR\apurpose\x12%\n" +
-	"\x0econflict_kinds\x18\x04 \x03(\tR\rconflictKinds\"V\n" +
+	"\x0econflict_kinds\x18\x04 \x03(\tR\rconflictKinds\"f\n" +
 	"\aPurpose\x12\x17\n" +
 	"\x13PURPOSE_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aHISTORY\x10\x01\x12\b\n" +
 	"\x04LOCK\x10\x02\x12\a\n" +
 	"\x03LOG\x10\x03\x12\a\n" +
 	"\x03TAG\x10\x04\x12\t\n" +
-	"\x05SEEDS\x10\x05\"\xa0\x03\n" +
+	"\x05SEEDS\x10\x05\x12\x0e\n" +
+	"\n" +
+	"REPEATABLE\x10\x06\"\xa0\x03\n" +
 	"\x14PrepareTablesRequest\x12\x16\n" +
 	"\x06engine\x18\x01 \x01(\tR\x06engine\x12S\n" +
 	"\videntifiers\x18\x02 \x01(\v21.ptah.provider.experimental.ComparisonIdentifiersR\videntifiers\x12f\n" +

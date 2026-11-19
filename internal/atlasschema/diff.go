@@ -1218,7 +1218,9 @@ func withMaterializedFromSource(
 }
 
 // materializedState creates a declared state on the dev database, reads it
-// back and returns what was read, with the declaration's coverage record.
+// back and returns what was read, with the declaration's coverage record. A
+// declaration loaded for another dialect than the dev server's is loaded
+// again for the server's ([loadedForAnotherDialect]).
 func materializedState(
 	ctx context.Context,
 	service renderer.SchemaService,
@@ -1244,6 +1246,14 @@ func materializedState(
 	// declaration there.
 	if err := devlock.EnsureDistinct(ctx, devConn, opts.Protected...); err != nil {
 		return atlassource.State{}, err
+	}
+	if server := devConn.Info().Dialect; loadedForAnotherDialect(opts.Dialect, server) {
+		reload := opts
+		reload.Dialect = server
+		declared, err = resolveDiffSource(ctx, set, reload)
+		if err != nil {
+			return atlassource.State{}, err
+		}
 	}
 
 	var state atlassource.State

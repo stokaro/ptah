@@ -52,3 +52,29 @@ func TestToDBSchemaOn_PredictsTheCollations(t *testing.T) {
 		})
 	}
 }
+
+// TestToDBSchemaOn_HoldsTheStoredTypes converts columns of the binary
+// character set as a read of the table they create reports them, at the
+// binary type of the same length, and keeps the declared type of a column the
+// server stores as declared.
+func TestToDBSchemaOn_HoldsTheStoredTypes(t *testing.T) {
+	for _, dialect := range []string{"mysql", "mariadb"} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+			declared := utf8mb4Table()
+			binary := must.Must(schemaext.NewFacets(&mysqlschema.DesiredColumnSettings{Charset: "binary"}))
+			declared.Fields = append(declared.Fields,
+				schemamodel.Field{StructName: "T", Name: "v", Type: "varchar(10)", Nullable: true, Facets: binary},
+				schemamodel.Field{StructName: "T", Name: "c", Type: "char(4)", Nullable: true, Facets: binary})
+
+			converted, err := goschematodb.ToDBSchemaOn(c.Context(), declared, dialect, must.Must(builtin.New()), goschematodb.ServerFacts{})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(converted.Tables, qt.HasLen, 1)
+			c.Assert(converted.Tables[0].Columns, qt.HasLen, 3)
+			c.Assert(converted.Tables[0].Columns[0].RawType(), qt.Equals, "varchar(20)")
+			c.Assert(converted.Tables[0].Columns[1].RawType(), qt.Equals, "varbinary(10)")
+			c.Assert(converted.Tables[0].Columns[2].RawType(), qt.Equals, "binary(4)")
+		})
+	}
+}

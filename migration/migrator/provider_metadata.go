@@ -115,7 +115,8 @@ func (m *Migrator) readProviderLog(ctx context.Context, store dbschema.Migration
 	entries := make([]MigrationLogEntry, len(records))
 	for index, record := range records {
 		entries[index] = MigrationLogEntry{RunID: record.RunID, Seq: record.Seq, Operation: record.Operation, Version: record.Version,
-			State: MigrationLogState(record.State), Actor: record.Actor, ActorSource: ActorSource(record.ActorSource), Checksum: record.Checksum, At: record.At, Error: record.Error}
+			State: MigrationLogState(record.State), Actor: record.Actor, ActorSource: ActorSource(record.ActorSource), Checksum: record.Checksum, At: record.At, Error: record.Error,
+			Repeatable: record.Repeatable}
 	}
 	slices.SortFunc(entries, func(left, right MigrationLogEntry) int {
 		return cmp.Or(right.At.Compare(left.At), cmp.Compare(right.RunID, left.RunID), cmp.Compare(right.Seq, left.Seq))
@@ -127,18 +128,14 @@ func (m *Migrator) readProviderLog(ctx context.Context, store dbschema.Migration
 	return attempts, nil
 }
 
-// appendProviderLog appends entry to a provider's migration log. A provider's
-// record holds no repeatable identity, so an entry about a repeatable migration
-// is refused rather than stored as version 0, where two repeatables of one run
-// would pair with each other's entries. No provider engine runs repeatable
-// migrations: [Migrator] refuses them where the revision table declares no
-// table for them.
+// appendProviderLog appends entry to a provider's migration log. An entry
+// about a repeatable migration carries its identity with version 0, which a
+// provider stores only where it keeps the record of repeatable migrations:
+// [Migrator] runs none on a provider that does not.
 func (m *Migrator) appendProviderLog(ctx context.Context, store dbschema.MigrationLogStore, entry MigrationLogEntry) error {
-	if entry.Repeatable != "" {
-		return fmt.Errorf("provider migration log cannot record repeatable migration %q", entry.Repeatable)
-	}
 	return store.Append(ctx, m.providerLogTable(), dbschema.MigrationLogRecord{RunID: entry.RunID, Seq: entry.Seq, Operation: entry.Operation,
-		Version: entry.Version, State: string(entry.State), Actor: entry.Actor, ActorSource: string(entry.ActorSource), Checksum: entry.Checksum, At: entry.At, Error: entry.Error})
+		Version: entry.Version, State: string(entry.State), Actor: entry.Actor, ActorSource: string(entry.ActorSource), Checksum: entry.Checksum, At: entry.At, Error: entry.Error,
+		Repeatable: entry.Repeatable})
 }
 
 func tagRecordKey(record dbschema.MigrationTagRecord) (string, error) {

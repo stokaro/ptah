@@ -26,7 +26,7 @@ type arrangement struct {
 	// side of it. On PostgreSQL only a unique one can, and only on the referenced side.
 	indexesBackKeys bool
 	// sameNamedKeysApart says the server refuses a statement that drops a foreign key
-	// and adds one of the same name: MySQL answers 1826.
+	// and adds one of the same name; see [descriptor.Migration.SameNamedForeignKeysApart].
 	sameNamedKeysApart bool
 	// selfKeysApart says the server refuses a statement adding a foreign key to its own
 	// table beside the change it needs there: MySQL answers 1215 or 1826 and MariaDB 1005.
@@ -51,15 +51,17 @@ type arrangement struct {
 	redundant map[string]map[string]bool
 }
 
-// arrangementFor is the rules of an engine.
-func arrangementFor(form descriptor.CatalogForm, facts *planFacts) arrangement {
+// arrangementFor is the rules of target, an engine the community binary has a driver
+// for.
+func arrangementFor(target descriptor.Dialect, facts *planFacts) arrangement {
+	form := target.Atlas.CatalogForm
 	family := form == descriptor.MySQLCatalogForm || form == descriptor.MariaDBCatalogForm
 	return arrangement{
 		merge:              form != descriptor.SQLiteCatalogForm,
 		restatesColumns:    family,
 		unorderedStatement: family,
 		indexesBackKeys:    family,
-		sameNamedKeysApart: form == descriptor.MySQLCatalogForm,
+		sameNamedKeysApart: target.Migration.SameNamedForeignKeysApart,
 		selfKeysApart:      family,
 		facts:              facts,
 	}

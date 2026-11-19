@@ -8,8 +8,9 @@ import (
 // Migration states how migration files are read, replayed and generated for
 // the engine where engines differ. The zero value takes no part in a read of
 // directives whose dialect is unknown, restores no session setting after a
-// replay, lets a generated ALTER TYPE ... ADD VALUE share a transaction and
-// refuses no statement inside one.
+// replay, lets a generated ALTER TYPE ... ADD VALUE share a transaction,
+// refuses no statement inside one, and lets one generated ALTER TABLE drop a
+// foreign key and add one of the same name.
 type Migration struct {
 	// DirectivesWithoutDialect reports that the engine's reading of a
 	// migration file decides its directives when the file's dialect is not
@@ -38,6 +39,14 @@ type Migration struct {
 	// transaction, and a check that knows it can say so before the file runs
 	// rather than after the server refuses it part way through.
 	RefusedInTransaction []TransactionRefusal `json:"refused_in_transaction,omitempty"`
+	// SameNamedForeignKeysApart reports that a release line of the engine
+	// refuses one ALTER TABLE that drops a foreign key and adds one of the
+	// same name, so a generated migration drops the key in a statement of its
+	// own ahead of the one that adds it back. MySQL 8.4 answers ERROR 1826,
+	// and MariaDB 10.11, 11.4 and 11.8 answer ERROR 1005 with errno 121.
+	// MariaDB 12.3 takes the statement, and the fact holds for every line of
+	// the engine, so a migration generated for one runs on another.
+	SameNamedForeignKeysApart bool `json:"same_named_foreign_keys_apart,omitempty"`
 }
 
 // TransactionRefusal is one statement an engine refuses inside a transaction
