@@ -1904,6 +1904,23 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 	return result
 }
 
+// refuseUnplannableChanges refuses, before the diff is read further, the
+// changes this planner cannot write for its target: an index changed in place,
+// a feature the target does not host, a role membership, and a change of a
+// serial column's sequence.
+func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
+	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
+		return err
+	}
+	if err := p.refuseUnhostedFeatureChanges(diff); err != nil {
+		return err
+	}
+	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
+		return err
+	}
+	return schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff)
+}
+
 // GenerateMigrationAST generates MySQL-specific migration AST statements from schema differences.
 //
 // This method transforms the schema differences captured in the SchemaDiff into executable
@@ -1987,19 +2004,10 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 		}
 	}()
 
-	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
-		return nil, err
-	}
-	if err := p.refuseUnhostedFeatureChanges(diff); err != nil {
-		return nil, err
-	}
-	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
+	if err := p.refuseUnplannableChanges(diff); err != nil {
 		return nil, err
 	}
 	var result []ast.Node
-	if err := schemaprecondition.RefuseSerialSequenceChanges(p.targetDialect(), diff); err != nil {
-		return nil, err
-	}
 	// One fold, at the door, beside the index resolver that has always been
 	// here. A diff the comparator produced arrives with its identities
 	// resolved; one an embedder built by hand does not, and the zero identity
