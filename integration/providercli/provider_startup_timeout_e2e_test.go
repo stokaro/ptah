@@ -27,7 +27,7 @@ func TestProviderStartupTimeout_FailurePath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	digest := sha256.Sum256(data)
 	f := newProviderCLI(c, providerhost.Spec{Executable: binary, SHA256: hex.EncodeToString(digest[:]), ProviderID: "example.org/fixture",
-		Environment: []string{"PTAH_FIXTURE_STARTUP_DELAY=30s"}})
+		Environment: []string{"PTAH_FIXTURE_STARTUP_DELAY=45s"}})
 
 	out, diagnostics, code := executeProviderCLI(c.Context(), []string{"providers", "check", "--provider-config", f.manifestPath, "--provider-engine", "fixture", "--json"})
 
@@ -45,7 +45,7 @@ func TestProviderStartupTimeout_FailurePath(t *testing.T) {
 	c.Assert(report.Diagnostic.Code, qt.Equals, "provider_start_timeout")
 	c.Assert(report.Diagnostic.EngineID, qt.Equals, "fixture")
 	c.Assert(report.Diagnostic.Message, qt.Matches, `the fixture provider example\.org/fixture \(`+regexp.QuoteMeta(binary)+
-		`\) did not finish its handshake within 10s; it ran for 1\d(\.\d)?s\. The first start of a new executable can take longer `+
+		`\) did not finish its handshake within 30s; it ran for 3\d(\.\d)?s\. The first start of a new executable can take longer `+
 		`while the system checks it, so run the command again, and if it fails again, check the executable with `+"`ptah providers check`")
 }
 
