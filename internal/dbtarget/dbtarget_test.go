@@ -170,6 +170,16 @@ func TestLookupDriverDSN_HappyPath(t *testing.T) {
 			want:   "user:pass@tcp(127.0.0.1:3307)/db",
 		},
 		{
+			// The catalog shape test opens this server with the raw driver to
+			// create its scratch databases.
+			name:   "the MariaDB 11.8 server takes the driver's network form",
+			engine: dbtarget.MariaDB118,
+			set: func(t *testing.T) {
+				t.Setenv("MARIADB_11_8_TEST_URL", "mariadb://root:pass@tcp(127.0.0.1:3318)/mysql")
+			},
+			want: "root:pass@tcp(127.0.0.1:3318)/mysql",
+		},
+		{
 			// Rewritten, not removed. pgx accepts a PostgreSQL URL or a
 			// keyword/value DSN, and a bare root@host:26257/db is neither.
 			name:   "a distributed SQL scheme is rewritten for pgx",
