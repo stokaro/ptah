@@ -283,7 +283,9 @@ func TestProviderReadsASQLViewIntoTheHostModel(t *testing.T) {
 
 // TestMissingProviderRefusesASQLSchemaBeforeReadingIt refuses a SQL desired
 // schema for an official engine without its provider with provider_missing,
-// and never reads the file with another grammar.
+// and never reads the file with another grammar. The user store is an empty
+// directory of the test's own, so a provider installed on the machine is not
+// selected.
 func TestMissingProviderRefusesASQLSchemaBeforeReadingIt(t *testing.T) {
 	for _, entry := range providercatalog.Entries() {
 		for _, command := range []struct {
@@ -294,6 +296,7 @@ func TestMissingProviderRefusesASQLSchemaBeforeReadingIt(t *testing.T) {
 		} {
 			t.Run(entry.EngineID+"/"+command.verb, func(t *testing.T) {
 				c := qt.New(t)
+				isolateStore(c)
 				schema := filepath.Join(c.TempDir(), "schema.sql")
 				writeSQLSchema(c, filepath.Dir(schema), map[string]string{"schema.sql": "$prefix = '/app';\nUPSERT INTO items (id) VALUES (1);\n"})
 
