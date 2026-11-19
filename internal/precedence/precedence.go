@@ -42,9 +42,10 @@ const ClickHouseOperators = "clickhouse-operators"
 // It returns "" and false when scheme names no precedence this package holds,
 // or when expression holds anything outside the operators, literals, names and
 // function calls its table reads, such as IN, CASE, a qualified name or
-// another character set introducer, and on MySQL NOT and IS. A caller then compares the expression as
-// written, because reading a construct by the wrong grouping could make two
-// different expressions equal.
+// another character set introducer, and on MySQL NOT and IS. A minus before an
+// integer above 9223372036854775807 is not read either. A caller then compares
+// the expression as written, because reading a construct by the wrong grouping
+// could make two different expressions equal.
 func Canonical(expression, scheme string, lexing lexer.Options) (string, bool) {
 	table, known := schemes[scheme]
 	if !known {
@@ -121,8 +122,9 @@ type table struct {
 	// case, so the key keeps a name as written instead of in lower case.
 	functionCase bool
 	// decimalNumbers reports that the engine stores a number as its decimal
-	// value: ClickHouse writes 010 as 10, 1.50 as 1.5, 1.0 as 1. and -0 as 0.
-	// The key writes a number that way.
+	// value: ClickHouse writes 010 as 10, 1.50 as 1.5, 1.0 as 1. and -0 as 0,
+	// though not -(0), which is negate over the literal. The key writes a
+	// number that way.
 	decimalNumbers bool
 }
 
@@ -555,14 +557,39 @@ func (r *reader) unary(minimum int) (text string, precedence int, ok bool) {
 		return r.atom()
 	}
 	r.pos++
+	// ClickHouse folds a minus written right before a number into the
+	// literal, and reads one before anything else, a group included, as
+	// negate: -0 is the UInt8 literal 0, while -(0) and - -0 are negate(0),
+	// an Int16 that makes -(0) + 18446744073709551614 an Int64 -2.
+	next, _ := r.peek()
+	folded := next.kind == kindLiteral
 	operand, operandBound, ok := r.unary(bound)
 	if !ok {
 		return "", 0, false
 	}
-	if tok.text == "-" && operand == "0" && r.table.decimalNumbers {
+	if tok.text == "-" && folded && operand == "0" && r.table.decimalNumbers {
 		return operand, atomPrecedence, true
 	}
+	if tok.text == "-" && aboveInt64(operand) {
+		return "", 0, false
+	}
 	return tok.text + enclose(operand, operandBound, bound), bound, true
+}
+
+// aboveInt64 reports whether text is an integer literal above
+// 9223372036854775807, counting one written with more digits than that as
+// above it. A minus written right before such a literal and one written before
+// a group around it read differently: ClickHouse 24.10 and 26.10 fold
+// -18446744073709551615 into one Float64 literal, -18446744073709552000, and
+// read -(18446744073709551615) as negate over the UInt64, which wraps to 1.
+// One key for both spellings would make the two defaults equal, so neither is
+// read and the caller compares them as written.
+func aboveInt64(text string) bool {
+	if text == "" || !allDigits(text) {
+		return false
+	}
+	const largest = "9223372036854775807"
+	return len(text) > len(largest) || len(text) == len(largest) && text > largest
 }
 
 // prefixWord reads the operand of the prefix word operator, whose precedence

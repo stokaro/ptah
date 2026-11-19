@@ -58,7 +58,15 @@ func TestCanonical_ClickHouse_HappyPath(t *testing.T) {
 		{name: "a decimal with trailing zeros", declared: "a * 1.50", stored: "a * 1.5", want: "`a` * 1.5"},
 		{name: "a leading zero", declared: "010 * 2", stored: "10 * 2", want: "10 * 2"},
 		{name: "a negative zero", declared: "-0 + a", stored: "0 + a", want: "0 + `a`"},
-		{name: "a negated zero in parentheses", declared: "a - -(0)", stored: "a - -(0)", want: "`a` - 0"},
+		{name: "a negated zero in parentheses", declared: "a - -(0)", stored: "a - -(0)", want: "`a` - -0"},
+		{name: "a minus before a negative zero", declared: "- -0", stored: "-(0)", want: "-0"},
+		{name: "a negative zero after a space", declared: "a - - 0", stored: "a - 0", want: "`a` - 0"},
+		{name: "IS NOT NULL after a comparison", declared: "a = 1 IS NOT NULL", stored: "(a = 1) IS NOT NULL", want: "`a` = 1 IS NOT NULL"},
+		{name: "IS NOT NULL before a comparison", declared: "a IS NOT NULL = b", stored: "(a IS NOT NULL) = b", want: "(`a` IS NOT NULL) = `b`"},
+		{name: "NOT before IS NOT NULL", declared: "NOT a IS NOT NULL", stored: "NOT (a IS NOT NULL)", want: "NOT `a` IS NOT NULL"},
+		{name: "IS NOT NULL after NOT and a comparison", declared: "NOT a = 1 IS NOT NULL", stored: "NOT ((a = 1) IS NOT NULL)", want: "NOT `a` = 1 IS NOT NULL"},
+		{name: "a negated integer at the top of the Int64 range", declared: "-9223372036854775807", stored: "-9223372036854775807", want: "-9223372036854775807"},
+		{name: "an integer above the Int64 range", declared: "18446744073709551615 + 1", stored: "18446744073709551615 + 1", want: "18446744073709551615 + 1"},
 	}
 
 	for _, test := range tests {
@@ -96,6 +104,11 @@ func TestCanonical_ClickHouse_DistinctExpressions(t *testing.T) {
 		{name: "a negated sum", left: "-(1 + 2)", right: "-1 + 2"},
 		{name: "a decimal and its tenth", left: "1.5", right: "1.05"},
 		{name: "a negative float zero", left: "-0.0 + a", right: "0 + a"},
+		// -(0) is negate(0), an Int16, so adding it to the largest UInt64
+		// but one gives the Int64 -2, where 0 is a UInt8 and the sum stays
+		// 18446744073709551614.
+		{name: "a negated zero in parentheses", left: "-(0) + 18446744073709551614", right: "0 + 18446744073709551614"},
+		{name: "a minus before a negative zero", left: "- -0 + a", right: "-0 + a"},
 	}
 
 	for _, test := range tests {
@@ -117,7 +130,9 @@ func TestCanonical_ClickHouse_DistinctExpressions(t *testing.T) {
 // arithmetic operator is read as a call by ClickHouse 24.10 and as the start
 // of NOT's operand by 26.10, and a prefix NOT after an operator that binds
 // tighter has no grouping the table can state. ClickHouse writes BETWEEN and
-// || back as other expressions.
+// || back as other expressions. A minus before an integer above the Int64
+// range means one value written right before the integer and another written
+// before a group around it.
 func TestCanonical_ClickHouse_FailurePath(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -137,6 +152,16 @@ func TestCanonical_ClickHouse_FailurePath(t *testing.T) {
 		{name: "a qualified name", expression: "t.a + 1"},
 		{name: "IS without NULL", expression: "a IS 1"},
 		{name: "an array", expression: "[1, 2]"},
+		// ClickHouse folds a minus written right before an integer into the
+		// literal and reads one before a group as negate, and the two differ
+		// above the Int64 range: -18446744073709551615 is
+		// -18446744073709552000 and -(18446744073709551615) is 1.
+		{name: "a minus before the largest UInt64", expression: "-18446744073709551615"},
+		{name: "a minus before a group around the largest UInt64", expression: "-(18446744073709551615)"},
+		{name: "a minus and a space before the largest UInt64", expression: "- 18446744073709551615 + 1"},
+		{name: "a minus before 2 to the 63", expression: "-9223372036854775808"},
+		{name: "a minus before a group around 2 to the 63", expression: "-(9223372036854775808)"},
+		{name: "a minus before 2 to the 63 with a leading zero", expression: "a * -09223372036854775808"},
 	}
 
 	for _, test := range tests {
