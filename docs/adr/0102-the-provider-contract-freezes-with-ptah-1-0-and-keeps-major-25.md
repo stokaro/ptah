@@ -262,7 +262,8 @@ Later minors add negotiated additions:
   (ADR 0122);
 - contract 25.41, the kinds of object a read does not describe (ADR 0123);
 - contract 25.42, the reviewed server advisory snapshot a provider carries;
-- contract 25.43, the operator's trust in replayed SQL (ADR 0124).
+- contract 25.43, the operator's trust in replayed SQL (ADR 0124);
+- contract 25.44, the record of repeatable migrations (ADR 0125).
 
 ## Alternatives considered
 
