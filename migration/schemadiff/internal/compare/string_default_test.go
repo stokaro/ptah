@@ -99,6 +99,7 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 	rows := []struct {
 		name, dialect, columnType string
 		literal, expression       string
+		set                       bool
 		reported                  string
 	}{
 		{name: "MySQL, a quoted literal", dialect: platform.MySQL, columnType: "varchar(30)", literal: "'1 + 2'", reported: "'1 + 2'"},
@@ -109,6 +110,10 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 		{name: "PostgreSQL, a cast literal", dialect: platform.Postgres, columnType: "varchar(30)", literal: "'a'", reported: "'a'::character varying"},
 		{name: "PostgreSQL, an expression that is a string", dialect: platform.Postgres, columnType: "text", expression: "('a')", reported: "'a'::text"},
 		{name: "PostgreSQL, a number on a varchar", dialect: platform.Postgres, columnType: "varchar(10)", literal: "0", reported: "0"},
+		{name: "PostgreSQL, a quoted number against a bare one", dialect: platform.Postgres, columnType: "varchar(10)", literal: "'0'", reported: "0"},
+		{name: "PostgreSQL, a number expression against a quoted number", dialect: platform.Postgres, columnType: "varchar(10)", expression: "0", reported: "'0'::character varying"},
+		{name: "MySQL, an empty string against the empty default the catalog reports", dialect: platform.MySQL, columnType: "varchar(10)", literal: "''", reported: ""},
+		{name: "PostgreSQL, an empty literal a model declares against an empty string", dialect: platform.Postgres, columnType: "varchar(10)", set: true, reported: "''::character varying"},
 		{name: "PostgreSQL, a number expression on a text column", dialect: platform.Postgres, columnType: "text", expression: "(1)", reported: "1"},
 		{name: "PostgreSQL, a quoted number on an integer", dialect: platform.Postgres, columnType: "integer", literal: "-1", reported: "'-1'::integer"},
 		{name: "Oracle, a literal on a CLOB", dialect: platform.Oracle, columnType: "CLOB", literal: "none", reported: "'none'"},
@@ -116,7 +121,7 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultExpr: row.expression}
+			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultSet: row.set, DefaultExpr: row.expression}
 			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: new(row.reported)}
 
 			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)

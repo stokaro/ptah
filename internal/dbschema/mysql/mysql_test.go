@@ -407,6 +407,16 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         "'uuid()'",
 		},
 		{
+			// MySQL reports DEFAULT 'NULL' on a varchar as the text NULL with
+			// an empty EXTRA, and DEFAULT NULL as no value at all, so the text
+			// is the string.
+			name:         "a MySQL string that spells NULL",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "NULL",
+			want:         "'NULL'",
+		},
+		{
 			name:         "a MySQL current-time default",
 			columnType:   "datetime",
 			dataType:     "datetime",

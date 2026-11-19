@@ -1069,13 +1069,13 @@ func columnDefaultsEqual(declared, reported, typeName, dialect string, declaredI
 //
 // A number is not held to this, because a catalog may report a numeric default
 // of a text column bare, as PostgreSQL reports `DEFAULT 0` on a varchar. An
-// empty side is left to the comparison as well, since a catalog may report an
-// empty string as an empty default. So is a declared literal without quotes,
-// as a Go or YAML model writes one: the catalog shape built from such a model
-// carries it without quotes too, and there the characters of a string and of
-// an expression cannot be told apart.
+// empty reported default is left to the comparison as well, since MySQL
+// reports an empty string default as an empty value. So is a declared literal
+// without quotes, as a Go or YAML model writes one: the catalog shape built
+// from such a model carries it without quotes too, and there the characters of
+// a string and of an expression cannot be told apart.
 func stringMeetsExpression(declared, reported, typeName string, declaredIsExpression bool) bool {
-	if strings.TrimSpace(declared) == "" || strings.TrimSpace(reported) == "" || !storesText(typeName) {
+	if strings.TrimSpace(reported) == "" || !storesText(typeName) {
 		return false
 	}
 	declaredString := normalize.IsStringLiteral(declared)

@@ -771,8 +771,6 @@ func isQuotedMySQLDefault(value string) bool {
 func mysqlDefaultNeedsLiteralQuotes(col *catalog.Column, value string) bool {
 	typeName := mysqlColumnType(col)
 	switch {
-	case strings.EqualFold(strings.TrimSpace(value), "NULL"):
-		return false
 	case strings.Contains(typeName, "date"), strings.Contains(typeName, "time"), strings.Contains(typeName, "year"):
 		return !isMySQLCurrentTime(value)
 	case strings.HasPrefix(typeName, "enum("), strings.HasPrefix(typeName, "set("):
