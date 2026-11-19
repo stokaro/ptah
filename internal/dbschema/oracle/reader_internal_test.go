@@ -326,3 +326,51 @@ func TestCarriedOnColumns_KeepsADeferrablePrimaryKey(t *testing.T) {
 func text(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: true}
 }
+
+// TestNewConstraint_DeferralAndGeneratedName holds what a constraint row
+// reports about its timing and its name. Oracle answers DEFERRED = IMMEDIATE
+// for a NOT DEFERRABLE key; carried into the model, the timing is written out
+// as DEFERRABLE INITIALLY IMMEDIATE, so it is kept only for a deferrable key.
+// GENERATED says whether Oracle chose the name, which lets a comparison pair
+// an unnamed declared CHECK with the one Oracle named SYS_C<n>.
+func TestNewConstraint_DeferralAndGeneratedName(t *testing.T) {
+	tests := []struct {
+		name          string
+		row           constraintRow
+		deferrable    bool
+		initially     string
+		generatedName bool
+	}{
+		{
+			name: "a key that cannot be deferred",
+			row:  constraintRow{name: "FK_A", generated: "USER NAME", kind: "R", deferrable: "NOT DEFERRABLE", deferred: "IMMEDIATE"},
+		},
+		{
+			name:       "a deferrable key checked at once",
+			row:        constraintRow{name: "FK_B", generated: "USER NAME", kind: "R", deferrable: "DEFERRABLE", deferred: "IMMEDIATE"},
+			deferrable: true, initially: "immediate",
+		},
+		{
+			name:       "a deferrable key checked at commit",
+			row:        constraintRow{name: "FK_C", generated: "USER NAME", kind: "R", deferrable: "DEFERRABLE", deferred: "DEFERRED"},
+			deferrable: true, initially: "deferred",
+		},
+		{
+			name:          "a CHECK Oracle named",
+			row:           constraintRow{name: "SYS_C008933", generated: "GENERATED NAME", kind: "C", condition: "id > 0", deferrable: "NOT DEFERRABLE", deferred: "IMMEDIATE"},
+			generatedName: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := &Reader{schema: "APP"}
+
+			got := reader.newConstraint(tt.row, nil)
+
+			c.Assert(got.Deferrable, qt.Equals, tt.deferrable)
+			c.Assert(got.Initially, qt.Equals, tt.initially)
+			c.Assert(got.GeneratedName, qt.Equals, tt.generatedName)
+		})
+	}
+}

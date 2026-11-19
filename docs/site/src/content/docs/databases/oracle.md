@@ -28,12 +28,14 @@ ptah schema diff --from oracle://user:pass@host:1521/FREEPDB1 --to live.hcl
 Schemas are synced, no changes to be made.
 ```
 
-Comparing a **declared file** against a live Oracle catalog does not converge
-yet. Tables, columns and indexes fold across the case difference between a
-declaration and the catalog; constraint names do not, so an unnamed `CHECK`
-declared as `orders_total_check` and stored as `ORDERS_TOTAL_CHECK` is dropped
-and re-added on each apply. Tracked by
-[#1875](https://github.com/stokaro/ptah/issues/1875).
+A **declared file** converges too. Names fold across the case difference
+between a declaration and the catalog, constraint names included, so a
+`CHECK` declared on a column is named `orders_total_check`, stored as
+`ORDERS_TOTAL_CHECK` and matched on the next run. An unnamed `CHECK` declared on
+the table is named by Oracle, `SYS_C<n>`, with a number no file can predict.
+Oracle keeps its condition as written, so the comparison matches it to the
+unnamed declaration by that condition, ignoring case and spacing, and a second
+plan is empty. A changed condition is a drop and an add.
 
 ## Identifiers and type mappings
 
@@ -105,8 +107,10 @@ the two names agree.
 An `--exclude` or `--include` selector matches the stored spelling exactly,
 without quotes: `orders` selects the table created as `"orders"`, and `ORDERS`
 selects the one created unquoted. It matches the same way on both sides of a
-plan, including a desired side read from a database or declared quoted in a
-SQL file. A selector written with quotes matches nothing.
+plan, including a desired side read from a database or declared in a SQL
+file, where a bare `orders` is the table stored as `ORDERS` and is selected by
+`ORDERS`. A selector written with quotes matches nothing. A report names such
+a table the same way a statement does, `APP."orders"`.
 
 Two type mappings are worth knowing because Oracle has no direct equivalent:
 `BOOLEAN` becomes `NUMBER(1)`, with `true` and `false` written as `1` and `0`,
@@ -315,7 +319,10 @@ reads it back from `ALL_CONSTRAINTS`, measured on Oracle Free 23. A primary
 key Oracle named itself is compared through the table's column flags, which
 cannot defer, so a deferrable one is compared as the table's key instead.
 Name a deferrable `UNIQUE`: Oracle names an unnamed one `SYS_C<n>`, which
-differs in every database. A change of deferral is a drop and an add.
+differs in every database. A change of deferral is a drop and an add. A key
+that is not deferrable reads back with no deferral clause, so `schema inspect`
+writes it as the server stores it and the file compares clean with the account
+it came from.
 
 ## Functions and procedures
 

@@ -307,7 +307,11 @@ while keeping exit status 0 and its rendered bytes.
 A table whose own name contains a dot is selectable three ways —
 `--include 'a.b.c'`, `--include 'a\.b\.c'`, or `--include 'main."a.b.c"'`.
 The escaped and quoted spellings were once the documented workaround for the
-bare one; all three work.
+bare one; all three work. A stored name that holds quote characters is
+matched as written: on PostgreSQL the table created as `app2."""q"""`, stored
+as `"q"`, is selected by `'"q"'` or `'app2."""q"""'`, and `q` selects only a
+table stored as `q`. Oracle allows no quote character in a name; its page
+says how a selector meets a name created quoted there.
 
 A selection that keeps an object whose dependency it dropped is refused rather
 than rendered, so the output never references an object it omits.

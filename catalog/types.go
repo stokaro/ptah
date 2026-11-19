@@ -916,6 +916,12 @@ type Constraint struct {
 	// Deferrable reports a foreign key whose check may be postponed to the end
 	// of a transaction, read from pg_constraint.condeferrable.
 	Deferrable bool `json:"deferrable,omitempty"`
+	// GeneratedName reports that the server chose the constraint's name
+	// because its declaration gave none, as Oracle names an unnamed CHECK
+	// SYS_C008933. A comparison pairs such a CHECK with an unnamed declared
+	// CHECK on the same table whose condition is the same, so the declaration
+	// that created it plans nothing on the next run. The Oracle reader sets it.
+	GeneratedName bool `json:"generated_name,omitempty"`
 	// Initially is the default timing of a deferrable check -- "deferred" or
 	// "immediate" -- read from pg_constraint.condeferred. It is empty for a
 	// constraint that is not deferrable, so a schema that never asked for one

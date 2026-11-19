@@ -258,6 +258,7 @@ func excludeGenerated(
 
 	state := newExclusionState(filters, defaultSchema, words)
 	state.dialect = dialect
+	state.fold = unquotedFold(dialect)
 	state.liveKeys = liveKeys
 	state.unmatchWholeConstraintKindsWhereRewritten()
 	filtered := cloneGenerated(schema)
@@ -820,6 +821,10 @@ type exclusionState struct {
 	// the child selector reports as naming nothing. The keep decision does not
 	// use this map -- a child of a removed table leaves with it either way.
 	removedGeneratedTables map[string]schemamodel.Table
+	// fold is the UnquotedFold of a filtered generated state, which spells
+	// its names as a statement does; see storedSpelling. Empty meets every
+	// name as written.
+	fold identifier.Fold
 }
 
 // tableIdentity and columnIdentity are the shared identity model's comparison
@@ -906,6 +911,9 @@ func (s *exclusionState) effectiveExtensionSchema(schema string) string {
 // bare name is looser than the community binary on a database URL, and
 // looseness on an exclude subtracts rather than adds statements.
 func (s *exclusionState) nameCandidates(schema, name string) []string {
+	if s.fold != "" {
+		schema, name = storedSpelling(schema, s.fold), storedSpelling(name, s.fold)
+	}
 	return qualifiedNameCandidates(s.effectiveSchema(schema), name)
 }
 
@@ -923,6 +931,9 @@ func (s *exclusionState) qualifiedNameCandidatesFor(name string) []string {
 // is in play, [checkPatternDepth] refuses a pattern that deep before it can be
 // matched against.
 func (s *exclusionState) childNameCandidates(schema, table, child string) []string {
+	if s.fold != "" {
+		schema, table, child = storedSpelling(schema, s.fold), storedSpelling(table, s.fold), storedSpelling(child, s.fold)
+	}
 	return tableChildNameCandidates(s.effectiveSchema(schema), table, child)
 }
 
@@ -2260,7 +2271,8 @@ func keep[T any](values []T, keepValue func(T) bool) []T {
 }
 
 func tableChildNameCandidates(schema, table, child string) []string {
-	schema, table, child = storedSpelling(schema), storedSpelling(strings.TrimSpace(table)), storedSpelling(strings.TrimSpace(child))
+	table = strings.TrimSpace(table)
+	child = strings.TrimSpace(child)
 	if table == "" || child == "" {
 		return nil
 	}
@@ -2272,7 +2284,7 @@ func tableChildNameCandidates(schema, table, child string) []string {
 }
 
 func qualifiedNameCandidates(schema, name string) []string {
-	schema, name = storedSpelling(schema), storedSpelling(strings.TrimSpace(name))
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil
 	}
@@ -2283,21 +2295,33 @@ func qualifiedNameCandidates(schema, name string) []string {
 	return []string{name, qualified}
 }
 
-// storedSpelling is the name a catalog stores for a name part a schema model
-// spells with its quotes. On an engine whose descriptor states an
-// UnquotedFold, a schema converted from a read, or declared quoted in a SQL
-// file, names the table stored as orders `"orders"`, while the read reports
-// orders. The candidates a selector is matched against are built from the
-// stored name on both sides, so orders leaves the same table from each; built
-// from the spelling, the converted side offers `"orders"` and
-// `APP."""orders"""`, the selector leaves only the read's table, and a diff of
-// the database against itself plans the excluded one. A part that is not
-// wholly quoted, which is every name a read reports, is returned as it is.
-func storedSpelling(part string) string {
-	for len(part) >= 2 && part[0] == '"' && part[len(part)-1] == '"' {
-		part = sqlident.UnquoteDoubleQuoted(part)
+// storedSpelling is the name a catalog stores for a name part a generated
+// state spells as a statement does, on an engine whose UnquotedFold is fold
+// (see [Scope.Dialect]). A part in double quotes is stored as written inside
+// them, and a bare part in the fold's case: a state converted from a read, or
+// declared in a SQL file, names the table stored as orders `"orders"`, and the
+// one stored as ORDERS orders or ORDERS. Matched as spelled, the converted
+// side offers `"orders"` and `APP."""orders"""`, a declared bare orders meets
+// the selector orders while the read's ORDERS does not, and a plan drops or
+// creates the table the selector meant to leave alone. Only the generated
+// side of such an engine is respelled: a read reports stored names, and on
+// another engine a stored name may hold quote characters of its own. An empty
+// part, which leaves the default schema in force, is returned as it is.
+func storedSpelling(part string, fold identifier.Fold) string {
+	part = strings.TrimSpace(part)
+	if len(part) >= 2 && part[0] == '"' && part[len(part)-1] == '"' {
+		return sqlident.UnquoteDoubleQuoted(part)
 	}
-	return part
+	return fold.Apply(part)
+}
+
+// unquotedFold is the UnquotedFold of dialect's descriptor, empty when the
+// dialect states none or the caller names no dialect.
+func unquotedFold(dialect string) identifier.Fold {
+	if dialect == "" {
+		return ""
+	}
+	return identifier.ForDialect(dialect).UnquotedFold
 }
 
 func extensionNameCandidates(schema, name string) []string {

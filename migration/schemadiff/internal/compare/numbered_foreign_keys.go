@@ -67,9 +67,17 @@ func pairNumberedForeignKeys(
 func unmatchedForeignKeys[T, U any](
 	side map[tableMemberKey]T, other map[tableMemberKey]U, shape func(T) bool,
 ) []tableMemberKey {
+	return unmatchedOfType(side, other, "FOREIGN KEY", shape)
+}
+
+// unmatchedOfType answers the keys of side's constraints of memberType that
+// other has no entry for and that shape accepts, in a fixed order.
+func unmatchedOfType[T, U any](
+	side map[tableMemberKey]T, other map[tableMemberKey]U, memberType string, shape func(T) bool,
+) []tableMemberKey {
 	var keys []tableMemberKey
 	for key, constraint := range side {
-		if key.memberType != "FOREIGN KEY" || !shape(constraint) {
+		if key.memberType != memberType || !shape(constraint) {
 			continue
 		}
 		if _, matched := other[key]; matched {

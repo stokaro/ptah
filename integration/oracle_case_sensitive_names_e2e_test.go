@@ -540,3 +540,64 @@ func keepMeRows(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection)
 	c.Assert(conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM keep_me").Scan(&count), qt.IsNil)
 	return count
 }
+
+// TestOracleBareDeclaredNameSelectorE2E_HappyPath plans a declaration that
+// writes its names bare and in lower case against an account holding ORDERS,
+// with a selector naming the stored ORDERS. A bare name is stored in upper
+// case, so the selector leaves the declared orders and the account's ORDERS
+// alike, and the plan is empty. Matched as written, the declared orders stays
+// in the plan and the account's ORDERS does not, so the plan creates it.
+func TestOracleBareDeclaredNameSelectorE2E_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	binary := filepath.Join(c.TempDir(), "ptah")
+	buildPtah(c, ctx, e2eRepoRoot(t), binary)
+	_, dbURL, conn := oracleCaseSensitiveAccount(c, ctx)
+	runAsAccount(c, ctx, conn, []string{
+		"CREATE TABLE orders (id NUMBER(10) PRIMARY KEY)",
+		"CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY)",
+	})
+	schemaPath := writeDeclaredSchema(c,
+		"CREATE TABLE orders (id NUMBER(10) PRIMARY KEY);\nCREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY);\n")
+
+	for _, selector := range [][]string{{"--exclude", "ORDERS"}, {"--include", "ORDERS"}} {
+		t.Run(selector[0], func(t *testing.T) {
+			c := qt.New(t)
+
+			stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), binary, append([]string{
+				"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--dry-run",
+			}, selector...)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stdout, qt.Contains, "Schema is synced")
+		})
+	}
+}
+
+// TestOracleBareDeclaredNameSelectorE2E_FailurePath plans the same
+// declaration with the selector orders, which names a table created quoted.
+// Neither side holds one, so schema apply refuses the selection and plans
+// nothing. Matched as written, the selector leaves the declared orders and
+// keeps the account's ORDERS, and the plan drops it.
+func TestOracleBareDeclaredNameSelectorE2E_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	binary := filepath.Join(c.TempDir(), "ptah")
+	buildPtah(c, ctx, e2eRepoRoot(t), binary)
+	_, dbURL, conn := oracleCaseSensitiveAccount(c, ctx)
+	runAsAccount(c, ctx, conn, []string{
+		"CREATE TABLE orders (id NUMBER(10) PRIMARY KEY)",
+		"CREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY)",
+	})
+	schemaPath := writeDeclaredSchema(c,
+		"CREATE TABLE orders (id NUMBER(10) PRIMARY KEY);\nCREATE TABLE keep_me (id NUMBER(10) PRIMARY KEY);\n")
+
+	stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--dry-run", "--exclude", "orders")
+
+	c.Assert(err, qt.ErrorMatches, "exit status 2", qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stderr, qt.Contains, `the --exclude selection matched no objects: "orders"`)
+	c.Assert(stdout, qt.Not(qt.Contains), "DROP TABLE")
+}
