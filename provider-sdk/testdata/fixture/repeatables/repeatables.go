@@ -1,4 +1,8 @@
-package backend
+// Package repeatables keeps the fixture's record of repeatable migrations on
+// SQLite, the service contract 25.44 adds. It lives apart from package
+// backend, which keeps to contract 25.0, so a provider built from that
+// contract's SDK still compiles the backend.
+package repeatables
 
 import (
 	"context"
@@ -7,11 +11,20 @@ import (
 	"fmt"
 	"strings"
 
+	"example.com/ptah-fixture-provider/backend"
 	"google.golang.org/protobuf/proto"
 
 	protocol "ptah.run/provider-sdk/protocol/experimental"
 	"ptah.run/provider-sdk/provider"
 )
+
+// Provider is the transactional fixture provider with the record of
+// repeatable migrations.
+type Provider struct {
+	backend.TransactionalProvider
+}
+
+func quote(name string) string { return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` }
 
 // repeatableDDL is the only layout the fixture keeps the record of repeatable
 // migrations in. The columns are ordinary, so a test reads the stored facts
@@ -37,7 +50,7 @@ func repeatableTable(scope *protocol.RepeatableScope) (string, error) {
 
 // checkRepeatableTable reports whether the record exists, and refuses one in
 // another layout or with triggers.
-func checkRepeatableTable(ctx context.Context, runner historyRunner, scope *protocol.RepeatableScope) (bool, error) {
+func checkRepeatableTable(ctx context.Context, runner backend.Querier, scope *protocol.RepeatableScope) (bool, error) {
 	table, err := repeatableTable(scope)
 	if err != nil {
 		return false, err
@@ -65,17 +78,6 @@ func checkRepeatableTable(ctx context.Context, runner historyRunner, scope *prot
 	return true, nil
 }
 
-// repeatableSession finds the session of scope and locks it. The caller
-// unlocks it.
-func (p *Provider) repeatableSession(scope *protocol.RepeatableScope) (*session, error) {
-	s, err := p.lookup(scope.GetSessionId())
-	if err != nil {
-		return nil, err
-	}
-	s.mu.Lock()
-	return s, nil
-}
-
 func repeatableResult(scope *protocol.RepeatableScope, id string, outcome protocol.RepeatableResult_Outcome) *protocol.RepeatableResult {
 	return &protocol.RepeatableResult{Scope: proto.CloneOf(scope), RequestId: id, Outcome: outcome}
 }
@@ -90,32 +92,27 @@ func (p *Provider) PrepareRepeatables(ctx context.Context, request *protocol.Pre
 	if err != nil {
 		return nil, err
 	}
-	s, err := p.repeatableSession(request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer s.mu.Unlock()
-	if err := s.guardLocks(ctx); err != nil {
-		return nil, err
-	}
-	runner, err := s.historyRunner("")
-	if err != nil {
-		return nil, err
-	}
-	exists, err := checkRepeatableTable(ctx, runner, request.GetScope())
-	if err != nil {
-		return repeatableResult(request.GetScope(), request.GetRequestId(), protocol.RepeatableResult_REFUSED), nil
-	}
-	if !exists {
-		ddl := strings.Replace(repeatableDDL(table), "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS main.", 1)
-		if _, err := runner.ExecContext(ctx, ddl); err != nil {
-			return nil, err
+	outcome := protocol.RepeatableResult_REFUSED
+	err = p.WithSession(ctx, request.GetScope().GetSessionId(), "", func(access backend.Access) error {
+		exists, err := checkRepeatableTable(ctx, access.Querier, request.GetScope())
+		if err != nil {
+			return nil
 		}
+		if !exists {
+			ddl := strings.Replace(repeatableDDL(table), "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS main.", 1)
+			if _, err := access.Querier.ExecContext(ctx, ddl); err != nil {
+				return err
+			}
+		}
+		if exists, err := checkRepeatableTable(ctx, access.Querier, request.GetScope()); err == nil && exists {
+			outcome = protocol.RepeatableResult_APPLIED
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	if exists, err := checkRepeatableTable(ctx, runner, request.GetScope()); err != nil || !exists {
-		return repeatableResult(request.GetScope(), request.GetRequestId(), protocol.RepeatableResult_REFUSED), nil
-	}
-	return repeatableResult(request.GetScope(), request.GetRequestId(), protocol.RepeatableResult_APPLIED), nil
+	return repeatableResult(request.GetScope(), request.GetRequestId(), outcome), nil
 }
 
 // ReadRepeatables reads every row in one query. A missing record stays
@@ -128,42 +125,42 @@ func (p *Provider) ReadRepeatables(ctx context.Context, request *protocol.ReadRe
 	if err != nil {
 		return nil, err
 	}
-	s, err := p.repeatableSession(request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer s.mu.Unlock()
-	runner, err := s.historyRunner("")
-	if err != nil {
-		return nil, err
-	}
-	exists, err := checkRepeatableTable(ctx, runner, request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	result := &protocol.RepeatableSnapshot{Scope: proto.CloneOf(request.GetScope()), Exists: exists, Complete: true}
-	if !exists {
-		return result, nil
-	}
-	rows, err := runner.QueryContext(ctx, "SELECT "+repeatableColumns+" FROM main."+table+" ORDER BY \"identity\" LIMIT ?", request.GetMaxRows()+1)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	for rows.Next() {
-		row, err := scanRepeatableRow(rows)
-		if err != nil {
-			return nil, err
+	result := &protocol.RepeatableSnapshot{Scope: proto.CloneOf(request.GetScope()), Complete: true}
+	err = p.WithSession(ctx, request.GetScope().GetSessionId(), "", func(access backend.Access) error {
+		exists, err := checkRepeatableTable(ctx, access.Querier, request.GetScope())
+		if err != nil || !exists {
+			return err
 		}
-		result.Rows = append(result.Rows, row)
-	}
-	if err := rows.Err(); err != nil {
+		result.Exists = true
+		result.Rows, err = readRows(ctx, access.Querier, table, request.GetMaxRows())
+		return err
+	})
+	if err != nil {
 		return nil, err
 	}
 	if err := provider.ValidateRepeatableSnapshotReply(request, result); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// readRows reads one row past limit, so a record over it fails the reply's
+// validation rather than reading as complete.
+func readRows(ctx context.Context, runner backend.Querier, table string, limit uint32) ([]*protocol.RepeatableRow, error) {
+	rows, err := runner.QueryContext(ctx, "SELECT "+repeatableColumns+" FROM main."+table+" ORDER BY \"identity\" LIMIT ?", int64(limit)+1)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var result []*protocol.RepeatableRow
+	for rows.Next() {
+		row, err := scanRepeatableRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
 }
 
 func scanRepeatableRow(rows *sql.Rows) (*protocol.RepeatableRow, error) {
@@ -187,31 +184,28 @@ func (p *Provider) ReadRepeatableBody(ctx context.Context, request *protocol.Rea
 	if err != nil {
 		return nil, err
 	}
-	s, err := p.repeatableSession(request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer s.mu.Unlock()
-	runner, err := s.historyRunner("")
-	if err != nil {
-		return nil, err
-	}
 	result := &protocol.RepeatableBody{Scope: proto.CloneOf(request.GetScope()), Identity: request.GetIdentity()}
-	if exists, err := checkRepeatableTable(ctx, runner, request.GetScope()); err != nil || !exists {
-		return result, err
-	}
-	var body []byte
-	var kept bool
-	err = runner.QueryRowContext(ctx, `SELECT "body", "body" IS NOT NULL FROM main.`+table+` WHERE "identity" = ?`, request.GetIdentity()).Scan(&body, &kept)
-	if errors.Is(err, sql.ErrNoRows) {
-		return result, nil
-	}
+	err = p.WithSession(ctx, request.GetScope().GetSessionId(), "", func(access backend.Access) error {
+		if exists, err := checkRepeatableTable(ctx, access.Querier, request.GetScope()); err != nil || !exists {
+			return err
+		}
+		var body []byte
+		var kept bool
+		err := access.Querier.QueryRowContext(ctx, `SELECT "body", "body" IS NOT NULL FROM main.`+table+` WHERE "identity" = ?`, request.GetIdentity()).Scan(&body, &kept)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		result.Found, result.Kept = true, kept
+		if kept {
+			result.Body = body
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	result.Found, result.Kept = true, kept
-	if kept {
-		result.Body = body
 	}
 	return result, nil
 }
@@ -228,58 +222,53 @@ func (p *Provider) MutateRepeatable(ctx context.Context, request *protocol.Mutat
 	if err != nil {
 		return nil, err
 	}
-	s, err := p.repeatableSession(request.GetScope())
-	if err != nil {
-		return nil, err
-	}
-	defer s.mu.Unlock()
-	if err := s.guardLocks(ctx); err != nil {
-		return nil, err
-	}
-	runner, err := s.historyRunner(request.GetScope().GetTransactionId())
-	if err != nil {
-		return nil, err
-	}
-	if exists, err := checkRepeatableTable(ctx, runner, request.GetScope()); err != nil || !exists {
-		return repeatableResult(request.GetScope(), request.GetRequestId(), protocol.RepeatableResult_REFUSED), nil
-	}
-	query, args, identity := repeatableMutation("main."+table, request)
-	changed, err := execRows(ctx, runner, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	if s.fault == "lost-repeatable-claim" && request.GetClaim() != nil {
-		return nil, fmt.Errorf("fixture lost repeatable migration claim acknowledgment")
-	}
 	result := repeatableResult(request.GetScope(), request.GetRequestId(), protocol.RepeatableResult_APPLIED)
-	if remove := request.GetRemove(); remove != nil {
-		result.Removed = changed == 1
-		return result, nil
+	err = p.WithSession(ctx, request.GetScope().GetSessionId(), request.GetScope().GetTransactionId(), func(access backend.Access) error {
+		if exists, err := checkRepeatableTable(ctx, access.Querier, request.GetScope()); err != nil || !exists {
+			result.Outcome = protocol.RepeatableResult_REFUSED
+			return nil
+		}
+		query, args, identity := repeatableMutation("main."+table, request)
+		changed, err := execRows(ctx, access.Querier, query, args...)
+		if err != nil {
+			return err
+		}
+		if access.Fault == "lost-repeatable-claim" && request.GetClaim() != nil {
+			return fmt.Errorf("fixture lost repeatable migration claim acknowledgment")
+		}
+		if remove := request.GetRemove(); remove != nil {
+			result.Removed = changed == 1
+			return nil
+		}
+		if changed == 1 {
+			return nil
+		}
+		return unappliedRepeatable(ctx, access.Querier, table, identity, request, result)
+	})
+	if err != nil {
+		return nil, err
 	}
-	if changed == 1 {
-		return result, nil
-	}
-	return s.unappliedRepeatable(ctx, runner, table, identity, request, result)
+	return result, nil
 }
 
 // unappliedRepeatable answers a claim, completion or failure that changed no
 // row. A row another run holds, or none, is a CONFLICT; a completion whose
 // run holds the row with another digest is REFUSED.
-func (s *session) unappliedRepeatable(ctx context.Context, runner historyRunner, table, identity string,
+func unappliedRepeatable(ctx context.Context, runner backend.Querier, table, identity string,
 	request *protocol.MutateRepeatableRequest, result *protocol.RepeatableResult,
-) (*protocol.RepeatableResult, error) {
+) error {
 	var holder string
 	err := runner.QueryRowContext(ctx, `SELECT "run_id" FROM main.`+table+` WHERE "identity" = ?`, identity).Scan(&holder)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, err
+		return err
 	}
 	result.Outcome = protocol.RepeatableResult_CONFLICT
 	if complete := request.GetComplete(); complete != nil && holder == complete.GetRunId() {
 		result.Outcome = protocol.RepeatableResult_REFUSED
-		return result, nil
+		return nil
 	}
 	result.HolderRunId = holder
-	return result, nil
+	return nil
 }
 
 // repeatableMutation is the one statement of a write, its values, and the
@@ -325,7 +314,7 @@ func repeatableMutation(table string, request *protocol.MutateRepeatableRequest)
 
 // execRows runs one write and returns how many rows it changed, which is at
 // most one: every statement addresses one identity.
-func execRows(ctx context.Context, runner historyRunner, query string, args ...any) (int64, error) {
+func execRows(ctx context.Context, runner backend.Querier, query string, args ...any) (int64, error) {
 	result, err := runner.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err

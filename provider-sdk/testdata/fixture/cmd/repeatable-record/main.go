@@ -10,13 +10,14 @@ import (
 	"slices"
 
 	"example.com/ptah-fixture-provider/backend"
+	"example.com/ptah-fixture-provider/repeatables"
 
 	"ptah.run/provider-sdk/provider"
 	"ptah.run/provider-sdk/runtime"
 )
 
 func main() {
-	owner := &backend.TransactionalProvider{}
+	owner := &repeatables.Provider{}
 	description := backend.Description()
 	description.SemanticIdentity = "fixture-repeatable-record-1"
 	features := []string{provider.TransactionsFeature, provider.HistoryFeature, provider.LocksFeature, provider.MetadataFeature}

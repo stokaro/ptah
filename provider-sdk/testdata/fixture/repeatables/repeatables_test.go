@@ -1,19 +1,38 @@
-package backend_test
+package repeatables_test
 
 import (
+	"context"
+	"net/url"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	"example.com/ptah-fixture-provider/backend"
+	"example.com/ptah-fixture-provider/repeatables"
 	qt "github.com/frankban/quicktest"
 
 	protocol "ptah.run/provider-sdk/protocol/experimental"
 )
 
+func openTransactionSession(c *qt.C, owner *repeatables.Provider, address string) *protocol.Session {
+	c.Helper()
+	session, err := owner.Open(c.Context(), &protocol.OpenRequest{Engine: "fixture", Address: address})
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		c.Check(owner.Close(context.Background(), &protocol.CloseRequest{SessionId: session.GetId()}), qt.IsNil)
+	})
+	return session
+}
+
+func transactionAddress(c *qt.C) string {
+	c.Helper()
+	return (&url.URL{Scheme: "fixture", Path: "/" + strings.TrimPrefix(filepath.ToSlash(filepath.Join(c.TempDir(), "repeatables.db")), "/")}).String()
+}
+
 func repeatableScope(id string) *protocol.RepeatableScope {
 	return &protocol.RepeatableScope{SessionId: id, Schema: "main", Table: "_revisions_repeatable"}
 }
 
-func prepareRepeatables(c *qt.C, owner *backend.TransactionalProvider, scope *protocol.RepeatableScope) {
+func prepareRepeatables(c *qt.C, owner *repeatables.Provider, scope *protocol.RepeatableScope) {
 	c.Helper()
 	result, err := owner.PrepareRepeatables(c.Context(), &protocol.PrepareRepeatablesRequest{Scope: scope, RequestId: "prepare"})
 	c.Assert(err, qt.IsNil)
@@ -27,7 +46,7 @@ func claimRepeatable(identity, run, expected string) *protocol.MutateRepeatableR
 	}}
 }
 
-func mutateRepeatable(c *qt.C, owner *backend.TransactionalProvider, scope *protocol.RepeatableScope, request *protocol.MutateRepeatableRequest) *protocol.RepeatableResult {
+func mutateRepeatable(c *qt.C, owner *repeatables.Provider, scope *protocol.RepeatableScope, request *protocol.MutateRepeatableRequest) *protocol.RepeatableResult {
 	c.Helper()
 	request.Scope, request.RequestId = scope, "write"
 	result, err := owner.MutateRepeatable(c.Context(), request)
@@ -35,7 +54,7 @@ func mutateRepeatable(c *qt.C, owner *backend.TransactionalProvider, scope *prot
 	return result
 }
 
-func readRepeatables(c *qt.C, owner *backend.TransactionalProvider, scope *protocol.RepeatableScope) *protocol.RepeatableSnapshot {
+func readRepeatables(c *qt.C, owner *repeatables.Provider, scope *protocol.RepeatableScope) *protocol.RepeatableSnapshot {
 	c.Helper()
 	result, err := owner.ReadRepeatables(c.Context(), &protocol.ReadRepeatablesRequest{Scope: scope, MaxRows: 100})
 	c.Assert(err, qt.IsNil)
@@ -48,7 +67,7 @@ func readRepeatables(c *qt.C, owner *backend.TransactionalProvider, scope *proto
 // loser's completion conflicts and names the run that took it.
 func TestRepeatableClaimsAreDecidedByTheRun(t *testing.T) {
 	c := qt.New(t)
-	owner := &backend.TransactionalProvider{}
+	owner := &repeatables.Provider{}
 	address := transactionAddress(c)
 	first := repeatableScope(openTransactionSession(c, owner, address).GetId())
 	second := repeatableScope(openTransactionSession(c, owner, address).GetId())
@@ -80,7 +99,7 @@ func TestRepeatableClaimsAreDecidedByTheRun(t *testing.T) {
 // and changes nothing.
 func TestRepeatableCompletionKeepsTheClaimedContent(t *testing.T) {
 	c := qt.New(t)
-	owner := &backend.TransactionalProvider{}
+	owner := &repeatables.Provider{}
 	scope := repeatableScope(openTransactionSession(c, owner, transactionAddress(c)).GetId())
 	prepareRepeatables(c, owner, scope)
 	mutateRepeatable(c, owner, scope, &protocol.MutateRepeatableRequest{Mutation: claimRepeatable("view", "run-a", "")})
@@ -111,7 +130,7 @@ func TestRepeatableCompletionKeepsTheClaimedContent(t *testing.T) {
 // A removal reports whether it deleted a row.
 func TestRepeatableRemovalReportsTheRow(t *testing.T) {
 	c := qt.New(t)
-	owner := &backend.TransactionalProvider{}
+	owner := &repeatables.Provider{}
 	scope := repeatableScope(openTransactionSession(c, owner, transactionAddress(c)).GetId())
 	prepareRepeatables(c, owner, scope)
 	mutateRepeatable(c, owner, scope, &protocol.MutateRepeatableRequest{Mutation: claimRepeatable("view", "run-a", "")})

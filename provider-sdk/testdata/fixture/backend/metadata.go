@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	protocol "ptah.run/provider-sdk/protocol/experimental"
 	"ptah.run/provider-sdk/provider"
@@ -24,6 +25,27 @@ func metadataDDL(table string, kind protocol.MetadataScope_Kind) string {
 		"actor VARCHAR(256) NULL, actor_source VARCHAR(32) NOT NULL, checksum VARCHAR(64) NULL, logged_at TIMESTAMP NOT NULL, error TEXT NULL, " +
 		"repeatable VARCHAR(255) NULL, PRIMARY KEY (run_id, seq))"
 }
+
+// logRepeatable is the identity a log entry about a repeatable migration
+// carries, and setLogRepeatable sets it. The field belongs to contract 25.44,
+// and this package keeps to contract 25.0, so both reach it by name: built
+// from an SDK without the field, the log keeps no identity.
+func logRepeatable(row *protocol.MigrationLogRecord) string {
+	field := row.ProtoReflect().Descriptor().Fields().ByName("repeatable")
+	if field == nil {
+		return ""
+	}
+	return row.ProtoReflect().Get(field).String()
+}
+
+func setLogRepeatable(row *protocol.MigrationLogRecord, identity string) {
+	field := row.ProtoReflect().Descriptor().Fields().ByName("repeatable")
+	if field == nil || identity == "" {
+		return
+	}
+	row.ProtoReflect().Set(field, protoreflect.ValueOfString(identity))
+}
+
 func metadataTable(scope *protocol.MetadataScope) (string, error) {
 	if scope.GetSchema() != "" && scope.GetSchema() != "main" {
 		return "", fmt.Errorf("fixture metadata supports main only")
@@ -203,7 +225,7 @@ func mutateMetadata(ctx context.Context, runner historyRunner, table string, req
 		row := mutation.AppendLog
 		_, err := runner.ExecContext(ctx, "INSERT INTO "+table+" (run_id,seq,operation,version,state,actor,actor_source,checksum,logged_at,error,repeatable) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
 			row.RunId, row.Sequence, row.Operation, row.Version, row.State, row.Actor, row.ActorSource, row.Checksum, time.Unix(row.AtSeconds, int64(row.AtNanos)).UTC().Format(time.RFC3339Nano), row.Error,
-			row.Repeatable)
+			logRepeatable(row))
 		return false, err
 	case *protocol.MutateMetadataRequest_PutTag:
 		row := mutation.PutTag

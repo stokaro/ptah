@@ -135,7 +135,8 @@ func scanMetadataLog(rows *sql.Rows) (*protocol.MigrationLogRecord, error) {
 	if err := rows.Scan(&row.RunId, &row.Sequence, &row.Operation, &row.Version, &row.State, &actor, &row.ActorSource, &checksum, &at, &failure, &repeatable); err != nil {
 		return nil, err
 	}
-	row.Actor, row.Checksum, row.Error, row.Repeatable = actor.String, checksum.String, failure.String, repeatable.String
+	row.Actor, row.Checksum, row.Error = actor.String, checksum.String, failure.String
+	setLogRepeatable(row, repeatable.String)
 	nanos, err := metadataNanoseconds(at)
 	if err != nil {
 		return nil, err
