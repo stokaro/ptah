@@ -1,7 +1,8 @@
 // Package repeatables keeps the fixture's record of repeatable migrations on
-// SQLite, the service contract 25.44 adds. It lives apart from package
-// backend, which keeps to contract 25.0, so a provider built from that
-// contract's SDK still compiles the backend.
+// SQLite, the service contract 25.44 adds, and with ReservedRecord reports the
+// record as reserved storage, the purpose contract 25.45 adds. It lives apart
+// from package backend, which keeps to contract 25.0, so a provider built from
+// that contract's SDK still compiles the backend.
 package repeatables
 
 import (
@@ -9,6 +10,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"example.com/ptah-fixture-provider/backend"
@@ -22,6 +24,63 @@ import (
 // repeatable migrations.
 type Provider struct {
 	backend.TransactionalProvider
+	// ReservedRecord reports the record of repeatable migrations as reserved
+	// storage of purpose REPEATABLE, under a host that lists
+	// schema.reserved-repeatable-record. Without it a read reports the
+	// record as a table.
+	ReservedRecord bool
+}
+
+// Open opens a session that, with ReservedRecord, states the reservation of
+// the record among its read features where the host negotiated it, as a read
+// of it then does.
+func (p *Provider) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
+	session, err := p.TransactionalProvider.Open(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if p.reservesRecord(ctx) {
+		session.Features = append(session.Features, provider.ReservedRepeatableRecordFeature)
+	}
+	return session, nil
+}
+
+// reservesRecord reports ReservedRecord under a host that lists the feature.
+func (p *Provider) reservesRecord(ctx context.Context) bool {
+	return p.ReservedRecord && slices.Contains(provider.HostFeatures(ctx), provider.ReservedRepeatableRecordFeature)
+}
+
+// Inspect reports the revision storage the provider keeps as reserved, as the
+// contract asks of a provider's own history. With ReservedRecord and a host
+// that lists schema.reserved-repeatable-record, it reports the record of
+// repeatable migrations as reserved storage of purpose REPEATABLE too. A table
+// is the record when its definition is exactly the layout PrepareRepeatables
+// writes under its name; a table that only shares a name with it stays a table
+// of the read.
+func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest) (*protocol.Schema, error) {
+	snapshot, err := p.TransactionalProvider.Inspect(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	reserveRecord := p.reservesRecord(ctx)
+	snapshot.Tables = slices.DeleteFunc(snapshot.Tables, func(table *protocol.Table) bool {
+		var purpose protocol.ReservedObject_Purpose
+		switch definition, err := backend.TableDDL(table); {
+		case backend.HistoryStorage(table):
+			purpose = protocol.ReservedObject_HISTORY
+		case reserveRecord && err == nil && definition == repeatableDDL(quote(table.GetIdentity().GetName())):
+			purpose = protocol.ReservedObject_REPEATABLE
+		default:
+			return false
+		}
+		snapshot.ReservedObjects = append(snapshot.ReservedObjects, &protocol.ReservedObject{Object: proto.CloneOf(table.GetIdentity()),
+			NormalizedObject: proto.CloneOf(table.GetNormalizedIdentity()), Purpose: purpose, ConflictKinds: []string{"table"}})
+		return true
+	})
+	if reserveRecord {
+		snapshot.TargetFeatures = append(snapshot.TargetFeatures, provider.ReservedRepeatableRecordFeature)
+	}
+	return snapshot, nil
 }
 
 func quote(name string) string { return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` }

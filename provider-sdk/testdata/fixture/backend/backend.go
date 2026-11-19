@@ -189,17 +189,28 @@ func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest
 	}
 	result := &protocol.Schema{Complete: true, Engine: p.engine(), Coverage: &protocol.ModelCoverage{Representation: protocol.ValueInput_OBSERVED}}
 	for _, name := range names {
+		identity := &protocol.Reference{Engine: p.engine(), Database: s.path, Kind: "table", Name: name, DisplayName: name}
+		var stored string
+		if err := s.db.QueryRowContext(ctx, "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?", name).Scan(&stored); err != nil {
+			return nil, err
+		}
+		// The migration log and the tag table are the provider's own storage,
+		// in a layout the fixture renders no CREATE TABLE for, so a read
+		// reports them as reserved rather than refuse the database.
+		if purpose, ok := metadataStorage(name, stored); ok {
+			normalized := proto.CloneOf(identity)
+			normalized.Name = NormalizeCommonIdentifier(name)
+			result.ReservedObjects = append(result.ReservedObjects, &protocol.ReservedObject{Object: identity, NormalizedObject: normalized,
+				Purpose: purpose, ConflictKinds: []string{"table"}})
+			continue
+		}
 		columns, err := tableColumns(ctx, s.db, name)
 		if err != nil {
 			return nil, err
 		}
-		table := &protocol.Table{Identity: &protocol.Reference{Engine: p.engine(), Database: s.path, Kind: "table", Name: name, DisplayName: name}, Columns: columns}
+		table := &protocol.Table{Identity: identity, Columns: columns}
 		canonical, err := renderChange(&protocol.Change{Object: table.Identity, Operation: &protocol.Change_CreateTable{CreateTable: table}})
 		if err != nil {
-			return nil, err
-		}
-		var stored string
-		if err := s.db.QueryRowContext(ctx, "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?", name).Scan(&stored); err != nil {
 			return nil, err
 		}
 		// This fixture accepts only definitions it can reconstruct exactly. CHECK,

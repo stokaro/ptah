@@ -1251,7 +1251,9 @@ service is refused.
 A directory that holds a repeatable migration, an `R__<identity>.sql` file,
 also needs a provider that keeps their record, `sessions.repeatable-record`.
 Without it the run is refused before anything changes, and the refusal names
-the provider, the engine and the feature; see
+the provider, the engine and the feature. With
+`schema.reserved-repeatable-record` a read reports the record as reserved
+storage, as it reports the migration history, so no plan drops it; see
 [Repeatable migrations through a provider](../../versioned/repeatable/#through-a-provider).
 
 Given a reviewed SQL migration directory, apply it and read its recorded state:

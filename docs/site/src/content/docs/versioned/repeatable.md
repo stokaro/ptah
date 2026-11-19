@@ -173,20 +173,22 @@ migration fails before it starts.
 
 An engine reached through an executable provider runs repeatable migrations
 when the provider lists `sessions.repeatable-record` for that engine. The
-provider stores the record where its engine keeps data. Ptah decides what each
-row means, as on a built-in engine: which file runs, the claim, a retry and a
-repair. A claim whose outcome the provider cannot confirm, for example because
-the connection dropped after the write, is settled by reading the row back.
+provider stores the record in its engine, and Ptah decides what each row
+means, as on a built-in engine: which file runs, the claim, a retry and a
+repair. A claim with an unknown outcome, such as after a dropped connection,
+is settled by reading the row back.
 
 The body runs in a transaction when the provider establishes transactional DDL
-for the session, and the write that records the content goes into that
-transaction, so the row and the work commit together. Under `--tx-mode none`,
-under `-- +ptah no_transaction`, or without transactional DDL, the body runs
-without one and its record says `no_transaction=true`.
+for the session, and the row that records the content commits with it. Under
+`--tx-mode none`, under `-- +ptah no_transaction`, or without transactional
+DDL, the body runs without one and its record says `no_transaction=true`.
 
-The record keeps at most 2 MiB (2097152 bytes) of a file. A longer file is
-refused before anything runs, with an error that names the file, its length
-and the limit.
+The record keeps at most 2 MiB (2097152 bytes) of a file; a longer file is
+refused before anything runs.
+
+Where the provider also lists `schema.reserved-repeatable-record`, the record
+is its own storage: no plan drops it, and a declaration of its name is
+refused.
 
 A provider that does not list `sessions.repeatable-record`, or does not list it
 for the engine, refuses a directory that holds a repeatable migration before

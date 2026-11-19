@@ -34,13 +34,23 @@ func historyTable(scope *protocol.HistoryScope) (string, error) {
 // PrepareHistory writes under the table's name. A table that only shares a
 // name with the storage is not.
 func HistoryStorage(table *protocol.Table) bool {
-	canonical, err := renderChange(&protocol.Change{Object: table.GetIdentity(), Operation: &protocol.Change_CreateTable{CreateTable: table}})
+	canonical, err := TableDDL(table)
 	if err != nil {
 		return false
 	}
-	canonical = strings.TrimSuffix(canonical, ";")
 	name := quote(table.GetIdentity().GetName())
 	return canonical == historyDDL(name, protocol.HistoryScope_NATIVE) || canonical == historyDDL(name, protocol.HistoryScope_ATLAS)
+}
+
+// TableDDL returns the CREATE TABLE statement the fixture renders for an
+// inspected table, without its semicolon. A read accepts only a table whose
+// stored definition is exactly this text, so it is the table's layout.
+func TableDDL(table *protocol.Table) (string, error) {
+	canonical, err := renderChange(&protocol.Change{Object: table.GetIdentity(), Operation: &protocol.Change_CreateTable{CreateTable: table}})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(canonical, ";"), nil
 }
 
 func historyDDL(table string, format protocol.HistoryScope_Format) string {

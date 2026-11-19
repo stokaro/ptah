@@ -290,6 +290,10 @@ var hostFeatures = []string{
 	// storage, which every comparison leaves out, so a plan never drops it;
 	// see reader.reservedNames.
 	provider.ReservedSeedsFeature,
+	// A read reports the record of repeatable migrations as reserved
+	// storage, which every comparison leaves out, so a plan never drops it;
+	// see reader.reservedNames.
+	provider.ReservedRepeatableRecordFeature,
 	// A clause of CREATE TABLE an engine that reads the shared SQL grammar
 	// claims reaches the provider whole, and the facets it decodes are the
 	// table's; see Host.tableClauseExtension.

@@ -45,6 +45,41 @@ func TestReservedStorageDoesNotBecomeDesiredAbsence(t *testing.T) {
 	c.Assert(diff.TablesAdded, qt.HasLen, 1)
 }
 
+// reservedRecord is a provider's record of repeatable migrations, reserved
+// under the purpose a host reads from REPEATABLE.
+func reservedRecord() *catalog.Database {
+	record := reservedHistory("postgres", "public", "schema_migrations_repeatable")
+	record.Purpose = "repeatable"
+	return &catalog.Database{ReservedNames: []catalog.ReservedName{record}}
+}
+
+// A comparison leaves the record of repeatable migrations out, so a
+// declaration that does not name it plans no change, where a table of the
+// schema would be dropped.
+func TestReservedRepeatableRecord_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+
+	diff, err := schemadiff.CompareWithDialect(c.Context(), &schemamodel.Database{}, reservedRecord(), "postgres", runtime)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse)
+}
+
+// A declaration that takes the record's name is refused, and the refusal
+// says what the name holds.
+func TestReservedRepeatableRecord_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	runtime := must.Must(builtin.New())
+	desired := &schemamodel.Database{Tables: []schemamodel.Table{{Name: "schema_migrations_repeatable", StructName: "Record"}}}
+
+	diff, err := schemadiff.CompareWithDialect(c.Context(), desired, reservedRecord(), "postgres", runtime)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*public\.schema_migrations_repeatable.* is reserved for the record of repeatable migrations by provider "example\.org/provider"`)
+	c.Assert(diff, qt.IsNil)
+}
+
 func TestReservedStorageRefusesConflictingObservationsAndNormalization(t *testing.T) {
 	for _, row := range []struct {
 		name   string
@@ -56,6 +91,7 @@ func TestReservedStorageRefusesConflictingObservationsAndNormalization(t *testin
 		}},
 		{"changed normalization", func(d *catalog.Database) { d.ReservedNames[0].Identity.Name.Normalized = "different" }},
 		{"wrong engine", func(d *catalog.Database) { d.ReservedNames[0].Engine = "mysql" }},
+		{"unknown purpose", func(d *catalog.Database) { d.ReservedNames[0].Purpose = "archive" }},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)

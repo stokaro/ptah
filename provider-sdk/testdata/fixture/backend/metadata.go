@@ -26,6 +26,21 @@ func metadataDDL(table string, kind protocol.MetadataScope_Kind) string {
 		"repeatable VARCHAR(255) NULL, PRIMARY KEY (run_id, seq))"
 }
 
+// metadataStorage reports whether a table whose stored definition is stored
+// is migration metadata this fixture created, and of which purpose: the
+// definition is exactly the log or the tag layout under the table's name. A
+// table that only shares a name with the storage is not.
+func metadataStorage(name, stored string) (protocol.ReservedObject_Purpose, bool) {
+	definition := strings.TrimSuffix(strings.TrimSpace(stored), ";")
+	switch definition {
+	case metadataDDL(quote(name), protocol.MetadataScope_LOG):
+		return protocol.ReservedObject_LOG, true
+	case metadataDDL(quote(name), protocol.MetadataScope_TAGS):
+		return protocol.ReservedObject_TAG, true
+	}
+	return protocol.ReservedObject_PURPOSE_UNSPECIFIED, false
+}
+
 // logRepeatable is the identity a log entry about a repeatable migration
 // carries, and setLogRepeatable sets it. The field belongs to contract 25.44,
 // and this package keeps to contract 25.0, so both reach it by name: built

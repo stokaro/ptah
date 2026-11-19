@@ -63,9 +63,7 @@ func reservedNamesIndex(current *catalog.Database, target string, semantics iden
 		if record.ProviderID == "" || record.Engine != target || record.Identity.Name.Source == "" || record.Identity.Name.Normalized == "" || record.Identity.Kind == "" {
 			return nil, fmt.Errorf("%w: invalid provider storage reservation", ptaherr.ErrInvalidSchemaDiff)
 		}
-		switch record.Purpose {
-		case "history", "lock", "log", "tag", "seeds":
-		default:
+		if _, known := reservedPurposes[record.Purpose]; !known {
 			return nil, fmt.Errorf("%w: unknown provider storage purpose", ptaherr.ErrInvalidSchemaDiff)
 		}
 		if record.Identity.Kind == objectidentity.KindTable && record.Identity.Key() != builder.TablePartsVerbatim(record.Identity.Schema.Source, record.Identity.Name.Source).Key() {
@@ -88,8 +86,21 @@ func refuseComparisonChanges(ctx context.Context, runtime any, target string, se
 	return refuseDroppedBindings(ctx, runtime, target, semantics, caps, desired, diff)
 }
 
+// reservedPurposes names what each purpose of provider storage keeps, as a
+// refusal of a declaration that takes its name says it. A purpose missing here
+// is refused as unknown, so the set a comparison accepts and the set a refusal
+// can describe are one list.
+var reservedPurposes = map[string]string{
+	"history":    "history storage",
+	"lock":       "lock storage",
+	"log":        "log storage",
+	"tag":        "tag storage",
+	"seeds":      "seeds storage",
+	"repeatable": "the record of repeatable migrations",
+}
+
 func reservedNameError(record catalog.ReservedName) error {
-	return fmt.Errorf("%w: %s is reserved for %s storage by provider %q", ptaherr.ErrInvalidSchemaDiff, record.Identity, record.Purpose, record.ProviderID)
+	return fmt.Errorf("%w: %s is reserved for %s by provider %q", ptaherr.ErrInvalidSchemaDiff, record.Identity, reservedPurposes[record.Purpose], record.ProviderID)
 }
 
 func refuseReservedChanges(ctx context.Context, runtime any, target string, semantics identifier.Semantics,
