@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -271,39 +270,32 @@ const droppedCheckTable = `CREATE TABLE t (id int PRIMARY KEY, c varchar(20), CO
 // drops a CHECK and holds the restored CHECK to the one the declaration
 // creates.
 //
-// The rollback is the down file `ptah migrations generate` writes for the
-// drop, which restores the CHECK from the clause the reader reports. The
-// directory gives each migration an Atlas file and an explicit down file, and
-// `ptah-compat migrate hash`, `migrate apply` and `migrate down` drive it.
-// Restored from a clause read with the extra encoding left on, the CHECK
-// would compare the column with other characters than the declaration names.
+// `ptah migrations generate` writes the drop and its down file from a database
+// holding the CHECK, under the names it gives them, and `ptah-compat migrate
+// hash`, `migrate apply --allow-dirty` and `migrate down` drive that directory
+// against the same database. Two defects redden it. Restored from a clause
+// read with the extra encoding left on, the CHECK compares the column with
+// other characters than the declaration names. Read as a Ptah directory, as
+// the native default reads a directory of .up.sql files, the rollback compares
+// the atlas.sum hash `migrate apply` recorded with the file's hex digest and
+// refuses with `checksum mismatch`.
 func TestCompatMigrateDownRestoresADroppedCheckE2E(t *testing.T) {
 	for _, engine := range mysqlFamilyEngines {
 		t.Run(engine.String(), func(t *testing.T) {
 			c := qt.New(t)
 			scratch := newMySQLFamilyScratch(c, engine)
-			up, down := generatedCheckDrop(c, scratch)
-			root := c.TempDir()
-			dir := filepath.Join(root, "m")
-			c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
-			for name, body := range map[string]string{
-				"1_init.sql":            droppedCheckTable + ";\n",
-				"1_init.down.sql":       "DROP TABLE t;\n",
-				"2_drop_check.sql":      up,
-				"2_drop_check.down.sql": down,
-			} {
-				c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil) // #nosec G703 -- the path is c.TempDir() plus a constant name
-			}
-			targetName, target := scratch.database(c, "ck_down")
+			targetName, target := scratch.builtFrom(c, droppedCheckTable)
 			referenceName, _ := scratch.builtFrom(c, droppedCheckTable)
+			root := c.TempDir()
+			generateCheckDrop(c, target, filepath.Join(root, "m"))
 			options := clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()}
 
 			hashed := clirun.Run(c, clirun.Compat, options, "migrate", "hash", "--dir", "file://m")
 			c.Assert(hashed.ExitCode, qt.Equals, 0, historyComment(hashed))
-			applied := clirun.Run(c, clirun.Compat, options, "migrate", "apply", "--url", target, "--dir", "file://m")
+			applied := clirun.Run(c, clirun.Compat, options, "migrate", "apply", "--url", target, "--dir", "file://m", "--allow-dirty")
 			c.Assert(applied.ExitCode, qt.Equals, 0, historyComment(applied))
 			c.Assert(checkClauseBytes(c, scratch, targetName), qt.Equals, "")
-			rolledBack := clirun.Run(c, clirun.Compat, options, "migrate", "down", "--url", target, "--dir", "file://m", "--to-version", "1")
+			rolledBack := clirun.Run(c, clirun.Compat, options, "migrate", "down", "--url", target, "--dir", "file://m")
 
 			c.Assert(rolledBack.ExitCode, qt.Equals, 0, historyComment(rolledBack))
 			c.Assert(checkClauseBytes(c, scratch, targetName), qt.Equals, checkClauseBytes(c, scratch, referenceName))
@@ -312,28 +304,18 @@ func TestCompatMigrateDownRestoresADroppedCheckE2E(t *testing.T) {
 	}
 }
 
-// generatedCheckDrop has `ptah migrations generate` write the migration that
-// drops the CHECK of [droppedCheckTable] from a database holding it, and
-// returns the up and down files it wrote.
-func generatedCheckDrop(c *qt.C, scratch mysqlScratch) (up, down string) {
+// generateCheckDrop has `ptah migrations generate` write, into dir, the
+// migration that drops the CHECK of [droppedCheckTable] from the database at
+// source, which holds it.
+func generateCheckDrop(c *qt.C, source, dir string) {
 	c.Helper()
-	_, source := scratch.builtFrom(c, droppedCheckTable)
-	dir := c.TempDir()
 	desired := quotedTextSchemaFile(c, "CREATE TABLE t (id int PRIMARY KEY, c varchar(20));")
 	generated := runPtahIn(c, "migrations", "generate", "--db-url", source, "--schema-file", desired,
 		"--migrations-dir", dir, "--name", "drop_check")
 	c.Assert(generated.ExitCode, qt.Equals, 0, historyComment(generated))
-	ups, err := filepath.Glob(filepath.Join(dir, "*_drop_check.up.sql"))
+	written, err := filepath.Glob(filepath.Join(dir, "*_drop_check.*.sql"))
 	c.Assert(err, qt.IsNil)
-	c.Assert(ups, qt.HasLen, 1)
-	downs, err := filepath.Glob(filepath.Join(dir, "*_drop_check.down.sql"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(downs, qt.HasLen, 1)
-	upBody, err := os.ReadFile(ups[0]) // #nosec G304 -- a file the test's own generate run wrote under c.TempDir()
-	c.Assert(err, qt.IsNil)
-	downBody, err := os.ReadFile(downs[0]) // #nosec G304 -- a file the test's own generate run wrote under c.TempDir()
-	c.Assert(err, qt.IsNil)
-	return string(upBody), string(downBody)
+	c.Assert(written, qt.HasLen, 2)
 }
 
 // checkClauseBytes answers, in hexadecimal, the CHECK_CLAUSE the server

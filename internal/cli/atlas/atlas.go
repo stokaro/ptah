@@ -747,6 +747,13 @@ func atlasMigrateDownVerb() atlasVerb {
 		// lock that would not release, a skipped out-of-order migration, a
 		// connection that would not close) still reaches the user.
 		//
+		// --dir-format atlas reads the directory the way `migrate apply` and
+		// `migrate hash` on this surface read it. Left to the native default,
+		// a directory whose files end in .up.sql is read as a Ptah directory,
+		// and the rollback compares each applied row's atlas.sum hash with the
+		// hex digest of the file: `checksum mismatch` on every directory
+		// `ptah migrations generate` writes.
+		//
 		// User args are appended after the prefix, so an explicit native
 		// `--revision-format ptah` or `--log-level info` pass-through still
 		// overrides the default (pflag keeps the last value).
@@ -757,12 +764,12 @@ func atlasMigrateDownVerb() atlasVerb {
 		// output rather than its narration -- measured, 2687 bytes became 0 on
 		// a rollback that still ran. quietingLogLevelArgs applies it only where
 		// the report reaches the writer directly.
-		prefixArgs:     []string{"--revision-format", "atlas", "--confirm"},
+		prefixArgs:     []string{"--revision-format", "atlas", "--dir-format", atlasDirFormatDefault, "--confirm"},
 		quietNarration: true,
-		// The community binary has neither flag. The lock name in particular
-		// would be read and then ignored, since a forwarded run takes the
-		// default lock.
-		nativeOnlyFlags:     []string{"confirm", "migration-lock-name"},
+		// The community binary has none of these flags. The lock name in
+		// particular would be read and then ignored, since a forwarded run
+		// takes the default lock.
+		nativeOnlyFlags:     []string{"confirm", "dir-format", "migration-lock-name"},
 		nativeProjectConfig: true,
 		flags: []atlasargs.Flag{
 			atlasargs.NativeString("url", "u", "Database URL", "db-url"),
