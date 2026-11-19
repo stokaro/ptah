@@ -168,11 +168,15 @@ func cockroachDB() descriptor.Dialect {
 			ExpressionProbes:               "pg-catalog",
 			ProbeViewsInSchema:             true,
 			RewritesRoutineBodies:          true,
-			RolePasswords:                  true,
-			RoutineTypeAliases:             "pg-aliases",
-			QualifiedTypeNames:             true,
-			CatalogTypeNames:               true,
-			PrimaryKeyStoresColumns:        true,
+			// The kind GeneratedColumnDefault creates a column declared with
+			// none, so such a declaration compares equal to the column Ptah
+			// built. CockroachDB itself builds `AS (expr)` VIRTUAL.
+			DefaultGeneratedKind:    "STORED",
+			RolePasswords:           true,
+			RoutineTypeAliases:      "pg-aliases",
+			QualifiedTypeNames:      true,
+			CatalogTypeNames:        true,
+			PrimaryKeyStoresColumns: true,
 		},
 
 		// A bare type name PostgreSQL defines is the built-in type here too.

@@ -198,6 +198,8 @@ PostgreSQL release lines differ in grammar that reaches generated SQL:
   change an existing generated column between `STORED` and `VIRTUAL` stops
   with an error naming the column; see
   [The kind of a generated column](#the-kind-of-a-generated-column).
+- A `VIRTUAL` generated column requires PostgreSQL 18+. On an older line
+  Ptah refuses the declaration before anything is sent; see the same section.
 - A column list on `ON DELETE SET NULL` or `ON DELETE SET DEFAULT` requires
   PostgreSQL 15+. On an older line Ptah refuses the declaration rather than
   render an action that clears every column of the key; see
@@ -1395,11 +1397,33 @@ it rebuilds the same views. See
 ## The kind of a generated column
 
 PostgreSQL 18 builds `VIRTUAL` generated columns as well as `STORED` ones, and
-Ptah reads the kind from `pg_attribute.attgenerated`. A declaration that names
-no kind is `STORED`, which is the only kind a PostgreSQL 17 or earlier server
-builds. So a `VIRTUAL` column in the database is a change against a
-declaration that names no kind or `STORED`, and the same column against one
-that names `VIRTUAL`.
+Ptah reads the kind from `pg_attribute.attgenerated`. Ptah writes
+`GENERATED ALWAYS AS (...) VIRTUAL` where the target line has the
+`virtual_generated_columns` capability, which PostgreSQL 18 and CockroachDB
+have. `ptah db read` and `ptah-compat schema inspect --format '{{ sql . }}'`
+print such a column `VIRTUAL`, and a schema that declares one is applied as
+declared.
+
+PostgreSQL 17 and earlier answer `syntax error at or near "VIRTUAL"`, and so
+does YugabyteDB. On those lines a declared `VIRTUAL` column is refused while
+the plan is rendered, before any statement is sent:
+
+```text
+postgres on this server line does not support VIRTUAL generated columns (capability virtual_generated_columns); column "m" declares one
+```
+
+A command connected to a server reads its version, so the answer follows the
+server. A server whose version string Ptah cannot read is planned with the
+default line of the dialect, PostgreSQL 17, and so is an offline
+`ptah schema render` without `--server-version`: both refuse a `VIRTUAL`
+column. `--server-version 18` renders it, and so does a newer version, which
+is planned as 18.
+
+A declaration that names no kind is `STORED`, the only kind PostgreSQL 17 and
+earlier build. PostgreSQL 18 builds `GENERATED ALWAYS AS (expr)` with no kind
+as `VIRTUAL`. So a column a user wrote by hand on PostgreSQL 18 without a kind
+is `VIRTUAL` in the database, while the same declaration in a schema file is
+`STORED` to Ptah, and the two are columns of different kinds.
 
 `ALTER COLUMN ... SET EXPRESSION` changes the expression of either kind and
 keeps the kind. No statement changes the kind of an existing column in place,
@@ -1409,6 +1433,11 @@ both kinds, and writes nothing:
 ```text
 generated column public.t.m is VIRTUAL and the schema declares it STORED; the postgres planner cannot change a generated column's kind in place, so drop the column and add it back, or declare it VIRTUAL
 ```
+
+The error stops the whole plan, not only that column: a new table declared in
+the same schema is not created either. Every apply against the database stops
+here until the declaration names the kind the column has. For a column written
+by hand on PostgreSQL 18 without a kind, that means declaring it `VIRTUAL`.
 
 A plan that changes only the expression of a `VIRTUAL` column is written as for
 a `STORED` one.

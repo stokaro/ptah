@@ -238,6 +238,7 @@ so typos fail fast. Current registry:
 | `view_comments` | COMMENT ON VIEW, stored where Ptah's reader reads it back: obj_description, or a YDB view's attribute |
 | `view_options` | a view's PostgreSQL options: CREATE VIEW ... WITH (security_invoker, security_barrier), ALTER VIEW ... SET and RESET, read back from pg_class.reloptions |
 | `views` | standalone CREATE VIEW ... AS <query> objects |
+| `virtual_generated_columns` | columns declared GENERATED ALWAYS AS (expr) VIRTUAL, computed when read (PostgreSQL 18+, CockroachDB, MySQL, MariaDB, SQLite, Oracle) |
 | `wide_date_time_types` | YDB's 64-bit date and time types Date32, Datetime64, Timestamp64 and Interval64 (YDB 25.2 and later) |
 | `xml_type` | PostgreSQL XML column type |
 <!-- END GENERATED CAPABILITY KEYS -->
@@ -467,6 +468,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `view_comments` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `view_options` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `virtual_generated_columns` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | `wide_date_time_types` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ |
 <!-- END GENERATED PRESET MATRIX -->

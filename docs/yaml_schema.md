@@ -252,6 +252,9 @@ Older PostgreSQL targets receive an explicit manual migration warning instead
 of an automatic destructive drop-and-recreate plan. The statement keeps the
 column's kind, so a change between `STORED` and `VIRTUAL` on an existing
 column is refused with an error that names the column.
+`generated_kind: VIRTUAL` renders on PostgreSQL 18+ and CockroachDB, which
+have the `virtual_generated_columns` capability, and is refused by name on
+earlier PostgreSQL lines and on YugabyteDB.
 
 If `enum` is provided and `type` is empty or `ENUM`, Ptah creates an enum named
 `enum_<struct_name>_<field_name>` and uses that generated type for the column.
