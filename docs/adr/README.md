@@ -134,6 +134,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0122](0122-a-comparison-reads-the-current-state-of-another-comparisons-models.md) | A comparison reads the current state of another comparison's models | Proposed |
 | [0123](0123-a-read-reports-the-kinds-of-object-it-does-not-describe.md) | A read reports the kinds of object it does not describe | Proposed |
 | [0124](0124-a-provider-receives-the-operators-trust-in-replayed-sql.md) | A provider receives the operator's trust in replayed SQL | Proposed |
+| [0125](0125-a-provider-keeps-the-record-of-repeatable-migrations.md) | A provider keeps the record of repeatable migrations | Proposed |
 
 ## Writing one
 

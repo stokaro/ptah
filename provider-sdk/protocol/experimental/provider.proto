@@ -54,6 +54,12 @@ service Provider {
   rpc ReadHistory(ReadHistoryRequest) returns (HistorySnapshot);
   rpc PrepareHistory(PrepareHistoryRequest) returns (HistoryResult);
   rpc MutateHistory(MutateHistoryRequest) returns (HistoryResult);
+  // Contract 25.44: the record of repeatable migrations. Each call is used
+  // only when both sides list the feature sessions.repeatable-record.
+  rpc ReadRepeatables(ReadRepeatablesRequest) returns (RepeatableSnapshot);
+  rpc PrepareRepeatables(PrepareRepeatablesRequest) returns (RepeatableResult);
+  rpc ReadRepeatableBody(ReadRepeatableBodyRequest) returns (RepeatableBody);
+  rpc MutateRepeatable(MutateRepeatableRequest) returns (RepeatableResult);
   rpc PrepareMetadata(PrepareMetadataRequest) returns (MetadataResult);
   rpc MutateMetadata(MutateMetadataRequest) returns (MetadataResult);
   rpc LookupMetadataTag(LookupMetadataTagRequest) returns (MetadataTagResult);
@@ -2874,6 +2880,147 @@ message HistoryResult {
   string message = 5;
 }
 
+// RepeatableScope binds the record of repeatable migrations to a live session.
+// Schema and table are identifier components, never SQL fragments: the host
+// names the record after the revision table, with the suffix _repeatable. Only
+// a completion carries a transaction ID, the transaction its migration body
+// ran in, so the record and the work commit together. A provider validates
+// the store's ownership and layout before reading or adopting it. Contract
+// 25.44, under sessions.repeatable-record.
+message RepeatableScope {
+  string session_id = 1;
+  string transaction_id = 2;
+  string schema = 3;
+  string table = 4;
+}
+// RepeatableRow is what the record keeps of one repeatable migration: the
+// content that last applied and the last attempt. The host owns the meaning:
+// which file runs, retry and repair. Identity is the part of the file name
+// between R__ and .sql.
+message RepeatableRow {
+  enum State { STATE_UNSPECIFIED = 0; RUNNING = 1; APPLIED = 2; FAILED = 3; }
+  string identity = 1;
+  State state = 2;
+  // The digest of the content that last applied; empty until one applies.
+  string checksum = 3;
+  // The digest, the 1-based position in its run, the transaction and the run
+  // of the last attempt.
+  string attempt_checksum = 4;
+  uint32 attempt_order = 5;
+  bool transactional = 6;
+  string run_id = 7;
+  // Unix time split into seconds and nanoseconds in [0, 999999999].
+  int64 attempted_at_seconds = 8;
+  int32 attempted_at_nanos = 9;
+  // Set once a content has applied; false leaves both applied_at fields zero.
+  bool applied = 10;
+  int64 applied_at_seconds = 11;
+  int32 applied_at_nanos = 12;
+  // The last failed attempt's error; empty after an attempt that applied.
+  string error = 13;
+  // Whether the record keeps the bytes of the content that last applied. An
+  // empty body is kept: it differs from none. ReadRepeatableBody reads them.
+  bool body_kept = 14;
+}
+// ReadRepeatables returns every row of the record, without bodies, as one
+// consistent snapshot. A provider refuses a record holding more than
+// max_rows; truncation is never a valid reply. Reading creates nothing.
+message ReadRepeatablesRequest {
+  RepeatableScope scope = 1;
+  uint32 max_rows = 2;
+}
+message RepeatableSnapshot {
+  RepeatableScope scope = 1;
+  bool exists = 2;
+  bool complete = 3;
+  repeated RepeatableRow rows = 4;
+}
+// PrepareRepeatables creates a missing record and verifies an existing one,
+// outside any transaction. It never upgrades another layout or changes a row.
+message PrepareRepeatablesRequest {
+  RepeatableScope scope = 1;
+  string request_id = 2;
+}
+// ReadRepeatableBody reads the bytes the record keeps for one identity, which
+// only a replay whose file no longer hashes to the applied digest needs.
+message ReadRepeatableBodyRequest {
+  RepeatableScope scope = 1;
+  string identity = 2;
+}
+// RepeatableBody answers ReadRepeatableBody. found is false when the record
+// holds no row for the identity; kept is false when the row keeps no body,
+// and body is then empty.
+message RepeatableBody {
+  RepeatableScope scope = 1;
+  string identity = 2;
+  bool found = 3;
+  bool kept = 4;
+  bytes body = 5;
+}
+// RepeatableClaim records that this run is about to attempt identity, before
+// any statement of its body runs. It sets the row's state to RUNNING, its
+// attempt fields and run_id, and clears its error; the applied digest, the
+// applied time and the body stay as they were. With insert, the claim
+// succeeds only when the record holds no row for the identity. Without it,
+// the claim succeeds only while the row still names expected_run_id, the run
+// the host read. Any other row is a CONFLICT that names its run.
+message RepeatableClaim {
+  string identity = 1;
+  bool insert = 2;
+  string expected_run_id = 3;
+  string run_id = 4;
+  string attempt_checksum = 5;
+  uint32 attempt_order = 6;
+  bool transactional = 7;
+  int64 attempted_at_seconds = 8;
+  int32 attempted_at_nanos = 9;
+}
+// RepeatableCompletion records the attempt's content as applied: state
+// APPLIED, the digest, the bytes and the time, and no error. It applies only
+// to the row run_id claimed. Under a transaction, APPLIED confirms the write,
+// not its commit.
+message RepeatableCompletion {
+  string identity = 1;
+  string run_id = 2;
+  string checksum = 3;
+  bytes body = 4;
+  int64 applied_at_seconds = 5;
+  int32 applied_at_nanos = 6;
+}
+// RepeatableFailure records that the attempt's body failed: state FAILED and
+// the error. It applies only to the row run_id claimed.
+message RepeatableFailure {
+  string identity = 1;
+  string run_id = 2;
+  string error = 3;
+}
+// MutateRepeatable is one atomic write to the record. No receipt permits a
+// replay: an UNKNOWN outcome is settled by reading the row's run_id back.
+message MutateRepeatableRequest {
+  RepeatableScope scope = 1;
+  string request_id = 2;
+  oneof mutation {
+    RepeatableClaim claim = 3;
+    RepeatableCompletion complete = 4;
+    RepeatableFailure fail = 5;
+    // Deletes the row of one identity, whatever it holds. The host's
+    // migration lock serializes it with runs.
+    string remove = 6;
+  }
+}
+message RepeatableResult {
+  enum Outcome { UNKNOWN = 0; APPLIED = 1; CONFLICT = 2; REFUSED = 3; }
+  RepeatableScope scope = 1;
+  string request_id = 2;
+  Outcome outcome = 3;
+  // The run the row names when a claim, a completion or a failure meets a
+  // CONFLICT; empty when the record holds no row for the identity.
+  string holder_run_id = 4;
+  // Set only by a removal that APPLIED and deleted a row. False there
+  // confirms the record held none.
+  bool removed = 5;
+}
+
 // LockScope identifies one acquisition attempt within a live session. The name
 // addresses the database's exclusion namespace; lock_id is never reused.
 message LockScope {
@@ -2944,6 +3091,10 @@ message MigrationLogRecord {
   int64 at_seconds = 9;
   int32 at_nanos = 10;
   string error = 11;
+  // The identity of the repeatable migration the entry is about; version is
+  // then 0. Sent only when both sides list sessions.repeatable-record.
+  // Contract 25.44.
+  string repeatable = 12;
 }
 message MigrationTagRecord {
   string name = 1;

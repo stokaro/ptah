@@ -78,10 +78,11 @@ uncommitted `go.work` file, and build with `GOWORK=off` before you push.
 The contract between a host and a provider has a version, major.minor.
 `provider.Revision` is the major, sent as `revision` in both directions of
 `Describe`. `provider.ContractMinor` is the minor this SDK speaks. This SDK
-speaks contract 25.43. Each released SDK speaks one contract:
+speaks contract 25.44. Each released SDK speaks one contract:
 
 | SDK release | Contract |
 | --- | --- |
+| `provider-sdk/v0.43.0` | 25.44 |
 | `provider-sdk/v0.42.0` | 25.43 |
 | `provider-sdk/v0.41.0` | 25.42 |
 | `provider-sdk/v0.40.0` | 25.41 |
@@ -209,6 +210,7 @@ returns to 0.
   Contract 25.41 adds [not-described kinds](#not-described-kinds).
   Contract 25.42 adds [provider-owned server advisories](#provider-owned-server-advisories).
   Contract 25.43 adds [trusted replay SQL](#trusted-replay-sql).
+  Contract 25.44 adds the [repeatable migration record](#repeatable-migration-record).
 - An incompatible change alters what an existing peer relies on: a field
   removed, renumbered, retyped or given another meaning, a field a request
   must now carry, a validator that refuses what an older peer sends, or
@@ -1728,6 +1730,46 @@ migration error contract. Failed transaction-bound tag operations prevent commit
 rollback and reader cleanup remain available. The common migrator retains its
 best-effort journal policy. Published-module adoption and official-engine
 qualification remain required under #4204.
+
+### Repeatable migration record
+
+[ADR 0125](../docs/adr/0125-a-provider-keeps-the-record-of-repeatable-migrations.md)
+decides this feature. A repeatable migration, `R__<identity>.sql`, runs again
+whenever its content changes. The host keeps one row per identity in a table
+beside the revision table, named after it with the suffix `_repeatable`: the
+digest and the bytes of the content that last applied, and the state, digest,
+order, transaction and run of the last attempt. `sessions.repeatable-record`
+lets a provider keep that row with four calls:
+
+- `ReadRepeatables` returns every row without its body, as one complete
+  snapshot bounded by `provider.MaxRepeatableRows`, and creates nothing;
+- `PrepareRepeatables` creates a missing record outside any transaction and
+  checks the ownership and layout of an existing one;
+- `ReadRepeatableBody` returns the bytes kept for one identity, which only a
+  drift check that replays a changed or deleted file needs;
+- `MutateRepeatable` writes one row atomically: a claim before the body runs,
+  a completion after it, a failure, or the removal `ptah migrations repair
+  --repeatable` asks for.
+
+The run ID decides a claim. A claim with `insert` succeeds only when the
+record holds no row for the identity; any other claim succeeds only while the
+row still names `expected_run_id`, the run the host read. A completion and a
+failure apply only to the row their run claimed. Any other row is a `CONFLICT`
+that names the run holding it, so of two runs that read the same record one
+runs the body and the other stops before it. A completion may carry the
+transaction its body ran in, so the record and the work commit together; every
+other call runs on the session alone. A body is at most
+`provider.MaxRepeatableBodyBytes`, and the host refuses a longer one before it
+runs anything. No receipt permits a replay: the host settles an `UNKNOWN`
+outcome by reading the row's run back.
+
+The feature also adds `MigrationLogRecord.repeatable`, the identity a log entry
+about a repeatable migration carries, with version `0`. That addition makes it
+a two-way feature: the provider and each engine that keeps the record list it
+beside `sessions.history`, and the host lists it. The SDK refuses the field,
+and every call, without the feature, on the client and on the server. A host
+that runs a directory holding repeatable migrations on an engine that does not
+list the feature refuses before anything changes.
 
 ## Offline schema validation
 

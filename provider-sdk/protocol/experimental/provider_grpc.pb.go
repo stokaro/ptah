@@ -60,6 +60,10 @@ const (
 	Provider_ReadHistory_FullMethodName               = "/ptah.provider.experimental.Provider/ReadHistory"
 	Provider_PrepareHistory_FullMethodName            = "/ptah.provider.experimental.Provider/PrepareHistory"
 	Provider_MutateHistory_FullMethodName             = "/ptah.provider.experimental.Provider/MutateHistory"
+	Provider_ReadRepeatables_FullMethodName           = "/ptah.provider.experimental.Provider/ReadRepeatables"
+	Provider_PrepareRepeatables_FullMethodName        = "/ptah.provider.experimental.Provider/PrepareRepeatables"
+	Provider_ReadRepeatableBody_FullMethodName        = "/ptah.provider.experimental.Provider/ReadRepeatableBody"
+	Provider_MutateRepeatable_FullMethodName          = "/ptah.provider.experimental.Provider/MutateRepeatable"
 	Provider_PrepareMetadata_FullMethodName           = "/ptah.provider.experimental.Provider/PrepareMetadata"
 	Provider_MutateMetadata_FullMethodName            = "/ptah.provider.experimental.Provider/MutateMetadata"
 	Provider_LookupMetadataTag_FullMethodName         = "/ptah.provider.experimental.Provider/LookupMetadataTag"
@@ -154,6 +158,12 @@ type ProviderClient interface {
 	ReadHistory(ctx context.Context, in *ReadHistoryRequest, opts ...grpc.CallOption) (*HistorySnapshot, error)
 	PrepareHistory(ctx context.Context, in *PrepareHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
 	MutateHistory(ctx context.Context, in *MutateHistoryRequest, opts ...grpc.CallOption) (*HistoryResult, error)
+	// Contract 25.44: the record of repeatable migrations. Each call is used
+	// only when both sides list the feature sessions.repeatable-record.
+	ReadRepeatables(ctx context.Context, in *ReadRepeatablesRequest, opts ...grpc.CallOption) (*RepeatableSnapshot, error)
+	PrepareRepeatables(ctx context.Context, in *PrepareRepeatablesRequest, opts ...grpc.CallOption) (*RepeatableResult, error)
+	ReadRepeatableBody(ctx context.Context, in *ReadRepeatableBodyRequest, opts ...grpc.CallOption) (*RepeatableBody, error)
+	MutateRepeatable(ctx context.Context, in *MutateRepeatableRequest, opts ...grpc.CallOption) (*RepeatableResult, error)
 	PrepareMetadata(ctx context.Context, in *PrepareMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error)
 	MutateMetadata(ctx context.Context, in *MutateMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error)
 	LookupMetadataTag(ctx context.Context, in *LookupMetadataTagRequest, opts ...grpc.CallOption) (*MetadataTagResult, error)
@@ -627,6 +637,46 @@ func (c *providerClient) MutateHistory(ctx context.Context, in *MutateHistoryReq
 	return out, nil
 }
 
+func (c *providerClient) ReadRepeatables(ctx context.Context, in *ReadRepeatablesRequest, opts ...grpc.CallOption) (*RepeatableSnapshot, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RepeatableSnapshot)
+	err := c.cc.Invoke(ctx, Provider_ReadRepeatables_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) PrepareRepeatables(ctx context.Context, in *PrepareRepeatablesRequest, opts ...grpc.CallOption) (*RepeatableResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RepeatableResult)
+	err := c.cc.Invoke(ctx, Provider_PrepareRepeatables_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) ReadRepeatableBody(ctx context.Context, in *ReadRepeatableBodyRequest, opts ...grpc.CallOption) (*RepeatableBody, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RepeatableBody)
+	err := c.cc.Invoke(ctx, Provider_ReadRepeatableBody_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *providerClient) MutateRepeatable(ctx context.Context, in *MutateRepeatableRequest, opts ...grpc.CallOption) (*RepeatableResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RepeatableResult)
+	err := c.cc.Invoke(ctx, Provider_MutateRepeatable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *providerClient) PrepareMetadata(ctx context.Context, in *PrepareMetadataRequest, opts ...grpc.CallOption) (*MetadataResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MetadataResult)
@@ -1061,6 +1111,12 @@ type ProviderServer interface {
 	ReadHistory(context.Context, *ReadHistoryRequest) (*HistorySnapshot, error)
 	PrepareHistory(context.Context, *PrepareHistoryRequest) (*HistoryResult, error)
 	MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error)
+	// Contract 25.44: the record of repeatable migrations. Each call is used
+	// only when both sides list the feature sessions.repeatable-record.
+	ReadRepeatables(context.Context, *ReadRepeatablesRequest) (*RepeatableSnapshot, error)
+	PrepareRepeatables(context.Context, *PrepareRepeatablesRequest) (*RepeatableResult, error)
+	ReadRepeatableBody(context.Context, *ReadRepeatableBodyRequest) (*RepeatableBody, error)
+	MutateRepeatable(context.Context, *MutateRepeatableRequest) (*RepeatableResult, error)
 	PrepareMetadata(context.Context, *PrepareMetadataRequest) (*MetadataResult, error)
 	MutateMetadata(context.Context, *MutateMetadataRequest) (*MetadataResult, error)
 	LookupMetadataTag(context.Context, *LookupMetadataTagRequest) (*MetadataTagResult, error)
@@ -1246,6 +1302,18 @@ func (UnimplementedProviderServer) PrepareHistory(context.Context, *PrepareHisto
 }
 func (UnimplementedProviderServer) MutateHistory(context.Context, *MutateHistoryRequest) (*HistoryResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MutateHistory not implemented")
+}
+func (UnimplementedProviderServer) ReadRepeatables(context.Context, *ReadRepeatablesRequest) (*RepeatableSnapshot, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadRepeatables not implemented")
+}
+func (UnimplementedProviderServer) PrepareRepeatables(context.Context, *PrepareRepeatablesRequest) (*RepeatableResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PrepareRepeatables not implemented")
+}
+func (UnimplementedProviderServer) ReadRepeatableBody(context.Context, *ReadRepeatableBodyRequest) (*RepeatableBody, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadRepeatableBody not implemented")
+}
+func (UnimplementedProviderServer) MutateRepeatable(context.Context, *MutateRepeatableRequest) (*RepeatableResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MutateRepeatable not implemented")
 }
 func (UnimplementedProviderServer) PrepareMetadata(context.Context, *PrepareMetadataRequest) (*MetadataResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PrepareMetadata not implemented")
@@ -2120,6 +2188,78 @@ func _Provider_MutateHistory_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Provider_ReadRepeatables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadRepeatablesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadRepeatables(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadRepeatables_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadRepeatables(ctx, req.(*ReadRepeatablesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_PrepareRepeatables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareRepeatablesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).PrepareRepeatables(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_PrepareRepeatables_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).PrepareRepeatables(ctx, req.(*PrepareRepeatablesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_ReadRepeatableBody_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadRepeatableBodyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).ReadRepeatableBody(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_ReadRepeatableBody_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).ReadRepeatableBody(ctx, req.(*ReadRepeatableBodyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Provider_MutateRepeatable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MutateRepeatableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderServer).MutateRepeatable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Provider_MutateRepeatable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderServer).MutateRepeatable(ctx, req.(*MutateRepeatableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Provider_PrepareMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PrepareMetadataRequest)
 	if err := dec(in); err != nil {
@@ -2974,6 +3114,22 @@ var Provider_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MutateHistory",
 			Handler:    _Provider_MutateHistory_Handler,
+		},
+		{
+			MethodName: "ReadRepeatables",
+			Handler:    _Provider_ReadRepeatables_Handler,
+		},
+		{
+			MethodName: "PrepareRepeatables",
+			Handler:    _Provider_PrepareRepeatables_Handler,
+		},
+		{
+			MethodName: "ReadRepeatableBody",
+			Handler:    _Provider_ReadRepeatableBody_Handler,
+		},
+		{
+			MethodName: "MutateRepeatable",
+			Handler:    _Provider_MutateRepeatable_Handler,
 		},
 		{
 			MethodName: "PrepareMetadata",

@@ -132,6 +132,10 @@ func liveRPCs() []rpc {
 		described("ListSeedTables", provider.SeedsFeature, protocol.ProviderClient.ListSeedTables, alone(provider.ValidateListSeedTablesRequest), aloneReply(provider.ValidateSeedTablesReply)),
 		described("ReadSeedLedger", provider.SeedsFeature, protocol.ProviderClient.ReadSeedLedger, alone(provider.ValidateReadSeedLedgerRequest), aloneReply(provider.ValidateSeedLedgerReply)),
 		described("ReadHistory", provider.HistoryFeature, protocol.ProviderClient.ReadHistory, alone(provider.ValidateReadHistoryRequest), aloneReply(provider.ValidateHistorySnapshotReply)),
+		described("ReadRepeatables", provider.RepeatableRecordFeature, protocol.ProviderClient.ReadRepeatables, alone(provider.ValidateReadRepeatablesRequest),
+			aloneReply(provider.ValidateRepeatableSnapshotReply)),
+		described("ReadRepeatableBody", provider.RepeatableRecordFeature, protocol.ProviderClient.ReadRepeatableBody, alone(provider.ValidateReadRepeatableBodyRequest),
+			aloneReply(provider.ValidateRepeatableBodyReply)),
 		described("ListDevObjects", provider.DevCleanupFeature, protocol.ProviderClient.ListDevObjects, alone(provider.ValidateListDevObjectsRequest), aloneReply(provider.ValidateDevObjectsReply)),
 		described("RunStatement", provider.StatementsFeature, protocol.ProviderClient.RunStatement, statementRequest, aloneReply(provider.ValidateStatementResultReply)),
 	}
