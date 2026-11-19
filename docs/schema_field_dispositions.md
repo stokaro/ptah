@@ -111,7 +111,7 @@ migration nobody asked for.
 
 ### Compared fields a change of which plans nothing
 
-64 known gaps: a conversion or the comparison drops each one on the dialects named.
+63 known gaps: a conversion or the comparison drops each one on the dialects named.
 
 | Field | Dialects | Directions | Why |
 | --- | --- | --- | --- |
