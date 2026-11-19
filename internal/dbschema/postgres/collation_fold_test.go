@@ -10,7 +10,8 @@ import (
 // TestWriterHintsAtAFoldedCollationName pins the line a refusal of a collation
 // whose name holds no upper-case letter carries. PostgreSQL 18.6 answers
 // `COLLATE "c"` with the refusal below, and a SQL schema file writes that for
-// an unquoted `COLLATE C`.
+// an unquoted `COLLATE C` and for a quoted `COLLATE "c"` alike, so the hint
+// is conditional on the name having been unquoted.
 func TestWriterHintsAtAFoldedCollationName(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -20,18 +21,18 @@ func TestWriterHintsAtAFoldedCollationName(t *testing.T) {
 		{
 			name:    "C",
 			message: `collation "c" for encoding "UTF8" does not exist`,
-			want:    `(?s).*\nhint: an unquoted collation name folds to lower case, so COLLATE C names "c"; write COLLATE "C"`,
+			want:    `(?s).*\nhint: if the name was written unquoted, it folded to lower case: COLLATE C names "c"; write COLLATE "C"`,
 		},
 		{
 			name:    "POSIX",
 			message: `collation "posix" for encoding "UTF8" does not exist`,
-			want:    `(?s).*\nhint: an unquoted collation name folds to lower case, so COLLATE POSIX names "posix"; write COLLATE "POSIX"`,
+			want:    `(?s).*\nhint: if the name was written unquoted, it folded to lower case: COLLATE POSIX names "posix"; write COLLATE "POSIX"`,
 		},
 		{
 			name:    "another name",
 			message: `collation "en_us.utf8" for encoding "UTF8" does not exist`,
-			want: `(?s).*\nhint: an unquoted collation name folds to lower case, so "en_us.utf8" may name a collation spelled ` +
-				`with upper-case letters; write the name in double quotes to keep its case`,
+			want: `(?s).*\nhint: if the name was written unquoted, it folded to lower case, and "en_us.utf8" may stand for a ` +
+				`collation spelled with upper-case letters; write the name in double quotes to keep its case`,
 		},
 	}
 	for _, test := range tests {

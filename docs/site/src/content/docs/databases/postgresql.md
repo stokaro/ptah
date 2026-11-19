@@ -408,8 +408,10 @@ quoted, so a mixed-case name and a schema keep what they name:
 In a SQL schema file an unquoted name folds to lower case, as PostgreSQL
 folds it: `COLLATE Ucs_Basic` names `ucs_basic`, and `COLLATE
 app."MixedCase"` names `MixedCase` in the schema `app`. So `COLLATE C` names
-`c`, which PostgreSQL does not ship. The server refuses the statement, and the
-error ends with a hint to write `COLLATE "C"`.
+`c`, which PostgreSQL does not ship, and the server refuses the statement. The
+rendered statement quotes every name, so it cannot show whether the name was
+quoted. The error ends with a conditional hint: if the name was written
+unquoted, write `COLLATE "C"`.
 
 The comparison reads the collation each column declares from
 `pg_attribute.attcollation`. A column whose declared collation differs is
@@ -429,7 +431,11 @@ without a change:
 
 A plan rates a collation change as a warning, including a reset to the type's
 collation. The change rebuilds every index on the column, and it fails where a
-unique key holds values that the new collation finds equal.
+unique key holds values that the new collation finds equal. A planned `TYPE`
+clause that restates the collation the column holds is rated by its type
+change alone. A migration file has no plan behind it, so a `TYPE ... COLLATE`
+in one is a warning that the collation may change. A `COLLATE` inside a string
+literal, such as a column comment or a default, is not a collation clause.
 
 A type change on a column with a collation restates the collation, because a
 `TYPE` clause without `COLLATE` gives the column its new type's collation.

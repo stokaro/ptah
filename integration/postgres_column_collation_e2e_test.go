@@ -148,9 +148,9 @@ CREATE VIEW %[1]s.v AS SELECT id, a FROM %[1]s.t;
 // changes a UNIQUE column's collation a warning. PostgreSQL 18.6 rebuilds the
 // column's indexes under the new collation and refuses the change where the
 // unique key then holds equal values, so a plan that calls it safe hides a
-// failure. A change the statement names a collation in is rated by its words;
-// a reset to the type's collation names none, and the comparison's own
-// reading rates it.
+// failure. The comparison's reading rates the change, whether the statement
+// names the new collation or, for a reset to the type's collation, names
+// none. A TYPE clause that restates the collation the column holds is safe.
 func TestSchemaPlanRatesAPostgreSQLCollationChangeE2E(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -160,8 +160,13 @@ func TestSchemaPlanRatesAPostgreSQLCollationChangeE2E(t *testing.T) {
 	}{
 		{
 			name: "set", before: "text", declared: `text COLLATE "C"`,
-			want: `ALTER TABLE "coll_app"."u" ALTER COLUMN "n" TYPE text COLLATE "C" | warning | the statement sets a column's collation: ` +
-				"a change of it rebuilds every index on the column and fails where a unique key holds values the new collation finds equal",
+			want: `ALTER TABLE "coll_app"."u" ALTER COLUMN "n" TYPE text COLLATE "C" | warning | the collation change rebuilds every index on the column, ` +
+				"changes how its values sort and compare, and fails where a unique key holds values the new collation finds equal",
+		},
+		{
+			name: "restated", before: `varchar(20) COLLATE "C"`, declared: `varchar(40) COLLATE "C"`,
+			want: `ALTER TABLE "coll_app"."u" ALTER COLUMN "n" TYPE varchar(40) COLLATE "C" | safe | ` +
+				"the statement restates the collation the column holds",
 		},
 		{
 			name: "reset", before: `text COLLATE "C"`, declared: "text",
@@ -212,6 +217,6 @@ func TestSchemaApplyHintsAtAnUnquotedCollationNameE2E(t *testing.T) {
 
 	c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0)
 	c.Assert(applied.Stderr, qt.Contains, `collation "c" for encoding "UTF8" does not exist (SQLSTATE 42704)`)
-	c.Assert(applied.Stderr, qt.Contains, "\nhint: an unquoted collation name folds to lower case, so COLLATE C names \"c\"; write COLLATE \"C\"\n")
+	c.Assert(applied.Stderr, qt.Contains, "\nhint: if the name was written unquoted, it folded to lower case: COLLATE C names \"c\"; write COLLATE \"C\"\n")
 	c.Assert(storedColumnCollations(c, target, "t"), qt.HasLen, 0)
 }
