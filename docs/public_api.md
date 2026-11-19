@@ -2465,6 +2465,12 @@ columns, so a comparison against a document sees a changed default collation
 as it does against a read. The runtime refuses a predicted collation for a
 column the table does not declare or that declares its own, and an empty one.
 
+`TableCreation.ColumnTypes` is the type a read reports for each declared column
+the target stores under another type, such as `varbinary(10)` for
+`varchar(10) CHARACTER SET binary` on MySQL and MariaDB, and the projected
+column holds it. The runtime refuses a predicted type for an undeclared column,
+and an empty one.
+
 `TableCreation.Observed` holds what a CREATE of the declaration leaves that its
 declared values do not convert to, because it depends on the table rather than
 on one value: a conversion sees each value alone. Its records name the table,

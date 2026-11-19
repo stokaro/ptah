@@ -144,9 +144,13 @@ func mysql() descriptor.Dialect {
 			Collations: true, InheritedCollationVaries: true,
 			// Measured on MySQL 8.4.13 and 26.10.0: utf8_bin is stored as
 			// utf8mb3_bin, and int COLLATE utf8mb4_bin keeps no collation.
+			// MySQL has no UCA 14.0.0 collation. The family is declared all
+			// the same, because a mysql:// URL may name a MariaDB server,
+			// which lists it with no character set.
 			CollationNames: descriptor.CollationNames{
-				CharsetAliases:  map[string]string{"utf8": "utf8mb3"},
-				CharsetDefaults: mysqlCharsetDefaults(),
+				CharsetAliases:       map[string]string{"utf8": "utf8mb3"},
+				CharsetDefaults:      mysqlCharsetDefaults(),
+				ListedWithoutCharset: []string{"uca1400_"},
 				Types: []string{
 					"char", "character", "nchar", "national", "varchar", "nvarchar",
 					"tinytext", "text", "mediumtext", "longtext", "enum", "set",

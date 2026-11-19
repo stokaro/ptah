@@ -683,19 +683,27 @@ which names the character set too where it changes:
 ``ALTER TABLE `t` CHARSET latin1, COLLATE latin1_bin, MODIFY COLUMN `n` varchar(20)``.
 The table option alone leaves the collation of every existing column as it
 is. In the same statement the server gives a reset column the new default, so
-one apply converges. The Atlas community binary v1.3.0 plans the same
-statement when it is given a dev database, and the table option alone without
-one; see
+one apply converges. A change of a table's default collation is rated a
+warning, because a column added or restated without a collation takes it.
+
+The Atlas community binary v1.3.0 plans the same statement when it is given a
+dev database, and the table option alone without one; see
 [A changed MySQL table collation](../../atlas/retained-divergences/#a-changed-mysql-table-collation).
-A change of a table's default collation is rated a warning, because a column
-added or restated without a collation takes it.
+MariaDB lists its UCA 14.0.0 collations, such as `utf8mb4_uca1400_ai_ci`, with
+no character set, and the binary reads no character set for a table that
+holds one. `ptah-compat` writes the change between two of them as the binary
+does, `COLLATE utf8mb4_uca1400_ai_ci` without `CHARSET utf8mb4`. The collation
+names its character set, so the server makes the same change.
 
 A foreign key stands on the collation of both its ends, so the server refuses
 a change of either end's collation while the key stands: MySQL with Error 3780
 and MariaDB with Error 1832. Ptah drops the key, changes both ends, and adds
 the key back, as it does for a change of the columns' type, so one apply
 changes a key and the column it references together. A change of the
-character set is a change of the collation.
+character set is a change of the collation. The statements are not one
+transaction: where the referenced table fails with Error 1366 after the
+referencing one converted, the key stays dropped, and the next plan finishes
+the change and adds it back, as it does after a failed change of type.
 
 A change of a column's character set converts every value the column holds,
 and is rated destructive: a character the new character set cannot hold fails
@@ -720,6 +728,15 @@ the same length: `varchar(10) CHARACTER SET binary` as `varbinary(10)`,
 `char(4) CHARACTER SET binary` as `binary(4)`, and `text CHARACTER SET binary`
 as `blob`. The comparison accepts the stored type, so such a column is not
 planned again, and a `MODIFY COLUMN` that changes it restates it as declared.
+A `--from` schema file holds its columns at the stored type too, so two files
+that spell one column both ways diff as synced in either direction.
+
+A `mysql://`, `mariadb://` or `maria://` URL cannot say whether the server is
+MySQL or MariaDB, and the server can. A `schema diff` or `schema inspect` that
+creates a schema file on the dev database reads the file again for the dev
+server's dialect where the URL named the other, so the table options the file
+states, such as `COLLATE=utf8mb4_unicode_ci`, reach the tables it creates, as
+`schema apply` and `migrations generate` read a file from the start.
 
 ## FULLTEXT parser
 

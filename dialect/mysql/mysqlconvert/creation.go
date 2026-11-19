@@ -29,7 +29,9 @@ const RowFormatProperty = "row_format"
 // default of the character set it or the column names, read from the
 // request's character set facts. A read of the created table reports them,
 // so a table projected from a schema file holds them too, and a comparison
-// against it sees a changed default as it does against a read.
+// against it sees a changed default as it does against a read. A character
+// column with the binary character set is stored as the binary type of the
+// same length, and the read reports that type, so the projection holds it.
 //
 // Whether each index and the primary key keep a KEY_BLOCK_SIZE hint depends
 // on the table's row format, which a conversion of one index's value cannot
@@ -44,7 +46,8 @@ const RowFormatProperty = "row_format"
 type CreationService struct{}
 
 // ProjectTableCreations returns, for each table in order, its predicted
-// collations and the block-size observation of each of its indexes and of its
+// collations, the types its binary character columns are stored as, and the
+// block-size observation of each of its indexes and of its
 // primary key. Another target wraps ptaherr.ErrUnsupportedDialect; an invalid
 // declared hint or owner setting wraps schemaext.ErrInvalidValue. Errors and
 // cancellation return no partial result.
@@ -71,6 +74,7 @@ func (CreationService) ProjectTableCreations(ctx context.Context, request schema
 			return schemaprojection.TableCreationResult{}, fmt.Errorf("table %q: %w", table.Declaration.Table.Name, err)
 		}
 		result.Tables[i].Collation, result.Tables[i].ColumnCollations = collations.Default, collations.Inherited
+		result.Tables[i].ColumnTypes = collations.Stored
 		retained := mysqlindex.KeepsBlockSize(request.Target, table.Declaration.Table.Overrides[request.Target][RowFormatProperty])
 		holders := make([]holder, 0, len(table.Declaration.Indexes)+1)
 		for _, index := range table.Declaration.Indexes {

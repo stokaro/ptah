@@ -43,6 +43,7 @@ func AlignRollback(dialect string, forward, rollback []ast.Node, diff *difftypes
 	for _, node := range out {
 		respell(node, spelling)
 	}
+	withoutUnreadCharsets(out, diff, dialect)
 	return out
 }
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
@@ -364,66 +365,11 @@ func inspectOnDev(
 	var desired *schemamodel.Database
 	var migrationSnapshot fs.FS
 	switch set.Kind {
-	case atlassource.KindLocalFile:
-		if err := validateInspectLocalSources(set, opts.ValidateLocalSchemaSource); err != nil {
-			return InspectResult{}, err
-		}
-		// The source URL is the file itself, so --dev-url is the only URL that
-		// can limit this run to a schema.
-		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
-		// LoadSources rather than the URL list: a source that came from an
-		// atlas.hcl `data "hcl_schema"` block carries that block's `vars`, and
-		// reading the raw URLs back out of the set would drop them. Measured on
-		// the pinned Atlas community binary v1.3.0, `schema inspect --env local
-		// --url env://src` against a file with a required variable the block
-		// supplies is exit 0 there and was exit 1 here, `missing value for
-		// required variable "tenant"`.
-		desired, err = schemafile.LoadSources(ctx, set.SchemaFileSources(), schemafile.Options{
-			Contexts:                 opts.Runtime,
-			YAML:                     opts.Runtime.YAML(),
-			SQL:                      opts.Runtime.SQL(),
-			HCL:                      opts.Runtime.HCL(),
-			CoverageVocabulary:       opts.Runtime.CoverageVocabulary(),
-			Relations:                featureselect.RelationsOf(opts.Runtime),
-			DatabaseURL:              devURL,
-			Dialect:                  dialect,
-			IgnoreUnknownHCLNames:    opts.IgnoreUnknownHCLNames,
-			ReportIgnored:            opts.Diagnostics,
-			SchemaScope:              schemaScope,
-			SchemaScopeFlag:          schemaScopeFlag,
-			RequestedSchemas:         opts.Schemas,
-			RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
-			Vars:                     opts.Vars,
-		})
+	case atlassource.KindLocalFile, atlassource.KindExternalSchema, atlassource.KindRemoteSchema, atlassource.KindCompositeSchema:
+		desired, err = loadInspectDeclaration(ctx, set, opts, devURL, dialect)
 		if err != nil {
 			return InspectResult{}, err
 		}
-	case atlassource.KindExternalSchema, atlassource.KindRemoteSchema, atlassource.KindCompositeSchema:
-		// Each resolves to a schema IR rather than to files: an external
-		// program prints one, a registry artifact records one, and a
-		// composition merges its parts into one. None has a single local path
-		// for the file loader above to read.
-		// The file options reach a composition's local parts, which load as
-		// the file arm above loads them; the other two kinds read none of them.
-		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
-		state, err := set.Resolve(ctx, atlassource.ResolveOptions{
-			Runtime:                   opts.Runtime,
-			DatabaseURL:               devURL,
-			Dialect:                   dialect,
-			DialectFlag:               "--dev-url",
-			ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
-			IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
-			ReportIgnored:             opts.Diagnostics,
-			SchemaScope:               schemaScope,
-			SchemaScopeFlag:           schemaScopeFlag,
-			RequestedSchemas:          opts.Schemas,
-			RefuseUnrequestedSchemas:  opts.RefuseUnrequestedSchemas,
-			Vars:                      opts.Vars,
-		})
-		if err != nil {
-			return InspectResult{}, err
-		}
-		desired = state.Schema
 	case atlassource.KindMigrationDir:
 		migrationSnapshot, err = prepareInspectMigrationSnapshot(
 			set.Sources[0].Path,
@@ -438,6 +384,7 @@ func inspectOnDev(
 	if err := validateInspectDesiredSchema(desired, opts.ValidateDesiredSchema); err != nil {
 		return InspectResult{}, err
 	}
+	declaredURL := devURL
 
 	// The container is started here and not at the top of the function: every
 	// refusal above is answerable from the URL text and the sources alone, and
@@ -472,6 +419,10 @@ func inspectOnDev(
 	}
 	defer dbschema.CloseAndWarn(devConn)
 	devConn.SchemaWriter().SetDryRun(false)
+	desired, err = inspectDeclarationForServer(ctx, set, opts, declaredURL, dialect, devConn.Info().Dialect, desired)
+	if err != nil {
+		return InspectResult{}, err
+	}
 
 	switch set.Kind {
 	case atlassource.KindMigrationDir:
@@ -531,6 +482,99 @@ func inspectOnDev(
 		return rendered, nil
 	}
 	return InspectResult{}, fmt.Errorf("--url: unresolved %s inspection source", set.Kind)
+}
+
+// loadInspectDeclaration loads a local-file, external, remote or composite
+// inspection source for dialect. [inspectOnDev] loads it for the dialect the
+// dev URL's scheme names before the dev database is touched, and again for
+// the dev server's where the two differ ([loadedForAnotherDialect]).
+func loadInspectDeclaration(
+	ctx context.Context,
+	set atlassource.Set,
+	opts InspectSourceOptions,
+	devURL, dialect string,
+) (*schemamodel.Database, error) {
+	if set.Kind == atlassource.KindLocalFile {
+		if err := validateInspectLocalSources(set, opts.ValidateLocalSchemaSource); err != nil {
+			return nil, err
+		}
+		// The source URL is the file itself, so --dev-url is the only URL that
+		// can limit this run to a schema.
+		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
+		// LoadSources rather than the URL list: a source that came from an
+		// atlas.hcl `data "hcl_schema"` block carries that block's `vars`, and
+		// reading the raw URLs back out of the set would drop them. Measured on
+		// the pinned Atlas community binary v1.3.0, `schema inspect --env local
+		// --url env://src` against a file with a required variable the block
+		// supplies is exit 0 there and was exit 1 here, `missing value for
+		// required variable "tenant"`.
+		return schemafile.LoadSources(ctx, set.SchemaFileSources(), schemafile.Options{
+			Contexts:                 opts.Runtime,
+			YAML:                     opts.Runtime.YAML(),
+			SQL:                      opts.Runtime.SQL(),
+			HCL:                      opts.Runtime.HCL(),
+			CoverageVocabulary:       opts.Runtime.CoverageVocabulary(),
+			Relations:                featureselect.RelationsOf(opts.Runtime),
+			DatabaseURL:              devURL,
+			Dialect:                  dialect,
+			IgnoreUnknownHCLNames:    opts.IgnoreUnknownHCLNames,
+			ReportIgnored:            opts.Diagnostics,
+			SchemaScope:              schemaScope,
+			SchemaScopeFlag:          schemaScopeFlag,
+			RequestedSchemas:         opts.Schemas,
+			RefuseUnrequestedSchemas: opts.RefuseUnrequestedSchemas,
+			Vars:                     opts.Vars,
+		})
+	}
+	// Each resolves to a schema IR rather than to files: an external program
+	// prints one, a registry artifact records one, and a composition merges
+	// its parts into one. None has a single local path for the file loader
+	// above to read. The file options reach a composition's local parts,
+	// which load as the file arm above loads them; the other two kinds read
+	// none of them.
+	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
+	state, err := set.Resolve(ctx, atlassource.ResolveOptions{
+		Runtime:                   opts.Runtime,
+		DatabaseURL:               devURL,
+		Dialect:                   dialect,
+		DialectFlag:               "--dev-url",
+		ValidateLocalSchemaSource: opts.ValidateLocalSchemaSource,
+		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+		ReportIgnored:             opts.Diagnostics,
+		SchemaScope:               schemaScope,
+		SchemaScopeFlag:           schemaScopeFlag,
+		RequestedSchemas:          opts.Schemas,
+		RefuseUnrequestedSchemas:  opts.RefuseUnrequestedSchemas,
+		Vars:                      opts.Vars,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return state.Schema, nil
+}
+
+// inspectDeclarationForServer returns desired, loaded for dialect, or the
+// source loaded again for server where the dev server's dialect differs
+// ([loadedForAnotherDialect]). A migration directory loads no declaration, and
+// desired is nil.
+func inspectDeclarationForServer(
+	ctx context.Context,
+	set atlassource.Set,
+	opts InspectSourceOptions,
+	devURL, dialect, server string,
+	desired *schemamodel.Database,
+) (*schemamodel.Database, error) {
+	if desired == nil || !loadedForAnotherDialect(dialect, server) {
+		return desired, nil
+	}
+	reloaded, err := loadInspectDeclaration(ctx, set, opts, devURL, server)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateInspectDesiredSchema(reloaded, opts.ValidateDesiredSchema); err != nil {
+		return nil, err
+	}
+	return reloaded, nil
 }
 
 func validateInspectLocalSources(set atlassource.Set, validate func(string) error) error {
@@ -633,6 +677,20 @@ func withMaterializedDevSchema(
 		}
 		return consume(materializedConn, baseline)
 	}))
+}
+
+// loadedForAnotherDialect reports whether a declaration loaded for the dialect
+// a URL scheme names has to be loaded again for server, the dialect of the dev
+// server it is created on. A MySQL-family scheme cannot tell MySQL from
+// MariaDB, and the connection names the server. A SQL document keeps the table
+// options it states, such as a default collation, among the properties of the
+// dialect it is read for, so a document read for one and rendered for the
+// other creates its tables without them: a schema file compared with the
+// database built from it plans a change for every column that takes the
+// table's collation. `schema apply` and `migrate diff` load a declaration for
+// the server's dialect from the start.
+func loadedForAnotherDialect(loaded, server string) bool {
+	return platform.NormalizeDialect(loaded) != platform.NormalizeDialect(server)
 }
 
 // renderMaterializedSchema prepares a complete render before resetting the
