@@ -147,7 +147,9 @@ func TestConstraints_CheckStringsThatDifferAreAChange(t *testing.T) {
 		{name: "a backslash ending a literal", dialect: platform.Postgres, declared: "c <> 'p'", stored: `(c <> 'p\'::text)`},
 		{name: "a backslash ending a literal", dialect: platform.SQLite, declared: "c <> 'p'", stored: `c <> 'p\'`},
 		{name: "a backslash in an escape string", dialect: platform.Postgres, declared: `c <> E'p\\'`, stored: `c <> E'p\''`},
-		{name: "another literal", dialect: platform.MySQL, declared: "c <> 'abd'", stored: "(`c` <> _utf8mb4\\'abc\\')"},
+		{name: "another literal", dialect: platform.MySQL, declared: "c <> 'abd'", stored: "(`c` <> _utf8mb4'abc')"},
+		{name: "a quote against none", dialect: platform.MySQL, declared: "c <> 'its'", stored: "(`c` <> _utf8mb4'it\\'s')"},
+		{name: "one backslash against two", dialect: platform.MySQL, declared: `c <> 'p\\'`, stored: "(`c` <> _utf8mb4'p\\\\\\\\')"},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect+"/"+test.name, func(t *testing.T) {
@@ -161,15 +163,20 @@ func TestConstraints_CheckStringsThatDifferAreAChange(t *testing.T) {
 }
 
 // TestConstraints_OneCheckStringIsNoChange holds CHECK clauses that differ
-// only outside their strings, or in how the catalog escapes them, to no
-// change. MySQL's information_schema prints each quote of a CHECK clause
-// escaped.
+// only outside their strings, or in how a string spells its value, to no
+// change. The MySQL and MariaDB rows hold the clause as the reader reports it.
 func TestConstraints_OneCheckStringIsNoChange(t *testing.T) {
 	tests := []quotedTextCheck{
 		{name: "a backslash ending a literal", dialect: platform.Postgres, declared: `c <> 'p\'`, stored: `(c <> 'p\'::text)`},
 		{name: "a literal after a backslash", dialect: platform.Postgres, declared: `c <> 'p\' ||  ' a  b'`, stored: `(c <> 'p\' || ' a  b')`},
 		{name: "an escaped quote in an escape string", dialect: platform.Postgres, declared: `c <>  E'p\'' ||  ' a  b'`, stored: `c <> E'p\'' || ' a  b'`},
-		{name: "the catalog's escaped quotes", dialect: platform.MySQL, declared: "c <> 'abc'", stored: "(`c` <> _utf8mb4\\'abc\\')"},
+		{name: "a character set introducer", dialect: platform.MySQL, declared: "c <> 'abc'", stored: "(`c` <> _utf8mb4'abc')"},
+		{name: "a doubled quote", dialect: platform.MySQL, declared: "c <> 'it''s'", stored: "(`c` <> _utf8mb4'it\\'s')"},
+		{name: "an escaped backslash", dialect: platform.MySQL, declared: `c <> 'p\\'`, stored: "(`c` <> _utf8mb4'p\\\\')"},
+		{name: "an escaped tab", dialect: platform.MySQL, declared: `c <> 'x\ty'`, stored: "(`c` <> _utf8mb4'x\ty')"},
+		{name: "a double-quoted string", dialect: platform.MySQL, declared: `c <> "d'q"`, stored: "(`c` <> _utf8mb4'd\\'q')"},
+		{name: "a backslash before a percent sign", dialect: platform.MariaDB, declared: `c <> 'x\%y'`, stored: "`c` <> 'x\\\\%y'"},
+		{name: "an escaped quote that ends a value", dialect: platform.MariaDB, declared: "c <> 'x'''", stored: "`c` <> 'x\\''"},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect+"/"+test.name, func(t *testing.T) {
