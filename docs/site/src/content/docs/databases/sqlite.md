@@ -135,6 +135,16 @@ enforcement on its connection instead, runs the plan, and runs
 the plan and rolls it back. Declared rows in the same plan go inside the pair,
 ahead of the enabling pragma, so the plan still ends with it.
 
+## A column default with an operator
+
+SQLite takes an expression default only in parentheses. SQLite 3.54 answers a
+syntax error to `DEFAULT 1 - 2`, `DEFAULT 1 + 2` and `DEFAULT 'a' || 'b'`, and
+takes `DEFAULT (1 - 2)`. A SQL schema file read with `--dialect sqlite`, or
+applied to a `sqlite://` database, is refused at the operator before anything
+is planned, and the refusal names the parenthesized form, `write DEFAULT (1 -
+2)`. SQLite reports a parenthesized default without its parentheses, and a
+comparison reads the two as the same default, so a second apply plans nothing.
+
 ## What a rebuild still refuses
 
 A rebuild is planned automatically wherever it can be. These are the cases it

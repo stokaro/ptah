@@ -187,7 +187,12 @@ END`,
 		// table before its timing. A column is an identity column through the
 		// IDENTITY property, which is how `db read` describes one.
 		Grammar: descriptor.Grammar{
-			Columns:    descriptor.ColumnGrammar{IdentityProperty: true, CurrentTimestampNiladic: true},
+			Columns: descriptor.ColumnGrammar{
+				IdentityProperty:        true,
+				CurrentTimestampNiladic: true,
+				DefaultPredicateRefusal: "SQL Server 2025 takes no predicate as a default, in parentheses or without, " +
+					"and answers Msg 156, Incorrect syntax near the keyword",
+			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"KEY", "INDEX"}},
 			Indexes:    descriptor.IndexGrammar{DropNamesTable: true, Nonclustered: true},
 			AlterTable: descriptor.AlterTableGrammar{AlterColumnDefinition: true},

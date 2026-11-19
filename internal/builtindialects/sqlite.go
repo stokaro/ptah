@@ -171,8 +171,12 @@ func sqlite() descriptor.Dialect {
 			Keys: descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 			// SQLite answers `near "(": syntax error` to CURRENT_TIMESTAMP() in a
 			// DEFAULT clause, so the parser keeps the keyword as written.
-			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true},
-			Forms:   sqliteStatementForms(),
+			Columns: descriptor.ColumnGrammar{
+				CurrentTimeKeywords: true,
+				DefaultOperatorRefusal: "SQLite 3.54 takes an expression default only in parentheses and answers " +
+					"a syntax error at an operator outside them",
+			},
+			Forms: sqliteStatementForms(),
 		},
 
 		// Clean checks: what internal/migrateclean reads. Measured against

@@ -16,13 +16,17 @@ func TestNewRegistry_Grammar_HappyPath(t *testing.T) {
 	described := head("alpha")
 	described.Grammar = descriptor.Grammar{
 		Columns: descriptor.ColumnGrammar{
-			TimestampLocalTimeZone: true,
-			CurrentTimeKeywords:    true,
-			NiladicFunctions:       []string{"SYSDATE", "USER"},
-			EmptyCallFunctions:     []string{"SYSDATE"},
-			EmptyCallRefusal:       "alpha refuses SYSDATE()",
-			SecondCheckRefusal:     "alpha takes one CHECK on a column",
-			ReferencesRefusal:      "what alpha builds depends on its release",
+			TimestampLocalTimeZone:  true,
+			CurrentTimeKeywords:     true,
+			NiladicFunctions:        []string{"SYSDATE", "USER"},
+			EmptyCallFunctions:      []string{"SYSDATE"},
+			EmptyCallRefusal:        "alpha refuses SYSDATE()",
+			DefaultOperatorRefusal:  "alpha takes an expression default only in parentheses",
+			DefaultPredicateRefusal: "alpha reads no predicate in a default",
+			DefaultDistinctFrom:     true,
+			DefaultPipesRefusal:     "alpha reads || by the session's SQL mode",
+			SecondCheckRefusal:      "alpha takes one CHECK on a column",
+			ReferencesRefusal:       "what alpha builds depends on its release",
 			Constraint: descriptor.ColumnConstraint{
 				Define: descriptor.ConstraintKindReferences,
 				Modify: descriptor.ConstraintKindCheck,
@@ -233,6 +237,11 @@ func TestNewRegistry_Grammar_FailurePath(t *testing.T) {
 			name:    "a MODIFY kind without a column constraint kind",
 			dialect: with(func(g *descriptor.Grammar) { g.Columns.Constraint.Modify = "CHECK" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a MODIFY column constraint kind needs a column constraint kind`,
+		},
+		{
+			name:    "IS DISTINCT FROM without a predicate refusal",
+			dialect: with(func(g *descriptor.Grammar) { g.Columns.DefaultDistinctFrom = true }),
+			wantErr: `invalid dialect descriptor: dialect "alpha": grammar: a default that reads IS DISTINCT FROM needs a default predicate refusal`,
 		},
 		{
 			name:    "a MATCH PARTIAL without the clause",

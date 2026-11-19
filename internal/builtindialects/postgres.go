@@ -263,7 +263,15 @@ func postgres() descriptor.Dialect {
 		// writes no LANGUAGE is PL/pgSQL. ALTER TABLE ... ADD CONSTRAINT k
 		// UNIQUE USING INDEX i makes the unique index i the key k, renaming it.
 		Grammar: descriptor.Grammar{
-			Columns: descriptor.ColumnGrammar{CurrentTimeKeywords: true, StoredStringDefaults: true, QualifiedCollations: true},
+			Columns: descriptor.ColumnGrammar{
+				CurrentTimeKeywords:  true,
+				StoredStringDefaults: true,
+				QualifiedCollations:  true,
+				DefaultPredicateRefusal: "PostgreSQL 18 reads no IS test but IS [NOT] DISTINCT FROM, and no AND or OR, in a default " +
+					"written without parentheses, and answers a syntax error there; write the whole expression in " +
+					"parentheses, as DEFAULT (1 + 2 IS NOT NULL)",
+				DefaultDistinctFrom: true,
+			},
 			Constraints: descriptor.ConstraintGrammar{
 				TableNotNull: true,
 				Enforcement:  descriptor.Enforcement{Checks: true, ForeignKeys: true, Once: true},
