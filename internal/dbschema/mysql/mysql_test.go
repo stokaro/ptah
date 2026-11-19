@@ -433,13 +433,23 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         `'a''b\\c'`,
 		},
 		{
-			// Under NO_BACKSLASH_ESCAPES a backslash is the character.
-			name:         "a MySQL string holding a backslash without backslash escapes",
+			// Measured on MySQL 26.10 for DEFAULT 'a\nb\tc\0d\Ze\rf\bg':
+			// the catalog reports each control character as the byte.
+			name:         "a MySQL string holding control characters",
 			columnType:   "varchar(30)",
 			dataType:     "varchar",
-			defaultValue: `a\b`,
+			defaultValue: "a\nb\tc\x00d\x1ae\rf\bg",
+			want:         `'a\nb\tc\0d\Ze\rf\bg'`,
+		},
+		{
+			// Under NO_BACKSLASH_ESCAPES a control character is written as
+			// the byte, which the session reads as itself.
+			name:         "a MySQL string holding a quote and a line feed without backslash escapes",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "it's\nhere",
 			literals:     literalsUnquotedVerbatim,
-			want:         `'a\b'`,
+			want:         "'it''s\nhere'",
 		},
 		{
 			// Measured on MySQL 26.10: DEFAULT '' reports an empty value and
@@ -577,10 +587,27 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         "current_timestamp()",
 		},
 		{
-			name:         "quoted value preserved",
+			// Measured on MySQL 26.10 for DEFAULT '''draft''': the quotes
+			// are the string's.
+			name:         "a MySQL string that starts and ends with a quote",
 			columnType:   "varchar(255)",
 			dataType:     "varchar",
 			defaultValue: "'draft'",
+			want:         "'''draft'''",
+		},
+		{
+			name:         "a MySQL string in double quotes",
+			columnType:   "varchar(255)",
+			dataType:     "varchar",
+			defaultValue: `"draft"`,
+			want:         `'"draft"'`,
+		},
+		{
+			name:         "a MariaDB quoted literal is kept",
+			columnType:   "varchar(255)",
+			dataType:     "varchar",
+			defaultValue: "'draft'",
+			literals:     literalsQuoted,
 			want:         "'draft'",
 		},
 	}
@@ -593,7 +620,30 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 				DataType:   test.dataType,
 			}
 
-			c.Assert(normalizeMySQLColumnDefault(col, test.defaultValue, test.extra, test.literals), qt.Equals, test.want)
+			got, err := normalizeMySQLColumnDefault(col, test.defaultValue, test.extra, test.literals)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// Under NO_BACKSLASH_ESCAPES a literal holding a backslash is refused: the
+// backslash is the character there, and written as it is the description
+// cannot be parsed back. 'p\' ends at the quote behind the backslash for a
+// reader that takes the backslash as an escape.
+func TestNormalizeMySQLColumnDefault_ABackslashWithoutBackslashEscapes_FailurePath(t *testing.T) {
+	for _, value := range []string{`a\b`, `p\`} {
+		t.Run(value, func(t *testing.T) {
+			c := qt.New(t)
+			col := &catalog.Column{Name: "c", ColumnType: "varchar(30)", DataType: "varchar"}
+
+			got, err := normalizeMySQLColumnDefault(col, value, "", literalsUnquotedVerbatim)
+
+			c.Assert(err, qt.ErrorMatches, `the default ".*" holds a backslash, and the session's sql_mode names NO_BACKSLASH_ESCAPES, `+
+				`under which the backslash is the character; Ptah reads a backslash in a string as an escape, so connect with a `+
+				`sql_mode that leaves out NO_BACKSLASH_ESCAPES to read this column`)
+			c.Assert(got, qt.Equals, "")
 		})
 	}
 }

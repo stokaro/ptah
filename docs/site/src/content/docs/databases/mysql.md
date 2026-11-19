@@ -184,10 +184,14 @@ SQL:
   without quotes and SQL NULL as no value, and the empty string as an empty
   value. `db read` writes each as the string it is.
 - `db read` writes a backslash in a MySQL string default doubled, so
-  `DEFAULT 'a\\b'` replays as the three characters it stores. A source
-  session whose `sql_mode` names `NO_BACKSLASH_ESCAPES` writes the backslash
-  as it is, for a target in the same mode. A quote escaped with a backslash
-  and a doubled quote compare as one character.
+  `DEFAULT 'a\\b'` replays as the three characters it stores, and a control
+  character as its escape, so `DEFAULT 'a\nb'` replays with its line feed.
+  A quote escaped with a backslash and a doubled quote compare as one
+  character. A read in a session whose `sql_mode` names
+  `NO_BACKSLASH_ESCAPES` refuses a string default holding a backslash and
+  names the column, because the backslash is the character in that session
+  and Ptah reads a backslash in a string as an escape; read from a session
+  without that mode.
 - A schema file may write a default as a bit string (`b'101'`, `0b101`), a
   hexadecimal string (`X'6A'`, `0x6a`), a string with a character set
   introducer (`_utf8mb4'x'`) or `N`, adjacent strings (`'a' 'b'`) or a
@@ -195,10 +199,14 @@ SQL:
   stores. On a `BINARY`, `VARBINARY` or `BLOB` column a string and the
   hexadecimal string of its bytes are one default, since MySQL reports
   `DEFAULT 'xy'` as `0x7879` and MariaDB `DEFAULT ('xy')` as `x'7879'`.
-  On an integer column `0x1F` and the `31` the server reports are one
-  default, and on a `BIT` column `0b110` and `b'110'`.
-  MariaDB prints `upper` and `lower` as `ucase` and `lcase`, and the
-  comparison reads them as the names the definition wrote.
+  On a text column a hexadecimal or bit string is the string of its bytes,
+  so `0x41`, `b'1000001'` and `'A'` are one default. On an integer column
+  `0x1F` and the `31` the server reports are one default, and so are
+  `b'101'` and `5`; on a `BIT` column `0b110` and `b'110'` are one default.
+  Both engines take `ucase` and `lcase` for `upper` and `lower`, and MariaDB
+  prints `upper` and `lower` as `ucase` and `lcase`. The comparison reads a
+  call to either name as a call to `upper` or `lower`, and `db read` writes
+  `upper` and `lower`.
 - `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
   MariaDB type. Both engines take one auto-increment column per table, and only

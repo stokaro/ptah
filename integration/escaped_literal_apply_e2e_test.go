@@ -53,15 +53,17 @@ const escapedLiteralMySQLRead = "SELECT CONCAT_WS(',', HEX(a), HEX(q), HEX(r), n
 // TestApplyKeepsAnEscapedLiteralDefaultE2E applies a Go model whose literal
 // defaults hold a backslash, a quote or the word NULL, with a column comment
 // and an enum value holding a backslash, twice, and reads what the server
-// stored back in hexadecimal. MariaDB reads a backslash in a string as an
-// escape, so the renderer doubles it. The server stores the characters the
-// model declares, and the second apply plans nothing.
+// stored back in hexadecimal. MySQL and MariaDB read a backslash in a string
+// as an escape, so the renderer doubles it, and the reader writes a stored one
+// back doubled. Each server stores the characters the model declares, and the
+// second apply plans nothing.
 func TestApplyKeepsAnEscapedLiteralDefaultE2E(t *testing.T) {
 	rows := []struct {
 		name   string
 		engine dbtarget.Engine
 		want   string
 	}{
+		{name: "mysql", engine: dbtarget.MySQLAdmin, want: "615C62,69745C27733B78,697427733B78,NULL,635C64,656E756D2827655C5C66272C27672729"},
 		{name: "mariadb", engine: dbtarget.MariaDBAdmin, want: "615C62,69745C27733B78,697427733B78,NULL,635C64,656E756D2827655C5C66272C27672729"},
 	}
 	for _, row := range rows {

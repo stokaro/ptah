@@ -662,7 +662,10 @@ func applyMySQLColumnMetadata(
 	generatedExpression sql.NullString,
 ) error {
 	if defaultValue.Valid && !isAbsentColumnDefault(defaultValue.String, literals) {
-		defaultSQL := normalizeMySQLColumnDefault(col, defaultValue.String, extra.String, literals)
+		defaultSQL, err := normalizeMySQLColumnDefault(col, defaultValue.String, extra.String, literals)
+		if err != nil {
+			return err
+		}
 		col.ColumnDefault = &defaultSQL
 	}
 	if characterMaxLength.Valid {
@@ -779,8 +782,9 @@ const (
 	// without them is an expression, a number or a keyword.
 	literalsQuoted
 	// literalsUnquotedVerbatim is MySQL's under NO_BACKSLASH_ESCAPES, where a
-	// backslash in a string literal is the character, so it is written back
-	// as it is.
+	// backslash in a string literal is the character. Ptah writes and reads a
+	// backslash as an escape, so a literal holding one is refused rather than
+	// read; any other literal is written back as it is.
 	literalsUnquotedVerbatim
 )
 
@@ -805,73 +809,48 @@ func (a sessionAccount) defaultLiterals() defaultLiterals {
 // 1 day)` and `'abc'`, with an empty EXTRA for both. Quoted, the expression
 // would read as a string, so the column would plan again on every apply and a
 // read would write the string back.
-func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string, literals defaultLiterals) string {
+//
+// MySQL writes a literal as the string it stores, so one that starts and ends
+// with a quote holds the quotes: measured on MySQL 26.10, a default declared
+// as the three characters quote, x, quote reports `'x'`, and the read writes it
+// back with each of those quotes doubled.
+//
+// A literal holding a backslash, read in a session whose sql_mode names
+// NO_BACKSLASH_ESCAPES, is refused: the backslash is the character there,
+// and a description holding it as written cannot be parsed or compared,
+// since both read a backslash as an escape.
+func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string, literals defaultLiterals) (string, error) {
 	value := strings.TrimSpace(defaultValue)
 	switch {
 	case literals == literalsQuoted && !isQuotedMySQLDefault(value):
-		return mariaDBFunctionNames(defaultValue)
-	case literals == literalsQuoted, isQuotedMySQLDefault(value):
-		return defaultValue
+		return normalize.FunctionAliases(defaultValue, mariaDBFunctionAliases(), true), nil
+	case literals == literalsQuoted:
+		return defaultValue, nil
 	case value != "" && hasGeneratedDefault(extra):
-		return generatedDefault(col, value)
+		return generatedDefault(col, value), nil
 	case value != "" && !mysqlDefaultNeedsLiteralQuotes(col, value):
 		// An empty answer is the empty string on every column: MySQL 26.10
 		// reports `DEFAULT ''` on a varbinary as an empty value too, and no
 		// default as SQL NULL.
-		return defaultValue
+		return defaultValue, nil
+	case literals == literalsUnquotedVerbatim && strings.Contains(defaultValue, `\`):
+		return "", fmt.Errorf("the default %q holds a backslash, and the session's sql_mode names "+
+			"NO_BACKSLASH_ESCAPES, under which the backslash is the character; Ptah reads a backslash in a string as an "+
+			"escape, so connect with a sql_mode that leaves out NO_BACKSLASH_ESCAPES to read this column", defaultValue)
+	case literals == literalsUnquotedVerbatim:
+		return "'" + strings.ReplaceAll(defaultValue, "'", "''") + "'", nil
 	}
-	return quoteMySQLDefaultLiteral(defaultValue, literals)
+	return quoteMySQLDefaultLiteral(defaultValue), nil
 }
 
-// mariaDBFunctions are the function names MariaDB prints in place of the ones
-// a definition wrote: measured on MariaDB 12.3, `DEFAULT (upper('abc'))`
-// reports `ucase('abc')`. Compared with the name the definition wrote, the
-// column plans again on every apply.
-var mariaDBFunctions = map[string]string{"ucase": "upper", "lcase": "lower"}
-
-// mariaDBFunctionNames writes each call in a MariaDB expression default with
-// the name a definition writes, outside quoted strings.
-func mariaDBFunctionNames(expression string) string {
-	var b strings.Builder
-	for i := 0; i < len(expression); i++ {
-		ch := expression[i]
-		if ch == '\'' {
-			end := i + 1
-			for end < len(expression) {
-				if expression[end] == '\\' || (expression[end] == '\'' && end+1 < len(expression) && expression[end+1] == '\'') {
-					end += 2
-					continue
-				}
-				if expression[end] == '\'' {
-					break
-				}
-				end++
-			}
-			end = min(end+1, len(expression))
-			b.WriteString(expression[i:end])
-			i = end - 1
-			continue
-		}
-		if isMySQLWordByte(ch) && (i == 0 || !isMySQLWordByte(expression[i-1])) {
-			end := i
-			for end < len(expression) && isMySQLWordByte(expression[end]) {
-				end++
-			}
-			word := expression[i:end]
-			if name, ok := mariaDBFunctions[strings.ToLower(word)]; ok && end < len(expression) && expression[end] == '(' {
-				word = name
-			}
-			b.WriteString(word)
-			i = end - 1
-			continue
-		}
-		b.WriteByte(ch)
-	}
-	return b.String()
-}
-
-func isMySQLWordByte(ch byte) bool {
-	return ch == '_' || ch == '$' || (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+// mariaDBFunctionAliases are the function names MariaDB prints in place of
+// the ones a definition wrote, as its descriptor states them: measured on
+// MariaDB 12.3, `DEFAULT (upper('abc'))` reports `ucase('abc')`. Read back
+// with the name the definition wrote, a description replays the call it
+// declared.
+func mariaDBFunctionAliases() map[string]string {
+	described, _ := platform.Lookup(platform.MariaDB)
+	return described.Columns.FunctionAliases
 }
 
 // generatedDefault returns an expression default as MySQL's catalog reports
@@ -964,14 +943,39 @@ func isMySQLCurrentTime(value string) bool {
 }
 
 // quoteMySQLDefaultLiteral writes the stored value of a literal default as a
-// string literal. Measured on MySQL 26.10, `DEFAULT 'a\\b'` reports `a\b`;
-// written back without the backslash doubled, `'a\b'` stores a and a
-// backspace, and `'a\'b\\c'` stores a'bc.
-func quoteMySQLDefaultLiteral(value string, literals defaultLiterals) string {
-	if literals != literalsUnquotedVerbatim {
-		value = strings.ReplaceAll(value, `\`, `\\`)
+// string literal under MySQL's default sql_mode. Measured on MySQL 26.10,
+// `DEFAULT 'a\\b'` reports `a\b`; written back without the backslash
+// doubled, `'a\b'` stores a and a backspace, and `'a\'b\\c'` stores a'bc. A
+// control character is reported as the byte itself, so `DEFAULT 'a\nb'`
+// reports a, a line feed and b; it is written back with the escape MySQL
+// reads for it, so a description holds no raw line break inside a string.
+func quoteMySQLDefaultLiteral(value string) string {
+	var b strings.Builder
+	b.WriteByte('\'')
+	for i := range len(value) {
+		switch ch := value[i]; ch {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\'':
+			b.WriteString("''")
+		case 0:
+			b.WriteString(`\0`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case 0x1a:
+			b.WriteString(`\Z`)
+		default:
+			b.WriteByte(ch)
+		}
 	}
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	b.WriteByte('\'')
+	return b.String()
 }
 
 // reconcileColumnUniqueness recomputes each column's IsUnique flag from the

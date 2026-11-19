@@ -2,6 +2,7 @@ package descriptor
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"unicode"
@@ -182,6 +183,13 @@ type Columns struct {
 	// declares where InheritedCollationVaries holds. The zero value resolves
 	// every name to itself.
 	CollationNames CollationNames `json:"collation_names,omitzero"`
+	// FunctionAliases maps, in lower case, a function name the server takes
+	// in place of another to that other name. A call to either name in an
+	// expression default is compared as a call to the second, so neither
+	// spelling plans the column again. MySQL and MariaDB take ucase and lcase
+	// for upper and lower, and MariaDB reports a default calling upper as
+	// ucase.
+	FunctionAliases map[string]string `json:"function_aliases,omitempty"`
 }
 
 // CollationNames states the collation names a server stores under another
@@ -296,6 +304,20 @@ func CheckNamings() []CheckNaming {
 	return []CheckNaming{CheckNamingTableNumbered, CheckNamingColumnOrConstraint}
 }
 
+// validateFunctionAliases refuses a function alias that is not two different
+// lower-case names. The aliases are read in name order, so the first refused
+// one is the same on every run.
+func (d Dialect) validateFunctionAliases() error {
+	for _, alias := range slices.Sorted(maps.Keys(d.Columns.FunctionAliases)) {
+		name := d.Columns.FunctionAliases[alias]
+		if alias == "" || name == "" || alias == name || alias != strings.ToLower(alias) || name != strings.ToLower(name) {
+			return fmt.Errorf("%w: dialect %q: function alias %q for %q is not two different lower-case names",
+				ErrInvalidDescriptor, d.Name, alias, name)
+		}
+	}
+	return nil
+}
+
 // validateNames checks the enumerated values of the schema-file reading
 // fields.
 func (d Dialect) validateNames() error {
@@ -312,6 +334,9 @@ func (d Dialect) validateNames() error {
 			ErrInvalidDescriptor, d.Name, language, DoBlockLanguages())
 	}
 	if err := d.validateTableOptions(); err != nil {
+		return err
+	}
+	if err := d.validateFunctionAliases(); err != nil {
 		return err
 	}
 	if d.IndexNaming.MaxBytes < 0 {

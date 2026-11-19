@@ -16,9 +16,11 @@ import (
 // literalDefaultSchema holds a default in each literal form the MySQL family
 // writes beside a plain string: a bit string, a hexadecimal string, MySQL's
 // 0x and 0b forms on a binary, an integer and a bit column, a string
-// expression on a varbinary, a call MariaDB prints by
-// another name, a character set introducer, adjacent strings and a
-// double-quoted string.
+// expression on a varbinary, a call MariaDB prints by another name and calls
+// each engine takes by another, a character set introducer, adjacent strings,
+// a double-quoted string, hexadecimal and bit literals on text columns, one of
+// them spelling a backslash and a quote, a string holding a line feed and a
+// tab, and a string that starts and ends with a quote.
 const literalDefaultSchema = "CREATE TABLE literals (\n" +
 	"  id int PRIMARY KEY,\n" +
 	"  b bit(3) DEFAULT b'101',\n" +
@@ -30,7 +32,15 @@ const literalDefaultSchema = "CREATE TABLE literals (\n" +
 	"  w varchar(30) DEFAULT (upper('abc')),\n" +
 	"  u varchar(30) DEFAULT _utf8mb4'u',\n" +
 	"  j varchar(30) DEFAULT 'a' 'b',\n" +
-	"  d varchar(30) DEFAULT \"d'q\"\n" +
+	"  d varchar(30) DEFAULT \"d'q\",\n" +
+	"  t varchar(8) DEFAULT 0x41,\n" +
+	"  s varchar(8) DEFAULT b'1100010',\n" +
+	"  q varchar(8) DEFAULT 0x5C27,\n" +
+	"  m int DEFAULT b'101',\n" +
+	"  v varchar(30) DEFAULT (ucase('abc')),\n" +
+	"  l varchar(30) DEFAULT (LCASE('ABC')),\n" +
+	"  f varchar(8) DEFAULT 'a\\nb\\tc',\n" +
+	"  k varchar(8) DEFAULT '''k'''\n" +
 	");\n"
 
 // TestDBReadReplaysALiteralDefaultE2E applies the schema twice, reads the
@@ -76,9 +86,9 @@ func TestDBReadReplaysALiteralDefaultE2E(t *testing.T) {
 			_, err = conn.ExecContext(c.Context(), "INSERT INTO literals (id) VALUES (1)")
 			c.Assert(err, qt.IsNil)
 			var got string
-			query := "SELECT CONCAT_WS(',', b + 0, HEX(x), HEX(h), n, o + 0, HEX(p), w, u, j, d) FROM literals"
+			query := "SELECT CONCAT_WS(',', b + 0, HEX(x), HEX(h), n, o + 0, HEX(p), w, u, j, d, t, s, HEX(q), m, v, l, HEX(f), HEX(k)) FROM literals"
 			c.Assert(conn.QueryRowContext(c.Context(), query).Scan(&got), qt.IsNil)
-			c.Assert(got, qt.Equals, "5,6A6B,61626364,31,6,7879,ABC,u,ab,d'q")
+			c.Assert(got, qt.Equals, "5,6A6B,61626364,31,6,7879,ABC,u,ab,d'q,A,b,5C27,5,ABC,abc,610A620963,276B27")
 		})
 	}
 }

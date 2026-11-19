@@ -306,6 +306,14 @@ func TestColumns_ABinaryDefaultIsItsBytes(t *testing.T) {
 		{name: "MySQL, an odd count of hexadecimal digits", dialect: platform.MySQL, columnType: "varbinary(8)", expression: "0xabc", reported: "x'0abc'", want: make(map[string]string)},
 		{name: "MariaDB, a hexadecimal number on an int", dialect: platform.MariaDB, columnType: "int", expression: "0x1f", reported: "31", want: make(map[string]string)},
 		{name: "MySQL, a bit number on a bit column", dialect: platform.MySQL, columnType: "bit(3)", expression: "0b110", reported: "b'110'", want: make(map[string]string)},
+		{name: "MySQL, a bit string on an int", dialect: platform.MySQL, columnType: "int", expression: "b'1'", reported: "1", want: make(map[string]string)},
+		{name: "MariaDB, a bit number on an int", dialect: platform.MariaDB, columnType: "bigint", expression: "0B101", reported: "5", want: make(map[string]string)},
+		{name: "MySQL, a number against a bit string the catalog reports", dialect: platform.MySQL, columnType: "int", expression: "5", reported: "b'101'", want: make(map[string]string)},
+		{
+			name: "MySQL, a bit string on an int against another number", dialect: platform.MySQL, columnType: "int",
+			expression: "b'101'", reported: "4",
+			want: map[string]string{"default_expr": "4 -> b'101'"},
+		},
 		{
 			name: "MySQL, another number on an int", dialect: platform.MySQL, columnType: "int",
 			expression: "0x1f", reported: "30",
@@ -321,6 +329,122 @@ func TestColumns_ABinaryDefaultIsItsBytes(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultExpr: row.expression}
+			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: new(row.reported)}
+
+			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)
+
+			c.Assert(result.Changes, qt.DeepEquals, row.want)
+		})
+	}
+}
+
+// A hexadecimal or bit literal on a MySQL-family text column is the string of
+// its bytes: the server stores the string, and the reader reports it in
+// quotes. Either side may be the literal.
+func TestColumns_AByteLiteralOnATextColumnIsItsString(t *testing.T) {
+	rows := []struct {
+		name, dialect, columnType string
+		literal, expression       string
+		reported                  string
+	}{
+		{name: "MySQL, a hexadecimal number", dialect: platform.MySQL, columnType: "varchar(8)", expression: "0x41", reported: "'A'"},
+		{name: "MariaDB, a hexadecimal string", dialect: platform.MariaDB, columnType: "varchar(8)", expression: "x'41'", reported: "'A'"},
+		{name: "MySQL, a bit string short of a byte", dialect: platform.MySQL, columnType: "varchar(8)", expression: "b'1100010'", reported: "'b'"},
+		{name: "MariaDB, a bit number", dialect: platform.MariaDB, columnType: "text", expression: "0b1100010", reported: "'b'"},
+		{name: "MySQL, a backslash and a quote", dialect: platform.MySQL, columnType: "varchar(8)", expression: "0x5C27", reported: `'\\'''`},
+		{name: "MariaDB, two bytes of one character", dialect: platform.MariaDB, columnType: "varchar(8)", expression: "X'C3A9'", reported: "'é'"},
+		{name: "MySQL, a string against a hexadecimal number", dialect: platform.MySQL, columnType: "varchar(8)", literal: "'A'", reported: "0x41"},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultExpr: row.expression}
+			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: new(row.reported)}
+
+			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)
+
+			c.Assert(result.Changes, qt.DeepEquals, make(map[string]string))
+		})
+	}
+}
+
+// A literal a model declares keeps its characters, and bytes that are no text
+// keep their spelling, so neither meets the string a server reports.
+func TestColumns_AByteLiteralStaysApartFromAnotherString(t *testing.T) {
+	rows := []struct {
+		name, dialect, columnType string
+		literal, expression       string
+		reported                  string
+		want                      map[string]string
+	}{
+		{
+			name: "MySQL, a model literal spelled like a hexadecimal number", dialect: platform.MySQL, columnType: "varchar(8)",
+			literal: "0x61", reported: "'a'",
+			want: map[string]string{"default": "'a' -> 0x61"},
+		},
+		{
+			name: "MariaDB, bytes that are no UTF-8 text", dialect: platform.MariaDB, columnType: "varchar(8)",
+			expression: "x'ff'", reported: "'a'",
+			want: map[string]string{"default": "'a' -> x'ff'"},
+		},
+		{
+			name: "MySQL, another string", dialect: platform.MySQL, columnType: "varchar(8)",
+			expression: "0x42", reported: "'A'",
+			want: map[string]string{"default": "'A' -> 0x42"},
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultSet: row.literal != "", DefaultExpr: row.expression}
+			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: new(row.reported)}
+
+			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)
+
+			c.Assert(result.Changes, qt.DeepEquals, row.want)
+		})
+	}
+}
+
+// A call to ucase or lcase is a call to upper or lower on the MySQL family,
+// whichever side writes it, and the same word inside a string is the string.
+func TestColumns_AFunctionAliasIsTheFunction(t *testing.T) {
+	rows := []struct {
+		name, dialect, columnType string
+		literal, expression       string
+		reported                  string
+		want                      map[string]string
+	}{
+		{
+			name: "MySQL, ucase against what MySQL reports", dialect: platform.MySQL, columnType: "varchar(30)",
+			expression: "(ucase('abc'))", reported: "upper(_utf8mb4'abc')",
+			want: make(map[string]string),
+		},
+		{
+			name: "MariaDB, lcase in upper case", dialect: platform.MariaDB, columnType: "varchar(30)",
+			expression: "(LCASE('ABC'))", reported: "lower('ABC')",
+			want: make(map[string]string),
+		},
+		{
+			name: "MariaDB, upper against an alias a reader keeps", dialect: platform.MariaDB, columnType: "varchar(30)",
+			expression: "(upper('abc'))", reported: "ucase('abc')",
+			want: make(map[string]string),
+		},
+		{
+			name: "MariaDB, the word inside a string", dialect: platform.MariaDB, columnType: "varchar(30)",
+			literal: "ucase(x)", reported: "'upper(x)'",
+			want: map[string]string{"default": "'upper(x)' -> ucase(x)"},
+		},
+		{
+			name: "PostgreSQL, which takes no alias", dialect: platform.Postgres, columnType: "text",
+			expression: "(ucase('abc'))", reported: "upper('abc'::text)",
+			want: map[string]string{"default_expr": "upper('abc'::text) -> (ucase('abc'))"},
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultSet: row.literal != "", DefaultExpr: row.expression}
 			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: new(row.reported)}
 
 			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)

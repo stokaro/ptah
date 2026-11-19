@@ -22,16 +22,23 @@ var MySQLAllGrants = []string{"GRANT ALL PRIVILEGES ON *.* TO `root`@`%` WITH GR
 
 // MySQLSession answers the questions a MySQL-family reader asks about its own
 // session, as an account holding grants on a server of version, and hands every
-// other question to next. The character set facts are MySQL 8.4's: utf8mb4 and
-// latin1 with their default collations, the default_collation_for_utf8mb4 a
-// fresh session holds, and utf8 naming utf8mb3.
+// other question to next. The session's sql_mode is [MySQLSQLMode]. The
+// character set facts are MySQL 8.4's: utf8mb4 and latin1 with their default
+// collations, the default_collation_for_utf8mb4 a fresh session holds, and
+// utf8 naming utf8mb3.
 func MySQLSession(version string, grants []string, next QueryHandler) QueryHandler {
+	return MySQLSessionInMode(version, MySQLSQLMode, grants, next)
+}
+
+// MySQLSessionInMode is [MySQLSession] for a session whose sql_mode is
+// sqlMode, such as one naming NO_BACKSLASH_ESCAPES.
+func MySQLSessionInMode(version, sqlMode string, grants []string, next QueryHandler) QueryHandler {
 	return func(query string, args []driver.NamedValue) (QueryResult, error) {
 		switch {
 		case strings.Contains(query, "SELECT CURRENT_USER(), VERSION()"):
 			return QueryResult{
 				Columns: []string{"CURRENT_USER()", "VERSION()", "@@SESSION.sql_mode"},
-				Rows:    [][]driver.Value{{"app@%", version, MySQLSQLMode}},
+				Rows:    [][]driver.Value{{"app@%", version, sqlMode}},
 			}, nil
 		case strings.TrimSpace(query) == "SHOW GRANTS":
 			rows := make([][]driver.Value, 0, len(grants))

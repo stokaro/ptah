@@ -55,6 +55,18 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 			d.TableOptions = []descriptor.TableOption{{Option: "WITHOUT_ROWID", Words: []string{"WITHOUT ROWID"}, Property: "without_rowid"}}
 		}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": table option "WITHOUT_ROWID" is spelled with "WITHOUT ROWID", which is not one word`},
+		{name: "a function alias in upper case", dialect: with(func(d *descriptor.Dialect) {
+			d.Columns.FunctionAliases = map[string]string{"UCASE": "upper"}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": function alias "UCASE" for "upper" is not two different lower-case names`},
+		{name: "a function alias for itself", dialect: with(func(d *descriptor.Dialect) {
+			d.Columns.FunctionAliases = map[string]string{"upper": "upper"}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": function alias "upper" for "upper" is not two different lower-case names`},
+		{name: "a function alias for no name", dialect: with(func(d *descriptor.Dialect) {
+			d.Columns.FunctionAliases = map[string]string{"ucase": ""}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": function alias "ucase" for "" is not two different lower-case names`},
 		{name: "an undeclared check naming", dialect: with(func(d *descriptor.Dialect) { d.CheckNaming = "numbered" }),
 			wantErr: `invalid dialect descriptor: dialect "alpha": check naming "numbered" is not one of .*`},
 		{name: "a numbered check naming with no identifier limit in characters", dialect: with(func(d *descriptor.Dialect) {

@@ -1143,25 +1143,43 @@ func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported, 
 			return binaryDefault(declared, dialect), binaryDefault(reported, dialect)
 		}
 		declared, reported = numericLiteralDefault(declared, typeName), numericLiteralDefault(reported, typeName)
+		if defaultlit.StoresText(typeName) {
+			// A literal a model declares is the characters, not the bytes they
+			// spell: the string 0x61 renders quoted and stores four characters.
+			if !declaresLiteral(genCol) {
+				declared = textDefault(declared)
+			}
+			reported = textDefault(reported)
+		}
 	}
-	if genCol.DefaultSet || genCol.Default != "" {
+	if declaresLiteral(genCol) {
 		return literalsAsRead(declared, reported, typeName, dialect)
 	}
 	if genCol.DefaultExpr == "" {
 		return declared, reported
+	}
+	lexing := dialectlexer.Options(dialect)
+	if aliases := columnFactsOf(dialect).FunctionAliases; len(aliases) > 0 {
+		declared = normalize.FunctionAliases(declared, aliases, lexing.BackslashEscapes)
+		reported = normalize.FunctionAliases(reported, aliases, lexing.BackslashEscapes)
 	}
 	declared, reported = normalize.Expression(declared), normalize.Expression(reported)
 	scheme := comparisonOf(dialect).OperatorPrecedence
 	if scheme == "" {
 		return declared, reported
 	}
-	lexing := dialectlexer.Options(dialect)
 	groupedDeclared, declaredRead := precedence.Canonical(declared, scheme, lexing)
 	groupedReported, reportedRead := precedence.Canonical(reported, scheme, lexing)
 	if !declaredRead || !reportedRead {
 		return declared, reported
 	}
 	return groupedDeclared, groupedReported
+}
+
+// declaresLiteral reports whether a column declares its default as a literal
+// value rather than as SQL.
+func declaresLiteral(genCol schemamodel.Field) bool {
+	return genCol.DefaultSet || genCol.Default != ""
 }
 
 // compareSequenceReferences compares two defaults by the sequences they
