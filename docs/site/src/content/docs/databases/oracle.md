@@ -366,10 +366,9 @@ incomplete coverage and an explicit target scope the annotation cannot preserve.
 
 ## Views that read other views
 
-Oracle checks a view's query when the view is created, so Ptah creates each view
-after the views it reads and refuses views that read one another in a ring;
-[Views that read other views](../mysql/#views-that-read-other-views)
-on the MySQL page says what counts as a read.
+Oracle checks a view's query when it creates the view, so Ptah creates each
+view after the views it reads and refuses views that read one another. The
+[MySQL page](../mysql/#views-that-read-other-views) says what counts as a read.
 
 ## Constraints that defer their check
 
@@ -443,8 +442,8 @@ holding the second body, and a call with the first one's arguments fails with
 `PLS-00306`. A function and a procedure of one name are left to the server,
 which refuses the second with `ORA-00955` and keeps the first.
 
-The semicolon that closes a PL/SQL block belongs to the block rather than to the
-client, which is why Oracle's own tooling ends one with a `/` on the next line.
+The semicolon that closes a PL/SQL block belongs to the block, not the client,
+so Oracle's own tooling ends one with a `/` on the next line.
 A `CREATE` handed to the server without it returns **no error at all** and
 leaves the object `INVALID`: `USER_TRIGGERS` still reports such a trigger
 `ENABLED`, and `USER_PROCEDURES` omits the routine. Ptah keeps that
