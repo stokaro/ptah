@@ -94,7 +94,7 @@ func TestReadCheckConstraintClauses_CapabilityChoosesTheFirstSpelling(t *testing
 			db := dbtest.Open(c, catalog.answer)
 			reader := NewMySQLReaderWithCapabilities(db.SQL, "app", test.caps)
 
-			clauses, err := reader.readCheckConstraintClauses(t.Context(), "app")
+			clauses, err := reader.readCheckConstraintClauses(t.Context(), "app", checkClausesEscaped)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(catalog.asked, qt.DeepEquals, test.wantAsked)
@@ -119,7 +119,7 @@ func TestReadCheckConstraintClauses_MariaDBKeepsTheCheckLevel(t *testing.T) {
 		}, nil
 	})
 	reader := NewMySQLReaderWithCapabilities(db.SQL, "app", capability.MariaDB1011())
-	clauses, err := reader.readCheckConstraintClauses(t.Context(), "app")
+	clauses, err := reader.readCheckConstraintClauses(t.Context(), "app", checkClausesAsSQL)
 	c.Assert(err, qt.IsNil)
 	c.Assert(clauses.byTableName[checkClauseKey("t", "c")], qt.Equals, "`c` > 0")
 	c.Assert(clauses.columnLevel[checkClauseKey("t", "c")], qt.IsTrue)

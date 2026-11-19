@@ -655,7 +655,7 @@ func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback
 	statusDefault := "'active'"
 	budgetDefault := "0"
 	budgetCheck := "(`budget_cents` >= 0)"
-	statusCheck := "(`status` in (_latin1\\'active\\',_latin1\\'archived\\'))"
+	statusCheck := "(`status` in (_latin1'active',_latin1'archived'))"
 	deleteRule := "CASCADE"
 	updateRule := "RESTRICT"
 
@@ -778,9 +778,12 @@ func TestCompareWithDialect_MySQLConstraintsActionsFixtureMatchesCatalogReadback
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 }
 
-func TestCompareWithDialect_MySQLCharsetEscapedStringLiteralMatchesGeneratedEscapes(t *testing.T) {
+// TestCompareWithDialect_MySQLCheckWithAnEscapedQuoteMatchesADoubledQuote
+// compares a declared owner's, its quote doubled, with the 'owner\'s' MySQL
+// prints for it, as the reader reports the clause.
+func TestCompareWithDialect_MySQLCheckWithAnEscapedQuoteMatchesADoubledQuote(t *testing.T) {
 	c := qt.New(t)
-	checkClause := "(`name` <> _latin1\\'owner\\'s\\')"
+	checkClause := "(`name` <> _latin1'owner\\'s')"
 
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{Name: "projects", StructName: "Project"}},

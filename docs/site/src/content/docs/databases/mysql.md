@@ -426,6 +426,15 @@ SQL:
   unnamed column checks, and the column's own name on MariaDB. Measured on
   MySQL 8.4.11 and MariaDB 11.8.9, a table whose columns `a` and `b` each carry
   one holds `e_chk_1` and `e_chk_2` on MySQL, and `a` and `b` on MariaDB.
+- A `CHECK` condition and the expression of a functional index are read as
+  SQL. MySQL's `information_schema` reports both escaped once more, as the body
+  of a string: for `CHECK (c <> 'it''s')` it holds
+  ``(`c` <> _utf8mb4\'it\\\'s\')``. Ptah takes that escaping off and reads
+  ``(`c` <> _utf8mb4'it\'s')``, the condition `SHOW CREATE TABLE` prints.
+  MariaDB reports the condition as SQL, `` `c` <> 'it\'s' ``, and Ptah reads it
+  as reported. The comparison reads each string by the value it stands for, so
+  `'it''s'`, `'it\'s'` and `"it's"` are one string, and so are `'x\ty'` and the
+  same string holding a tab.
 - A `CHECK` written on a column may name only that column on MySQL.
   `CREATE TABLE c (a int, b int CHECK (b > a))` is
   `ERROR 3813 (HY000): Column check constraint ... references other column`

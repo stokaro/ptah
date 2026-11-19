@@ -4,6 +4,7 @@ import (
 	"strings"
 	"unicode"
 
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/normalize"
 )
 
@@ -11,27 +12,25 @@ import (
 // backticks outside strings go, letters outside strings are lowered, and a
 // cast or a character set introducer on a literal is dropped.
 //
-// Where a string ends is quoting's question. A dialect whose strings read
-// backslash escapes keeps a rule for MySQL's information_schema, which prints
-// each quote of a CHECK clause escaped, `_utf8mb4\'abc\'`: a backslash before
-// a quote is dropped. Elsewhere a backslash is an ordinary byte outside an
-// E'...' string. PostgreSQL stores `t <> 'p\'` as a comparison with the
-// two-byte string p\, and dropping the backslash would read it as `t <> 'p'`.
+// Where a string ends is quoting's question, and a string is kept whole. On a
+// dialect whose strings read backslash escapes, a string is compared by the
+// value it stands for, written between single quotes with each quote doubled.
+// MySQL escapes a quote with a backslash where a declaration doubles it, and
+// prints a tab where a declaration writes `\t`. MariaDB prints `'x\\%y'` for
+// `'x\%y'`. Each pair is one value.
+// Elsewhere a string is compared as written. PostgreSQL stores `t <> 'p\'` as a
+// comparison with the two-byte string p\, outside an E'...' string.
 func normalizeCheckExpression(expr string, quoting normalize.Quoting) string {
-	expr = trimBalancedCheckParens(strings.TrimSpace(expr))
+	expr = trimBalancedCheckParens(strings.TrimSpace(expr), quoting)
 
 	normalizer := checkExpressionNormalizer{expr: expr, quoting: quoting}
 	return canonicalizeCheckSetMembership(normalizer.normalize())
 }
 
 type checkExpressionNormalizer struct {
-	expr     string
-	quoting  normalize.Quoting
-	builder  strings.Builder
-	inString bool
-	// escapes reports that the string the normalizer is in reads a
-	// backslash as an escape, an E'...' string on PostgreSQL.
-	escapes bool
+	expr    string
+	quoting normalize.Quoting
+	builder strings.Builder
 	pos     int
 }
 
@@ -44,81 +43,53 @@ func (n *checkExpressionNormalizer) normalize() string {
 
 func (n *checkExpressionNormalizer) writeNext() {
 	ch := n.expr[n.pos]
-	if n.writeEscapedQuote(ch) || n.writeStringQuote(ch) || n.skipCharsetIntroducer(ch) || n.skipLiteralCast(ch) {
+	if n.writeString() || n.skipCharsetIntroducer(ch) || n.skipLiteralCast(ch) {
 		return
 	}
-	if !n.inString && unicode.IsSpace(rune(ch)) {
+	if unicode.IsSpace(rune(ch)) || ch == '`' {
 		return
 	}
-	if !n.inString && ch == '`' {
-		return
-	}
-	if !n.inString && ch >= 'A' && ch <= 'Z' {
+	if ch >= 'A' && ch <= 'Z' {
 		ch += 'a' - 'A'
 	}
 	n.builder.WriteByte(ch)
 }
 
-func (n *checkExpressionNormalizer) writeEscapedQuote(ch byte) bool {
-	if ch != '\\' || n.pos+1 >= len(n.expr) {
-		return false
-	}
-	if !n.quoting.BackslashEscapes {
-		return n.writeEscape()
-	}
-	if n.expr[n.pos+1] != '\'' {
-		return false
-	}
-	if !n.inString || checkEscapedQuoteClosesString(n.expr, n.pos+1) {
-		return true
-	}
-	n.builder.WriteByte('\'')
-	n.pos++
-	return true
-}
+// backslashStrings reads a string literal with backslash escapes, as the
+// shared lexer reads one on every dialect whose descriptor states them.
+var backslashStrings = lexer.Options{BackslashEscapes: true}
 
-// writeEscape copies a backslash and the byte after it, inside a string that
-// reads backslash escapes on a dialect whose other strings do not.
-func (n *checkExpressionNormalizer) writeEscape() bool {
-	if !n.inString || !n.escapes {
+// writeString writes the string that opens at pos, as normalizeCheckExpression
+// says, and leaves pos on its closing quote.
+func (n *checkExpressionNormalizer) writeString() bool {
+	if !n.quoting.OpensString(n.expr, n.pos) {
 		return false
 	}
-	n.builder.WriteByte(n.expr[n.pos])
-	n.pos++
-	n.builder.WriteByte(n.expr[n.pos])
-	return true
-}
-
-func (n *checkExpressionNormalizer) writeStringQuote(ch byte) bool {
-	if ch != '\'' {
-		return false
+	end := n.quoting.QuotedEnd(n.expr, n.pos)
+	literal := n.expr[n.pos : end+1]
+	n.pos = end
+	if n.quoting.BackslashEscapes {
+		if value, read := lexer.StringValue(literal, backslashStrings); read {
+			n.builder.WriteByte('\'')
+			n.builder.WriteString(strings.ReplaceAll(value, "'", "''"))
+			n.builder.WriteByte('\'')
+			return true
+		}
 	}
-	if !n.inString {
-		n.escapes = n.quoting.BackslashEscapesIn(n.expr, n.pos)
-	}
-	n.builder.WriteByte(ch)
-	if n.inString && n.pos+1 < len(n.expr) && n.expr[n.pos+1] == '\'' {
-		n.pos++
-		return true
-	}
-	n.inString = !n.inString
+	n.builder.WriteString(literal)
 	return true
 }
 
 func (n *checkExpressionNormalizer) skipCharsetIntroducer(ch byte) bool {
-	if n.inString || ch != '_' || !checkCharsetIntroducerFollows(n.expr, n.pos) {
+	if ch != '_' || !checkCharsetIntroducerFollows(n.expr, n.pos) {
 		return false
 	}
-	n.pos = skipCheckCharsetIntroducer(n.expr, n.pos)
-	if n.pos < len(n.expr) && n.expr[n.pos] == '\\' {
-		return true
-	}
-	n.pos--
+	n.pos = skipCheckCharsetIntroducer(n.expr, n.pos) - 1
 	return true
 }
 
 func (n *checkExpressionNormalizer) skipLiteralCast(ch byte) bool {
-	if n.inString || ch != ':' || n.pos+1 >= len(n.expr) || n.expr[n.pos+1] != ':' || !checkCastFollowsLiteral(n.expr, n.pos) {
+	if ch != ':' || n.pos+1 >= len(n.expr) || n.expr[n.pos+1] != ':' || !checkCastFollowsLiteral(n.expr, n.pos) {
 		return false
 	}
 	n.pos += 2
@@ -129,14 +100,6 @@ func (n *checkExpressionNormalizer) skipLiteralCast(ch byte) bool {
 	return true
 }
 
-func checkEscapedQuoteClosesString(expr string, quoteIndex int) bool {
-	next := quoteIndex + 1
-	if next >= len(expr) {
-		return true
-	}
-	return !isCheckStringBodyChar(rune(expr[next]))
-}
-
 func checkCharsetIntroducerFollows(expr string, start int) bool {
 	i := start + 1
 	if i >= len(expr) || !isCheckCharsetNameStart(rune(expr[i])) {
@@ -145,10 +108,7 @@ func checkCharsetIntroducerFollows(expr string, start int) bool {
 	for i < len(expr) && isCheckCharsetNameChar(rune(expr[i])) {
 		i++
 	}
-	if i < len(expr) && expr[i] == '\'' {
-		return true
-	}
-	return i+1 < len(expr) && expr[i] == '\\' && expr[i+1] == '\''
+	return i < len(expr) && expr[i] == '\''
 }
 
 func skipCheckCharsetIntroducer(expr string, start int) int {
@@ -167,43 +127,27 @@ func isCheckCharsetNameChar(ch rune) bool {
 	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_'
 }
 
-func isCheckStringBodyChar(ch rune) bool {
-	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_'
-}
-
-func trimBalancedCheckParens(expr string) string {
+func trimBalancedCheckParens(expr string, quoting normalize.Quoting) string {
 	for {
 		trimmed := strings.TrimSpace(expr)
 		if len(trimmed) < 2 || trimmed[0] != '(' || trimmed[len(trimmed)-1] != ')' {
 			return trimmed
 		}
-		if !checkOuterParensWrap(trimmed) {
+		if !checkOuterParensWrap(trimmed, quoting) {
 			return trimmed
 		}
 		expr = trimmed[1 : len(trimmed)-1]
 	}
 }
 
-func checkOuterParensWrap(expr string) bool {
+// checkOuterParensWrap reports whether the parenthesis that opens expr closes
+// at its end, reading a parenthesis inside a string as text.
+func checkOuterParensWrap(expr string, quoting normalize.Quoting) bool {
 	depth := 0
-	inString := false
 	for i := 0; i < len(expr); i++ {
 		ch := expr[i]
-		if ch == '\\' && i+1 < len(expr) && expr[i+1] == '\'' {
-			if inString && !checkEscapedQuoteClosesString(expr, i+1) {
-				i++
-			}
-			continue
-		}
-		if ch == '\'' {
-			if inString && i+1 < len(expr) && expr[i+1] == '\'' {
-				i++
-				continue
-			}
-			inString = !inString
-			continue
-		}
-		if inString {
+		if quoting.OpensString(expr, i) {
+			i = quoting.QuotedEnd(expr, i)
 			continue
 		}
 
