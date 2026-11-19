@@ -5,17 +5,14 @@ import "strings"
 // CatalogExpression folds an expression into the spelling a catalog that
 // reprints expressions shares with the declaration it was written from:
 // identifier quotes (backticks and double quotes) and whitespace dropped,
-// ASCII letters lowered, and a parenthesized name reduced to the name. Text
-// between the quotes stringQuotes lists, such as `'` alone or `'"` where a
-// double-quoted token is a string rather than a name, is copied as written. A
-// backslash inside such text escapes the byte after it, and a doubled quote is
-// the quote itself.
-func CatalogExpression(expression, stringQuotes string) string {
+// ASCII letters lowered, and a parenthesized name reduced to the name. A
+// string, as quoting says where one opens and ends, is copied as written.
+func CatalogExpression(expression string, quoting Quoting) string {
 	var b strings.Builder
 	for i := 0; i < len(expression); i++ {
 		ch := expression[i]
-		if strings.IndexByte(stringQuotes, ch) >= 0 {
-			i = copyQuoted(&b, expression, i)
+		if quoting.OpensString(expression, i) {
+			i = copyQuoted(&b, expression, i, quoting)
 			continue
 		}
 		switch ch {
@@ -32,15 +29,15 @@ func CatalogExpression(expression, stringQuotes string) string {
 }
 
 // RenameFunction replaces each call of the function from in expression with a
-// call of to, outside quoted text: from followed by an opening parenthesis,
-// where no identifier character comes before it. The names are matched as
-// written, with no case folded.
-func RenameFunction(expression, from, to string) string {
+// call of to, outside quoted text as quoting reads it: from followed by an
+// opening parenthesis, where no identifier character comes before it. The
+// names are matched as written, with no case folded.
+func RenameFunction(expression, from, to string, quoting Quoting) string {
 	from, to = from+"(", to+"("
 	var b strings.Builder
 	for i := 0; i < len(expression); i++ {
 		if expression[i] == '\'' || expression[i] == '"' {
-			i = copyQuoted(&b, expression, i)
+			i = copyQuoted(&b, expression, i, quoting)
 			continue
 		}
 		if strings.HasPrefix(expression[i:], from) && (i == 0 || !isIdentifierByte(expression[i-1])) {
@@ -55,27 +52,10 @@ func RenameFunction(expression, from, to string) string {
 
 // copyQuoted copies the quoted text that opens at value[start] and returns the
 // position of its closing quote, or of the last byte when it is not closed.
-func copyQuoted(b *strings.Builder, value string, start int) int {
-	quote := value[start]
-	b.WriteByte(value[start])
-	for i := start + 1; i < len(value); i++ {
-		b.WriteByte(value[i])
-		if value[i] == '\\' && i+1 < len(value) {
-			i++
-			b.WriteByte(value[i])
-			continue
-		}
-		if value[i] != quote {
-			continue
-		}
-		if i+1 < len(value) && value[i+1] == quote {
-			i++
-			b.WriteByte(value[i])
-			continue
-		}
-		return i
-	}
-	return len(value) - 1
+func copyQuoted(b *strings.Builder, value string, start int, quoting Quoting) int {
+	end := quoting.QuotedEnd(value, start)
+	b.WriteString(value[start : end+1])
+	return end
 }
 
 // collapseParenthesizedNames removes the parentheses around a bare name, as in

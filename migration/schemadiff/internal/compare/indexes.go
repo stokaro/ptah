@@ -20,6 +20,7 @@ import (
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/indexbacking"
 	"ptah.run/internal/indexscope"
+	"ptah.run/internal/normalize"
 )
 
 // Indexes performs index comparison between generated and database schemas with intelligent filtering.
@@ -911,7 +912,7 @@ func indexDefinitionsChanged(
 		declaredPredicate = resolved.Predicate
 	}
 	if !nullsDistinctEqual(desired.NullsDistinct, database.NullsDistinct) ||
-		indexPredicateChanged(declaredPredicate, database.Condition, rules.IndexPredicates) ||
+		indexPredicateChanged(declaredPredicate, database.Condition, quotingOf(dialect), rules.IndexPredicates) ||
 		indexPayloadChanged(desired.IncludeColumns, database.IncludeColumns, dialect, semantics) {
 		return true
 	}
@@ -928,7 +929,7 @@ func indexDefinitionsChanged(
 		return rules.IndexDefinitions.DefinitionChanged(generatedIndexWithResolvedExpression(desired, resolved), database, semantics)
 	case rules.Indexes != nil:
 		return desired.Unique != database.IsUnique ||
-			ruledIndexKeysChanged(generatedIndexWithResolvedExpression(desired, resolved), database, semantics) ||
+			ruledIndexKeysChanged(generatedIndexWithResolvedExpression(desired, resolved), database, quotingOf(dialect), semantics) ||
 			coveredColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
 			!rules.Indexes.OptionsEqual(desired, database)
 	default:
@@ -1066,11 +1067,12 @@ func generatedIndexWithResolvedExpression(
 // make a new index; a column goes through the dialect's identifier semantics.
 func indexKeyTarget(
 	name, expr string,
+	quoting normalize.Quoting,
 	semantics identifier.Semantics,
 ) (column, expression string) {
 	trimmedExpr := strings.TrimSpace(expr)
 	if trimmedExpr != "" {
-		return "", normalizeCheckExpression(trimmedExpr)
+		return "", normalizeCheckExpression(trimmedExpr, quoting)
 	}
 	return semantics.ColumnIdentityKey(name), ""
 }
@@ -1117,6 +1119,7 @@ func coveredColumnsChanged(
 func ruledIndexKeysChanged(
 	desired schemamodel.Index,
 	database catalog.Index,
+	quoting normalize.Quoting,
 	semantics identifier.Semantics,
 ) bool {
 	if database.KeyPartsIncomplete {
@@ -1129,8 +1132,8 @@ func ruledIndexKeysChanged(
 	}
 	for position, generatedPart := range generatedParts {
 		databasePart := databaseParts[position]
-		generatedColumn, generatedExpr := indexKeyTarget(generatedPart.Name, generatedPart.Expr, semantics)
-		databaseColumn, databaseExpr := indexKeyTarget(databasePart.Name, databasePart.Expr, semantics)
+		generatedColumn, generatedExpr := indexKeyTarget(generatedPart.Name, generatedPart.Expr, quoting, semantics)
+		databaseColumn, databaseExpr := indexKeyTarget(databasePart.Name, databasePart.Expr, quoting, semantics)
 		if generatedColumn != databaseColumn || generatedExpr != databaseExpr || generatedPart.Desc != databasePart.Desc {
 			return true
 		}
@@ -1160,14 +1163,14 @@ func effectiveDatabaseIndexParts(index catalog.Index) []catalog.IndexPart {
 	return parts
 }
 
-func indexPredicateChanged(desired, database string, predicates schemacomparison.IndexPredicates) bool {
+func indexPredicateChanged(desired, database string, quoting normalize.Quoting, predicates schemacomparison.IndexPredicates) bool {
 	if strings.TrimSpace(desired) == "" || strings.TrimSpace(database) == "" {
 		return strings.TrimSpace(desired) != strings.TrimSpace(database)
 	}
 	if checkExpressionHasUnsupportedRewrite(desired, database) {
 		return false
 	}
-	return normalizePredicate(desired, predicates) != normalizePredicate(database, predicates)
+	return normalizePredicate(desired, quoting, predicates) != normalizePredicate(database, quoting, predicates)
 }
 
 // normalizePredicate reduces an index predicate to a spelling-insensitive
@@ -1175,11 +1178,11 @@ func indexPredicateChanged(desired, database string, predicates schemacomparison
 // removes the decorations first, through predicates, its rule, so
 // user-authored predicates converge with introspected ones instead of
 // planning a replacement on every run.
-func normalizePredicate(value string, predicates schemacomparison.IndexPredicates) string {
+func normalizePredicate(value string, quoting normalize.Quoting, predicates schemacomparison.IndexPredicates) string {
 	if predicates != nil {
 		value = predicates.Spelling(value)
 	}
-	return normalizeCheckExpression(value)
+	return normalizeCheckExpression(value, quoting)
 }
 
 // IndexRenames returns the renames [IndexesWithSemantics] plans for desired

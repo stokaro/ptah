@@ -2,7 +2,6 @@ package compare
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/mysqlviewsecurity"
+	"ptah.run/internal/normalize"
 	"ptah.run/internal/oracleroutine"
 	"ptah.run/internal/pgtypealias"
 	"ptah.run/internal/routineargs"
@@ -1036,7 +1036,8 @@ func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchem
 		return true
 	}
 
-	if bodyQualifiesRelation(desired) {
+	quoting := quotingOf(dialect)
+	if bodyQualifiesRelation(desired, quoting) {
 		return false
 	}
 	return canonicalizeNormalizedSQLBody(desired, dialect) ==
@@ -1044,7 +1045,7 @@ func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchem
 			databaseBody,
 			dialect,
 			databaseSchema,
-			singlePartQualifierNames(desired),
+			singlePartQualifierNames(desired, quoting),
 		)
 }
 
@@ -1102,42 +1103,50 @@ func normalizeSQLBodyStrippingQualifiers(
 	body, dialect, schema string,
 	authored map[string]struct{},
 ) string {
+	quoting := quotingOf(dialect)
 	return canonicalizeNormalizedSQLBody(
-		stripSQLQualifiers(normalizeSQLBody(body, dialect), schema, authored),
+		stripSQLQualifiers(normalizeSQLBody(body, dialect), schema, authored, quoting),
 		dialect,
 	)
 }
 
+// normalizeSQLBody and canonicalizeNormalizedSQLBody fold a body outside its
+// strings only, and where a string ends is the dialect's quoting. Folding the
+// spaces inside one, or an alias pattern matched inside one, reads
+// `SELECT t || ' a  b'` as `SELECT t || ' a b'`: two views that return
+// different values compare as one.
 func normalizeSQLBody(body, dialect string) string {
+	quoting := quotingOf(dialect)
 	body = strings.TrimSpace(body)
 	body = strings.TrimSuffix(body, ";")
 	body = strings.TrimSpace(body)
-	body = normalizeSQLCaseAndIdentifierQuotes(body, dialect)
-	body = stripDefaultAggregateAliases(body)
-	body = collapseWhitespaceOutsideQuotedSQL(body)
-	body = normalizeCommaSpacingOutsideQuotedSQL(body)
+	body = normalizeSQLCaseAndIdentifierQuotes(body, quoting)
+	body = stripDefaultAggregateAliases(body, quoting)
+	body = collapseWhitespaceOutsideQuotedSQL(body, quoting)
+	body = normalizeCommaSpacingOutsideQuotedSQL(body, quoting)
 	return strings.TrimSpace(body)
 }
 
 func canonicalizeNormalizedSQLBody(body, dialect string) string {
-	body = stripDefaultColumnAliases(body)
-	body = stripSimpleComparisonParentheses(body)
-	body = regexp.MustCompile(`\s+`).ReplaceAllString(body, " ")
+	quoting := quotingOf(dialect)
+	body = stripDefaultColumnAliases(body, quoting)
+	body = stripSimpleComparisonParentheses(body, quoting)
+	body = collapseWhitespaceOutsideQuotedSQL(body, quoting)
 	if comparisonOf(dialect).ViewPredicatesAsIntegers {
-		body = normalizeMySQLBooleanViewPredicates(body)
+		body = normalizeMySQLBooleanViewPredicates(body, quoting)
 	}
 	return strings.TrimSpace(body)
 }
 
-func normalizeMySQLBooleanViewPredicates(body string) string {
-	body = replaceSQLLiteralOutsideSingleQuotedSQL(body, " = false", " = 0")
-	body = replaceSQLLiteralOutsideSingleQuotedSQL(body, "= false", "= 0")
-	body = replaceSQLLiteralOutsideSingleQuotedSQL(body, " = true", " = 1")
-	return replaceSQLLiteralOutsideSingleQuotedSQL(body, "= true", "= 1")
+func normalizeMySQLBooleanViewPredicates(body string, quoting normalize.Quoting) string {
+	body = replaceSQLLiteralOutsideSingleQuotedSQL(body, " = false", " = 0", quoting)
+	body = replaceSQLLiteralOutsideSingleQuotedSQL(body, "= false", "= 0", quoting)
+	body = replaceSQLLiteralOutsideSingleQuotedSQL(body, " = true", " = 1", quoting)
+	return replaceSQLLiteralOutsideSingleQuotedSQL(body, "= true", "= 1", quoting)
 }
 
-func stripDefaultAggregateAliases(body string) string {
-	return defaultAggregateAliasPattern.ReplaceAllStringFunc(body, func(match string) string {
+func stripDefaultAggregateAliases(body string, quoting normalize.Quoting) string {
+	return replaceMatchesOutsideQuotedSQL(body, defaultAggregateAliasPattern, quoting, func(match string) string {
 		parts := defaultAggregateAliasPattern.FindStringSubmatch(match)
 		if len(parts) != 4 || parts[1] != parts[3] {
 			return match
@@ -1146,8 +1155,8 @@ func stripDefaultAggregateAliases(body string) string {
 	})
 }
 
-func stripDefaultColumnAliases(body string) string {
-	return defaultColumnAliasPattern.ReplaceAllStringFunc(body, func(match string) string {
+func stripDefaultColumnAliases(body string, quoting normalize.Quoting) string {
+	return replaceMatchesOutsideQuotedSQL(body, defaultColumnAliasPattern, quoting, func(match string) string {
 		parts := defaultColumnAliasPattern.FindStringSubmatch(match)
 		if len(parts) != 3 || parts[1] != parts[2] {
 			return match
@@ -1156,8 +1165,10 @@ func stripDefaultColumnAliases(body string) string {
 	})
 }
 
-func stripSimpleComparisonParentheses(body string) string {
-	return simpleComparisonParenthesesPattern.ReplaceAllString(body, "$1")
+func stripSimpleComparisonParentheses(body string, quoting normalize.Quoting) string {
+	return replaceMatchesOutsideQuotedSQL(body, simpleComparisonParenthesesPattern, quoting, func(match string) string {
+		return simpleComparisonParenthesesPattern.ReplaceAllString(match, "$1")
+	})
 }
 
 // withTargetDefaults reads an attribute a routine leaves out as the target's,

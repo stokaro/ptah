@@ -74,6 +74,7 @@ func TestTriggerDefinitions_AnExternalFunctionIsComparedByName(t *testing.T) {
 			diff := compare.TriggerDefinitions(
 				declaredTrigger(test.declared, ""),
 				catalogTrigger(test.current, auditBody),
+				platform.Postgres,
 				identifier.ForDialect(platform.Postgres),
 			)
 
@@ -105,6 +106,7 @@ func TestTriggerDefinitions_ATriggerPtahOwnsIsStillComparedByBody(t *testing.T) 
 			diff := compare.TriggerDefinitions(
 				declaredTrigger("", test.declared),
 				catalogTrigger("ptah_trigger_a_trg__a", auditBody),
+				platform.Postgres,
 				identifier.ForDialect(platform.Postgres),
 			)
 
@@ -140,6 +142,7 @@ func TestTriggerDefinitions_ADeclarationCarryingOnlyABodyComparesByBody(t *testi
 			diff := compare.TriggerDefinitions(
 				declaredTrigger("", test.declared),
 				catalogTrigger("audit_fn", auditBody),
+				platform.Postgres,
 				identifier.ForDialect(platform.Postgres),
 			)
 

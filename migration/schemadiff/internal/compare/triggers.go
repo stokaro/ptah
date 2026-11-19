@@ -13,6 +13,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/exprkey"
+	"ptah.run/internal/normalize"
 	"ptah.run/internal/objectlookup"
 	"ptah.run/internal/tableref"
 	"ptah.run/internal/triggerdef"
@@ -37,24 +38,15 @@ func TriggersWithDialect(
 	diff *difftypes.SchemaDiff,
 	dialect string,
 ) {
-	TriggersWithSemantics(desired, database, diff, identifier.ForDialect(dialect))
+	TriggersWithSemanticsAndConditions(desired, database, diff, dialect, identifier.ForDialect(dialect), nil, capability.Capabilities{})
 }
 
-// TriggersWithSemantics compares trigger identity using the live database's
-// resolved default schema and identifier rules.
-func TriggersWithSemantics(
-	desired *schemamodel.Database,
-	database *catalog.Database,
-	diff *difftypes.SchemaDiff,
-	semantics identifier.Semantics,
-) {
-	TriggersWithSemanticsAndConditions(desired, database, diff, semantics, nil, capability.Capabilities{})
-}
-
-// TriggersWithSemanticsAndConditions is [TriggersWithSemantics] with each
-// declared WHEN condition as the server prints it, where a server was asked
-// (see [config.CompareOptions.TriggerConditions]), and with the target's
-// capabilities.
+// TriggersWithSemanticsAndConditions compares triggers with the live
+// database's resolved default schema and identifier rules, with each declared
+// WHEN condition as the server prints it, where a server was asked (see
+// [config.CompareOptions.TriggerConditions]), and with the target's
+// capabilities. The dialect says where a string in a condition or a body
+// ends.
 //
 // A condition is compared only where caps says the read can report one,
 // [capability.CatalogTriggerDefinitions]. Without it the read has every
@@ -65,6 +57,7 @@ func TriggersWithSemanticsAndConditions(
 	desired *schemamodel.Database,
 	database *catalog.Database,
 	diff *difftypes.SchemaDiff,
+	dialect string,
 	semantics identifier.Semantics,
 	conditions map[string]config.TriggerCondition,
 	caps capability.Capabilities,
@@ -109,7 +102,7 @@ func TriggersWithSemanticsAndConditions(
 		if resolved := conditions[exprkey.Trigger(semantics, declared.Table, declared.Name)]; resolved.Resolved {
 			canonical.When = resolved.Condition
 		}
-		triggerDiff := TriggerDefinitions(canonical, database.Triggers[index], semantics)
+		triggerDiff := TriggerDefinitions(canonical, database.Triggers[index], dialect, semantics)
 		if !readsConditions {
 			delete(triggerDiff.Changes, "when")
 		}
@@ -226,10 +219,13 @@ func sortTriggerRefs(refs []difftypes.TriggerRef) {
 	})
 }
 
-// TriggerDefinitions performs detailed comparison between generated and database trigger definitions.
+// TriggerDefinitions performs detailed comparison between generated and
+// database trigger definitions. The dialect says where a string in the
+// condition or the body ends.
 func TriggerDefinitions(
 	genTrigger schemamodel.Trigger,
 	dbTrigger catalog.Trigger,
+	dialect string,
 	semantics identifier.Semantics,
 ) difftypes.TriggerDiff {
 	genTrigger.Canonicalize()
@@ -253,7 +249,7 @@ func TriggerDefinitions(
 	if genTrigger.ForEach != dbForEach {
 		triggerDiff.Changes["for"] = fmt.Sprintf("%s -> %s", dbForEach, genTrigger.ForEach)
 	}
-	if !sameTriggerCondition(genTrigger.When, dbTrigger.When) {
+	if !sameTriggerCondition(genTrigger.When, dbTrigger.When, quotingOf(dialect)) {
 		triggerDiff.Changes["when"] = fmt.Sprintf("%s -> %s", describeCondition(dbTrigger.When), describeCondition(genTrigger.When))
 	}
 	// A transition table's name is compared exactly: the renderer quotes it,
@@ -289,8 +285,8 @@ func TriggerDefinitions(
 		return triggerDiff
 	}
 
-	genBody := normalizeTriggerBody(genTrigger.Body)
-	dbBody := normalizeTriggerBody(dbTrigger.Body)
+	genBody := normalizeTriggerBody(genTrigger.Body, dialect)
+	dbBody := normalizeTriggerBody(dbTrigger.Body, dialect)
 	if genBody != dbBody {
 		triggerDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbTrigger.Body), strings.TrimSpace(genTrigger.Body))
 	}
@@ -333,9 +329,9 @@ func foldTriggerColumn(name string) string {
 // 0:::INT8` on v26.2.7 and v26.3.1. The annotation asserts the type the
 // constant already has, so it is dropped from both sides before they are
 // folded; without that, every such trigger is replaced on every plan.
-func sameTriggerCondition(declared, observed string) bool {
-	return normalizeCheckExpression(withoutTypeAnnotations(declared)) ==
-		normalizeCheckExpression(withoutTypeAnnotations(observed))
+func sameTriggerCondition(declared, observed string, quoting normalize.Quoting) bool {
+	return normalizeCheckExpression(withoutTypeAnnotations(declared), quoting) ==
+		normalizeCheckExpression(withoutTypeAnnotations(observed), quoting)
 }
 
 // withoutTypeAnnotations removes each CockroachDB type annotation, `:::` and
@@ -383,8 +379,8 @@ func describeCondition(condition string) string {
 	return strings.TrimSpace(condition)
 }
 
-func normalizeTriggerBody(body string) string {
-	body = normalizeSQLBodyPreservingQualifiers(body, "")
+func normalizeTriggerBody(body, dialect string) string {
+	body = normalizeSQLBodyPreservingQualifiers(body, dialect)
 	body = strings.TrimPrefix(body, "begin ")
 	body = strings.TrimPrefix(body, "begin")
 	body = strings.TrimSpace(body)

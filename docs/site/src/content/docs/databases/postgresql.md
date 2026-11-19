@@ -398,6 +398,13 @@ column is NOT NULL on the file's side either way, as the server holds it.
 `ptah-compat schema diff` refuses a schema file without `--dev-url`, as Atlas
 CE does, unless `PTAH_ATLAS_DIFF_WITHOUT_DEV_URL=1` is set.
 
+The folding of a CHECK, an index predicate, a trigger condition and a view
+body drops case and whitespace outside strings, and keeps each string as
+written. A backslash is an ordinary character in a string other than
+`E'...'`, as the server reads it with `standard_conforming_strings` on, so
+`'p\'` ends at its second quote. `t <> 'p\'` against `t <> 'p'` is a change,
+and so is `t || ' a  b'` against `t || ' a b'` in a view.
+
 A view or materialized view body is compared by folding first. The server
 expands a `*` into the column list when it creates the view, so
 `SELECT * FROM orders WHERE total > 100` reads back as

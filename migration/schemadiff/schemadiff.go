@@ -239,7 +239,7 @@ func compareReportingUndecidedAdditions(
 		caps: caps, rules: rules, changes: comparisonChanges(featureResult)}); err != nil {
 		return nil, Diagnostics{}, err
 	}
-	compare.TriggersWithSemanticsAndConditions(desired, database, diff, identifierSemantics, opts.TriggerConditions, caps)
+	compare.TriggersWithSemanticsAndConditions(desired, database, diff, opts.Dialect, identifierSemantics, opts.TriggerConditions, caps)
 
 	// Compare RLS policies (PostgreSQL-specific feature)
 	compare.RLSPoliciesWithSemantics(

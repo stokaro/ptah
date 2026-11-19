@@ -100,10 +100,11 @@ func newConstraintKey(
 func recordSynthesized(
 	into map[tableMemberKey]schemamodel.Constraint,
 	synthesized []schemamodel.Constraint,
+	dialect string,
 	semantics identifier.Semantics,
 ) {
 	for _, constraint := range synthesized {
-		key := newDeclaredConstraintKey(constraint, semantics)
+		key := newDeclaredConstraintKey(constraint, dialect, semantics)
 		if _, declared := into[key]; declared {
 			continue
 		}
