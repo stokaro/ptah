@@ -9,6 +9,19 @@ body:
         so a surprising behavior is often already recorded, sometimes with the
         measurement that explains it.
 
+        Give this issue a short title in plain English that names the problem.
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Problem and expected result
+      description: >-
+        In a short paragraph, explain what you were trying to do, what went
+        wrong, what you expected, and why the difference matters. Use familiar
+        words. Put commands, logs, and implementation details in the fields below.
+    validations:
+      required: true
+
   - type: dropdown
     id: surface
     attributes:
@@ -60,13 +73,6 @@ body:
         The schema, migration, or config file, cut down as far as it still
         reproduces. A reduced case is usually what turns a report into a fix.
       render: sql
-    validations:
-      required: true
-
-  - type: textarea
-    id: expected
-    attributes:
-      label: What you expected
     validations:
       required: true
 

@@ -2,6 +2,22 @@ name: Documentation
 description: A page is wrong, missing, out of date, or hard to follow.
 labels: ["documentation"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Give this issue a short title in plain English that names the documentation problem.
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: Problem with the documentation
+      description: >-
+        In a short paragraph, explain what is wrong, missing, or hard to follow
+        and why it matters to a reader. Use familiar words. Then quote the
+        relevant text or describe what you tried and what happened.
+    validations:
+      required: true
+
   - type: input
     id: page
     attributes:
@@ -21,16 +37,5 @@ body:
         - It is missing something a reader needs
         - It is accurate but hard to follow
         - A link, an example, or a command does not work
-    validations:
-      required: true
-
-  - type: textarea
-    id: detail
-    attributes:
-      label: What you found
-      description: >-
-        Quote the sentence where you can. If you measured the real behavior, say
-        what you ran and what you got: a measurement is the fastest way to settle
-        which side is wrong.
     validations:
       required: true
