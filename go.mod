@@ -180,7 +180,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
 	golang.org/x/exp v0.0.0-20261119141654-b15d094f3610 // indirect
 	golang.org/x/sync v0.25.0 // indirect
-	golang.org/x/telemetry v0.0.0-20261118162831-00acfd773c25 // indirect
+	golang.org/x/telemetry v0.0.0-20261119160235-508b12de1089 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/vuln v1.10.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
