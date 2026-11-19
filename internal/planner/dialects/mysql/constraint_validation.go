@@ -54,8 +54,7 @@ func (p *Planner) addsCheckFirst(add difftypes.ConstraintAdditionInfo, modified 
 // the CHECK whatever its condition, so the name alone recognizes it: it is the
 // table and the declared name hashed, which nobody writes by hand.
 //
-// The removal pass asks the same question through
-// [Planner.replacementLeftovers], so the CHECK is dropped once.
+// [Planner.replacementLeftovers] lists these CHECKs once for the plan.
 func leftoverOfReplacement(
 	add difftypes.ConstraintAdditionInfo,
 	removals map[constraintHostKey]difftypes.ConstraintRemovalInfo,
@@ -67,21 +66,29 @@ func leftoverOfReplacement(
 	return info, left && strings.EqualFold(info.Type, "CHECK")
 }
 
-// replacementLeftovers answers the removals the additions drop ahead of their
-// replacement; see [leftoverOfReplacement].
-func (p *Planner) replacementLeftovers(diff *difftypes.SchemaDiff, semantics identifier.Semantics) map[constraintHostKey]struct{} {
+// replacementLeftovers answers, in the order of the additions, the CHECKs that
+// stopped replacements left under a temporary name; see
+// [leftoverOfReplacement].
+//
+// It is the one answer for the plan. The constraint step drops each of these
+// before its additions, and the removal step counts them as dropped. With the
+// add pass deciding the drop beside its own replacement, an addition that pass
+// does not replace, such as a CHECK under the name of a foreign key the plan
+// drops ahead of a column change, drops nothing, the removal step skips the
+// CHECK, and the table keeps it.
+func (p *Planner) replacementLeftovers(diff *difftypes.SchemaDiff, semantics identifier.Semantics) []difftypes.ConstraintRemovalInfo {
 	removals := make(map[constraintHostKey]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemoved))
 	for _, info := range diff.ConstraintsRemoved {
 		removals[info.Identity] = info
 	}
-	leftovers := make(map[constraintHostKey]struct{})
+	var leftovers []difftypes.ConstraintRemovalInfo
 	for _, add := range diff.ConstraintsAdded {
 		_, modified := removals[add.Identity]
 		if !p.addsCheckFirst(add, modified) {
 			continue
 		}
 		if info, left := leftoverOfReplacement(add, removals, semantics); left {
-			leftovers[info.Identity] = struct{}{}
+			leftovers = append(leftovers, info)
 		}
 	}
 	return leftovers

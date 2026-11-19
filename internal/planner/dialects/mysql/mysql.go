@@ -2152,9 +2152,13 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	maps.Copy(alreadyDropped, keyrelease.UniquesTakenOver(diff, p.targetDialect()))
 	maps.Copy(alreadyDropped, released.ConstraintSet())
 	maps.Copy(alreadyDropped, uniquesRebuilt.ConstraintSet())
-	result, err = p.addNewConstraints(result, diff, alreadyDropped, released.IndexSet(), taken)
+	leftovers := p.replacementLeftovers(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
+	result, err = p.addNewConstraints(result, diff, alreadyDropped, leftovers, released.IndexSet(), taken)
 	if err != nil {
 		return nil, err
+	}
+	for _, leftover := range leftovers {
+		alreadyDropped[leftover.Identity] = struct{}{}
 	}
 	result = validateConstraints(result, diff)
 
@@ -2431,6 +2435,7 @@ func (p *Planner) addNewConstraints(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	bracketDropped map[constraintHostKey]struct{},
+	leftovers []difftypes.ConstraintRemovalInfo,
 	releasedIndexes map[difftypes.IndexRef]struct{},
 	taken *takeoverLedger,
 ) ([]ast.Node, error) {
@@ -2447,6 +2452,11 @@ func (p *Planner) addNewConstraints(
 	// MySQL has no IF EXISTS guard on constraint drops, so a duplicate drop
 	// would abort the migration.
 	maps.Copy(state.droppedForModify, bracketDropped)
+	// A CHECK a stopped replacement left goes before every addition, the ADD
+	// under its name among them ([Planner.replacementLeftovers]).
+	for _, leftover := range leftovers {
+		result = p.appendScopedDrop(result, leftover, state.droppedForModify, state.semantics)
+	}
 
 	addKeys := func(result []ast.Node) []ast.Node {
 		return p.addPrimaryKeyConstraintsWithTables(result, diff, diff.TablesAdded.Names(), state)
@@ -2787,9 +2797,6 @@ func (p *Planner) addNonForeignKeyConstraintsWithTables(
 		info, modified := removalByTableName[key]
 		if _, dropped := droppedForModify[key]; !dropped && p.addsCheckFirst(add, modified) {
 			droppedForModify[key] = struct{}{}
-			if leftover, left := leftoverOfReplacement(add, removalByTableName, semantics); left {
-				result = p.appendScopedDrop(result, leftover, droppedForModify, semantics)
-			}
 			result = append(result, p.replacedCheck(add, constraint, p.dropConstraintNode(info))...)
 			handled[semantics.IndexIdentityKey(add.Name)] = struct{}{}
 			continue
@@ -3030,7 +3037,6 @@ func (p *Planner) removeConstraints(
 		droppedTables[semantics.QualifiedTableIdentityKey(t)] = struct{}{}
 	}
 
-	leftovers := p.replacementLeftovers(diff, semantics)
 	dropped := make(map[constraintHostKey]struct{})
 	for _, info := range foreignKeysFirst(diff.ConstraintsRemoved) {
 		if info.TableName == "" {
@@ -3045,12 +3051,9 @@ func (p *Planner) removeConstraints(
 			continue
 		}
 		if _, preDropped := bracketDropped[key]; preDropped {
-			// A column-type change already dropped this foreign key before the
-			// column modifications (issue #694); do not drop it a second time.
-			continue
-		}
-		if _, left := leftovers[key]; left {
-			// The replacement that stopped and left it drops it first.
+			// An earlier step dropped it: a foreign key ahead of a column-type
+			// change (issue #694), or a CHECK a stopped replacement left, ahead
+			// of the additions. Do not drop it a second time.
 			continue
 		}
 		nameIdentity := semantics.IndexIdentityKey(info.Name)
