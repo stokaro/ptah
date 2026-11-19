@@ -249,12 +249,17 @@ func (s *schemaParseState) parseFieldComment(
 	return nil
 }
 
+// generatedColumnKind is the generated kind a field declares: generated_kind,
+// or STORED or VIRTUAL from stored. A generated_kind without generated is kept,
+// and the render decides whether the target takes the kind without an
+// expression, as ClickHouse takes EPHEMERAL; stored without generated is
+// ignored.
 func generatedColumnKind(kv map[string]string) string {
-	if strings.TrimSpace(kv["generated"]) == "" {
-		return ""
-	}
 	if kind := strings.TrimSpace(kv["generated_kind"]); kind != "" {
 		return strings.ToUpper(kind)
+	}
+	if strings.TrimSpace(kv["generated"]) == "" {
+		return ""
 	}
 	if stored := strings.TrimSpace(kv["stored"]); stored != "" {
 		if strings.EqualFold(stored, "true") {

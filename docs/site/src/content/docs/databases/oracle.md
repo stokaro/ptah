@@ -189,6 +189,10 @@ Oracle keeps no `START WITH` for a sequence. The read reports `LAST_NUMBER`,
 the next value the sequence issues, rounded up to the end of its cached block,
 and `schema inspect` writes it as the start. A declared start the counter has
 reached compares equal, so a sequence that has issued values plans nothing. A
+start changed in the declaration compares the same way: on a sequence whose
+next value is 21, a start raised from 1 to 10 plans nothing and reports no
+warning, since Oracle keeps no start to compare it with. The counter keeps its
+place, and the new start takes effect only where the sequence is created. A
 declared start it has not reached, above `LAST_NUMBER` for an ascending
 sequence, is a change, and the plan refuses it rather than move the counter.
 

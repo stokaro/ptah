@@ -302,7 +302,7 @@ Maps a Go struct field to a database column.
 | `foreign` | No | Foreign key reference in table(column) form. |
 | `foreign_key_name` | No | Explicit foreign key constraint name. |
 | `generated` | No | Generated column expression. |
-| `generated_kind` | No | Generated column kind: STORED or VIRTUAL, and on ClickHouse MATERIALIZED, ALIAS or EPHEMERAL. |
+| `generated_kind` | No | Generated column kind: STORED or VIRTUAL, and on ClickHouse MATERIALIZED, ALIAS or EPHEMERAL. Only ClickHouse's EPHEMERAL stands without `generated`; any other kind without an expression is refused. |
 | `identity_generation` | No | SQL identity generation mode. |
 | `identity_increment` | No | SQL identity increment value. |
 | `identity_options` | No | Raw SQL identity options. |
@@ -312,7 +312,7 @@ Maps a Go struct field to a database column.
 | `on_delete` | No | Foreign key ON DELETE action. |
 | `on_update` | No | Foreign key ON UPDATE action. |
 | `primary` | No | Marks the column as part of the primary key. `true`/`false`; bare form allowed. |
-| `stored` | No | Shortcut controlling generated column storage. `true`/`false`. |
+| `stored` | No | Shortcut controlling generated column storage. `true`/`false`. Ignored unless `generated` is set. |
 | `type` | No | Database column type. |
 | `unique` | No | Adds a single-column unique constraint. `true`/`false`; bare form allowed. |
 | `unique_expr` | No | Uniqueness over an expression. Not implemented: rendering fails with `column "…" declares unique_expr`, because emitting the column's own `UNIQUE` instead would enforce a different constraint. |

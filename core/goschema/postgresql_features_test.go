@@ -202,6 +202,22 @@ func TestParseGeneratedColumnField(t *testing.T) {
 				GeneratedKind:       "VIRTUAL",
 			},
 		},
+		{
+			// The render decides whether the target takes the kind without an
+			// expression, as ClickHouse takes EPHEMERAL.
+			name:    "a generated kind without an expression",
+			comment: "//ptah:schema:field name=\"full_name\" type=\"Int64\" generated_kind=\"ephemeral\"",
+			expected: schemamodel.Field{
+				Name:          "full_name",
+				Type:          "Int64",
+				GeneratedKind: "EPHEMERAL",
+			},
+		},
+		{
+			name:     "stored without an expression",
+			comment:  "//ptah:schema:field name=\"full_name\" type=\"TEXT\" stored=\"true\"",
+			expected: schemamodel.Field{Name: "full_name", Type: "TEXT"},
+		},
 	}
 
 	for _, tt := range tests {

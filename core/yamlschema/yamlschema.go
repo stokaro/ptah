@@ -795,12 +795,17 @@ func hasIdentitySettings(spec fieldSpec) bool {
 	return spec.IdentityStart != "" || spec.IdentityIncrement != "" || spec.IdentityOptions != ""
 }
 
+// yamlGeneratedColumnKind is the generated kind a column declares:
+// generated_kind, or STORED from stored. A generated_kind without generated is
+// kept, and the render decides whether the target takes the kind without an
+// expression, as ClickHouse takes EPHEMERAL; stored without generated is
+// ignored.
 func yamlGeneratedColumnKind(spec fieldSpec) string {
-	if strings.TrimSpace(string(spec.Generated)) == "" {
-		return ""
-	}
 	if kind := strings.TrimSpace(string(spec.GeneratedKind)); kind != "" {
 		return strings.ToUpper(kind)
+	}
+	if strings.TrimSpace(string(spec.Generated)) == "" {
+		return ""
 	}
 	if spec.Stored {
 		return "STORED"

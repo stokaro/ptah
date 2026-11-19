@@ -9,7 +9,9 @@ import (
 
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
+	"ptah.run/internal/constraintscope"
 	mysqlplanner "ptah.run/internal/planner/dialects/mysql"
 	oracleplanner "ptah.run/internal/planner/dialects/oracle"
 )
@@ -89,6 +91,52 @@ func TestPlanner_OracleDropsALeftoverTemporaryCheckFirst(t *testing.T) {
 		"ALTER TABLE T1 ADD CONSTRAINT ptah_e2c5b8dcf1d8c385 CHECK (a > 1);",
 		"ALTER TABLE T1 DROP CONSTRAINT CK11;",
 		"ALTER TABLE T1 RENAME CONSTRAINT ptah_e2c5b8dcf1d8c385 TO ck11;",
+	})
+}
+
+// A CHECK that takes the name of a foreign key the plan drops ahead of a
+// column change is added under its own name: the foreign key is gone by then,
+// so nothing is replaced. A CHECK a stopped replacement left under the
+// temporary name is still on the table, and the plan drops it once, before the
+// additions. Decided by the add pass alone, the drop goes with that pass's
+// replacement and the removals skip the CHECK, so no plan drops it.
+func TestPlanner_OracleDropsALeftoverCheckTheAdditionDoesNotReplace(t *testing.T) {
+	c := qt.New(t)
+	semantics := identifier.ForDialect("oracle")
+	identity := constraintscope.Identity(semantics, "T1", "CK11")
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
+			TableName: "T1",
+			ColumnsModified: []difftypes.ColumnDiff{{
+				ColumnName: "A",
+				Changes:    map[string]string{"type": "NUMBER(10) -> NUMBER(19)"},
+				Desired:    schemamodel.Field{Name: "A", Type: "NUMBER(19)", Nullable: true},
+			}},
+		}},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{
+			{Name: "CK11", TableName: "T1", Type: "FOREIGN KEY", Identity: identity},
+			{
+				Name: "PTAH_E2C5B8DCF1D8C385", TableName: "T1", Type: "CHECK",
+				Identity: constraintscope.Identity(semantics, "T1", "PTAH_E2C5B8DCF1D8C385"),
+			},
+		},
+		ConstraintsAdded: difftypes.ConstraintAdditions{{
+			Name: "ck11", TableName: "T1", Type: "CHECK", CheckExpression: "a > 1", Identity: identity,
+		}},
+	}
+
+	nodes, err := oracleplanner.New().GenerateMigrationAST(t.Context(), must.Must(builtin.New()), diff)
+	c.Assert(err, qt.IsNil)
+	sql, err := builtin.RenderSQL("oracle", nodes...)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statementsOf(sql), qt.DeepEquals, []string{
+		"ALTER TABLE T1 DROP CONSTRAINT CK11;",
+		"-- Modify table: T1",
+		"-- Modify column T1.A: type: NUMBER(10) -> NUMBER(19)",
+		"ALTER TABLE T1 MODIFY (A NUMBER(19));",
+		"ALTER TABLE T1 DROP CONSTRAINT PTAH_E2C5B8DCF1D8C385;",
+		"ALTER TABLE T1 ADD CONSTRAINT ck11 CHECK (a > 1);",
 	})
 }
 

@@ -352,3 +352,54 @@ func TestOracleLeftoverReplacementCheckE2E(t *testing.T) {
 	c.Assert(err2, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", again, againErr))
 	c.Assert(again, qt.Contains, "Schema is synced")
 }
+
+// TestOracleLeftoverCheckUnderAForeignKeyNameE2E declares CHECK ck15 where t15
+// holds a foreign key of that name over a column whose type changes, and holds
+// the CHECK a stopped replacement of ck15 leaves under its temporary name. The
+// plan drops the foreign key ahead of the column change, so it adds ck15 under
+// its own name and replaces nothing, and it drops the leftover once, before
+// the additions. The apply succeeds, t15 holds ck15 alone, and the second apply
+// finds nothing to do. With the leftover dropped beside a replacement alone,
+// the first apply leaves it on the table and the second apply drops it.
+func TestOracleLeftoverCheckUnderAForeignKeyNameE2E(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	binary := filepath.Join(c.TempDir(), "ptah")
+	buildPtah(c, ctx, e2eRepoRoot(t), binary)
+	_, dbURL, conn := oracleCaseSensitiveAccount(c, ctx)
+	runAsAccount(c, ctx, conn, []string{
+		`CREATE TABLE p15 (id NUMBER(10) PRIMARY KEY)`,
+		`CREATE TABLE t15 (id NUMBER(10) PRIMARY KEY, a NUMBER(10), CONSTRAINT ck15 CHECK (a > 0))`,
+	})
+	probePath := writeDeclaredSchema(c,
+		"CREATE TABLE p15 (id NUMBER(10) PRIMARY KEY);\n"+
+			"CREATE TABLE t15 (id NUMBER(10) PRIMARY KEY, a NUMBER(10), CONSTRAINT ck15 CHECK (a > 1));\n")
+	probed, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "apply", "--db-url", dbURL, "--schema-file", probePath, "--dry-run")
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", probed, stderr))
+	temporary := regexp.MustCompile(`ADD CONSTRAINT (ptah_[0-9a-f]{16}) CHECK`).FindStringSubmatch(probed)
+	c.Assert(temporary, qt.HasLen, 2, qt.Commentf("%s", probed))
+	runAsAccount(c, ctx, conn, []string{
+		`ALTER TABLE t15 DROP CONSTRAINT ck15`,
+		`ALTER TABLE t15 ADD CONSTRAINT ck15 FOREIGN KEY (a) REFERENCES p15 (id)`,
+		`ALTER TABLE t15 ADD CONSTRAINT ` + temporary[1] + ` CHECK (a > 1)`,
+	})
+	schemaPath := writeDeclaredSchema(c,
+		"CREATE TABLE p15 (id NUMBER(10) PRIMARY KEY);\n"+
+			"CREATE TABLE t15 (id NUMBER(10) PRIMARY KEY, a NUMBER(19), CONSTRAINT ck15 CHECK (a > 1));\n")
+	constraints := `SELECT constraint_name || ' ' || constraint_type || ' ' || search_condition_vc FROM user_constraints ` +
+		`WHERE table_name = 'T15' AND constraint_type IN ('C', 'R') AND (search_condition_vc IS NULL OR search_condition_vc NOT LIKE '%IS NOT NULL') ORDER BY 1`
+
+	stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--auto-approve")
+	again, againErr, err2 := runCLIProcess(ctx, c.TempDir(), binary,
+		"schema", "apply", "--db-url", dbURL, "--schema-file", schemaPath, "--auto-approve")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stdout, qt.Matches, `(?s).*DROP CONSTRAINT CK15;.*DROP CONSTRAINT `+strings.ToUpper(temporary[1])+
+		`;.*ADD CONSTRAINT ck15 CHECK \(a > 1\);.*`)
+	c.Assert(accountNames(c, ctx, conn, constraints), qt.DeepEquals, []string{"CK15 C a > 1"})
+	c.Assert(err2, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", again, againErr))
+	c.Assert(again, qt.Contains, "Schema is synced")
+}
