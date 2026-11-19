@@ -11,21 +11,24 @@ import (
 // creates the table, and keeps that moment for every row.
 func TestParse_RelativeTimeDefault_FailurePath(t *testing.T) {
 	rows := []struct {
-		name, column, wantErr string
+		name, dialect, column, wantErr string
 	}{
 		{
-			name: "now on a timestamptz", column: "a timestamptz DEFAULT 'now'",
+			dialect: "postgres", name: "now on a timestamptz", column: "a timestamptz DEFAULT 'now'",
 			wantErr: `(?s).*column a: DEFAULT 'now' on a timestamptz column is read once, when the table is created.*such as now\(\) or CURRENT_DATE`,
 		},
-		{name: "today in mixed case on a date", column: "b date DEFAULT 'Today'", wantErr: `(?s).*column b: DEFAULT 'Today' on a date column is read once.*`},
-		{name: "a cast", column: "c timestamp DEFAULT 'now'::timestamp", wantErr: `(?s).*column c: DEFAULT 'now'::timestamp on a timestamp column.*`},
-		{name: "tomorrow on a time", column: "d time DEFAULT ' tomorrow '", wantErr: `(?s).*column d: DEFAULT ' tomorrow ' on a time column.*`},
-		{name: "yesterday", column: "e timestamp with time zone DEFAULT 'yesterday'", wantErr: `(?s).*column e: DEFAULT 'yesterday'.*`},
+		{dialect: "postgres", name: "today in mixed case on a date", column: "b date DEFAULT 'Today'", wantErr: `(?s).*column b: DEFAULT 'Today' on a date column is read once.*`},
+		{dialect: "postgres", name: "a cast", column: "c timestamp DEFAULT 'now'::timestamp", wantErr: `(?s).*column c: DEFAULT 'now'::timestamp on a timestamp column.*`},
+		{dialect: "postgres", name: "tomorrow on a time", column: "d time DEFAULT ' tomorrow '", wantErr: `(?s).*column d: DEFAULT ' tomorrow ' on a time column.*`},
+		{dialect: "postgres", name: "yesterday", column: "e timestamp with time zone DEFAULT 'yesterday'", wantErr: `(?s).*column e: DEFAULT 'yesterday'.*`},
+		{dialect: "postgres", name: "in parentheses", column: "f timestamptz DEFAULT ('now')", wantErr: `(?s).*column f: DEFAULT \('now'\) on a timestamptz column is read once.*`},
+		{dialect: "postgres", name: "cast in parentheses", column: "g date DEFAULT ('today'::date)", wantErr: `(?s).*column g: DEFAULT \('today'::date\) on a date column.*`},
+		{dialect: "yugabytedb", name: "YugabyteDB", column: "h timestamptz DEFAULT 'now'", wantErr: `(?s).*column h: DEFAULT 'now' on a timestamptz column is read once.*`},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := parseDialect(c, "postgres", "CREATE TABLE t (id int PRIMARY KEY, "+row.column+");")
+			statements, err := parseDialect(c, row.dialect, "CREATE TABLE t (id int PRIMARY KEY, "+row.column+");")
 
 			c.Assert(err, qt.ErrorMatches, row.wantErr)
 			c.Assert(statements, qt.IsNil)
@@ -43,6 +46,7 @@ func TestParse_RelativeTimeDefault_HappyPath(t *testing.T) {
 		{name: "a text column", dialect: "postgres", column: "a text DEFAULT 'now'", want: "'now'"},
 		{name: "MySQL", dialect: "mysql", column: "a varchar(8) DEFAULT 'now'", want: "'now'"},
 		{name: "SQLite", dialect: "sqlite", column: "a datetime DEFAULT 'now'", want: "'now'"},
+		{name: "CockroachDB, which keeps the string", dialect: "cockroachdb", column: "a timestamptz DEFAULT 'now'", want: "'now'"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

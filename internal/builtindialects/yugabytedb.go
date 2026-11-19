@@ -200,6 +200,10 @@ func yugabyteDB() descriptor.Dialect {
 					Shift:        true,
 					DistinctFrom: true,
 				},
+				// Measured on YugabyteDB 2026.1.2: DEFAULT 'now' and
+				// DEFAULT ('now') on a timestamptz store the creation time,
+				// and 'today' on a date the creation date.
+				RelativeTimeLiterals: []string{"NOW", "TODAY", "TOMORROW", "YESTERDAY"},
 			},
 			Constraints: descriptor.ConstraintGrammar{
 				NotValid: true,

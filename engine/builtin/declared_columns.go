@@ -8,6 +8,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/schemaprep"
 )
 
@@ -26,8 +27,50 @@ func validateDeclaredColumns(dialect string, database *schemamodel.Database) err
 		if err := validateUndeclaredEnum(dialect, database, field); err != nil {
 			return err
 		}
+		if err := validateRelativeTimeDefault(dialect, database, field); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// validateRelativeTimeDefault refuses a default on a date or time column that
+// the target reads as a moment relative to when it reads it, such as
+// PostgreSQL's 'now' ([defaultlit.RelativeTimeLiteral]). The parser refuses
+// one a CREATE TABLE writes; this refuses one a Go or YAML model declares,
+// and one an ALTER COLUMN ... SET DEFAULT in a schema file sets, which reach
+// the model without the column's type beside them. Measured on PostgreSQL 18,
+// the server reads the default once, when it creates the table, so every row
+// gets that moment and every plan changes the column again.
+func validateRelativeTimeDefault(dialect string, database *schemamodel.Database, field schemamodel.Field) error {
+	described, ok := platform.Lookup(dialect)
+	if !ok {
+		return nil
+	}
+	value := field.DefaultExpr
+	if field.Default != "" || field.DefaultSet {
+		value = field.Default
+		if !defaultlit.IsSQLLiteral(strings.TrimSpace(value)) {
+			value = "'" + strings.ReplaceAll(value, "'", "''") + "'"
+		}
+	}
+	if !defaultlit.RelativeTimeLiteral(field.Type, value, described.Grammar.Columns.RelativeTimeLiterals) {
+		return nil
+	}
+	tableName := field.StructName
+	if table := tableByStructName(database.Tables, field.StructName); table != nil {
+		tableName = table.QualifiedName()
+	}
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"column %q of table %q: DEFAULT %s on a %s column is read once, when the table is created, so every row "+
+				"gets that moment and every plan changes the column again; write a function the server calls for each "+
+				"row, such as now() or CURRENT_DATE",
+			field.Name, tableName, value, field.Type,
+		),
+	}
 }
 
 // validateUndeclaredEnum refuses a column typed ENUM that carries its values
