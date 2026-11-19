@@ -132,9 +132,9 @@ cat >migrations/0000000002_unsafe.down.sql <<'SQL'
 DROP INDEX idx_users_email;
 SQL
 lint_output=$("$ptah" migrations lint --dir ./migrations --dialect postgres 2>&1)
-expect 'PG106: DROP INDEX without CONCURRENTLY blocks writes' "$lint_output"
-expect 'PG101: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build' "$lint_output"
-expect 'PG303: SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock' "$lint_output"
+expect 'PG106 locking/drop-index: DROP INDEX without CONCURRENTLY blocks writes' "$lint_output"
+expect 'PG101 locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build' "$lint_output"
+expect 'PG303 locking/set-not-null: SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock' "$lint_output"
 expect 'backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, and SET NOT NULL afterwards' "$lint_output"
 expect '3 finding(s).' "$lint_output"
 

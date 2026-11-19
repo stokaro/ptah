@@ -387,7 +387,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `DS104`<br>`integrity/drop-not-null` | DROP NOT NULL removes a column-level data protection | both | Ptah |
 | `DS105`<br>`integrity/drop-untyped-constraint` | an untyped DROP CONSTRAINT removes a data protection the SQL does not name | both | Ptah |
 | `DS106`<br>`destructive/remove-enum-value` | removing an enum value can invalidate rows that still hold it | both | Ptah |
-| `DS107`<br>`destructive/drop-object` | dropping a schema, type, extension, function, procedure, trigger, role, policy, or YDB user, group, topic, transfer, async replication, coordination node, or streaming query removes behavior or data; an IF EXISTS drop of a type or a trigger the dev database shows absent removes nothing and is not reported | both | Ptah |
+| `DS107`<br>`destructive/drop-object` | dropping a schema, type, extension, function, procedure, trigger, role or policy, or a YDB object the YDB table below names, removes behavior or data; an IF EXISTS drop of a type or a trigger the dev database shows absent is not reported | both | Ptah |
 | `DS108`<br>`destructive/truncate-table` | TRUNCATE deletes every row in the table | both | Ptah |
 | `DS109`<br>`security/disable-row-level-security` | DISABLE ROW LEVEL SECURITY removes an access-control protection | both | Ptah |
 | `DS110P`<br>`dependency/drop-column-in-use` | a column a view or routine still reads is dropped, and the finding names what breaks; a view dropped or rebuilt with a plain projection before the column drop is left out | both | Ptah |
