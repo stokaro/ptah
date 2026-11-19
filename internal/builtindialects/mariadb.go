@@ -126,6 +126,15 @@ func mariaDB() descriptor.Dialect {
 		// `_2` and on, where MySQL cuts it.
 		IndexNaming: descriptor.IndexNaming{MaxBytes: 64, DescendingCovers: true, UniqueIsIndex: true},
 		CheckNaming: descriptor.CheckNamingColumnOrConstraint,
+		// Measured on 12.3.3: two tables of a database each hold a CHECK named
+		// ck, and one table refuses dd beside DD. It also refuses é beside É
+		// and s beside ſ, and accepts i beside İ (U+0130). Ptah folds ASCII
+		// letters only, so it never refuses a pair the server accepts and
+		// leaves the server to refuse the rest.
+		CheckNames: descriptor.CheckNames{
+			Scope: descriptor.CheckNameScopeTable, Comparison: "ascii_case_insensitive",
+			Refusal: "Error 1826 (HY000): Duplicate CHECK constraint name '{name}'",
+		},
 		Columns: descriptor.Columns{
 			NationalCharAsChar: true, NationalCharCharset: "utf8mb3",
 			Collations: true, InheritedCollationVaries: true,

@@ -18,7 +18,11 @@ type readingFacts struct {
 	names       descriptor.Names
 	indexNaming descriptor.IndexNaming
 	checkNaming descriptor.CheckNaming
-	selection   descriptor.SchemaSelection
+	// checkNamesRefused reports that the descriptor states where the server
+	// keeps a CHECK name unique, so schemaprep.ValidateCheckNames refuses two
+	// CHECKs of one name for every kind of source.
+	checkNamesRefused bool
+	selection         descriptor.SchemaSelection
 	// databaseIsSchema reports that a database of the server is what the model
 	// calls a schema, so CREATE DATABASE declares one.
 	databaseIsSchema bool
@@ -69,11 +73,12 @@ func factsOf(sourcePlatform string) readingFacts {
 		return readingFacts{}
 	}
 	facts := readingFacts{
-		name:        described.Name,
-		names:       described.Names,
-		indexNaming: described.IndexNaming,
-		checkNaming: described.CheckNaming,
-		selection:   described.Schemas.Selection,
+		name:              described.Name,
+		names:             described.Names,
+		indexNaming:       described.IndexNaming,
+		checkNaming:       described.CheckNaming,
+		checkNamesRefused: described.CheckNames.Scope != "",
+		selection:         described.Schemas.Selection,
 
 		databaseIsSchema: described.Schemas.Selection == descriptor.SchemaSelectionDatabase ||
 			described.Schemas.ConnectedDatabaseOnly,

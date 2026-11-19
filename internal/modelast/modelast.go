@@ -1741,6 +1741,11 @@ func walkCommonDatabase(
 	); err != nil {
 		return err
 	}
+	// The server would refuse the second CHECK of a name partway through the
+	// render's statements; refused here, no statement is written.
+	if err := schemaprep.ValidateCheckNames(&database, targetPlatform); err != nil {
+		return err
+	}
 
 	// Normalize once so every conversion path consumes the same names.
 	assigned := schemaprep.AssignDefaultForeignKeyNames(&database, targetPlatform)

@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlschema"
 )
 
@@ -143,25 +144,25 @@ func TestRead_MySQLUnnamedCheckNames_FailurePath(t *testing.T) {
 		{
 			name:    "a named CHECK written after the unnamed one",
 			sql:     "CREATE TABLE f2 (a int, CHECK (a > 0), CONSTRAINT f2_chk_1 CHECK (a < 9));",
-			wantIs:  sqlschema.ErrDuplicateCheckName,
+			wantIs:  schemaprep.ErrDuplicateCheckName,
 			wantErr: `(?s).*f2_chk_1, the name MySQL gives an unnamed CHECK of f2, is held by another CHECK, and MySQL answers ERROR 3822.*`,
 		},
 		{
 			name:    "a named CHECK in another case",
 			sql:     "CREATE TABLE f3 (a int, CONSTRAINT F3_CHK_1 CHECK (a > 0), CHECK (a < 9));",
-			wantIs:  sqlschema.ErrDuplicateCheckName,
+			wantIs:  schemaprep.ErrDuplicateCheckName,
 			wantErr: `(?s).*F3_CHK_1, the name MySQL gives an unnamed CHECK of f3, is held by another CHECK.*`,
 		},
 		{
 			name:    "a CHECK of another table",
 			sql:     "CREATE TABLE f6 (a int, CONSTRAINT f7_CHK_1 CHECK (a > 0));\nCREATE TABLE f7 (a int CHECK (a > 0));",
-			wantIs:  sqlschema.ErrDuplicateCheckName,
+			wantIs:  schemaprep.ErrDuplicateCheckName,
 			wantErr: `(?s).*f7_CHK_1, the name MySQL gives an unnamed CHECK of f7, is held by another CHECK.*`,
 		},
 		{
 			name:    "a named CHECK the count reaches",
 			sql:     "CREATE TABLE b5 (a int, CONSTRAINT b5_chk_2 CHECK (a > 1), CHECK (a > 2), CHECK (a > 3));",
-			wantIs:  sqlschema.ErrDuplicateCheckName,
+			wantIs:  schemaprep.ErrDuplicateCheckName,
 			wantErr: `(?s).*b5_chk_2, the name MySQL gives an unnamed CHECK of b5, is held by another CHECK.*`,
 		},
 		{
@@ -325,7 +326,7 @@ func TestRead_MariaDBUnnamedCheckNames_FailurePath(t *testing.T) {
 
 	database, _, err := sqlschema.Read([]byte("CREATE TABLE e8 (a int CHECK (a > 0), CONSTRAINT a CHECK (a < 9));"), "mariadb")
 
-	c.Assert(err, qt.ErrorIs, sqlschema.ErrDuplicateCheckName)
+	c.Assert(err, qt.ErrorIs, schemaprep.ErrDuplicateCheckName)
 	c.Assert(err, qt.ErrorMatches, `(?s).*a names a CHECK of e8, and so does the CHECK on column a, which MariaDB names after the column; MariaDB answers ERROR 1826.*`)
 	c.Assert(database.Tables, qt.HasLen, 0)
 }

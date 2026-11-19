@@ -380,6 +380,15 @@ func (s Semantics) TableIdentityKey(value string) string {
 	return s.identityKey(s.TableNames, value)
 }
 
+// NameIdentityKey returns the confirmed comparison key for a name the
+// semantics state no comparison for, compared under comparison, such as a
+// CHECK name under the comparison its dialect's descriptor states. A quoted
+// name the target's unquoted fold keeps apart keys as written, as it does for
+// a table. The empty comparison compares exactly.
+func (s Semantics) NameIdentityKey(comparison Comparison, value string) string {
+	return s.identityKey(comparison, value)
+}
+
 // TableConflictKey returns the conservative collision key for a schema or table
 // name.
 func (s Semantics) TableConflictKey(value string) string {

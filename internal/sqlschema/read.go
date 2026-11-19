@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/sqlext"
 	"ptah.run/internal/featureselect"
 	"ptah.run/internal/parser"
+	"ptah.run/internal/schemaprep"
 )
 
 // Read loads a SQL desired schema into the canonical model.
@@ -137,6 +138,13 @@ func ReadWith(
 		return schemamodel.Database{}, nil, err
 	}
 	schemamodel.Finalize(&database)
+	// Every verb that reads a declared schema, whether or not it renders or
+	// compares it, refuses two CHECKs of one name in one table. Two tables are
+	// left to the callers that know the server's dialect, since a mysql URL
+	// may reach MariaDB.
+	if err := schemaprep.ValidateCheckNamesWithinTables(&database, dialect); err != nil {
+		return schemamodel.Database{}, nil, err
+	}
 	if err := takeNotValidAllowances(ctx, &database, allowances); err != nil {
 		return schemamodel.Database{}, nil, err
 	}

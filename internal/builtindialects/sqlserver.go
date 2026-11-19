@@ -118,6 +118,19 @@ END`,
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names: descriptor.Names{Lookup: "unicode_case_insensitive"},
+		// Measured on SQL Server 2022 (16.0.4325.4) and 2025: a CHECK named ck on
+		// one table and the same name on another of the schema is refused, and a
+		// table of another schema holds ck. Whether ck and CK are one name
+		// follows the database's collation: the default SQL_Latin1_General_CP1_CI_AS
+		// refuses the pair, and Latin1_General_100_CS_AS accepts it. Names compare
+		// exactly, so Ptah refuses only what holds under every collation and
+		// leaves a difference of case to the server.
+		CheckNames: descriptor.CheckNames{
+			Scope:   descriptor.CheckNameScopeSchema,
+			Refusal: "mssql: There is already an object named '{name}' in the database. (2714)",
+			TableRefusal: "mssql: Cannot create, drop, enable, or disable more than one constraint, column, index, " +
+				"or trigger named '{name}' in this context. Duplicate names are not allowed. (8168)",
+		},
 		// A read lists every database role, whatever schemas it covers.
 		Roles: descriptor.Roles{OutOfScope: descriptor.RoleScopeNone},
 		// A serial type is written with IDENTITY, and the server refuses a nullable identity

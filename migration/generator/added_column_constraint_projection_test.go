@@ -72,13 +72,15 @@ func TestReverseCaptureOfAddedColumnConstraints_HappyPath(t *testing.T) {
 	c.Assert(opts.CurrentSchema.Constraints, qt.HasLen, 0)
 }
 
-// A column's CHECK named like a constraint the table change adds is two
+// A column's foreign key named like a constraint the table change adds is two
 // constraints under one name, which no read reports, so the reverse plan has
-// no table to start from and the plan is refused.
+// no table to start from and the plan is refused. A column's CHECK of that
+// name does not reach the plan: the comparison refuses two CHECKs of one name
+// in one table.
 func TestReverseCaptureOfAddedColumnConstraints_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	opts := addedColumnOptions(c, []schemamodel.Field{
-		{Name: "score", StructName: "Item", Type: "INTEGER", Nullable: true, Check: "score >= 0", CheckName: "items_bounds"},
+		{Name: "owner_id", StructName: "Item", Type: "INTEGER", Nullable: true, Foreign: "owners(id)", ForeignKeyName: "items_bounds"},
 	}, []schemamodel.Constraint{{Name: "items_bounds", StructName: "Item", Type: "CHECK", CheckExpression: "id > 0"}})
 	c.Assert(opts.Diff.ConstraintsAdded, qt.HasLen, 1)
 
