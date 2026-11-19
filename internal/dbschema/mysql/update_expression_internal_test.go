@@ -121,7 +121,7 @@ func TestApplyMySQLColumnMetadata_PutsTheClauseOnTheColumn(t *testing.T) {
 			c := qt.New(t)
 			column := catalog.Column{Name: "updated_at"}
 
-			err := applyMySQLColumnMetadata(&column,
+			err := applyMySQLColumnMetadata(&column, literalsUnquoted,
 				sql.NullString{}, sql.NullInt64{}, sql.NullInt64{}, sql.NullInt64{},
 				sql.NullString{}, sql.NullString{},
 				sql.NullString{String: test.extra, Valid: true},

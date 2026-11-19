@@ -28,11 +28,13 @@ import (
 	"ptah.run/internal/columnsemantics"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/constraintowner"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
 	"ptah.run/internal/oracletype"
 	"ptah.run/internal/pgcollation"
 	"ptah.run/internal/pgname"
+	"ptah.run/internal/precedence"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlitekey"
 	"ptah.run/internal/sqlservertype"
@@ -899,7 +901,7 @@ func columnDefaultChange(
 		if normalize.IsDefaultExpr(dbDefault) {
 			idxName = "default_expr"
 		}
-		declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault)
+		declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault, dialect)
 		if !columnDefaultsEqual(declared, reported, genType, dialect,
 			genCol.Default == "" && genCol.DefaultExpr != "") {
 			return idxName, fmt.Sprintf("%s -> %s", dbDefault, genDefault)
@@ -916,11 +918,28 @@ func columnDefaultChange(
 // with them, the declaration differs from the table it built on every run, and
 // SQLite rebuilds the table for it each time. A literal keeps its text, so a
 // string default `(x)` stays a different value from `x`.
-func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported string) (comparedDeclared, comparedReported string) {
+//
+// Where the dialect's descriptor names an operator precedence, both are then
+// compared as the operations it groups ([precedence.Canonical]). MySQL stores
+// `(2 * 3 + 1)` as `((2 * 3) + 1)`, and without the reading every apply plans
+// the column again. Either side the precedence cannot read leaves both as
+// written.
+func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported, dialect string) (comparedDeclared, comparedReported string) {
 	if genCol.Default != "" || genCol.DefaultExpr == "" {
 		return declared, reported
 	}
-	return normalize.Expression(declared), normalize.Expression(reported)
+	declared, reported = normalize.Expression(declared), normalize.Expression(reported)
+	scheme := comparisonOf(dialect).OperatorPrecedence
+	if scheme == "" {
+		return declared, reported
+	}
+	lexing := dialectlexer.Options(dialect)
+	groupedDeclared, declaredRead := precedence.Canonical(declared, scheme, lexing)
+	groupedReported, reportedRead := precedence.Canonical(reported, scheme, lexing)
+	if !declaredRead || !reportedRead {
+		return declared, reported
+	}
+	return groupedDeclared, groupedReported
 }
 
 // columnDefaultsEqual compares both values under the desired column type.

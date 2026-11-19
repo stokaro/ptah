@@ -136,3 +136,105 @@ func TestColumns_AParenthesizedExpressionDefaultIsTheExpression(t *testing.T) {
 		})
 	}
 }
+
+// TestColumns_AnExpressionDefaultIsComparedByPrecedence pins that a dialect
+// whose descriptor names an operator precedence compares an expression default
+// as the operations it groups. Each reported spelling is what MySQL 26.10 or
+// MariaDB 12.3 stored for the declared one, and without the reading every
+// apply plans the column again.
+func TestColumns_AnExpressionDefaultIsComparedByPrecedence(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		declared string
+		reported string
+		want     map[string]string
+	}{
+		{
+			name:     "MySQL writes the multiplication's parentheses",
+			dialect:  platform.MySQL,
+			declared: "(2 * 3 + 1)",
+			reported: "((2 * 3) + 1)",
+			want:     make(map[string]string),
+		},
+		{
+			name:     "MySQL writes the right operand's parentheses",
+			dialect:  platform.MySQL,
+			declared: "(1 + 2 * 3)",
+			reported: "(1 + (2 * 3))",
+			want:     make(map[string]string),
+		},
+		{
+			name:     "MySQL quotes and groups column references",
+			dialect:  platform.MySQL,
+			declared: "(a + b * 2)",
+			reported: "(`a` + (`b` * 2))",
+			want:     make(map[string]string),
+		},
+		{
+			name:     "MySQL wraps a negated literal",
+			dialect:  platform.MySQL,
+			declared: "(-1 + 2)",
+			reported: "(-(1) + 2)",
+			want:     make(map[string]string),
+		},
+		{
+			name:     "MariaDB writes % as MOD",
+			dialect:  platform.MariaDB,
+			declared: "(7 % 4 * 2)",
+			reported: "(7 MOD 4 * 2)",
+			want:     make(map[string]string),
+		},
+		{
+			name:     "MariaDB quotes a column reference",
+			dialect:  platform.MariaDB,
+			declared: "(a + b * 2)",
+			reported: "(`a` + `b` * 2)",
+			want:     make(map[string]string),
+		},
+		{
+			// The parentheses precedence needs are the expression.
+			name:     "a group that changes the grouping",
+			dialect:  platform.MySQL,
+			declared: "(1 + 2 * 3)",
+			reported: "((1 + 2) * 3)",
+			want:     map[string]string{"default_expr": "((1 + 2) * 3) -> (1 + 2 * 3)"},
+		},
+		{
+			name:     "a right-hand group of one precedence",
+			dialect:  platform.MySQL,
+			declared: "(1 - 2 - 3)",
+			reported: "(1 - (2 - 3))",
+			want:     map[string]string{"default_expr": "(1 - (2 - 3)) -> (1 - 2 - 3)"},
+		},
+		{
+			// NOT is outside the table, so the text is compared as written.
+			name:     "an expression the precedence does not read",
+			dialect:  platform.MySQL,
+			declared: "(NOT 1 + 1)",
+			reported: "(0 = (1 + 1))",
+			want:     map[string]string{"default_expr": "(0 = (1 + 1)) -> (NOT 1 + 1)"},
+		},
+		{
+			// SQLite stores a default as written, and its descriptor names no
+			// precedence.
+			name:     "a dialect without a precedence",
+			dialect:  platform.SQLite,
+			declared: "(2 * 3 + 1)",
+			reported: "(2 * 3) + 1",
+			want:     map[string]string{"default_expr": "(2 * 3) + 1 -> (2 * 3 + 1)"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			genCol := schemamodel.Field{Name: "n", Type: "int", Nullable: true, DefaultExpr: test.declared}
+			dbCol := catalog.Column{Name: "n", DataType: "int", IsNullable: "YES", ColumnDefault: new(test.reported)}
+
+			result := compare.ColumnsWithDialect(genCol, dbCol, test.dialect)
+
+			c.Assert(result.Changes, qt.DeepEquals, test.want)
+		})
+	}
+}
