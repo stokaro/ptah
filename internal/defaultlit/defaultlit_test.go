@@ -212,3 +212,26 @@ func TestAsRead(t *testing.T) {
 		})
 	}
 }
+
+// Where a backslash in a string is an escape, a bare value is quoted with its
+// backslashes doubled, and a value already written as a literal under that
+// rule keeps its spelling.
+func TestAsReadEscaped(t *testing.T) {
+	tests := []struct {
+		name, columnType, value string
+		want                    string
+	}{
+		{name: "a backslash", columnType: "varchar(30)", value: `a\b`, want: `'a\\b'`},
+		{name: "a backslash before a quote", columnType: "text", value: `it\'s`, want: `'it\\''s'`},
+		{name: "a quote", columnType: "text", value: "it's", want: "'it''s'"},
+		{name: "a literal escaped with a backslash", columnType: "String", value: `'it\'s'`, want: `'it\'s'`},
+		{name: "a literal with a doubled backslash", columnType: "varchar(30)", value: `'a\\b'`, want: `'a\\b'`},
+		{name: "a number on an integer", columnType: "int", value: `7`, want: `7`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(defaultlit.AsReadEscaped(tt.columnType, tt.value), qt.Equals, tt.want)
+		})
+	}
+}

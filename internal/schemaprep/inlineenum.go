@@ -101,7 +101,7 @@ func LowerInlineEnums(fields []schemamodel.Field, enums []schemamodel.Enum, dial
 		return fields
 	}
 	target := describe(dialect)
-	form := EnumForm{Style: inlineEnumStyle(dialect), CheckType: target.preparation.EnumCheckType}
+	form := EnumForm{Style: inlineEnumStyle(dialect), CheckType: target.preparation.EnumCheckType, BackslashEscapes: target.backslashEscapes}
 	if target.preparation.EnumCheckQuotesColumn {
 		// A dialect that refuses a CHECK whose spelling of the column
 		// disagrees with the column, as Oracle does, names it by
@@ -125,6 +125,11 @@ type EnumForm struct {
 	// CheckColumn spells the column inside a descriptor.EnumCheck column's
 	// CHECK. Nil names the column bare.
 	CheckColumn func(name string) string
+	// BackslashEscapes is whether the target reads a backslash in a string
+	// as an escape, so each one in a value is written doubled. Measured on
+	// MySQL 26.10 and MariaDB 12.3, ENUM('e\\f') stores e\f and the catalog
+	// reports enum('e\\f').
+	BackslashEscapes bool
 }
 
 // LowerEnumColumns returns a copy of fields with every enum column, as
@@ -154,7 +159,7 @@ func LowerEnumColumns(fields []schemamodel.Field, enums []schemamodel.Enum, form
 		field.Enum = values
 		switch form.Style {
 		case descriptor.EnumColumnType:
-			field.Type = enumColumnType(field.Enum)
+			field.Type = enumColumnType(field.Enum, form.BackslashEscapes)
 		case descriptor.EnumNumbered:
 			field.Type = ClickHouseEnumType(field.Enum)
 		case descriptor.EnumCheck:
@@ -163,7 +168,7 @@ func LowerEnumColumns(fields []schemamodel.Field, enums []schemamodel.Enum, form
 				column = form.CheckColumn(field.Name)
 			}
 			field.Type = form.CheckType
-			field.Check = inlineEnumCheck(*field, column)
+			field.Check = inlineEnumCheck(*field, column, form.BackslashEscapes)
 		}
 	}
 	return lowered
@@ -171,8 +176,8 @@ func LowerEnumColumns(fields []schemamodel.Field, enums []schemamodel.Enum, form
 
 // inlineEnumCheck is the CHECK an inline enum column carries, over the
 // column spelled as column, joined to the column's own CHECK where it has one.
-func inlineEnumCheck(field schemamodel.Field, column string) string {
-	enumCheck := column + " IN (" + strings.Join(quotedEnumValues(field.Enum), ", ") + ")"
+func inlineEnumCheck(field schemamodel.Field, column string, backslashEscapes bool) string {
+	enumCheck := column + " IN (" + strings.Join(quotedEnumValues(field.Enum, backslashEscapes), ", ") + ")"
 	if field.Check != "" {
 		return "(" + field.Check + ") AND " + enumCheck
 	}
@@ -199,13 +204,19 @@ func ClickHouseEnumType(values []string) string {
 
 // enumColumnType is the ENUM column type an enum with values is built as,
 // enum('a','b').
-func enumColumnType(values []string) string {
-	return "enum(" + strings.Join(quotedEnumValues(values), ",") + ")"
+func enumColumnType(values []string, backslashEscapes bool) string {
+	return "enum(" + strings.Join(quotedEnumValues(values, backslashEscapes), ",") + ")"
 }
 
-func quotedEnumValues(values []string) []string {
+// quotedEnumValues writes each value as a string literal with its quotes
+// doubled, and its backslashes too where backslashEscapes says a backslash
+// escapes.
+func quotedEnumValues(values []string, backslashEscapes bool) []string {
 	quoted := make([]string, 0, len(values))
 	for _, value := range values {
+		if backslashEscapes {
+			value = strings.ReplaceAll(value, `\`, `\\`)
+		}
 		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
 	}
 	return quoted

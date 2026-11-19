@@ -48,3 +48,36 @@ func TestToDBSchema_HoldsALiteralDefaultAsACatalogReportsIt(t *testing.T) {
 		})
 	}
 }
+
+// Where a backslash in a string is an escape, a literal is held with its
+// backslashes doubled, the form MySQL and ClickHouse report the characters
+// in. PostgreSQL reads a backslash in a standard string as itself.
+func TestToDBSchema_HoldsABackslashAsTheDialectReportsIt(t *testing.T) {
+	tests := []struct {
+		name, dialect string
+		want          string
+	}{
+		{name: "MySQL", dialect: platform.MySQL, want: `'a\\b'`},
+		{name: "MariaDB", dialect: platform.MariaDB, want: `'a\\b'`},
+		{name: "ClickHouse", dialect: platform.ClickHouse, want: `'a\\b'`},
+		{name: "PostgreSQL", dialect: platform.Postgres, want: `'a\b'`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			key := schemamodel.Field{StructName: "Note", Name: "id", Type: "INT", Primary: true}
+			field := schemamodel.Field{StructName: "Note", Name: "c", Type: "VARCHAR(30)", Nullable: true, Default: `a\b`, DefaultSet: true}
+			db := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Note", Name: "notes"}},
+				Fields: []schemamodel.Field{key, field},
+			}
+
+			got, err := goschematodb.ToDBSchema(t.Context(), db, test.dialect, must.Must(builtin.New()))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Tables, qt.HasLen, 1)
+			c.Assert(got.Tables[0].Columns, qt.HasLen, 2)
+			c.Assert(got.Tables[0].Columns[1].ColumnDefault, qt.DeepEquals, new(test.want))
+		})
+	}
+}

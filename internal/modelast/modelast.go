@@ -152,8 +152,14 @@ func handleEnumTypes(field schemamodel.Field, enums []schemamodel.Enum, targetPl
 }
 
 func applyInlineEnumModel(field schemamodel.Field, values []string, targetPlatform string) schemamodel.Field {
+	// A target that reads a backslash in a string as an escape stores e\f
+	// for the literal 'e\\f', so each backslash in a value is doubled.
+	backslashEscapes := describe(targetPlatform).Lexical.BackslashEscapes
 	quotedValues := make([]string, len(values))
 	for i, value := range values {
+		if backslashEscapes {
+			value = strings.ReplaceAll(value, `\`, `\\`)
+		}
 		quotedValues[i] = escapeSQLStringLiteral(value)
 	}
 

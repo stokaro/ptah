@@ -310,7 +310,7 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 			autoincrement.NotNull(field, described.Columns) {
 			field.Nullable = false
 		}
-		column := toDBColumn(field, i+1)
+		column := toDBColumn(field, i+1, described.Lexical.BackslashEscapes)
 		column.IsAutoIncrement = autoincrement.DeclaredOn(field, dialect)
 		// A target that stores a declared type as another reports the one it
 		// stores: Oracle a TEXT column as a CLOB, CockroachDB an INT column at
@@ -332,7 +332,7 @@ func toDBColumns(table schemamodel.Table, fields []schemamodel.Field, dialect st
 	return out
 }
 
-func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
+func toDBColumn(field schemamodel.Field, ordinal int, backslashEscapes bool) catalog.Column {
 	nullable := "NO"
 	if field.Nullable {
 		nullable = "YES"
@@ -369,7 +369,13 @@ func toDBColumn(field schemamodel.Field, ordinal int) catalog.Column {
 		// bare `x` a struct tag declares on a text column is the string `'x'`.
 		// Held bare, a description of the literal `1 + 2` reads like the
 		// expression `(1 + 2)`, and a comparison takes the two for one default.
-		column.ColumnDefault = new(defaultlit.AsRead(field.Type, field.Default))
+		// Where a backslash in a string is an escape, it is doubled
+		// ([defaultlit.AsReadEscaped]), as MySQL reports it.
+		read := defaultlit.AsRead
+		if backslashEscapes {
+			read = defaultlit.AsReadEscaped
+		}
+		column.ColumnDefault = new(read(field.Type, field.Default))
 	} else if field.DefaultExpr != "" {
 		column.ColumnDefault = new(field.DefaultExpr)
 	}

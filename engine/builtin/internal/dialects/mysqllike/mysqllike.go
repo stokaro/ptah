@@ -113,8 +113,16 @@ func isMySQLBooleanType(columnType string) bool {
 		strings.HasPrefix(normalized, "tinyint(1)")
 }
 
+// mysqlDefaultNeedsLiteralQuotes reports whether a literal default is written
+// in quotes on a column of columnType.
+//
+// The literal NULL on a column that stores text is the string: a schema file
+// spells SQL NULL as an expression, and a Go or YAML literal is a value. The
+// comparison reads it as the string the catalog reports for `DEFAULT 'NULL'`,
+// so written bare it would store no default and plan the column on every
+// apply.
 func mysqlDefaultNeedsLiteralQuotes(columnType, value string) bool {
-	if isMySQLNullDefault(value) || isMySQLTemporalDefaultExpression(columnType, value) {
+	if isMySQLNullDefault(value) && !defaultlit.StoresText(columnType) || isMySQLTemporalDefaultExpression(columnType, value) {
 		return false
 	}
 

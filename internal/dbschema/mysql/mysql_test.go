@@ -108,6 +108,12 @@ func TestMySQLReader_parseEnumValues(t *testing.T) {
 				columnType:   "enum('single')",
 				expectedVals: []string{"single"},
 			},
+			{
+				// Measured on MySQL 26.10 and MariaDB 12.3 for ENUM('e\\f', 'g,h', 'it''s').
+				name:         "values holding a backslash, a comma and a quote",
+				columnType:   `enum('e\\f','g,h','it''s')`,
+				expectedVals: []string{`e\f`, "g,h", "it's"},
+			},
 		}
 
 		for _, test := range tests {
@@ -135,6 +141,10 @@ func TestMySQLReader_parseEnumValues(t *testing.T) {
 			{
 				name:       "invalid format",
 				columnType: "not_enum_format",
+			},
+			{
+				name:       "a literal nothing closes",
+				columnType: "enum('a','b)",
 			},
 		}
 

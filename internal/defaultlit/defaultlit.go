@@ -128,6 +128,24 @@ func AsRead(columnType, value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
+// AsReadEscaped is [AsRead] for an engine that reads a backslash inside a
+// string literal as an escape, such as MySQL under its default sql_mode and
+// ClickHouse. A value already written as a literal under that rule
+// ([IsEscapedSQLLiteral]) is returned trimmed. Any other value on a column
+// that [StoresText] is quoted with each backslash doubled before each quote
+// is doubled, so the bare `a\b` a struct tag declares reads as the `'a\\b'`
+// MySQL reads back for the three characters it stores.
+func AsReadEscaped(columnType, value string) string {
+	if !StoresText(columnType) {
+		return value
+	}
+	trimmed := strings.TrimSpace(value)
+	if IsEscapedSQLLiteral(trimmed) {
+		return trimmed
+	}
+	return "'" + strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), "'", "''") + "'"
+}
+
 // Typed returns value ready to follow `DEFAULT` in the form the column's own
 // type takes, which for a number or a boolean is no quotes at all, and quotes
 // any other value with quote unless it is already a literal.

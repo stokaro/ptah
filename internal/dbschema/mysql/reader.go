@@ -13,8 +13,11 @@ import (
 	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"ptah.run/catalog"
+	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/dialect/mysql/mysqlschema"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/mysqlsystemdb"
@@ -1896,28 +1899,60 @@ func (r *Reader) readNameOnlyCheckConstraintClauses(ctx context.Context, dbName 
 	return rows.Err()
 }
 
-// parseEnumValues parses enum values from MySQL column type
+// parseEnumValues reads the values of a MySQL enum column type, such as
+// enum('a','b'). The catalog writes each value as a string literal: measured
+// on MySQL 26.10 and MariaDB 12.3, the value e\f is written 'e\\f', and a
+// quote inside a value is doubled. Each value is read as the server reads the
+// literal, so one holding a comma, a quote or a backslash is one value. An
+// empty value is left out, and a list that is not literals separated by commas
+// reads as no values.
 func parseEnumValues(columnType string) []string {
-	// Remove "enum(" and ")" from the string
-	if !strings.HasPrefix(columnType, "enum(") {
+	body, ok := strings.CutPrefix(columnType, "enum(")
+	if !ok || !strings.HasSuffix(body, ")") {
 		return nil
 	}
-
-	valuesPart := strings.TrimPrefix(columnType, "enum(")
-	valuesPart = strings.TrimSuffix(valuesPart, ")")
-
-	// Split by comma and clean up quotes
+	body = body[:len(body)-1]
+	lexing := dialectlexer.Options(platform.MySQL)
 	var values []string
-	parts := strings.SplitSeq(valuesPart, ",")
-	for part := range parts {
-		part = strings.TrimSpace(part)
-		part = strings.Trim(part, "'\"")
-		if part != "" {
-			values = append(values, part)
+	for i := 0; i < len(body); i++ {
+		switch quote := body[i]; quote {
+		case ' ', ',':
+			continue
+		case '\'', '"':
+			end := closingQuote(body, i, quote)
+			if end < 0 {
+				return nil
+			}
+			value, read := lexer.StringValue(body[i:end+1], lexing)
+			if !read {
+				return nil
+			}
+			if value != "" {
+				values = append(values, value)
+			}
+			i = end
+		default:
+			return nil
 		}
 	}
-
 	return values
+}
+
+// closingQuote returns the position of the quote that closes the literal
+// opening at start in text, reading a doubled quote and a backslash escape as
+// part of the literal, or -1 when nothing closes it.
+func closingQuote(text string, start int, quote byte) int {
+	for i := start + 1; i < len(text); i++ {
+		switch {
+		case text[i] == '\\':
+			i++
+		case text[i] == quote && i+1 < len(text) && text[i+1] == quote:
+			i++
+		case text[i] == quote:
+			return i
+		}
+	}
+	return -1
 }
 
 // parameterDeclaration spells one routine parameter the way CREATE accepts it.

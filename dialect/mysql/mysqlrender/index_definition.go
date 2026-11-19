@@ -37,10 +37,15 @@ func QuoteQualifiedIdentifier(identifier string) string {
 	}
 }
 
-// QuoteString writes a string literal in single quotes, doubling a single
-// quote inside it.
+// QuoteString writes value as a string literal in single quotes, doubling
+// each backslash and then each single quote inside it. Under MySQL's and
+// MariaDB's default sql_mode a backslash in a string escapes the character
+// after it: measured on MySQL 26.10 and MariaDB 12.3, `'a\b'` stores a and a
+// backspace and `'c\d'` stores cd, where `'a\\b'` stores the three
+// characters. Under NO_BACKSLASH_ESCAPES the doubled backslash is stored
+// twice.
 func QuoteString(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	return "'" + strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), "'", "''") + "'"
 }
 
 // HiddenIndexWord is how dialect says whether the optimizer uses an index:

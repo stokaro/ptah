@@ -29,6 +29,16 @@ func TestLowerInlineEnums(t *testing.T) {
 			wantType: "enum('a','it''s')",
 		},
 		{
+			name: "mysql, a backslash, which escapes", dialect: "mysql",
+			field:    schemamodel.Field{Name: "s", Type: "ENUM", Enum: []string{`e\f`, "it's"}},
+			wantType: `enum('e\\f','it''s')`,
+		},
+		{
+			name: "sqlite, a backslash, which is a character", dialect: "sqlite",
+			field:    schemamodel.Field{Name: "s", Type: "ENUM", Enum: []string{`e\f`}},
+			wantType: "TEXT", wantCheck: `s IN ('e\f')`,
+		},
+		{
 			name: "mariadb named enum", dialect: "mariadb",
 			field:    schemamodel.Field{Name: "s", Type: "status"},
 			wantType: "enum('a','b')",

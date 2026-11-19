@@ -555,6 +555,12 @@ SQL:
   or without the `=`, hold the text the server stores. A doubled quote and a
   backslash escape are read as the server reads them, and of two `COMMENT`
   clauses on one column the last is kept.
+- A Go or YAML literal default, a column, table or index comment and an enum
+  value are written with each backslash doubled and each quote doubled, so
+  `a\b` stores those three characters under the default `sql_mode`. A text
+  default is compared by the string it stores, so `'it\'s'` and `'it''s'` are
+  one default. A literal `NULL` on a text column is the string `'NULL'`; a
+  schema file writes SQL `NULL` without quotes.
 
 ## Table options
 

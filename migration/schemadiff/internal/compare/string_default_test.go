@@ -162,6 +162,12 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 		{name: "PostgreSQL, a number expression on a text column", dialect: platform.Postgres, columnType: "text", expression: "(1)", reported: "1"},
 		{name: "PostgreSQL, a quoted number on an integer", dialect: platform.Postgres, columnType: "integer", literal: "-1", reported: "'-1'::integer"},
 		{name: "Oracle, a literal on a CLOB", dialect: platform.Oracle, columnType: "CLOB", literal: "none", reported: "'none'"},
+		{name: "MySQL, a bare literal with a backslash", dialect: platform.MySQL, columnType: "varchar(30)", literal: `a\b`, reported: `'a\\b'`},
+		{name: "MariaDB, a bare literal with a backslash before a quote", dialect: platform.MariaDB, columnType: "varchar(30)", literal: `it\'s`, reported: `'it\\''s'`},
+		{name: "MySQL, a quote escaped with a backslash against a doubled one", dialect: platform.MySQL, columnType: "varchar(30)", literal: `'it\'s'`, reported: `'it''s'`},
+		{name: "ClickHouse, a bare literal with a backslash", dialect: platform.ClickHouse, columnType: "String", literal: `a\b`, reported: `'a\\b'`},
+		{name: "ClickHouse, a bare literal with a quote", dialect: platform.ClickHouse, columnType: "Nullable(String)", literal: `it's;x`, reported: `'it\'s;x'`},
+		{name: "PostgreSQL, a bare literal with a backslash", dialect: platform.Postgres, columnType: "text", literal: `a\b`, reported: `'a\b'::text`},
 		{name: "Oracle, a sequence reference on a text column", dialect: platform.Oracle, columnType: "VARCHAR2(30)", expression: "app.seq.NEXTVAL", reported: `"APP"."SEQ"."NEXTVAL"`},
 		{name: "SQL Server, a sequence clause on a text column", dialect: platform.SQLServer, columnType: "nvarchar(30)", expression: "NEXT VALUE FOR s", reported: "(NEXT VALUE FOR [s])"},
 	}
@@ -174,6 +180,39 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)
 
 			c.Assert(result.Changes, qt.DeepEquals, make(map[string]string))
+		})
+	}
+}
+
+// Where a backslash escapes, a backslash the declaration holds is not the
+// escape a catalog spelling starts: a bare a\b is three characters, and the
+// reported 'a\b' is a and a backspace.
+func TestColumns_ABackslashIsNotTheEscapeItStarts(t *testing.T) {
+	rows := []struct {
+		name, dialect, columnType string
+		literal, reported         string
+		want                      map[string]string
+	}{
+		{
+			name: "MySQL", dialect: platform.MySQL, columnType: "varchar(30)",
+			literal: `a\b`, reported: `'a\b'`,
+			want: map[string]string{"default": `'a\b' -> a\b`},
+		},
+		{
+			name: "ClickHouse", dialect: platform.ClickHouse, columnType: "String",
+			literal: `a\b`, reported: `'a\b'`,
+			want: map[string]string{"default": `'a\b' -> a\b`},
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultSet: true}
+			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: new(row.reported)}
+
+			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)
+
+			c.Assert(result.Changes, qt.DeepEquals, row.want)
 		})
 	}
 }

@@ -3188,6 +3188,12 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 			expectedType: "ENUM('normal', '''; DROP TABLE users; --')",
 		},
 		{
+			name:         "MariaDB enum with a backslash, which escapes there",
+			platform:     "mariadb",
+			enumValues:   []string{`e\f`, "g"},
+			expectedType: `ENUM('e\\f', 'g')`,
+		},
+		{
 			name:         "MySQL enum with consecutive quotes",
 			platform:     "mysql",
 			enumValues:   []string{"test", "''quoted''"},
