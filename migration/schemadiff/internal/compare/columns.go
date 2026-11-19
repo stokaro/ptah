@@ -1205,7 +1205,63 @@ func columnDefaultsEqual(declared, reported, typeName, dialect string, declaredI
 	if same, recognized := compareTemporalDefaultFunctions(declared, reported, typeName, dialect, declaredIsExpression); recognized {
 		return same
 	}
-	return normalize.DefaultValue(declared, typeName) == normalize.DefaultValue(reported, typeName)
+	return !stringMeetsExpression(declared, reported, typeName, declaredIsExpression) &&
+		normalize.DefaultValue(declared, typeName) == normalize.DefaultValue(reported, typeName)
+}
+
+// stringMeetsExpression reports whether one default is a string and the other
+// an expression, on a column that stores text. [normalize.DefaultValue] takes
+// the quotes off a string, so without this check `'1 + 2'` and `(1 + 2)` are one
+// default, and the column that stores the five characters is never changed to
+// the one that stores 3. The same holds in the other direction, and for
+// `'now()'` against `now()`.
+//
+// A number is not held to this, because a catalog may report a numeric default
+// of a text column bare, as PostgreSQL reports `DEFAULT 0` on a varchar. An
+// empty reported default is left to the comparison as well, since MySQL
+// reports an empty string default as an empty value. So is a declared literal
+// without quotes, as a Go or YAML model writes one: the catalog shape built
+// from such a model carries it without quotes too, and there the characters of
+// a string and of an expression cannot be told apart.
+func stringMeetsExpression(declared, reported, typeName string, declaredIsExpression bool) bool {
+	if strings.TrimSpace(reported) == "" || !storesText(typeName) {
+		return false
+	}
+	declaredString := normalize.IsStringLiteral(declared)
+	reportedString := normalize.IsStringLiteral(reported)
+	unquotedLiteral := !declaredIsExpression && !declaredString
+	switch {
+	case unquotedLiteral, declaredString == reportedString:
+		return false
+	case declaredString:
+		return !isBareNumber(reported)
+	default:
+		return !isBareNumber(declared)
+	}
+}
+
+// storesText reports whether a normalized column type holds characters.
+func storesText(typeName string) bool {
+	name := strings.ToLower(typeName)
+	return strings.Contains(name, "char") || strings.Contains(name, "text") ||
+		strings.Contains(name, "clob") || strings.Contains(name, "string") ||
+		strings.HasPrefix(name, "enum(") || strings.HasPrefix(name, "set(")
+}
+
+// isBareNumber reports whether a default is an unquoted decimal number, inside
+// any redundant parentheses.
+func isBareNumber(value string) bool {
+	number := strings.TrimLeft(normalize.Expression(value), "+-")
+	mantissa, exponent, scientific := strings.Cut(strings.ToLower(number), "e")
+	whole, fraction, _ := strings.Cut(mantissa, ".")
+	if scientific && !isDigits(strings.TrimLeft(exponent, "+-")) {
+		return false
+	}
+	return (whole != "" || fraction != "") && (whole == "" || isDigits(whole)) && (fraction == "" || isDigits(fraction))
+}
+
+func isDigits(value string) bool {
+	return value != "" && strings.Trim(value, "0123456789") == ""
 }
 
 // compareTemporalDefaultFunctions compares SQL Server's current-time defaults
