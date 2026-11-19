@@ -912,7 +912,7 @@ func indexDefinitionsChanged(
 		declaredPredicate = resolved.Predicate
 	}
 	if !nullsDistinctEqual(desired.NullsDistinct, database.NullsDistinct) ||
-		indexPredicateChanged(declaredPredicate, database.Condition, quotingOf(dialect), rules.IndexPredicates) ||
+		indexPredicateChanged(declaredPredicate, database.Condition, normalize.QuotingOf(dialect), rules.IndexPredicates) ||
 		indexPayloadChanged(desired.IncludeColumns, database.IncludeColumns, dialect, semantics) {
 		return true
 	}
@@ -929,7 +929,7 @@ func indexDefinitionsChanged(
 		return rules.IndexDefinitions.DefinitionChanged(generatedIndexWithResolvedExpression(desired, resolved), database, semantics)
 	case rules.Indexes != nil:
 		return desired.Unique != database.IsUnique ||
-			ruledIndexKeysChanged(generatedIndexWithResolvedExpression(desired, resolved), database, quotingOf(dialect), semantics) ||
+			ruledIndexKeysChanged(generatedIndexWithResolvedExpression(desired, resolved), database, normalize.QuotingOf(dialect), semantics) ||
 			coveredColumnsChanged(desired.IncludeColumns, database.IncludeColumns, semantics) ||
 			!rules.Indexes.OptionsEqual(desired, database)
 	default:

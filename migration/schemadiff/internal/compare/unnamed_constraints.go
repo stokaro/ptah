@@ -107,7 +107,7 @@ func foldNames(names []string, semantics identifier.Semantics) string {
 func newDeclaredConstraintKey(constraint schemamodel.Constraint, dialect string, semantics identifier.Semantics) tableMemberKey {
 	key := newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
 	if strings.TrimSpace(constraint.Name) == "" {
-		key.member = unnamedDeclaredDefinition(constraint).member(quotingOf(dialect), semantics)
+		key.member = unnamedDeclaredDefinition(constraint).member(normalize.QuotingOf(dialect), semantics)
 	}
 	return key
 }
@@ -117,7 +117,7 @@ func newDeclaredConstraintKey(constraint schemamodel.Constraint, dialect string,
 func newCatalogConstraintKey(constraint catalog.Constraint, dialect string, semantics identifier.Semantics) tableMemberKey {
 	key := newConstraintKey(constraint.QualifiedTableName(), constraint.Name, constraint.Type, semantics)
 	if strings.TrimSpace(constraint.Name) == "" {
-		key.member = unnamedCatalogDefinition(constraint).member(quotingOf(dialect), semantics)
+		key.member = unnamedCatalogDefinition(constraint).member(normalize.QuotingOf(dialect), semantics)
 	}
 	return key
 }

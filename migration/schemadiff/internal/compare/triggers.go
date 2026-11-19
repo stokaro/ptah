@@ -249,7 +249,7 @@ func TriggerDefinitions(
 	if genTrigger.ForEach != dbForEach {
 		triggerDiff.Changes["for"] = fmt.Sprintf("%s -> %s", dbForEach, genTrigger.ForEach)
 	}
-	if !sameTriggerCondition(genTrigger.When, dbTrigger.When, quotingOf(dialect)) {
+	if !sameTriggerCondition(genTrigger.When, dbTrigger.When, normalize.QuotingOf(dialect)) {
 		triggerDiff.Changes["when"] = fmt.Sprintf("%s -> %s", describeCondition(dbTrigger.When), describeCondition(genTrigger.When))
 	}
 	// A transition table's name is compared exactly: the renderer quotes it,

@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/core/platform"
 	"ptah.run/internal/normalize"
 )
 
@@ -63,6 +64,30 @@ func TestQuoting_OpensString(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(test.quoting.OpensString(test.value, 0), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestQuotingOf reads each built-in dialect's quoting from its descriptor:
+// PostgreSQL's E'...' strings, MySQL's and MariaDB's double-quoted strings and
+// backslash escapes, ClickHouse's backslash escapes in names too, and the SQL
+// standard for SQLite and for a dialect the registry does not know.
+func TestQuotingOf(t *testing.T) {
+	tests := []struct {
+		dialect string
+		want    normalize.Quoting
+	}{
+		{dialect: platform.Postgres, want: normalize.Quoting{EscapeStrings: true}},
+		{dialect: platform.MySQL, want: normalize.Quoting{Strings: `'"`, BackslashEscapes: true}},
+		{dialect: platform.MariaDB, want: normalize.Quoting{Strings: `'"`, BackslashEscapes: true}},
+		{dialect: platform.ClickHouse, want: normalize.Quoting{BackslashEscapes: true, IdentifierBackslashEscapes: true}},
+		{dialect: platform.SQLite, want: normalize.Quoting{}},
+		{dialect: "no-such-dialect", want: normalize.Quoting{}},
+	}
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(normalize.QuotingOf(test.dialect), qt.Equals, test.want)
 		})
 	}
 }

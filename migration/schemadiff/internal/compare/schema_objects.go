@@ -1036,7 +1036,7 @@ func schemaObjectBodiesEqual(generatedBody, databaseBody, dialect, databaseSchem
 		return true
 	}
 
-	quoting := quotingOf(dialect)
+	quoting := normalize.QuotingOf(dialect)
 	if bodyQualifiesRelation(desired, quoting) {
 		return false
 	}
@@ -1103,7 +1103,7 @@ func normalizeSQLBodyStrippingQualifiers(
 	body, dialect, schema string,
 	authored map[string]struct{},
 ) string {
-	quoting := quotingOf(dialect)
+	quoting := normalize.QuotingOf(dialect)
 	return canonicalizeNormalizedSQLBody(
 		stripSQLQualifiers(normalizeSQLBody(body, dialect), schema, authored, quoting),
 		dialect,
@@ -1116,7 +1116,7 @@ func normalizeSQLBodyStrippingQualifiers(
 // `SELECT t || ' a  b'` as `SELECT t || ' a b'`: two views that return
 // different values compare as one.
 func normalizeSQLBody(body, dialect string) string {
-	quoting := quotingOf(dialect)
+	quoting := normalize.QuotingOf(dialect)
 	body = strings.TrimSpace(body)
 	body = strings.TrimSuffix(body, ";")
 	body = strings.TrimSpace(body)
@@ -1128,7 +1128,7 @@ func normalizeSQLBody(body, dialect string) string {
 }
 
 func canonicalizeNormalizedSQLBody(body, dialect string) string {
-	quoting := quotingOf(dialect)
+	quoting := normalize.QuotingOf(dialect)
 	body = stripDefaultColumnAliases(body, quoting)
 	body = stripSimpleComparisonParentheses(body, quoting)
 	body = collapseWhitespaceOutsideQuotedSQL(body, quoting)
