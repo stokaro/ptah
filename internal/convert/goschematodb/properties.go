@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/schemapreparation"
 	"ptah.run/core/schemaprojection"
 	"ptah.run/core/schemaproperties"
+	"ptah.run/internal/schemaprep"
 )
 
 // Runtime selects source decoding, CREATE prediction, desired lowering and
@@ -70,6 +71,14 @@ func prepareSourceTableSets(
 	for i, source := range sources {
 		scoped, err := schemamodel.ScopeToTarget(source, selected)
 		if err != nil {
+			return nil, nil, err
+		}
+		// The creation projection keys each named constraint's facets by its
+		// table and name, so two CHECKs of one name in one table reach it as
+		// one owner declared twice. Refused here, the pair is reported as the
+		// server reports it; two tables are left to a caller that knows the
+		// server's dialect.
+		if err := schemaprep.ValidateCheckNamesWithinTables(scoped, selected.Name()); err != nil {
 			return nil, nil, err
 		}
 		// Decoding copies tables and indexes. Constraint facet destinations also

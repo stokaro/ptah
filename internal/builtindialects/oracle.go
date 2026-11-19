@@ -137,6 +137,14 @@ END;`,
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names: descriptor.Names{Lookup: "ascii_case_insensitive"},
+		// Measured on Oracle Free 23.26: a CHECK named ck on one table and ck
+		// or CK on another of the schema is refused, and "ck" and "Ck" are two
+		// names beside CK. The model keeps the quotes of a name only its quoted
+		// spelling reaches, and the identifier rules keep such a name apart.
+		CheckNames: descriptor.CheckNames{
+			Scope: descriptor.CheckNameScopeSchema, Comparison: "ascii_case_insensitive",
+			Refusal: "ORA-02264: name already used by an existing constraint",
+		},
 		// Measured on Oracle Free 23.26: an identity column reads back NOT
 		// NULL, declared so or not, and an auto-increment flag and a serial
 		// type are each written as one. Compared as declared, the plan writes

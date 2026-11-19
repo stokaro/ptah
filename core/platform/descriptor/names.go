@@ -86,6 +86,41 @@ const (
 	CheckNamingColumnOrConstraint CheckNaming = "column-or-constraint"
 )
 
+// CheckNames states where a server keeps the name of a CHECK unique, and how
+// it refuses a CHECK whose name is taken there.
+type CheckNames struct {
+	// Scope is where two CHECK constraints may not share a name. Empty states
+	// no scope, and no name is refused.
+	Scope CheckNameScope `json:"scope,omitempty"`
+	// Comparison is how two names in the scope are compared, spelled as a
+	// [Names] field spells its comparison. Empty compares them exactly as the
+	// model records them.
+	Comparison string `json:"comparison,omitempty"`
+	// Refusal is the first line of the error the dialect's driver reports when
+	// the server refuses the second CHECK, with {name} where the server writes
+	// that CHECK's name.
+	Refusal string `json:"refusal,omitempty"`
+	// TableRefusal is the first line of that error where both CHECKs belong to
+	// one table, where it differs from Refusal. Empty means Refusal.
+	TableRefusal string `json:"table_refusal,omitempty"`
+}
+
+// CheckNameScope is where a server keeps the name of a CHECK unique.
+type CheckNameScope string
+
+const (
+	// CheckNameScopeTable keeps one CHECK of a name per table.
+	CheckNameScopeTable CheckNameScope = "table"
+	// CheckNameScopeSchema keeps one CHECK of a name per schema, across its
+	// tables.
+	CheckNameScopeSchema CheckNameScope = "schema"
+)
+
+// CheckNameScopes returns every declared value of [CheckNameScope].
+func CheckNameScopes() []CheckNameScope {
+	return []CheckNameScope{CheckNameScopeTable, CheckNameScopeSchema}
+}
+
 // ConstraintNaming is how a server names a constraint a schema file leaves
 // unnamed.
 type ConstraintNaming string
@@ -358,7 +393,34 @@ func (d Dialect) validateNames() error {
 			"in characters, and the identifier limit states no length in characters",
 			ErrInvalidDescriptor, d.Name, d.CheckNaming)
 	}
+	if err := d.validateCheckNames(); err != nil {
+		return err
+	}
 	return d.validateForeignKeyNaming()
+}
+
+// validateCheckNames refuses a CHECK name scope that is not a declared one, a
+// comparison that is not one [Names] spells, and a scope without the refusal
+// it answers, or a refusal without a scope to give it.
+func (d Dialect) validateCheckNames() error {
+	names := d.CheckNames
+	if names.Scope != "" && !slices.Contains(CheckNameScopes(), names.Scope) {
+		return fmt.Errorf("%w: dialect %q: CHECK name scope %q is not one of %q",
+			ErrInvalidDescriptor, d.Name, names.Scope, CheckNameScopes())
+	}
+	if names.Comparison != "" && !slices.Contains(NameComparisons(), names.Comparison) {
+		return fmt.Errorf("%w: dialect %q: CHECK names comparison %q is not one of %q",
+			ErrInvalidDescriptor, d.Name, names.Comparison, NameComparisons())
+	}
+	if (names.Scope == "") != (names.Refusal == "") {
+		return fmt.Errorf("%w: dialect %q: CHECK names state a scope and the refusal it answers together, or neither",
+			ErrInvalidDescriptor, d.Name)
+	}
+	if names.Scope == "" && (names.Comparison != "" || names.TableRefusal != "") {
+		return fmt.Errorf("%w: dialect %q: CHECK names state a comparison or a table refusal without a scope",
+			ErrInvalidDescriptor, d.Name)
+	}
+	return nil
 }
 
 // validateTableOptions checks TableOptions: each names an option and a

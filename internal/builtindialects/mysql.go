@@ -139,6 +139,13 @@ func mysql() descriptor.Dialect {
 			MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true, BaseBytes: 61,
 		},
 		CheckNaming: descriptor.CheckNamingTableNumbered,
+		// Measured on 26.10.0: a CHECK named ck on one table and ck or CK on
+		// another of the database is refused, and so is ÉK after ék; ek and ék
+		// are two names.
+		CheckNames: descriptor.CheckNames{
+			Scope: descriptor.CheckNameScopeSchema, Comparison: "unicode_case_insensitive",
+			Refusal: "Error 3822 (HY000): Duplicate check constraint name '{name}'.",
+		},
 		Columns: descriptor.Columns{
 			NationalCharAsChar: true, NationalCharCharset: "utf8mb3", CheckOwnColumnOnly: true,
 			Collations: true, InheritedCollationVaries: true,

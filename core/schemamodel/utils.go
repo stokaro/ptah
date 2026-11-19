@@ -1829,7 +1829,16 @@ func constraintDedupKey(c Constraint) string {
 	if strings.TrimSpace(c.Table) != "" {
 		scope = strings.TrimSpace(c.Table)
 	}
-	return constraintIdentity(scope, c)
+	key := constraintIdentity(scope, c)
+	// Two CHECKs of one name and table with different conditions are two
+	// declarations, and keeping both lets the validation of CHECK names refuse
+	// them as the server does. Folded by name alone, the second condition is
+	// dropped without a word. The identity itself stays the name, so two Go
+	// sources that give one CHECK two conditions still conflict.
+	if strings.TrimSpace(c.Name) != "" && strings.EqualFold(strings.TrimSpace(c.Type), "CHECK") {
+		key += "\x00" + strings.TrimSpace(c.CheckExpression)
+	}
+	return key
 }
 
 func constraintIdentity(scope string, constraint Constraint) string {

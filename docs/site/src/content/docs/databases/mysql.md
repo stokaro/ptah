@@ -425,6 +425,16 @@ SQL:
   check of the table holds, the names the same statement writes included.
   MariaDB takes one check on a column and answers `ERROR 1064` to a second,
   and Ptah refuses it the same way.
+- A `CHECK` name the declaration writes is held where the server holds it.
+  MySQL holds it once per schema, across its tables, and compares it without
+  case but with accents: `ck` and `CK` are one name, `ek` and `ék` two.
+  MariaDB holds it once per table. Two `CHECK` constraints of one name are
+  refused before any statement runs, and the refusal ends with the server's
+  own error, such as `Error 3822 (HY000): Duplicate check constraint name
+  'CK'.` on MySQL and `Error 1826 (HY000): Duplicate CHECK constraint name
+  'DD'` on MariaDB. Against a live server the scope is that of the server that
+  answers, so a `mysql://` URL that reaches MariaDB holds a name per table.
+  Measured on MySQL 26.10 and MariaDB 12.3.
 - A column `check` declared in YAML or a Go annotation without `check_name`
   is written without a name, and the comparison looks for the name the server
   gives it: `<table>_chk_<n>` on MySQL, numbered in column order among the

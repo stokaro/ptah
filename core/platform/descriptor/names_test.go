@@ -75,6 +75,30 @@ func TestNewRegistry_SchemaFileFields_FailurePath(t *testing.T) {
 		}),
 			wantErr: `invalid dialect descriptor: dialect "alpha": check naming "table-numbered" refuses a derived name ` +
 				`longer than the identifier limit in characters, and the identifier limit states no length in characters`},
+		{name: "an undeclared CHECK name scope", dialect: with(func(d *descriptor.Dialect) {
+			d.CheckNames = descriptor.CheckNames{Scope: "database", Refusal: "refused"}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": CHECK name scope "database" is not one of \["table" "schema"\]`},
+		{name: "an undeclared CHECK names comparison", dialect: with(func(d *descriptor.Dialect) {
+			d.CheckNames = descriptor.CheckNames{Scope: descriptor.CheckNameScopeSchema, Comparison: "fold", Refusal: "refused"}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": CHECK names comparison "fold" is not one of .*`},
+		{name: "a CHECK name scope without the refusal it answers", dialect: with(func(d *descriptor.Dialect) {
+			d.CheckNames = descriptor.CheckNames{Scope: descriptor.CheckNameScopeTable}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": CHECK names state a scope and the refusal it answers together, or neither`},
+		{name: "a CHECK name refusal without a scope", dialect: with(func(d *descriptor.Dialect) {
+			d.CheckNames = descriptor.CheckNames{Refusal: "refused"}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": CHECK names state a scope and the refusal it answers together, or neither`},
+		{name: "a CHECK names comparison without a scope", dialect: with(func(d *descriptor.Dialect) {
+			d.CheckNames = descriptor.CheckNames{Comparison: "exact"}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": CHECK names state a comparison or a table refusal without a scope`},
+		{name: "a CHECK table refusal without a scope", dialect: with(func(d *descriptor.Dialect) {
+			d.CheckNames = descriptor.CheckNames{TableRefusal: "refused"}
+		}),
+			wantErr: `invalid dialect descriptor: dialect "alpha": CHECK names state a comparison or a table refusal without a scope`},
 		{name: "an undeclared foreign key naming", dialect: with(func(d *descriptor.Dialect) {
 			d.ForeignKeyNaming = "numbered"
 			d.IndexNaming.MaxBytes = 64

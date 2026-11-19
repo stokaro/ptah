@@ -90,6 +90,8 @@ type createdConstraint struct {
 	indexed bool
 	// what names the constraint in an error.
 	what string
+	// check reports a CHECK.
+	check bool
 }
 
 // createdNames is what one PostgreSQL CREATE TABLE's naming pass knows: the
@@ -101,6 +103,10 @@ type createdNames struct {
 	// held maps a name one of the statement's constraints took to that
 	// constraint, for an error to name.
 	held map[string]string
+	// writtenChecks holds the names the statement writes for its CHECKs.
+	writtenChecks map[string]bool
+	// checkNamesRefused is the dialect fact of that name.
+	checkNamesRefused bool
 	// table is the table the statement creates, for an error to name.
 	table string
 }
@@ -163,6 +169,7 @@ func nameCreatedConstraints(
 		return nil
 	}
 	names := statementNames(database, base, table, created)
+	names.checkNamesRefused = factsOf(sourcePlatform).checkNamesRefused
 	statement := &createdStatement{
 		table:       table,
 		fields:      database.Fields[created.fields:],
@@ -268,10 +275,11 @@ func statementNames(
 	relations := pgname.RelationNames(databases, table.Schema)
 	relations.Claim(table.Name)
 	return &createdNames{
-		constraints: constraintNamesInSchema(databases, table.Schema),
-		relations:   relations,
-		held:        make(map[string]string),
-		table:       table.QualifiedName(),
+		constraints:   constraintNamesInSchema(databases, table.Schema),
+		relations:     relations,
+		held:          make(map[string]string),
+		writtenChecks: make(map[string]bool),
+		table:         table.QualifiedName(),
 	}
 }
 
@@ -282,7 +290,11 @@ func (n *createdNames) settle(constraints []createdConstraint) error {
 	for _, constraint := range constraints {
 		name := constraint.written
 		if name != "" {
-			if holder, held := n.held[name]; held {
+			// A CHECK named as another CHECK the statement names is refused
+			// for every kind of source by schemaprep.ValidateCheckNames, in
+			// the words the server answers with; what is refused here is a
+			// name the server derived or a constraint of another kind holds.
+			if holder, held := n.held[name]; held && (!constraint.check || !n.writtenChecks[name] || !n.checkNamesRefused) {
 				return fmt.Errorf("%w: CREATE TABLE %s gives the name %s to %s, which %s already holds "+
 					"when the server builds it, and PostgreSQL refuses the statement; name one of them differently",
 					ErrDuplicateConstraintName, n.table, name, constraint.what, holder)
@@ -298,6 +310,9 @@ func (n *createdNames) settle(constraints []createdConstraint) error {
 			n.relations.Claim(name)
 		}
 		n.held[name] = constraint.what
+		if constraint.check && constraint.written != "" {
+			n.writtenChecks[name] = true
+		}
 	}
 	return nil
 }
@@ -362,8 +377,9 @@ func (s *createdStatement) checks() []createdConstraint {
 			derive: func(taken func(string) bool) string {
 				return pgname.Check(s.table.Name, field.Check, columns, taken)
 			},
-			keep: func(name string) { field.CheckName = name },
-			what: fmt.Sprintf("the CHECK (%s) of column %s", field.Check, field.Name),
+			keep:  func(name string) { field.CheckName = name },
+			what:  fmt.Sprintf("the CHECK (%s) of column %s", field.Check, field.Name),
+			check: true,
 		})
 	}
 	for i := range s.constraints {
@@ -377,8 +393,9 @@ func (s *createdStatement) checks() []createdConstraint {
 			derive: func(taken func(string) bool) string {
 				return pgname.Check(s.table.Name, constraint.CheckExpression, columns, taken)
 			},
-			keep: func(name string) { constraint.Name = name },
-			what: fmt.Sprintf("the CHECK (%s)", constraint.CheckExpression),
+			keep:  func(name string) { constraint.Name = name },
+			what:  fmt.Sprintf("the CHECK (%s)", constraint.CheckExpression),
+			check: true,
 		})
 	}
 	return checks

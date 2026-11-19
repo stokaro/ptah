@@ -208,6 +208,11 @@ PostgreSQL release lines differ in grammar that reaches generated SQL:
   older line Ptah refuses the declaration rather than render a constraint the
   server would check; see
   [Constraint enforcement and the MATCH type](#constraint-enforcement-and-the-match-type).
+- A `CHECK` name is held once per table: two tables may each hold a `CHECK`
+  named `ck`, and two `CHECK` constraints of one name in one table, on a
+  column or on the table, are refused before any statement runs, with the
+  server's own error, `ERROR: check constraint "dd" already exists (SQLSTATE
+  42710)`. An unquoted name is read folded to lower case, so `DD` is `dd`.
 
 ## Schema objects
 

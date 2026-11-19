@@ -128,3 +128,34 @@ func TestUnquotedFold_EqualReadsTheBareCharacters(t *testing.T) {
 	c.Assert(semantics.Equal(without), qt.IsFalse)
 	c.Assert(without.TableIdentityKey(`"a$b"`), qt.Equals, without.TableIdentityKey("A$B"))
 }
+
+// TestNameIdentityKey_ComparesUnderTheGivenComparison keys a name of a kind
+// the semantics state no comparison for, such as a CHECK name, under the
+// comparison the caller names, with the target's quoted-name rule: on Oracle a
+// quoted name only its quoted spelling reaches keeps its quotes, and a quoted
+// name already in the fold's case keys as its unquoted spelling.
+func TestNameIdentityKey_ComparesUnderTheGivenComparison(t *testing.T) {
+	tests := []struct {
+		name       string
+		dialect    string
+		comparison identifier.Comparison
+		value      string
+		want       string
+	}{
+		{name: "an unquoted name folds", dialect: "oracle", comparison: identifier.ComparisonASCIIInsensitive, value: "CK", want: "ck"},
+		{name: "a quoted name in the fold's case folds", dialect: "oracle", comparison: identifier.ComparisonASCIIInsensitive, value: `"CK"`, want: "ck"},
+		{name: "a quoted name out of the fold's case keeps its quotes", dialect: "oracle", comparison: identifier.ComparisonASCIIInsensitive, value: `"Ck"`, want: `"Ck"`},
+		{name: "a Unicode comparison folds every letter", dialect: "mysql", comparison: identifier.ComparisonUnicodeInsensitive, value: "ÉK", want: "ék"},
+		{name: "an ASCII comparison keeps a letter beyond ASCII", dialect: "mysql", comparison: identifier.ComparisonASCIIInsensitive, value: "ÉK", want: "Ék"},
+		{name: "the empty comparison compares exactly", dialect: "postgres", comparison: "", value: "DD", want: "DD"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := identifier.ForDialect(test.dialect).NameIdentityKey(test.comparison, test.value)
+
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}

@@ -168,6 +168,13 @@ The statement reads the mark when it runs, inside the plan's transaction. The
 copy keeps the larger of the two values, and the rename gives the row the
 table's name, so the next row after the example above gets 4.
 
+## Two CHECK constraints of one name
+
+SQLite builds a table holding two `CHECK` constraints of one name. Ptah refuses
+the pair before anything runs, because it tells the constraints of a table apart
+by name and could neither compare nor drop one of them. Give one of them another
+name.
+
 ## A column default with an operator
 
 SQLite takes an expression default only in parentheses. SQLite 3.54 answers a

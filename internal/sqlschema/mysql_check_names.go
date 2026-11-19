@@ -11,20 +11,8 @@ import (
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/mysqlname"
+	"ptah.run/internal/schemaprep"
 )
-
-// ErrDuplicateCheckName is the class of a CHECK the server would name after
-// another CHECK already holds the name.
-//
-// Neither engine moves a derived name out of the way. Measured on MySQL 8.4.11
-// and 26.7.0, an unnamed CHECK of `f2` beside `CONSTRAINT f2_chk_1 CHECK (...)`,
-// written before or after it, in either case, or on another table of the
-// database, is `ERROR 3822 (HY000): Duplicate check constraint name`. Measured
-// on MariaDB 11.8.9, `a int CHECK (a > 0), CONSTRAINT a CHECK (a < 9)` is
-// `ERROR 1826 (HY000): Duplicate CHECK constraint name 'a'`. A model holding
-// both would carry two CHECKs under one name, and the document is refused as
-// the server refuses it.
-var ErrDuplicateCheckName = errors.New("two CHECK constraints claim the same name")
 
 // ErrCheckNameTooLong is the class of a CHECK name MySQL derives past the
 // longest identifier it keeps, the descriptor's IdentifierLimit. See
@@ -240,7 +228,9 @@ func mariaDBCheckNameTaken(databases []*schemamodel.Database, table schemamodel.
 
 // refuseMariaDBColumnCheckName refuses a table-level CHECK written under the
 // name of a column that carries a CHECK: MariaDB names the column's CHECK after
-// the column, and answers ERROR 1826 to the second name.
+// the column, and answers ERROR 1826 to the second name. Measured on 11.8.9,
+// `a int CHECK (a > 0), CONSTRAINT a CHECK (a < 9)` is `ERROR 1826 (HY000):
+// Duplicate CHECK constraint name 'a'`.
 func refuseMariaDBColumnCheckName(databases []*schemamodel.Database, table schemamodel.Table) error {
 	for _, database := range databases {
 		if database == nil {
@@ -255,7 +245,7 @@ func refuseMariaDBColumnCheckName(databases []*schemamodel.Database, table schem
 					strings.EqualFold(constraint.Name, field.CheckName) {
 					return fmt.Errorf("%w: %s names a CHECK of %s, and so does the CHECK on column %s, "+
 						"which MariaDB names after the column; MariaDB answers ERROR 1826",
-						ErrDuplicateCheckName, constraint.Name, table.Name, field.Name)
+						schemaprep.ErrDuplicateCheckName, constraint.Name, table.Name, field.Name)
 				}
 			}
 		}
@@ -295,7 +285,13 @@ func refuseMySQLCheckName(databases []*schemamodel.Database, table schemamodel.T
 	return nil
 }
 
+// duplicateMySQLCheckName refuses a name MySQL derives for an unnamed CHECK of
+// table that another CHECK already holds. MySQL does not move a derived name
+// out of the way: measured on 8.4.11 and 26.7.0, an unnamed CHECK of `f2`
+// beside `CONSTRAINT f2_chk_1 CHECK (...)`, written before or after it, in
+// either case, or on another table of the database, is `ERROR 3822 (HY000):
+// Duplicate check constraint name`.
 func duplicateMySQLCheckName(held string, table schemamodel.Table) error {
 	return fmt.Errorf("%w: %s, the name MySQL gives an unnamed CHECK of %s, is held by another "+
-		"CHECK, and MySQL answers ERROR 3822", ErrDuplicateCheckName, held, table.Name)
+		"CHECK, and MySQL answers ERROR 3822", schemaprep.ErrDuplicateCheckName, held, table.Name)
 }

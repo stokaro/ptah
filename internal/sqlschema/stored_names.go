@@ -21,6 +21,9 @@ import (
 // are stored as one, in a namespace where the server refuses the second.
 var ErrStoredNameCollision = errors.New("two names the file writes are stored as one")
 
+// checkKind is the kind a CHECK's name is recorded under.
+const checkKind = "check"
+
 // ErrNameInUse is the refusal of a file that declares a name already in use in
 // a namespace where the server refuses the second declaration, such as an
 // index named like a table, or a table created twice without IF NOT EXISTS.
@@ -295,6 +298,11 @@ func (s *storedNames) claimName(space, owner, kind, written string, rule onExist
 	// declares again, in words of its own; a name taken across kinds, or within
 	// one file, is this check's.
 	if previous.file != s.file && previous.kind == kind {
+		return true, nil
+	}
+	// Two CHECKs of one name are refused for every kind of source, in the
+	// server's words, where the descriptor states where it keeps the name.
+	if kind == checkKind && previous.kind == checkKind && factsOf(s.sourcePlatform).checkNamesRefused {
 		return true, nil
 	}
 	if s.duplicate == nil {
@@ -779,7 +787,7 @@ func (s *storedNames) column(table relation, column *ast.ColumnNode, rule onExis
 	}
 	owner := table.tableKey()
 	owned := ownership{table: owner, columns: []string{s.storedColumn(column.Name)}}
-	names := []struct{ kind, name string }{{"check", column.CheckName}, {"not-null constraint", column.NotNullConstraintName}}
+	names := []struct{ kind, name string }{{checkKind, column.CheckName}, {"not-null constraint", column.NotNullConstraintName}}
 	if column.ForeignKey != nil {
 		names = append(names, struct{ kind, name string }{"foreign key", column.ForeignKey.Name})
 	}
@@ -885,7 +893,7 @@ func constraintKind(kind ast.ConstraintType) string {
 	case ast.ForeignKeyConstraint:
 		return "foreign key"
 	case ast.CheckConstraint:
-		return "check"
+		return checkKind
 	default:
 		return "constraint"
 	}

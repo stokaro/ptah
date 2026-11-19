@@ -198,6 +198,9 @@ type Dialect struct {
 	// CheckNaming is how the server names a CHECK a schema file leaves
 	// unnamed. Empty keeps the name the rest of Ptah derives.
 	CheckNaming CheckNaming `json:"check_naming,omitempty"`
+	// CheckNames states where the server refuses a second CHECK of a name, and
+	// what it answers. The zero value refuses nothing.
+	CheckNames CheckNames `json:"check_names,omitzero"`
 	// ConstraintNaming is how the server names a CHECK, UNIQUE or FOREIGN
 	// KEY a schema file leaves unnamed, and a NOT NULL on a release that
 	// names one. Empty keeps the name the rest of Ptah derives.

@@ -37,6 +37,12 @@ Oracle keeps its condition as written, so the comparison matches it to the
 unnamed declaration by that condition, ignoring case and spacing, and a second
 plan is empty. A changed condition is a drop and an add.
 
+Oracle holds a constraint name once per schema, across its tables. Two `CHECK`
+constraints of one name are refused before any statement runs, with the error
+Oracle answers: `ORA-02264: name already used by an existing constraint`.
+Names compare as Oracle stores them, so `ck` and `"CK"` are one name, and
+`"ck"`, which keeps its lower case, is another.
+
 ## Identifiers and type mappings
 
 Identifiers are written **bare**, which is Oracle-only among the engines here

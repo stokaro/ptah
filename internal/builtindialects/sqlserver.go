@@ -118,6 +118,18 @@ END`,
 
 		// How a schema file's names are read, and how unnamed indexes and CHECKs are named.
 		Names: descriptor.Names{Lookup: "unicode_case_insensitive"},
+		// Measured on SQL Server 2022 (16.0.4325.4) under the default
+		// SQL_Latin1_General_CP1_CI_AS collation: a CHECK named ck on one table
+		// and ck or CK on another of the schema is refused, and so is ÉK after
+		// ék, while a table of another schema holds ck. A database with a
+		// case-sensitive collation keeps ck and CK apart, and is refused here
+		// all the same.
+		CheckNames: descriptor.CheckNames{
+			Scope: descriptor.CheckNameScopeSchema, Comparison: "unicode_case_insensitive",
+			Refusal: "mssql: There is already an object named '{name}' in the database. (2714)",
+			TableRefusal: "mssql: Cannot create, drop, enable, or disable more than one constraint, column, index, " +
+				"or trigger named '{name}' in this context. Duplicate names are not allowed. (8168)",
+		},
 		// A read lists every database role, whatever schemas it covers.
 		Roles: descriptor.Roles{OutOfScope: descriptor.RoleScopeNone},
 		// A serial type is written with IDENTITY, and the server refuses a nullable identity

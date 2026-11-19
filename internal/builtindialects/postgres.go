@@ -138,6 +138,14 @@ func postgres() descriptor.Dialect {
 		Names:            descriptor.Names{Unquoted: "ascii_case_insensitive", PublicKeyword: true, RegclassConstants: true},
 		IndexNaming:      descriptor.IndexNaming{PrimaryKeySuffix: "pkey"},
 		ConstraintNaming: descriptor.ConstraintNamingTableColumnsSuffix,
+		// Measured on 18.6: two tables of a schema each hold a CHECK named ck,
+		// and one table refuses dd beside DD, which is stored as dd, and holds
+		// dd beside "DD". A schema file's unquoted name is read folded, so the
+		// model's names compare exactly.
+		CheckNames: descriptor.CheckNames{
+			Scope:   descriptor.CheckNameScopeTable,
+			Refusal: `ERROR: check constraint "{name}" already exists (SQLSTATE 42710)`,
+		},
 		// A column's collation is written after its type and read back from
 		// pg_attribute.attcollation. CockroachDB and YugabyteDB leave it
 		// unset: neither renderer path nor reader has been measured there.

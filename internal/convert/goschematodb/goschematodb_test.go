@@ -13,6 +13,7 @@ import (
 	"ptah.run/feature/pgextension"
 	"ptah.run/feature/pgtype"
 	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/internal/schemaprep"
 	"ptah.run/migration/schemadiff"
 )
 
@@ -111,7 +112,11 @@ func TestToDBSchema_FieldLevelConstraintsStayIdempotent(t *testing.T) {
 	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("field-level CHECK/FK should not produce a file-to-file churn diff: %#v", diff))
 }
 
-func TestToDBSchema_ExplicitConstraintOverridesFieldLevelConstraintWithSameName(t *testing.T) {
+// TestToDBSchema_AColumnCheckAndATableCheckOfOneName_FailurePath is a column's
+// CHECK and a table's CHECK under one name. PostgreSQL refuses the second
+// with SQLSTATE 42710, and keeping either one would drop a condition the
+// author wrote.
+func TestToDBSchema_AColumnCheckAndATableCheckOfOneName_FailurePath(t *testing.T) {
 	c := qt.New(t)
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
@@ -131,10 +136,12 @@ func TestToDBSchema_ExplicitConstraintOverridesFieldLevelConstraintWithSameName(
 		}},
 	}
 
-	got := must.Must(goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New())))
+	got, err := goschematodb.ToDBSchema(t.Context(), db, platform.Postgres, must.Must(builtin.New()))
 
-	c.Assert(got.Constraints, qt.HasLen, 1)
-	c.Assert(*got.Constraints[0].CheckClause, qt.Equals, "status IN ('active', 'disabled')")
+	c.Assert(err, qt.ErrorIs, schemaprep.ErrDuplicateCheckName)
+	c.Assert(err, qt.ErrorMatches, `two CHECK constraints claim the same name: table "users" declares CHECK "users_status_check" and CHECK "users_status_check", `+
+		`and the server keeps one CHECK of a name per table: ERROR: check constraint "users_status_check" already exists \(SQLSTATE 42710\)`)
+	c.Assert(got, qt.IsNil)
 }
 
 func TestToDBSchema_PreservesStructuralObjectIdentities(t *testing.T) {
