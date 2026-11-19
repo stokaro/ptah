@@ -125,13 +125,23 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	if err != nil {
 		return nil, err
 	}
+	defaults, aliases, err := r.readCharsetFacts(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if !selected.Valid {
-		return r.readServer(ctx, account)
+		server, err := r.readServer(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		server.CharsetDefaultCollations, server.CharsetAliases = defaults, aliases
+		return server, nil
 	}
 	schema, err := r.readDatabase(ctx, account, selected.String, referencedOutside(selected.String))
 	if err != nil {
 		return nil, err
 	}
+	schema.CharsetDefaultCollations, schema.CharsetAliases = defaults, aliases
 	// Roles and their grants are read only where the preset claims them, the
 	// same gate the ClickHouse reader uses. mysql.user and mysql.tables_priv
 	// need a privilege reading a table does not, so an account without it must
@@ -143,6 +153,68 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		}
 	}
 	return schema, nil
+}
+
+// readCharsetFacts reads the collation the server gives each character set
+// named without a collation, keyed by the character set in lower case, and
+// the character set utf8 names in this session; see
+// [catalog.Database.CharsetDefaultCollations] and
+// [catalog.Database.CharsetAliases]. The alias is asked of the server rather
+// than read from a setting, so it holds whatever decides it: MariaDB's
+// old_mode, or the alias MySQL fixes.
+func (r *Reader) readCharsetFacts(ctx context.Context) (defaults, aliases map[string]string, err error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT CHARACTER_SET_NAME, DEFAULT_COLLATE_NAME FROM information_schema.CHARACTER_SETS")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read character sets: %w", err)
+	}
+	defer rows.Close()
+	defaults = make(map[string]string)
+	for rows.Next() {
+		var charset, collation string
+		if err := rows.Scan(&charset, &collation); err != nil {
+			return nil, nil, fmt.Errorf("failed to read character sets: %w", err)
+		}
+		defaults[strings.ToLower(charset)] = collation
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("failed to read character sets: %w", err)
+	}
+	if err := r.readUTF8MB4Default(ctx, defaults); err != nil {
+		return nil, nil, err
+	}
+	var utf8 string
+	if err := r.db.QueryRowContext(ctx, "SELECT CHARSET(CONVERT('' USING utf8))").Scan(&utf8); err != nil {
+		return nil, nil, fmt.Errorf("failed to read the character set utf8 names: %w", err)
+	}
+	return defaults, map[string]string{"utf8": strings.ToLower(utf8)}, nil
+}
+
+// readUTF8MB4Default replaces the default collation of utf8mb4 in defaults
+// with MySQL's default_collation_for_utf8mb4 where the session has the
+// variable. A table or a column that names utf8mb4 and no collation takes that
+// variable's value, while information_schema.CHARACTER_SETS keeps reporting
+// utf8mb4_0900_ai_ci. MariaDB has no such variable, and its CHARACTER_SETS
+// reports what its character_set_collations selects, so the query answers no
+// row there and defaults stays as read.
+func (r *Reader) readUTF8MB4Default(ctx context.Context, defaults map[string]string) error {
+	rows, err := r.db.QueryContext(ctx, "SHOW SESSION VARIABLES LIKE 'default_collation_for_utf8mb4'")
+	if err != nil {
+		return fmt.Errorf("failed to read the default collation of utf8mb4: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, collation string
+		if err := rows.Scan(&name, &collation); err != nil {
+			return fmt.Errorf("failed to read the default collation of utf8mb4: %w", err)
+		}
+		if collation != "" {
+			defaults["utf8mb4"] = collation
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to read the default collation of utf8mb4: %w", err)
+	}
+	return nil
 }
 
 // readServer describes the databases a whole-server read covers, each under

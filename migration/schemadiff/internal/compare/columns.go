@@ -240,6 +240,9 @@ func tableColumnsWithSemantics(
 				rules:                spellings.ColumnRules,
 				receipts:             spellings.OwnerColumns.Compared[objectidentity.NewBuilder(semantics).ColumnParts(genTable.Schema, genTable.Name, genCol.Name).Key()],
 				generated:            spellings.GeneratedExpressions,
+				inheritedCollation:   prepared.InheritedCollations[genCol.Name],
+				charsetAliases:       spellings.charsetAliases,
+				charsetDefaults:      spellings.charsetDefaults,
 				semantics:            semantics,
 			})
 			// A comment-only difference has no entry in Changes, and it is
@@ -482,6 +485,17 @@ type columnContext struct {
 	// generated reads a generated column's expression on the target, nil
 	// where it registers no rule for it.
 	generated schemacomparison.GeneratedExpressions
+	// inheritedCollation is the collation the target's preparation resolved
+	// for a column that declares none
+	// ([schemapreparation.Table.InheritedCollations]), empty where it
+	// resolved none.
+	inheritedCollation string
+	// charsetAliases is [catalog.Database.CharsetAliases], nil where the read
+	// reports none.
+	charsetAliases map[string]string
+	// charsetDefaults is [catalog.Database.CharsetDefaultCollations], nil
+	// where the read reports none.
+	charsetDefaults map[string]string
 }
 
 // columnSpelling returns the server's spelling of the column's type and
@@ -553,8 +567,9 @@ func columnsWithDesiredDomains(
 	// change.
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnCollation]; owned {
 		applyColumnDifference(colDiff.Changes, "collation", receipt.Difference)
-	} else if change := columnCollationChange(genCol, dbCol, dialect); change != "" {
+	} else if change := columnCollationChange(genCol, dbCol, dialect, ctx.inheritedCollation, ctx.charsetAliases); change != "" {
 		colDiff.Changes["collation"] = change
+		colDiff.CharsetChange = columnCharsetChange(genCol, dbCol, dialect, ctx.inheritedCollation, ctx.charsetAliases, ctx.charsetDefaults)
 	}
 	if receipt, owned := ctx.receipts[schemacomparison.ColumnType]; owned {
 		applyColumnDifference(colDiff.Changes, "type", receipt.Difference)
@@ -627,19 +642,31 @@ func columnsWithDesiredDomains(
 // none declared for it: `COLLATE BINARY` on SQLite.
 //
 // Where the descriptor states InheritedCollationVaries, a column that declares
-// a collation is compared with the one it holds, and a column that declares
-// none is not compared ([declaredCollationHolds]).
-func columnCollationChange(desired schemamodel.Field, current catalog.Column, dialect string) string {
+// a collation is compared with the one it holds, and so is one the target's
+// preparation resolved an inherited collation for, inherited, where the
+// current side holds a collation. A column with neither is not compared
+// ([declaredCollationHolds]). aliases, where the read
+// reports them, take the place of the descriptor's character set aliases.
+func columnCollationChange(desired schemamodel.Field, current catalog.Column, dialect, inherited string, aliases map[string]string) string {
 	facts := columnFactsOf(dialect)
 	if !facts.Collations {
 		return ""
 	}
 	if facts.InheritedCollationVaries {
 		held := heldCollation(current)
-		if declaredCollationHolds(desired.Collate, desired.Type, held, facts.CollationNames) {
+		declared := desired.Collate
+		// An inherited collation is compared only with one the current side
+		// holds. A read reports a collation for every column of a type that
+		// holds one; a current side projected from a document, such as the
+		// --from file of a diff, holds none for a column that names none, and
+		// states nothing to compare it with.
+		if declared == "" && held != "" {
+			declared = inherited
+		}
+		if declaredCollationHolds(declared, desired.Type, held, collationNamesOn(facts.CollationNames, aliases)) {
 			return ""
 		}
-		return held + " -> " + desired.Collate
+		return held + " -> " + declared
 	}
 	change := current.Collate + " -> " + desired.Collate
 	if qualifiedCollations.Get(dialect) {
@@ -686,6 +713,81 @@ func declaredCollationHolds(declared, declaredType, held string, names descripto
 	if held == "" && len(names.Types) > 0 && !slices.Contains(names.Types, collatedTypeName(declaredType)) {
 		return true
 	}
+	return sameStoredCollation(declared, held, names)
+}
+
+// columnCharsetChange is the change of character set that the change of a
+// column's collation [columnCollationChange] reports makes, nil where the
+// character set stays or either side names none known. known is
+// [catalog.Database.CharsetDefaultCollations], whose keys are the character
+// sets the read reports.
+func columnCharsetChange(desired schemamodel.Field, current catalog.Column, dialect, inherited string, aliases, known map[string]string) *difftypes.CharsetChange {
+	facts := columnFactsOf(dialect)
+	if !facts.InheritedCollationVaries {
+		return nil
+	}
+	declared := desired.Collate
+	if declared == "" {
+		declared = inherited
+	}
+	return charsetChange(heldCollation(current), declared, collationNamesOn(facts.CollationNames, aliases), known)
+}
+
+// tableCollationChange is the change of a table's default collation from
+// held to declared, the one the target's preparation resolved, on a target
+// whose descriptor states InheritedCollationVaries, with the change of
+// character set it makes. It is nil where declared is empty, which compares
+// nothing, or names the collation held. aliases are as
+// [columnCollationChange] reads them, and known as [columnCharsetChange]
+// reads it.
+func tableCollationChange(dialect, declared, held string, aliases, known map[string]string) *difftypes.CollationChange {
+	facts := columnFactsOf(dialect)
+	names := collationNamesOn(facts.CollationNames, aliases)
+	if !facts.Collations || !facts.InheritedCollationVaries || declared == "" || held == "" ||
+		sameStoredCollation(declared, held, names) {
+		return nil
+	}
+	return &difftypes.CollationChange{Current: held, Desired: declared, Charset: charsetChange(held, declared, names, known)}
+}
+
+// charsetChange is the change of character set that a change of collation
+// from held to declared makes, nil where both belong to one character set or
+// either belongs to none known.
+func charsetChange(held, declared string, names descriptor.CollationNames, known map[string]string) *difftypes.CharsetChange {
+	current, desired := collationCharset(held, names, known), collationCharset(declared, names, known)
+	if current == "" || desired == "" || current == desired {
+		return nil
+	}
+	return &difftypes.CharsetChange{Current: current, Desired: desired}
+}
+
+// collationCharset is the character set collation belongs to: the part of
+// its stored name before the first underscore, which is the whole name of the
+// binary collation. It is empty where that part is no key of known, as for
+// MariaDB's uca1400_ai_ci, which takes the character set of the column or the
+// table it is declared on.
+func collationCharset(collation string, names descriptor.CollationNames, known map[string]string) string {
+	charset, _, _ := strings.Cut(strings.ToLower(storedCollation(collation, names)), "_")
+	if _, found := known[charset]; !found {
+		return ""
+	}
+	return charset
+}
+
+// collationNamesOn is names with the character set aliases the read reports,
+// and names as they are where it reports none: utf8 names utf8mb4 on a MariaDB
+// whose old_mode leaves out UTF8_IS_UTF8MB3, where the descriptor says
+// utf8mb3.
+func collationNamesOn(names descriptor.CollationNames, aliases map[string]string) descriptor.CollationNames {
+	if aliases != nil {
+		names.CharsetAliases = aliases
+	}
+	return names
+}
+
+// sameStoredCollation reports whether declared and held name one collation
+// once each is spelled as the server stores it.
+func sameStoredCollation(declared, held string, names descriptor.CollationNames) bool {
 	declared, held = storedCollation(declared, names), storedCollation(held, names)
 	if strings.EqualFold(declared, held) {
 		return true

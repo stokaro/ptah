@@ -74,6 +74,22 @@ type Table struct {
 	// shared comparison of predicates; the source declaration in Desired keeps
 	// the predicate it was written with.
 	IndexConditions map[string]string
+	// InheritedCollations holds the collation the target gives each declared
+	// column that names none, keyed by the column's declared name: the default
+	// collation of the character set the column names, or the table's default
+	// collation. It is output-only, and a target that resolves none leaves it
+	// nil. A column with no entry and no declared collation is not compared on
+	// its collation. The column comparison compares an entry as if the column
+	// declared it; the source declaration in Desired keeps naming none, so a
+	// planned statement restates the column without a collation and the
+	// server resolves it the same way.
+	InheritedCollations map[string]string
+	// DefaultCollation is the default collation the declaration gives the
+	// table as the target resolves it: the one it names, or the default
+	// collation of the character set it names. It is output-only, and empty
+	// where the declaration states neither or the target resolves none, which
+	// leaves the table's default collation uncompared.
+	DefaultCollation string
 }
 
 // Clone returns independent common state and immutable feature snapshots.
@@ -83,6 +99,7 @@ func (t Table) Clone() Table {
 	t.ResolvedFacets = slices.Clone(t.ResolvedFacets)
 	t.IndexMethods = maps.Clone(t.IndexMethods)
 	t.IndexConditions = maps.Clone(t.IndexConditions)
+	t.InheritedCollations = maps.Clone(t.InheritedCollations)
 	if t.IndexNulls != nil {
 		nulls := make(map[string][]string, len(t.IndexNulls))
 		for name, orders := range t.IndexNulls {
@@ -101,12 +118,22 @@ type Request struct {
 	Identifiers  identifier.Semantics
 	Capabilities capability.Capabilities
 	Tables       []Table
+	// CharsetDefaultCollations is the server fact
+	// [ptah.run/catalog.Database.CharsetDefaultCollations] of the read the
+	// tables were observed in, nil where the read reports none.
+	CharsetDefaultCollations map[string]string
+	// CharsetAliases is the server fact
+	// [ptah.run/catalog.Database.CharsetAliases] of that read, nil where it
+	// reports none.
+	CharsetAliases map[string]string
 }
 
 // Clone returns an independent batch, including mutable target facts.
 func (r Request) Clone() Request {
 	r.Identifiers = r.Identifiers.Clone()
 	r.Tables = cloneTables(r.Tables)
+	r.CharsetDefaultCollations = maps.Clone(r.CharsetDefaultCollations)
+	r.CharsetAliases = maps.Clone(r.CharsetAliases)
 	return r
 }
 
@@ -115,7 +142,9 @@ func (r Request) Clone() Request {
 // other captured state, including observations and coverage, stays unchanged.
 // ResolvedFacets may carry resolved values for existing declared facet kinds,
 // IndexMethods the kinds of declared indexes, IndexNulls the NULLS orders of
-// their key parts, and IndexConditions their predicates.
+// their key parts, IndexConditions their predicates, InheritedCollations the
+// collations of declared columns that name none, and DefaultCollation the
+// table's default collation.
 // Complete is required even for an empty batch. Errors discard the whole result.
 type Result struct {
 	Complete bool
@@ -216,7 +245,11 @@ func samePreparedTable(before, after Table, semantics identifier.Semantics) erro
 	if err := acceptIndexConditions(before, after.IndexConditions); err != nil {
 		return err
 	}
+	if err := acceptCollations(before, after); err != nil {
+		return err
+	}
 	before, after = before.Clone(), after.Clone()
+	after.InheritedCollations, after.DefaultCollation = nil, ""
 	if !retainEqualFeatures(&before, &after) {
 		return fmt.Errorf("%w: preparation changed captured features", ErrInvalid)
 	}
@@ -233,6 +266,27 @@ func samePreparedTable(before, after Table, semantics identifier.Semantics) erro
 	}
 	if !reflect.DeepEqual(before.Desired, unchanged) {
 		return fmt.Errorf("%w: preparation changed state outside column key membership", ErrInvalid)
+	}
+	return nil
+}
+
+// acceptCollations refuses an input that already states collations, an
+// inherited collation for a column the table does not declare or that
+// declares its own, and an empty collation.
+func acceptCollations(source, prepared Table) error {
+	if len(source.InheritedCollations) != 0 || source.DefaultCollation != "" {
+		return fmt.Errorf("%w: preparation input already states collations", ErrInvalid)
+	}
+	for name, collation := range prepared.InheritedCollations {
+		index := slices.IndexFunc(source.Desired.Fields, func(field schemamodel.Field) bool { return field.Name == name })
+		switch {
+		case index < 0:
+			return fmt.Errorf("%w: inherited collation for undeclared column %q", ErrInvalid, name)
+		case source.Desired.Fields[index].Collate != "":
+			return fmt.Errorf("%w: inherited collation for column %q, which declares its own", ErrInvalid, name)
+		case collation == "":
+			return fmt.Errorf("%w: empty inherited collation for column %q", ErrInvalid, name)
+		}
 	}
 	return nil
 }

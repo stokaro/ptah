@@ -119,6 +119,7 @@ a program, a directory holding only tests, or behind a Go `internal/` boundary.
 | `dialect/mysql/mysqlcompare` | Table option and column setting comparison that keeps declared values, and index block-size comparison. |
 | `dialect/mysql/mysqldiff` | Table option and index block-size change models that a planner and a reversal read. |
 | `dialect/mysql/mysqlplan` | Index block-size replacement and reversal, and option and setting accounting through table creation, rebuild and removal. |
+| `dialect/mysql/mysqlprepare` | The collation a MySQL or MariaDB column or table that names none takes from the server's character set defaults. |
 | `dialect/mysql/mysqlrender` | Owner-selected CREATE TABLE options, column clauses, index definitions and the index replacement handler. |
 | `dialect/mysql/mysqlconvert` | Conversion between table option, index option and block size, and column setting declarations and observations. |
 | `dialect/mysql/mysqlreport` | Captured table option, index option and block size, and column setting counts. |

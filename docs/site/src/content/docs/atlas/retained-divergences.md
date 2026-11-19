@@ -162,6 +162,8 @@ own measurement conditions.
 | [A COLLATE on a SQLite index key](#a-collate-on-a-sqlite-index-key) | reads the key with its collation, so a change of it is planned | reads the column alone, reports the change as synced, and plans the index without it |
 | [A COLLATE on a SQLite column](#a-collate-on-a-sqlite-column) | `schema inspect` writes the collation a column declares, in every format, and `schema diff` and `schema apply` plan a change of it | writes none, so the document describes a column that compares as BINARY, and reports the schemas synced |
 | [A COLLATE on a PostgreSQL column](#a-collate-on-a-postgresql-column) | `schema diff` and `schema apply` plan a change of a column's collation | report the schemas synced |
+| [A changed MySQL table collation](#a-changed-mysql-table-collation) | plans the table's `COLLATE` in one statement with the reset of the column that takes it, so one apply converges | does the same with `--dev-url`; without it, plans the table's `COLLATE` alone, and the column keeps the old collation until a second apply |
+| [A foreign key over a changed collation](#a-foreign-key-over-a-changed-collation) | drops the foreign key, changes both ends, and adds the key back, so one apply converges | plans a bare `MODIFY COLUMN` of each end, which the server refuses while the key stands |
 
 ## A `--config` selection naming more than one file
 
@@ -1905,6 +1907,66 @@ comparing differently from the declaration, and nothing says so.
 
 **Evidence.** `migration/schemadiff/internal/compare/column_collation_test.go`,
 `integration/postgres_column_collation_e2e_test.go`
+
+## A changed MySQL table collation
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** A column that names no collation takes its table's
+default collation. `ptah-compat schema apply` plans a changed table default as
+`ALTER TABLE ... COLLATE` in one statement with the reset of each column that
+takes it and holds the old one, so one apply converges, with or without
+`--dev-url`. The pinned community binary v1.3.0 plans the same statement when
+it is given `--dev-url`. Without it, the binary plans the table's `COLLATE`
+alone. `ALTER TABLE ... COLLATE` leaves the collation of every existing column
+as it is, so the column keeps the old collation after the apply, and only the
+next plan resets it. Measured on 2026-11-19 on MySQL 8.4 and MariaDB 11.8, on
+a table `retable (id int PRIMARY KEY, n varchar(20))` with
+`COLLATE=utf8mb4_bin`, against an HCL document declaring
+`collate = "utf8mb4_general_ci"` on the table and no collation on `n`:
+
+| Step | Binary without `--dev-url` | Binary with `--dev-url`, and `ptah-compat` |
+| --- | --- | --- |
+| first `schema apply` | ``ALTER TABLE `retable` COLLATE utf8mb4_general_ci;`` | ``ALTER TABLE `retable` COLLATE utf8mb4_general_ci, MODIFY COLUMN `n` varchar(20) NULL;`` |
+| `n` after it | `utf8mb4_bin` | `utf8mb4_general_ci` |
+| second `schema apply --dry-run` | ``ALTER TABLE `retable` MODIFY COLUMN `n` varchar(20) NULL;`` | no change planned |
+
+`ptah-compat` qualifies each table with its database, which the table above
+leaves out. A plan that needs a second apply describes a state the first apply
+does not reach. Both binaries reset a column that holds another collation than the one
+its table gives it, and both leave alone a column that takes its collation from
+a character set it names.
+
+**Evidence.** `migration/schemadiff/inherited_collation_test.go`,
+`integration/mysql_inherited_collation_e2e_test.go`
+
+## A foreign key over a changed collation
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** A foreign key stands on the collation of both its ends,
+so MySQL refuses a change of either end's collation while the key stands with
+Error 3780, and MariaDB with Error 1832. `ptah-compat schema apply` drops the
+key, changes both ends, and adds the key back, as it does for a change of the
+columns' type, so one apply converges and every row keeps its parent. The
+pinned community binary v1.3.0 plans a bare `MODIFY COLUMN` of each end, and
+the first statement fails. Measured on 2026-11-19 on MySQL 8.4 and MariaDB
+11.8, with `--dev-url`, on `parent (code varchar(10) PRIMARY KEY)` and
+`child (id int PRIMARY KEY, code varchar(10), FOREIGN KEY (code) REFERENCES parent (code))`,
+both columns `COLLATE utf8mb4_unicode_ci`, against a SQL file declaring both
+`COLLATE utf8mb4_bin`:
+
+| Step | Binary | `ptah-compat` |
+| --- | --- | --- |
+| first statement | ``ALTER TABLE `child` MODIFY COLUMN `code` varchar(10) NULL COLLATE utf8mb4_bin;`` | ``ALTER TABLE `child` DROP FOREIGN KEY `child_code_fk`, MODIFY COLUMN `code` varchar(10) COLLATE utf8mb4_bin NULL;`` |
+| last statement | the `parent` column's `MODIFY COLUMN` | ``ALTER TABLE `child` ADD CONSTRAINT `child_code_fk` FOREIGN KEY (`code`) REFERENCES `parent` (`code`) ...;`` |
+| apply | exits `1` with Error 3780 on MySQL and Error 1832 on MariaDB; both columns keep `utf8mb4_unicode_ci` | both columns hold `utf8mb4_bin`, and the key stands |
+
+The same holds where the columns take the collation from their tables'
+default, or from a character set each names.
+
+**Evidence.** `internal/planner/dialects/mysql/fk_collation_test.go`,
+`integration/mysql_foreign_key_collation_e2e_test.go`
 
 ## Not on this page
 

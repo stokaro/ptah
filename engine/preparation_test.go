@@ -164,3 +164,45 @@ func TestPreparation_IndexMethods(t *testing.T) {
 	c.Assert(result, qt.DeepEquals, schemapreparation.Result{})
 	c.Assert(calls, qt.Equals, 1)
 }
+
+// A table's prepared collations pass through, and an input that already
+// states them never reaches the service.
+func TestPreparation_Collations(t *testing.T) {
+	c := qt.New(t)
+	calls := 0
+	service := preparationFunc(func(_ context.Context, request schemapreparation.Request) (schemapreparation.Result, error) {
+		calls++
+		request.Tables[0].InheritedCollations = map[string]string{"name": "utf8mb4_bin"}
+		request.Tables[0].DefaultCollation = "utf8mb4_bin"
+		return schemapreparation.Result{Complete: true, Tables: request.Tables}, nil
+	})
+	runtime := mustRuntime(c, preparationProvider(service))
+	request := preparationRequest()
+	request.Tables[0].Desired.Fields = append(request.Tables[0].Desired.Fields, schemamodel.Field{Name: "name", StructName: "Event", Type: "VARCHAR(20)"})
+	result, err := runtime.PrepareTables(t.Context(), request)
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Tables[0].InheritedCollations, qt.DeepEquals, map[string]string{"name": "utf8mb4_bin"})
+	c.Assert(result.Tables[0].DefaultCollation, qt.Equals, "utf8mb4_bin")
+	c.Assert(result.Tables[0].Desired.Fields[1].Collate, qt.Equals, "")
+
+	stated := []struct {
+		name    string
+		columns map[string]string
+		table   string
+	}{
+		{name: "column collations", columns: map[string]string{"name": "utf8mb4_bin"}},
+		{name: "the table's collation", table: "utf8mb4_bin"},
+	}
+	for _, row := range stated {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			input := request.Clone()
+			input.Tables[0].InheritedCollations, input.Tables[0].DefaultCollation = row.columns, row.table
+			refused, err := runtime.PrepareTables(t.Context(), input)
+			c.Assert(err, qt.ErrorIs, schemapreparation.ErrInvalid)
+			c.Assert(err, qt.ErrorMatches, `.*preparation input already states collations`)
+			c.Assert(refused, qt.DeepEquals, schemapreparation.Result{})
+		})
+	}
+	c.Assert(calls, qt.Equals, 1)
+}

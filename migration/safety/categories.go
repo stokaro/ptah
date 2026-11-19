@@ -138,6 +138,17 @@ var countedCategories = slices.Concat(kindCategories(), []countedCategory{
 	// what it holds or does. A column's comment is a modification of the
 	// column, which columns_modified counts.
 	{name: "comments_changed", severity: Safe, count: commentChanges},
+	// A table's default collation decides the collation of every column later
+	// added or restated without one, as a schema's does for the tables created
+	// in it, and the plan's ALTER TABLE ... COLLATE is rated the same way.
+	{name: "table_collations_changed", severity: Warning, count: func(d *difftypes.SchemaDiff) int {
+		return sumTables(d, func(table difftypes.TableDiff) int {
+			if table.CollationChange != nil {
+				return 1
+			}
+			return 0
+		})
+	}},
 	{name: "columns_modified", severity: Warning, count: func(d *difftypes.SchemaDiff) int {
 		return sumTables(d, func(table difftypes.TableDiff) int { return len(table.ColumnsModified) })
 	}},
@@ -153,6 +164,12 @@ var countedCategories = slices.Concat(kindCategories(), []countedCategory{
 	// sees "columns_modified: 1 (warning)" is told a cast is planned.
 	{name: "column_types_narrowed", severity: Destructive, count: func(d *difftypes.SchemaDiff) int {
 		return sumTables(d, func(table difftypes.TableDiff) int { return narrowedTypes(table.ColumnsModified) })
+	}},
+	// Counted again for the same reason: the server converts every value of
+	// the column, and a character the new character set cannot hold fails
+	// the statement or is lost.
+	{name: "column_charsets_converted", severity: Destructive, count: func(d *difftypes.SchemaDiff) int {
+		return sumTables(d, func(table difftypes.TableDiff) int { return convertedCharsets(table.ColumnsModified) })
 	}},
 	// A column's identity goes with its sequence, as a removed sequence does.
 	{name: "column_identities_removed", severity: Destructive, count: func(d *difftypes.SchemaDiff) int {
