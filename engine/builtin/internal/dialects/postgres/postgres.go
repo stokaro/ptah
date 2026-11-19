@@ -1032,7 +1032,7 @@ func (r *Renderer) renderAlterTable(node *ast.AlterTableNode) error {
 		return nil
 	}
 	prefix := "ALTER TABLE " + r.escapeQualifiedIdentifier(node.Name) + " "
-	return r.w.WriteAlterTable(node, prefix, r.dialect, func(operations []ast.AlterOperation) error {
+	return r.w.WriteAlterTable(node, prefix, r.dialect, r.capabilities(), func(operations []ast.AlterOperation) error {
 		return r.renderAlterTableStatements(node, operations)
 	})
 }

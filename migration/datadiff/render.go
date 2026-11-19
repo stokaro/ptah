@@ -12,7 +12,9 @@ import (
 
 	"ptah.run/core/dataext"
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/sqlident"
 )
 
@@ -110,6 +112,14 @@ func Render(diff *DataDiff, dialect string, services dataext.Services) (up, down
 // Both slices are nil when diff carries no changes. On error both are nil and
 // the error is the one [Render] returns for the same diff.
 func RenderStatements(diff *DataDiff, dialect string, services dataext.Services) (up, down []string, err error) {
+	return renderStatements(diff, dialect, services, capability.Capabilities{})
+}
+
+// renderStatements is [RenderStatements] for a session with caps: a string
+// literal is written as that session reads it ([newTarget]).
+func renderStatements(
+	diff *DataDiff, dialect string, services dataext.Services, caps capability.Capabilities,
+) (up, down []string, err error) {
 	if diff == nil {
 		return nil, nil, errors.New("datadiff: nil diff")
 	}
@@ -125,7 +135,7 @@ func RenderStatements(diff *DataDiff, dialect string, services dataext.Services)
 		return nil, nil, fmt.Errorf("datadiff: the owner of %s renders its row writes; render through RenderStatementsContext", dialect)
 	}
 
-	t, err := newTarget(dialect, services)
+	t, err := newTarget(dialect, services, caps)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -291,18 +301,25 @@ type target struct {
 // unrecognized dialect always has. A dialect whose owner writes some of its
 // literals (descriptor.Literals.ByOwner) is refused when services carries no
 // literal service, rather than written from each value alone.
-func newTarget(dialect string, services dataext.Services) (target, error) {
+//
+// A string literal reads a backslash as an escape where the descriptor says
+// so, except on a session whose sql_mode names NO_BACKSLASH_ESCAPES
+// ([capability.NoBackslashEscapes]): that session reads a backslash as
+// itself, and a doubled one would be stored twice.
+func newTarget(dialect string, services dataext.Services, caps capability.Capabilities) (target, error) {
 	described, _ := platform.Lookup(dialect)
 	if described.Literals.ByOwner && services.Literals == nil && services.Columns == nil {
 		return target{}, fmt.Errorf(
 			"datadiff: %s writes literals through its owner's data services, and the caller gave none; "+
 				"pass the services engine.Runtime.DataServices returns for the dialect", described.Name)
 	}
+	literals := described.Literals
+	literals.BackslashEscapes = backslashmode.Escapes(literals.BackslashEscapes, caps)
 	return target{
 		dialect:           dialect,
 		name:              described.Name,
 		dateTimeWallClock: described.ManagedData.DateTimeWallClock,
-		literals:          described.Literals,
+		literals:          literals,
 		managed:           described.ManagedData,
 		services:          services,
 	}, nil
@@ -450,7 +467,8 @@ func textValue(v any) (string, bool) {
 //
 // Where the dialect's descriptor says string literals process C-style
 // backslash escapes (descriptor.Literals.BackslashEscapes), as MySQL, MariaDB
-// and ClickHouse do by default, the backslash is ALSO escaped (\ -> \\); for the PostgreSQL family, SQLite, SQL Server, and any
+// and ClickHouse do by default, the backslash is ALSO escaped (\ -> \\),
+// unless the session reads a backslash as itself ([newTarget]); for the PostgreSQL family, SQLite, SQL Server, and any
 // unrecognized dialect the backslash is left untouched, as standard SQL treats
 // it literally. A string containing a NUL byte is rejected because it is not
 // portably representable as a SQL literal.

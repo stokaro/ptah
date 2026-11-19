@@ -13,11 +13,13 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/devclean"
 	"ptah.run/internal/devdocker"
@@ -159,6 +161,22 @@ func (p ApplyRuntimePlan) SimulateOnDev(ctx context.Context, opts SimulateOption
 	}
 
 	return rehearseStatementsOnDev(ctx, p.conn, dev.conn, dev.baseline, p.current, p.seed.target(ctx, p.conn), p.txMode, statements, p.runtime)
+}
+
+// refuseRehearsalAcrossBackslashModes refuses to rehearse statements on dev
+// when the dev session reads them differently from the target session; see
+// [backslashmode.ReadDifferently]. The statements are written for the target
+// session, as Ptah renders them for it or as a user wrote them, and are sent as
+// written, so on such a dev session the rehearsal stores other characters than
+// the apply would, and proves nothing about it.
+func refuseRehearsalAcrossBackslashModes(target, dev catalog.ServerInfo, statements []string) error {
+	if !backslashmode.ReadDifferently(target.Capabilities, dev.Capabilities, statements) {
+		return nil
+	}
+	return fmt.Errorf("%w: the target session's sql_mode %s and the dev session's %s, and a statement holds a backslash, "+
+		"which the two sessions read differently, so the rehearsal would not run what the apply runs; "+
+		"give the dev database the target's sql_mode", ptaherr.ErrUnsupportedFeature,
+		backslashmode.Describe(target.Capabilities), backslashmode.Describe(dev.Capabilities))
 }
 
 // discardDevRehearsalArtifacts drops what the rehearsal created in the dev
@@ -448,6 +466,9 @@ func rehearseStatementsOnDev(
 	}
 	if targetConn == nil {
 		return errors.New("schema apply simulation requires target database connection")
+	}
+	if err := refuseRehearsalAcrossBackslashModes(targetConn.Info(), devConn.Info(), statements); err != nil {
+		return err
 	}
 	// A plan for a whole server names each table by its database and runs as
 	// written on a whole dev server. A plan for one database is re-scoped onto

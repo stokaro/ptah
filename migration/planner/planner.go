@@ -380,10 +380,15 @@ func (p RenderedPlan) sqlStatements(fragments []string) []PlannedStatement {
 		// right for most targets and wrong for the one whose routine body is
 		// opened by IS: an Oracle function with a declaration section came out
 		// of here as four fragments, each of which the server refuses on its own.
+		// The session the plan is rendered for decides how a string ends: a
+		// literal written for one whose sql_mode names NO_BACKSLASH_ESCAPES
+		// keeps a backslash before its closing quote, which the default rule
+		// reads as an escape, and would cut the statement at a semicolon
+		// further on.
 		text := carry + fragment
-		pieces := sqlutil.SplitSQLStatementsForDialect(text, p.Dialect)
+		pieces := sqlutil.SplitSQLStatementsForSession(text, p.Dialect, p.Request.Capabilities)
 		executable := len(pieces)
-		for executable > 0 && strings.TrimSpace(sqlutil.StripCommentsForDialect(pieces[executable-1], p.Dialect)) == "" {
+		for executable > 0 && strings.TrimSpace(sqlutil.StripCommentsForSession(pieces[executable-1], p.Dialect, p.Request.Capabilities)) == "" {
 			executable--
 		}
 		for _, piece := range pieces[:executable] {
@@ -391,7 +396,7 @@ func (p RenderedPlan) sqlStatements(fragments []string) []PlannedStatement {
 		}
 		carry = trailingPieces(text, pieces, executable)
 	}
-	for _, piece := range sqlutil.SplitSQLStatementsForDialect(carry, p.Dialect) {
+	for _, piece := range sqlutil.SplitSQLStatementsForSession(carry, p.Dialect, p.Request.Capabilities) {
 		statements = append(statements, PlannedStatement{SQL: piece, Node: -1})
 	}
 	return statements

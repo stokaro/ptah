@@ -31,6 +31,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/clickhouserbac"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
@@ -395,6 +396,10 @@ func readsADevRealm(ctx context.Context, contexts schemaext.DatabaseContextResol
 // all keeps the dialect default. Two documents compared as written hold no
 // connection, and plan for the dev server instead; see
 // [devreach.Server], which answers documentCaps.
+//
+// The statements a diff prints are run later, on a session the diff cannot
+// name, so the set never holds the session's NO_BACKSLASH_ESCAPES; see
+// [backslashmode.ForLater].
 func diffCapabilities(
 	target servertarget.Target,
 	version string,
@@ -405,9 +410,9 @@ func diffCapabilities(
 	case version != "":
 		return target.Capabilities
 	case conn != nil:
-		return conn.Info().Capabilities
+		return backslashmode.ForLater(conn.Info().Capabilities)
 	case documentCaps.Len() != 0:
-		return documentCaps
+		return backslashmode.ForLater(documentCaps)
 	default:
 		return target.Capabilities
 	}

@@ -683,7 +683,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return applyAtlasNativeSchemaPlan(cmd, opts, conn, plan, txMode)
 		}
 
-		sqlText, statements, err := atlasApplySQL(cmd.Context(), plan, opts, conn.Info().Dialect)
+		sqlText, statements, err := atlasApplySQL(cmd.Context(), plan, opts, conn.Info())
 		if err != nil {
 			return "", err
 		}
@@ -1791,7 +1791,7 @@ func printAtlasApplyPreview(out io.Writer, plan atlasschema.ApplyRuntimePlan, op
 }
 
 // atlasApplySQL refuses native operations before exposing a SQL editing buffer.
-func atlasApplySQL(ctx context.Context, plan atlasschema.ApplyRuntimePlan, opts atlasSchemaApplyOptions, dialect string) (string, []string, error) {
+func atlasApplySQL(ctx context.Context, plan atlasschema.ApplyRuntimePlan, opts atlasSchemaApplyOptions, session catalog.ServerInfo) (string, []string, error) {
 	sqlText, err := plan.SQL()
 	if err != nil {
 		return "", nil, err
@@ -1805,7 +1805,7 @@ func atlasApplySQL(ctx context.Context, plan atlasschema.ApplyRuntimePlan, opts 
 		if err != nil {
 			return "", nil, err
 		}
-		statements = atlasschema.SplitApplyStatements(sqlText, dialect)
+		statements = atlasschema.SplitApplyStatements(sqlText, session)
 	}
 	return sqlText, statements, nil
 }

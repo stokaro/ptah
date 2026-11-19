@@ -14,6 +14,7 @@ import (
 	"ptah.run/core/schemaext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/schemavalidation"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/concurrentindex"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/planshape"
@@ -166,6 +167,12 @@ func PlanBidirectionalSchemaDiff(
 	if caps.Len() == 0 {
 		caps = capability.ForDialect(dialect)
 	}
+	// A migration file is run later, by a session nobody knows yet, so its
+	// literals are written for the default sql_mode whatever the session that
+	// planned it reads. Without this a session whose sql_mode names
+	// NO_BACKSLASH_ESCAPES writes a file that stores no backslash where the
+	// declaration holds one, once it runs under the default sql_mode.
+	caps = backslashmode.ForLater(caps)
 	if err := caps.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid capabilities for %s: %w", dialect, err)
 	}

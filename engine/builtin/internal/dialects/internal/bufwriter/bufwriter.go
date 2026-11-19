@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/sqlutil"
 )
 
@@ -56,7 +57,12 @@ func (w *Writer) Output() string {
 // node's operations as they are: the order of one statement may hold only inside one
 // statement, so it never reaches a file as several. So do a node whose two lists no longer
 // say the same changes, because something rewrote one of them.
-func (w *Writer) WriteAlterTable(node *ast.AlterTableNode, prefix, dialect string, write func([]ast.AlterOperation) error) error {
+//
+// caps is the capability set the text is rendered for, which decides how a string in it
+// ends; see [JoinAlterTable].
+func (w *Writer) WriteAlterTable(
+	node *ast.AlterTableNode, prefix, dialect string, caps capability.Capabilities, write func([]ast.AlterOperation) error,
+) error {
 	if len(node.OneStatement) == 0 || !sameChanges(node) {
 		return write(node.Operations)
 	}
@@ -64,7 +70,7 @@ func (w *Writer) WriteAlterTable(node *ast.AlterTableNode, prefix, dialect strin
 	if err := write(node.OneStatement); err != nil {
 		return err
 	}
-	joined, ok := JoinAlterTable(w.output.String()[start:], prefix, dialect)
+	joined, ok := JoinAlterTable(w.output.String()[start:], prefix, dialect, caps)
 	if ok {
 		w.replaceFrom(start, joined)
 		return nil
@@ -110,16 +116,17 @@ func (w *Writer) Reset() {
 
 // JoinAlterTable writes the statements of text, what one table's operations render,
 // as one ALTER TABLE whose clauses are separated by commas. prefix is what starts each
-// statement, `ALTER TABLE "t" `, and dialect says how the text quotes. A comment line
-// stays ahead of the statement.
+// statement, `ALTER TABLE "t" `, and dialect and caps say how the text quotes: a
+// literal rendered for a session whose sql_mode names NO_BACKSLASH_ESCAPES is read as
+// that session reads it. A comment line stays ahead of the statement.
 //
 // It answers false for text holding a statement that does not start with prefix. Those
 // statements cannot be one, so the caller writes the operations in the order that runs
 // one by one rather than in the order it asked to join.
-func JoinAlterTable(text, prefix, dialect string) (string, bool) {
+func JoinAlterTable(text, prefix, dialect string, caps capability.Capabilities) (string, bool) {
 	var comments strings.Builder
 	var clauses []string
-	for _, statement := range sqlutil.SplitSQLStatementsForDialect(text, dialect) {
+	for _, statement := range sqlutil.SplitSQLStatementsForSession(text, dialect, caps) {
 		for strings.HasPrefix(statement, "-- ") {
 			line, rest, _ := strings.Cut(statement, "\n")
 			comments.WriteString(line + "\n")

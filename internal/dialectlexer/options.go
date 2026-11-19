@@ -5,7 +5,9 @@
 package dialectlexer
 
 import (
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/lexerext"
@@ -25,6 +27,19 @@ func Options(dialect string) lexer.Options {
 		return options
 	}
 	return optionsByDialect.Get(dialect)
+}
+
+// ForSession is [Options] for text a session with caps reads: a session whose
+// sql_mode names NO_BACKSLASH_ESCAPES reads a backslash in a string as the
+// character, whatever the dialect's descriptor says; see
+// [backslashmode.Escapes]. A provider's own scanner is returned as Options
+// returns it.
+func ForSession(dialect string, caps capability.Capabilities) lexer.Options {
+	options := Options(dialect)
+	if options.Scanner == nil {
+		options.BackslashEscapes = backslashmode.Escapes(options.BackslashEscapes, caps)
+	}
+	return options
 }
 
 // optionsByDialect holds the answer of [FromDescriptor] for every dialect.

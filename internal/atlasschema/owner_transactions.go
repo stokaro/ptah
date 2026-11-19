@@ -66,12 +66,6 @@ func (p ApplyRuntimePlan) PreflightExecution(sqlText string) error {
 	if sqlText != original && p.HasInputReferences() {
 		return fmt.Errorf("%w: edited SQL with approved execution inputs needs a new provider plan", ptaherr.ErrUnsupportedFeature)
 	}
-	// Edited SQL is the user's own and is sent as written.
-	if sqlText == original {
-		if err := p.plan.refuseEscapedLiterals(); err != nil {
-			return err
-		}
-	}
 	if err := checkOwnerTransactions(p.plan.transactions, p.txMode, p.conn); err != nil {
 		return err
 	}

@@ -741,7 +741,7 @@ func runSchemaApplyOnLockedSession(
 			return "", err
 		}
 		sqlText = edited
-		statements = atlasschema.SplitApplyStatements(sqlText, conn.Info().Dialect)
+		statements = atlasschema.SplitApplyStatements(sqlText, conn.Info())
 		// An edited statement may do something other than what was planned, so
 		// the edited units carry no effects.
 		units = atlasschema.SQLApplyUnitReports(statements)

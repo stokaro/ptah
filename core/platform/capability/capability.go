@@ -1384,15 +1384,16 @@ const (
 	// NO_BACKSLASH_ESCAPES. Such a session reads a backslash in a string
 	// literal as the character, where the default sql_mode reads it as the
 	// start of an escape: measured on MySQL 26.10 and MariaDB 12.3, `'a\\b'`
-	// holds two backslashes there and one under the default sql_mode. Ptah
-	// writes, splits and scans SQL text as the default sql_mode reads it, so a
-	// schema apply refuses a plan that writes a backslash in a literal it
-	// renders from the model -- a default, a comment, an enum value -- on a
-	// session with this key. SQL a user wrote is sent as written.
+	// holds two backslashes there and one under the default sql_mode. The
+	// MySQL-family renderer reads it: a literal Ptah renders from the model
+	// and runs on its own connection -- a default, a comment, an enum value, a
+	// declared row -- keeps each backslash single on a session with this key.
+	// Text written for later -- a migration file, a saved plan, the statements
+	// a diff prints -- is rendered without the key, for the default sql_mode,
+	// and SQL a user wrote is sent as written.
 	//
-	// No preset holds it, and no renderer reads it. The MySQL-family
-	// connector sets it from @@SESSION.sql_mode when it connects and again on
-	// a pinned session.
+	// No preset holds it. The MySQL-family connector sets it from
+	// @@SESSION.sql_mode when it connects and again on a pinned session.
 	NoBackslashEscapes Capability = "no_backslash_escapes"
 
 	// CheckConstraints marks a target whose grammar has CHECK at all.
@@ -2303,7 +2304,7 @@ var registry = map[Capability]spec{
 		doc: "a column default may be an expression the server evaluates, not only a literal (MySQL 8.0.13+, MariaDB 10.2+; not YDB)",
 	},
 	NoBackslashEscapes: {
-		doc: "the MySQL-family session's sql_mode names NO_BACKSLASH_ESCAPES, so a schema apply refuses a plan that renders a backslash in a string literal (set from the session, never by a preset)",
+		doc: "the MySQL-family session's sql_mode names NO_BACKSLASH_ESCAPES, so a string literal Ptah renders for that session keeps each backslash single (set from the session, never by a preset)",
 	},
 	CheckConstraints: {
 		doc: "the grammar has CHECK constraints at all, enforced or not (not YDB)",

@@ -46,7 +46,73 @@ func TestIndexDefinition(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(strings.Join(mysqlrender.IndexDefinition(test.dialect, test.index, test.placement), " "), qt.Equals, test.want)
+			c.Assert(strings.Join(mysqlrender.IndexDefinition(test.dialect, capability.ForDialect(test.dialect), test.index, test.placement), " "),
+				qt.Equals, test.want)
+		})
+	}
+}
+
+// noBackslashEscapes is a MySQL session whose sql_mode names
+// NO_BACKSLASH_ESCAPES, as the connector marks one.
+var noBackslashEscapes = capability.ForDialect(platform.MySQL).With(capability.NoBackslashEscapes, true)
+
+// An index comment is written as the session reads it: a backslash doubled
+// under the default sql_mode, and kept single where the session reads it as
+// itself.
+func TestIndexDefinition_CommentForTheSession(t *testing.T) {
+	index := mysqlast.Index{Name: "k", Comment: `C:\p's`, Parts: []mysqlast.IndexPart{{Column: "a"}}}
+	for _, test := range []struct {
+		name string
+		caps capability.Capabilities
+		want string
+	}{
+		{name: "the default sql_mode", caps: capability.ForDialect(platform.MySQL), want: "INDEX `k` (`a`) COMMENT 'C:\\\\p''s'"},
+		{name: "NO_BACKSLASH_ESCAPES", caps: noBackslashEscapes, want: "INDEX `k` (`a`) COMMENT 'C:\\p''s'"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(strings.Join(mysqlrender.IndexDefinition(platform.MySQL, test.caps, index, ""), " "), qt.Equals, test.want)
+		})
+	}
+}
+
+// QuoteString doubles each quote, and each backslash for a session that reads
+// one as an escape.
+func TestQuoteString(t *testing.T) {
+	for _, test := range []struct {
+		name, value string
+		caps        capability.Capabilities
+		want        string
+	}{
+		{name: "the default sql_mode", value: `a\b's`, caps: capability.ForDialect(platform.MySQL), want: `'a\\b''s'`},
+		{name: "a set without the key", value: `a\b`, want: `'a\\b'`},
+		{name: "NO_BACKSLASH_ESCAPES", value: `a\b's`, caps: noBackslashEscapes, want: `'a\b''s'`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(mysqlrender.QuoteString(test.value, test.caps), qt.Equals, test.want)
+		})
+	}
+}
+
+// RespellStrings writes each string of default-mode text for a session that
+// reads a backslash as itself, and leaves the rest of the text, and all of it
+// for any other session, as written.
+func TestRespellStrings(t *testing.T) {
+	for _, test := range []struct {
+		name, text string
+		caps       capability.Capabilities
+		want       string
+	}{
+		{name: "an enum type", text: `enum('e\\f','it\'s','g')`, caps: noBackslashEscapes, want: `enum('e\f','it''s','g')`},
+		{name: "a quoted default", text: `'C:\\p'`, caps: noBackslashEscapes, want: `'C:\p'`},
+		{name: "no backslash", text: `enum('it''s','g')`, caps: noBackslashEscapes, want: `enum('it''s','g')`},
+		{name: "a backslash outside a string", text: "set('a\\\\b') /* c\\d */", caps: noBackslashEscapes, want: "set('a\\b') /* c\\d */"},
+		{name: "the default sql_mode", text: `enum('e\\f','it\'s')`, caps: capability.ForDialect(platform.MySQL), want: `enum('e\\f','it\'s')`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(mysqlrender.RespellStrings(test.text, test.caps), qt.Equals, test.want)
 		})
 	}
 }

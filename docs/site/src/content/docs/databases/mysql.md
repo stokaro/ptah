@@ -596,24 +596,40 @@ SQL:
   or without the `=`, hold the text the server stores. A doubled quote and a
   backslash escape are read as the server reads them, and of two `COMMENT`
   clauses on one column the last is kept.
-- A Go or YAML literal default, a column, table or index comment and an enum
-  value are written with each backslash doubled and each quote doubled, so
-  `a\b` stores those three characters under the default `sql_mode`. A plan, a
-  saved plan file and a migration file are written that way whatever the
-  server's `sql_mode`. A text default is compared by the string it stores, so
+- A Go or YAML literal default, a column, table or index comment, an enum
+  value and a declared row's value are written with each quote doubled. Under
+  the default `sql_mode` each backslash is doubled too, so `a\b` stores those
+  three characters. A text default is compared by the string it stores, so
   `'it\'s'` and `'it''s'` are one default. A literal `NULL` on a text column is
   the string `'NULL'`; a schema file writes SQL `NULL` without quotes.
 - A session whose `sql_mode` names `NO_BACKSLASH_ESCAPES` reads a backslash in
   a string as the character, so `'a\\b'` stores two backslashes there. Ptah
-  reads the mode once, when it connects. `schema apply` on such a session
-  refuses a plan that writes a backslash in one of the literals above, before
-  anything runs, and names each one. SQL a user wrote is sent byte for byte
-  and read the way the session reads it: a view or routine body from a schema
-  file, the plan's SQL after `--edit`, a plan file applied with `--plan`, and
-  a migration file. A plan file or a migration file Ptah generated therefore
-  stores each such backslash twice on that session, and the next `migrations
-  generate` plans the column again. `migrations up` on such a session needs
+  reads the mode once, when it connects, and writes the literals above for the
+  session that runs them, with each backslash single on such a session:
+  `schema apply`, its declared rows, `--dry-run`, and what a dev database
+  builds for `schema diff` and for the `--dev-url` rehearsal. Text Ptah writes
+  for later is written for the default `sql_mode` whatever the session's: a
+  migration file, a saved plan file and the statements `schema diff` prints.
+- SQL a user wrote is sent byte for byte: a view or routine body from a schema
+  file, the plan's SQL after `--edit`, and a migration file. `schema apply`
+  cuts the `--edit` text into statements the way the session reads it, so the
+  prompt rates each statement the session receives. `migrations up` sends a
+  migration file as written and cuts it the way the default `sql_mode` reads
+  it, so a file Ptah generated stores each such backslash twice on a
+  `NO_BACKSLASH_ESCAPES` session. `migrations up` on such a session also needs
   `--tx-mode none`; see [Apply migrations](../../versioned/apply/).
+- Two refusals keep text off a session that reads it differently, before
+  anything runs. `schema apply --plan` refuses a saved plan that holds a
+  backslash on a `NO_BACKSLASH_ESCAPES` session; apply the desired schema
+  without `--plan` there. The `--dev-url` rehearsal refuses a plan that holds a
+  backslash when the dev session and the target session disagree on
+  `NO_BACKSLASH_ESCAPES`; give the dev database the target's `sql_mode`. A plan
+  without a backslash runs on either session.
+- `ptah-compat` writes these literals the same way, so on a
+  `NO_BACKSLASH_ESCAPES` session it stores the declared value. The community
+  binary writes each backslash doubled on every session, which stores two
+  where the declaration holds one. We are stricter here, deliberately: that
+  spelling changes the data the user declared.
 
 ## Table options
 

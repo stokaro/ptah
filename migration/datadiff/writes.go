@@ -30,8 +30,10 @@ func RenderContext(
 // target whose capabilities are caps, and through the owner's write service
 // where services carries one (dataext.Services.Writes).
 //
-// Without a write service it is [RenderStatements], and ctx and caps are not
-// read. With one, the owner spells every statement: the up and down writes are
+// Without a write service it is [RenderStatements] for a session with caps,
+// and ctx is not read: a string literal is written as that session reads it,
+// so on a MySQL-family session whose sql_mode names NO_BACKSLASH_ESCAPES a
+// backslash is not doubled. With one, the owner spells every statement: the up and down writes are
 // the operations RenderStatements renders, in the same order -- an insert of
 // every column of the row, sorted; an update by key that sets the columns
 // outside the key, sorted; a delete by key -- and are sent in one batch, up
@@ -46,7 +48,7 @@ func RenderStatementsContext(
 	caps capability.Capabilities,
 ) (up, down []string, err error) {
 	if services.Writes == nil {
-		return RenderStatements(diff, dialect, services)
+		return renderStatements(diff, dialect, services, caps)
 	}
 	if diff == nil {
 		return nil, nil, errors.New("datadiff: nil diff")

@@ -118,7 +118,9 @@ func (p ApplyRuntimePlan) RatingOfSQL(ctx context.Context, sqlText string) (Plan
 		return PlanRating{}, err
 	}
 	dialect := p.conn.Info().Dialect
-	edited, err := PlanFile{Dialect: dialect, Statements: statements}.WithStatementsFromSQL(ctx, runtime, sqlText)
+	// The edited text runs on this session, so it is cut as the session reads
+	// it, and the rating judges each statement the session receives.
+	edited, err := PlanFile{Dialect: dialect, Statements: statements}.withStatementsFromSQL(ctx, runtime, sqlText, p.conn.Info().Capabilities)
 	if err != nil {
 		return PlanRating{}, err
 	}

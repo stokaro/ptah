@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/clientdelimiter"
 	"ptah.run/internal/descriptortable"
@@ -21,7 +22,7 @@ import (
 // written, whitespace included. Both line comments (-- comment) and block
 // comments (/* comment */) are removed.
 func StripComments(sql string) string {
-	return stripComments(sql, "")
+	return stripComments(sql, "", capability.Capabilities{})
 }
 
 // StripCommentsForDialect removes SQL comments while preserving constructs
@@ -33,7 +34,16 @@ func StripComments(sql string) string {
 // its provider registered; a blank or unrecognized one is not an error and
 // strips exactly as [StripComments] does.
 func StripCommentsForDialect(sql, dialect string) string {
-	return stripComments(sql, lexicalDialect(dialect))
+	return stripComments(sql, lexicalDialect(dialect), capability.Capabilities{})
+}
+
+// StripCommentsForSession is [StripCommentsForDialect] for text a session with
+// caps reads. A MySQL-family session whose sql_mode names NO_BACKSLASH_ESCAPES
+// ([capability.NoBackslashEscapes]) reads a backslash in a string as the
+// character, so `'x\'` is a whole string there and a comment after it is
+// removed. The zero caps read the text as StripCommentsForDialect does.
+func StripCommentsForSession(sql, dialect string, caps capability.Capabilities) string {
+	return stripComments(sql, lexicalDialect(dialect), caps)
 }
 
 // lexicalDialect is the name the scan of a dialect's text is read under: the
@@ -49,14 +59,14 @@ func lexicalDialect(dialect string) string {
 	return strings.ToLower(strings.TrimSpace(dialect))
 }
 
-func stripComments(sql, dialect string) string {
+func stripComments(sql, dialect string, caps capability.Capabilities) string {
 	if strings.TrimSpace(sql) == "" {
 		return sql
 	}
 
 	options := lexer.Options{}
 	if dialect != "" {
-		options = dialectlexer.Options(dialect)
+		options = dialectlexer.ForSession(dialect, caps)
 	}
 	lexr := lexer.NewLexerWithOptions(sql, options)
 	var result strings.Builder
@@ -90,7 +100,7 @@ func stripComments(sql, dialect string) string {
 // strips them. The result is never nil: input carrying no statement at all —
 // empty, whitespace, or bare semicolons — yields an empty, non-nil slice.
 func SplitSQLStatements(sql string) []string {
-	return splitSQLStatements(sql, "")
+	return splitSQLStatements(sql, "", capability.Capabilities{})
 }
 
 // SplitSQLStatementsForDialect splits SQL using dialect-specific client
@@ -124,10 +134,22 @@ func SplitSQLStatements(sql string) []string {
 // statement that uses one defined by an earlier statement runs only where the
 // statements are sent as one query.
 func SplitSQLStatementsForDialect(sql, dialect string) []string {
-	return splitSQLStatements(sql, lexicalDialect(dialect))
+	return splitSQLStatements(sql, lexicalDialect(dialect), capability.Capabilities{})
 }
 
-func splitSQLStatements(sql, dialect string) []string {
+// SplitSQLStatementsForSession is [SplitSQLStatementsForDialect] for text a
+// session with caps runs. A MySQL-family session whose sql_mode names
+// NO_BACKSLASH_ESCAPES ([capability.NoBackslashEscapes]) reads a backslash in
+// a string as the character, so `'a\'; DROP TABLE t` holds a string that
+// ends after the backslash and a second statement after it, where the default
+// rule reads one string that runs past the semicolon. Text bound for a session
+// is cut with its rule, since the cut decides what the session receives. The
+// zero caps split as SplitSQLStatementsForDialect does.
+func SplitSQLStatementsForSession(sql, dialect string, caps capability.Capabilities) []string {
+	return splitSQLStatements(sql, lexicalDialect(dialect), caps)
+}
+
+func splitSQLStatements(sql, dialect string, caps capability.Capabilities) []string {
 	if strings.TrimSpace(sql) == "" {
 		return make([]string, 0)
 	}
@@ -137,7 +159,7 @@ func splitSQLStatements(sql, dialect string) []string {
 	// cannot leak out and be mis-split into an extra statement. Backslash
 	// escapes are only honored for the dialects that actually process them;
 	// the no-dialect path stays PostgreSQL-safe (backslash is literal).
-	options := dialectlexer.Options(dialect)
+	options := dialectlexer.ForSession(dialect, caps)
 	lexr := lexer.NewLexerWithOptions(sql, options)
 	var statements []string
 	var currentStatement strings.Builder

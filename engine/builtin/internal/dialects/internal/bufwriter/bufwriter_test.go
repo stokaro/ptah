@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 )
 
@@ -15,8 +16,10 @@ func TestJoinAlterTable_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		text    string
-		want    string
+		// caps is the session the text is rendered for.
+		caps capability.Capabilities
+		text string
+		want string
 	}{
 		{name: "one statement", dialect: platform.Postgres, text: "ALTER TABLE \"t\" ADD c int;\n", want: "ALTER TABLE \"t\" ADD c int;\n"},
 		{name: "two statements", dialect: platform.Postgres, text: "ALTER TABLE \"t\" ADD c int;\nALTER TABLE \"t\" DROP d;\n", want: "ALTER TABLE \"t\" ADD c int, DROP d;\n"},
@@ -65,13 +68,19 @@ func TestJoinAlterTable_HappyPath(t *testing.T) {
 			text: "ALTER TABLE \"t\" ADD a text DEFAULT 'x\\';\nALTER TABLE \"t\" DROP d;\n",
 			want: "ALTER TABLE \"t\" ADD a text DEFAULT 'x\\', DROP d;\n",
 		},
+		{
+			name: "a backslash before the closing quote under NO_BACKSLASH_ESCAPES", dialect: platform.MySQL,
+			caps: capability.ForDialect(platform.MySQL).With(capability.NoBackslashEscapes, true),
+			text: "ALTER TABLE \"t\" ADD a text DEFAULT 'x\\';\nALTER TABLE \"t\" DROP d;\n",
+			want: "ALTER TABLE \"t\" ADD a text DEFAULT 'x\\', DROP d;\n",
+		},
 		{name: "nothing", dialect: platform.Postgres, text: "", want: ""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, ok := bufwriter.JoinAlterTable(test.text, prefix, test.dialect)
+			got, ok := bufwriter.JoinAlterTable(test.text, prefix, test.dialect, test.caps)
 
 			c.Assert(ok, qt.IsTrue)
 			c.Assert(got, qt.Equals, test.want)
@@ -96,7 +105,7 @@ func TestJoinAlterTable_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got, ok := bufwriter.JoinAlterTable(test.text, prefix, platform.Postgres)
+			got, ok := bufwriter.JoinAlterTable(test.text, prefix, platform.Postgres, capability.Capabilities{})
 
 			c.Assert(ok, qt.IsFalse)
 			c.Assert(got, qt.Equals, "")

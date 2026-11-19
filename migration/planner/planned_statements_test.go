@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/go-extras/go-kit/must"
 
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/migration/planner"
 )
@@ -85,6 +87,43 @@ func TestRenderedPlanPlannedStatements(t *testing.T) {
 				want = append(want, statement.SQL)
 			}
 			c.Assert(must.Must(plan.Statements()), qt.DeepEquals, want)
+		})
+	}
+}
+
+// A plan is cut where the session it is rendered for ends a string. A
+// literal written for a session whose sql_mode names NO_BACKSLASH_ESCAPES keeps
+// a backslash before its closing quote, so the statement holding it is not cut
+// at the semicolon after that quote; the default sql_mode reads the same
+// backslash as an escape.
+func TestRenderedPlanPlannedStatements_ForTheSession(t *testing.T) {
+	fragment := "CREATE TABLE t (q varchar(9) DEFAULT 'it\\''s;x', b varchar(9) DEFAULT 'x\\');\nDROP TABLE u;\n"
+	tests := []struct {
+		name string
+		caps capability.Capabilities
+		want []string
+	}{
+		{
+			name: "NO_BACKSLASH_ESCAPES",
+			caps: capability.ForDialect(platform.MySQL).With(capability.NoBackslashEscapes, true),
+			want: []string{"CREATE TABLE t (q varchar(9) DEFAULT 'it\\''s;x', b varchar(9) DEFAULT 'x\\')", "DROP TABLE u"},
+		},
+		{
+			name: "the default sql_mode",
+			caps: capability.ForDialect(platform.MySQL),
+			want: []string{"CREATE TABLE t (q varchar(9) DEFAULT 'it\\''s", "x', b varchar(9) DEFAULT 'x\\');\nDROP TABLE u;"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			plan := planner.RenderedPlan{
+				Request: renderer.Request{Capabilities: test.caps},
+				Result:  renderer.Result{Complete: true, Fragments: renderer.SQLFragments([]string{fragment})},
+				Dialect: platform.MySQL,
+			}
+
+			c.Assert(must.Must(plan.Statements()), qt.DeepEquals, test.want)
 		})
 	}
 }

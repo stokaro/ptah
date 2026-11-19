@@ -26,6 +26,7 @@ import (
 	"ptah.run/internal/atlasfilter"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/atlassource"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/convert/dbschematogo"
 	"ptah.run/internal/convert/goschematodb"
 	"ptah.run/internal/dbexprprobe"
@@ -174,6 +175,10 @@ type ApplyOptions struct {
 	// the schema again on its dev database, which holds none of the target's
 	// rows, and runs the target plan's data statements instead.
 	withoutData bool
+	// forLater spells the plan's literals for the default sql_mode rather than
+	// for the session it was planned on: a saved plan runs later, on a session
+	// the plan cannot name. See [backslashmode.ForLater].
+	forLater bool
 	// naming is where a desired name written without a schema is placed; see
 	// [namingFor]. Unresolved, it is decided from the connection and DevURL.
 	// A comparison on the dev database carries the target's, so both place a
@@ -212,9 +217,6 @@ type ApplyPlan struct {
 	// the objects it changes; see [planeffect.Describe]. It is nil when no unit
 	// is described.
 	effects [][]planeffect.Effect
-	// escaped names each string literal the plan renders from the model that
-	// holds a backslash; see [escapedLiterals].
-	escaped []string
 }
 
 // ApplyRuntimeOptions configures Atlas schema apply planning and execution.
@@ -629,6 +631,7 @@ func computeApplyPlan(
 		naming:           placed.naming,
 	}
 	info := conn.Info()
+	info.Capabilities = opts.renderCapabilities(info)
 	// The comparison is told what the diff policy will do to its answer; see
 	// [DiffPolicy.CompareOptions].
 	compareOpts := opts.Policy.CompareOptions()
@@ -742,6 +745,16 @@ func reviewApplyDiff(
 	return nil
 }
 
+// renderCapabilities is the capability set the plan's statements are spelled
+// for: the session's own, or for a saved plan the default sql_mode's; see
+// [ApplyOptions.forLater].
+func (opts ApplyOptions) renderCapabilities(info catalog.ServerInfo) capability.Capabilities {
+	if opts.forLater {
+		return backslashmode.ForLater(info.Capabilities)
+	}
+	return info.Capabilities
+}
+
 // plannedData is the data stage of a plan: the statements that reconcile the
 // declared rows, and the row sets they read, or none for a plan computed
 // [ApplyOptions.withoutData].
@@ -755,7 +768,8 @@ func plannedData(
 	if opts.withoutData {
 		return nil, nil, nil
 	}
-	return managedDataStatements(ctx, conn, opts.Runtime, desired, current, opts.ProjectRoots, protectedtable.New(opts.ProtectedTables))
+	return managedDataStatements(ctx, conn, opts.renderCapabilities(conn.Info()), opts.Runtime, desired, current, opts.ProjectRoots,
+		protectedtable.New(opts.ProtectedTables))
 }
 
 // selectApplyStates checks selectors against both sides before planning. One
@@ -1413,7 +1427,7 @@ func ApplySQL(
 		return errors.New("schema apply execution requires database connection")
 	}
 
-	return applyStatements(ctx, conn, txMode, SplitApplyStatements(sqlText, conn.Info().Dialect))
+	return applyStatements(ctx, conn, txMode, SplitApplyStatements(sqlText, conn.Info()))
 }
 
 // ApplyStatements executes an already-split ordered statement list under
@@ -1487,11 +1501,18 @@ func (e *listedStatementsError) position(executed int) int {
 	return e.positions[executed-1]
 }
 
-func SplitApplyStatements(sqlText, dialect string) []string {
-	statements := sqlutil.SplitSQLStatementsForDialect(sqlText, dialect)
+// SplitApplyStatements cuts SQL text a session runs, such as the plan an
+// --edit returned, into the statements that session receives, without their
+// comments. info is the session: one whose sql_mode names NO_BACKSLASH_ESCAPES
+// reads a backslash in a string as the character, so the text is cut and its
+// comments found as that session reads them. Read with the default rule,
+// `'a\'; DROP TABLE t; -- '` would be one statement holding a string, and the
+// DROP would reach the server without passing a gate that reads statements.
+func SplitApplyStatements(sqlText string, info catalog.ServerInfo) []string {
+	statements := sqlutil.SplitSQLStatementsForSession(sqlText, info.Dialect, info.Capabilities)
 	filtered := statements[:0]
 	for _, stmt := range statements {
-		stmt = strings.TrimSpace(sqlutil.StripCommentsForDialect(stmt, dialect))
+		stmt = strings.TrimSpace(sqlutil.StripCommentsForSession(stmt, info.Dialect, info.Capabilities))
 		if stmt != "" {
 			filtered = append(filtered, stmt)
 		}

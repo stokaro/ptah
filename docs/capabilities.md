@@ -178,7 +178,7 @@ so typos fail fast. Current registry:
 | `migration_lock_timeout` | a migration can be bounded by a lock timeout, which limits how long a statement waits for a lock |
 | `migration_statement_timeout` | a migration can be bounded by a statement timeout, which limits how long each statement runs |
 | `named_not_null_constraints` | a NOT NULL constraint carries a name the catalog reports back (PostgreSQL 18+) |
-| `no_backslash_escapes` | the MySQL-family session's sql_mode names NO_BACKSLASH_ESCAPES, so a schema apply refuses a plan that renders a backslash in a string literal (set from the session, never by a preset) |
+| `no_backslash_escapes` | the MySQL-family session's sql_mode names NO_BACKSLASH_ESCAPES, so a string literal Ptah renders for that session keeps each backslash single (set from the session, never by a preset) |
 | `non_equi_joins` | a JOIN condition can be any predicate, not only equalities between the joined inputs' columns (not YDB, ClickHouse 24) |
 | `not_enforced_checks` | CHECK constraints declared NOT ENFORCED, kept and not checked (PostgreSQL 18+, MySQL 8.0.16+) |
 | `not_enforced_foreign_keys` | foreign keys declared NOT ENFORCED, kept and not checked (PostgreSQL 18+) |
