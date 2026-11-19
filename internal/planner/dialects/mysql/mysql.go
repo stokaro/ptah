@@ -541,6 +541,7 @@ func (p *Planner) modifyExistingColumns(
 			field.Nullable = false
 		}
 		columnNode := modelast.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())
+		startNotes := leaveOutIdentityStart(tableDiff.TableName, colDiff, columnNode)
 
 		// Add a comment showing what changes are being made, before the
 		// statement it describes: written after it, the comment would be the
@@ -554,6 +555,7 @@ func (p *Planner) modifyExistingColumns(
 		}
 		astCommentNode := ast.NewDescriptiveComment(fmt.Sprintf("Modify column %s.%s: %s", tableDiff.TableName, colDiff.ColumnName, strings.Join(changesList, ", ")))
 		result = append(result, astCommentNode)
+		result = append(result, startNotes...)
 
 		// Generate ALTER COLUMN statements using AST
 		previousDefault, defaultChanged := columnchange.PreviousDefault(colDiff)
@@ -2225,6 +2227,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if !p.describes() {
 		guards.Settle(result, guards.Options{HarmlessRaw: harmlessSessionStatement})
 	}
+	warnLeftOutIdentityStarts(ctx, diff)
 	return result, nil
 }
 

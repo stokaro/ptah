@@ -144,6 +144,30 @@ var (
 		},
 	}
 
+	// LeftOutIdentityStarts is a START WITH a column declares that a plan
+	// changing the generation of the column's identity leaves out, since on a
+	// column that holds rows it restarts the counter and the next insert can
+	// fail. Its records carry the column as the "column" attribute and the
+	// start as the "start" attribute. Like [UndecidedObjects], the summary names
+	// every column, and the warning is written before the plan it concerns.
+	LeftOutIdentityStarts = &Category{
+		Name: "left-out-identity-start",
+		Summary: func(records []Record) string {
+			columns := make([]string, 0, len(records))
+			for _, record := range records {
+				column, _ := attr(record, "column")
+				start, _ := attr(record, "start")
+				columns = append(columns, column.String()+" (START WITH "+start.String()+")")
+			}
+			return fmt.Sprintf("%d identity starts are left out of the plan: %s. "+
+				"A start given to an identity column that holds rows restarts its counter there, "+
+				"and the next insert fails with ORA-00001 where a row holds the value. "+
+				"Declare START WITH LIMIT VALUE, or set each start by hand with "+
+				"ALTER TABLE ... MODIFY (... GENERATED ... AS IDENTITY (START WITH n)) once the value is known to be free",
+				len(records), strings.Join(columns, ", "))
+		},
+	}
+
 	// UndecidedObjects is an object a comparison could not decide, so it plans
 	// no change for it: a declared object of a kind the current side does not
 	// describe, or a provider's object it could not compare. Its records carry
