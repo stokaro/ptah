@@ -176,17 +176,13 @@ declaration builds, and changes it in place:
   `ALTER TABLE t MODIFY (id NUMBER(10) GENERATED ALWAYS AS IDENTITY)`, or
   `BY DEFAULT`, with the declared options except the start, as in
   `(INCREMENT BY 5)`. The counter goes on from where it was.
-- A declared `START WITH n` is left out of that `MODIFY`. Oracle restarts the
-  counter at a start given to a column that holds values: on a column holding
-  1 to 3, `START WITH 2` makes the next insert fail with `ORA-00001`. The rest
-  of the plan is kept. `schema apply`, its dry run, `migrations plan` and
-  `migrations generate` print one warning on standard error for each such
-  column, naming the column and the declared start, and a generated migration
-  file carries the same text as a comment above the `MODIFY`. To set the start,
-  declare `START WITH LIMIT VALUE`, which starts after the highest value the
-  column holds, or run
-  `ALTER TABLE t MODIFY (id GENERATED ALWAYS AS IDENTITY (START WITH 50))` by
-  hand once the value is known to be free.
+- A declared `START WITH n` is left out of that `MODIFY`, because Oracle
+  restarts the counter there: on a column holding 1 to 3, `START WITH 2` makes
+  the next insert fail with `ORA-00001`. Ptah warns about each such column on
+  standard error, and a generated migration file carries the warning as a
+  comment. To set the start, declare `START WITH LIMIT VALUE`, which starts
+  after the highest value held, or run the `MODIFY` with `START WITH n` by hand
+  once the value is free.
 - A column declared without an identity, over one that has it, takes
   `MODIFY (id NUMBER(10) DROP IDENTITY)`. Oracle leaves the column nullable,
   unless it is a key column, so a declared `NOT NULL` or default follows in a
@@ -196,9 +192,8 @@ declaration builds, and changes it in place:
   the column as a new column, or create the table again. The refusal names the
   first such column and stops there.
 
-The identity options are outside the comparison. A changed start, step or
-cache on a column that keeps its generation plans nothing, and the column
-keeps the options it was built with.
+The comparison leaves the identity options out: a changed start, step or
+cache on a column that keeps its generation plans nothing.
 
 A column Oracle reads as `BY DEFAULT ON NULL` compares equal to one declared
 `BY DEFAULT`.
