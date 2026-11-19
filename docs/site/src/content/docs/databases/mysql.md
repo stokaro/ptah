@@ -164,6 +164,8 @@ SQL:
   parentheses. Only a current-time function on a `DATETIME` or `TIMESTAMP`
   column stays bare: MySQL 8.4 and 26.10 refuse `DEFAULT uuid()` with
   `ERROR 1064` and `DEFAULT now()` on a `VARCHAR` with `ERROR 1067`. A
+  `default_expr` in a Go struct or a YAML schema is written by the same rule,
+  so `default_expr="1 + 2"` renders `DEFAULT (1 + 2)`. A
   parenthesis that changes the grouping is part of the default:
   `((1 + 2) * 3)` and `(1 + 2 * 3)` differ. An expression that holds
   `NOT`, `IS`, `IN`, `CASE`, a qualified name or another character set
@@ -175,6 +177,8 @@ SQL:
   either direction, and the same holds for `'now()'` and `(now())`. MySQL
   reports both of those as `now()` and tells them apart by
   `DEFAULT_GENERATED` in `EXTRA`, and `db read` writes the string in quotes.
+  A `default` in a Go struct or a YAML schema is such a string, so
+  `default="1 + 2"` against a column that holds `(1 + 2)` changes it too.
 - `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
   MariaDB type. Both engines take one auto-increment column per table, and only
@@ -551,6 +555,16 @@ SQL:
   or without the `=`, hold the text the server stores. A doubled quote and a
   backslash escape are read as the server reads them, and of two `COMMENT`
   clauses on one column the last is kept.
+- A Go or YAML literal default, a column, table or index comment and an enum
+  value are written with each backslash doubled and each quote doubled, so
+  `a\b` stores those three characters under the default `sql_mode`. A plan, a
+  saved plan file and a migration file are written that way whatever the
+  server's `sql_mode`. `schema apply` reads the `sql_mode` of the session it
+  applies on, and where it names `NO_BACKSLASH_ESCAPES` it sends each string
+  literal with every backslash once, so the server stores the same
+  characters. `migrations up` sends a migration file as written, so a file
+  Ptah generated stores what it declares on a session that keeps backslash
+  escapes.
 
 ## Table options
 

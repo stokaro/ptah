@@ -177,6 +177,10 @@ applied to a `sqlite://` database, is refused at the operator before anything
 is planned, and the refusal names the parenthesized form, `write DEFAULT (1 -
 2)`. SQLite reports a parenthesized default without its parentheses, and a
 comparison reads the two as the same default, so a second apply plans nothing.
+A Go or YAML `default_expr` such as `1 + 2` or `datetime('now')`, and a default
+a read reports without parentheses, is written in them. A number, a quoted
+string, a blob, `NULL`, `TRUE`, `FALSE` and the current-time keywords are
+written bare.
 
 ## What a rebuild still refuses
 

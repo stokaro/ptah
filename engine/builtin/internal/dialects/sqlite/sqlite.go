@@ -739,7 +739,7 @@ func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string,
 	case column.Default.HasLiteral():
 		parts = append(parts, "DEFAULT", renderDefaultLiteral(column))
 	case column.Default.Expression != "":
-		parts = append(parts, "DEFAULT", column.Default.Expression)
+		parts = append(parts, "DEFAULT", sqliteDefaultExpression(column.Default.Expression))
 	}
 	if column.Check != "" {
 		if column.CheckName != "" {
@@ -792,6 +792,40 @@ func mapColumnType(column *ast.ColumnNode) string {
 	default:
 		return column.Type
 	}
+}
+
+// sqliteDefaultExpression writes an expression default in the parentheses
+// SQLite requires around one. Its grammar takes a literal, a signed number,
+// NULL, TRUE, FALSE and the three current-time keywords bare, and anything
+// else only in parentheses: measured on SQLite 3.51, `DEFAULT 1 + 2` and
+// `DEFAULT datetime('now')` answer a syntax error, and each is accepted in
+// parentheses and reported without them. An expression the declaration
+// already encloses is written as it is.
+func sqliteDefaultExpression(expression string) string {
+	trimmed := strings.TrimSpace(expression)
+	switch strings.ToUpper(trimmed) {
+	case "NULL", "TRUE", "FALSE", "CURRENT_TIME", "CURRENT_DATE", "CURRENT_TIMESTAMP":
+		return expression
+	}
+	if isHexadecimalLiteral(trimmed) || defaultlit.IsPlainNumber(trimmed) ||
+		defaultlit.IsSQLLiteral(trimmed) || normalize.Expression(trimmed) != trimmed {
+		return expression
+	}
+	return "(" + trimmed + ")"
+}
+
+// isHexadecimalLiteral reports whether value is a hexadecimal integer, 0x1F,
+// or a blob literal, x'41', each of which SQLite takes bare in a default.
+func isHexadecimalLiteral(value string) bool {
+	lower := strings.ToLower(value)
+	digits, integer := strings.CutPrefix(lower, "0x")
+	if !integer {
+		if len(lower) < 3 || !strings.HasPrefix(lower, "x'") || !strings.HasSuffix(lower, "'") {
+			return false
+		}
+		digits = lower[2 : len(lower)-1]
+	}
+	return (integer && digits != "" || !integer && len(digits)%2 == 0) && strings.Trim(digits, "0123456789abcdef") == ""
 }
 
 // renderDefaultLiteral writes a default in the form the column's own affinity

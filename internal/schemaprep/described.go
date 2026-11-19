@@ -14,6 +14,7 @@ type described struct {
 	identifiers      descriptor.IdentifierLimit
 	checkNaming      descriptor.CheckNaming
 	constraintNaming descriptor.ConstraintNaming
+	backslashEscapes bool
 }
 
 // describedDialects caches what [describe] found. A spelling keeps the answer
@@ -43,6 +44,7 @@ func describe(dialect string) described {
 		identifiers:      found.IdentifierLimit,
 		checkNaming:      found.CheckNaming,
 		constraintNaming: found.ConstraintNaming,
+		backslashEscapes: found.Lexical.BackslashEscapes,
 	}
 	describedDialects.Store(dialect, answer)
 	return answer

@@ -296,7 +296,7 @@ Maps a Go struct field to a database column.
 | `check` | No | Column CHECK expression. |
 | `check_name` | No | Explicit CHECK constraint name. |
 | `comment` | No | Column comment. |
-| `default` | No | Literal column default. |
+| `default` | No | Literal column default. On a text column it is a string: `default="now()"` stores the five characters, and plans a change against a column whose default is the call. |
 | `default_expr` | No | SQL default expression. |
 | `enum` | No | Comma-separated enum values. |
 | `foreign` | No | Foreign key reference in table(column) form. |

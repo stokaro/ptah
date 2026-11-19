@@ -1,6 +1,6 @@
 package mysqlconnect
 
-// White-box testing required: the DSN go-sql-driver receives, the product a banner names and the session foreign-key policy are computed by unexported helpers, and no exported result reports them without a live server.
+// White-box testing required: the DSN go-sql-driver receives, the product a banner names, the session foreign-key policy and the session's sql_mode are computed by unexported helpers, and no exported result reports them without a live server.
 
 import (
 	"database/sql/driver"
@@ -109,6 +109,44 @@ func TestRefineMySQLForeignKeyCapabilities_ProbeFailure(t *testing.T) {
 	)
 
 	c.Assert(err, qt.ErrorMatches, `query restrict_fk_on_non_standard_key: driver: bad connection`)
+	c.Assert(got.Len(), qt.Equals, 0)
+}
+
+// The session's sql_mode decides how a backslash in a string reads, and the
+// refinement marks the session whose mode names NO_BACKSLASH_ESCAPES. The
+// modes are MySQL 26.10's default with and without it; internal/sqlmode
+// holds the rows that read the list.
+func TestRefineSQLModeCapabilities_HappyPath(t *testing.T) {
+	tests := []struct {
+		name, sqlMode string
+		want          bool
+	}{
+		{name: "MySQL's default", sqlMode: "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"},
+		{name: "without backslash escapes", sqlMode: "ONLY_FULL_GROUP_BY,NO_BACKSLASH_ESCAPES,STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION", want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := refineSQLModeCapabilities(capability.MySQL84(), func(destination ...any) error {
+				*destination[0].(*string) = test.sqlMode
+				return nil
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got.Has(capability.NoBackslashEscapes), qt.Equals, test.want)
+			c.Assert(got.Has(capability.ExpressionDefaults), qt.IsTrue)
+		})
+	}
+}
+
+func TestRefineSQLModeCapabilities_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := refineSQLModeCapabilities(capability.MySQL84(), func(...any) error { return driver.ErrBadConn })
+
+	c.Assert(err, qt.ErrorIs, driver.ErrBadConn)
+	c.Assert(err, qt.ErrorMatches, `query sql_mode: driver: bad connection`)
 	c.Assert(got.Len(), qt.Equals, 0)
 }
 

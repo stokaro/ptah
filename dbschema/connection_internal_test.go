@@ -388,13 +388,24 @@ func TestReportCapabilityResolution(t *testing.T) {
 	}
 }
 
+// The pinned session answers both variables the refinement reads: the
+// foreign-key policy, relaxed, and a sql_mode that names
+// NO_BACKSLASH_ESCAPES. Each refinement shows on the session's capabilities
+// and not on the connection's.
 func TestDatabaseConnectionWithSession_MySQLRelaxationIsCallbackScoped(t *testing.T) {
 	c := qt.New(t)
-	db := dbtest.Open(t, func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
-		return dbtest.QueryResult{
+	answers := map[string]dbtest.QueryResult{
+		"SELECT @@SESSION.restrict_fk_on_non_standard_key": {
 			Columns: []string{"restrict_fk_on_non_standard_key"},
 			Rows:    [][]driver.Value{{int64(0)}},
-		}, nil
+		},
+		"SELECT @@SESSION.sql_mode": {
+			Columns: []string{"sql_mode"},
+			Rows:    [][]driver.Value{{"STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES"}},
+		},
+	}
+	db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		return answers[query], nil
 	})
 	db.SQL.SetMaxOpenConns(1)
 	newReader := func(runner sqlrunner.Runner) catalog.SchemaReader {
@@ -425,12 +436,13 @@ func TestDatabaseConnectionWithSession_MySQLRelaxationIsCallbackScoped(t *testin
 	err := conn.WithSession(ctx, func(scoped *DatabaseConnection) error {
 		c.Assert(scoped.Info().Capabilities.Has(capability.ForeignKeysRequireUniqueReference), qt.IsFalse)
 		c.Assert(scoped.Info().Capabilities.Has(capability.ForeignKeysRequireIndexedReference), qt.IsTrue)
+		c.Assert(scoped.Info().Capabilities.Has(capability.NoBackslashEscapes), qt.IsTrue)
 		c.Assert(conn.Info().Capabilities, qt.DeepEquals, baseline)
 		return nil
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.QueryCount(), qt.Equals, 1)
+	c.Assert(db.QueryCount(), qt.Equals, 2)
 	c.Assert(conn.Info().Capabilities, qt.DeepEquals, baseline)
 }
 

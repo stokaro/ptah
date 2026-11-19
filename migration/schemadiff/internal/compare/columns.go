@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/columnsemantics"
 	"ptah.run/internal/columnsequence"
 	"ptah.run/internal/constraintowner"
+	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/exprkey"
 	"ptah.run/internal/normalize"
@@ -1092,7 +1093,7 @@ func columnDefaultChange(
 		if normalize.IsDefaultExpr(dbDefault) {
 			idxName = "default_expr"
 		}
-		declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault, dialect)
+		declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault, genType, dialect)
 		declaredIsExpression := genCol.Default == "" && genCol.DefaultExpr != ""
 		same, recognized := compareSequenceReferences(declared, reported, dialect, ctx.heldSchema, ctx.semantics, declaredIsExpression)
 		if !recognized {
@@ -1111,16 +1112,25 @@ func columnDefaultChange(
 // lose the parentheses around the whole of them: `DEFAULT (datetime('now'))`
 // and the `datetime('now')` SQLite reports for it are one default. Compared
 // with them, the declaration differs from the table it built on every run, and
-// SQLite rebuilds the table for it each time. A literal keeps its text, so a
-// string default `(x)` stays a different value from `x`.
+// SQLite rebuilds the table for it each time.
+//
+// A literal is compared as the catalog reports it ([defaultlit.AsRead]): on a
+// column that stores text, the bare `x` a struct tag or a YAML document
+// declares is the string `'x'`. Compared as written, the literal `1 + 2` and
+// the expression `(1 + 2)` a catalog reports are one default, so the column
+// that stores 3 is never changed to the one that stores the five characters.
+// The quotes also keep a string default `(x)` a different value from `x`.
 //
 // Where the dialect's descriptor names an operator precedence, both are then
 // compared as the operations it groups ([precedence.Canonical]). MySQL stores
 // `(2 * 3 + 1)` as `((2 * 3) + 1)`, and without the reading every apply plans
 // the column again. Either side the precedence cannot read leaves both as
 // written.
-func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported, dialect string) (comparedDeclared, comparedReported string) {
-	if genCol.Default != "" || genCol.DefaultExpr == "" {
+func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported, typeName, dialect string) (comparedDeclared, comparedReported string) {
+	if genCol.DefaultSet || genCol.Default != "" {
+		return literalsAsRead(declared, reported, typeName, dialect)
+	}
+	if genCol.DefaultExpr == "" {
 		return declared, reported
 	}
 	declared, reported = normalize.Expression(declared), normalize.Expression(reported)
@@ -1207,7 +1217,7 @@ func columnDefaultsEqual(declared, reported, typeName, dialect string, declaredI
 	if same, recognized := compareTemporalDefaultFunctions(declared, reported, typeName, dialect, declaredIsExpression); recognized {
 		return same
 	}
-	return !stringMeetsExpression(declared, reported, typeName, declaredIsExpression) &&
+	return !stringMeetsExpression(declared, reported, typeName) &&
 		normalize.DefaultValue(declared, typeName) == normalize.DefaultValue(reported, typeName)
 }
 
@@ -1220,34 +1230,24 @@ func columnDefaultsEqual(declared, reported, typeName, dialect string, declaredI
 //
 // A number is not held to this, because a catalog may report a numeric default
 // of a text column bare, as PostgreSQL reports `DEFAULT 0` on a varchar. An
-// empty reported default is left to the comparison as well, since MySQL
-// reports an empty string default as an empty value. So is a declared literal
-// without quotes, as a Go or YAML model writes one: the catalog shape built
-// from such a model carries it without quotes too, and there the characters of
-// a string and of an expression cannot be told apart.
-func stringMeetsExpression(declared, reported, typeName string, declaredIsExpression bool) bool {
-	if strings.TrimSpace(reported) == "" || !storesText(typeName) {
+// empty side is left to the comparison as well: an empty declaration is no
+// default, and MySQL reports an empty string default as an empty value. A
+// declared literal arrives here quoted ([comparableExpressionDefaults]), so it
+// is a string whatever its characters.
+func stringMeetsExpression(declared, reported, typeName string) bool {
+	if strings.TrimSpace(declared) == "" || strings.TrimSpace(reported) == "" || !defaultlit.StoresText(typeName) {
 		return false
 	}
 	declaredString := normalize.IsStringLiteral(declared)
 	reportedString := normalize.IsStringLiteral(reported)
-	unquotedLiteral := !declaredIsExpression && !declaredString
 	switch {
-	case unquotedLiteral, declaredString == reportedString:
+	case declaredString == reportedString:
 		return false
 	case declaredString:
 		return !isBareNumber(reported)
 	default:
 		return !isBareNumber(declared)
 	}
-}
-
-// storesText reports whether a normalized column type holds characters.
-func storesText(typeName string) bool {
-	name := strings.ToLower(typeName)
-	return strings.Contains(name, "char") || strings.Contains(name, "text") ||
-		strings.Contains(name, "clob") || strings.Contains(name, "string") ||
-		strings.HasPrefix(name, "enum(") || strings.HasPrefix(name, "set(")
 }
 
 // isBareNumber reports whether a default is an unquoted decimal number, inside

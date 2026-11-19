@@ -194,6 +194,7 @@ func measuredLines() map[string]measuredLine {
 			},
 			carried: map[capability.Capability]string{
 				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
+				capability.NoBackslashEscapes:              sessionModeCarried,
 				capability.AlterTableAlgorithmLock: "the probe sends no ALTER TABLE ... ALGORITHM= " +
 					"clause, and the key is false for every PostgreSQL-family target because the grammar " +
 					"is MySQL's alone",
@@ -388,6 +389,7 @@ func measuredLines() map[string]measuredLine {
 			},
 			carried: map[capability.Capability]string{
 				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
+				capability.NoBackslashEscapes:              sessionModeCarried,
 				capability.AlterTableAlgorithmLock: "the probe sends no ALGORITHM= clause. Measured " +
 					"separately on MySQL 8.4.6 and MariaDB 12.3.3 over eighteen ALTER TABLE forms: both " +
 					"accept ALGORITHM=INSTANT, ALGORITHM=INPLACE with LOCK=NONE and ALGORITHM=COPY, and " +
@@ -582,6 +584,7 @@ func measuredLines() map[string]measuredLine {
 			},
 			carried: map[capability.Capability]string{
 				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
+				capability.NoBackslashEscapes:              sessionModeCarried,
 				capability.AlterTableAlgorithmLock: "the probe sends no ALGORITHM= clause. Measured " +
 					"separately on MySQL 8.4.6 and MariaDB 12.3.3 over eighteen ALTER TABLE forms: both " +
 					"accept ALGORITHM=INSTANT, ALGORITHM=INPLACE with LOCK=NONE and ALGORITHM=COPY, and " +
@@ -782,6 +785,12 @@ const mysqlIndexRoleCommentCarried = "this run predates the keys and sent no COM
 const routineReplacementCarried = "no statement decides it: the key states how Ptah's plan replaces a modified " +
 	"routine, by DROP and CREATE on MySQL and MariaDB and by CREATE OR REPLACE on the PostgreSQL family, " +
 	"which is the planner's choice rather than the server's answer"
+
+// sessionModeCarried explains the session sql_mode key, which no probe
+// statement decides: the connector reads it off the session, and the probe's
+// servers run the default sql_mode, which every preset already describes.
+const sessionModeCarried = "no statement decides it: the connector sets the key from the session's sql_mode, " +
+	"and the probe's servers run the default sql_mode, which no preset marks"
 
 const enforcementAndMatchCarried = "this run predates the key and sent no NOT ENFORCED or MATCH clause. " +
 	"It was measured on 2026-09-27 against PostgreSQL 17.11 and 18.6, MySQL 8.4.11 and 9.7.2, " +

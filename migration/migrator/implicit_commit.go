@@ -6,6 +6,7 @@ import (
 
 	"ptah.run/internal/ddltx"
 	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlmode"
 	"ptah.run/internal/txcontrol"
 )
 
@@ -196,21 +197,12 @@ func mysqlUnsafeSQLModeAssignment(tokens []lexer.Token) bool {
 }
 
 func mysqlParserChangingSQLMode(sqlMode string) (string, bool) {
-	parserMode := ""
-	for mode := range strings.SplitSeq(sqlMode, ",") {
-		normalized := strings.ToUpper(strings.TrimSpace(mode))
-		switch normalized {
-		case "MSSQL":
-			return normalized, true
-		case "ANSI_QUOTES":
-			parserMode = normalized
-		case "NO_BACKSLASH_ESCAPES":
-			if parserMode == "" {
-				parserMode = normalized
-			}
+	for _, mode := range []string{"MSSQL", "ANSI_QUOTES", sqlmode.NoBackslashEscapes} {
+		if sqlmode.Has(sqlMode, mode) {
+			return mode, true
 		}
 	}
-	return parserMode, parserMode != ""
+	return "", false
 }
 
 func (m *Migration) hasSQLExecutor(direction MigrationDirection) bool {

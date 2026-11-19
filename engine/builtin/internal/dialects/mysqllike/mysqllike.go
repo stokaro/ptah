@@ -16,10 +16,12 @@ import (
 	"ptah.run/dialect/mysql/mysqlrender"
 	"ptah.run/engine/builtin/internal/dialects/internal/bufwriter"
 	"ptah.run/engine/builtin/internal/dialects/internal/viewrefusal"
+	"ptah.run/internal/defaultlit"
 	"ptah.run/internal/definer"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/mysqlviewsecurity"
+	"ptah.run/internal/normalize"
 	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/sqlscript"
@@ -111,8 +113,16 @@ func isMySQLBooleanType(columnType string) bool {
 		strings.HasPrefix(normalized, "tinyint(1)")
 }
 
+// mysqlDefaultNeedsLiteralQuotes reports whether a literal default is written
+// in quotes on a column of columnType.
+//
+// The literal NULL on a column that stores text is the string: a schema file
+// spells SQL NULL as an expression, and a Go or YAML literal is a value. The
+// comparison reads it as the string the catalog reports for `DEFAULT 'NULL'`,
+// so written bare it would store no default and plan the column on every
+// apply.
 func mysqlDefaultNeedsLiteralQuotes(columnType, value string) bool {
-	if isMySQLNullDefault(value) || isMySQLTemporalDefaultExpression(columnType, value) {
+	if isMySQLNullDefault(value) && !defaultlit.StoresText(columnType) || isMySQLTemporalDefaultExpression(columnType, value) {
 		return false
 	}
 
@@ -129,6 +139,27 @@ func mysqlDefaultNeedsLiteralQuotes(columnType, value string) bool {
 	default:
 		return false
 	}
+}
+
+// renderDefaultExpression writes an expression default in the parentheses the
+// server requires around one. Measured on MySQL 8.4 and 26.10, `DEFAULT 1 + 2`
+// answers ERROR 1064, and `DEFAULT now()` on a varchar and `DEFAULT
+// CURRENT_TIMESTAMP` on a TEXT column ERROR 1067; each is accepted in
+// parentheses. MariaDB 12.3 answers ERROR 1064 to `DEFAULT 1 + 2` too, and
+// reports the parenthesized current-time default as it reports the bare one.
+// What the server takes bare stays bare, so the catalog reports it as a
+// literal where it is one: a number, a quoted string, NULL, TRUE or FALSE, a
+// current-time function on a temporal column, and an expression the
+// declaration already encloses.
+func renderDefaultExpression(columnType, expression string) string {
+	trimmed := strings.TrimSpace(expression)
+	switch {
+	case strings.EqualFold(trimmed, "NULL"), strings.EqualFold(trimmed, "TRUE"), strings.EqualFold(trimmed, "FALSE"),
+		defaultlit.IsPlainNumber(trimmed), defaultlit.IsSQLLiteral(trimmed),
+		isMySQLTemporalDefaultExpression(columnType, trimmed), normalize.Expression(trimmed) != trimmed:
+		return expression
+	}
+	return "(" + trimmed + ")"
 }
 
 func isMySQLNullDefault(value string) bool {
@@ -994,7 +1025,7 @@ func (r *Renderer) appendColumnTail(parts []string, column *ast.ColumnNode) []st
 	case column.Default.HasLiteral():
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column)))
 	case column.Default.Expression != "":
-		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
+		parts = append(parts, "DEFAULT "+renderDefaultExpression(column.Type, column.Default.Expression))
 	}
 	if _, onUpdate := columnSettings(column); onUpdate != "" {
 		parts = append(parts, "ON UPDATE", onUpdate)
