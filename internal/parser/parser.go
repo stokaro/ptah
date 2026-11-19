@@ -4117,7 +4117,7 @@ func (p *Parser) refuseDefaultPipes(text string, start, end int) error {
 	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
 		if token.MatchOperatorValue("|") && previous.MatchOperatorValue("|") && previous.End == token.Start {
 			return ptaherr.At(previous.Start, fmt.Errorf(
-				"%s holds ||: write DEFAULT (%s) for a concatenation, or OR for a logical or; %s",
+				"%s holds ||: write DEFAULT %s for a concatenation, or OR for a logical or; %s",
 				text, p.concatenation(text), refusal))
 		}
 		previous = token
@@ -4125,32 +4125,95 @@ func (p *Parser) refuseDefaultPipes(text string, start, end int) error {
 	return nil
 }
 
-// concatenation answers the CONCAT call that joins the operands || separates
-// in expression, outside any group but one around the whole of it.
+// concatenation answers expression written with CONCAT where it writes ||,
+// in parentheses unless one group holds the whole of it. Each run of operands
+// || joins becomes one CONCAT call where it stands, so in
+// `coalesce('a' || 'b', 'c')` the call takes the first argument's place.
 func (p *Parser) concatenation(expression string) string {
-	inner := expression
-	if strings.HasPrefix(inner, "(") && strings.HasSuffix(inner, ")") && closesAtEnd(inner, lexerOptions(p.dialect)) {
-		inner = strings.TrimSpace(inner[1 : len(inner)-1])
+	options := lexerOptions(p.dialect)
+	written := withConcat(expression, options)
+	if strings.HasPrefix(written, "(") && closesAtEnd(written, options) {
+		return written
 	}
-	scan := lexer.NewLexerWithOptions(inner, lexerOptions(p.dialect))
-	var operands []string
-	depth, from := 0, 0
-	var previous lexer.Token
+	return "(" + written + ")"
+}
+
+// withConcat rewrites each run of operands || joins in text as a CONCAT call,
+// in every group and argument list, and keeps the rest as written.
+func withConcat(text string, options lexer.Options) string {
+	var tokens []lexer.Token
+	scan := lexer.NewLexerWithOptions(text, options)
 	for token := scan.NextToken(); token.Type != lexer.TokenEOF; token = scan.NextToken() {
+		tokens = append(tokens, token)
+	}
+	var out, operand strings.Builder
+	var operands []string
+	flush := func() {
+		operands = append(operands, operand.String())
+		operand.Reset()
+		out.WriteString(joinedByConcat(operands))
+		operands = operands[:0]
+	}
+	for i := 0; i < len(tokens); i++ {
+		token := tokens[i]
 		switch {
 		case token.MatchOperatorValue("("):
-			depth++
-		case token.MatchOperatorValue(")"):
-			depth--
-		case depth == 0 && token.MatchOperatorValue("|") && previous.MatchOperatorValue("|") && previous.End == token.Start:
-			operands = append(operands, strings.TrimSpace(inner[from:previous.Start]))
-			from = token.End
-			token = lexer.Token{}
+			closing := matchingParenthesis(tokens, i)
+			if closing < 0 {
+				operand.WriteString(text[token.Start:])
+				i = len(tokens)
+				continue
+			}
+			operand.WriteString("(" + withConcat(text[token.End:tokens[closing].Start], options) + ")")
+			i = closing
+		case token.MatchOperatorValue(","):
+			flush()
+			out.WriteString(",")
+		case token.MatchOperatorValue("|") && i+1 < len(tokens) && tokens[i+1].MatchOperatorValue("|") && token.End == tokens[i+1].Start:
+			operands = append(operands, operand.String())
+			operand.Reset()
+			i++
+		default:
+			operand.WriteString(token.Value)
 		}
-		previous = token
 	}
-	operands = append(operands, strings.TrimSpace(inner[from:]))
-	return "CONCAT(" + strings.Join(operands, ", ") + ")"
+	flush()
+	return out.String()
+}
+
+// joinedByConcat answers one operand as written, and several as the CONCAT
+// call that joins them, keeping the space before the first and after the
+// last.
+func joinedByConcat(operands []string) string {
+	if len(operands) == 1 {
+		return operands[0]
+	}
+	trimmed := make([]string, len(operands))
+	for i, operand := range operands {
+		trimmed[i] = strings.TrimSpace(operand)
+	}
+	first, last := operands[0], operands[len(operands)-1]
+	leading := first[:len(first)-len(strings.TrimLeft(first, " \t\r\n"))]
+	trailing := last[len(strings.TrimRight(last, " \t\r\n")):]
+	return leading + "CONCAT(" + strings.Join(trimmed, ", ") + ")" + trailing
+}
+
+// matchingParenthesis answers the index of the token that closes the
+// parenthesis at open, or -1 where none does.
+func matchingParenthesis(tokens []lexer.Token, open int) int {
+	depth := 0
+	for i := open; i < len(tokens); i++ {
+		switch {
+		case tokens[i].MatchOperatorValue("("):
+			depth++
+		case tokens[i].MatchOperatorValue(")"):
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // closesAtEnd reports whether the parenthesis that opens text closes at its

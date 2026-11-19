@@ -233,7 +233,7 @@ func mariaDB() descriptor.Dialect {
 			Columns: descriptor.ColumnGrammar{
 				DefaultOperatorRefusal: "MariaDB 12.3 takes an expression default only in parentheses and answers " +
 					"ERROR 1064 (42000) to an operator outside them",
-				DefaultPipesRefusal: "MariaDB 12.3 reads || as OR under its default SQL mode and stores " +
+				DefaultPipesRefusal: "MariaDB 11.8 to 12.3 read || as OR under their default SQL mode and store " +
 					"DEFAULT ('a' || 'b') as ('a' or 'b'), which inserts 0; under PIPES_AS_CONCAT it is a " +
 					"concatenation",
 				SecondCheckRefusal: "MariaDB accepts one CHECK on a column and answers ERROR 1064 (42000) to the " +

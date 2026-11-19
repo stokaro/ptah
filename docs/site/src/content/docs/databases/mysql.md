@@ -585,13 +585,15 @@ before anything is planned, and the refusal names the parenthesized form,
 `/*!80023 INVISIBLE */`, stays the column's.
 
 Both engines read `||` as `OR` under their default SQL mode and as a
-concatenation only under `PIPES_AS_CONCAT`. MySQL 26.10 stores
-`DEFAULT ('a' || 'b')` as `((0 <> 'a') or (0 <> 'b'))` and answers
-ERROR 1292 (22007) to the INSERT that takes it; MariaDB 12.3 stores
-`('a' or 'b')` and inserts 0. A schema file read with either dialect is
-refused at the first `||`, in parentheses or without, and the refusal names
-the call that concatenates under every mode, `write DEFAULT (CONCAT('a',
-'b'))`. Write `OR` where a logical or is meant.
+concatenation only under `PIPES_AS_CONCAT`. MySQL 8.4 to 26.10 store
+`DEFAULT ('a' || 'b')` as `((0 <> 'a') or (0 <> 'b'))` and answer
+ERROR 1292 (22007) to the INSERT that takes it; MariaDB 11.8 to 12.3 store
+`('a' or 'b')` and insert 0. A schema file read with either dialect is
+refused at the first `||`, in parentheses or without, and the refusal writes
+the default with a call that concatenates under every mode where the
+operands stand: `write DEFAULT (CONCAT('a', 'b'))`, and
+`write DEFAULT (coalesce(CONCAT('a', 'b'), 'c'))` for
+`(coalesce('a' || 'b', 'c'))`. Write `OR` where a logical or is meant.
 
 ## Column character set and ON UPDATE
 

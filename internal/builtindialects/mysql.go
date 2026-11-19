@@ -251,7 +251,7 @@ func mysql() descriptor.Dialect {
 			Columns: descriptor.ColumnGrammar{
 				DefaultOperatorRefusal: "MySQL 26.10 takes an expression default only in parentheses and answers " +
 					"ERROR 1064 (42000) to an operator outside them",
-				DefaultPipesRefusal: "MySQL 26.10 reads || as OR under its default SQL mode and stores " +
+				DefaultPipesRefusal: "MySQL 8.4 to 26.10 read || as OR under their default SQL mode and store " +
 					"DEFAULT ('a' || 'b') as ((0 <> 'a') or (0 <> 'b')), so an INSERT that takes the default " +
 					"answers ERROR 1292 (22007); under PIPES_AS_CONCAT it is a concatenation",
 				ReferencesRefusal: "MySQL 8.4 builds nothing from the clause, while MySQL 9.7 and 26.7 build a " +

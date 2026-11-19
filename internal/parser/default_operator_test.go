@@ -396,10 +396,10 @@ func TestParse_DefaultOperatorOutsideParentheses_FailurePath(t *testing.T) {
 // first ||, in parentheses or without, and the refusal names the CONCAT call
 // its operands make.
 func TestParse_DefaultPipes_FailurePath(t *testing.T) {
-	const mysql = `MySQL 26\.10 reads \|\| as OR under its default SQL mode and stores DEFAULT \('a' \|\| 'b'\) as ` +
+	const mysql = `MySQL 8\.4 to 26\.10 read \|\| as OR under their default SQL mode and store DEFAULT \('a' \|\| 'b'\) as ` +
 		`\(\(0 <> 'a'\) or \(0 <> 'b'\)\), so an INSERT that takes the default answers ERROR 1292 \(22007\); ` +
 		`under PIPES_AS_CONCAT it is a concatenation`
-	const mariadb = `MariaDB 12\.3 reads \|\| as OR under its default SQL mode and stores DEFAULT \('a' \|\| 'b'\) as ` +
+	const mariadb = `MariaDB 11\.8 to 12\.3 read \|\| as OR under their default SQL mode and store DEFAULT \('a' \|\| 'b'\) as ` +
 		`\('a' or 'b'\), which inserts 0; under PIPES_AS_CONCAT it is a concatenation`
 	rows := []struct {
 		name, dialect, column, wantErr string
@@ -419,6 +419,24 @@ func TestParse_DefaultPipes_FailurePath(t *testing.T) {
 			column: "s varchar(9) DEFAULT (concat('x', 'y') || 'b'||'c')",
 			wantErr: `line 1, column 64: expected default value: \(concat\('x', 'y'\) \|\| 'b'\|\|'c'\) holds \|\|: write ` +
 				`DEFAULT \(CONCAT\(concat\('x', 'y'\), 'b', 'c'\)\) for a concatenation, or OR for a logical or; ` + mysql,
+		},
+		{
+			// The call takes the place of the argument || joins.
+			name: "MySQL, inside a call", dialect: "mysql", column: "s varchar(9) DEFAULT (coalesce('a' || 'b', 'c'))",
+			wantErr: `line 1, column 60: expected default value: \(coalesce\('a' \|\| 'b', 'c'\)\) holds \|\|: write ` +
+				`DEFAULT \(coalesce\(CONCAT\('a', 'b'\), 'c'\)\) for a concatenation, or OR for a logical or; ` + mysql,
+		},
+		{
+			// The first group does not hold the whole default, so the rewrite
+			// gains parentheses of its own.
+			name: "MySQL, a group on each side", dialect: "mysql", column: "s varchar(9) DEFAULT ('a' || 'b') || ('c')",
+			wantErr: `line 1, column 51: expected default value: \('a' \|\| 'b'\) \|\| \('c'\) holds \|\|: write ` +
+				`DEFAULT \(CONCAT\(\(CONCAT\('a', 'b'\)\), \('c'\)\)\) for a concatenation, or OR for a logical or; ` + mysql,
+		},
+		{
+			name: "MySQL, a group before another operator", dialect: "mysql", column: "s varchar(9) DEFAULT ('a' || 'b') + 1",
+			wantErr: `line 1, column 51: expected default value: \('a' \|\| 'b'\) \+ 1 holds \|\|: write ` +
+				`DEFAULT \(\(CONCAT\('a', 'b'\)\) \+ 1\) for a concatenation, or OR for a logical or; ` + mysql,
 		},
 		{
 			name: "MariaDB, in parentheses", dialect: "mariadb", column: "s varchar(4) DEFAULT ('a' || 'b')",
