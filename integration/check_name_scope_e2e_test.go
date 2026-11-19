@@ -213,6 +213,13 @@ func TestSchemaApplyKeepsACheckNamePerTableE2E(t *testing.T) {
 			checks: "SELECT count(*) FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 't'",
 		},
 		{
+			// MySQL accepts the capital sharp s beside the sharp s, so Ptah,
+			// which folds ASCII letters only, does too.
+			name: "MySQL, the capital sharp s beside the sharp s", engine: checkNameMySQL, want: "2",
+			schema: "CREATE TABLE t (a int, CONSTRAINT `\u1e9e` CHECK (a > 0), CONSTRAINT `\u00df` CHECK (a < 9));\n",
+			checks: "SELECT count(*) FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE()",
+		},
+		{
 			// A case-sensitive collation holds ck and CK apart, and Ptah
 			// leaves a difference of case to the server.
 			name: "SQL Server, a case-sensitive collation", engine: checkNameSQLServerCaseSensitive, want: "2",
