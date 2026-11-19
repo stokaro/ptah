@@ -179,6 +179,15 @@ SQL:
   `DEFAULT_GENERATED` in `EXTRA`, and `db read` writes the string in quotes.
   A `default` in a Go struct or a YAML schema is such a string, so
   `default="1 + 2"` against a column that holds `(1 + 2)` changes it too.
+- `DEFAULT ''` and no default are different defaults, and so are
+  `DEFAULT 'NULL'` and `DEFAULT NULL`. MySQL reports the string `NULL`
+  without quotes and SQL NULL as no value, and the empty string as an empty
+  value. `db read` writes each as the string it is.
+- `db read` writes a backslash in a MySQL string default doubled, so
+  `DEFAULT 'a\\b'` replays as the three characters it stores. A source
+  session whose `sql_mode` names `NO_BACKSLASH_ESCAPES` writes the backslash
+  as it is, for a target in the same mode. A quote escaped with a backslash
+  and a doubled quote compare as one character.
 - `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
   MariaDB type. Both engines take one auto-increment column per table, and only

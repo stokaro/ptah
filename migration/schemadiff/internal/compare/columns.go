@@ -1093,18 +1093,37 @@ func columnDefaultChange(
 		if normalize.IsDefaultExpr(dbDefault) {
 			idxName = "default_expr"
 		}
-		declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault, genType, dialect)
-		declaredIsExpression := genCol.Default == "" && genCol.DefaultExpr != ""
-		same, recognized := compareSequenceReferences(declared, reported, dialect, ctx.heldSchema, ctx.semantics, declaredIsExpression)
-		if !recognized {
-			same = columnDefaultsEqual(declared, reported, genType, dialect, declaredIsExpression)
-		}
-		if !same {
-			return idxName, fmt.Sprintf("%s -> %s", dbDefault, genDefault)
+		if !sameColumnDefault(genCol, genDefault, dbDefault, genType, dialect, ctx) {
+			return idxName, fmt.Sprintf("%s -> %s", dbDefault, shownDefault(genCol, genDefault, genType))
 		}
 	}
 
 	return "", ""
+}
+
+// shownDefault is the declared default as a change reports it. An empty
+// literal is shown as the string it is, not as nothing.
+func shownDefault(genCol schemamodel.Field, genDefault, genType string) string {
+	if genDefault == "" && genCol.DefaultSet {
+		return defaultlit.AsRead(genType, genCol.Default)
+	}
+	return genDefault
+}
+
+// sameColumnDefault reports whether the declared default, genDefault as the
+// renderer writes it, and the reported default dbDefault are one default on a
+// column of type genType.
+func sameColumnDefault(genCol schemamodel.Field, genDefault, dbDefault, genType, dialect string, ctx columnContext) bool {
+	declared, reported := comparableExpressionDefaults(genCol, genDefault, dbDefault, genType, dialect)
+	declaredIsExpression := genCol.Default == "" && genCol.DefaultExpr != ""
+	if same, recognized := compareSequenceReferences(declared, reported, dialect, ctx.heldSchema, ctx.semantics, declaredIsExpression); recognized {
+		return same
+	}
+	// A sequence reference is never an empty string, so the empty string's
+	// own check runs only on a default the sequence comparison did not
+	// recognize.
+	return !noDefaultMeetsEmptyString(genCol, genType, dbDefault) &&
+		columnDefaultsEqual(declared, reported, genType, dialect, declaredIsExpression)
 }
 
 // comparableExpressionDefaults answers the declared and the reported default
@@ -1127,6 +1146,9 @@ func columnDefaultChange(
 // the column again. Either side the precedence cannot read leaves both as
 // written.
 func comparableExpressionDefaults(genCol schemamodel.Field, declared, reported, typeName, dialect string) (comparedDeclared, comparedReported string) {
+	if comparisonOf(dialect).DoubleQuotedStrings {
+		declared, reported = quotesDoubled(declared), quotesDoubled(reported)
+	}
 	if genCol.DefaultSet || genCol.Default != "" {
 		return literalsAsRead(declared, reported, typeName, dialect)
 	}
@@ -1210,6 +1232,42 @@ func SequenceReferenceNames(expression, dialect string) []string {
 	return sequenceref.Names(expression, rules)
 }
 
+// quotesDoubled writes each backslash-escaped quote inside a single-quoted
+// string of value as a doubled quote. Under MySQL's default sql_mode `'a\'b'`
+// and the same string with the quote doubled are one string. The MySQL and
+// MariaDB readers write the doubled form and a schema file may hold the other,
+// and compared as written they plan the column on every apply. Every other
+// escape is kept as written.
+func quotesDoubled(value string) string {
+	if !strings.Contains(value, `\'`) {
+		return value
+	}
+	var b strings.Builder
+	inString := false
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		switch {
+		case !inString:
+			inString = ch == '\''
+		case ch == '\\' && i+1 < len(value):
+			i++
+			if value[i] == '\'' {
+				b.WriteString("''")
+				continue
+			}
+			b.WriteByte(ch)
+			ch = value[i]
+		case ch == '\'' && i+1 < len(value) && value[i+1] == '\'':
+			b.WriteByte(ch)
+			i++
+		case ch == '\'':
+			inString = false
+		}
+		b.WriteByte(ch)
+	}
+	return b.String()
+}
+
 // columnDefaultsEqual compares both values under the desired column type.
 // SQL Server's temporal functions are compared before general normalization
 // so an expression cannot match a quoted string with the same spelling.
@@ -1221,6 +1279,25 @@ func columnDefaultsEqual(declared, reported, typeName, dialect string, declaredI
 		normalize.DefaultValue(declared, typeName) == normalize.DefaultValue(reported, typeName)
 }
 
+// noDefaultMeetsEmptyString reports whether one side has no default and the
+// other the empty string. [normalize.DefaultValue] takes the quotes off a
+// string, so without this check the empty string and no default are one
+// default: a column that stores an empty string for an omitted value is never
+// changed to the one that stores NULL, nor back. Measured on MySQL 26.10,
+// MariaDB 12.3 and PostgreSQL 18, each catalog tells the two apart.
+func noDefaultMeetsEmptyString(genCol schemamodel.Field, typeName, reported string) bool {
+	declaresNone := !genCol.DefaultSet && genCol.Default == "" && genCol.DefaultExpr == ""
+	declaresEmpty := (genCol.DefaultSet || genCol.Default != "") && isEmptyString(defaultlit.AsRead(typeName, genCol.Default))
+	reportsNone := strings.TrimSpace(reported) == ""
+	return (declaresNone && isEmptyString(reported)) || (declaresEmpty && reportsNone)
+}
+
+// isEmptyString reports whether value is a string literal that holds nothing,
+// in any spelling a catalog reports one.
+func isEmptyString(value string) bool {
+	return normalize.IsStringLiteral(value) && normalize.DefaultValue(value, "") == ""
+}
+
 // stringMeetsExpression reports whether one default is a string and the other
 // an expression, on a column that stores text. [normalize.DefaultValue] takes
 // the quotes off a string, so without this check `'1 + 2'` and `(1 + 2)` are one
@@ -1229,13 +1306,11 @@ func columnDefaultsEqual(declared, reported, typeName, dialect string, declaredI
 // `'now()'` against `now()`.
 //
 // A number is not held to this, because a catalog may report a numeric default
-// of a text column bare, as PostgreSQL reports `DEFAULT 0` on a varchar. An
-// empty side is left to the comparison as well: an empty declaration is no
-// default, and MySQL reports an empty string default as an empty value. A
+// of a text column bare, as PostgreSQL reports `DEFAULT 0` on a varchar. A
 // declared literal arrives here quoted ([comparableExpressionDefaults]), so it
 // is a string whatever its characters.
 func stringMeetsExpression(declared, reported, typeName string) bool {
-	if strings.TrimSpace(declared) == "" || strings.TrimSpace(reported) == "" || !defaultlit.StoresText(typeName) {
+	if !defaultlit.StoresText(typeName) {
 		return false
 	}
 	declaredString := normalize.IsStringLiteral(declared)

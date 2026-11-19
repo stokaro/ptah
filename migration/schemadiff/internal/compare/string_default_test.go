@@ -157,7 +157,6 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 		{name: "PostgreSQL, a number on a varchar", dialect: platform.Postgres, columnType: "varchar(10)", literal: "0", reported: "0"},
 		{name: "PostgreSQL, a quoted number against a bare one", dialect: platform.Postgres, columnType: "varchar(10)", literal: "'0'", reported: "0"},
 		{name: "PostgreSQL, a number expression against a quoted number", dialect: platform.Postgres, columnType: "varchar(10)", expression: "0", reported: "'0'::character varying"},
-		{name: "MySQL, an empty string against the empty default the catalog reports", dialect: platform.MySQL, columnType: "varchar(10)", literal: "''", reported: ""},
 		{name: "PostgreSQL, an empty literal a model declares against an empty string", dialect: platform.Postgres, columnType: "varchar(10)", set: true, reported: "''::character varying"},
 		{name: "PostgreSQL, a number expression on a text column", dialect: platform.Postgres, columnType: "text", expression: "(1)", reported: "1"},
 		{name: "PostgreSQL, a quoted number on an integer", dialect: platform.Postgres, columnType: "integer", literal: "-1", reported: "'-1'::integer"},
@@ -170,6 +169,8 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 		{name: "PostgreSQL, a bare literal with a backslash", dialect: platform.Postgres, columnType: "text", literal: `a\b`, reported: `'a\b'::text`},
 		{name: "Oracle, a sequence reference on a text column", dialect: platform.Oracle, columnType: "VARCHAR2(30)", expression: "app.seq.NEXTVAL", reported: `"APP"."SEQ"."NEXTVAL"`},
 		{name: "SQL Server, a sequence clause on a text column", dialect: platform.SQLServer, columnType: "nvarchar(30)", expression: "NEXT VALUE FOR s", reported: "(NEXT VALUE FOR [s])"},
+		{name: "MySQL, a quote after a backslash against a doubled quote", dialect: platform.MySQL, columnType: "varchar(30)", literal: `'a\'b\\c'`, reported: `'a''b\\c'`},
+		{name: "MariaDB, a quote after a backslash against a doubled quote", dialect: platform.MariaDB, columnType: "varchar(30)", literal: `'a\'b'`, reported: `'a''b'`},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -209,6 +210,77 @@ func TestColumns_ABackslashIsNotTheEscapeItStarts(t *testing.T) {
 			c := qt.New(t)
 			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultSet: true}
 			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: new(row.reported)}
+
+			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)
+
+			c.Assert(result.Changes, qt.DeepEquals, row.want)
+		})
+	}
+}
+
+// No default and the empty string are different defaults: one inserts NULL for
+// an omitted value, the other an empty string. Each catalog reports the empty
+// string in quotes, and no default as nothing.
+func TestColumns_AnEmptyStringIsNotNoDefault(t *testing.T) {
+	rows := []struct {
+		name, dialect, columnType string
+		literal                   string
+		set                       bool
+		reported                  *string
+		want                      map[string]string
+	}{
+		{
+			name: "MySQL, an empty string against no default", dialect: platform.MySQL, columnType: "varchar(10)",
+			literal: "''",
+			want:    map[string]string{"default_expr": " -> ''"},
+		},
+		{
+			name: "MySQL, no default against an empty string", dialect: platform.MySQL, columnType: "varchar(10)",
+			reported: new("''"),
+			want:     map[string]string{"default": "'' -> "},
+		},
+		{
+			name: "MariaDB, no default against an empty string", dialect: platform.MariaDB, columnType: "varchar(10)",
+			reported: new("''"),
+			want:     map[string]string{"default": "'' -> "},
+		},
+		{
+			name: "PostgreSQL, an empty string against no default", dialect: platform.Postgres, columnType: "varchar(10)",
+			literal: "''",
+			want:    map[string]string{"default_expr": " -> ''"},
+		},
+		{
+			name: "PostgreSQL, no default against an empty string", dialect: platform.Postgres, columnType: "varchar(10)",
+			reported: new("''::character varying"),
+			want:     map[string]string{"default_expr": "''::character varying -> "},
+		},
+		{
+			name: "an empty literal a model declares against no default", dialect: platform.Postgres, columnType: "text",
+			set:  true,
+			want: map[string]string{"default_expr": " -> ''"},
+		},
+		{
+			// A varbinary stores no text, so only the empty string's own
+			// check tells it from no default.
+			name: "MySQL, no default against an empty string on a varbinary", dialect: platform.MySQL, columnType: "varbinary(8)",
+			reported: new("''"),
+			want:     map[string]string{"default": "'' -> "},
+		},
+		{
+			name: "no default against no default", dialect: platform.MySQL, columnType: "varchar(10)",
+			want: map[string]string{},
+		},
+		{
+			name: "an empty string against an empty string", dialect: platform.MariaDB, columnType: "varchar(10)",
+			literal: "''", reported: new("''"),
+			want: map[string]string{},
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			genCol := schemamodel.Field{Name: "c", Type: row.columnType, Nullable: true, Default: row.literal, DefaultSet: row.set}
+			dbCol := catalog.Column{Name: "c", DataType: row.columnType, ColumnType: row.columnType, IsNullable: "YES", ColumnDefault: row.reported}
 
 			result := compare.ColumnsWithDialect(genCol, dbCol, row.dialect)
 

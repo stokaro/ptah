@@ -417,6 +417,63 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         "'uuid()'",
 		},
 		{
+			// Measured on MySQL 26.10 for DEFAULT 'a\\b'.
+			name:         "a MySQL string holding a backslash",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: `a\b`,
+			want:         `'a\\b'`,
+		},
+		{
+			// Measured on MySQL 26.10 for DEFAULT 'a\'b\\c'.
+			name:         "a MySQL string holding a quote and a backslash",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: `a'b\c`,
+			want:         `'a''b\\c'`,
+		},
+		{
+			// Under NO_BACKSLASH_ESCAPES a backslash is the character.
+			name:         "a MySQL string holding a backslash without backslash escapes",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: `a\b`,
+			literals:     literalsUnquotedVerbatim,
+			want:         `'a\b'`,
+		},
+		{
+			// Measured on MySQL 26.10: DEFAULT '' reports an empty value and
+			// no default reports SQL NULL.
+			name:         "a MySQL empty string",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "",
+			want:         "''",
+		},
+		{
+			name:         "a MySQL empty string on a varbinary",
+			columnType:   "varbinary(8)",
+			dataType:     "varbinary",
+			defaultValue: "",
+			want:         "''",
+		},
+		{
+			name:         "a MySQL string of one space",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: " ",
+			want:         "' '",
+		},
+		{
+			// Measured on MariaDB 12.3, which writes the literal as SQL.
+			name:         "a MariaDB string holding a backslash",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: `'a\\b'`,
+			literals:     literalsQuoted,
+			want:         `'a\\b'`,
+		},
+		{
 			// MySQL reports DEFAULT 'NULL' on a varchar as the text NULL with
 			// an empty EXTRA, and DEFAULT NULL as no value at all, so the text
 			// is the string.

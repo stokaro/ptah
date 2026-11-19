@@ -267,18 +267,6 @@ var roundTripGaps = []Unreached{
 		Directions: nil,
 		Reason:     gapComparison,
 	},
-	{
-		Field:      "schemamodel.Field.DefaultSet",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlite", "sqlserver", "yugabytedb"},
-		Directions: []Direction{FromCatalog},
-		Reason:     gapFromCatalog,
-	},
-	{
-		Field:      "schemamodel.Field.DefaultSet",
-		Dialects:   []string{"clickhouse", "cockroachdb", "mariadb", "mysql", "oracle", "postgres", "sqlite", "sqlserver", "yugabytedb"},
-		Directions: []Direction{ToCatalog},
-		Reason:     gapComparison,
-	},
 	{Field: "schemamodel.Field.Facets", Dialects: []string{"mariadb", "mysql"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Field.GeneratedExpression", Dialects: []string{"oracle"}, Directions: nil, Reason: gapComparison},
 	{Field: "schemamodel.Field.IdentityIncrement", Dialects: []string{"sqlserver"}, Directions: nil, Reason: gapComparison},

@@ -13,6 +13,10 @@ const (
 	MariaDBVersion = "12.3.3-MariaDB-ubu2404"
 )
 
+// MySQLSQLMode is the sql_mode a scripted MySQL-family session reports:
+// MySQL's default, under which a backslash in a string literal escapes.
+const MySQLSQLMode = "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+
 // MySQLAllGrants is the SHOW GRANTS answer of an account that sees everything.
 var MySQLAllGrants = []string{"GRANT ALL PRIVILEGES ON *.* TO `root`@`%` WITH GRANT OPTION"}
 
@@ -26,8 +30,8 @@ func MySQLSession(version string, grants []string, next QueryHandler) QueryHandl
 		switch {
 		case strings.Contains(query, "SELECT CURRENT_USER(), VERSION()"):
 			return QueryResult{
-				Columns: []string{"CURRENT_USER()", "VERSION()"},
-				Rows:    [][]driver.Value{{"app@%", version}},
+				Columns: []string{"CURRENT_USER()", "VERSION()", "@@SESSION.sql_mode"},
+				Rows:    [][]driver.Value{{"app@%", version, MySQLSQLMode}},
 			}, nil
 		case strings.TrimSpace(query) == "SHOW GRANTS":
 			rows := make([][]driver.Value, 0, len(grants))

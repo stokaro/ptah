@@ -43,7 +43,11 @@ var (
 type sessionAccount struct {
 	name    string
 	mariaDB bool
-	grants  mysqlgrants.Grants
+	// noBackslashEscapes is whether the session's sql_mode names
+	// NO_BACKSLASH_ESCAPES, under which a backslash in a string literal is
+	// the character itself.
+	noBackslashEscapes bool
+	grants             mysqlgrants.Grants
 }
 
 // readSessionAccount asks the server who the session is and what it holds.
@@ -52,11 +56,13 @@ type sessionAccount struct {
 // complete, and SHOW GRANTS about oneself needs no privilege.
 func (r *Reader) readSessionAccount(ctx context.Context) (sessionAccount, error) {
 	var account sessionAccount
-	var version string
-	if err := r.db.QueryRowContext(ctx, "SELECT CURRENT_USER(), VERSION()").Scan(&account.name, &version); err != nil {
+	var version, sqlMode string
+	query := "SELECT CURRENT_USER(), VERSION(), @@SESSION.sql_mode"
+	if err := r.db.QueryRowContext(ctx, query).Scan(&account.name, &version, &sqlMode); err != nil {
 		return sessionAccount{}, fmt.Errorf("failed to read the connecting account: %w", err)
 	}
 	account.mariaDB = capability.BannerPlatform(version) == platform.MariaDB
+	account.noBackslashEscapes = namesNoBackslashEscapes(sqlMode)
 
 	// MariaDB prints a role's rows under the role's name.
 	grants, err := mysqlgrants.Read(ctx, r.db, !account.mariaDB)
@@ -65,6 +71,17 @@ func (r *Reader) readSessionAccount(ctx context.Context) (sessionAccount, error)
 	}
 	account.grants = grants
 	return account, nil
+}
+
+// namesNoBackslashEscapes reports whether sqlMode, as @@SESSION.sql_mode
+// answers it, names NO_BACKSLASH_ESCAPES.
+func namesNoBackslashEscapes(sqlMode string) bool {
+	for mode := range strings.SplitSeq(sqlMode, ",") {
+		if strings.EqualFold(strings.TrimSpace(mode), "NO_BACKSLASH_ESCAPES") {
+			return true
+		}
+	}
+	return false
 }
 
 // missingPrivilege is one line of a refusal: what the account cannot see, in the

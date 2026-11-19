@@ -661,7 +661,7 @@ func applyMySQLColumnMetadata(
 	extra,
 	generatedExpression sql.NullString,
 ) error {
-	if defaultValue.Valid && !isAbsentColumnDefault(defaultValue.String) {
+	if defaultValue.Valid && !isAbsentColumnDefault(defaultValue.String, literals) {
 		defaultSQL := normalizeMySQLColumnDefault(col, defaultValue.String, extra.String, literals)
 		col.ColumnDefault = &defaultSQL
 	}
@@ -748,14 +748,20 @@ func mysqlUpdateExpression(extra string) string {
 // against the source said `Schema is synced` throughout, because both sides of
 // that comparison read through here (stokaro/ptah#2128).
 //
-// The bare form is what is folded, and the quotes are what make that safe: a
-// default of the STRING "NULL" is stored as `'NULL'` and stays a default. For a
-// nullable column `DEFAULT NULL` and no default are the same thing, and MariaDB
-// does not store a NULL default for a NOT NULL column, so nothing else can
-// reach this. It is also the compatible answer -- the pinned binary writes no
-// default for either column above.
-func isAbsentColumnDefault(value string) bool {
-	return strings.EqualFold(strings.TrimSpace(value), "NULL")
+// The bare form is what is folded, and only where the server quotes a literal,
+// which is what makes that safe: MariaDB stores a default of the STRING "NULL"
+// as `'NULL'`, and it stays a default. For a nullable column `DEFAULT NULL` and
+// no default are the same thing, and MariaDB does not store a NULL default for
+// a NOT NULL column, so nothing else can reach this. It is also the compatible
+// answer -- the pinned binary writes no default for either column above.
+//
+// MySQL writes a literal without quotes, so there the text NULL is the string.
+// Measured on MySQL 8.4 and 26.10, `DEFAULT 'NULL'` on a varchar or on an
+// `enum('NULL','b')` reports the text NULL, and `DEFAULT NULL` reports SQL
+// NULL. Folded, the string reads as no default: every apply of a declaration
+// that holds it writes it again, and one that drops it plans nothing.
+func isAbsentColumnDefault(value string, literals defaultLiterals) bool {
+	return literals == literalsQuoted && strings.EqualFold(strings.TrimSpace(value), "NULL")
 }
 
 // defaultLiterals says how a server writes a literal default in
@@ -765,18 +771,27 @@ type defaultLiterals uint8
 
 const (
 	// literalsUnquoted is MySQL's: a literal is written without quotes, and
-	// EXTRA says DEFAULT_GENERATED for an expression default.
+	// EXTRA says DEFAULT_GENERATED for an expression default. The literal is
+	// the stored value, so a backslash in it is written back escaped, as
+	// MySQL's default sql_mode reads one.
 	literalsUnquoted defaultLiterals = iota
 	// literalsQuoted is MariaDB's: a literal is written in quotes, so a value
 	// without them is an expression, a number or a keyword.
 	literalsQuoted
+	// literalsUnquotedVerbatim is MySQL's under NO_BACKSLASH_ESCAPES, where a
+	// backslash in a string literal is the character, so it is written back
+	// as it is.
+	literalsUnquotedVerbatim
 )
 
 // defaultLiterals answers how the server the account is on writes a literal
 // default.
 func (a sessionAccount) defaultLiterals() defaultLiterals {
-	if a.mariaDB {
+	switch {
+	case a.mariaDB:
 		return literalsQuoted
+	case a.noBackslashEscapes:
+		return literalsUnquotedVerbatim
 	}
 	return literalsUnquoted
 }
@@ -793,14 +808,17 @@ func (a sessionAccount) defaultLiterals() defaultLiterals {
 func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string, literals defaultLiterals) string {
 	value := strings.TrimSpace(defaultValue)
 	switch {
-	case value == "", literals == literalsQuoted, isQuotedMySQLDefault(value):
+	case literals == literalsQuoted, isQuotedMySQLDefault(value):
 		return defaultValue
-	case hasGeneratedDefault(extra):
+	case value != "" && hasGeneratedDefault(extra):
 		return generatedDefault(col, value)
-	case !mysqlDefaultNeedsLiteralQuotes(col, value):
+	case value != "" && !mysqlDefaultNeedsLiteralQuotes(col, value):
+		// An empty answer is the empty string on every column: MySQL 26.10
+		// reports `DEFAULT ''` on a varbinary as an empty value too, and no
+		// default as SQL NULL.
 		return defaultValue
 	}
-	return quoteMySQLDefaultLiteral(defaultValue)
+	return quoteMySQLDefaultLiteral(defaultValue, literals)
 }
 
 // generatedDefault returns an expression default as MySQL's catalog reports
@@ -892,7 +910,14 @@ func isMySQLCurrentTime(value string) bool {
 	}
 }
 
-func quoteMySQLDefaultLiteral(value string) string {
+// quoteMySQLDefaultLiteral writes the stored value of a literal default as a
+// string literal. Measured on MySQL 26.10, `DEFAULT 'a\\b'` reports `a\b`;
+// written back without the backslash doubled, `'a\b'` stores a and a
+// backspace, and `'a\'b\\c'` stores a'bc.
+func quoteMySQLDefaultLiteral(value string, literals defaultLiterals) string {
+	if literals != literalsUnquotedVerbatim {
+		value = strings.ReplaceAll(value, `\`, `\\`)
+	}
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
