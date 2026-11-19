@@ -367,7 +367,7 @@ func TestNativeMigrationsLintRenameHasNoAddSideE2E(t *testing.T) {
 	report := stdout + stderr
 
 	c.Assert(exitStatusOf(c, err), qt.Equals, 0)
-	c.Assert(report, qt.Contains, "BC101: renames are not backwards compatible")
+	c.Assert(report, qt.Contains, "BC101 rollout/rename: renames are not backwards compatible")
 	c.Assert(report, qt.Contains, "1 finding(s).")
 	c.Assert(report, qt.Not(qt.Contains), "without a DEFAULT")
 }
