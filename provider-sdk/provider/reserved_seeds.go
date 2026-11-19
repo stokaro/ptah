@@ -30,9 +30,12 @@ func validateReservedSeedsFeature(description *protocol.Description, engine *pro
 }
 
 // validateInspectedSeedReservations refuses a seed ledger reservation in a
-// read that did not negotiate ReservedSeedsFeature.
-func validateInspectedSeedReservations(description *protocol.Description, engine *protocol.Engine, snapshot *protocol.Schema) error {
-	if EngineOffers(description, engine.GetId(), ReservedSeedsFeature) && slices.Contains(snapshot.GetTargetFeatures(), ReservedSeedsFeature) {
+// read that did not negotiate ReservedSeedsFeature. The read's target
+// features are the negotiation: [valueTarget] refuses one the engine does not
+// list, and the description refuses an engine that lists it without the
+// provider.
+func validateInspectedSeedReservations(_ *protocol.Description, _ *protocol.Engine, snapshot *protocol.Schema) error {
+	if slices.Contains(snapshot.GetTargetFeatures(), ReservedSeedsFeature) {
 		return nil
 	}
 	for _, record := range snapshot.GetReservedObjects() {
