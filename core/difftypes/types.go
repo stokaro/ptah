@@ -3271,6 +3271,11 @@ type IndexChange struct {
 	// writes drops it, and the later ones leave it out, as the index is gone by
 	// then. [SchemaDiff.IndexesTakenOver] keys what all of them take over.
 	Replaces []IndexRef
+	// Note says why the plan adds an index the declaration does not hold, for a
+	// planner to write as a comment above the statement that adds it. It is
+	// empty for a declared index, and for an addition whose reason the
+	// declaration shows.
+	Note string
 }
 
 // IndexDeclarationsOf pairs every declared index with its resolved owner.

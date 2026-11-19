@@ -440,6 +440,10 @@ func (r *Reader) readDatabase(
 	if err != nil {
 		return nil, fmt.Errorf("failed to read constraints: %w", err)
 	}
+	constraints, err = r.withHiddenForeignKeys(ctx, account, dbName, foreignSchema, constraints)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read constraints: %w", err)
+	}
 	schema.Constraints = constraints
 
 	views, err := r.readViews(ctx, dbName)

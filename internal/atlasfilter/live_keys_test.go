@@ -122,3 +122,79 @@ func TestExcludeNamesADeclaredKeyByTheDatabasesKey_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// undeclaredKeyTable declares table with id and code, both nullable, and the
+// primary key on code where keyOnCode holds, or no key at all.
+func undeclaredKeyTable(schema, table string, keyOnCode bool) *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{Schema: schema, Name: table, StructName: "T"}},
+		Fields: []schemamodel.Field{
+			{StructName: "T", Name: "id", Type: "int", Nullable: true},
+			{StructName: "T", Name: "code", Type: "text", Nullable: true, Primary: keyOnCode},
+		},
+	}
+}
+
+// A selector that names the database's primary key leaves the key on the
+// server, and the server's key keeps NOT NULL on each of its columns. The
+// desired side holds that NOT NULL whether or not the declaration writes the
+// key, or writes it on other columns: a nullable id in the comparison plans
+// DROP NOT NULL, which PostgreSQL refuses with 42P16 while the key stands.
+// SQLite adds no NOT NULL for a key, so the declaration's nullability stays
+// there, and a desired side with no read of the database names no key the
+// declaration does not write.
+func TestExcludeHoldsTheNotNullOfTheDatabasesKey(t *testing.T) {
+	tests := []struct {
+		name, dialect, defaultSchema, exclude string
+		realm, keyOnCode                      bool
+		live                                  *catalog.Database
+		// wantIDNullable and wantCodeNullable are the nullability of id and
+		// code the desired side keeps; wantUnmatched the selectors it reports
+		// naming nothing.
+		wantIDNullable, wantCodeNullable bool
+		wantUnmatched                    []string
+	}{
+		{
+			name: "a key the declaration does not write", dialect: "postgres", defaultSchema: "public", realm: true,
+			exclude: "public.kinds.pk_kinds", live: liveKeyTable("public", "kinds", "pk_kinds", "uq_code"),
+			wantIDNullable: false, wantCodeNullable: true,
+		},
+		{
+			name: "a key the declaration writes on another column", dialect: "postgres", defaultSchema: "public", realm: true,
+			keyOnCode: true, exclude: "public.kinds.pk_kinds[type=constraint]", live: liveKeyTable("public", "kinds", "pk_kinds", "uq_code"),
+			wantIDNullable: false, wantCodeNullable: false,
+		},
+		{
+			name: "the MySQL primary key the declaration does not write", dialect: "mysql", defaultSchema: "app",
+			exclude: "kinds.PRIMARY[type=index]", live: liveKeyTable("app", "kinds", "PRIMARY", "code"),
+			wantIDNullable: false, wantCodeNullable: true,
+		},
+		{
+			name: "a SQLite key the declaration does not write", dialect: "sqlite", defaultSchema: "main",
+			exclude: "kinds.kinds_pkey", live: liveKeyTable("main", "kinds", "kinds_pkey", "kinds_code"),
+			wantIDNullable: true, wantCodeNullable: true,
+		},
+		{
+			name: "no read of the database", dialect: "postgres", defaultSchema: "public", realm: true,
+			exclude: "public.kinds.pk_kinds", live: nil,
+			wantIDNullable: true, wantCodeNullable: true, wantUnmatched: []string{"public.kinds.pk_kinds"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			scope := atlasfilter.Scope{
+				Selections: ownerSelections(), Exclude: []string{test.exclude}, DefaultSchema: test.defaultSchema,
+				RealmRelativePatterns: test.realm, Dialect: test.dialect, LiveKeys: atlasfilter.KeysOf(test.live),
+			}
+
+			declared, report, err := atlasfilter.ExcludeGeneratedScopeReport(undeclaredKeyTable(test.defaultSchema, "kinds", test.keyOnCode), scope)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(declared.Fields[0].Nullable, qt.Equals, test.wantIDNullable)
+			c.Assert(declared.Fields[1].Nullable, qt.Equals, test.wantCodeNullable)
+			c.Assert(declared.Fields[1].Primary, qt.IsFalse)
+			c.Assert(report.Unmatched, qt.DeepEquals, test.wantUnmatched)
+		})
+	}
+}

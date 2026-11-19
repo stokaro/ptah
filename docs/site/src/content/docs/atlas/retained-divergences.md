@@ -1052,11 +1052,18 @@ one when no index covers the key's columns. The binary excludes the key under
 MariaDB 12.3 refuse with `ERROR 1553` while the key stands, so the apply fails.
 Ptah names the key under `[type=fk]`, `[type=foreign_key]` and
 `[type=foreign-key]`, and leaves the index the server built out with it, so the
-plan is synced. An index the author declared stays in
-the plan on both binaries, and the server refuses its removal the same way.
-The binary keeps a foreign key only under `[type=fk]`. Ptah keeps it under all
-three spellings, deliberately, since a selector is written to keep what it
-names.
+plan is synced. The binary keeps a foreign key only under `[type=fk]`. Ptah
+keeps it under all three spellings, deliberately, since a selector is written
+to keep what it names.
+
+An index the author declared under such a key stays in the plan on both
+binaries. The binary plans `DROP INDEX kids_parent_idx` alone, and the server
+refuses it with `ERROR 1553` after the statements before it ran: measured on
+MySQL 8.4, a plan that also dropped the column `alpha.x` dropped it, then
+failed. `ptah-compat` adds an index for the key in the statement that
+drops the declared one, under the name the server gives the key's index, with a
+comment above it. The next run plans nothing, on MySQL 8.4 and 26.10 and
+MariaDB 11.8 and 12.3.
 
 On SQLite, a plan changes most of a table by writing a new one from the
 declaration and copying the rows, and the declaration holds nothing a selector

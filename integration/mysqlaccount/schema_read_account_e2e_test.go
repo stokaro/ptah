@@ -87,10 +87,11 @@ type fixture struct {
 // privileges: a plan refuses to replace a SQL SECURITY DEFINER view another
 // account defined.
 //
-// The foreign key stands on an index the fixture declares. MariaDB shows an
-// account holding only SELECT no foreign key, so that account cannot tell an
-// index the server built for one from a declared index, and keeps it where the
-// administrator's selector leaving out every constraint takes it with the key.
+// The foreign key stands on an index the fixture declares, which a plan toward
+// the right database drops. The server refuses that while the key has no other
+// index, so the plan adds one for the key. MariaDB shows an account holding only
+// SELECT no TABLE_CONSTRAINTS row, and that account finds the key in
+// KEY_COLUMN_USAGE and plans the same as the administrator.
 var (
 	sharedObjects = []string{
 		"CREATE TABLE parent (id INT PRIMARY KEY)",

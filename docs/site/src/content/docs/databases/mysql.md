@@ -364,7 +364,10 @@ SQL:
   old one: `ALTER TABLE t DROP INDEX cover, ADD INDEX k (a)`. `DROP INDEX` alone
   answers `ERROR 1553`, and an index added first can make the server drop one it
   built by itself, so that a later `DROP INDEX` answers `ERROR 1091`. The new
-  index takes the name the server gives the index it builds for that key.
+  index takes the name the server gives the index it builds for that key. A key
+  an exclude selector keeps out of scope gets its index the same way, with a
+  comment above the statement that names the key; the selector leaves the new
+  index out with the key, so the next run plans nothing.
 - A plan that adds an index or a key the foreign key can stand on drops the
   index the server built for the key in the statement that adds it: `ALTER
   TABLE t DROP INDEX k, ADD INDEX i (a)`, and in the same way with `ADD
@@ -1107,15 +1110,13 @@ the account needs no privilege for it:
 | `--include '*[type=table]'` | `SHOW VIEW` and the routine privilege |
 
 MariaDB can hide constraint rows from an account with only `SELECT`. The read
-still gets each primary and unique key from its visible index, and the selector
-leaves that key out as it does for an account that sees the row, so both
-accounts plan the same. The index the server built for a foreign key leaves the
-comparison with its key, so the key keeps its index and no plan drops one the
-server refuses to drop while the key stands. An account that sees no foreign key
-cannot tell that index from one the author declared, so its comparison keeps the
-index and reports it where the desired schema leaves it out. Declare the index
-the key stands on, or give the account the constraint privilege, and both
-accounts plan the same.
+still gets each primary and unique key from its visible index, and each foreign
+key's columns and referenced table from `KEY_COLUMN_USAGE`, which MariaDB shows
+that account. The selector leaves each key out as it does for an account that
+sees the row, so both accounts plan the same. The index the server built for a
+foreign key leaves the comparison with its key, and a plan that drops an index
+the author declared under the key adds one for the key in the same statement,
+so no plan drops an index the server refuses to drop while the key stands.
 
 A selector that names objects does not count, because a read that cannot see a
 trigger cannot say what it is called: `--exclude 'audit_*[type=trigger]'` still needs
