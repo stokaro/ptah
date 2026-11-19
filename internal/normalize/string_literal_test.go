@@ -47,6 +47,10 @@ func TestIsStringLiteral_FailurePath(t *testing.T) {
 		{"an empty value", ""},
 		{"a string compared", "'a' = 'b'"},
 		{"a digit before the quote", "1'a'"},
+		{"an Oracle sequence reference", "seq.NEXTVAL"},
+		{"the reference Oracle stores", `"APP"."SEQ"."NEXTVAL"`},
+		{"a SQL Server sequence clause", "NEXT VALUE FOR s"},
+		{"the clause SQL Server stores", "(NEXT VALUE FOR [s])"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

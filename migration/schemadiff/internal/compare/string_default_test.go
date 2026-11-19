@@ -23,6 +23,16 @@ func TestColumns_AStringDefaultIsNoExpression(t *testing.T) {
 		want                      map[string]string
 	}{
 		{
+			name: "Oracle, the string a sequence reference spells", dialect: platform.Oracle, columnType: "VARCHAR2(30)",
+			literal: "'app.seq.NEXTVAL'", reported: `"APP"."SEQ"."NEXTVAL"`,
+			want: map[string]string{"default": `"APP"."SEQ"."NEXTVAL" -> 'app.seq.NEXTVAL'`},
+		},
+		{
+			name: "SQL Server, the string a sequence clause spells", dialect: platform.SQLServer, columnType: "nvarchar(30)",
+			literal: "'NEXT VALUE FOR s'", reported: "(NEXT VALUE FOR [s])",
+			want: map[string]string{"default_expr": "(NEXT VALUE FOR [s]) -> 'NEXT VALUE FOR s'"},
+		},
+		{
 			name: "MySQL, the string the expression spells", dialect: platform.MySQL, columnType: "varchar(30)",
 			expression: "(1 + 2)", reported: "'1 + 2'",
 			want: map[string]string{"default": "'1 + 2' -> (1 + 2)"},
@@ -117,6 +127,8 @@ func TestColumns_AStringDefaultMatchesItsOwnSpellings(t *testing.T) {
 		{name: "PostgreSQL, a number expression on a text column", dialect: platform.Postgres, columnType: "text", expression: "(1)", reported: "1"},
 		{name: "PostgreSQL, a quoted number on an integer", dialect: platform.Postgres, columnType: "integer", literal: "-1", reported: "'-1'::integer"},
 		{name: "Oracle, a literal on a CLOB", dialect: platform.Oracle, columnType: "CLOB", literal: "none", reported: "'none'"},
+		{name: "Oracle, a sequence reference on a text column", dialect: platform.Oracle, columnType: "VARCHAR2(30)", expression: "app.seq.NEXTVAL", reported: `"APP"."SEQ"."NEXTVAL"`},
+		{name: "SQL Server, a sequence clause on a text column", dialect: platform.SQLServer, columnType: "nvarchar(30)", expression: "NEXT VALUE FOR s", reported: "(NEXT VALUE FOR [s])"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
