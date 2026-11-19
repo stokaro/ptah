@@ -429,6 +429,14 @@
       "qualified": false
     },
     {
+      "category": "table_collations_changed",
+      "severities": [
+        "warning"
+      ],
+      "bare": true,
+      "qualified": false
+    },
+    {
       "category": "table_constraints_added",
       "severities": [
         "warning"

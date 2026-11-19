@@ -453,6 +453,16 @@ func priorTables(prior *schemamodel.Database) []schemamodel.Table {
 	return prior.Tables
 }
 
+// reverseCollationChange swaps the sides of a table's default collation
+// change, so the rollback restores the collation the database had; nil stays
+// nil.
+func reverseCollationChange(change *difftypes.CollationChange) *difftypes.CollationChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.CollationChange{Current: change.Desired, Desired: change.Current}
+}
+
 // reverseCommentChange swaps the two sides of a comment transition, so the
 // rollback restores the comment the database had.
 func reverseCommentChange(change *difftypes.CommentChange) *difftypes.CommentChange {

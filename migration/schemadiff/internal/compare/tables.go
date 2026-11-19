@@ -137,6 +137,10 @@ type TableContext struct {
 	// GeneratedExpressions reads a generated column's expression on the
 	// target, nil where it registers no rule for it.
 	GeneratedExpressions schemacomparison.GeneratedExpressions
+
+	// charsetAliases is [catalog.Database.CharsetAliases] of the database
+	// compared, which [TablesAndColumnsWithTableContext] sets.
+	charsetAliases map[string]string
 }
 
 // TablesAndColumnsWithTableContext is [TablesAndColumnsWithSemantics] told
@@ -165,6 +169,7 @@ func TablesAndColumnsWithTableContext(
 		dbTables[tableMapIdentity(table.Schema, table.Name, dialect, semantics)] = table
 	}
 	uniqueness := readColumnUniqueness(desired, database, dialect, semantics)
+	spellings.charsetAliases = database.CharsetAliases
 
 	// Find added and removed tables.
 	//
@@ -277,6 +282,7 @@ func TablesAndColumnsWithTableContext(
 			// with nothing able to fix it (stokaro/ptah#2168). A target that
 			// stores no table comment has nothing to compare.
 			tableDiff.CommentChange = storedCommentChange(dialect, genTable.Comment, dbTable.Comment)
+			tableDiff.CollationChange = tableCollationChange(dialect, spellings.Prepared[identity].DefaultCollation, dbTable.Collate, spellings.charsetAliases)
 			if tableDiff.HasChanges() {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}

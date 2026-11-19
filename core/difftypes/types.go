@@ -1852,6 +1852,15 @@ type TableDiff struct {
 	// comment report `Schema is synced` forever (stokaro/ptah#2168).
 	CommentChange *CommentChange `json:"comment_change,omitzero"`
 
+	// CollationChange carries the change of the table's default collation, and
+	// is nil when it is unchanged or not compared. A comparison compares it on
+	// a target whose preparation resolves the declaration's default collation
+	// ([ptah.run/core/schemapreparation.Table.DefaultCollation]), MySQL and
+	// MariaDB. The change leaves the collation of every existing column as it
+	// is; a column that takes the table's default is reset by a change of its
+	// own in ColumnsModified.
+	CollationChange *CollationChange `json:"collation_change,omitzero"`
+
 	// FeatureChanges carries owner-defined changes to individual table-owned subjects.
 	FeatureChanges []schemaext.ChangeRecord `json:"feature_changes,omitzero"`
 
@@ -1889,7 +1898,7 @@ func (d *TableDiff) HasChanges() bool {
 	return d != nil && (len(d.ColumnsAdded) > 0 || len(d.ColumnsRemoved) > 0 ||
 		len(d.ColumnsModified) > 0 ||
 		len(d.ConstraintsAdded) > 0 || len(d.ConstraintsRemoved) > 0 ||
-		d.CommentChange != nil ||
+		d.CommentChange != nil || d.CollationChange != nil ||
 		len(d.FeatureChanges) > 0)
 }
 
@@ -2041,6 +2050,15 @@ type CommentChange struct {
 	// Current is what the database holds, empty when it holds none.
 	Current string `json:"current"`
 	// Desired is what the declaration asks for, empty to remove it.
+	Desired string `json:"desired"`
+}
+
+// CollationChange is the transition of a table's default collation. Both
+// sides are collation names as the server and the declaration spell them.
+type CollationChange struct {
+	// Current is the collation the database holds.
+	Current string `json:"current"`
+	// Desired is the collation the declaration resolves to.
 	Desired string `json:"desired"`
 }
 

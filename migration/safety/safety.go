@@ -544,6 +544,14 @@ const setsCollationReason = "the statement sets a column's collation, which may 
 // the column holds.
 const keptCollationReason = "the statement restates the collation the column holds"
 
+// tableCollationReason is why a change of a MySQL or MariaDB table's default
+// collation is a warning. It rewrites no row, and the columns the table holds
+// keep their collations, but every column later added or restated without a
+// collation takes the new one: a plan that resets such columns rebuilds their
+// indexes under it.
+const tableCollationReason = "the statement changes the table's default collation: a column added or restated " +
+	"without a collation takes it, and a unique key on such a column fails where it holds values the new collation finds equal"
+
 // HighestAssessment returns the highest severity from statement assessments.
 // Empty or nil assessments answer Safe; severities compare the way [Highest]
 // documents.
@@ -1072,14 +1080,61 @@ func assessRawSQL(sql string, assessment StatementAssessment, known nodeKnowledg
 		assessment.Reason = dropDefaultReason
 	// Last, so a statement it rates would be safe without it, and a node's
 	// verdict on the collation can take its place ([Fold]).
-	case !known.settlesCollation && setsColumnCollation(sql):
+	case collationReason(sql, known) != "":
 		assessment.Severity = Warning
-		assessment.Reason = setsCollationReason
+		assessment.Reason = collationReason(sql, known)
 	}
 	for _, statement := range lintscan.Split(sql, lintscan.ForDialect("")) {
 		raiseAssessment(&assessment, nextInsertVerdict(statement.Words))
 	}
 	return assessment
+}
+
+// collationReason is the reason a statement that sets a collation is rated a
+// warning, and empty for one that sets none: a column's collation, unless the
+// node that rendered the statement settles it, or the table's default
+// collation.
+func collationReason(sql string, known nodeKnowledge) string {
+	switch {
+	case !known.settlesCollation && setsColumnCollation(sql):
+		return setsCollationReason
+	case setsTableCollation(sql):
+		return tableCollationReason
+	default:
+		return ""
+	}
+}
+
+// setsTableCollation reports whether statement changes the default collation
+// of a MySQL or MariaDB table: an ALTER TABLE with a COLLATE, CHARSET or
+// CHARACTER SET table option, which also selects the character set's default
+// collation, and no clause that adds, alters, modifies, changes, retypes or
+// converts a column. An option may be written `COLLATE x` or `COLLATE=x`. The
+// clauses are read as [alterTableClauses] splits them, so the word inside a
+// string literal, such as a table comment, is not an option.
+func setsTableCollation(statement string) bool {
+	option := false
+	for i, clause := range alterTableClauses(statement) {
+		if i == 0 && len(clause) > 0 {
+			clause = clause[1:]
+		}
+		for j, word := range clause {
+			if isTableOptionWord(word, "COLLATE") || isTableOptionWord(word, "CHARSET") ||
+				word == "CHARACTER" && j+1 < len(clause) && isTableOptionWord(clause[j+1], "SET") {
+				option = true
+			}
+			if slices.Contains([]string{"ADD", "ALTER", "MODIFY", "CHANGE", "TYPE", "CONVERT"}, word) {
+				return false
+			}
+		}
+	}
+	return option
+}
+
+// isTableOptionWord reports whether word is the table option name, alone or
+// joined to its value by `=`.
+func isTableOptionWord(word, name string) bool {
+	return word == name || strings.HasPrefix(word, name+"=")
 }
 
 // setsColumnCollation reports whether statement writes the collation of a

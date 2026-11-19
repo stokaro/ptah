@@ -138,6 +138,17 @@ var countedCategories = slices.Concat(kindCategories(), []countedCategory{
 	// what it holds or does. A column's comment is a modification of the
 	// column, which columns_modified counts.
 	{name: "comments_changed", severity: Safe, count: commentChanges},
+	// A table's default collation decides the collation of every column later
+	// added or restated without one, as a schema's does for the tables created
+	// in it, and the plan's ALTER TABLE ... COLLATE is rated the same way.
+	{name: "table_collations_changed", severity: Warning, count: func(d *difftypes.SchemaDiff) int {
+		return sumTables(d, func(table difftypes.TableDiff) int {
+			if table.CollationChange != nil {
+				return 1
+			}
+			return 0
+		})
+	}},
 	{name: "columns_modified", severity: Warning, count: func(d *difftypes.SchemaDiff) int {
 		return sumTables(d, func(table difftypes.TableDiff) int { return len(table.ColumnsModified) })
 	}},

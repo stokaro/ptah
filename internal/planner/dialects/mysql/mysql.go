@@ -951,6 +951,19 @@ func appendColumnComment(result []ast.Node, table string, colDiff difftypes.Colu
 	})
 }
 
+// appendTableCollation emits the change of the table's default collation, if
+// it has one. It goes before the table's column statements: a column added or
+// restated without a collation takes the table's default at the moment its
+// statement runs, so a column reset to the table's collation after this
+// statement takes the new one. The statement itself leaves every existing
+// column's collation as it is.
+func appendTableCollation(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
+	if tableDiff.CollationChange == nil {
+		return result
+	}
+	return append(result, ast.NewRawSQL("ALTER TABLE "+lockTableName(tableDiff.TableName)+" COLLATE "+tableDiff.CollationChange.Desired))
+}
+
 // appendTableComment emits the table's comment transition, if it has one.
 func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.Node {
 	if tableDiff.CommentChange == nil {
@@ -988,7 +1001,7 @@ func (p *Planner) modifyExistingTables(
 		// column to change anything about it, and MODIFY COLUMN already
 		// carries the comment -- which is why only the table half is emitted
 		// here while PostgreSQL emits both (stokaro/ptah#2168).
-		inPlace := appendTableComment(nil, tableDiff)
+		inPlace := appendTableComment(appendTableCollation(nil, tableDiff), tableDiff)
 
 		// Add new columns
 		inPlace = p.addNewTableColumns(inPlace, &tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics, keys)

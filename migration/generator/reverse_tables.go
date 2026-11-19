@@ -112,7 +112,8 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			// reversal can swap them. None of them was swapped, or carried at
 			// all: a migration that changed a table's comment rolled back to
 			// "No rollback operations needed" (stokaro/ptah#2418).
-			CommentChange: reverseCommentChange(tableDiff.CommentChange),
+			CommentChange:   reverseCommentChange(tableDiff.CommentChange),
+			CollationChange: reverseCollationChange(tableDiff.CollationChange),
 		}
 	}
 	return reversed

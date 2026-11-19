@@ -28,6 +28,7 @@ func TestTableDiff_HasChangesReadsEveryField(t *testing.T) {
 		"ConstraintsAdded":   true,
 		"ConstraintsRemoved": true,
 		"CommentChange":      true,
+		"CollationChange":    true,
 		"FeatureChanges":     true,
 		"Desired":            false, // the table as declared, which a change is made to
 		"Current":            false, // the table as observed before the change

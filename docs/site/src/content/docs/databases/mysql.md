@@ -562,9 +562,11 @@ attributes, for MySQL and MariaDB alike. An engine or a character set that is
 not a name of letters, digits and underscores, and an auto-increment value
 that is not a whole number, is refused where it is written.
 
-The options apply when the table is created. A read reports the character set
-and the collation and neither the engine nor the next auto-increment value, so
-a plan never changes the options of a table that exists. Another target leaves
+The engine and the auto-increment value apply when the table is created. A
+read reports neither, so a plan never changes them on a table that exists. A
+read reports the table's default collation, which names its character set, so
+a plan changes the default character set of a table that exists through its
+collation; see [Column collations](#column-collations). Another target leaves
 the auto-increment value and the character set out, as it leaves out any other
 target's properties.
 
@@ -631,23 +633,54 @@ collation is planned as `MODIFY COLUMN`, which restates the column with the
 declared collation and its declared character set.
 
 A name the server stores under another name is compared as the stored name.
-Both servers store a collation of the `utf8` character set under `utf8mb3`,
-so `COLLATE utf8_bin` holds as `utf8mb3_bin`. MariaDB also takes a collation
-without its character set, so `COLLATE uca1400_ai_ci` on a `utf8mb4` column
-holds as `utf8mb4_uca1400_ai_ci`, and `COLLATE DEFAULT`, which selects the
+MySQL stores a collation of the `utf8` character set under `utf8mb3`, so
+`COLLATE utf8_bin` holds as `utf8mb3_bin`. MariaDB does the same while its
+`old_mode` holds `UTF8_IS_UTF8MB3`, which is the default, and stores it under
+`utf8mb4` when `old_mode` leaves that flag out. Ptah asks the server what
+`utf8` names in the session it reads with, so a URL that sets `old_mode`, such
+as `mariadb://user:pass@host:3306/app?old_mode=%27%27`, is compared the way the
+server stores what that session writes.
+
+MariaDB also takes a collation without its character set, so
+`COLLATE uca1400_ai_ci` on a `utf8mb4` column holds as `utf8mb4_uca1400_ai_ci`,
+and `COLLATE DEFAULT`, which selects the
 default collation of the column's character set and is compared as no
 collation. Both servers accept a collation on a type that holds none, such as
 `int COLLATE utf8mb4_bin`, and keep none, so such a collation is not compared.
 
-A column that declares no collation is not compared. The server gives it its
-table's default collation, or the default collation of a character set the
-column names: `CHARACTER SET utf8mb4` in a table whose default is
+A column that declares no collation takes one from the server: the default
+collation of a character set the column names, or else its table's default
+collation. `CHARACTER SET utf8mb4` in a table whose default is
 `utf8mb4_unicode_ci` gives `utf8mb4_0900_ai_ci` on MySQL 8.4 and
-`utf8mb4_uca1400_ai_ci` on MariaDB 12.3. Ptah cannot tell which collation that
-is without asking the server, so a column that holds a collation the schema
-file does not name keeps it, and no change is planned. The Atlas community
-binary v1.3.0 plans a `MODIFY COLUMN` for such a column. To change it back,
-declare the collation the column should hold.
+`utf8mb4_uca1400_ai_ci` on MariaDB 12.3, and `CHARACTER SET latin1` gives
+`latin1_swedish_ci` on both. Ptah reads each character set's default from the
+server it compares with, in the session it reads with: MySQL's
+`default_collation_for_utf8mb4` and MariaDB's `character_set_collations` are
+honored.
+
+The column is compared with the collation it takes, and one that holds
+another is reset with a `MODIFY COLUMN` that names no collation, so the server
+resolves it the same way. A column that names no character set is not compared
+where the declaration names neither a character set nor a collation for its
+table, since the database's default decides it. Nor is a column whose type
+carries an attribute that selects a collation of its own, such as
+`varchar(20) BINARY`.
+
+A table's default collation is compared too, where the declaration names it or
+names the table's character set. A changed one is planned as
+`ALTER TABLE ... COLLATE`, which leaves the collation of every existing column
+as it is, and it comes before the table's column statements, so a column reset
+to the table's collation takes the new one and one apply converges. The Atlas
+community binary v1.3.0 plans the same reset of a column, and plans a changed
+table default alone: its column keeps the old collation after the apply, and
+only the next plan resets it. Ptah does not copy that order, because the apply
+would not reach the state the plan describes. A change of a table's default
+collation is rated a warning, because a column added or restated without a
+collation takes it.
+
+Both comparisons need a side read from a server. A diff of two schema files
+compares neither an inherited collation nor a table's default collation,
+because neither file holds a collation the server gave.
 
 ## FULLTEXT parser
 
