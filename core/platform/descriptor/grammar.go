@@ -70,6 +70,13 @@ type ColumnGrammar struct {
 	// of one is kept as the expression written. Without its name, the word
 	// is read as a literal value, which a renderer writes as a string.
 	NiladicFunctions []string `json:"niladic_functions,omitempty"`
+	// RelativeTimeLiterals names, in upper case, the date and time input
+	// strings the engine reads as a moment relative to when it reads them,
+	// such as PostgreSQL's 'now' and 'today'. The engine reads a default
+	// when the table is created, so a default of one on a date or time column
+	// holds that moment for every row, and a comparison with the declaration
+	// changes the column on every apply. The parser refuses one.
+	RelativeTimeLiterals []string `json:"relative_time_literals,omitempty"`
 	// EmptyCallFunctions names, in upper case, the functions a default may
 	// write bare that the engine refuses with an empty argument list, such as
 	// Oracle's SYSDATE(). A precision, as in SYSTIMESTAMP(3), is no empty
@@ -698,9 +705,12 @@ func (d Dialect) validateGrammar() error {
 }
 
 // validateColumnGrammar checks the niladic function names, the computed
-// kinds and the column constraint kinds.
+// kinds, the relative time literals and the column constraint kinds.
 func validateColumnGrammar(grammar Grammar) error {
 	if err := validateFunctionNames("niladic function", grammar.Columns.NiladicFunctions); err != nil {
+		return err
+	}
+	if err := validateFunctionNames("relative time literal", grammar.Columns.RelativeTimeLiterals); err != nil {
 		return err
 	}
 	if err := validateFunctionNames("empty call function", grammar.Columns.EmptyCallFunctions); err != nil {

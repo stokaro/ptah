@@ -179,6 +179,32 @@ SQL:
   `DEFAULT_GENERATED` in `EXTRA`, and `db read` writes the string in quotes.
   A `default` in a Go struct or a YAML schema is such a string, so
   `default="1 + 2"` against a column that holds `(1 + 2)` changes it too.
+- `DEFAULT ''` and no default are different defaults, and so are
+  `DEFAULT 'NULL'` and `DEFAULT NULL`. MySQL reports the string `NULL`
+  without quotes and SQL NULL as no value, and the empty string as an empty
+  value. `db read` writes each as the string it is.
+- `db read` writes a backslash in a MySQL string default doubled, so
+  `DEFAULT 'a\\b'` replays as the three characters it stores, and a control
+  character as its escape, so `DEFAULT 'a\nb'` replays with its line feed.
+  A quote escaped with a backslash and a doubled quote compare as one
+  character. The catalog reports a default the same way under every
+  `sql_mode`, so a read in a session whose `sql_mode` names
+  `NO_BACKSLASH_ESCAPES` writes the same file.
+- A schema file may write a default as a bit string (`b'101'`, `0b101`), a
+  hexadecimal string (`X'6A'`, `0x6a`), a string with a character set
+  introducer (`_utf8mb4'x'`) or `N`, adjacent strings (`'a' 'b'`) or a
+  double-quoted string (`"a"`). Each is read as the literal the server
+  stores. On a `BINARY`, `VARBINARY` or `BLOB` column a string and the
+  hexadecimal string of its bytes are one default, since MySQL reports
+  `DEFAULT 'xy'` as `0x7879` and MariaDB `DEFAULT ('xy')` as `x'7879'`.
+  On a text column a hexadecimal or bit string is the string of its bytes,
+  so `0x41`, `b'1000001'` and `'A'` are one default. On an integer column
+  `0x1F` and the `31` the server reports are one default, and so are
+  `b'101'` and `5`; on a `BIT` column `0b110` and `b'110'` are one default.
+  Both engines take `ucase` and `lcase` for `upper` and `lower`, and MariaDB
+  prints `upper` and `lower` as `ucase` and `lcase`. The comparison reads a
+  call to either name as a call to `upper` or `lower`, and `db read` writes
+  `upper` and `lower`.
 - `SERIAL`, `BIGSERIAL` and `SMALLSERIAL` are written as `INT`, `BIGINT` and
   `SMALLINT` with `AUTO_INCREMENT`, unless the field gives its own MySQL or
   MariaDB type. Both engines take one auto-increment column per table, and only
@@ -564,7 +590,9 @@ SQL:
   literal with every backslash once, so the server stores the same
   characters. `migrations up` sends a migration file as written, so a file
   Ptah generated stores what it declares on a session that keeps backslash
-  escapes.
+  escapes. A text default is compared by the string it stores, so `'it\'s'`
+  and `'it''s'` are one default. A literal `NULL` on a text column is the
+  string `'NULL'`; a schema file writes SQL `NULL` without quotes.
 
 ## Table options
 

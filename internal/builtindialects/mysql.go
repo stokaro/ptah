@@ -156,6 +156,9 @@ func mysql() descriptor.Dialect {
 					"tinytext", "text", "mediumtext", "longtext", "enum", "set",
 				},
 			},
+			// Measured on MySQL 26.10: DEFAULT (ucase('abc')) is reported
+			// as upper(...).
+			FunctionAliases: map[string]string{"ucase": "upper", "lcase": "lower"},
 		},
 
 		// Dev databases.

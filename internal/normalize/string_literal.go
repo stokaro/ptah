@@ -40,10 +40,17 @@ func afterQuoted(value string, start int, backslashes bool) string {
 
 // isStringIntroducer reports whether prefix may stand before a quoted string
 // without making it something else: nothing, N, E, or a character set such as
-// _utf8mb4.
+// _utf8mb4. B and X make a bit and a hexadecimal literal, so neither is one.
 func isStringIntroducer(prefix string) bool {
+	switch strings.ToUpper(prefix) {
+	case "", "N", "E":
+		return true
+	}
+	if prefix[0] != '_' || len(prefix) == 1 {
+		return false
+	}
 	for i := range len(prefix) {
-		if !isIdentifierByte(prefix[i]) || (i == 0 && prefix[i] >= '0' && prefix[i] <= '9') {
+		if !isIdentifierByte(prefix[i]) {
 			return false
 		}
 	}
@@ -71,12 +78,80 @@ func castsOnly(rest string) bool {
 	return true
 }
 
+// isCastType reports whether name is a type a cast names: one name, which may
+// be qualified or quoted, or one of the type names SQL spells in several words,
+// each with any size and array suffix. `text IS NOT NULL` and `text AND x` are
+// a type followed by more of an expression.
 func isCastType(name string) bool {
-	if name == "" {
+	var words []string
+	for word := range strings.FieldsSeq(withoutModifiers(name)) {
+		words = append(words, strings.ToLower(word))
+	}
+	switch len(words) {
+	case 0:
+		return false
+	case 1:
+		return isTypeName(words[0])
+	default:
+		return multiWordTypes[strings.Join(words, " ")]
+	}
+}
+
+// multiWordTypes are the type names PostgreSQL prints in more than one word.
+var multiWordTypes = map[string]bool{
+	"character varying": true, "national character": true, "national character varying": true,
+	"double precision": true, "bit varying": true,
+	"timestamp with time zone": true, "timestamp without time zone": true,
+	"time with time zone": true, "time without time zone": true,
+}
+
+// withoutModifiers removes a size, a precision and array brackets from a type
+// name, and reports the name unchanged when they do not close.
+func withoutModifiers(name string) string {
+	var b strings.Builder
+	depth := 0
+	for i := range len(name) {
+		switch ch := name[i]; {
+		case ch == '(' || ch == '[':
+			depth++
+		case ch == ')' || ch == ']':
+			depth--
+			if depth < 0 {
+				return name
+			}
+		case depth > 0:
+			if !isIdentifierByte(ch) && ch != ',' && ch != ' ' {
+				return name
+			}
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	if depth != 0 {
+		return name
+	}
+	return b.String()
+}
+
+// isTypeName reports whether word is one type name: identifiers or quoted
+// identifiers joined by dots.
+func isTypeName(word string) bool {
+	for part := range strings.SplitSeq(word, ".") {
+		quoted := len(part) >= 2 && part[0] == '"' && part[len(part)-1] == '"' && !strings.Contains(part[1:len(part)-1], `"`)
+		if !quoted && !isIdentifier(part) {
+			return false
+		}
+	}
+	return true
+}
+
+// isIdentifier reports whether word is an unquoted identifier.
+func isIdentifier(word string) bool {
+	if word == "" || (word[0] >= '0' && word[0] <= '9') {
 		return false
 	}
-	for i := range len(name) {
-		if !isIdentifierByte(name[i]) && !strings.ContainsRune(` ."(),[]`, rune(name[i])) {
+	for i := range len(word) {
+		if !isIdentifierByte(word[i]) {
 			return false
 		}
 	}

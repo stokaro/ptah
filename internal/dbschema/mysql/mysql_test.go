@@ -417,6 +417,88 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         "'uuid()'",
 		},
 		{
+			// Measured on MySQL 26.10 for DEFAULT 'a\\b'.
+			name:         "a MySQL string holding a backslash",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: `a\b`,
+			want:         `'a\\b'`,
+		},
+		{
+			// Measured on MySQL 26.10 for DEFAULT 'a\'b\\c'.
+			name:         "a MySQL string holding a quote and a backslash",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: `a'b\c`,
+			want:         `'a''b\\c'`,
+		},
+		{
+			// Measured on MySQL 26.10 for DEFAULT 'a\nb\tc\0d\Ze\rf\bg':
+			// the catalog reports each control character as the byte.
+			name:         "a MySQL string holding control characters",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "a\nb\tc\x00d\x1ae\rf\bg",
+			want:         `'a\nb\tc\0d\Ze\rf\bg'`,
+		},
+		{
+			// Measured on MySQL 26.10: DEFAULT '' reports an empty value and
+			// no default reports SQL NULL.
+			name:         "a MySQL empty string",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "",
+			want:         "''",
+		},
+		{
+			name:         "a MySQL empty string on a varbinary",
+			columnType:   "varbinary(8)",
+			dataType:     "varbinary",
+			defaultValue: "",
+			want:         "''",
+		},
+		{
+			// Measured on MariaDB 12.3 for DEFAULT (upper('abc')).
+			name:         "a MariaDB call it prints by another name",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "ucase('abc')",
+			literals:     literalsQuoted,
+			want:         "upper('abc')",
+		},
+		{
+			name:         "a MariaDB call inside a string keeps its name",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: `concat('ucase(x)', 'it''s', lcase('A\'b'))`,
+			literals:     literalsQuoted,
+			want:         `concat('ucase(x)', 'it''s', lower('A\'b'))`,
+		},
+		{
+			name:         "a MariaDB word that is no call",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: "ucase_x(1)",
+			literals:     literalsQuoted,
+			want:         "ucase_x(1)",
+		},
+		{
+			name:         "a MySQL string of one space",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: " ",
+			want:         "' '",
+		},
+		{
+			// Measured on MariaDB 12.3, which writes the literal as SQL.
+			name:         "a MariaDB string holding a backslash",
+			columnType:   "varchar(30)",
+			dataType:     "varchar",
+			defaultValue: `'a\\b'`,
+			literals:     literalsQuoted,
+			want:         `'a\\b'`,
+		},
+		{
 			// MySQL reports DEFAULT 'NULL' on a varchar as the text NULL with
 			// an empty EXTRA, and DEFAULT NULL as no value at all, so the text
 			// is the string.
@@ -495,10 +577,27 @@ func TestNormalizeMySQLColumnDefaultQuotesCatalogStringLiterals(t *testing.T) {
 			want:         "current_timestamp()",
 		},
 		{
-			name:         "quoted value preserved",
+			// Measured on MySQL 26.10 for DEFAULT '''draft''': the quotes
+			// are the string's.
+			name:         "a MySQL string that starts and ends with a quote",
 			columnType:   "varchar(255)",
 			dataType:     "varchar",
 			defaultValue: "'draft'",
+			want:         "'''draft'''",
+		},
+		{
+			name:         "a MySQL string in double quotes",
+			columnType:   "varchar(255)",
+			dataType:     "varchar",
+			defaultValue: `"draft"`,
+			want:         `'"draft"'`,
+		},
+		{
+			name:         "a MariaDB quoted literal is kept",
+			columnType:   "varchar(255)",
+			dataType:     "varchar",
+			defaultValue: "'draft'",
+			literals:     literalsQuoted,
 			want:         "'draft'",
 		},
 	}

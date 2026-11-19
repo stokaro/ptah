@@ -49,44 +49,59 @@ var columnsColumns = []string{
 // The quoted row is the one that makes the fold safe rather than lossy, and it
 // is a real MariaDB answer rather than an invented one: `DEFAULT 'NULL'` is
 // stored WITH its quotes, so a column that genuinely defaults to the string
-// keeps it.
+// keeps it. MySQL writes that default as the bare text NULL, which is why the
+// fold is MariaDB's alone.
 func TestReadColumns_SeparatesNoDefaultFromADefaultOfNull(t *testing.T) {
 	tests := []struct {
 		name string
 		// catalog is COLUMN_DEFAULT as the engine answers it. nil is SQL NULL.
 		catalog driver.Value
+		// literals is how the engine writes a literal default.
+		literals defaultLiterals
 		// want is the default the column ends up with, or "" for none.
 		want string
 	}{
 		{
-			name:    "MariaDB's answer for a column with no default",
-			catalog: "NULL",
-			want:    "",
+			name:     "MariaDB's answer for a column with no default",
+			catalog:  "NULL",
+			literals: literalsQuoted,
+			want:     "",
 		},
 		{
-			name:    "MySQL's answer for the same column",
-			catalog: nil,
-			want:    "",
+			name:     "MySQL's answer for the same column",
+			catalog:  nil,
+			literals: literalsUnquoted,
+			want:     "",
 		},
 		{
 			// The control. Without it the fold could swallow a real default and
 			// every row above would still pass.
-			name:    "a column that defaults to the string",
-			catalog: "'NULL'",
-			want:    "'NULL'",
+			name:     "a column that defaults to the string",
+			catalog:  "'NULL'",
+			literals: literalsQuoted,
+			want:     "'NULL'",
+		},
+		{
+			// Measured on MySQL 8.4 and 26.10 for DEFAULT 'NULL'.
+			name:     "MySQL's answer for a column that defaults to the string",
+			catalog:  "NULL",
+			literals: literalsUnquoted,
+			want:     "'NULL'",
 		},
 		{
 			// The other control: an ordinary default is not touched.
-			name:    "a column that defaults to something else",
-			catalog: "'new'",
-			want:    "'new'",
+			name:     "a column that defaults to something else",
+			catalog:  "'new'",
+			literals: literalsQuoted,
+			want:     "'new'",
 		},
 		{
 			// Case is the engine's to choose, and folding on an exact match
 			// would leave this one recorded.
-			name:    "the same answer in another case",
-			catalog: "null",
-			want:    "",
+			name:     "the same answer in another case",
+			catalog:  "null",
+			literals: literalsQuoted,
+			want:     "",
 		},
 	}
 
@@ -100,7 +115,7 @@ func TestReadColumns_SeparatesNoDefaultFromADefaultOfNull(t *testing.T) {
 			}
 			reader := NewMySQLReader(columnsDB(c, [][]driver.Value{row}).SQL, "app")
 
-			columnsByTable, err := reader.readColumnsByTable(t.Context(), "app", literalsUnquoted)
+			columnsByTable, err := reader.readColumnsByTable(t.Context(), "app", test.literals)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(columnsByTable["customers"], qt.HasLen, 1)

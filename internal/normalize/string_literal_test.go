@@ -18,6 +18,12 @@ func TestIsStringLiteral_HappyPath(t *testing.T) {
 		{"a PostgreSQL cast", "'1 + 2'::character varying"},
 		{"a cast with a size", "'a'::character varying(30)"},
 		{"two casts", "'a'::text::\"Mood\""},
+		{"a qualified quoted type", "'a'::public.\"Mood\""},
+		{"a type in several words", "'2020-01-01'::timestamp with time zone"},
+		{"a precision inside a type in several words", "'2020-01-01'::timestamp(3) with time zone"},
+		{"an array of a sized type", "'{}'::character varying(30)[]"},
+		{"a national string in lower case", "n'a'"},
+		{"a PostgreSQL escape string", "E'a\\nb'"},
 		{"SQL Server's parentheses", "(('a'))"},
 		{"a national string", "N'a'"},
 		{"a character set introducer", "_utf8mb4'a'"},
@@ -51,6 +57,15 @@ func TestIsStringLiteral_FailurePath(t *testing.T) {
 		{"the reference Oracle stores", `"APP"."SEQ"."NEXTVAL"`},
 		{"a SQL Server sequence clause", "NEXT VALUE FOR s"},
 		{"the clause SQL Server stores", "(NEXT VALUE FOR [s])"},
+		{"a cast followed by IS NOT NULL", "'a'::text IS NOT NULL"},
+		{"a cast followed by AND", "'a'::text AND b"},
+		{"a cast followed by OR", "'a'::text OR b"},
+		{"a bit literal", "B'101'"},
+		{"a bit literal in lower case", "b'1'"},
+		{"a hexadecimal literal", "X'41'"},
+		{"a hexadecimal literal in lower case", "x'41'"},
+		{"a word before the quote", "upper'a'"},
+		{"an underscore alone before the quote", "_'a'"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

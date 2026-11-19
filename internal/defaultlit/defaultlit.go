@@ -264,3 +264,43 @@ func isDigits(value string) bool {
 	}
 	return true
 }
+
+// IsBinaryString reports whether value is a bit string such as b'101' or a
+// hexadecimal string such as x'61', in either case, or MySQL's 0x61 or 0b101.
+// Each is a literal the server stores as written, not an expression.
+func IsBinaryString(value string) bool {
+	_, ok := HexString(value)
+	if ok {
+		return true
+	}
+	lower := strings.ToLower(strings.TrimSpace(value))
+	if bits, found := strings.CutPrefix(lower, "0b"); found {
+		return bits != "" && strings.Trim(bits, "01") == ""
+	}
+	return len(lower) >= 3 && strings.HasPrefix(lower, "b'") && strings.HasSuffix(lower, "'") &&
+		strings.Trim(lower[2:len(lower)-1], "01") == ""
+}
+
+// HexString returns a hexadecimal string, x'61' or 0x61 in either case, as
+// x'61' with lower-case digits: MariaDB reports a binary default that way, and
+// MySQL as 0x61. MySQL reads 0xabc as 0x0abc, so an odd count of digits gains
+// the leading zero. ok is false for anything else.
+func HexString(value string) (canonical string, ok bool) {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	var digits string
+	switch {
+	case strings.HasPrefix(lower, "0x"):
+		digits = lower[2:]
+	case len(lower) >= 3 && strings.HasPrefix(lower, "x'") && strings.HasSuffix(lower, "'"):
+		digits = lower[2 : len(lower)-1]
+	default:
+		return "", false
+	}
+	if strings.Trim(digits, "0123456789abcdef") != "" {
+		return "", false
+	}
+	if len(digits)%2 == 1 {
+		digits = "0" + digits
+	}
+	return "x'" + digits + "'", true
+}

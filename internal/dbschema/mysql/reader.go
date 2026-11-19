@@ -661,7 +661,7 @@ func applyMySQLColumnMetadata(
 	extra,
 	generatedExpression sql.NullString,
 ) error {
-	if defaultValue.Valid && !isAbsentColumnDefault(defaultValue.String) {
+	if defaultValue.Valid && !isAbsentColumnDefault(defaultValue.String, literals) {
 		defaultSQL := normalizeMySQLColumnDefault(col, defaultValue.String, extra.String, literals)
 		col.ColumnDefault = &defaultSQL
 	}
@@ -748,14 +748,20 @@ func mysqlUpdateExpression(extra string) string {
 // against the source said `Schema is synced` throughout, because both sides of
 // that comparison read through here (stokaro/ptah#2128).
 //
-// The bare form is what is folded, and the quotes are what make that safe: a
-// default of the STRING "NULL" is stored as `'NULL'` and stays a default. For a
-// nullable column `DEFAULT NULL` and no default are the same thing, and MariaDB
-// does not store a NULL default for a NOT NULL column, so nothing else can
-// reach this. It is also the compatible answer -- the pinned binary writes no
-// default for either column above.
-func isAbsentColumnDefault(value string) bool {
-	return strings.EqualFold(strings.TrimSpace(value), "NULL")
+// The bare form is what is folded, and only where the server quotes a literal,
+// which is what makes that safe: MariaDB stores a default of the STRING "NULL"
+// as `'NULL'`, and it stays a default. For a nullable column `DEFAULT NULL` and
+// no default are the same thing, and MariaDB does not store a NULL default for
+// a NOT NULL column, so nothing else can reach this. It is also the compatible
+// answer -- the pinned binary writes no default for either column above.
+//
+// MySQL writes a literal without quotes, so there the text NULL is the string.
+// Measured on MySQL 8.4 and 26.10, `DEFAULT 'NULL'` on a varchar or on an
+// `enum('NULL','b')` reports the text NULL, and `DEFAULT NULL` reports SQL
+// NULL. Folded, the string reads as no default: every apply of a declaration
+// that holds it writes it again, and one that drops it plans nothing.
+func isAbsentColumnDefault(value string, literals defaultLiterals) bool {
+	return literals == literalsQuoted && strings.EqualFold(strings.TrimSpace(value), "NULL")
 }
 
 // defaultLiterals says how a server writes a literal default in
@@ -765,7 +771,9 @@ type defaultLiterals uint8
 
 const (
 	// literalsUnquoted is MySQL's: a literal is written without quotes, and
-	// EXTRA says DEFAULT_GENERATED for an expression default.
+	// EXTRA says DEFAULT_GENERATED for an expression default. The literal is
+	// the stored value under every sql_mode, so a backslash in it is written
+	// back escaped, as Ptah reads one.
 	literalsUnquoted defaultLiterals = iota
 	// literalsQuoted is MariaDB's: a literal is written in quotes, so a value
 	// without them is an expression, a number or a keyword.
@@ -790,17 +798,42 @@ func (a sessionAccount) defaultLiterals() defaultLiterals {
 // 1 day)` and `'abc'`, with an empty EXTRA for both. Quoted, the expression
 // would read as a string, so the column would plan again on every apply and a
 // read would write the string back.
+//
+// MySQL writes a literal as the string it stores, so one that starts and ends
+// with a quote holds the quotes: measured on MySQL 26.10, a default declared
+// as the three characters quote, x, quote reports `'x'`, and the read writes it
+// back with each of those quotes doubled.
+//
+// The catalog's answer does not depend on the session's sql_mode: measured on
+// MySQL 26.10 and MariaDB 12.3, a session under NO_BACKSLASH_ESCAPES reads
+// the same COLUMN_DEFAULT as one under the default mode, so the read writes
+// the same description in both.
 func normalizeMySQLColumnDefault(col *catalog.Column, defaultValue, extra string, literals defaultLiterals) string {
 	value := strings.TrimSpace(defaultValue)
 	switch {
-	case value == "", literals == literalsQuoted, isQuotedMySQLDefault(value):
+	case literals == literalsQuoted && !isQuotedMySQLDefault(value):
+		return normalize.FunctionAliases(defaultValue, mariaDBFunctionAliases(), true)
+	case literals == literalsQuoted:
 		return defaultValue
-	case hasGeneratedDefault(extra):
+	case value != "" && hasGeneratedDefault(extra):
 		return generatedDefault(col, value)
-	case !mysqlDefaultNeedsLiteralQuotes(col, value):
+	case value != "" && !mysqlDefaultNeedsLiteralQuotes(col, value):
+		// An empty answer is the empty string on every column: MySQL 26.10
+		// reports `DEFAULT ''` on a varbinary as an empty value too, and no
+		// default as SQL NULL.
 		return defaultValue
 	}
 	return quoteMySQLDefaultLiteral(defaultValue)
+}
+
+// mariaDBFunctionAliases are the function names MariaDB prints in place of
+// the ones a definition wrote, as its descriptor states them: measured on
+// MariaDB 12.3, `DEFAULT (upper('abc'))` reports `ucase('abc')`. Read back
+// with the name the definition wrote, a description replays the call it
+// declared.
+func mariaDBFunctionAliases() map[string]string {
+	described, _ := platform.Lookup(platform.MariaDB)
+	return described.Columns.FunctionAliases
 }
 
 // generatedDefault returns an expression default as MySQL's catalog reports
@@ -892,8 +925,40 @@ func isMySQLCurrentTime(value string) bool {
 	}
 }
 
+// quoteMySQLDefaultLiteral writes the stored value of a literal default as a
+// string literal under MySQL's default sql_mode. Measured on MySQL 26.10,
+// `DEFAULT 'a\\b'` reports `a\b`; written back without the backslash
+// doubled, `'a\b'` stores a and a backspace, and `'a\'b\\c'` stores a'bc. A
+// control character is reported as the byte itself, so `DEFAULT 'a\nb'`
+// reports a, a line feed and b; it is written back with the escape MySQL
+// reads for it, so a description holds no raw line break inside a string.
 func quoteMySQLDefaultLiteral(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	var b strings.Builder
+	b.WriteByte('\'')
+	for i := range len(value) {
+		switch ch := value[i]; ch {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\'':
+			b.WriteString("''")
+		case 0:
+			b.WriteString(`\0`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case 0x1a:
+			b.WriteString(`\Z`)
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
 
 // reconcileColumnUniqueness recomputes each column's IsUnique flag from the

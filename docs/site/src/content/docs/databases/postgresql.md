@@ -232,7 +232,17 @@ its own read-back rarely match as text:
 Time defaults keep their SQL syntax: `DEFAULT CURRENT_TIMESTAMP` stays a
 keyword expression, and `DEFAULT CURRENT_TIMESTAMP(3)` keeps its precision.
 `DEFAULT NULL` means SQL null, the same as an omitted default.
-`DEFAULT 'NULL'` is a string value and compares as a different default.
+`DEFAULT 'NULL'` is a string value and compares as a different default, and
+so does `DEFAULT ''`.
+
+A date or time column with the default `'now'`, `'today'`, `'tomorrow'` or
+`'yesterday'` is refused, with or without a cast and in parentheses, as
+`('now')`. The refusal covers a SQL schema file's `CREATE TABLE` and
+`ALTER COLUMN ... SET DEFAULT`, and a `default` or `default_expr` in a Go
+struct or a YAML schema. PostgreSQL reads the string once, when it creates
+the table, and stores that moment as the default; write `now()`,
+`CURRENT_TIMESTAMP` or `CURRENT_DATE` instead.
+
 On a text column a string is never the expression its characters spell:
 `DEFAULT 'now()'` and `DEFAULT now()` are different defaults, and so are
 `'1 + 2'` and `(1 + 2)`. A `default` in a Go struct or a YAML schema is such a

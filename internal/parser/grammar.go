@@ -48,6 +48,12 @@ type targetGrammar struct {
 	// collation by a name or a schema and a name, read into the one spelling
 	// the renderer and the comparison use.
 	qualifiedCollations bool
+	// mysqlStrings is whether string constants are read as MySQL reads them
+	// under its default sql_mode: a double-quoted token is a string, adjacent
+	// strings are one constant, and _utf8mb4'x' introduces one with a
+	// character set. Only the MySQL family declares double-quoted strings,
+	// and its grammar holds the other two rules beside it.
+	mysqlStrings bool
 }
 
 // targetGrammars derives each dialect's grammar once per registry. A parser is
@@ -67,6 +73,7 @@ var targetGrammars = descriptortable.New(func(described descriptor.Dialect) targ
 		identityColumns:     described.Comparison.IdentityColumns,
 		collations:          described.Columns.Collations,
 		qualifiedCollations: described.Grammar.Columns.QualifiedCollations,
+		mysqlStrings:        described.Comparison.DoubleQuotedStrings,
 	}
 })
 

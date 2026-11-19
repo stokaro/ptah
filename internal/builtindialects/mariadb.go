@@ -143,6 +143,9 @@ func mariaDB() descriptor.Dialect {
 					"tinytext", "text", "mediumtext", "longtext", "enum", "set",
 				},
 			},
+			// Measured on MariaDB 12.3: DEFAULT (upper('abc')) and
+			// DEFAULT (ucase('abc')) are both reported as ucase('abc').
+			FunctionAliases: map[string]string{"ucase": "upper", "lcase": "lower"},
 		},
 
 		// Dev databases. MariaDB has no server UUID; its host name, port and data

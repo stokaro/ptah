@@ -39,81 +39,64 @@ func escapedLiteralModel(attributes, fields string) declaredModel {
 	}
 }
 
-// mysqlFamilyEnumField declares an enum whose first value holds a backslash.
-const mysqlFamilyEnumField = `	//ptah:schema:field name="e" type="ENUM" enum="e\\f,g" default="g"
+// mysqlFamilyFields declares an enum whose first value holds a backslash, and
+// a default that holds two backslashes in a row (a\\b).
+const mysqlFamilyFields = `	//ptah:schema:field name="e" type="ENUM" enum="e\\f,g" default="g"
 	E string
+	//ptah:schema:field name="b" type="VARCHAR(30)" default="a\\\\b"
+	B string
 `
 
 // escapedLiteralMySQLRead reads the stored defaults of the MySQL family in
-// hexadecimal, with the comment of column a and the type of enum column e.
+// hexadecimal, with the comment of column a, the type of enum column e and
+// the default of column b.
 const escapedLiteralMySQLRead = "SELECT CONCAT_WS(',', HEX(a), HEX(q), HEX(r), n, (SELECT HEX(COLUMN_COMMENT) FROM information_schema.COLUMNS " +
 	"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notes' AND COLUMN_NAME = 'a'), (SELECT HEX(COLUMN_TYPE) " +
-	"FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notes' AND COLUMN_NAME = 'e')) FROM notes"
+	"FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notes' AND COLUMN_NAME = 'e'), HEX(b)) FROM notes"
+
+// The sql_mode values an escaped literal row sets on its session: the
+// server's own, under which a backslash in a string is an escape, and the
+// same with NO_BACKSLASH_ESCAPES, under which it is the character.
+const (
+	serverSQLMode          = "@@sql_mode"
+	noBackslashEscapesMode = "CONCAT(@@sql_mode,',NO_BACKSLASH_ESCAPES')"
+)
 
 // TestApplyKeepsAnEscapedLiteralDefaultE2E applies a Go model whose literal
 // defaults hold a backslash, a quote or the word NULL, with a column comment
 // and an enum value holding a backslash, twice, and reads what the server
-// stored back in hexadecimal. MariaDB reads a backslash in a string as an
-// escape, so the renderer doubles it. The server stores the characters the
-// model declares, and the second apply plans nothing.
+// stored back in hexadecimal. Each row sets the session's sql_mode. Under the
+// server's own mode a backslash in a string is an escape, so the renderer
+// doubles it; under NO_BACKSLASH_ESCAPES it is the character, so the apply
+// sends it once. The reader writes a stored backslash back doubled under
+// either mode. Each server stores the characters the model declares, and the
+// second apply plans nothing.
 func TestApplyKeepsAnEscapedLiteralDefaultE2E(t *testing.T) {
+	const want = "615C62,69745C27733B78,697427733B78,NULL,635C64,656E756D2827655C5C66272C27672729,615C5C62"
 	rows := []struct {
-		name   string
-		engine dbtarget.Engine
-		want   string
+		name    string
+		engine  dbtarget.Engine
+		sqlMode string
+		// noBackslashEscapes is whether the session's sql_mode names
+		// NO_BACKSLASH_ESCAPES, read back from the session.
+		noBackslashEscapes bool
 	}{
-		{name: "mariadb", engine: dbtarget.MariaDBAdmin, want: "615C62,69745C27733B78,697427733B78,NULL,635C64,656E756D2827655C5C66272C27672729"},
+		{name: "mysql", engine: dbtarget.MySQLAdmin, sqlMode: serverSQLMode},
+		{name: "mysql without backslash escapes", engine: dbtarget.MySQLAdmin, sqlMode: noBackslashEscapesMode, noBackslashEscapes: true},
+		{name: "mariadb", engine: dbtarget.MariaDBAdmin, sqlMode: serverSQLMode},
+		{name: "mariadb without backslash escapes", engine: dbtarget.MariaDBAdmin, sqlMode: noBackslashEscapesMode, noBackslashEscapes: true},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			database := mysqlFamilyScratchURL(c, row.engine, "escaped_default")
+			database := withSQLMode(c, mysqlFamilyScratchURL(c, row.engine, "escaped_default"), row.sqlMode)
 
-			got := applyEscapedLiteralModel(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyEnumField), escapedLiteralMySQLRead)
+			got := applyEscapedLiteralModel(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyFields), escapedLiteralMySQLRead)
 
-			c.Assert(got, qt.Equals, row.want)
+			c.Assert(strings.Contains(sessionSQLMode(c, database), "NO_BACKSLASH_ESCAPES"), qt.Equals, row.noBackslashEscapes)
+			c.Assert(got, qt.Equals, want)
 		})
 	}
-}
-
-// TestApplyKeepsAnEscapedLiteralDefaultWithoutBackslashEscapesE2E applies
-// the model to MariaDB through a session whose sql_mode names
-// NO_BACKSLASH_ESCAPES, where the server reads a backslash in a string as the
-// character. The apply sends each backslash once there, the server stores the
-// characters the model declares, and the second apply plans nothing.
-func TestApplyKeepsAnEscapedLiteralDefaultWithoutBackslashEscapesE2E(t *testing.T) {
-	c := qt.New(t)
-	database := withoutBackslashEscapes(c, mysqlFamilyScratchURL(c, dbtarget.MariaDBAdmin, "escaped_default"))
-
-	got := applyEscapedLiteralModel(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyEnumField), escapedLiteralMySQLRead)
-
-	c.Assert(sessionSQLMode(c, database), qt.Contains, "NO_BACKSLASH_ESCAPES")
-	c.Assert(got, qt.Equals, "615C62,69745C27733B78,697427733B78,NULL,635C64,656E756D2827655C5C66272C27672729")
-}
-
-// TestApplyStoresAnEscapedLiteralOnMySQLE2E applies the model to MySQL once
-// under each sql_mode and reads what the server stored in hexadecimal: the
-// characters the model declares under both. The default mode reads `'a\\b'`
-// as a, a backslash and b, and NO_BACKSLASH_ESCAPES reads `'a\b'` so.
-func TestApplyStoresAnEscapedLiteralOnMySQLE2E(t *testing.T) {
-	const want = "615C62,69745C27733B78,697427733B78,NULL,635C64,656E756D2827655C5C66272C27672729"
-	t.Run("the default sql_mode", func(t *testing.T) {
-		c := qt.New(t)
-		database := mysqlFamilyScratchURL(c, dbtarget.MySQLAdmin, "escaped_default")
-
-		got := applyOnceAndRead(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyEnumField), escapedLiteralMySQLRead)
-
-		c.Assert(got, qt.Equals, want)
-	})
-	t.Run("NO_BACKSLASH_ESCAPES", func(t *testing.T) {
-		c := qt.New(t)
-		database := withoutBackslashEscapes(c, mysqlFamilyScratchURL(c, dbtarget.MySQLAdmin, "escaped_default"))
-
-		got := applyOnceAndRead(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyEnumField), escapedLiteralMySQLRead)
-
-		c.Assert(sessionSQLMode(c, database), qt.Contains, "NO_BACKSLASH_ESCAPES")
-		c.Assert(got, qt.Equals, want)
-	})
 }
 
 // TestApplyKeepsAnEscapedLiteralDefaultOnPostgreSQLE2E is the control on an
@@ -164,23 +147,6 @@ func applyEscapedLiteralModel(c *qt.C, database string, model declaredModel, rea
 	return got
 }
 
-// applyOnceAndRead applies model to database once, asserts that it succeeds,
-// inserts a row that takes every default, and returns what read answers for
-// it.
-func applyOnceAndRead(c *qt.C, database string, model declaredModel, read string) string {
-	c.Helper()
-	created := applyModel(c, database, model)
-	c.Assert(created.ExitCode, qt.Equals, 0, historyComment(created))
-	conn, err := dbschema.ConnectToDatabase(c.Context(), database)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	_, err = conn.ExecContext(c.Context(), "INSERT INTO notes (id) VALUES (1)")
-	c.Assert(err, qt.IsNil)
-	var got string
-	c.Assert(conn.QueryRowContext(c.Context(), read).Scan(&got), qt.IsNil)
-	return got
-}
-
 // sessionSQLMode returns the sql_mode of a session opened on database, which
 // shows whether a parameter the address carries reached the session.
 func sessionSQLMode(c *qt.C, database string) string {
@@ -193,16 +159,16 @@ func sessionSQLMode(c *qt.C, database string) string {
 	return sqlMode
 }
 
-// withoutBackslashEscapes returns database with a query parameter the driver
-// sets on every session it opens, adding NO_BACKSLASH_ESCAPES to the
-// server's sql_mode. The address may name its host as tcp(host:port), which
+// withSQLMode returns database with a query parameter the driver sets on
+// every session it opens: sqlMode is the expression the session's sql_mode
+// is set to. The address may name its host as tcp(host:port), which
 // url.Parse refuses, so only the query is parsed.
-func withoutBackslashEscapes(c *qt.C, database string) string {
+func withSQLMode(c *qt.C, database, sqlMode string) string {
 	c.Helper()
 	address, rawQuery, _ := strings.Cut(database, "?")
 	query, err := url.ParseQuery(rawQuery)
 	c.Assert(err, qt.IsNil)
-	query.Set("sql_mode", "CONCAT(@@sql_mode,',NO_BACKSLASH_ESCAPES')")
+	query.Set("sql_mode", sqlMode)
 	return address + "?" + query.Encode()
 }
 

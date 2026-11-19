@@ -276,6 +276,10 @@ func postgres() descriptor.Dialect {
 					Shift:        true,
 					DistinctFrom: true,
 				},
+				// Measured on PostgreSQL 18: DEFAULT 'now' on a timestamptz
+				// stores the creation time, and 'today' on a date the
+				// creation date.
+				RelativeTimeLiterals: []string{"NOW", "TODAY", "TOMORROW", "YESTERDAY"},
 			},
 			Constraints: descriptor.ConstraintGrammar{
 				TableNotNull: true,

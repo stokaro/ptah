@@ -2605,9 +2605,13 @@ func (p *Parser) handleDefault(column *ast.ColumnNode) error {
 	}
 	p.advance()
 	p.skipWhitespace()
+	start := p.current.Start
 	defaultValue, err := p.parseDefaultValue()
 	if err != nil {
 		return fmt.Errorf("expected default value: %w", err)
+	}
+	if err := p.refuseRelativeTimeDefault(column, defaultValue, start); err != nil {
+		return err
 	}
 	if defaultValue.Expression != "" {
 		column.SetDefaultExpression(defaultValue.Expression)
@@ -3810,6 +3814,9 @@ func (p *Parser) handleStringLiteral() (*ast.DefaultValue, error) {
 		}
 	} else {
 		p.advance()
+		if p.target.mysqlStrings {
+			value = p.mysqlStringConstant(value)
+		}
 	}
 
 	// PostgreSQL type casts such as '{}'::jsonb or '{}'::uuid[]
@@ -3889,10 +3896,8 @@ func (p *Parser) handleFunctionCallOrKeyword() (*ast.DefaultValue, error) {
 	p.advance()
 
 	upperValue := strings.ToUpper(value)
-	if upperValue == "E" && p.current.Type == lexer.TokenString {
-		value += p.current.Value
-		p.advance()
-		return &ast.DefaultValue{Value: value, ValueSet: true}, nil
+	if literal, ok := p.gluedLiteral(value, upperValue); ok {
+		return literal, nil
 	}
 
 	// A function may be schema-qualified: pg_catalog.now(), public.nextval(...).

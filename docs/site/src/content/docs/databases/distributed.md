@@ -72,6 +72,10 @@ anything is read, and is never inspected or planned as PostgreSQL.
   ordering.
   A column of a serial type or one declared `GENERATED ... AS IDENTITY` is
   `NOT NULL` whether or not the file says so, as the server builds it.
+  A date or time default of `'now'`, `'today'`, `'tomorrow'` or `'yesterday'`
+  is refused as it is on PostgreSQL: YugabyteDB 2026.1 also stores the moment
+  the table is created. CockroachDB keeps the string, so it is accepted
+  there.
 
 CockroachDB and YugabyteDB open a transaction around a migration body, and a
 schema statement does not wait for it to end. See
