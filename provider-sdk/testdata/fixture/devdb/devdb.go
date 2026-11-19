@@ -42,10 +42,11 @@ type Provider struct {
 
 // Features are the services and behaviors this package adds: the ones the
 // provider declares, and the ones its engine declares. A statement timeout is
-// the provider's, and dev realms are the engine's alone.
+// the provider's, and dev realms are the engine's alone. Trust in replayed SQL
+// lifts the guard's refusal of VACUUM INTO; see [Cleaner.GuardReplay].
 func Features() (providerFeatures, engineFeatures []string) {
 	services := []string{provider.TransactionsFeature, provider.HistoryFeature, provider.LocksFeature, provider.DevDatabaseFeature,
-		provider.DevCleanupFeature, provider.ReplayGuardFeature, provider.StatementsFeature}
+		provider.DevCleanupFeature, provider.ReplayGuardFeature, provider.ReplayTrustFeature, provider.StatementsFeature}
 	return append(slices.Clone(services), provider.StatementTimeoutFeature), append(services, provider.DevRealmsFeature)
 }
 
@@ -71,9 +72,20 @@ func BareDescription() *protocol.Description {
 	description.SemanticIdentity += "-bare"
 	engine := description.Engines[0]
 	engine.Features = slices.DeleteFunc(engine.Features, func(feature string) bool {
-		return feature == provider.DevCleanupFeature || feature == provider.ReplayGuardFeature || feature == provider.DevRealmsFeature ||
-			feature == provider.StatementsFeature
+		return feature == provider.DevCleanupFeature || feature == provider.ReplayGuardFeature || feature == provider.ReplayTrustFeature ||
+			feature == provider.DevRealmsFeature || feature == provider.StatementsFeature
 	})
+	return description
+}
+
+// UntrustingDescription is Description as a provider built before contract
+// 25.43 declares it: the replay guard without trust in replayed SQL.
+func UntrustingDescription() *protocol.Description {
+	description := Description()
+	description.SemanticIdentity += "-untrusting"
+	untrusting := func(feature string) bool { return feature == provider.ReplayTrustFeature }
+	description.Features = slices.DeleteFunc(description.Features, untrusting)
+	description.Engines[0].Features = slices.DeleteFunc(description.Engines[0].Features, untrusting)
 	return description
 }
 
@@ -104,13 +116,34 @@ func (p *Provider) Inspect(ctx context.Context, request *protocol.InspectRequest
 }
 
 // Open accepts a fixture address with the host localhost, which a realm
-// address keeps from the operator's, as well as one with no host.
+// address keeps from the operator's, as well as one with no host. It records
+// the trust the host sent; see [RecordTrust].
 func (p *Provider) Open(ctx context.Context, request *protocol.OpenRequest) (*protocol.Session, error) {
+	if err := RecordTrust("open", request.GetTrustedSql()); err != nil {
+		return nil, err
+	}
 	if address, err := url.Parse(request.GetAddress()); err == nil && address.Host == "localhost" {
 		address.Host = ""
-		request = &protocol.OpenRequest{Engine: request.GetEngine(), Address: address.String()}
+		request = &protocol.OpenRequest{Engine: request.GetEngine(), Address: address.String(), TrustedSql: request.GetTrustedSql()}
 	}
 	return p.TransactionalProvider.Open(ctx, request)
+}
+
+// RecordTrust appends the request kind and the trust it carried to the file
+// FIXTURE_TRUST_LOG names, one line each, so a test reads what reached the
+// provider through the host's real entry points. Nothing is recorded when the
+// variable is unset.
+func RecordTrust(kind string, trusted bool) error {
+	path := os.Getenv("FIXTURE_TRUST_LOG")
+	if path == "" {
+		return nil
+	}
+	log, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304 G703 -- the test names this log in its private directory
+	if err != nil {
+		return fmt.Errorf("open the fixture trust log: %w", err)
+	}
+	_, err = fmt.Fprintf(log, "%s %t\n", kind, trusted)
+	return errors.Join(err, log.Close())
 }
 
 // ProvisionDevDatabase creates a dev database file for a docker URL in either
@@ -302,8 +335,16 @@ func dropTables(ctx context.Context, db *sql.DB, found []*protocol.DevObject) er
 }
 
 // GuardReplay refuses a statement that reaches past the database file, or
-// that changes the replay session's own settings, and accepts the rest.
+// that changes the replay session's own settings, and accepts the rest. A
+// trusted scope lifts the refusal of VACUUM INTO, a copy the operator may
+// want written, and keeps ATTACH and DETACH, which change the session's
+// databases, and PRAGMA, which changes its settings. It records the trust the
+// request carried; see [RecordTrust].
 func (Cleaner) GuardReplay(_ context.Context, request *protocol.GuardReplayRequest) (*protocol.GuardedReplay, error) {
+	trusted := request.GetScope().GetTrustedSql()
+	if err := RecordTrust("guard", trusted); err != nil {
+		return nil, err
+	}
 	result := &protocol.GuardedReplay{}
 	for _, statement := range request.GetStatements() {
 		verdict := &protocol.ReplayVerdict{}
@@ -311,7 +352,7 @@ func (Cleaner) GuardReplay(_ context.Context, request *protocol.GuardReplayReque
 		switch {
 		case len(fields) > 0 && (fields[0] == "ATTACH" || fields[0] == "DETACH"):
 			verdict.Refused, verdict.Operation = true, fields[0]+" reaches another database file"
-		case len(fields) > 1 && fields[0] == "VACUUM" && fields[1] == "INTO":
+		case len(fields) > 1 && fields[0] == "VACUUM" && fields[1] == "INTO" && !trusted:
 			verdict.Refused, verdict.Operation = true, "VACUUM INTO writes another database file"
 		case len(fields) > 0 && fields[0] == "PRAGMA":
 			verdict.Refused, verdict.Operation = true, "PRAGMA changes the replay session's settings"

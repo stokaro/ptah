@@ -2,6 +2,8 @@
 // through one independent process: the dev database services of cmd/devdb
 // and the rules of cmd/lint. A host replays and lints a migration directory or
 // a plan on a dev database only this provider can clean.
+// FIXTURE_DEV_TRUST=undeclared serves it as a provider built before contract
+// 25.43, which declares no trust in replayed SQL, as cmd/devdb does.
 package main
 
 import (
@@ -30,6 +32,9 @@ func main() {
 	}
 	owner := &devdb.Provider{Dir: dir}
 	description := devdb.Description()
+	if os.Getenv("FIXTURE_DEV_TRUST") == "undeclared" {
+		description = devdb.UntrustingDescription()
+	}
 	description.SemanticIdentity += "-lint"
 	description.Features = append(description.Features, provider.LintFeature)
 	engine := description.Engines[0]

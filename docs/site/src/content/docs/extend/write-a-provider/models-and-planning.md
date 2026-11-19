@@ -153,6 +153,11 @@ target. The provider takes part through four features:
   database clean when the list is empty.
 - `database.dev-replay-guard` judges each statement Ptah is about to replay and
   refuses one whose effects reach outside the dev database.
+- `database.dev-replay-trust` tells the guard and each dev session that the
+  operator trusts the SQL the run executes. The provider lifts only refusals
+  whose reason is that it cannot confine the effects, and keeps every refusal
+  that protects the session and the cleanup. See
+  [Trusted replay SQL (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#trusted-replay-sql).
 
 Ptah decides which database is a dev database; the provider cannot. The
 [Dev database cleanup and the replay guard (latest development source)](https://github.com/stokaro/ptah/blob/master/provider-sdk/README.md#dev-database-cleanup-and-the-replay-guard)

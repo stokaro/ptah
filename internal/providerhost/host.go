@@ -104,6 +104,10 @@ var hostFeatures = []string{
 	// A dev URL of an engine whose provider creates dev realms enters a
 	// realm; see DevDatabaseOwner.EnterRealm.
 	provider.DevRealmsFeature,
+	// The operator's trust in the SQL a run executes on its dev database
+	// reaches the provider's replay guard and the dev session; see
+	// target.Open and replayGuard.Validate.
+	provider.ReplayTrustFeature,
 	// `ptah sql lint` reads a provider's statement facts; see
 	// sqllint.Options.Owner.
 	provider.LintStatementFactsFeature,
