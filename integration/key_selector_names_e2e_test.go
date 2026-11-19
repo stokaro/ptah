@@ -71,7 +71,10 @@ const (
 		"WHERE schemaname = 'public' AND tablename = 'kinds'"
 	postgresKindsPrimaryKey = "SELECT conname FROM pg_constraint WHERE contype = 'p' AND conrelid = 'public.kinds'::regclass"
 	postgresTypesPrimaryKey = "SELECT conname FROM pg_constraint WHERE contype = 'p' AND conrelid = 'public.types'::regclass"
-	mySQLKindsIndexes       = "SELECT GROUP_CONCAT(DISTINCT INDEX_NAME ORDER BY INDEX_NAME) FROM information_schema.STATISTICS " +
+	postgresKindsKeyAndID   = "SELECT c.conname || ' ' || a.attnotnull FROM pg_constraint c " +
+		"JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attname = 'id' " +
+		"WHERE c.contype = 'p' AND c.conrelid = 'public.kinds'::regclass"
+	mySQLKindsIndexes = "SELECT GROUP_CONCAT(DISTINCT INDEX_NAME ORDER BY INDEX_NAME) FROM information_schema.STATISTICS " +
 		"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'kinds'"
 	mySQLKindsID = "SELECT CONCAT_WS(' ', COLUMN_KEY, EXTRA, IS_NULLABLE) FROM information_schema.COLUMNS " +
 		"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'kinds' AND COLUMN_NAME = 'id'"
@@ -93,6 +96,12 @@ const (
 // name on both sides. A desired side that named its key by the predicted name
 // alone kept the key the selector named, and planned ADD PRIMARY KEY, which
 // PostgreSQL refuses with 42P16 while the server's key stands.
+//
+// A declaration that writes no key at all, and leaves the key's column
+// nullable, keeps the NOT NULL the server's key holds. Without it the plan
+// holds DROP NOT NULL, which PostgreSQL refuses with 42P16, and MODIFY COLUMN,
+// which MySQL and MariaDB run without dropping the NOT NULL, so every run plans
+// it again.
 func TestExcludeNamesAKeyByTheTargetsNameE2E(t *testing.T) {
 	type keySelectorRow struct {
 		name, server                 string
@@ -120,6 +129,15 @@ func TestExcludeNamesAKeyByTheTargetsNameE2E(t *testing.T) {
 			want:    "pk_kinds",
 		})
 	}
+	rows = append(rows, keySelectorRow{
+		name:    "postgresql/a primary key the declaration does not write",
+		server:  "postgresql",
+		live:    "CREATE TABLE public.kinds (id int NOT NULL, code text, CONSTRAINT pk_kinds PRIMARY KEY (id));\n",
+		desired: "CREATE TABLE public.kinds (id int, code text);\n",
+		exclude: "public.kinds.pk_kinds",
+		read:    postgresKindsKeyAndID,
+		want:    "pk_kinds true",
+	})
 	for _, exclude := range []string{"public.types.kinds_pkey", "public.types.kinds_pkey[type=constraint]", "public.types.kinds_pkey[type=index]"} {
 		rows = append(rows, keySelectorRow{
 			name:    "postgresql/the primary key a renamed table kept, as " + exclude,
@@ -161,6 +179,15 @@ func TestExcludeNamesAKeyByTheTargetsNameE2E(t *testing.T) {
 				exclude: "kinds.PRIMARY[type=constraint]",
 				read:    mySQLKindsID,
 				want:    "PRI auto_increment NO",
+			},
+			keySelectorRow{
+				name:    engine.name + "/the primary key declared nowhere, on a column the declaration leaves nullable",
+				server:  engine.name,
+				live:    "CREATE TABLE kinds (id int NOT NULL, code varchar(20), PRIMARY KEY (id));",
+				desired: "CREATE TABLE kinds (id int, code varchar(20));\n",
+				exclude: "kinds.PRIMARY[type=index]",
+				read:    mySQLKindsID,
+				want:    "PRI  NO",
 			},
 		)
 	}

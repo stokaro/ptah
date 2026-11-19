@@ -364,7 +364,10 @@ SQL:
   old one: `ALTER TABLE t DROP INDEX cover, ADD INDEX k (a)`. `DROP INDEX` alone
   answers `ERROR 1553`, and an index added first can make the server drop one it
   built by itself, so that a later `DROP INDEX` answers `ERROR 1091`. The new
-  index takes the name the server gives the index it builds for that key.
+  index takes the name the server gives the index it builds for that key. A key
+  an exclude selector keeps out of scope gets its index the same way, with a
+  comment above the statement that names the key; the selector leaves the new
+  index out with the key, so the next run plans nothing.
 - A plan that adds an index or a key the foreign key can stand on drops the
   index the server built for the key in the statement that adds it: `ALTER
   TABLE t DROP INDEX k, ADD INDEX i (a)`, and in the same way with `ADD

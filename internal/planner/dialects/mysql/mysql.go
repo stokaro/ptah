@@ -1569,6 +1569,7 @@ func (p *Planner) addNewIndexes(
 		indexNode := modelast.FromIndex(change.Index)
 		indexNode.Table = ref.TableName
 		indexNode.IfNotExists = false
+		result = append(result, noteOf(change)...)
 		removals := slices.Collect(replacements.Matches(ref))
 		// An index rebuilt under its own name is dropped and added in one
 		// statement: `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`. MySQL
@@ -1671,10 +1672,26 @@ func indexesTakingOver(
 			_, named := namedByForeignKeys[ref]
 			return named
 		}) && !writtenAtRelease(change, released) {
-			result = append(result, indexTakingOverNode(diff, change, taken))
+			result = append(result, indexTakingOverNodes(diff, change, taken)...)
 		}
 	}
 	return result
+}
+
+// indexTakingOverNodes is the statement that drops what change takes over from and
+// adds its index, after the note the comparison gave the addition; see [noteOf].
+func indexTakingOverNodes(diff *difftypes.SchemaDiff, change difftypes.IndexChange, taken *takeoverLedger) []ast.Node {
+	return append(noteOf(change), indexTakingOverNode(diff, change, taken))
+}
+
+// noteOf is the comment that says why the plan adds change's index, where the
+// comparison gave a reason the declaration does not show; see
+// [difftypes.IndexChange.Note].
+func noteOf(change difftypes.IndexChange) []ast.Node {
+	if change.Note == "" {
+		return nil
+	}
+	return []ast.Node{ast.NewComment(change.Note)}
 }
 
 // indexTakingOverNode is the statement that drops what change takes over from and adds
@@ -1839,7 +1856,7 @@ func (p *Planner) releaseKeyNames(result []ast.Node, diff *difftypes.SchemaDiff,
 		}
 		takeover := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
 		if _, done := written[takeover]; !done {
-			result = append(result, indexTakingOverNode(diff, change, taken))
+			result = append(result, indexTakingOverNodes(diff, change, taken)...)
 			written[takeover] = struct{}{}
 		}
 	}
@@ -2711,7 +2728,7 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 			if change, takenOver := indexTakingOverFrom(state.diff, ref); takenOver {
 				takeover := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
 				if _, written := takeovers[takeover]; !written && !writtenAtRelease(change, state.releasedIndexes) {
-					result = append(result, indexTakingOverNode(state.diff, change, state.taken))
+					result = append(result, indexTakingOverNodes(state.diff, change, state.taken)...)
 					takeovers[takeover] = struct{}{}
 				}
 			} else if len(state.taken.claim([]difftypes.IndexRef{ref})) > 0 {

@@ -464,16 +464,24 @@ reports no difference on them.
 
 On MySQL and MariaDB, `--exclude 'kids.kids_parent_fk[type=foreign_key]'`
 also leaves out the index the server built for the foreign key, under the key's
-name or, for a key written without one, under its first column's. An index
-the author declared stays in the comparison even where the key stands on it:
-a desired schema that leaves it out plans `DROP INDEX`, and the server refuses
-that with `ERROR 1553` while the key needs the index. A selector that leaves
-out every constraint, such as `*[type=constraint]`, leaves out the index the
-server built with each key too. MariaDB shows an account that holds only
-`SELECT` no foreign key, so that account cannot tell the index the server built
-from one the author declared, and keeps it in the comparison;
-[MySQL and MariaDB](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind) says how both accounts get the same
-answer.
+name or, for a key written without one, under its first column's.
+
+An index the author declared stays in the comparison even where the key stands
+on it, so a desired schema that leaves it out drops it. `DROP INDEX` alone
+answers `ERROR 1553` while the key needs the index, so the plan gives the key an
+index of its own over the key's columns, in the key's order, in the same
+statement:
+`ALTER TABLE kids DROP INDEX kids_parent_idx, ADD INDEX kids_parent_fk (parent_id)`.
+The new index takes the name the server gives the index it builds for the key,
+and a comment above the statement says why it is there. The selector leaves
+that index out with the key, so the next run plans nothing.
+
+A selector that leaves out every constraint, such as `*[type=constraint]`,
+leaves out the index the server built with each key too. MariaDB shows an
+account that holds only `SELECT` no foreign key, so that account cannot tell the
+index the server built from one the author declared, and keeps it in the
+comparison; [MySQL and MariaDB](../../databases/mysql/#a-run-that-does-not-depend-on-a-kind)
+says how both accounts get the same answer.
 
 On SQLite, a plan changes most of a table by writing a new one from the
 declaration and copying the rows. A part of the table that a selector keeps out

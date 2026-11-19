@@ -1,6 +1,8 @@
 package atlasfilter
 
 import (
+	"slices"
+
 	"ptah.run/catalog"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/indexbacking"
@@ -27,11 +29,12 @@ type liveRead struct {
 	tables []livePrimaryKey
 }
 
-// livePrimaryKey is the primary key of one table: its name, and whether the
-// table holds one.
+// livePrimaryKey is the primary key of one table: its name, its columns, and
+// whether the table holds one.
 type livePrimaryKey struct {
 	schema, table string
 	name          string
+	columns       []string
 	held          bool
 }
 
@@ -56,12 +59,12 @@ func KeysOf(db *catalog.Database) LiveKeys {
 	}
 	for _, constraint := range db.Constraints {
 		if key := at(constraint.Schema, constraint.TableName); key != nil && indexbacking.KindOf(constraint.Type) == indexbacking.PrimaryKey {
-			key.name, key.held = constraint.Name, true
+			key.name, key.columns, key.held = constraint.Name, slices.Clone(constraint.ColumnNamesOrDefault()), true
 		}
 	}
 	for _, index := range db.Indexes {
 		if key := at(index.Schema, index.TableName); key != nil && index.IsPrimary && !key.held {
-			key.name, key.held = index.Name, true
+			key.name, key.columns, key.held = index.Name, slices.Clone(index.Columns), true
 		}
 	}
 	return LiveKeys{read: read}
@@ -71,14 +74,26 @@ func KeysOf(db *catalog.Database) LiveKeys {
 // table, in the schema each one resolves to, and whether the database holds
 // one there.
 func (k LiveKeys) primary(s *exclusionState, table schemamodel.Table) (string, bool) {
+	key, held := k.primaryKey(s, table)
+	return key.name, held
+}
+
+// primaryColumns returns the columns of the database's primary key on the
+// declared table, or none where the database holds no key there.
+func (k LiveKeys) primaryColumns(s *exclusionState, table schemamodel.Table) []string {
+	key, _ := k.primaryKey(s, table)
+	return key.columns
+}
+
+func (k LiveKeys) primaryKey(s *exclusionState, table schemamodel.Table) (livePrimaryKey, bool) {
 	if k.read == nil {
-		return "", false
+		return livePrimaryKey{}, false
 	}
 	schema := s.effectiveSchema(table.Schema)
 	for _, key := range k.read.tables {
 		if key.held && key.table == table.Name && s.effectiveSchema(key.schema) == schema {
-			return key.name, true
+			return key, true
 		}
 	}
-	return "", false
+	return livePrimaryKey{}, false
 }

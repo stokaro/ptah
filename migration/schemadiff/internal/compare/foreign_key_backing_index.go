@@ -247,6 +247,13 @@ func addedForeignKeyShares(diff *difftypes.SchemaDiff, index catalog.Index, sema
 // gets serves a narrower key over the same leading columns too. A name a live index
 // that stays holds keeps the addition out, and the server's refusal names the reason.
 // It runs after the constraints and the indexes are compared.
+//
+// A foreign key an exclude selector keeps out of scope stands on the indexes of its
+// table like any other, so it gets an index too: without one, the removal of an index
+// the author declared under it answers Error 1553. The selector leaves the index the
+// server builds for the key out with it, so the new index leaves the next comparison
+// with the key. An index the selector keeps out of scope never leaves, and serves a
+// key as one in scope does.
 func ForeignKeyIndexesStaying(database *catalog.Database, diff *difftypes.SchemaDiff, dialect string, semantics identifier.Semantics) {
 	if foreignKeyNamingOf(dialect) != descriptor.ForeignKeyNamingTableNumbered || database == nil {
 		return
@@ -269,7 +276,11 @@ func ForeignKeyIndexesStaying(database *catalog.Database, diff *difftypes.Schema
 		_, removed := removedIndexes[identity]
 		return removed || removedConstraints[constraintIdentity(index.QualifiedTableName(), index.Name, semantics)]
 	}
-	keys := slices.Clone(database.Constraints)
+	outOfScope := make(map[difftypes.ConstraintIdentity]bool, len(database.OutOfScope.Constraints))
+	for _, key := range database.OutOfScope.Constraints {
+		outOfScope[constraintIdentity(key.QualifiedTableName(), key.Name, semantics)] = true
+	}
+	keys := slices.Concat(database.Constraints, database.OutOfScope.Constraints)
 	slices.SortStableFunc(keys, func(a, b catalog.Constraint) int {
 		return cmp.Compare(len(b.ColumnNamesOrDefault()), len(a.ColumnNamesOrDefault()))
 	})
@@ -291,20 +302,48 @@ func ForeignKeyIndexesStaying(database *catalog.Database, diff *difftypes.Schema
 			TableName: key.QualifiedTableName(),
 			Index:     schemamodel.Index{Name: name, Fields: slices.Clone(key.ColumnNamesOrDefault())},
 		}
-		for _, index := range under {
-			ref := difftypes.IndexRef{Name: index.Name, TableName: index.QualifiedTableName()}
-			if removed, listed := removedIndexes[indexscope.IdentityKeyWithSemantics(semantics, ref)]; listed {
-				change.Replaces = append(change.Replaces, removed)
-			} else if removedUniques[constraintIdentity(ref.TableName, ref.Name, semantics)] {
-				change.Replaces = append(change.Replaces, ref)
-			}
+		if outOfScope[constraintIdentity(key.QualifiedTableName(), key.Name, semantics)] {
+			change.Note = outOfScopeKeyNote(key, name, under)
 		}
+		change.Replaces = replacedUnder(under, removedIndexes, removedUniques, semantics)
 		diff.IndexesAdded = append(diff.IndexesAdded, change)
 		added = true
 	}
 	if added {
 		diff.SetIndexAdditions(diff.IndexesAdded)
 	}
+}
+
+// replacedUnder lists the indexes under a key that the plan removes, as an index
+// removal or as the removal of a UNIQUE constraint, which the index added for
+// the key takes over from.
+func replacedUnder(
+	under []catalog.Index,
+	removedIndexes map[difftypes.IndexRef]difftypes.IndexRef,
+	removedUniques map[difftypes.ConstraintIdentity]bool,
+	semantics identifier.Semantics,
+) []difftypes.IndexRef {
+	var replaced []difftypes.IndexRef
+	for _, index := range under {
+		ref := difftypes.IndexRef{Name: index.Name, TableName: index.QualifiedTableName()}
+		if removed, listed := removedIndexes[indexscope.IdentityKeyWithSemantics(semantics, ref)]; listed {
+			replaced = append(replaced, removed)
+		} else if removedUniques[constraintIdentity(ref.TableName, ref.Name, semantics)] {
+			replaced = append(replaced, ref)
+		}
+	}
+	return replaced
+}
+
+// outOfScopeKeyNote says why the plan adds index name for key, a foreign key an
+// exclude selector keeps out of scope, which the declaration does not show.
+func outOfScopeKeyNote(key catalog.Constraint, name string, under []catalog.Index) string {
+	names := make([]string, 0, len(under))
+	for _, index := range under {
+		names = append(names, index.Name)
+	}
+	return "Add index " + name + " for foreign key " + key.Name + ", which an exclude selector keeps out of scope: " +
+		"the server refuses to drop " + strings.Join(names, ", ") + " while the key has no other index"
 }
 
 // allOf reports whether every index satisfies leaves.
@@ -315,17 +354,23 @@ func allOf(indexes []catalog.Index, leaves func(catalog.Index) bool) bool {
 // nameStays reports whether an index of key's table that the plan leaves holds name.
 func nameStays(database *catalog.Database, key catalog.Constraint, name string, leaves func(catalog.Index) bool, semantics identifier.Semantics) bool {
 	table := semantics.QualifiedTableIdentityKey(key.QualifiedTableName())
-	return slices.ContainsFunc(database.Indexes, func(index catalog.Index) bool {
+	return slices.ContainsFunc(liveIndexes(database), func(index catalog.Index) bool {
 		return semantics.QualifiedTableIdentityKey(index.QualifiedTableName()) == table &&
 			semantics.IndexIdentityKey(index.Name) == semantics.IndexIdentityKey(name) && !leaves(index)
 	})
+}
+
+// liveIndexes returns every index the server holds: those in scope, and those an
+// exclude selector keeps out of it, which the plan never removes.
+func liveIndexes(database *catalog.Database) []catalog.Index {
+	return slices.Concat(database.Indexes, database.OutOfScope.Indexes)
 }
 
 // indexesUnder returns the indexes of key's table that begin with key's columns.
 func indexesUnder(database *catalog.Database, key catalog.Constraint, semantics identifier.Semantics) []catalog.Index {
 	table := semantics.QualifiedTableIdentityKey(key.QualifiedTableName())
 	var indexes []catalog.Index
-	for _, index := range database.Indexes {
+	for _, index := range liveIndexes(database) {
 		if semantics.QualifiedTableIdentityKey(index.QualifiedTableName()) == table && startsWith(index, key.ColumnNamesOrDefault()) {
 			indexes = append(indexes, index)
 		}
@@ -372,7 +417,7 @@ func keptKeyIndexName(database *catalog.Database, key catalog.Constraint, descri
 	}
 	table := semantics.QualifiedTableIdentityKey(key.QualifiedTableName())
 	return mysqlname.IndexName(described.IndexNaming.BaseBytes, key.ColumnNamesOrDefault()[0], func(name string) bool {
-		return slices.ContainsFunc(database.Indexes, func(index catalog.Index) bool {
+		return slices.ContainsFunc(liveIndexes(database), func(index catalog.Index) bool {
 			return semantics.QualifiedTableIdentityKey(index.QualifiedTableName()) == table &&
 				semantics.IndexIdentityKey(index.Name) == semantics.IndexIdentityKey(name)
 		})
