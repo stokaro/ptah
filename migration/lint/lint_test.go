@@ -1079,6 +1079,11 @@ func TestLintFS_FilesTheMigratorRefusesTheDirectoryFor(t *testing.T) {
 			"1_a.sql":  "CREATE TABLE a (id INT);\n",
 			"v2_b.sql": "CREATE TABLE b (id INT);\n",
 		}, lint.CompatibilityProfileAtlas, make([]string, 0)},
+		{"two up files of one Ptah version", map[string]string{
+			"0000000001_a.up.sql":   "CREATE TABLE a (id INT);\n",
+			"0000000001_a.down.sql": "DROP TABLE a;\n",
+			"0000000001_b.up.sql":   "CREATE TABLE b (id INT);\n",
+		}, lint.CompatibilityProfileNative, []string{"0000000001_a.up.sql", "0000000001_b.up.sql"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

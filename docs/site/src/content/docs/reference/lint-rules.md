@@ -361,7 +361,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MF102` | an index dropped and rebuilt as unique fails on the first duplicate and leaves the table without it | both | Atlas |
 | `MF102P` | the migration carries no executable statements | both | Ptah |
 | `MF103` | the file name does not follow the migration file-name convention | both | Ptah |
-| `MF105P` | a run refuses the migration directory for this file: the directory's format does not read its name, or the revision table cannot keep its version | native only | Ptah |
+| `MF105P` | a run refuses the migration directory for this file: the directory's format does not read its name, another file carries its version and direction, or the revision table cannot keep its version | native only | Ptah |
 | `NM101` | a schema this migration creates or renames to violates the configured naming convention | both | Atlas |
 | `NM102` | a table this migration creates or renames to violates the configured naming convention | both | Atlas |
 | `NM103` | a column this migration declares, adds, or renames to violates the configured naming convention | both | Atlas |

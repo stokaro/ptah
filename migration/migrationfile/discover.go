@@ -32,6 +32,11 @@ import (
 // the files that sum covers; see [atlasSumGovernsSelection] for why that is a
 // correctness rule rather than a compatibility preference.
 //
+// A directory read in the Ptah format that holds two files for one direction
+// of one version, such as 0000000002_a.up.sql beside 0000000002_b.up.sql, is
+// refused with a [DuplicateFileError] naming both, rather than a selection a
+// run would apply one of them from.
+//
 // In a directory read in the Ptah format, a file named R__<identity>.sql is a
 // repeatable migration, which [DiscoverRepeatables] returns and this function
 // leaves out.
@@ -207,6 +212,9 @@ func discover(fsys fs.FS, format DirFormat, reading rReading) (discovered, error
 			return discovered{}, err
 		}
 	} else if err := refuseUnreadFiles(sqlFiles, files, repeatables); err != nil {
+		return discovered{}, err
+	}
+	if err := refuseDuplicatePtahFiles(files); err != nil {
 		return discovered{}, err
 	}
 	sortDiscovered(files)

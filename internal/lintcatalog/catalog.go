@@ -470,7 +470,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 	},
 	"MF105P": {
 		Name:       "file-form/refused-file",
-		Summary:    "a run refuses the migration directory for this file: the directory's format does not read its name, or the revision table cannot keep its version",
+		Summary:    "a run refuses the migration directory for this file: the directory's format does not read its name, another file carries its version and direction, or the revision table cannot keep its version",
 		NativeOnly: true,
 		YDB:        YDBApplies,
 		YDBNote:    "the migration directory's files",
