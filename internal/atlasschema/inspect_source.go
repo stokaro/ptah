@@ -297,7 +297,7 @@ func InspectSource(ctx context.Context, opts InspectSourceOptions) (InspectResul
 	}
 	if set.Kind == atlassource.KindDatabase {
 		// The database is the source, so a MySQL-family URL naming none is
-		// the whole server, as the pinned community binary v1.3.0 reads it
+		// the whole server, as the pinned community binary reads it
 		// (stokaro/ptah#3789).
 		conn, err := connectInspectSource(ctx, set.Sources[0].Raw, opts.ConnectTimeout, dbschema.ConnectToServer)
 		if err != nil {

@@ -19,7 +19,7 @@ import (
 
 // TestCompatBinarySchemaInspectFormatLiterals exercises the compatibility
 // formatter across the process, filesystem, and SQLite boundaries. The pinned
-// Atlas CE v1.3.0 binary prints bare and whitespace-wrapped hcl/sql/json bodies
+// Atlas CE binary prints bare and whitespace-wrapped hcl/sql/json bodies
 // literally; the explicit `sql` helper writes the plan that creates the
 // inspected schema, and the `json` and `hcl` helpers write the schema.
 func TestCompatBinarySchemaInspectFormatLiterals(t *testing.T) {

@@ -41,7 +41,7 @@ func uniqueKeyRebuildSchema() *schemamodel.Database {
 //
 // A unique key and its constraint are one catalog row here and
 // `ALTER TABLE ... DROP INDEX` removes it, which is what the pinned community
-// binary v1.3.0 plans on MySQL 9.7.1. Reading the mark as "spell this as a
+// binary plans on MySQL 9.7.1. Reading the mark as "spell this as a
 // constraint drop" -- the PostgreSQL-family answer -- would emit
 // ALTER TABLE ... DROP CONSTRAINT here and change a plan that was already right.
 // The key is rebuilt under its own name, so the drop and the add are one

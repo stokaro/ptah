@@ -1325,7 +1325,7 @@ func TestStrictCompatSchemaInspectOmitsPostgresSystemBaselines(t *testing.T) {
 
 // TestStrictCompatSchemaInspectOmitsPublications inspects a database that
 // holds a publication, as a Supabase dev image or a Debezium source does. The
-// pinned community binary v1.3.0 inspects it and describes no publication, so
+// pinned community binary inspects it and describes no publication, so
 // strict mode does the same, with nothing on stderr. The control is the
 // default compatibility surface, which keeps the publication.
 func TestStrictCompatSchemaInspectOmitsPublications(t *testing.T) {
@@ -1953,7 +1953,7 @@ func runAtlasBinary(binary string, additions []string, args ...string) (stdout, 
 
 // TestStrictCompatSchemaDiffPlansNoInspectedPublication diffs two databases
 // that differ only by a publication, the one holding it on the desired side.
-// The pinned community binary v1.3.0 describes no publication when it
+// The pinned community binary describes no publication when it
 // inspects, so it reports the two in sync, and strict mode does the same. The
 // control is the default compatibility surface, which plans the publication.
 func TestStrictCompatSchemaDiffPlansNoInspectedPublication(t *testing.T) {

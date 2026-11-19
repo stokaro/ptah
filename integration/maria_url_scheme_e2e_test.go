@@ -28,7 +28,7 @@ const mariaSchemeTable = "CREATE TABLE widgets (id int NOT NULL, name varchar(20
 // raw ones go-sql-driver's own form carries, {addr} the server and {db} the
 // database.
 //
-// The pinned community binary v1.3.0 opens `maria://`, in either letter case,
+// The pinned community binary opens `maria://`, in either letter case,
 // on every verb that takes a database URL, and reads it exactly as it reads
 // `mariadb://` and `mysql://`: the three schemes gave byte-identical `schema
 // inspect` output against MariaDB 11.8.9 and against MySQL 8.4.11

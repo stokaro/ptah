@@ -14,7 +14,7 @@ import (
 )
 
 // TestAtlasPartialHashValues pins the `partial_hashes` column against the
-// pinned Atlas community binary v1.3.0 (stokaro/ptah#1196).
+// pinned Atlas community binary (stokaro/ptah#1196).
 //
 // Every want below was read out of a SQLite database that binary wrote, by
 // applying the same migration with the same `-- atlas:txmode none` directive

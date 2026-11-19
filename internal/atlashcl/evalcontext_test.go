@@ -246,7 +246,7 @@ table "t" {
 	}
 }
 
-// Files the pinned Atlas community binary v1.3.0 exits 1 on now exit non-zero
+// Files the pinned Atlas community binary exits 1 on now exit non-zero
 // here too, instead of exiting 0 with the unresolved source text in the DDL.
 //
 // Each row was run through that binary with `schema diff --dev-url

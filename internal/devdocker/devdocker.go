@@ -342,7 +342,7 @@ func (s Spec) URL(hostPort, password string) string {
 // whole two-minute budget before reporting a deterministic error. Probing the
 // server and letting the consumer open the full URL turns that into an
 // immediate refusal naming the schema, which is also when the pinned community
-// binary v1.3.0 reports it.
+// binary reports it.
 //
 // On an image the URL names, the wait probes the server's own database instead,
 // [Spec.CreatesDatabase] says why.
@@ -535,7 +535,7 @@ func parseImageURL(parsed *url.URL, driver string) (Spec, error) {
 }
 
 // splitImagePath reads the image and the database out of a `docker+` URL, as
-// the pinned community binary v1.3.0 reads them: the last path segment is the
+// the pinned community binary reads them: the last path segment is the
 // database when there are two or more and it holds no colon, the segments
 // before it are the image, and a host other than `_` leads the image. A
 // database the path does not name is empty.

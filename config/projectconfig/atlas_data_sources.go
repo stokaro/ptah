@@ -668,7 +668,7 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 		return validateCompositeSchemaShape(block)
 	case "gcp_cloudsql_token":
 		// No body schema, and none required: the pinned community binary
-		// v1.3.0 decodes a block carrying an unrecognized attribute and goes
+		// decodes a block carrying an unrecognized attribute and goes
 		// straight to the token exchange, where `data "gcp_cloudsql_token"
 		// "g" { bogus = "x" }` answers `getting token: oauth2: ...` rather
 		// than "Unsupported argument". Refusing the attribute here would

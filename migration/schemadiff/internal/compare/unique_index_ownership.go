@@ -40,7 +40,7 @@ func generatedIndexIdentities(
 //
 // leave the identical catalog row, which is why `schema inspect` writes MySQL
 // uniqueness back out as `index { unique = true }` and never as a constraint,
-// on both `ptah-compat` and the pinned community binary v1.3.0.
+// on both `ptah-compat` and the pinned community binary.
 //
 // **Which representation wins is decided by the desired state, not by the
 // dialect.** When the desired state names the object as an index, the index
@@ -58,7 +58,7 @@ func generatedIndexIdentities(
 // 1; measured on PostgreSQL 17.10, where the statements carry IF NOT EXISTS and
 // IF EXISTS, the create was skipped, the drop ran, the apply exited 0 and the
 // table was left with no unique index at all. The pinned community binary
-// v1.3.0 reported "Schema is synced" for every one of those fixtures
+// reported "Schema is synced" for every one of those fixtures
 // (stokaro/ptah#1245).
 //
 // Uniqueness of the declared index is deliberately *not* required for the
@@ -74,7 +74,7 @@ func generatedIndexIdentities(
 // catalog row on MySQL and MariaDB, a constraint owning an index everywhere
 // else, so on PostgreSQL 17.10 it is
 // `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`, which is what the
-// pinned community binary v1.3.0 plans and the only spelling the server takes
+// pinned community binary plans and the only spelling the server takes
 // -- and the down direction restores the constraint on every engine.
 //
 // SQL Server is excluded because a UNIQUE constraint and a unique index are

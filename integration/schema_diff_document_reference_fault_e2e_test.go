@@ -12,8 +12,8 @@ import (
 // whose server applies the rule when it creates the foreign key; SQLite does
 // not. It takes a CREATE TABLE whose foreign key references a column no
 // unique key covers and refuses the first write to child with `foreign key
-// mismatch`, so a SQLite database can hold that state, and the community
-// binary v1.3.0 plans a diff from it and exits 0. A diff from such a document
+// mismatch`, so a SQLite database can hold that state, and the pinned community
+// binary plans a diff from it and exits 0. A diff from such a document
 // to one that adds the key is the repair, and refusing it would be stricter
 // than that binary for no gain. The --to document is refused on SQLite, which
 // is stricter than that binary, deliberately: it would plan a table no row can
@@ -57,7 +57,7 @@ func TestSchemaDiffRefusesAReferenceFaultInTheToDocument_FailurePathE2E(t *testi
 // TestSchemaDiffPlansFromAReferenceFaultInTheFromDocument_HappyPathE2E plans
 // from the faulty document on every surface of [documentDiffRuns]: to the
 // document that declares parent.code unique, the repair, and to the one that
-// drops the foreign key. The community binary v1.3.0 exits 0 on both. Holding
+// drops the foreign key. The pinned community binary exits 0 on both. Holding
 // the --from document to the rule refuses both rows.
 func TestSchemaDiffPlansFromAReferenceFaultInTheFromDocument_HappyPathE2E(t *testing.T) {
 	targets := []struct {

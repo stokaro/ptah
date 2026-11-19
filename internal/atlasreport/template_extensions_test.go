@@ -27,7 +27,7 @@ func helperCall(helper string) string {
 }
 
 // TestTemplateHelpers_HappyPath parses, on each verb, a helper the pinned
-// community binary v1.3.0 defines there.
+// community binary defines there.
 func TestTemplateHelpers_HappyPath(t *testing.T) {
 	tests := []struct {
 		verb   string

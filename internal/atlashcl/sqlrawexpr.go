@@ -127,7 +127,7 @@ type sqlRawExprRefusal struct {
 //     or an argument that is not a string
 //   - a sql() call that is not the whole attribute value
 //
-// The pinned Atlas community binary v1.3.0 refuses every one of these too, so
+// The pinned Atlas community binary refuses every one of these too, so
 // the guard opens no position where ptah-compat is stricter than that binary.
 func (p *parser) rejectMalformedSQLRawExprs(body *hclsyntax.Body) error {
 	var refusals []sqlRawExprRefusal

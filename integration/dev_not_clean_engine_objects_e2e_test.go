@@ -197,7 +197,7 @@ func TestDevDatabaseClaimTakesAnEmptyMySQLFamilyDatabaseLive(t *testing.T) {
 
 // TestCompatVerbsRefuseAMySQLFamilyViewTheResetDropsE2E replays a migration
 // directory and rehearses a plan with a view alone in the dev database, where
-// the binary v1.3.0 keeps the view at exit 0. Both refuse, and the view stays.
+// the pinned binary keeps the view at exit 0. Both refuse, and the view stays.
 func TestCompatVerbsRefuseAMySQLFamilyViewTheResetDropsE2E(t *testing.T) {
 	verbs := []struct {
 		name   string

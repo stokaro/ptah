@@ -111,7 +111,7 @@ type Scope struct {
 	// slot is already filled by the connection; a run describing the realm is
 	// handed patterns relative to the realm, so `users` is a SCHEMA and the
 	// full schema.object.child depth is addressable. The pinned community
-	// binary v1.3.0 answers both ways on the same database, and the URL is what
+	// binary answers both ways on the same database, and the URL is what
 	// decides: `--exclude public.users.id` drops the column on
 	// `postgres://.../db` and is refused on `postgres://.../db?search_path=public`
 	// -- the binary prefixing the connection's schema before counting, and

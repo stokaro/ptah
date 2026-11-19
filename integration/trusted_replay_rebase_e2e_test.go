@@ -190,7 +190,7 @@ const rebaseHistoryDiffExclude = "*[type=policy],*[type=function],*[type=trigger
 // rebaseHistoryApplyExcludes are the same selectors as schema apply's flags,
 // and the revision table. A URL bound to public holds that table in the
 // compared schema, so without the selector both ptah-compat and Atlas CE
-// v1.3.0 plan DROP TABLE "atlas_schema_revisions".
+// plan DROP TABLE "atlas_schema_revisions".
 var rebaseHistoryApplyExcludes = []string{
 	"--exclude", "*[type=policy]", "--exclude", "*[type=function]", "--exclude", "*[type=trigger]",
 	"--exclude", "*[type=view]", "--exclude", "*[type=extension]", "--exclude", "atlas_schema_revisions",

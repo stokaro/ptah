@@ -168,7 +168,7 @@ func runAtlasSchemaClean(
 		return cmdutil.Fail(cmd, err)
 	}
 	// Absent and empty are different answers on this verb. The pinned community
-	// binary v1.3.0 refuses an absent --url with the plural spelling, but lets
+	// binary refuses an absent --url with the plural spelling, but lets
 	// `--url ""` through to the client layer, which answers
 	// `sql/sqlclient: missing driver` -- the behavior of a check that asks
 	// whether the flag was given, not what it holds. The project-config value is

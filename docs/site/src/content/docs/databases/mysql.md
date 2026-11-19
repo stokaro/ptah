@@ -146,7 +146,7 @@ SQL:
   A changed secondary-index comment rebuilds the index in one statement: `ALTER TABLE t DROP INDEX k,
   ADD INDEX k (...) COMMENT '...'`. MySQL 8.4.11 refuses a `DROP INDEX` alone on
   an index a foreign key needs (`ERROR 1553`) and takes the pair. Atlas CE
-  v1.3.0 writes the drop and the add as two statements. Primary-key replacements
+  writes the drop and the add as two statements. Primary-key replacements
   also use one `ALTER TABLE` so `AUTO_INCREMENT` and incoming foreign keys
   keep their supporting index.
 - A column's `AUTO_INCREMENT` is compared, and a change is written as
@@ -364,7 +364,10 @@ SQL:
   old one: `ALTER TABLE t DROP INDEX cover, ADD INDEX k (a)`. `DROP INDEX` alone
   answers `ERROR 1553`, and an index added first can make the server drop one it
   built by itself, so that a later `DROP INDEX` answers `ERROR 1091`. The new
-  index takes the name the server gives the index it builds for that key.
+  index takes the name the server gives the index it builds for that key. A key
+  an exclude selector keeps out of scope gets its index the same way, with a
+  comment above the statement that names the key; the selector leaves the new
+  index out with the key, so the next run plans nothing.
 - A plan that adds an index or a key the foreign key can stand on drops the
   index the server built for the key in the statement that adds it: `ALTER
   TABLE t DROP INDEX k, ADD INDEX i (a)`, and in the same way with `ADD
@@ -609,7 +612,10 @@ SQL:
   `schema apply`, its declared rows, `--dry-run`, and what a dev database
   builds for `schema diff` and for the `--dev-url` rehearsal. Text Ptah writes
   for later is written for the default `sql_mode` whatever the session's: a
-  migration file, a saved plan file and the statements `schema diff` prints.
+  migration file from `migrations generate`, `migrations data`,
+  `migrations checkpoint` or `ptah-compat migrate diff`, a saved plan file, and
+  the SQL that `schema diff`, `migrations plan`, `schema compare`, `db read` and
+  `schema inspect` print.
 - SQL a user wrote is sent byte for byte: a view or routine body from a schema
   file, the plan's SQL after `--edit`, and a migration file. `schema apply`
   cuts the `--edit` text into statements the way the session reads it, so the
@@ -627,9 +633,10 @@ SQL:
   without a backslash runs on either session.
 - `ptah-compat` writes these literals the same way, so on a
   `NO_BACKSLASH_ESCAPES` session it stores the declared value. The community
-  binary writes each backslash doubled on every session, which stores two
-  where the declaration holds one. We are stricter here, deliberately: that
-  spelling changes the data the user declared.
+  binary stores four backslashes where the declaration holds one (measured
+  with the community binary v1.3.0 and v1.4.0). We are stricter here,
+  deliberately: that spelling changes the data the user declared; see
+  [Compatibility differences](../../atlas/retained-divergences/#a-backslash-on-a-no_backslash_escapes-session).
 
 ## Table options
 
@@ -765,7 +772,7 @@ is. In the same statement the server gives a reset column the new default, so
 one apply converges. A change of a table's default collation is rated a
 warning, because a column added or restated without a collation takes it.
 
-The Atlas community binary v1.3.0 plans the same statement when it is given a
+The pinned Atlas community binary plans the same statement when it is given a
 dev database, and the table option alone without one; see
 [A changed MySQL table collation](../../atlas/retained-divergences/#a-changed-mysql-table-collation).
 MariaDB lists its UCA 14.0.0 collations, such as `utf8mb4_uca1400_ai_ci`, with
@@ -1114,15 +1121,13 @@ the account needs no privilege for it:
 | `--include '*[type=table]'` | `SHOW VIEW` and the routine privilege |
 
 MariaDB can hide constraint rows from an account with only `SELECT`. The read
-still gets each primary and unique key from its visible index, and the selector
-leaves that key out as it does for an account that sees the row, so both
-accounts plan the same. The index the server built for a foreign key leaves the
-comparison with its key, so the key keeps its index and no plan drops one the
-server refuses to drop while the key stands. An account that sees no foreign key
-cannot tell that index from one the author declared, so its comparison keeps the
-index and reports it where the desired schema leaves it out. Declare the index
-the key stands on, or give the account the constraint privilege, and both
-accounts plan the same.
+still gets each primary and unique key from its visible index, and each foreign
+key's columns and referenced table from `KEY_COLUMN_USAGE`, which MariaDB shows
+that account. The selector leaves each key out as it does for an account that
+sees the row, so both accounts plan the same. The index the server built for a
+foreign key leaves the comparison with its key, and a plan that drops an index
+the author declared under the key adds one for the key in the same statement,
+so no plan drops an index the server refuses to drop while the key stands.
 
 A selector that names objects does not count, because a read that cannot see a
 trigger cannot say what it is called: `--exclude 'audit_*[type=trigger]'` still needs

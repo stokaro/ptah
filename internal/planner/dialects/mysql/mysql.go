@@ -526,7 +526,7 @@ func (p *Planner) modifyExistingColumns(
 		// that keeps its UNIQUE while its type changes gains a second key,
 		// `x_2`, and the next comparison plans it away. So the statement says
 		// UNIQUE only when this change gives the column its UNIQUE. Atlas CE
-		// v1.3.0 restates the column without it (stokaro/ptah#3857).
+		// restates the column without it (stokaro/ptah#3857).
 		if _, uniqueChanged := colDiff.Changes["unique"]; !uniqueChanged {
 			field.Unique = false
 		}
@@ -1569,12 +1569,13 @@ func (p *Planner) addNewIndexes(
 		indexNode := modelast.FromIndex(change.Index)
 		indexNode.Table = ref.TableName
 		indexNode.IfNotExists = false
+		result = append(result, noteOf(change)...)
 		removals := slices.Collect(replacements.Matches(ref))
 		// An index rebuilt under its own name is dropped and added in one
 		// statement: `ALTER TABLE t DROP INDEX k, ADD INDEX k (...)`. MySQL
 		// 8.4.11 refuses a DROP INDEX alone on an index a foreign key needs
 		// (ERROR 1553) and takes the pair, and the pair leaves no moment
-		// without the index. The pinned community binary v1.3.0 writes the
+		// without the index. The pinned community binary writes the
 		// two as separate statements and fails there (stokaro/ptah#3853).
 		if p.replacesIndexInOneStatement(removals, ref, semantics) {
 			_, ownedByConstraint := constraintBacked[removals[0]]
@@ -1671,10 +1672,26 @@ func indexesTakingOver(
 			_, named := namedByForeignKeys[ref]
 			return named
 		}) && !writtenAtRelease(change, released) {
-			result = append(result, indexTakingOverNode(diff, change, taken))
+			result = append(result, indexTakingOverNodes(diff, change, taken)...)
 		}
 	}
 	return result
+}
+
+// indexTakingOverNodes is the statement that drops what change takes over from and
+// adds its index, after the note the comparison gave the addition; see [noteOf].
+func indexTakingOverNodes(diff *difftypes.SchemaDiff, change difftypes.IndexChange, taken *takeoverLedger) []ast.Node {
+	return append(noteOf(change), indexTakingOverNode(diff, change, taken))
+}
+
+// noteOf is the comment that says why the plan adds change's index, where the
+// comparison gave a reason the declaration does not show; see
+// [difftypes.IndexChange.Note].
+func noteOf(change difftypes.IndexChange) []ast.Node {
+	if change.Note == "" {
+		return nil
+	}
+	return []ast.Node{ast.NewComment(change.Note)}
 }
 
 // indexTakingOverNode is the statement that drops what change takes over from and adds
@@ -1839,7 +1856,7 @@ func (p *Planner) releaseKeyNames(result []ast.Node, diff *difftypes.SchemaDiff,
 		}
 		takeover := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
 		if _, done := written[takeover]; !done {
-			result = append(result, indexTakingOverNode(diff, change, taken))
+			result = append(result, indexTakingOverNodes(diff, change, taken)...)
 			written[takeover] = struct{}{}
 		}
 	}
@@ -2711,7 +2728,7 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 			if change, takenOver := indexTakingOverFrom(state.diff, ref); takenOver {
 				takeover := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
 				if _, written := takeovers[takeover]; !written && !writtenAtRelease(change, state.releasedIndexes) {
-					result = append(result, indexTakingOverNode(state.diff, change, state.taken))
+					result = append(result, indexTakingOverNodes(state.diff, change, state.taken)...)
 					takeovers[takeover] = struct{}{}
 				}
 			} else if len(state.taken.claim([]difftypes.IndexRef{ref})) > 0 {

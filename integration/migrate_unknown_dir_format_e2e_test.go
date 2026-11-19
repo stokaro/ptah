@@ -24,7 +24,7 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 
 	// One row per VERB and per SPELLING, because that is the granularity at
 	// which this can regress. `unknown dir format "bogus"` is the pinned
-	// community binary v1.3.0's answer on every path where it reaches directory-
+	// community binary's answer on every path where it reaches directory-
 	// layout resolution. An adaptation living inside the `hash` / `validate`
 	// wrapper makes those two match and leaves the other seven printing a
 	// longer diagnostic of their own (stokaro/ptah#1235 cell 9.8).

@@ -33,7 +33,7 @@ import (
 // the inspected tables.
 //
 // Skipping is the answer rather than refusing, and rather than reconciling.
-// Refusing would fail a document the pinned Atlas community binary v1.3.0
+// Refusing would fail a document the pinned Atlas community binary
 // reads at exit 0, on the surface that exists to be drop-in. Reconciling would
 // mean ALTERing a role on the operator's server because a dev database was
 // pointed at it, and a dev database's contract is that it is disposable --

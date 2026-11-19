@@ -125,7 +125,7 @@ func NativeLocalDir(name, shorthand, usage, nativeName string) Flag {
 // The default is what [registerAtlasFlags] prints in `--help` and what
 // [appendDefaultArgs] folds into the arguments when no layer named a directory,
 // so declaring it here is what makes the help line and the runtime agree. On
-// the pinned community binary v1.3.0 every migrate verb that registers --dir
+// the pinned community binary every migrate verb that registers --dir
 // documents `(default "file://migrations")`; Ptah honored it on some verbs and
 // not others, and `migrate new` printed the flag with no default at all while
 // refusing to run without one (stokaro/ptah#1241 item 3).

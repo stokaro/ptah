@@ -850,7 +850,7 @@ func TestCompatMigrateApply_ConvertedDirFromProjectConfigIsGated(t *testing.T) {
 // stokaro/ptah#980. A converted directory with nothing to execute now exits 0
 // with "No migration files to execute" instead of the converter's "no
 // importable migration files found", matching the pinned community binary
-// v1.3.0 on all six rows below.
+// on all six rows below.
 //
 // The table spans the two axes the issue names — three directory shapes, each
 // with and without atlas.sum — because hashing first is what would implicate

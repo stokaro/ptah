@@ -151,7 +151,7 @@ type atlasCompatExtensionRoundTripCase struct {
 // PostgreSQL prints an operator class only when it is not the default for its
 // key's type, so `CREATE INDEX t_gin ON t USING gin (n int4_ops)` over an integer
 // column comes back as `USING gin (n)` and every word of btree_gin is gone. The
-// block was dropped at exit 0 and the pinned Atlas community binary v1.3.0 then
+// block was dropped at exit 0 and the pinned Atlas community binary then
 // refused the result: `create index "t_gin" to table: "t": pq: data type
 // integer has no default operator class for access method "gin"`, exit 1, with
 // Ptah's own apply failing identically. The btree_gist row is the same dependency

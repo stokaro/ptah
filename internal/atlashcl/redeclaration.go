@@ -75,7 +75,7 @@ import (
 //
 // It is an environment variable rather than a flag because the conformance
 // cli-surface tier asserts flag parity with the pinned Atlas community binary
-// v1.3.0, so a new flag would fail it.
+// so a new flag would fail it.
 const MergeRedeclarationsEnvVar = "PTAH_HCL_MERGE_REDECLARATIONS"
 
 // StrictRedeclarationsEnvVar refuses a repeated declaration of the kinds the
@@ -216,7 +216,7 @@ const (
 // The second half is what makes the refusal actionable rather than merely
 // correct. A document holding `enum "public" "mood"` and `enum "other" "mood"`
 // collides under the bare-name identity the pinned Atlas community binary
-// v1.3.0 uses, and the only honest advice for it is the variable that reads the
+// uses, and the only honest advice for it is the variable that reads the
 // two apart -- not the one that merges them, which would delete a type.
 type declaration struct {
 	object declaredObject
@@ -387,7 +387,7 @@ func (p *parser) documentDeclarations(policy redeclarationPolicy) []declaration 
 	return append(objects, declaredBeyondParity(db, policy)...)
 }
 
-// declaredBeyondParity lists the kinds the pinned Atlas community binary v1.3.0
+// declaredBeyondParity lists the kinds the pinned Atlas community binary
 // reads at exit 0 when they are repeated.
 //
 // They are one function rather than four loops among the others so the

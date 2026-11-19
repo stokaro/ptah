@@ -7,7 +7,7 @@
 // place while its replacement is built. A removed key that holds the name of
 // the column's own key breaks it. On MySQL and MariaDB the server names the
 // column's key `x_2`, and the next comparison plans it again. On PostgreSQL
-// `ADD CONSTRAINT c_x_key` answers that the name exists. Atlas CE v1.3.0 drops
+// `ADD CONSTRAINT c_x_key` answers that the name exists. Atlas CE drops
 // the holder first. So a planner drops each key this package finds ahead of the
 // column changes, and skips it where the plan's removals land.
 //

@@ -298,7 +298,7 @@ func NoPositionalArgs(cmd *cobra.Command, args []string) error {
 // refusal, naming the flag that carries the value the caller most likely meant.
 //
 // It exists for the Atlas-compatible surface, where refusing a stray positional
-// is a deliberate divergence: the pinned Atlas community binary v1.3.0 accepts
+// is a deliberate divergence: the pinned Atlas community binary accepts
 // one and silently discards it, so `atlas migrate status --url … file://mig2`
 // exits 0 reporting on ./migrations instead of on the directory that was named
 // (stokaro/ptah#1241 item 13). A refusal is the right answer there, but only if

@@ -151,7 +151,7 @@ func TestSchemaApplyAddsAColumnKeyBesideADeclaredKeyE2E(t *testing.T) {
 // the PostgreSQL side of the first row: `CREATE TABLE c (a int UNIQUE,
 // CONSTRAINT uq_a UNIQUE (a))` builds `uq_a` alone on PostgreSQL 18, so the
 // database the migration built already holds the file's keys, as Atlas CE
-// v1.3.0 reports.
+// reports.
 func TestMigrateDiffFindsAColumnUniqueBesideANamedUniqueSyncedOnPostgresE2E(t *testing.T) {
 	c := qt.New(t)
 	dir, schema := writeRewrittenMigrationProject(c,

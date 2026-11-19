@@ -103,7 +103,7 @@ func runAtlasMigrateStatus(
 	}
 	// The scheme refusal runs before everything this command body validates,
 	// and the position is measured rather than chosen. On the pinned community
-	// binary v1.3.0, `migrate status --dir mig` beats a missing --url, an
+	// binary `migrate status --dir mig` beats a missing --url, an
 	// unknown --dir-format and a malformed --format template with
 	// `missing scheme for dir url. Did you mean "file://mig"?`; the control
 	// `--dir file://mig --dir-format nosuchfmt` prints `unknown dir format

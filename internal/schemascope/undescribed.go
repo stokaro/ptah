@@ -47,7 +47,7 @@ func (u Undescribed) Warning() string {
 // search_path and the operator selected none. A schema the desired schema
 // declares nothing in is then authoritatively absent, and the comparison
 // removes its tables, as `schema apply` does and as the pinned Atlas
-// community binary v1.3.0 plans `DROP SCHEMA ... CASCADE`. That stays the
+// community binary plans `DROP SCHEMA ... CASCADE`. That stays the
 // answer; this names it, so a removal the operator did not ask for in words
 // is not silent. `migrations generate` writes it into a file.
 //

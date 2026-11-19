@@ -56,7 +56,7 @@ func mysqlUniqueKeyDatabaseSchema() *catalog.Database {
 
 // mysqlUniqueKeyGeneratedSchema is the same table as the desired state writes
 // it. `schema inspect` on `ptah-compat` and on the pinned community binary
-// v1.3.0, and Ptah's own annotations, all spell MySQL uniqueness as an index,
+// and Ptah's own annotations, all spell MySQL uniqueness as an index,
 // so there is no schemamodel.Constraint at all.
 func mysqlUniqueKeyGeneratedSchema() *schemamodel.Database {
 	return &schemamodel.Database{
@@ -427,7 +427,7 @@ func TestCompareWithDialect_DeclaredUniqueConstraintKeepsConstraintOwnership(t *
 // UNIQUE constraint enforces the object, not a statement: what removes it
 // differs per engine, and what RESTORES it does not. On MySQL and MariaDB the
 // unique key and its constraint are one catalog row and `DROP INDEX` removes
-// it, which is what the pinned community binary v1.3.0 plans there; on
+// it, which is what the pinned community binary plans there; on
 // PostgreSQL 17.10 that spelling answers `cannot drop index uq_users_email
 // because constraint uq_users_email on table users requires it (SQLSTATE
 // 2BP01)` and the pinned binary plans `ALTER TABLE "users" DROP CONSTRAINT
@@ -499,7 +499,7 @@ func TestCompareWithDialect_PlainIndexRemovalIsNotConstraintBacked(t *testing.T)
 // expression lives in a STATISTICS column MariaDB does not have. Reading what
 // it can see as the whole key would find the key short by one part against the
 // desired state every run and plan a rebuild forever, on a database MySQL 9.7.1
-// and the pinned community binary v1.3.0 both call unchanged. The named part
+// and the pinned community binary both call unchanged. The named part
 // here is the desired key's own, so nothing is contradicted and nothing is
 // planned.
 func TestCompareWithDialect_MySQLKeyWithAnUnreadablePartDoesNotChurn(t *testing.T) {

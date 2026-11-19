@@ -42,7 +42,7 @@ type Service struct {
 // errURLNamesNoDatabase refuses a MySQL-family URL that selects no database,
 // and says what to write instead.
 //
-// The pinned community binary v1.3.0 reads such a URL as the whole server: it
+// The pinned community binary reads such a URL as the whole server: it
 // inspects every database, plans CREATE DATABASE and DROP DATABASE, keeps its
 // revisions in a database of their own, and `schema clean` drops every
 // database on the server. dbschema.ConnectToServer opens one for the callers
@@ -191,7 +191,7 @@ func (Service) Describe(
 // in every banner, the replication prefix included, and a banner without it is
 // a MySQL server. `mysql://`, `mariadb://` and `maria://` open one driver, so
 // the scheme cannot say which of the two a server is; the pinned community
-// binary v1.3.0 decides by the server the same way, and printed byte-identical
+// binary decides by the server the same way, and printed byte-identical
 // `schema inspect` output through all three against MariaDB 11.8.9 and against
 // MySQL 8.4.11. Read from the scheme, a `mariadb://` URL naming a MySQL server
 // plans MariaDB statements for it, and a dev URL spelled differently from its

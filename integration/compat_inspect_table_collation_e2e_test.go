@@ -67,7 +67,7 @@ func tableCollationsOf(c *qt.C, scratch mysqlScratch, database string) map[strin
 
 // The HCL document writes a table's charset and collate where they differ
 // from its schema block's and leaves them to the schema block where they do
-// not, as the pinned community binary v1.3.0 writes them on MySQL 8.4.
+// not, as the pinned community binary writes them on MySQL 8.4.
 func TestCompatSchemaInspectHCLWritesAMySQLTableCollationE2E(t *testing.T) {
 	for _, engine := range mySQLFamilyEngines {
 		t.Run(engine.String(), func(t *testing.T) {

@@ -34,7 +34,7 @@ func changeCountOf(c *qt.C, files map[string]string, opts lint.Options, name str
 }
 
 // Every expected count in this file is the one the pinned community binary
-// v1.3.0 reports for the same directory on SQLite, PostgreSQL or MySQL, under
+// reports for the same directory on SQLite, PostgreSQL or MySQL, under
 // `migrate lint --dev-url ... --latest 1` against an empty dev database, except
 // where a row says the count is Ptah's own.
 

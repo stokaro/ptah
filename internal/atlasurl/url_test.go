@@ -24,12 +24,12 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 		{name: "mysql TCP spelling", rawURL: "mysql://root@tcp(localhost:3306)/dev", want: "mysql"},
 		{name: "mysql TCP spelling with closing parenthesis in password", rawURL: "mysql://root:pa)ss@tcp(localhost:3306)/dev", want: "mysql"},
 		{name: "mariadb TCP spelling", rawURL: "mariadb://root@tcp(localhost:3306)/dev", want: "mariadb"},
-		// The pinned binary v1.3.0 accepts `maria://` wherever it opens a
+		// The pinned binary accepts `maria://` wherever it opens a
 		// database, as the MariaDB spelling it also takes as a docker engine.
 		{name: "maria", rawURL: "maria://root@localhost:3306/dev", want: "mariadb"},
 		{name: "maria TCP spelling", rawURL: "maria://root:pa)ss@tcp(localhost:3306)/dev", want: "mariadb"},
 		{name: "maria in upper case", rawURL: "MARIA://root@localhost/dev", want: "mariadb"},
-		// The socket spellings the pinned binary v1.3.0 opens. Only the
+		// The socket spellings the pinned binary opens. Only the
 		// transport differs from the plain scheme.
 		{name: "mysql socket", rawURL: "mysql+unix://root@/run/mysqld/mysqld.sock?database=dev", want: "mysql"},
 		{name: "mariadb socket", rawURL: "mariadb+unix://root@/run/mysqld/mysqld.sock?database=dev", want: "mariadb"},
@@ -78,7 +78,7 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 		{name: "docker engine the binary has no driver for", rawURL: "docker://clickhouse/24.8/dev", wantErr: `unsupported docker image "clickhouse"`},
 		{name: "docker engine that is a dialect but not an image", rawURL: "docker://sqlite/dev", wantErr: `unsupported docker image "sqlite"`},
 		{name: "unsupported", rawURL: "db2://localhost/dev", wantErr: `unsupported --dev-url dialect "db2://localhost/dev"`},
-		// The pinned binary v1.3.0 answers `unknown driver "maria+tcp"`: the
+		// The pinned binary answers `unknown driver "maria+tcp"`: the
 		// MariaDB spelling is a scheme of its own, not a prefix.
 		{name: "maria with a transport the community binary refuses", rawURL: "maria+tcp://localhost/dev", wantErr: `unsupported --dev-url dialect "maria\+tcp://localhost/dev"`},
 		// The value is quoted as dburldisplay shows it. Without a scheme,
@@ -618,7 +618,7 @@ func TestIsDockerURL_FailurePath(t *testing.T) {
 		{name: "sqlite opaque", rawURL: "sqlite:file:app.db"},
 		{name: "a host named docker", rawURL: "postgres://user@docker:5432/db"},
 		{name: "scheme prefix only", rawURL: "dockerish://postgres/dev"},
-		// The pinned community binary v1.3.0 registers six `docker+` drivers and
+		// The pinned community binary registers six `docker+` drivers and
 		// answers any other one `unknown driver` (stokaro/ptah#4040).
 		{name: "an image driver the community binary does not register", rawURL: "docker+sqlite://_/x:1/dev"},
 		{name: "an image scheme with no driver", rawURL: "docker+://_/postgres:17/dev"},
@@ -633,7 +633,7 @@ func TestIsDockerURL_FailurePath(t *testing.T) {
 }
 
 // TestDockerImageDriver_HappyPath names the `docker+` drivers the pinned
-// community binary v1.3.0 registers, each answered with the driver as written.
+// community binary registers, each answered with the driver as written.
 func TestDockerImageDriver_HappyPath(t *testing.T) {
 	tests := []string{"postgres", "mysql", "maria", "mariadb", "clickhouse", "sqlserver"}
 

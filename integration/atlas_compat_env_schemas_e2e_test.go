@@ -43,7 +43,7 @@ type atlasCompatEnvSchemasCase struct {
 // TestAtlasCompatEnvSchemasRestrictsTheInspectedUniverseE2E establishes the
 // behavioral half of `env { schemas }`, which no SQLite fixture can reach.
 //
-// The decode half is provable anywhere — the pinned Atlas community binary v1.3.0
+// The decode half is provable anywhere — the pinned Atlas community binary
 // refuses `schemas = "one"` with `field is of type slice but attr "schemas" is
 // type: string` at exit 1, and a binary that refuses on a field's TYPE has
 // decoded that field. What the decode proof cannot say is what the decoded

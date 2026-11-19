@@ -130,7 +130,7 @@ func sequenceIsImplicit(catalog pgSequenceCatalog, query string) (bool, error) {
 // `schema diff` against the domain fixture emitted the table with the domain
 // column and no CREATE SEQUENCE, and replaying it into a fresh database failed
 // at psql exit 3 with `ERROR: relation "s" does not exist`. After it, the same
-// replay is exit 0 and the pinned binary v1.3.0 reports the replayed database
+// replay is exit 0 and the pinned binary reports the replayed database
 // synced with the source.
 func TestReadSequencesForSchema_DomainBackedSequenceIsStandalone(t *testing.T) {
 	tests := []struct {

@@ -190,7 +190,7 @@ func TestCompatMigrateVerbsRefuseADevServerThatIsNotCleanE2E(t *testing.T) {
 // URLs log in as different accounts, so they share no database name; the
 // server identity, its UUID on MySQL and its host name, port and data
 // directory on MariaDB, says they are one server. The pinned community binary
-// v1.3.0 compares no identity, and replays onto such a server when the
+// compares no identity, and replays onto such a server when the
 // account it uses sees it empty.
 func TestCompatMigrateDiffRefusesADevServerThatIsTheDesiredServerE2E(t *testing.T) {
 	for _, engine := range mysqlServerEngines {

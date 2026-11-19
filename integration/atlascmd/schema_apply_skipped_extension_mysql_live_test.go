@@ -62,7 +62,7 @@ extension "pg_trgm" {}
 // TestCompatSchemaApplyRefusesACreateExtensionInAMySQLDocument pins the other
 // side of the skip above. A SQL document read for MySQL is written for MySQL,
 // and its CREATE EXTENSION is a statement MySQL refuses: the pinned community
-// binary v1.3.0 runs the document on the dev database and exits 1 on the
+// binary runs the document on the dev database and exits 1 on the
 // server's 1064. So the apply refuses before it changes anything, rather than
 // skipping the statement and creating the table.
 func TestCompatSchemaApplyRefusesACreateExtensionInAMySQLDocument(t *testing.T) {

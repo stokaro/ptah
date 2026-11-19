@@ -666,7 +666,7 @@ func TestStrictCEUnknownHCLPolicy(t *testing.T) {
 }
 
 // The full surface keeps the PostgreSQL fill from a column's declared default
-// before SET NOT NULL; strict CE mode plans without it, as Atlas CE v1.3.0
+// before SET NOT NULL; strict CE mode plans without it, as Atlas CE
 // does.
 func TestStrictCENullBackfillPolicy(t *testing.T) {
 	c := qt.New(t)
@@ -776,7 +776,7 @@ func TestStrictCEDatabaseDialectPolicy(t *testing.T) {
 	}
 }
 
-// The pinned binary v1.3.0 does not apply ssl-ca, so strict mode refuses a
+// The pinned binary does not apply ssl-ca, so strict mode refuses a
 // URL that relies on it, in every MySQL-family form. The default profile keeps
 // it, and a URL without it stays accepted.
 func TestStrictCERefusesTheCABundleParameter(t *testing.T) {

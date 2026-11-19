@@ -56,12 +56,11 @@ func TestRuleForNativeCode(t *testing.T) {
 // `-- atlas:nolint DS103` silence a DROP COLUMN while leaving an
 // ALTER COLUMN ... TYPE on the very next line reported.
 //
-// The "DS" and "D" rows pin exactness against the pinned community binary
-// (atlas community version v1.3.0): with `-- atlas:nolint DS` or
-// `-- atlas:nolint D` above `ALTER TABLE t DROP COLUMN legacy;` it reports
-// DS103 and exits 1, so a code selector must never widen into a family. Give
-// the code fallback Family:true and both rows silence the whole DS family,
-// which is exit 0 where the community binary exits 1.
+// The "DS" and "D" rows pin exactness against the pinned community binary: with
+// `-- atlas:nolint DS` or `-- atlas:nolint D` above `ALTER TABLE t DROP COLUMN
+// legacy;` it reports DS103 and exits 1, so a code selector must never widen
+// into a family. Give the code fallback Family:true and both rows silence the
+// whole DS family, which is exit 0 where the community binary exits 1.
 func TestNativeSuppressionTargets(t *testing.T) {
 	tests := []struct {
 		name     string

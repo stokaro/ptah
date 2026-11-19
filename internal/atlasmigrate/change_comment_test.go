@@ -25,7 +25,7 @@ func changeCommentNodes() []ast.Node {
 
 // TestBuildMigrationFileContents_WritesEachChangeUnderItsComment_HappyPath
 // pins the comment above each statement of a migration file, in the words the
-// pinned community binary v1.3.0 writes: capitalized by the `sql` helper of a
+// pinned community binary writes: capitalized by the `sql` helper of a
 // native file, as the change names it in a file of a layout another tool
 // reads. The comment heads the statement a node renders. A planner's own note
 // is a report, not a change: it is a statement of its own with no change

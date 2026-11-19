@@ -10,7 +10,7 @@ import (
 )
 
 // TestCompatMigrateApply_OneVersionSpelledTwoWaysRefuses pins a retained
-// divergence. The pinned community binary v1.3.0 applies 1_a.sql beside
+// divergence. The pinned community binary applies 1_a.sql beside
 // 001_b.sql as two revisions, 001 and then 1, because it keys revisions on the
 // spelling and orders files by name. Ptah runs migrations in numeric order, so
 // the pair ties, and it refuses the directory before any migration runs rather
@@ -65,7 +65,7 @@ func TestCompatMigrateApply_DuplicateVersionRefuses(t *testing.T) {
 // TestCompatMigrateApply_RevisionSpelledApartFromItsFileRefuses pins the other
 // retained divergence on spelling. A history recorded 1 and 2 meets a
 // directory that spells 001, 002 and a new 003. The pinned community binary
-// v1.3.0 compares versions as text, reads 003 as below the current version 2,
+// compares versions as text, reads 003 as below the current version 2,
 // and exits 0 with nothing executed, so 003 never runs. ptah-compat refuses
 // before any migration runs and prints the statements that respell the rows.
 func TestCompatMigrateApply_RevisionSpelledApartFromItsFileRefuses(t *testing.T) {

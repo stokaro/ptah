@@ -161,10 +161,10 @@ func compatColumnDropSites(c *qt.C, second string, baseline []lintext.BaselineCo
 	})
 }
 
-// The compatibility surface counts an add in the drop's own statement only:
-// atlas v1.3.0 reads a drop and an add of one column in one ALTER TABLE as a
-// change of the column, and reports the drop where the add is a statement of
-// its own.
+// The compatibility surface counts an add in the drop's own statement only: the
+// pinned community binary reads a drop and an add of one column in one ALTER
+// TABLE as a change of the column, and reports the drop where the add is a
+// statement of its own.
 func TestDropColumnOfARegeneratedColumn_CompatibilityCountsOneStatement(t *testing.T) {
 	tests := []struct {
 		name   string

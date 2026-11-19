@@ -25,7 +25,7 @@ const (
 
 // TestAnalyzeFS_AtlasSQLiteReplacementIsOneChange pins the schema changes of a
 // SQLite table replacement on the Atlas surface to what the pinned community
-// binary v1.3.0 counts. Its SQLite analyzer folds `CREATE TABLE new_t`, the
+// binary counts. Its SQLite analyzer folds `CREATE TABLE new_t`, the
 // next statement, `DROP TABLE t` and `ALTER TABLE new_t RENAME TO t` into one
 // change to t. Each row's count is that binary's summary on the same version.
 //

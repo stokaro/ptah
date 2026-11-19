@@ -19,7 +19,7 @@ import (
 // A dev database's default privileges are its environment, as its extensions
 // are. An image such as Supabase's grants its API roles on every table
 // created in public through `ALTER DEFAULT PRIVILEGES ... IN SCHEMA public`,
-// and the pinned community binary v1.3.0 takes such a dev database and keeps
+// and the pinned community binary takes such a dev database and keeps
 // them. A reset revoked them, so the claim refused the database rather than
 // lose them, and the image could not be a dev database (stokaro/ptah#4034).
 // Each test reads pg_default_acl back afterwards.

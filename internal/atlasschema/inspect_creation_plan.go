@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/planstyle"
 	"ptah.run/migration/planner"
 	"ptah.run/migration/schemadiff"
@@ -35,11 +36,11 @@ type CreationPlanRuntime interface {
 //
 // So ptah-compat plans it the same way, in the statement style and shape its
 // `schema diff` plans in, and writes the bytes that `schema diff` writes from a
-// new database to the inspected one. Where those differ from v1.3.0 they differ
-// for both commands: v1.3.0 drops the extensions, standalone sequences and
-// policies a database holds from its plan, and Ptah keeps them. The rendered
-// schema native `ptah schema inspect` writes is a description, laid out for
-// reading, and stays the native answer.
+// new database to the inspected one. Where those differ from the pinned
+// community binary's, they differ for both commands: it drops the extensions,
+// standalone sequences and policies a database holds from its plan, and Ptah
+// keeps them. The rendered schema native `ptah schema inspect` writes is a
+// description, laid out for reading, and stays the native answer.
 
 // creationScope is what a creation plan takes from the scope of the read.
 type creationScope struct {
@@ -59,9 +60,9 @@ type creationScope struct {
 // its grants, and the extensions the server installs in every database, which
 // [config.DefaultCompareOptions] names. So the plan creates none of them, as
 // `schema diff` from a new database plans none of them. It holds every
-// inspected schema when the scope came from the connection URL: v1.3.0 then
-// writes no CREATE SCHEMA, as [atlasreport.SchemaInspectReport] says for the
-// rendered SQL.
+// inspected schema when the scope came from the connection URL: the pinned
+// community binary then writes no CREATE SCHEMA, as
+// [atlasreport.SchemaInspectReport] says for the rendered SQL.
 //
 // A read of the whole database plans every object it holds. A read of some of
 // its schemas plans what those schemas hold, and the database it creates them
@@ -166,8 +167,11 @@ func planCreation(
 	if !compared.HasChanges() {
 		return nil, nil
 	}
+	// The plan is printed as the inspected database's SQL and run later, on a
+	// session nobody knows yet, so it is written for the default sql_mode; see
+	// [backslashmode.ForLater].
 	changes, plan, err := planChanges(ctx, runtime, compared, info.Dialect, planext.Options{
-		Capabilities: info.Capabilities,
+		Capabilities: backslashmode.ForLater(info.Capabilities),
 		Statements:   planstyle.Statements,
 		Shape:        planext.StatementShapeCatalog,
 	})

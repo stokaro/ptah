@@ -81,7 +81,7 @@ env "local" {
 }
 
 // TestParseAtlas_AWSRDSTokenRefusesAnUnknownAttribute matches the pinned
-// community binary v1.3.0, which answers a `bogus` argument on this block with
+// community binary which answers a `bogus` argument on this block with
 // "Unsupported argument" rather than minting a token that ignores it.
 func TestParseAtlas_AWSRDSTokenRefusesAnUnknownAttribute(t *testing.T) {
 	c := qt.New(t)
@@ -125,7 +125,7 @@ env "local" {
 }
 
 // TestParseAtlas_GCPCloudSQLTokenAcceptsAnUnrecognizedAttribute is a parity
-// case, not a preference. The pinned community binary v1.3.0 decodes this
+// case, not a preference. The pinned community binary decodes this
 // block loosely: `bogus = "x"` reaches the token exchange rather than being
 // refused, so refusing it here would refuse a project that binary accepts.
 func TestParseAtlas_GCPCloudSQLTokenAcceptsAnUnrecognizedAttribute(t *testing.T) {

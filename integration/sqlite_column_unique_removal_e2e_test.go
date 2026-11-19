@@ -17,7 +17,7 @@ import (
 
 // A UNIQUE a SQLite column declares is an index SQLite builds for itself,
 // sqlite_autoindex_parent_1, which DROP INDEX refuses. Removing it means
-// rebuilding the table. The community binary v1.3.0 plans the removal from
+// rebuilding the table. The pinned community binary plans the removal from
 // sqliteUniqueRemovalKeyed to sqliteUniqueRemovalSound as DROP INDEX
 // `parent_code` and a rebuild of child; on a database created from
 // sqliteUniqueRemovalKeyed that plan fails at its second statement with `no

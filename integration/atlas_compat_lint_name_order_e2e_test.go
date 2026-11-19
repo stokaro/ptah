@@ -34,7 +34,7 @@ func analyzingLines(report string) []string {
 }
 
 // TestCompatAtlasLintReportsFilesInNameOrderE2E reports the files of an Atlas
-// directory in file-name order, as the pinned community binary v1.3.0 does:
+// directory in file-name order, as the pinned community binary does:
 // 10_b.sql before 9_a.sql, and v1_x.sql last. The header names the file
 // before the selection in that order as its start.
 func TestCompatAtlasLintReportsFilesInNameOrderE2E(t *testing.T) {
@@ -58,7 +58,7 @@ func TestCompatAtlasLintReportsFilesInNameOrderE2E(t *testing.T) {
 
 // TestCompatAtlasLintNameOrderMatchesTheCommunityBinaryE2E holds the report
 // order and the header of both selections to the pinned community binary
-// v1.3.0.
+// .
 func TestCompatAtlasLintNameOrderMatchesTheCommunityBinaryE2E(t *testing.T) {
 	reference := atlasReferenceBinary(t)
 	c := qt.New(t)

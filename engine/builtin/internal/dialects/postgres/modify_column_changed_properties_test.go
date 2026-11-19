@@ -36,7 +36,7 @@ func modifyColumn(column *ast.ColumnNode, changed ast.ColumnProperties, hasChang
 //
 // Restating the column instead writes, for every row, a TYPE naming the type
 // the column already has, a NULL backfill and SET NOT NULL for a column that
-// is NOT NULL, and the default. Atlas CE v1.3.0 writes the one clause each
+// is NOT NULL, and the default. Atlas CE writes the one clause each
 // change needs, and the rows below are what it writes for the same change,
 // apart from the backfill a column becoming NOT NULL keeps
 // (stokaro/ptah#3645).

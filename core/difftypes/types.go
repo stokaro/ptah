@@ -836,7 +836,7 @@ type SchemaDiff struct {
 	// table users requires it (SQLSTATE 2BP01)`, measured on 17.10, so its
 	// planner drops the constraint instead. MySQL and MariaDB are the opposite
 	// case -- a unique key and its index are one catalog row that `DROP INDEX`
-	// drops, which is what the pinned community binary v1.3.0 plans there -- so
+	// drops, which is what the pinned community binary plans there -- so
 	// their planners ignore the list and their plans are unchanged by it.
 	//
 	// The list is not PostgreSQL-only, because the down direction needs it on
@@ -3271,6 +3271,11 @@ type IndexChange struct {
 	// writes drops it, and the later ones leave it out, as the index is gone by
 	// then. [SchemaDiff.IndexesTakenOver] keys what all of them take over.
 	Replaces []IndexRef
+	// Note says why the plan adds an index the declaration does not hold, for a
+	// planner to write as a comment above the statement that adds it. It is
+	// empty for a declared index, and for an addition whose reason the
+	// declaration shows.
+	Note string
 }
 
 // IndexDeclarationsOf pairs every declared index with its resolved owner.

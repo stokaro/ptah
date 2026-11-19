@@ -25,7 +25,7 @@ import (
 // (stokaro/ptah#4041). The block is lazy, as a data source is: it is read only
 // when a selected env, a local or a data source references its url, and a
 // block nothing references stays ignored, as the pinned community binary
-// v1.3.0 ignores every docker block. That binary also refuses the reference,
+// ignores every docker block. That binary also refuses the reference,
 // with `Unsupported attribute; This object does not have an attribute named
 // "url"`; [AtlasLoadOptions.IgnoreDockerBlocks] selects that answer.
 //

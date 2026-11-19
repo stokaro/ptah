@@ -18,7 +18,7 @@ import (
 )
 
 // The `--format` template surface of each compat verb, compared with the pinned
-// community binary v1.3.0 on SQLite, which both binaries carry compiled in. A
+// community binary on SQLite, which both binaries carry compiled in. A
 // template either binary refuses is refused by the other, in the same words but
 // for the Go type an execution error names, which is each binary's own.
 

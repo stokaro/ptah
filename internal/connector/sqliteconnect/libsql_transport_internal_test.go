@@ -17,7 +17,7 @@ import (
 )
 
 // libSQLURLRow is one authored URL and the transport the pinned community
-// binary v1.3.0 reaches for it.
+// binary reaches for it.
 type libSQLURLRow struct {
 	name       string
 	url        string

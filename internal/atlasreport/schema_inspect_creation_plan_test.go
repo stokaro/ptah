@@ -37,7 +37,7 @@ var creationPlanChanges = []atlasreport.SchemaChange{
 }
 
 // TestSchemaInspectReport_CreationPlan_HappyPath writes the creation plan in
-// place of the rendered schema, the way the pinned community binary v1.3.0
+// place of the rendered schema, the way the pinned community binary
 // answers `--format '{{ sql . }}'`: each statement under the comment naming its
 // change, on one line unless the helper is given an indent.
 func TestSchemaInspectReport_CreationPlan_HappyPath(t *testing.T) {

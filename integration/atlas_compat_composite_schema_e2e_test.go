@@ -18,8 +18,8 @@ import (
 
 // A `data "composite_schema"` block assembles a desired state from parts, each
 // placed in the schema its label names. ariga/atlas#3807 builds its desired
-// state this way, from an HCL directory and a SQL directory. The community
-// binary v1.3.0 has no handler for the data source, so strict compatibility
+// state this way, from an HCL directory and a SQL directory. The pinned community
+// binary has no handler for the data source, so strict compatibility
 // keeps its refusal; the default surface evaluates the block.
 
 // compositeAuthHCL declares the auth schema and its users table in Atlas HCL.

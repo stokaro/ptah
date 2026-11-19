@@ -21,7 +21,7 @@ func serverCleanPlan() schemaclean.Plan {
 
 // TestServerCleanPolicy_FailurePath refuses the cleanup of a whole server
 // without the opt-in, and lists the databases it would drop as a dry run
-// prints them (stokaro/ptah#3789). The pinned community binary v1.3.0 drops
+// prints them (stokaro/ptah#3789). The pinned community binary drops
 // them at exit 0.
 func TestServerCleanPolicy_FailurePath(t *testing.T) {
 	c := qt.New(t)

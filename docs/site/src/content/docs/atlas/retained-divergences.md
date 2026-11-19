@@ -22,7 +22,7 @@ disposition: keep
 ---
 
 The drop-in rule has two directions and they are not symmetric. `ptah-compat`
-must never exit `0` where the pinned Atlas community binary v1.3.0 exits `1`
+must never exit `0` where the pinned Atlas community binary exits `1`
 over a mistake in the invocation; that direction is a correctness failure and
 there are no entries for it. Where the binary fails for a reason the invocation
 does not cause, there are two entries:
@@ -169,6 +169,7 @@ own measurement conditions.
 | [A foreign key over a changed collation](#a-foreign-key-over-a-changed-collation) | drops the foreign key, changes both ends, and adds the key back, so one apply converges | plans a bare `MODIFY COLUMN` of each end, which the server refuses while the key stands |
 | [A foreign key taken back under its name over a retyped column](#a-foreign-key-taken-back-under-its-name-over-a-retyped-column) | drops the key before the referenced column changes, so the file applies | changes the referenced column first, which the server refuses while the key stands |
 | [A MariaDB table changed to a UCA 14.0.0 collation](#a-mariadb-table-changed-to-a-uca-1400-collation) | writes the character set the collation names on the table, restates a column that takes it without one, and converges in one apply | writes the dev database's character set beside a collation of another, which MariaDB refuses, and gives such a column the character set's default collation |
+| [A backslash on a `NO_BACKSLASH_ESCAPES` session](#a-backslash-on-a-no_backslash_escapes-session) | writes a literal for the session that runs it, so the server stores the declared value | stores four backslashes where the declaration holds one |
 
 ## A `--config` selection naming more than one file
 
@@ -445,7 +446,7 @@ so it refuses the directory and names the file.
 text. They part where a file whose version sorts above the target comes first
 in file-name order. The underscore after a version sorts after digits and
 capital letters, so `10_c.sql` and `1R__rep.sql` come before `1_a.sql`, and
-`20_c.sql` before `2_b.sql`. The pinned community binary v1.3.0 stops at the
+`20_c.sql` before `2_b.sql`. The pinned community binary stops at the
 first such file and records only the files before it. `ptah-compat` records
 every file whose version is at or below the target.
 
@@ -471,7 +472,7 @@ rows.
 **Type.** Deliberate divergence
 
 **Current boundary.** `ptah-compat migrate apply --exec-order linear-skip`
-leaves each out-of-order file pending, as the pinned community binary v1.3.0
+leaves each out-of-order file pending, as the pinned community binary
 does, and writes one warning per skipped file on stderr. The binary writes
 nothing. Stdout, the database and the exit status are the same on both.
 
@@ -602,7 +603,7 @@ holds it.
 
 **Current boundary.** Ptah reduces a `sql()` call to the SQL it carries
 everywhere an attribute is read as text, including `check.expr` and
-`index.where`. The pinned community binary v1.3.0 refuses the same two with
+`index.where`. The pinned community binary refuses the same two with
 `incorrect type raw`.
 
 **Why it stays.** `sql()` exists so a schema file can carry an expression the
@@ -622,7 +623,7 @@ reached a plan verbatim.
 **Type.** Compatibility behavior with a native safety difference
 
 **Current boundary.** When a migration body fails inside a transaction and
-rollback succeeds, the pinned community binary v1.3.0 writes no revision row.
+rollback succeeds, the pinned community binary writes no revision row.
 `ptah-compat` reaches the same end state and retries the whole file on the next
 apply. Native `ptah migrations up` keeps a durable failed row for status and
 repair workflows.
@@ -806,7 +807,7 @@ confining `file()` the gate goes red and this divergence can be retired.
 **Current boundary.** On PostgreSQL, `ptah-compat migrate apply` refuses a
 migration while an index that migration creates is reported unusable by
 `pg_index` (`indisvalid` or `indisready` false). The pinned community binary
-v1.3.0 applies it and records it.
+applies it and records it.
 
 Measured on PostgreSQL 17.10, identical fixture on both: a `members` table whose
 duplicate rows made an earlier `CREATE UNIQUE INDEX CONCURRENTLY` fail, the
@@ -920,7 +921,7 @@ it. Measured on both URLs against the same PostgreSQL 17 database.
 **Type.** Deliberate divergence
 
 **Current boundary.** A selector that matches no object protects nothing, and
-reads exactly like one that worked. The pinned community binary v1.3.0 exits
+reads exactly like one that worked. The pinned community binary exits
 `0` and prints nothing for such a selector, whether `--exclude` or an `atlas.hcl`
 env's `exclude` list carries it. `ptah-compat` reports it. `schema inspect` and
 `schema diff` keep their exit status and write a warning on stderr. `schema
@@ -953,7 +954,7 @@ last row reports the flag.
 table inside every schema on every Ptah schema source. The leading schema glob
 may be narrowed, as in `app[type=schema].*[type=table]`.
 
-The pinned community binary v1.3.0 gives source-dependent answers. On a live
+The pinned community binary gives source-dependent answers. On a live
 PostgreSQL database containing tables and enums in `public` and `app`, the
 selector removes both tables and keeps both enums. On a SQLite file diff between
 one table and the same schema plus a second table, it exits `0` but leaves the
@@ -980,7 +981,7 @@ the schema glob, the final resource type, and the surviving non-table objects.
 
 **Current boundary.** An exclude selector names a constraint through its
 table, as `table.constraint` or `schema.table.constraint`. The pinned community
-binary v1.3.0 keeps a constraint only under the type it names it by: a
+binary keeps a constraint only under the type it names it by: a
 `UNIQUE` or `EXCLUDE` constraint under `[type=index]`, and a `CHECK` constraint
 under `[type=check]`. Under every other selector that names the constraint, it
 accepts the selector, exits `0` and drops the constraint. `ptah-compat` keeps
@@ -1053,15 +1054,22 @@ one when no index covers the key's columns. The binary excludes the key under
 MariaDB 12.3 refuse with `ERROR 1553` while the key stands, so the apply fails.
 Ptah names the key under `[type=fk]`, `[type=foreign_key]` and
 `[type=foreign-key]`, and leaves the index the server built out with it, so the
-plan is synced. An index the author declared stays in
-the plan on both binaries, and the server refuses its removal the same way.
-The binary keeps a foreign key only under `[type=fk]`. Ptah keeps it under all
-three spellings, deliberately, since a selector is written to keep what it
-names.
+plan is synced. The binary keeps a foreign key only under `[type=fk]`. Ptah
+keeps it under all three spellings, deliberately, since a selector is written
+to keep what it names.
+
+An index the author declared under such a key stays in the plan on both
+binaries. The binary plans `DROP INDEX kids_parent_idx` alone, and the server
+refuses it with `ERROR 1553` after the statements before it ran: measured on
+MySQL 8.4, a plan that also dropped the column `alpha.x` dropped it, then
+failed. `ptah-compat` adds an index for the key in the statement that
+drops the declared one, under the name the server gives the key's index, with a
+comment above it. The next run plans nothing, on MySQL 8.4 and 26.10 and
+MariaDB 11.8 and 12.3.
 
 On SQLite, a plan changes most of a table by writing a new one from the
 declaration and copying the rows, and the declaration holds nothing a selector
-keeps out of scope. The binary v1.3.0 writes the new table without those parts.
+keeps out of scope. The pinned binary writes the new table without those parts.
 `ptah-compat` carries each one into the new table from its live definition.
 With the table `kinds(id, name, extra)` holding values in `extra`, the index
 `idx_name` and the trigger `trg_name`, and a desired schema that declares `id`
@@ -1190,7 +1198,7 @@ in the URL, keeps it on for every file, so the second file leaves `v` as written
 
 **Current boundary.** `ptah-compat` refuses an Atlas directory that spells one
 version number two ways, such as `1_a.sql` beside `001_b.sql`. The pinned
-community binary v1.3.0 applies both files as two revisions.
+community binary applies both files as two revisions.
 
 Measured on PostgreSQL 18 on 2026-09-24, with the directory hashed by that
 binary:
@@ -1256,7 +1264,7 @@ txtar down section.
 **Current boundary.** `ptah-compat` refuses a history whose revision row spells
 a migration file's version another way, such as the row `1` for `001_a.sql`,
 and prints the statements that respell the rows. The pinned community binary
-v1.3.0 reads the same history by comparing versions as text.
+reads the same history by comparing versions as text.
 
 Measured on PostgreSQL 18 on 2026-09-25. The revision rows were `1` and `2`, and
 the directory spelled `001_a.sql`, `002_b.sql` and a new `003_c.sql`:
@@ -1291,7 +1299,7 @@ run the printed statements on PostgreSQL, MySQL and ClickHouse.
 **Current boundary.** `migrate diff` into the Liquibase layout
 (`--dir 'file://migrations?format=liquibase'`) writes each line of the
 changeset's rollback as `--rollback <SQL>`, with one blank after the keyword.
-The pinned community binary v1.3.0 writes `--rollback: <SQL>`. Liquibase 5.0.4
+The pinned community binary writes `--rollback: <SQL>`. Liquibase 5.0.4
 reads a rollback line only with that blank, so it reads a line with the colon
 as a comment in the changeset's SQL, and the changeset has no rollback.
 
@@ -1646,7 +1654,7 @@ file. A PostgreSQL file that opens and closes its own transaction runs as
 golang-migrate's default mode runs it, outside any transaction of the
 migrator's, with its revision row written after the file's last statement. A
 PostgreSQL file of one statement runs without one. The pinned community binary
-v1.3.0 wraps each file in a transaction of its own, so a file with its own
+wraps each file in a transaction of its own, so a file with its own
 block nests in it, and its `COMMIT` ends the binary's transaction early.
 
 Measured on PostgreSQL 18, each directory applied to a fresh database:
@@ -1678,7 +1686,7 @@ its own `BEGIN` and `COMMIT` is refused by `ptah-compat migrate apply`, and
 records the progress of each statement in the revision table. A `BEGIN` in the
 file would put that record outside the file's transaction, so the migrator
 refuses any statement that controls transaction state, on every engine and in
-the up and the down half. The pinned community binary v1.3.0 runs the file as
+the up and the down half. The pinned community binary runs the file as
 written and lints it clean. The lint rule reads the same statements the
 migrator refuses, so a directory that lints without a `TX201` finding is not
 one the migrator stops at for this reason.
@@ -1728,7 +1736,7 @@ before it applies the first. When a file holds a statement PostgreSQL refuses
 inside the transaction the file runs in, such as a lone
 `CREATE INDEX CONCURRENTLY` under the default `--tx-mode file`, the run is
 refused: no file is applied and no revision row is written. A dry run is
-refused the same way. The pinned community binary v1.3.0 applies the files
+refused the same way. The pinned community binary applies the files
 before it, then sends the statement and exits `1` with PostgreSQL's error. Its
 dry run sends nothing and reports every file `ok`.
 
@@ -1787,7 +1795,7 @@ exit `1`. Neither table is created.
 before it applies the first. A file that holds its own `BEGIN` and `COMMIT`
 under the default `--tx-mode file` controls the transaction the migrator runs
 it in, and the run is refused: no file is applied and no revision row is
-written. A dry run is refused the same way. The pinned community binary v1.3.0
+written. A dry run is refused the same way. The pinned community binary
 applies the files before it, then sends the `BEGIN` inside the transaction it
 opened for the file and exits `1` with the engine's error. Its dry run sends
 nothing and reports every file `ok`.
@@ -1834,7 +1842,7 @@ refuses a statement whose effect it cannot tie to the file's transaction, such
 as a table on a non-transactional storage engine.
 [Recovering from a migration body that failed part-way](../migrate-commands/#recovering-from-a-migration-body-that-failed-part-way)
 lists the forms. The refusal reads the file alone, so the run is refused before
-it applies the first file, in a dry run too. The pinned community binary v1.3.0
+it applies the first file, in a dry run too. The pinned community binary
 runs the file as written.
 
 Measured on 2026-11-14 on MySQL 8.4, with `1_base.sql` holding
@@ -1867,7 +1875,7 @@ measured the same way.
 **Current boundary.** `ptah-compat migrate lint` replays a SQLite directory on
 the SQLite Ptah bundles. SQLite 3.54 refuses to rename a column to `oid`,
 `rowid` or `_rowid_`, with `cannot rename to rowid alias`, and the SQLite in the
-pinned community binary v1.3.0, 3.49.1, renames it. The binary's own fixture
+pinned community binary, 3.49.1, renames it. The binary's own fixture
 `cli-migrate-lint-project.txtar` has such a rename in its base. Measured on
 2026-11-13 with that fixture's directory and project file, each exit status read
 from an unpiped invocation:
@@ -1893,7 +1901,7 @@ accepted it would pass a directory Ptah cannot apply.
 **Current boundary.** A column definition in a SQL schema file that writes
 `DEFAULT` twice is refused, on every engine, before anything is planned:
 `column n carries a second DEFAULT: a column has one default; remove one of
-them`. The pinned community binary v1.3.0 replays the file on the dev database
+them`. The pinned community binary replays the file on the dev database
 and keeps the engine's answer. PostgreSQL refuses `n int DEFAULT 1 DEFAULT 3`
 with `multiple default values specified for column "n"`, and SQLite accepts it
 and keeps the last default, so the binary plans the column with `DEFAULT 3` and
@@ -1916,7 +1924,7 @@ directory of another layout against the source file the directory holds. A
 file's `.Name` is that file's name, its `.Text` is the file as written, and a
 diagnostic's `.Pos` is the offset of the statement in that text, so the text
 report's `-- L<n>:` and `{{ $file.Line .Pos }}` give the statement's line. The
-pinned community binary v1.3.0 does the same in golang-migrate, Flyway and
+pinned community binary does the same in golang-migrate, Flyway and
 Liquibase directories. In a goose or dbmate file it reports the same `.Text`
 with an offset counted from the start of the up section, so the line it prints
 is line 1, the section directive, however far below it the statement is.
@@ -2057,7 +2065,7 @@ comparing differently from the declaration, and nothing says so.
 default collation. `ptah-compat schema apply` plans a changed table default as
 `ALTER TABLE ... COLLATE` in one statement with the reset of each column that
 takes it and holds the old one, so one apply converges, with or without
-`--dev-url`. The pinned community binary v1.3.0 plans the same statement when
+`--dev-url`. The pinned community binary plans the same statement when
 it is given `--dev-url`. Without it, the binary plans the table's `COLLATE`
 alone. `ALTER TABLE ... COLLATE` leaves the collation of every existing column
 as it is, so the column keeps the old collation after the apply, and only the
@@ -2201,6 +2209,33 @@ ALTER TABLE `t` CHARSET utf8mb3, COLLATE utf8mb3_uca1400_ai_ci, MODIFY COLUMN `n
 ```
 
 **Evidence.** `integration/mariadb_uca_collation_change_e2e_test.go`
+
+## A backslash on a `NO_BACKSLASH_ESCAPES` session
+
+**Type.** Divergence: a defect not copied
+
+**Current boundary.** A MySQL or MariaDB session whose `sql_mode` names
+`NO_BACKSLASH_ESCAPES` reads a backslash in a string as the character.
+`ptah-compat schema apply` writes a declared default, comment, enum value and
+declared row for the session that runs it, so the server stores the characters
+the declaration holds. The pinned community binary stores four backslashes
+where the declaration holds one. Measured on 2026-11-19 with the community
+binary v1.4.0 on MySQL 26.10, and with v1.3.0 the same way, with `--dev-url`
+on a session under the same `sql_mode`, against a SQL file declaring
+`a varchar(20) DEFAULT 'a\\b'`:
+
+| Step | Binary | `ptah-compat` |
+| --- | --- | --- |
+| the column in the plan | ``DEFAULT "a\\\\b"`` | ``DEFAULT 'a\b'`` |
+| the default an inserted row takes, in hexadecimal | `615C5C5C5C62` | `615C62` |
+
+On a database the binary created, `ptah-compat schema apply` plans the column's
+default back to the declared value. SQL `ptah-compat` writes for later, such
+as a migration file or `schema diff` output, is written for the default
+`sql_mode`; see [MySQL](../../databases/mysql/).
+
+**Evidence.** `integration/backslash_escapes_session_e2e_test.go`,
+`integration/escaped_literal_apply_e2e_test.go`
 
 ## Not on this page
 

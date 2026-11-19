@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/core/renderer"
 	"ptah.run/dbschema"
+	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/cli/internal/cmdutil"
 	"ptah.run/internal/cli/internal/dbcli"
 	"ptah.run/internal/cli/internal/engineruntime"
@@ -143,9 +144,11 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return fmt.Errorf("error converting schema: %w", err)
 	}
+	// The SQL is printed and run later, on a session nobody knows yet, so it
+	// is written for the default sql_mode; see [backslashmode.ForLater].
 	info := conn.Info()
 	rendered, err := renderer.RenderSchema(cmd.Context(), runtime, renderer.SchemaRequest{
-		Target: info.Dialect, Schema: dbsch, Capabilities: info.Capabilities, Identifiers: info.IdentifierSemantics,
+		Target: info.Dialect, Schema: dbsch, Capabilities: backslashmode.ForLater(info.Capabilities), Identifiers: info.IdentifierSemantics,
 		DatabasePath: schema.DatabasePath,
 	})
 	if err != nil {

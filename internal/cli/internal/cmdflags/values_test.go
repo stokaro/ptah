@@ -230,7 +230,7 @@ func TestInstallStdlibFlagValues_KeepsTypedAccessors(t *testing.T) {
 }
 
 // TestFlagUsages_RendersBooleanFlagsAsAtlasCEDoes pins the help lines the
-// pinned Atlas CE binary v1.3.0 prints for `atlas schema apply --help`: a
+// pinned Atlas CE binary prints for `atlas schema apply --help`: a
 // boolean flag reads `--dry-run`, with no `[=true|false]` after it. The
 // default-true line is the same renderer's answer for a flag Atlas CE does not
 // declare on that verb.

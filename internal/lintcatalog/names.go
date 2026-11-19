@@ -31,22 +31,25 @@ type Category struct {
 // refuses a rule whose category is missing here and a category no rule uses.
 var categories = []Category{
 	{Name: "capability", Summary: "the target server version lacks a capability the statement needs"},
-	{Name: "correctness", Summary: "the server accepts the statement, and the result is not what the statement declares"},
+	{Name: "correctness", Summary: "the statement is wrong as written: malformed, naming a column the schema does not declare, " +
+		"or declaring a property its body breaks"},
 	{Name: "coverage", Summary: "something the linter did not read, so a clean result does not mean it was checked"},
 	{Name: "data-dependent", Summary: "the statement succeeds, fails or changes values depending on the rows the table already holds"},
 	{Name: "dependency", Summary: "the statement drops or renames something another object still uses"},
-	{Name: "design", Summary: "a schema shape whose cost is paid later rather than when the migration runs"},
+	{Name: "design", Summary: "a schema choice that applies cleanly and costs later, in row padding, table bloat or rows with no key to address them by; " +
+		"silencing it hides advice, never a statement that fails or blocks"},
 	{Name: "destructive", Summary: "the statement deletes rows, values, objects or history for good"},
 	{Name: "file-form", Summary: "the migration file or its directory does not have the form the run reads"},
 	{Name: "integrity", Summary: "the statement removes a constraint or a NOT NULL the database enforces on the data"},
 	{Name: "locking", Summary: "the statement holds a lock that blocks reads or writes while it runs"},
 	{Name: "naming", Summary: "a name breaks the configured convention, or is longer than the server keeps"},
-	{Name: "online", Summary: "online mode could not prove the statement runs without a lock that blocks reads or writes"},
-	{Name: "parse", Summary: "the linter cannot read the statement"},
-	{Name: "rewrite", Summary: "the statement rewrites or copies every row of the table"},
+	{Name: "online", Summary: "online mode, which the user selects, could not prove the statement runs without a lock that blocks reads or writes; " +
+		"its rules fire only in that mode, so --disable locking leaves them on"},
+	{Name: "rewrite", Summary: "the statement rewrites or copies every row of the table; an info rule here reports that the rewrite was checked for and is absent"},
 	{Name: "rollout", Summary: "the change breaks a client or a consumer deployed against the current schema"},
 	{Name: "security", Summary: "the statement weakens access control, or writes a secret or an unquoted value into SQL"},
-	{Name: "side-effect", Summary: "the statement has an effect it does not state, or the server keeps less than it says"},
+	{Name: "side-effect", Summary: "the statement resets, ignores or leaves behind something its text does not show; " +
+		"silenced, a migration can succeed and leave the database different from what it says"},
 	{Name: "transaction", Summary: "the statement cannot run, or runs differently, inside the migration's transaction or query"},
 	{Name: "ydb", Summary: "a statement form only YDB refuses", Engine: "ydb"},
 }
@@ -78,6 +81,10 @@ const (
 // namePattern is the grammar of a Ptah rule name: two lowercase segments,
 // each a run of letters and digits joined by single hyphens, with a slash
 // between them. It cannot match an Atlas check code, which is upper case.
+//
+// The second segment follows the SQL spelling of the statement it reports, so
+// a rule about NO FORCE ROW LEVEL SECURITY is
+// `security/no-force-row-level-security`, not a paraphrase of it.
 var namePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*/[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
 // Category returns the category segment of the rule's Ptah name, or the empty

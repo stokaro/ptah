@@ -14,7 +14,7 @@ const singleStatementTrigger = "CREATE TABLE a (id int PRIMARY KEY, n int);\n" +
 	"CREATE TRIGGER tr BEFORE INSERT ON a FOR EACH ROW SET NEW.n = NEW.id;"
 
 // TestRead_SingleStatementTrigger_HappyPath reads a trigger whose body is one
-// statement, which MySQL and MariaDB run and Atlas CE v1.3.0 reports synced
+// statement, which MySQL and MariaDB run and Atlas CE reports synced
 // with the database the file builds. The reader refused it for want of BEGIN
 // (stokaro/ptah#3915).
 func TestRead_SingleStatementTrigger_HappyPath(t *testing.T) {

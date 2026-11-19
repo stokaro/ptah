@@ -1110,7 +1110,7 @@ func domainBase(name string, defined []schemaext.DefinedType) (string, bool) {
 // leave it out, and without this the plan says `unique: false -> true` and
 // adds nothing (stokaro/ptah#3649). The constraint takes the name PostgreSQL
 // gives the same UNIQUE inside CREATE TABLE, which is also what Atlas CE
-// v1.3.0 writes: `ALTER TABLE t ADD CONSTRAINT t_c_key UNIQUE (c)`, and
+// writes: `ALTER TABLE t ADD CONSTRAINT t_c_key UNIQUE (c)`, and
 // `t_c_key1` where another relation or constraint of the schema holds t_c_key.
 // The comparison derives the name and the diff carries it; see
 // [difftypes.TableDiff.ColumnKeyNames]. Written without the number beside an
@@ -1697,7 +1697,7 @@ func (p *Planner) releaseKeyNames(result []ast.Node, diff *difftypes.SchemaDiff,
 // "uq_users_email"` comes back as `cannot drop index uq_users_email because
 // constraint uq_users_email on table users requires it (SQLSTATE 2BP01)`,
 // measured on 17.10. Dropping the constraint takes its index with it, which is
-// what the pinned community binary v1.3.0 plans for the same change:
+// what the pinned community binary plans for the same change:
 // `ALTER TABLE "users" DROP CONSTRAINT "uq_users_email"`, followed by the
 // CREATE INDEX that replaces it when there is one. The comparator marks these
 // removals (ConstraintBackedIndexRemovals) because it is the side that read the

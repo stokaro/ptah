@@ -2423,7 +2423,7 @@ func readDatabaseScopedArtifacts(ctx context.Context, q cleanupConn) ([]dbreset.
 // holds a database-scoped object the cleanup cannot remove and kept does not
 // name, and then drops each publication the run created. An object kept names
 // was there when the dev database was claimed, so it is the dev database's
-// environment rather than the run's: the community binary v1.3.0 uses such a
+// environment rather than the run's: the pinned community binary uses such a
 // database and leaves it, and the Supabase image ships six event triggers and
 // a publication (stokaro/ptah#4055). One the run created is refused, since the
 // cleanup cannot take it away, except a publication, which it can: see

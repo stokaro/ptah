@@ -164,7 +164,7 @@ func Type(dbColumn catalog.Column) string {
 	// Before this, c_point3d inspected as `cube` and c_domain as
 	// `positive_int`: applying that document back built the column as a bare
 	// cube, so the domain and its constraint were gone from the database with
-	// nothing reported. The pinned community binary v1.3.0 renders
+	// nothing reported. The pinned community binary renders
 	// `sql("point3d")` for the same column, so this is also the compatible
 	// answer. The same split is visible on stock extension domains -- `lo`
 	// (over oid) survived while `earth` (over cube) did not.

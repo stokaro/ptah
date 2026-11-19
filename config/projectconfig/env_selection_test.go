@@ -78,7 +78,7 @@ func TestParseAtlasWithOptionsEnvSelection_HappyPath(t *testing.T) {
 // TestParseAtlasWithOptionsEvaluatesNoUnnamedEnv_HappyPath holds that an env
 // no name selects is not evaluated, so neither an expression that cannot
 // evaluate nor a second env block stops the top-level read. The pinned
-// community binary v1.3.0 reads a file named with --config and no --env this
+// community binary reads a file named with --config and no --env this
 // way: `env "prod" { url = nosuch() }` there exits 0.
 func TestParseAtlasWithOptionsEvaluatesNoUnnamedEnv_HappyPath(t *testing.T) {
 	tests := []struct {

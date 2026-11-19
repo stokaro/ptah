@@ -1698,8 +1698,11 @@ func (s *exclusionState) columnUniqueNameCandidates(table schemamodel.Table, col
 // [exclusionState.filterGeneratedFields] to clear on the fields. Kept, the
 // comparison plans an ADD PRIMARY KEY on a table that holds one.
 //
-// A table declaring no key is not asked, so a selector naming the key of a
-// table without one reports that it named nothing.
+// The columns returned are the declared key's and the database's key's alike:
+// the server's key stays, and so does the NOT NULL it holds on each of its
+// columns, whatever the declaration says about the key. A table declaring no
+// key is asked about the database's key only, so a selector naming the key of
+// a table that holds none on either side reports that it named nothing.
 func (s *exclusionState) excludeGeneratedPrimaryKeys(
 	tables []schemamodel.Table,
 	fields []schemamodel.Field,
@@ -1722,6 +1725,9 @@ func (s *exclusionState) excludeGeneratedPrimaryKeys(
 		}
 		for _, part := range table.PrimaryKeyParts {
 			addKeyColumn(table.StructName, part.Name)
+		}
+		for _, column := range s.liveKeys.primaryColumns(s, table) {
+			addKeyColumn(table.StructName, column)
 		}
 	}
 	kept = slices.Clone(tables)

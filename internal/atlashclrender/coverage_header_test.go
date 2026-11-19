@@ -15,7 +15,7 @@ import (
 )
 
 // The compatibility surface omits three block types the pinned Atlas community
-// binary v1.3.0 refuses to read. That omission is a PRESENTATION decision, and
+// binary refuses to read. That omission is a PRESENTATION decision, and
 // until this header existed the comparator read it as deletion intent:
 // `ptah-compat schema inspect` followed by `schema apply` of its own output
 // planned `DROP EXTENSION`, `DROP SEQUENCE` and `DROP POLICY` against the

@@ -103,7 +103,7 @@ table "sim_added" {
 	// it was, down to every column and index information_schema reports.
 	c.Assert(mySQLSchemaSnapshot(c, targetConn, liveMySQLDatabaseName(c, targetURL)), qt.DeepEquals, before)
 	// And the dev database is handed back empty, as the pinned community
-	// binary v1.3.0 does when its own dev-database work fails.
+	// binary does when its own dev-database work fails.
 	devConn := openLiveMySQL(c, devURL)
 	c.Assert(mySQLTableNames(c, devConn, liveMySQLDatabaseName(c, devURL)), qt.HasLen, 0)
 }

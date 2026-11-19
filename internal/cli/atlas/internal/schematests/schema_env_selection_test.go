@@ -31,7 +31,7 @@ func writeSchemaEnvSelectionProject(c *qt.C, project string) {
 // TestSchemaVerbsSelectNoEnvWithoutEnvFlag_FailurePath holds that a lone env no
 // flag names gives a schema verb neither its database, its dev database nor
 // its desired schema. Every row fails the way the pinned community binary
-// v1.3.0 fails in the same directory, and prod.db, which any read of the env
+// fails in the same directory, and prod.db, which any read of the env
 // would create, stays absent.
 func TestSchemaVerbsSelectNoEnvWithoutEnvFlag_FailurePath(t *testing.T) {
 	tests := []struct {

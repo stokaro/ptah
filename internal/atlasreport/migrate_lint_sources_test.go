@@ -32,8 +32,8 @@ var liquibaseDropSource = atlasreport.MigrateLintSource{
 }
 
 // The template data of a converted file is the source file's: its name, its
-// text, and each diagnostic's position in that text, which the community
-// binary v1.3.0 reports for the same Liquibase directory as `2_drop.sql`, the
+// text, and each diagnostic's position in that text, which the pinned community
+// binary reports for the same Liquibase directory as `2_drop.sql`, the
 // file as read and offset 43 (line 4). A name FileNames gives wins over the
 // source file's.
 func TestMigrateLintSources_TemplateData(t *testing.T) {
@@ -75,7 +75,7 @@ func TestMigrateLintSources_TemplateData(t *testing.T) {
 }
 
 // The text report places a finding in a converted file on its source line,
-// as the community binary v1.3.0 prints `-- L4:` for the same directory.
+// as the pinned community binary prints `-- L4:` for the same directory.
 func TestMigrateLintSources_TextLine(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -614,7 +614,7 @@ func TestCompatMigrateIntegrityUnknownFormatAdapterLeavesOtherErrorsUnchanged(t 
 //
 // That test pinned `migrate new` PRINTING the semantic wording, on the reading
 // that the verb was outside the adaptation. It was not outside it — the pinned
-// community binary v1.3.0 answers `unknown dir format "bogus"` on `migrate new`
+// community binary answers `unknown dir format "bogus"` on `migrate new`
 // exactly as it does on `migrate hash` and `migrate validate`
 // (stokaro/ptah#1235 cell 9.8), and the split existed only because the adapter
 // was a block inside a wrapper this verb does not use.

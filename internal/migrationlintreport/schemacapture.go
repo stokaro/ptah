@@ -34,7 +34,7 @@ type schemaCapture struct {
 	observed bool
 	// hasBase is false when the run analyzes no version at all -- an empty
 	// directory, or one where the selector matched nothing. Current is then the
-	// same state as Desired, which is what the pinned community binary v1.3.0
+	// same state as Desired, which is what the pinned community binary
 	// reports for an empty directory: both halves render the bare schema.
 	hasBase bool
 	schemas []string

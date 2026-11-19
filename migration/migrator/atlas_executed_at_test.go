@@ -15,7 +15,7 @@ import (
 // TestAtlasRevisionExecutedAt_ReadsBothStoredTexts reads executed_at back from
 // the two texts a SQLite Atlas revision table holds: the UTC text an RFC 3339
 // writer stores, and the local time with its offset the pinned community
-// binary v1.3.0 and Ptah store. Each reads as the instant it names, in the
+// binary and Ptah store. Each reads as the instant it names, in the
 // zone it names, so a table either writer filled stays readable.
 func TestAtlasRevisionExecutedAt_ReadsBothStoredTexts(t *testing.T) {
 	tests := []struct {

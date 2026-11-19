@@ -13,7 +13,7 @@ import (
 )
 
 // NotCleanError is the refusal of a dev database that already holds objects,
-// in the words the pinned community binary v1.3.0 uses before it takes one.
+// in the words the pinned community binary uses before it takes one.
 //
 // Its text is the part every verb of that binary prints the same way, less the
 // `sql/migrate:` package name the binary puts in front of it. What a verb puts

@@ -62,7 +62,7 @@ type excludeUnmatchedCase struct {
 //	  filtered schema and never offered to a pattern, so no selector naming one
 //	  could ever set a match mark.
 //
-// Both exit 0 on the pinned Atlas community binary v1.3.0 and on the tree before
+// Both exit 0 on the pinned Atlas community binary and on the tree before
 // the refusal existed. This test runs against a live database because a filter
 // unit test cannot see the introspection that fills these four collections.
 //

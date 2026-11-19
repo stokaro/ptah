@@ -18,7 +18,7 @@ import (
 // server builds one whatever keys the column already has. Measured on MySQL
 // 8.4.11 and MariaDB 11.8.9 with `x int UNIQUE` changed to `x bigint UNIQUE`:
 // `MODIFY COLUMN x bigint UNIQUE` left keys `x` and `x_2`, and the next
-// comparison dropped `x_2`. Atlas CE v1.3.0 writes `MODIFY COLUMN x bigint
+// comparison dropped `x_2`. Atlas CE writes `MODIFY COLUMN x bigint
 // NULL` and its next comparison is synced. So the MODIFY says UNIQUE only when
 // the change gives the column its UNIQUE (stokaro/ptah#3857).
 func TestGenerateSchemaDiffSQLStatements_MySQLFamilyModifyStatesUniqueOnlyWhenItAddsTheKey(t *testing.T) {

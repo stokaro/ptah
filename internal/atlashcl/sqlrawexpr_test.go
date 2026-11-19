@@ -389,7 +389,7 @@ func functionParameters(db *schemamodel.Database) []string {
 // A sql() call Ptah cannot reduce to SQL text is refused outright rather than
 // rendered from its source. This is the guard that keeps the #1106 decision
 // honest: reducing sql() is only safe if no other sql() spelling can reach the
-// renderer. The pinned Atlas community binary v1.3.0 refuses every shape below
+// renderer. The pinned Atlas community binary refuses every shape below
 // too, so refusing them costs no drop-in compatibility.
 //
 // Reverted, each row parses without error and the file plans: `sql(1)` reaches

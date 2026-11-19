@@ -52,7 +52,7 @@ type columnKeys struct {
 // [columnkey.Name]. The name the server tries first gives way to a name the
 // desired state holds; see [columnkey.Taken]. A key over the column alone under
 // another name is not the column's: it is planned for removal, and the
-// column's key is added under the server's name, as Atlas CE v1.3.0 plans it
+// column's key is added under the server's name, as Atlas CE plans it
 // (stokaro/ptah#3723). On the other engines it is the key named after the
 // column where there is one, and the first by name otherwise, so the answer
 // does not depend on the catalog's order.

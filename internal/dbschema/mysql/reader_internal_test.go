@@ -344,7 +344,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 // whose STATISTICS row carries the expression and a NULL COLUMN_NAME. A read
 // that lets GROUP_CONCAT collapse the whole row fails outright --
 // `converting NULL to string is unsupported`, exit 1 on a MySQL 9.7.1 database
-// the pinned community binary v1.3.0 reports synced. The part is reported as
+// the pinned community binary reports synced. The part is reported as
 // missing from Columns instead, so a comparison can decline to read a partial
 // key as a whole one.
 func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {

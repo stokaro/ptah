@@ -502,7 +502,7 @@ func collectDatabaseIndexes(
 //
 //   - The UP drop is spelled per engine. On MySQL and MariaDB a unique key and
 //     its constraint are one currentCatalog row and `ALTER TABLE ... DROP INDEX`
-//     removes it, which is what the pinned community binary v1.3.0 plans there,
+//     removes it, which is what the pinned community binary plans there,
 //     so their planners ignore the mark. Everywhere else the constraint is an
 //     object of its own that owns the index and the server refuses to drop the
 //     index alone: PostgreSQL 17.10 answers `DROP INDEX "uq_users_email"` with
@@ -1082,7 +1082,7 @@ func indexKeyTarget(
 //
 // Order is significant, matching both PostgreSQL -- which stores the payload
 // columns in the order they were written and reports them that way -- and the
-// pinned community binary v1.3.0, which planned a rebuild for
+// pinned community binary which planned a rebuild for
 // `INCLUDE (b, c)` against `INCLUDE (c, b)` on PostgreSQL 17.10.
 //
 // The payload is compared separately from the keys and never merged into them:
@@ -1115,7 +1115,7 @@ func coveredColumnsChanged(
 // A key the reader could not read whole is compared as far as it was read:
 // see [namedKeyPartsContradict]. Reading what is left as the whole key would
 // find it short by one part on every run and plan a rebuild forever, on a
-// database the pinned community binary v1.3.0 reports synced.
+// database the pinned community binary reports synced.
 func ruledIndexKeysChanged(
 	desired schemamodel.Index,
 	database catalog.Index,

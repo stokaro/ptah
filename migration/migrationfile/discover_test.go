@@ -117,7 +117,7 @@ func TestDiscoverMigrationFilesRecognizesAtlasImportedFlywayRepeatables(t *testi
 	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAuto)
 	c.Assert(err, qt.IsNil)
 	// Atlas reads not_a_repeatable.sql and also_not_R_views.sql as the
-	// versions not and also, as the pinned community binary v1.3.0 runs them,
+	// versions not and also, as the pinned community binary runs them,
 	// and orders the directory by file name.
 	c.Assert(files, qt.HasLen, 5)
 	c.Assert(files[0].Path, qt.Equals, "2_baseline.sql")

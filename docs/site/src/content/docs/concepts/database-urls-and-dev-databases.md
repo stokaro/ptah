@@ -344,7 +344,7 @@ schema. The reset that ends the replay returns each schema it keeps to the comme
 it held, and drops the others. A URL pinned to one schema is reset without reading
 that state, so there the comment is refused. A privilege on a schema is refused in
 every replay, because it depends on the server's roles, and so is a comment on a
-protected namespace such as `pg_catalog`. The pinned community binary v1.3.0
+protected namespace such as `pg_catalog`. The pinned community binary
 replays all of these, so `ptah-compat` is stricter here, deliberately.
 
 Replay runs each migration the way `migrations up` does, in one transaction

@@ -76,7 +76,7 @@ func TestAtlasRevisionIdentity_RunsInPositionOrder(t *testing.T) {
 
 // TestAtlasRevisionIdentity_HappyPath applies 1_a.sql under --exec-order
 // non-linear and records it as 1 beside 1R, as the pinned community binary
-// v1.3.0 does.
+// does.
 func TestAtlasRevisionIdentity_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(c.TempDir(), "app.db")

@@ -26,7 +26,7 @@ func writeColumnChangeSchema(c *qt.C, dir, name, columns string) string {
 //
 // Restating the column for it writes `ALTER COLUMN TYPE` naming the type it
 // already has, which locks the table, a NULL backfill in a DO block, `SET NOT
-// NULL` for a column that is NOT NULL, and then the default. Atlas CE v1.3.0
+// NULL` for a column that is NOT NULL, and then the default. Atlas CE
 // writes the SET DEFAULT or DROP DEFAULT alone, and so does the plan
 // (stokaro/ptah#3645). The server is what says the one statement is enough:
 // the catalog holds the new default and nullability, and a second comparison

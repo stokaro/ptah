@@ -19,7 +19,7 @@ import (
 	"ptah.run/internal/dbtarget"
 )
 
-// The pinned community binary v1.3.0 opens `mysql://`, `mariadb://` and
+// The pinned community binary opens `mysql://`, `mariadb://` and
 // `maria://` with one driver and reads MySQL or MariaDB from the server. Against
 // one server it accepts any pair of the three for a target and its dev
 // database on `schema apply`, `schema diff` and `migrate diff`. Against a

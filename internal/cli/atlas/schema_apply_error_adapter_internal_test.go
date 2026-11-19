@@ -63,7 +63,7 @@ func TestDisplayAtlasSchemaApplyError(t *testing.T) {
 }
 
 // TestAtlasSchemaApplyRelativeDiagnostic covers cell 9.13's second half: the
-// pinned community binary v1.3.0 echoes the desired-schema path in the form the
+// pinned community binary echoes the desired-schema path in the form the
 // operator wrote it, and this surface resolved every form to an absolute path.
 //
 // Every case is anchored on an explicit platform-native working-directory

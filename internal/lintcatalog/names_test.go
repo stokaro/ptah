@@ -123,9 +123,13 @@ func TestValidateRefusesABrokenName(t *testing.T) {
 			problem: "rules MY131 and PG306 share the name locking/add-foreign-key with different severities, warning and error",
 		},
 		{
-			name:    "a category no rule uses",
-			edits:   map[string]func(*lintcatalog.Entry){"SQL001": func(e *lintcatalog.Entry) { e.Name = "coverage/syntax-error" }},
-			problem: "category parse is declared and names no rule",
+			name: "a category no rule uses",
+			edits: map[string]func(*lintcatalog.Entry){
+				"PG110":  func(e *lintcatalog.Entry) { e.Name = "correctness/column-alignment" },
+				"PG320":  func(e *lintcatalog.Entry) { e.Name = "correctness/disable-autovacuum" },
+				"DDL001": func(e *lintcatalog.Entry) { e.Name = "correctness/no-primary-key" },
+			},
+			problem: "category design is declared and names no rule",
 		},
 	}
 	for _, row := range rows {

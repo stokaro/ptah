@@ -18,7 +18,7 @@ import (
 //
 // A database is created with IF NOT EXISTS and the character set and
 // collation the declaration gives it, through [schemaprecondition.Node], the
-// creation every planner builds. The pinned community binary v1.3.0 writes
+// creation every planner builds. The pinned community binary writes
 // `CREATE DATABASE` without the guard; the two create the same database.
 func (p *Planner) planServerSchemas(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	if p.targetDialect() == platform.SQLServer {

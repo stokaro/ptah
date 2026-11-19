@@ -909,7 +909,7 @@ func TestIsURLAnswersOnTheSchemeAlone(t *testing.T) {
 		},
 		{
 			// A LEADING space is not the same URL with whitespace on it. The
-			// pinned binary v1.3.0 parses ` docker://postgres/16/dev` as a
+			// pinned binary parses ` docker://postgres/16/dev` as a
 			// relative path whose first segment is `docker:` and exits 1 with
 			// `sql/sqlclient: parse open url: first path segment in URL cannot
 			// contain colon`, having started nothing. This row wanted `true`

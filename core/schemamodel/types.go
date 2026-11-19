@@ -245,7 +245,7 @@ type Field struct {
 	// expression -- `type = sql("USER_DEFINED")` -- rather than as a type the
 	// grammar names. Type still holds the reduced SQL text so rendered DDL is
 	// valid, but a writer that emits Atlas HCL must put the call back: the
-	// pinned Atlas community binary v1.3.0 refuses the bare identifier
+	// pinned Atlas community binary refuses the bare identifier
 	// (`There is no type named "USER_DEFINED"`) and accepts only the call.
 	TypeRawSQL bool
 	// TypeIsDeclaredText records that Type is the text an author wrote, read

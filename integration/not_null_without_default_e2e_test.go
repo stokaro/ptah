@@ -67,7 +67,7 @@ func readNotNullRows(c *qt.C, url string) (rows, nullable string) {
 // A column made NOT NULL with no default, over a NULL row, is refused by the
 // server and left as it was. Filled with a value its type suggests, the NULL
 // becomes 0 or the empty string and the apply reports success; Atlas CE
-// v1.3.0 refuses the same change with SQLSTATE 23502 (stokaro/ptah#3648).
+// refuses the same change with SQLSTATE 23502 (stokaro/ptah#3648).
 func TestSchemaApplySetNotNullWithoutDefault_FailurePath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -100,7 +100,7 @@ func TestSchemaApplySetNotNullWithoutDefault_FailurePath(t *testing.T) {
 
 // With no NULL row the same change applies, and a column that declares a
 // default fills its NULL rows with it: the value is one the author wrote.
-// Atlas CE v1.3.0 refuses the second row as it does the rows above, so there
+// Atlas CE refuses the second row as it does the rows above, so there
 // Ptah is deliberately more permissive, with the author's own value.
 func TestSchemaApplySetNotNullWithoutDefault_HappyPath(t *testing.T) {
 	tests := []struct {

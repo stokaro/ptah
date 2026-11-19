@@ -10,7 +10,7 @@ import (
 
 // Atlas's lint analyzers pre-wrap their rendered text at analyzer-specific
 // boundaries before the report adds indentation. These widths were bracketed
-// against Atlas CE v1.3.0: DS102 keeps 79 message columns and 87 fix columns,
+// against Atlas CE: DS102 keeps 79 message columns and 87 fix columns,
 // while DS103 keeps 80 and 88 respectively. MF103 uses the general 88-column
 // report width.
 const (

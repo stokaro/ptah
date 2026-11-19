@@ -350,7 +350,7 @@ table "users" {
 }
 
 // TestParsePrimaryKeyType reads the primary_key `type` the pinned community
-// binary v1.3.0 writes for a MariaDB key built USING HASH.
+// binary writes for a MariaDB key built USING HASH.
 func TestParsePrimaryKeyType(t *testing.T) {
 	c := qt.New(t)
 

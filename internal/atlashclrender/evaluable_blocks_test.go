@@ -313,7 +313,7 @@ func renderAndParse(c *qt.C, db *schemamodel.Database) *schemamodel.Database {
 // the property. Parsing resolves a trigger's `on = table.users` to the table's
 // qualified name, so the next render writes `on = table.public.users` and every
 // later one repeats it. That spelling is refused by the pinned Atlas community
-// binary v1.3.0 -- `Unsupported attribute; This object does not have an
+// binary -- `Unsupported attribute; This object does not have an
 // attribute named "public"` -- and its own cross-schema references are
 // unqualified: `ref_columns = [table.users.column.id]` reaches a table in
 // another schema at exit 0 while the qualified spelling of the same reference

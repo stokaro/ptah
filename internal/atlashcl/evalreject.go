@@ -151,7 +151,7 @@ func (p *parser) declaresSchemaRoot(name string) bool {
 // here (see mustEvaluate), every value helper in this package falls back to an
 // attribute's SOURCE TEXT when an expression will not evaluate, and a call let
 // through would reach the database as the literal `jsonencode(schema.main)`.
-// The pinned Atlas community binary v1.3.0 loads that document at exit 0, so
+// The pinned Atlas community binary loads that document at exit 0, so
 // this is Ptah refusing what that binary accepts -- the same asymmetry the
 // closed dropped-body scope takes, and the one that costs a message rather than
 // a wrong schema.

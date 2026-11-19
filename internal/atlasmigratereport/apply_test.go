@@ -86,7 +86,7 @@ func TestWriteApplyFormat_FailurePathRequiresMigrationFilesystem(t *testing.T) {
 
 // A file whose statement the database refused lists the statements it sent,
 // the refused one last and spelled as the file spells it, the way the pinned
-// community binary v1.3.0 lists them for the same directory on SQLite. The run
+// community binary lists them for the same directory on SQLite. The run
 // is a real one, because only the migrator marks a statement as sent.
 func TestWriteApplyFormat_ListsTheRefusedStatementLast(t *testing.T) {
 	c := qt.New(t)

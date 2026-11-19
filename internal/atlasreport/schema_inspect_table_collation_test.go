@@ -28,7 +28,7 @@ func collatedMySQLTable() *catalog.Database {
 
 // The JSON document lists a MySQL table's charset and collation after its
 // children, beside its comment, whether or not they restate the schema's, as
-// the pinned community binary v1.3.0 does on MySQL 8.4.
+// the pinned community binary does on MySQL 8.4.
 func TestSchemaInspectJSON_ListsAMySQLTableCharsetAndCollation(t *testing.T) {
 	c := qt.New(t)
 	report := newInspectReport(c, &schemamodel.Database{}, collatedMySQLTable(),

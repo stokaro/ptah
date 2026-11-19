@@ -318,7 +318,7 @@ func TestAtlasMigrateApplyReportShapeE2E_Parity(t *testing.T) {
 }
 
 // TestAtlasMigrateApplyReportShapeE2E_RetainedDivergence pins the rows whose
-// answer differs from the pinned community binary v1.3.0 on purpose, each with
+// answer differs from the pinned community binary on purpose, each with
 // that binary's answer beside it.
 func TestAtlasMigrateApplyReportShapeE2E_RetainedDivergence(t *testing.T) {
 	c := qt.New(t)

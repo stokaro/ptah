@@ -10,7 +10,7 @@ import (
 
 // TestParse_RefusesABoolAttributeThatIsNoBool refuses a value that is not a
 // bool in every bool attribute the reader reads as optional, positioned at
-// the attribute. The pinned community binary v1.3.0 refuses each of these
+// the attribute. The pinned community binary refuses each of these
 // with `bool value is required`, a string spelling true included; this
 // reader read them as absent, so `null = "true"` declared a NOT NULL column.
 func TestParse_RefusesABoolAttributeThatIsNoBool(t *testing.T) {

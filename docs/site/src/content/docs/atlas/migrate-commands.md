@@ -414,7 +414,7 @@ positional `amount` applies only the first N pending migrations. Use
 `--baseline` to mark earlier migration files as applied without executing their
 SQL bodies before applying the remaining pending migrations.
 
-The amount is read as the pinned community binary v1.3.0 reads it: a base-10
+The amount is read as the pinned community binary reads it: a base-10
 integer of at least `1` that fits in 64 bits, with an optional sign. `+1` and
 `01` apply one migration. Anything else exits `1` before the database is
 opened, with the binary's line: `0` and `-1` with
@@ -755,7 +755,7 @@ internal `error applying migrations:` wrapper. The native command keeps its
 Inside a Ptah-supported txtar migration, `migration.sql` and `down.sql` carry
 independent modes. Ptah rejects a transaction-mode header placed before
 `-- atlas:txtar`; this safety check prevents the archive from being executed as
-one plain SQL stream. Atlas CE `v1.3.0` instead ignores section-local modes and
+one plain SQL stream. Atlas CE instead ignores section-local modes and
 can classify that malformed outer-header shape as plain SQL, so this contour is
 an intentional safety difference rather than a parity claim.
 
@@ -1550,7 +1550,7 @@ server-level authorization required to replay migration history.
 ### The statements of a generated file
 
 Each statement of a file `migrate diff` writes sits under a comment that names
-its change, in the words the pinned community binary v1.3.0 writes. On a
+its change, in the words the pinned community binary writes. On a
 PostgreSQL dev URL that pins no `search_path`, the statement names the schema
 and the comment keeps the bare name, as the community binary writes them:
 
@@ -2015,7 +2015,7 @@ line, file name, and reason.
 
 An **empty** migration directory is the one shape where a missing `atlas.sum`
 is not drift: there is nothing for it to cover, so `ptah-compat migrate validate`
-exits `0` with no output, matching the pinned Atlas community binary v1.3.0 and
+exits `0` with no output, matching the pinned Atlas community binary and
 matching what `ptah-compat migrate apply` already does on the same directory
 (`No migration files to execute`). The moment the directory holds a migration
 file the refusal returns, byte-identically. `ptah-compat migrate lint --latest`
@@ -2050,7 +2050,7 @@ ptah-compat migrate lint \
 
 Both flags in that example are required, and they are **two separate
 requirements** with two separate refusals, each matching the pinned Atlas
-community binary v1.3.0 byte for byte:
+community binary byte for byte:
 
 | invocation | exit | message |
 | --- | --- | --- |
@@ -2307,7 +2307,7 @@ not be read must not be able to drop a diagnostic. That grammar boundary is why
 `DROP INDEX` is not an example of it, and neither are `DROP VIEW`,
 `DROP FUNCTION` and the other drops the parser reads: it models the statement, so
 `DROP INDEX public.idx;` counts one schema change,
-matching the pinned community binary v1.3.0, and `DROP INDEX app.idx;` is
+matching the pinned community binary and `DROP INDEX app.idx;` is
 scoped out whole — no schema change and no `PG106`, which is also what the
 community binary reports. Raising `PG106` for the `app` form
 ([`stokaro/ptah#1296`](https://github.com/stokaro/ptah/issues/1296)) says

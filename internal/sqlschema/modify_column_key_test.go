@@ -12,7 +12,7 @@ import (
 // UNIQUE in it asks for a key of its own. Measured on MySQL 8.4.11 and 26.7.0
 // and MariaDB 11.8.9 and 12.3.3: `x int UNIQUE` keeps the key `x` through
 // `MODIFY x bigint`, and `MODIFY x bigint UNIQUE` adds `x_2` beside it, under
-// the next name no key of the table holds. Atlas CE v1.3.0 reports each
+// the next name no key of the table holds. Atlas CE reports each
 // database synced with the file that built it (stokaro/ptah#3875). The
 // column's own key is the column's UNIQUE, and each key the MODIFY adds is a
 // UNIQUE constraint under the server's name.

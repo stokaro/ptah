@@ -20,7 +20,7 @@ import (
 // `<table>_ibfk_<n>` and its index after the key's first column. Read with
 // Ptah's own `fk_<table>_<columns>` instead, the file plans a rename and a
 // DROP INDEX against the database it built, and applying that plan fails
-// halfway (stokaro/ptah#3725). Atlas CE v1.3.0 reports each row synced.
+// halfway (stokaro/ptah#3725). Atlas CE reports each row synced.
 //
 // A key written `CONSTRAINT FOREIGN KEY`, with the keyword and no symbol, is
 // unnamed too, and the server numbers it in the same sequence as the keys
@@ -246,7 +246,7 @@ func TestSchemaApplyOfAMySQLFileWithUnnamedForeignKeysConvergesE2E(t *testing.T)
 // TestMigrateDiffRenamesAMySQLKeyTheFileLeavesUnnamedE2E is the control: a
 // migration that names the key `c_p_fk` and a schema file that leaves it
 // unnamed differ in the key's name, so the plan drops `c_p_fk` and adds
-// `c_ibfk_1`, as Atlas CE v1.3.0 does, and the directory then converges.
+// `c_ibfk_1`, as Atlas CE does, and the directory then converges.
 func TestMigrateDiffRenamesAMySQLKeyTheFileLeavesUnnamedE2E(t *testing.T) {
 	c := qt.New(t)
 	scratch := newMySQLScratch(c)
