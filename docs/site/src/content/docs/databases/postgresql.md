@@ -194,7 +194,10 @@ PostgreSQL release lines differ in grammar that reaches generated SQL:
 - Trigger modification uses single-statement `CREATE OR REPLACE TRIGGER` on
   PostgreSQL 14+; older lines get an explicit drop-and-create sequence.
 - In-place `ALTER COLUMN ... SET EXPRESSION` for generated columns requires
-  PostgreSQL 17+.
+  PostgreSQL 17+. The statement keeps the column's kind, so a plan that would
+  change an existing generated column between `STORED` and `VIRTUAL` stops
+  with an error naming the column; see
+  [The kind of a generated column](#the-kind-of-a-generated-column).
 - A column list on `ON DELETE SET NULL` or `ON DELETE SET DEFAULT` requires
   PostgreSQL 15+. On an older line Ptah refuses the declaration rather than
   render an action that clears every column of the key; see
@@ -1388,6 +1391,27 @@ step comes after the column step. The rollback migration does the same in the
 other direction. A change of a column's collation is a `TYPE` clause too, so
 it rebuilds the same views. See
 [What a view rebuild keeps](#what-a-view-rebuild-keeps).
+
+## The kind of a generated column
+
+PostgreSQL 18 builds `VIRTUAL` generated columns as well as `STORED` ones, and
+Ptah reads the kind from `pg_attribute.attgenerated`. A declaration that names
+no kind is `STORED`, which is the only kind a PostgreSQL 17 or earlier server
+builds. So a `VIRTUAL` column in the database is a change against a
+declaration that names no kind or `STORED`, and the same column against one
+that names `VIRTUAL`.
+
+`ALTER COLUMN ... SET EXPRESSION` changes the expression of either kind and
+keeps the kind. No statement changes the kind of an existing column in place,
+so a plan that would change it stops with an error that names the column and
+both kinds, and writes nothing:
+
+```text
+generated column public.t.m is VIRTUAL and the schema declares it STORED; the postgres planner cannot change a generated column's kind in place, so drop the column and add it back, or declare it VIRTUAL
+```
+
+A plan that changes only the expression of a `VIRTUAL` column is written as for
+a `STORED` one.
 
 ## Changing a column type under a generated column
 

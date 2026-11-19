@@ -345,11 +345,14 @@ func normalizeInlineEnumsForCompare(
 // normalizeGeneratedColumnsForCompare returns desired and database with each
 // generated kind as the target creates it ([createdGeneratedKind]), so a
 // declaration that leaves the kind to the target, or names it portably,
-// compares equal to the column the target built. The catalog side is read the
-// same way because a catalog the server did not write, such as one converted
-// from a declaration or read from an HCL file, may state no kind, or STORED
-// where the server reports MATERIALIZED. Without it a schema file compared
-// with itself plans a change of kind for each such column.
+// compares equal to the column the target built. A catalog converted from a
+// declaration ([catalog.Database.Predicted]) is read the same way, because it
+// may state no kind, or STORED where the server reports MATERIALIZED. Without
+// it a schema file compared with itself plans a change of kind for each such
+// column. A catalog a server reported takes only the target's names for STORED
+// and VIRTUAL: an empty kind there is what the read found, and filling it with
+// the target's default would hide a column of another kind that the reader
+// does not name.
 func normalizeGeneratedColumnsForCompare(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -379,7 +382,7 @@ func normalizeGeneratedColumnsForCompare(
 		table.Columns = slices.Clone(table.Columns)
 		for c := range table.Columns {
 			column := &table.Columns[c]
-			generated := column.GeneratedExpression != nil && strings.TrimSpace(*column.GeneratedExpression) != ""
+			generated := database.Predicted && column.GeneratedExpression != nil && strings.TrimSpace(*column.GeneratedExpression) != ""
 			column.GeneratedKind = createdGeneratedKind(column.GeneratedKind, generated, facts)
 		}
 	}

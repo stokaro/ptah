@@ -12,6 +12,7 @@ import (
 	"ptah.run/core/planext"
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/engine/builtin"
 	"ptah.run/internal/planner/dialects/postgres"
@@ -133,4 +134,71 @@ func TestPlanner_AGeneratedColumnsChangesLeaveTheDiffAsItWas_HappyPath(t *testin
 		"generated": "STORED upper(title) -> STORED lower(title)",
 		"nullable":  "true -> false",
 	})
+}
+
+// generatedKindChange is the generated column code of tasks, held as held and
+// declared as declared, over one expression.
+func generatedKindChange(held, declared string) *difftypes.SchemaDiff {
+	return &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "tasks", ColumnsModified: []difftypes.ColumnDiff{{
+		ColumnName:            "code",
+		Changes:               map[string]string{"generated": held + " upper(title) -> " + declared + " upper(title)"},
+		PreviousGeneratedKind: held,
+		Desired: schemamodel.Field{
+			StructName: "Task", Name: "code", Type: "text",
+			GeneratedExpression: "upper(title)", GeneratedKind: declared,
+		},
+	}}}}}
+}
+
+// TestPlanner_AGeneratedColumnsKind_FailurePath changes the kind of a generated
+// column in either direction. ALTER COLUMN SET EXPRESSION keeps the kind, so
+// the statement would run, change nothing, and be planned again on the next
+// run. The plan stops and names the column.
+func TestPlanner_AGeneratedColumnsKind_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		held     string
+		declared string
+		want     string
+	}{
+		{
+			name: "virtual to stored", held: "VIRTUAL", declared: "STORED",
+			want: `unsupported feature: generated column tasks.code is VIRTUAL and the schema declares it STORED; ` +
+				`the postgres planner cannot change a generated column's kind in place, so drop the column and add it back, or declare it VIRTUAL`,
+		},
+		{
+			name: "stored to virtual", held: "STORED", declared: "VIRTUAL",
+			want: `unsupported feature: generated column tasks.code is STORED and the schema declares it VIRTUAL; ` +
+				`the postgres planner cannot change a generated column's kind in place, so drop the column and add it back, or declare it STORED`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := postgres.NewWithCapabilities(capability.Postgres18()).
+				GenerateMigrationAST(c.Context(), must.Must(builtin.New()), generatedKindChange(test.held, test.declared))
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, test.want)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// TestPlanner_AGeneratedColumnsExpressionOfOneKind_HappyPath is the control:
+// the column keeps its kind and changes its expression, which ALTER COLUMN SET
+// EXPRESSION does on a VIRTUAL column as on a STORED one.
+func TestPlanner_AGeneratedColumnsExpressionOfOneKind_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	diff := generatedKindChange("VIRTUAL", "VIRTUAL")
+	diff.TablesModified[0].ColumnsModified[0].Desired.GeneratedExpression = "lower(title)"
+
+	nodes, err := postgres.NewWithCapabilities(capability.Postgres18()).WithStatementStyle(planext.StatementStyleExact).
+		GenerateMigrationAST(c.Context(), must.Must(builtin.New()), diff)
+	c.Assert(err, qt.IsNil)
+	sql, err := builtin.RenderSQLWithCapabilities(platform.Postgres, capability.Postgres18(), nodes...)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "tasks" ALTER COLUMN "code" SET EXPRESSION AS (lower(title));`)
 }

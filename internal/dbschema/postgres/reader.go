@@ -1186,10 +1186,16 @@ func cockroachSizedString(dialect string, column catalog.Column) string {
 	return fmt.Sprintf("STRING(%d)", *column.CharacterMaxLength)
 }
 
+// postgresGeneratedKind maps pg_attribute.attgenerated to a generated kind: "s"
+// is a STORED column, and "v" a VIRTUAL one, which PostgreSQL builds from
+// version 18 and CockroachDB builds too. Any other code is a column that is
+// not generated, and reads as no kind.
 func postgresGeneratedKind(code string) string {
 	switch code {
 	case "s":
 		return "STORED"
+	case "v":
+		return "VIRTUAL"
 	default:
 		return ""
 	}

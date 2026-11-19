@@ -297,6 +297,14 @@ type Database struct {
 	// Without it the same name is taken as written, as a schema predicted from
 	// a declaration writes it, and folds. The Oracle reader sets it.
 	StoredNames bool `json:"stored_names,omitempty"`
+	// Predicted reports that this description was converted from a
+	// declaration, as a prediction of what a server builds from it, rather
+	// than read from a server. A comparison fills in what a declaration leaves
+	// to the server, such as the kind of a generated column declared without
+	// one, only on a predicted description. On a read, an empty value is what
+	// the server reported, and a guess there could hide a difference. It is a
+	// fact about where the description came from, so it is never serialized.
+	Predicted bool `json:"-"`
 }
 
 // TableParts are parts of tables, each naming the table it belongs to, and
