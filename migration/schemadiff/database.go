@@ -829,10 +829,24 @@ func heldGeneratedExpressions(opts *config.CompareOptions) map[string]config.Gen
 	return opts.GeneratedExpressions
 }
 
+// GeneratedExpressionRefusal is one declared generated column that a server
+// refused to spell, as [ResolveGeneratedExpressions] reports it.
+type GeneratedExpressionRefusal struct {
+	// Key is the column's key in the map ResolveGeneratedExpressions returns.
+	Key string
+	// Schema, Table and Column name the column. Schema is the connection's
+	// schema where the table names none.
+	Schema, Table, Column string
+	// Reason is the server's error for the statement it refused, such as a
+	// role that may not create a temporary table.
+	Reason error
+}
+
 // ResolveGeneratedExpressions asks conn how it stores the expression of every
-// declared generated column that database also holds as a generated column,
-// and returns the answers keyed as [config.CompareOptions.GeneratedExpressions]
-// reads them.
+// declared generated column that database also holds as a generated column.
+// The answers are keyed by the strings [config.CompareOptions.GeneratedExpressions]
+// is read with, one per column, the form the comparison builds from the
+// dialect and the column's schema, table and name.
 //
 // It is for a caller that holds a dev database beside the target. Put in the
 // options, the answers spell the declarations there, and
@@ -842,35 +856,43 @@ func heldGeneratedExpressions(opts *config.CompareOptions) map[string]config.Gen
 // columns database reports, in a transaction that is rolled back, so conn
 // needs those column types and nothing else.
 //
-// Only a server whose descriptor names the pg-catalog probes is asked; on
-// every other dialect the result is nil. An answer with Resolved false is a
-// column the server refused to spell.
+// A nil desired or a nil database returns nil, nil, and a nil conn returns an
+// error. Only a server whose descriptor names the pg-catalog probes is asked;
+// on every other dialect the result is nil. A column the server refused to
+// spell has an answer with Resolved false and one refusal, in probe order,
+// that carries the server's reason.
 func ResolveGeneratedExpressions(
 	ctx context.Context,
 	conn Connection,
 	desired *schemamodel.Database,
 	database *catalog.Database,
-) (map[string]config.GeneratedExpression, error) {
+) (map[string]config.GeneratedExpression, []GeneratedExpressionRefusal, error) {
 	if desired == nil || database == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if conn == nil {
-		return nil, fmt.Errorf("resolve generated expressions: database connection is nil")
+		return nil, nil, fmt.Errorf("resolve generated expressions: database connection is nil")
 	}
 	info := conn.Info()
 	semantics, err := conn.ResolveIdentifierSemantics(ctx, collectIdentifierNames(desired, database, info.Schema, info.Dialect))
 	if err != nil {
-		return nil, fmt.Errorf("resolve generated expressions: %w", err)
+		return nil, nil, fmt.Errorf("resolve generated expressions: %w", err)
 	}
 	probes := generatedColumnProbes(info, desired, database, semantics)
 	if len(probes) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
-	resolved, _, err := dbexprprobe.ResolveGeneratedColumns(ctx, conn, probes)
+	resolved, refused, err := dbexprprobe.ResolveGeneratedColumns(ctx, conn, probes)
 	if err != nil {
-		return nil, fmt.Errorf("resolve generated expressions: %w", err)
+		return nil, nil, fmt.Errorf("resolve generated expressions: %w", err)
 	}
-	return resolved, nil
+	var refusals []GeneratedExpressionRefusal
+	for _, refusal := range refused {
+		refusals = append(refusals, GeneratedExpressionRefusal{
+			Key: refusal.Key, Schema: refusal.Schema, Table: refusal.Table, Column: refusal.Column, Reason: refusal.Reason,
+		})
+	}
+	return resolved, refusals, nil
 }
 
 // resolveGeneratedExpressions asks the server how it stores the expression of

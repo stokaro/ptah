@@ -2626,7 +2626,10 @@ also holds as generated. Only PostgreSQL and YugabyteDB are asked; elsewhere the
 result is nil. Put in `config.CompareOptions.GeneratedExpressions`, the answers
 are what `CompareWithDatabase` compares, and the comparison asks its own
 connection only about the columns they leave out. An answer with `Resolved`
-false is a column the server refused to spell.
+false is a column the server refused to spell, and a
+`schemadiff.GeneratedExpressionRefusal` beside the map carries the server's
+reason. A nil desired schema or database returns no answers, and a nil
+connection is refused.
 
 `schemaext.ComparisonRequest.DeclaredRelations` and
 `schemaext.ObjectComparisonRequest.DeclaredRelations` name the tables, views and

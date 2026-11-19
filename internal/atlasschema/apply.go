@@ -1611,7 +1611,9 @@ func spellGeneratedColumnsOnDev(
 		return fmt.Errorf("connect to --dev-url: %w", err)
 	}
 	defer dbschema.CloseAndWarn(dev)
-	answers, err := schemadiff.ResolveGeneratedExpressions(ctx, dev, desired, current)
+	// A column the dev database refused is left out of the options, so the
+	// comparison asks the target about it and warns if the target refuses too.
+	answers, _, err := schemadiff.ResolveGeneratedExpressions(ctx, dev, desired, current)
 	if err != nil {
 		return err
 	}
