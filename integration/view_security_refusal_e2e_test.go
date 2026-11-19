@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -554,15 +555,29 @@ func TestCompatMigrateDiffRollbackRemovesAViewSecurityOptionItAddedE2E(t *testin
 }
 
 // atlasReferenceBinary is the pinned community binary, or a skip where none is
-// configured, which the integration contour reports as a failure.
+// configured, which the integration contour reports as a failure. It spends
+// the binary's edition notice before returning; see [referenceNoticeSpent].
 func atlasReferenceBinary(t *testing.T) string {
 	t.Helper()
 	binary, ok := atlasreference.Binary()
 	if !ok {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s)", atlasreference.EnvVar, atlasreference.Version)
 	}
+	referenceNoticeSpent.Do(func() {
+		// #nosec G204 G702 -- operator-provided pinned reference binary
+		cmd := exec.CommandContext(t.Context(), binary, "schema", "inspect", "--url", "sqlite://file?mode=memory")
+		//nolint:errcheck // output and status are both discarded; this run exists only to spend the notice
+		_, _ = cmd.CombinedOutput()
+	})
 	return binary
 }
+
+// referenceNoticeSpent runs the community binary once before any test reads
+// its output. In a fresh environment the binary prints an edition notice on
+// its first command and on that one only, so without this run the notice
+// lands in whichever comparison runs first in a shard, and a test that pins
+// the binary's output text fails there and passes everywhere else.
+var referenceNoticeSpent sync.Once
 
 // TestViewSecurityDocumentOnTheCommunityBinaryE2E holds the measurement behind
 // the compatibility surface's stricter answer. The pinned community binary
