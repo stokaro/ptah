@@ -28,6 +28,9 @@ import (
 //
 // The statements an engine refuses inside a transaction replace no switch, so
 // they are left out here; internal/txrequire tests what they decide.
+// SameNamedForeignKeysApart replaces a switch that held for MySQL alone and
+// holds for MariaDB too, so it is left out as well; the server decides it, in
+// TestCompatMigrateDiffCatalogShapeE2E_EveryPlanRunsBothWays.
 func TestDescriptors_MigrationAgreesWithTheRetiredSwitches(t *testing.T) {
 	sqliteForeignKeys := descriptor.SessionSetting{
 		Name:  "SQLite foreign key state",
@@ -59,7 +62,7 @@ func TestDescriptors_MigrationAgreesWithTheRetiredSwitches(t *testing.T) {
 			c := qt.New(t)
 			expected, found := want[dialect.Name]
 			c.Assert(found, qt.IsTrue)
-			c.Assert(dialect.Migration, qt.CmpEquals(cmpopts.EquateEmpty(), cmpopts.IgnoreFields(descriptor.Migration{}, "RefusedInTransaction", "ConstraintsRewriteTable")), expected)
+			c.Assert(dialect.Migration, qt.CmpEquals(cmpopts.EquateEmpty(), cmpopts.IgnoreFields(descriptor.Migration{}, "RefusedInTransaction", "ConstraintsRewriteTable", "SameNamedForeignKeysApart")), expected)
 		})
 	}
 }

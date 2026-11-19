@@ -323,7 +323,7 @@ func mysql() descriptor.Dialect {
 
 		// Migrations: the engine's reading decides a migration file's
 		// directives when its dialect is unknown.
-		Migration: descriptor.Migration{DirectivesWithoutDialect: true},
+		Migration: descriptor.Migration{DirectivesWithoutDialect: true, SameNamedForeignKeysApart: true},
 
 		// Reach: the constructs of the MySQL family that reach outside the
 		// database, which a scan refuses on every engine.
