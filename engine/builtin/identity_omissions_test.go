@@ -67,9 +67,9 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryLostIdentityClau
 			want:    []string{"identity generation"},
 		},
 		{
-			name:    "oracle keeps only the generation",
+			name:    "oracle keeps the generation, the start and the step",
 			dialect: platform.Oracle,
-			want:    []string{"identity increment", "identity start"},
+			want:    nil,
 		},
 		{
 			// The extra line is the point of this row. Every other target
@@ -90,7 +90,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryLostIdentityClau
 				identitySchema(), test.dialect, capability.ForDialect(test.dialect))
 
 			c.Assert(err, qt.IsNil)
-			properties := make([]string, 0, len(omissions))
+			var properties []string
 			for _, omission := range omissions {
 				c.Assert(omission.Name, qt.Equals, "tickets.id")
 				properties = append(properties, omission.Property)

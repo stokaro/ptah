@@ -22,10 +22,11 @@ func identityChanged(column *ast.ColumnNode, previous string) *ast.AlterTableNod
 
 // TestModifyColumn_WritesAChangedIdentity_HappyPath renders each change to an
 // identity column. A changed generation is one MODIFY with the column's
-// identity clause, the counter going on from where it was. A dropped identity
-// leaves the column nullable unless it is a key column, so the NOT NULL and
-// the default a plain column declares follow in a second MODIFY: in the same
-// clause as the drop, the NOT NULL answers ORA-01442.
+// identity clause and the options the column carries, the counter going on
+// from where it was. A dropped identity leaves the column nullable unless it is
+// a key column, so the NOT NULL and the default a plain column declares follow
+// in a second MODIFY: in the same clause as the drop, the NOT NULL answers
+// ORA-01442.
 func TestModifyColumn_WritesAChangedIdentity_HappyPath(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -37,6 +38,25 @@ func TestModifyColumn_WritesAChangedIdentity_HappyPath(t *testing.T) {
 			name:   "BY DEFAULT to ALWAYS",
 			column: (&ast.ColumnNode{Name: "id", Type: "NUMBER(10)"}).SetIdentity("ALWAYS", "", ""), previous: "BY_DEFAULT",
 			want: "ALTER TABLE t MODIFY (id NUMBER(10) GENERATED ALWAYS AS IDENTITY);\n",
+		},
+		{
+			name:   "BY DEFAULT to ALWAYS with a step",
+			column: (&ast.ColumnNode{Name: "id", Type: "NUMBER(10)"}).SetIdentity("ALWAYS", "", "5"), previous: "BY_DEFAULT",
+			want: "ALTER TABLE t MODIFY (id NUMBER(10) GENERATED ALWAYS AS IDENTITY (INCREMENT BY 5));\n",
+		},
+		{
+			name: "BY DEFAULT to ALWAYS with a written option list",
+			column: (&ast.ColumnNode{Name: "id", Type: "NUMBER(10)"}).SetIdentity("ALWAYS", "", "").
+				SetIdentityOptions("INCREMENT BY 5 CACHE 10"),
+			previous: "BY_DEFAULT",
+			want:     "ALTER TABLE t MODIFY (id NUMBER(10) GENERATED ALWAYS AS IDENTITY (INCREMENT BY 5 CACHE 10));\n",
+		},
+		{
+			name: "BY DEFAULT to ALWAYS from the highest value held",
+			column: (&ast.ColumnNode{Name: "id", Type: "NUMBER(10)"}).SetIdentity("ALWAYS", "", "").
+				SetIdentityOptions("START WITH LIMIT VALUE"),
+			previous: "BY_DEFAULT",
+			want:     "ALTER TABLE t MODIFY (id NUMBER(10) GENERATED ALWAYS AS IDENTITY (START WITH LIMIT VALUE));\n",
 		},
 		{
 			name:   "ALWAYS to an auto-increment flag",
@@ -85,5 +105,5 @@ func TestModifyColumn_WritesAChangedIdentity_FailurePath(t *testing.T) {
 		identityChanged((&ast.ColumnNode{Name: "id", Type: "NUMBER(10)"}).SetAutoIncrement(), ""))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `render modified column t\.id: unsupported feature: oracle: an existing column does not become an identity column \(ORA-30673\), and column "id" declares one; add it as a new column, or create the table again`)
+	c.Assert(err, qt.ErrorMatches, `render modified column t\.id: unsupported feature: oracle: an existing column does not become an identity column \(ORA-30673\), and column "id" declares one; add it as a new column, or create the table again \(the plan stops at the first such column\)`)
 }

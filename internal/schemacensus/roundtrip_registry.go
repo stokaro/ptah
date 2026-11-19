@@ -266,7 +266,7 @@ var roundTripGaps = []Unreached{
 	{Field: "schemamodel.Field.IdentityIncrement", Dialects: []string{"sqlserver"}, Directions: nil, Reason: gapComparison},
 	{
 		Field:      "schemamodel.Field.IdentityOptions",
-		Dialects:   []string{"cockroachdb", "postgres", "yugabytedb"},
+		Dialects:   []string{"cockroachdb", "oracle", "postgres", "yugabytedb"},
 		Directions: nil,
 		Reason:     gapToCatalog,
 	},
