@@ -127,6 +127,42 @@ func TestPrepareTables_ResolvesInheritedColumnCollations(t *testing.T) {
 	})
 }
 
+// TestPrepareTables_NamesTheStoredBinaryTypes names the binary type the
+// server stores each character column of the binary character set as, with
+// its declared length. A column of another character set, of a type with an
+// attribute of its own, or of a type that is not a character type is stored
+// as declared.
+func TestPrepareTables_NamesTheStoredBinaryTypes(t *testing.T) {
+	for _, target := range []string{"mysql", "mariadb"} {
+		t.Run(target, func(t *testing.T) {
+			c := qt.New(t)
+			fields := []schemamodel.Field{
+				charsetColumn("varying", "varchar(10)", "binary"),
+				charsetColumn("fixed", "CHAR(4)", "BINARY"),
+				charsetColumn("small", "tinytext", "binary"),
+				charsetColumn("text", "text", "binary"),
+				charsetColumn("medium", "mediumtext", "binary"),
+				charsetColumn("long", "longtext", "binary"),
+				charsetColumn("latin", "varchar(10)", "latin1"),
+				charsetColumn("attribute", "varchar(10) BINARY", "binary"),
+				charsetColumn("listed", "enum('a','b')", "binary"),
+				{Name: "plain", Type: "varchar(10)"},
+			}
+
+			table := prepared(c, target, charsetTable("utf8mb4", ""), fields, nil)
+
+			c.Assert(table.StoredTypes, qt.DeepEquals, map[string]string{
+				"varying": "varbinary(10)",
+				"fixed":   "binary(4)",
+				"small":   "tinyblob",
+				"text":    "blob",
+				"medium":  "mediumblob",
+				"long":    "longblob",
+			})
+		})
+	}
+}
+
 // TestPrepareTables_ReadsWhatTheServerAliasNames resolves utf8 through the
 // alias the read reports, and through the target descriptor's where the read
 // reports none.

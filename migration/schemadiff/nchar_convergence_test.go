@@ -21,7 +21,7 @@ func TestCompareNCharDeclaration_UsesTheCatalogForm(t *testing.T) {
 		{"postgres", "character(5)", ""},
 		{"yugabytedb", "character(5)", ""},
 		{"mysql", "char(5)", "utf8mb3_general_ci"},
-		{"mariadb", "char(5)", "utf8mb3_general_ci"},
+		{"mariadb", "char(5)", "utf8mb3_uca1400_ai_ci"},
 	}
 	for _, test := range tests {
 		t.Run(test.dialect, func(t *testing.T) {

@@ -695,12 +695,22 @@ the statement with Error 1366, or is lost where the session is not strict.
 change and the column resets are one statement, so a value that fails the
 conversion leaves the table's default and its columns as they were.
 
-A diff of two schema files has no server to read collations from. It compares
-a column's collation where either file declares one, and gives a column that
-declares none in the desired file its table's default collation from that
-file. It does not compare a table's default collation, a column that declares
-no collation in either file, or a column that names a character set and no
-collation in the desired file.
+A diff of two schema files predicts what the server gives the tables of the
+`--from` file, as a read of the tables built from it would report: each
+table's default collation, and the collation of each column that names none.
+The character set defaults come from the dev database's session where
+`--dev-url` names one, so a dev URL that sets `default_collation_for_utf8mb4`
+is honored, and otherwise from the defaults of the newest release line Ptah
+tests: `utf8mb4_0900_ai_ci` on MySQL and `utf8mb4_uca1400_ai_ci` on MariaDB
+for `utf8mb4`. The `--to` file is resolved from the same defaults, so a file
+compared with itself plans nothing, and a changed table default or column
+character set is planned as it is against a server.
+
+A character type with `CHARACTER SET binary` is stored as the binary type of
+the same length: `varchar(10) CHARACTER SET binary` as `varbinary(10)`,
+`char(4) CHARACTER SET binary` as `binary(4)`, and `text CHARACTER SET binary`
+as `blob`. The comparison accepts the stored type, so such a column is not
+planned again, and a `MODIFY COLUMN` that changes it restates it as declared.
 
 ## FULLTEXT parser
 
