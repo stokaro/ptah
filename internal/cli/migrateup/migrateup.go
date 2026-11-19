@@ -34,6 +34,7 @@ import (
 	"ptah.run/internal/cli/internal/migrationsource"
 	"ptah.run/internal/dburldisplay"
 	"ptah.run/internal/deploymentreport"
+	"ptah.run/internal/driftgate"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/migrationintegrity"
 	"ptah.run/internal/migrationlintgate"
@@ -118,6 +119,13 @@ type options struct {
 	checkDrift           bool
 	shadowDB             string
 	driftExclude         []string
+	// driftDeclared is the drift check the selected atlas.hcl env declares,
+	// which runs when --check-drift was not given; see
+	// [resolveDriftRequest].
+	driftDeclared *projectconfig.PreApplyDrift
+	// driftOnDrift is what a check that did not come back clean does to the
+	// run: --check-drift refuses, a declared check says in `on_error`.
+	driftOnDrift driftgate.OnDrift
 	// resolvedRunner is what runner names once ptah.yaml is merged under it.
 	resolvedRunner migrateflags.Runner
 	// lockName is the migration lock name the run selected, once the flag, its
@@ -282,7 +290,8 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 		checkDriftFlag,
 		false,
 		"Before any pending migration, replay the applied history on --"+shadowDBFlag+" under the migration lock "+
-			"and refuse to run if the database schema differs from it",
+			"and refuse to run if the database schema differs from it; an atlas.hcl env's "+
+			"check \"migrate_apply\" drift block turns it on, and a value set here wins over the block",
 	)
 	flags.StringVar(
 		&opts.shadowDB,
@@ -515,10 +524,12 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	if err := dbcli.CheckRunAttribution(opts.actor, opts.actorOrigin, opts.runReference); err != nil {
 		return opts, err
 	}
+	opts = resolveDriftRequest(cmd, opts, projectCfg)
 	// After the shadow database is resolved, so a project dev_url satisfies
 	// --check-drift, and before the hook is authorized for a run it refuses.
 	if err := validateDriftFlags(
 		opts.checkDrift, cmd.Flags().Changed(shadowDBFlag), cmd.Flags().Changed(driftExcludeFlag), opts.shadowDB,
+		opts.driftDeclared,
 	); err != nil {
 		return opts, err
 	}
@@ -1117,7 +1128,7 @@ func applyPendingMigrations(
 		After:      status,
 		Err:        outcome.runErr,
 		DryRun:     opts.dryRun,
-		DriftCheck: guards.drift.found(),
+		DriftCheck: guards.drift.Found(),
 	}); err != nil && outcome.runErr == nil {
 		outcome.runErr = err
 	}

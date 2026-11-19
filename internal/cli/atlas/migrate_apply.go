@@ -273,6 +273,10 @@ func runAtlasMigrateApplyTarget(
 	if opts.dir == "" {
 		return formatOutput, fmt.Errorf("migrations directory is required")
 	}
+	driftDevURL, err := atlasApplyDriftDevURL(projectCfg)
+	if err != nil {
+		return formatOutput, err
+	}
 
 	var localDir atlasargs.LocalDir
 	if loaded &&
@@ -439,6 +443,13 @@ func runAtlasMigrateApplyTarget(
 
 	noteAtlasMigrateApplyLockUnsupported(cmd, opts.lock, plan, conn.Info().Dialect)
 
+	drift, releaseDrift, err := prepareAtlasApplyDrift(cmd, projectCfg, opts.url, driftDevURL, conn, plan)
+	if err != nil {
+		return formatOutput, err
+	}
+	defer releaseDrift()
+	plan = plan.WithPlanGuard(drift.Guard())
+
 	result, err := plan.ExecuteWithPreflight(
 		cmd.Context(),
 		func(_ context.Context, lockedPlan migrator.MigrationPlan) error {
@@ -446,7 +457,14 @@ func runAtlasMigrateApplyTarget(
 			return nil
 		},
 	)
+	reportAtlasApplyDrift(cmd.ErrOrStderr(), drift)
 	if err != nil {
+		// A drift check that refused ran under the migration lock before any
+		// file, so like the out-of-order refusal below it writes no --format
+		// report.
+		if refusal := atlasApplyDriftRefusal(err); refusal != nil {
+			return formatOutput, refusal
+		}
 		// The community binary refuses an out-of-order file before it runs
 		// anything and writes no --format report for it: the refusal goes to
 		// stderr alone, with or without --format.

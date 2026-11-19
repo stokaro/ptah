@@ -394,8 +394,10 @@ func (p Policy) ValidateSchemaInspectFormat(format string) error {
 }
 
 // ValidateProjectConfig rejects atlas.hcl constructs that the compatibility
-// parser accepted without applying. Full mode reports those no-ops as before;
-// strict mode cannot use a silently ignored construct as CE-parity evidence.
+// parser accepted without applying, and the pre-apply drift check. Full mode
+// reports the no-ops and runs the drift check; strict mode cannot use a
+// silently ignored construct as CE-parity evidence, and the pinned binary has
+// no drift check to run.
 func (p Policy) ValidateProjectConfig(config projectconfig.Config) error {
 	if !p.strictCE {
 		return nil
@@ -408,6 +410,13 @@ func (p Policy) ValidateProjectConfig(config projectconfig.Config) error {
 			ignored.Name,
 			ignored.Filename,
 			ignored.Line,
+		)
+	}
+	if drift := config.PreApplyDrift; drift != nil {
+		return fmt.Errorf(
+			"Atlas Community Edition strict compatibility refuses %s: "+
+				"the pre-apply drift check is a capability Community Edition lacks",
+			drift.Origin(),
 		)
 	}
 	for _, rawURL := range append(

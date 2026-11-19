@@ -1001,12 +1001,21 @@ func (p atlasParser) parseEnv(env atlasEnvBlock, name string) (Config, error) {
 }
 
 func (p atlasParser) parseEnvBlock(block *hclsyntax.Block, seen map[string]struct{}, cfg *Config) error {
-	if _, ok := seen[block.Type]; ok {
+	// A check block is addressed by its label, so `check "migrate_apply"` and
+	// `check "schema_apply"` are two checks rather than one block written
+	// twice. The structure walk has already refused two checks with one label.
+	key := block.Type
+	if block.Type == "check" {
+		key += "\x00" + strings.Join(block.Labels, "\x00")
+	}
+	if _, ok := seen[key]; ok {
 		return unsupportedBlock(block)
 	}
-	seen[block.Type] = struct{}{}
+	seen[key] = struct{}{}
 
 	switch block.Type {
+	case "check":
+		return p.parseCheck(block, cfg)
 	case "diff":
 		return p.parseDiff(block, cfg)
 	case "format":

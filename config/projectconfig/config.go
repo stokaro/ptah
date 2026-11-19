@@ -96,6 +96,11 @@ type Config struct {
 	// diagnostic about a selector in the list uses it to point at the file
 	// that holds it.
 	ExcludeOrigin string
+	// PreApplyDrift is the drift check the selected atlas.hcl env declares
+	// with `check "migrate_apply" { drift {} }`, or nil when it declares none.
+	// `migrate apply` and `ptah migrations up` run it before any pending
+	// migration.
+	PreApplyDrift *PreApplyDrift
 	// IgnoredExtensions names database extensions the comparison must leave
 	// alone. It appends to Ptah's own default list rather than replacing it,
 	// so plpgsql stays ignored whatever a project writes here.
@@ -1052,6 +1057,11 @@ func Merge(base, override Config) Config {
 	// the run applies.
 	if override.presence.has(fieldExclude) || len(override.Exclude) > 0 {
 		result.ExcludeOrigin = override.ExcludeOrigin
+	}
+	if override.PreApplyDrift != nil {
+		drift := *override.PreApplyDrift
+		drift.Exclude = slices.Clone(drift.Exclude)
+		result.PreApplyDrift = &drift
 	}
 	result.Schema = mergeSchema(result.Schema, override.Schema, override.presence, &result.presence)
 	result.Migration = mergeMigration(

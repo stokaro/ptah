@@ -494,6 +494,29 @@ check names its `stage` and `reason`:
 }
 ```
 
+An `atlas.hcl` env can ask for the check without the flag, in a
+`check "migrate_apply"` block holding a `drift` block:
+
+```hcl
+env "prod" {
+  dev = "docker://postgres/17/dev"
+  check "migrate_apply" {
+    drift {
+      on_error = CONTINUE
+    }
+  }
+}
+```
+
+`ptah migrations up --config atlas.hcl --env prod` then runs the check, with
+`--shadow-db` or the env's `dev` database as the shadow database. `on_error =
+FAIL`, the default, refuses on drift as `--check-drift` does, and `CONTINUE`
+reports the differences and applies. An `exclude` list in the `drift` block
+replaces the project's for the check. A `--check-drift` value, from the flag or
+from `PTAH_CHECK_DRIFT`, wins over the block. `ptah-compat migrate apply` reads
+the same block; see
+[Pre-apply drift check](../../atlas/project-config/#pre-apply-drift-check).
+
 `ptah schema drift` answers a different question: whether a database matches a
 declared desired schema. `--check-drift` asks whether it matches the history it
 claims to have run.

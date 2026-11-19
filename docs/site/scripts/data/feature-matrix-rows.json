@@ -981,6 +981,15 @@
     "evidence": "Measured 2026-08-02: pinned CE v1.2.0 answers `migrate apply --skip-checks` with `unknown flag: --skip-checks`, identical to the control `--skip-chxxxx`; Atlas's own help surface registers --skip-checks on `migrate down` only. Implemented in internal/cli/atlas/migrate_apply.go (atlasApplySkipChecksFromEnv) and internal/atlasmigrate ApplyOptions.SkipChecks. The variable is the PTAH_<FLAG> twin of native `ptah migrations up --skip-checks`. Both binaries agree on the name and on every valid boolean; they differ on an invalid one, which compat refuses outright while native discards the parse error and enforces (internal/cli/internal/cmdflags/env.go drops the flags.Set error) — both fail safe. It bypasses pre-migration checks only: TestMigrateApplySkipChecksEnvDoesNotBypassChecksumVerification pins that atlas.sum verification still refuses a tampered directory, and TestMigrateApplySkipChecksEnvStillRecordsRevisions pins unchanged bookkeeping. On `migrate down` the --skip-checks waiver is explicit-only (atlasargs.ExplicitUnsupportedBoolReason plus atlasMigrateDownExplicitOnlyFlags, one per parsing path, and cmdflags.DisableEnvBinding so --help stops advertising the twin): before this, PTAH_SKIP_CHECKS=1 made every `ptah-compat migrate down` fail with `accepts --skip-checks, but Ptah does not implement its behavior` on both the default and --format paths. The exclusion is deliberately ONE flag — --to-tag and --plan keep their twins because setting them is a genuine request, and discarding PTAH_TO_TAG would leave an empty target that reverts the entire history (measured 2026-08-02: users table and its row dropped)."
   },
   {
+    "area": "Safety gates",
+    "feature": "Pre-apply drift check (`check \"migrate_apply\"` drift block)",
+    "ptah": "yes",
+    "atlas_oss": "no",
+    "atlas_pro": "yes",
+    "note": "migrate apply replays the applied history on the env's dev database and stops on drift; on_error = CONTINUE reports and applies. Native migrations up reads the block too.",
+    "evidence": "Measured 2026-11-19 on the pinned community binary v1.4.0 (scripts/atlas-ce-reference.lock): it accepts `check \"migrate_apply\" { drift {} }`, ignores it and applies migration 2 on a drifted target; `on_error = FAIL`, `CONTINUE` and any other identifier fail with Unknown variable, exit 1. Ptah parses the block in config/projectconfig/atlas_drift_check.go, runs the shared check in internal/driftgate, which `ptah migrations up --check-drift` also runs, and adapts it in internal/cli/atlas/migrate_apply_drift.go. integration/atlas_compat_migrate_apply_drift_check_e2e_test.go pins refusal, a clean apply, CONTINUE, the absent block and the community divergence on SQLite and PostgreSQL; PTAH_ATLAS_STRICT_COMPAT=1 refuses the block before connecting (internal/atlascompatpolicy)."
+  },
+  {
     "area": "Versioned migrations — runtime policy",
     "feature": "Transaction modes (`--tx-mode` file/all/none)",
     "ptah": "yes",

@@ -722,6 +722,24 @@ func TestStrictCERefusesIgnoredProjectConfigConstructs(t *testing.T) {
 	c.Assert(atlascompatpolicy.Full().ValidateProjectConfig(config), qt.IsNil)
 }
 
+// TestStrictCERefusesThePreApplyDriftCheck pins the refusal of the drift
+// block: the pinned binary has no drift check, so strict mode cannot run one,
+// and it says so rather than calling the block ignored. Full mode runs it.
+func TestStrictCERefusesThePreApplyDriftCheck(t *testing.T) {
+	c := qt.New(t)
+	config := projectconfig.Config{PreApplyDrift: &projectconfig.PreApplyDrift{
+		OnError:  projectconfig.DriftOnErrorFail,
+		Filename: "atlas.hcl",
+		Line:     8,
+	}}
+
+	err := atlascompatpolicy.StrictCE().ValidateProjectConfig(config)
+
+	c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(`Atlas Community Edition strict compatibility refuses atlas.hcl check "migrate_apply" drift at atlas.hcl:8: `+
+		`the pre-apply drift check is a capability Community Edition lacks`))
+	c.Assert(atlascompatpolicy.Full().ValidateProjectConfig(config), qt.IsNil)
+}
+
 func TestStrictCERefusesUnenforceableSchemaApplyLintPolicy(t *testing.T) {
 	c := qt.New(t)
 	config := projectconfig.Config{Lint: projectconfig.LintConfig{

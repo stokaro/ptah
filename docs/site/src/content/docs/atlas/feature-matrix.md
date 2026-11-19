@@ -107,16 +107,16 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 206 capabilities below:
+Across the 207 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 192 |
+| Ptah supports it fully | 193 |
 | Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 66 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 54 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 55 |
 | Ptah has it and neither Atlas edition does | 29 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 10 |
@@ -281,6 +281,7 @@ seven of them as open capabilities regardless.
 | Lint enforcement per surface | ✅ | 🟡 | ✅ | The lint guide's enforcement table says, per surface, which rules run and whether a finding is reported, exits non-zero at a threshold, or refuses the apply; a `gate` section widens the apply gate. |
 | Native migration lint rule set | ✅ | 🟡 | ✅ | Every rule is on the generated lint-rules page, grouped by dialect and gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
 | Per-rule severity policy | ✅ | ❌ | 🟡 | Severity vocabulary is info\|warning\|error; only error gates. The community binary carries no severity attribute: it accepts one and ignores it, exactly as it treats an invented attribute. |
+| Pre-apply drift check (`check "migrate_apply"` drift block) | ✅ | ❌ | ✅ | migrate apply replays the applied history on the env's dev database and stops on drift; on_error = CONTINUE reports and applies. Native migrations up reads the block too. |
 | Pre-migration assertion checks | ✅ | ❌ | ✅ | Scalar SELECTs in either direction; txtar checks.sql and checks/*.sql support all-of/oneof groups. One failure mode, abort, and no checks under `--tx-mode all`. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
 | Schema security findings over roles, grants and policies | 🔷 | ❌ | ✅ | Findings over a live schema's grants, policies, routines and role graph: code, severity, structured detail and a suggestion, local and with no account. Skipped rules are named rather than silent. |
