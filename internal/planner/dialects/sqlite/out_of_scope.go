@@ -71,8 +71,13 @@ func outOfScopeOf(diff *difftypes.SchemaDiff, table schemamodel.Table, semantics
 //
 // A column of the primary key is carried with the key, as a table constraint,
 // where the declaration holds no key of its own; beside a declared key it is
-// refused, since a table holds one key. A column with AUTOINCREMENT is refused,
-// because SQLite takes that keyword only on a column's own PRIMARY KEY clause.
+// refused, since a table holds one key. A column with AUTOINCREMENT keeps the
+// keyword only on its own PRIMARY KEY clause, so it is carried with the key
+// inline where the declaration holds no key and the key is out of scope too;
+// the returned name is that column, whose key carryConstraints then leaves
+// alone. Anywhere else it is refused. A generated column whose expression
+// reads a column the rebuilt table drops is refused too: SQLite would refuse
+// the CREATE TABLE.
 //
 // A carried column keeps its place among the live columns, which observed
 // lists with their positions: `SELECT *` and an INSERT without a column list
@@ -80,50 +85,88 @@ func outOfScopeOf(diff *difftypes.SchemaDiff, table schemamodel.Table, semantics
 func carryColumns(
 	node *ast.CreateTableNode,
 	table schemamodel.Table,
-	columns, observed []catalog.Column,
+	carried outOfScope,
+	observed []catalog.Column,
+	dropped map[string]bool,
 	semantics identifier.Semantics,
-) ([]copiedColumn, error) {
-	positions := make(map[string]int, len(observed)+len(columns))
-	for _, live := range slices.Concat(observed, columns) {
+) ([]copiedColumn, string, error) {
+	positions := make(map[string]int, len(observed)+len(carried.columns))
+	for _, live := range slices.Concat(observed, carried.columns) {
 		positions[semantics.ColumnIdentityKey(live.Name)] = live.OrdinalPosition
 	}
-	var copied []copiedColumn
-	for _, column := range columns {
+	var (
+		copied    []copiedColumn
+		inlineKey string
+	)
+	for _, column := range carried.columns {
+		inline := column.IsAutoIncrement && !declaresPrimaryKey(node) && carriesKeyOf(carried.constraints, column.Name, semantics)
 		switch {
 		case column.IsPrimaryKey && declaresPrimaryKey(node):
-			return nil, unsupportedFeaturef(
+			return nil, "", unsupportedFeaturef(
 				"rebuilding table %s cannot keep column %s as it is: an exclude selector keeps it out of scope, "+
 					"and it is part of the primary key, which the rebuilt table takes from the declaration. "+
 					"Exclude the whole table, or declare the column and stop excluding it",
 				table.QualifiedName(), column.Name)
-		case column.IsAutoIncrement:
-			return nil, unsupportedFeaturef(
+		case column.IsAutoIncrement && !inline:
+			return nil, "", unsupportedFeaturef(
 				"rebuilding table %s cannot keep column %s as it is: an exclude selector keeps it out of scope, "+
 					"and Ptah cannot carry its AUTOINCREMENT, which SQLite takes only on the column's own PRIMARY KEY. "+
 					"Exclude the whole table, or declare the column and stop excluding it",
 				table.QualifiedName(), column.Name)
 		}
-		insertAtLivePosition(node, column, positions, semantics)
+		if column.GeneratedExpression != nil {
+			for _, gone := range slices.Sorted(maps.Keys(dropped)) {
+				if expressionReads(*column.GeneratedExpression, gone, semantics) {
+					return nil, "", unsupportedFeaturef(
+						"rebuilding table %s cannot keep column %s as it is: an exclude selector keeps it out of scope, "+
+							"and its generated expression reads column %s, which the rebuilt table drops. Keep the column, "+
+							"or exclude the whole table",
+						table.QualifiedName(), column.Name, gone)
+				}
+			}
+		}
+		carriedNode := carriedColumnNode(column)
+		if inline {
+			carriedNode.Primary, inlineKey = true, column.Name
+			carriedNode.SetAutoIncrement()
+		}
+		insertAtLivePosition(node, carriedNode, column.OrdinalPosition, positions, semantics)
 		if column.GeneratedKind == "" {
 			copied = append(copied, copiedColumn{name: column.Name, selectExpr: quoteIdentifier(column.Name)})
 		}
 	}
-	return copied, nil
+	return copied, inlineKey, nil
 }
 
-// insertAtLivePosition writes column into the new table after the nearest
-// column the live table holds before it, or first where none comes before it.
-// positions holds each live column's place, keyed by identity; a declared
-// column the live table lacks has none and is passed over.
-func insertAtLivePosition(node *ast.CreateTableNode, column catalog.Column, positions map[string]int, semantics identifier.Semantics) {
+// carriesKeyOf reports whether constraints, the constraints out of scope,
+// hold a primary key over column alone.
+func carriesKeyOf(constraints []catalog.Constraint, column string, semantics identifier.Semantics) bool {
+	return slices.ContainsFunc(constraints, func(constraint catalog.Constraint) bool {
+		return keyOver(constraint, column, semantics)
+	})
+}
+
+// keyOver reports whether constraint is a primary key over column alone.
+func keyOver(constraint catalog.Constraint, column string, semantics identifier.Semantics) bool {
+	columns := constraintColumns(constraint)
+	return indexbacking.KindOf(constraint.Type) == indexbacking.PrimaryKey && len(columns) == 1 &&
+		semantics.ColumnIdentityKey(columns[0]) == semantics.ColumnIdentityKey(column)
+}
+
+// insertAtLivePosition writes column, which the live table holds at ordinal,
+// into the new table after the nearest column the live table holds before it,
+// or first where none comes before it. positions holds each live column's
+// place, keyed by identity; a declared column the live table lacks has none
+// and is passed over.
+func insertAtLivePosition(node *ast.CreateTableNode, column *ast.ColumnNode, ordinal int, positions map[string]int, semantics identifier.Semantics) {
 	at, nearest := 0, 0
 	for i, held := range node.Columns {
 		position := positions[semantics.ColumnIdentityKey(held.Name)]
-		if position > nearest && position < column.OrdinalPosition {
+		if position > nearest && position < ordinal {
 			at, nearest = i+1, position
 		}
 	}
-	node.Columns = slices.Insert(node.Columns, at, carriedColumnNode(column))
+	node.Columns = slices.Insert(node.Columns, at, column)
 }
 
 // carriedColumnNode is the column the read reported, for the renderer to write
@@ -159,6 +202,11 @@ func carriedColumnNode(column catalog.Column) *ast.ColumnNode {
 // `1+2`, which is not a default clause. A literal is written bare, so the
 // stored text stays what it was, and anything else goes back inside
 // parentheses.
+//
+// A default written as one identifier, bare or quoted, is the string it
+// spells: `DEFAULT abc`, `DEFAULT "dq"` and `DEFAULT [br]` store the text abc,
+// dq and br. It goes back as that string literal, since in parentheses SQLite
+// reads it as a column and refuses the default as not constant.
 func carriedDefault(value string) string {
 	trimmed := strings.TrimSpace(value)
 	switch strings.ToUpper(trimmed) {
@@ -168,7 +216,20 @@ func carriedDefault(value string) string {
 	if defaultlit.IsPlainNumber(strings.TrimPrefix(trimmed, "+")) || singleQuoted(trimmed) || blobLiteral(trimmed) {
 		return trimmed
 	}
+	if spelled, ok := identifierDefault(trimmed); ok {
+		return "'" + strings.ReplaceAll(spelled, "'", "''") + "'"
+	}
 	return "(" + trimmed + ")"
+}
+
+// identifierDefault returns the text a default of one identifier spells, bare
+// or quoted, and whether value is one.
+func identifierDefault(value string) (string, bool) {
+	tokens := tokenizeSQL(value)
+	if len(tokens) != 1 || !tokens[0].word {
+		return "", false
+	}
+	return tokens[0].text, true
 }
 
 // singleQuoted reports whether value is one string literal, with every quote
@@ -213,7 +274,9 @@ func declaresPrimaryKey(node *ast.CreateTableNode) bool {
 //
 // A primary key is carried where the declaration holds none, which is the case
 // when the selector that kept it out of scope named the declared key too; a
-// table holds one key, so beside a declared key it is refused. A constraint
+// table holds one key, so beside a declared key it is refused. The key over
+// inlineKey, the AUTOINCREMENT column carryColumns carried with its key, is
+// already on that column. A constraint
 // over a column the new table does not hold is refused by name, and so is a
 // CHECK whose expression names one: SQLite would refuse the CREATE TABLE, or
 // the rule would go with the column.
@@ -221,10 +284,14 @@ func carryConstraints(
 	node *ast.CreateTableNode,
 	table schemamodel.Table,
 	constraints []catalog.Constraint,
+	inlineKey string,
 	columns, dropped map[string]bool,
 	semantics identifier.Semantics,
 ) error {
 	for _, constraint := range constraints {
+		if inlineKey != "" && keyOver(constraint, inlineKey, semantics) {
+			continue
+		}
 		if indexbacking.KindOf(constraint.Type) == indexbacking.PrimaryKey && declaresPrimaryKey(node) {
 			return unsupportedFeaturef(
 				"rebuilding table %s cannot keep primary key %s as it is: an exclude selector keeps it out of scope, "+
@@ -242,7 +309,7 @@ func carryConstraints(
 		}
 		if constraint.CheckClause != nil {
 			for _, column := range slices.Sorted(maps.Keys(dropped)) {
-				if mentionsIdentifier(*constraint.CheckClause, column, semantics) {
+				if expressionReads(*constraint.CheckClause, column, semantics) {
 					return unsupportedFeaturef(
 						"rebuilding table %s cannot keep constraint %s as it is: an exclude selector keeps it out of scope, "+
 							"and its expression reads column %s, which the rebuilt table drops. Keep the column, or exclude "+
@@ -321,68 +388,15 @@ func carriedConstraint(constraint catalog.Constraint, table string) schemamodel.
 	return carried
 }
 
-// mentionsIdentifier reports whether expression names identifier outside its
-// string literals, bare or quoted, compared the way the target compares column
-// names.
-func mentionsIdentifier(expression, name string, semantics identifier.Semantics) bool {
-	want := semantics.ColumnIdentityKey(name)
-	for i := 0; i < len(expression); {
-		ch := expression[i]
-		switch {
-		case ch == '\'':
-			end := strings.IndexByte(expression[i+1:], '\'')
-			if end < 0 {
-				return false
-			}
-			i += end + 2
-		case ch == '"' || ch == '`' || ch == '[':
-			closing := byte('"')
-			switch ch {
-			case '`':
-				closing = '`'
-			case '[':
-				closing = ']'
-			}
-			end := strings.IndexByte(expression[i+1:], closing)
-			if end < 0 {
-				return false
-			}
-			if semantics.ColumnIdentityKey(expression[i+1:i+1+end]) == want {
-				return true
-			}
-			i += end + 2
-		case isIdentifierStart(ch):
-			start := i
-			for i < len(expression) && isIdentifierPart(expression[i]) {
-				i++
-			}
-			if semantics.ColumnIdentityKey(expression[start:i]) == want {
-				return true
-			}
-		default:
-			i++
-		}
-	}
-	return false
-}
-
-func isIdentifierStart(ch byte) bool {
-	return ch == '_' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= 0x80
-}
-
-func isIdentifierPart(ch byte) bool {
-	return isIdentifierStart(ch) || ch >= '0' && ch <= '9' || ch == '$'
-}
-
 // carryTriggers creates the triggers out of scope again from the statement
 // SQLite stored for each. DROP TABLE takes a table's triggers with it.
 //
 // SQLite resolves the columns a trigger's body names when the trigger fires,
-// not when it is created, so a trigger that names a column the rebuilt table
+// not when it is created, so a trigger that reads a column the rebuilt table
 // drops would be created and then fail every statement that fires it. Such a
 // trigger is refused by name, as a CHECK that reads a dropped column is. A
-// body that names another table's column of the same name is refused too: the
-// planner reads names, not the tables they belong to.
+// name the trigger writes into another table's column list, or qualifies with
+// another table, belongs to that table and is left alone (see references.go).
 func carryTriggers(table schemamodel.Table, triggers []catalog.Trigger, dropped map[string]bool, semantics identifier.Semantics) ([]ast.Node, error) {
 	nodes := make([]ast.Node, 0, len(triggers))
 	for _, trigger := range triggers {
@@ -394,10 +408,11 @@ func carryTriggers(table schemamodel.Table, triggers []catalog.Trigger, dropped 
 				table.QualifiedName(), trigger.Name)
 		}
 		for _, column := range slices.Sorted(maps.Keys(dropped)) {
-			if mentionsIdentifier(definition, column, semantics) {
+			reference := relationReference{table: table.Name, column: column, onTable: true, semantics: semantics}
+			if reference.triggerReads(definition, "") {
 				return nil, unsupportedFeaturef(
 					"rebuilding table %s cannot keep trigger %s as it is: an exclude selector keeps it out of scope, "+
-						"and its statement names column %s, which the rebuilt table drops. Keep the column, or exclude "+
+						"and its statement reads column %s, which the rebuilt table drops. Keep the column, or exclude "+
 						"the whole table",
 					table.QualifiedName(), trigger.Name, column)
 			}

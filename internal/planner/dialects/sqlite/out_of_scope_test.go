@@ -80,6 +80,59 @@ func TestPlannerRebuildCarriesWhatAnExclusionKeeps_HappyPath(t *testing.T) {
 			absent: `DEFAULT ('x')`,
 		},
 		{
+			name:   "a column whose default is one double-quoted identifier, as the string SQLite reads it",
+			parts:  catalog.TableParts{Tables: carriedTable(withDefault(carriedColumn("extra"), `"dq"`))},
+			want:   []string{`"extra" TEXT DEFAULT 'dq'`},
+			absent: `DEFAULT ("dq")`,
+		},
+		{
+			name:   "a column whose default is one bracketed identifier, with a quote to double",
+			parts:  catalog.TableParts{Tables: carriedTable(withDefault(carriedColumn("extra"), `[it's]`))},
+			want:   []string{`"extra" TEXT DEFAULT 'it''s'`},
+			absent: `DEFAULT ([it's])`,
+		},
+		{
+			name:    "an AUTOINCREMENT column whose key is out of scope too, on its own key",
+			keyless: true,
+			parts: catalog.TableParts{
+				Tables: carriedTable(autoIncrement(keyColumn(integerColumn(carriedColumn("serial"))))),
+				Constraints: []catalog.Constraint{{
+					TableName: "users", Name: "users_pkey", Type: "PRIMARY KEY", ColumnNames: []string{"serial"},
+				}},
+			},
+			want:   []string{`"serial" INTEGER PRIMARY KEY AUTOINCREMENT`},
+			absent: `PRIMARY KEY ("serial")`,
+		},
+		{
+			name: "a trigger that writes a column of the dropped name into another table",
+			parts: catalog.TableParts{Triggers: []catalog.Trigger{{
+				Table: "users", Name: "users_log",
+				Definition: `CREATE TRIGGER users_log AFTER DELETE ON users BEGIN INSERT INTO log(name) VALUES (OLD.email); END`,
+			}}},
+			want:   []string{`CREATE TRIGGER users_log AFTER DELETE ON users BEGIN INSERT INTO log(name) VALUES (OLD.email); END;`},
+			absent: `DROP TRIGGER`,
+		},
+		{
+			name: "a trigger that sets a column of the dropped name in another table from a query of its own",
+			parts: catalog.TableParts{Triggers: []catalog.Trigger{{
+				Table: "users", Name: "users_sync",
+				Definition: `CREATE TRIGGER users_sync AFTER UPDATE ON users BEGIN ` +
+					`UPDATE log SET name = (SELECT email FROM users WHERE id = NEW.id); END`,
+			}}},
+			want:   []string{`UPDATE log SET name = (SELECT email FROM users WHERE id = NEW.id); END;`},
+			absent: `DROP TRIGGER`,
+		},
+		{
+			name: "a trigger that names the dropped column in a comment, a string and after another table",
+			parts: catalog.TableParts{Triggers: []catalog.Trigger{{
+				Table: "users", Name: "users_note",
+				Definition: "CREATE TRIGGER users_note AFTER DELETE ON users BEGIN -- name\n" +
+					"UPDATE log SET name = 'name' WHERE log.name = OLD.email; END",
+			}}},
+			want:   []string{`UPDATE log SET name = 'name' WHERE log.name = OLD.email; END;`},
+			absent: `DROP TRIGGER`,
+		},
+		{
 			name:   "a column whose default is an expression",
 			parts:  catalog.TableParts{Tables: carriedTable(withDefault(carriedColumn("extra"), "1+2"))},
 			want:   []string{`"extra" TEXT DEFAULT (1+2)`},
@@ -229,7 +282,52 @@ func TestPlannerRebuildCarriesWhatAnExclusionKeeps_FailurePath(t *testing.T) {
 				Table: "users", Name: "users_touch",
 				Definition: `CREATE TRIGGER users_touch AFTER DELETE ON users BEGIN SELECT name FROM users; END`,
 			}}},
-			want: `sqlite: rebuilding table users cannot keep trigger users_touch as it is: .* names column name, which the rebuilt table drops\. .*`,
+			want: `sqlite: rebuilding table users cannot keep trigger users_touch as it is: .* reads column name, which the rebuilt table drops\. .*`,
+		},
+		{
+			name: "a trigger that reads the dropped column of the row it fires on",
+			parts: catalog.TableParts{Triggers: []catalog.Trigger{{
+				Table: "users", Name: "users_touch",
+				Definition: `CREATE TRIGGER users_touch AFTER UPDATE ON users BEGIN INSERT INTO log(msg) VALUES (NEW.name); END`,
+			}}},
+			want: `sqlite: rebuilding table users cannot keep trigger users_touch as it is: .* reads column name, which the rebuilt table drops\. .*`,
+		},
+		{
+			name: "a trigger that reads the dropped column qualified by its table",
+			parts: catalog.TableParts{Triggers: []catalog.Trigger{{
+				Table: "users", Name: "users_touch",
+				Definition: `CREATE TRIGGER users_touch AFTER DELETE ON users BEGIN UPDATE log SET msg = (SELECT users.name FROM users); END`,
+			}}},
+			want: `sqlite: rebuilding table users cannot keep trigger users_touch as it is: .* reads column name, which the rebuilt table drops\. .*`,
+		},
+		{
+			name: "a trigger that fires on an update of the dropped column",
+			parts: catalog.TableParts{Triggers: []catalog.Trigger{{
+				Table: "users", Name: "users_touch",
+				Definition: `CREATE TRIGGER users_touch AFTER UPDATE OF name ON users BEGIN SELECT 1; END`,
+			}}},
+			want: `sqlite: rebuilding table users cannot keep trigger users_touch as it is: .* reads column name, which the rebuilt table drops\. .*`,
+		},
+		{
+			name:  "a generated column that reads the dropped column",
+			parts: catalog.TableParts{Tables: carriedTable(generated(carriedColumn("lowered"), "lower(name)"))},
+			want:  `sqlite: rebuilding table users cannot keep column lowered as it is: .* generated expression reads column name, which the rebuilt table drops\. .*`,
+		},
+		{
+			name: "an index whose key expression reads the dropped column",
+			parts: catalog.TableParts{Indexes: []catalog.Index{{
+				TableName: "users", Name: "users_lower", Parts: []catalog.IndexPart{{Expr: "lower(name)"}},
+				Definition: `CREATE INDEX users_lower ON users (lower(name))`,
+			}}},
+			want: `sqlite: rebuilding table users cannot keep index users_lower: its statement reads column name, which the rebuilt table drops\. .*`,
+		},
+		{
+			name: "a partial index whose WHERE clause reads the dropped column",
+			parts: catalog.TableParts{Indexes: []catalog.Index{{
+				TableName: "users", Name: "users_email", Parts: []catalog.IndexPart{{Name: "email"}},
+				Definition: `CREATE INDEX users_email ON users (email) WHERE name IS NOT NULL`,
+			}}},
+			want: `sqlite: rebuilding table users cannot keep index users_email: its statement reads column name, which the rebuilt table drops\. .*`,
 		},
 		{
 			name:  "a trigger the read kept no statement for",
@@ -267,6 +365,11 @@ func withDefault(column catalog.Column, value string) catalog.Column {
 func generated(column catalog.Column, expression string) catalog.Column {
 	column.GeneratedExpression = &expression
 	column.GeneratedKind = "VIRTUAL"
+	return column
+}
+
+func integerColumn(column catalog.Column) catalog.Column {
+	column.ColumnType = "INTEGER"
 	return column
 }
 

@@ -662,13 +662,17 @@ func (p *Planner) rebuildTable(
 	if err := addInlineConstraints(createNode, *table, declared.Constraints); err != nil {
 		return nil, err
 	}
-	carriedCopies, err := carryColumns(createNode, *table, carried.columns, observed.Table.Columns, semantics)
+	newColumns := rebuiltColumns(declared, carried.columns, semantics)
+	dropped := droppedColumns(observed, newColumns, semantics)
+	carriedCopies, inlineKey, err := carryColumns(createNode, *table, carried, observed.Table.Columns, dropped, semantics)
 	if err != nil {
 		return nil, err
 	}
-	newColumns := rebuiltColumns(declared, carried.columns, semantics)
-	dropped := droppedColumns(observed, newColumns, semantics)
-	if err := carryConstraints(createNode, *table, carried.constraints, newColumns, dropped, semantics); err != nil {
+	if err := carryConstraints(createNode, *table, carried.constraints, inlineKey, newColumns, dropped, semantics); err != nil {
+		return nil, err
+	}
+	named, err := dependentsOf(diff, *table, dropped, semantics)
+	if err != nil {
 		return nil, err
 	}
 	createNode.Name = qualifyLikeTable(*table, tempName)
@@ -689,13 +693,24 @@ func (p *Planner) rebuildTable(
 	rebuild := sqliterebuild.CopyStatement{New: createNode.Name, Old: table.QualifiedName()}
 	nodes := []ast.Node{
 		ast.NewDescriptiveComment("SQLite table rebuild for changes ALTER TABLE cannot express on " + table.QualifiedName()),
+	}
+	if named {
+		nodes = append(nodes,
+			ast.NewDescriptiveComment("Leave the views and triggers that name "+table.QualifiedName()+" as they are during the rename"),
+			ast.NewRawSQL(legacyAlterOn),
+		)
+	}
+	nodes = append(nodes,
 		createNode,
 		ast.NewRawSQL(rebuild.CopyRows(quoteIdentifierList(copiedColumnNames(columns)), copiedColumnSelectList(columns))),
 		ast.NewDropTable(table.QualifiedName()),
 		ast.NewRawSQL(rebuild.Rename()),
+	)
+	if named {
+		nodes = append(nodes, ast.NewRawSQL(legacyAlterOff))
 	}
 	nodes = append(nodes, p.recreateTableIndexes(*table, declared.Indexes)...)
-	kept, err := recreateKeptIndexes(declared, slices.Concat(observed.Indexes, carried.indexes), newColumns, diff)
+	kept, err := recreateKeptIndexes(declared, slices.Concat(observed.Indexes, carried.indexes), newColumns, dropped, diff)
 	if err != nil {
 		return nil, err
 	}
@@ -938,12 +953,14 @@ func (p *Planner) recreateTableIndexes(table schemamodel.Table, indexes []schema
 //
 // An index over a column the rebuilt table leaves out cannot be kept, so the
 // plan refuses it by name. columns is the identity of every column the rebuilt
-// table holds. An expression key is left to the server, since the columns an
-// expression reads are not recorded.
+// table holds, and dropped names the live columns it leaves out. A key
+// expression and a WHERE clause are read from the stored statement, so an
+// index that reads a dropped column there is refused too, rather than left to
+// fail at CREATE INDEX after the old table is gone.
 func recreateKeptIndexes(
 	declared schemacapture.TableDeclaration,
 	observed []catalog.Index,
-	columns map[string]bool,
+	columns, dropped map[string]bool,
 	diff *difftypes.SchemaDiff,
 ) ([]ast.Node, error) {
 	semantics := diff.EffectiveIdentifierSemantics(DialectName)
@@ -964,6 +981,14 @@ func recreateKeptIndexes(
 			if !columns[semantics.ColumnIdentityKey(column)] {
 				return nil, unsupportedFeaturef(
 					"rebuilding table %s cannot keep index %s: the rebuilt table has no column %s. "+
+						"Keep the column, or remove the index in a separate migration first",
+					declared.Table.QualifiedName(), index.Name, column)
+			}
+		}
+		for _, column := range slices.Sorted(maps.Keys(dropped)) {
+			if indexReads(index.Definition, column, semantics) {
+				return nil, unsupportedFeaturef(
+					"rebuilding table %s cannot keep index %s: its statement reads column %s, which the rebuilt table drops. "+
 						"Keep the column, or remove the index in a separate migration first",
 					declared.Table.QualifiedName(), index.Name, column)
 			}

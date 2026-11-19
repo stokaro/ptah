@@ -135,6 +135,17 @@ enforcement on its connection instead, runs the plan, and runs
 the plan and rolls it back. Declared rows in the same plan go inside the pair,
 ahead of the enabling pragma, so the plan still ends with it.
 
+SQLite checks every view and trigger when a table is renamed, and the rename
+fails while one names a table that does not exist. The rebuild drops the old
+table before it renames the new one, so a view that selects from the table, or a
+trigger of another table that writes it, would fail the rename. Where the plan
+sees such an object, declared or kept out of scope by a selector, it renames
+between `PRAGMA legacy_alter_table = on;` and `PRAGMA legacy_alter_table = off;`,
+and the object names the table again once the new table takes its name. The
+pragma takes effect inside a transaction, and `ptah schema apply` puts back the
+value it found when the transaction ends. A rebuild that nothing else names
+renames without the pair.
+
 ## What a rebuild still refuses
 
 A rebuild is planned automatically wherever it can be. These are the cases it
@@ -148,7 +159,8 @@ cannot, each refused before any SQL runs and each naming what to do instead.
 | A trigger whose body is itself a `CREATE TRIGGER` statement | Recreating it would nest one trigger inside another | Declare the body as the statements the trigger runs, without the `CREATE TRIGGER` header |
 | An `EXCLUDE` constraint | SQLite has no such constraint | Express the rule as a `UNIQUE` index when it compares whole values for equality, or as a `CHECK` constraint or trigger when it does not |
 | A constraint change the comparison cannot attribute to a table | The rebuild does not know which table to rebuild | Declare the constraint on its table |
-| An index `diff.skip: [drop_index]` keeps over a column the rebuild removes | The rebuilt table has no column for the index to cover | Keep the column, or remove the index in a separate migration first |
+| An index `diff.skip: [drop_index]` or a selector keeps whose columns, key expression or `WHERE` clause read a column the rebuild removes | The rebuilt table has no column for the index to read | Keep the column, or remove the index in a separate migration first |
+| A view, or a trigger of another table, that reads a column the rebuild removes | The rename leaves it as it is, and it would fail the first time it runs | Keep the column, or change the view or trigger first |
 
 A table already holding `new_<name>` is **not** refused. That name is
 an ordinary identifier and a schema is allowed to use it, so the rebuild's

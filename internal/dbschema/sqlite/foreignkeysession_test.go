@@ -135,8 +135,7 @@ func TestRebuildTransactionRefusesToOrphanARow(t *testing.T) {
 
 	err := tx.Commit()
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "unresolved foreign-key reference")
-	c.Assert(err.Error(), qt.Contains, "c references missing t")
+	c.Assert(err.Error(), qt.Contains, "sqlite: rebuild leaves rows that violate a foreign key: 1 row(s) of c violate the foreign key to t")
 
 	// The refusal rolled the rebuild back rather than leaving it half-applied.
 	c.Assert(scalar(t, db, `SELECT count(*) FROM t`), qt.Equals, "1")
@@ -164,7 +163,7 @@ func TestRefusedRebuildLeavesAPinnedConnectionUsable(t *testing.T) {
 
 	err = tx.Commit()
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "unresolved foreign-key reference")
+	c.Assert(err.Error(), qt.Contains, "violate the foreign key to t")
 
 	// The connection answers, which it cannot do with a transaction still open
 	// on it, and it answers with the schema the refusal preserved.
@@ -227,6 +226,42 @@ func TestRebuildTransactionRestoresEnforcementOnTheConnection(t *testing.T) {
 				qt.IsNil,
 			)
 			c.Assert(enforced, qt.Equals, 1)
+		})
+	}
+}
+
+// A rebuild plan turns legacy_alter_table on around a rename that a view or a
+// trigger names, and off after it. A plan that stops between the two leaves it
+// on, and the connection would then rename tables without rewriting what names
+// them for whoever borrows it next. The session puts back the value it found,
+// whether the transaction commits or rolls back.
+func TestRebuildTransactionRestoresTheRenameSettingOnTheConnection(t *testing.T) {
+	tests := []struct {
+		name   string
+		finish func(tx catalog.SchemaTransaction) error
+	}{
+		{name: "after a commit", finish: catalog.SchemaTransaction.Commit},
+		{name: "after a rollback", finish: catalog.SchemaTransaction.Rollback},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			db := openRebuildDB(t)
+			seedReferencedTable(t, db)
+
+			conn, err := db.Conn(boundedContext(t))
+			c.Assert(err, qt.IsNil)
+			defer func() { c.Assert(conn.Close(), qt.IsNil) }()
+
+			writer := sqlite.NewSQLiteWriterForConnection(conn, "")
+			tx := beginRebuild(t, writer)
+			c.Assert(executeAll(t, tx, []string{"PRAGMA legacy_alter_table = on"}), qt.IsNil)
+			c.Assert(tt.finish(tx), qt.IsNil)
+
+			var legacy int
+			c.Assert(conn.QueryRowContext(boundedContext(t), "PRAGMA legacy_alter_table").Scan(&legacy), qt.IsNil)
+			c.Assert(legacy, qt.Equals, 0)
 		})
 	}
 }

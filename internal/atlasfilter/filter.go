@@ -179,8 +179,11 @@ func excludeDatabase(
 
 // outOfScopeParts returns the parts of the tables filtered keeps that read
 // reported and filtered left out, after the parts read already held out of
-// scope. A part of a table filtered does not keep is not one: a table out of
-// scope is not changed, so nothing has to carry its parts.
+// scope. The columns, indexes and constraints of a table filtered does not
+// keep are not among them: a table out of scope is not changed, so nothing has
+// to carry its parts. Every trigger and view filtered left out is, whatever
+// table it belongs to or reads: a plan that writes a kept table anew must not
+// break one that names it.
 //
 // It compares the two descriptions rather than asking each filter what it
 // removed, so a part every rule below takes out is carried alike: a column a
@@ -218,8 +221,18 @@ func outOfScopeParts(read, filtered *catalog.Database) catalog.TableParts {
 	}
 	parts.Indexes = leftOutParts(read.OutOfScope.Indexes, read.Indexes, filtered.Indexes, keptTable, indexPartKey, catalog.Index.Clone)
 	parts.Constraints = leftOutParts(read.OutOfScope.Constraints, read.Constraints, filtered.Constraints, keptTable, constraintPartKey, catalog.Constraint.Clone)
-	parts.Triggers = leftOutParts(read.OutOfScope.Triggers, read.Triggers, filtered.Triggers, keptTable, triggerPartKey, catalog.Trigger.Clone)
+	anyTable := func(string, string) bool { return true }
+	parts.Triggers = leftOutParts(read.OutOfScope.Triggers, read.Triggers, filtered.Triggers, anyTable, triggerPartKey, catalog.Trigger.Clone)
+	parts.Views = leftOutParts(read.OutOfScope.Views, read.Views, filtered.Views, anyTable, viewPartKey, cloneViewPart)
 	return parts
+}
+
+// cloneViewPart copies a view with independent attribute and option lists,
+// so the out-of-scope copy shares no backing array with the read.
+func cloneViewPart(view catalog.View) catalog.View {
+	view.Attributes = slices.Clone(view.Attributes)
+	view.Options = slices.Clone(view.Options)
+	return view
 }
 
 // partKey names one part of a table, or the table itself with an empty kind
@@ -279,6 +292,10 @@ func constraintPartKey(constraint catalog.Constraint) partKey {
 
 func triggerPartKey(trigger catalog.Trigger) partKey {
 	return partKey{schema: trigger.Schema, table: trigger.Table, kind: "trigger", name: trigger.Name}
+}
+
+func viewPartKey(view catalog.View) partKey {
+	return partKey{schema: view.Schema, kind: "view", name: view.Name}
 }
 
 // unfilteredReport is the report for a state no pattern was ever tested

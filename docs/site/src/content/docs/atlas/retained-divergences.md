@@ -1048,6 +1048,9 @@ Ptah names the key under `[type=fk]`, `[type=foreign_key]` and
 `[type=foreign-key]`, and leaves the index the server built out with it, so the
 plan is synced. An index the author declared stays in
 the plan on both binaries, and the server refuses its removal the same way.
+The binary keeps a foreign key only under `[type=fk]`. Ptah keeps it under all
+three spellings, deliberately, since a selector is written to keep what it
+names.
 
 On SQLite, a plan changes most of a table by writing a new one from the
 declaration and copying the rows, and the declaration holds nothing a selector
@@ -1078,12 +1081,19 @@ With the table holding a column `UNIQUE`, the check `code_len` and the index
 - `kinds.*` leaves out every column of the table and its constraints with them,
   and both binaries plan nothing.
 
+A column with `AUTOINCREMENT` keeps the keyword on its own `PRIMARY KEY`
+clause where the declaration holds no primary key. A view, or a trigger of
+another table, that names the rebuilt table stays as it is, because the plan
+renames the new table with `legacy_alter_table` on.
+
 Where a part cannot be carried as it stands, `ptah-compat` refuses the plan and
-names the part: a trigger or a `CHECK` that reads a column the new table drops,
-a constraint or an index over such a column, a primary key beside the one the
-declaration holds, and a column with `AUTOINCREMENT`. With a trigger that reads
-`extra` and a selector that keeps only the trigger, the binary applies and
-leaves the trigger out; `ptah-compat` stops before any change.
+names the part. A part is refused when it reads a column the new table drops: a
+trigger, a `CHECK`, a generated column, a view, a constraint over the column,
+and an index whose columns, key expression or `WHERE` clause read it. A primary
+key beside the one the declaration holds is refused too, and so is a column with
+`AUTOINCREMENT` beside a declared primary key. With a trigger that reads `extra`
+and a selector that keeps only the trigger, the binary applies and leaves the
+trigger out; `ptah-compat` stops before any change.
 
 **Evidence.** `integration/constraint_selector_e2e_test.go`,
 `integration/exclusion_selector_e2e_test.go`,
@@ -1092,6 +1102,7 @@ leaves the trigger out; `ptah-compat` stops before any change.
 `integration/sqlite_rebuild_carry_e2e_test.go`,
 `internal/atlasfilter/constraint_selector_test.go`,
 `internal/atlasfilter/foreign_key_backing_test.go`,
+`internal/planner/dialects/sqlite/dependents_test.go`,
 `internal/planner/dialects/sqlite/out_of_scope_test.go`
 
 ## One version spelled two ways
