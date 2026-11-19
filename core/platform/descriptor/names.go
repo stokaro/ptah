@@ -155,15 +155,52 @@ type Columns struct {
 	// Collations reports that a column's own collation is written on the
 	// column and compared with the one the catalog reports the column
 	// declaring. A column that declares none takes its type's collation, so
-	// one the catalog reports declaring a collation is changed back. Names
-	// compare exactly where Grammar.Columns.QualifiedCollations holds, and
-	// ignoring ASCII case elsewhere.
+	// one the catalog reports declaring a collation is changed back, unless
+	// InheritedCollationVaries holds. Names compare exactly where
+	// Grammar.Columns.QualifiedCollations holds, and ignoring ASCII case
+	// elsewhere.
 	Collations bool `json:"collations,omitempty"`
 	// InheritedCollation is the collation every column that declares none
 	// compares with, whatever its type: BINARY on SQLite. A declaration
 	// naming it holds against a column that declares none. Empty means the
 	// type decides, and the catalog reports the collation the column takes.
 	InheritedCollation string `json:"inherited_collation,omitempty"`
+	// InheritedCollationVaries reports that a column declaring no collation
+	// takes one the server picks: its table's default, or the default
+	// collation of a character set the column names, as MySQL and MariaDB
+	// do. Only the server knows which that is, so the comparison compares a
+	// collation only where the column declares one, against the collation
+	// the column holds.
+	InheritedCollationVaries bool `json:"inherited_collation_varies,omitempty"`
+	// CollationNames states how the server resolves a collation name a column
+	// declares where InheritedCollationVaries holds. The zero value resolves
+	// every name to itself.
+	CollationNames CollationNames `json:"collation_names,omitzero"`
+}
+
+// CollationNames states the collation names a server stores under another
+// name, or keeps no collation for. A column that declares such a name holds
+// the name the server stores, and a comparison that read the name as written
+// would restate the column on every run.
+type CollationNames struct {
+	// CharsetAliases maps a character set name a definition may write to the
+	// name the server stores it under, in lower case: utf8 to utf8mb3 on MySQL
+	// 8.4 and MariaDB 11.8. A collation named after the alias is stored under
+	// the other name, so `COLLATE utf8_bin` holds as utf8mb3_bin.
+	CharsetAliases map[string]string `json:"charset_aliases,omitempty"`
+	// WithoutCharset reports that a collation may be named without its
+	// character set and takes the column's: `COLLATE uca1400_ai_ci` on a
+	// utf8mb4 column of MariaDB 11.8 holds as utf8mb4_uca1400_ai_ci.
+	WithoutCharset bool `json:"without_charset,omitempty"`
+	// CharsetDefault is the name that selects the default collation of the
+	// column's character set, `DEFAULT` on MariaDB 11.8. A column that
+	// declares it is compared as one that declares none.
+	CharsetDefault string `json:"charset_default,omitempty"`
+	// Types are the type names, in lower case and without a size, whose
+	// columns hold a collation. The server accepts a collation on another
+	// type and keeps none, as MySQL 8.4 does for `int COLLATE utf8mb4_bin`,
+	// so a collation declared there is not compared.
+	Types []string `json:"types,omitempty"`
 }
 
 // Statements states how a server reads statements a schema file writes about

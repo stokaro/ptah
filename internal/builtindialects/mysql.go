@@ -139,7 +139,19 @@ func mysql() descriptor.Dialect {
 			MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true, BaseBytes: 61,
 		},
 		CheckNaming: descriptor.CheckNamingTableNumbered,
-		Columns:     descriptor.Columns{NationalCharAsChar: true, NationalCharCharset: "utf8mb3", CheckOwnColumnOnly: true},
+		Columns: descriptor.Columns{
+			NationalCharAsChar: true, NationalCharCharset: "utf8mb3", CheckOwnColumnOnly: true,
+			Collations: true, InheritedCollationVaries: true,
+			// Measured on MySQL 8.4.13 and 26.10.0: utf8_bin is stored as
+			// utf8mb3_bin, and int COLLATE utf8mb4_bin keeps no collation.
+			CollationNames: descriptor.CollationNames{
+				CharsetAliases: map[string]string{"utf8": "utf8mb3"},
+				Types: []string{
+					"char", "character", "nchar", "national", "varchar", "nvarchar",
+					"tinytext", "text", "mediumtext", "longtext", "enum", "set",
+				},
+			},
+		},
 
 		// Dev databases.
 		DevRealm: descriptor.DevRealm{
