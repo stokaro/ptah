@@ -250,10 +250,11 @@ make integration-test            # Docker Compose suite; binds fixed host ports
 
 ### Lint rules
 
-A new lint rule needs its meaning in `internal/lintcatalog`, which holds the
-identifier convention and feeds the generated rule page;
-`scripts/check-docsync.sh` fails when they disagree. `preConventionCodes` may
-shrink, never grow: rename a new rule that fails the convention.
+A new lint rule needs its meaning and its Ptah name, `category/name` under a
+category declared there, in `internal/lintcatalog`, which holds the identifier
+convention and feeds the generated rule page; `scripts/check-docsync.sh` fails
+when they disagree. `preConventionCodes` may shrink, never grow: rename a new
+rule that fails the convention.
 
 ### The Go toolchain
 
