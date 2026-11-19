@@ -22,6 +22,11 @@ Search the existing issues first. Ptah is pre-GA and moves quickly, so a
 surprising behavior is often already recorded, sometimes with the measurement
 that explains it.
 
+Use a plain-English title that names the problem or needed result. Start
+with a short explanation of what is wrong or missing and why it matters,
+following [PR and issue writing](AGENTS.md#pr-and-issue-writing).
+Put reproduction steps and technical evidence after that introduction.
+
 Say which binary you ran. `ptah` and `ptah-compat` present different command
 surfaces on purpose, and the same flag can mean different things on each, so the
 surface is part of the report rather than a detail.
@@ -66,6 +71,7 @@ Use an imperative subject under about 72 characters that names the purpose
 of the complete change.
 
 Use the [PR template](.github/pull_request_template.md) and follow
+[PR and issue writing](AGENTS.md#pr-and-issue-writing) and
 [Pull request descriptions](AGENTS.md#pull-request-descriptions).
 Explain the need, resulting behavior, material risks, and observed checks.
 Describe non-obvious decisions without listing edits file by file.

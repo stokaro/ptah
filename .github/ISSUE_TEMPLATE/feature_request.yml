@@ -5,15 +5,17 @@ body:
   - type: markdown
     attributes:
       value: |
-        Describe the task and the outcome you need rather than the flag you have
-        in mind. The need often already has a spelling, and where it does not,
-        the shape it should take depends on which workflow it belongs to.
+        Give this issue a short title in plain English that says what you need to do.
+        Describe the task and why it matters before suggesting commands or designs.
 
   - type: textarea
     id: task
     attributes:
       label: What are you trying to do
-      description: The task, and why the outcome matters. Not the option you imagine.
+      description: >-
+        In a short paragraph, explain what you need to do, what is missing or
+        difficult today, and why that matters. Use familiar words. Leave proposed
+        commands and implementation details for the optional field below.
     validations:
       required: true
 
