@@ -65,6 +65,10 @@ type GeneratedColumnProbe struct {
 // returned with Resolved false rather than omitted, for the reason
 // [ResolveCheckExpressions] gives, and the server's answer is returned among
 // the refusals, so the caller can say why the column is compared as written.
+// A server that offers no temporary table at all, as CockroachDB by default,
+// refuses every probe for that reason alone, which is about the server and
+// not about a column: its columns are returned with Resolved false and none
+// of them is a refusal, as [ResolveColumnSpellings] does.
 //
 // Only a server whose descriptor names the pg-catalog probes is asked; every
 // other dialect returns nil. Oracle's generated columns are resolved by
@@ -96,7 +100,7 @@ func ResolveGeneratedColumns(
 			continue
 		}
 		resolved[probe.Key] = answer.expression
-		if answer.refusal != nil {
+		if answer.refusal != nil && !temporaryTablesUnavailable(answer.refusal) {
 			refusals = append(refusals, GeneratedColumnRefusal{
 				Key: probe.Key, Schema: probe.Schema, Table: probe.Table, Column: probe.Column, Reason: answer.refusal,
 			})

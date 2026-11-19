@@ -189,7 +189,7 @@ func TestDefaultValue_FoldsOnlyAValuePreservingCast(t *testing.T) {
 		{name: "a date literal on a timestamp column", input: "'2020-01-01 10:30'::date", typeName: "timestamp", want: "'2020-01-01 10:30'::date"},
 		{name: "a decimal to a float can round", input: "0.1::real", typeName: "decimal", want: "0.1::real"},
 		{name: "parentheses that group stay", input: "(1 + 2.5)::integer", typeName: "numeric", want: "(1 + 2.5)::integer"},
-		{name: "an array constructor to the column's type", input: "ARRAY[]::text[]", typeName: "text[]", want: "ARRAY[]"},
+		{name: "an array constructor to the column's type", input: "ARRAY[]::text[]", typeName: "text[]", want: "{}"},
 		{name: "a decimal to the column's own integer type", input: "(1.5)::integer", typeName: "integer", want: "1.5"},
 		{name: "a length on the column's own type truncates", input: "'abcd'::varchar(3)", typeName: "varchar(10)", want: "'abcd'::varchar(3)"},
 		{name: "a cast with no column type known stays", input: "ARRAY[]::text[]", typeName: "", want: "ARRAY[]::text[]"},

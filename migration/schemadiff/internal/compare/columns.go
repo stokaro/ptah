@@ -1337,7 +1337,7 @@ func isEmptyString(value string) bool {
 // declared literal arrives here quoted ([comparableExpressionDefaults]), so it
 // is a string whatever its characters.
 func stringMeetsExpression(declared, reported, typeName string) bool {
-	if !defaultlit.StoresText(typeName) {
+	if _, isArray := normalize.ArrayElement(typeName); isArray || !defaultlit.StoresText(typeName) {
 		return false
 	}
 	declaredString := normalize.IsStringLiteral(declared)

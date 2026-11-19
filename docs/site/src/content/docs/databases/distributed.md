@@ -57,6 +57,14 @@ anything is read, and is never inspected or planned as PostgreSQL.
   as `VIRTUAL`. A `VIRTUAL` column is read and printed `VIRTUAL`, and a plan
   that would change a column's kind stops, as on PostgreSQL; see
   [The kind of a generated column](../postgresql/#the-kind-of-a-generated-column).
+  CockroachDB offers no temporary table by default, so it cannot spell a
+  declared default or generated expression the way it stores one, and a run
+  does not warn about that. The comparison reads the forms it stores instead:
+  a negative number in parentheses, as `(-1)`, `CURRENT_DATE` written as
+  `current_date()`, and an array literal such as `'{a,b}'` stored as
+  `ARRAY['a', 'b']`. An array default whose elements are numbers, strings or
+  `NULL` is compared as the text PostgreSQL prints for it, `{a,b}`; any other
+  array default is compared as written.
 - **YugabyteDB**: the preset includes concurrent index creation, role
   management, row-level security, standalone sequences, `XML` columns, and
   advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`
