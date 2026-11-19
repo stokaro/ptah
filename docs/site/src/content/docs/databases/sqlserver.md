@@ -538,13 +538,10 @@ it, directly above the statement it suppresses.
 
 ## Views that read other views
 
-The server checks a view's query when the view is created. Ptah creates each
-view the plan adds or replaces after the views of the plan its body reads, or
-that `depends_on` names. A name is a read where a relation can appear, as after
-`FROM` or a `JOIN`; a column alias, a table alias or a common table expression
-that has the name of another view is not. Views the plan adds that read one
-another in a ring are refused by name before anything is applied, because no
-order creates them.
+SQL Server checks a view's query when the view is created, so Ptah creates each view
+after the views it reads and refuses views that read one another in a ring;
+[Views that read other views](../mysql/#views-that-read-other-views)
+on the MySQL page says what counts as a read.
 
 ## Triggers
 
