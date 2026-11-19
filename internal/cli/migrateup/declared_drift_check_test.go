@@ -201,3 +201,39 @@ func TestMigrateUpDeclaredDriftCheckFailurePathNeedsADevDatabase(t *testing.T) {
 		`the applied history is replayed on it`)
 	c.Assert(countRevisionTables(c, dbPath), qt.Equals, 0)
 }
+
+// TestMigrateUpMalformedCheckDriftVariable_FailurePath refuses a
+// PTAH_CHECK_DRIFT that is not a boolean before the run opens the target,
+// with three migrations pending, whether or not the project declares a drift
+// check: the variable is never read as the default, and no file of the
+// target is created.
+func TestMigrateUpMalformedCheckDriftVariable_FailurePath(t *testing.T) {
+	rows := []struct {
+		name    string
+		project string
+	}{
+		{name: "no declared drift check", project: "env \"local\" {\n}\n"},
+		{
+			name:    "a declared drift check",
+			project: "env \"local\" {\n  dev = \"sqlite://file?mode=memory\"\n  check \"migrate_apply\" {\n    drift {}\n  }\n}\n",
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			t.Setenv("PTAH_CHECK_DRIFT", "maybe")
+			c := qt.New(t)
+			migrationsDir := writeThreeUpMigrations(c)
+			dbPath := filepath.Join(c.TempDir(), "never-opened.db")
+			config := filepath.Join(c.TempDir(), "atlas.hcl")
+			c.Assert(os.WriteFile(config, []byte(row.project), 0o600), qt.IsNil)
+
+			out, code := runUpExit(c, "--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir,
+				"--config", config, "--env", "local")
+
+			c.Assert(code, qt.Equals, 2, qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, `invalid boolean value "maybe" for PTAH_CHECK_DRIFT`)
+			_, statErr := os.Stat(dbPath)
+			c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+		})
+	}
+}

@@ -317,7 +317,9 @@ func (p ApplyPlan) RevisionTable() (schema, table string) {
 
 // WithPlanGuard returns the plan with guard set to decide, under the migration
 // lock and before any change, whether the selection may run; see
-// [migrator.MigrateUpOptions.PlanGuard]. A nil guard decides nothing.
+// [migrator.MigrateUpOptions.PlanGuard]. A nil guard decides nothing. The
+// result's StartedAt is when the guard let the plan through, so the time the
+// guard takes is not reported as migration time.
 func (p ApplyPlan) WithPlanGuard(guard migrator.MigrationPlanGuard) ApplyPlan {
 	p.planGuard = guard
 	return p
@@ -342,6 +344,23 @@ func (p ApplyPlan) ExecuteWithPreflight(
 	hook migrator.PreMigrationHook,
 ) (ApplyResult, error) {
 	return p.execute(ctx, hook)
+}
+
+// timedPlanGuard is the plan guard the run was given, which restarts the
+// run's clock in result when it lets the plan through. The report times each
+// migration from that clock, so the guard's own work, such as the replay of a
+// drift check, is not charged to the first migration.
+func (p ApplyPlan) timedPlanGuard(result *ApplyResult) migrator.MigrationPlanGuard {
+	if p.planGuard == nil {
+		return nil
+	}
+	return func(ctx context.Context, plan migrator.MigrationPlan) error {
+		if err := p.planGuard(ctx, plan); err != nil {
+			return err
+		}
+		result.StartedAt = time.Now()
+		return nil
+	}
 }
 
 func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) (ApplyResult, error) {
@@ -387,7 +406,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 			result.ChecksDeferred = versions
 			result.ChecksDeferredKeys = revisionKeysForVersions(p.Migrations, versions)
 		},
-		PlanGuard: p.planGuard,
+		PlanGuard: p.timedPlanGuard(&result),
 	})
 	result.EndedAt = time.Now()
 	result.Executed = executionStarted
