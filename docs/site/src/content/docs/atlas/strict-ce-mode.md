@@ -102,7 +102,10 @@ discarding it:
   `data "composite_schema"` block, declared or referenced, and a reference to a
   `docker` block's `url`, which Atlas CE refuses with `Unsupported attribute`;
 - Atlas txtar, Ptah directives, and SQL templates for commands that execute,
-  convert, or replay migration bodies.
+  convert, or replay migration bodies;
+- the pre-apply drift check an `atlas.hcl` env declares in
+  `check "migrate_apply"`, which Atlas CE ignores; see
+  [Pre-apply drift check](../project-config/#pre-apply-drift-check).
 
 Checksum-only migration reads preserve those bytes because they do not execute
 or reinterpret the body.

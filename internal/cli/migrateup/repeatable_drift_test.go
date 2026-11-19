@@ -8,7 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/dbschema"
-	"ptah.run/internal/cli/migrateup"
+	"ptah.run/internal/driftgate"
 )
 
 // The drift tests apply a directory whose repeatable migration builds a view,
@@ -103,7 +103,7 @@ func TestCheckDriftRepeatables_FailurePath(t *testing.T) {
 		_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
 			"--check-drift", "--shadow-db", shadowURL)
 
-		c.Assert(err, qt.ErrorAs, new(*migrateup.DriftError))
+		c.Assert(err, qt.ErrorAs, new(*driftgate.DriftError))
 		c.Assert(err, qt.ErrorMatches, `error running migrations: the database schema differs from the schema its 1 applied migration and `+
 			`1 repeatable migration produce, in 1 place, so no pending migration was run; first: missing view user_emails`)
 		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1})
@@ -121,7 +121,7 @@ func TestCheckDriftRepeatables_FailurePath(t *testing.T) {
 		_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
 			"--check-drift", "--shadow-db", shadowURL)
 
-		c.Assert(err, qt.ErrorAs, new(*migrateup.DriftError))
+		c.Assert(err, qt.ErrorAs, new(*driftgate.DriftError))
 		c.Assert(err, qt.ErrorMatches, `(?s)error running migrations: the database schema differs from the schema its 1 applied `+
 			`migration and 1 repeatable migration produce, .*user_emails.*`)
 		c.Assert(seqRevisions(c, dbPath), qt.DeepEquals, []int64{1})
@@ -140,7 +140,7 @@ func TestCheckDriftRepeatables_FailurePath(t *testing.T) {
 		_, err = runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
 			"--allow-dirty", "--check-drift", "--shadow-db", shadowURL)
 
-		c.Assert(err, qt.ErrorAs, new(*migrateup.DriftCheckUnavailableError))
+		c.Assert(err, qt.ErrorAs, new(*driftgate.UnavailableError))
 		c.Assert(err, qt.ErrorMatches, `error running migrations: the drift check could not compare the database with its applied history, `+
 			`so no pending migration was run: the applied history cannot be replayed: repeatable migration user_emails: `+
 			`its last attempt is failed and ran outside a transaction, so what it left in the database is unknown`)

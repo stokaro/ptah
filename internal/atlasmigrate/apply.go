@@ -127,6 +127,7 @@ type ApplyPlan struct {
 	opts                   ApplyOptions
 	assumedAppliedVersions []int64
 	assumedAppliedKeys     []string
+	planGuard              migrator.MigrationPlanGuard
 }
 
 // ApplyResult contains execution metadata needed by CLI output and Atlas
@@ -314,6 +315,20 @@ func (p ApplyPlan) RevisionTable() (schema, table string) {
 	return p.opts.RevisionsSchema, revisiontable.Atlas
 }
 
+// WithPlanGuard returns the plan with guard set to decide, under the migration
+// lock and before any change, whether the selection may run; see
+// [migrator.MigrateUpOptions.PlanGuard]. A nil guard decides nothing.
+func (p ApplyPlan) WithPlanGuard(guard migrator.MigrationPlanGuard) ApplyPlan {
+	p.planGuard = guard
+	return p
+}
+
+// AppliedHistory reads the history the target's revision table records, as
+// [migrator.Migrator.AppliedHistory] does for the migrator the plan runs.
+func (p ApplyPlan) AppliedHistory(ctx context.Context) (migrator.AppliedHistory, error) {
+	return p.mig.AppliedHistory(ctx)
+}
+
 // Execute applies the selected plan. Dry-run and no-op plans return metadata
 // without modifying schema state.
 func (p ApplyPlan) Execute(ctx context.Context) (ApplyResult, error) {
@@ -372,6 +387,7 @@ func (p ApplyPlan) execute(ctx context.Context, hook migrator.PreMigrationHook) 
 			result.ChecksDeferred = versions
 			result.ChecksDeferredKeys = revisionKeysForVersions(p.Migrations, versions)
 		},
+		PlanGuard: p.planGuard,
 	})
 	result.EndedAt = time.Now()
 	result.Executed = executionStarted

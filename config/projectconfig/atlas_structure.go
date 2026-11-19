@@ -87,6 +87,28 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 		allowUnknownAttributes: true,
 		allowUnknownBlocks:     true,
 		blocks: map[string]atlasBlockStructure{
+			// `check "migrate_apply" { drift { ... } }` is the pre-apply drift
+			// check [atlasParser.parseCheck] reads. A check with another
+			// label, or with no drift block, is tolerated there and reported
+			// as ignored; a check written with no label or with two takes the
+			// unknown-block path here.
+			"check": {
+				labels:                  1,
+				tolerateOtherLabelArity: true,
+				body: atlasBodyStructure{
+					allowUnknownAttributes: true,
+					allowUnknownBlocks:     true,
+					blocks: map[string]atlasBlockStructure{
+						"drift": {
+							body: atlasBodyStructure{
+								attributes:             []string{"exclude", "on_error"},
+								allowUnknownAttributes: true,
+								allowUnknownBlocks:     true,
+							},
+						},
+					},
+				},
+			},
 			"diff": {
 				body: atlasBodyStructure{
 					allowUnknownAttributes: true,

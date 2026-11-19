@@ -41,6 +41,8 @@ Ptah accepts these local configuration blocks:
 - top-level and env-local `lint`
 - top-level `exporter` for named output templates
 - env-local `schema`, `migration`, `format`, and `diff`
+- env-local `check "migrate_apply"` holding a `drift` block; see
+  [Pre-apply drift check](#pre-apply-drift-check)
 
 Referenced Atlas Cloud and remote-directory sources, registry constructs, and
 unsupported data-source types fail explicitly.
@@ -145,6 +147,8 @@ env "local" {
 | `diff.skip.drop_index` | Omits standalone index drops and their comment cleanup from the same commands. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
+| `check "migrate_apply".drift.on_error` | Whether `migrate apply` stops on drift (`FAIL`, the default) or reports it and applies (`CONTINUE`). |
+| `check "migrate_apply".drift.exclude` | Resource exclusion filters for the drift check; they replace `env.exclude` for it. |
 
 ### `diff.skip`
 
@@ -335,6 +339,84 @@ expanded value can be a supported local file, database URL, or declared
 external schema program. `env://url` and `env://dev` resolve the corresponding
 database URL; `env://migration.dir` resolves the configured local migration
 directory. Nested `env://` references fail explicitly.
+
+## Pre-apply drift check
+
+When the selected env declares a drift check, `migrate apply` compares the
+target with the schema its applied migrations produce before any pending file
+runs:
+
+```hcl
+env "prod" {
+  url = getenv("DATABASE_URL")
+  dev = "docker://postgres/17/dev"
+  migration {
+    dir = "file://migrations"
+  }
+  check "migrate_apply" {
+    drift {
+      on_error = FAIL
+      exclude  = ["audit_log"]
+    }
+  }
+}
+```
+
+The check is the one `ptah migrations up --check-drift` runs, and
+[Check the schema against its history](../../versioned/apply/#check-the-schema-against-its-history)
+describes what it compares and when it cannot decide. Under the migration lock,
+it replays the migrations the revision table records as applied on the env's
+`dev` database and compares that schema with the target's.
+
+| Setting | Behavior |
+| --- | --- |
+| `on_error = FAIL` | The default. A target that differs stops the run before any pending file, and the command exits with status 1. |
+| `on_error = CONTINUE` | The differences are reported and the pending files run. A check that cannot compare is reported, and the run goes on. |
+| `exclude` | Replaces `env.exclude` for the check and takes the same selectors. The revision table and its schema are always left out. |
+
+`on_error` is the identifier `FAIL` or `CONTINUE`, and an expression may choose
+between them. Any other value is refused. A target with no applied migration
+has no history to compare with, so the check is skipped and says so. The env
+needs a `dev` database, and without one the run is refused before it connects:
+
+```text
+Error: atlas.hcl check "migrate_apply" drift at atlas.hcl:7 needs the env's dev database: the applied history is replayed on it
+```
+
+What the check found goes to standard error. Standard output and the
+`--format` report stay what the community binary writes, and a refused run
+writes no report:
+
+```text
+Drift check: the database differs from the schema its 1 applied migration produces:
+  - extra column t.extra
+No pending migration was run. Bring the database back to its history, or record the change in a migration, then run again.
+Error: the database schema differs from the schema its 1 applied migration produces, in 1 place, so no pending migration was run; first: extra column t.extra
+```
+
+A clean check prints
+`Drift check: the database matches the schema its 1 applied migration produces`
+on standard error, and the run goes on.
+
+Only the `drift` block runs. Pre-execution `allow` and `deny` rules inside the
+check, unknown drift settings, a `check` with another label, and a `check`
+without a label are reported as ignored. A second `check "migrate_apply"` in
+one env, or a second `drift` block in one check, is refused.
+
+The pinned community binary has no drift check. It accepts `drift {}`, ignores
+it and applies on top of a drifted database, and it refuses `on_error = FAIL`
+as an unknown variable. Running the check is a capability Ptah adds, so
+[strict mode](../strict-ce-mode/) refuses the block before connecting:
+
+```text
+Error: Atlas Community Edition strict compatibility refuses atlas.hcl check "migrate_apply" drift at atlas.hcl:8: the pre-apply drift check is a capability Community Edition lacks
+```
+
+The native binary reads the same block. `ptah migrations up --config atlas.hcl
+--env prod` runs the declared check, with `--shadow-db` or the env's `dev`
+database as the replay target. A `--check-drift` value, from the flag or from
+`PTAH_CHECK_DRIFT`, wins over the block: `--check-drift=false` turns the check
+off, and `--check-drift` refuses on drift whatever `on_error` says.
 
 ## Functions
 
