@@ -101,7 +101,7 @@ line it has, and the run says so. `--format json` carries it as
 there the sentence is printed on stderr, beside the report on stdout:
 
 ```text
-warning: postgres 99 is newer than the newest measured release line 18.x; capabilities were planned as 18.x
+warning: postgres 99 is newer than the newest measured release line 19.x; capabilities were planned as 19.x
 ```
 
 ## Which direction each rule reads

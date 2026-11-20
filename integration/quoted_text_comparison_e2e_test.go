@@ -41,7 +41,7 @@ var quotedTextPostgresServers = []struct {
 	name   string
 	engine dbtarget.Engine
 }{
-	{name: "postgres-18", engine: dbtarget.PostgreSQL},
+	{name: "postgres-newest", engine: dbtarget.PostgreSQL},
 	{name: "postgres-16", engine: dbtarget.PostgreSQL16},
 }
 

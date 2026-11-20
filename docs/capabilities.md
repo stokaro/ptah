@@ -559,7 +559,7 @@ resolution := capability.ResolveServerVersion("mysql", "99.0")
 // resolution.Capabilities    == capability.MySQL84()
 // resolution.VersionSpecific == false   (the dialect default was used)
 // resolution.Saturated       == true    (99.x is past the newest measured line)
-// resolution.NewestMeasured  == "26.7"
+// resolution.NewestMeasured  == "26.10"
 // resolution.Recognized      == true    (99.0 is a version, just an unmeasured one)
 ```
 
@@ -569,12 +569,12 @@ The newest measured line per refined dialect:
 
 | Dialect | Newest measured line | Saturates above |
 | --- | --- | --- |
-| MySQL | 26.7 (`MySQL84()`) | 26.7 |
+| MySQL | 26.10 (`MySQL84()`) | 26.10 |
 | MariaDB | 12.3 (`MariaDB1011()`) | 12.3 |
-| PostgreSQL | 18.x (`Postgres17()`) | 18 |
+| PostgreSQL | 19.x (`Postgres18()`) | 19 |
 | CockroachDB | 26.4 (`CockroachDB263()`) | 26.4 |
 
-The matrix measured PostgreSQL 18.4, MySQL 26.7.0, MariaDB 12.3.2, and both
+The matrix measured PostgreSQL 19.0, MySQL 26.10.0, MariaDB 12.3.2, and both
 CockroachDB 25.4, 26.2, 26.3, and 26.4 before promoting those lines. MySQL,
 MariaDB, and CockroachDB match exact major/minor lines: an unmeasured sibling
 such as MySQL 26.6, MariaDB 12.2, or CockroachDB 26.1 is not reported as a
@@ -732,7 +732,7 @@ SQL Server is the entry with teeth. `@@VERSION` opens with the marketing year,
 so a resolver that reads the first number out of it reads `2025`; without the
 token, `ptah schema render --dialect postgres --server-version '<that banner>'`
 exits `0` and announces that it planned a PostgreSQL saturated past release line
-`18.x`. The token claims the banner for its own product first, and the number
+`19.x`. The token claims the banner for its own product first, and the number
 `ResolveServerVersion` then spends is the one after the dash — `17.0.4075.5`,
 which is the release line, rather than `2025`, which is the year on the box.
 
