@@ -282,31 +282,33 @@ func unquoteSchemaName(token lexer.Token) string {
 	return value
 }
 
-// inDevDatabase is state, the target's current schema read through target,
-// with the objects a one-database read names by the target's database moved
-// to dev's, where a schema is a database and the two connections select
-// databases of different names.
+// RebindDatabase is state, a schema read through source, with the objects a
+// one-database read names by source's database moved to destination's, where
+// a schema is a database and the two connections select databases of
+// different names. A dev database rehearses a target's schema with it, and the
+// drift check compares a shadow database's replay with the target with it.
 //
 // A read of one database records that database on each view, on each
 // ClickHouse materialized view, and on each MySQL or MariaDB routine and
 // MariaDB sequence, where a table is left unqualified, and the server
-// qualifies the relations of a stored view body with it. Recreated as read,
-// the baseline wrote `app`.`v` with a body reading `app`.`t` from a dev
-// database `appdev`, and the baseline guard refused it as a write to another
-// database. Each of these objects in the target's database is left
-// unqualified, as its tables are, and a view body reads the dev database's
+// qualifies the relations of a stored view body with it. Compared as read,
+// the same view in a shadow database `app_shadow` and in the target `app` is a
+// missing view and an extra view, and recreated as read on a dev database
+// `appdev` the baseline wrote `app`.`v`, which the baseline guard refused as a
+// write to another database. Each of these objects in source's database is
+// left unqualified, as its tables are, and a view body reads destination's
 // tables instead. A view body that also reads another database keeps that
-// name, and the guard refuses the statement as before.
+// name, and an object in another database keeps its qualifier.
 //
 // A routine body is not rewritten: it is procedural text, and a name in it
-// that reads the target's database is left as written. On a dev database of
-// the target's server the dev cleanup refuses first, since another database
+// that reads source's database is left as written. On a dev database of the
+// target's server the dev cleanup refuses first, since another database
 // holds a routine; on a dev server of its own the routine is created as
 // written, and a statement that calls it fails there as it would on any
 // server without that database. state is not modified.
-func inDevDatabase(state *catalog.Database, target, dev catalog.ServerInfo) *catalog.Database {
-	from, to := strings.TrimSpace(target.Schema), strings.TrimSpace(dev.Schema)
-	if state == nil || !schemaScopeNamesDatabase(dev.Dialect) || from == "" || to == "" || from == to {
+func RebindDatabase(state *catalog.Database, source, destination catalog.ServerInfo) *catalog.Database {
+	from, to := strings.TrimSpace(source.Schema), strings.TrimSpace(destination.Schema)
+	if state == nil || !schemaScopeNamesDatabase(destination.Dialect) || from == "" || to == "" || from == to {
 		return state
 	}
 	moved := *state
@@ -314,14 +316,14 @@ func inDevDatabase(state *catalog.Database, target, dev catalog.ServerInfo) *cat
 	for i := range moved.Views {
 		if moved.Views[i].Schema == from {
 			moved.Views[i].Schema = ""
-			moved.Views[i].Body = viewBodyInDev(moved.Views[i].Body, dev.Dialect, from, to)
+			moved.Views[i].Body = viewBodyInDev(moved.Views[i].Body, destination.Dialect, from, to)
 		}
 	}
 	moved.MatViews = slices.Clone(state.MatViews)
 	for i := range moved.MatViews {
 		if moved.MatViews[i].Schema == from {
 			moved.MatViews[i].Schema = ""
-			moved.MatViews[i].Body = viewBodyInDev(moved.MatViews[i].Body, dev.Dialect, from, to)
+			moved.MatViews[i].Body = viewBodyInDev(moved.MatViews[i].Body, destination.Dialect, from, to)
 		}
 	}
 	moved.Functions = slices.Clone(state.Functions)
