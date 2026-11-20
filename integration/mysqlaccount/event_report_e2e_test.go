@@ -32,11 +32,15 @@ type driftDocument struct {
 }
 
 // declaredAsItIs writes the desired schema of a database as it stands, which
-// declares no event, since no schema source can.
+// declares no event, since no schema source can. It leaves roles out. A MySQL
+// role belongs to the server, not to the database, so the inspection would
+// declare every role another test holds on the shared server at that moment,
+// and the fixture's accounts, which cannot read roles, would report those as
+// undecided and fail the drift check.
 func declaredAsItIs(c *qt.C, f fixture, database string) string {
 	c.Helper()
 	inspected := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
-		"schema", "inspect", "--db-url", f.url("", database), "--format", "hcl")
+		"schema", "inspect", "--db-url", f.url("", database), "--format", "hcl", "--exclude", "*[type=role]")
 	c.Assert(inspected.ExitCode, qt.Equals, 0, qt.Commentf("stderr:\n%s", inspected.Stderr))
 	file := filepath.Join(c.TempDir(), "desired.hcl")
 	c.Assert(os.WriteFile(file, []byte(inspected.Stdout), 0o600), qt.IsNil)
