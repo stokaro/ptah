@@ -269,9 +269,10 @@ selects an extra version is:
 ```
 
 An entry may also bind the record the work runs over with `applied_checksum`:
-the digest the caller saw recorded as applied, which is the
-`applied_checksum` of the dry run's `planned_repeatables`, or an empty string
-for an identity with no record yet. Under the lock the run compares it with
+the digest the caller saw recorded as applied, or an empty string for an
+identity with no record yet. The dry run's `planned_repeatables` carries that
+value as `applied_checksum` on every entry, `""` included, so the approval
+copies it unchanged. Under the lock the run compares it with
 the record and refuses the run when another writer applied a different digest
 in between, so an approval that says "changed from" a digest holds only over
 that digest. Without the field the record is not compared. `null` is refused,

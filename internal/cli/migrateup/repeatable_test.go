@@ -217,6 +217,80 @@ func TestMigrateUpRepeatableAppliedChecksum_HappyPath(t *testing.T) {
 	})
 }
 
+// TestMigrateUpRepeatableAppliedChecksum_DryRunCarriesNoRecord reads the
+// value an approval copies from the dry run's run document. Work with no
+// record carries "applied_checksum": "" rather than no field, because an
+// approval that copies an absent field makes no claim about the record and the
+// run would then not compare it.
+func TestMigrateUpRepeatableAppliedChecksum_DryRunCarriesNoRecord(t *testing.T) {
+	c := qt.New(t)
+	dir := writeRepeatableDirectory(c, cliRepeatableBody)
+	dbPath := filepath.Join(c.TempDir(), "app.db")
+
+	out, human, err := runUpSplit("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--json", "--dry-run")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", human))
+	var document struct {
+		PlannedRepeatables []map[string]any `json:"planned_repeatables"`
+	}
+	c.Assert(json.Unmarshal([]byte(out), &document), qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(document.PlannedRepeatables, qt.HasLen, 1)
+	applied, present := document.PlannedRepeatables[0]["applied_checksum"]
+	c.Assert(present, qt.IsTrue, qt.Commentf("%s", out))
+	c.Assert(applied, qt.Equals, "")
+}
+
+// failingRepeatableBody is a repeatable body whose first attempt fails, so its
+// record holds an attempt and no applied digest.
+const failingRepeatableBody = "INSERT INTO missing_table VALUES (1);\n"
+
+// retryDirectory runs a directory whose repeatable attempt fails, then fixes
+// the body, and answers the directory, the database and an approval of the
+// retry bound to the applied digest applied.
+func retryDirectory(c *qt.C, applied string) (dir, dbPath, approval string) {
+	c.Helper()
+	dir = writeRepeatableDirectory(c, failingRepeatableBody)
+	dbPath = filepath.Join(c.TempDir(), "app.db")
+	_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir)
+	c.Assert(err, qt.ErrorMatches, `(?s).*repeatable migration audit failed and took no effect.*`)
+	c.Assert(os.WriteFile(filepath.Join(dir, "R__audit.sql"), []byte(cliRepeatableBody), 0o600), qt.IsNil)
+	approval = filepath.Join(c.TempDir(), "expected.json")
+	content := `{"migrations": [], "repeatables": [{"identity": "audit", "checksum": "` +
+		cliH1(cliRepeatableBody) + `", "applied_checksum": "` + applied + `"}]}`
+	c.Assert(os.WriteFile(approval, []byte(content), 0o600), qt.IsNil)
+	return dir, dbPath, approval
+}
+
+// TestMigrateUpRepeatableAppliedChecksum_RetryOverNoRecord retries, under
+// --allow-dirty, repeatable work whose first attempt failed. The failed
+// attempt applied nothing, so the record holds no applied digest, and an
+// approval of the retry binds it as "".
+func TestMigrateUpRepeatableAppliedChecksum_RetryOverNoRecord(t *testing.T) {
+	c := qt.New(t)
+	dir, dbPath, approval := retryDirectory(c, "")
+
+	out, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
+		"--allow-dirty", "--expect-sequence", approval)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(cliRepeatableRuns(c, dbPath), qt.Equals, 1)
+}
+
+// TestMigrateUpRepeatableAppliedChecksum_RetryOverFailedDigest refuses an
+// approval of a retry that claims the failed attempt's digest as applied:
+// that digest never applied, and the record holds none.
+func TestMigrateUpRepeatableAppliedChecksum_RetryOverFailedDigest(t *testing.T) {
+	c := qt.New(t)
+	dir, dbPath, approval := retryDirectory(c, cliH1(failingRepeatableBody))
+
+	_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir,
+		"--allow-dirty", "--expect-sequence", approval)
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*the repeatable migrations selected under the migration lock are \[audit@h1:\S+ over nothing\], `+
+		`and the approved repeatables are \[audit@h1:\S+ over h1:\S+\].*`)
+	c.Assert(cliRepeatableRuns(c, dbPath), qt.Equals, 0)
+}
+
 // TestMigrateUpRepeatableAppliedChecksum_FailurePath refuses repeatable work
 // whose record is not the one the approval binds, before anything runs: a
 // record the approval did not see, and one that moved to another digest.
