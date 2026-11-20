@@ -48,7 +48,7 @@ status 0:
 
 ```text
 Dialect: postgres
-Revision table: schema_migrations
+Revision table: "schema_migrations"
 Current version: 1
 Pending migrations: 1
   - 2
@@ -62,7 +62,7 @@ the statements that would bring it back to its history, and exits with status
 
 ```text
 Dialect: postgres
-Revision table: schema_migrations
+Revision table: "schema_migrations"
 Current version: 1
 Pending migrations: 1
   - 2
@@ -99,27 +99,28 @@ ptah migrations drift --db-url "$DATABASE_URL" --migrations-dir ./migrations --s
 
 ## Read the JSON report
 
-`--json` prints one document on standard output. `check` is the result in the
-shape the run document of `migrations up --check-drift` carries in
-`drift_check`: its `outcome` is `clean`, `drifted` or `unable`, `replayed`
-lists the versions the check replayed, and `findings` lists the differences.
-`revision_table` names the table the history was read from, and
-`current_version` and `pending` say where the database stands. `diff` is the
-change that brings the database back, and `statements` are the statements that
-make it; both are present only on drift. `plan_error` replaces `statements`
-when the change could not be planned, and the drift still stands. `undecided`
-lists the objects the database read could not describe, and `omissions` the
-changes the statements leave out; `warnings` is described
-[below](#a-history-the-report-cannot-find). Each of the last three is present
-only when it has entries. The `diff` below is shortened to the part that
-changed:
+`--json` prints one document on standard output. Its fields:
+
+| Field | What it holds |
+| --- | --- |
+| `check` | The result, in the shape the run document of `migrations up --check-drift` carries in `drift_check`: `outcome` is `clean`, `drifted` or `unable`, `replayed` lists the versions replayed, and `findings` lists the differences. |
+| `revision_table` | The table the history was read from, quoted and qualified as the engine names it. |
+| `current_version`, `pending` | Where the database stands. |
+| `diff`, `statements` | The change that brings the database back, and the statements that make it. Present only on drift. |
+| `plan_error` | Replaces `statements` when the change could not be planned; the drift still stands. |
+| `undecided` | The objects the database read could not describe. Present only when there are some. |
+| `warnings` | What to know before acting on the report; see [below](#a-history-the-report-cannot-find). Present only when there are some. |
+
+A change the plan leaves out is a warning on standard error, as
+`ptah schema compare` reports it. The `diff` below is shortened to the part
+that changed:
 
 ```json
 {
   "contract_version": 1,
   "command": "migrations drift",
   "dialect": "postgres",
-  "revision_table": "schema_migrations",
+  "revision_table": "\"schema_migrations\"",
   "current_version": "1",
   "pending": ["2"],
   "check": {
@@ -157,7 +158,9 @@ the `stage` and `reason` it stopped at and exits with status 2, when:
   applied, or a history that applied a lower version after a higher one. A
   changed file is refused whatever the edit, a comment included, as
   `ptah migrations up` refuses it, because the directory no longer holds what
-  the database ran;
+  the database ran. A history out of order is refused even where
+  `ptah migrations up` accepts it, because the report replays versions in
+  order and that order is not the one the database ran;
 - the shadow database cannot be used: it is the target under another name, it
   is not empty, or the replay of the applied migrations fails on it;
 - the database read cannot describe an object the applied migrations create,
@@ -174,8 +177,21 @@ object in the database then reads as drift, and the statements drop all of
 them, the revision table that does hold the history included. The report
 still exits with status 1, and when no applied migration is recorded and the
 database holds objects it says so first, in the text report and in
-`warnings`. Check `Revision table:`, and name the table that holds the history
-with `--migrations-table` and `--migrations-schema`.
+`warnings`.
+
+The likeliest cause is a history recorded in the other revision format: one
+written with `--revision-format atlas` and read with the default `ptah`, or the
+reverse. The report then reads the other format's revision table where that
+format keeps it, and when the table records applied migrations the warning
+names it and the `--revision-format` value that reads it:
+
+```text
+Warning: the revision table "schema_migrations" records no applied migration, or does not exist, but the atlas-format revision table "atlas_schema_revisions"."atlas_schema_revisions" records 1 applied migration: run the report again with --revision-format atlas; the statements below would drop every object the report compares.
+```
+
+Otherwise the warning names the flags to check: `--migrations-table` and
+`--migrations-schema` for where the history is, and `--revision-format` for
+its format.
 
 ## The migration lock
 
