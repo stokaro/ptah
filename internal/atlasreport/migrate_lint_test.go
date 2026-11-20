@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/builtintest"
@@ -29,8 +30,9 @@ func TestWriteMigrateLintFormat_CustomTemplate(t *testing.T) {
 		"2_drop_users.sql":   {Data: []byte("DROP TABLE users;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
 		Selection: migrationlint.VersionSelection{
 			Versions:   []int64{2},
 			Restricted: true,
@@ -59,8 +61,9 @@ func TestWriteMigrateLintFormat_JSONFiles(t *testing.T) {
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id integer);")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
@@ -85,8 +88,9 @@ func TestNewMigrateLint_OmitsAtlasIgnoredFilesAndCounts(t *testing.T) {
 		},
 	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -108,8 +112,9 @@ func TestNewMigrateLint_DuplicateBasenamesKeepFindingsScoped(t *testing.T) {
 		"b/1_change.sql": {Data: []byte("SELECT 1;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -137,9 +142,10 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 		},
 	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "sqlite",
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -165,9 +171,10 @@ func TestWriteMigrateLintFormat_JSONCarriesNoPtahRuleName(t *testing.T) {
 		"1_drop.sql": {Data: []byte("DROP TABLE users;\n")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "sqlite",
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
@@ -190,8 +197,9 @@ func TestNewMigrateLint_OrdersMigrationsByVersion(t *testing.T) {
 		"2_earlier.sql": {Data: []byte("SELECT 2;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -212,9 +220,10 @@ func TestNewMigrateLint_PathPrefixCannotCrossAttachFindings(t *testing.T) {
 		"migrations/1_change.sql": {Data: []byte("SELECT 1;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		PathPrefix:    "migrations",
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		PathPrefix:     "migrations",
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -286,9 +295,10 @@ func TestNewMigrateLint_LoadStepCountsReplayedFiles(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), test.files, migrationlint.Options{
-				Compatibility: migrationlint.CompatibilityProfileAtlas,
-				DirFormat:     migrationfile.DirFormatAtlas,
-				Dialect:       "sqlite",
+				Compatibility:  migrationlint.CompatibilityProfileAtlas,
+				AtlasSelectors: atlascodes.SuppressedBy,
+				DirFormat:      migrationfile.DirFormatAtlas,
+				Dialect:        "sqlite",
 			})
 			c.Assert(err, qt.IsNil)
 
@@ -328,9 +338,10 @@ func TestWriteMigrateLintText_SummaryCountsAnAtlasSQLiteReplacementOnce(t *testi
 			analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 				"1_replace.sql": {Data: []byte(sql)},
 			}, migrationlint.Options{
-				Compatibility: migrationlint.CompatibilityProfileAtlas,
-				DirFormat:     migrationfile.DirFormatAtlas,
-				Dialect:       "sqlite",
+				Compatibility:  migrationlint.CompatibilityProfileAtlas,
+				AtlasSelectors: atlascodes.SuppressedBy,
+				DirFormat:      migrationfile.DirFormatAtlas,
+				Dialect:        "sqlite",
 			})
 			c.Assert(err, qt.IsNil)
 			var out bytes.Buffer
@@ -349,9 +360,10 @@ func TestNewMigrateLint_IncludesAtlasRepeatableFiles(t *testing.T) {
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"2R_drop_users.sql":  {Data: []byte("DROP TABLE users;\n")},
 	}, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
-		Dialect:       "sqlite",
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -378,8 +390,9 @@ func TestWriteMigrateLintFormat_RedactsSensitiveURL(t *testing.T) {
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"1_empty.sql": {Data: []byte("-- no changes\n")},
 	}, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
@@ -410,8 +423,9 @@ func TestWriteMigrateLintFormat_ValidAtlasSumAddsIntegrityStep(t *testing.T) {
 	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot, covered)
 	c.Assert(err, qt.IsNil)
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), snapshot, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer

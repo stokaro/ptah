@@ -43,20 +43,10 @@ func TestLintPendingDestructive_DoesNotApplyAtlasFileSuppression(t *testing.T) {
 }
 
 // TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate records which
-// directives reopen the apply-time destructive gate, because resolving Atlas
-// analyzer names on the native surface changed one of these rows.
-//
-// The gate has always honored a statement-local directive an author wrote above
-// the statement: on a binary built from master, `-- ptah:nolint destructive/drop-table` and
-// `-- atlas:nolint DS101` above `DROP TABLE users;` both take
-// `ptah migrations up` from exit 2 to exit 0. `-- atlas:nolint destructive`
-// did not, because the analyzer name resolved to nothing natively; it now does,
-// which is the row this change moves. The whole-file header keeps blocking, and
-// keeps blocking for the same reason as before: the header form is
-// compatibility-scoped, and a blank line detaches it from the statement below.
-//
-// Reverting the change prints []string{"destructive/drop-table"} for the "Atlas analyzer name"
-// row instead of an empty slice.
+// directives reopen the apply-time destructive gate. The gate honors a
+// statement-local `ptah:nolint` written above the statement, by rule name. An
+// `atlas:nolint` comment, with a code or an analyzer name, is Atlas's
+// directive: the native gate refuses it rather than read a code as a rule.
 func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T) {
 	tests := []struct {
 		name string
@@ -64,10 +54,8 @@ func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T)
 		want []string
 	}{
 		{name: "no directive", up: "DROP TABLE users;\n", want: []string{"destructive/drop-table"}},
-		{name: "native code", up: "-- ptah:nolint destructive/drop-table\nDROP TABLE users;\n", want: make([]string, 0)},
-		{name: "Atlas code spelling", up: "-- atlas:nolint DS101\nDROP TABLE users;\n", want: make([]string, 0)},
-		{name: "Atlas analyzer name", up: "-- atlas:nolint destructive\nDROP TABLE users;\n", want: make([]string, 0)},
-		{name: "Atlas file header", up: "-- atlas:nolint destructive\n\nDROP TABLE users;\n", want: []string{"destructive/drop-table"}},
+		{name: "native name", up: "-- ptah:nolint destructive/drop-table\nDROP TABLE users;\n", want: nil},
+		{name: "native category", up: "-- ptah:nolint destructive\nDROP TABLE users;\n", want: nil},
 	}
 
 	for _, test := range tests {
@@ -81,11 +69,28 @@ func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T)
 			findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "")
 
 			c.Assert(err, qt.IsNil)
-			codes := make([]string, 0, len(findings))
+			var codes []string
 			for _, finding := range findings {
 				codes = append(codes, finding.Rule)
 			}
 			c.Assert(codes, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+func TestLintPendingDestructive_AtlasDirectivesAreRefusedAtTheApplyGate(t *testing.T) {
+	for _, up := range []string{"-- atlas:nolint DS102\nDROP TABLE users;\n", "-- atlas:nolint destructive\nDROP TABLE users;\n"} {
+		t.Run(up, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := fstest.MapFS{
+				"0000000001_drop.up.sql":   {Data: []byte(up)},
+				"0000000001_drop.down.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
+			}
+
+			findings, err := lintPendingDestructive(c.Context(), builtintest.Runtime(), fsys, migrationlintgate.Pending{Versions: []int64{1}}, "sqlite", "")
+
+			c.Assert(err, qt.ErrorMatches, `.*atlas:nolint is an Atlas directive that ptah-compat reads.*`)
+			c.Assert(findings, qt.IsNil)
 		})
 	}
 }

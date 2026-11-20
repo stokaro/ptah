@@ -46,13 +46,13 @@ func TestLintPlan_RunsOnlyTheRulesThePolicyNames(t *testing.T) {
 		want    []string
 	}{
 		{
-			name:    "a lint block naming the destructive family",
-			configs: map[string]lint.RuleConfig{"DS": {}},
-			want:    []string{"DS101"},
+			name:    "a lint block naming the destructive analyzer",
+			configs: map[string]lint.RuleConfig{"destructive": {}},
+			want:    []string{"destructive/drop-table"},
 		},
 		{
-			name:    "a lint block naming another family",
-			configs: map[string]lint.RuleConfig{"MF": {}},
+			name:    "a lint block naming another analyzer",
+			configs: map[string]lint.RuleConfig{"concurrent_index": {}},
 			want:    make([]string, 0),
 		},
 		{

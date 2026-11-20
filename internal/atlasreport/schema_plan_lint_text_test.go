@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/atlasreport"
 	"ptah.run/internal/builtintest"
 	migrationlint "ptah.run/migration/lint"
@@ -22,9 +23,10 @@ func planLintAnalysis(c *qt.C, sql string) migrationlint.Analysis {
 	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
 		"20060102150405_plan.sql": {Data: []byte(sql)},
 	}, migrationlint.Options{
-		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		Dialect:       "postgres",
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		Dialect:        "postgres",
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis

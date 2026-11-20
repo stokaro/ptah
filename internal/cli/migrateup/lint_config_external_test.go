@@ -39,7 +39,7 @@ func TestMigrateUp_InvalidLintPolicyPreventsExecution(t *testing.T) {
 			name:    "bypass still validates registered selectors",
 			policy:  "disabled-rules:\n  - design/zz404\n",
 			args:    []string{"--allow-destructive"},
-			wantErr: `.*rule selector "design/zz404" does not match any registered rule.*`,
+			wantErr: `.*is not the name of a .*lint rule.*`,
 		},
 		{
 			name:    "malformed exclusion glob",
@@ -162,7 +162,7 @@ func TestMigrateUp_InvalidLintSelectorRejectedWithoutPendingMigrations(t *testin
 	second.SetArgs([]string{"--db-url", dbURL, "--migrations-dir", dir})
 	err := second.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `.*rule selector "design/zz404" does not match any registered rule.*`)
+	c.Assert(err, qt.ErrorMatches, `.*is not the name of a .*lint rule.*`)
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)

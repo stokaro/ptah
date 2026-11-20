@@ -181,8 +181,8 @@ func TestRunLint_MultiTargetDropFingerprintsEveryTable(t *testing.T) {
 			"take a verified backup first and consider a rename-and-retire window instead"
 	}
 	c.Assert(sarifResultMessagesOf(results), qt.DeepEquals, []string{
-		rollout("alpha"), rollout("mid"), rollout("zeta"),
 		dataLoss("alpha"), dataLoss("mid"), dataLoss("zeta"),
+		rollout("alpha"), rollout("mid"), rollout("zeta"),
 	})
 	// Six results, six fingerprints. The rule id is part of the fingerprint,
 	// so the two consequences for one table do not fold together either.
@@ -647,7 +647,7 @@ func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(dir, "ptah.yaml"), []byte(`lint:
   dialect: postgres
   disabled-rules:
-    - MF
+    - file-form
 `), 0o600), qt.IsNil)
 	originalWD, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
@@ -1345,5 +1345,5 @@ func TestRunLint_DisableByName_FailurePath(t *testing.T) {
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(reportStream(stdout, stderr), qt.Contains,
 		`rule selector "destructive/drop" is not the name of a migration lint rule; `+
-			`a name is a category and a rule joined by a slash, such as locking/set-not-null`)
+			`a name is a category and a rule joined by a slash, such as locking/add-foreign-key`)
 }
