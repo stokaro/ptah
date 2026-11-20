@@ -75,7 +75,7 @@ func TestProviderAnnotatesStatementsASplitWithoutADialect(t *testing.T) {
 	c.Assert(result.Declined, qt.HasLen, 0)
 }
 
-// TestProviderLintReceivesTheTargetTheHostResolved reads back, through FX102,
+// TestProviderLintReceivesTheTargetTheHostResolved reads back, through design/fx102,
 // the server version and the capabilities the host sent. The host resolves
 // both before it asks; the provider judges with what it is given.
 func TestProviderLintReceivesTheTargetTheHostResolved(t *testing.T) {
@@ -95,8 +95,8 @@ func TestProviderLintReceivesTheTargetTheHostResolved(t *testing.T) {
 }
 
 // TestProviderLintOfARunThatNamesNoTarget is the run the host answers for the
-// provider. Sent on, the fixture would report FX101 on the DROP TABLE and
-// FX102 on the file; refused, the run would fail.
+// provider. Sent on, the fixture would report design/fx101 on the DROP TABLE and
+// design/fx102 on the file; refused, the run would fail.
 func TestProviderLintOfARunThatNamesNoTarget(t *testing.T) {
 	c := qt.New(t)
 	_, runtime := yamlProviderCommand(c, "lint")

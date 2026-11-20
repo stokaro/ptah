@@ -99,6 +99,7 @@ func LintRuntime(runtime lintext.Runtime, served schemaext.TargetResolver) (lint
 	published := publishedLint{Runtime: runtime, engines: make(map[string][]lintext.Rule)}
 	for _, engine := range engines {
 		rules := providerhost.PublishedLintRules(engine)
+		slices.SortFunc(rules, compareRules)
 		for _, name := range append([]string{engine.GetId()}, engine.GetAliases()...) {
 			published.engines[name] = rules
 		}

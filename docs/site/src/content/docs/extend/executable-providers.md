@@ -504,10 +504,10 @@ wraps.
 lists the feature, the provider's split says what each statement is, which
 table a statement creates without a primary key, and which capability keys a
 statement needs. `sql lint` reads those facts instead of parsing the file:
-DDL001 for a missing primary key, CAP001 for a key the target's capabilities
-answer false, SQL002 for a statement that changes no schema object, and SQL004
+design/no-primary-key for a missing primary key, capability/missing for a key the target's capabilities
+answer false, coverage/unsupported-statement for a statement that changes no schema object, and coverage/unanalyzed-statements
 for a schema statement no fact examines. Ptah declares capabilities only for
-the release lines of its own engines, so on another engine SQL004 lists each
+the release lines of its own engines, so on another engine coverage/unanalyzed-statements lists each
 requirement as unexamined. A provider whose split does not say what each
 statement is is refused.
 

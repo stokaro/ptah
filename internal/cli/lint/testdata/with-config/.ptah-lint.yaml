@@ -1,4 +1,4 @@
 dialect: postgres
 disabled-rules:
-  - MF
-  - BC101
+  - file-form
+  - rollout/rename

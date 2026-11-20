@@ -24,7 +24,7 @@ func TestPolicyStillRefusesUserSelectorsForUnselectedEngines(t *testing.T) {
 	runtime, err := engine.New()
 	c.Assert(err, qt.IsNil)
 	_, err = migrationlintgate.LoadPolicy(runtime, fstest.MapFS{
-		".ptah-lint.yaml": {Data: []byte("disabled-rules: [PG]\n")},
+		".ptah-lint.yaml": {Data: []byte("disabled-rules: [locking/create-index]\n")},
 	}, "fixture")
-	c.Assert(err, qt.ErrorMatches, `rule selector "PG" does not match any registered rule`)
+	c.Assert(err, qt.ErrorMatches, `rule selector "locking/create-index" is not the name of a migration lint rule; .*`)
 }

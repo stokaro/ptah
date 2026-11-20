@@ -71,11 +71,11 @@ func TestLoadPolicy_FailurePath_UnregisteredRuleSelectors(t *testing.T) {
 	}{
 		{
 			name:   "disabled rule selector",
-			config: "disabled-rules:\n  - ZZ404\n",
+			config: "disabled-rules:\n  - design/zz404\n",
 		},
 		{
 			name:   "configured rule selector",
-			config: "rules:\n  ZZ404:\n    severity: error\n",
+			config: "rules:\n  design/zz404:\n    severity: error\n",
 		},
 	}
 
@@ -88,7 +88,7 @@ func TestLoadPolicy_FailurePath_UnregisteredRuleSelectors(t *testing.T) {
 
 			_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 
-			c.Assert(err, qt.ErrorMatches, `rule selector "design/zz404" does not match any registered rule`)
+			c.Assert(err, qt.ErrorMatches, `rule selector "design/zz404" is not the name of a migration lint rule; .*`)
 		})
 	}
 }

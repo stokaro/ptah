@@ -31,7 +31,7 @@ func TestParseAtlas_LintRuleBlockDeclaresARule(t *testing.T) {
   url = "sqlite://app.db"
 
   lint {
-    rule "NOVARCHAR" {
+    rule "design/no-varchar" {
       severity        = "error"
       title           = "varchar(n) instead of text"
       match           = strcontains(lower(statement.sql), "varchar(")
@@ -44,7 +44,7 @@ func TestParseAtlas_LintRuleBlockDeclaresARule(t *testing.T) {
 `)
 
 	c.Assert(rules, qt.HasLen, 1)
-	rule := rules["NOVARCHAR"]
+	rule := rules["design/no-varchar"]
 	c.Assert(rule.Match, qt.Equals, `strcontains(lower(statement.sql), "varchar(")`)
 	c.Assert(rule.Message, qt.Equals, "use text, not varchar(n)")
 	c.Assert(rule.Title, qt.Equals, "varchar(n) instead of text")
@@ -66,7 +66,7 @@ func TestParseAtlas_LintRuleBlocksMayRepeat(t *testing.T) {
   url = "sqlite://app.db"
 
   lint {
-    rule "NOVARCHAR" {
+    rule "design/no-varchar" {
       match   = strcontains(statement.sql, "varchar(")
       message = "use text"
     }
@@ -80,7 +80,7 @@ func TestParseAtlas_LintRuleBlocksMayRepeat(t *testing.T) {
 `)
 
 	c.Assert(rules, qt.HasLen, 2)
-	c.Assert(rules["NOVARCHAR"].Message, qt.Equals, "use text")
+	c.Assert(rules["design/no-varchar"].Message, qt.Equals, "use text")
 	c.Assert(rules["NOTIMESTAMP"].Message, qt.Equals, "use timestamptz")
 }
 
@@ -101,7 +101,7 @@ func TestParseAtlas_LintRuleKeepsTheAtlasSpellingIgnored(t *testing.T) {
       src = ["schema.rule.hcl"]
     }
 
-    rule "NOVARCHAR" {
+    rule "design/no-varchar" {
       match   = strcontains(statement.sql, "varchar(")
       message = "use text"
     }
@@ -118,7 +118,7 @@ func TestParseAtlas_LintRuleKeepsTheAtlasSpellingIgnored(t *testing.T) {
 	c.Assert(names, qt.Contains, "rule")
 	// ...and the one-label form is a declaration, not an ignored construct.
 	c.Assert(cfg.Lint.RuleConfigs, qt.HasLen, 1)
-	c.Assert(cfg.Lint.RuleConfigs["NOVARCHAR"].Match, qt.Equals, `strcontains(statement.sql, "varchar(")`)
+	c.Assert(cfg.Lint.RuleConfigs["design/no-varchar"].Match, qt.Equals, `strcontains(statement.sql, "varchar(")`)
 }
 
 // TestParseAtlas_LintRuleRefusesADuplicateCode keeps two declarations of one
@@ -130,12 +130,12 @@ func TestParseAtlas_LintRuleRefusesADuplicateCode(t *testing.T) {
   url = "sqlite://app.db"
 
   lint {
-    rule "NOVARCHAR" {
+    rule "design/no-varchar" {
       match   = strcontains(statement.sql, "a")
       message = "first"
     }
 
-    rule "NOVARCHAR" {
+    rule "design/no-varchar" {
       match   = strcontains(statement.sql, "b")
       message = "second"
     }
@@ -143,7 +143,7 @@ func TestParseAtlas_LintRuleRefusesADuplicateCode(t *testing.T) {
 }
 `), "atlas.hcl", "local")
 
-	c.Assert(err, qt.ErrorMatches, `duplicate rule "NOVARCHAR" at atlas.hcl:10`)
+	c.Assert(err, qt.ErrorMatches, `duplicate rule "design/no-varchar" at atlas.hcl:10`)
 }
 
 // TestParseAtlas_LintRuleMatchIsNotEvaluated is the property stated directly.
@@ -158,7 +158,7 @@ func TestParseAtlas_LintRuleMatchIsNotEvaluated(t *testing.T) {
   url = "sqlite://app.db"
 
   lint {
-    rule "NOVARCHAR" {
+    rule "design/no-varchar" {
       match   = strcontains(lower(statement.sql), "varchar(") && !file.is_down
       message = "use text"
     }
@@ -166,7 +166,7 @@ func TestParseAtlas_LintRuleMatchIsNotEvaluated(t *testing.T) {
 }
 `)
 
-	c.Assert(rules["NOVARCHAR"].Match, qt.Equals,
+	c.Assert(rules["design/no-varchar"].Match, qt.Equals,
 		`strcontains(lower(statement.sql), "varchar(") && !file.is_down`)
 }
 

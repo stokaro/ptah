@@ -94,7 +94,7 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	}, projectconfig.Config{
 		Lint: projectconfig.LintConfig{
 			Dialect:       "postgres",
-			DisabledRules: []string{"MF"},
+			DisabledRules: []string{"file-form"},
 			Latest:        &latest,
 		},
 	})
@@ -102,9 +102,9 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed, qt.IsFalse)
 	c.Assert(report.Dialect, qt.Equals, "postgres")
-	c.Assert(report.DisabledRules, qt.DeepEquals, []string{"MF"})
+	c.Assert(report.DisabledRules, qt.DeepEquals, []string{"file-form"})
 	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column"})
 	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
 
@@ -222,7 +222,7 @@ func TestBuild_LatestAndAnalysisShareOneSourceSnapshot(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(report.Findings[0].File, qt.Contains, "2_new.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "2_new.sql")
 	c.Assert(source.reads, qt.DeepEquals, map[string]int{
@@ -254,7 +254,7 @@ func TestBuild_LatestSelectsAtlasBareRepeatableAfterNumericMigrations(t *testing
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Versions, qt.DeepEquals, []int64{0})
 	c.Assert(report.VersionKeys, qt.DeepEquals, []string{"R"})
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(report.Findings[0].File, qt.Contains, "R__drop_users.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "R__drop_users.sql")
 }
@@ -297,7 +297,7 @@ func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
 	c.Assert(report.VersionKeys, qt.DeepEquals, []string{"2R"})
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(report.Findings[0].File, qt.Contains, "2R_drop_users.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "2R_drop_users.sql")
 }
@@ -319,7 +319,7 @@ func TestBuild_ProvidedSnapshotDoesNotRequireSourceDirectory(t *testing.T) {
 	}, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table"})
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 }
 
 func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {

@@ -65,7 +65,7 @@ func TestBuild_ProjectDeclaredRuleReportsAFinding(t *testing.T) {
 
 	report, err := buildWithProjectRules(c, "CREATE TABLE users (nick VARCHAR(20));\n",
 		map[string]projectconfig.LintRuleConfig{
-			"NOVARCHAR": {
+			"design/no-varchar": {
 				Match:    `strcontains(lower(statement.sql), "varchar(")`,
 				Message:  "use text, not varchar(n)",
 				Severity: string(migrationlint.SeverityError),
@@ -73,8 +73,8 @@ func TestBuild_ProjectDeclaredRuleReportsAFinding(t *testing.T) {
 		})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(messagesOf(report, "NOVARCHAR"), qt.DeepEquals, []string{"use text, not varchar(n)"})
-	c.Assert(severitiesOf(report, "NOVARCHAR"), qt.DeepEquals,
+	c.Assert(messagesOf(report, "design/no-varchar"), qt.DeepEquals, []string{"use text, not varchar(n)"})
+	c.Assert(severitiesOf(report, "design/no-varchar"), qt.DeepEquals,
 		[]migrationlint.Severity{migrationlint.SeverityError})
 }
 
@@ -123,7 +123,7 @@ func TestBuild_ProjectDeclaredRuleIsRefusedWhenMalformed(t *testing.T) {
 
 	_, err := buildWithProjectRules(c, "CREATE TABLE users (nick VARCHAR(20));\n",
 		map[string]projectconfig.LintRuleConfig{
-			"NOVARCHAR": {Match: `stmt.sql != ""`, Message: "x"},
+			"design/no-varchar": {Match: `stmt.sql != ""`, Message: "x"},
 		})
 
 	c.Assert(err, qt.ErrorMatches, `.*unknown name "stmt".*`)

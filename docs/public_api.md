@@ -755,12 +755,12 @@ data SQL Server stores, and both break what reads through them. The bundled
 runtime registers it on the sqlserver target.
 
 `dialect/postgres/pglint` is the PostgreSQL owner's lint rules: `Rules`
-publishes the PG and TX families and the online rules ON101 and ON103 as data,
+publishes the PG and TX families and the online rules online/unproven and online/lock-held-across-scan as data,
 and `Service` checks them, rules that read the starting schema state included.
 The bundled runtime registers both on the postgres target.
 
 `dialect/mysql/mysqllint` is the MySQL owner's lint rules for MySQL and
-MariaDB: `Rules` publishes the MY family and the online rule ON102 as data, and
+MariaDB: `Rules` publishes the MY family and the online rule online/unproven as data, and
 `Service` checks them. The bundled runtime registers both on the mysql target;
 each rule names the targets it judges.
 

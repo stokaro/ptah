@@ -54,12 +54,12 @@ func varcharFS() fstest.MapFS {
 func TestDeclaredRule_RunsFromConfiguration(t *testing.T) {
 	c := qt.New(t)
 
-	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("design/no-varchar", varcharRule(), "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
 	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Rule, qt.Equals, "NOVARCHAR")
+	c.Assert(findings[0].Rule, qt.Equals, "design/no-varchar")
 	c.Assert(findings[0].Message, qt.Equals, "use text, not varchar(n)")
 	c.Assert(findings[0].Line, qt.Equals, 1)
 	// Warning is the default: a project's own rule is advisory until its author
@@ -68,7 +68,7 @@ func TestDeclaredRule_RunsFromConfiguration(t *testing.T) {
 	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityWarning)
 	// The code stands in for the title when none is given, so a report never
 	// prints an empty column.
-	c.Assert(findings[0].Title, qt.Equals, "NOVARCHAR")
+	c.Assert(findings[0].Title, qt.Equals, "design/no-varchar")
 }
 
 // TestDeclaredRule_SilentOnAStatementItDoesNotMatch is the control. Without it
@@ -79,7 +79,7 @@ func TestDeclaredRule_SilentOnAStatementItDoesNotMatch(t *testing.T) {
 		"1_init.sql": {Data: []byte("CREATE TABLE users (id integer, nick text);")},
 	}
 
-	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, declaredRuleOptions("design/no-varchar", varcharRule(), "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.Findings(), qt.HasLen, 0)
@@ -92,7 +92,7 @@ func TestDeclaredRule_SeverityAndTitleAreHonored(t *testing.T) {
 	config.Severity = lint.SeverityError
 	config.Title = "varchar(n) instead of text"
 
-	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("NOVARCHAR", config, "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("design/no-varchar", config, "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
@@ -122,7 +122,7 @@ func TestDeclaredRule_DialectScope(t *testing.T) {
 			config.Dialects = []string{"postgres"}
 
 			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(),
-				varcharFS(), declaredRuleOptions("NOVARCHAR", config, test.running))
+				varcharFS(), declaredRuleOptions("design/no-varchar", config, test.running))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(analysis.Findings(), qt.HasLen, test.want)
@@ -137,9 +137,9 @@ func TestDeclaredRule_ReadsTheDialectItRunsUnder(t *testing.T) {
 	c := qt.New(t)
 	config := lint.RuleConfig{Match: `dialect == "postgres"`, Message: "postgres only"}
 
-	postgres, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("PGONLY", config, "postgres"))
+	postgres, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("design/pg-only", config, "postgres"))
 	c.Assert(err, qt.IsNil)
-	mysql, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("PGONLY", config, "mysql"))
+	mysql, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("design/pg-only", config, "mysql"))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(postgres.Findings(), qt.HasLen, 1)
@@ -170,13 +170,13 @@ func TestDeclaredRule_DownDirection(t *testing.T) {
 			c := qt.New(t)
 			config := varcharRule()
 			config.AppliesToDown = test.appliesToDown
-			opts := declaredRuleOptions("NOVARCHAR", config, "postgres")
+			opts := declaredRuleOptions("design/no-varchar", config, "postgres")
 			opts.DirFormat = migrationfile.DirFormatPtah
 
 			analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, opts)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(findingsFor(analysis.Findings(), "NOVARCHAR"), qt.HasLen, test.want)
+			c.Assert(findingsFor(analysis.Findings(), "design/no-varchar"), qt.HasLen, test.want)
 		})
 	}
 }
@@ -191,10 +191,10 @@ func TestDeclaredRule_HonorsNolint(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
 		"1_init.sql": {Data: []byte(
-			"-- ptah:nolint NOVARCHAR\nCREATE TABLE users (id integer, nick VARCHAR(20));")},
+			"-- ptah:nolint design/no-varchar\nCREATE TABLE users (id integer, nick VARCHAR(20));")},
 	}
 
-	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, declaredRuleOptions("design/no-varchar", varcharRule(), "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.Findings(), qt.HasLen, 0)
@@ -204,8 +204,8 @@ func TestDeclaredRule_HonorsNolint(t *testing.T) {
 // its code, which only works because a declared code is an ordinary rule code.
 func TestDeclaredRule_HonorsDisable(t *testing.T) {
 	c := qt.New(t)
-	opts := declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres")
-	opts.Disabled = []string{"NOVARCHAR"}
+	opts := declaredRuleOptions("design/no-varchar", varcharRule(), "postgres")
+	opts.Disabled = []string{"design/no-varchar"}
 
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), opts)
 
@@ -222,7 +222,7 @@ func TestDeclaredRule_EvaluationFailureIsReported(t *testing.T) {
 	c := qt.New(t)
 	config := lint.RuleConfig{Match: `upper(statement.sql)`, Message: "unused"}
 
-	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("BROKEN", config, "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), varcharFS(), declaredRuleOptions("design/broken", config, "postgres"))
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
@@ -245,7 +245,7 @@ func TestDeclaredRule_RefusedDeclarations(t *testing.T) {
 	}{
 		{
 			name:    "no message",
-			code:    "NOVARCHAR",
+			code:    "design/no-varchar",
 			config:  lint.RuleConfig{Match: `file.is_up`},
 			message: "declares `match` but no `message`",
 		},
@@ -257,19 +257,19 @@ func TestDeclaredRule_RefusedDeclarations(t *testing.T) {
 		},
 		{
 			name:    "unknown name in expression",
-			code:    "NOVARCHAR",
+			code:    "design/no-varchar",
 			config:  lint.RuleConfig{Match: `stmt.sql != ""`, Message: "x"},
 			message: `unknown name "stmt"`,
 		},
 		{
 			name:    "unparseable expression",
-			code:    "NOVARCHAR",
+			code:    "design/no-varchar",
 			config:  lint.RuleConfig{Match: `contains(`, Message: "x"},
 			message: "parse match expression",
 		},
 		{
 			name: "unsupported dialect scope",
-			code: "NOVARCHAR",
+			code: "design/no-varchar",
 			config: lint.RuleConfig{
 				Match: `file.is_up`, Message: "x", Dialects: []string{"postgrez"},
 			},
@@ -357,14 +357,14 @@ func TestDeclaredRule_SuppressionIsPerStatementNotPerLine(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
 		"1_init.sql": {Data: []byte(
-			"-- ptah:nolint NOVARCHAR\n" +
+			"-- ptah:nolint design/no-varchar\n" +
 				"CREATE TABLE a (x VARCHAR(1)); CREATE TABLE b (y VARCHAR(1));\n")},
 	}
 
-	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, declaredRuleOptions("NOVARCHAR", varcharRule(), "postgres"))
+	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, declaredRuleOptions("design/no-varchar", varcharRule(), "postgres"))
 
 	c.Assert(err, qt.IsNil)
-	findings := findingsFor(analysis.Findings(), "NOVARCHAR")
+	findings := findingsFor(analysis.Findings(), "design/no-varchar")
 	// Exactly one: the suppressed statement is silent and the other is not.
 	c.Assert(findings, qt.HasLen, 1)
 }

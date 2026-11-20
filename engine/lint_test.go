@@ -66,7 +66,7 @@ func (s upperSplitter) SplitStatements(_ context.Context, request lintext.SplitR
 }
 
 // lintRuntime holds targets alpha (alias a) and beta, alpha splitting with
-// splitter, and two owners: XY101 on alpha and XY102 on both, then XY201 on
+// splitter, and two owners: design/xy101 on alpha and design/xy102 on both, then design/xy201 on
 // alpha.
 func lintRuntime(c *qt.C, splitter lintext.Splitter, first, second countingChecks) *engine.Runtime {
 	c.Helper()
@@ -140,13 +140,19 @@ func TestNew_LintFailurePath(t *testing.T) {
 			`.*publishes lint rules without a service, or a service without rules`},
 		{"an invalid rule", []engine.Provider{{ID: "example.org/one", Targets: target, Lint: []engine.Lint{{
 			Rules: []lintext.Rule{{Name: "design/xy101", Title: "t", Severity: "fatal", Targets: []string{"alpha"}}}, Service: service}}}},
-			`.*rule XY101 has unknown severity "fatal"`},
+			`.*rule design/xy101 has unknown severity "fatal"`},
 		{"an unregistered target", []engine.Provider{{ID: "example.org/one", Targets: []engine.Target{{Name: "beta"}},
-			Lint: []engine.Lint{{Rules: checks.Rules(), Service: service}}}}, `.*lint rule XY101 judges unregistered target "alpha"`},
-		{"one code from two owners", []engine.Provider{
+			Lint: []engine.Lint{{Rules: checks.Rules(), Service: service}}}}, `.*lint rule design/xy101 judges unregistered target "alpha"`},
+		{"one name from two owners for one target", []engine.Provider{
 			{ID: "example.org/one", Targets: target, Lint: []engine.Lint{{Rules: checks.Rules(), Service: service}}},
 			{ID: "example.org/two", Lint: []engine.Lint{{Rules: checks.Rules(), Service: service}}},
-		}, `.*lint rule XY101 is published by "example.org/one" and "example.org/two"`},
+		}, `.*lint rule design/xy101 is published by "example.org/one" and "example.org/two" for the same target "alpha"`},
+		{"one name at two severities", []engine.Provider{
+			{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha"}, {Name: "beta"}},
+				Lint: []engine.Lint{{Rules: checks.Rules(), Service: service}}},
+			{ID: "example.org/two", Lint: []engine.Lint{{Service: service, Rules: []lintext.Rule{
+				{Name: "design/xy101", Title: "t", Severity: lintext.Error, Targets: []string{"beta"}}}}}},
+		}, `.*lint rule design/xy101 is published by "example.org/one" at severity warning and by "example.org/two" at severity error; one name has one severity`},
 		{"a typed-nil splitter", []engine.Provider{{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha", Splitter: (*upperSplitter)(nil)}}}},
 			`.*target "alpha" has a typed-nil statement splitter service`},
 		{"a typed-nil routine body reader", []engine.Provider{{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha",
@@ -164,6 +170,36 @@ func TestNew_LintFailurePath(t *testing.T) {
 			c.Assert(runtime, qt.IsNil)
 		})
 	}
+}
+
+// A name two owners publish for different targets at one severity is one
+// hazard checked once per engine: the runtime lists the rule once per owner,
+// asks only the owner whose target the run names, and asks both for a run
+// that names none.
+func TestRuntime_OneNameFromTwoOwners_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	alpha := countingChecks{checks: lintext.Checks{wordCheck("design/xy101", "DROP", "alpha")}, calls: new(0)}
+	beta := countingChecks{checks: lintext.Checks{wordCheck("design/xy101", "TRUNCATE", "beta")}, calls: new(0)}
+	runtime := must.Must(engine.New(
+		engine.Provider{ID: "example.org/one", Targets: []engine.Target{{Name: "alpha"}, {Name: "beta"}},
+			Lint: []engine.Lint{{Rules: alpha.checks.Rules(), Service: alpha}}},
+		engine.Provider{ID: "example.org/two", Lint: []engine.Lint{{Rules: beta.checks.Rules(), Service: beta}}},
+	))
+
+	all, err := runtime.LintRules("")
+	c.Assert(err, qt.IsNil)
+	forAlpha, err := runtime.LintRules("alpha")
+	c.Assert(err, qt.IsNil)
+	_, err = runtime.CheckMigrations(c.Context(), runRequest("alpha", "design/xy101"))
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(all, qt.HasLen, 2)
+	c.Assert(forAlpha, qt.HasLen, 1)
+	c.Assert([]int{*alpha.calls, *beta.calls}, qt.DeepEquals, []int{1, 0})
+
+	_, err = runtime.CheckMigrations(c.Context(), runRequest("", "design/xy101"))
+	c.Assert(err, qt.IsNil)
+	c.Assert([]int{*alpha.calls, *beta.calls}, qt.DeepEquals, []int{2, 1})
 }
 
 // runRequest enables codes over one up file holding a DROP, a TRUNCATE and
@@ -203,14 +239,14 @@ func TestRuntime_CheckMigrations_FailurePath(t *testing.T) {
 		wantIs  error
 		wantErr string
 	}{
-		{"a code no owner publishes", runRequest("alpha", "design/xy999"), countingChecks{}, lintext.ErrInvalid, `.*no published lint rule XY999 judges target "alpha".*`},
-		{"a rule that does not judge the target", runRequest("beta", "design/xy101"), countingChecks{}, lintext.ErrInvalid, `.*no published lint rule XY101 judges target "beta".*`},
+		{"a code no owner publishes", runRequest("alpha", "design/xy999"), countingChecks{}, lintext.ErrInvalid, `.*no published lint rule design/xy999 judges target "alpha".*`},
+		{"a rule that does not judge the target", runRequest("beta", "design/xy101"), countingChecks{}, lintext.ErrInvalid, `.*no published lint rule design/xy101 judges target "beta".*`},
 		{"a code asked for twice", runRequest("alpha", "design/xy101", "design/xy101"), countingChecks{}, lintext.ErrInvalid, `.*or it is asked for twice`},
 		{"an unregistered target", runRequest("gamma", "design/xy101"), countingChecks{}, ptaherr.ErrUnsupportedDialect, `.*lint target "gamma" is not registered`},
 		{"an incomplete reply", runRequest("alpha", "design/xy201"), countingChecks{reply: &lintext.CheckResult{}}, lintext.ErrInvalid,
 			`lint rules of "example.org/two": .*a lint check did not complete`},
 		{"a reply naming another rule", runRequest("alpha", "design/xy201"), countingChecks{reply: &lintext.CheckResult{Complete: true,
-			Findings: []lintext.Finding{{Name: "design/xy101", Message: "m"}}}}, lintext.ErrInvalid, `lint rules of "example.org/two": .*finding XY101.*`},
+			Findings: []lintext.Finding{{Name: "design/xy101", Message: "m"}}}}, lintext.ErrInvalid, `lint rules of "example.org/two": .*finding design/xy101.*`},
 		{"an owner's failure", runRequest("alpha", "design/xy201"), countingChecks{failure: failure}, failure, `plugin closed`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -238,8 +274,8 @@ func (s replyService) CheckMigrations(_ context.Context, request lintext.CheckRe
 	return s.reply, nil
 }
 
-// baselineRuntime holds target alpha and one owner of a baseline rule XY301
-// and a text rule XY302, whose service answers with reply.
+// baselineRuntime holds target alpha and one owner of a baseline rule design/xy301
+// and a text rule design/xy302, whose service answers with reply.
 func baselineRuntime(c *qt.C, service replyService) *engine.Runtime {
 	c.Helper()
 	rules := []lintext.Rule{
@@ -292,7 +328,7 @@ func TestRuntime_CheckMigrations_BaselineSubjectsOfATextRule(t *testing.T) {
 	result, err := baselineRuntime(c, service).CheckMigrations(t.Context(), twoFiles("design/xy302"))
 
 	c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
-	c.Assert(err, qt.ErrorMatches, `lint rules of "example.org/baseline": .*rule XY302 names baseline subjects but reads no baseline`)
+	c.Assert(err, qt.ErrorMatches, `lint rules of "example.org/baseline": .*rule design/xy302 names baseline subjects but reads no baseline`)
 	c.Assert(result, qt.DeepEquals, lintext.CheckResult{})
 }
 

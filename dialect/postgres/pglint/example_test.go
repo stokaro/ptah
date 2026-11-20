@@ -3,7 +3,6 @@ package pglint_test
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"ptah.run/core/lintext"
 	"ptah.run/dialect/postgres/pglint"
@@ -14,7 +13,7 @@ import (
 // the codes the run enables over every file in one call.
 func ExampleService() {
 	for _, rule := range pglint.Rules() {
-		if strings.HasPrefix(rule.Name, "TX") {
+		if rule.Name == "transaction/mixed-statements" {
 			fmt.Println(rule.Name, rule.Severity, rule.Title)
 		}
 	}

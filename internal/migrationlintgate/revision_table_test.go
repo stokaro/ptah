@@ -16,7 +16,7 @@ import (
 // also gates on the migration-form family.
 func atlasRepeatableGateFS() fstest.MapFS {
 	return fstest.MapFS{
-		lint.ConfigFileName: {Data: []byte("gate:\n  families: [DS, MF]\n")},
+		lint.ConfigFileName: {Data: []byte("gate:\n  rules: [destructive/drop-table, file-form]\n")},
 		"1_a.sql":           {Data: []byte("CREATE TABLE a (id INTEGER);\n")},
 		"R__x.sql":          {Data: []byte("DROP TABLE a;\n")},
 	}

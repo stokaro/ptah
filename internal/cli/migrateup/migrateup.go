@@ -1517,7 +1517,7 @@ func lockedDestructiveLintHook(
 
 // gateRefusal names what the gate refused on: the data-safety wording the
 // default gate has always used, or the policy's own widening when a finding
-// outside the DS family is among them.
+// outside the data-safety rules is among them.
 func gateRefusal(findings []lint.Finding) string {
 	for _, finding := range findings {
 		if !slices.Contains(migrationlintgate.ReportedRules(), finding.Rule) {

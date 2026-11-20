@@ -358,7 +358,7 @@ func TestLintSource_IdentifierRulesTakeThePolicy(t *testing.T) {
 			want: []string{"naming/identifier-too-long error", "naming/identifier-collision error"},
 		},
 		{name: "naming/identifier-too-long disabled", opts: sqllint.Options{DisabledRules: []string{"naming/identifier-too-long"}}, want: []string{"naming/identifier-collision error"}},
-		{name: "the family disabled", opts: sqllint.Options{DisabledRules: []string{"DDL"}}},
+		{name: "the category disabled", opts: sqllint.Options{DisabledRules: []string{"naming"}}},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

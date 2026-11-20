@@ -37,7 +37,7 @@ func TestMigrateUp_InvalidLintPolicyPreventsExecution(t *testing.T) {
 		},
 		{
 			name:    "bypass still validates registered selectors",
-			policy:  "disabled-rules:\n  - ZZ404\n",
+			policy:  "disabled-rules:\n  - design/zz404\n",
 			args:    []string{"--allow-destructive"},
 			wantErr: `.*rule selector "design/zz404" does not match any registered rule.*`,
 		},
@@ -156,7 +156,7 @@ func TestMigrateUp_InvalidLintSelectorRejectedWithoutPendingMigrations(t *testin
 	first := migrateup.NewMigrateUpCommand()
 	first.SetArgs([]string{"--db-url", dbURL, "--migrations-dir", dir})
 	c.Assert(first.Execute(), qt.IsNil)
-	c.Assert(os.WriteFile(configPath, []byte("rules:\n  ZZ404:\n    severity: error\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(configPath, []byte("rules:\n  design/zz404:\n    severity: error\n"), 0o600), qt.IsNil)
 
 	second := migrateup.NewMigrateUpCommand()
 	second.SetArgs([]string{"--db-url", dbURL, "--migrations-dir", dir})

@@ -66,7 +66,7 @@ func (p atlasParser) checkBlockArityAndUniqueness(
 	if _, duplicate := seen[key]; duplicate {
 		if len(block.Labels) > 0 {
 			// A labeled block is addressed BY its label, so the useful
-			// message names it: two `rule "NOVARCHAR"` blocks are a
+			// message names it: two `rule "design/no-varchar"` blocks are a
 			// collision between two definitions, not an unsupported
 			// construct, and "unsupported" sends the reader looking for a
 			// spelling mistake that is not there.

@@ -14,7 +14,7 @@ import (
 // the codes the run enables over every file in one call.
 func ExampleService() {
 	for _, rule := range mysqllint.Rules() {
-		if strings.HasPrefix(rule.Name, "ON") {
+		if strings.HasPrefix(rule.Name, "online/") {
 			fmt.Println(rule.Name, rule.Severity, rule.Targets, rule.Title)
 		}
 	}

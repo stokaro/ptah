@@ -53,7 +53,7 @@ type policyReport struct {
 
 // A lint policy that names an engine its installed provider serves selects
 // that provider as --dialect would, with no provider flag: `migrations lint`
-// lints with the provider's rules, FX101 and FX102 among them, where the
+// lints with the provider's rules, design/fx101 and design/fx102 among them, where the
 // policy's dialect was refused as one no runtime knew.
 func TestMigrationsLintOfAPolicysDialectReachesTheInstalledProvider(t *testing.T) {
 	c := qt.New(t)

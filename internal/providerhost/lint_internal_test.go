@@ -26,7 +26,7 @@ func lintTarget() *target {
 }
 
 // untargetedRun is a run that names no target over a file whose statement the
-// fixture's FX101 would report.
+// fixture's design/fx101 would report.
 func untargetedRun(codes ...string) lintext.CheckRequest {
 	return lintext.CheckRequest{Names: codes, Files: []lintext.File{{Name: "1.sql", Up: true,
 		Statements: []lintext.Statement{{Start: 0, End: 13, Line: 1, SQL: "DROP TABLE a;"}}}}}
@@ -44,7 +44,7 @@ func TestUntargetedLintRunIsAnsweredWithoutTheProvider_FailurePath(t *testing.T)
 		c := qt.New(t)
 		result, err := lintService{target: lintTarget()}.CheckMigrations(c.Context(), untargetedRun("design/fx101", "design/zz999"))
 		c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
-		c.Assert(err, qt.ErrorMatches, `.*engine "fixture" publishes no lint rule ZZ999`)
+		c.Assert(err, qt.ErrorMatches, `.*engine "fixture" publishes no lint rule design/zz999`)
 		c.Assert(result, qt.DeepEquals, lintext.CheckResult{})
 	})
 	t.Run("a canceled run", func(t *testing.T) {

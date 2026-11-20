@@ -1036,7 +1036,7 @@ ALTER TABLE "public"."t" ADD CONSTRAINT "nn" NOT NULL "a";
 ```
 
 It fails on a `NULL` row as `SET NOT NULL` does, with the same SQLSTATE, and the
-safety report and lint rule `PG303` read it the same way. PostgreSQL 18 added the
+safety report and lint rule `locking/set-not-null` read it the same way. PostgreSQL 18 added the
 statement, and a target that keeps no name writes `SET NOT NULL` with a `WARNING`
 comment. A rename after `SET NOT NULL` would have to guess the name the server picked:
 it picks `t_a_not_null1` where another constraint holds `t_a_not_null`, and the
@@ -1118,7 +1118,7 @@ table there, and the render reports the flag as a property it left out.
 A table that changes between logged and unlogged is planned as
 `ALTER TABLE ... SET UNLOGGED` or `SET LOGGED`, and a rollback writes the
 opposite. PostgreSQL rewrites the table to do it, under a lock that blocks
-readers and writers, and the `PG307` lint rule reports the statement in a
+readers and writers, and the `rewrite/set-persistence` lint rule reports the statement in a
 migration that contains one.
 
 ## Table partition keys
@@ -1545,13 +1545,13 @@ The rebuild has these limits:
 - A NOT NULL with a name of its own, `CONSTRAINT price_nn NOT NULL`, comes
   back under the default name.
 - A migration that holds the rebuild lints without a destructive change: the
-  drop rules `DS102` and `BC104` skip a generated column the file adds back as
+  drop rules `destructive/drop-column` and `rollout/drop-column` skip a generated column the file adds back as
   generated, where the starting state shows it generated, so `ptah migrations
   up` applies it without `--allow-destructive`. Under `ptah-compat migrate
   lint`, a dev database bound to one schema is what lets the lint match the
   qualified names the file writes. The lint still warns that the type change may
-  rewrite the table (`DS103`), that the add computes every row (`PG309`) and
-  that each `CREATE INDEX` blocks writes (`PG101`), because each one does.
+  rewrite the table (`data-dependent/alter-column-type`), that the add computes every row (`rewrite/add-stored-generated-column`) and
+  that each `CREATE INDEX` blocks writes (`locking/create-index`), because each one does.
 
 ## Changing a column to or from an enum
 
@@ -2757,8 +2757,8 @@ a path that names more schemas refuses more plans. A server that does not
 report its search path is read as one that names every schema.
 
 Both ways of taking the protection away are lint findings at error severity:
-`DISABLE ROW LEVEL SECURITY` is `DS109` and `NO FORCE ROW LEVEL SECURITY` is
-`DS111P`. `ptah migrations up` refuses a pending migration that holds either
+`DISABLE ROW LEVEL SECURITY` is `security/disable-row-level-security` and `NO FORCE ROW LEVEL SECURITY` is
+`security/no-force-row-level-security`. `ptah migrations up` refuses a pending migration that holds either
 statement until you rerun it with `--allow-destructive`, and `plan` and
 `generate --check-destructive` refuse a plan that disables row-level security
 or removes FORCE. See [Lint and gate unsafe SQL](../../versioned/lint/).
@@ -3155,9 +3155,9 @@ handles the two cases differently:
 - **The populated-table heuristic** excludes a partitioned parent and generates
   the plain, transactional statement. Nothing asked for a concurrent build, and
   the plain form is legal SQL that `ptah migrations lint` still reports as a
-  blocking build: as [`PG108`](../../reference/lint-rules/), which names the
+  blocking build: as [`locking/partitioned-index`](../../reference/lint-rules/), which names the
   sequence below, when the same migration creates the parent or `--dev-url`
-  shows it partitioned, and as `PG101` otherwise.
+  shows it partitioned, and as `locking/create-index` otherwise.
 - **An explicit `diff.concurrent_index.create` / `diff.concurrent_index.drop`**
   fails generation before any file is written, naming the index and the
   partitioned table. Silently downgrading an explicit request would hand a
@@ -3506,11 +3506,11 @@ populated chunks:
   index before you run the migration again.
 
 `ptah migrations lint` and `ptah-compat migrate lint` report a plain build as
-[`PG101`](../../reference/lint-rules/). With `--dev-url` the replay shows which
+[`locking/create-index`](../../reference/lint-rules/). With `--dev-url` the replay shows which
 tables are hypertables, and on one the finding names the per-chunk build instead
 of `CONCURRENTLY`. The per-chunk build is not reported as a blocking build, but
-in a migration that runs inside a transaction it is reported as `PG103P`, the
-way `PG103` reports `CONCURRENTLY` there.
+in a migration that runs inside a transaction it is reported as `transaction/per-chunk-index`, the
+way `transaction/concurrent-index` reports `CONCURRENTLY` there.
 
 On a server with the extension, `ptah migrations up` refuses the run before it
 applies any migration of it, and names the line and the marker:

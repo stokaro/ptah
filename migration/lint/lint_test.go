@@ -171,7 +171,7 @@ func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
 	})
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
-		Disabled: []string{"MF", "BC", "PG", "MY"},
+		Disabled: []string{"file-form", "rollout", "locking", "rewrite", "transaction"},
 		Selection: lint.VersionSelection{
 			Versions:   []int64{2},
 			Restricted: true,
@@ -1037,11 +1037,9 @@ func refusedFiles(findings []lint.Finding) []string {
 	return files
 }
 
-// The Atlas code MF104 reports a nullable column made non-nullable, and a
-// selector matches every rule code it prefixes once its aliases expand.
-// Disabling MF104 leaves the refusal of a file a run refuses the directory for
-// reported, which a rule code MF104 prefixes would lose.
-func TestLintFS_DisablingAtlasMF104KeepsTheRunRefusal(t *testing.T) {
+// Disabling a rule that is not the refusal leaves the refusal of a file a run
+// refuses the directory for reported.
+func TestLintFS_DisablingAnotherRuleKeepsTheRunRefusal(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
 		"0000000001_a.up.sql":   "CREATE TABLE a (id INT);\n",
@@ -1049,7 +1047,7 @@ func TestLintFS_DisablingAtlasMF104KeepsTheRunRefusal(t *testing.T) {
 		"notes.sql":             "CREATE TABLE notes (id INT);\n",
 	})
 
-	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"MF104"}})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"data-dependent/set-not-null"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(refusedFiles(findings), qt.DeepEquals, []string{"notes.sql"})
@@ -1239,7 +1237,7 @@ func TestLintFS_InvalidCustomRuleFailsFast(t *testing.T) {
 		"0000000001_x.down.sql": "-- restore\n",
 	}), lint.Options{ExtraRules: []lint.Rule{{Name: "design/xx001", Title: "broken"}}})
 
-	c.Assert(err, qt.ErrorMatches, "rule XX001 has unsupported severity.*")
+	c.Assert(err, qt.ErrorMatches, "rule design/xx001 has unsupported severity.*")
 }
 
 func TestLintFS_LowercaseCustomRuleCodeFailsFast(t *testing.T) {
@@ -1349,15 +1347,15 @@ CREATE INDEX i ON b (c);
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column", "locking/create-index"})
 
-	// Disable a whole family by prefix.
-	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"DS"}})
+	// Disable a whole category.
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"destructive"}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-table", "rollout/drop-column", "locking/create-index"})
 
 	// A stray empty entry must not disable everything.
 	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{""}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "rollout/drop-column", "destructive/drop-column", "locking/create-index"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table", "destructive/drop-column", "rollout/drop-column", "locking/create-index"})
 }
 
 func TestLintFS_ConstraintDeletionFamily(t *testing.T) {
@@ -1380,8 +1378,10 @@ ALTER TABLE users DROP CONSTRAINT uq_email;
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"integrity/drop-foreign-key", "integrity/drop-check", "integrity/drop-primary-key", "rewrite/drop-primary-key", "integrity/drop-untyped-constraint"})
 
-	// Disabling the CD family silences the typed codes but keeps the integrity/drop-untyped-constraint fallback.
-	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"CD"}})
+	// Disabling the typed constraint rules keeps the integrity/drop-untyped-constraint fallback.
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{
+		"integrity/drop-foreign-key", "integrity/drop-check", "integrity/drop-primary-key",
+	}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rewrite/drop-primary-key", "integrity/drop-untyped-constraint"})
 
@@ -1458,7 +1458,7 @@ func TestLoadConfig_HappyPath(t *testing.T) {
 	dir := t.TempDir()
 	c.Assert(writeFile(dir+"/.ptah-lint.yaml", `dialect: postgres
 disabled-rules:
-  - MF
+  - file-form
   - rollout/rename
 rules:
   data-dependent/alter-column-type:
@@ -1470,7 +1470,7 @@ rules:
 	cfg, err := lint.LoadConfig(builtintest.Runtime(), dir+"/.ptah-lint.yaml")
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.Dialect, qt.Equals, "postgres")
-	c.Assert(cfg.DisabledRules, qt.DeepEquals, []string{"MF", "rollout/rename"})
+	c.Assert(cfg.DisabledRules, qt.DeepEquals, []string{"file-form", "rollout/rename"})
 	c.Assert(cfg.Rules["data-dependent/alter-column-type"].Severity, qt.Equals, lint.SeverityWarning)
 	c.Assert(cfg.Rules["data-dependent/alter-column-type"].Exclude, qt.DeepEquals, []string{"legacy/**"})
 }

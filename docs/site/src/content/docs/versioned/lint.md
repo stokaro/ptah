@@ -36,14 +36,14 @@ ptah migrations lint --dir ./migrations --dialect sqlite
 A finding names the file, line, rule, and remediation (exit `1`):
 
 ```text
-migrations/0000000003_drop_users.up.sql:1 [error] DS101 destructive/drop-table: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead (table dropped)
+migrations/0000000003_drop_users.up.sql:1 [error] destructive/drop-table: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead (table dropped)
 
 1 finding(s).
 ```
 
 A clean run prints `No lint findings.` and exits `0`. A statement the SQL parser
 could not read is not clean:
-[`AC102`](../../reference/lint-rules/#a-statement-the-parser-could-not-read) reports it and
+[`coverage/unparsed-statement`](../../reference/lint-rules/#a-statement-the-parser-could-not-read) reports it and
 keeps the exit code.
 
 [Lint rules](../../reference/lint-rules/) lists every rule identifier with its
@@ -114,13 +114,13 @@ Rules whose subject is the **cost or the executability** of a statement read
 both halves, because PostgreSQL charges the same lock and enforces the same
 transaction restriction whichever direction asked for it:
 
-- `PG106` — `DROP INDEX` without `CONCURRENTLY` blocks writes. This is the
+- `locking/drop-index` — `DROP INDEX` without `CONCURRENTLY` blocks writes. This is the
   statement a rollback file is normally made of, including the one Ptah
   generates whenever the forward statement was not a concurrent build.
-- `PG103` — a `CONCURRENTLY` statement in a file with no `no_transaction`
+- `transaction/concurrent-index` — a `CONCURRENTLY` statement in a file with no `no_transaction`
   marker cannot execute at all. A rollback that cannot run is only discovered
   when someone needs it.
-- `TX101` — a file mixing autocommit-only statements with transactional DDL.
+- `transaction/mixed-statements` — a file mixing autocommit-only statements with transactional DDL.
   The classification is semantic, not keyword-based: a file that adds a value to
   an enum type it creates itself is not a mix, because PostgreSQL allows the new
   value immediately when the type is new in the same transaction, while a file
@@ -153,11 +153,11 @@ Useful controls:
   and what reads each column. A rule that compares a statement with that
   state stays quiet without it, a rule the state only refines reports from
   the text alone, and the run names both kinds as unmet so the thinner
-  report is never mistaken for a clean one. Two info-severity rules, `MY130P`
-  and `PG301P`, say where the state shows a column change applied in place,
+  report is never mistaken for a clean one. An info-severity rule, `rewrite/in-place-column-change`,
+  says where the state shows a column change applied in place,
   and by which algorithm, so quiet cost rules read as a judgment rather than
   as a rule that did not look.
-- `--disable DS101` (or a family such as `MY`, a rule name, or a category)
+- `--disable destructive/drop-table` (a rule name, or a category such as `locking`)
   skips rules ad hoc; a committed `.ptah-lint.yaml` does it persistently and adds per-rule
   severity and path scoping — see below.
 - `--provider-config` selects an
@@ -179,14 +179,14 @@ selects an explicit lint policy; without that flag, lint loads
 dialect: postgres
 server-version: "17"
 disabled-rules:
-  - MF103
-  - MY
+  - file-form/file-name
+  - locking
 rules:
-  DS103:
+  data-dependent/alter-column-type:
     severity: warning
-  DS104:
+  integrity/drop-not-null:
     severity: info
-  DS102:
+  destructive/drop-column:
     severity: error
     exclude:
       - legacy/**
@@ -204,18 +204,18 @@ rules:
   names no server, or one naming a different product than `dialect`, fails
   config parsing (exit `2`). See [Which server the run plans
   against](#which-server-the-run-plans-against).
-- `disabled-rules` lists rule codes (`DS101`) or family prefixes (`MY`) to
-  skip entirely; entries merge with `--disable` flags. Code selectors and
-  custom rule codes use uppercase ASCII letters and digits and start with a
-  letter. A selector that is a rule's own code selects that rule alone, and
-  any other code selector is a prefix: `MF101` disables the unique-index
-  check and leaves the missing-down rule `MF101P` running, while `MF`
-  disables both and `PG3` disables every `PG3xx` rule. A [rule name or
-  category](../../reference/lint-rules/#rule-names-and-categories) works too
-  and matches exactly. The same rules decide a `ptah:nolint` selector.
-- `rules` keys name a code, a family prefix, a rule name or a category; the
-  most specific key wins, so a `DS102` entry beats a `DS` entry, and a key
-  that is a code governs that code alone.
+- `disabled-rules` lists the rules to skip entirely, each a [rule name or
+  category](../../reference/lint-rules/#rule-names-and-categories); entries
+  merge with `--disable` flags. A name or a category matches exactly and never
+  as a prefix: `data-dependent/add-unique-index` disables the unique-index
+  check and leaves the missing-down rule `file-form/missing-down` running,
+  while `file-form` disables every file-form rule and `file` disables nothing.
+  Ptah rules have no numeric code, so a word written as one, such as `DS102`
+  or `MY`, is refused. The same rules decide a `ptah:nolint` selector.
+- `rules` keys name a rule or a category, written `locking` or `locking/`;
+  the more specific key wins, so a `destructive/drop-column` entry beats a
+  `destructive` entry. A declared rule takes a name of the same form, with a
+  category from the lint rules reference.
 - `severity` accepts `info`, `warning` or `error` and replaces the rule's
   default severity on its findings — the level that `--fail-on` and the
   apply-time destructive gate below evaluate. Only `error` gates: a rule set to
@@ -235,19 +235,20 @@ rules:
   trailing separators are configuration errors rather than being rewritten
   into a broader match.
 
-- `gate` names the rule families whose error-severity findings refuse
-  `ptah migrations up`, beyond the `DS` family the apply gate always blocks
-  on. `gate: { families: [MY, PG] }` with `rules: { MY130: { severity: error } }`
-  makes a MySQL table copy stop a deploy; without the section the same finding
-  is reported by `ptah migrations lint` and applies. A family no rule belongs
-  to, and an empty list, fail config parsing.
+- `gate` names the rules and categories whose error-severity findings refuse
+  `ptah migrations up`, beyond the data-safety rules the apply gate always
+  blocks on. `gate: { rules: [rewrite/alter-column-type] }` with `rules: {
+  rewrite/alter-column-type: { severity: error } }` makes a table copy stop a
+  deploy; without the section the same finding is reported by `ptah migrations
+  lint` and applies. A name or category no rule has, and an empty list, fail
+  config parsing.
 
 - `online: require` selects the online mode, which reports every statement it
   cannot prove takes no blocking lock and refuses the apply. See
   [The online mode](../online-mode/).
 
 Configuration decoding is strict. Unknown keys, misspelled keys such as
-`severty`, lowercase codes, whitespace-padded selectors, selectors that match
+`severty`, selectors written as codes, whitespace-padded selectors, selectors that match
 no registered rule, unsupported dialects or severities, empty or malformed
 or non-normalized exclusion globs, and multiple YAML documents fail before
 linting or migration execution instead of silently weakening policy.
@@ -255,7 +256,7 @@ linting or migration execution instead of silently weakening policy.
 Precedence: a rule listed in `disabled-rules` never runs, regardless of its
 `rules` entry; then `exclude` skips the matching files; then `severity`
 relabels the findings that remain. Per-rule entries apply to custom
-analyzer codes the same way as to built-in ones — see
+analyzer rules the same way as to built-in ones — see
 [Reusable components](../../extend/components/) for registering custom
 rules from Go.
 
@@ -289,7 +290,7 @@ naming:
   primary key constraint counts as an index, as it does for Atlas.
 - `message` is appended to each finding. `severity` is the level the six
   findings report at, `warning` by default; a `rules` entry for one of the
-  codes still wins, so `rules: { NM103: { severity: info } }` softens columns
+  codes still wins, so `rules: { naming/column-name: { severity: info } }` softens columns
   alone.
 - A pattern that does not compile, a kind block without a `match`, and a
   section with no pattern at all fail config parsing, so a naming block never
@@ -324,13 +325,15 @@ takes precedence over it, the way `rules` entries do.
 ## Declare a rule of your own
 
 A `rules` entry that carries `match` **defines** a rule instead of configuring
-one. The rule runs on `ptah migrations lint` and on the compat `migrate lint`
+one. Its key is a rule name like any other: a category from the
+[lint rules reference](../../reference/lint-rules/#rule-names-and-categories)
+and a rule joined by a slash. The rule runs on `ptah migrations lint` and on the compat `migrate lint`
 alike, with no Go build anywhere:
 
 ```yaml
 dialect: postgres
 rules:
-  NOVARCHAR:
+  design/no-varchar:
     title: varchar(n) instead of text
     severity: warning
     match: 'strcontains(lower(statement.sql), "varchar(")'
@@ -343,7 +346,7 @@ a bare expression:
 ```hcl
 env "local" {
   lint {
-    rule "NOVARCHAR" {
+    rule "design/no-varchar" {
       title    = "varchar(n) instead of text"
       severity = "warning"
       match    = strcontains(lower(statement.sql), "varchar(")
@@ -354,9 +357,9 @@ env "local" {
 ```
 
 `match` is an expression evaluated once per statement; the rule fires where it
-is true. `message` is required — a finding whose text is its own rule code says
+is true. `message` is required — a finding whose text is its own rule name says
 what fired and not why it matters. `severity` defaults to `warning`, `title`
-defaults to the code, `dialects` restricts the rule to named dialects, and
+defaults to the name, `dialects` restricts the rule to named dialects, and
 `applies-to-down` (`applies_to_down` in HCL) extends it to the down half of a
 migration.
 
@@ -407,34 +410,25 @@ When one reviewed statement is acceptable but the rule should stay active
 everywhere else, put a `ptah:nolint` comment directly above it:
 
 ```sql
--- ptah:nolint DS102
+-- ptah:nolint destructive/drop-column
 ALTER TABLE users DROP COLUMN archived_note;
 ```
 
 The directive suppresses only the named rules, and only for the statement
 directly below it — a blank line between the comment and the statement
-detaches the two. List several codes separated by spaces or commas, name a
-family (`DS`), a rule name or a category, or write a bare `-- ptah:nolint`
-to silence every rule for that one statement. A rule name or category that
-does not exist fails the run.
+detaches the two. List several rule names separated by spaces or commas, name
+a category, or write a bare `-- ptah:nolint` to silence every rule for that
+one statement. A rule name or category that does not exist fails the run, and
+so does a word written as a rule code, such as `DS102`: Ptah rules are named,
+and a code is not a name.
 
-`-- atlas:nolint DS102` is accepted as an alias with the same
-statement-scoped behavior, so a directory shared with Atlas tooling keeps
-one set of directives. Atlas analyzer-name selectors (`destructive`,
-`data_depend`, `concurrent_index`, `incompatible`, `nestedtx`) name rule
-families and work here too. A code selector always names the code the
-command you ran printed, so on this surface it is the native code:
-`ptah migrations lint` reports `DS102` for a dropped column and
-`-- atlas:nolint DS102` silences it, while `ptah-compat migrate lint`
-prints the same finding as `DS103`.
-
-The `atlas:` spelling follows Atlas's matching rule rather than Ptah's, so a
-code selector there matches one code exactly: `-- ptah:nolint DS` silences
-the data-safety family and `-- atlas:nolint DS` silences nothing. An
-unrecognized `atlas:nolint` selector is accepted and silences nothing,
-without a warning. Whole-file `atlas:nolint`
-headers take effect only on the Atlas-compatible surface — see
-[Atlas migrate commands](../../atlas/migrate-commands/).
+`-- atlas:nolint` is Atlas's directive. `ptah-compat migrate lint` reads it,
+with Atlas's codes and analyzer names (`destructive`, `data_depend`,
+`concurrent_index`, `incompatible`, `nestedtx`), and so does the whole-file
+header form; see [Atlas migrate commands](../../atlas/migrate-commands/).
+Native `ptah migrations lint` and `ptah migrations up` refuse an
+`atlas:nolint` comment at its line, because a code is not a rule name. Write
+`ptah:nolint` with the rule name instead.
 
 ## Where each rule runs, and what a finding does there
 
@@ -447,7 +441,7 @@ does on that surface:
 | Surface | Rules that run | What a finding does |
 | --- | --- | --- |
 | `ptah migrations lint` | the whole registry, gated by `--dialect` | reported; exit `1` at `--fail-on` |
-| `ptah migrations up` | every family but `MF`, `BC`, `PG` and `MY` | an error-severity `DS` or gated finding refuses the apply, exit `2` |
+| `ptah migrations up` | every rule but the advisory ones (migration-file form, backward compatibility, and the PostgreSQL and MySQL locking and rewrite rules) | an error-severity data-safety or gated finding refuses the apply, exit `2` |
 | `ptah-compat migrate lint` | the same registry, under the `atlas.hcl` policy | reported in Atlas's format; an error exits `1` |
 | `ptah-compat schema apply` | the rules the `atlas.hcl` `lint` block names | an error-severity finding refuses the apply |
 | `ptah-compat schema plan lint` | the whole registry, over the plan's SQL | reported; exit `0` unless told to fail |
@@ -458,10 +452,11 @@ What each row leaves out:
 - `ptah migrations lint` runs the rules that need a dev database when
   `--dev-url` is given and names them as unmet otherwise. `--fail-on` takes
   `error`, the default, `any`, or `none`. Nothing is applied.
-- `ptah migrations up` treats `MF`, `BC`, `PG` and `MY` as advisory and drops
-  their findings without printing them. A family named under `gate` in
-  `.ptah-lint.yaml` refuses on its error-severity findings the way `DS` does,
-  and `--allow-destructive` bypasses the refusal.
+- `ptah migrations up` treats the migration-file form, backward compatibility,
+  and PostgreSQL and MySQL locking and rewrite rules as advisory and drops
+  their findings without printing them. A rule or category named under `gate`
+  in `.ptah-lint.yaml` refuses on its error-severity findings the way the
+  data-safety rules do, and `--allow-destructive` bypasses the refusal.
 - `ptah-compat migrate lint` exits `0` for a version whose findings are
   warnings alone.
 - `ptah-compat schema apply` runs no lint pass without a `lint` block, and
@@ -476,7 +471,7 @@ or a rewrite the operator has planned for is something to review, not
 something the migrator should refuse to run on its own. A project that wants a
 finding to stop a deploy has two explicit places to say so: the lint run in
 CI with `--fail-on`, and the `gate` section, which widens the apply-time gate
-by family for the rules the project has rated `error`.
+by rule name or category for the rules the project has rated `error`.
 
 ## The destructive-change gate
 
@@ -491,7 +486,7 @@ Destructive statements require explicit policy at two points:
 
 ```text
 error: error running migrations: pending migrations contain destructive statements; rerun with --allow-destructive after review:
-- 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead
+- 0000000003_drop_users.up.sql:1 destructive/drop-table error: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead
 ```
 
 Use `--allow-destructive` only after the plan has been reviewed and the
@@ -499,8 +494,8 @@ rollback path is understood.
 
 `ptah migrations up` always loads and validates the conventional
 `<migrations-dir>/.ptah-lint.yaml`; when the apply-time gate is active, it
-blocks on error-severity `DS` data-safety findings, and on error-severity
-findings from any family the policy's `gate` section names. What the gate
+blocks on error-severity data-safety findings, and on error-severity
+findings from any rule or category the policy's `gate` section names. What the gate
 lints is always the dialect the connection reports, never the policy's — a
 policy `dialect` is a statement about the directory, not a scanner selector.
 
@@ -524,7 +519,7 @@ does not change the analysis: every built-in MySQL-family rule applies to both
 `mysql` and `mariadb`, and the scanner treats them identically. The one
 asymmetry inside the PostgreSQL family: the `PG` and `TX` rules apply to
 PostgreSQL only, except where a rule was measured on the other engines, which
-is `PG303` on CockroachDB and YugabyteDB. So those databases
+is `locking/set-not-null` on CockroachDB and YugabyteDB. So those databases
 run the dialect-independent families plus that measured set — whether or not
 a policy file exists, and regardless of what it declares.
 
@@ -541,7 +536,7 @@ path matching as `ptah migrations lint`. That makes the escape hatch
 proportional: a rule downgraded with
 `severity: warning`, listed under `disabled-rules`, or excluded for a path
 stops blocking exactly that reviewed pattern — a widening
-`ALTER COLUMN ... TYPE` under `rules: {DS103: {severity: warning}}` applies
+`ALTER COLUMN ... TYPE` under `rules: {data-dependent/alter-column-type: {severity: warning}}` applies
 without `--allow-destructive` — while a `DROP TABLE` in another pending
 file of the same batch still aborts the apply. `--allow-destructive`
 remains the all-or-nothing per-run override rather than the only way past

@@ -431,12 +431,12 @@ env "ci" {
 	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(cfg.Lint.RuleConfigs["DS"].Severity, qt.Equals, "error")
-	c.Assert(cfg.Lint.RuleConfigs["PG101"].Severity, qt.Equals, "error")
-	c.Assert(cfg.Lint.RuleConfigs["PG103"].Severity, qt.Equals, "error")
-	c.Assert(cfg.Lint.RuleConfigs["DD"].Severity, qt.Equals, "warning")
-	c.Assert(cfg.Lint.RuleConfigs["BC"].Severity, qt.Equals, "error")
-	c.Assert(cfg.Lint.RuleConfigs["TX201"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["destructive/drop-table"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["locking/create-index"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["transaction/concurrent-index"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["data-dependent/add-not-null-column"].Severity, qt.Equals, "warning")
+	c.Assert(cfg.Lint.RuleConfigs["rollout/rename"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["transaction/explicit-transaction"].Severity, qt.Equals, "error")
 }
 
 func TestParseAtlasProjectConfigEnvOnlyLintPolicyBlocks(t *testing.T) {
@@ -465,12 +465,12 @@ func TestParseAtlasProjectConfigEnvOnlyLintPolicyBlocks(t *testing.T) {
 	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "ci")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(cfg.Lint.RuleConfigs["DS"].Severity, qt.Equals, "warning")
-	c.Assert(cfg.Lint.RuleConfigs["PG101"].Severity, qt.Equals, "error")
-	c.Assert(cfg.Lint.RuleConfigs["PG103"].Severity, qt.Equals, "error")
-	c.Assert(cfg.Lint.RuleConfigs["DD"].Severity, qt.Equals, "warning")
-	c.Assert(cfg.Lint.RuleConfigs["BC"].Severity, qt.Equals, "error")
-	c.Assert(cfg.Lint.RuleConfigs["TX201"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["destructive/drop-table"].Severity, qt.Equals, "warning")
+	c.Assert(cfg.Lint.RuleConfigs["locking/create-index"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["transaction/concurrent-index"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["data-dependent/add-not-null-column"].Severity, qt.Equals, "warning")
+	c.Assert(cfg.Lint.RuleConfigs["rollout/rename"].Severity, qt.Equals, "error")
+	c.Assert(cfg.Lint.RuleConfigs["transaction/explicit-transaction"].Severity, qt.Equals, "error")
 }
 
 func TestParseAtlasProjectConfigEnvSchemaFormatAndDiffBlocks(t *testing.T) {
@@ -1900,7 +1900,7 @@ func TestParseAtlasProjectConfigGlobalLintLogFeedsFormat(t *testing.T) {
 	// The analysis parts of the lint block remain intact alongside log.
 	c.Assert(cfg.Lint.Latest, qt.IsNotNil)
 	c.Assert(*cfg.Lint.Latest, qt.Equals, 1)
-	c.Assert(cfg.Lint.RuleConfigs["DS"].Severity, qt.Equals, "warning")
+	c.Assert(cfg.Lint.RuleConfigs["destructive/drop-table"].Severity, qt.Equals, "warning")
 }
 
 func TestParseAtlasProjectConfigEnvLintLogOverridesGlobal(t *testing.T) {

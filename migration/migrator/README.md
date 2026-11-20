@@ -1021,7 +1021,7 @@ either, nor is a file of one statement the runner sends alone: any one
 statement on PostgreSQL, and on another engine a statement it refuses inside a
 transaction.
 
-The same classification backs `migrate lint`'s `TX101`, so the two surfaces
+The same classification backs `migrate lint`'s `transaction/mixed-statements`, so the two surfaces
 cannot disagree about one file.
 
 ### Every file is read before the run starts

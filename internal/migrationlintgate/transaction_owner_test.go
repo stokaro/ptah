@@ -19,7 +19,7 @@ import (
 // runs it as written, as golang-migrate does.
 func TestAnalyzeWithPolicy_TransactionOwnerDecidesTX201(t *testing.T) {
 	fsys := fstest.MapFS{
-		lint.ConfigFileName:       {Data: []byte("gate:\n  families: [TX]\nrules:\n  transaction/explicit-transaction:\n    severity: error\n")},
+		lint.ConfigFileName:       {Data: []byte("gate:\n  rules: [transaction/explicit-transaction]\nrules:\n  transaction/explicit-transaction:\n    severity: error\n")},
 		"0000000001_own.up.sql":   {Data: []byte("BEGIN;\nCREATE TABLE t1 (id int);\nCOMMIT;\n")},
 		"0000000001_own.down.sql": {Data: []byte("DROP TABLE t1;\n")},
 	}

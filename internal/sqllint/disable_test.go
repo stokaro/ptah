@@ -124,7 +124,6 @@ func TestDisableRefusesTheParsePathCodes(t *testing.T) {
 	}{
 		{name: "the parse error's own code", disabled: []string{"correctness/syntax-error"}, covers: "correctness/syntax-error"},
 		{name: "the unmodeled statement's own code", disabled: []string{"coverage/unsupported-statement"}, covers: "coverage/unsupported-statement"},
-		{name: "the family prefix, which covers both", disabled: []string{"SQL"}, covers: "correctness/syntax-error"},
 		{name: "the parse error's category", disabled: []string{"correctness"}, covers: "correctness/syntax-error"},
 		{name: "the unmodeled statement's name", disabled: []string{"coverage/unsupported-statement"}, covers: "coverage/unsupported-statement"},
 		{
@@ -159,12 +158,13 @@ func TestDisableRefusesAnUnknownSelector(t *testing.T) {
 		disabled string
 		wantErr  string
 	}{
-		{name: "a category in the wrong case", disabled: "Design", wantErr: `--disable "Design" must start with an uppercase.*`},
-		{name: "a word", disabled: "foo", wantErr: `--disable "foo" must start with an uppercase.*`},
-		{name: "codes joined by a slash", disabled: "design/no-primary-key/DDL002", wantErr: `--disable "design/no-primary-key/DDL002" must start with an uppercase.*`},
-		{name: "a lower-case code", disabled: "ddl001", wantErr: `--disable "ddl001" must start with an uppercase.*`},
-		{name: "a lower-case parse path code", disabled: "sql001", wantErr: `--disable "sql001" must start with an uppercase.*`},
-		{name: "a code no rule has", disabled: "design/zz999", wantErr: `--disable "design/zz999" matches no rule code .*`},
+		{name: "a category in the wrong case", disabled: "Design", wantErr: `--disable "Design" is not a rule name or category.*`},
+		{name: "a word", disabled: "foo", wantErr: `--disable "foo" is not a rule name or category.*`},
+		{name: "a name and a code joined by a slash", disabled: "design/no-primary-key/DDL002", wantErr: `--disable "design/no-primary-key/DDL002" is not the name of a SQL lint rule.*`},
+		{name: "a lower-case code", disabled: "ddl001", wantErr: `--disable "ddl001" is not a rule name or category.*`},
+		{name: "a code", disabled: "DDL001", wantErr: `--disable lint rules are named category/name; DDL001 is not a rule name`},
+		{name: "a code prefix", disabled: "SQL", wantErr: `--disable lint rules are named category/name; SQL is not a rule name`},
+		{name: "a name no rule has, in a declared category", disabled: "design/zz999", wantErr: `--disable "design/zz999" is not the name of a SQL lint rule.*`},
 		{name: "a name no rule has", disabled: "design/nothing", wantErr: `--disable "design/nothing" is not the name of a SQL lint rule; .*`},
 		{name: "a category that is not declared", disabled: "desing/", wantErr: `--disable "desing/" is not a rule category; .*`},
 	}
@@ -208,7 +208,7 @@ func TestDisableRefusesAnUnknownName(t *testing.T) {
 			name:     "the beginning of a name",
 			disabled: "design/no-primary",
 			wantErr: `--disable "design/no-primary" is not the name of a SQL lint rule; ` +
-				`a name is a category and a rule joined by a slash, such as design/no-primary-key`,
+				`a name is a category and a rule joined by a slash, such as locking/add-foreign-key`,
 		},
 		{
 			name:     "a name only migration lint has",

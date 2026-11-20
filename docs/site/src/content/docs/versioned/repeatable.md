@@ -69,7 +69,7 @@ Ptah versioned file, so a directory of repeatable migrations alone needs
 `--dir-format ptah`. In the Atlas format, `R__<name>.sql` is the one-time
 version `R`, as Atlas reads it. `R` is not a number: the directory runs over
 the Atlas revision table (`--revision-format atlas`), and lint reports the file
-under `MF105P` without that flag. `ptah-compat` reads it as a repeatable
+under `file-form/refused-file` without that flag. `ptah-compat` reads it as a repeatable
 migration when asked; see [The compatibility surface](#the-compatibility-surface).
 
 ## What an up run does
@@ -87,7 +87,7 @@ retried, and not one whose content already applied. `--pre-up-hook`,
 work is a repeatable migration.
 
 `ptah migrations lint` reads a repeatable migration as an up migration that has
-no down file, so `MF101P` and `MF103` do not report it. `--latest N` never
+no down file, so `file-form/missing-down` and `file-form/file-name` do not report it. `--latest N` never
 selects one, because it has no version; `--git-base` selects one whose file
 changed.
 

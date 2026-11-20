@@ -183,7 +183,7 @@ func TestValidateOptionsRefusesAnInconsistentInputDeclaration(t *testing.T) {
 				CheckFile: func(*lint.File) []lint.Finding { return nil },
 				Input:     lint.InputBaselineSchema,
 			},
-			want: `rule ZZ901 declares the baseline schema input and must set BaselineSubjects ` +
+			want: `rule design/zz901 declares the baseline schema input and must set BaselineSubjects ` +
 				`to say which statements need it`,
 		},
 		{
@@ -195,7 +195,7 @@ func TestValidateOptionsRefusesAnInconsistentInputDeclaration(t *testing.T) {
 				CheckFile:        func(*lint.File) []lint.Finding { return nil },
 				BaselineSubjects: func(*lint.File) []int { return nil },
 			},
-			want: `rule ZZ902 sets BaselineSubjects but declares the statement text input; ` +
+			want: `rule design/zz902 sets BaselineSubjects but declares the statement text input; ` +
 				`set Input to InputBaselineSchema`,
 		},
 		{
@@ -207,7 +207,7 @@ func TestValidateOptionsRefusesAnInconsistentInputDeclaration(t *testing.T) {
 				CheckFile: func(*lint.File) []lint.Finding { return nil },
 				Input:     lint.RuleInput(99),
 			},
-			want: `rule ZZ903 has unsupported input 99`,
+			want: `rule design/zz903 has unsupported input 99`,
 		},
 	}
 
@@ -236,7 +236,7 @@ func TestExtraRulesRefuseAnInconsistentInputDeclaration(t *testing.T) {
 
 	_, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), opts)
 
-	c.Assert(err, qt.ErrorMatches, `.*rule ZZ904 declares the baseline schema input.*`)
+	c.Assert(err, qt.ErrorMatches, `.*rule design/zz904 declares the baseline schema input.*`)
 }
 
 // TestAnalyzeFS_ReviewedScopeDecidesWhatIsWorthReading is why

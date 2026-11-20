@@ -61,7 +61,7 @@ func TestMigrationGate_AnAtlasRepeatableOverTheAtlasTable_HappyPath(t *testing.T
 func TestMigrationGate_AnAtlasRepeatableUnderAMigrationFormGate_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	dir := readsWholeDirectory(c, map[string]string{
-		".ptah-lint.yaml": "gate:\n  families: [DS, MF]\n",
+		".ptah-lint.yaml": "gate:\n  rules: [destructive/drop-table, file-form]\n",
 		"1_a.sql":         "CREATE TABLE ta (id INTEGER);\n",
 		"R__r.sql":        "CREATE TABLE tr (id INTEGER);\n",
 	})

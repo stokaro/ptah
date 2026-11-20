@@ -1,16 +1,18 @@
 // Package lint inspects migration files for production-unsafe patterns and
-// emits rule-coded findings, in the spirit of sqlcheck and `atlas migrate
+// emits findings named for their rule, in the spirit of sqlcheck and `atlas migrate
 // lint` (issue #151).
 //
-// # Rule codes
+// # Rule names
 //
-//   - DS — data safety (dropping tables/columns, lossy type changes)
-//   - MF — migration form (missing down file, empty migration, naming)
-//   - BC — breaking-change safety (renames breaking deployed readers)
-//   - PG — PostgreSQL-specific hazards, which the PostgreSQL owner checks
-//   - MY — MySQL/MariaDB-specific hazards, which the MySQL owner checks
-//   - YD — YDB statements the server refuses, or runs with an effect the
-//     statement does not state, which the YDB provider checks
+// A rule is identified by its name, `category/name`, the spelling a finding
+// reports, a selector selects and a baseline records. The category says what
+// the statement risks (`destructive`, `rollout`, `locking`, `rewrite`, and so
+// on, declared in [ptah.run/internal/lintnames]); the engine is the rule's
+// Dialects. A selector is a name or a category and matches exactly, never as a
+// prefix. A hazard checked on several engines is one rule name: each engine's
+// owner supplies its check, the dialects of the checks do not overlap, and
+// their default severities match. Ptah rules have no numeric code, and a word
+// spelled as one is refused wherever a selector is read.
 //
 // # How statements are matched
 //
@@ -39,9 +41,10 @@
 // # Rules the engine owners check
 //
 // An engine owner may publish rules of its own through the runtime a run is
-// given, as [ptah.run/core/lintext] data. The PostgreSQL owner publishes the
-// PG and TX families and the online rules online/unproven and online/lock-held-across-scan that way, the MySQL
-// owner the MY family and online/unproven, and the YDB provider the YD family. [Rules]
+// given, as [ptah.run/core/lintext] data. The PostgreSQL owner publishes its
+// locking, rewrite and transaction rules and the online rules online/unproven and
+// online/lock-held-across-scan that way, the MySQL owner its rules and its
+// share of online/unproven, and the YDB provider its ydb rules. [Rules]
 // lists them after this package's own. A run asks the owners for their
 // findings once, over every file, and applies the same policy to them as to
 // every other finding: suppression directives, severity overrides, excluded

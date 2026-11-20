@@ -17,7 +17,7 @@ func file(name string, up bool, sql string) lintext.File {
 	return lintext.File{Name: name, Up: up, Down: !up, Statements: lintscan.Split(sql, lintscan.ForDialect("mysql"))}
 }
 
-// Rules publishes the owner's families in code order, each rule valid as
+// Rules publishes the owner's families in name order, each rule valid as
 // data and naming the engines it judges, and a call's rules share nothing
 // with the next call's.
 func TestRules(t *testing.T) {
@@ -34,10 +34,15 @@ func TestRules(t *testing.T) {
 		targets[rule.Name] = rule.Targets
 	}
 	c.Assert(codes, qt.DeepEquals, []string{
-		"locking/blocking-alter-table", "side-effect/inline-reference", "rewrite/remove-enum-value", "rewrite/reorder-enum-values", "rewrite/insert-enum-value", "rewrite/widen-enum", "rewrite/remove-set-member", "rewrite/reorder-set-members", "rewrite/insert-set-member", "rewrite/widen-set",
-		"rewrite/alter-column-type", "rewrite/in-place-column-change", "locking/add-foreign-key", "rewrite/add-primary-key", "rewrite/drop-primary-key", "locking/add-fulltext-index", "locking/add-spatial-index", "rewrite/convert-charset", "rewrite/replace-primary-key", "rewrite/change-engine", "rewrite/change-partitioning",
-		"rewrite/add-stored-generated-column", "locking/add-auto-increment-column", "rewrite/modify-generated-column", "locking/add-check", "locking/enforce-check", "destructive/drop-system-versioning", "rewrite/set-not-null",
-		"online/unproven",
+		"destructive/drop-system-versioning", "locking/add-auto-increment-column", "locking/add-check",
+		"locking/add-foreign-key", "locking/add-fulltext-index", "locking/add-spatial-index",
+		"locking/blocking-alter-table", "locking/enforce-check", "online/unproven", "rewrite/add-primary-key",
+		"rewrite/add-stored-generated-column", "rewrite/alter-column-type", "rewrite/change-engine",
+		"rewrite/change-partitioning", "rewrite/convert-charset", "rewrite/drop-primary-key",
+		"rewrite/in-place-column-change", "rewrite/insert-enum-value", "rewrite/insert-set-member",
+		"rewrite/modify-generated-column", "rewrite/remove-enum-value", "rewrite/remove-set-member",
+		"rewrite/reorder-enum-values", "rewrite/reorder-set-members", "rewrite/replace-primary-key",
+		"rewrite/set-not-null", "rewrite/widen-enum", "rewrite/widen-set", "side-effect/inline-reference",
 	})
 	c.Assert([]any{targets["locking/blocking-alter-table"], targets["locking/enforce-check"], targets["destructive/drop-system-versioning"], targets["online/unproven"]}, qt.DeepEquals,
 		[]any{[]string{"mysql", "mariadb"}, []string{"mysql"}, []string{"mariadb"}, []string{"mysql", "mariadb"}})
@@ -106,7 +111,7 @@ func TestService_CheckMigrations_FailurePath(t *testing.T) {
 		codes   []string
 		wantErr string
 	}{
-		{"a code the owner does not publish", context.Background(), []string{"locking/create-index"}, `.*no rule of code locking/create-index`},
+		{"a code the owner does not publish", context.Background(), []string{"locking/create-index"}, `.*no rule named locking/create-index`},
 		{"cancellation", canceled, []string{"online/unproven"}, `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -250,12 +250,25 @@ make integration-test            # Docker Compose suite; binds fixed host ports
 
 ### Lint rules
 
-A new lint rule needs its meaning in `internal/lintcatalog`, which holds the
-identifier convention and feeds the generated rule page, and its Ptah name,
-`category/name` under a declared category, in `internal/lintnames`, which the
-linters match selectors against; `scripts/check-docsync.sh` fails when they
-disagree. `preConventionCodes` may shrink, never grow: rename a new
-rule that fails the convention.
+A lint rule is identified by its name, `category/name`, everywhere the lint
+core reads one: findings, selectors, baselines, the apply gate and every native
+report. Ptah rules have no numeric code. The categories are declared once in
+`internal/lintnames`; the engine runtime accepts one name from several owners
+when their dialects are disjoint and their severities match, so one hazard is
+one rule with a check per engine.
+
+Every rule name is enumerated on one generated page. Adding a rule is two
+edits -- the rule, which declares its name, and its meaning in
+`internal/lintcatalog` -- and `scripts/check-docsync.sh` fails when they
+disagree. A selector is an exact name or an exact category, never a prefix, and
+native code refuses any word spelled as a code, with a message that names no
+rule: native code holds no table from codes to rules.
+
+The Atlas check codes live in `internal/atlascodes`, which only the
+compatibility surface (`ptah-compat`, `internal/atlasreport`) and the
+documentation generator import. A native or shared package must not. The
+table from names to Atlas codes and the reviewed reference snapshot are gated
+there, in both directions.
 
 ### The Go toolchain
 

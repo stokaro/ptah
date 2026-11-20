@@ -33,25 +33,25 @@ func TestAnalyze_HappyPath(t *testing.T) {
 			name:      "dropping a table is destructive",
 			sql:       "DROP TABLE users;\n",
 			dialect:   "sqlite",
-			wantRules: []string{"DS101"},
+			wantRules: []string{"destructive/drop-table"},
 		},
 		{
 			name:      "dropping a column is destructive",
 			sql:       "ALTER TABLE users DROP COLUMN nick;\n",
 			dialect:   "postgres",
-			wantRules: []string{"DS102"},
+			wantRules: []string{"destructive/drop-column"},
 		},
 		{
 			name:      "a non-nullable add is data dependent",
 			sql:       "ALTER TABLE users ADD COLUMN nick text NOT NULL;\n",
 			dialect:   "postgres",
-			wantRules: []string{"DD101"},
+			wantRules: []string{"data-dependent/add-not-null-column"},
 		},
 		{
 			name:      "a dialect rule fires only on its dialect",
 			sql:       "CREATE INDEX idx_users_nick ON users (nick);\n",
 			dialect:   "postgres",
-			wantRules: []string{"PG101"},
+			wantRules: []string{"locking/create-index"},
 		},
 		{
 			name:      "the same statement is quiet on another dialect",
@@ -63,7 +63,7 @@ func TestAnalyze_HappyPath(t *testing.T) {
 			name:      "an alias resolves to its canonical dialect",
 			sql:       "CREATE INDEX idx_users_nick ON users (nick);\n",
 			dialect:   "postgresql",
-			wantRules: []string{"PG101"},
+			wantRules: []string{"locking/create-index"},
 		},
 		{
 			name:      "an atlas nolint directive silences the finding",
@@ -95,8 +95,8 @@ func TestAnalyzeIgnoresMigrationDirectoryForm(t *testing.T) {
 		name string
 		rule string
 	}{
-		{name: "no missing down migration", rule: "MF101P"},
-		{name: "no file name complaint", rule: "MF103"},
+		{name: "no missing down migration", rule: "file-form/missing-down"},
+		{name: "no file name complaint", rule: "file-form/file-name"},
 	}
 
 	for _, test := range tests {

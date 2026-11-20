@@ -110,7 +110,7 @@ func lintDirectory(c *qt.C, create, drop string) string {
 
 // TestMigrationsLintThroughAProviderWithoutADialect selects the provider from
 // its manifest alone and names no dialect. The host splits the files without
-// a dialect, so the provider's rules say nothing (FX101 would report the DROP
+// a dialect, so the provider's rules say nothing (design/fx101 would report the DROP
 // TABLE), and the provider still annotates the split: destructive/drop-object reports the drop
 // only because the fixture marked it as one that loses state.
 func TestMigrationsLintThroughAProviderWithoutADialect(t *testing.T) {
@@ -150,7 +150,7 @@ func TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath(t *testing.
 }
 
 // TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings is the
-// control for the run above: the same provider reports FX101 on a DROP TABLE,
+// control for the run above: the same provider reports design/fx101 on a DROP TABLE,
 // the shared rules read the words its split carries, and destructive/drop-object comes from
 // that split rather than from an annotation.
 func TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings(t *testing.T) {

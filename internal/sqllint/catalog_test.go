@@ -17,19 +17,25 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	"ptah.run/internal/builtintest"
+	"ptah.run/internal/lintnames"
 	"ptah.run/internal/sqllint"
 )
 
-// ruleCodePattern is the shape of a rule identifier: a family prefix, a
-// three-digit number, and the optional trailing `P` the repository convention
-// puts on a rule of ours inside a family Atlas also uses.
-//
-// The suffix is not decoration in this pattern. `internal/lintcatalog` refuses
-// a Ptah rule in an Atlas-owned family that is spelled without it, so `PG112P`
-// is the only spelling such a rule may have -- and a scan blind to that
-// spelling would walk past exactly the identifiers the convention mandates,
-// leaving an emitted finding documented nowhere.
-var ruleCodePattern = regexp.MustCompile(`^[A-Z]+[0-9]{3}P?$`)
+// ruleNamePattern is the shape of a rule name: two lowercase hyphenated
+// segments joined by a slash. A scan also asks whether the first segment is a
+// declared category, so a path such as "text/plain" in the package is not
+// mistaken for a rule.
+var ruleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*/[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+
+// isRuleName reports whether text is the name of a rule under a declared
+// category.
+func isRuleName(text string) bool {
+	if !ruleNamePattern.MatchString(text) {
+		return false
+	}
+	_, declared := lintnames.CategoryFor(lintnames.CategoryOf(text))
+	return declared
+}
 
 // declaredRuleCodes reads the Go source in dir for every string literal whose
 // value looks like a rule identifier, wherever it appears.
@@ -75,7 +81,7 @@ func declaredRuleCodes(tb testing.TB, dir string) []string {
 				return true
 			}
 			text, unquoteErr := strconv.Unquote(literal.Value)
-			if unquoteErr == nil && ruleCodePattern.MatchString(text) {
+			if unquoteErr == nil && isRuleName(text) {
 				codes = append(codes, text)
 			}
 			return true
@@ -119,11 +125,11 @@ func TestDeclaredRuleCodesReadsEveryConventionalSpelling(t *testing.T) {
 		code  string
 		found []string
 	}{
-		{name: "Ptah rule inside an Atlas family", code: "PG112P", found: []string{"PG112P"}},
-		{name: "rule inside a family of ours", code: "coverage/dynamic-sql", found: []string{"coverage/dynamic-sql"}},
-		{name: "Atlas check under the Atlas identifier", code: "locking/create-index", found: []string{"locking/create-index"}},
-		{name: "lowercase is not an identifier", code: "pg112p", found: nil},
-		{name: "two digits is not an identifier", code: "PG12", found: nil},
+		{name: "a rule name", code: "naming/identifier-collision", found: []string{"naming/identifier-collision"}},
+		{name: "a rule of another category", code: "coverage/dynamic-sql", found: []string{"coverage/dynamic-sql"}},
+		{name: "a path is not a rule", code: "text/plain", found: nil},
+		{name: "a code is not a name", code: "PG112P", found: nil},
+		{name: "a name without a slash is not a rule", code: "coverage", found: nil},
 	}
 
 	for _, row := range rows {

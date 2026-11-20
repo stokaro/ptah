@@ -378,7 +378,7 @@ migration directory is read.
 [Transactions in a golang-migrate directory](../../atlas/migrate-commands/#transactions-in-a-golang-migrate-directory)
 describes the transactions a file runs in. `ptah migrations lint --runner
 golang-migrate` judges a down file by the same reading
-([`TX201`](../../reference/lint-rules/)).
+([`transaction/explicit-transaction`](../../reference/lint-rules/)).
 
 A failed rollback rolls back the transaction it interrupted and records, on a
 dirty revision, the statements that stayed committed. Here a down file differs

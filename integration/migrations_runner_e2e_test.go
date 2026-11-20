@@ -152,7 +152,7 @@ func TestMigrationsUpRunnerDecidesTheGateE2E(t *testing.T) {
 			dir := runnerMigrations(c, map[string]string{
 				"0000000001_own.up.sql":   "BEGIN;\nCREATE TABLE t1 (id int);\nCOMMIT;\n",
 				"0000000001_own.down.sql": "DROP TABLE t1;\n",
-				".ptah-lint.yaml":         "gate:\n  families: [TX]\nrules:\n  transaction/explicit-transaction:\n    severity: error\n",
+				".ptah-lint.yaml":         "gate:\n  rules: [transaction/explicit-transaction]\nrules:\n  transaction/explicit-transaction:\n    severity: error\n",
 			})
 			target, _ := scratchReplayDatabase(c)
 

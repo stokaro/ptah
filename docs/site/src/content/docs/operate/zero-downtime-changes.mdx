@@ -268,20 +268,20 @@ ptah migrations lint --dir ./migrations --dialect postgres
 ```
 
 ```text
-migrations/0000000002_unsafe.down.sql:1 [warning] PG106 locking/drop-index: DROP INDEX without CONCURRENTLY blocks writes while PostgreSQL removes the index; use DROP INDEX CONCURRENTLY outside a transaction for populated tables (index dropped with a table lock)
-migrations/0000000002_unsafe.up.sql:1 [warning] PG101 locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
-migrations/0000000002_unsafe.up.sql:2 [warning] PG303 locking/set-not-null: SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it (column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, and SET NOT NULL afterwards, which then scans nothing (not-null validation scans existing rows)
+migrations/0000000002_unsafe.down.sql:1 [warning] locking/drop-index: DROP INDEX without CONCURRENTLY blocks writes while PostgreSQL removes the index; use DROP INDEX CONCURRENTLY outside a transaction for populated tables (index dropped with a table lock)
+migrations/0000000002_unsafe.up.sql:1 [warning] locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; on a populated table use CREATE INDEX CONCURRENTLY outside a transaction (index built with a table lock)
+migrations/0000000002_unsafe.up.sql:2 [warning] locking/set-not-null: SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it (column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, and SET NOT NULL afterwards, which then scans nothing (not-null validation scans existing rows)
 
 3 finding(s).
 ```
 
-Read PG303 again: it is the whole recipe, in order, inside the finding. That is
+Read locking/set-not-null again: it is the whole recipe, in order, inside the finding. That is
 what the catalog is for. The rules name the rewrite rather than only the cost,
-and the ones you will meet most are `PG101` and `PG106` for index builds and
-drops, `PG104` and `PG105` for primary keys and unique constraints, `PG303` for
-`SET NOT NULL`, `PG305` for `CHECK`, and `PG301` for a column type change.
+and the ones you will meet most are `locking/create-index` and `locking/drop-index` for index builds and
+drops, `locking/add-primary-key` and `locking/add-unique-constraint` for primary keys and unique constraints, `locking/set-not-null` for
+`SET NOT NULL`, `locking/add-check` for `CHECK`, and `rewrite/alter-column-type` for a column type change.
 
-The command also prints a warning on stderr that names `PG101`. The rule can
+The command also prints a warning on stderr that names `locking/create-index`. The rule can
 read a dev database, given with `--dev-url`, to tell whether the table is a
 TimescaleDB hypertable, and this run gave none. For an ordinary table the
 finding is the same either way.
@@ -332,7 +332,7 @@ DROP INDEX CONCURRENTLY idx_users_email;
 without reading existing rows, and `VALIDATE CONSTRAINT` reads them under a lock
 that lets writes through.
 
-**`SET NOT NULL` goes through a validated `CHECK`,** in the order PG303 prints:
+**`SET NOT NULL` goes through a validated `CHECK`,** in the order locking/set-not-null prints:
 backfill, add `CHECK (col IS NOT NULL) NOT VALID`, validate it, then
 `SET NOT NULL`, which now scans nothing because the check already proved it. The
 rewrite above drops the `SET NOT NULL` rather than showing all four statements,

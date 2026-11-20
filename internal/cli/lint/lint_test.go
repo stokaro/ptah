@@ -298,8 +298,8 @@ func TestRunLint_ConfigFileDisablesRulesAndSetsDialect(t *testing.T) {
 	c.Assert(report.Dialect, qt.Equals, "postgres")
 
 	for _, f := range report.Findings {
-		c.Assert(f.Rule, qt.Not(qt.Contains), "MF",
-			qt.Commentf("the MF family is disabled by .ptah-lint.yaml; got %v", f))
+		c.Assert(f.Rule, qt.Not(qt.Contains), "file-form/",
+			qt.Commentf("the file-form category is disabled by .ptah-lint.yaml; got %v", f))
 		c.Assert(f.Rule, qt.Not(qt.Equals), "rollout/rename")
 		c.Assert(f.Rule, qt.Not(qt.Equals), "locking/blocking-alter-table",
 			qt.Commentf("dialect: postgres from the config must gate MY rules; got %v", f))
@@ -321,7 +321,7 @@ func TestRunLint_LatestRestrictsToLatestMigrationVersions(t *testing.T) {
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column"})
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column"})
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
@@ -358,7 +358,7 @@ func TestRunLint_ProjectConfigLatestRestrictsToLatestMigrationVersions(t *testin
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column"})
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column"})
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
@@ -444,7 +444,7 @@ func TestRunLint_GitBaseRestrictsToChangedMigrationVersions(t *testing.T) {
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column"})
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column"})
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
@@ -493,7 +493,7 @@ func TestRunLint_ProjectConfigGitBaseRestrictsToChangedMigrationVersions(t *test
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column"})
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column"})
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
 	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
@@ -668,7 +668,7 @@ func TestRunLint_ProjectConfigDisablesRulesAndSetsDialect(t *testing.T) {
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "postgres")
 	for _, f := range report.Findings {
-		c.Assert(f.Rule, qt.Not(qt.Contains), "MF",
+		c.Assert(f.Rule, qt.Not(qt.Contains), "file-form/",
 			qt.Commentf("the MF family is disabled by ptah.yaml; got %v", f))
 		c.Assert(f.Rule, qt.Not(qt.Equals), "locking/blocking-alter-table",
 			qt.Commentf("dialect: postgres from ptah.yaml must gate MY rules; got %v", f))
@@ -709,7 +709,7 @@ func TestRunLint_AtlasProjectConfigDestructivePolicyDowngradesSeverity(t *testin
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	// The policy downgrades the destructive rule it names. rollout/drop-column is not in
 	// that family and keeps the severity it was registered with.
-	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column"})
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column"})
 	c.Assert(report.Findings[1].Severity, qt.Equals, migrationlint.SeverityWarning)
 }
 
@@ -839,7 +839,7 @@ func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	// The exclusion names destructive/drop-column, so the legacy path is excluded for that rule
 	// alone and rollout/drop-column still reports there.
-	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"rollout/drop-column", "rollout/drop-column", "destructive/drop-column"})
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column", "rollout/drop-column"})
 	c.Assert(report.Findings[2].Severity, qt.Equals, migrationlint.SeverityWarning)
 	c.Assert(report.Findings[2].File, qt.Contains, "main/0000000002_main.up.sql")
 }
@@ -1036,15 +1036,15 @@ func TestRunLint_FailOnThresholds(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "destructive/drop-table")
 
-	// any: even warning-only runs fail. Disable the DS error rules and keep
+	// any: even warning-only runs fail. Disable the destructive error rules and keep
 	// warnings; the exit code must still be 1.
-	_, _, err = execute("--dir", "testdata/bad", "--fail-on", "any", "--disable", "DS")
+	_, _, err = execute("--dir", "testdata/bad", "--fail-on", "any", "--disable", "destructive")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 
 	// error (default): warnings alone do not fail. misnamed.sql is an error
 	// too, file-form/refused-file, since the migrator refuses the directory for it.
-	stdout, _, err = execute("--dir", "testdata/bad", "--disable", "DS", "--disable", "file-form/refused-file")
+	stdout, _, err = execute("--dir", "testdata/bad", "--disable", "destructive", "--disable", "file-form/refused-file")
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "locking/create-index")
 }
@@ -1298,7 +1298,7 @@ func TestRunLint_TextAndJSONCarryTheRuleName(t *testing.T) {
 		rules = append(rules, finding.Rule)
 	}
 	c.Assert(text, qt.Contains, "0000000001_drop.up.sql:1 [error] destructive/drop-table: DROP TABLE permanently deletes")
-	c.Assert(rules, qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table"})
+	c.Assert(rules, qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(jsonOut, qt.Contains, `"rule": "destructive/drop-table"`)
 }
 

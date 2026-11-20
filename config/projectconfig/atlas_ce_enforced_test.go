@@ -45,8 +45,8 @@ func TestParseAtlasLintCondropSeverity(t *testing.T) {
 }
 `,
 			want:   "error",
-			codes:  []string{"CD", "DS105"},
-			absent: []string{"DS", "DD", "BC", "TX201", "PG101", "PG103"},
+			codes:  []string{"integrity/drop-foreign-key", "integrity/drop-check", "integrity/drop-primary-key", "integrity/drop-untyped-constraint"},
+			absent: []string{"destructive/drop-table", "data-dependent/add-not-null-column", "rollout/rename", "transaction/explicit-transaction", "locking/create-index", "transaction/concurrent-index"},
 		},
 		{
 			name: "error false downgrades the constraint family only",
@@ -57,8 +57,8 @@ func TestParseAtlasLintCondropSeverity(t *testing.T) {
 }
 `,
 			want:   "warning",
-			codes:  []string{"CD", "DS105"},
-			absent: []string{"DS", "DD", "BC", "TX201", "PG101", "PG103"},
+			codes:  []string{"integrity/drop-foreign-key", "integrity/drop-check", "integrity/drop-primary-key", "integrity/drop-untyped-constraint"},
+			absent: []string{"destructive/drop-table", "data-dependent/add-not-null-column", "rollout/rename", "transaction/explicit-transaction", "locking/create-index", "transaction/concurrent-index"},
 		},
 		{
 			// Same block inside env, because the parser reaches it by a
@@ -75,7 +75,7 @@ func TestParseAtlasLintCondropSeverity(t *testing.T) {
 }
 `,
 			want:  "error",
-			codes: []string{"CD", "DS105"},
+			codes: []string{"integrity/drop-foreign-key", "integrity/drop-check", "integrity/drop-primary-key", "integrity/drop-untyped-constraint"},
 		},
 	}
 

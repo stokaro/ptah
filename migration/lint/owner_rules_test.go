@@ -149,7 +149,7 @@ func TestAnalyzeFS_AppliesThePolicyToTheOwnersFindings(t *testing.T) {
 		want []string
 	}{
 		{"reported", "SELECT 1;\n", lint.Options{Dialect: "postgres"}, []string{"XY101 warning"}},
-		{"silenced by a directive", "-- ptah:nolint XY101\nSELECT 1;\n", lint.Options{Dialect: "postgres"}, make([]string, 0)},
+		{"silenced by a directive", "-- ptah:nolint design/xy101\nSELECT 1;\n", lint.Options{Dialect: "postgres"}, make([]string, 0)},
 		{"a configured severity", "SELECT 1;\n",
 			lint.Options{Dialect: "postgres", RuleConfigs: map[string]lint.RuleConfig{"design/xy101": {Severity: lint.SeverityError}}},
 			[]string{"XY101 error"}},

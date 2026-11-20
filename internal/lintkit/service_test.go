@@ -172,7 +172,7 @@ func TestRules_CheckMigrations_FailurePath(t *testing.T) {
 		codes   []string
 		wantErr string
 	}{
-		{"a code no rule carries", context.Background(), []string{"design/xy999"}, `.*no rule of code XY999`},
+		{"a code no rule carries", context.Background(), []string{"design/xy999"}, `.*no rule named design/xy999`},
 		{"cancellation", canceled, []string{"design/xy101"}, `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -203,13 +203,13 @@ func TestRules_Validate_FailurePath(t *testing.T) {
 		rules   lintkit.Rules
 		wantErr string
 	}{
-		{"both functions", lintkit.Rules{both}, `.*rule XY101 must set exactly one of Statement, File and Directory`},
-		{"a file and a directory function", lintkit.Rules{fileAndDirectory}, `.*rule XY104 must set exactly one of Statement, File and Directory`},
-		{"no function", lintkit.Rules{neither}, `.*rule XY101 must set exactly one of Statement, File and Directory`},
-		{"a baseline rule naming no subjects", lintkit.Rules{withoutSubjects}, `.*rule XY301 sets BaselineSubjects exactly when its input reads a baseline`},
-		{"a text rule naming subjects", lintkit.Rules{textWithSubjects}, `.*rule XY101 sets BaselineSubjects exactly when its input reads a baseline`},
-		{"two rules of one code", lintkit.Rules{wordRule("design/xy101", "DROP", false), wordRule("design/xy101", "TRUNCATE", false)}, `.*two rules of code XY101`},
-		{"a rule that does not validate", lintkit.Rules{invalid}, `.*rule code "xy101" must start.*`},
+		{"both functions", lintkit.Rules{both}, `.*rule design/xy101 must set exactly one of Statement, File and Directory`},
+		{"a file and a directory function", lintkit.Rules{fileAndDirectory}, `.*rule design/xy104 must set exactly one of Statement, File and Directory`},
+		{"no function", lintkit.Rules{neither}, `.*rule design/xy101 must set exactly one of Statement, File and Directory`},
+		{"a baseline rule naming no subjects", lintkit.Rules{withoutSubjects}, `.*rule design/xy301 sets BaselineSubjects exactly when its input reads a baseline`},
+		{"a text rule naming subjects", lintkit.Rules{textWithSubjects}, `.*rule design/xy101 sets BaselineSubjects exactly when its input reads a baseline`},
+		{"two rules of one code", lintkit.Rules{wordRule("design/xy101", "DROP", false), wordRule("design/xy101", "TRUNCATE", false)}, `.*two rules of name design/xy101`},
+		{"a rule that does not validate", lintkit.Rules{invalid}, `.*rule name "xy101" must be a category.*`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

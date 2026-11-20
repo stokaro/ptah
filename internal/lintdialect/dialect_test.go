@@ -380,6 +380,7 @@ func TestBuiltInRules_MySQLFamilyMembersAreSplitOnlyWhereMeasured(t *testing.T) 
 		"locking/enforce-check=" + platform.MySQL,
 		"destructive/drop-system-versioning=" + platform.MariaDB,
 	}
+	slices.Sort(measured)
 
 	mysqlFamily := slices.DeleteFunc(ruleFamilyCoverage(c), func(cov ruleDialectCoverage) bool {
 		return cov.family != platform.MySQL

@@ -206,15 +206,15 @@ env "prod" {
 	c.Assert(err, qt.IsNil)
 
 	fields := projectconfig.Merge(projectconfig.Config{}, parsed)
-	rule := fields.Lint.RuleConfigs["DS"]
+	rule := fields.Lint.RuleConfigs["destructive/drop-table"]
 	rule.Severity = ""
-	fields.Lint.RuleConfigs["DS"] = rule
+	fields.Lint.RuleConfigs["destructive/drop-table"] = rule
 	fields.Format = projectconfig.FormatConfig{}
 
 	base := projectconfig.Config{
 		Lint: projectconfig.LintConfig{
 			RuleConfigs: map[string]projectconfig.LintRuleConfig{
-				"DS": {
+				"destructive/drop-table": {
 					Severity: "warning",
 					Exclude:  []string{"legacy/**"},
 				},
@@ -238,8 +238,8 @@ env "prod" {
 	cfg := projectconfig.Merge(base, fields)
 
 	c.Assert(cfg.Format, qt.DeepEquals, projectconfig.FormatConfig{})
-	c.Assert(cfg.Lint.RuleConfigs["DS"].Severity, qt.Equals, "")
-	c.Assert(cfg.Lint.RuleConfigs["DS"].Exclude, qt.DeepEquals, []string{"legacy/**"})
+	c.Assert(cfg.Lint.RuleConfigs["destructive/drop-table"].Severity, qt.Equals, "")
+	c.Assert(cfg.Lint.RuleConfigs["destructive/drop-table"].Exclude, qt.DeepEquals, []string{"legacy/**"})
 
 	rules := projectconfig.Merge(projectconfig.Config{}, parsed)
 	rules.Lint.RuleConfigs = make(map[string]projectconfig.LintRuleConfig)

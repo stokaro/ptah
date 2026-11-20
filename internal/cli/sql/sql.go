@@ -103,7 +103,7 @@ migration directory specific.`,
 	serverversion.Register(flags, &version)
 	flags.StringVar(&format, "format", formatText, "Output format: text or json")
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
-	flags.StringArrayVar(&disabled, "disable", nil, "Disable rules by code, family, Ptah rule name or category, for example design/no-primary-key, CAP, design/no-primary-key or naming (repeatable)")
+	flags.StringArrayVar(&disabled, "disable", nil, "Disable rules by Ptah rule name or category, for example design/no-primary-key or naming (repeatable)")
 	cmdutil.ConfigureCommandArgs(cmd, cobra.ArbitraryArgs)
 	return providercommand.Configure(cmd, func(cmd *cobra.Command, err error) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), format, err.Error())
@@ -393,7 +393,7 @@ func sourceNames(sources []sqllint.Source) []string {
 // stays here in the command rather than between the two libraries.
 func sqlLintSeverities(ctx context.Context) (map[string]sqllint.Severity, error) {
 	// The policy is validated against the bundled rules, as the migration
-	// linter validates it: a gate family no rule belongs to is refused here too.
+	// linter validates it: a gate rule or category no rule has is refused here too.
 	// A policy naming an engine an executable provider serves is validated
 	// against the runtime that provider joins, as the migration linter reads
 	// it, since only that runtime knows the dialect.
