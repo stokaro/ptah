@@ -19,7 +19,7 @@ func lintDescription() *protocol.Description {
 	description.Features = append(description.Features, provider.LintFeature)
 	engine := description.Engines[0]
 	engine.Features = append(engine.Features, provider.LintFeature)
-	engine.LintRules = []*protocol.LintRule{{Code: "XY101", Title: "Drop loses data", Severity: protocol.LintRule_ERROR}}
+	engine.LintRules = []*protocol.LintRule{{Code: "design/xy101", Title: "Drop loses data", Severity: protocol.LintRule_ERROR}}
 	return description
 }
 
@@ -56,7 +56,7 @@ func TestLintDescriptionDeclaresRules_FailurePath(t *testing.T) {
 		{"digit first", func(d *protocol.Description) { d.Engines[0].LintRules[0].Code = "1XY" }},
 		{"blank title", func(d *protocol.Description) { d.Engines[0].LintRules[0].Title = " " }},
 		{"no severity", func(d *protocol.Description) { d.Engines[0].LintRules[0].Severity = 0 }},
-		{"subsumes itself", func(d *protocol.Description) { d.Engines[0].LintRules[0].Subsumes = []string{"XY101"} }},
+		{"subsumes itself", func(d *protocol.Description) { d.Engines[0].LintRules[0].Subsumes = []string{"design/xy101"} }},
 		{"duplicate code", func(d *protocol.Description) {
 			d.Engines[0].LintRules = append(d.Engines[0].LintRules, proto.CloneOf(d.Engines[0].LintRules[0]))
 		}},
@@ -187,10 +187,10 @@ func TestLintAnnotation_FailurePath(t *testing.T) {
 }
 
 func lintCheck() (*protocol.CheckLintRequest, *protocol.CheckedLint) {
-	request := &protocol.CheckLintRequest{Engine: lintEngineID(), Codes: []string{"XY101"},
+	request := &protocol.CheckLintRequest{Engine: lintEngineID(), Codes: []string{"design/xy101"},
 		Files: []*protocol.LintFile{{Name: "1.sql", Up: true, Statements: lintStatements()}}}
 	result := &protocol.CheckedLint{Complete: true, Findings: []*protocol.LintFinding{{
-		Code: "XY101", File: 0, Statement: 1, Message: "drop loses data",
+		Code: "design/xy101", File: 0, Statement: 1, Message: "drop loses data",
 		Subjects: []*protocol.LintSubject{{Kind: protocol.LintSubject_TABLE, Name: "b"}},
 	}}}
 	return request, result
@@ -200,7 +200,7 @@ func TestLintCheck_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	request, result := lintCheck()
 	c.Assert(provider.ValidateCheckedLint(lintDescription(), request, result), qt.IsNil)
-	result.Findings = []*protocol.LintFinding{{Code: "XY101", File: 0, Statement: -1, Message: "file level"}}
+	result.Findings = []*protocol.LintFinding{{Code: "design/xy101", File: 0, Statement: -1, Message: "file level"}}
 	c.Assert(provider.ValidateCheckedLint(lintDescription(), request, result), qt.IsNil)
 	result.Findings = nil
 	c.Assert(provider.ValidateCheckedLint(lintDescription(), request, result), qt.IsNil)
@@ -213,8 +213,8 @@ func TestLintCheck_FailurePath(t *testing.T) {
 	}{
 		{"incomplete", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Complete = false }},
 		{"rule not enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = nil }},
-		{"undeclared rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = []string{"ZZ999"} }},
-		{"repeated rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = []string{"XY101", "XY101"} }},
+		{"undeclared rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = []string{"design/zz999"} }},
+		{"repeated rule enabled", func(q *protocol.CheckLintRequest, _ *protocol.CheckedLint) { q.Codes = []string{"design/xy101", "design/xy101"} }},
 		{"file beyond request", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Findings[0].File = 1 }},
 		{"negative file", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Findings[0].File = -1 }},
 		{"statement beyond file", func(_ *protocol.CheckLintRequest, r *protocol.CheckedLint) { r.Findings[0].Statement = 2 }},

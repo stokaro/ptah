@@ -73,15 +73,30 @@ func lintCodeCount(description *protocol.Description, code string) int {
 	return count
 }
 
-// canonicalLintCode reports an uppercase ASCII letter followed by uppercase
-// ASCII letters and digits.
+// canonicalLintCode reports whether a rule is named as the host names rules:
+// two lowercase segments joined by a slash, each of letters and digits joined
+// by single hyphens, such as locking/add-foreign-key. The wire field is still
+// called code; it carries the name.
 func canonicalLintCode(code string) bool {
-	for i, char := range code {
-		if (char < 'A' || char > 'Z') && (i == 0 || char < '0' || char > '9') {
+	category, name, found := strings.Cut(code, "/")
+	return found && lintNameSegment(category) && lintNameSegment(name)
+}
+
+func lintNameSegment(segment string) bool {
+	if segment == "" || segment[0] < 'a' || segment[0] > 'z' || segment[len(segment)-1] == '-' {
+		return false
+	}
+	for i := 1; i < len(segment); i++ {
+		char := segment[i]
+		hyphen := char == '-'
+		if hyphen && segment[i-1] == '-' {
+			return false
+		}
+		if !hyphen && (char < 'a' || char > 'z') && (char < '0' || char > '9') {
 			return false
 		}
 	}
-	return code != ""
+	return true
 }
 
 func lintEngine(description *protocol.Description, name string) (*protocol.Engine, error) {

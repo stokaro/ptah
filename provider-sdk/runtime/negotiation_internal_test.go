@@ -39,7 +39,7 @@ func contractDescription() *protocol.Description {
 			Id: "test", Features: []string{provider.LintFeature, provider.LintStatementFactsFeature},
 			Identifiers: &protocol.IdentifierRules{TableNames: protocol.IdentifierRules_EXACT, ColumnNames: protocol.IdentifierRules_EXACT,
 				IndexNames: protocol.IdentifierRules_EXACT, IndexNamespace: protocol.IdentifierRules_TABLE},
-			LintRules:    []*protocol.LintRule{{Code: "XY101", Title: "Table without key", Severity: protocol.LintRule_WARNING}},
+			LintRules:    []*protocol.LintRule{{Code: "design/xy101", Title: "Table without key", Severity: protocol.LintRule_WARNING}},
 			QueryDialect: &protocol.QueryDialect{Placeholder: "question"},
 		}},
 	}

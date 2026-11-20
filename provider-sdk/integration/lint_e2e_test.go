@@ -49,7 +49,7 @@ func TestIndependentProviderLintsWithoutSession(t *testing.T) {
 	c.Assert(checked.Findings, qt.HasLen, 1)
 	c.Assert(checked.Findings[0].Statement, qt.Equals, int32(1))
 
-	request.Codes = []string{"ZZ999"}
+	request.Codes = []string{"design/zz999"}
 	checked, err = client.CheckLintMigrations(c.Context(), request)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(checked, qt.IsNil)

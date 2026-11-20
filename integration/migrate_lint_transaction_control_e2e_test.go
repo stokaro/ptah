@@ -84,9 +84,9 @@ func TestMigrateLintTransactionControlE2E_CompatReportsAndApplyRefuses(t *testin
 			"\n"+
 			"  -- analyzing version 2\n"+
 			"    -- diagnostics detected:\n"+
-			"      -- L3 [transaction/explicit-transaction]: the migrator refuses transaction control in a migration that runs without a\n"+
-			"         transaction and commits each statement on its own, so the apply stops at this BEGIN;\n"+
-			"         remove the transaction control\n"+
+			"      -- L3 [transaction/explicit-transaction]: the migrator refuses transaction control in a\n"+
+			"         migration that runs without a transaction and commits each statement on its own, so the\n"+
+			"         apply stops at this BEGIN; remove the transaction control\n"+
 			"  -- ok (DUR)\n"+
 			"\n"+
 			"  -------------------------\n"+
