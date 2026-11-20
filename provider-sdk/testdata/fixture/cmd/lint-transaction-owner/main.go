@@ -35,7 +35,7 @@ func main() {
 		description.Features = append(description.Features, provider.LintTransactionOwnerFeature)
 		engine.Features = append(engine.Features, provider.LintTransactionOwnerFeature)
 	}
-	engine.LintRules = []*protocol.LintRule{{Code: "design/fx301", Title: "BEGIN nests inside the migrator's transaction", Severity: protocol.LintRule_ERROR}}
+	engine.LintRules = []*protocol.LintRule{{Code: "FX301", Title: "BEGIN nests inside the migrator's transaction", Severity: protocol.LintRule_ERROR}}
 	owner := &backend.Provider{}
 	if err := runtime.Serve(runtime.Server{Description: description, Sessions: owner, Inspector: owner, Renderer: owner, Executor: owner,
 		SQLAnalyzer: owner, ValueNormalizer: owner, SourceDecoder: owner, ValueConverter: owner, Linter: transactionLinter{}}); err != nil {
@@ -61,7 +61,7 @@ func (transactionLinter) CheckLintMigrations(ctx context.Context, request *proto
 	for file, source := range request.GetFiles() {
 		for statement, value := range source.GetStatements() {
 			if strings.HasPrefix(strings.ToUpper(strings.TrimSpace(value.GetSql())), "BEGIN") {
-				result.Findings = append(result.Findings, &protocol.LintFinding{Code: "design/fx301", File: int32(file), Statement: int32(statement), // #nosec G115 -- a fixture run holds few files and statements.
+				result.Findings = append(result.Findings, &protocol.LintFinding{Code: "FX301", File: int32(file), Statement: int32(statement), // #nosec G115 -- a fixture run holds few files and statements.
 					Message: "BEGIN nests inside the transaction the migrator opens around this file"})
 			}
 		}

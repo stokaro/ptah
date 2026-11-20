@@ -23,7 +23,7 @@ func TestIndependentProviderLintsWithoutSession(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	checksum := sha256.Sum256(data)
 	client := start(c, transport.Options{Executable: binary, SHA256: hex.EncodeToString(checksum[:]), ProviderID: "example.org/fixture", RequiredFeatures: []string{provider.LintFeature}})
-	c.Assert(client.Description().GetEngines()[0].GetLintRules()[0].GetCode(), qt.Equals, "design/fx101")
+	c.Assert(client.Description().GetEngines()[0].GetLintRules()[0].GetCode(), qt.Equals, "FX101")
 	sources := []*protocol.LintSource{{Name: "1.sql", Sql: "CREATE TABLE a (id INTEGER);\nDROP TABLE a;", Up: true}}
 
 	split, err := client.SplitLintStatements(c.Context(), &protocol.SplitLintRequest{Engine: "fixture", Sources: sources})
@@ -40,7 +40,7 @@ func TestIndependentProviderLintsWithoutSession(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(annotated.Files[0].Statements[1].Effects[0].Fact, qt.Equals, protocol.LintFact_LINT_FACT_STATEFUL_DROP)
 
-	request := &protocol.CheckLintRequest{Engine: "fixture", Codes: []string{"design/fx101"}, Files: files}
+	request := &protocol.CheckLintRequest{Engine: "fixture", Codes: []string{"FX101"}, Files: files}
 	original := proto.CloneOf(request)
 	checked, err := client.CheckLintMigrations(c.Context(), request)
 	c.Assert(err, qt.IsNil)
@@ -49,7 +49,7 @@ func TestIndependentProviderLintsWithoutSession(t *testing.T) {
 	c.Assert(checked.Findings, qt.HasLen, 1)
 	c.Assert(checked.Findings[0].Statement, qt.Equals, int32(1))
 
-	request.Codes = []string{"design/zz999"}
+	request.Codes = []string{"ZZ999"}
 	checked, err = client.CheckLintMigrations(c.Context(), request)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(checked, qt.IsNil)
