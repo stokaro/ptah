@@ -47,8 +47,8 @@ func TestIsSelector(t *testing.T) {
 		{selector: "lockin", want: false},
 		{selector: "LOCKING", want: false},
 		{selector: "PG", want: false},
-		{selector: "destructive/drop-table", want: false},
-		{selector: "destructive/drop-table/DS102", want: false},
+		{selector: "DS101", want: false},
+		{selector: "DS101/DS102", want: false},
 		{selector: "/", want: false},
 		{selector: "", want: false},
 	}
@@ -79,7 +79,7 @@ func TestSelects(t *testing.T) {
 		{name: "the beginning of the category with a slash", selector: "lock/", rule: "locking/set-not-null", want: false},
 		{name: "another rule's name", selector: "locking/add-foreign-key", rule: "locking/set-not-null", want: false},
 		{name: "another category", selector: "destructive", rule: "locking/set-not-null", want: false},
-		{name: "a code", selector: "locking/set-not-null", rule: "locking/set-not-null", want: false},
+		{name: "a code", selector: "PG303", rule: "locking/set-not-null", want: false},
 		{name: "no rule", selector: "locking", rule: "", want: false},
 	}
 	for _, row := range rows {
@@ -140,8 +140,8 @@ func TestSet_Resolve_FailurePath(t *testing.T) {
 			wantErr: `"naming" is a category that holds no migration lint rule`,
 		},
 		{
-			name: "a code", selector: "destructive/drop-column",
-			wantErr: `lint rules are named category/name; destructive/drop-column is not a rule name`,
+			name: "a code", selector: "DS102",
+			wantErr: `lint rules are named category/name; DS102 is not a rule name`,
 		},
 		{
 			name: "a code prefix", selector: "DS",
@@ -176,7 +176,7 @@ func TestSet_ValidateSelector_FailurePath(t *testing.T) {
 		selector string
 		wantErr  string
 	}{
-		{selector: "rewrite/alter-column-type", wantErr: `lint rules are named category/name; rewrite/alter-column-type is not a rule name`},
+		{selector: "PG301", wantErr: `lint rules are named category/name; PG301 is not a rule name`},
 		{selector: "DS", wantErr: `lint rules are named category/name; DS is not a rule name`},
 		{selector: "locking/typo", wantErr: `"locking/typo" is not the name of a migration lint rule.*`},
 		{selector: "lockin", wantErr: `"lockin" is not a rule name or category.*`},
@@ -196,7 +196,7 @@ func TestValidateGrammar_FailurePath(t *testing.T) {
 		selector string
 		wantErr  string
 	}{
-		{selector: "data-dependent/add-unique-index", wantErr: `lint rules are named category/name; data-dependent/add-unique-index is not a rule name`},
+		{selector: "MF101", wantErr: `lint rules are named category/name; MF101 is not a rule name`},
 		{selector: "locking/Add", wantErr: `"locking/Add" is not a rule name; a name is a category and a rule joined by a slash.*`},
 		{selector: "nosuch/add-foreign-key", wantErr: `"nosuch/add-foreign-key" is not a rule category; the categories are .*`},
 		{selector: "nosuch/", wantErr: `"nosuch/" is not a rule category; the categories are .*`},

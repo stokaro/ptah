@@ -38,7 +38,7 @@ func TestRule_Validate_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{"a code-shaped name", lintext.Rule{Name: "XY101", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}},
-			`.*rule name "design/xy101" must be a category and a rule joined by a slash.*`},
+			`.*rule name "XY101" must be a category and a rule joined by a slash.*`},
 		{"a name without a category", lintext.Rule{Name: "drop-table", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}},
 			`.*rule name "drop-table" must be a category.*`},
 		{"no title", lintext.Rule{Name: "test/drop-table", Title: " ", Severity: lintext.Error, Targets: []string{"postgres"}}, `.*rule test/drop-table has no title`},

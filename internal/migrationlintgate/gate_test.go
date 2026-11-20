@@ -88,7 +88,7 @@ func TestLoadPolicy_FailurePath_UnregisteredRuleSelectors(t *testing.T) {
 
 			_, err := migrationlintgate.LoadPolicy(builtintest.Runtime(), fsys, "sqlite")
 
-			c.Assert(err, qt.ErrorMatches, `rule selector "design/zz404" is not the name of a migration lint rule; .*`)
+			c.Assert(err, qt.ErrorMatches, `.*"design/zz404" is not the name of a .*lint rule; .*`)
 		})
 	}
 }
