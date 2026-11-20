@@ -484,8 +484,9 @@ func TestApplyReportsARehearsalBackslashModeRefusalE2E(t *testing.T) {
 			applied := runPtahIn(c, "schema", "apply", "--db-url", target, flag, path, "--dev-url", dev, "--auto-approve", "--json")
 
 			c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, historyComment(applied))
-			c.Assert(decodeApplyRefusal(c, applied).Refusal.Code, qt.Equals, "backslash-mode", historyComment(applied))
-			c.Assert(decodeApplyRefusal(c, applied).Outcome, qt.Equals, "refused")
+			document := decodeApplyRefusal(c, applied)
+			c.Assert(document.Refusal.Code, qt.Equals, "backslash-mode", historyComment(applied))
+			c.Assert(document.Outcome, qt.Equals, "refused")
 			c.Assert(readNoBackslashEscapes(c, target, tablesIn), qt.Equals, "0")
 		})
 	}
