@@ -1018,3 +1018,5 @@ v0.33.0 ptah.run/dialect/mysql/mysqlrender
 # only. Pre-v1, so no compatibility is owed.
 v0.33.1 ptah.run/core/lintext
 v0.33.1 ptah.run/migration/lint
+v0.34.0 ptah.run/core/lintext
+v0.34.0 ptah.run/migration/lint
