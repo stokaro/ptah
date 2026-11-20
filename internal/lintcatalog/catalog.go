@@ -316,7 +316,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		YDBNote: "the migration directory's files",
 	},
 	"data-dependent/add-unique-index": {
-		Summary: "a unique index built over existing rows fails on the first duplicate",
+		Summary: "a unique index built over existing rows fails on the first duplicate, and a failed CONCURRENTLY build leaves an invalid index behind",
 		YDB:     YDBApplies,
 		YDBNote: "`ADD INDEX ... UNIQUE` where the target adds one to an existing table; `capability/unique-index-on-existing-table` replaces it where it does not",
 	},

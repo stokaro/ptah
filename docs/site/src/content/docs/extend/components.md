@@ -616,12 +616,12 @@ statement an owner declined because its own lexing splits the text
 differently.
 
 The runtime also holds the rules the engine owners check, such as the
-PostgreSQL owner's PG and TX families, the MySQL owner's MY family and the
-rules an executable provider publishes, such as the YDB provider's YD family. `lint.Rules(runtime)` lists them after
+PostgreSQL owner's rules, the MySQL owner's rules and the
+rules an executable provider publishes, such as the YDB provider's `ydb` category. `lint.Rules(runtime)` lists them after
 the rules the lint package checks itself, and a run asks the owners for their
 findings through `Runtime.CheckMigrations`, once per run, then applies the
 same policy to them as to every other finding. The configuration loaders take
-the runtime for the same reason: a `gate` family is checked against its rules.
+the runtime for the same reason: the rules and categories a `gate` section names are checked against its rules.
 
 `LintFS` and `AnalyzeFS` validate `lint.Options` before reading migrations. A
 host that can return early when no work is pending, or that offers an execution
@@ -666,11 +666,11 @@ _ = m
 `VersionSelection.Restricted` distinguishes no selector from an explicitly
 empty changeset. Native Ptah callers should keep the zero-value
 `CompatibilityProfileNative`; `CompatibilityProfileAtlas` exists for
-Atlas-compatible command adapters. It switches the `atlas:nolint` code
-namespace to the codes that profile prints and enables the file-header form,
-without changing native safety behavior. Atlas analyzer-name selectors resolve
-under both profiles, because they name rule families rather than printed
-codes.
+Atlas-compatible command adapters. It enables the `atlas:nolint` directive,
+which native analysis refuses, and the file-header form, without changing
+native safety behavior. The adapter supplies `Options.AtlasSelectors`, the
+function that turns an Atlas analyzer name or check code into rule names; the
+`lint` package holds no table of Atlas codes.
 
 Each finding context identifies its zero-based statement index. Structured
 subjects preserve the executable identifier spelling: table subjects use
@@ -682,7 +682,7 @@ captured snapshot.
 
 A host tool can add its own analyzers to the same run without reimplementing
 the dialect-aware scanner. `Options.ExtraRules` appends per-run rules, and a
-run refuses an invalid rule or one whose code another rule holds. The rule
+run refuses an invalid rule or one whose name another rule holds. The rule
 receives statements Ptah has already prepared: `Statement.Words` is the
 comment-free token-word sequence the built-in rules scan, and
 `Statement.Canonical` is the uppercased display form. This example is
@@ -692,7 +692,7 @@ compile-checked in `examples/reusable_components`:
 findings, err = lint.LintFS(ctx, runtime, fsys, lint.Options{
 	Dialect: "postgres",
 	ExtraRules: []lint.Rule{{
-		Code:     "ORG101",
+		Name:     "design/org101",
 		Title:    "TEXT column without explicit limit",
 		Severity: lint.SeverityWarning,
 		CheckStatement: func(stmt *lint.Statement) (bool, string) {
@@ -718,13 +718,13 @@ back as data. The readers are `dialect/postgres/pgroutine` for the PostgreSQL
 family, `dialect/mysql/mysqlroutine` for MySQL and MariaDB, and
 `dialect/mssql/mssqlroutine` for SQL Server.
 
-Rule codes use uppercase ASCII letters and digits and start with a letter.
-Custom codes flow through reporting, `--disable`, inline `-- ptah:nolint`
-directives, and `.ptah-lint.yaml` per-rule severity and path excludes
-exactly like built-in codes; the configuration surface is documented in
-[Lint and gate unsafe SQL](../../versioned/lint/). A custom rule has no Ptah
-rule name, so a name or category selector does not reach it: select it by
-its code or a code prefix.
+A rule is named `category/name`: two lowercase segments joined by a slash,
+the first a category Ptah declares. A custom rule flows through reporting,
+`--disable`, inline `-- ptah:nolint` directives, and `.ptah-lint.yaml`
+per-rule severity and path excludes exactly like a built-in rule; the
+configuration surface is documented in
+[Lint and gate unsafe SQL](../../versioned/lint/). A selector is the rule's
+name or its category.
 
 ### Use capabilities
 

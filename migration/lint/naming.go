@@ -69,9 +69,8 @@ const (
 	nameCheck
 )
 
-// namingCodes are the rule codes, in nameKind order: the Atlas codes, since
-// the rules report what the Atlas naming analyzer reports.
-var namingCodes = [...]string{"naming/schema-name", "naming/table-name", "naming/column-name", "naming/index-name", "naming/foreign-key-name", "naming/check-name"}
+// namingNames are the rule names, in nameKind order.
+var namingNames = [...]string{"naming/schema-name", "naming/table-name", "naming/column-name", "naming/index-name", "naming/foreign-key-name", "naming/check-name"}
 
 var nameKindLabels = [...]string{"schema", "table", "column", "index", "foreign key", "check constraint"}
 
@@ -169,9 +168,9 @@ func withNamingSeverity(configs map[string]RuleConfig, naming *NamingConfig) map
 	if naming == nil || naming.Severity == "" {
 		return configs
 	}
-	merged := make(map[string]RuleConfig, len(configs)+len(namingCodes))
+	merged := make(map[string]RuleConfig, len(configs)+len(namingNames))
 	maps.Copy(merged, configs)
-	for _, code := range namingCodes {
+	for _, code := range namingNames {
 		config := merged[code]
 		if config.Severity == "" {
 			config.Severity = naming.Severity
@@ -474,8 +473,8 @@ func collectAddClause(w []string, i, end int, owner string, collect func(nameKin
 // namingRules is the family: one rule per kind of name, each reading the
 // project's convention.
 func namingRules() []Rule {
-	rules := make([]Rule, 0, len(namingCodes))
-	for kind := range nameKind(len(namingCodes)) {
+	rules := make([]Rule, 0, len(namingNames))
+	for kind := range nameKind(len(namingNames)) {
 		rules = append(rules, namingRule(kind))
 	}
 	return rules
@@ -484,7 +483,7 @@ func namingRules() []Rule {
 func namingRule(kind nameKind) Rule {
 	title := kind.String() + " name violates the naming convention"
 	return Rule{
-		Name:     namingCodes[kind],
+		Name:     namingNames[kind],
 		Title:    title,
 		Severity: SeverityWarning,
 		CheckFile: func(file *File) []Finding {
@@ -506,7 +505,7 @@ func namingRule(kind nameKind) Rule {
 				}
 				stmt := &file.Statements[object.statement]
 				findings = append(findings, Finding{
-					Rule:     namingCodes[kind],
+					Rule:     namingNames[kind],
 					Title:    title,
 					Severity: SeverityWarning,
 					File:     file.Path,

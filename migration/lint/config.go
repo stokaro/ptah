@@ -57,7 +57,7 @@ type Config struct {
 	// refused here rather than resolving to the default and quietly changing
 	// which rules can fire.
 	ServerVersion string `yaml:"server-version,omitempty"`
-	// DisabledRules lists rule codes or family prefixes to skip; merged
+	// DisabledRules lists the rule names and categories to skip; merged
 	// with --disable flags.
 	DisabledRules []string `yaml:"disabled-rules"`
 	// Rules carries per-rule severity and path-scope overrides.

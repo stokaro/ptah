@@ -97,6 +97,11 @@ func TestLoadPolicy_GateRefusesARuleNobodyHas(t *testing.T) {
 			wantErr: `.*gate: rule lint rules are named category/name; MY is not a rule name`,
 		},
 		{
+			name:    "the retired families key",
+			policy:  "gate:\n  families: [locking]\n",
+			wantErr: `(?s).*field families not found in type lint\.GateConfig`,
+		},
+		{
 			name:    "an empty list",
 			policy:  "gate:\n  rules: []\n",
 			wantErr: `.*gate: rules lists nothing, so the section would widen nothing`,

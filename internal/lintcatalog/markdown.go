@@ -332,9 +332,9 @@ func writeAtlasChecks(w io.Writer, entries []Entry) error {
 		atlascodes.ReferenceReviewedOn,
 		counts[atlascodes.StatusCovered], counts[atlascodes.StatusPartial], counts[atlascodes.StatusAbsent], counts[atlascodes.StatusWaived], len(checks),
 		atlasSurfaceNote(entries, checks))
-	// Five columns, and the widest carries a sentence, so at a phone width auto
-	// layout shrinks the table and the status column stacks into cells fifteen
-	// lines tall. The wrapper scrolls and the table keeps its desktop width
+	// Three columns, and the last carries the rule names, which are unbreakable
+	// tokens, and a sentence, so at a phone width auto layout shrinks the table
+	// and a narrower column stacks into cells fifteen lines tall. The wrapper scrolls and the table keeps its desktop width
 	// inside it -- the same fix the feature matrix uses, and the reason
 	// check-responsive.mjs exempted this route until now: the table is emitted
 	// here rather than by a docs script (stokaro/ptah#946).
@@ -342,14 +342,14 @@ func writeAtlasChecks(w io.Writer, entries []Entry) error {
 	// The blank lines around the table are load-bearing: without them the
 	// markdown inside the div is not parsed as a table.
 	out.WriteString(wideTableOpen)
-	out.WriteString("| Atlas check | Meaning | Pro | Ptah rule | Status |\n| --- | --- | --- | --- | --- |\n")
+	out.WriteString("| Atlas check | Meaning | Ptah rule and status |\n| --- | --- | --- |\n")
 	for _, check := range checks {
 		status := string(check.Status)
 		if check.Note != "" {
 			status += " — " + check.Note
 		}
-		fmt.Fprintf(&out, "| `%s` | %s | %s | %s | %s |\n",
-			check.Code, check.Meaning, proLabel(check), ruleList(check.PtahRules), status)
+		fmt.Fprintf(&out, "| %s | %s | %s<br>%s |\n",
+			checkLabel(check), check.Meaning, ruleList(check.PtahRules), status)
 	}
 	out.WriteString(wideTableClose)
 	_, err := io.WriteString(w, out.String())
@@ -446,14 +446,14 @@ func codeList(codes []string) string {
 	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
 }
 
-// proLabel renders whether the Atlas documentation marks a check as an Atlas
-// Pro feature. It takes the check rather than the flag so the column can never
-// be filled in from a boolean that belongs to another row.
-func proLabel(check atlascodes.Check) string {
+// checkLabel renders a check's code and whether the Atlas documentation marks
+// it as an Atlas Pro feature. It takes the check rather than the flag so the
+// mark can never be filled in from a boolean that belongs to another row.
+func checkLabel(check atlascodes.Check) string {
 	if check.Pro {
-		return "yes"
+		return "`" + check.Code + "` (Pro)"
 	}
-	return "no"
+	return "`" + check.Code + "`"
 }
 
 func ruleList(codes []string) string {

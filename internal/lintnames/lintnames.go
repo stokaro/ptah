@@ -108,12 +108,12 @@ func CategoryOf(name string) string {
 // (`locking/set-not-null`) or a category (`locking/`), or it is a declared
 // category's name (`locking`).
 //
-// Every other selector is a code or a code prefix and is matched by the
-// linter's own code rule. The split is total and the two sides cannot meet: a
-// name holds a lower-case letter, and a code is upper case. Upper-case codes
-// joined by a slash, `DS101/DS102`, and a slash on its own stay on the code
-// side, where a nolint directive splits them at the slash. The selector is
-// read as written; a caller that trims whitespace trims it first.
+// Every other selector is written as a code, which native Ptah refuses. The
+// split is total and the two sides cannot meet: a name holds a lower-case
+// letter, and a code is upper case. Upper-case codes joined by a slash,
+// `DS101/DS102`, and a slash on its own stay on the code side, where a nolint
+// directive splits them at the slash. The selector is read as written; a
+// caller that trims whitespace trims it first.
 func IsSelector(selector string) bool {
 	_, _, ok := parse(selector)
 	return ok

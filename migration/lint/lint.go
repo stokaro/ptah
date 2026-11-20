@@ -253,16 +253,16 @@ type RuleConfig struct {
 	//
 	// Its presence is what separates the two uses of this type: an entry with
 	// Match defines a new rule, an entry without it configures a rule that
-	// already exists. A code that already belongs to a built-in rule cannot be
+	// already exists. A name that already belongs to a built-in rule cannot be
 	// declared, so a typo can never quietly replace a built-in check with a
 	// weaker one of the same name.
 	Match string `yaml:"match,omitempty"`
 	// Message is the finding text a declared rule reports. It is required when
-	// Match is set: a finding whose message is the rule code tells a reader
+	// Match is set: a finding whose message is the rule name tells a reader
 	// what fired and nothing about why it matters.
 	Message string `yaml:"message,omitempty"`
 	// Title is the declared rule's short name in reports. It defaults to the
-	// rule code.
+	// rule name.
 	Title string `yaml:"title,omitempty"`
 	// Dialects restricts a declared rule to specific target dialects. Empty
 	// runs it under every dialect.

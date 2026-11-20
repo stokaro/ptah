@@ -552,7 +552,7 @@ Know the limits of this gate: the policy file is not tamper-evident.
 `ptah.sum` hashes only the migration `*.sql` files, so `ptah migrations
 validate` and `up --verify-sum` still pass when `.ptah-lint.yaml` is added or
 edited out-of-band, and the apply prints no notice when the config suppresses
-a destructive finding — a one-line `disabled-rules: [DS]` dropped next to the
+a destructive finding — a one-line `disabled-rules: [destructive]` dropped next to the
 migrations at deploy time disables this gate silently.
 
 Loosening the gate is a visible committed change only if your process makes it

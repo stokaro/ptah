@@ -65,14 +65,11 @@ var checks = []Check{
 	// version starts from refines both: a unique index or primary key that
 	// already covers the key's columns proves the rows unique and silences
 	// them, and a dropped index is known by its columns, so a unique rebuild
-	// under a new name is MF102's replacement too (stokaro/ptah#2957). The
-	// identifiers were Ptah's own missing-down and empty-file rules before
-	// the convention; those are MF101P and MF102P now, so the Atlas checks
-	// keep their codes.
+	// under a new name is MF102's replacement too (stokaro/ptah#2957).
 	{
 		Code: "MF101", Meaning: "adding a unique index to an existing column",
 		PtahRules: []string{"data-dependent/add-unique-index"}, Status: StatusCovered,
-		Note: "structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind, and a unique index the dev database already holds over the columns silences it",
+		Note: "structural: the message names the query that settles the duplicates; a unique index the dev database already holds over the columns silences it",
 	},
 	{
 		Code: "MF102", Meaning: "modifying a non-unique index to unique",
@@ -80,40 +77,42 @@ var checks = []Check{
 		Note: "an index dropped earlier in the file and rebuilt as unique under the same name, or under a new name over the columns the dev database records for it; the message adds that the failure leaves the table without the index it had",
 	},
 	{Code: "MF103", Meaning: "adding a non-nullable column to an existing table", PtahRules: []string{"data-dependent/add-not-null-column"}, Status: StatusCovered},
-	// DD103 reads the column's current nullability from the dev database,
-	// because MODIFY, SQL Server's ALTER COLUMN and ClickHouse's MODIFY COLUMN
-	// restate the whole column and the text cannot tell a change from a
-	// restatement (migration/lint/notnull.go, stokaro/ptah#2942). PG303 names
-	// the two built-in engines that speak PostgreSQL's wire protocol beside it,
-	// each measured to fail SET NOT NULL on a NULL row, and DD103 names
+	// data-dependent/set-not-null reads the column's current nullability from
+	// the dev database, because MODIFY, SQL Server's ALTER COLUMN and
+	// ClickHouse's MODIFY COLUMN restate the whole column and the text cannot
+	// tell a change from a restatement (migration/lint/notnull.go,
+	// stokaro/ptah#2942). locking/set-not-null names the two built-in engines
+	// that speak PostgreSQL's wire protocol beside PostgreSQL, each measured to
+	// fail SET NOT NULL on a NULL row, and data-dependent/set-not-null names
 	// ClickHouse, measured to fail the mutation and leave the table unreadable
-	// (stokaro/ptah#2958). SP101 is the official Spanner provider's rule for the
-	// same statement, recorded in internal/providerpublished.
+	// (stokaro/ptah#2958). The official Spanner provider publishes
+	// data-dependent/set-not-null for the same statement, recorded in
+	// internal/providerpublished.
 	{
 		Code: "MF104", Meaning: "modifying a nullable column to non-nullable might fail",
-		PtahRules: []string{"locking/set-not-null", "rewrite/set-not-null", "data-dependent/set-not-null", "data-dependent/set-not-null"}, Status: StatusCovered,
-		Note: "PG303 on PostgreSQL, CockroachDB and YugabyteDB, LT101 on SQLite, DD103 on MySQL, MariaDB, SQL Server and ClickHouse, SP101 on Spanner; every engine measured, each with its own failure named",
+		PtahRules: []string{"locking/set-not-null", "rewrite/set-not-null", "data-dependent/set-not-null"}, Status: StatusCovered,
+		Note: "the first on PostgreSQL, CockroachDB and YugabyteDB, the second on SQLite, MySQL and MariaDB, the third on MySQL, MariaDB, SQL Server, ClickHouse and Spanner; every engine measured, each with its own failure named",
 	},
 
 	{Code: "BC101", Meaning: "renaming a table", PtahRules: []string{"rollout/rename"}, Status: StatusCovered},
 	{Code: "BC102", Meaning: "renaming a column", PtahRules: []string{"rollout/rename"}, Status: StatusCovered, Note: "one rule reports both object kinds"},
 	{
 		Code: "BC103", Meaning: "dropping a table", PtahRules: []string{"rollout/drop-table"}, Status: StatusCovered,
-		Note: "the rollout break, not the row loss DS101 reports on the same statement, and separately " +
+		Note: "the rollout break, not the row loss destructive/drop-table reports on the same statement, and separately " +
 			"suppressible: accepting the data loss is not accepting deployed clients failing. Native " +
 			"`ptah migrations lint` only; no apply gate",
 	},
 	{
 		Code: "BC104", Meaning: "dropping a column", PtahRules: []string{"rollout/drop-column"}, Status: StatusCovered,
-		Note: "as BC103, beside DS102, and reported on the same surface; a column the migration created or added earlier is exempt from both, since no deployed client read it",
+		Note: "as BC103, beside destructive/drop-column, and reported on the same surface; a column the migration created or added earlier is exempt from both, since no deployed client read it",
 	},
 
-	{Code: "MY101", Meaning: "adding a non-nullable column without a DEFAULT to an existing table", PtahRules: []string{"data-dependent/add-not-null-column"}, Status: StatusCovered, Note: "DD101 applies to every dialect"},
+	{Code: "MY101", Meaning: "adding a non-nullable column without a DEFAULT to an existing table", PtahRules: []string{"data-dependent/add-not-null-column"}, Status: StatusCovered, Note: "the Ptah rule applies to every dialect"},
 	{Code: "MY102", Meaning: "an inline REFERENCES clause in ADD COLUMN has no effect", PtahRules: []string{"side-effect/inline-reference"}, Status: StatusCovered},
 
 	// MySQL removes an enum value by restating the whole member list in a
-	// MODIFY COLUMN, which is why DS106 does not answer for this check: its
-	// scan matches the PostgreSQL spellings, DROP VALUE and DELETE FROM
+	// MODIFY COLUMN, which is why destructive/remove-enum-value does not answer
+	// for this check: its scan matches the PostgreSQL spellings, DROP VALUE and DELETE FROM
 	// pg_enum. The list a column has is not in the statement either, so the
 	// eight rules below read it from the schema state the version starts from.
 	//
@@ -124,8 +123,8 @@ var checks = []Check{
 	// again. Each rule compares the list the dev database reports with the
 	// list the MODIFY or CHANGE assigns, and says which of those the
 	// migration did; without that state the statement is still reported by
-	// DS103 and MY101, and the run names these rules as unmet
-	// (stokaro/ptah#2942).
+	// data-dependent/alter-column-type and locking/blocking-alter-table, and the
+	// run names these rules as unmet (stokaro/ptah#2942).
 	{Code: "MY110", Meaning: "removing enum values from a column requires a table copy", PtahRules: []string{"rewrite/remove-enum-value"}, Status: StatusCovered},
 	{Code: "MY111", Meaning: "reordering enum values requires a table copy", PtahRules: []string{"rewrite/reorder-enum-values"}, Status: StatusCovered},
 	{Code: "MY112", Meaning: "inserting enum values other than at the end requires a table copy", PtahRules: []string{"rewrite/insert-enum-value"}, Status: StatusCovered},
@@ -144,12 +143,14 @@ var checks = []Check{
 	// class or a utf8mb3 column converted to utf8mb4 is not reported as the
 	// copy it is not, while a collation change or that same conversion on a
 	// keyed column is reported as the copy MySQL makes of it; without that
-	// state the statement is still reported by DS103 and MY101, and the run
-	// names these rules as unmet (stokaro/ptah#2942, stokaro/ptah#2957).
+	// state the statement is still reported by data-dependent/alter-column-type
+	// and locking/blocking-alter-table, and the run names these rules as unmet
+	// (stokaro/ptah#2942, stokaro/ptah#2957).
 	{
 		Code: "MY130", Meaning: "changing a column type requires a table copy", Pro: true,
 		PtahRules: []string{"rewrite/alter-column-type"}, Status: StatusCovered,
-		Note: "fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary, character set, collation or key that decides it; MY130P is the info finding for the change applied in place",
+		Note: "fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary, character set, collation or key that " +
+			"decides it; rewrite/in-place-column-change is the info finding for the change applied in place",
 	},
 	{Code: "MY131", Meaning: "adding a foreign key blocks DML", Pro: true, PtahRules: []string{"locking/add-foreign-key"}, Status: StatusCovered},
 	{Code: "MY132", Meaning: "adding a primary key requires a table rebuild", Pro: true, PtahRules: []string{"rewrite/add-primary-key"}, Status: StatusCovered},
@@ -197,7 +198,7 @@ var checks = []Check{
 	{
 		Code: "MY143", Meaning: "modifying a generated column requires a table copy and blocks DML", Pro: true,
 		PtahRules: []string{"rewrite/modify-generated-column"}, Status: StatusCovered,
-		Note: "the MODIFY and CHANGE side; adding one is MY140, and DS103 still reports the type change where the declared type moves",
+		Note: "the MODIFY and CHANGE side; adding one is MY140, and data-dependent/alter-column-type still reports the type change where the declared type moves",
 	},
 	{
 		Code: "MY144", Meaning: "adding a CHECK constraint scans all existing rows", Pro: true,
@@ -216,7 +217,7 @@ var checks = []Check{
 	{
 		Code: "MY147", Meaning: "changing column nullability requires a table rebuild", Pro: true,
 		PtahRules: []string{"rewrite/set-not-null"}, Status: StatusCovered,
-		Note: "the cost; measured in place with writes allowed. Whether an existing NULL fails the statement is the separate question DD103 answers from the baseline",
+		Note: "the cost; measured in place with writes allowed. Whether an existing NULL fails the statement is the separate question data-dependent/set-not-null answers from the baseline",
 	},
 	{
 		Code: "MY148", Meaning: "changing a column character set or collation requires a table copy and blocks DML", Pro: true,
@@ -248,13 +249,14 @@ var checks = []Check{
 	// applies as a catalog edit is not reported as a rewrite and a collation
 	// change is reported as the index rebuild it is; PG304 reads the key
 	// columns' nullability the same way, and for a USING INDEX form the key
-	// columns of the index it names. Without that state DS103 and PG104 keep
-	// the statement and the run names these rules as unmet (stokaro/ptah#2942,
-	// stokaro/ptah#2957).
+	// columns of the index it names. Without that state
+	// data-dependent/alter-column-type and PG104 keep the statement and the run
+	// names these rules as unmet (stokaro/ptah#2942, stokaro/ptah#2957).
 	{
 		Code: "PG301", Meaning: "a column type change requires a table and index rewrite", Pro: true,
 		PtahRules: []string{"rewrite/alter-column-type"}, Status: StatusCovered,
-		Note: "fires for a change PostgreSQL rewrites for, naming the abort a value can cause, and for a collation change on an indexed column, naming the indexes it rebuilds; PG301P is the info finding for a catalog edit",
+		Note: "fires for a change PostgreSQL rewrites for, naming the abort a value can cause, and for a collation change on an indexed column, naming the " +
+			"indexes it rebuilds; rewrite/in-place-column-change is the info finding for a catalog edit",
 	},
 	{Code: "PG302", Meaning: "a volatile DEFAULT on an added column rewrites the table", Pro: true, PtahRules: []string{"rewrite/volatile-default"}, Status: StatusCovered},
 	{Code: "PG303", Meaning: "SET NOT NULL scans existing rows", Pro: true, PtahRules: []string{"locking/set-not-null"}, Status: StatusCovered},
@@ -283,7 +285,7 @@ var checks = []Check{
 	{
 		Code: "PG312", Meaning: "redefining a primary key builds its unique index under an ACCESS EXCLUSIVE lock", Pro: true,
 		PtahRules: []string{"locking/replace-primary-key"}, Status: StatusCovered,
-		Note: "distinct from Ptah's own PG312P, which is about a SECURITY DEFINER routine and keeps its trailing P; the USING INDEX form builds nothing under the lock and is not reported",
+		Note: "distinct from security/definer-without-search-path, which is about a SECURITY DEFINER routine; the USING INDEX form builds nothing under the lock and is not reported",
 	},
 	{
 		Code: "PG314", Meaning: "changing REPLICA IDENTITY to FULL or NOTHING risks the logical replication setup", Pro: true,

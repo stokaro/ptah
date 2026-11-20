@@ -99,12 +99,12 @@ The supported attributes map to Ptah settings as follows:
 | `lint.latest` | `migrations lint --latest` default |
 | `lint.git.base` | `migrations lint --git-base` default |
 | `lint.git.dir` | `migrations lint --git-dir` default |
-| `lint.destructive.error` | `DS` lint rule-family severity |
-| `lint.concurrent_index.error` | `PG101` and `PG103` lint rule severity |
-| `lint.condrop.error` | `CD` lint rule-family and `DS105` lint rule severity |
-| `lint.data_depend.error` | `DD` lint rule-family severity |
-| `lint.incompatible.error` | `BC` lint rule-family severity |
-| `lint.nestedtx.error` | `TX201` lint rule severity |
+| `lint.destructive.error` | severity of the lint rules the Atlas `destructive` analyzer covers |
+| `lint.concurrent_index.error` | `locking/create-index` and `transaction/concurrent-index` lint rule severity |
+| `lint.condrop.error` | the constraint-deletion lint rules and `integrity/drop-untyped-constraint` severity |
+| `lint.data_depend.error` | severity of the lint rules the Atlas `data_depend` analyzer covers |
+| `lint.incompatible.error` | `rollout/rename`, `rollout/drop-table` and `rollout/drop-column` lint rule severity |
+| `lint.nestedtx.error` | `transaction/explicit-transaction` lint rule severity |
 | `lint.log` | `ptah-compat migrate lint` output template; shares the `format.migrate.lint` default |
 | `format.schema.inspect` | `ptah-compat schema inspect --format` default |
 | `format.schema.apply` | `ptah-compat schema apply --format` default |
@@ -295,7 +295,7 @@ migration files. `lint.git.dir` matches Atlas's working-directory option for
 Git changeset detection and defaults to the current directory when omitted.
 
 The supported lint policy analyzer blocks map the Atlas `error` boolean to
-Ptah lint severity only where the analyzer has a matching Ptah rule family.
+Ptah lint severity only where the analyzer has matching Ptah rules.
 `error = true` sets the mapped findings to error severity; `error = false`
 sets them to warning severity.
 
@@ -324,21 +324,24 @@ reports `DS102` for the old table. A `new_<table>` replacement whose copy
 leaves a column's values or the rows behind is reported, where the community
 binary reports nothing.
 
-The supported mappings are `destructive` to the `DS` family, `data_depend` to
-the `DD` family, `incompatible` to the `BC` family, `concurrent_index` to
-`PG101` and `PG103`, `nestedtx` to `TX201`, and `condrop` to the `CD` family
-plus `DS105`. Atlas `check` blocks are rejected for now because Atlas check IDs
-and Ptah rule IDs are not a stable one-to-one namespace; which identifier means
-what in each namespace is enumerated in
+The supported mappings are `destructive` and `data_depend` to the rules each
+analyzer covers, `incompatible` to `rollout/rename`, `rollout/drop-table` and
+`rollout/drop-column`, `concurrent_index` to `locking/create-index` and
+`transaction/concurrent-index`, `nestedtx` to `transaction/explicit-transaction`,
+and `condrop` to the constraint-deletion rules plus
+`integrity/drop-untyped-constraint`. Atlas `check` blocks are rejected for now
+because Atlas check codes and Ptah rule names are not a stable one-to-one
+namespace; which Atlas code each Ptah rule reports is enumerated in
 [Lint rules](./site/src/content/docs/reference/lint-rules.md).
 
 `condrop` is a separate analyzer from `destructive` and from `data_depend`, not
 an alias for either. On the community binary, a migration dropping a foreign key
 is reported as a warning by default; `condrop { error = true }` turns that run
 into an error while `destructive { error = true }` leaves it a warning. Ptah's
-`CD` family is the same constraint-deletion family, and `DS105` is included
-because it is Ptah's untyped fallback for the ANSI `ALTER TABLE ... DROP
-CONSTRAINT <name>` form — the exact statement the community binary attributes to
+`integrity/drop-foreign-key`, `integrity/drop-check` and
+`integrity/drop-primary-key` are the same constraint-deletion rules, and
+`integrity/drop-untyped-constraint` is included because it is Ptah's untyped
+fallback for the ANSI `ALTER TABLE ... DROP CONSTRAINT <name>` form — the exact statement the community binary attributes to
 `condrop`.
 
 Analyzer `force` options, allow-list blocks such as `allow_table` /

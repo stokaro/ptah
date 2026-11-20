@@ -95,7 +95,7 @@ both: `0000000002_a.up.sql` beside `0000000002_b.up.sql`, or a
 `.checkpoint.up.sql` beside an ordinary up file of its version. A run that
 kept one would never apply the other, and nothing in the directory says which
 one the author meant. `ptah migrations lint` reports each of the files under
-`MF105P`. An Atlas-format directory with two such files is refused when a
+`file-form/refused-file`. An Atlas-format directory with two such files is refused when a
 command loads its migrations, as `duplicate Atlas up migration for version
 ...`. Lint does not report that case, because an Atlas revision's identity is
 known only once the migrations load.

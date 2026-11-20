@@ -65,7 +65,7 @@ func loadAnalyzableSources(
 type CompatibilityProfile string
 
 const (
-	// CompatibilityProfileNative preserves Ptah rule codes, directives, and
+	// CompatibilityProfileNative preserves Ptah rule names, directives, and
 	// safety behavior. It is the zero value and the default for every native
 	// API and command.
 	CompatibilityProfileNative CompatibilityProfile = ""
@@ -407,7 +407,7 @@ func (a Analysis) BaselineVersions() []int64 {
 }
 
 // UnmetInputs returns every rule that asked for an analyzer input this run did
-// not supply, ordered by file and then by rule code.
+// not supply, ordered by file and then by rule name.
 //
 // It is empty for a run that gave every rule what it asked for, which is every
 // run whose second pass had a baseline and every run with nothing to resolve.
@@ -672,7 +672,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 }
 
 // LintFS lints every *.sql file under fsys and returns findings ordered by
-// file, line, and rule code. Call [AnalyzeFS] when prepared files or the source
+// file, line, and rule name. Call [AnalyzeFS] when prepared files or the source
 // snapshot are also needed; option validation and the empty-directory behavior
 // are [AnalyzeFS]'s.
 func LintFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) ([]Finding, error) {

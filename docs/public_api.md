@@ -530,7 +530,7 @@ separately addressed facets.
 that contribute to it. It carries no Go closure, so an owner may answer it
 from another process:
 
-- `Rule` describes a rule as data: its code, title, default severity, the
+- `Rule` describes a rule as data: its name, title, default severity, the
   targets it judges, whether it applies to a rollback half, what it reads
   besides the text, and the rules it subsumes. `Rule.Validate` refuses one a
   host cannot publish.
@@ -589,10 +589,10 @@ splitter for every built-in dialect. `engine.Runtime` answers
 `lintext.Runtime`: `LintRules` reads the published rules without calling an
 owner, `SplitStatements` asks the target's splitter under its canonical name,
 `AnnotateStatements` asks every annotator once and joins the answers, and
-`CheckMigrations` sends each owner its codes in one call and joins the
-findings and baseline subjects. A code belongs to one rule across every
-provider, and a rule judges targets the runtime registers; registration refuses
-anything else.
+`CheckMigrations` sends each owner its rule names in one call and joins the
+findings and baseline subjects. Several owners may publish one name, each for
+targets no other owner of the name judges and at one severity, and a rule
+judges targets the runtime registers; registration refuses anything else.
 
 `core/routineext` is the contract between the hosts that analyze a routine
 body and the owner that reads it. A body is written in the engine's own
@@ -4388,14 +4388,14 @@ a server that was named from a default that was assumed.
 
 Configuration decoding rejects unknown keys and noncanonical rule selectors,
 including selectors with leading or trailing whitespace. A selector may be a
-rule code, a code prefix, a Ptah rule name such as `destructive/drop-table`,
-or a category such as `locking`; a name or category no rule has is refused,
-and `Finding.Name` carries the rule's name beside its code. It also rejects
+rule name such as `destructive/drop-table`, or a category such as `locking`;
+a name or category no rule has is refused, as is a word written as a code, and
+`Finding.Rule` carries the rule's name. It also rejects
 unsupported dialects and empty, malformed, or non-normalized exclusion globs
 instead of silently weakening the effective policy. `LoadConfig` and
-`LoadConfigFS` take the runtime, because a `gate` family is checked against its
-rules. `lint.ValidateOptions` checks selectors against the runtime's rules
-without reading migration files; call it before a no-work return or an
+`LoadConfigFS` take the runtime, because the rules and categories a `gate`
+section names are checked against its rules. `lint.ValidateOptions` checks
+selectors against the runtime's rules without reading migration files; call it before a no-work return or an
 execution override that can skip `LintFS` or `AnalyzeFS`.
 
 Finding contexts identify the exact statement and affected tables or columns;

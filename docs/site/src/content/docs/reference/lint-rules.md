@@ -339,7 +339,7 @@ Neither apply gate reports even that much, so a rule listed below is not by itse
 | `coverage/routine-body` | the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does | both | — |
 | `coverage/unparsed-statement` | the SQL parser could not read a statement and no server ran it, so a clean result says nothing about it | both | — |
 | `data-dependent/add-not-null-column` | adding a NOT NULL column without a default fails or blocks on a populated table | both | `MF103` |
-| `data-dependent/add-unique-index` | a unique index built over existing rows fails on the first duplicate | both | `MF101` |
+| `data-dependent/add-unique-index` | a unique index built over existing rows fails on the first duplicate, and a failed CONCURRENTLY build leaves an invalid index behind | both | `MF101` |
 | `data-dependent/alter-column-type` | a column type change can truncate or reject existing values and may rewrite the table under a lock; a clause that restates the column's current type, as the dev database records it, is not reported | both | — |
 | `data-dependent/rebuild-index-as-unique` | an index dropped and rebuilt as unique fails on the first duplicate and leaves the table without it | both | `MF102` |
 | `dependency/drop-column-in-use` | a column a view or routine still reads is dropped, and the finding names what breaks; a view dropped or rebuilt with a plain projection before the column drop is left out | both | — |
@@ -745,85 +745,85 @@ Every check code in the reviewed snapshot of the [Atlas analyzer documentation](
 
 <div class="ptah-wide-table">
 
-| Atlas check | Meaning | Pro | Ptah rule | Status |
-| --- | --- | --- | --- | --- |
-| `DS101` | schema was dropped | no | `destructive/drop-object` | covered |
-| `DS102` | table was dropped | no | `destructive/drop-table` | covered |
-| `DS103` | non-virtual column was dropped | no | `destructive/drop-column` | covered |
-| `MF101` | adding a unique index to an existing column | no | `data-dependent/add-unique-index` | covered — structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind, and a unique index the dev database already holds over the columns silences it |
-| `MF102` | modifying a non-unique index to unique | no | `data-dependent/rebuild-index-as-unique` | covered — an index dropped earlier in the file and rebuilt as unique under the same name, or under a new name over the columns the dev database records for it; the message adds that the failure leaves the table without the index it had |
-| `MF103` | adding a non-nullable column to an existing table | no | `data-dependent/add-not-null-column` | covered |
-| `MF104` | modifying a nullable column to non-nullable might fail | no | `locking/set-not-null`, `rewrite/set-not-null`, `data-dependent/set-not-null`, `data-dependent/set-not-null` | covered — PG303 on PostgreSQL, CockroachDB and YugabyteDB, LT101 on SQLite, DD103 on MySQL, MariaDB, SQL Server and ClickHouse, SP101 on Spanner; every engine measured, each with its own failure named |
-| `BC101` | renaming a table | no | `rollout/rename` | covered |
-| `BC102` | renaming a column | no | `rollout/rename` | covered — one rule reports both object kinds |
-| `BC103` | dropping a table | no | `rollout/drop-table` | covered — the rollout break, not the row loss DS101 reports on the same statement, and separately suppressible: accepting the data loss is not accepting deployed clients failing. Native `ptah migrations lint` only; no apply gate |
-| `BC104` | dropping a column | no | `rollout/drop-column` | covered — as BC103, beside DS102, and reported on the same surface; a column the migration created or added earlier is exempt from both, since no deployed client read it |
-| `MY101` | adding a non-nullable column without a DEFAULT to an existing table | no | `data-dependent/add-not-null-column` | covered — DD101 applies to every dialect |
-| `MY102` | an inline REFERENCES clause in ADD COLUMN has no effect | no | `side-effect/inline-reference` | covered |
-| `MY110` | removing enum values from a column requires a table copy | no | `rewrite/remove-enum-value` | covered |
-| `MY111` | reordering enum values requires a table copy | no | `rewrite/reorder-enum-values` | covered |
-| `MY112` | inserting enum values other than at the end requires a table copy | no | `rewrite/insert-enum-value` | covered |
-| `MY113` | exceeding 256 enum values changes storage size and requires a table copy | no | `rewrite/widen-enum` | covered |
-| `MY120` | removing set values from a column requires a table copy | no | `rewrite/remove-set-member` | covered |
-| `MY121` | reordering set values requires a table copy | no | `rewrite/reorder-set-members` | covered |
-| `MY122` | inserting set values other than at the end requires a table copy | no | `rewrite/insert-set-member` | covered |
-| `MY123` | exceeding a set-size boundary changes storage size and requires a table copy | no | `rewrite/widen-set` | covered |
-| `MY130` | changing a column type requires a table copy | yes | `rewrite/alter-column-type` | covered — fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary, character set, collation or key that decides it; MY130P is the info finding for the change applied in place |
-| `MY131` | adding a foreign key blocks DML | yes | `locking/add-foreign-key` | covered |
-| `MY132` | adding a primary key requires a table rebuild | yes | `rewrite/add-primary-key` | covered |
-| `MY133` | dropping a primary key without adding one requires a table copy | yes | `rewrite/drop-primary-key`, `integrity/drop-primary-key` | covered — MY133 names the copy and CD103 the lost uniqueness guarantee; the message names the MariaDB case where another NOT NULL UNIQUE key keeps the change in place |
-| `MY134` | adding a FULLTEXT index blocks DML | yes | `locking/add-fulltext-index` | covered |
-| `MY135` | adding a SPATIAL index blocks DML | yes | `locking/add-spatial-index` | covered |
-| `MY136` | changing the table character set requires a table rebuild | yes | `rewrite/convert-charset` | covered — names the columns whose re-encoding forces the copy; a conversion that touches no column, or only utf8mb3 to utf8mb4 on short VARCHAR and CHAR columns no key covers, is not reported |
-| `MY137` | modifying the primary key rebuilds the table and its secondary indexes | yes | `rewrite/replace-primary-key` | covered — one statement that drops and adds; measured in place with writes allowed, so it subsumes MY132 rather than repeating it, and leaves CD103 to report the identity loss |
-| `MY138` | changing the storage engine requires a table copy and blocks DML | yes | `rewrite/change-engine` | covered — any ENGINE= clause, including one naming the engine the table already uses, which costs the same because it is the documented way to force a rebuild |
-| `MY139` | partitioning or removing partitioning requires a table copy and blocks DML | yes | `rewrite/change-partitioning` | covered — measured, this statement form accepts no ALGORITHM or LOCK clause at all, so the finding says there is no online-DDL negotiation rather than naming a copy |
-| `MY140` | adding a STORED generated column requires a table copy and blocks DML | yes | `rewrite/add-stored-generated-column` | covered |
-| `MY141` | adding an AUTO_INCREMENT column rebuilds the table and blocks DML | yes | `locking/add-auto-increment-column` | covered — the rebuild is in place and writes still stop: LOCK=NONE is refused, which is why the finding reports cost and locking separately |
-| `MY142` | adding a column before existing columns prevents an instant operation on older versions | yes | `rewrite/add-column-before-existing` | covered — reports only where the server the run plans against lacks the instant placement, read from `--server-version` or the dev database: MySQL before 8.0.29 and MariaDB before 10.4 |
-| `MY143` | modifying a generated column requires a table copy and blocks DML | yes | `rewrite/modify-generated-column` | covered — the MODIFY and CHANGE side; adding one is MY140, and DS103 still reports the type change where the declared type moves |
-| `MY144` | adding a CHECK constraint scans all existing rows | yes | `locking/add-check` | covered |
-| `MY145` | modifying or enforcing a CHECK constraint re-validates all existing rows | yes | `locking/enforce-check` | covered — MySQL only: MariaDB has no ENFORCED or NOT ENFORCED syntax, so a mariadb finding would describe a statement that server refuses to parse |
-| `MY146` | dropping system versioning permanently deletes all history rows | yes | `destructive/drop-system-versioning` | covered — MariaDB only: MySQL 8.4 has no system versioning at all; reported as an error because the history is deleted rather than made expensive |
-| `MY147` | changing column nullability requires a table rebuild | yes | `rewrite/set-not-null` | covered — the cost; measured in place with writes allowed. Whether an existing NULL fails the statement is the separate question DD103 answers from the baseline |
-| `MY148` | changing a column character set or collation requires a table copy and blocks DML | yes | `rewrite/alter-column-type` | partial — MY130 names this consequence where it can prove the copy from the dev database; without that baseline, or on a spelling it cannot resolve to a before-and-after, the statement is not reported |
-| `LT101` | modifying a nullable column to non-nullable without a DEFAULT | no | `rewrite/set-not-null` | covered |
-| `PG101` | index created without CONCURRENTLY | yes | `locking/create-index` | covered — on a TimescaleDB hypertable, which refuses CONCURRENTLY, the message names the per-chunk build instead when the dev database shows the table is one; that build is not reported |
-| `PG102` | index dropped without CONCURRENTLY | yes | `locking/drop-index` | covered |
-| `PG103` | concurrent operation without the atlas:txmode none header | yes | `transaction/concurrent-index` | covered — the atlas:txmode none header and Ptah's own directive both silence it, and so does a golang-migrate file that holds nothing else |
-| `PG104` | PRIMARY KEY creation acquires an ACCESS EXCLUSIVE lock | yes | `locking/add-primary-key` | covered |
-| `PG105` | UNIQUE constraint creation acquires an ACCESS EXCLUSIVE lock | yes | `locking/add-unique-constraint` | covered |
-| `PG110` | creating a table with non-optimal data alignment | no | `design/column-alignment` | covered |
-| `PG301` | a column type change requires a table and index rewrite | yes | `rewrite/alter-column-type` | covered — fires for a change PostgreSQL rewrites for, naming the abort a value can cause, and for a collation change on an indexed column, naming the indexes it rebuilds; PG301P is the info finding for a catalog edit |
-| `PG302` | a volatile DEFAULT on an added column rewrites the table | yes | `rewrite/volatile-default` | covered |
-| `PG303` | SET NOT NULL scans existing rows | yes | `locking/set-not-null` | covered |
-| `PG304` | PRIMARY KEY on nullable columns requires a full scan | yes | `locking/add-primary-key-on-nullable`, `locking/add-primary-key` | covered — PG304 names the columns the key sets NOT NULL and the extra scan that costs, for a column list and for USING INDEX alike; PG104 names the lock every ADD PRIMARY KEY takes |
-| `PG305` | a CHECK constraint requires a full table scan | yes | `locking/add-check` | covered |
-| `PG306` | a FOREIGN KEY requires a full scan and blocks writes | yes | `locking/add-foreign-key` | covered |
-| `PG307` | a logging-mode change rewrites the table | yes | `rewrite/set-persistence` | covered |
-| `PG308` | trigger creation acquires a SHARE ROW EXCLUSIVE lock | yes | `locking/create-trigger` | covered |
-| `PG309` | a STORED generated column rewrites the table | yes | `rewrite/add-stored-generated-column` | covered |
-| `PG310` | an identity column rewrites the table | yes | `rewrite/add-identity-column` | covered |
-| `PG311` | an access-method change rewrites the table | yes | `rewrite/set-access-method` | covered |
-| `PG108` | an index on a partitioned table blocks writes on all its partitions | yes | `locking/partitioned-index` | partial — reported where the migration declares the parent PARTITION BY, or the dev database shows an earlier parent partitioned; without a dev database PG101 reports it instead |
-| `PG109` | an EXCLUDE constraint takes an ACCESS EXCLUSIVE lock and scans the table | yes | `locking/add-exclusion-constraint` | covered |
-| `PG312` | redefining a primary key builds its unique index under an ACCESS EXCLUSIVE lock | yes | `locking/replace-primary-key` | covered — distinct from Ptah's own PG312P, which is about a SECURITY DEFINER routine and keeps its trailing P; the USING INDEX form builds nothing under the lock and is not reported |
-| `PG314` | changing REPLICA IDENTITY to FULL or NOTHING risks the logical replication setup | yes | `rollout/weaken-replica-identity` | covered — FULL and NOTHING carry different consequences and are reported with different messages; DEFAULT and USING INDEX keep a usable row identity and are not reported |
-| `PG320` | disabling autovacuum lets dead rows accumulate | yes | `design/disable-autovacuum` | covered — the one rule here whose hazard is not a lock or a rewrite: the statement takes only a SHARE UPDATE EXCLUSIVE lock and the cost is paid later |
-| `CD101` | a foreign-key constraint was dropped | yes | `integrity/drop-foreign-key` | covered |
-| `CD102` | a check constraint was dropped | yes | `integrity/drop-check` | covered |
-| `CD103` | a primary-key constraint was dropped | yes | `integrity/drop-primary-key` | covered |
-| `TX101` | statements cannot run in a single transaction | yes | `transaction/mixed-statements` | covered |
-| `TX201` | a nested transaction was detected | yes | `transaction/explicit-transaction` | covered — reported on every engine the migrator applies, because the migrator refuses the file; a golang-migrate file on PostgreSQL, up or down, is read as the migrator runs its own transactions |
-| `NM101` | a schema name violates the naming convention | no | `naming/schema-name` | covered — needs a configured naming convention |
-| `NM102` | a table name violates the naming convention | no | `naming/table-name` | covered — needs a configured naming convention |
-| `NM103` | a column name violates the naming convention | no | `naming/column-name` | covered — needs a configured naming convention |
-| `NM104` | an index name violates the naming convention | no | `naming/index-name` | covered — needs a configured naming convention; a unique or primary key constraint counts as an index, as it does for Atlas |
-| `NM105` | a foreign-key constraint name violates the naming convention | no | `naming/foreign-key-name` | covered — needs a configured naming convention |
-| `NM106` | a check constraint name violates the naming convention | no | `naming/check-name` | covered — needs a configured naming convention |
-| `SA101` | a possible SQL injection vulnerability was detected | no | `security/dynamic-sql-from-value` | covered — reports a routine body that builds its statement from an unquoted value; a literal text, quote_ident/quote_literal, format's %I and %L, QUOTENAME, and parameters are the safe forms it leaves alone |
-| `OW101` | a user is not authorized to modify a resource | yes | — | waived — binds to a schema-ownership annotation set and an account model Ptah does not have |
-| `OW102` | a user is explicitly denied access to a resource | yes | — | waived — same reason as OW101 |
+| Atlas check | Meaning | Ptah rule and status |
+| --- | --- | --- |
+| `DS101` | schema was dropped | `destructive/drop-object`<br>covered |
+| `DS102` | table was dropped | `destructive/drop-table`<br>covered |
+| `DS103` | non-virtual column was dropped | `destructive/drop-column`<br>covered |
+| `MF101` | adding a unique index to an existing column | `data-dependent/add-unique-index`<br>covered — structural: the message names the query that settles the duplicates; a unique index the dev database already holds over the columns silences it |
+| `MF102` | modifying a non-unique index to unique | `data-dependent/rebuild-index-as-unique`<br>covered — an index dropped earlier in the file and rebuilt as unique under the same name, or under a new name over the columns the dev database records for it; the message adds that the failure leaves the table without the index it had |
+| `MF103` | adding a non-nullable column to an existing table | `data-dependent/add-not-null-column`<br>covered |
+| `MF104` | modifying a nullable column to non-nullable might fail | `locking/set-not-null`, `rewrite/set-not-null`, `data-dependent/set-not-null`<br>covered — the first on PostgreSQL, CockroachDB and YugabyteDB, the second on SQLite, MySQL and MariaDB, the third on MySQL, MariaDB, SQL Server, ClickHouse and Spanner; every engine measured, each with its own failure named |
+| `BC101` | renaming a table | `rollout/rename`<br>covered |
+| `BC102` | renaming a column | `rollout/rename`<br>covered — one rule reports both object kinds |
+| `BC103` | dropping a table | `rollout/drop-table`<br>covered — the rollout break, not the row loss destructive/drop-table reports on the same statement, and separately suppressible: accepting the data loss is not accepting deployed clients failing. Native `ptah migrations lint` only; no apply gate |
+| `BC104` | dropping a column | `rollout/drop-column`<br>covered — as BC103, beside destructive/drop-column, and reported on the same surface; a column the migration created or added earlier is exempt from both, since no deployed client read it |
+| `MY101` | adding a non-nullable column without a DEFAULT to an existing table | `data-dependent/add-not-null-column`<br>covered — the Ptah rule applies to every dialect |
+| `MY102` | an inline REFERENCES clause in ADD COLUMN has no effect | `side-effect/inline-reference`<br>covered |
+| `MY110` | removing enum values from a column requires a table copy | `rewrite/remove-enum-value`<br>covered |
+| `MY111` | reordering enum values requires a table copy | `rewrite/reorder-enum-values`<br>covered |
+| `MY112` | inserting enum values other than at the end requires a table copy | `rewrite/insert-enum-value`<br>covered |
+| `MY113` | exceeding 256 enum values changes storage size and requires a table copy | `rewrite/widen-enum`<br>covered |
+| `MY120` | removing set values from a column requires a table copy | `rewrite/remove-set-member`<br>covered |
+| `MY121` | reordering set values requires a table copy | `rewrite/reorder-set-members`<br>covered |
+| `MY122` | inserting set values other than at the end requires a table copy | `rewrite/insert-set-member`<br>covered |
+| `MY123` | exceeding a set-size boundary changes storage size and requires a table copy | `rewrite/widen-set`<br>covered |
+| `MY130` (Pro) | changing a column type requires a table copy | `rewrite/alter-column-type`<br>covered — fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary, character set, collation or key that decides it; rewrite/in-place-column-change is the info finding for the change applied in place |
+| `MY131` (Pro) | adding a foreign key blocks DML | `locking/add-foreign-key`<br>covered |
+| `MY132` (Pro) | adding a primary key requires a table rebuild | `rewrite/add-primary-key`<br>covered |
+| `MY133` (Pro) | dropping a primary key without adding one requires a table copy | `rewrite/drop-primary-key`, `integrity/drop-primary-key`<br>covered — MY133 names the copy and CD103 the lost uniqueness guarantee; the message names the MariaDB case where another NOT NULL UNIQUE key keeps the change in place |
+| `MY134` (Pro) | adding a FULLTEXT index blocks DML | `locking/add-fulltext-index`<br>covered |
+| `MY135` (Pro) | adding a SPATIAL index blocks DML | `locking/add-spatial-index`<br>covered |
+| `MY136` (Pro) | changing the table character set requires a table rebuild | `rewrite/convert-charset`<br>covered — names the columns whose re-encoding forces the copy; a conversion that touches no column, or only utf8mb3 to utf8mb4 on short VARCHAR and CHAR columns no key covers, is not reported |
+| `MY137` (Pro) | modifying the primary key rebuilds the table and its secondary indexes | `rewrite/replace-primary-key`<br>covered — one statement that drops and adds; measured in place with writes allowed, so it subsumes MY132 rather than repeating it, and leaves CD103 to report the identity loss |
+| `MY138` (Pro) | changing the storage engine requires a table copy and blocks DML | `rewrite/change-engine`<br>covered — any ENGINE= clause, including one naming the engine the table already uses, which costs the same because it is the documented way to force a rebuild |
+| `MY139` (Pro) | partitioning or removing partitioning requires a table copy and blocks DML | `rewrite/change-partitioning`<br>covered — measured, this statement form accepts no ALGORITHM or LOCK clause at all, so the finding says there is no online-DDL negotiation rather than naming a copy |
+| `MY140` (Pro) | adding a STORED generated column requires a table copy and blocks DML | `rewrite/add-stored-generated-column`<br>covered |
+| `MY141` (Pro) | adding an AUTO_INCREMENT column rebuilds the table and blocks DML | `locking/add-auto-increment-column`<br>covered — the rebuild is in place and writes still stop: LOCK=NONE is refused, which is why the finding reports cost and locking separately |
+| `MY142` (Pro) | adding a column before existing columns prevents an instant operation on older versions | `rewrite/add-column-before-existing`<br>covered — reports only where the server the run plans against lacks the instant placement, read from `--server-version` or the dev database: MySQL before 8.0.29 and MariaDB before 10.4 |
+| `MY143` (Pro) | modifying a generated column requires a table copy and blocks DML | `rewrite/modify-generated-column`<br>covered — the MODIFY and CHANGE side; adding one is MY140, and data-dependent/alter-column-type still reports the type change where the declared type moves |
+| `MY144` (Pro) | adding a CHECK constraint scans all existing rows | `locking/add-check`<br>covered |
+| `MY145` (Pro) | modifying or enforcing a CHECK constraint re-validates all existing rows | `locking/enforce-check`<br>covered — MySQL only: MariaDB has no ENFORCED or NOT ENFORCED syntax, so a mariadb finding would describe a statement that server refuses to parse |
+| `MY146` (Pro) | dropping system versioning permanently deletes all history rows | `destructive/drop-system-versioning`<br>covered — MariaDB only: MySQL 8.4 has no system versioning at all; reported as an error because the history is deleted rather than made expensive |
+| `MY147` (Pro) | changing column nullability requires a table rebuild | `rewrite/set-not-null`<br>covered — the cost; measured in place with writes allowed. Whether an existing NULL fails the statement is the separate question data-dependent/set-not-null answers from the baseline |
+| `MY148` (Pro) | changing a column character set or collation requires a table copy and blocks DML | `rewrite/alter-column-type`<br>partial — MY130 names this consequence where it can prove the copy from the dev database; without that baseline, or on a spelling it cannot resolve to a before-and-after, the statement is not reported |
+| `LT101` | modifying a nullable column to non-nullable without a DEFAULT | `rewrite/set-not-null`<br>covered |
+| `PG101` (Pro) | index created without CONCURRENTLY | `locking/create-index`<br>covered — on a TimescaleDB hypertable, which refuses CONCURRENTLY, the message names the per-chunk build instead when the dev database shows the table is one; that build is not reported |
+| `PG102` (Pro) | index dropped without CONCURRENTLY | `locking/drop-index`<br>covered |
+| `PG103` (Pro) | concurrent operation without the atlas:txmode none header | `transaction/concurrent-index`<br>covered — the atlas:txmode none header and Ptah's own directive both silence it, and so does a golang-migrate file that holds nothing else |
+| `PG104` (Pro) | PRIMARY KEY creation acquires an ACCESS EXCLUSIVE lock | `locking/add-primary-key`<br>covered |
+| `PG105` (Pro) | UNIQUE constraint creation acquires an ACCESS EXCLUSIVE lock | `locking/add-unique-constraint`<br>covered |
+| `PG110` | creating a table with non-optimal data alignment | `design/column-alignment`<br>covered |
+| `PG301` (Pro) | a column type change requires a table and index rewrite | `rewrite/alter-column-type`<br>covered — fires for a change PostgreSQL rewrites for, naming the abort a value can cause, and for a collation change on an indexed column, naming the indexes it rebuilds; rewrite/in-place-column-change is the info finding for a catalog edit |
+| `PG302` (Pro) | a volatile DEFAULT on an added column rewrites the table | `rewrite/volatile-default`<br>covered |
+| `PG303` (Pro) | SET NOT NULL scans existing rows | `locking/set-not-null`<br>covered |
+| `PG304` (Pro) | PRIMARY KEY on nullable columns requires a full scan | `locking/add-primary-key-on-nullable`, `locking/add-primary-key`<br>covered — PG304 names the columns the key sets NOT NULL and the extra scan that costs, for a column list and for USING INDEX alike; PG104 names the lock every ADD PRIMARY KEY takes |
+| `PG305` (Pro) | a CHECK constraint requires a full table scan | `locking/add-check`<br>covered |
+| `PG306` (Pro) | a FOREIGN KEY requires a full scan and blocks writes | `locking/add-foreign-key`<br>covered |
+| `PG307` (Pro) | a logging-mode change rewrites the table | `rewrite/set-persistence`<br>covered |
+| `PG308` (Pro) | trigger creation acquires a SHARE ROW EXCLUSIVE lock | `locking/create-trigger`<br>covered |
+| `PG309` (Pro) | a STORED generated column rewrites the table | `rewrite/add-stored-generated-column`<br>covered |
+| `PG310` (Pro) | an identity column rewrites the table | `rewrite/add-identity-column`<br>covered |
+| `PG311` (Pro) | an access-method change rewrites the table | `rewrite/set-access-method`<br>covered |
+| `PG108` (Pro) | an index on a partitioned table blocks writes on all its partitions | `locking/partitioned-index`<br>partial — reported where the migration declares the parent PARTITION BY, or the dev database shows an earlier parent partitioned; without a dev database PG101 reports it instead |
+| `PG109` (Pro) | an EXCLUDE constraint takes an ACCESS EXCLUSIVE lock and scans the table | `locking/add-exclusion-constraint`<br>covered |
+| `PG312` (Pro) | redefining a primary key builds its unique index under an ACCESS EXCLUSIVE lock | `locking/replace-primary-key`<br>covered — distinct from security/definer-without-search-path, which is about a SECURITY DEFINER routine; the USING INDEX form builds nothing under the lock and is not reported |
+| `PG314` (Pro) | changing REPLICA IDENTITY to FULL or NOTHING risks the logical replication setup | `rollout/weaken-replica-identity`<br>covered — FULL and NOTHING carry different consequences and are reported with different messages; DEFAULT and USING INDEX keep a usable row identity and are not reported |
+| `PG320` (Pro) | disabling autovacuum lets dead rows accumulate | `design/disable-autovacuum`<br>covered — the one rule here whose hazard is not a lock or a rewrite: the statement takes only a SHARE UPDATE EXCLUSIVE lock and the cost is paid later |
+| `CD101` (Pro) | a foreign-key constraint was dropped | `integrity/drop-foreign-key`<br>covered |
+| `CD102` (Pro) | a check constraint was dropped | `integrity/drop-check`<br>covered |
+| `CD103` (Pro) | a primary-key constraint was dropped | `integrity/drop-primary-key`<br>covered |
+| `TX101` (Pro) | statements cannot run in a single transaction | `transaction/mixed-statements`<br>covered |
+| `TX201` (Pro) | a nested transaction was detected | `transaction/explicit-transaction`<br>covered — reported on every engine the migrator applies, because the migrator refuses the file; a golang-migrate file on PostgreSQL, up or down, is read as the migrator runs its own transactions |
+| `NM101` | a schema name violates the naming convention | `naming/schema-name`<br>covered — needs a configured naming convention |
+| `NM102` | a table name violates the naming convention | `naming/table-name`<br>covered — needs a configured naming convention |
+| `NM103` | a column name violates the naming convention | `naming/column-name`<br>covered — needs a configured naming convention |
+| `NM104` | an index name violates the naming convention | `naming/index-name`<br>covered — needs a configured naming convention; a unique or primary key constraint counts as an index, as it does for Atlas |
+| `NM105` | a foreign-key constraint name violates the naming convention | `naming/foreign-key-name`<br>covered — needs a configured naming convention |
+| `NM106` | a check constraint name violates the naming convention | `naming/check-name`<br>covered — needs a configured naming convention |
+| `SA101` | a possible SQL injection vulnerability was detected | `security/dynamic-sql-from-value`<br>covered — reports a routine body that builds its statement from an unquoted value; a literal text, quote_ident/quote_literal, format's %I and %L, QUOTENAME, and parameters are the safe forms it leaves alone |
+| `OW101` (Pro) | a user is not authorized to modify a resource | —<br>waived — binds to a schema-ownership annotation set and an account model Ptah does not have |
+| `OW102` (Pro) | a user is explicitly denied access to a resource | —<br>waived — same reason as OW101 |
 
 </div>
 
