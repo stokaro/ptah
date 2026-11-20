@@ -1254,11 +1254,15 @@ that came back without a body is still refused, because it has another definer.
 database even when the dev and target databases have different names. A view
 whose body is the same reports no change; a changed body still produces a plan.
 
-`migrations up --check-drift` replays the applied history in a shadow database and
-compares it with the target. A view, a routine, or on MariaDB a sequence that the
-migrations create there is the target's own object, whatever the two databases are
-named, and a changed view body is still reported. An object a migration creates in
-another database is compared under that database's name.
+`migrations drift` and `migrations up --check-drift` replay the applied history in a
+shadow database and compare it with the target. A view, a routine, or on MariaDB a
+sequence that the migrations create there is the target's own object, whatever the
+two databases are named, and a changed view body is still reported. So is a grant the
+migrations write there: `GRANT SELECT ON t` compares as the target's grant on its own
+table, and `GRANT SHOW VIEW ON *` as the target's grant on its own database. An object
+a migration creates in another database is compared under that database's name. A
+`schema apply --dev-url` rehearsal writes the target's grants onto the dev database's
+objects in the same way.
 
 ### View security
 
