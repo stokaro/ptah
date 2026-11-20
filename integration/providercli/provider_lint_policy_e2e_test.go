@@ -67,7 +67,7 @@ func TestMigrationsLintOfAPolicysDialectReachesTheInstalledProvider(t *testing.T
 	var report policyReport
 	c.Assert(json.Unmarshal([]byte(out), &report), qt.IsNil, qt.Commentf("stdout %q, stderr %q", out, diagnostics))
 	c.Assert(report.Error, qt.Equals, "")
-	c.Assert(rulesOf(report.Findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "destructive/drop-object", "design/fx101", "design/fx102"})
+	c.Assert(rulesOf(report.Findings), qt.DeepEquals, []string{"design/fx101", "design/fx102", "destructive/drop-object", "destructive/drop-table", "rollout/drop-table"})
 }
 
 // `sql lint` reads the severities of the policy in the working directory, and

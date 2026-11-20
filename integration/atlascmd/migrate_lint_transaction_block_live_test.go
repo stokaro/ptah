@@ -19,10 +19,10 @@ import (
 // over a golang-migrate directory whose hand-written migrations wrap their
 // statements in BEGIN/COMMIT (stokaro/ptah#4953). golang-migrate opens no
 // transaction around a file, so the block is the file's only transaction and
-// TX201 does not apply there. These tests run that shape against a live
+// transaction/explicit-transaction does not apply there. These tests run that shape against a live
 // server: the dev database replays the block, and the verdict follows the
 // layout. The same block in Atlas's layout, which Atlas wraps per file, keeps
-// TX201.
+// transaction/explicit-transaction.
 
 // transactionBlockLive is a migration that opens and commits its own
 // transaction.

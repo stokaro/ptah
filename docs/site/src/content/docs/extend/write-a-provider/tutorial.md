@@ -48,7 +48,7 @@ Create an empty module and add the provider SDK and the SQLite driver:
 ```bash
 mkdir ptah-tutorial-provider && cd ptah-tutorial-provider
 go mod init example.com/ptah-tutorial-provider
-go get ptah.run/provider-sdk@v0.40.0 modernc.org/sqlite@v1.61.1
+go get ptah.run/provider-sdk@v0.45.0 modernc.org/sqlite@v1.61.1
 ```
 
 The SDK is a Go module of its own, `ptah.run/provider-sdk`,
@@ -70,7 +70,7 @@ require (
 	google.golang.org/grpc v1.86.0-dev
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.61.1
-	ptah.run/provider-sdk v0.40.0
+	ptah.run/provider-sdk v0.45.0
 )
 ```
 
@@ -153,7 +153,7 @@ change rather than planning it. `sessions.locks` offers the lock that
 `ptah schema apply` takes, on the provider and on the engine. `errors.reasons`
 lets a failed call carry a reason the provider wrote.
 
-The description sets no minimum contract, which means any host of contract 25
+The description sets no minimum contract, which means any host of contract 26
 can start the provider. [How a provider works](../architecture/#contract-versions-and-features)
 explains contract minors and features.
 
@@ -611,7 +611,7 @@ ptah providers check --provider-config providers.json --provider-engine tutorial
 Expected output on standard output:
 
 ```text
-example.com/ptah-tutorial-provider 0.0.0-dev: compatible protocol revision 25 (/path/to/ptah-tutorial-provider/ptah-tutorial-provider)
+example.com/ptah-tutorial-provider 0.0.0-dev: compatible protocol revision 26 (/path/to/ptah-tutorial-provider/ptah-tutorial-provider)
 ```
 
 Ptah verified the digest, started the process, negotiated the contract and

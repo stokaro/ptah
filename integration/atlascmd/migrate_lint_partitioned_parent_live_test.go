@@ -13,8 +13,8 @@ import (
 
 // TestMigrateLintNamesAnEarlierPartitionedParentLive is stokaro/ptah#3588
 // through `migrate lint --dev-url`: an index on a partitioned parent an earlier
-// migration created got PG101, whose CONCURRENTLY remedy PostgreSQL refuses on
-// a partitioned table. The control leaves the same table ordinary, where PG101
+// migration created got locking/create-index, whose CONCURRENTLY remedy PostgreSQL refuses on
+// a partitioned table. The control leaves the same table ordinary, where locking/create-index
 // is the right answer and stays.
 func TestMigrateLintNamesAnEarlierPartitionedParentLive(t *testing.T) {
 	tests := []struct {

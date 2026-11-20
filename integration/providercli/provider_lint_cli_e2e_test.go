@@ -121,7 +121,7 @@ func TestMigrationsLintThroughAProviderWithoutADialect(t *testing.T) {
 	findings, diagnostics, code := f.lint(c, dir)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", diagnostics))
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "destructive/drop-object"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-object", "destructive/drop-table", "rollout/drop-table"})
 }
 
 // TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath names the
@@ -161,7 +161,7 @@ func TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings(t *testing.T
 	findings, diagnostics, code := f.lint(c, dir, "--dialect", "ydb")
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", diagnostics))
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "destructive/drop-object", "design/fx101", "design/fx102"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"design/fx101", "design/fx102", "destructive/drop-object", "destructive/drop-table", "rollout/drop-table"})
 }
 
 func TestMigrationsLintAppliesAProviderRuleToDownOnlyWhenPublished(t *testing.T) {
@@ -267,7 +267,8 @@ func (s catalogSource) LintRules(target string) ([]lintext.Rule, error) {
 		return nil, err
 	}
 	rules := slices.Concat(bundled, published, s.recorded)
-	slices.SortFunc(rules, func(a, b lintext.Rule) int { return strings.Compare(a.Name, b.Name) })
+	// Stable, so that the owners of one shared name keep the order they were read in.
+	slices.SortStableFunc(rules, func(a, b lintext.Rule) int { return strings.Compare(a.Name, b.Name) })
 	return rules, nil
 }
 

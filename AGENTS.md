@@ -268,7 +268,15 @@ The Atlas check codes live in `internal/atlascodes`, which only the
 compatibility surface (`ptah-compat`, `internal/atlasreport`) and the
 documentation generator import. A native or shared package must not. The
 table from names to Atlas codes and the reviewed reference snapshot are gated
-there, in both directions.
+there, in both directions. `ptah-compat` prints rule names by default.
+`PTAH_ATLAS_STRICT_COMPAT=1` prints the Atlas code in the community binary's
+report shape and runs only the rules that table maps; `atlas:nolint` reads a
+code or an analyzer name in both modes and a rule name in the default mode only.
+
+The rule-name grammar is published once by the provider SDK as
+`provider.ValidLintRuleName`, because a provider is a separate module. The
+host's `lintext.CanonicalName` is the host's copy, since `core/lintext` must
+not link the SDK, and `internal/providerhost` holds the two to one answer.
 
 ### The Go toolchain
 

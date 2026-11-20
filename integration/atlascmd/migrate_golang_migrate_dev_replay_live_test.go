@@ -19,7 +19,7 @@ import (
 // The commands that replay a golang-migrate directory on a dev database read a
 // file the way `migrate apply` runs it (stokaro/ptah#4962). A file that holds
 // one CREATE INDEX CONCURRENTLY runs without a transaction there, so lint does
-// not report PG103 and validate and diff replay it. A file that opens a
+// not report transaction/concurrent-index and validate and diff replay it. A file that opens a
 // transaction inside its own one is refused for the same reason by apply and
 // by the replay lint and validate run before they judge anything.
 

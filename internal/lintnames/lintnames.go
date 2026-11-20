@@ -19,6 +19,8 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"ptah.run/core/lintext"
 )
 
 // Category is the hazard class a rule name begins with: the part before the
@@ -79,19 +81,19 @@ func CategoryFor(name string) (Category, bool) {
 	return categories[index], true
 }
 
-// namePattern is the grammar of a rule name: two lowercase segments, each a
-// run of letters and digits joined by single hyphens, with a slash between
-// them. It cannot match a rule code or an Atlas check code, which are upper
-// case.
+// WellFormed reports whether name follows the rule-name grammar: two lowercase
+// segments, each a run of letters and digits joined by single hyphens, with a
+// slash between them. It cannot match a rule code or an Atlas check code, which
+// are upper case. It does not say the category is declared; see [CategoryFor].
+//
+// The grammar is [lintext.CanonicalName], so the host holds one definition of
+// it, and a test in internal/providerhost holds that definition to the one the
+// provider SDK publishes as provider.ValidLintRuleName.
 //
 // The second segment follows the SQL spelling of the statement it reports, so
 // a rule about NO FORCE ROW LEVEL SECURITY is
 // `security/no-force-row-level-security`, not a paraphrase of it.
-var namePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*/[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
-
-// WellFormed reports whether name follows the rule-name grammar. It does not
-// say the category is declared; see [CategoryFor].
-func WellFormed(name string) bool { return namePattern.MatchString(name) }
+func WellFormed(name string) bool { return lintext.CanonicalName(name) }
 
 // CategoryOf returns the category segment of a rule name, or the empty string
 // when the name has no slash.

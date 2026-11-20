@@ -12,7 +12,7 @@ import (
 )
 
 // TestMigrateLintNamesTheHypertableRemedyLive is the directory
-// stokaro/ptah#3551 reported through `migrate lint --dev-url`: PG101 advised
+// stokaro/ptah#3551 reported through `migrate lint --dev-url`: locking/create-index advised
 // CREATE INDEX CONCURRENTLY for an index on a hypertable, and TimescaleDB
 // refuses that statement there. The control leaves the same table ordinary,
 // where CONCURRENTLY is the right advice and stays.
