@@ -2164,6 +2164,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	fkPlan := p.planColumnTypeForeignKeyChanges(diff)
 	p.releaseForeignKeysOverMovedKeys(diff, &fkPlan)
 	p.releaseForeignKeysOverColumnKeyDrops(diff, &fkPlan)
+	p.releaseForeignKeysOverHeldKeys(diff, &fkPlan)
 	result = append(result, fkPlan.drops...)
 
 	// 4a. Drop a removed key that holds the name a column's own UNIQUE takes,
@@ -2175,7 +2176,8 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	nameHolders := keyrelease.Find(diff, p.targetDialect())
 	released := nameHolders.
 		With(keyrelease.PrimaryKeysUnderColumnChanges(diff, p.targetDialect())).
-		With(keyrelease.UnderColumnDrops(diff, p.targetDialect()))
+		With(keyrelease.UnderColumnDrops(diff, p.targetDialect())).
+		With(keyrelease.UnderColumnKeys(diff, p.targetDialect()))
 	uniquesRebuilt := p.uniquesRebuiltAsIndexes(diff, released)
 	released = released.With(keyrelease.NamesIndexesTake(diff, p.targetDialect()).Without(uniquesRebuilt))
 	autoIncrement := p.autoIncrementKeysOf(diff)
@@ -2234,6 +2236,16 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	maps.Copy(alreadyDropped, uniquesRebuilt.ConstraintSet())
 	leftovers := p.replacementLeftovers(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 	leftovers = append(leftovers, p.primaryKeyRemovalsBeforeAdditions(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))...)
+	// 5.4. A key the plan adds over the column list another key holds goes
+	// after that key, on a server that holds one key per list. A primary key
+	// both answer is dropped here once: addNewConstraints skips a leftover
+	// already dropped.
+	holderDrops, holdersDropped := p.keyHolderDrops(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()), alreadyDropped)
+	result = append(result, holderDrops...)
+	maps.Copy(alreadyDropped, holdersDropped)
+	restoredKeys, restoredDropped := p.columnKeysRestored(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()), alreadyDropped)
+	result = append(result, restoredKeys...)
+	maps.Copy(alreadyDropped, restoredDropped)
 	result, err = p.addNewConstraints(result, diff, alreadyDropped, leftovers, released.IndexSet(), taken)
 	if err != nil {
 		return nil, err

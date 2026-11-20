@@ -44,13 +44,17 @@ func oracle() descriptor.Dialect {
 			LetterFirst:    true,
 		},
 		Placeholder: descriptor.PlaceholderColon,
+		// Measured on 23.26 with the AL32UTF8 character set: a table named
+		// with 128 bytes is created, and 129 ASCII characters or 65 two-byte
+		// characters (130 bytes) answer ORA-00972, so the limit counts bytes
+		// and the server refuses a longer name rather than cutting it.
+		IdentifierLimit: descriptor.IdentifierLimit{Max: 128, Unit: "bytes"},
 
 		// An Oracle banner carries two numbers, and the first is not the
 		// version: "Oracle AI Database 26ai Free Release 23.26.2.0.0". The
 		// version is read after "Release". The IF [NOT] EXISTS guards arrived
 		// with the 23 line, and the step is the whole major: 23.0 through
-		// 23.25 were never measured. Ptah models no identifier limit for
-		// Oracle.
+		// 23.25 were never measured.
 		Capabilities: descriptor.Capabilities{
 			DefaultPreset: "Oracle23",
 			BannerTokens:  []string{"oracle"},
@@ -145,6 +149,10 @@ END;`,
 			Scope: descriptor.CheckNameScopeSchema, Comparison: "ascii_case_insensitive",
 			Refusal: "ORA-02264: name already used by an existing constraint",
 		},
+		// Measured on Oracle Free 23.26: UNIQUE (a) beside a primary key or
+		// another UNIQUE over (a) is refused, in CREATE TABLE and in ALTER
+		// TABLE ADD, and UNIQUE (b, a) beside UNIQUE (a, b) is taken.
+		SecondKeyRefusal: "ORA-02261: The unique or primary key already exists in the table.",
 		// Measured on Oracle Free 23.26: an identity column reads back NOT
 		// NULL, declared so or not, and an auto-increment flag and a serial
 		// type are each written as one. Compared as declared, the plan writes
@@ -165,6 +173,10 @@ END;`,
 		// Oracle stores a generated column's expression in a form of its own
 		// (stokaro/ptah#1915).
 		Comparison: descriptor.Comparison{
+			// Measured on Oracle Free 23.26: dropping a UNIQUE a foreign key
+			// references answers ORA-02273, so the foreign key leaves first
+			// and comes back once the key that replaces it is there.
+			ForeignKeyHoldsItsKey:        true,
 			TimePrecision:                descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:                    descriptor.BareTypes{Stated: true, FloatBits: 126, FloatKeepsPrecision: true, IntervalLeading: 2},
 			RewritesGeneratedExpressions: true,

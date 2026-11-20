@@ -533,6 +533,12 @@ type ConstraintRemovalInfo struct {
 	// Type is the constraint type (FOREIGN KEY, CHECK, UNIQUE, PRIMARY KEY, ...)
 	Type string `json:"type"`
 
+	// Columns are the constraint's columns in constraint order, where the
+	// comparison read them from the database or the reversal from the forward
+	// addition. It is empty where neither knows them. A planner reads it to
+	// order a key's drop before an addition over the same columns.
+	Columns []string `json:"columns,omitempty"`
+
 	// Identity is what pairs this removal with an addition of the same object.
 	// Name and TableName stay because they are the spellings a statement and a
 	// diagnostic are written with; this is the comparison form.

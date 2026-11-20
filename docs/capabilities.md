@@ -281,8 +281,8 @@ keeps them as a `Traits` value instead of flattening them into more flags, and
 The identifier limit is the value a boolean cannot carry, because the unit is
 half the answer: 63 **bytes** for the PostgreSQL family (`postgres`,
 `cockroachdb`, `yugabytedb`), 64 characters for MySQL and MariaDB, 128
-characters for SQL Server, and no modeled limit for ClickHouse and
-SQLite. PostgreSQL truncates at 63 bytes, so a 32-character accented name is
+characters for SQL Server, 128 bytes for Oracle, and no modeled limit for
+ClickHouse and SQLite. PostgreSQL truncates at 63 bytes, so a 32-character accented name is
 already over the limit while its rune count says it fits. As flags the limit
 would need one key per length, and the unit would have nowhere to live at all.
 `IdentifierLimit.Exceeds` is where the byte-versus-character rule is **defined**,
@@ -1058,7 +1058,8 @@ file, exactly as any other command reaching the same URL would.
   character sets, or collations. `SET NULL` requires every affected local
   column to be nullable. Explicit foreign-key names must fit the target's
   identifier limit: 63 bytes for the PostgreSQL family, 64 characters for the
-  MySQL family, and 128 characters for SQL Server. Generated names
+  MySQL family, 128 characters for SQL Server, and 128 bytes for Oracle.
+  Generated names
   are shortened deterministically before collision checks. Standards-oriented targets require a declared candidate key.
   A disabled `foreign_keys` capability
   or any invalid constraint fails the complete render instead of omitting the

@@ -277,7 +277,7 @@ func reverseConstraintRemovals(
 			continue
 		}
 		infos = appendConstraintRemovalInfo(infos, seen, difftypes.ConstraintRemovalInfo{
-			Name: add.Name, TableName: add.TableName, Type: add.Type,
+			Name: add.Name, TableName: add.TableName, Type: add.Type, Columns: slices.Clone(add.Columns),
 			// Carried, not re-derived: this record IS the forward addition,
 			// turned around. Deriving it again would be a second answer to a
 			// question the comparator already answered.
@@ -326,7 +326,10 @@ func reverseConstraintRemovals(
 		switch {
 		case tableConstraints[name].Name != "":
 			c := tableConstraints[name]
-			infos = appendConstraintRemovalInfo(infos, seen, difftypes.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type, Identity: constraintscope.Identity(semantics, c.Table, name)})
+			infos = appendConstraintRemovalInfo(infos, seen, difftypes.ConstraintRemovalInfo{
+				Name: name, TableName: c.Table, Type: c.Type, Columns: slices.Clone(c.Columns),
+				Identity: constraintscope.Identity(semantics, c.Table, name),
+			})
 		case fkTables[name] != "":
 			infos = appendConstraintRemovalInfo(infos, seen, difftypes.ConstraintRemovalInfo{
 				Name: name, TableName: fkTables[name], Type: "FOREIGN KEY",

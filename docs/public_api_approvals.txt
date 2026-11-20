@@ -1020,3 +1020,12 @@ v0.33.1 ptah.run/core/lintext
 v0.33.1 ptah.run/migration/lint
 v0.34.0 ptah.run/core/lintext
 v0.34.0 ptah.run/migration/lint
+
+# ConstraintRemovalInfo carries the columns of the constraint it removes. A
+# server that holds one key per ordered column list refuses a key added over
+# the list of a key that still stands, so the plan drops the old key first, and
+# a rollback's removal is of a key the observed table does not hold yet, so the
+# columns have to travel with the removal. The slice makes the struct no longer
+# comparable with ==; nothing in Ptah compares removals by value. Pre-v1, so no
+# compatibility is owed.
+v0.34.0 ptah.run/core/difftypes

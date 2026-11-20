@@ -201,6 +201,11 @@ type Dialect struct {
 	// CheckNames states where the server refuses a second CHECK of a name, and
 	// what it answers. The zero value refuses nothing.
 	CheckNames CheckNames `json:"check_names,omitzero"`
+	// SecondKeyRefusal is the first line of the error the dialect's driver
+	// reports when the server refuses a second primary or unique key over
+	// the ordered column list another key of the table holds. Empty means
+	// the server takes such a key, and nothing is refused or reordered.
+	SecondKeyRefusal string `json:"second_key_refusal,omitempty"`
 	// ConstraintNaming is how the server names a CHECK, UNIQUE or FOREIGN
 	// KEY a schema file leaves unnamed, and a NOT NULL on a release that
 	// names one. Empty keeps the name the rest of Ptah derives.

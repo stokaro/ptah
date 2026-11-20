@@ -301,6 +301,7 @@ func appendConstraintRemoval(
 		Name:      dbConstraint.Name,
 		TableName: dbConstraint.QualifiedTableName(),
 		Type:      dbConstraint.Type,
+		Columns:   slices.Clone(dbConstraint.ColumnNamesOrDefault()),
 		Identity:  constraintIdentity(dbConstraint.QualifiedTableName(), dbConstraint.Name, semantics),
 	})
 }

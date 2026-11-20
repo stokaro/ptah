@@ -65,6 +65,7 @@ func reverseColumnKeyRemovals(
 				Name:      name,
 				TableName: table.TableName,
 				Type:      "UNIQUE",
+				Columns:   []string{column},
 				Identity:  constraintscope.Identity(semantics, table.TableName, name),
 			})
 		}

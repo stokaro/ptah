@@ -74,8 +74,8 @@ func TestDescriptors_PreparationAgreesWithTheRetiredSwitches(t *testing.T) {
 // TestDescriptors_IdentifierLimitAgreesWithTheForeignKeyNames pins the
 // identifier limits internal/schemaprep now reads to name a foreign key
 // against the limits it wrote out before: 63 bytes on the PostgreSQL family,
-// 128 characters on SQL Server, 64 characters on MySQL and MariaDB, and none
-// elsewhere. PostgreSQL and YugabyteDB cut a
+// 128 characters on SQL Server, 64 characters on MySQL and MariaDB, 128 bytes
+// on Oracle, and none elsewhere. PostgreSQL and YugabyteDB cut a
 // longer name to the limit; CockroachDB keeps it whole.
 func TestDescriptors_IdentifierLimitAgreesWithTheForeignKeyNames(t *testing.T) {
 	bytes63 := descriptor.IdentifierLimit{Max: 63, Unit: "bytes"}
@@ -87,7 +87,8 @@ func TestDescriptors_IdentifierLimitAgreesWithTheForeignKeyNames(t *testing.T) {
 		platform.Postgres: cut63, platform.CockroachDB: bytes63, platform.YugabyteDB: cut63,
 		platform.SQLServer: characters(128),
 		platform.MySQL:     characters(64), platform.MariaDB: characters(64),
-		platform.ClickHouse: {}, platform.SQLite: {}, platform.Oracle: {},
+		platform.Oracle:     {Max: 128, Unit: "bytes"},
+		platform.ClickHouse: {}, platform.SQLite: {},
 	}
 	for _, dialect := range builtindialects.Descriptors() {
 		t.Run(dialect.Name, func(t *testing.T) {
