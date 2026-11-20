@@ -159,19 +159,19 @@ type Parser struct {
 //
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
 func NewParser(input string, opts ...Option) *Parser {
-	normalized, origins := clientdelimiter.Normalize(input)
 	p := &Parser{
-		input:     normalized,
 		source:    input,
-		origins:   origins,
 		startTime: time.Now(),
 		timeout:   30 * time.Second, // 30 second timeout to prevent infinite loops
 	}
 	for _, opt := range opts {
 		opt(p)
 	}
+	options := lexerOptions(p.dialect)
+	p.input, p.origins = normalizeClientDelimiters(input, p.dialect)
+	normalized := p.input
 	p.target = grammarOf(p.dialect)
-	p.lexer = lexer.NewLexerWithOptions(normalized, lexerOptions(p.dialect))
+	p.lexer = lexer.NewLexerWithOptions(normalized, options)
 	p.advance() // Load the first token
 	return p
 }
@@ -197,6 +197,18 @@ func lexerOptions(dialect string) lexer.Options {
 		return lexer.Options{}
 	}
 	return dialectlexer.Options(dialect)
+}
+
+// normalizeClientDelimiters honors the script's client delimiter directives,
+// reading its literals by the rules of options so a line inside one is not
+// taken for a directive. A script with no dialect keeps a backslash as an
+// escape in every literal, as [clientdelimiter.Normalize] does.
+func normalizeClientDelimiters(input, dialect string) (string, clientdelimiter.Origins) {
+	rules, ok := dialectlexer.ClientDelimiterRules(dialect, capability.Capabilities{})
+	if !ok {
+		return clientdelimiter.Normalize(input)
+	}
+	return clientdelimiter.NormalizeFor(input, rules)
 }
 
 // Parse parses the input SQL and returns a list of AST statements.

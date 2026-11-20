@@ -5,9 +5,12 @@
 package dialectlexer
 
 import (
+	"slices"
+
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/descriptor"
 	"ptah.run/internal/backslashmode"
+	"ptah.run/internal/clientdelimiter"
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/lexer"
 	"ptah.run/internal/lexerext"
@@ -90,4 +93,47 @@ func executableComments(style descriptor.ExecutableComments) lexer.ExecutableCom
 	default:
 		return lexer.ExecutableCommentsNone
 	}
+}
+
+// lineComments holds, per dialect, the line comment markers its descriptor
+// lists beside "--".
+var lineComments = descriptortable.New(func(described descriptor.Dialect) []string {
+	return slices.Clone(described.Lexical.LineComments)
+})
+
+// lineCommentsFor returns the line comment markers dialect states: a built-in
+// descriptor's, or the ones a provider declared for an engine the registry
+// does not describe ([DeclareLexical]). The two never name one engine, since
+// a declaration for a described name is refused.
+func lineCommentsFor(dialect string) []string {
+	if entry, found := declared.Load(declaredKey(dialect)); found {
+		return slices.Clone(entry.(*declaration).lexical.LineComments)
+	}
+	return lineComments.Get(dialect)
+}
+
+// ClientDelimiterRules is how a script written for dialect spells its
+// literals, for the client delimiter rewrite: where a literal or comment ends
+// decides whether a line that reads like a directive stands inside one. The
+// backslash rule is the session's ([ForSession]) and the line comment markers
+// are the descriptor's. A `$tag$` body quotes in every dialect except MySQL and
+// MariaDB, where a dollar sign is a name character: the shared lexer reads
+// one for the rest, PostgreSQL's dollar quotes and ClickHouse's heredocs
+// among them. A blank dialect has no rules to read; ok is false and the caller
+// uses the permissive set [clientdelimiter.Normalize] reads with.
+func ClientDelimiterRules(dialect string, caps capability.Capabilities) (rules clientdelimiter.Rules, ok bool) {
+	if dialect == "" {
+		return clientdelimiter.Rules{}, false
+	}
+	options := ForSession(dialect, caps)
+	return clientdelimiter.Rules{
+		BackslashEscapes: options.BackslashEscapes,
+		EscapeStrings:    options.PostgreSQLEscapeStrings,
+		// No descriptor field states the dollar rule itself. Executable
+		// comments are what the descriptors set on MySQL and MariaDB alone,
+		// so they stand in for it.
+		DollarQuotes:       options.ExecutableComments == lexer.ExecutableCommentsNone,
+		LineComments:       lineCommentsFor(dialect),
+		BracketIdentifiers: options.BracketIdentifiers,
+	}, true
 }

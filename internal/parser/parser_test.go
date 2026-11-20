@@ -5535,3 +5535,57 @@ func TestParser_ParseExcludeConstraint_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// A default holding a line that reads like a delimiter directive is the text of
+// the default: the directive is honored only outside a literal.
+func TestParser_DirectiveLookingLiteral_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		sql     string
+		want    string
+	}{
+		{
+			name: "Atlas form, no dialect",
+			sql:  "CREATE TABLE t (n text DEFAULT 'a\n-- atlas:delimiter $$\nb');",
+			want: "'a\n-- atlas:delimiter $$\nb'",
+		},
+		{
+			name:    "client form, postgres",
+			dialect: platform.Postgres,
+			sql:     "CREATE TABLE t (n text DEFAULT 'a\nDELIMITER $$\nb');",
+			want:    "'a\nDELIMITER $$\nb'",
+		},
+		{
+			name:    "client form after a backslash, mysql",
+			dialect: platform.MySQL,
+			sql:     "CREATE TABLE t (n text DEFAULT 'a\\'\nDELIMITER $$\nb');",
+			want:    "'a\\'\nDELIMITER $$\nb'",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+			table := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(table.Columns[0].Default.Value, qt.Equals, test.want)
+		})
+	}
+}
+
+// PostgreSQL reads a backslash as an ordinary character, so `'a\'` is a whole
+// literal and the directive after it is honored; read with the permissive rule
+// the literal stays open and swallows the directive.
+func TestParser_DirectiveAfterAPostgresBackslashLiteral_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	sql := "CREATE TABLE t (n text DEFAULT 'a\\');\nDELIMITER $$\nCREATE TABLE u (id int)$$\nCREATE TABLE v (id int)$$\n"
+
+	statements, err := parser.NewParser(sql, parser.WithDialect(platform.Postgres)).Parse()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 3)
+}
