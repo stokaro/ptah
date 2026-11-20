@@ -445,6 +445,10 @@ func validateDeclaredBeforeComparison(
 	if err := schemaprep.ValidateCheckNamesAs(desired, info.Dialect, info.IdentifierSemantics.Normalize(info.Dialect)); err != nil {
 		return err
 	}
+	// So does a second key over one column list, where the server holds one.
+	if err := schemaprep.ValidateKeyColumnLists(desired, info.Dialect); err != nil {
+		return err
+	}
 	if err := pgreservedrole.ValidateDeclared(info.Dialect, desired.Roles); err != nil {
 		return err
 	}

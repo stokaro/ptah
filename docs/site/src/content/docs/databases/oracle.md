@@ -63,6 +63,12 @@ hold digits, the underscore, `$` and `#`, as Oracle allows, so `a$b` is
 written bare and stored as `A$B`. A name that starts with any other character,
 such as `_a`, is written quoted, since Oracle refuses it bare with ORA-00911.
 
+A name holds at most 128 bytes, and Oracle refuses a longer one with
+ORA-00972 rather than cutting it. A foreign key name the file declares must
+fit. A name Ptah makes up, such as a foreign key name or the `<table>_pkey` of
+a primary key added to an existing table, is cut to fit and given a hash
+suffix.
+
 The case of a name declared bare carries no meaning. A declared `orders` means
 the table Oracle stores as `ORDERS`, whether it comes from a Go annotation or
 a SQL file. A reserved word is quoted, as above, and compared the same way. In
@@ -522,6 +528,18 @@ A column gains its `UNIQUE` with `MODIFY (a ... UNIQUE)` and loses it with
 `DROP UNIQUE (a)`, since Oracle names the key. A foreign key the plan drops
 over that key goes first. A column of a key over several columns is not unique
 by itself.
+
+Oracle holds one primary or unique key per ordered column list of a table and
+answers a second key over the same list with `ORA-02261`. `(a, b)` and `(b, a)`
+are two lists. A file that declares two keys over one list is refused before
+any statement runs, for example a column written `PRIMARY KEY UNIQUE` or a
+`UNIQUE` over the primary key's columns. A plan that replaces a key with
+another over the same list drops the old key first, including the key Oracle
+named for a column alone. Oracle refuses to drop a key a foreign key
+references (`ORA-02273`), so such a foreign key is dropped before the key and
+added back over the new one. A primary key added to an existing table is
+written with its declared name, or `<table>_pkey`, so a later file and a
+rollback drop it by that name.
 
 ## Primary keys on columns
 

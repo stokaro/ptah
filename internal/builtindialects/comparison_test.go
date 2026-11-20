@@ -125,6 +125,7 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			GeneratedColumnsBecomePlain: true,
 		},
 		"oracle": {
+			ForeignKeyHoldsItsKey:        true,
 			TimePrecision:                descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:                    descriptor.BareTypes{Stated: true, FloatBits: 126, FloatKeepsPrecision: true, IntervalLeading: 2},
 			RewritesGeneratedExpressions: true,

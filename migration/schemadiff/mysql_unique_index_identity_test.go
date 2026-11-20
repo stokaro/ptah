@@ -214,6 +214,7 @@ func TestCompareWithDialect_UndeclaredUniqueKeyIsStillRemoved(t *testing.T) {
 				Name:      "uq_users_email",
 				TableName: "users",
 				Type:      "UNIQUE",
+				Columns:   []string{"email"},
 				Identity: difftypes.ConstraintIdentity{
 					Schema: test.wantSchema, Table: "users", Name: "uq_users_email",
 				},
@@ -280,6 +281,7 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 				Name:      "uq_users_email",
 				TableName: "users",
 				Type:      "UNIQUE",
+				Columns:   []string{"email"},
 				Identity: difftypes.ConstraintIdentity{
 					Schema: test.wantSchema, Table: "users", Name: "uq_users_email",
 				},

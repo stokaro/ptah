@@ -366,7 +366,7 @@ func tablePrimaryKeyConstraintName(
 	if table.PrimaryKeyName != "" {
 		return table.PrimaryKeyName
 	}
-	return table.Name + "_pkey"
+	return schemaprep.PrimaryKeyName(table.Name, dialect)
 }
 
 // declaresKeyName reports a primary key name the table declares, on a dialect that
