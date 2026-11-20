@@ -11,8 +11,8 @@ import "ptah.run/migration/migrator"
 // the target's lock while it verifies, as `migrations up --check-drift` does,
 // and on an engine whose lock names are server-wide, MySQL and MariaDB, a
 // shadow database on the target's server waits on that lock for as long as
-// the caller holds it, which is until the replay returns. Every replay of package shadow into a
-// claimed database goes through here.
+// the caller holds it, which is until the replay returns. Every replay of
+// package shadow into a claimed database goes through here.
 //
 // The checkpoint generator is not a verification of a target and holds no
 // target lock around its replay; it keeps the lock and bounds the wait with
