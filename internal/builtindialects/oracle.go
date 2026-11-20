@@ -145,6 +145,10 @@ END;`,
 			Scope: descriptor.CheckNameScopeSchema, Comparison: "ascii_case_insensitive",
 			Refusal: "ORA-02264: name already used by an existing constraint",
 		},
+		// Measured on Oracle Free 23.26: UNIQUE (a) beside a primary key or
+		// another UNIQUE over (a) is refused, in CREATE TABLE and in ALTER
+		// TABLE ADD, and UNIQUE (b, a) beside UNIQUE (a, b) is taken.
+		SecondKeyRefusal: "ORA-02261: The unique or primary key already exists in the table.",
 		// Measured on Oracle Free 23.26: an identity column reads back NOT
 		// NULL, declared so or not, and an auto-increment flag and a serial
 		// type are each written as one. Compared as declared, the plan writes

@@ -1746,6 +1746,10 @@ func walkCommonDatabase(
 	if err := schemaprep.ValidateCheckNames(&database, targetPlatform); err != nil {
 		return err
 	}
+	// The same holds for a second key over one column list.
+	if err := schemaprep.ValidateKeyColumnLists(&database, targetPlatform); err != nil {
+		return err
+	}
 
 	// Normalize once so every conversion path consumes the same names.
 	assigned := schemaprep.AssignDefaultForeignKeyNames(&database, targetPlatform)

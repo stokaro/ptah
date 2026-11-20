@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/schemacapture"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/constraintscope"
 	"ptah.run/internal/objectlookup"
 )
 
@@ -42,53 +43,20 @@ func (p *Planner) keyHolderDrops(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) ([]ast.Node, map[constraintHostKey]struct{}) {
-	dropped := make(map[constraintHostKey]struct{})
+	holders := keyHolders{diff: diff, semantics: semantics, dropped: make(map[constraintHostKey]struct{}), hidden: make(map[string]bool)}
 	if diff == nil || !holdsOneKeyPerColumnList(p.targetDialect()) {
-		return nil, dropped
-	}
-	observed := make(map[string]*schemacapture.TableObservation, len(diff.ObservedConstraintHosts))
-	for i := range diff.ObservedConstraintHosts {
-		observation := &diff.ObservedConstraintHosts[i]
-		observed[semantics.QualifiedTableIdentityKey(observation.Table.QualifiedName())] = observation
-	}
-	columnList := func(columns []string) []string {
-		keys := make([]string, len(columns))
-		for i, column := range columns {
-			keys[i] = semantics.ColumnIdentityKey(column)
-		}
-		return keys
+		return nil, holders.dropped
 	}
 	var drops []ast.Node
-	hiddenDropped := make(map[string]bool)
 	for _, add := range diff.ConstraintsAdded {
 		if !isKeyType(add.Type) {
 			continue
 		}
-		observation := observed[semantics.QualifiedTableIdentityKey(add.TableName)]
-		list := columnList(add.Columns)
-		for _, removal := range diff.ConstraintsRemoved {
-			if _, done := dropped[removal.Identity]; done || removal.Identity == add.Identity ||
-				!isKeyType(removal.Type) || !objectlookup.Same(add.TableName, removal.TableName, semantics) {
-				continue
-			}
-			columns := removal.Columns
-			if len(columns) == 0 && observation != nil {
-				if held, found := heldConstraint(observation, removal.Name, semantics); found {
-					columns = held.ColumnNamesOrDefault()
-				}
-			}
-			if !slices.Equal(columnList(columns), list) {
-				continue
-			}
+		observation := holders.observed(add.TableName)
+		for _, removal := range holders.removedOver(add, observation) {
 			drops = append(drops, p.dropConstraintNode(removal))
-			dropped[removal.Identity] = struct{}{}
 		}
-		if len(list) != 1 || observation == nil {
-			continue
-		}
-		hidden := semantics.QualifiedTableIdentityKey(add.TableName) + "\x00" + list[0]
-		if !hiddenDropped[hidden] && holdsHiddenColumnKey(observation, list[0], semantics) {
-			hiddenDropped[hidden] = true
+		if holders.dropsHiddenKey(add, observation) {
 			drops = append(drops, &ast.AlterTableNode{Name: add.TableName, Operations: []ast.AlterOperation{
 				&ast.ModifyColumnOperation{
 					Column:            &ast.ColumnNode{Name: add.Columns[0]},
@@ -98,7 +66,90 @@ func (p *Planner) keyHolderDrops(
 			}})
 		}
 	}
-	return drops, dropped
+	return drops, holders.dropped
+}
+
+// keyHolders finds the keys that hold the column lists of the keys a plan
+// adds, and remembers the ones already dropped.
+type keyHolders struct {
+	diff      *difftypes.SchemaDiff
+	semantics identifier.Semantics
+	// dropped are the removals a drop carries out.
+	dropped map[constraintHostKey]struct{}
+	// hidden are the table and column of each column key dropped by its
+	// column.
+	hidden map[string]bool
+}
+
+// observed is the observation of table. The observation spells its table as
+// the server reads it, with the schema, and an addition as the declaration
+// does.
+func (h keyHolders) observed(table string) *schemacapture.TableObservation {
+	for i := range h.diff.ObservedConstraintHosts {
+		if objectlookup.Same(table, h.diff.ObservedConstraintHosts[i].Table.QualifiedName(), h.semantics) {
+			return &h.diff.ObservedConstraintHosts[i]
+		}
+	}
+	return nil
+}
+
+// columnList is columns as the server compares them, in order.
+func (h keyHolders) columnList(columns []string) []string {
+	keys := make([]string, len(columns))
+	for i, column := range columns {
+		keys[i] = h.semantics.ColumnIdentityKey(column)
+	}
+	return keys
+}
+
+// identity is the identity of a constraint of table. A diff the comparison
+// built carries each identity; one built by hand does not, and it is filled
+// the way the comparison fills it.
+func (h keyHolders) identity(table, name string, carried difftypes.ConstraintIdentity) difftypes.ConstraintIdentity {
+	if carried == (difftypes.ConstraintIdentity{}) {
+		return constraintscope.Identity(h.semantics, table, name)
+	}
+	return carried
+}
+
+// removedOver answers the key removals of add's table over add's column list,
+// not yet dropped, and records them as dropped. A removal's columns are the
+// ones it carries, or else the ones the observed table holds under its name.
+func (h keyHolders) removedOver(add difftypes.ConstraintAdditionInfo, observation *schemacapture.TableObservation) []difftypes.ConstraintRemovalInfo {
+	list := h.columnList(add.Columns)
+	added := h.identity(add.TableName, add.Name, add.Identity)
+	var removals []difftypes.ConstraintRemovalInfo
+	for _, removal := range h.diff.ConstraintsRemoved {
+		removed := h.identity(removal.TableName, removal.Name, removal.Identity)
+		if _, done := h.dropped[removed]; done || removed == added ||
+			!isKeyType(removal.Type) || !objectlookup.Same(add.TableName, removal.TableName, h.semantics) {
+			continue
+		}
+		columns := removal.Columns
+		if held, found := heldConstraint(observation, removal.Name, h.semantics); len(columns) == 0 && found {
+			columns = held.ColumnNamesOrDefault()
+		}
+		if slices.Equal(h.columnList(columns), list) {
+			removals = append(removals, removal)
+			h.dropped[removed] = struct{}{}
+		}
+	}
+	return removals
+}
+
+// dropsHiddenKey reports whether add, a key over one column, needs the key
+// Oracle named for that column dropped first, and records it as dropped.
+func (h keyHolders) dropsHiddenKey(add difftypes.ConstraintAdditionInfo, observation *schemacapture.TableObservation) bool {
+	if len(add.Columns) != 1 || observation == nil {
+		return false
+	}
+	column := h.semantics.ColumnIdentityKey(add.Columns[0])
+	key := h.semantics.QualifiedTableIdentityKey(add.TableName) + "\x00" + column
+	if h.hidden[key] || !holdsHiddenColumnKey(observation, column, h.semantics) {
+		return false
+	}
+	h.hidden[key] = true
+	return true
 }
 
 // columnKeysRestoredAfterDrops answers the statements that give a column its
@@ -161,8 +212,12 @@ func isKeyType(constraintType string) bool {
 	return strings.EqualFold(constraintType, "UNIQUE") || strings.EqualFold(constraintType, "PRIMARY KEY")
 }
 
-// heldConstraint finds the constraint named name in the observed table.
+// heldConstraint finds the constraint named name in the observed table, which
+// may be nil.
 func heldConstraint(observation *schemacapture.TableObservation, name string, semantics identifier.Semantics) (catalog.Constraint, bool) {
+	if observation == nil {
+		return catalog.Constraint{}, false
+	}
 	for _, held := range observation.Constraints {
 		if semantics.IndexIdentityKey(held.Name) == semantics.IndexIdentityKey(name) {
 			return held, true
