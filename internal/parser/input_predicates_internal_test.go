@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"ptah.run/internal/lexer"
 	"ptah.run/internal/routineext/compound"
 )
 
@@ -54,7 +55,20 @@ func TestIsScalarIFExpressionFragment(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(compound.ScalarIF(tt.fragment), qt.Equals, tt.expected)
+			c.Assert(compound.ScalarIF(tt.fragment, lexer.Options{}), qt.Equals, tt.expected)
 		})
 	}
+}
+
+// A # banner after the condition is a comment on MySQL, so the THEN behind it
+// makes the IF a block, and the same text with the # as an operator is not
+// affected: the fragment is read with the options of the dialect.
+func TestScalarIF_HashComment(t *testing.T) {
+	fragment := "(x > 1) #=== banner\n THEN SET y = 1; END IF;"
+
+	t.Run("mysql reads a comment", func(t *testing.T) {
+		c := qt.New(t)
+
+		c.Assert(compound.ScalarIF(fragment, lexerOptions("mysql")), qt.IsFalse)
+	})
 }

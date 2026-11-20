@@ -3,6 +3,7 @@ package compare
 import (
 	"strings"
 
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -24,9 +25,12 @@ import (
 // semicolon after it does not hide it, and the words inside a string, a comment
 // or a quoted name are not the clause. A body without the clause is returned
 // unchanged.
-func MaterializedViewQuery(body string) string {
+//
+// The body is read with the lexer options of dialect, so a # inside it is an
+// operator or a comment as the engine reads it.
+func MaterializedViewQuery(body, dialect string) string {
 	var words []lexer.Token
-	l := lexer.NewLexer(body)
+	l := lexer.NewLexerWithOptions(body, dialectlexer.Options(dialect))
 	for token := l.NextToken(); token.Type != lexer.TokenEOF; token = l.NextToken() {
 		switch token.Type {
 		case lexer.TokenWhitespace, lexer.TokenComment, lexer.TokenSemicolon:

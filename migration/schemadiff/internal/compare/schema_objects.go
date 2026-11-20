@@ -1001,7 +1001,7 @@ func materializedViewDefinitions(
 		PreviousOptions: slices.Clone(dbView.Options),
 	}
 
-	declared, stored := MaterializedViewQuery(genView.Body), MaterializedViewQuery(dbView.Body)
+	declared, stored := MaterializedViewQuery(genView.Body, dialect), MaterializedViewQuery(dbView.Body, dialect)
 	if !declaredBodyEqual(declared, stored, dialect, dbView.Schema, bodies) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}

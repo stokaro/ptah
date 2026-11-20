@@ -48,10 +48,13 @@ func StoredName(name string) Matcher {
 }
 
 // Tokens reads expression into its tokens without whitespace and comments,
-// each with its byte offsets in expression.
+// each with its byte offsets in expression. Its only caller canonicalizes
+// PostgreSQL row-level security clauses, so the text is read with PostgreSQL's
+// rules for text with no line comment marker beside "--" declared: a # is an
+// operator, not a comment.
 func Tokens(expression string) []lexer.Token {
 	var tokens []lexer.Token
-	scanner := lexer.NewLexerWithOptions(expression, lexer.Options{StandardStrings: true})
+	scanner := lexer.NewLexerWithOptions(expression, lexer.Options{StandardStrings: true, LineCommentsDeclared: true})
 	for token := scanner.NextToken(); token.Type != lexer.TokenEOF; token = scanner.NextToken() {
 		if token.Type != lexer.TokenWhitespace && token.Type != lexer.TokenComment {
 			tokens = append(tokens, token)

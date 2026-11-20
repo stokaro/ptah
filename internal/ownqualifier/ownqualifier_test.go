@@ -85,3 +85,16 @@ func TestStoredName_MatchesTheServersSpelling(t *testing.T) {
 		})
 	}
 }
+
+// A # is an operator, not a comment: the tokens after it stay in the clause, so
+// two policies that differ after one do not read as equal.
+func TestTokens_HashOperator(t *testing.T) {
+	c := qt.New(t)
+
+	var texts []string
+	for _, token := range ownqualifier.Tokens("(owner_id # 3) = 0 AND t.tenant = 5") {
+		texts = append(texts, token.Value)
+	}
+
+	c.Assert(texts, qt.DeepEquals, []string{"(", "owner_id", "#", "3", ")", "=", "0", "AND", "t", ".", "tenant", "=", "5"})
+}

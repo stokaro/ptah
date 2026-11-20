@@ -1427,7 +1427,7 @@ func (p *Parser) collectFunctionBeginBody() (string, bool, error) {
 
 func (p *Parser) trackCurrentRoutineCompoundKeyword(blockDepth, caseDepth *int, pendingEndTrailer *bool) {
 	keyword := strings.ToUpper(p.current.Value)
-	if keyword == "IF" && compound.ScalarIF(p.input[p.current.End:]) {
+	if keyword == "IF" && compound.ScalarIF(p.input[p.current.End:], lexerOptions(p.dialect)) {
 		// MySQL scalar IF(...) calls are not compound IF ... END IF blocks.
 		return
 	}

@@ -30,9 +30,19 @@ func TestMaterializedViewQuery_DropsTheDataClause(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(compare.MaterializedViewQuery(test.body), qt.Equals, "SELECT total FROM orders")
+			c.Assert(compare.MaterializedViewQuery(test.body, "postgres"), qt.Equals, "SELECT total FROM orders")
 		})
 	}
+}
+
+// A # is the XOR operator on PostgreSQL, so the clause after it is still the
+// last words of the code and is dropped with the rest of the line kept.
+func TestMaterializedViewQuery_HashOperator(t *testing.T) {
+	c := qt.New(t)
+
+	got := compare.MaterializedViewQuery("SELECT a # b AS x FROM t WITH NO DATA", "postgres")
+
+	c.Assert(got, qt.Equals, "SELECT a # b AS x FROM t")
 }
 
 // TestMaterializedViewQuery_KeepsTheQuery pins the bodies that end in no such
@@ -53,7 +63,7 @@ func TestMaterializedViewQuery_KeepsTheQuery(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(compare.MaterializedViewQuery(test.body), qt.Equals, test.body)
+			c.Assert(compare.MaterializedViewQuery(test.body, "postgres"), qt.Equals, test.body)
 		})
 	}
 }

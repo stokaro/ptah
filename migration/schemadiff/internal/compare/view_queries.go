@@ -42,7 +42,7 @@ func ViewQueryPairs(desired *schemamodel.Database, database *catalog.Database, d
 	materialized := materializedViewFamily
 	materialized.Compare = func(declared schemamodel.MaterializedView, held catalog.MaterializedView, _ string) difftypes.MaterializedViewDiff {
 		add(schemacomparison.ViewQueryPair{Kind: objectidentity.KindMatView, Schema: held.Schema, Name: held.Name, Held: held.Body,
-			Declared: MaterializedViewQuery(declared.Body)})
+			Declared: MaterializedViewQuery(declared.Body, dialect)})
 		return difftypes.MaterializedViewDiff{}
 	}
 	compareViewLikesByIdentity(materialized, desired, database, &difftypes.SchemaDiff{}, dialect, semantics)
@@ -63,12 +63,12 @@ func ViewQueryPairs(desired *schemamodel.Database, database *catalog.Database, d
 // answered once undecided and once equivalent is undecided. The queries are
 // read as the comparison reads them: a materialized view's without its data
 // clause on both sides.
-func AnsweredViewQueries(pairs []schemacomparison.ViewQueryPair, answers []schemacomparison.ViewQueryAnswer) schemacomparison.Views {
+func AnsweredViewQueries(pairs []schemacomparison.ViewQueryPair, answers []schemacomparison.ViewQueryAnswer, dialect string) schemacomparison.Views {
 	answered := make(answeredViews, len(pairs))
 	for i, pair := range pairs {
 		held := pair.Held
 		if pair.Kind == objectidentity.KindMatView {
-			held = MaterializedViewQuery(held)
+			held = MaterializedViewQuery(held, dialect)
 		}
 		key := [2]string{pair.Declared, held}
 		previous, seen := answered[key]

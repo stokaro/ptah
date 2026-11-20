@@ -83,6 +83,7 @@ func TestSplitSQLStatementsForDialect_UnlistedHash_HappyPath(t *testing.T) {
 		{"cockroachdb xor", "cockroachdb", "SELECT 5 # 3, 'it''s';\nSELECT 1;\n", []string{"SELECT 5 # 3, 'it''s'", "SELECT 1"}},
 		{"yugabytedb xor", "yugabytedb", "SELECT 5 # 3, 'it''s';\nSELECT 1;\n", []string{"SELECT 5 # 3, 'it''s'", "SELECT 1"}},
 		{"sqlite hash", "sqlite", "SELECT 5 # 3, 'it''s';\nSELECT 1;\n", []string{"SELECT 5 # 3, 'it''s'", "SELECT 1"}},
+		{"oracle name character", "oracle", "CREATE TABLE emp# (id# NUMBER);\nSELECT 2;\n", []string{"CREATE TABLE emp# (id# NUMBER)", "SELECT 2"}},
 		{"sqlserver temp table", "sqlserver", "SELECT * INTO #t FROM u WHERE a = 'x;y';\nSELECT 1;\n", []string{"SELECT * INTO #t FROM u WHERE a = 'x;y'", "SELECT 1"}},
 	}
 	for _, test := range tests {

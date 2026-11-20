@@ -28,9 +28,11 @@ func Options(dialect string) lexer.Options {
 		return lexer.Options{Scanner: scanner}
 	}
 	if options, found := declaredOptions(dialect); found {
+		options.LineComments = slices.Clone(options.LineComments)
 		return options
 	}
 	options := optionsByDialect.Get(dialect)
+	options.LineComments = slices.Clone(options.LineComments)
 	if platform.NormalizeDialect(dialect) == "" {
 		// A blank or unknown name states no markers, and an empty list is a
 		// statement too, so such text keeps the lexer's heuristic for #.

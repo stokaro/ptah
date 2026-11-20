@@ -8,7 +8,6 @@ import (
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
-	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -139,7 +138,7 @@ func resolveOneViewBody(
 // leaves such a body to the text comparison. `count(*)` is not a star. Text
 // inside quotes, dollar quotes and comments is never read.
 func SelectsStar(body string) bool {
-	lex := lexer.NewLexerWithOptions(body, dialectlexer.Options(platform.Postgres))
+	lex := lexer.NewLexerWithOptions(body, lexer.Options{StandardStrings: true, PostgreSQLEscapeStrings: true, LineCommentsDeclared: true})
 	var previous lexer.Token
 	for {
 		token := lex.NextToken()
