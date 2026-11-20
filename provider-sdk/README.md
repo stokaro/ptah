@@ -2084,7 +2084,7 @@ that lists the feature declares at least one rule.
 
 | Field | What it holds |
 | --- | --- |
-| `code` | The rule's name, the identifier a finding carries: `category/name`, two lowercase segments joined by a slash, each of letters and digits joined by single hyphens, such as `locking/add-foreign-key`. The field keeps the name `code` and carries the name. `provider.ValidLintRuleName` is the one definition of the grammar, and the host reads it from there. |
+| `code` | The rule's name, which a finding carries: `category/name`, two lowercase segments joined by a slash, each of letters and digits joined by single hyphens, such as `locking/add-foreign-key`. `provider.ValidLintRuleName` is the one definition of the grammar, and the host reads it from there. |
 | `title` | The rule's short name in reports. It is not blank. |
 | `severity` | The default severity: `INFO`, `WARNING` or `ERROR`. |
 | `applies_to_down` | Whether the rule also judges the rollback half of a migration. The request holds down files either way, and the host does not filter findings by this field, so the owner applies it. |
