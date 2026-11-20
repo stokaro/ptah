@@ -96,3 +96,38 @@ func TestParse_ObjectGrants_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*grant "readers_read" names a target with both on_topic and on_external_table; a grant names one object`)
 	c.Assert(db, qt.IsNil)
 }
+
+// TestParse_MemberOptions_HappyPath reads the options a membership states, in
+// the spelling the Go annotations use.
+func TestParse_MemberOptions_HappyPath(t *testing.T) {
+	c := qt.New(t)
+	document := `roles:
+  readers: {}
+  app:
+    member_of: ["readers(admin;set=false)"]
+`
+
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(document))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Roles, qt.DeepEquals, []schemamodel.Role{
+		{Name: "app", Inherit: true, MemberOf: []string{"readers"},
+			MemberOptions: map[string]schemamodel.RoleMembershipOptions{"readers": {Admin: new(true), Set: new(false)}}},
+		{Name: "readers", Inherit: true},
+	})
+}
+
+// TestParse_MemberOptions_FailurePath refuses an option the grammar does not
+// have, naming the role.
+func TestParse_MemberOptions_FailurePath(t *testing.T) {
+	c := qt.New(t)
+	document := `roles:
+  app:
+    member_of: ["readers(owner)"]
+`
+
+	db, err := yamlschema.Parse(t.Context(), noOwners, []byte(document))
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*role "app".*unknown membership option "owner".*`)
+	c.Assert(db, qt.IsNil)
+}

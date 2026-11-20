@@ -16,7 +16,7 @@ import (
 // provider of the family may state one; no built-in engine of the family lacks
 // it.
 func withoutRoles() capability.Capabilities {
-	return capability.Postgres18().With(capability.RoleManagement, false).With(capability.RoleComments, false)
+	return capability.Postgres18().With(capability.RoleManagement, false).With(capability.RoleComments, false).With(capability.RoleMembership, false).With(capability.RoleMembershipAdmin, false).With(capability.RoleMembershipInheritSet, false)
 }
 
 func TestCapabilityRefusalNamesEveryOperation(t *testing.T) {

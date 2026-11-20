@@ -127,7 +127,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseSerialSequenceChanges(platform.ClickHouse, diff); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseRoleMemberships(platform.ClickHouse, diff); err != nil {
+	if err := schemaprecondition.RefuseRoleMemberships(platform.ClickHouse, p.capabilities(), diff); err != nil {
 		return nil, err
 	}
 	if err := schemaprecondition.RefuseSharedRowSecurity(platform.ClickHouse, diff); err != nil {

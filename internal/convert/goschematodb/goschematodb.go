@@ -991,7 +991,15 @@ func toDBRoleMemberships(roles []schemamodel.Role) []catalog.RoleMembership {
 	for _, role := range roles {
 		for _, group := range role.MemberOf {
 			if group = strings.TrimSpace(group); group != "" {
-				out = append(out, catalog.RoleMembership{Role: group, Member: role.Name})
+				stated := role.MemberOptions[group]
+				membership := catalog.RoleMembership{Role: group, Member: role.Name, AdminOption: stated.Admin != nil && *stated.Admin}
+				if stated.Inherit != nil {
+					membership.InheritOption = new(*stated.Inherit)
+				}
+				if stated.Set != nil {
+					membership.SetOption = new(*stated.Set)
+				}
+				out = append(out, membership)
 			}
 		}
 	}

@@ -157,7 +157,6 @@ func RoundTripUnmeasured() []UnmeasuredEntry {
 		{Field: "schemamodel.Grant.OnDatabase", Reason: providerOnly},
 		{Field: "schemamodel.Grant.OnObject", Reason: providerOnly},
 		{Field: "schemamodel.Role.Group", Reason: providerOnly},
-		{Field: "schemamodel.Role.MemberOf", Reason: providerOnly},
 	}
 }
 

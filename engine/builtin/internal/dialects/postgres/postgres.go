@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/core/ast"
@@ -422,9 +423,9 @@ func (r *Renderer) VisitNode(node ast.Node) error {
 	case *ast.RevokePrivilegeNode:
 		return r.renderRevokePrivilege(n)
 	case *ast.GrantRoleMembershipNode:
-		return grantrefusal.Membership(r.dialect, r.capabilities(), "ADD "+n.Member+" TO "+n.Role)
+		return r.renderGrantRoleMembership(n)
 	case *ast.RevokeRoleMembershipNode:
-		return grantrefusal.Membership(r.dialect, r.capabilities(), "DROP "+n.Member+" FROM "+n.Role)
+		return r.renderRevokeRoleMembership(n)
 	case *ast.CreatePolicyNode:
 		return r.renderCreatePolicy(n)
 	case *ast.DropPolicyNode:
@@ -3804,6 +3805,72 @@ func (r *Renderer) renderGrantPrivilege(node *ast.GrantPrivilegeNode) error {
 	r.w.WriteLinef("GRANT %s ON %s %s TO %s%s;",
 		privileges, node.ObjectType, r.grantTarget(node.ObjectType, node.ObjectName, node.Arguments),
 		r.escapeRoleTarget(node.Role), grantOption)
+	return nil
+}
+
+// renderGrantRoleMembership writes `GRANT role TO member`, with the options the
+// node states. PostgreSQL 16 and later spell each option `ADMIN|INHERIT|SET
+// TRUE|FALSE`, and the statement changes those options on a membership that
+// exists. Earlier lines know `WITH ADMIN OPTION` only, so an INHERIT or SET
+// option is refused there, and ADMIN false is the absence of the clause.
+func (r *Renderer) renderGrantRoleMembership(node *ast.GrantRoleMembershipNode) error {
+	caps := r.capabilities()
+	if !caps.Has(capability.RoleMembership) {
+		return grantrefusal.Membership(r.dialect, caps, "ADD "+node.Member+" TO "+node.Role)
+	}
+	var options []string
+	if node.Admin != nil {
+		if err := grantrefusal.MembershipOption(r.dialect, caps, capability.RoleMembershipAdmin, node.Role, node.Member, "WITH ADMIN OPTION"); err != nil {
+			return err
+		}
+		switch {
+		case caps.Has(capability.RoleMembershipInheritSet):
+			options = append(options, "ADMIN "+strings.ToUpper(strconv.FormatBool(*node.Admin)))
+		case *node.Admin:
+			options = append(options, "ADMIN OPTION")
+		}
+	}
+	for _, option := range []struct {
+		name  string
+		value *bool
+	}{{"INHERIT", node.Inherit}, {"SET", node.Set}} {
+		if option.value == nil {
+			continue
+		}
+		if err := grantrefusal.MembershipOption(r.dialect, caps, capability.RoleMembershipInheritSet, node.Role, node.Member, "WITH "+option.name); err != nil {
+			return err
+		}
+		options = append(options, option.name+" "+strings.ToUpper(strconv.FormatBool(*option.value)))
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	clause := ""
+	if len(options) > 0 {
+		clause = " WITH " + strings.Join(options, ", ")
+	}
+	r.w.WriteLinef("GRANT %s TO %s%s;", r.escapeIdentifier(node.Role), r.escapeIdentifier(node.Member), clause)
+	return nil
+}
+
+// renderRevokeRoleMembership writes `REVOKE role FROM member`, or `REVOKE
+// ADMIN OPTION FOR role FROM member`, which keeps the membership.
+func (r *Renderer) renderRevokeRoleMembership(node *ast.RevokeRoleMembershipNode) error {
+	caps := r.capabilities()
+	if !caps.Has(capability.RoleMembership) {
+		return grantrefusal.Membership(r.dialect, caps, "DROP "+node.Member+" FROM "+node.Role)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	optionFor := ""
+	if node.AdminOptionFor {
+		if err := grantrefusal.MembershipOption(r.dialect, caps, capability.RoleMembershipAdmin, node.Role, node.Member, "REVOKE ADMIN OPTION FOR"); err != nil {
+			return err
+		}
+		optionFor = "ADMIN OPTION FOR "
+	}
+	r.w.WriteLinef("REVOKE %s%s FROM %s;", optionFor, r.escapeIdentifier(node.Role), r.escapeIdentifier(node.Member))
 	return nil
 }
 

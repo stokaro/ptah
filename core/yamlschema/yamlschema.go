@@ -451,7 +451,9 @@ type roleSpec struct {
 	Replication bool         `yaml:"replication"`
 	Comment     stringScalar `yaml:"comment"`
 	// Group declares a YDB group, and MemberOf the groups the role is a
-	// member of; see [schemamodel.Role].
+	// member of, each with optional membership options such as
+	// readers(admin;inherit=false); see [schemamodel.Role] and
+	// [schemamodel.ParseMemberOf].
 	Group    bool       `yaml:"group"`
 	MemberOf stringList `yaml:"member_of"`
 
@@ -1393,24 +1395,25 @@ func (d document) addRoles(db *schemamodel.Database, owners yamlext.Set) error {
 			inherit = *spec.Inherit
 		}
 		// Nil for none, as the annotation parser leaves it.
-		var memberOf []string
-		if groups := cleanStrings(spec.MemberOf); len(groups) > 0 {
-			memberOf = groups
+		memberOf, memberOptions, err := schemamodel.ParseMemberOf(cleanStrings(spec.MemberOf))
+		if err != nil {
+			return fmt.Errorf("role %q: %w", key, err)
 		}
 		db.Roles = append(db.Roles, schemamodel.Role{
-			StructName:  string(spec.StructName),
-			Name:        valueOrDefault(spec.Name, key),
-			Login:       spec.Login,
-			Password:    string(spec.Password),
-			Superuser:   spec.Superuser,
-			CreateDB:    spec.CreateDB,
-			CreateRole:  spec.CreateRole,
-			Inherit:     inherit,
-			Replication: spec.Replication,
-			Comment:     string(spec.Comment),
-			Group:       spec.Group,
-			MemberOf:    memberOf,
-			Facets:      facets,
+			StructName:    string(spec.StructName),
+			Name:          valueOrDefault(spec.Name, key),
+			Login:         spec.Login,
+			Password:      string(spec.Password),
+			Superuser:     spec.Superuser,
+			CreateDB:      spec.CreateDB,
+			CreateRole:    spec.CreateRole,
+			Inherit:       inherit,
+			Replication:   spec.Replication,
+			Comment:       string(spec.Comment),
+			Group:         spec.Group,
+			MemberOf:      memberOf,
+			MemberOptions: memberOptions,
+			Facets:        facets,
 		})
 		name := db.Roles[len(db.Roles)-1].Name
 		if first, repeated := declaredBy[name]; repeated {

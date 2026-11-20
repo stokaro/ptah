@@ -79,14 +79,6 @@ var refusedDiffCategories = map[string]refusedFixture{
 		why:  "a database's character set and collation are a whole-server MySQL-family change for the same reason",
 		diff: &difftypes.SchemaDiff{SchemasModified: []difftypes.SchemaChange{{Name: "app", Collate: "C"}}},
 	},
-	"RoleMembershipsAdded": {
-		why:  "the comparison records a membership only on a target with role_membership, which is YDB's, so a PostgreSQL plan reaches one only through a diff built by hand, and planning nothing would leave the member without what it was declared to hold",
-		diff: &difftypes.SchemaDiff{RoleMembershipsAdded: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
-	},
-	"RoleMembershipsRemoved": {
-		why:  "the comparison records a membership only on a target with role_membership, which is YDB's; planning nothing would leave the member holding what it was declared not to hold",
-		diff: &difftypes.SchemaDiff{RoleMembershipsRemoved: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
-	},
 	"IndexesRenamed": {
 		why:  "the comparison pairs a removed index with an added one only on a target with index_rename, which is YDB's, so a PostgreSQL plan reaches a rename only through a diff built by hand, and planning nothing would leave the index under its old name",
 		diff: &difftypes.SchemaDiff{IndexesRenamed: []difftypes.IndexRename{{TableName: "users", From: "a", To: "b"}}},
@@ -465,6 +457,25 @@ func diffCategoryFixtures() []categoryFixture {
 		{
 			"GrantOptionsAdded",
 			&difftypes.SchemaDiff{GrantOptionsAdded: []difftypes.GrantRef{{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t", WithOption: true}}},
+			&schemamodel.Database{},
+		},
+		{
+			"RoleMembershipsAdded",
+			&difftypes.SchemaDiff{RoleMembershipsAdded: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
+			&schemamodel.Database{},
+		},
+		{
+			"RoleMembershipsModified",
+			&difftypes.SchemaDiff{RoleMembershipsModified: []difftypes.RoleMembershipChange{{
+				Role: "readers", Member: "app",
+				From: schemamodel.RoleMembershipOptions{Admin: new(false), Inherit: new(true), Set: new(true)},
+				To:   schemamodel.RoleMembershipOptions{Admin: new(true), Inherit: new(true), Set: new(true)},
+			}}},
+			&schemamodel.Database{},
+		},
+		{
+			"RoleMembershipsRemoved",
+			&difftypes.SchemaDiff{RoleMembershipsRemoved: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
 			&schemamodel.Database{},
 		},
 		{

@@ -3102,14 +3102,27 @@ func (n *DropRoleNode) SetGroup(group bool) *DropRoleNode {
 func (n *DropRoleNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
 // GrantRoleMembershipNode makes Member a member of Role, holding every
-// privilege Role holds: YDB's `ALTER GROUP role ADD USER member`, where Role
-// is a group and Member a user or another group. Only the YDB renderer writes
-// it today; every other renderer refuses it.
+// privilege Role holds: `GRANT role TO member` on PostgreSQL, MySQL and
+// ClickHouse, and YDB's `ALTER GROUP role ADD USER member`, where Role is a
+// group and Member a user or another group. A renderer of a target that does
+// not plan memberships refuses it.
+//
+// On a membership that already exists the statement changes the options it
+// states and leaves the others, as PostgreSQL 16, MySQL and ClickHouse do.
 type GrantRoleMembershipNode struct {
 	// Role is the role, on YDB the group, that gains a member.
 	Role string
 	// Member is the role that becomes a member.
 	Member string
+	// Admin states WITH ADMIN OPTION when true, and on a target that can
+	// withdraw it states WITH ADMIN FALSE when false. Nil states nothing.
+	Admin *bool
+	// Inherit states the INHERIT option, PostgreSQL 16 and later. Nil states
+	// nothing, and the member role's own attribute applies to a new
+	// membership.
+	Inherit *bool
+	// Set states the SET option, PostgreSQL 16 and later. Nil states nothing.
+	Set *bool
 	// Comment is an optional comment for the statement.
 	Comment string
 }
@@ -3125,17 +3138,27 @@ func (n *GrantRoleMembershipNode) SetComment(comment string) *GrantRoleMembershi
 	return n
 }
 
+// SetOptions states the membership options the statement carries.
+func (n *GrantRoleMembershipNode) SetOptions(admin, inherit, set *bool) *GrantRoleMembershipNode {
+	n.Admin, n.Inherit, n.Set = admin, inherit, set
+	return n
+}
+
 // Accept implements the Node interface for GrantRoleMembershipNode.
 func (n *GrantRoleMembershipNode) Accept(visitor Visitor) error { return visitor.VisitNode(n) }
 
-// RevokeRoleMembershipNode takes Member out of Role: YDB's `ALTER GROUP role
-// DROP USER member`. Only the YDB renderer writes it today; every other
-// renderer refuses it.
+// RevokeRoleMembershipNode takes Member out of Role: `REVOKE role FROM member`
+// on PostgreSQL, MySQL and ClickHouse, and YDB's `ALTER GROUP role DROP USER
+// member`. With AdminOptionFor it takes the admin option away and keeps the
+// membership. A renderer of a target that does not plan memberships refuses it.
 type RevokeRoleMembershipNode struct {
 	// Role is the role, on YDB the group, that loses a member.
 	Role string
 	// Member is the role that stops being a member.
 	Member string
+	// AdminOptionFor revokes only the admin option, which is `REVOKE ADMIN
+	// OPTION FOR role FROM member`, and keeps the membership.
+	AdminOptionFor bool
 	// Comment is an optional comment for the statement.
 	Comment string
 }
@@ -3148,6 +3171,12 @@ func NewRevokeRoleMembership(role, member string) *RevokeRoleMembershipNode {
 // SetComment sets a comment for the statement.
 func (n *RevokeRoleMembershipNode) SetComment(comment string) *RevokeRoleMembershipNode {
 	n.Comment = comment
+	return n
+}
+
+// SetAdminOptionFor makes the statement revoke only the admin option.
+func (n *RevokeRoleMembershipNode) SetAdminOptionFor(adminOptionFor bool) *RevokeRoleMembershipNode {
+	n.AdminOptionFor = adminOptionFor
 	return n
 }
 

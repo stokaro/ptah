@@ -232,6 +232,25 @@ jobs:
         ports:
           - 5436:5432
 
+      # PostgreSQL 14 holds the admin option of a role membership and no
+      # INHERIT or SET option, which arrived in 16. Only the tests that ask for
+      # dbtarget.PostgreSQL14 use it. renovate.json disables updates for this
+      # pin: a 15.x tag removes the coverage without failing anything.
+      postgres-14:
+        image: postgres:14
+        env:
+          POSTGRES_DB: ptah_test
+          POSTGRES_USER: ptah_user
+          POSTGRES_PASSWORD: ptah_password
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -p 5432 -U ptah_user -d ptah_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --tmpfs /var/lib/postgresql/data:rw,noexec,nosuid,size=1024m
+        ports:
+          - 5437:5432
+
       pgbouncer:
         image: edoburu/pgbouncer:v1.26.1-p0
         env:
@@ -508,6 +527,13 @@ jobs:
             sleep 2
           done
           echo "PostgreSQL 16 is ready!"
+
+          echo "Waiting for PostgreSQL 14..."
+          until pg_isready -h localhost -p 5437 -U ptah_user; do
+            echo "PostgreSQL 14 is unavailable - sleeping"
+            sleep 2
+          done
+          echo "PostgreSQL 14 is ready!"
           
           echo "Waiting for MySQL..."
           until mysqladmin ping -h 127.0.0.1 -P 3306 -u ptah_user -pptah_password --silent; do
@@ -764,6 +790,8 @@ jobs:
           TIMESCALE_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5435/ptah_test?sslmode=disable"
           # PostgreSQL 16, with an account that creates the test's databases.
           POSTGRES_16_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5436/ptah_test?sslmode=disable"
+          # PostgreSQL 14, with an account that creates roles.
+          POSTGRES_14_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5437/ptah_test?sslmode=disable"
           POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"

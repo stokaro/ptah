@@ -17,6 +17,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/platform/identifier"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
@@ -159,19 +160,23 @@ func RefuseSerialSequenceChanges(dialect string, diff *difftypes.SchemaDiff) err
 	return nil
 }
 
-// RefuseRoleMemberships refuses a diff that adds or removes the membership of
-// a role in another, for a planner of dialect that plans none. The comparison
-// records memberships only on a target with capability.RoleMembership, which
-// no built-in engine has, so a built-in planner reaches one only through a
-// diff built by hand, and planning nothing would leave the member holding what
-// it held and report the two sides equal.
-func RefuseRoleMemberships(dialect string, diff *difftypes.SchemaDiff) error {
+// RefuseRoleMemberships refuses a diff that adds, changes or removes the
+// membership of a role in another, for a planner whose target lacks
+// capability.RoleMembership. The comparison records memberships only on a
+// target with the key, so such a planner reaches one only through a diff built
+// by hand, and planning nothing would leave the member holding what it held
+// and report the two sides equal.
+func RefuseRoleMemberships(dialect string, caps capability.Capabilities, diff *difftypes.SchemaDiff) error {
 	switch {
-	case diff == nil:
+	case diff == nil || caps.Has(capability.RoleMembership):
 		return nil
 	case len(diff.RoleMembershipsAdded) > 0:
 		membership := diff.RoleMembershipsAdded[0]
 		return fmt.Errorf("%w: the diff makes %q a member of %q, and the %s planner plans no role membership",
+			ptaherr.ErrUnsupportedFeature, membership.Member, membership.Role, dialect)
+	case len(diff.RoleMembershipsModified) > 0:
+		membership := diff.RoleMembershipsModified[0]
+		return fmt.Errorf("%w: the diff changes the options of %q in %q, and the %s planner plans no role membership",
 			ptaherr.ErrUnsupportedFeature, membership.Member, membership.Role, dialect)
 	case len(diff.RoleMembershipsRemoved) > 0:
 		membership := diff.RoleMembershipsRemoved[0]

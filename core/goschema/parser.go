@@ -1925,21 +1925,26 @@ func (s *schemaParseState) parseRoleComment(comment *ast.Comment, structName str
 	if err != nil {
 		return ownerAttributeError(ctx, err)
 	}
+	memberOf, memberOptions, err := schemamodel.ParseMemberOf(splitCommaList(kv["member_of"]))
+	if err != nil {
+		return ownerAttributeError(ctx, err)
+	}
 	s.roles = append(s.roles, schemamodel.Role{
-		Facets:      facets,
-		StructName:  structName,
-		Name:        kv["name"],
-		Login:       kv["login"] == "true",
-		Password:    kv["password"],
-		Superuser:   kv["superuser"] == "true",
-		CreateDB:    kv["createdb"] == "true" || kv["create_db"] == "true",
-		CreateRole:  kv["createrole"] == "true" || kv["create_role"] == "true",
-		Inherit:     kv["inherit"] != "false", // Default to true unless explicitly set to false
-		Replication: kv["replication"] == "true",
-		Comment:     kv["comment"],
-		Group:       kv["group"] == "true",
-		MemberOf:    splitCommaList(kv["member_of"]),
-		Dialects:    scope,
+		Facets:        facets,
+		StructName:    structName,
+		Name:          kv["name"],
+		Login:         kv["login"] == "true",
+		Password:      kv["password"],
+		Superuser:     kv["superuser"] == "true",
+		CreateDB:      kv["createdb"] == "true" || kv["create_db"] == "true",
+		CreateRole:    kv["createrole"] == "true" || kv["create_role"] == "true",
+		Inherit:       kv["inherit"] != "false", // Default to true unless explicitly set to false
+		Replication:   kv["replication"] == "true",
+		Comment:       kv["comment"],
+		Group:         kv["group"] == "true",
+		MemberOf:      memberOf,
+		MemberOptions: memberOptions,
+		Dialects:      scope,
 	})
 	return nil
 }

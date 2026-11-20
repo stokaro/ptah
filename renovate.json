@@ -132,6 +132,17 @@
       "enabled": false
     },
     {
+      "description": "The postgres-14 integration service is pinned to 14 deliberately: PostgreSQL 14 holds the admin option of a role membership and no INHERIT or SET option, which arrived in 16, so the membership tests plan a different statement there. A 15.x tag removes that coverage without failing anything. Matching on the current value freezes only that pin; the tag names a line, so the server still takes each 14 patch release.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "postgres"
+      ],
+      "matchCurrentValue": "14",
+      "enabled": false
+    },
+    {
       "description": "Update indirect Go dependencies",
       "matchManagers": [
         "gomod"

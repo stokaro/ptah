@@ -201,6 +201,81 @@ func (r *Renderer) renderRevokePrivilege(node *ast.RevokePrivilegeNode) error {
 	return nil
 }
 
+// renderGrantRoleMembership renders `GRANT role TO member`, with WITH ADMIN
+// OPTION when the node states the admin option. Measured on 26.10, the
+// statement upgrades a membership that exists, and a plain GRANT on one that
+// holds the option leaves it on. A ClickHouse membership has no INHERIT or SET
+// option, so those are refused.
+func (r *Renderer) renderGrantRoleMembership(node *ast.GrantRoleMembershipNode) error {
+	caps := r.capabilities()
+	if !caps.Has(capability.RoleMembership) {
+		return grantrefusal.Membership(r.Dialect(), caps, "ADD "+node.Member+" TO "+node.Role)
+	}
+	if node.Admin != nil {
+		if err := grantrefusal.MembershipOption(r.Dialect(), caps, capability.RoleMembershipAdmin, node.Role, node.Member, "WITH ADMIN OPTION"); err != nil {
+			return err
+		}
+	}
+	for _, option := range []struct {
+		name  string
+		value *bool
+	}{{"WITH INHERIT", node.Inherit}, {"WITH SET", node.Set}} {
+		if option.value == nil {
+			continue
+		}
+		if err := grantrefusal.MembershipOption(r.Dialect(), caps, capability.RoleMembershipInheritSet, node.Role, node.Member, option.name); err != nil {
+			return err
+		}
+	}
+	role, member, err := membershipTargets("GRANT", node.Role, node.Member)
+	if err != nil {
+		return err
+	}
+	clause := ""
+	if node.Admin != nil && *node.Admin {
+		clause = " WITH ADMIN OPTION"
+	}
+	r.writeRBACComment(node.Comment)
+	r.w.WriteLinef("GRANT %s TO %s%s;", role, member, clause)
+	return nil
+}
+
+// renderRevokeRoleMembership renders `REVOKE role FROM member`, or `REVOKE
+// ADMIN OPTION FOR role FROM member`, which keeps the membership (measured on
+// 26.10: with_admin_option goes from 1 to 0 and the row stays).
+func (r *Renderer) renderRevokeRoleMembership(node *ast.RevokeRoleMembershipNode) error {
+	caps := r.capabilities()
+	if !caps.Has(capability.RoleMembership) {
+		return grantrefusal.Membership(r.Dialect(), caps, "DROP "+node.Member+" FROM "+node.Role)
+	}
+	role, member, err := membershipTargets("REVOKE", node.Role, node.Member)
+	if err != nil {
+		return err
+	}
+	subject := ""
+	if node.AdminOptionFor {
+		if err := grantrefusal.MembershipOption(r.Dialect(), caps, capability.RoleMembershipAdmin, node.Role, node.Member, "REVOKE ADMIN OPTION FOR"); err != nil {
+			return err
+		}
+		subject = "ADMIN OPTION FOR "
+	}
+	r.writeRBACComment(node.Comment)
+	r.w.WriteLinef("REVOKE %s%s FROM %s;", subject, role, member)
+	return nil
+}
+
+func membershipTargets(operation, role, member string) (string, string, error) {
+	quotedRole, err := roleTarget(operation, role)
+	if err != nil {
+		return "", "", err
+	}
+	quotedMember, err := roleTarget(operation, member)
+	if err != nil {
+		return "", "", err
+	}
+	return quotedRole, quotedMember, nil
+}
+
 // grantParts is a grant or revoke reduced to the three fragments both
 // statements are built from, each already quoted or validated.
 type grantParts struct {

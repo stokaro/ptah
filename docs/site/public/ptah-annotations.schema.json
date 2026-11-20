@@ -1911,7 +1911,7 @@
               "type": "string"
             },
             "member_of": {
-              "description": "Comma-separated groups the role is a member of. YDB only.",
+              "description": "Comma-separated groups the role is a member of. A group may carry membership options in parentheses, such as readers(admin;inherit=false;set=true).",
               "type": "string"
             },
             "name": {

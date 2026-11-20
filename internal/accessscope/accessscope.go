@@ -24,8 +24,10 @@ import (
 // cannot hold, and returns nil when the target holds all of it.
 //
 // A target without [capability.GroupPrincipals] refuses a role declared as a
-// group, one without [capability.RoleMembership] a role's member_of, and one
-// without [capability.DatabaseGrants] a grant or revoke on the database. Each
+// group, one without [capability.RoleMembership] a role's member_of, one
+// without [capability.RoleMembershipAdmin] or [capability.RoleMembershipInheritSet]
+// a membership that states the admin option or the inherit or set option, and
+// one without [capability.DatabaseGrants] a grant or revoke on the database. Each
 // refusal names the first offender by name, so two runs over one schema name
 // the same one. None is skipped instead: a skipped group would leave the
 // grants that name it without a principal, a skipped membership would leave a
@@ -42,6 +44,10 @@ func ValidateDeclared(dialect string, caps capability.Capabilities, database *sc
 	}{
 		{capability.GroupPrincipals, "declares group %q", groupNames(database.Roles)},
 		{capability.RoleMembership, "declares a membership of role %q", memberNames(database.Roles)},
+		{capability.RoleMembershipAdmin, "states the admin option of its membership in a role: member %q",
+			optionMembers(database.Roles, func(o schemamodel.RoleMembershipOptions) bool { return o.Admin != nil })},
+		{capability.RoleMembershipInheritSet, "states the inherit or set option of its membership in a role: member %q",
+			optionMembers(database.Roles, func(o schemamodel.RoleMembershipOptions) bool { return o.Inherit != nil || o.Set != nil })},
 		{capability.DatabaseGrants, "grants or revokes a privilege on the database to %q", databaseGrantees(database)},
 	}
 	for _, gate := range gates {
@@ -135,6 +141,18 @@ func memberNames(roles []schemamodel.Role) []string {
 	var names []string
 	for _, role := range roles {
 		if len(role.MemberOf) > 0 {
+			names = append(names, role.Name)
+		}
+	}
+	return names
+}
+
+// optionMembers names the roles with a membership that states an option
+// stated reports.
+func optionMembers(roles []schemamodel.Role, stated func(schemamodel.RoleMembershipOptions) bool) []string {
+	var names []string
+	for _, role := range roles {
+		if slices.ContainsFunc(role.MemberOf, func(group string) bool { return stated(role.MemberOptions[group]) }) {
 			names = append(names, role.Name)
 		}
 	}

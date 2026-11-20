@@ -34,3 +34,22 @@ func Membership(dialect string, caps capability.Capabilities, statement string) 
 		Message: fmt.Sprintf("%s: the %s renderer writes no role membership", statement, normalized),
 	}
 }
+
+// MembershipOption refuses an option a membership statement states and the
+// target cannot hold, wrapping [ptaherr.ErrUnsupportedFeature]. key is the
+// capability that names the option, and option the clause refused, such as
+// `WITH INHERIT`. An option the target would drop in silence leaves the member
+// holding something other than it was declared to.
+func MembershipOption(dialect string, caps capability.Capabilities, key capability.Capability, role, member, option string) error {
+	if caps.Has(key) {
+		return nil
+	}
+	normalized := platform.NormalizeDialect(dialect)
+	return &ptaherr.CapabilityError{
+		Dialect: normalized,
+		Feature: string(key),
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf("%s on the membership of %s in %s, which requires target capability %s, unavailable on this %s target",
+			option, member, role, key, normalized),
+	}
+}

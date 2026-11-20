@@ -47,7 +47,8 @@ func TestPlanner_CapabilityGatesRoleManagement(t *testing.T) {
 
 	// A PostgreSQL-family target without role management, as a provider may
 	// state one; no built-in engine of the family lacks it.
-	noRoles := capability.Postgres17().With(capability.RoleManagement, false).With(capability.RoleComments, false)
+	noRoles := capability.Postgres17().With(capability.RoleManagement, false).With(capability.RoleComments, false).
+		With(capability.RoleMembership, false).With(capability.RoleMembershipAdmin, false).With(capability.RoleMembershipInheritSet, false)
 	nodes, err := postgres.NewForDialect(platform.Postgres, noRoles).GenerateMigrationAST(
 		context.Background(), must.Must(builtin.New()),
 		withDeclaredObjects(diff, desired),

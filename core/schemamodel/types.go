@@ -1570,6 +1570,14 @@ type Role struct {
 	// list.
 	MemberOf []string `json:",omitempty"`
 
+	// MemberOptions holds the options a membership states, keyed by the group
+	// name as MemberOf spells it. A group with no entry states none. A target
+	// without [ptah.run/core/platform/capability.RoleMembershipAdmin] refuses
+	// a stated admin option, and one without
+	// [ptah.run/core/platform/capability.RoleMembershipInheritSet] a stated
+	// inherit or set option, rather than leaving it out of the plan.
+	MemberOptions map[string]RoleMembershipOptions `json:",omitempty"`
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToTarget].
 	Dialects []string `json:",omitempty"`

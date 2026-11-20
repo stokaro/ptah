@@ -1468,14 +1468,21 @@ func roleGroupFixture() schemamodel.Database {
 	return db
 }
 
-// roleMembershipFixture declares a role that is a member of another. No
-// built-in target plans a membership, so each refuses it by capability; the
-// YDB provider renders it as ALTER GROUP ... ADD USER.
+// roleMembershipFixture declares a role that is a member of another, with
+// every membership option stated. PostgreSQL 16 and later render all three,
+// MySQL and ClickHouse take the admin option only, and a target that plans no
+// membership refuses it by capability; the YDB provider renders it as ALTER
+// GROUP ... ADD USER.
 func roleMembershipFixture() schemamodel.Database {
 	db := oneTable("T", schemamodel.Table{Name: "t"})
 	db.Roles = []schemamodel.Role{
 		{StructName: "RO", Name: "readers", Inherit: true},
-		{StructName: "RO", Name: "app", Login: true, Inherit: true, MemberOf: []string{"readers"}},
+		{
+			StructName: "RO", Name: "app", Login: true, Inherit: true, MemberOf: []string{"readers"},
+			MemberOptions: map[string]schemamodel.RoleMembershipOptions{
+				"readers": {Admin: new(true), Inherit: new(false), Set: new(true)},
+			},
+		},
 	}
 	return db
 }

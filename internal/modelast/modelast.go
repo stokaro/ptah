@@ -1513,7 +1513,9 @@ func FromRoleMemberships(role schemamodel.Role) []*ast.GrantRoleMembershipNode {
 	nodes := make([]*ast.GrantRoleMembershipNode, 0, len(role.MemberOf))
 	for _, group := range role.MemberOf {
 		if group = strings.TrimSpace(group); group != "" {
-			nodes = append(nodes, ast.NewGrantRoleMembership(group, role.Name))
+			stated := role.MemberOptions[group]
+			nodes = append(nodes, ast.NewGrantRoleMembership(group, role.Name).
+				SetOptions(stated.Admin, stated.Inherit, stated.Set))
 		}
 	}
 	return nodes

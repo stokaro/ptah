@@ -69,10 +69,19 @@ type roleRow struct {
 	storage string
 }
 
+// membershipRow is one row of the simulated system.role_grants for a role
+// granted to a role.
+type membershipRow struct {
+	role   string
+	member string
+	admin  bool
+}
+
 // rbacServer is the state one simulated ClickHouse holds.
 type rbacServer struct {
-	roles  []roleRow
-	grants []grantRow
+	roles       []roleRow
+	grants      []grantRow
+	memberships []membershipRow
 }
 
 // grantsColumnsAddedAfter2410 are the two system.grants columns 26.7.3.19 has
@@ -313,6 +322,12 @@ func answerClickHouse(query string, args []driver.NamedValue, server rbacServer)
 	switch {
 	case strings.Contains(query, "FROM system.roles"):
 		return answerRoles(query, server.roles)
+	case strings.Contains(query, "FROM system.role_grants"):
+		result := dbtest.QueryResult{Columns: []string{"granted_role_name", "role_name", "with_admin_option"}}
+		for _, row := range server.memberships {
+			result.Rows = append(result.Rows, []driver.Value{row.role, row.member, uint8OfBool[row.admin]})
+		}
+		return result, nil
 	case strings.Contains(query, "FROM system.grants"):
 		return answerGrants(query, args, server.grants)
 	// The reader describes row policies now that ClickHouse carries
@@ -352,7 +367,7 @@ func withRoleManagement() capability.Capabilities {
 }
 
 func withoutRoleManagement() capability.Capabilities {
-	return capability.ClickHouse24().With(capability.RoleManagement, false)
+	return capability.ClickHouse24().With(capability.RoleManagement, false).With(capability.RoleMembership, false).With(capability.RoleMembershipAdmin, false).With(capability.RoleMembershipInheritSet, false)
 }
 
 // mixedServer is one server holding a row for every reason a row is or is not

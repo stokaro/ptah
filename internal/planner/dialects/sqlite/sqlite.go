@@ -92,7 +92,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	if err := schemaprecondition.RefuseFeatureChanges(DialectName, withoutTableOptionsChanges(diff)); err != nil {
 		return nil, err
 	}
-	if err := schemaprecondition.RefuseRoleMemberships(DialectName, diff); err != nil {
+	if err := schemaprecondition.RefuseRoleMemberships(DialectName, p.capabilities(), diff); err != nil {
 		return nil, err
 	}
 	// The identity check alone. Nothing is resolved: an addition carries its

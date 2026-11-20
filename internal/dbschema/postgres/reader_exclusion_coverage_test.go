@@ -34,7 +34,7 @@ func TestReadSchemaContext_ExclusionCoverageWithoutCatalogFunctions(t *testing.T
 			c := qt.New(t)
 			db := dbtest.Open(c, emptyCatalog)
 			reader := postgres.NewPostgreSQLWireReaderWithCapabilities(db.SQL, "public", test.dialect,
-				capability.Postgres16().With(capability.PostgresCatalogFunctions, false).With(capability.RoleManagement, false))
+				capability.Postgres16().With(capability.PostgresCatalogFunctions, false).With(capability.RoleManagement, false).With(capability.RoleMembership, false).With(capability.RoleMembershipAdmin, false).With(capability.RoleMembershipInheritSet, false))
 
 			database, err := reader.ReadSchemaContext(c.Context())
 

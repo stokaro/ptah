@@ -248,6 +248,8 @@ func measuredLines() map[string]measuredLine {
 				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
 				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
+				capability.RoleMembershipAdmin:             accessKeyCarried,
+				capability.RoleMembershipInheritSet:        accessKeyCarried,
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
@@ -448,6 +450,8 @@ func measuredLines() map[string]measuredLine {
 				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
 				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
+				capability.RoleMembershipAdmin:             accessKeyCarried,
+				capability.RoleMembershipInheritSet:        accessKeyCarried,
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
@@ -649,6 +653,8 @@ func measuredLines() map[string]measuredLine {
 				capability.VectorIndexMaintainedOnWrite:    vectorKeyCarried,
 				capability.VectorBitType:                   vectorKeyCarried,
 				capability.RoleMembership:                  accessKeyCarried,
+				capability.RoleMembershipAdmin:             accessKeyCarried,
+				capability.RoleMembershipInheritSet:        accessKeyCarried,
 				capability.GroupPrincipals:                 accessKeyCarried,
 				capability.DatabaseGrants:                  accessKeyCarried,
 				capability.RelativeGrantPaths:              accessKeyCarried,
@@ -929,13 +935,13 @@ const columnFamilyKeyCarried = "this run predates the key and sent no column fam
 const changefeedKeyCarried = "this run predates the key and sent no changefeed experiment; the probe asks " +
 	"it on every run, and the value here is the preset's"
 
-// accessKeyCarried is why the keys about role membership, groups, grants on
-// the database and relative grant paths are carried on every measured line:
-// the run named there predates them. Each describes what Ptah's planner plans,
-// which no built-in planner does, so the probe declares them undecided on
-// these engines, and the value here is the preset's.
+// accessKeyCarried is why the keys about role membership, its admin and
+// inherit-and-set options, groups, grants on the database and relative grant
+// paths are carried on every measured line: the run named there predates them.
+// Each describes what Ptah's planner plans, so the probe declares them
+// undecided on these engines, and the value here is the preset's.
 const accessKeyCarried = "this run predates the key; the probe declares it undecided on this engine, " +
-	"because no built-in planner plans it, and the value here is the preset's"
+	"because what it names is a property of Ptah's planner, and the value here is the preset's"
 
 // replicationKeyCarried is why the keys about a YDB async replication and a
 // transfer are carried on these lines: the run predates them. The probe asks

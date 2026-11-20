@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/core/difftypes"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/internal/planner/schemaprecondition"
 )
@@ -23,6 +24,9 @@ func TestRefuseRoleMemberships_FailurePath(t *testing.T) {
 		{name: "an addition",
 			diff:    &difftypes.SchemaDiff{RoleMembershipsAdded: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
 			wantErr: `unsupported feature: the diff makes "app" a member of "readers", and the mysql planner plans no role membership`},
+		{name: "an option change",
+			diff:    &difftypes.SchemaDiff{RoleMembershipsModified: []difftypes.RoleMembershipChange{{Role: "readers", Member: "app"}}},
+			wantErr: `unsupported feature: the diff changes the options of "app" in "readers", and the mysql planner plans no role membership`},
 		{name: "a removal",
 			diff:    &difftypes.SchemaDiff{RoleMembershipsRemoved: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}},
 			wantErr: `unsupported feature: the diff takes "app" out of "readers", and the mysql planner plans no role membership`},
@@ -31,7 +35,7 @@ func TestRefuseRoleMemberships_FailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := schemaprecondition.RefuseRoleMemberships("mysql", test.diff)
+			err := schemaprecondition.RefuseRoleMemberships("mysql", capability.MariaDB1011(), test.diff)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 		})
@@ -52,7 +56,16 @@ func TestRefuseRoleMemberships_HappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(schemaprecondition.RefuseRoleMemberships("mysql", test.diff), qt.IsNil)
+			c.Assert(schemaprecondition.RefuseRoleMemberships("mysql", capability.MariaDB1011(), test.diff), qt.IsNil)
 		})
 	}
+}
+
+// TestRefuseRoleMemberships_AcceptsATargetThatPlansMemberships is the control
+// for the refusals above: the same diff passes where the target has
+// capability.RoleMembership, so the refusal follows the key and not the diff.
+func TestRefuseRoleMemberships_AcceptsATargetThatPlansMemberships(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{RoleMembershipsAdded: []difftypes.RoleMembershipRef{{Role: "readers", Member: "app"}}}
+	c.Assert(schemaprecondition.RefuseRoleMemberships("mysql", capability.MySQL84(), diff), qt.IsNil)
 }

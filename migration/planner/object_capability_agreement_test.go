@@ -276,6 +276,8 @@ func postgresFamily() []familyMember {
 			With(capability.CreateOrReplaceTrigger, false).
 			With(capability.RowLevelSecurity, false).With(capability.PolicyComments, false).
 			With(capability.RoleManagement, false).With(capability.RoleComments, false).
+			With(capability.RoleMembership, false).With(capability.RoleMembershipAdmin, false).
+			With(capability.RoleMembershipInheritSet, false).
 			With(capability.CatalogDefaultPrivileges, false).
 			With(capability.SequenceStartCounterOnly, true),
 	})

@@ -143,15 +143,36 @@ func (r *renderer) renderRoles() {
 // where it does not, as a grantee is written ([renderer.roleTarget]): a YDB
 // group such as DATA-READERS is one a role can join without the document
 // declaring it.
+//
+// A group whose membership states an option is written as a `membership` block
+// naming it and the options, and every other group stays in `member_of`.
 func (r *renderer) roleMemberships(role schemamodel.Role) {
-	if len(role.MemberOf) == 0 {
-		return
+	var plain []string
+	var stated []string
+	for _, group := range role.MemberOf {
+		if role.MemberOptions[group].IsZero() {
+			plain = append(plain, r.roleTarget(group))
+			continue
+		}
+		stated = append(stated, group)
 	}
-	groups := make([]string, len(role.MemberOf))
-	for i, group := range role.MemberOf {
-		groups[i] = r.roleTarget(group)
+	if len(plain) > 0 {
+		r.rawAttr(1, "member_of", "["+strings.Join(plain, ", ")+"]")
 	}
-	r.rawAttr(1, "member_of", "["+strings.Join(groups, ", ")+"]")
+	for _, group := range stated {
+		options := role.MemberOptions[group]
+		r.line("  membership {")
+		r.rawAttr(2, "role", r.roleTarget(group))
+		for _, option := range []struct {
+			name  string
+			value *bool
+		}{{"admin", options.Admin}, {"inherit", options.Inherit}, {"set", options.Set}} {
+			if option.value != nil {
+				r.rawAttr(2, option.name, strconv.FormatBool(*option.value))
+			}
+		}
+		r.line("  }")
+	}
 }
 
 // rolePassword writes a role's password the way every statement names it:

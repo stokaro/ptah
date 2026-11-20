@@ -58,7 +58,7 @@ func planObjectsAfterTables(
 	diff *difftypes.SchemaDiff,
 	caps capability.Capabilities,
 ) (after, replacementDrops []ast.Node, err error) {
-	result = planRoles(result, diff)
+	result = planRoles(result, diff, caps)
 	result = reportFunctions(result, diff)
 	result, replacementDrops, err = reportViewLikes(result, diff, caps)
 	if err != nil {
