@@ -1,6 +1,7 @@
-// Package driftgate is the pre-apply drift check: a comparison of a migration
-// target with the schema its applied history produces, made under the
-// migration lock before any pending migration runs.
+// Package driftgate is the drift check of a migration target: a comparison of
+// the target with the schema its applied history produces, made under the
+// migration lock. A migration run makes it before any pending migration runs,
+// and a report-only run makes it and applies nothing.
 //
 // The comparison baseline is the history the revision table records, not the
 // directory's latest state, so a pending migration's changes are never read as
@@ -10,9 +11,11 @@
 // the migration lock can still land after the check; the lock coordinates
 // runners, not every session that can alter the schema.
 //
-// `ptah migrations up --check-drift` and the atlas.hcl `check "migrate_apply" {
-// drift {} }` block of both binaries run this one check. They differ only in the
-// [Options] their surface selects.
+// `ptah migrations up --check-drift`, the atlas.hcl `check "migrate_apply" {
+// drift {} }` block of both binaries and `ptah migrations drift` run this one
+// check. They differ only in the [Options] their surface selects, and in
+// whether the migrator runs the check as a [Check.Guard] or the caller runs it
+// with [Check.Run].
 package driftgate
 
 import (
@@ -23,11 +26,16 @@ import (
 	"time"
 
 	"ptah.run/catalog"
+	"ptah.run/core/difftypes"
+	"ptah.run/core/planext"
 	"ptah.run/core/schemamodel"
 	"ptah.run/dbschema"
 	"ptah.run/engine"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/backslashmode"
+	"ptah.run/internal/planstyle"
 	"ptah.run/migration/migrator"
+	"ptah.run/migration/planner"
 	"ptah.run/migration/shadow"
 )
 
@@ -103,17 +111,43 @@ func (c *Check) Guard() migrator.MigrationPlanGuard {
 		return nil
 	}
 	return func(ctx context.Context, _ migrator.MigrationPlan) error {
-		check, skipped, err := c.run(ctx)
-		c.skipped = skipped
-		if skipped {
-			return nil
-		}
-		c.result = &check
+		_, err := c.Run(ctx)
 		if c.opts.OnDrift == Continue {
 			return nil
 		}
 		return err
 	}
+}
+
+// Result is what one run of a check found.
+type Result struct {
+	// Check is the outcome, in the form a run document reports it.
+	Check migrator.DriftCheck
+	// Diff is the change that brings the target back to the schema its
+	// applied history produces, which Check.Findings itemize. It is nil unless
+	// Check.Outcome is [migrator.DriftDrifted].
+	Diff *difftypes.SchemaDiff
+}
+
+// Run makes the check now and returns what it found, for a caller that runs
+// it itself rather than through the migrator. The caller holds the target's
+// migration lock, as [migrator.Migrator.HoldMigrationLock] does, so the history
+// it reads is the history the target still has when the target is read.
+//
+// A drifted target comes back with a [*DriftError], and a check that could not
+// decide with an [*UnavailableError]; the result says what was found either
+// way. [Options.OnDrift] does not apply here: the caller decides what the
+// outcome does. A check skipped under [Options.SkipWithoutHistory] returns the
+// zero Result and no error, and [Check.Skipped] then reports true. What Run
+// found is also what [Check.Found] returns afterwards.
+func (c *Check) Run(ctx context.Context) (Result, error) {
+	result, skipped, err := c.run(ctx)
+	c.skipped = skipped
+	if skipped {
+		return Result{}, nil
+	}
+	c.result = &result.Check
+	return result, err
 }
 
 // Found is what the check found, or nil when it was not asked for, never ran,
@@ -158,14 +192,14 @@ func (e *UnavailableError) Error() string {
 
 func (e *UnavailableError) Unwrap() error { return e.Err }
 
-func (c *Check) run(ctx context.Context) (migrator.DriftCheck, bool, error) {
+func (c *Check) run(ctx context.Context) (Result, bool, error) {
 	history, err := c.opts.History.AppliedHistory(ctx)
 	if err != nil {
 		check := migrator.DriftCheck{Outcome: migrator.DriftUnable, Stage: "history", Reason: "history_read_error", Message: err.Error()}
 		if unreplayable, ok := errors.AsType[*migrator.UnreplayableHistoryError](err); ok {
 			check.Reason = unreplayable.Reason
 		}
-		return check, false, &UnavailableError{Check: check, Err: err}
+		return Result{Check: check}, false, &UnavailableError{Check: check, Err: err}
 	}
 	check := migrator.DriftCheck{Replayed: history.Versions(), ReplayedKeys: history.VersionKeys()}
 	if len(check.Replayed) == 0 {
@@ -175,7 +209,7 @@ func (c *Check) run(ctx context.Context) (migrator.DriftCheck, bool, error) {
 		check.ReplayedRepeatables = append(check.ReplayedRepeatables, repeatable.Identity)
 	}
 	if c.opts.SkipWithoutHistory && len(check.Replayed) == 0 && len(check.ReplayedRepeatables) == 0 {
-		return migrator.DriftCheck{}, true, nil
+		return Result{}, true, nil
 	}
 
 	info := c.opts.Conn.Info()
@@ -199,12 +233,12 @@ func (c *Check) run(ctx context.Context) (migrator.DriftCheck, bool, error) {
 				check.Reason = verification.Result.Mismatches[0].Kind
 			}
 		}
-		return check, false, &UnavailableError{Check: check, Err: err}
+		return Result{Check: check}, false, &UnavailableError{Check: check, Err: err}
 	}
 	switch {
 	case len(result.Drift) > 0:
 		check.Outcome, check.Findings = migrator.DriftDrifted, findings(result.Drift)
-		return check, false, &DriftError{Check: check}
+		return Result{Check: check, Diff: result.Diff}, false, &DriftError{Check: check}
 	case len(result.Undecided) > 0:
 		check.Outcome, check.Stage, check.Reason = migrator.DriftUnable, "schema-match", "incomplete_coverage"
 		check.Findings = findings(result.Undecided)
@@ -212,11 +246,25 @@ func (c *Check) run(ctx context.Context) (migrator.DriftCheck, bool, error) {
 			"so whether the database holds %s is unknown; first: %s",
 			len(result.Undecided), plural(len(result.Undecided), "object", "objects"),
 			plural(len(result.Undecided), "it", "them"), result.Undecided[0].Message)
-		return check, false, &UnavailableError{Check: check}
+		return Result{Check: check}, false, &UnavailableError{Check: check}
 	default:
 		check.Outcome = migrator.DriftClean
-		return check, false, nil
+		return Result{Check: check}, false, nil
 	}
+}
+
+// Reconcile plans the change that brings a drifted target back to the schema
+// its applied history produces: diff, the [Result.Diff] of a drifted check,
+// planned and rendered as text for the server info describes. The plan's
+// statements are written for a session nobody has opened yet, as `schema
+// compare` writes the ones it prints. Nothing runs them, and a person reviews
+// them before anything does: a drop of what no applied migration created is
+// among them, and the data it holds goes with it.
+func Reconcile(ctx context.Context, runtime *engine.Runtime, info catalog.ServerInfo, diff *difftypes.SchemaDiff) (planner.RenderedPlan, error) {
+	return planner.GenerateSchemaDiffTextPlan(ctx, runtime, diff, info.Dialect, planext.Options{
+		Capabilities: backslashmode.ForLater(info.Capabilities),
+		Statements:   planstyle.Statements,
+	})
 }
 
 // scope applies the selection to both sides of the comparison, the way

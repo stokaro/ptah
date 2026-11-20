@@ -9,6 +9,7 @@ import (
 
 	"ptah.run/internal/cli/migrateup"
 	"ptah.run/internal/cli/migrations"
+	"ptah.run/internal/cli/migrationsdrift"
 	"ptah.run/internal/errorkind"
 	"ptah.run/internal/providercatalog"
 	"ptah.run/internal/providerdiagnostic"
@@ -18,7 +19,7 @@ import (
 func TestProviderSelectionBelongsToNativeMigrations(t *testing.T) {
 	c := qt.New(t)
 	native := migrations.NewMigrationsCommand()
-	for _, verb := range []string{"up", "down", "status", "log", "tag", "baseline", "repair", "set"} {
+	for _, verb := range []string{"up", "down", "status", "drift", "log", "tag", "baseline", "repair", "set"} {
 		t.Run(verb, func(t *testing.T) {
 			c := qt.New(t)
 			command, _, err := native.Find([]string{verb})
@@ -36,7 +37,7 @@ func TestProviderSelectionBelongsToNativeMigrations(t *testing.T) {
 }
 
 func TestProviderSetupFailurePreservesMigrationJSON(t *testing.T) {
-	for _, verb := range []string{"up", "down", "status", "log"} {
+	for _, verb := range []string{"up", "down", "status", "drift", "log"} {
 		t.Run(verb, func(t *testing.T) {
 			c := qt.New(t)
 			command := migrations.NewMigrationsCommand()
@@ -61,7 +62,7 @@ func TestProviderSetupFailurePreservesMigrationJSON(t *testing.T) {
 // missing.
 func TestProviderMigrationSetupReportsOfficialInstallation(t *testing.T) {
 	for _, entry := range providercatalog.Entries() {
-		for _, verb := range []string{"up", "down", "status", "log"} {
+		for _, verb := range []string{"up", "down", "status", "drift", "log"} {
 			t.Run(entry.EngineID+"/"+verb, func(t *testing.T) {
 				c := qt.New(t)
 				c.Setenv("XDG_CACHE_HOME", c.TempDir())
@@ -87,8 +88,8 @@ func TestProviderMigrationSetupReportsOfficialInstallation(t *testing.T) {
 
 // TestProviderSetupFailureIsTheVerbsFailureDocument holds a setup failure to
 // the failure document of the verb it stopped: a run that never started for
-// up and down, and the status contract's failure document for status. Neither names a
-// kind, because no target connection was opened.
+// up and down, and the failure document of its contract for status and drift. None names
+// a kind, because no target connection was opened.
 func TestProviderSetupFailureIsTheVerbsFailureDocument(t *testing.T) {
 	c := qt.New(t)
 	run := func(verb string) string {
@@ -131,4 +132,14 @@ func TestProviderSetupFailureIsTheVerbsFailureDocument(t *testing.T) {
 	c.Assert(status.Command, qt.Equals, "migrations status")
 	c.Assert(status.Error, qt.IsNotNil)
 	c.Assert(status.Error.Kind, qt.Equals, errorkind.Kind(""))
+
+	var drift struct {
+		errorkind.Failure
+		ProviderDiagnostic *providerdiagnostic.Diagnostic `json:"provider_diagnostic"`
+	}
+	c.Assert(json.Unmarshal([]byte(run("drift")), &drift), qt.IsNil)
+	c.Assert(drift.ContractVersion, qt.Equals, migrationsdrift.ContractVersion)
+	c.Assert(drift.Command, qt.Equals, "migrations drift")
+	c.Assert(drift.Error, qt.IsNotNil)
+	c.Assert(drift.Error.Kind, qt.Equals, errorkind.Kind(""))
 }
