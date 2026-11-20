@@ -35,22 +35,26 @@ func validateOmissions(omissions []Omission) error {
 // all, so it is absent rather than omitted and produces nothing here.
 type Omission struct {
 	// Dialect is the normalized target the render was for.
-	Dialect string
+	Dialect string `json:"dialect"`
 	// Reason is a stable token for why the declaration did not reach the
 	// output. Branch on it rather than on Message, whose wording is free to
 	// change.
-	Reason string
+	Reason string `json:"reason"`
 	// Kind is the owning object's kind, such as "table".
-	Kind string
+	Kind string `json:"kind"`
 	// Name is the owning object's name as the declaration spells it.
-	Name string
+	Name string `json:"name"`
 	// Property names the lost property, empty when the whole object was lost.
-	Property string
+	Property string `json:"property,omitempty"`
 	// Detail is the declared value, empty when there is nothing to repeat.
-	Detail string
+	Detail string `json:"detail,omitempty"`
 	// Remedy states how to keep the declaration on this target, empty when
 	// there is no remedy that works here.
-	Remedy string
+	Remedy string `json:"remedy,omitempty"`
+	// Commented reports that the statements already carry a comment that says
+	// the same thing. A target sets it where its renderer writes the
+	// comment itself; a provider's reply never does.
+	Commented bool `json:"commented,omitempty"`
 }
 
 // Message states the loss in one sentence, without naming the object.

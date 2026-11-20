@@ -234,6 +234,12 @@ The rest of the plan runs. A warning names a declaration that a planned
 statement leaves out, so a run that plans no statement prints none, even when
 the schema still declares what the database cannot hold.
 
+A saved plan records its omissions in the plan file. `schema approve` prints
+them as it signs, and `schema apply --plan` prints them again, so the person
+who approves the file and the run that applies it read what the database will
+not carry, not only the run that planned it. The signature covers them with the
+rest of the file.
+
 ## Apply with approval
 
 Without `--dry-run`, the command shows the same plan and asks for confirmation
@@ -629,6 +635,7 @@ file does not record the field, so `apply --plan` does not report it; the
 | `owner-schema-privilege` | `apply` | A statement gives an object to a role that holds no `CREATE` privilege on its schema. `owner` names the `statement`, `kind`, `role`, `schema`, and `holds` when the role owns the object now |
 | `dependent-object` | `plan`, and `apply` without `--plan` | The plan drops an object something else depends on. The error message names both |
 | `declaration-refused` | `plan`, and `apply` without `--plan` | The target cannot host or plan what the schema states. The error message names it |
+| `backslash-mode` | `apply --plan`, and `apply` with `--dev-url` | A statement holds a backslash, and the session it would run on reads it differently, because one `sql_mode` names `NO_BACKSLASH_ESCAPES` and the other does not: the target session for a saved plan, or the dev session for the rehearsal. The error message names both modes; see [MySQL](../../databases/mysql/) |
 
 A consumer that does not know a code still knows what `refused` means, and
 reads the error message for the rest.

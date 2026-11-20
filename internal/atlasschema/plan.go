@@ -153,6 +153,11 @@ type PlanFile struct {
 	// Annotations are ordered display notes. They are not statements and do
 	// not contribute to schema fingerprints or execution requirements.
 	Annotations []renderer.Annotation `json:"annotations,omitempty"`
+	// Omissions are the declarations the statements leave out, as the render
+	// that produced them recorded them. They sit in the document, which an
+	// approval signs, so an approver reads what the target will not carry and
+	// `schema apply --plan` warns about the same declarations the plan step did.
+	Omissions []renderer.Omission `json:"omissions,omitempty"`
 }
 
 // PlanRowSet is one declared row set a plan read: the table, the key columns a
@@ -448,6 +453,7 @@ func PreparePlanFileReportingUndecided(
 		Destructive:      destructive,
 		Statements:       statements,
 		Annotations:      computation.executionAnnotations(),
+		Omissions:        slices.Clone(computation.omissions),
 	}, computation.undecided, nil
 }
 
@@ -1040,11 +1046,28 @@ func refusePlanAcrossBackslashModes(plan PlanFile, session catalog.ServerInfo) e
 	if !backslashmode.ReadDifferently(written, session.Capabilities, plan.StatementSQL()) {
 		return nil
 	}
-	return fmt.Errorf("%w: the plan is written for a session whose sql_mode %s, the session's sql_mode %s, "+
+	return &BackslashModeError{Err: fmt.Errorf("%w: the plan is written for a session whose sql_mode %s, the session's sql_mode %s, "+
 		"and a statement holds a backslash, which the two read differently; apply the desired schema without --plan, "+
 		"or connect with a sql_mode without NO_BACKSLASH_ESCAPES", ptaherr.ErrUnsupportedFeature,
-		backslashmode.Describe(written), backslashmode.Describe(session.Capabilities))
+		backslashmode.Describe(written), backslashmode.Describe(session.Capabilities))}
 }
+
+// BackslashModeError refuses statements that hold a backslash on a session
+// that reads them differently from the session they are written for, because
+// one sql_mode names NO_BACKSLASH_ESCAPES and the other does not. It is raised
+// before any statement is sent: for a saved plan on the target session, and
+// for the --dev-url rehearsal on a dev session the target disagrees with. Err
+// names both modes and what to do.
+type BackslashModeError struct {
+	Err error
+}
+
+// Error returns the refusal's sentence.
+func (e *BackslashModeError) Error() string { return e.Err.Error() }
+
+// Unwrap returns the refusal's sentence as an error, which wraps
+// [ptaherr.ErrUnsupportedFeature].
+func (e *BackslashModeError) Unwrap() error { return e.Err }
 
 // decodePlanJSON parses and validates the native format_version-1 JSON plan
 // document.

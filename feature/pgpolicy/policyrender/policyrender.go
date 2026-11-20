@@ -20,6 +20,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemaext"
+	"ptah.run/core/sqlutil"
 	"ptah.run/feature/pgpolicy"
 	"ptah.run/internal/sqlident"
 	"ptah.run/internal/tableref"
@@ -228,7 +229,7 @@ func renderTableState(_ renderer.ExtensionContext, value *pgpolicy.TableStateOpe
 		statements = append(statements, "ALTER TABLE "+table+" "+keyword+" ROW LEVEL SECURITY;")
 	}
 	if after.Comment != "" {
-		statements = append([]string{"-- " + strings.Join(strings.Fields(after.Comment), " ")}, statements...)
+		statements = append([]string{sqlutil.LineComment(strings.Join(strings.Fields(after.Comment), " "))}, statements...)
 	}
 	return statements, nil
 }

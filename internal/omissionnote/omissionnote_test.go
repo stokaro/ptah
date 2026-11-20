@@ -35,6 +35,15 @@ func TestLine(t *testing.T) {
 			want: "sqlite: table users: table option ENGINE=InnoDB was skipped (unsupported)"},
 		{name: "a remedy", omission: autoIncrement,
 			want: "postgres: column users.id: auto-increment was skipped (unsupported); declare the column type as SERIAL"},
+		{name: "a line feed in a declared value", omission: renderer.Omission{Dialect: "sqlite", Reason: "unsupported", Kind: "table",
+			Name: "ro_c", Property: "comment", Detail: "first\nDROP TABLE victim;\n-- end"},
+			want: `sqlite: table ro_c: comment=first\nDROP TABLE victim;\n-- end was skipped (unsupported)`},
+		{name: "a carriage return in a declared value", omission: renderer.Omission{Dialect: "sqlite", Reason: "unsupported", Kind: "table",
+			Name: "ro_c", Property: "comment", Detail: "first\rDROP TABLE victim;"},
+			want: `sqlite: table ro_c: comment=first\rDROP TABLE victim; was skipped (unsupported)`},
+		{name: "a control character in a name", omission: renderer.Omission{Dialect: "sqlite", Reason: "unsupported", Kind: "table",
+			Name: "a\x00b"},
+			want: `sqlite: table a\x00b was skipped (unsupported)`},
 		{name: "a whole object", omission: renderer.Omission{Dialect: "clickhouse", Reason: "unsupported", Kind: "index", Name: "u_name"},
 			want: "clickhouse: index u_name was skipped (unsupported)"},
 	}
@@ -103,4 +112,48 @@ func TestComments(t *testing.T) {
 		"-- " + omissionnote.Line(autoIncrement),
 		"-- " + omissionnote.Line(engineOption),
 	})
+}
+
+// TestComments_KeepDeclaredTextOnOneLine is the injection control: a declared
+// value holding line breaks cannot start a second line of the file, so no
+// line of the comments is anything but a comment.
+func TestComments_KeepDeclaredTextOnOneLine(t *testing.T) {
+	c := qt.New(t)
+
+	comments := omissionnote.Comments([]renderer.Omission{
+		{Dialect: "sqlite", Reason: "unsupported", Kind: "table", Name: "t", Property: "comment", Detail: "a\nDROP TABLE victim;\n-- b"},
+		{Dialect: "sqlite", Reason: "unsupported", Kind: "table", Name: "t", Property: "comment", Detail: "a\rDROP TABLE victim;"},
+	})
+
+	c.Assert(comments, qt.HasLen, 2)
+	c.Assert(comments[0], qt.Equals, `-- sqlite: table t: comment=a\nDROP TABLE victim;\n-- b was skipped (unsupported)`)
+	c.Assert(comments[1], qt.Equals, `-- sqlite: table t: comment=a\rDROP TABLE victim; was skipped (unsupported)`)
+}
+
+// TestReport_KeepsDeclaredTextOnOneLine is the same control for the warning.
+func TestReport_KeepsDeclaredTextOnOneLine(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	omissionnote.Report(context.Background(), &out, []renderer.Omission{
+		{Dialect: "sqlite", Reason: "unsupported", Kind: "table", Name: "t", Property: "comment", Detail: "a\nDROP TABLE victim;"},
+	})
+
+	c.Assert(out.String(), qt.Equals, "warning: sqlite: table t: comment=a\\nDROP TABLE victim; was skipped (unsupported)\n")
+}
+
+// TestComments_LeaveOutWhatTheRendererCommented keeps the file from saying an
+// omission twice: one the renderer wrote its own comment for is not repeated,
+// while the warning still names it.
+func TestComments_LeaveOutWhatTheRendererCommented(t *testing.T) {
+	c := qt.New(t)
+	commented := engineOption
+	commented.Commented = true
+
+	comments := omissionnote.Comments([]renderer.Omission{commented, autoIncrement})
+
+	c.Assert(comments, qt.DeepEquals, []string{"-- " + omissionnote.Line(autoIncrement)})
+	var out bytes.Buffer
+	omissionnote.Report(context.Background(), &out, []renderer.Omission{commented})
+	c.Assert(out.String(), qt.Equals, "warning: "+omissionnote.Line(engineOption)+"\n")
 }

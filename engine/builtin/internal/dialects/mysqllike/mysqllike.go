@@ -1784,9 +1784,10 @@ func (r *Renderer) sequenceNotSupported(statement, name, comment string) {
 		r.w.WriteLinef("-- %s %s not supported in %s", statement, name, r.dialect)
 	}
 	r.sink.Record(renderdiag.Omission{
-		Reason: renderdiag.ReasonUnsupported,
-		Kind:   sequenceKind,
-		Name:   name,
+		Reason:    renderdiag.ReasonUnsupported,
+		Commented: true,
+		Kind:      sequenceKind,
+		Name:      name,
 	})
 }
 
@@ -1874,11 +1875,11 @@ func (r *Renderer) renderAlterTableForceRLS(node *ast.AlterTableForceRLSNode) er
 func (r *Renderer) notGenerated(kind, name string) {
 	if name == "" {
 		r.w.WriteLinef("-- %s: %s is not generated for this target; skipped.", r.dialectUpper, kind)
-		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: kind})
+		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: kind})
 		return
 	}
 	r.w.WriteLinef("-- %s: %s %s is not generated for this target; skipped.", r.dialectUpper, kind, name)
-	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: kind, Name: name})
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Commented: true, Kind: kind, Name: name})
 }
 
 // renderRawSQL renders a literal SQL fragment verbatim. Dialect-specific

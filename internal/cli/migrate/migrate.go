@@ -363,8 +363,8 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 
 	fmt.Fprintln(out, "-- Migration generated from schema differences")
 	fmt.Fprintf(out, "-- Generated on: %s\n", "now") // You could add actual timestamp
-	fmt.Fprintf(out, "-- Source: %s\n", rootsDisplay)
-	fmt.Fprintf(out, "-- Target: %s\n", dburldisplay.Format(dbURL))
+	fmt.Fprintf(out, "%s\n", sqlutil.LineComment("Source: "+rootsDisplay))
+	fmt.Fprintf(out, "%s\n", sqlutil.LineComment("Target: "+dburldisplay.Format(dbURL)))
 	fmt.Fprintln(out)
 
 	migrationSQL, err := rendered.SQL()

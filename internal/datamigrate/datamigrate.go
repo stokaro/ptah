@@ -27,6 +27,7 @@ import (
 	"ptah.run/core/manageddata"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/backslashmode"
 	"ptah.run/internal/dataorder"
@@ -698,5 +699,5 @@ func qualifiedName(schema, table string) string {
 // can tell the concatenated phase blocks apart. The comment is a no-op at apply
 // time and does not affect the round-trip.
 func tableBlock(label, body string) string {
-	return "-- data: " + label + "\n" + body
+	return sqlutil.LineComment("data: "+label) + "\n" + body
 }

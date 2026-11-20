@@ -76,6 +76,8 @@ expect "a pull request with no request selects nothing" pull_request "" "[]"
 expect "a pull request selects what its comment asked for" pull_request postgres '["postgres-18","postgres-17"]'
 expect "a comma list selects the union, in matrix order" workflow_dispatch "mysql, oracle-21" '["mysql-9-7","mysql-8-4","oracle-21"]'
 expect "surrounding space is not part of a name" workflow_dispatch "  postgres-18  " '["postgres-18"]'
+expect "a space list selects the union, in matrix order" workflow_dispatch "mysql oracle-21" '["mysql-9-7","mysql-8-4","oracle-21"]'
+expect "commas and spaces mix" workflow_dispatch "mysql-8-4,  oracle-21 postgres-18" '["postgres-18","mysql-8-4","oracle-21"]'
 
 # A request that names nothing is an error, not an empty run. `postgres-1` is
 # the case that matters: it is a prefix of a real id, and a rule that matched on

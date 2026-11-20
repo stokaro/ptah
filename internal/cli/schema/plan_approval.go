@@ -1,13 +1,16 @@
 package schema
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"ptah.run/core/renderer"
 	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/planapproval"
 )
 
@@ -52,6 +55,7 @@ what the approval is worth.
 			if planPath == "" {
 				return cmdutil.Fail(cmd, fmt.Errorf("--%s is required", approvalPlanFlag))
 			}
+			reportRecordedOmissions(cmd, planPath)
 			if err := planapproval.Sign(cmd.Context(), planPath, keyPath); err != nil {
 				return cmdutil.Fail(cmd, err)
 			}
@@ -157,4 +161,23 @@ func requirePlanApproval(cmd *cobra.Command, planPath string, plan []byte, allow
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "Plan approved by %s\n", approval.Signer)
 	return nil
+}
+
+// reportRecordedOmissions warns, on standard error, about each declaration the
+// plan at path records its statements leave out, so the approver reads what the
+// target will not carry before the signature stands. A file that holds no JSON
+// document, or one that records none, raises nothing: the approval signs bytes,
+// and a plan of another kind has no omissions to read.
+func reportRecordedOmissions(cmd *cobra.Command, path string) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var document struct {
+		Omissions []renderer.Omission `json:"omissions"`
+	}
+	if err := json.Unmarshal(contents, &document); err != nil {
+		return
+	}
+	omissionnote.Report(cmd.Context(), cmd.ErrOrStderr(), document.Omissions)
 }

@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
 	"ptah.run/internal/atlasmigrate"
 	"ptah.run/internal/omissionnote"
 	"ptah.run/internal/planstyle"
@@ -190,8 +191,7 @@ func withSkipComments(specs []generatedMigrationSpec, skipped []diffpolicy.Skipp
 	}
 	var block strings.Builder
 	for _, change := range skipped {
-		block.WriteString("-- ")
-		block.WriteString(change.Comment())
+		block.WriteString(sqlutil.LineComment(change.Comment()))
 		block.WriteByte('\n')
 	}
 	specs[0].UpSQL = block.String() + specs[0].UpSQL
