@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -54,6 +55,16 @@ func (tgt target) up(c *qt.C, version string, extra ...string) {
 func (tgt target) write(c *qt.C, name, content string) {
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(tgt.dir, name), []byte(content), 0o600), qt.IsNil)
+}
+
+// backslashShadow is a shadow database URL whose path holds a backslash on
+// every platform, as each Windows path does, so a fixture that writes it into
+// atlas.hcl without quoting it fails on every platform: `\U` is an HCL escape.
+func backslashShadow(c *qt.C) string {
+	c.Helper()
+	dir := filepath.Join(c.TempDir(), `a\Users`)
+	c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
+	return "sqlite://" + filepath.Join(dir, "shadow.db")
 }
 
 // config writes a project file named name into a directory of its own and
@@ -195,7 +206,8 @@ func TestMigrationsDrift_HappyPath(t *testing.T) {
 }
 
 // A report writes nothing to the database: a database no migration ran on
-// keeps having no revision table, and every migration is pending.
+// keeps having no revision table, and every migration is pending. It holds no
+// object either, so it is not drift and gets no warning about its history.
 func TestMigrationsDrift_HappyPathWritesNoRevisionTable(t *testing.T) {
 	c := qt.New(t)
 	tgt := emptyTarget(c)
@@ -207,6 +219,7 @@ func TestMigrationsDrift_HappyPathWritesNoRevisionTable(t *testing.T) {
 	c.Assert(got.Pending, qt.DeepEquals, []string{"1", "2"})
 	c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftClean)
 	c.Assert(got.Check.Replayed, qt.HasLen, 0)
+	c.Assert(got.Warnings, qt.HasLen, 0)
 	c.Assert(tables(c, tgt.url), qt.HasLen, 0)
 }
 
@@ -217,7 +230,7 @@ func TestMigrationsDrift_HappyPathText(t *testing.T) {
 	stdout, stderr, code := tgt.drift(c)
 
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
-	c.Assert(stdout, qt.Equals, "Dialect: sqlite\nRevision table: schema_migrations\nCurrent version: 1\n"+
+	c.Assert(stdout, qt.Equals, "Dialect: sqlite\nRevision table: \"schema_migrations\"\nCurrent version: 1\n"+
 		"Pending migrations: 1\n  - 2\n\n"+
 		"No drift: the database matches the schema its 1 applied migration produces.\n")
 	c.Assert(stderr, qt.Equals, "")
@@ -280,7 +293,7 @@ func TestMigrationsDrift_FailurePathReportsDriftText(t *testing.T) {
 	stdout, stderr, code := tgt.drift(c)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
-	c.Assert(stdout, qt.Equals, "Dialect: sqlite\nRevision table: schema_migrations\nCurrent version: 2\nPending migrations: 0\n\n"+
+	c.Assert(stdout, qt.Equals, "Dialect: sqlite\nRevision table: \"schema_migrations\"\nCurrent version: 2\nPending migrations: 0\n\n"+
 		"Drift: the database differs from the schema its 2 applied migrations produce:\n"+
 		"  - missing index users.users_email\n\n"+
 		"Statements that would bring the database back to its history (review them; nothing ran):\n"+
@@ -357,8 +370,8 @@ func TestMigrationsDrift_FailurePathCannotDecideText(t *testing.T) {
 
 	c.Assert(code, qt.Equals, 2)
 	c.Assert(stdout, qt.Matches, `(?s)Dialect: sqlite\n.*\n\nCould not compare the database with its applied history: `+
-		`the applied history cannot be replayed: version 1: its file changed after it applied \(checksum stored \S+, current \S+\), `+
-		`so the directory no longer holds what the database ran\n`)
+		`the applied history cannot be replayed: version 1: the checksum it recorded when it applied is \S+ `+
+		`and the directory's is \S+: its file, or the checksums the directory carries, changed after it applied\n`)
 	c.Assert(stderr, qt.Equals, "")
 }
 
@@ -393,7 +406,7 @@ func TestMigrationsDrift_HappyPathReadsTheProject(t *testing.T) {
 			c := qt.New(t)
 			tgt := newTarget(c, "1", "CREATE TABLE scratch (id INTEGER PRIMARY KEY)")
 			path := config(c, "atlas.hcl", "env \"local\" {\n"+
-				"  dev = \""+tgt.shadowURL+"\"\n"+
+				"  dev = "+strconv.Quote(backslashShadow(c))+"\n"+
 				"  exclude = "+test.envExclude+"\n"+
 				"  check \"migrate_apply\" {\n    drift {\n"+test.drift+"    }\n  }\n"+
 				"}\n")
@@ -415,7 +428,7 @@ func TestMigrationsDrift_FailurePathADriftBlockExcludeReplacesTheEnvs(t *testing
 	c := qt.New(t)
 	tgt := newTarget(c, "1", "CREATE TABLE scratch (id INTEGER PRIMARY KEY)")
 	path := config(c, "atlas.hcl", "env \"local\" {\n"+
-		"  dev = \""+tgt.shadowURL+"\"\n"+
+		"  dev = "+strconv.Quote(backslashShadow(c))+"\n"+
 		"  exclude = [\"scratch\"]\n"+
 		"  check \"migrate_apply\" {\n    drift {\n      exclude = [\"orders_archive\"]\n    }\n  }\n"+
 		"}\n")
@@ -435,6 +448,26 @@ func TestMigrationsDrift_FailurePathADriftBlockExcludeReplacesTheEnvs(t *testing
 	})
 }
 
+// A selector of the drift block that matches nothing is reported under the
+// block's own place in atlas.hcl, so the warning points at the list the
+// report used rather than at the env's.
+func TestMigrationsDrift_HappyPathNamesTheDriftBlockOfAnUnmatchedSelector(t *testing.T) {
+	c := qt.New(t)
+	tgt := newTarget(c, "1")
+	path := config(c, "atlas.hcl", "env \"local\" {\n"+
+		"  dev = "+strconv.Quote(backslashShadow(c))+"\n"+
+		"  exclude = [\"orders_archive\"]\n"+
+		"  check \"migrate_apply\" {\n    drift {\n      exclude = [\"nothing_here\"]\n    }\n  }\n"+
+		"}\n")
+
+	stdout, stderr, code := run(c, "migrations", "drift", "--db-url", tgt.url,
+		"--migrations-dir", tgt.dir, "--config", path, "--env", "local")
+
+	c.Assert(code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+	c.Assert(stderr, qt.Matches, `Warning: the exclude selection from atlas\.hcl check "migrate_apply" drift at .+:5 `+
+		`matched no objects: "nothing_here"\.\n`)
+}
+
 // A revision table under another name is the one the report reads, and the
 // one it leaves out of the comparison: without that, the table itself would
 // be drift.
@@ -446,7 +479,7 @@ func TestMigrationsDrift_HappyPathReadsAConfiguredRevisionTable(t *testing.T) {
 	got, stderr, code := tgt.document(c, "--migrations-table", "app_revisions")
 
 	c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
-	c.Assert(got.RevisionTable, qt.Equals, "app_revisions")
+	c.Assert(got.RevisionTable, qt.Equals, `"app_revisions"`)
 	c.Assert(got.CurrentVersion, qt.Equals, "1")
 	c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftClean)
 	c.Assert(got.Warnings, qt.HasLen, 0)
@@ -464,20 +497,67 @@ func TestMigrationsDrift_FailurePathWarnsOfAnEmptyRevisionTable(t *testing.T) {
 	got, stderr, code := tgt.document(c)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
-	c.Assert(got.RevisionTable, qt.Equals, "schema_migrations")
+	c.Assert(got.RevisionTable, qt.Equals, `"schema_migrations"`)
 	c.Assert(got.CurrentVersion, qt.Equals, "")
 	c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftDrifted)
 	c.Assert(got.Warnings, qt.DeepEquals, []string{
-		"the revision table schema_migrations records no applied migration, or does not exist, and the database holds objects: " +
-			"if its history is recorded elsewhere, name that table with --migrations-table and --migrations-schema; " +
-			"the statements below would drop every object",
+		`the revision table "schema_migrations" records no applied migration, or does not exist, and the database holds objects: ` +
+			"if the history is recorded elsewhere, name its table with --migrations-table and --migrations-schema, " +
+			"and its format with --revision-format; the statements below would drop every object the report compares",
 	})
 	c.Assert(got.Statements, qt.Contains, `DROP TABLE "app_revisions"`)
 
 	stdout, _, code := tgt.drift(c)
 
 	c.Assert(code, qt.Equals, 1)
-	c.Assert(stdout, qt.Contains, "\n\nWarning: the revision table schema_migrations records no applied migration")
+	c.Assert(stdout, qt.Contains, "\n\nWarning: the revision table \"schema_migrations\" records no applied migration")
+}
+
+// A history written in one revision format and read in the other is the
+// likeliest reason a database with objects records no applied migration, so
+// the report names the revision table of the other format and the flag that
+// reads it. Read with that flag, the same history is clean.
+func TestMigrationsDrift_FailurePathNamesAHistoryOfTheOtherFormat(t *testing.T) {
+	for _, test := range []struct {
+		name                    string
+		written, read           string
+		writtenTable, readTable string
+	}{
+		{
+			name: "an atlas history read as ptah", written: "atlas", read: "ptah",
+			writtenTable: `"atlas_schema_revisions"`, readTable: `"schema_migrations"`,
+		},
+		{
+			name: "a ptah history read as atlas", written: "ptah", read: "atlas",
+			writtenTable: `"schema_migrations"`, readTable: `"atlas_schema_revisions"`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			tgt := emptyTarget(c)
+			tgt.up(c, "1", "--revision-format", test.written)
+
+			got, stderr, code := tgt.document(c, "--revision-format", test.read)
+
+			c.Assert(code, qt.Equals, 1, qt.Commentf("%s", stderr))
+			c.Assert(got.RevisionTable, qt.Equals, test.readTable)
+			c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftDrifted)
+			c.Assert(got.Warnings, qt.DeepEquals, []string{
+				"the revision table " + test.readTable + " records no applied migration, or does not exist, " +
+					"but the " + test.written + "-format revision table " + test.writtenTable + " records 1 applied migration: " +
+					"run the report again with --revision-format " + test.written + "; " +
+					"the statements below would drop every object the report compares",
+			})
+
+			got, stderr, code = tgt.document(c, "--revision-format", test.written)
+
+			c.Assert(code, qt.Equals, 0, qt.Commentf("%s", stderr))
+			c.Assert(got.RevisionTable, qt.Equals, test.writtenTable)
+			c.Assert(got.CurrentVersion, qt.Equals, "1")
+			c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftClean)
+			c.Assert(got.Warnings, qt.HasLen, 0)
+		})
+	}
 }
 
 // A run that cannot start prints the failure document instead of a report,

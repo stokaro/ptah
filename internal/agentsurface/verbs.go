@@ -161,8 +161,8 @@ var verbs = map[string]Verb{
 	"migrations drift": {TargetReads, ScratchRewrites,
 		"replays the applied history into an ephemeral shadow database under the migration lock " +
 			"and reports how the target differs from it; the revision state is only read and the " +
-			"statements it prints are not run, but on Oracle the lock creates ptah_locks when absent " +
-			"and adds its row, which needs CREATE TABLE, or SELECT and INSERT on that table"},
+			"statements it prints are not run, but on Oracle the lock adds its row to ptah_locks, " +
+			"creating the table when absent if the account may create a table in that schema"},
 	"migrations down": {TargetWrites, ScratchRewrites,
 		"rolls back migrations against the target, after replaying and verifying the rollback " +
 			"plan in an ephemeral shadow database"},

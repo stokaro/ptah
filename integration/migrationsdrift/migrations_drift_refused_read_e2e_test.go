@@ -83,6 +83,13 @@ func (r refusedRoleRead) report(c *qt.C) (document, clirun.Result) {
 	return reader.report(c)
 }
 
+// text runs the report as report does, as the text a person reads.
+func (r refusedRoleRead) text(c *qt.C) clirun.Result {
+	c.Helper()
+	return clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir(), Timeout: time.Minute},
+		"migrations", "drift", "--db-url", r.restricted, "--migrations-dir", r.run.dir, "--shadow-db", r.run.shadow)
+}
+
 // undecidedRole is the finding the report gives for the role the read could
 // not see.
 func (r refusedRoleRead) undecidedRole() migrator.DriftFinding {
@@ -128,4 +135,11 @@ func TestMigrationsDriftE2E_FailurePathReportsDriftBesideWhatTheReadIsRefused(t 
 	c.Assert(got.Undecided, qt.Contains, read.undecidedRole())
 	c.Assert(got.Statements, qt.Not(qt.HasLen), 0)
 	c.Assert(read.run.nicknameColumns(c), qt.Equals, 1)
+
+	text := read.text(c)
+
+	c.Assert(text.ExitCode, qt.Equals, 1, qt.Commentf("%s", text.Stderr))
+	c.Assert(text.Stdout, qt.Contains, "\nThe database read could not describe these objects the applied migrations create, "+
+		"so whether the database holds them is unknown, and the statements below do not cover them:\n")
+	c.Assert(text.Stdout, qt.Contains, "\n  - "+read.undecidedRole().Message+"\n")
 }

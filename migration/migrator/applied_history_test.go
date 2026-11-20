@@ -143,7 +143,8 @@ func TestAppliedHistoryFailurePathRefusesAnAppliedFileThatChanged(t *testing.T) 
 			var mismatch *migrator.ChecksumMismatchError
 			c.Assert(err, qt.ErrorAs, &mismatch)
 			c.Assert(mismatch.Version, qt.Equals, int64(2))
-			c.Assert(err, qt.ErrorMatches, `the applied history cannot be replayed: version 2: its file changed after it applied .+`)
+			c.Assert(err, qt.ErrorMatches, `the applied history cannot be replayed: version 2: the checksum it recorded when it applied is [0-9a-f]+ `+
+				`and the directory's is [0-9a-f]+: its file, or the checksums the directory carries, changed after it applied`)
 		})
 	}
 }

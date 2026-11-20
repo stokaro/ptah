@@ -203,23 +203,27 @@ func (m *Migrator) appliedHistory(revisions []MigrationRevision) (AppliedHistory
 }
 
 // refuseChangedAppliedFiles refuses a history in which an applied file no
-// longer accounts for the checksum its revision recorded. It asks the rule an
-// apply asks before it runs, so the history a drift check replays is one an
-// apply would accept, and a mismatch an apply tolerates as a coherent
-// projection of the history is tolerated here too.
+// longer accounts for the checksum its revision recorded. It asks the
+// classification an apply asks before it runs.
+//
+// An apply also accepts mismatches that a coherent historical projection
+// explains. Such a projection exists only where a version was applied after a
+// higher one at a later time, and [refuseOutOfOrderHistory] refuses that
+// history before this runs, so a drift check refuses a non-linear history an
+// apply accepts, and says it is out of order rather than changed.
 func (m *Migrator) refuseChangedAppliedFiles(revisions []MigrationRevision) error {
 	classified, err := m.classifyAppliedChecksums(m.migrationProvider.Migrations(), revisions)
 	if err != nil {
 		return fmt.Errorf("verify the applied checksums: %w", err)
 	}
-	if len(classified.mismatches) == 0 || classified.coherentProjection {
+	if len(classified.mismatches) == 0 {
 		return nil
 	}
 	mismatch := classified.mismatches[0]
 	return &UnreplayableHistoryError{
 		Reason: UnreplayableChanged, Version: mismatch.Version, VersionKey: mismatch.RevisionKey,
-		Detail: fmt.Sprintf("its file changed after it applied (checksum stored %s, current %s), "+
-			"so the directory no longer holds what the database ran", mismatch.Stored, mismatch.Computed),
+		Detail: fmt.Sprintf("the checksum it recorded when it applied is %s and the directory's is %s: "+
+			"its file, or the checksums the directory carries, changed after it applied", mismatch.Stored, mismatch.Computed),
 		Err: mismatch,
 	}
 }

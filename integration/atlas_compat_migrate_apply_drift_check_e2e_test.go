@@ -179,6 +179,31 @@ func TestCompatMigrateApplyDriftCheckAppliesToACleanTargetE2E(t *testing.T) {
 	}
 }
 
+// TestCompatMigrateApplyDriftCheckLeavesOutTheBlockExcludeE2E holds the drift
+// block's exclude list to its purpose: the env sets no list of its own, and a
+// table the block names is not drift, so migration 2 runs on a target that
+// holds it.
+func TestCompatMigrateApplyDriftCheckLeavesOutTheBlockExcludeE2E(t *testing.T) {
+	for _, engine := range compatDriftEngines(qt.New(t)) {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := compatDriftProject(c, engine,
+				"  check \"migrate_apply\" {\n    drift {\n      exclude = [\"scratch\"]\n    }\n  }\n")
+			first := compatDriftApply(c, dir, nil, "1")
+			c.Assert(first.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", first.Stdout, first.Stderr))
+			compatDriftExec(c, engine.target, "CREATE TABLE scratch (id integer PRIMARY KEY)")
+
+			got := compatDriftApply(c, dir, nil)
+
+			c.Assert(got.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
+			c.Assert(got.Stderr, qt.Equals, "Drift check: the database matches the schema its 1 applied migration produces\n")
+			versions, pending := compatDriftRead(c, engine)
+			c.Assert(versions, qt.DeepEquals, []string{"1", "2"})
+			c.Assert(pending, qt.Equals, 1)
+		})
+	}
+}
+
 // TestCompatMigrateApplyDriftCheckThatContinuesAppliesE2E runs the check with
 // on_error = CONTINUE: the drift is reported and migration 2 runs.
 func TestCompatMigrateApplyDriftCheckThatContinuesAppliesE2E(t *testing.T) {

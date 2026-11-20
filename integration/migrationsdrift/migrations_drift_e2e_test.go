@@ -44,6 +44,9 @@ type driftEngine struct {
 	tables string
 	// nickname counts the columns named nickname that drift_users has.
 	nickname string
+	// ptahTable and atlasTable are the default revision table of each format,
+	// quoted and qualified as the engine names it.
+	ptahTable, atlasTable string
 }
 
 var (
@@ -53,6 +56,8 @@ var (
 		tables: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema()",
 		nickname: "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() " +
 			"AND table_name = 'drift_users' AND column_name = 'nickname'",
+		// Atlas keeps its revision table in a schema of its own.
+		ptahTable: `"schema_migrations"`, atlasTable: `"atlas_schema_revisions"."atlas_schema_revisions"`,
 	}
 	mysqlDrift = driftEngine{
 		name: "mysql", admin: dbtarget.MySQLAdmin,
@@ -60,6 +65,7 @@ var (
 		tables: "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()",
 		nickname: "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() " +
 			"AND table_name = 'drift_users' AND column_name = 'nickname'",
+		ptahTable: "`schema_migrations`", atlasTable: "`atlas_schema_revisions`",
 	}
 	driftEngines = []driftEngine{postgresDrift, mysqlDrift}
 )
@@ -74,6 +80,13 @@ type driftRun struct {
 }
 
 func newDriftRun(c *qt.C, engine driftEngine, version string, outOfBand ...string) driftRun {
+	c.Helper()
+	return newDriftRunApplying(c, engine, []string{"--to-version", version}, outOfBand...)
+}
+
+// newDriftRunApplying is newDriftRun with the flags of the `migrations up`
+// that migrates the target.
+func newDriftRunApplying(c *qt.C, engine driftEngine, upFlags []string, outOfBand ...string) driftRun {
 	c.Helper()
 	address := dbtarget.URL(c, engine.admin)
 	admin, err := dbschema.ConnectToDatabase(c.Context(), address)
@@ -100,7 +113,7 @@ func newDriftRun(c *qt.C, engine driftEngine, version string, outOfBand ...strin
 		c.Assert(os.WriteFile(filepath.Join(run.dir, name), []byte(content), 0o600), qt.IsNil)
 	}
 	applied := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: c.TempDir()},
-		"migrations", "up", "--db-url", run.target, "--migrations-dir", run.dir, "--to-version", version)
+		append([]string{"migrations", "up", "--db-url", run.target, "--migrations-dir", run.dir}, upFlags...)...)
 	c.Assert(applied.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", applied.Stdout, applied.Stderr))
 	run.exec(c, outOfBand...)
 	return run
@@ -156,6 +169,52 @@ func (r driftRun) report(c *qt.C, extra ...string) (document, clirun.Result) {
 	c.Assert(json.Unmarshal([]byte(result.Stdout), &got), qt.IsNil,
 		qt.Commentf("stdout:\n%s\nstderr:\n%s", result.Stdout, result.Stderr))
 	return got, result
+}
+
+// A history in Atlas's revision format is read where Atlas keeps it, a schema
+// of its own on PostgreSQL, and the report names that table as the engine
+// qualifies it.
+func TestMigrationsDriftE2E_HappyPathReadsAnAtlasFormatHistory(t *testing.T) {
+	for _, engine := range driftEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newDriftRunApplying(c, engine, []string{"--to-version", "1", "--revision-format", "atlas"})
+
+			got, result := run.report(c, "--revision-format", "atlas")
+
+			c.Assert(result.ExitCode, qt.Equals, 0, qt.Commentf("%s", result.Stderr))
+			c.Assert(got.RevisionTable, qt.Equals, engine.atlasTable)
+			c.Assert(got.CurrentVersion, qt.Equals, "1")
+			c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftClean)
+			c.Assert(got.Warnings, qt.HasLen, 0)
+		})
+	}
+}
+
+// The same history read in Ptah's format records no applied migration, so
+// every object reads as drift. Naming --migrations-table and
+// --migrations-schema alone would send a person to a table Ptah's format
+// cannot read, so the report names the Atlas table that holds the history and
+// the flag that reads it.
+func TestMigrationsDriftE2E_FailurePathNamesAnAtlasFormatHistory(t *testing.T) {
+	for _, engine := range driftEngines {
+		t.Run(engine.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newDriftRunApplying(c, engine, []string{"--to-version", "1", "--revision-format", "atlas"})
+
+			got, result := run.report(c)
+
+			c.Assert(result.ExitCode, qt.Equals, 1, qt.Commentf("%s", result.Stderr))
+			c.Assert(got.RevisionTable, qt.Equals, engine.ptahTable)
+			c.Assert(got.Check.Outcome, qt.Equals, migrator.DriftDrifted)
+			c.Assert(got.Warnings, qt.DeepEquals, []string{
+				"the revision table " + engine.ptahTable + " records no applied migration, or does not exist, " +
+					"but the atlas-format revision table " + engine.atlasTable + " records 1 applied migration: " +
+					"run the report again with --revision-format atlas; " +
+					"the statements below would drop every object the report compares",
+			})
+		})
+	}
 }
 
 func TestMigrationsDriftE2E_HappyPath(t *testing.T) {
