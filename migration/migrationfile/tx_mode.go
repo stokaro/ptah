@@ -130,8 +130,22 @@ func parseAtlasFileTxMode(filename, sql string) (FileTxMode, bool, error) {
 		return FileTxModeUnspecified, false, nil
 	}
 
-	var values []string
+	// seen holds each value with whether its line leads with the key. A header
+	// that runs straight into the first statement keeps only those: the
+	// community binary reads no directive from such a header, and the heading
+	// it writes above a statement, such as `-- Create "atlas:txmode none"
+	// table`, holds the key inside a quoted name. Reading the key anywhere in
+	// that shape refuses a file the community binary wrote and applies. The
+	// cost is that `-- note, atlas:txmode none` directly above a statement is
+	// not honored either; the community binary drops it too, and a directive
+	// meant for that shape is written on a line of its own.
+	type txModeValue struct {
+		value string
+		leads bool
+	}
+	var seen []txModeValue
 	headerComplete := false
+	endsAtStatement := false
 	for sql != "" {
 		line, rest, hasNewline := strings.Cut(sql, "\n")
 		// The directive header ends at the first line that is not a comment.
@@ -148,9 +162,11 @@ func parseAtlasFileTxMode(filename, sql string) (FileTxMode, bool, error) {
 		// wrote and we can read is not made meaningless by the line after it.
 		if strings.TrimSpace(line) == "" || !strings.HasPrefix(line, "--") {
 			headerComplete = true
+			endsAtStatement = strings.TrimSpace(line) != ""
 			break
 		}
 
+		leads := strings.HasPrefix(strings.TrimLeft(line[len("--"):], " \t"), atlasFileTxModeKey)
 		for search := line; ; {
 			_, after, found := strings.Cut(search, atlasFileTxModeKey)
 			if !found {
@@ -160,7 +176,7 @@ func parseAtlasFileTxMode(filename, sql string) (FileTxMode, bool, error) {
 			if strings.HasPrefix(after, " ") {
 				value = strings.TrimSpace(after[1:])
 			}
-			values = append(values, value)
+			seen = append(seen, txModeValue{value: value, leads: leads})
 			search = after
 		}
 		if !hasNewline {
@@ -173,6 +189,13 @@ func parseAtlasFileTxMode(filename, sql string) (FileTxMode, bool, error) {
 
 	if !headerComplete {
 		return FileTxModeUnspecified, false, nil
+	}
+	values := make([]string, 0, len(seen))
+	for _, v := range seen {
+		if endsAtStatement && !v.leads {
+			continue
+		}
+		values = append(values, v.value)
 	}
 	if len(values) == 0 {
 		return FileTxModeUnspecified, false, nil

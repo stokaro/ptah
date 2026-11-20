@@ -22,12 +22,17 @@ type Writer struct {
 // `--` the line is a comment, and the text arguments it formats in are declared
 // text that must not end it: each string, error and [fmt.Stringer] argument goes
 // through [sqlutil.CommentText] first, so a line break in it is written as an
-// escape. The format string itself is the renderer's own and is written as it is.
+// escape, and a word a directive reader acts on is broken by
+// [sqlutil.NeutralizeDirectives]. The format string itself is the renderer's own.
 func (w *Writer) WriteLinef(format string, args ...any) {
 	if strings.HasPrefix(format, "--") {
 		args = commentSafeArgs(args)
 	}
-	w.WriteLine(fmt.Sprintf(format, args...))
+	line := fmt.Sprintf(format, args...)
+	if strings.HasPrefix(format, "--") {
+		line = sqlutil.NeutralizeDirectives(line)
+	}
+	w.WriteLine(line)
 }
 
 // commentSafeArgs returns args with each text argument made safe to sit in a

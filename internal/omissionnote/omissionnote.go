@@ -84,7 +84,7 @@ func Comments(omissions []renderer.Omission) []string {
 			continue
 		}
 		seen[line] = true
-		comments = append(comments, "-- "+line)
+		comments = append(comments, sqlutil.LineComment(line))
 	}
 	return comments
 }

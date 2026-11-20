@@ -925,8 +925,13 @@ and pipelines share a directory:
   in its own transaction; `all` runs the selected batch in one; `none`
   disables wrapping. A migration may select `file` or `none` with a leading
   `-- atlas:txmode <mode>` header, or with `-- +ptah no_transaction`. A blank
-  line after that header is accepted but not required. Explicit file modes
-  conflict with global `all`.
+  line after that header is accepted but not required. Atlas CE reads
+  `atlas:txmode` anywhere in a header line that a blank line follows, and Ptah
+  does the same. A header that runs straight into the first statement is a Ptah
+  extension, and there the directive counts only on a line that begins with
+  it. The heading `-- Create "atlas:txmode none" table`, which Atlas and
+  `ptah-compat migrate diff` write directly above a statement, is therefore not
+  a directive. Explicit file modes conflict with global `all`.
 
   Ptah transaction, timeout, and online-DDL directives are significant only
   **before the first executable statement**. Atlas transaction mode uses its

@@ -307,6 +307,11 @@ Declared text that reaches a comment stays on one line. A table comment that
 holds a line break and a statement is written with the break as `\n`, so no
 part of it can run as SQL.
 
+A word that a directive reader acts on is broken by a space when it comes from
+declared text. A table comment of `+ptah no_transaction` or `atlas:txmode none`
+is written as `+ ptah no_transaction` and `atlas :txmode none`, so the file does
+not change its transaction mode and no reader takes the comment for a directive.
+
 Columns keep their place in both directions. The up file adds new columns in the
 order the declaration gives them, and the down file adds dropped columns back in
 the order the table held them, so the table ends with its columns in the same
