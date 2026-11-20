@@ -272,12 +272,8 @@ func writeAtlasIdentities(w io.Writer, entries []Entry) error {
 	out.WriteString("| Ptah rule | Atlas check | Dialects |\n| --- | --- | --- |\n")
 	rows := 0
 	for _, identity := range atlascodes.Identities() {
-		dialects := everyDialect
-		if len(identity.Dialects) > 0 {
-			dialects = strings.Join(identity.Dialects, ", ")
-		}
 		rows++
-		fmt.Fprintf(&out, "| `%s` | `%s` | %s |\n", identity.Name, identity.Code, dialects)
+		fmt.Fprintf(&out, "| `%s` | `%s` | %s |\n", identity.Name, identity.Code, identityDialects(identity, entries))
 	}
 	if rows == 0 {
 		out.WriteString("| none | | |\n")
@@ -285,6 +281,27 @@ func writeAtlasIdentities(w io.Writer, entries []Entry) error {
 	out.WriteString("\n")
 	_, err := io.WriteString(w, out.String())
 	return err
+}
+
+// identityDialects names the dialects on which the Atlas compatibility table
+// answers with the identity's code: the dialects the migration rule of that
+// name runs on, less those another identity of the name answers for.
+func identityDialects(identity atlascodes.Identity, entries []Entry) string {
+	var dialects []string
+	for _, entry := range entries {
+		if entry.Name != identity.Name || entry.Kind != KindMigration {
+			continue
+		}
+		if len(entry.Dialects) == 0 {
+			return everyDialect
+		}
+		for _, dialect := range entry.Dialects {
+			if atlascodes.RuleFor(identity.Name, dialect).Code == identity.Code && !slices.Contains(dialects, dialect) {
+				dialects = append(dialects, dialect)
+			}
+		}
+	}
+	return strings.Join(dialects, ", ")
 }
 
 // wideTableOpen and wideTableClose wrap a table wide enough that a phone

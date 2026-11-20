@@ -1008,3 +1008,13 @@ v0.33.0 ptah.run/core/platform/descriptor
 # each backslash single, and one written for any other session doubles it.
 # Pre-v1, so no compatibility is owed.
 v0.33.0 ptah.run/dialect/mysql/mysqlrender
+
+# stokaro/ptah#6393: a lint rule is identified by its name, `category/name`,
+# and has no numeric code. The Code fields of the rule, the finding and the
+# baseline subject, the check request's Codes, CanonicalCode, the gate's
+# Families, the family-based selector helpers and the Atlas alias tables are
+# replaced by name equivalents (Name, Names, Rules), and SelectorSelects takes
+# the selector and the name alone. Atlas codes live in the compatibility layer
+# only. Pre-v1, so no compatibility is owed.
+v0.33.1 ptah.run/core/lintext
+v0.33.1 ptah.run/migration/lint

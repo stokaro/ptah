@@ -516,7 +516,7 @@ Neither apply gate reports even that much, so a rule listed below is not by itse
 
 | Rule | Meaning | Surface | Atlas check |
 | --- | --- | --- | --- |
-| `rewrite/set-not-null` | declaring a column NOT NULL rebuilds the table: SQLite cannot enforce it on existing nullable data without a rebuild, and MySQL and MariaDB rebuild in place; whether an existing NULL fails the statement is the question data-dependent/set-not-null answers | both | `LT101`, `MY147` |
+| `rewrite/set-not-null` | declaring a column NOT NULL rebuilds the table: SQLite cannot enforce it on existing nullable data without a rebuild, and MySQL and MariaDB rebuild in place; whether an existing NULL fails the statement is the question data-dependent/set-not-null answers | both | `MY147`, `LT101` |
 
 </div>
 
@@ -684,7 +684,6 @@ Ptah rules have no numeric code. The compatibility layer maps each rule that rep
 | `naming/foreign-key-name` | `NM105` | all |
 | `naming/check-name` | `NM106` | all |
 | `security/dynamic-sql-from-value` | `SA101` | all |
-| `rewrite/set-not-null` | `LT101` | sqlite |
 | `transaction/explicit-transaction` | `TX201` | postgres, mysql, mariadb, clickhouse, sqlite, sqlserver, cockroachdb, yugabytedb |
 | `rollout/drop-table` | `BC103` | all |
 | `rollout/drop-column` | `BC104` | all |
@@ -715,6 +714,7 @@ Ptah rules have no numeric code. The compatibility layer maps each rule that rep
 | `locking/enforce-check` | `MY145` | mysql |
 | `destructive/drop-system-versioning` | `MY146` | mariadb |
 | `rewrite/set-not-null` | `MY147` | mysql, mariadb |
+| `rewrite/set-not-null` | `LT101` | sqlite |
 | `locking/create-index` | `PG101` | postgres |
 | `transaction/concurrent-index` | `PG103` | postgres |
 | `locking/add-primary-key` | `PG104` | postgres |

@@ -357,8 +357,10 @@ func TestValidate_FailurePath(t *testing.T) {
 // rule again.
 func TestIdentities_EveryRuleOfEveryDialectIsFoundByItsCode(t *testing.T) {
 	for _, identity := range atlascodes.Identities() {
-		// A rule with no dialect list is resolved on a run that names none.
-		probes := map[bool][]string{true: {""}, false: identity.Dialects}[len(identity.Dialects) == 0]
+		// Each engine is resolved on the dialects whose descriptor names its
+		// analyzer; a rule of every engine is resolved on the dialect of the
+		// identity that answers for it.
+		probes := map[string][]string{"MY": {"mysql", "mariadb"}, "PG": {"postgres"}, "": {"sqlite", "postgres"}}[identity.Engine]
 		for _, dialect := range probes {
 			t.Run(identity.Name+" on "+dialect, func(t *testing.T) {
 				c := qt.New(t)
