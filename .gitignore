@@ -82,6 +82,9 @@ internal/cli/atlas/dev
 # The gates themselves use `go run`, which writes nothing, so nothing needed
 # the file. Build into `bin/`, which `/bin/*` above already ignores.
 /exporteddocs
+# The same for `go build ./internal/cmd/atlasref`, 8.8 MB of darwin/arm64.
+# Anchored, so internal/cmd/atlasref, its source, stays tracked.
+/atlasref
 
 # A fixture program built from the fixture module's root. `go build
 # ./cmd/namespaces` there writes `namespaces` beside go.mod, and one such
