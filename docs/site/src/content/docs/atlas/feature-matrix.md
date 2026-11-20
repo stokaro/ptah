@@ -107,16 +107,16 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 210 capabilities below:
+Across the 211 capabilities below:
 
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 195 |
-| Ptah supports it with a stated limitation | 3 |
+| Ptah supports it with a stated limitation | 4 |
 | Ptah does not implement it | 1 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 66 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 56 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 57 |
 | Ptah has it and neither Atlas edition does | 29 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 12 |
@@ -286,6 +286,7 @@ seven of them as open capabilities regardless.
 | Pre-migration assertion checks | ✅ | ❌ | ✅ | Scalar SELECTs in either direction; txtar checks.sql and checks/*.sql support all-of/oneof groups. One failure mode, abort, and no checks under `--tx-mode all`. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
 | Schema security findings over roles, grants and policies | 🔷 | ❌ | ✅ | Findings over a live schema's grants, policies, routines and role graph, including how much of the database each role reaches, local and with no account. Skipped rules are named, not silent. |
+| Server version vulnerability scan | 🟡 | ❌ | ✅ | `ptah db vulnerabilities` matches server versions against pinned local advisories and sends no inventory anywhere. SQL Server and a `ptah-compat` route remain (stokaro/ptah#6327). |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❌ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--server-version` server string; text/json output, rule disable. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |
 
