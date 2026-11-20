@@ -268,13 +268,22 @@ func TestUpdatesAfter_FailurePath(t *testing.T) {
 // oracleIndex schedules updates the way the security alerts index does, one
 // list for each kind of update, and links the given pages.
 func oracleIndex(links ...string) []byte {
+	anchors := make([]string, 0, len(links))
+	for _, link := range links {
+		anchors = append(anchors, fmt.Sprintf("<a href=\"%s\">update</a>", strings.TrimPrefix(link, "https://www.oracle.com")))
+	}
+	return oracleIndexWith(anchors...)
+}
+
+// oracleIndexWith is oracleIndex with each link's markup written out.
+func oracleIndexWith(anchors ...string) []byte {
 	var page strings.Builder
 	page.WriteString("<p>Critical Patch Updates are released quarterly. The next four dates are:</p>\n<ul class=\"obullets\">\n" +
 		"<li>19 January 2027</li>\n<li>20 April 2027</li>\n<li>20 July 2027</li>\n<li>19 October 2027</li>\n</ul>\n" +
 		"<p>Critical Security Patch Updates are released monthly. The next four dates are:</p>\n<ul class=\"obullets\">\n" +
 		"<li>15 December 2026</li>\n<li>16 February 2027</li>\n<li>16 March 2027</li>\n<li>18 May 2027</li>\n</ul>\n")
-	for _, link := range links {
-		fmt.Fprintf(&page, "<a href=\"%s\">update</a>\n", strings.TrimPrefix(link, "https://www.oracle.com"))
+	for _, anchor := range anchors {
+		page.WriteString(anchor + "\n")
 	}
 	return []byte(page.String())
 }
@@ -444,7 +453,24 @@ const (
 	novemberUpdate = "https://www.oracle.com/security-alerts/cspunov2026.html"
 	octoberUpdate  = "https://www.oracle.com/security-alerts/cpuoct2026.html"
 	decemberUpdate = "https://www.oracle.com/security-alerts/cspudec2026.html"
+	januaryUpdate  = "https://www.oracle.com/security-alerts/cpujan2027.html"
 )
+
+// noMySQLPage is an update with nothing for MySQL: another product's matrix
+// and an advisory for a product built on MySQL Server, which Oracle files
+// under that product.
+var noMySQLPage = []byte("<h4 id=\"AppendixPS\">Oracle PeopleSoft Risk Matrix</h4>\nCVE-2026-90000\n" +
+	"<td>Oracle Communications Unified Assurance</td>\n<td>Core (MySQL Server)</td>\n")
+
+// decemberMatrix is the MySQL matrix the December update rows carry.
+const decemberMatrix = "CVE-2099-99001 CVE-2099-99002"
+
+// decemberPage is the December update with the MySQL heading written as
+// heading, between the volatile script and the next appendix.
+func decemberPage(heading string) []byte {
+	return []byte("<script>nonce-7</script>\n" + heading + "Oracle MySQL Risk Matrix</h4>\n" + decemberMatrix +
+		"\n<h4 id=\"AppendixPS\">Oracle PeopleSoft Risk Matrix</h4>\nCVE-2026-90000\n")
+}
 
 // servedPages answers the URLs it holds and refuses every other, so a check
 // that reads a page it should not reach fails rather than reading nothing.
@@ -582,6 +608,138 @@ func TestCheckVersioned_ChangedAdditionalSourceIsReviewed(t *testing.T) {
 	c.Assert(pending.ReviewedSource, qt.Equals, "")
 	c.Assert(pending.AddedIDs, qt.DeepEquals, []string{"CVE-2026-00007"})
 	c.Assert(pending.RemovedIDs, qt.HasLen, 0)
+}
+
+// TestCheckVersioned_NewerMatrixIsReviewed runs the check a day after the
+// November snapshot's valid_until, with the December update linked and
+// carrying MySQL rows in markup Oracle may write. Each row must leave a
+// review of the update and leave the snapshot alone; read as an update with
+// nothing for MySQL, it would move valid_until to January instead.
+func TestCheckVersioned_NewerMatrixIsReviewed(t *testing.T) {
+	standard := `<h4 id="AppendixMSQL">`
+	tests := []struct {
+		name       string
+		anchors    []string
+		pages      map[string][]byte
+		wantSource string
+		wantAdded  []string
+	}{
+		{name: "an absolute link", anchors: []string{`<a href="https://www.oracle.com/security-alerts/cspudec2026.html">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPage(standard)}, wantSource: decemberUpdate, wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "a link to the MySQL matrix", anchors: []string{`<a href="/security-alerts/cspudec2026.html#AppendixMSQL">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPage(standard)}, wantSource: decemberUpdate, wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "a single-quoted href after target", anchors: []string{`<a target='_blank' href='/security-alerts/cspudec2026.html'>December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPage(standard)}, wantSource: decemberUpdate, wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "a heading with a class before its id", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPage(`<h4 class="otable-title" id="AppendixMSQL">`)}, wantSource: decemberUpdate,
+			wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "a single-quoted heading id", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			pages: map[string][]byte{decemberUpdate: decemberPage(`<h4 id='AppendixMSQL'>`)}, wantSource: decemberUpdate,
+			wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+		{name: "a quarterly update after a monthly one with nothing for MySQL",
+			anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`, `<a href="/security-alerts/cpujan2027.html">January</a>`},
+			pages:   map[string][]byte{decemberUpdate: noMySQLPage, januaryUpdate: oraclePage("nonce-8", "CVE-2099-99003")}, wantSource: januaryUpdate,
+			wantAdded: []string{"CVE-2099-99003"}},
+		{name: "the older of two updates with MySQL rows",
+			anchors: []string{`<a href="/security-alerts/cpujan2027.html">January</a>`, `<a href="/security-alerts/cspudec2026.html">December</a>`},
+			pages:   map[string][]byte{decemberUpdate: decemberPage(standard), januaryUpdate: oraclePage("nonce-8", "CVE-2099-99003")}, wantSource: decemberUpdate,
+			wantAdded: []string{"CVE-2099-99001", "CVE-2099-99002"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Chdir(t.TempDir())
+			now := time.Date(2026, 12, 16, 9, 0, 0, 0, time.UTC)
+			current := twoPageSnapshot(c, now.Add(-24*time.Hour), time.Date(2026, 12, 15, 0, 0, 0, 0, time.UTC))
+			pages := maps.Clone(tt.pages)
+			pages[oracleIndexURL] = oracleIndexWith(append([]string{
+				`<a href="/security-alerts/cpuoct2026.html">October</a>`, `<a href="/security-alerts/cspunov2026.html">November</a>`,
+			}, tt.anchors...)...)
+			c.Assert(checkVersioned(current, servedPages(pages), now), qt.IsNil)
+			pending := readMySQLReview(c)
+			c.Assert(pending.Source, qt.Equals, tt.wantSource)
+			c.Assert(pending.ReviewedSource, qt.Equals, novemberUpdate)
+			c.Assert(pending.AddedIDs, qt.DeepEquals, tt.wantAdded)
+			_, err := os.Stat(filepath.Join("internal", "vulnerability", "mysql.json"))
+			c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+		})
+	}
+}
+
+// TestCheckVersioned_UnreadUpdate_FailurePath runs the check a day after the
+// November snapshot's valid_until. Each row hides the December update from
+// the check in a way that would otherwise move valid_until to January, and
+// each must fail rather than write the snapshot or a review.
+func TestCheckVersioned_UnreadUpdate_FailurePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		anchors  []string
+		december []byte
+		want     string
+	}{
+		{name: "the due date passed with no page linked", want: `the security alerts index schedules the next update for 2027-01-19, after valid_until 2026-12-15, ` +
+			`but links no update for December 2026 or later, so the update due on 2026-12-15 is unread`},
+		{name: "a page that names the MySQL appendix in another element", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			december: []byte("<div id=\"AppendixMSQL\"><p>Oracle MySQL</p></div>\n" + decemberMatrix),
+			want:     `https://www\.oracle\.com/security-alerts/cspudec2026\.html: the page names "AppendixMSQL" but has no MySQL risk matrix heading the source check reads`},
+		{name: "a page that titles the MySQL matrix under another id", anchors: []string{`<a href="/security-alerts/cspudec2026.html">December</a>`},
+			december: []byte("<h4 id=\"AppendixMYSQL\">Oracle MySQL Risk Matrix</h4>\n" + decemberMatrix),
+			want:     `https://www\.oracle\.com/security-alerts/cspudec2026\.html: the page names "Oracle MySQL Risk Matrix" but has no MySQL risk matrix heading the source check reads`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Chdir(t.TempDir())
+			now := time.Date(2026, 12, 16, 9, 0, 0, 0, time.UTC)
+			current := twoPageSnapshot(c, now.Add(-24*time.Hour), time.Date(2026, 12, 15, 0, 0, 0, 0, time.UTC))
+			pages := map[string][]byte{
+				oracleIndexURL: oracleIndexWith(append([]string{
+					`<a href="/security-alerts/cpuoct2026.html">October</a>`, `<a href="/security-alerts/cspunov2026.html">November</a>`,
+				}, tt.anchors...)...),
+				decemberUpdate: tt.december,
+				novemberUpdate: oraclePage("nonce-5", "CVE-2026-00002"),
+				octoberUpdate:  oraclePage("nonce-6", "CVE-2026-00001"),
+			}
+			c.Assert(checkVersioned(current, servedPages(pages), now), qt.ErrorMatches, tt.want)
+			_, err := os.Stat(filepath.Join("internal", "vulnerability", "mysql.json"))
+			c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+			_, err = os.Stat(filepath.Join("internal", "vulnerability", "review", "mysql.json"))
+			c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+		})
+	}
+}
+
+// TestCheckVersioned_UnexpectedSourceIsRefusedBeforeFetching names a page
+// outside Oracle's updates as a reviewed source: the check refuses it before
+// it reads anything, the index included.
+func TestCheckVersioned_UnexpectedSourceIsRefusedBeforeFetching(t *testing.T) {
+	tests := []struct {
+		name       string
+		source     string
+		additional string
+		want       string
+	}{
+		{name: "the source", source: "https://example.org/security-alerts/cspunov2026.html", additional: octoberUpdate,
+			want: `unexpected reviewed source "https://example.org/security-alerts/cspunov2026.html"`},
+		{name: "an additional source", source: novemberUpdate, additional: "https://www.oracle.com/security-alerts/alert-cve-2026-0001.html",
+			want: `unexpected reviewed source "https://www.oracle.com/security-alerts/alert-cve-2026-0001.html"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Chdir(t.TempDir())
+			now := time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC)
+			current := twoPageSnapshot(c, now.Add(-24*time.Hour), time.Date(2026, 12, 15, 0, 0, 0, 0, time.UTC))
+			current.Source, current.AdditionalSources[0].URL = tt.source, tt.additional
+			var fetched []string
+			record := func(url string) ([]byte, error) {
+				fetched = append(fetched, url)
+				return oracleIndex(octoberUpdate, novemberUpdate), nil
+			}
+			c.Assert(checkVersioned(current, record, now), qt.ErrorMatches, tt.want)
+			c.Assert(fetched, qt.IsNil)
+		})
+	}
 }
 
 func TestCheckVersioned_FailurePath(t *testing.T) {

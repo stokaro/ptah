@@ -44,13 +44,27 @@ const oracleIndexURL = "https://www.oracle.com/security-alerts/"
 
 var oracleUpdate = regexp.MustCompile(`^https://www\.oracle\.com/security-alerts/cs?pu(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)([0-9]{4})\.html$`)
 
-var oracleUpdateLink = regexp.MustCompile(`href="(/security-alerts/cs?pu(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[0-9]{4}\.html)"`)
+// oracleUpdateLink reads a link to an update page out of the index: relative
+// or absolute on www.oracle.com, in either quote or none, with or without a
+// fragment or a query, wherever the href sits among the attributes. The first
+// group is the page's path.
+var oracleUpdateLink = regexp.MustCompile(`\s(?i:href)\s*=\s*["']?(?:(?i:https?://www\.oracle\.com))?(/security-alerts/cs?pu(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[0-9]{4}\.html)(?:[?#][^"'\s>]*)?(?:["'\s>])`)
 
 var updateMonths = []string{"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"}
 
-// mysqlMatrixHeading opens the MySQL risk matrix on an Oracle update page. A
-// monthly update with nothing for MySQL has none.
-const mysqlMatrixHeading = `<h4 id="AppendixMSQL">`
+// mysqlMatrixHeading opens the MySQL risk matrix on an Oracle update page: an
+// h4 whose id is AppendixMSQL, in either quote or none, among any attributes.
+// A monthly update with nothing for MySQL has none.
+var mysqlMatrixHeading = regexp.MustCompile(`<(?i:h4)\s(?:[^>]*\s)?(?i:id)\s*=\s*(?:"AppendixMSQL"|'AppendixMSQL'|AppendixMSQL\b)[^>]*>`)
+
+// appendixHeading opens the risk matrix that follows the MySQL one, which is
+// where the MySQL matrix ends.
+var appendixHeading = regexp.MustCompile(`<(?i:h4)\s(?:[^>]*\s)?(?i:id)\s*=\s*["']?Appendix`)
+
+// mysqlMatrixMarkers name the MySQL risk matrix on a page whatever its
+// markup, compared without regard to case. A page carrying one without a
+// heading mysqlMatrixHeading reads has changed shape.
+var mysqlMatrixMarkers = []string{"AppendixMSQL", "Oracle MySQL Risk Matrix"}
 
 const scheduleLead = "next four dates are:"
 
@@ -189,6 +203,9 @@ func checkVersioned(current vulnerability.VersionedSnapshot, fetchPage fetcher, 
 		if next, err = scheduledUpdate(index, now); err != nil {
 			return err
 		}
+		if err := confirmLaterValidUntil(current.ValidUntil, next, index); err != nil {
+			return err
+		}
 	}
 	pages := make(map[string][]byte, len(sources))
 	for _, source := range sources {
@@ -215,21 +232,43 @@ func updateKey(url string) (int, bool) {
 	return year*len(updateMonths) + slices.Index(updateMonths, parts[1]), true
 }
 
+// monthKey is updateKey's order for the update Oracle publishes in date's
+// month.
+func monthKey(date time.Time) int {
+	year, month, _ := date.UTC().Date()
+	return year*len(updateMonths) + int(month) - 1
+}
+
+// linkedUpdates returns the update pages the index links, each once, as
+// absolute URLs. An index that links none has changed shape.
+func linkedUpdates(index []byte) ([]string, error) {
+	links := oracleUpdateLink.FindAllSubmatch(index, -1)
+	if len(links) == 0 {
+		return nil, errors.New("the security alerts index links no update")
+	}
+	urls := make([]string, 0, len(links))
+	for _, match := range links {
+		if url := "https://www.oracle.com" + string(match[1]); !slices.Contains(urls, url) {
+			urls = append(urls, url)
+		}
+	}
+	return urls, nil
+}
+
 // updatesAfter returns the update pages the index links that are newer than
-// reviewed, oldest first. An index that links none has changed shape.
+// reviewed, oldest first.
 func updatesAfter(index []byte, reviewed string) ([]string, error) {
 	reviewedKey, ok := updateKey(reviewed)
 	if !ok {
 		return nil, fmt.Errorf("reviewed source %q is not an Oracle update page", reviewed)
 	}
-	links := oracleUpdateLink.FindAllSubmatch(index, -1)
-	if len(links) == 0 {
-		return nil, errors.New("the security alerts index links no update")
+	links, err := linkedUpdates(index)
+	if err != nil {
+		return nil, err
 	}
 	newer := make([]string, 0)
-	for _, match := range links {
-		url := "https://www.oracle.com" + string(match[1])
-		if key, _ := updateKey(url); key > reviewedKey && !slices.Contains(newer, url) {
+	for _, url := range links {
+		if key, _ := updateKey(url); key > reviewedKey {
 			newer = append(newer, url)
 		}
 	}
@@ -244,7 +283,7 @@ func updatesAfter(index []byte, reviewed string) ([]string, error) {
 // newerUpdate returns the oldest update newer than the snapshot's source that
 // carries a MySQL risk matrix, with its page, or an empty URL when none does.
 // An update with no matrix has nothing for MySQL, so it leaves the reviewed
-// pages complete.
+// pages complete; each one is logged so a person can check the reading.
 func newerUpdate(current vulnerability.VersionedSnapshot, index []byte, fetchPage fetcher) (string, []byte, error) {
 	newer, err := updatesAfter(index, current.Source)
 	if err != nil {
@@ -255,12 +294,58 @@ func newerUpdate(current vulnerability.VersionedSnapshot, index []byte, fetchPag
 		if err != nil {
 			return "", nil, fmt.Errorf("read %s: %w", url, err)
 		}
-		if bytes.Contains(page, []byte(mysqlMatrixHeading)) {
+		carries, err := mysqlMatrix(page)
+		if err != nil {
+			return "", nil, fmt.Errorf("%s: %w", url, err)
+		}
+		if carries {
 			return url, page, nil
 		}
 		fmt.Printf("%s: %s carries no MySQL risk matrix\n", current.Product, url)
 	}
 	return "", nil, nil
+}
+
+// mysqlMatrix reports whether an Oracle update page carries a MySQL risk
+// matrix. A page that names the matrix without a heading the check reads is an
+// error: read as having no matrix, it would let the check move valid_until
+// past advisories nobody reviewed.
+func mysqlMatrix(page []byte) (bool, error) {
+	if mysqlMatrixHeading.Match(page) {
+		return true, nil
+	}
+	lower := bytes.ToLower(page)
+	for _, marker := range mysqlMatrixMarkers {
+		if bytes.Contains(lower, bytes.ToLower([]byte(marker))) {
+			return false, fmt.Errorf("the page names %q but has no MySQL risk matrix heading the source check reads", marker)
+		}
+	}
+	return false, nil
+}
+
+// confirmLaterValidUntil refuses a next scheduled update later than the
+// snapshot's valid_until unless the index links an update for valid_until's
+// month or later. The update due on valid_until is the one a later date
+// skips, so without its page the check cannot have read it: the index may
+// not link it yet, or may link it in a shape the check does not read. A
+// schedule Oracle moved later before publishing fails the same way, and a
+// person decides.
+func confirmLaterValidUntil(validUntil, next time.Time, index []byte) error {
+	if validUntil.IsZero() || !next.After(validUntil) {
+		return nil
+	}
+	links, err := linkedUpdates(index)
+	if err != nil {
+		return err
+	}
+	for _, url := range links {
+		if key, _ := updateKey(url); key >= monthKey(validUntil) {
+			return nil
+		}
+	}
+	due := validUntil.UTC().Format(time.DateOnly)
+	return fmt.Errorf("the security alerts index schedules the next update for %s, after valid_until %s, but links no update for %s or later, so the update due on %s is unread",
+		next.Format(time.DateOnly), due, validUntil.UTC().Format("January 2006"), due)
 }
 
 // scheduledUpdate returns the earliest release date the index schedules for
@@ -299,15 +384,15 @@ func advisoryContent(product string, source []byte) ([]byte, error) {
 	if product != "mysql" {
 		return source, nil
 	}
-	start := bytes.Index(source, []byte(mysqlMatrixHeading))
-	if start < 0 {
+	heading := mysqlMatrixHeading.FindIndex(source)
+	if heading == nil {
 		return nil, errors.New("MySQL risk matrix heading missing from the Oracle update page")
 	}
-	end := bytes.Index(source[start+len(mysqlMatrixHeading):], []byte(`<h4 id="Appendix`))
-	if end < 0 {
+	end := appendixHeading.FindIndex(source[heading[1]:])
+	if end == nil {
 		return nil, errors.New("MySQL risk matrix has no following appendix")
 	}
-	return source[start : start+len(mysqlMatrixHeading)+end], nil
+	return source[heading[0] : heading[1]+end[0]], nil
 }
 
 // validSource reports whether a reviewed snapshot may name a page as one of
