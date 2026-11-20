@@ -34,7 +34,11 @@ type absentObjectRow struct {
 	strictTotal    string
 	fullExit       int
 	fullTotal      string
+	// codes are the rule names the default surface reports; strictCodes are the
+	// Atlas check codes the strict policy prints for them, none for a rule the
+	// Atlas table does not map.
 	codes          []string
+	strictCodes    []string
 	nativeExit     int
 	nativeCodes    []string
 }
@@ -59,7 +63,7 @@ var sqliteAbsentObjectRows = []absentObjectRow{
 		name:          "control: IF EXISTS drop of a present trigger",
 		files:         absentObjectFiles(countBase+sqliteTrigger, "DROP TRIGGER IF EXISTS users_ai;\n"),
 		communityExit: 0, communityTotal: "0", strictExit: 1, strictTotal: "0", fullExit: 1, fullTotal: "1",
-		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
+		codes: []string{"destructive/drop-object"}, strictCodes: []string{"DS101"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "IF EXISTS drop of an absent view",
@@ -127,7 +131,7 @@ var postgresAbsentObjectRows = []absentObjectRow{
 		name:          "control: IF EXISTS drop of a present trigger",
 		files:         absentObjectFiles(postgresCountBase+postgresTrigger, "DROP TRIGGER IF EXISTS users_tg ON users;\n"),
 		communityExit: 0, communityTotal: "0", strictExit: 1, strictTotal: "0", fullExit: 1, fullTotal: "1",
-		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
+		codes: []string{"destructive/drop-object"}, strictCodes: []string{"DS101"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "IF EXISTS drop of an absent type",
@@ -139,13 +143,13 @@ var postgresAbsentObjectRows = []absentObjectRow{
 		name:          "control: IF EXISTS drop of a present enum type",
 		files:         absentObjectFiles(postgresMood, "DROP TYPE IF EXISTS mood;\n"),
 		communityExit: 0, communityTotal: "1", strictExit: 1, strictTotal: "1", fullExit: 1, fullTotal: "1",
-		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
+		codes: []string{"destructive/drop-object"}, strictCodes: []string{"DS101"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "drop of a composite type",
 		files:         absentObjectFiles(postgresCountBase+"CREATE TYPE pair AS (a int, b int);\n", "DROP TYPE pair;\n"),
 		communityExit: 0, communityTotal: "0", strictExit: 1, strictTotal: "0", fullExit: 1, fullTotal: "1",
-		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
+		codes: []string{"destructive/drop-object"}, strictCodes: []string{"DS101"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "IF EXISTS drop of an absent view",
@@ -180,7 +184,7 @@ var postgresAbsentObjectRows = []absentObjectRow{
 		name:          "control: IF EXISTS drop of a present column",
 		files:         absentObjectFiles(postgresCountBase, "ALTER TABLE users DROP COLUMN IF EXISTS name;\n"),
 		communityExit: 1, communityTotal: "1", strictExit: 1, strictTotal: "1", fullExit: 1, fullTotal: "1",
-		codes: []string{"data-dependent/alter-column-type"}, nativeExit: 1, nativeCodes: []string{"rollout/drop-column", "destructive/drop-column"},
+		codes: []string{"destructive/drop-column"}, strictCodes: []string{"DS103"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-column", "rollout/drop-column"},
 	},
 	{
 		name:          "an enum label added",
@@ -245,7 +249,7 @@ var mysqlAbsentObjectRows = []absentObjectRow{
 		files: absentObjectFiles(mysqlCountBase+"CREATE TRIGGER users_ai AFTER INSERT ON users FOR EACH ROW SET @x = 1;\n",
 			"DROP TRIGGER users_ai;\n"),
 		communityExit: 0, communityTotal: "0", strictExit: 1, strictTotal: "0", fullExit: 1, fullTotal: "1",
-		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
+		codes: []string{"destructive/drop-object"}, strictCodes: []string{"DS101"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "IF EXISTS drop of an absent view",
@@ -255,15 +259,17 @@ var mysqlAbsentObjectRows = []absentObjectRow{
 	},
 }
 
-// compatRuleCode matches a rule a `migrate lint` text report names, as in
-// `-- L1 [destructive/drop-object]: ...` or `-- L1: Dropping ... analyzers#data-dependent/alter-column-type`.
-var compatRuleCode = regexp.MustCompile(`(?:-- L\d+ \[|analyzers#)([A-Z]+\d+P?)\b`)
+// compatRuleCode matches a rule the default `migrate lint` text report names,
+// as in `-- L1 [destructive/drop-object]: ...`.
+var compatRuleCode = regexp.MustCompile(`-- L\d+ \[([a-z][a-z0-9/-]*)\]`)
+
+// strictRuleCode matches an Atlas check code in the strict policy's report, as
+// in `-- L1: Dropping ... analyzers#DS102` or `-- L1 [DS102]: ...`.
+var strictRuleCode = regexp.MustCompile(`(?:-- L\d+ \[|analyzers#)([A-Z]+\d+P?)\b`)
 
 // nativeRuleCode matches a rule a `ptah migrations lint` report names, as in
-// `migrations/2_head.sql:1 [error] destructive/drop-object: ...`. The
-// rule's name after the code is optional, since a rule with no Ptah name
-// prints its code alone.
-var nativeRuleCode = regexp.MustCompile(`(?m)^\S+:\d+ \[[a-z]+\] ([A-Z]+\d+P?)(?: [a-z0-9/-]+)?:`)
+// `migrations/2_head.sql:1 [error] destructive/drop-object: ...`.
+var nativeRuleCode = regexp.MustCompile(`(?m)^\S+:\d+ \[[a-z]+\] ([a-z][a-z0-9/-]*):`)
 
 // ruleCodes returns the rules a report names, each once, in code order, and
 // nil for none.
@@ -302,7 +308,7 @@ func assertCompatAbsentObject(c *qt.C, row absentObjectRow, dev absentObjectDev)
 	fullTotal := clirun.Run(c, clirun.Compat, full, changeCountArgs(dev.url(c), "1", totalTemplate...)...)
 
 	c.Assert(strictText.ExitCode, qt.Equals, row.strictExit, qt.Commentf("stdout:\n%s\nstderr:\n%s", strictText.Stdout, strictText.Stderr))
-	c.Assert(ruleCodes(compatRuleCode, strictText.Stdout), qt.DeepEquals, row.codes, qt.Commentf("stdout:\n%s", strictText.Stdout))
+	c.Assert(ruleCodes(strictRuleCode, strictText.Stdout), qt.DeepEquals, row.strictCodes, qt.Commentf("stdout:\n%s", strictText.Stdout))
 	c.Assert(strictTotal.Stdout, qt.Equals, row.strictTotal, qt.Commentf("stderr:\n%s", strictTotal.Stderr))
 	c.Assert(fullText.ExitCode, qt.Equals, row.fullExit, qt.Commentf("stdout:\n%s\nstderr:\n%s", fullText.Stdout, fullText.Stderr))
 	c.Assert(ruleCodes(compatRuleCode, fullText.Stdout), qt.DeepEquals, row.codes, qt.Commentf("stdout:\n%s", fullText.Stdout))
@@ -527,7 +533,7 @@ func TestMigrateLintMySQLQualifiedDropBesideAViewE2E(t *testing.T) {
 			"migrations", "lint", "--dir", "migrations", "--dev-url", devURL, "--latest", "1")
 
 		c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-		c.Assert(ruleCodes(nativeRuleCode, got.Stdout), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table"})
+		c.Assert(ruleCodes(nativeRuleCode, got.Stdout), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	})
 	t.Run("community binary", func(t *testing.T) {
 		reference := atlasReferenceBinary(t)

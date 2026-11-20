@@ -33,7 +33,7 @@ func TestMigrationsLintReadsPastAGoLineFS(t *testing.T) {
 			out, _ := runPtahNativeWithError("migrations", "lint", "--dir", dir, "--dialect", "sqlserver",
 				"--format", "json", "--fail-on", "none")
 
-			c.Assert(lintedFindings(c, out), qt.DeepEquals, []string{"rollout/drop-table@3 users", "destructive/drop-table@3 users"})
+			c.Assert(lintedFindings(c, out), qt.DeepEquals, []string{"destructive/drop-table@3 users", "rollout/drop-table@3 users"})
 		})
 	}
 }

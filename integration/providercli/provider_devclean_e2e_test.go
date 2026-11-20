@@ -341,7 +341,7 @@ func TestProviderLintReplaysMigrationsOnItsDevDatabase(t *testing.T) {
 	out, diagnostics, code := lintWithDev(c, lintMigrations(c, `DROP TABLE "records";`), devPath)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s\n%s", out, diagnostics))
-	c.Assert(out, qt.Contains, "0000000002_drop.up.sql:1 [error] FX101: DROP TABLE removes every row")
+	c.Assert(out, qt.Contains, "0000000002_drop.up.sql:1 [error] design/fx101: DROP TABLE removes every row")
 	c.Assert(tables(c, devPath), qt.HasLen, 0)
 }
 

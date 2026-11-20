@@ -55,7 +55,7 @@ func TestGolangMigrateLoneConcurrentIndexDevReplayLive(t *testing.T) {
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
 		c.Assert(out, qt.Contains, "-- analyzing version 20240829000000 -- no diagnostics found")
-		c.Assert(out, qt.Not(qt.Contains), "PG103")
+		c.Assert(out, qt.Not(qt.Contains), "transaction/concurrent-index")
 	})
 
 	t.Run("validate", func(t *testing.T) {

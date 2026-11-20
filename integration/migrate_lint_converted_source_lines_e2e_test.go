@@ -120,7 +120,7 @@ func TestCompatMigrateLintConvertedSourceLinesE2E(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			root, dir := sourceLinesProject(c, test.format, test.first, test.firstBody, test.second, test.secondBody)
-			opts := clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()}
+			opts := clirun.Options{Dir: root, Env: strictEnvironment()}
 
 			text := clirun.Run(c, clirun.Compat, opts, sourceLinesArgs(dir)...)
 			template := clirun.Run(c, clirun.Compat, opts, sourceLinesArgs(dir, "--format", sourceLinesTemplate)...)
