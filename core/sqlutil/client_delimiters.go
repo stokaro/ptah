@@ -12,7 +12,12 @@ import (
 // whitespace between — is dropped rather than doubled, which is how `END;$$`
 // becomes `END;`.
 //
-// A directive must be alone on its line. Both spellings are matched
+// A directive must be alone on its line, and on a line a statement could
+// begin on: a line inside a quoted literal, a dollar-quoted body or a block
+// comment is the text of that literal or comment, so a COMMENT or DEFAULT that
+// holds a line reading `-- atlas:delimiter $$` reaches the server whole. This
+// function reads literals with a backslash as an escape; the dialect-aware
+// splitters in this package read them by the dialect's own rule. Both spellings are matched
 // case-insensitively: `DELIMITER $$` (the MySQL client's form) and
 // `-- atlas:delimiter $$`. The delimiter token may be wrapped in single or
 // double quotes, which are stripped, and the escapes \n, \r and \t are

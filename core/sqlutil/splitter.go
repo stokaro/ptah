@@ -154,7 +154,7 @@ func splitSQLStatements(sql, dialect string, caps capability.Capabilities) []str
 		return make([]string, 0)
 	}
 
-	sql = normalizeClientDelimitersFor(sql, dialect)
+	sql = normalizeClientDelimitersFor(sql, dialect, caps)
 	// Use SQL-standard string scanning so a semicolon inside a string literal
 	// cannot leak out and be mis-split into an extra statement. Backslash
 	// escapes are only honored for the dialects that actually process them;
@@ -242,20 +242,29 @@ func splitSQLStatements(sql, dialect string, caps capability.Capabilities) []str
 // it reads as a comment; such an engine's text is read by its provider's
 // rules or not at all, and no YDB client writes a delimiter directive. A blank
 // or unknown dialect honors them.
-func normalizeClientDelimitersFor(sql, dialect string) string {
-	normalized, _ := clientDelimitersFor(sql, dialect)
+func normalizeClientDelimitersFor(sql, dialect string, caps capability.Capabilities) string {
+	normalized, _ := clientDelimitersFor(sql, dialect, caps)
 	return normalized
 }
 
 // clientDelimitersFor is [normalizeClientDelimitersFor] with where each part
 // of the rewrite stands in sql. The origins are the identity where nothing was
 // rewritten.
-func clientDelimitersFor(sql, dialect string) (string, clientdelimiter.Origins) {
+func clientDelimitersFor(sql, dialect string, caps capability.Capabilities) (string, clientdelimiter.Origins) {
 	facts := scriptFacts.Get(dialect)
 	if facts.described && !facts.scripts.ClientDelimiters || !facts.described && lexerext.Provided(dialect) != nil {
 		return sql, nil
 	}
-	return clientdelimiter.Normalize(sql)
+	if dialect == "" {
+		return clientdelimiter.Normalize(sql)
+	}
+	// A directive stands only outside a literal, and where a literal ends is the
+	// dialect's rule, the one the lexer reads the rewritten text with.
+	options := dialectlexer.ForSession(dialect, caps)
+	return clientdelimiter.NormalizeFor(sql, clientdelimiter.Rules{
+		BackslashEscapes: options.BackslashEscapes,
+		EscapeStrings:    options.PostgreSQLEscapeStrings,
+	})
 }
 
 // batchSeparator is the word that ends a batch in the dialect's scripts

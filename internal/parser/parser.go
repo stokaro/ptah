@@ -159,19 +159,19 @@ type Parser struct {
 //
 //	parser := NewParser("CREATE TABLE users (id INTEGER PRIMARY KEY);")
 func NewParser(input string, opts ...Option) *Parser {
-	normalized, origins := clientdelimiter.Normalize(input)
 	p := &Parser{
-		input:     normalized,
 		source:    input,
-		origins:   origins,
 		startTime: time.Now(),
 		timeout:   30 * time.Second, // 30 second timeout to prevent infinite loops
 	}
 	for _, opt := range opts {
 		opt(p)
 	}
+	options := lexerOptions(p.dialect)
+	p.input, p.origins = normalizeClientDelimiters(input, p.dialect, options)
+	normalized := p.input
 	p.target = grammarOf(p.dialect)
-	p.lexer = lexer.NewLexerWithOptions(normalized, lexerOptions(p.dialect))
+	p.lexer = lexer.NewLexerWithOptions(normalized, options)
 	p.advance() // Load the first token
 	return p
 }
@@ -192,6 +192,20 @@ func NewParser(input string, opts ...Option) *Parser {
 // escaping rules contradict each other, so any single dialect's answer refuses
 // one of them. Permissive is the only setting that reads a document nobody has
 // classified yet.
+// normalizeClientDelimiters honors the script's client delimiter directives,
+// reading its literals by the rules of options so a line inside one is not
+// taken for a directive. A script with no dialect keeps a backslash as an
+// escape in every literal, as [clientdelimiter.Normalize] does.
+func normalizeClientDelimiters(input, dialect string, options lexer.Options) (string, clientdelimiter.Origins) {
+	if dialect == "" {
+		return clientdelimiter.Normalize(input)
+	}
+	return clientdelimiter.NormalizeFor(input, clientdelimiter.Rules{
+		BackslashEscapes: options.BackslashEscapes,
+		EscapeStrings:    options.PostgreSQLEscapeStrings,
+	})
+}
+
 func lexerOptions(dialect string) lexer.Options {
 	if dialect == "" {
 		return lexer.Options{}
