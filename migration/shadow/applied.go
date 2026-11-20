@@ -230,7 +230,7 @@ func replayApplied(
 	lease *shadowdb.Lease,
 	replay migrator.MigrationProvider,
 ) error {
-	mig := migrator.NewMigrator(shadowConn, replay)
+	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(shadowConn, replay))
 	metadata := []string{mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier(), mig.RepeatableTableIdentifier()}
 	lease.DropsMetadata(metadata...)
 	if err := mig.MigrateUp(ctx); err != nil {

@@ -384,7 +384,7 @@ func VerifyMigration(ctx context.Context, opts MigrationVerifyOptions) (resultEr
 		)
 	}
 
-	mig := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...))
+	mig := shadowdb.ReplayMigrator(migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migrations...)))
 	lease.DropsMetadata(mig.MigrationsTableIdentifier(), mig.MigrationLogTableIdentifier())
 	if err := mig.MigrateUp(ctx); err != nil {
 		if description := shadowdb.DescribeReplayError(err); description != "" {

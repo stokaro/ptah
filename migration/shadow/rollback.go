@@ -115,12 +115,7 @@ func VerifyRollback(ctx context.Context, opts RollbackVerifyOptions) (resultErr 
 	if err != nil {
 		return fmt.Errorf("rollback verification failed: register migrations: %w", err)
 	}
-	// The shadow database is this verification's alone once claimed, and its
-	// revision history lives only until the release drops it, so the replay
-	// takes no migration lock. A caller may hold the target's lock while it
-	// verifies, and on an engine whose lock names are server-wide, such as
-	// MySQL, the replay's lock would wait on that one for good.
-	mig = mig.WithSkipChecks(opts.SkipChecks).WithoutMigrationLock()
+	mig = shadowdb.ReplayMigrator(mig.WithSkipChecks(opts.SkipChecks))
 
 	// DropAllTables leaves the revision table behind, because it is metadata
 	// rather than part of the schema under test. Rows left in it name versions
