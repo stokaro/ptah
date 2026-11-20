@@ -280,6 +280,12 @@ type ConstraintGrammar struct {
 	// stands (ORA-02260 on Oracle). Without it the removal follows the
 	// additions, as every other constraint removal does.
 	PrimaryKeyDroppedFirst bool `json:"primary_key_dropped_first,omitempty"`
+	// OneForeignKeyPerReference reports that a table holds one foreign key
+	// for a list of columns and the reference it points at, as Oracle's does:
+	// a second one answers ORA-02275 whatever its name. A plan that replaces
+	// such a key with one over the same columns and reference drops the old
+	// key before it adds the new one. Without it the new key is added first.
+	OneForeignKeyPerReference bool `json:"one_foreign_key_per_reference,omitempty"`
 }
 
 // Enforcement is where ENFORCED and NOT ENFORCED may follow a constraint.

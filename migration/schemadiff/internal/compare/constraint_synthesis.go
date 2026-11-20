@@ -488,8 +488,10 @@ func synthesizeFieldLevelForeignKeyConstraints(
 			continue
 		}
 		name := f.ForeignKeyName
+		derived := f.ForeignKeyNameDerived
 		if name == "" {
 			name = schemaprep.GenerateForeignKeyName(f.tableName, f.Name)
+			derived = true
 		}
 		// Reuse the canonical generate-path parser so the synthesized table /
 		// column always match exactly what the planner emits (issue #189
@@ -508,6 +510,7 @@ func synthesizeFieldLevelForeignKeyConstraints(
 		synthesized = append(synthesized, schemamodel.Constraint{
 			StructName:     f.StructName,
 			Name:           name,
+			NameDerived:    derived,
 			Type:           "FOREIGN KEY",
 			Table:          tableName,
 			Columns:        []string{f.Name},

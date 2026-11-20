@@ -286,6 +286,11 @@ type Field struct {
 	ForeignKeyName  string // Custom foreign key constraint name
 	OnDelete        string // Foreign key ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
 	OnUpdate        string // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+	// ForeignKeyNameDerived marks a ForeignKeyName that Ptah chose because the
+	// declaration named none. A comparison lets a key the server named itself
+	// satisfy such a declaration; a name the author wrote is never paired with
+	// a server-chosen one.
+	ForeignKeyNameDerived bool
 	// Deferrable marks a single-column foreign key whose check may be postponed
 	// to the end of a transaction. See
 	// [ptah.run/core/ast.ForeignKeyRef.Deferrable].
@@ -509,6 +514,10 @@ type Constraint struct {
 	Name       string           // Constraint name (e.g., "positive_total")
 	Type       string           // Constraint type: CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY
 	Table      string           // Table name (if different from struct name)
+
+	// NameDerived marks a FOREIGN KEY name that Ptah chose because the
+	// declaration named none. See [Field.ForeignKeyNameDerived].
+	NameDerived bool
 
 	// UsingMethod is the index access method of a PRIMARY KEY.
 	UsingMethod string
