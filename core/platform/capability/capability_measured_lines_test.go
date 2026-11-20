@@ -195,6 +195,7 @@ func measuredLines() map[string]measuredLine {
 			carried: map[capability.Capability]string{
 				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
 				capability.NoBackslashEscapes:              sessionModeCarried,
+				capability.StandardStringSize:              sessionModeCarried,
 				capability.InstantAddColumnAnyPosition: "the experiment that asks it postdates this run. " +
 					"Measured separately on PostgreSQL 18: ALTER TABLE iap ADD COLUMN m int FIRST, " +
 					"ALGORITHM=INSTANT is refused with a syntax error at FIRST, and the key is false for " +
@@ -395,6 +396,7 @@ func measuredLines() map[string]measuredLine {
 			carried: map[capability.Capability]string{
 				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
 				capability.NoBackslashEscapes:              sessionModeCarried,
+				capability.StandardStringSize:              sessionModeCarried,
 				capability.InstantAddColumnAnyPosition: "the experiment that asks it postdates this run. " +
 					"Measured separately on MySQL 26.7.0 and MariaDB 12.3.3: ALTER TABLE ... ADD COLUMN " +
 					"FIRST and ADD COLUMN ... AFTER id are both accepted with ALGORITHM=INSTANT, as they " +
@@ -595,6 +597,7 @@ func measuredLines() map[string]measuredLine {
 			carried: map[capability.Capability]string{
 				capability.RoutineReplacementResetsDefiner: routineReplacementCarried,
 				capability.NoBackslashEscapes:              sessionModeCarried,
+				capability.StandardStringSize:              sessionModeCarried,
 				capability.InstantAddColumnAnyPosition: "the experiment that asks it postdates this run. " +
 					"Measured separately on MySQL 26.7.0 and MariaDB 12.3.3: ALTER TABLE ... ADD COLUMN " +
 					"FIRST and ADD COLUMN ... AFTER id are both accepted with ALGORITHM=INSTANT, as they " +
@@ -801,11 +804,12 @@ const routineReplacementCarried = "no statement decides it: the key states how P
 	"routine, by DROP and CREATE on MySQL and MariaDB and by CREATE OR REPLACE on the PostgreSQL family, " +
 	"which is the planner's choice rather than the server's answer"
 
-// sessionModeCarried explains the session sql_mode key, which no probe
-// statement decides: the connector reads it off the session, and the probe's
-// servers run the default sql_mode, which every preset already describes.
-const sessionModeCarried = "no statement decides it: the connector sets the key from the session's sql_mode, " +
-	"and the probe's servers run the default sql_mode, which no preset marks"
+// sessionModeCarried explains the keys no probe statement decides because the
+// connector reads them off the server when it connects: the session sql_mode
+// and Oracle's MAX_STRING_SIZE. The probe's servers run the defaults, which
+// every preset already describes.
+const sessionModeCarried = "no statement decides it: the connector sets the key from the session's sql_mode " +
+	"or the database's MAX_STRING_SIZE, and the probe's servers run the defaults, which no preset marks"
 
 const enforcementAndMatchCarried = "this run predates the key and sent no NOT ENFORCED or MATCH clause. " +
 	"It was measured on 2026-09-27 against PostgreSQL 17.11 and 18.6, MySQL 8.4.11 and 9.7.2, " +

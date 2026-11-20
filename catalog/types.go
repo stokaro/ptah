@@ -576,8 +576,9 @@ type Column struct {
 	// PostgreSQL only COLLATE "default" restates the database default this
 	// way: a column naming the collation the database default is built from,
 	// such as "en_US.utf8", reads as declared, because the catalog stores
-	// that collation rather than "default". Oracle and ClickHouse report
-	// none.
+	// that collation rather than "default". Oracle holds none for a character
+	// column that names none, which the catalog calls USING_NLS_COMP, and for
+	// one that takes its table's DEFAULT COLLATION. ClickHouse reports none.
 	Collate string `json:"collate,omitempty"`
 	// EffectiveCollate is the collation the column compares with, declared
 	// or inherited, and the one every output written from a read prints.
@@ -585,7 +586,8 @@ type Column struct {
 	// CockroachDB name it as information_schema.COLUMNS does, empty for the
 	// database default. SQLite and SQL Server read no inherited name, so
 	// there it is the declared one, empty for BINARY and for the database's
-	// collation. A description that is not a read, such as a schema file or
+	// collation. Oracle names it for every column that holds a collation other
+	// than USING_NLS_COMP, its table's default included. A description that is not a read, such as a schema file or
 	// a provider's answer, sets both fields to the collation it names.
 	EffectiveCollate string `json:"effective_collate,omitempty"`
 	// Comment is the column's own comment, where the target has one and the
@@ -1193,6 +1195,14 @@ type ServerInfo struct {
 	// JSON name so a consumer that marshals ServerInfo still learns which target
 	// the description came from.
 	RedactedURL string `json:"url"`
+
+	// CollationNames lists the collation sorts the connected server names, in
+	// upper case, where the connector reads them. Oracle's connector reads them
+	// from V$NLS_VALID_VALUES, which a plan checks a declared column collation
+	// against before it runs a statement. It is nil where the dialect has no
+	// such list, and where the read failed, in which case the server answers a
+	// name itself.
+	CollationNames []string `json:"-"`
 
 	Capabilities        capability.Capabilities `json:"capabilities"`         // resolved from Dialect + Version for live connections
 	IdentifierSemantics identifier.Semantics    `json:"identifier_semantics"` // catalog identifier metadata and static rules

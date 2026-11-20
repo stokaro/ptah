@@ -27,6 +27,7 @@ import (
 	"ptah.run/internal/indexscope"
 	"ptah.run/internal/modelast"
 	"ptah.run/internal/objectlookup"
+	"ptah.run/internal/oraclecollation"
 	"ptah.run/internal/planner/columnchange"
 	"ptah.run/internal/planner/featurehost"
 	"ptah.run/internal/planner/guards"
@@ -1919,14 +1920,20 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 
 // refuseUnplannableChanges refuses, before the diff is read further, the
 // changes this planner cannot write for its target: an index changed in place,
-// a feature the target does not host, a role membership, and a change of a
-// serial column's sequence.
+// a feature the target does not host, a role membership, a change of a
+// serial column's sequence, and, on Oracle, a collation change on a column an
+// index, key or CHECK uses.
 func (p *Planner) refuseUnplannableChanges(diff *difftypes.SchemaDiff) error {
 	if err := schemaprecondition.RefuseIndexChangesInPlace(p.targetDialect(), diff); err != nil {
 		return err
 	}
 	if err := p.refuseUnhostedFeatureChanges(diff); err != nil {
 		return err
+	}
+	if p.targetDialect() == platform.Oracle {
+		if err := oraclecollation.RefuseKeyedColumnChange(diff); err != nil {
+			return err
+		}
 	}
 	if err := schemaprecondition.RefuseRoleMemberships(p.targetDialect(), diff); err != nil {
 		return err

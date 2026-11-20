@@ -49,7 +49,7 @@ func lostProperties(c *qt.C, database *schemamodel.Database, dialect string) []s
 // It decides which values a comparison and a unique index treat as equal, and
 // most of the targets that drop it here do have a column COLLATE clause, so the
 // declaration is lost passing through Ptah rather than by the server's
-// incapacity (stokaro/ptah#2983). PostgreSQL and SQLite write it, and
+// incapacity (stokaro/ptah#2983). PostgreSQL, SQLite and Oracle write it, and
 // CockroachDB and YugabyteDB, which the PostgreSQL renderer serves, report it
 // lost.
 func TestGetOrderedCreateStatementsReportingOmissions_NamesALostCollation(t *testing.T) {
@@ -65,7 +65,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesALostCollation(t *tes
 		{name: "yugabytedb drops it", dialect: platform.YugabyteDB, want: []string{"collation"}},
 		{name: "sqlite writes it", dialect: platform.SQLite, want: nil},
 		{name: "sql server drops it", dialect: platform.SQLServer, want: []string{"collation"}},
-		{name: "oracle drops it", dialect: platform.Oracle, want: []string{"collation"}},
+		{name: "oracle writes it", dialect: platform.Oracle, want: nil},
 		{name: "clickhouse drops it", dialect: platform.ClickHouse, want: []string{"collation"}},
 	}
 

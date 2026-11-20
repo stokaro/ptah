@@ -28,6 +28,7 @@ import (
 	"ptah.run/internal/descriptortable"
 	"ptah.run/internal/foreignkeyscope"
 	"ptah.run/internal/objectowner"
+	"ptah.run/internal/oraclecollation"
 	"ptah.run/internal/pgreservedrole"
 	"ptah.run/internal/pgsystemschema"
 	"ptah.run/internal/schemaprep"
@@ -479,6 +480,12 @@ func validateDeclaredBeforeComparison(
 		info.Dialect,
 		desired.Schemas,
 	); err != nil {
+		return err
+	}
+	// Oracle commits each DDL statement, so a collation it refuses partway
+	// through a plan leaves the statements before it applied: a name it does
+	// not know, or a DESC key part over a collated column.
+	if err := oraclecollation.RefuseDeclared(info.Dialect, desired, database, info.CollationNames); err != nil {
 		return err
 	}
 	return validateKeysIntoComparedSchemas(desired, database, info.Dialect)

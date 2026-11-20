@@ -150,7 +150,14 @@ END;`,
 		// type are each written as one. Compared as declared, the plan writes
 		// MODIFY (id ... NULL), which Oracle answers with ORA-01451 on every
 		// apply.
-		Columns: descriptor.Columns{AutoIncrementNotNull: true, SerialNotNull: true},
+		Columns: descriptor.Columns{
+			AutoIncrementNotNull: true, SerialNotNull: true,
+			// A column COLLATE is written after the type and compared with the
+			// collation the catalog reports. A column that declares none takes
+			// its table's DEFAULT COLLATION, or USING_NLS_COMP, so only a
+			// declared collation is compared (MAX_STRING_SIZE=EXTENDED).
+			Collations: true, InheritedCollation: "USING_NLS_COMP", InheritedCollationVaries: true,
+		},
 
 		// How the common model is lowered for the engine.
 		InlineEnum: descriptor.InlineEnum{Type: "VARCHAR2(255)", Check: descriptor.InlineEnumCheckQuoted},

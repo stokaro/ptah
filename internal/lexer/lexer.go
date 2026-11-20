@@ -160,6 +160,22 @@ type Options struct {
 	// does. Unset, a comment ends at the first */.
 	NestedBlockComments bool
 
+	// AlternativeQuoting reads Oracle's alternative-quoted literals, q'[...]'
+	// and nq'[...]', as one TokenString each. The character after the opening
+	// quote is the delimiter and the literal ends at its closing form followed
+	// by a quote, so an apostrophe inside, as in q'[it's]', stays in the
+	// literal. [ { < ( close with their mate and any other character with
+	// itself. A space, tab or line break cannot be the delimiter, and text that
+	// is not such a literal reads as it always did.
+	//
+	// It is off in every set of options a descriptor produces
+	// (internal/dialectlexer.FromDescriptor): a scan that has to judge what a
+	// statement runs, internal/sqlreach among them, recognizes the unread
+	// spelling and refuses it, and reading it here would hide the literal from
+	// that refusal. A reader that needs the literal's extent sets it on the
+	// options it takes.
+	AlternativeQuoting bool
+
 	// Scanner is a lexer of an engine's own. When it is set, it reads the
 	// text in place of every rule the fields above select, which it does not
 	// consult, and [StringValue] asks it for the text of a string.
@@ -370,6 +386,8 @@ func (l *Lexer) scanSpecialToken(ch rune) (Token, bool) {
 		return l.scanTemporaryIdentifier(), true
 	case ch == '#' && !l.opts.LineCommentsDeclared && !l.opts.DisableHashComments && !isHashOperatorContinuation(l.peekNext()):
 		return l.scanMarkedLineComment(1), true
+	case l.opts.AlternativeQuoting && l.alternativeQuoteIntroducerLength() > 0:
+		return l.scanAlternativeQuote(), true
 	default:
 		return Token{}, false
 	}
@@ -911,4 +929,54 @@ func (l *Lexer) consumeDollarQuoted() bool {
 	}
 
 	return true
+}
+
+// alternativeQuoteIntroducerLength is the length of the q or nq at the current
+// position when a delimiter and an opening quote follow it as Oracle's
+// alternative quoting needs, and 0 otherwise.
+func (l *Lexer) alternativeQuoteIntroducerLength() int {
+	rest := l.input[l.pos:]
+	length := 0
+	switch {
+	case len(rest) >= 1 && (rest[0] == 'q' || rest[0] == 'Q'):
+		length = 1
+	case len(rest) >= 2 && (rest[0] == 'n' || rest[0] == 'N') && (rest[1] == 'q' || rest[1] == 'Q'):
+		length = 2
+	default:
+		return 0
+	}
+	if len(rest) <= length || rest[length] != '\'' {
+		return 0
+	}
+	delimiter, _ := utf8.DecodeRuneInString(rest[length+1:])
+	if length+1 >= len(rest) || delimiter == '\'' || unicode.IsSpace(delimiter) {
+		return 0
+	}
+	return length
+}
+
+// scanAlternativeQuote scans q'[...]' or nq'[...]' as one string token, ending
+// at the delimiter's closing form and a quote, or at the end of the input.
+func (l *Lexer) scanAlternativeQuote() Token {
+	l.pos += l.alternativeQuoteIntroducerLength() + 1
+	delimiter := l.advance()
+	closing := delimiter
+	switch delimiter {
+	case '[':
+		closing = ']'
+	case '{':
+		closing = '}'
+	case '<':
+		closing = '>'
+	case '(':
+		closing = ')'
+	}
+	for l.pos < len(l.input) {
+		ch := l.advance()
+		if ch == closing && l.peek() == '\'' {
+			l.advance()
+			break
+		}
+	}
+	return l.emit(TokenString)
 }

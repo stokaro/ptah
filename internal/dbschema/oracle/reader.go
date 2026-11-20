@@ -15,6 +15,7 @@
 package oracle
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"fmt"
@@ -26,6 +27,7 @@ import (
 	"ptah.run/core/platform"
 	"ptah.run/core/platform/capability"
 	lockbuiltin "ptah.run/internal/dblockext/builtin"
+	"ptah.run/internal/oraclecollation"
 	"ptah.run/internal/revisiontable"
 	"ptah.run/internal/sqlrunner"
 )
@@ -97,7 +99,7 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 	}
 	schema.Constraints = constraints
 
-	indexes, err := r.readIndexes(ctx)
+	indexes, err := r.readIndexes(ctx, schema.Tables)
 	if err != nil {
 		return nil, fmt.Errorf("oracle: read indexes: %w", err)
 	}
@@ -276,6 +278,13 @@ func (r *Reader) readTables(ctx context.Context) ([]catalog.Table, error) {
 // with a default. HIDDEN_COLUMN comes with it and has to be filtered, because
 // that view also lists the internal columns Oracle keeps for itself.
 //
+// COLLATION is the collation of a character column: USING_NLS_COMP where the
+// column names none, NULL on every other type, and the name upper-cased as
+// declared otherwise (measured on Oracle Free 23.26, STANDARD and EXTENDED,
+// and on 21.3 XE, STANDARD). ALL_TABLES.DEFAULT_COLLATION is the table's own,
+// which a column without a COLLATE of its own takes; [oraclecollation.Read]
+// turns the pair into the declared and the effective collation.
+//
 // IDENTITY_COLUMN says whether a column is an identity and not how it is
 // generated. ALL_TAB_IDENTITY_COLS.GENERATION_TYPE carries that, and it decides
 // whether the column takes an explicit value: GENERATED ALWAYS refuses one with
@@ -306,8 +315,13 @@ const columnQueryTail = `,
        c.virtual_column,
        c.data_default,
        cc.comments,
-       ic.generation_type
+       ic.generation_type,
+       c.collation,
+       t.default_collation
 FROM all_tab_cols c
+LEFT JOIN all_tables t
+       ON t.owner = c.owner
+      AND t.table_name = c.table_name
 LEFT JOIN all_col_comments cc
        ON cc.owner = c.owner
       AND cc.table_name = c.table_name
@@ -345,26 +359,29 @@ func (r *Reader) readColumns(ctx context.Context) (map[string][]catalog.Column, 
 	columns := make(map[string][]catalog.Column)
 	for rows.Next() {
 		var (
-			table      string
-			column     catalog.Column
-			charLength sql.NullInt64
-			charUsed   sql.NullString
-			precision  sql.NullInt64
-			scale      sql.NullInt64
-			nullable   string
-			position   sql.NullInt64
-			identity   string
-			virtual    string
-			def        sql.NullString
-			comment    sql.NullString
-			vectorInfo sql.NullString
-			generation sql.NullString
+			table        string
+			column       catalog.Column
+			charLength   sql.NullInt64
+			charUsed     sql.NullString
+			precision    sql.NullInt64
+			scale        sql.NullInt64
+			nullable     string
+			position     sql.NullInt64
+			identity     string
+			virtual      string
+			def          sql.NullString
+			comment      sql.NullString
+			vectorInfo   sql.NullString
+			generation   sql.NullString
+			collation    sql.NullString
+			tableDefault sql.NullString
 		)
 		if err := rows.Scan(&table, &column.Name, &column.DataType, &vectorInfo, &charLength, &charUsed,
 			&precision, &scale, &nullable, &position, &identity, &virtual, &def,
-			&comment, &generation); err != nil {
+			&comment, &generation, &collation, &tableDefault); err != nil {
 			return nil, err
 		}
+		column.Collate, column.EffectiveCollate = oraclecollation.Read(collation.String, tableDefault.String)
 		// Oracle has no empty string: a column with no comment and one whose
 		// comment was set to '' both read as NULL, so there is no state the
 		// zero value could be mistaken for.
@@ -638,13 +655,21 @@ WHERE i.owner = :1
   AND i.index_type <> 'LOB'
 ORDER BY i.table_name, i.index_name`
 
+// indexColumnQuery reads the key parts of every index, with the expression
+// ALL_IND_EXPRESSIONS keeps for a part that is not a plain column.
+// COLUMN_EXPRESSION is a LONG, so it is selected as itself and never filtered
+// or compared in SQL.
 const indexColumnQuery = `
-SELECT ic.index_name, ic.column_name, ic.descend, ic.column_position
+SELECT ic.index_name, ic.table_name, ic.column_name, ic.descend, ic.column_position, ie.column_expression
 FROM all_ind_columns ic
+LEFT JOIN all_ind_expressions ie
+       ON ie.index_owner = ic.index_owner
+      AND ie.index_name = ic.index_name
+      AND ie.column_position = ic.column_position
 WHERE ic.index_owner = :1
 ORDER BY ic.index_name, ic.column_position`
 
-func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
+func (r *Reader) readIndexes(ctx context.Context, tables []catalog.Table) ([]catalog.Index, error) {
 	rows, err := r.db.QueryContext(ctx, indexQuery, r.schema)
 	if err != nil {
 		return nil, err
@@ -666,7 +691,7 @@ func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 		return nil, err
 	}
 
-	columns, err := r.readIndexColumns(ctx)
+	columns, err := r.readIndexColumns(ctx, collationsOf(tables))
 	if err != nil {
 		return nil, err
 	}
@@ -675,14 +700,32 @@ func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 		indexes[i].Parts = parts
 		names := make([]string, 0, len(parts))
 		for _, part := range parts {
-			names = append(names, part.Name)
+			names = append(names, cmp.Or(part.Name, part.Expr))
 		}
 		indexes[i].Columns = names
 	}
 	return indexes, nil
 }
 
-func (r *Reader) readIndexColumns(ctx context.Context) (map[string][]catalog.IndexPart, error) {
+// collationsOf maps each table's column to the collation it compares with, the
+// lookup that tells a key over a collated column from a key a user wrote.
+func collationsOf(tables []catalog.Table) map[string]map[string]string {
+	held := make(map[string]map[string]string, len(tables))
+	for _, table := range tables {
+		columns := make(map[string]string, len(table.Columns))
+		for _, column := range table.Columns {
+			columns[column.Name] = column.EffectiveCollate
+		}
+		held[table.Name] = columns
+	}
+	return held
+}
+
+// readIndexColumns reads the key parts of every index. collations is the
+// collation each column of each table compares with, keyed by table and then
+// column name: a key listed under a hidden column is mapped back to the column
+// only when that column holds the sort the key applies.
+func (r *Reader) readIndexColumns(ctx context.Context, collations map[string]map[string]string) (map[string][]catalog.IndexPart, error) {
 	rows, err := r.db.QueryContext(ctx, indexColumnQuery, r.schema)
 	if err != nil {
 		return nil, err
@@ -691,15 +734,28 @@ func (r *Reader) readIndexColumns(ctx context.Context) (map[string][]catalog.Ind
 
 	parts := make(map[string][]catalog.IndexPart)
 	for rows.Next() {
-		var index, column, descend string
+		var index, table, column, descend string
 		var position sql.NullInt64
-		if err := rows.Scan(&index, &column, &descend, &position); err != nil {
+		var expression sql.NullString
+		if err := rows.Scan(&index, &table, &column, &descend, &position, &expression); err != nil {
 			return nil, err
 		}
-		parts[index] = append(parts[index], catalog.IndexPart{
-			Name: column,
-			Desc: descend == "DESC",
-		})
+		// A key over a column with a collation is listed under a hidden
+		// column; the key is the column's own when the column holds the sort
+		// the key applies (see oraclecollation.SortKeyColumn). A user's
+		// NLSSORT over a column that holds another collation is a
+		// function-based index like any other.
+		part := catalog.IndexPart{Name: column, Desc: descend == "DESC"}
+		base, sort, sorted := oraclecollation.SortKeyColumn(column, expression.String)
+		if sorted && strings.EqualFold(collations[table][base], sort) {
+			part.Name = base
+		} else if hidden := strings.HasPrefix(column, "SYS_NC") && strings.TrimSpace(expression.String) != ""; hidden {
+			// A function-based key is listed under a hidden column. The
+			// expression is what the key is, and a part carries one or the
+			// other.
+			part.Name, part.Expr = "", strings.TrimSpace(expression.String)
+		}
+		parts[index] = append(parts[index], part)
 	}
 	return parts, rows.Err()
 }
