@@ -141,14 +141,11 @@ func mysql() descriptor.Dialect {
 			MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true, BaseBytes: 61,
 		},
 		CheckNaming: descriptor.CheckNamingTableNumbered,
-		// Measured on 26.10.0: a CHECK named ck on one table and ck or CK on
-		// another of the database is refused, and so is ÉK after ék and İ after
-		// i; ek and ék are two names, and ẞ (U+1E9E) beside ß and ϴ (U+03F4)
-		// beside θ are accepted. Ptah folds ASCII letters only, so it never
-		// refuses a pair the server accepts and leaves the rest to the server.
+		// Measured on 26.10.0: see mysqlCheckNameFolds.
 		CheckNames: descriptor.CheckNames{
 			Scope: descriptor.CheckNameScopeSchema, Comparison: "ascii_case_insensitive",
-			Refusal: "Error 3822 (HY000): Duplicate check constraint name '{name}'.",
+			FoldedRanges: mysqlCheckNameFolds,
+			Refusal:      "Error 3822 (HY000): Duplicate check constraint name '{name}'.",
 		},
 		Columns: descriptor.Columns{
 			NationalCharAsChar: true, NationalCharCharset: "utf8mb3", CheckOwnColumnOnly: true,
@@ -525,4 +522,23 @@ func mysqlCharsetDefaults() map[string]string {
 		"utf16le": "utf16le_general_ci", "utf32": "utf32_general_ci",
 		"utf8mb3": "utf8mb3_general_ci", "utf8mb4": "utf8mb4_0900_ai_ci",
 	}
+}
+
+// Measured on 26.10.0 over every code point below U+20000 that has a
+// simple lowercase: a CHECK named ck on one table and ck or CK on
+// another of the database is refused, and so are ÉK after ék, İ after i
+// and the Kelvin sign after k, while ek and ék are two names, and ẞ
+// (U+1E9E) beside ß and ϴ (U+03F4) beside θ are accepted. The server
+// folds the Latin-1 and Latin Extended letters, the basic Greek,
+// Cyrillic and Armenian capitals, the polytonic Greek block, the
+// letterlike signs, the Roman numerals, the circled and the fullwidth
+// capitals. In each range below the run refused every pair, so Ptah
+// never refuses a pair the server accepts. A pair the server refuses
+// outside them reaches the server, which refuses it after the
+// statements before it have run, since MySQL DDL does not roll back.
+var mysqlCheckNameFolds = []descriptor.CodePointRange{
+	{First: 0xC0, Last: 0xDE}, {First: 0x100, Last: 0x1FF}, {First: 0x386, Last: 0x3AB},
+	{First: 0x400, Last: 0x42F}, {First: 0x531, Last: 0x556}, {First: 0x1F00, Last: 0x1FFF},
+	{First: 0x2126, Last: 0x212B}, {First: 0x2160, Last: 0x216F}, {First: 0x24B6, Last: 0x24CF},
+	{First: 0xFF21, Last: 0xFF3A},
 }

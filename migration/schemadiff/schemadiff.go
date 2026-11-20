@@ -441,7 +441,7 @@ func validateDeclaredBeforeComparison(
 	// keeps a CHECK name per table where a MySQL server keeps it per schema.
 	// A plan holding both names fails at the second CHECK, partway through an
 	// apply, and a compatibility diff would probe them on its dev database.
-	if err := schemaprep.ValidateCheckNames(desired, info.Dialect); err != nil {
+	if err := schemaprep.ValidateCheckNamesAs(desired, info.Dialect, info.IdentifierSemantics.Normalize(info.Dialect)); err != nil {
 		return err
 	}
 	if err := pgreservedrole.ValidateDeclared(info.Dialect, desired.Roles); err != nil {
