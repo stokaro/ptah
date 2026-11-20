@@ -59,7 +59,7 @@ func TestCompatMigrateLintSQLiteTempTableE2E(t *testing.T) {
 			args := append([]string{"migrate", "lint", "--dir", "file://migrations", "--dev-url", "sqlite://dev?mode=memory"}, scope.args...)
 
 			communityOut, communityStderr, err := runCLIProcess(c.Context(), dir, reference, args...)
-			compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()}, args...)
+			compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: strictEnvironment()}, args...)
 
 			c.Assert(exitStatusOf(c, err), qt.Equals, 0, qt.Commentf("community stdout:\n%s\nstderr:\n%s", communityOut, communityStderr))
 			c.Assert(compat.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))

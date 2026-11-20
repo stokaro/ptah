@@ -99,7 +99,7 @@ func TestCompatMigrateLintDropOfWhatNeverHeldDataE2E(t *testing.T) {
 			args := []string{"migrate", "lint", "--dir", "file://migrations", "--dev-url", "sqlite://dev?mode=memory", "--latest", "1"}
 
 			communityOut, communityStderr, err := runCLIProcess(c.Context(), dir, reference, args...)
-			compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: environmentWithoutPtahVariables()}, args...)
+			compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: dir, Env: strictEnvironment()}, args...)
 
 			c.Assert(compat.ExitCode, qt.Equals, exitStatusOf(c, err), qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
 			c.Assert(redactLintE2EDurations(compat.Stdout), qt.Equals, redactLintE2EDurations(communityOut))

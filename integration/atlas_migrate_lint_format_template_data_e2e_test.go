@@ -142,7 +142,7 @@ func TestCompatMigrateLintFormatTemplateDataE2E(t *testing.T) {
 			}
 
 			communityOut, communityErr, err := runCLIProcess(c.Context(), root, reference, args...)
-			compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: root, Env: environmentWithoutPtahVariables()}, args...)
+			compat := clirun.Run(c, clirun.Compat, clirun.Options{Dir: root, Env: strictEnvironment()}, args...)
 
 			c.Assert(compat.ExitCode, qt.Equals, exitStatusOf(c, err), qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
 			c.Assert(compat.Stdout, qt.Equals, communityOut)
