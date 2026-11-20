@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -411,6 +412,81 @@ func TestApplyRefusesAPlanWithABackslashOnABackslashEscapesSessionE2E(t *testing
 			c.Assert(applied.Stderr, qt.Contains, "the plan is written for a session whose sql_mode does not name NO_BACKSLASH_ESCAPES, "+
 				"the session's sql_mode names NO_BACKSLASH_ESCAPES, and a statement holds a backslash", historyComment(applied))
 			c.Assert(readNoBackslashEscapes(c, session, tablesIn), qt.Equals, "0")
+		})
+	}
+}
+
+// applyRefusal is the part of the `schema apply --json` document a caller acts
+// on when the run is refused.
+type applyRefusal struct {
+	Outcome string `json:"outcome"`
+	Refusal struct {
+		Code string `json:"code"`
+	} `json:"refusal"`
+}
+
+// decodeApplyRefusal reads the document a `schema apply --json` run printed.
+func decodeApplyRefusal(c *qt.C, result clirun.Result) applyRefusal {
+	c.Helper()
+	var document applyRefusal
+	c.Assert(json.Unmarshal([]byte(result.Stdout), &document), qt.IsNil, historyComment(result))
+	return document
+}
+
+// TestApplyReportsAPlanBackslashModeRefusalE2E runs the refused apply of
+// [TestApplyRefusesAPlanWithABackslashOnABackslashEscapesSessionE2E] with
+// --json, as a dry run and as a real one. The document ends the run as
+// refused with the backslash-mode code, which a caller tells apart from a
+// broken plan, and the database gains no table.
+func TestApplyReportsAPlanBackslashModeRefusalE2E(t *testing.T) {
+	rows := []struct {
+		name   string
+		engine dbtarget.Engine
+		mode   []string
+	}{
+		{name: "mysql, a dry run", engine: dbtarget.MySQLAdmin, mode: []string{"--dry-run"}},
+		{name: "mysql, an apply", engine: dbtarget.MySQLAdmin, mode: []string{"--auto-approve"}},
+		{name: "mariadb, a dry run", engine: dbtarget.MariaDBAdmin, mode: []string{"--dry-run"}},
+		{name: "mariadb, an apply", engine: dbtarget.MariaDBAdmin, mode: []string{"--auto-approve"}},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := mysqlFamilyScratchURL(c, row.engine, "planned")
+			plan := savePlan(c, database, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyFields))
+			session := withSQLMode(c, database, noBackslashEscapesMode)
+
+			applied := runPtahIn(c, append([]string{"schema", "apply", "--db-url", session, "--plan", plan, "--json"}, row.mode...)...)
+
+			c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, historyComment(applied))
+			c.Assert(decodeApplyRefusal(c, applied), qt.DeepEquals, applyRefusal{
+				Outcome: "refused",
+				Refusal: struct {
+					Code string `json:"code"`
+				}{Code: "backslash-mode"},
+			})
+			c.Assert(readNoBackslashEscapes(c, session, tablesIn), qt.Equals, "0")
+		})
+	}
+}
+
+// TestApplyReportsARehearsalBackslashModeRefusalE2E runs the refused apply of
+// [TestApplyRefusesARehearsalAcrossBackslashModesE2E] with --json: the
+// rehearsal's refusal carries the same code as the saved plan's.
+func TestApplyReportsARehearsalBackslashModeRefusalE2E(t *testing.T) {
+	for _, row := range backslashModeRows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			target := withSQLMode(c, mysqlFamilyScratchURL(c, row.engine, "rehearsed"), row.first)
+			dev := withSQLMode(c, mysqlFamilyScratchURL(c, row.engine, "dev"), row.second)
+			flag, path := modelDir(c, escapedLiteralModel(` comment="c\\d"`, mysqlFamilyFields))
+
+			applied := runPtahIn(c, "schema", "apply", "--db-url", target, flag, path, "--dev-url", dev, "--auto-approve", "--json")
+
+			c.Assert(applied.ExitCode, qt.Not(qt.Equals), 0, historyComment(applied))
+			c.Assert(decodeApplyRefusal(c, applied).Refusal.Code, qt.Equals, "backslash-mode", historyComment(applied))
+			c.Assert(decodeApplyRefusal(c, applied).Outcome, qt.Equals, "refused")
+			c.Assert(readNoBackslashEscapes(c, target, tablesIn), qt.Equals, "0")
 		})
 	}
 }

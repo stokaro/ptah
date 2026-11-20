@@ -173,10 +173,10 @@ func refuseRehearsalAcrossBackslashModes(target, dev catalog.ServerInfo, stateme
 	if !backslashmode.ReadDifferently(target.Capabilities, dev.Capabilities, statements) {
 		return nil
 	}
-	return fmt.Errorf("%w: the target session's sql_mode %s and the dev session's %s, and a statement holds a backslash, "+
+	return &BackslashModeError{Err: fmt.Errorf("%w: the target session's sql_mode %s and the dev session's %s, and a statement holds a backslash, "+
 		"which the two sessions read differently, so the rehearsal would not run what the apply runs; "+
 		"give the dev database the target's sql_mode", ptaherr.ErrUnsupportedFeature,
-		backslashmode.Describe(target.Capabilities), backslashmode.Describe(dev.Capabilities))
+		backslashmode.Describe(target.Capabilities), backslashmode.Describe(dev.Capabilities))}
 }
 
 // discardDevRehearsalArtifacts drops what the rehearsal created in the dev

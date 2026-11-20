@@ -148,3 +148,35 @@ func TestRefusal_ViewOptionsWireNames(t *testing.T) {
 	c.Assert(string(got), qt.Equals,
 		`{"code":"view-security-option","view_options":[{"view":"v","option":"security_invoker"}]}`)
 }
+
+// TestNewApplyReport_NamesTheBackslashModeRefusal holds both backslash-mode
+// refusals to their code: a saved plan on a session whose sql_mode reads its
+// backslashes differently, and a rehearsal on such a dev session. Each is
+// raised before a statement is sent, so a dispatched run names no code.
+func TestNewApplyReport_NamesTheBackslashModeRefusal(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "a saved plan", err: fmt.Errorf("verify plan: %w", &atlasschema.BackslashModeError{
+			Err: fmt.Errorf("%w: the plan is written for a session whose sql_mode does not name NO_BACKSLASH_ESCAPES", ptaherr.ErrUnsupportedFeature),
+		})},
+		{name: "a rehearsal", err: fmt.Errorf("rehearse: %w", &atlasschema.BackslashModeError{
+			Err: fmt.Errorf("%w: the target session's sql_mode does not name NO_BACKSLASH_ESCAPES", ptaherr.ErrUnsupportedFeature),
+		})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			refused := atlasschema.NewApplyReport(atlasschema.ApplyEvidence{Err: test.err})
+			dispatched := atlasschema.NewApplyReport(atlasschema.ApplyEvidence{Dispatched: true, Err: test.err})
+
+			c.Assert(refused.Outcome, qt.Equals, atlasschema.ApplyOutcomeRefused)
+			c.Assert(refused.Refusal, qt.DeepEquals, &atlasschema.Refusal{Code: atlasschema.RefusalBackslashMode})
+			c.Assert(refused.Error, qt.DeepEquals, &errorkind.Report{Message: test.err.Error()})
+			c.Assert(dispatched.Outcome, qt.Equals, atlasschema.ApplyOutcomeUnknown)
+			c.Assert(dispatched.Refusal, qt.IsNil)
+		})
+	}
+}

@@ -689,7 +689,8 @@ SQL:
   without `--plan` there. The `--dev-url` rehearsal refuses a plan that holds a
   backslash when the dev session and the target session disagree on
   `NO_BACKSLASH_ESCAPES`; give the dev database the target's `sql_mode`. A plan
-  without a backslash runs on either session.
+  without a backslash runs on either session. With `--json`, both refusals end
+  the run as `refused` with the code `backslash-mode`.
 - `ptah-compat` writes these literals the same way, so on a
   `NO_BACKSLASH_ESCAPES` session it stores the declared value. The community
   binary stores four backslashes where the declaration holds one (measured

@@ -173,6 +173,13 @@ const (
 	// states, because this target cannot host it or plan it. The error message
 	// names the declaration. Change it or target another engine.
 	RefusalDeclarationRefused RefusalCode = "declaration-refused"
+	// RefusalBackslashMode means statements that hold a backslash would run on
+	// a session that reads them differently from the session they are written
+	// for, because one sql_mode names NO_BACKSLASH_ESCAPES and the other does
+	// not: a saved plan on the target session, or the --dev-url rehearsal on a
+	// dev session the target disagrees with. Apply the desired schema without
+	// --plan, or give both sessions one sql_mode.
+	RefusalBackslashMode RefusalCode = "backslash-mode"
 )
 
 // Refusal is the reason a plan or an apply refused, with the details a caller
@@ -592,6 +599,7 @@ func refusalFor(err error) *Refusal {
 	var ownerSchema *OwnerSchemaError
 	var dependentObject *planrefusal.DependentObjectError
 	var declaration *planrefusal.DeclarationError
+	var backslash *BackslashModeError
 	switch {
 	case errors.As(err, &stale):
 		changed := "schema"
@@ -638,6 +646,8 @@ func refusalFor(err error) *Refusal {
 		return &Refusal{Code: RefusalDependentObject}
 	case errors.As(err, &declaration):
 		return &Refusal{Code: RefusalDeclarationRefused}
+	case errors.As(err, &backslash):
+		return &Refusal{Code: RefusalBackslashMode}
 	default:
 		return nil
 	}
