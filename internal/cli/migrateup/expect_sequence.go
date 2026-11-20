@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -33,11 +34,63 @@ type expectedSequence struct {
 	Repeatables []expectedRepeatable `json:"repeatables,omitempty"`
 }
 
-// expectedRepeatable is one approved repeatable migration: its identity and
-// the digest of the content the caller saw.
+// expectedRepeatable is one approved repeatable migration: its identity, the
+// digest of the content the caller saw, and optionally the digest the caller
+// saw recorded as applied for that identity.
+//
+// AppliedChecksum is absent when the caller makes no claim about the record,
+// and then the record is not compared. Present, it is the digest the run must
+// find recorded under the lock, and an empty string says the caller saw no
+// record. An approval that shows "changed from X" binds X: another writer that
+// applies a third version between the caller's read and the run moves the
+// record, and the approved body would otherwise run over a state the approver
+// never saw.
 type expectedRepeatable struct {
-	Identity string `json:"identity"`
-	Checksum string `json:"checksum"`
+	Identity        string       `json:"identity"`
+	Checksum        string       `json:"checksum"`
+	AppliedChecksum appliedClaim `json:"applied_checksum"`
+}
+
+// appliedClaim is the applied digest an approval binds, and whether it binds
+// one at all. JSON null is refused rather than read as either: a caller that
+// writes null may mean "no record", which is the empty string, or "no claim",
+// which is an absent field, and guessing either way enforces a constraint the
+// caller did not set or drops one it did.
+type appliedClaim struct {
+	bound  bool
+	digest string
+}
+
+// UnmarshalJSON reads a string, and refuses null and any other JSON value.
+func (a *appliedClaim) UnmarshalJSON(content []byte) error {
+	if string(bytes.TrimSpace(content)) == "null" {
+		return errors.New("applied_checksum is null: write the digest, an empty string for no record, " +
+			"or leave the field out to make no claim about the record")
+	}
+	if err := json.Unmarshal(content, &a.digest); err != nil {
+		return fmt.Errorf("applied_checksum: %w", err)
+	}
+	a.bound = true
+	return nil
+}
+
+// approved is the entry as the comparison names it: identity@checksum, and
+// where the entry binds the record, the digest it runs over, or "nothing" for
+// no record.
+func (r expectedRepeatable) approved() string {
+	if !r.AppliedChecksum.bound {
+		return r.Identity + "@" + r.Checksum
+	}
+	return r.Identity + "@" + r.Checksum + " over " + recordedOrNothing(r.AppliedChecksum.digest)
+}
+
+// recordedOrNothing spells an applied digest for a comparison, and an empty
+// one, which no record has, as "nothing".
+func recordedOrNothing(applied string) string {
+	if applied == "" {
+		return "nothing"
+	}
+	return applied
 }
 
 // expectedMigration is one approved migration, named the way the revision
@@ -135,8 +188,9 @@ type RepeatableSequenceMismatchError struct {
 	Selected []string
 }
 
-// Error names both lists, each entry as identity@checksum, and says nothing
-// ran.
+// Error names both lists, each entry as identity@checksum followed, where the
+// approval binds the record, by the applied digest it runs over, and says
+// nothing ran.
 func (e *RepeatableSequenceMismatchError) Error() string {
 	return fmt.Sprintf(
 		"the repeatable migrations selected under the migration lock are [%s], and the approved repeatables are "+
@@ -165,11 +219,18 @@ func (e *expectedSequence) check(plan migrator.MigrationPlan) error {
 	}
 	expectedRepeatables := make([]string, 0, len(e.Repeatables))
 	for _, repeatable := range e.Repeatables {
-		expectedRepeatables = append(expectedRepeatables, repeatable.Identity+"@"+repeatable.Checksum)
+		expectedRepeatables = append(expectedRepeatables, repeatable.approved())
 	}
+	// A selected entry names its record where the approved entry at the same
+	// place binds one, so an approval that makes no claim about the record
+	// compares identity and checksum alone.
 	selectedRepeatables := make([]string, 0, len(plan.Repeatables))
-	for _, work := range plan.Repeatables {
-		selectedRepeatables = append(selectedRepeatables, work.Identity+"@"+work.Checksum)
+	for index, work := range plan.Repeatables {
+		selected := work.Identity + "@" + work.Checksum
+		if index < len(e.Repeatables) && e.Repeatables[index].AppliedChecksum.bound {
+			selected += " over " + recordedOrNothing(work.AppliedChecksum)
+		}
+		selectedRepeatables = append(selectedRepeatables, selected)
 	}
 	if !slices.Equal(expectedRepeatables, selectedRepeatables) {
 		return &RepeatableSequenceMismatchError{Expected: expectedRepeatables, Selected: selectedRepeatables}

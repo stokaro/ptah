@@ -165,3 +165,118 @@ func TestMigrateUpRepeatables_FailurePath(t *testing.T) {
 		c.Assert(seqRevisions(c, dbPath), qt.HasLen, 0)
 	})
 }
+
+// writeExpectedRepeatableOver writes an --expect-sequence document approving
+// version 1 and the audit repeatable with checksum, run over the applied
+// digest applied, where an empty applied says no record.
+func writeExpectedRepeatableOver(c *qt.C, checksum, applied string) string {
+	c.Helper()
+	content, err := json.Marshal(map[string]any{
+		"migrations":  []map[string]any{{"version": 1}},
+		"repeatables": []map[string]any{{"identity": "audit", "checksum": checksum, "applied_checksum": applied}},
+	})
+	c.Assert(err, qt.IsNil)
+	path := filepath.Join(c.TempDir(), "expected.json")
+	c.Assert(os.WriteFile(path, content, 0o600), qt.IsNil)
+	return path
+}
+
+// TestMigrateUpRepeatableAppliedChecksum_HappyPath runs repeatable work whose
+// approval binds the record it runs over: no record for a first run, and the
+// digest that applied before for a changed body.
+func TestMigrateUpRepeatableAppliedChecksum_HappyPath(t *testing.T) {
+	t.Run("a first run over no record", func(t *testing.T) {
+		c := qt.New(t)
+		dir := writeRepeatableDirectory(c, cliRepeatableBody)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		expected := writeExpectedRepeatableOver(c, cliH1(cliRepeatableBody), "")
+
+		out, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--expect-sequence", expected)
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(cliRepeatableRuns(c, dbPath), qt.Equals, 1)
+	})
+
+	t.Run("a changed body over the digest that applied", func(t *testing.T) {
+		c := qt.New(t)
+		dir := writeRepeatableDirectory(c, cliRepeatableBody)
+		dbPath := filepath.Join(c.TempDir(), "app.db")
+		_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir)
+		c.Assert(err, qt.IsNil)
+		changed := cliRepeatableBody + "-- changed\n"
+		c.Assert(os.WriteFile(filepath.Join(dir, "R__audit.sql"), []byte(changed), 0o600), qt.IsNil)
+		expected := `{"migrations": [], "repeatables": [{"identity": "audit", "checksum": "` + cliH1(changed) +
+			`", "applied_checksum": "` + cliH1(cliRepeatableBody) + `"}]}`
+		path := filepath.Join(c.TempDir(), "expected.json")
+		c.Assert(os.WriteFile(path, []byte(expected), 0o600), qt.IsNil)
+
+		out, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--expect-sequence", path)
+
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		c.Assert(cliRepeatableRuns(c, dbPath), qt.Equals, 2)
+	})
+}
+
+// TestMigrateUpRepeatableAppliedChecksum_FailurePath refuses repeatable work
+// whose record is not the one the approval binds, before anything runs: a
+// record the approval did not see, and one that moved to another digest.
+func TestMigrateUpRepeatableAppliedChecksum_FailurePath(t *testing.T) {
+	changed := cliRepeatableBody + "-- changed\n"
+	tests := []struct {
+		name    string
+		applied string
+		wantErr string
+	}{
+		{
+			name:    "an approval that saw no record",
+			applied: "",
+			wantErr: `(?s).*the repeatable migrations selected under the migration lock are \[audit@h1:\S+ over h1:\S+\], ` +
+				`and the approved repeatables are \[audit@h1:\S+ over nothing\].*`,
+		},
+		{
+			name:    "an approval that saw another digest applied",
+			applied: cliH1("SELECT 2;\n"),
+			wantErr: `(?s).*the repeatable migrations selected under the migration lock are \[audit@h1:\S+ over h1:\S+\], ` +
+				`and the approved repeatables are \[audit@h1:\S+ over h1:\S+\].*`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeRepeatableDirectory(c, cliRepeatableBody)
+			dbPath := filepath.Join(c.TempDir(), "app.db")
+			_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir)
+			c.Assert(err, qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(dir, "R__audit.sql"), []byte(changed), 0o600), qt.IsNil)
+			expected := `{"migrations": [], "repeatables": [{"identity": "audit", "checksum": "` + cliH1(changed) +
+				`", "applied_checksum": "` + tc.applied + `"}]}`
+			path := filepath.Join(c.TempDir(), "expected.json")
+			c.Assert(os.WriteFile(path, []byte(expected), 0o600), qt.IsNil)
+
+			_, err = runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--expect-sequence", path)
+
+			c.Assert(err, qt.ErrorMatches, tc.wantErr)
+			c.Assert(cliRepeatableRuns(c, dbPath), qt.Equals, 1)
+		})
+	}
+}
+
+// TestMigrateUpRepeatableAppliedChecksum_RefusesNull refuses an approval whose
+// applied_checksum is null before the run connects, since null could mean no
+// record or no claim, and the run can enforce only one of them.
+func TestMigrateUpRepeatableAppliedChecksum_RefusesNull(t *testing.T) {
+	c := qt.New(t)
+	dir := writeRepeatableDirectory(c, cliRepeatableBody)
+	dbPath := filepath.Join(c.TempDir(), "app.db")
+	path := filepath.Join(c.TempDir(), "expected.json")
+	expected := `{"migrations": [{"version": 1}], "repeatables": [{"identity": "audit", "checksum": "` +
+		cliH1(cliRepeatableBody) + `", "applied_checksum": null}]}`
+	c.Assert(os.WriteFile(path, []byte(expected), 0o600), qt.IsNil)
+
+	_, err := runUpThroughRoot("--db-url", "sqlite://"+dbPath, "--migrations-dir", dir, "--expect-sequence", path)
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*parse --expect-sequence: applied_checksum is null: write the digest, `+
+		`an empty string for no record, or leave the field out to make no claim about the record.*`)
+	_, statErr := os.Stat(dbPath)
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+}
