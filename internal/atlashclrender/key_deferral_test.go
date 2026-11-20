@@ -31,22 +31,28 @@ func deferrableKeyDatabase(primaryKey, unique bool) *schemamodel.Database {
 // TestRender_DeferrableKey_FailurePath refuses a key that defers its check:
 // Atlas HCL writes a UNIQUE as a unique index, which cannot defer, and has no
 // deferral on a primary key. Written plain, the key would reject at once the
-// rows its author arranged to fix before commit.
+// rows its author arranged to fix before commit. A UNIQUE the server named,
+// which a description leaves unnamed, is named by its table and columns.
 func TestRender_DeferrableKey_FailurePath(t *testing.T) {
 	tests := []struct {
 		name       string
 		primaryKey bool
 		unique     bool
+		uniqueName string
 		wantErr    string
 	}{
-		{name: "a primary key", primaryKey: true, wantErr: `the primary key of table "slots" defers its check, which Atlas HCL cannot represent`},
-		{name: "a UNIQUE", unique: true, wantErr: `UNIQUE "slots_pos_key" defers its check, which Atlas HCL cannot represent`},
+		{name: "a primary key", primaryKey: true, uniqueName: "slots_pos_key", wantErr: `the primary key of table "slots" defers its check, which Atlas HCL cannot represent`},
+		{name: "a UNIQUE", unique: true, uniqueName: "slots_pos_key", wantErr: `UNIQUE "slots_pos_key" defers its check, which Atlas HCL cannot represent`},
+		{name: "an unnamed UNIQUE", unique: true, wantErr: `the UNIQUE on table "slots" over \(pos\) defers its check, which Atlas HCL cannot represent`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := atlashclrender.RenderInspected(deferrableKeyDatabase(test.primaryKey, test.unique), "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
+			database := deferrableKeyDatabase(test.primaryKey, test.unique)
+			database.Constraints[0].Name = test.uniqueName
+
+			result, err := atlashclrender.RenderInspected(database, "public", atlashclrender.Options{HCL: builtintest.Runtime().HCL(), Dialect: "postgres"})
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(result, qt.DeepEquals, atlashclrender.Result{})
