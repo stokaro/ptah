@@ -30,6 +30,8 @@ var separateVocabularies = map[string]string{
 		"it spells the lint subset of this scale (info, warning, error), pinned by migration/lint's tests",
 	"internal/adoptpreflight": "scores a preflight outcome (ok, action, refuse), not a level",
 	"internal/embedverify":    "scores a gate outcome (blocking, advisory), not a level",
+	"internal/vulnerability": "rates an advisory's CVSS v3 base score (none, low, medium, high, critical) " +
+		"as advisory sources publish it, which a scan filters by and never reports as a finding level",
 }
 
 // TestSeverity_EveryOtherVocabularyIsRecorded makes the doc comment enforceable.

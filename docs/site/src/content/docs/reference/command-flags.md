@@ -321,10 +321,13 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--advisories` | `string` | — | `PTAH_ADVISORIES` | — |
-| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--db-url` | `stringArray` | `[]` | `PTAH_DB_URL` | — |
 | `--deployment` | `string` | `self-managed` | `PTAH_DEPLOYMENT` | — |
 | `--fail-on` | `string` | `both` | `PTAH_FAIL_ON` | — |
+| `--fail-severity` | `string` | `none` | `PTAH_FAIL_SEVERITY` | — |
 | `--format` | `string` | `table` | `PTAH_FORMAT` | — |
+| `--ignore` | `stringArray` | `[]` | `PTAH_IGNORE` | — |
+| `--min-severity` | `string` | `none` | `PTAH_MIN_SEVERITY` | — |
 | `--provider-config` | `string` | — | — | — |
 | `--provider-engine` | `string` | — | — | — |
 | `--provider-exchanges` | `string` | — | — | — |

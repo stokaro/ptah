@@ -16,9 +16,10 @@ import (
 // conflict rather than guessed at in either direction (stokaro/ptah#2768).
 func mysql() descriptor.Dialect {
 	return descriptor.Dialect{
-		Name:    "mysql",
-		Aliases: []string{"mysql+unix"},
-		Family:  "mysql",
+		Name:              "mysql",
+		VulnerabilityScan: "supported",
+		Aliases:           []string{"mysql+unix"},
+		Family:            "mysql",
 		Identifiers: descriptor.Identifiers{
 			IndexNamespace: "table",
 			IndexNames:     "ascii_folded_non_ascii_unknown",
