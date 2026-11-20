@@ -256,7 +256,60 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database, da
 		return nil
 	}
 	schema.RoleMemberships = memberships
+
+	wide, err := r.readWideAccess(ctx)
+	if err != nil {
+		if !isRoleReadDenied(err) {
+			return fmt.Errorf("failed to read global privileges: %w", err)
+		}
+		// Left nil: the security analysis then says it could not measure a
+		// role's reach, rather than measuring it without what is granted on
+		// every database.
+		wide = nil
+	}
+	schema.WideAccess = wide
 	return r.readConnectedRole(ctx, schema)
+}
+
+// readWideAccess reads the privileges each role holds on every database, the
+// `GRANT SELECT ON *.*` kind. A description of one database leaves them out,
+// because a statement that grants them is not part of that database, but the
+// role still reaches every table in it: without this, a role holding global
+// SELECT reads the whole database while the grants say it reads nothing.
+//
+// SELECT is read access, and INSERT, UPDATE or DELETE is write access. Other
+// global privileges change no rows and are not reported. The privilege columns
+// of mysql.user are read rather than information_schema.USER_PRIVILEGES,
+// which on MariaDB lists no role.
+func (r *Reader) readWideAccess(ctx context.Context) ([]catalog.WideAccess, error) {
+	predicate, err := r.rolePredicate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT user, Select_priv = 'Y', Insert_priv = 'Y' OR Update_priv = 'Y' OR Delete_priv = 'Y'
+		FROM mysql.user
+		WHERE `+predicate+`
+			  AND user NOT LIKE 'mysql.%'
+			  AND (Select_priv = 'Y' OR Insert_priv = 'Y' OR Update_priv = 'Y' OR Delete_priv = 'Y')
+		ORDER BY user`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	access := make([]catalog.WideAccess, 0)
+	for rows.Next() {
+		held := catalog.WideAccess{Source: "global privileges"}
+		if err := rows.Scan(&held.Role, &held.Read, &held.Write); err != nil {
+			return nil, err
+		}
+		access = append(access, held)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return access, nil
 }
 
 // readConnectedRole records the role this connection runs as. CURRENT_USER()

@@ -66,6 +66,8 @@ type Detail struct {
 	Roles []string `json:"roles,omitempty"`
 	// Language is the routine's language, where the finding is about one.
 	Language string `json:"language,omitempty"`
+	// Reach is the measurement behind a reach finding.
+	Reach *ReachDetail `json:"reach,omitempty"`
 }
 
 // Finding is one result.
@@ -247,6 +249,10 @@ type Options struct {
 	// refinements included. An empty set runs no capability-gated rule and says
 	// so in SkippedRules.
 	Capabilities capability.Capabilities
+	// Reach is what roles/read-reach and roles/write-reach measure over. Nil
+	// means the caller could not establish it, and both rules report
+	// themselves skipped; see [ReachFromCatalog].
+	Reach *Reach
 	// DatabasePath is the absolute path of the database db was read from,
 	// such as YDB's /local, and empty for a declaration. A finding about a
 	// grant on the database itself names the database by it, and by its kind
@@ -310,6 +316,17 @@ func Analyze(db *schemamodel.Database, opts Options) Report {
 		report.SkippedRules = append(report.SkippedRules,
 			SkippedRule{Code: "ROL03", Reason: "role membership was not read for this source"},
 			SkippedRule{Code: "ROL04", Reason: "role membership was not read for this source"},
+		)
+	}
+
+	if opts.Reach != nil {
+		report.Findings = append(report.Findings, findBroadReach(opts.Reach)...)
+	} else {
+		const reason = "the access no object grant states -- superuser, predefined roles, " +
+			"server-wide privileges -- was not read for this source, so a role's reach would be measured short"
+		report.SkippedRules = append(report.SkippedRules,
+			SkippedRule{Code: ReadReachRule, Reason: reason},
+			SkippedRule{Code: WriteReachRule, Reason: reason},
 		)
 	}
 

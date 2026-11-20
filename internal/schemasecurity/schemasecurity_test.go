@@ -32,6 +32,9 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		owners []schemasecurity.ObjectOwner
 		// revokes are the privileges owners revoked from themselves.
 		revokes []schemasecurity.OwnerRevoke
+		// reach is what the reach rules measure; nil means the caller could
+		// not establish it.
+		reach *schemasecurity.Reach
 		// wantCodes are the finding codes, in the order Analyze sorts them.
 		wantCodes []string
 		// wantSkipped are the rules SkippedRules names.
@@ -47,7 +50,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   []string{"PRV03"},
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "the same grant to a named role is not",
@@ -59,7 +62,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "a SECURITY DEFINER routine is reported",
@@ -70,7 +73,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV02"},
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "a SECURITY INVOKER routine is not",
@@ -81,7 +84,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "a granted table with no row-level security is reported",
@@ -92,7 +95,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV01"},
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "the same table with the row-security owner's switch on is not",
@@ -104,7 +107,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "the same table with the row-security owner's switch off is reported",
@@ -116,7 +119,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV01"},
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "the same table with row-level security enabled is not",
@@ -128,7 +131,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			// The rule cannot be answered where the target has no such
@@ -142,7 +145,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"PRV01", "OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"PRV01", "OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			// PostgreSQL creates this grant in every database; a rule that
@@ -155,7 +158,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			// CREATE was revoked from PUBLIC by default in PostgreSQL 15, so a
@@ -168,7 +171,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV03"},
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "a role nobody holds and that cannot log in is reported",
@@ -178,7 +181,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			},
 			memberships: make([]schemasecurity.RoleMembership, 0),
 			wantCodes:   []string{"ROL04"},
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "the same role with a member is not",
@@ -188,7 +191,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			},
 			memberships: []schemasecurity.RoleMembership{{Role: "reporting", Member: "alice"}},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			// A login role is its own principal. Reporting every application
@@ -200,7 +203,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			},
 			memberships: make([]schemasecurity.RoleMembership, 0),
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "two roles held by one member that grant the same privileges are reported",
@@ -224,7 +227,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				{Role: "analyst", Member: "alice"},
 			},
 			wantCodes:   []string{"ROL03"},
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			// One shared privilege out of two is a coincidence, not a
@@ -252,7 +255,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				{Role: "writer", Member: "alice"},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			// Measured on MariaDB 11.8: CREATE ROLE inserts an admin edge from
@@ -267,7 +270,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				{Role: "reporting", Member: "root", AdminOption: true},
 			},
 			wantCodes:   []string{"ROL04"},
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:    "two roles held only with admin option are not an overlap",
@@ -296,7 +299,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// alice only: root holds both roles with admin option, which is the
 			// right to grant them rather than evidence anybody uses them.
 			wantCodes:   []string{"ROL03"},
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:     "objects owned by a login role are reported once for that role",
@@ -310,7 +313,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			// One finding, not three: the rule is about the owner, and a row
 			// per object would bury every other finding on a real schema.
 			wantCodes:   []string{"OWN01"},
-			wantSkipped: []string{"ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:     "the same objects owned by a role that cannot log in are not",
@@ -321,7 +324,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				{Kind: "schema", Name: "public", Owner: "app_owner", OwnerCanLogin: new(false)},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			// An owner whose login state the read did not establish cannot be
@@ -336,7 +339,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				{Kind: "table", Name: "users", Owner: "postgres"},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			// The read reports the owner's direct ACL entry: a privilege the
@@ -351,7 +354,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				{Kind: "table", Name: "public.orders", Owner: "app_owner", Privilege: "DELETE"},
 			},
 			wantCodes:   []string{"OWN02"},
-			wantSkipped: []string{"ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 		{
 			name:        "an owner that holds every default privilege is not",
@@ -360,6 +363,41 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			owners:      []schemasecurity.ObjectOwner{{Kind: "table", Name: "public.orders", Owner: "app_owner", OwnerCanLogin: new(false)}},
 			revokes:     make([]schemasecurity.OwnerRevoke, 0),
 			wantCodes:   make([]string, 0),
+			wantSkipped: []string{"ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
+		},
+		{
+			name:     "a role that reads most relations is reported",
+			dialect:  "postgres",
+			database: &schemamodel.Database{},
+			owners:   make([]schemasecurity.ObjectOwner, 0),
+			revokes:  make([]schemasecurity.OwnerRevoke, 0),
+			reach: &schemasecurity.Reach{
+				Relations: []schemasecurity.ReachRelation{{Name: "a"}, {Name: "b"}, {Name: "c"}},
+				Grants: []schemasecurity.ReachGrant{
+					{Role: "app", Relation: schemasecurity.ReachRelation{Name: "a"}, Read: true},
+					{Role: "app", Relation: schemasecurity.ReachRelation{Name: "b"}, Read: true},
+				},
+				Principals:  []schemasecurity.ReachPrincipal{{Name: "app"}},
+				WarnPercent: 50, ErrorPercent: 75,
+			},
+			wantCodes:   []string{"roles/read-reach"},
+			wantSkipped: []string{"ROL01", "ROL03", "ROL04"},
+		},
+		{
+			name:     "a role that reads half of them is not",
+			dialect:  "postgres",
+			database: &schemamodel.Database{},
+			owners:   make([]schemasecurity.ObjectOwner, 0),
+			revokes:  make([]schemasecurity.OwnerRevoke, 0),
+			reach: &schemasecurity.Reach{
+				Relations: []schemasecurity.ReachRelation{{Name: "a"}, {Name: "b"}},
+				Grants: []schemasecurity.ReachGrant{
+					{Role: "app", Relation: schemasecurity.ReachRelation{Name: "a"}, Read: true},
+				},
+				Principals:  []schemasecurity.ReachPrincipal{{Name: "app"}},
+				WarnPercent: 50, ErrorPercent: 75,
+			},
+			wantCodes:   make([]string, 0),
 			wantSkipped: []string{"ROL01", "ROL03", "ROL04"},
 		},
 		{
@@ -367,7 +405,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			dialect:     "postgres",
 			database:    &schemamodel.Database{},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04"},
+			wantSkipped: []string{"OWN01", "OWN02", "ROL01", "ROL03", "ROL04", "roles/read-reach", "roles/write-reach"},
 		},
 	}
 
@@ -380,6 +418,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RoleMemberships: test.memberships,
 				ObjectOwners:    test.owners,
 				OwnerRevokes:    test.revokes,
+				Reach:           test.reach,
 			})
 
 			codes := make([]string, 0, len(report.Findings))
@@ -421,6 +460,7 @@ func TestAnalyze_OwnersOfUnknownLoginStateAreNamedAsNotChecked(t *testing.T) {
 		},
 		RoleMemberships: make([]schemasecurity.RoleMembership, 0),
 		RoleObjectUsage: make([]schemasecurity.RoleObjectUsage, 0),
+		Reach:           &schemasecurity.Reach{},
 	})
 
 	c.Assert(report.Findings, qt.HasLen, 1)

@@ -173,6 +173,7 @@ func excludeDatabase(
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
 	filtered.Roles = state.filterRoles(filtered.Roles)
 	filtered.RoleMemberships = state.filterRoleMemberships(filtered.RoleMemberships)
+	filtered.WideAccess = state.filterWideAccess(filtered.WideAccess)
 	filtered.ObjectOwners = state.filterObjectOwners(filtered.ObjectOwners)
 	filtered.Grants = state.filterGrants(filtered.Grants, excludedObjects(schema.FeatureObjects, filtered.FeatureObjects))
 	state.noteReservedNames(filtered.ReservedNames)
@@ -1534,6 +1535,18 @@ func (s *exclusionState) filterRoleMemberships(
 	})
 }
 
+// filterWideAccess drops the access an excluded role holds, which the `role`
+// selector answers as it does for a membership. Nil stays nil: it says the
+// read did not establish the access, and an empty list would say the read
+// found none, which lets the security analysis measure a superuser as
+// reaching nothing.
+func (s *exclusionState) filterWideAccess(access []catalog.WideAccess) []catalog.WideAccess {
+	if access == nil {
+		return nil
+	}
+	return keep(access, func(held catalog.WideAccess) bool { return !s.matches("role", held.Role) })
+}
+
 // excludedObjects reports, by identity, the feature objects of before that an
 // exclusion took out of after.
 func excludedObjects(before, after schemaext.Objects) func(objectidentity.ID) bool {
@@ -2380,6 +2393,7 @@ func cloneDatabase(schema *catalog.Database) *catalog.Database {
 		Roles:           slices.Clone(schema.Roles),
 		Grants:          slices.Clone(schema.Grants),
 		RoleMemberships: slices.Clone(schema.RoleMemberships),
+		WideAccess:      slices.Clone(schema.WideAccess),
 		ObjectOwners:    cloneObjectOwners(schema.ObjectOwners),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
