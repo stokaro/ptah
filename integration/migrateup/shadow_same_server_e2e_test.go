@@ -19,7 +19,8 @@ import (
 )
 
 // sameServerDatabases creates two empty databases on engine's server and
-// returns their addresses, with a handle on the first.
+// returns their addresses, with a handle on the first. Creating a database
+// takes an administrative account, so engine is an admin target.
 func sameServerDatabases(c *qt.C, engine dbtarget.Engine) (target, shadow string, conn *dbschema.DatabaseConnection) {
 	c.Helper()
 	address := dbtarget.URL(c, engine)
@@ -79,8 +80,8 @@ func TestCheckDriftShadowOnTheTargetServerE2E_HappyPath(t *testing.T) {
 		name   string
 		engine dbtarget.Engine
 	}{
-		{name: "mysql", engine: dbtarget.MySQL},
-		{name: "mariadb", engine: dbtarget.MariaDB},
+		{name: "mysql", engine: dbtarget.MySQLAdmin},
+		{name: "mariadb", engine: dbtarget.MariaDBAdmin},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
