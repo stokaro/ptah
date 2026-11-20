@@ -141,12 +141,7 @@ func mysql() descriptor.Dialect {
 			MaxBytes: 64, FunctionalBase: "functional_index", UniqueIsIndex: true, BaseBytes: 61,
 		},
 		CheckNaming: descriptor.CheckNamingTableNumbered,
-		// Measured on 26.10.0: see mysqlCheckNameFolds.
-		CheckNames: descriptor.CheckNames{
-			Scope: descriptor.CheckNameScopeSchema, Comparison: "ascii_case_insensitive",
-			FoldedRanges: mysqlCheckNameFolds,
-			Refusal:      "Error 3822 (HY000): Duplicate check constraint name '{name}'.",
-		},
+		CheckNames:  mysqlCheckNames,
 		Columns: descriptor.Columns{
 			NationalCharAsChar: true, NationalCharCharset: "utf8mb3", CheckOwnColumnOnly: true,
 			Collations: true, InheritedCollationVaries: true,
@@ -536,6 +531,14 @@ func mysqlCharsetDefaults() map[string]string {
 // never refuses a pair the server accepts. A pair the server refuses
 // outside them reaches the server, which refuses it after the
 // statements before it have run, since MySQL DDL does not roll back.
+// mysqlCheckNames is how MySQL holds a CHECK name, measured on 26.10.0: once
+// per schema, compared without case over ASCII and over mysqlCheckNameFolds.
+var mysqlCheckNames = descriptor.CheckNames{
+	Scope: descriptor.CheckNameScopeSchema, Comparison: "ascii_case_insensitive",
+	FoldedRanges: mysqlCheckNameFolds,
+	Refusal:      "Error 3822 (HY000): Duplicate check constraint name '{name}'.",
+}
+
 var mysqlCheckNameFolds = []descriptor.CodePointRange{
 	{First: 0xC0, Last: 0xDE}, {First: 0x100, Last: 0x1FF}, {First: 0x386, Last: 0x3AB},
 	{First: 0x400, Last: 0x42F}, {First: 0x531, Last: 0x556}, {First: 0x1F00, Last: 0x1FFF},
