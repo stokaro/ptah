@@ -8,6 +8,8 @@
 package rolemembership
 
 import (
+	"fmt"
+
 	"ptah.run/core/ast"
 	"ptah.run/core/difftypes"
 	"ptah.run/core/platform/capability"
@@ -77,6 +79,9 @@ func modification(change difftypes.RoleMembershipChange, caps capability.Capabil
 		return []ast.Node{ast.NewRevokeRoleMembership(change.Role, change.Member).SetAdminOptionFor(true)}
 	default:
 		return []ast.Node{
+			ast.NewComment(fmt.Sprintf("WARNING: %s holds no %s between the next two statements, and keeps none "+
+				"if the second one fails, because the server commits each statement as it runs",
+				change.Member, change.Role)),
 			ast.NewRevokeRoleMembership(change.Role, change.Member),
 			ast.NewGrantRoleMembership(change.Role, change.Member),
 		}

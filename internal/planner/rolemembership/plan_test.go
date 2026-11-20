@@ -30,6 +30,22 @@ func planMemberships(
 	live []catalog.RoleMembership,
 ) ([]string, error) {
 	t.Helper()
+	sql, err := renderMembershipPlan(t, dialect, caps, roles, live)
+	if err != nil {
+		return nil, err
+	}
+	return splitStatements(sql), nil
+}
+
+// renderMembershipPlan is the plan as rendered text, comments included.
+func renderMembershipPlan(
+	t *testing.T,
+	dialect string,
+	caps capability.Capabilities,
+	roles []schemamodel.Role,
+	live []catalog.RoleMembership,
+) (string, error) {
+	t.Helper()
 	runtime := must.Must(builtin.New())
 	liveRoles := make([]catalog.Role, 0, len(roles))
 	for _, role := range roles {
@@ -42,17 +58,13 @@ func planMemberships(
 		nil, runtime,
 	)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	nodes, err := planner.GenerateSchemaDiffASTWithOptions(t.Context(), runtime, diff, dialect, planext.Options{Capabilities: caps})
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	sql, err := builtin.RenderSQLWithCapabilities(dialect, caps, nodes...)
-	if err != nil {
-		return nil, err
-	}
-	return splitStatements(sql), nil
+	return builtin.RenderSQLWithCapabilities(dialect, caps, nodes...)
 }
 
 func splitStatements(sql string) []string {
@@ -188,6 +200,11 @@ func TestPlan_MySQL84_HappyPath(t *testing.T) {
 		got, err := planMemberships(t, platform.MySQL, capability.MySQL84(), plainRoles(), edge(true, nil, nil))
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.DeepEquals, []string{"REVOKE `readers` FROM `app`;", "GRANT `readers` TO `app`;"})
+		raw, err := renderMembershipPlan(t, platform.MySQL, capability.MySQL84(), plainRoles(), edge(true, nil, nil))
+		c.Assert(err, qt.IsNil)
+		c.Assert(raw, qt.Matches, "(?s).*-- WARNING: app holds no readers between the next two statements, and keeps none "+
+			"if the second one fails, because the server commits each statement as it runs\n"+
+			"REVOKE `readers` FROM `app`;\nGRANT `readers` TO `app`;\n.*")
 	})
 	t.Run("a membership holding the declared option plans nothing", func(t *testing.T) {
 		c := qt.New(t)

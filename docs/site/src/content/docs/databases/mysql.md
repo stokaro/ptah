@@ -1444,7 +1444,14 @@ has no statement that withdraws the option alone (`REVOKE ADMIN OPTION FOR` is a
 syntax error on 8.4), and a plain `GRANT` leaves it on, so a plan that removes
 the option revokes the membership and grants it again. A declaration that states
 no option means the default, no admin option, so a membership that holds the
-option is brought back to it. MariaDB refuses a declared membership.
+option is brought back to it. The server commits each statement as it runs,
+so the member holds no role between the `REVOKE` and the `GRANT`, and keeps none
+if the `GRANT` fails. The plan carries a warning comment before the pair.
+
+A declared role whose `member_of` omits a membership it holds in another
+declared role has that membership revoked, and the plan rates it as a warning. A
+membership in a role the declaration does not name is left alone. MariaDB
+refuses a declared membership.
 
 ### Events
 

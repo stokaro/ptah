@@ -154,3 +154,42 @@ func TestRoleMemberships_EachEndOfAnUndecidedRoleDecidesAlone(t *testing.T) {
 		})
 	}
 }
+
+// TestRoleMemberships_AMembershipBetweenDeclaredRolesTheDeclarationOmitsIsRemoved
+// holds the decision that a declared role whose member_of leaves out a
+// membership it holds in another declared role loses it, as a managed role
+// loses a grant the declaration does not list.
+func TestRoleMemberships_AMembershipBetweenDeclaredRolesTheDeclarationOmitsIsRemoved(t *testing.T) {
+	c := qt.New(t)
+	roles := []schemamodel.Role{{Name: "readers", Inherit: true}, {Name: "app", Inherit: true}}
+
+	diff := compareMemberships(capability.Postgres16(), roles, heldEdge(false, new(true), new(true)))
+
+	c.Assert(diff.RoleMembershipsRemoved, qt.DeepEquals, []difftypes.RoleMembershipRef{{
+		Role: "readers", Member: "app",
+		Options: schemamodel.RoleMembershipOptions{Admin: new(false), Inherit: new(true), Set: new(true)},
+	}})
+	c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
+}
+
+// TestRoleMemberships_AMembershipInAnUndeclaredRoleIsLeftAlone is the control:
+// the same live edge stays when the declaration does not name the group, and
+// when it does not name the member.
+func TestRoleMemberships_AMembershipInAnUndeclaredRoleIsLeftAlone(t *testing.T) {
+	tests := []struct {
+		name  string
+		roles []schemamodel.Role
+	}{
+		{name: "the group is not declared", roles: []schemamodel.Role{{Name: "app", Inherit: true}}},
+		{name: "the member is not declared", roles: []schemamodel.Role{{Name: "readers", Inherit: true}}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := compareMemberships(capability.Postgres16(), test.roles, heldEdge(false, new(true), new(true)))
+			c.Assert(diff.RoleMembershipsRemoved, qt.HasLen, 0)
+			c.Assert(diff.RoleMembershipsAdded, qt.HasLen, 0)
+		})
+	}
+}

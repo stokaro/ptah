@@ -2026,8 +2026,9 @@ grant option.
 
 `member_of` on a role names the roles it joins. A plan runs `GRANT "group" TO
 "member"`, and `REVOKE` for a membership between two declared roles that the
-declaration no longer lists. A membership in a role the declaration does not
-name stays as the server holds it.
+declaration no longer lists, and the plan rates that revocation as a warning. A
+membership in a role the declaration does not name stays as the server holds
+it.
 
 ```go
 //ptah:schema:role name="readers"
@@ -2060,10 +2061,11 @@ before 16 is refused, naming the capability `role_membership_inherit_set`; it
 is not left out of the plan.
 
 PostgreSQL 16 keeps one row per grantor and Ptah does not read the grantor. A
-member holds the union of its rows, so an option another grantor's row grants
-stays on after a plan changes the connected role's own row, and the next
-comparison plans the change again. Connect as the grantor, or remove the other
-row, to converge.
+member holds the union of its rows. A `GRANT` changes only the connected role's
+own row, so an option another grantor's row grants stays on, and a `REVOKE`
+removes only that row, so a membership another grantor made survives. The next
+comparison plans the same change again. Connect as the grantor, or remove the
+other row, to converge.
 
 CockroachDB and YugabyteDB refuse a declared membership.
 
