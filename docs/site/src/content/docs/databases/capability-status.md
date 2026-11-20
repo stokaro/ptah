@@ -13,9 +13,9 @@ sourceOfTruth:
 generated: true
 generator: internal/cmd/capmatrix
 editSource: internal/capabilityprobe/cells.go
-lastVerified: "2026-11-12"
+lastVerified: "2026-11-20"
 evidence:
-  - "https://github.com/stokaro/ptah/actions/runs/43262252524"
+  - "https://github.com/stokaro/ptah/actions/runs/44785250174"
 searchAliases:
   - database capability status
   - which database versions pass
@@ -31,14 +31,15 @@ What the tier 2 capability matrix measured, one row per declared
 release line, in the run named below. Regenerate it with `capmatrix status`
 over that run's cell results.
 
-- Measured: 2026-11-12T16:46:09Z
-- Commit: `4a09c280f060e0cbc7830ba9276a57a2c1d28f66`
-- Run: [43262252524](https://github.com/stokaro/ptah/actions/runs/43262252524)
-- Declared release lines: 34. Runnable cells: 30. Results received: 30.
-- 30 passed, 0 capability disagreements, 0 suite failures, 0 missing.
+- Measured: 2026-11-20T17:38:38Z
+- Commit: `b866e41162499c1ef4d337b5a842b37b03b051aa`
+- Run: [44785250174](https://github.com/stokaro/ptah/actions/runs/44785250174)
+- Declared release lines: 35. Runnable cells: 31. Results received: 31.
+- 31 passed, 0 capability disagreements, 0 suite failures, 0 missing.
 
 | Cell | Engine | Line | Verdict |
 | --- | --- | --- | --- |
+| `postgres-19` | postgres | 19 | PASS |
 | `postgres-18` | postgres | 18 | PASS |
 | `postgres-17` | postgres | 17 | PASS |
 | `postgres-16` | postgres | 16 | PASS |

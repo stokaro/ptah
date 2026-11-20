@@ -291,8 +291,8 @@ var Cells = []Cell{
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:19",
 		Note: "PostgreSQL 19 was released on 2026-11-19, and the integration suite runs it: the " +
 			"suite follows the newest line, and 18 and older stay certified through the probe. " +
-			"No preset of its own: the line is planned as Postgres18 until the probe measures a key " +
-			"on which 19 and 18 differ",
+			"Measured on 19.0 against Postgres18 by probe run 44785250174: 155 rows, 131 agreements, " +
+			"0 disagreements, and the cell's floor of 131 met, so the line has no preset of its own",
 	},
 	{
 		Dialect: platform.Postgres, Line: "18",
