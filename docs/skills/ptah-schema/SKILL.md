@@ -46,6 +46,18 @@ database `sqlite://dev.db`. In a real project, use its schema sources in place
 of `--schema-file schema.sql`, for example `--root-dir ./models` for Go
 structs, its migration directory, and the database URLs the person gave you.
 
+Two rules about those databases decide whether the migration is right:
+
+- `migrations plan` and `migrations generate` diff the desired schema against
+  the database `--db-url` names. That database must hold every migration in the
+  directory and nothing else. Run `migrations up` on it first. A database
+  behind the directory puts other people's pending changes into your migration,
+  and one ahead of it, or changed by hand, gives a wrong or empty one. With no
+  such database, add `--replay --dev-url <url>` to `migrations generate`, and
+  Ptah builds the current state from the directory instead.
+- A `--dev-url` database is reset destructively. It is never the application
+  database, and never one a person did not name as scratch.
+
 The example starts with one table. Save this as `schema.sql`:
 
 ```sql

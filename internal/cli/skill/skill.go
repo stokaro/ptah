@@ -74,8 +74,8 @@ current directory, which should be the project root, or under your home
 directory with --user. --skills-dir names any other skills directory instead.
 
 A file already there with the skill's content is left as it is. A file with
-other content stops the install before anything is written, unless --overwrite
-is given. Nothing is deleted.`,
+other content, in any of the directories, stops the install before anything is
+written anywhere, unless --overwrite is given. Nothing is deleted.`,
 		Example: `  ptah skill install --agent claude
   ptah skill install --agent codex --agent cursor --user
   ptah skill install ptah-schema --skills-dir ./tools/skills`,
@@ -114,18 +114,17 @@ func runInstall(cmd *cobra.Command, args []string, opts *installOptions) error {
 			names = append(names, skill.Name)
 		}
 	}
+	var targets []skills.Target
 	for _, dir := range dirs {
 		for _, name := range names {
-			installed, err := skills.Install(name, dir, skills.InstallOptions{Overwrite: opts.overwrite})
-			for _, file := range installed {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", file.Status, file.Path)
-			}
-			if err != nil {
-				return err
-			}
+			targets = append(targets, skills.Target{Name: name, Dir: dir})
 		}
 	}
-	return nil
+	installed, err := skills.Install(targets, skills.InstallOptions{Overwrite: opts.overwrite})
+	for _, file := range installed {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", file.Status, file.Path)
+	}
+	return err
 }
 
 // installDirs resolves the flags to the skills directories to install into,

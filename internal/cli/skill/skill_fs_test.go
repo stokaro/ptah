@@ -59,6 +59,25 @@ func TestInstall_HappyPath(t *testing.T) {
 	})
 }
 
+// A conflict in the second agent's directory stops the install before the
+// first agent's directory is written, so a refusal leaves no agent half done.
+func TestInstall_RefusesForEveryAgentAtOnce(t *testing.T) {
+	c := qt.New(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	changed := filepath.Join(home, ".agents", "skills", "ptah-schema", "SKILL.md")
+	c.Assert(os.MkdirAll(filepath.Dir(changed), 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(changed, []byte("edited\n"), 0o600), qt.IsNil)
+
+	out, err := run(c, "install", "--agent", "claude", "--agent", "codex", "--user")
+
+	c.Assert(err, qt.ErrorMatches, `.*SKILL\.md: a file with other content is already there; pass --overwrite to replace it`)
+	c.Assert(out, qt.Not(qt.Contains), "written")
+	_, statErr := os.Stat(filepath.Join(home, ".claude"))
+	c.Assert(statErr, qt.ErrorIs, os.ErrNotExist)
+}
+
 func TestInstall_FailurePath(t *testing.T) {
 	tests := []struct {
 		name    string

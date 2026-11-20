@@ -56,6 +56,22 @@ func TestShippedSkills_LoadAsAgentsReadThem(t *testing.T) {
 	}
 }
 
+// List reads each description with its own small reader, and the YAML parse
+// an agent makes is the reference it has to agree with.
+func TestList_DescriptionsMatchTheYAMLParse(t *testing.T) {
+	c := qt.New(t)
+	shipped, err := skills.List()
+	c.Assert(err, qt.IsNil)
+	for _, skill := range shipped {
+		body, err := fs.ReadFile(docs.Skills, path.Join("skills", skill.Name, "SKILL.md"))
+		c.Assert(err, qt.IsNil)
+		var front skillFrontmatter
+		c.Assert(yaml.Unmarshal([]byte(strings.SplitN(string(body), "---\n", 3)[1]), &front), qt.IsNil)
+
+		c.Assert(skill.Description, qt.Equals, front.Description)
+	}
+}
+
 func TestList_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
@@ -113,9 +129,9 @@ func TestInstall_HappyPath(t *testing.T) {
 		dir := t.TempDir()
 		target := filepath.Join(dir, "ptah-schema", "SKILL.md")
 
-		first, err := skills.Install("ptah-schema", dir, skills.InstallOptions{})
+		first, err := skills.Install([]skills.Target{{Name: "ptah-schema", Dir: dir}}, skills.InstallOptions{})
 		c.Assert(err, qt.IsNil)
-		second, err := skills.Install("ptah-schema", dir, skills.InstallOptions{})
+		second, err := skills.Install([]skills.Target{{Name: "ptah-schema", Dir: dir}}, skills.InstallOptions{})
 		c.Assert(err, qt.IsNil)
 
 		c.Assert(first, qt.DeepEquals, []skills.InstalledFile{{Path: target, Status: skills.Written}})
@@ -124,6 +140,21 @@ func TestInstall_HappyPath(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(written, qt.DeepEquals, shippedSkill(c))
 	})
+	t.Run("every target, in order", func(t *testing.T) {
+		c := qt.New(t)
+		first, second := t.TempDir(), t.TempDir()
+
+		installed, err := skills.Install([]skills.Target{
+			{Name: "ptah-schema", Dir: first},
+			{Name: "ptah-schema", Dir: second},
+		}, skills.InstallOptions{})
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(installed, qt.DeepEquals, []skills.InstalledFile{
+			{Path: filepath.Join(first, "ptah-schema", "SKILL.md"), Status: skills.Written},
+			{Path: filepath.Join(second, "ptah-schema", "SKILL.md"), Status: skills.Written},
+		})
+	})
 	t.Run("replaces a changed file when asked", func(t *testing.T) {
 		c := qt.New(t)
 		dir := t.TempDir()
@@ -131,7 +162,7 @@ func TestInstall_HappyPath(t *testing.T) {
 		c.Assert(os.MkdirAll(filepath.Dir(target), 0o750), qt.IsNil)
 		c.Assert(os.WriteFile(target, []byte("edited\n"), 0o600), qt.IsNil)
 
-		installed, err := skills.Install("ptah-schema", dir, skills.InstallOptions{Overwrite: true})
+		installed, err := skills.Install([]skills.Target{{Name: "ptah-schema", Dir: dir}}, skills.InstallOptions{Overwrite: true})
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(installed, qt.DeepEquals, []skills.InstalledFile{{Path: target, Status: skills.Written}})
@@ -142,6 +173,24 @@ func TestInstall_HappyPath(t *testing.T) {
 }
 
 func TestInstall_FailurePath(t *testing.T) {
+	t.Run("a changed file in a later target keeps every target as it was", func(t *testing.T) {
+		c := qt.New(t)
+		first, second := t.TempDir(), t.TempDir()
+		changed := filepath.Join(second, "ptah-schema", "SKILL.md")
+		c.Assert(os.MkdirAll(filepath.Dir(changed), 0o750), qt.IsNil)
+		c.Assert(os.WriteFile(changed, []byte("edited\n"), 0o600), qt.IsNil)
+
+		installed, err := skills.Install([]skills.Target{
+			{Name: "ptah-schema", Dir: first},
+			{Name: "ptah-schema", Dir: second},
+		}, skills.InstallOptions{})
+
+		c.Assert(err, qt.ErrorIs, skills.ErrFileDiffers)
+		c.Assert(installed, qt.IsNil)
+		untouched, err := os.ReadDir(first)
+		c.Assert(err, qt.IsNil)
+		c.Assert(untouched, qt.HasLen, 0)
+	})
 	t.Run("a changed file is kept", func(t *testing.T) {
 		c := qt.New(t)
 		dir := t.TempDir()
@@ -149,7 +198,7 @@ func TestInstall_FailurePath(t *testing.T) {
 		c.Assert(os.MkdirAll(filepath.Dir(target), 0o750), qt.IsNil)
 		c.Assert(os.WriteFile(target, []byte("edited\n"), 0o600), qt.IsNil)
 
-		installed, err := skills.Install("ptah-schema", dir, skills.InstallOptions{})
+		installed, err := skills.Install([]skills.Target{{Name: "ptah-schema", Dir: dir}}, skills.InstallOptions{})
 
 		c.Assert(err, qt.ErrorIs, skills.ErrFileDiffers)
 		c.Assert(installed, qt.IsNil)
@@ -162,7 +211,7 @@ func TestInstall_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 
-			installed, err := skills.Install(name, dir, skills.InstallOptions{})
+			installed, err := skills.Install([]skills.Target{{Name: name, Dir: dir}}, skills.InstallOptions{})
 
 			c.Assert(err, qt.ErrorIs, skills.ErrUnknownSkill)
 			c.Assert(err, qt.ErrorMatches, `unknown skill ".*"; Ptah ships ptah-schema`)

@@ -2,8 +2,8 @@ package skills
 
 // White-box testing required: Ptah ships one skill of one file, so the order
 // that makes a refusal leave no partial skill behind -- every file compared
-// before any is written -- is observable only on a skill of several files,
-// which only the unexported install can be given.
+// before any is written -- is observable within one skill only on a skill of
+// several files, which only the unexported install can be given.
 
 import (
 	"os"
@@ -26,7 +26,7 @@ func TestInstall_RefusesBeforeWritingAnyFile(t *testing.T) {
 	c.Assert(os.MkdirAll(filepath.Dir(changed), 0o750), qt.IsNil)
 	c.Assert(os.WriteFile(changed, []byte("edited\n"), 0o600), qt.IsNil)
 
-	installed, err := install(source, "multi", dir, InstallOptions{})
+	installed, err := install(source, []Target{{Name: "multi", Dir: dir}}, InstallOptions{})
 
 	c.Assert(err, qt.ErrorIs, ErrFileDiffers)
 	c.Assert(installed, qt.IsNil)
@@ -45,7 +45,7 @@ func TestInstall_WritesEveryFileOfTheSkill(t *testing.T) {
 	}
 	dir := t.TempDir()
 
-	installed, err := install(source, "multi", dir, InstallOptions{})
+	installed, err := install(source, []Target{{Name: "multi", Dir: dir}}, InstallOptions{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(installed, qt.DeepEquals, []InstalledFile{

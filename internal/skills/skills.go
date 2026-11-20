@@ -155,22 +155,34 @@ const (
 
 // InstalledFile is one file of an installed skill.
 type InstalledFile struct {
-	// Path is where the file is, dir joined with the skill's relative path.
+	// Path is where the file is: the target's directory joined with the
+	// skill's relative path.
 	Path string
 	// Status is what the install did with it.
 	Status FileStatus
 }
 
-// Install copies the named skill into dir, as dir/<name>/SKILL.md and the
-// files beside it, creating directories as needed. Files already present
-// with the skill's content are left as they are. A file with other content
-// refuses the install with [ErrFileDiffers] unless opts.Overwrite is set, and
-// the refusal comes before any file is written. Install deletes nothing.
+// Target is one skill to install and the skills directory to install it into.
+type Target struct {
+	// Name is the skill, as [List] names it.
+	Name string
+	// Dir is the skills directory; the skill goes to Dir/<Name>/.
+	Dir string
+}
+
+// Install copies each target's skill into its directory, as
+// <dir>/<name>/SKILL.md and the files beside it, creating directories as
+// needed. Files already present with the skill's content are left as they
+// are. Every file of every target is compared before any is written, so a
+// file with other content refuses the whole install with [ErrFileDiffers],
+// leaving every target as it was, unless opts.Overwrite is set. An unknown
+// name fails with [ErrUnknownSkill], also before any write. Install deletes
+// nothing.
 //
-// The result lists every file of the skill, in a stable order. An unknown
-// name fails with [ErrUnknownSkill].
-func Install(name, dir string, opts InstallOptions) ([]InstalledFile, error) {
-	return install(docs.Skills, name, dir, opts)
+// The result lists every file of every target, in target order and then in
+// a stable order within a skill.
+func Install(targets []Target, opts InstallOptions) ([]InstalledFile, error) {
+	return install(docs.Skills, targets, opts)
 }
 
 type plannedFile struct {
@@ -179,10 +191,14 @@ type plannedFile struct {
 	present bool
 }
 
-func install(source fs.FS, name, dir string, opts InstallOptions) ([]InstalledFile, error) {
-	planned, err := planInstall(source, name, dir, opts)
-	if err != nil {
-		return nil, err
+func install(source fs.FS, targets []Target, opts InstallOptions) ([]InstalledFile, error) {
+	var planned []plannedFile
+	for _, target := range targets {
+		files, err := planInstall(source, target.Name, target.Dir, opts)
+		if err != nil {
+			return nil, err
+		}
+		planned = append(planned, files...)
 	}
 	installed := make([]InstalledFile, 0, len(planned))
 	for _, file := range planned {
@@ -190,10 +206,13 @@ func install(source fs.FS, name, dir string, opts InstallOptions) ([]InstalledFi
 			installed = append(installed, InstalledFile{Path: file.target, Status: Unchanged})
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(file.target), 0o750); err != nil {
+		// The skill is public text meant to be committed and read by every
+		// user and process that works on the project, so it is written
+		// readable to all, as the files around it are.
+		if err := os.MkdirAll(filepath.Dir(file.target), 0o755); err != nil { // #nosec G301 -- a public skill directory, not a secret.
 			return installed, fmt.Errorf("create the directory for %s: %w", file.target, err)
 		}
-		if err := os.WriteFile(file.target, file.content, 0o600); err != nil {
+		if err := os.WriteFile(file.target, file.content, 0o644); err != nil { // #nosec G306 -- a public skill file, not a secret.
 			return installed, fmt.Errorf("write %s: %w", file.target, err)
 		}
 		installed = append(installed, InstalledFile{Path: file.target, Status: Written})
