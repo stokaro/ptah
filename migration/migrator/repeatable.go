@@ -76,8 +76,10 @@ type RepeatableWork struct {
 	// value ptah.sum records for the file.
 	Checksum string `json:"checksum"`
 	// AppliedChecksum is the digest recorded as applied before the run, empty
-	// when no content of this identity has applied yet.
-	AppliedChecksum string `json:"applied_checksum,omitempty"`
+	// when no content of this identity has applied yet. The JSON form always
+	// carries it, as "" for no record: an approval binds the record by copying
+	// this value, and an absent field there makes no claim about the record.
+	AppliedChecksum string `json:"applied_checksum"`
 	// Reason is one of the RepeatableReason constants.
 	Reason string `json:"reason"`
 }

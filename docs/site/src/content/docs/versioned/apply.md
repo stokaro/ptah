@@ -352,8 +352,9 @@ key nor a version of one or more is an error, because a field this build did
 not read would be a constraint the caller believes it set.
 
 A directory with [repeatable migrations](../repeatable/) approves their work in
-a `repeatables` list, each entry an `identity` and a `checksum`. Without the
-list, an approval approves no repeatable work.
+a `repeatables` list, each entry an `identity`, a `checksum` and optionally the
+`applied_checksum` the work runs over. Without the list, an approval approves
+no repeatable work.
 
 The database this page migrated already records `1785255952`, so an approval
 naming it again describes a history that has since moved: `up` selects nothing
