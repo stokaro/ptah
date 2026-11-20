@@ -599,12 +599,18 @@ tables. A key made only of range columns needs no extension.
 
 Each source spells the clauses its own way:
 
-| Source | Primary key | Unique constraint | Foreign key |
-| --- | --- | --- | --- |
-| SQL | `PRIMARY KEY (id, valid_at WITHOUT OVERLAPS)` | `UNIQUE (id, valid_at WITHOUT OVERLAPS)` | `FOREIGN KEY (id, PERIOD valid_at) REFERENCES p (id, PERIOD valid_at)` |
-| Go annotation | `primary_key="id,valid_at" primary_key_without_overlaps="true"` on the table, or `without_overlaps="true"` on a `PRIMARY KEY` constraint | `without_overlaps="true"` on the constraint | `period="true"` on the constraint, with `foreign_columns` |
-| YAML | `primary_key_without_overlaps: true` on the table | `without_overlaps: true` on the constraint | `period: true` on the constraint, with `foreign_columns` |
-| HCL | `without_overlaps = true` in `primary_key` | `without_overlaps = true` in `unique` | `period = true` in `foreign_key` |
+- SQL writes the clause inside the key: `PRIMARY KEY (id, valid_at WITHOUT
+  OVERLAPS)`, `UNIQUE (id, valid_at WITHOUT OVERLAPS)`, and `FOREIGN KEY (id,
+  PERIOD valid_at) REFERENCES p (id, PERIOD valid_at)`.
+- A Go annotation sets `primary_key_without_overlaps="true"` beside the table's
+  `primary_key`, or `without_overlaps="true"` on a `PRIMARY KEY` or `UNIQUE`
+  constraint, and `period="true"` on a foreign key constraint with
+  `foreign_columns`.
+- YAML sets `primary_key_without_overlaps: true` on the table,
+  `without_overlaps: true` on a unique constraint, and `period: true` on a
+  foreign key constraint with `foreign_columns`.
+- HCL sets `without_overlaps = true` in a `primary_key` or `unique` block, and
+  `period = true` in a `foreign_key` block.
 
 A temporal key is always backed by a GiST index, so an HCL `primary_key` or
 `unique` block with `without_overlaps = true` may also write `type = GIST`, and
