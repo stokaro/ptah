@@ -2064,6 +2064,21 @@ ptah-compat migrate lint \
   --latest 1
 ```
 
+### Rule names and Atlas codes
+
+The default `ptah-compat` surface names each finding by its Ptah rule name. The
+text report prints `L1 [destructive/drop-table]: Dropping table "users"`, and a
+`--format` template reads the name in `Code` and `Findings[].rule`. Every rule
+runs, so a rule Atlas has no check for is reported too.
+
+`PTAH_ATLAS_STRICT_COMPAT=1` selects the community binary's vocabulary. The
+report prints the Atlas check code of each rule in the binary's own line shape,
+`L1: Dropping table "users" https://atlasgo.io/lint/analyzers#DS102`, and the
+run executes only the rules the Atlas table maps. The generated
+[Lint rules](../../reference/lint-rules/#atlas-check-codes) page lists the
+mapping. The codes quoted in the rest of this page are the ones strict mode
+prints; the default surface prints the name of the same rule.
+
 Both flags in that example are required, and they are **two separate
 requirements** with two separate refusals, each matching the pinned Atlas
 community binary byte for byte:

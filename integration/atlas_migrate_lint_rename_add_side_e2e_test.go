@@ -303,7 +303,7 @@ func TestAtlasMigrateLintRenameAddSideE2E(t *testing.T) {
 			writeLintE2EFile(c, migrationsDir, "1.sql", test.base)
 			writeLintE2EFile(c, migrationsDir, "2.sql", test.rename)
 
-			stdout, stderr, err := runLintE2EBinary(ctx, binaryPath,
+			stdout, stderr, err := runLintE2EStrictBinary(ctx, binaryPath,
 				"migrate", "lint",
 				"--dir", "file://"+migrationsDir,
 				"--dev-url", replaceDatabaseName(c, dbURL, testDBName),

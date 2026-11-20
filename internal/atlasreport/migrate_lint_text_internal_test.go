@@ -703,7 +703,7 @@ func TestWriteMigrateLintText_RendersAtlasDiagnostics(t *testing.T) {
 			analysis := analyzeMigrationsWithBaseline(t, tc.files, tc.latest, tc.baseline, tc.dialect)
 			var out bytes.Buffer
 
-			err := writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+			err := writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(out.String(), qt.Equals, tc.want)
@@ -739,7 +739,7 @@ func TestWriteMigrateLintText_RendersAtlasRepeatableVersionKey(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
-	err = writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+	err = writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals,
@@ -772,7 +772,7 @@ func TestWriteMigrateLintText_RendersAtlasBareRepeatableVersionKey(t *testing.T)
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
-	err = writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+	err = writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals,
@@ -832,7 +832,7 @@ func TestMigrateLintProseIsAtlasCompatible(t *testing.T) {
 	}, 1)
 	var out bytes.Buffer
 
-	err := writeMigrateLintText(&out, MigrateLintOptions{Analysis: &analysis}, fixedZeroClock())
+	err := writeMigrateLintText(&out, MigrateLintOptions{AtlasCodes: true, Analysis: &analysis}, fixedZeroClock())
 	c.Assert(err, qt.IsNil)
 	rendered := out.String()
 

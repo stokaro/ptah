@@ -1746,7 +1746,7 @@ analyzed: a report about a plan that does not describe this transition would be
 an accurate report about a change nobody is about to make.
 
 The analysis is the one `ptah-compat migrate lint` runs over a migration file
-holding the same SQL — the same rules, the same codes, and the same
+holding the same SQL — the same rules, named the same way, and the same
 `atlas:nolint` directives silence it. The report goes to stdout: a header
 naming the number of statements analyzed, the findings grouped by analyzer with
 their suggested fixes, and a summary carrying the schema-change and diagnostic

@@ -43,7 +43,7 @@ func writeMigrateLintText(w io.Writer, opts MigrateLintOptions, now func() time.
 	if opts.ReplayFailure != nil {
 		return writeMigrateLintTextReplayFailure(w, opts, *opts.ReplayFailure, now)
 	}
-	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions, opts.Sources, opts.fileOrder)
+	model := buildMigrateLintText(*opts.Analysis, opts.RevisionVersions, opts.Sources, opts.fileOrder, opts.AtlasCodes)
 	if model.analyzedCount == 0 {
 		// No analyzed versions means there is no report to render.
 		return nil
@@ -128,7 +128,7 @@ func writeMigrateLintTextFixes(w io.Writer, fixes []migrateLintTextFix) error {
 }
 
 func writeMigrateLintTextDiagnostic(w io.Writer, diag migrateLintTextDiag) error {
-	if !diag.atlas {
+	if !diag.atlas || diag.anchor == "" {
 		return writeWrapped(
 			w,
 			"      -- ",
@@ -137,9 +137,7 @@ func writeMigrateLintTextDiagnostic(w io.Writer, diag migrateLintTextDiag) error
 		)
 	}
 	content := fmt.Sprintf("L%d: %s", diag.line, diag.message)
-	if diag.code != "" {
-		content += " " + atlasAnalyzerDocsURL + diag.code
-	}
+	content += " " + atlasAnalyzerDocsURL + diag.anchor
 	return writeWrappedAt(w, "      -- ", "         ", content, diag.messageWidth)
 }
 
@@ -231,9 +229,39 @@ type migrateLintTextGroup struct {
 	diags []migrateLintTextDiag
 }
 
+// compatView is how one compatibility report names the rules: the dialect of
+// the run, which picks the Atlas code of a rule shared by several engines, and
+// whether the strict policy prints Atlas codes in place of Ptah names.
+type compatView struct {
+	dialect string
+	codes   bool
+}
+
+// label is what the report prints for a finding's rule.
+func (v compatView) label(finding migrationlint.Finding, rule atlascodes.Rule) string {
+	if v.codes {
+		return rule.Code
+	}
+	return finding.Rule
+}
+
+// anchor is the Atlas check code a documentation link ends in, and is empty
+// when the report prints names.
+func (v compatView) anchor(finding migrationlint.Finding, rule atlascodes.Rule) string {
+	if v.codes {
+		return rule.Code
+	}
+	return ""
+}
+
 type migrateLintTextDiag struct {
-	line         int
-	code         string
+	line int
+	// code is what the report prints for the rule: its name, or its Atlas
+	// check code under the strict policy.
+	code string
+	// anchor is the Atlas check code the documentation link ends in. It is
+	// empty unless the run prints Atlas codes.
+	anchor       string
 	message      string
 	messageWidth int
 	atlas        bool
@@ -257,9 +285,10 @@ func buildMigrateLintText(
 	revisionVersions map[int64]string,
 	sources map[int64]MigrateLintSource,
 	order func([]migrationlint.File) func(a, b migrationlint.File) int,
+	atlasCodes bool,
 ) migrateLintText {
 	upFiles := sortedUpFiles(analysis.Files(), order)
-	diagsByFile := diagnosticsByFile(sourcedFindings(analysis, sources), analysis.Target().Dialect)
+	diagsByFile := diagnosticsByFile(sourcedFindings(analysis, sources), compatView{dialect: analysis.Target().Dialect, codes: atlasCodes})
 
 	firstSelected := -1
 	var model migrateLintText
@@ -323,24 +352,25 @@ func sortedUpFiles(
 
 // diagnosticsByFile maps findings into compatibility diagnostics keyed
 // by the cleaned reporting path of the file that owns them.
-func diagnosticsByFile(findings []migrationlint.Finding, dialect string) map[string][]migrateLintTextDiag {
+func diagnosticsByFile(findings []migrationlint.Finding, view compatView) map[string][]migrateLintTextDiag {
 	byFile := make(map[string][]migrateLintTextDiag)
 	for _, finding := range findings {
 		key := path.Clean(finding.File)
-		byFile[key] = append(byFile[key], compatibilityDiagnostic(finding, dialect))
+		byFile[key] = append(byFile[key], compatibilityDiagnostic(finding, view))
 	}
 	return byFile
 }
 
 // compatibilityDiagnostic maps a structured native finding to the measured
 // Atlas analyzer code, wording, and suggested-fix shape used by ptah-compat.
-func compatibilityDiagnostic(finding migrationlint.Finding, dialect string) migrateLintTextDiag {
-	rule := atlascodes.RuleFor(finding.Rule, dialect)
+func compatibilityDiagnostic(finding migrationlint.Finding, view compatView) migrateLintTextDiag {
+	rule := atlascodes.RuleFor(finding.Rule, view.dialect)
 	diagnostic, mapped := atlasDiagnosticText(rule.Code, finding)
 	if !mapped {
 		return migrateLintTextDiag{
 			line:         finding.Line,
-			code:         rule.Code,
+			code:         view.label(finding, rule),
+			anchor:       view.anchor(finding, rule),
 			message:      finding.Message,
 			messageWidth: lintWrapWidth,
 			group:        analyzerGroupLabel(rule.Analyzer),
@@ -349,7 +379,8 @@ func compatibilityDiagnostic(finding migrationlint.Finding, dialect string) migr
 	}
 	return migrateLintTextDiag{
 		line:         finding.Line,
-		code:         rule.Code,
+		code:         view.label(finding, rule),
+		anchor:       view.anchor(finding, rule),
 		message:      diagnostic.message,
 		messageWidth: diagnostic.messageWidth,
 		atlas:        true,

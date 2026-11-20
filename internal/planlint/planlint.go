@@ -68,7 +68,7 @@ func Analyze(ctx context.Context, runtime Runtime, sql, dialect string) (lint.An
 	}
 	return lint.AnalyzeFS(ctx, runtime, snapshot, lint.Options{
 		Compatibility:  lint.CompatibilityProfileAtlas,
-		AtlasSelectors: atlascodes.SuppressedBy,
+		AtlasSelectors: atlascodes.SuppressedByOrName,
 		Dialect:        canonical,
 		DirFormat:      migrationfile.DirFormatAtlas,
 	})

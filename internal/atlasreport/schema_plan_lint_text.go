@@ -26,6 +26,9 @@ const (
 type SchemaPlanLintOptions struct {
 	// Analysis is the lint analysis of the plan's statements. Required.
 	Analysis *migrationlint.Analysis
+	// AtlasCodes prints each rule under its Atlas check code, in the community
+	// binary's report shape, instead of under its Ptah name.
+	AtlasCodes bool
 }
 
 // WriteSchemaPlanLintText renders the analysis of a plan file's statements.
@@ -46,7 +49,7 @@ func writeSchemaPlanLintText(w io.Writer, opts SchemaPlanLintOptions, now func()
 	if opts.Analysis == nil {
 		return fmt.Errorf("plan lint analysis is required")
 	}
-	model := buildSchemaPlanLintText(*opts.Analysis)
+	model := buildSchemaPlanLintText(*opts.Analysis, opts.AtlasCodes)
 
 	start := now()
 	// The noun is already in the header sentence, so the count carries none:
@@ -90,7 +93,7 @@ func writeSchemaPlanLintGroup(w io.Writer, group migrateLintTextGroup) ([]migrat
 }
 
 func writeSchemaPlanLintDiagnostic(w io.Writer, diag migrateLintTextDiag) error {
-	if !diag.atlas {
+	if !diag.atlas || diag.anchor == "" {
 		return writeWrapped(
 			w,
 			planLintDiagPrefix,
@@ -99,9 +102,7 @@ func writeSchemaPlanLintDiagnostic(w io.Writer, diag migrateLintTextDiag) error 
 		)
 	}
 	content := fmt.Sprintf("L%d: %s", diag.line, diag.message)
-	if diag.code != "" {
-		content += " " + atlasAnalyzerDocsURL + diag.code
-	}
+	content += " " + atlasAnalyzerDocsURL + diag.anchor
 	return writeWrappedAt(w, planLintDiagPrefix, planLintDiagContinue, content, diag.messageWidth)
 }
 
@@ -162,7 +163,7 @@ type schemaPlanLintText struct {
 // Findings are grouped by analyzer for the whole plan rather than per file:
 // the analysis of a plan holds one file, and a report that grouped per file
 // would be describing a directory the plan does not have.
-func buildSchemaPlanLintText(analysis migrationlint.Analysis) schemaPlanLintText {
+func buildSchemaPlanLintText(analysis migrationlint.Analysis, atlasCodes bool) schemaPlanLintText {
 	var model schemaPlanLintText
 	for _, file := range analysis.Files() {
 		model.statements += len(file.Statements)
@@ -170,7 +171,7 @@ func buildSchemaPlanLintText(analysis migrationlint.Analysis) schemaPlanLintText
 	}
 	var diags []migrateLintTextDiag
 	for _, finding := range analysis.Findings() {
-		diags = append(diags, compatibilityDiagnostic(finding, analysis.Target().Dialect))
+		diags = append(diags, compatibilityDiagnostic(finding, compatView{dialect: analysis.Target().Dialect, codes: atlasCodes}))
 	}
 	model.diagnostics = len(diags)
 	model.groups = groupDiagnostics(diags)

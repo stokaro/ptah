@@ -150,7 +150,8 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 	c.Assert(err, qt.IsNil)
 
 	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{
-		Analysis: &analysis,
+		AtlasCodes: true,
+		Analysis:   &analysis,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -161,12 +162,11 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 	c.Assert(report.Files[0].Findings[2].Rule, qt.Equals, "MF103")
 }
 
-// TestWriteMigrateLintFormat_JSONCarriesNoPtahRuleName renders a dropped
-// table, whose native finding carries the Ptah name destructive/drop-table,
-// through the template a `--format '{{ json .Files }}'` run takes. The name is
-// native vocabulary: the compatibility report prints the Atlas code alone.
-func TestWriteMigrateLintFormat_JSONCarriesNoPtahRuleName(t *testing.T) {
-	c := qt.New(t)
+// jsonFilesOfADroppedTable renders a dropped table, whose finding carries the
+// Ptah name destructive/drop-table, through the template a
+// `--format '{{ json .Files }}'` run takes.
+func jsonFilesOfADroppedTable(c *qt.C, atlasCodes bool) (rule string, rendered string) {
+	c.Helper()
 	fsys := fstest.MapFS{
 		"1_drop.sql": {Data: []byte("DROP TABLE users;\n")},
 	}
@@ -177,17 +177,40 @@ func TestWriteMigrateLintFormat_JSONCarriesNoPtahRuleName(t *testing.T) {
 		Dialect:        "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
+	c.Assert(analysis.Findings(), qt.Not(qt.HasLen), 0)
 	var out bytes.Buffer
 
 	err = atlasreport.WriteMigrateLintFormat(&out, `{{ json .Files }}`, atlasreport.MigrateLintOptions{
-		Analysis: &analysis,
+		AtlasCodes: atlasCodes,
+		Analysis:   &analysis,
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(analysis.Findings(), qt.Not(qt.HasLen), 0)
-	c.Assert(analysis.Findings()[0].Rule, qt.Equals, "destructive/drop-table")
-	c.Assert(out.String(), qt.Contains, `"rule":"DS102"`)
-	c.Assert(out.String(), qt.Not(qt.Contains), `destructive/drop-table`)
+	return analysis.Findings()[0].Rule, out.String()
+}
+
+// TestWriteMigrateLintFormat_DefaultCarriesTheRuleName: the default
+// compatibility report prints the rule's name where it printed a code.
+func TestWriteMigrateLintFormat_DefaultCarriesTheRuleName(t *testing.T) {
+	c := qt.New(t)
+
+	rule, rendered := jsonFilesOfADroppedTable(c, false)
+
+	c.Assert(rule, qt.Equals, "destructive/drop-table")
+	c.Assert(rendered, qt.Contains, `"rule":"destructive/drop-table"`)
+	c.Assert(rendered, qt.Not(qt.Contains), `DS102`)
+}
+
+// TestWriteMigrateLintFormat_StrictCarriesTheAtlasCode: the strict report
+// prints the Atlas code alone, and the same finding is still in it.
+func TestWriteMigrateLintFormat_StrictCarriesTheAtlasCode(t *testing.T) {
+	c := qt.New(t)
+
+	rule, rendered := jsonFilesOfADroppedTable(c, true)
+
+	c.Assert(rule, qt.Equals, "destructive/drop-table")
+	c.Assert(rendered, qt.Contains, `"rule":"DS102"`)
+	c.Assert(rendered, qt.Not(qt.Contains), `destructive/drop-table`)
 }
 
 func TestNewMigrateLint_OrdersMigrationsByVersion(t *testing.T) {
@@ -228,7 +251,8 @@ func TestNewMigrateLint_PathPrefixCannotCrossAttachFindings(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{
-		Analysis: &analysis,
+		AtlasCodes: true,
+		Analysis:   &analysis,
 	})
 
 	c.Assert(err, qt.IsNil)
@@ -367,7 +391,7 @@ func TestNewMigrateLint_IncludesAtlasRepeatableFiles(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 
-	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{Analysis: &analysis})
+	report, err := atlasreport.NewMigrateLint(atlasreport.MigrateLintOptions{AtlasCodes: true, Analysis: &analysis})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Files, qt.HasLen, 2)
@@ -459,4 +483,43 @@ func TestWriteMigrateLintFormat_InvalidAtlasSumRendersIntegrityFailure(t *testin
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "1|File atlas.sum is invalid|atlas.sum|checksum mismatch")
+}
+
+// textOfADroppedTable renders the text report of a dropped table.
+func textOfADroppedTable(c *qt.C, atlasCodes bool) string {
+	c.Helper()
+	analysis, err := migrationlint.AnalyzeFS(c.Context(), builtintest.Runtime(), fstest.MapFS{
+		"1_drop.sql": {Data: []byte("DROP TABLE users;\n")},
+	}, migrationlint.Options{
+		Compatibility:  migrationlint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		DirFormat:      migrationfile.DirFormatAtlas,
+		Dialect:        "sqlite",
+	})
+	c.Assert(err, qt.IsNil)
+	var out bytes.Buffer
+
+	err = atlasreport.WriteMigrateLintText(&out, atlasreport.MigrateLintOptions{AtlasCodes: atlasCodes, Analysis: &analysis})
+
+	c.Assert(err, qt.IsNil)
+	return out.String()
+}
+
+func TestWriteMigrateLintText_DefaultPrintsTheRuleName(t *testing.T) {
+	c := qt.New(t)
+
+	text := textOfADroppedTable(c, false)
+
+	c.Assert(text, qt.Contains, `L1 [destructive/drop-table]: Dropping table "users"`)
+	c.Assert(text, qt.Not(qt.Contains), "analyzers#")
+	c.Assert(text, qt.Not(qt.Contains), "DS102")
+}
+
+func TestWriteMigrateLintText_StrictPrintsTheAtlasCodeInTheCommunityShape(t *testing.T) {
+	c := qt.New(t)
+
+	text := textOfADroppedTable(c, true)
+
+	c.Assert(text, qt.Contains, `L1: Dropping table "users" https://atlasgo.io/lint/analyzers#DS102`)
+	c.Assert(text, qt.Not(qt.Contains), "destructive/drop-table")
 }

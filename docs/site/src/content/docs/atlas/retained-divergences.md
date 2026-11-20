@@ -154,7 +154,7 @@ own measurement conditions.
 | [A YDB database URL](#a-ydb-database-url) | serves it through the YDB provider in the default profile, and refuses it in the binary's words under `PTAH_ATLAS_STRICT_COMPAT=1` | has no YDB driver: `sql/sqlclient: unknown driver "ydb"` |
 | [A realm beside one database on a dev server](#a-realm-beside-one-database-on-a-dev-server) | refuses the pair on `schema diff`, with the binary's own `schema apply` sentence for it | plans databases the one-database side never read |
 | [A golang-migrate file that runs its own transaction](#a-golang-migrate-file-that-runs-its-own-transaction) | runs it as golang-migrate does, outside the migrator's transaction, and exits `0` | nests it in a transaction of its own and exits `1` with `pq: unexpected transaction status idle` |
-| [A `txmode none` file that controls its own transaction](#a-txmode-none-file-that-controls-its-own-transaction) | lint reports `TX201` for each such block, and apply refuses the run before it applies the first file, exit `1` | lint reports nothing, and apply runs the file as written, exit `0` |
+| [A `txmode none` file that controls its own transaction](#a-txmode-none-file-that-controls-its-own-transaction) | lint reports `transaction/explicit-transaction` (Atlas `TX201`) for each such block, and apply refuses the run before it applies the first file, exit `1` | lint reports nothing, and apply runs the file as written, exit `0` |
 | [A file its transaction would refuse](#a-file-its-transaction-would-refuse) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies the files before it and exits `1` with PostgreSQL's error; its dry run exits `0` |
 | [A file that controls the transaction it runs in](#a-file-that-controls-the-transaction-it-runs-in) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies the files before it and exits `1` with the engine's error; its dry run exits `0` |
 | [A MySQL file the transaction witness refuses](#a-mysql-file-the-transaction-witness-refuses) | refuses the run before it applies the first file, in a dry run too, exit `1` | applies every file, exit `0` |
@@ -1682,13 +1682,14 @@ has the rules.
 
 **Current boundary.** A migration that carries `-- atlas:txmode none` and holds
 its own `BEGIN` and `COMMIT` is refused by `ptah-compat migrate apply`, and
-`ptah-compat migrate lint` reports it as `TX201`. Without a transaction, Ptah
+`ptah-compat migrate lint` reports it as `transaction/explicit-transaction`,
+Atlas check code `TX201` under strict compatibility. Without a transaction, Ptah
 records the progress of each statement in the revision table. A `BEGIN` in the
 file would put that record outside the file's transaction, so the migrator
 refuses any statement that controls transaction state, on every engine and in
 the up and the down half. The pinned community binary runs the file as
 written and lints it clean. The lint rule reads the same statements the
-migrator refuses, so a directory that lints without a `TX201` finding is not
+migrator refuses, so a directory that lints without a `transaction/explicit-transaction` finding is not
 one the migrator stops at for this reason.
 
 Measured on 2026-11-14 over SQLite, with `1.sql` holding
@@ -1705,7 +1706,7 @@ COMMIT;
 
 | Run | Binary | `ptah-compat` |
 | --- | --- | --- |
-| `migrate lint --dev-url 'sqlite://dev?mode=memory' --latest 1` | `1 version ok`, no diagnostics, exit `0` | `L3 [TX201]` as a warning, `1 version with warnings`, exit `0` |
+| `migrate lint --dev-url 'sqlite://dev?mode=memory' --latest 1` | `1 version ok`, no diagnostics, exit `0` | `L3 [transaction/explicit-transaction]` as a warning, `1 version with warnings`, exit `0` |
 | `migrate apply --url sqlite://t.db` | applies both files, exit `0` | refuses the run before it applies migration `1`, with `migration 2 cannot run up statement 1 without a transaction because "BEGIN" controls transaction state`, and records no revision, exit `1` |
 
 The same file without the directive runs inside the transaction each migrator

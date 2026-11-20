@@ -425,7 +425,9 @@ and a code is not a name.
 `-- atlas:nolint` is Atlas's directive. `ptah-compat migrate lint` reads it,
 with Atlas's codes and analyzer names (`destructive`, `data_depend`,
 `concurrent_index`, `incompatible`, `nestedtx`), and so does the whole-file
-header form; see [Atlas migrate commands](../../atlas/migrate-commands/).
+header form. The default surface also accepts a Ptah rule name there; under
+`PTAH_ATLAS_STRICT_COMPAT=1` a rule name matches nothing, as in the community
+binary; see [Atlas migrate commands](../../atlas/migrate-commands/).
 Native `ptah migrations lint` and `ptah migrations up` refuse an
 `atlas:nolint` comment at its line, because a code is not a rule name. Write
 `ptah:nolint` with the rule name instead.

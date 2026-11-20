@@ -324,7 +324,7 @@ func assertLintE2EScopedReport(
 	want string,
 ) {
 	c.Helper()
-	stdout, stderr, err := runLintE2EBinary(ctx, binaryPath,
+	stdout, stderr, err := runLintE2EStrictBinary(ctx, binaryPath,
 		"migrate", "lint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,

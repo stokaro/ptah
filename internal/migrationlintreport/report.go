@@ -136,6 +136,11 @@ type AtlasVocabulary struct {
 	Selectors func([]string) []string
 	// RuleConfigs translates the keys of a per-rule policy into rule names.
 	RuleConfigs func(map[string]lint.RuleConfig) map[string]lint.RuleConfig
+	// Only, when set, names the rules the run executes: every other rule is
+	// disabled before the analysis starts. The strict compatibility policy
+	// sets it to the rules the Atlas table maps, so a run reports only what
+	// the community binary has a check for.
+	Only func(ruleName string) bool
 }
 
 // translate returns the rule policy the lint core reads: the selectors and
@@ -293,6 +298,25 @@ type sarifRegion struct {
 	StartLine int `json:"startLine"`
 }
 
+// unmappedRules lists the registered rules a vocabulary with an Only filter
+// leaves out, for a compatibility run. It is empty for every other run.
+func (v *AtlasVocabulary) unmappedRules(compatibility lint.CompatibilityProfile, runtime lintext.Runtime) ([]string, error) {
+	if v == nil || v.Only == nil || compatibility != lint.CompatibilityProfileAtlas {
+		return nil, nil
+	}
+	rules, err := lint.Rules(runtime)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, rule := range rules {
+		if !v.Only(rule.Name) && !slices.Contains(names, rule.Name) {
+			names = append(names, rule.Name)
+		}
+	}
+	return names, nil
+}
+
 // Build returns the migration lint report without rendering it.
 func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (Report, error) {
 	if err := schemaext.RequireRuntime(ctx, opts.Runtime); err != nil {
@@ -329,6 +353,11 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	}
 	disabled := append(append(make([]string, 0), cfg.DisabledRules...), opts.Disabled...)
 	disabled, ruleConfigs := opts.Atlas.translate(opts.Compatibility, disabled, cfg.Rules)
+	unmapped, err := opts.Atlas.unmappedRules(opts.Compatibility, opts.Runtime)
+	if err != nil {
+		return Report{}, err
+	}
+	disabled = append(disabled, unmapped...)
 	var atlasNoLint lint.AtlasSelectors
 	if opts.Atlas != nil {
 		atlasNoLint = opts.Atlas.NoLint

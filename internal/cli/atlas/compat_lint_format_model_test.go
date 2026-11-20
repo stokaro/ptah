@@ -84,7 +84,7 @@ func TestCompatMigrateLintFormatModel(t *testing.T) {
 				"{{ end }}{{ end }}{{ end }}",
 			assert: func(c *qt.C, err error, output string) {
 				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
-				c.Assert(output, qt.Contains, "pos="+lintFormatDropPos+" code=DS102 text=Dropping table \"staging\"")
+				c.Assert(output, qt.Contains, "pos="+lintFormatDropPos+" code=destructive/drop-table text=Dropping table \"staging\"")
 				c.Assert(output, qt.Contains, "fix=Add a pre-migration check to ensure table \"staging\" is empty before dropping it")
 			},
 		},
@@ -118,7 +118,7 @@ func TestCompatMigrateLintFormatModel(t *testing.T) {
 			format: "{{ range .Files }}{{ range .Findings }}{{ .Rule }}|{{ .Message }}{{ end }}{{ end }}",
 			assert: func(c *qt.C, err error, output string) {
 				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
-				c.Assert(output, qt.Contains, "DS102|")
+				c.Assert(output, qt.Contains, "destructive/drop-table|")
 				c.Assert(output, qt.Contains, "DROP TABLE permanently deletes")
 			},
 		},

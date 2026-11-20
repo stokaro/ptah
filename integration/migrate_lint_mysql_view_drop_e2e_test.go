@@ -50,7 +50,7 @@ func TestMigrateLintDropOfATableAViewReadsE2E(t *testing.T) {
 			_, err := runCompatVerb("migrate", "hash", "--dir", "file://"+dir)
 			c.Assert(err, qt.IsNil)
 
-			stdout, stderr, err := runLintE2EBinary(ctx, compatBinary,
+			stdout, stderr, err := runLintE2EStrictBinary(ctx, compatBinary,
 				"migrate", "lint", "--dir", "file://"+dir, "--dev-url", dev, "--latest", "1")
 
 			c.Assert(exitStatusOf(c, err), qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))

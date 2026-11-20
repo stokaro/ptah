@@ -824,20 +824,35 @@ const exampleRuleName = "locking/add-foreign-key"
 // through atlas. Words are split at the separators an Atlas selector list may
 // use, and each is upper-cased the way the community binary reads it. A nil
 // atlas resolves every selector to no rule; a directive without one still
-// means every rule.
+// means every rule. A word that is a Ptah rule name reaches atlas unchanged.
 func parseAtlasNoLintRules(rest string, atlas AtlasSelectors) []noLintTarget {
 	rest = strings.TrimSpace(rest)
 	if rest == "" {
 		return []noLintTarget{everyRuleTarget()}
 	}
 	var rules []noLintTarget
-	for part := range strings.FieldsFuncSeq(rest, isNoLintSeparator) {
-		part = strings.ToUpper(strings.TrimSpace(part))
-		if part == "" || atlas == nil {
+	for field := range strings.FieldsSeq(rest) {
+		if atlas == nil {
 			continue
 		}
-		for _, name := range atlas(part) {
-			rules = append(rules, selectorTarget(name))
+		// A word written as a Ptah rule name is handed to atlas whole and as
+		// written: it holds a slash, which otherwise separates two selectors,
+		// and a name is lower case. Whether a compatibility surface honors
+		// it is atlas's decision.
+		if lintnames.WellFormed(field) {
+			for _, name := range atlas(field) {
+				rules = append(rules, selectorTarget(name))
+			}
+			continue
+		}
+		for part := range strings.FieldsFuncSeq(field, isNoLintSeparator) {
+			part = strings.ToUpper(strings.TrimSpace(part))
+			if part == "" {
+				continue
+			}
+			for _, name := range atlas(part) {
+				rules = append(rules, selectorTarget(name))
+			}
 		}
 	}
 	return rules

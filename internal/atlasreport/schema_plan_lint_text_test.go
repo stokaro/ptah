@@ -75,7 +75,7 @@ func TestWriteSchemaPlanLintText_HappyPath(t *testing.T) {
 			want: "Analyzing planned statements (1 in total):\n" +
 				"\n" +
 				"  -- destructive changes detected:\n" +
-				"    -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- L1 [destructive/drop-table]: Dropping table \"users\"\n" +
 				"  -- suggested fix:\n" +
 				"    -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n" +
 				"\n" +
@@ -89,8 +89,8 @@ func TestWriteSchemaPlanLintText_HappyPath(t *testing.T) {
 			want: "Analyzing planned statements (2 in total):\n" +
 				"\n" +
 				"  -- destructive changes detected:\n" +
-				"    -- L1: Dropping table \"users\" https://atlasgo.io/lint/analyzers#DS102\n" +
-				"    -- L2: Dropping table \"orders\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- L1 [destructive/drop-table]: Dropping table \"users\"\n" +
+				"    -- L2 [destructive/drop-table]: Dropping table \"orders\"\n" +
 				"  -- suggested fixes:\n" +
 				"    -> Add a pre-migration check to ensure table \"users\" is empty before dropping it\n" +
 				"    -> Add a pre-migration check to ensure table \"orders\" is empty before dropping it\n" +
@@ -109,11 +109,10 @@ func TestWriteSchemaPlanLintText_HappyPath(t *testing.T) {
 			want: "Analyzing planned statements (2 in total):\n" +
 				"\n" +
 				"  -- destructive changes detected:\n" +
-				"    -- L2: Dropping table \"orders\" https://atlasgo.io/lint/analyzers#DS102\n" +
+				"    -- L2 [destructive/drop-table]: Dropping table \"orders\"\n" +
 				"  -- data dependent changes detected:\n" +
-				"    -- L1: Adding a non-nullable \"text\" column \"nick\" will fail in case table" +
-				" \"users\" is not\n" +
-				"       empty https://atlasgo.io/lint/analyzers#MF103\n" +
+				"    -- L1 [data-dependent/add-not-null-column]: Adding a non-nullable \"text\" column \"nick\" will\n" +
+				"       fail in case table \"users\" is not empty\n" +
 				"  -- suggested fix:\n" +
 				"    -> Add a pre-migration check to ensure table \"orders\" is empty before dropping it\n" +
 				"\n" +

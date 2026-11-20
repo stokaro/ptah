@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"ptah.run/core/platform"
+	"ptah.run/internal/lintnames"
 )
 
 // The Atlas analyzers whose names the compatibility surface prints and reads
@@ -162,7 +163,10 @@ func (i Identity) appliesTo(dialect string) bool {
 // RuleFor returns the Atlas-compatible identity for a Ptah rule on dialect.
 // A rule with no Atlas check stays a Ptah diagnostic under its own name, so
 // the overlapping code spaces cannot silently change its meaning. A run that
-// names no dialect takes the first identity of the name.
+// names no dialect takes the first identity of the name. That is a decision,
+// not an oversight: a finding carries no dialect, so a run that names none
+// cannot tell which engine's code a shared name stands for, and
+// `atlas migrate lint` always has a dev database that names one.
 func RuleFor(name, dialect string) Rule {
 	for _, identity := range identities {
 		if identity.Name == name && identity.appliesTo(dialect) {
@@ -170,6 +174,12 @@ func RuleFor(name, dialect string) Rule {
 		}
 	}
 	return Rule{Analyzer: AnalyzerPtah, Code: name}
+}
+
+// Mapped reports whether the table maps the rule to an Atlas check on at least
+// one dialect.
+func Mapped(name string) bool {
+	return slices.ContainsFunc(identities, func(identity Identity) bool { return identity.Name == name })
 }
 
 // NamesFor returns the Ptah rules that report the Atlas check code, as the
@@ -216,6 +226,21 @@ var analyzerRules = map[string][]string{
 func AnalyzerRules(selector string) ([]string, bool) {
 	rules, ok := analyzerRules[strings.ToLower(strings.TrimSpace(selector))]
 	return slices.Clone(rules), ok
+}
+
+// SuppressedByOrName is [SuppressedBy] for the default compatibility surface,
+// which also honors a Ptah rule name in an `atlas:nolint` comment. The strict
+// policy uses [SuppressedBy] alone: the community binary reads a word that is
+// no analyzer and no check code as a selector that matches nothing, and a rule
+// name is such a word there, so honoring it would be looser than the binary.
+func SuppressedByOrName(selector string) []string {
+	if rules := SuppressedBy(selector); len(rules) > 0 {
+		return rules
+	}
+	if trimmed := strings.TrimSpace(selector); lintnames.WellFormed(trimmed) {
+		return []string{trimmed}
+	}
+	return nil
 }
 
 // SuppressedBy translates one selector of an `atlas:nolint` comment, an Atlas

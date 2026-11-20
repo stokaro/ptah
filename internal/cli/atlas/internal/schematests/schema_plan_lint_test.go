@@ -87,7 +87,7 @@ func TestSchemaPlanLint_HappyPath(t *testing.T) {
 			desiredSQL: lintDestructiveTo,
 			want: []string{
 				"  -- destructive changes detected:",
-				`Dropping table "drop_me" https://atlasgo.io/lint/analyzers#DS102`,
+				`[destructive/drop-table]: Dropping table "drop_me"`,
 				"  -- suggested fix:",
 				`-> Add a pre-migration check to ensure table "drop_me" is empty before dropping it`,
 				"  -- 1 diagnostic",
