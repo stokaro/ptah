@@ -79,6 +79,12 @@ func TestMigrationsPullSkipValidationMovesAnUnreadableDirectoryToTheNextCommandE
 	c.Assert(err, qt.IsNil)
 	c.Assert(entries, qt.HasLen, 0)
 
+	// The text form says the directory was not validated.
+	text := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
+		"migrations", "pull", reference, "--out", "text", "--plain-http", "--skip-validation")
+	c.Assert(text.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", text.Stdout, text.Stderr))
+	c.Assert(text.Stdout, qt.Contains, "Not validated: the next command that reads the directory reports what it cannot read.\n")
+
 	// The flag writes the published bytes and says it did not read them.
 	pulled := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
 		"migrations", "pull", reference, "--out", "migrations", "--plain-http", "--skip-validation", "--json")
@@ -114,21 +120,24 @@ func TestMigrationsPullSkipValidationMovesAnUnreadableDirectoryToTheNextCommandE
 // what it skips: what the artifact says about itself is checked as on a
 // default pull, and a refusal writes nothing.
 func TestMigrationsPullSkipValidationStillChecksTheArtifactE2E(t *testing.T) {
+	noSQL := fstest.MapFS{".ptah-lint.yaml": {Data: []byte("rules: {}\n")}}
 	tests := []struct {
 		name         string
 		artifactType string
 		format       string
+		files        fstest.MapFS
 		want         string
 	}{
-		{name: "an unknown migration format", artifactType: ociartifact.MigrationArtifactType, format: "bogus", want: "invalid migration artifact format"},
-		{name: "a desired-schema artifact", artifactType: ociartifact.SchemaArtifactType, format: "ptah", want: ociartifact.SchemaArtifactType},
+		{name: "an unknown migration format", artifactType: ociartifact.MigrationArtifactType, format: "bogus", files: skipValidationMigration(), want: "invalid migration artifact format"},
+		{name: "a desired-schema artifact", artifactType: ociartifact.SchemaArtifactType, format: "ptah", files: skipValidationMigration(), want: ociartifact.SchemaArtifactType},
+		{name: "an artifact with no SQL file", artifactType: ociartifact.MigrationArtifactType, format: "ptah", files: noSQL, want: "migration artifact contains no migration files"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			registry := requiredOCIRegistry(t)
 			reference := skipValidationReference(registry, "checked")
-			publishMigrationLayers(c, reference, test.artifactType, test.format, skipValidationMigration())
+			publishMigrationLayers(c, reference, test.artifactType, test.format, test.files)
 			dir := c.TempDir()
 
 			pulled := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
@@ -141,4 +150,25 @@ func TestMigrationsPullSkipValidationStillChecksTheArtifactE2E(t *testing.T) {
 			c.Assert(entries, qt.HasLen, 0)
 		})
 	}
+}
+
+// TestMigrationsPullDefaultReportOmitsUnvalidatedE2E is the control for the
+// field: a pull that read the directory as migrations carries no
+// `unvalidated` key at all.
+func TestMigrationsPullDefaultReportOmitsUnvalidatedE2E(t *testing.T) {
+	c := qt.New(t)
+	registry := requiredOCIRegistry(t)
+	reference := skipValidationReference(registry, "default")
+	publishMigrationLayers(c, reference, ociartifact.MigrationArtifactType, "ptah", skipValidationMigration())
+	dir := c.TempDir()
+
+	pulled := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: dir},
+		"migrations", "pull", reference, "--out", "migrations", "--plain-http", "--json")
+
+	c.Assert(pulled.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", pulled.Stdout, pulled.Stderr))
+	var report map[string]any
+	c.Assert(json.Unmarshal([]byte(pulled.Stdout), &report), qt.IsNil, qt.Commentf("%s", pulled.Stdout))
+	c.Assert(report["source"], qt.Equals, "oci")
+	_, unvalidated := report["unvalidated"]
+	c.Assert(unvalidated, qt.IsFalse)
 }

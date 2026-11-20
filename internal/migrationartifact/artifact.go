@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"path"
+	"strings"
 	"time"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -169,9 +171,11 @@ func Pull(ctx context.Context, client *ociartifact.Client, ref string) (Artifact
 // reading it as migrations. Everything the artifact says about itself is still
 // checked: the manifest, the artifact type, the layer media types, sizes and
 // digests, each file name and its path, the migration-format annotation, and
-// that every entry is a regular file. What the files hold is not: a name the
-// format does not read, or a directory with no migration in it, is left for
-// the command that reads the directory to report.
+// that every entry is a regular file, and that the artifact holds at least one
+// SQL file. What the files hold is not: a name the format does not read is
+// left for the command that reads the directory to report. An artifact with no
+// SQL file is refused here, because a directory with nothing in it reads as a
+// history with nothing to apply, and the next command would report success.
 func PullUnvalidated(ctx context.Context, client *ociartifact.Client, ref string) (Artifact, error) {
 	pulled, err := pullArtifact(ctx, client, ref)
 	if err != nil {
@@ -185,12 +189,36 @@ func PullUnvalidated(ctx context.Context, client *ociartifact.Client, ref string
 	if err != nil {
 		return Artifact{}, err
 	}
+	holdsSQL, err := holdsSQLFile(snapshot)
+	if err != nil {
+		return Artifact{}, err
+	}
+	if !holdsSQL {
+		return Artifact{}, fmt.Errorf("migration artifact contains no migration files")
+	}
 	return Artifact{
 		FileSystem: snapshot,
 		Descriptor: pulled.Descriptor,
 		Reference:  pulled.Reference,
 		DirFormat:  format,
 	}, nil
+}
+
+// holdsSQLFile reports whether fsys holds a regular file whose name ends in
+// .sql, at any depth.
+func holdsSQLFile(fsys fs.FS) (bool, error) {
+	found := false
+	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() && strings.EqualFold(path.Ext(name), ".sql") {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found, err
 }
 
 func pullArtifact(ctx context.Context, client *ociartifact.Client, ref string) (ociartifact.Artifact, error) {

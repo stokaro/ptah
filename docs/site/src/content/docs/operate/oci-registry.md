@@ -242,11 +242,10 @@ rejected without being overwritten, including one that appears during the pull.
 ### Pull without reading the directory
 
 `--skip-validation` is for a step that holds registry credentials and must not
-report what an artifact says. The directory is written without being read as
-migrations, so a file the format does not read is reported by the next command
-that reads it, such as `migrations status --json`. Every check of the artifact
-itself still runs. `--json` adds `"unvalidated": true`, and a Git or HTTPS
-reference refuses the flag.
+report what an artifact says. A file the format does not read is then reported
+by the next command that reads the directory, such as `migrations status --json`. Every check of the artifact
+itself still runs, and an artifact with no SQL file is still refused. `--json`
+adds `"unvalidated": true`, and a Git or HTTPS reference refuses the flag.
 
 ## Understand deployment reporting
 

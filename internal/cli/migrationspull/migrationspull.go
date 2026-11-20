@@ -47,9 +47,9 @@ credential configuration, whichever holds a credential for the registry;
 --skip-validation writes an oci:// artifact without reading it as migrations,
 for a step that holds registry credentials and must not report what an
 artifact says. The manifest, artifact type, migration format, layer media
-types, sizes, digests, file names and paths are still checked, and every file
-has to be a regular file. A file the format does not read, or a directory with
-no migration in it, is reported by the next command that reads the directory.
+types, sizes, digests, file names and paths are still checked, every file has
+to be a regular file, and an artifact with no SQL file is refused. A file the
+format does not read is reported by the next command that reads the directory.
 
 A git+https:// or git+ssh:// reference names a repository. --branch, --tag or
 --commit says which commit, and --path the migration directory in its tree

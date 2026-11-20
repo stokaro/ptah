@@ -593,10 +593,11 @@ being overwritten.
 
 `--skip-validation` writes the directory without reading it as migrations, for a
 step that holds registry credentials and must not report what an artifact says.
-A file the format does not read, or a directory with no migration in it, is then
-reported by the next command that reads the directory. The manifest, artifact
-type, migration-format annotation, layer media types, sizes, digests, file names
-and paths are still checked, and every entry has to be a regular file. Standard
+A file the format does not read is then reported by the next command that reads
+the directory. The manifest, artifact type, migration-format annotation, layer
+media types, sizes, digests, file names and paths are still checked, every entry
+has to be a regular file, and an artifact with no SQL file is still refused,
+because an empty directory would read as a history with nothing to apply. Standard
 output adds a line saying the directory was not validated, `--json` adds
 `"unvalidated": true`, and a Git or HTTPS reference refuses the flag.
 
