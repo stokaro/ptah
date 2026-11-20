@@ -438,6 +438,10 @@ func atlasProjectLoadOptions(
 		// selects evaluates one; the default surface runs its program, as
 		// Atlas does.
 		RejectExternalSchema: policy.IsStrictCE(),
+		// The pinned community binary has no handler for this data source and
+		// refuses a project that declares one, referenced or not; the default
+		// surface mints the token from the Azure default credential chain.
+		RejectAzureDBToken: policy.IsStrictCE(),
 		// The community binary reads no docker block; the default surface
 		// starts the one a selected env references (stokaro/ptah#4041).
 		IgnoreDockerBlocks: policy.IsStrictCE(),

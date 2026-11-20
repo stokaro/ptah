@@ -2,10 +2,15 @@ package cloudtoken_test
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -190,4 +195,92 @@ func TestGCPCloudSQLToken_ReportsAMissingCredentialSource(t *testing.T) {
 	_, err := cloudtoken.GCPCloudSQLToken(context.Background())
 
 	c.Assert(err, qt.ErrorMatches, `gcp cloudsql token: .*`)
+}
+
+// azureTokenEndpoint stands in for the App Service managed identity endpoint,
+// the one source in the Azure default chain an offline test can serve over
+// plain HTTP. It records the resource each request asks for.
+//
+// The managed identity token cache is shared by the whole process, so a token
+// one test received would answer the next test's request without reaching
+// its endpoint. Each token expires in a minute, which the cache already treats
+// as due for renewal, so every request is sent.
+func azureTokenEndpoint(c *qt.C, token string) *[]string {
+	resources := new([]string)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*resources = append(*resources, r.URL.Query().Get("resource"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"access_token":%q,"expires_on":"%d","token_type":"Bearer"}`,
+			token, time.Now().Add(time.Minute).Unix())
+	}))
+	c.Cleanup(server.Close)
+	isolateAzureChain(c)
+	c.Setenv("IDENTITY_ENDPOINT", server.URL)
+	c.Setenv("IDENTITY_HEADER", "header")
+	return resources
+}
+
+// isolateAzureChain empties every variable the Azure default chain reads
+// before it reaches a managed identity, and hides the Azure CLI, Azure
+// Developer CLI and PowerShell it tries after one, so a developer's own Azure
+// setup cannot answer for the test.
+func isolateAzureChain(c *qt.C) {
+	c.Setenv("PATH", c.TempDir())
+	for _, name := range []string{
+		"AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_CLIENT_SECRET",
+		"AZURE_CLIENT_CERTIFICATE_PATH", "AZURE_USERNAME", "AZURE_PASSWORD",
+		"AZURE_FEDERATED_TOKEN_FILE", "AZURE_TOKEN_CREDENTIALS",
+		"IDENTITY_ENDPOINT", "IDENTITY_HEADER", "IDENTITY_SERVER_THUMBPRINT",
+		"MSI_ENDPOINT", "MSI_SECRET",
+	} {
+		// Setenv first so the cleanup restores the variable, then unset it:
+		// the chain reads some of these with LookupEnv, and an empty
+		// AZURE_TOKEN_CREDENTIALS is refused rather than read as absent.
+		c.Setenv(name, "")
+		c.Assert(os.Unsetenv(name), qt.IsNil)
+	}
+}
+
+// TestAzureDBToken_AsksForTheDatabaseResource is the success path through the
+// real default chain: the token is what the identity endpoint returned, and
+// the resource it asked for is the scope without its `/.default` suffix.
+func TestAzureDBToken_AsksForTheDatabaseResource(t *testing.T) {
+	cases := []struct {
+		name  string
+		scope string
+		want  string
+	}{
+		{name: "the default scope", scope: "", want: "https://ossrdbms-aad.database.windows.net"},
+		{name: "a scope the project names", scope: "https://database.windows.net/.default", want: "https://database.windows.net"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			resources := azureTokenEndpoint(c, "entra-token")
+
+			token, err := cloudtoken.AzureDBToken(context.Background(), cloudtoken.AzureDBOptions{Scope: tc.scope})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(token, qt.Equals, "entra-token")
+			c.Assert(*resources, qt.DeepEquals, []string{tc.want})
+		})
+	}
+}
+
+// TestAzureDBToken_ReportsAnEndpointThatRefuses holds the failure path: the
+// identity endpoint answers, refuses, and the refusal names the scope.
+func TestAzureDBToken_ReportsAnEndpointThatRefuses(t *testing.T) {
+	c := qt.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+	}))
+	c.Cleanup(server.Close)
+	isolateAzureChain(c)
+	c.Setenv("IDENTITY_ENDPOINT", server.URL)
+	c.Setenv("IDENTITY_HEADER", "header")
+
+	token, err := cloudtoken.AzureDBToken(context.Background(), cloudtoken.AzureDBOptions{})
+
+	c.Assert(err, qt.ErrorMatches, `(?s)azure db token: getting token for https://ossrdbms-aad\.database\.windows\.net/\.default: .*`)
+	c.Assert(token, qt.Equals, "")
 }
