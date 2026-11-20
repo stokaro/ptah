@@ -10,6 +10,7 @@ import (
 
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/atlascompatpolicy"
 	"ptah.run/internal/atlasmigrateimport"
 	"ptah.run/internal/atlasreport"
@@ -431,7 +432,12 @@ func atlasMigrateLintReportOptions(
 		FailOn:        migrationlintreport.FailOnError,
 		Latest:        opts.latest,
 		Compatibility: migrationlint.CompatibilityProfileAtlas,
-		ChangeCount:   policy.LintChangeCount(),
+		Atlas: &migrationlintreport.AtlasVocabulary{
+			NoLint:      atlascodes.SuppressedBy,
+			Selectors:   atlascodes.SelectorList,
+			RuleConfigs: atlascodes.RuleConfigKeys[migrationlint.RuleConfig],
+		},
+		ChangeCount: policy.LintChangeCount(),
 		// The transaction rules judge a file by the tool its layout is for.
 		TransactionOwner: format.TransactionOwner(),
 		// What the operator declared about the server DevURL names; see

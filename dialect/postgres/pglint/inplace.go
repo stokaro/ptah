@@ -31,11 +31,11 @@ import (
 func postgresInPlaceRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG301P",
+			Name:     "rewrite/in-place-column-change",
 			Title:    "column type change applied as a catalog edit",
 			Severity: lintext.Info,
 			Targets:  []string{"postgres"},
-			Subsumes: []string{"DS103"},
+			Subsumes: []string{"data-dependent/alter-column-type"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: pgTypeChangeStatements,

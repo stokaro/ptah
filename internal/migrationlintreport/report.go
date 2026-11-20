@@ -122,7 +122,46 @@ type Runtime interface {
 
 // Options are the migration lint inputs shared by native and Atlas-compatible
 // commands.
+// AtlasVocabulary is how the compatibility surface reads rule selectors: an
+// `atlas.hcl` lint policy and an `atlas:nolint` comment name rules by Atlas
+// analyzer and check code, which the lint core does not know. The
+// compatibility surface supplies the translation from its Atlas table; a nil
+// vocabulary reads every selector as a Ptah rule name or category.
+type AtlasVocabulary struct {
+	// NoLint translates the selector of an `atlas:nolint` comment into rule
+	// names; see [lint.AtlasSelectors].
+	NoLint lint.AtlasSelectors
+	// Selectors translates a list of selectors, `--disable` entries and
+	// `disabled-rules`, into Ptah selectors.
+	Selectors func([]string) []string
+	// RuleConfigs translates the keys of a per-rule policy into rule names.
+	RuleConfigs func(map[string]lint.RuleConfig) map[string]lint.RuleConfig
+}
+
+// translate returns the rule policy the lint core reads: the selectors and
+// per-rule configs of a compatibility run with their Atlas spellings replaced.
+// A nil vocabulary changes nothing.
+func (v *AtlasVocabulary) translate(
+	compatibility lint.CompatibilityProfile,
+	disabled []string,
+	rules map[string]lint.RuleConfig,
+) ([]string, map[string]lint.RuleConfig) {
+	if v == nil || compatibility != lint.CompatibilityProfileAtlas {
+		return disabled, rules
+	}
+	if v.Selectors != nil {
+		disabled = v.Selectors(disabled)
+	}
+	if v.RuleConfigs != nil {
+		rules = v.RuleConfigs(rules)
+	}
+	return disabled, rules
+}
+
 type Options struct {
+	// Atlas is the compatibility surface's reading of rule selectors; see
+	// [AtlasVocabulary].
+	Atlas *AtlasVocabulary
 	// Runtime selects the services used to convert and report replayed state.
 	Runtime   Runtime
 	Dir       string
@@ -289,6 +328,11 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		return Report{}, err
 	}
 	disabled := append(append(make([]string, 0), cfg.DisabledRules...), opts.Disabled...)
+	disabled, ruleConfigs := opts.Atlas.translate(opts.Compatibility, disabled, cfg.Rules)
+	var atlasNoLint lint.AtlasSelectors
+	if opts.Atlas != nil {
+		atlasNoLint = opts.Atlas.NoLint
+	}
 	outcome, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, declared.deferred, lint.Options{
 		Compatibility: opts.Compatibility,
 		Dialect:       dialect,
@@ -317,7 +361,8 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		},
 		DirFormat:         prepared.dirFormat,
 		AtlasTemplateData: migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
-		RuleConfigs:       cfg.Rules,
+		RuleConfigs:       ruleConfigs,
+		AtlasSelectors:    atlasNoLint,
 		Naming:            cfg.Naming,
 		// The same policy decides the standalone lint and the apply gate, or
 		// the two disagree about the same directory: a `migrations lint` that
@@ -1718,7 +1763,7 @@ func writeGitLab(w io.Writer, report Report) error {
 		occurrence := seen[key]
 		seen[key] = occurrence + 1
 		entries = append(entries, gitlabFinding{
-			Description: fmt.Sprintf("%s: %s", strings.TrimSpace(finding.Rule+" "+finding.Name), finding.Message),
+			Description: fmt.Sprintf("%s: %s", finding.Rule, finding.Message),
 			CheckName:   finding.Rule,
 			Fingerprint: gitlabFingerprint(finding, occurrence),
 			Severity:    gitlabSeverity(finding.Severity),
@@ -1803,16 +1848,11 @@ func sarifRules(findings []lint.Finding) ([]sarifRule, map[string]int) {
 	for i, code := range codes {
 		indexes[code] = i
 		finding := byCode[code]
-		// SARIF's name is the rule's readable identifier, which the Ptah
-		// name is; the title stays the short description, and serves as the
-		// name of a rule that has no Ptah name.
-		name := finding.Name
-		if name == "" {
-			name = finding.Title
-		}
+		// The rule's name is its SARIF id; SARIF's own name is the readable
+		// title.
 		rules = append(rules, sarifRule{
 			ID:               code,
-			Name:             name,
+			Name:             finding.Title,
 			ShortDescription: sarifMessage{Text: finding.Title},
 			DefaultConfig:    sarifDefaultConfig{Level: sarifLevel(finding.Severity)},
 		})
@@ -1903,7 +1943,7 @@ func writeGitHubActions(w io.Writer, report Report) {
 			level = "error"
 		}
 		file := escapeGHProperty(finding.File)
-		message := escapeGHData(fmt.Sprintf("%s: %s", strings.TrimSpace(finding.Rule+" "+finding.Name), finding.Message))
+		message := escapeGHData(fmt.Sprintf("%s: %s", finding.Rule, finding.Message))
 		if finding.Line > 0 {
 			fmt.Fprintf(w, "::%s file=%s,line=%d::%s\n", level, file, finding.Line, message)
 			continue

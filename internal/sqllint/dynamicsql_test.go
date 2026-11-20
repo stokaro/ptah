@@ -66,7 +66,7 @@ func TestLintSource_DynamicSQLIsNamedOnEveryDialect(t *testing.T) {
 
 			codes := dynamicCodes(c, row.dialect, row.sql)
 
-			c.Assert(codes, qt.Contains, "SQL003")
+			c.Assert(codes, qt.Contains, "coverage/dynamic-sql")
 		})
 	}
 }
@@ -101,7 +101,7 @@ func TestLintSource_AnOrdinaryRoutineIsNotCalledDynamic(t *testing.T) {
 
 			codes := dynamicCodes(c, row.dialect, row.sql)
 
-			c.Assert(codes, qt.Not(qt.Contains), "SQL003")
+			c.Assert(codes, qt.Not(qt.Contains), "coverage/dynamic-sql")
 		})
 	}
 }
@@ -118,7 +118,7 @@ func TestLintSource_MySQLNamesBothHalvesOfThePreparedStatement(t *testing.T) {
 	codes := dynamicCodes(c, "mysql",
 		"CREATE PROCEDURE p() BEGIN SET @s = 'DROP TABLE t'; PREPARE stmt FROM @s; EXECUTE stmt; END")
 
-	c.Assert(countCode(codes, "SQL003"), qt.Equals, 2)
+	c.Assert(countCode(codes, "coverage/dynamic-sql"), qt.Equals, 2)
 }
 
 // countCode counts how many findings carried one identifier.

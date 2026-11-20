@@ -73,7 +73,7 @@ func atlasGapReportsOnThisSurface(file *File) bool {
 // deployed clients still query.
 func atlasGapDroppedTableRule() Rule {
 	return Rule{
-		Code:     "BC103",
+		Name:     "rollout/drop-table",
 		Title:    "dropped table breaks deployed code",
 		Severity: SeverityWarning,
 		// The starting state shows a DROP TABLE IF EXISTS of a table that is
@@ -132,7 +132,7 @@ func atlasGapDroppedTableFindings(file *File, stmt *Statement, index int, create
 	}
 	finding := func(message string, subjects ...Subject) Finding {
 		return Finding{
-			Rule:     "BC103",
+			Rule:     "rollout/drop-table",
 			Title:    "dropped table breaks deployed code",
 			Severity: SeverityWarning,
 			File:     file.Path,
@@ -176,7 +176,7 @@ const atlasGapDroppedTableAdvice = "application versions already deployed agains
 // any of them, so nothing can break on the name.
 func atlasGapDroppedColumnRule() Rule {
 	return Rule{
-		Code:     "BC104",
+		Name:     "rollout/drop-column",
 		Title:    "dropped column breaks deployed code",
 		Severity: SeverityWarning,
 		// The starting state shows a CREATE TABLE IF NOT EXISTS of a table
@@ -210,7 +210,7 @@ func atlasGapDroppedColumnRule() Rule {
 					continue
 				}
 				findings = append(findings, Finding{
-					Rule:     "BC104",
+					Rule:     "rollout/drop-column",
 					Title:    "dropped column breaks deployed code",
 					Severity: SeverityWarning,
 					File:     file.Path,

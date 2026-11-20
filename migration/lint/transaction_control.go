@@ -15,7 +15,7 @@ import (
 // transactionControlRules is TX201, which every dialect lint analyzes shares.
 func transactionControlRules() []Rule {
 	return []Rule{{
-		Code:     "TX201",
+		Name:     "transaction/explicit-transaction",
 		Title:    "transaction block embedded in migration",
 		Severity: SeverityWarning,
 		Dialects: lintDialects(func(described descriptor.Lint) bool { return described.Analyzed }),
@@ -205,7 +205,7 @@ func nestedTransactionBlocks(file *File) []Finding {
 
 func transactionControlFinding(file *File, statement int, message string) Finding {
 	return Finding{
-		Rule:     "TX201",
+		Rule:     "transaction/explicit-transaction",
 		Title:    "transaction block embedded in migration",
 		Severity: SeverityWarning,
 		File:     file.Path,

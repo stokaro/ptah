@@ -14,14 +14,14 @@ import (
 // the codes the run enables over every file in one call.
 func ExampleService() {
 	for _, rule := range mysqllint.Rules() {
-		if strings.HasPrefix(rule.Code, "ON") {
-			fmt.Println(rule.Code, rule.Severity, rule.Targets, rule.Title)
+		if strings.HasPrefix(rule.Name, "ON") {
+			fmt.Println(rule.Name, rule.Severity, rule.Targets, rule.Title)
 		}
 	}
 
 	request := lintext.CheckRequest{
 		Target: lintext.Target{Name: "mariadb"},
-		Codes:  []string{"ON102"},
+		Names:  []string{"online/unproven"},
 		Files: []lintext.File{{Name: "0000000001_add.up.sql", Version: 1, Up: true, Statements: []lintext.Statement{
 			{Start: 0, End: 30, Line: 1, SQL: "ALTER TABLE t ADD COLUMN c int", Words: []string{"ALTER", "TABLE", "T", "ADD", "COLUMN", "C", "INT"}},
 		}}},
@@ -32,7 +32,7 @@ func ExampleService() {
 		return
 	}
 	for _, finding := range result.Findings {
-		fmt.Println(finding.Code, request.Files[finding.File].Name, "statement", finding.Statement)
+		fmt.Println(finding.Name, request.Files[finding.File].Name, "statement", finding.Statement)
 	}
 	// Output:
 	// ON102 error [mysql mariadb] statement does not ask MySQL to apply it online

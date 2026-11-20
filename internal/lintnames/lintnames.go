@@ -1,18 +1,20 @@
-// Package lintnames declares the Ptah name of every built-in lint rule, the
-// categories those names begin with, and the predicate that decides whether a
+// Package lintnames declares the categories every Ptah lint rule name begins
+// with, the grammar of a name, and the predicate that decides whether a
 // selector written as a name or a category selects a rule.
 //
-// A rule keeps its code: findings, baselines and ptah-compat identify it by
-// the code. The name is the native spelling a selector may use beside it, in
-// `--disable`, `disabled-rules`, a `rules:` key and a `ptah:nolint` comment.
+// A rule is identified by its name, `category/name`, everywhere: findings,
+// baselines, selectors and reports. Ptah rules have no numeric code. This
+// package knows no Atlas code either; the table that maps names to Atlas
+// check codes lives in the Atlas compatibility layer, which only the
+// compatibility surface imports.
+//
 // migration/lint and internal/sqllint match selectors with this package, and
-// internal/lintcatalog checks its tables against the rule registries and
-// renders them, which is why the tables live below all three.
+// internal/lintcatalog checks the registries against the categories declared
+// here, which is why the declarations live below all three.
 package lintnames
 
 import (
 	"fmt"
-	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -132,80 +134,19 @@ func parse(selector string) (name, category string, ok bool) {
 	return selector, "", true
 }
 
-// Table maps the codes of one linter's rules to their names. Its zero value
-// holds no rule.
-type Table struct {
-	linter  string
-	example string
-	names   map[string]string
-}
-
-// Migration returns the names of the rules migration lint registers, the
-// rules the official executable providers publish included. A rule a
-// configuration declares, and one a third-party provider publishes, has a
-// code and no name.
-func Migration() Table {
-	return Table{linter: "migration lint", example: "locking/set-not-null", names: migrationNames}
-}
-
-// SQL returns the names of the rules `ptah sql lint` can report.
-func SQL() Table {
-	return Table{linter: "SQL lint", example: "design/no-primary-key", names: sqlNames}
-}
-
-// Any returns the names of the rules of both linters, for a selector read
-// from a file both of them read, such as the `rules:` section of
-// `.ptah-lint.yaml`. A code both linters register names one rule in each.
-func Any() Table {
-	names := make(map[string]string, len(migrationNames)+len(sqlNames))
-	maps.Copy(names, migrationNames)
-	maps.Copy(names, sqlNames)
-	return Table{linter: "lint", example: "locking/set-not-null", names: names}
-}
-
-// Name returns the name of the rule code, or the empty string for a code the
-// table does not name.
-func (t Table) Name(code string) string { return t.names[code] }
-
-// Codes returns every code the table names, sorted.
-func (t Table) Codes() []string { return slices.Sorted(maps.Keys(t.names)) }
-
-// SpecificKeys returns the keys that name the rule alone, most specific
-// first: its code, then its name. A `rules:` section looks these up before it
-// looks up a group. The name is left out for a code the table does not name.
-func (t Table) SpecificKeys(code string) []string {
-	if name := t.names[code]; name != "" {
-		return []string{code, name}
-	}
-	return []string{code}
-}
-
-// GroupKeys returns the keys that name the rule's category, written as
-// `locking` and as `locking/`. It is empty for a code the table does not name.
-// Every linter that reads a `rules:` section resolves a category key through
-// this one function, so the two spellings cannot drift apart.
-func (t Table) GroupKeys(code string) []string {
-	category := CategoryOf(t.names[code])
-	if category == "" {
-		return nil
-	}
-	return []string{category, category + "/"}
-}
-
-// Selects reports whether a name-space selector selects the rule code: the
-// selector is the rule's name, or the category its name begins with. A
-// selector written as a code selects nothing here; see [IsSelector].
+// Selects reports whether selector selects the rule called ruleName: the
+// selector is the rule's name, or the category its name begins with, written
+// `locking` or `locking/`. This is the one predicate every selector of every
+// linter goes through: a flag, a configuration file, a baseline and a
+// `ptah:nolint` comment.
 //
 // There is no prefix match. `locking/set-not` selects no rule, and `lock`
-// is not a category, so a name cannot reach a rule its author did not spell.
-func (t Table) Selects(selector, code string) bool {
-	ruleName := t.names[code]
-	if ruleName == "" {
-		return false
-	}
+// is not a category, so a selector cannot reach a rule its author did not
+// spell.
+func Selects(selector, ruleName string) bool {
 	name, category, ok := parse(selector)
 	switch {
-	case !ok:
+	case !ok || ruleName == "":
 		return false
 	case name != "":
 		return name == ruleName
@@ -214,33 +155,84 @@ func (t Table) Selects(selector, code string) bool {
 	}
 }
 
-// Resolve returns the codes a name-space selector selects, sorted. It refuses
-// a selector naming no rule of the table: a name it does not hold, a category
+// ConfigKeys returns the keys of a `rules:` section that name the rule alone,
+// which is its name.
+func ConfigKeys(ruleName string) []string { return []string{ruleName} }
+
+// GroupKeys returns the keys that name the rule's category, written as
+// `locking` and as `locking/`. Every linter that reads a `rules:` section
+// resolves a category key through this one function, so the two spellings
+// cannot drift apart.
+func GroupKeys(ruleName string) []string {
+	category := CategoryOf(ruleName)
+	if category == "" {
+		return nil
+	}
+	return []string{category, category + "/"}
+}
+
+// Set is the rule names one linter run holds. It judges selectors against
+// them, so a selector that reaches no rule of the run is refused rather than
+// read as a rule turned off. Its zero value holds no rule.
+type Set struct {
+	linter string
+	names  []string
+}
+
+// NewSet returns the set of names, sorted and without repeats. linter names
+// the linter for refusals, such as "migration lint".
+func NewSet(linter string, names []string) Set {
+	return Set{linter: linter, names: slices.Compact(slices.Sorted(slices.Values(names)))}
+}
+
+// Names returns the names the set holds, sorted.
+func (s Set) Names() []string { return slices.Clone(s.names) }
+
+// Has reports whether the set holds the name.
+func (s Set) Has(name string) bool {
+	_, found := slices.BinarySearch(s.names, name)
+	return found
+}
+
+// Resolve returns the names a name-space selector selects, sorted. It refuses
+// a selector naming no rule of the set: a name it does not hold, a category
 // that is not declared, and a declared category none of its rules is named
-// under. A selector written as a code is refused too, since it is the code
-// rule's to judge.
-func (t Table) Resolve(selector string) ([]string, error) {
+// under. A code-shaped selector is refused as [RefuseCode] says.
+func (s Set) Resolve(selector string) ([]string, error) {
+	if IsCode(selector) {
+		return nil, RefuseCode(selector)
+	}
 	name, category, ok := parse(selector)
 	if !ok {
-		return nil, fmt.Errorf("%q is not a rule name or category", selector)
+		return nil, fmt.Errorf("%q is not a rule name or category; lint rules are named category/name, such as %s", selector, exampleName)
 	}
-	var codes []string
-	for _, code := range t.Codes() {
-		if t.Selects(selector, code) {
-			codes = append(codes, code)
+	var selected []string
+	for _, candidate := range s.names {
+		if Selects(selector, candidate) {
+			selected = append(selected, candidate)
 		}
 	}
-	if len(codes) > 0 {
-		return codes, nil
+	if len(selected) > 0 {
+		return selected, nil
 	}
 	if name != "" {
 		return nil, fmt.Errorf("%q is not the name of a %s rule; a name is a category and a rule joined by a slash, such as %s",
-			selector, t.linter, t.example)
+			selector, s.linter, exampleName)
 	}
 	if _, declared := CategoryFor(category); !declared {
 		return nil, fmt.Errorf("%q is not a rule category; the categories are %s", selector, categoryList())
 	}
-	return nil, fmt.Errorf("%q is a category that holds no %s rule", selector, t.linter)
+	return nil, fmt.Errorf("%q is a category that holds no %s rule", selector, s.linter)
+}
+
+// exampleName is the rule name refusals show.
+const exampleName = "locking/add-foreign-key"
+
+// RefuseCode is the refusal of a word spelled as a rule code, such as DS102.
+// Ptah rules are named, and the message names no rule the code might once
+// have stood for: native Ptah holds no table from codes to rules.
+func RefuseCode(word string) error {
+	return fmt.Errorf("lint rules are named category/name; %s is not a rule name", word)
 }
 
 // MeantAsSelector reports whether a word of a nolint directive's free-form
@@ -285,32 +277,66 @@ func IsCode(word string) bool {
 }
 
 // ValidateSelector judges a selector written in a flag or a configuration
-// file, the way every linter does before it runs. A selector is a code or a
-// code prefix, spelled in upper case, or a name or category the table holds.
-// Anything else is refused: matched against nothing it would read as a rule
-// turned off. Whether a code or prefix reaches a rule is the caller's to
-// judge; it knows the rules the run registers.
+// file, the way every linter does before it runs. A selector is a rule name
+// or a category the set holds. A code-shaped word is refused with
+// [RefuseCode], and anything else is refused: matched against nothing it
+// would read as a rule turned off.
 //
-// The error begins with the quoted selector, so a caller prefixes it with the
-// place the selector was written.
-func (t Table) ValidateSelector(selector string) error {
+// The error begins with the quoted selector or the refused code, so a caller
+// prefixes it with the place the selector was written.
+func (s Set) ValidateSelector(selector string) error {
 	switch {
-	case selector == "", IsCode(selector):
+	case selector == "":
 		return nil
+	case IsCode(selector):
+		return RefuseCode(selector)
 	case IsSelector(selector):
-		_, err := t.Resolve(selector)
+		_, err := s.Resolve(selector)
 		return err
 	default:
-		return fmt.Errorf("%q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits, "+
-			"or be a rule name or category, such as %s or %s", selector, t.example, CategoryOf(t.example))
+		return fmt.Errorf("%q is not a rule name or category; lint rules are named category/name, such as %s or %s",
+			selector, exampleName, CategoryOf(exampleName))
 	}
 }
 
-// categoryList joins the declared category names for a refusal.
-func categoryList() string {
+// CategoryNames returns the declared category names, ordered.
+func CategoryNames() []string {
 	names := make([]string, 0, len(categories))
 	for _, category := range categories {
 		names = append(names, category.Name)
 	}
-	return strings.Join(names, ", ")
+	return names
+}
+
+// categoryList joins the declared category names for a refusal.
+func categoryList() string { return strings.Join(CategoryNames(), ", ") }
+
+// ValidateGrammar judges a selector or a declared rule's name by form alone,
+// without a set of rules to look it up in: a configuration file is read before
+// the run knows which rules it has. A code-shaped word is refused as
+// [RefuseCode] says; a name or category must be well formed and begin with a
+// declared category.
+func ValidateGrammar(selector string) error {
+	switch {
+	case selector == "":
+		return nil
+	case IsCode(selector):
+		return RefuseCode(selector)
+	}
+	name, category, ok := parse(selector)
+	if !ok {
+		return fmt.Errorf("%q is not a rule name or category; lint rules are named category/name, such as %s or %s",
+			selector, exampleName, CategoryOf(exampleName))
+	}
+	if name != "" {
+		category = CategoryOf(name)
+		if !WellFormed(name) {
+			return fmt.Errorf("%q is not a rule name; a name is a category and a rule joined by a slash, such as %s",
+				selector, exampleName)
+		}
+	}
+	if _, declared := CategoryFor(category); !declared {
+		return fmt.Errorf("%q is not a rule category; the categories are %s", selector, categoryList())
+	}
+	return nil
 }

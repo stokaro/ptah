@@ -415,11 +415,11 @@ func mysqlCostRules() []lintkit.Rule {
 func columnTypeCopyRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "MY130",
+			Name:     "rewrite/alter-column-type",
 			Title:    "column type change copies the table",
 			Severity: lintext.Warning,
 			Targets:  family(),
-			Subsumes: []string{"DS103", "MY101"},
+			Subsumes: []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: columnChangeStatements,
@@ -447,7 +447,7 @@ func columnTypeCopyRule() lintkit.Rule {
 func primaryKeyDropCopyRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "MY133",
+			Name:     "rewrite/drop-primary-key",
 			Title:    "primary key dropped without a replacement copies the table",
 			Severity: lintext.Warning,
 			Targets:  family(),
@@ -574,11 +574,11 @@ func (c resolvedCharsetConversion) inPlace() int {
 func charsetConversionCopyRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "MY136",
+			Name:     "rewrite/convert-charset",
 			Title:    "character set conversion copies the table",
 			Severity: lintext.Warning,
 			Targets:  family(),
-			Subsumes: []string{"MY101"},
+			Subsumes: []string{"locking/blocking-alter-table"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: charsetConversionStatements,

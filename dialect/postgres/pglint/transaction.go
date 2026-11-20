@@ -13,7 +13,7 @@ func transactionRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
 			Rule: lintext.Rule{
-				Code:     "TX101",
+				Name:     "transaction/mixed-statements",
 				Title:    "transactional and non-transactional statements mixed",
 				Severity: lintext.Warning,
 				Targets:  []string{platform.Postgres},

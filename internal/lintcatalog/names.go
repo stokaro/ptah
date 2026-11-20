@@ -26,8 +26,7 @@ const (
 func (e Entry) Category() string { return lintnames.CategoryOf(e.Name) }
 
 // nameProblems returns every way entries break the naming rule [Entry.Name]
-// and [lintnames.Category] state. A dialect list that is empty means every dialect, so a
-// rule for every dialect shares its name with no other rule of its linter.
+// and [lintnames.Category] state.
 func nameProblems(entries []Entry) []string {
 	var problems []string
 	for _, entry := range entries {
@@ -39,50 +38,40 @@ func nameProblems(entries []Entry) []string {
 // entryNameProblems checks the name of one entry on its own.
 func entryNameProblems(entry Entry) []string {
 	switch {
-	case entry.Name == "":
-		return []string{fmt.Sprintf("rule %s has no Ptah name", entry.Code)}
 	case !lintnames.WellFormed(entry.Name):
-		return []string{fmt.Sprintf("rule %s is named %q, which is not two lowercase hyphenated segments joined by a slash", entry.Code, entry.Name)}
+		return []string{fmt.Sprintf("rule %q is not two lowercase hyphenated segments joined by a slash", entry.Name)}
 	}
 	category, declared := lintnames.CategoryFor(entry.Category())
 	switch {
 	case !declared:
-		return []string{fmt.Sprintf("rule %s is named %s, whose category %q is not declared", entry.Code, entry.Name, entry.Category())}
+		return []string{fmt.Sprintf("rule %s names a category %q that is not declared", entry.Name, entry.Category())}
 	case category.Engine != "" && (entry.Owner != OwnerProvider || !slices.Equal(entry.Dialects, []string{category.Engine})):
-		return []string{fmt.Sprintf("rule %s is named %s under the engine category %q, which holds only rules a provider publishes for %s alone",
-			entry.Code, entry.Name, category.Name, category.Engine)}
+		return []string{fmt.Sprintf("rule %s is under the engine category %q, which holds only rules a provider publishes for %s alone",
+			entry.Name, category.Name, category.Engine)}
 	}
 	return nil
 }
 
 // sharedNameProblems checks the entries that share a name against each other.
+// Each linter holds one entry per name, so these are a name both linters
+// report, and the two must agree on its default severity.
 func sharedNameProblems(entries []Entry) []string {
 	var problems []string
 	for index, entry := range entries {
 		for _, other := range entries[index+1:] {
-			if entry.Name == "" || entry.Name != other.Name {
+			if entry.Name != other.Name {
 				continue
 			}
-			if entry.Severity != other.Severity {
-				problems = append(problems, fmt.Sprintf("rules %s and %s share the name %s with different severities, %s and %s",
-					entry.Code, other.Code, entry.Name, entry.Severity, other.Severity))
+			if entry.Kind == other.Kind {
+				problems = append(problems, fmt.Sprintf("rule %s has two entries in %s lint", entry.Name, entry.Kind))
 			}
-			if entry.Kind == other.Kind && !disjointDialects(entry.Dialects, other.Dialects) {
-				problems = append(problems, fmt.Sprintf("rules %s and %s share the name %s on overlapping dialects (%s; %s): "+
-					"one name is one hazard, checked at most once on each dialect", entry.Code, other.Code, entry.Name, entry.DialectsLabel(), other.DialectsLabel()))
+			if entry.Severity != other.Severity {
+				problems = append(problems, fmt.Sprintf("rule %s is %s in %s lint and %s in %s lint; one name has one default severity",
+					entry.Name, entry.Severity, entry.Kind, other.Severity, other.Kind))
 			}
 		}
 	}
 	return problems
-}
-
-// disjointDialects reports whether two dialect lists name dialects and share
-// none. An empty list means every dialect, so it overlaps every other list.
-func disjointDialects(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return false
-	}
-	return !slices.ContainsFunc(a, func(dialect string) bool { return slices.Contains(b, dialect) })
 }
 
 // unusedCategoryProblems reports a declared category no entry is named under,
@@ -97,28 +86,35 @@ func unusedCategoryProblems(entries []Entry) []string {
 	return problems
 }
 
-// providerOwnedCodes returns the code of every rule an official provider's
-// recorded catalog publishes.
-func providerOwnedCodes() (map[string]bool, error) {
+// providerOwnedNames returns, for every rule name an official provider's
+// recorded catalog publishes, the engines it publishes it for.
+func providerOwnedNames() (map[string][]string, error) {
 	descriptions, err := providerpublished.Descriptions()
 	if err != nil {
 		return nil, err
 	}
-	owned := make(map[string]bool)
+	owned := make(map[string][]string)
 	for _, description := range descriptions {
 		for _, engine := range description.GetEngines() {
 			for _, rule := range providerhost.PublishedLintRules(engine) {
-				owned[rule.Code] = true
+				owned[rule.Name] = append(owned[rule.Name], rule.Targets...)
 			}
 		}
 	}
 	return owned, nil
 }
 
-// ownerOf returns who publishes the rule code.
-func ownerOf(code string, providerOwned map[string]bool) Owner {
-	if providerOwned[code] {
-		return OwnerProvider
+// ownerOf returns who publishes the rule: the provider when it judges only
+// engines a provider publishes the name for, and the host otherwise.
+func ownerOf(name string, dialects []string, providerOwned map[string][]string) Owner {
+	engines := providerOwned[name]
+	if len(dialects) == 0 || len(engines) == 0 {
+		return OwnerHost
 	}
-	return OwnerHost
+	for _, dialect := range dialects {
+		if !slices.Contains(engines, dialect) {
+			return OwnerHost
+		}
+	}
+	return OwnerProvider
 }

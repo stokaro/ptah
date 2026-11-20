@@ -13,6 +13,7 @@ import (
 	"fmt"
 
 	"ptah.run/core/schemaext"
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/lintdialect"
 	"ptah.run/migration/lint"
@@ -66,9 +67,10 @@ func Analyze(ctx context.Context, runtime Runtime, sql, dialect string) (lint.An
 		return lint.Analysis{}, fmt.Errorf("prepare plan for analysis: %w", err)
 	}
 	return lint.AnalyzeFS(ctx, runtime, snapshot, lint.Options{
-		Compatibility: lint.CompatibilityProfileAtlas,
-		Dialect:       canonical,
-		DirFormat:     migrationfile.DirFormatAtlas,
+		Compatibility:  lint.CompatibilityProfileAtlas,
+		AtlasSelectors: atlascodes.SuppressedBy,
+		Dialect:        canonical,
+		DirFormat:      migrationfile.DirFormatAtlas,
 	})
 }
 

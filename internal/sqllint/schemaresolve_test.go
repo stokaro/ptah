@@ -46,7 +46,7 @@ func TestLintSource_AnIndexIsCheckedAgainstTheSuppliedSchema(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(codesOf(findings), qt.DeepEquals, []string{"DDL002"})
+	c.Assert(codesOf(findings), qt.DeepEquals, []string{"correctness/index-on-undeclared-column"})
 	c.Assert(findings[0].Message, qt.Contains, "nickname")
 	c.Assert(findings[0].Message, qt.Contains, "users")
 }
@@ -83,7 +83,7 @@ func TestLintSource_AnIndexResolvesAgainstItsOwnFile(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(codesOf(findings), qt.DeepEquals, []string{"DDL002"})
+	c.Assert(codesOf(findings), qt.DeepEquals, []string{"correctness/index-on-undeclared-column"})
 }
 
 // TestLintSource_AnIndexOnAnUnknownTableIsSilent keeps the rule from reporting

@@ -35,7 +35,7 @@ func setNotNullConsequence(dialect string) string {
 func setNotNullRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG303",
+			Name:     "locking/set-not-null",
 			Title:    "not-null validation scans existing rows",
 			Severity: lintext.Warning,
 			Targets:  pgWireFamily,

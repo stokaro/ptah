@@ -284,7 +284,7 @@ func riskIsSettled(risk uniqueRisk) bool {
 
 func uniqueIndexAddedRule() Rule {
 	return Rule{
-		Code:     "MF101",
+		Name:     "data-dependent/add-unique-index",
 		Title:    "unique index over existing rows may fail",
 		Severity: SeverityWarning,
 		Input:    InputBaselineRefinement,
@@ -303,7 +303,7 @@ func uniqueIndexAddedRule() Rule {
 				}
 				message := fmt.Sprintf("%s builds over the rows %s already holds and %s. %s",
 					site.Label(), site.Table.Name, uniqueFailure(site), uniqueAdvice(site, risk))
-				findings = append(findings, uniqueFinding(file, site, "MF101", "unique index over existing rows may fail", message))
+				findings = append(findings, uniqueFinding(file, site, "data-dependent/add-unique-index", "unique index over existing rows may fail", message))
 			}
 			return findings
 		},
@@ -312,10 +312,10 @@ func uniqueIndexAddedRule() Rule {
 
 func indexMadeUniqueRule() Rule {
 	return Rule{
-		Code:     "MF102",
+		Name:     "data-dependent/rebuild-index-as-unique",
 		Title:    "index rebuilt as unique may fail",
 		Severity: SeverityWarning,
-		Subsumes: []string{"MF101"},
+		Subsumes: []string{"data-dependent/add-unique-index"},
 		Input:    InputBaselineRefinement,
 		BaselineSubjects: func(file *File) []int {
 			return unionSubjects(file, uniqueIndexStatements, ifNotExistsCreates)
@@ -342,7 +342,7 @@ func indexMadeUniqueRule() Rule {
 					"which also leaves the table without the index it had. %s. On PostgreSQL build the unique index CONCURRENTLY under a new name first "+
 					"and drop the old one only once it exists, so a failure leaves the old index in place",
 					site.Label(), replaced, replacement, site.Table.Name, uniqueFailure(site), uniqueAdvice(site, risk))
-				findings = append(findings, uniqueFinding(file, site, "MF102", "index rebuilt as unique may fail", message))
+				findings = append(findings, uniqueFinding(file, site, "data-dependent/rebuild-index-as-unique", "index rebuilt as unique may fail", message))
 			}
 			return findings
 		},

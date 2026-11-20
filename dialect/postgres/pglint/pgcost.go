@@ -341,11 +341,11 @@ const pgRewriteConsequence = "PostgreSQL rewrites the whole table and rebuilds e
 func postgresTypeRewriteRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG301",
+			Name:     "rewrite/alter-column-type",
 			Title:    "column type change rewrites the table",
 			Severity: lintext.Warning,
 			Targets:  []string{"postgres"},
-			Subsumes: []string{"DS103"},
+			Subsumes: []string{"data-dependent/alter-column-type"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: pgTypeChangeStatements,
@@ -501,7 +501,7 @@ func pgPrimaryKeyStatements(file *lintkit.File) []int {
 func postgresPrimaryKeyScanRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "PG304",
+			Name:     "locking/add-primary-key-on-nullable",
 			Title:    "primary key over nullable columns scans the table",
 			Severity: lintext.Warning,
 			Targets:  []string{"postgres"},

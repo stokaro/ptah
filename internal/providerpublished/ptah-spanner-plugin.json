@@ -25,17 +25,17 @@
       "lintRules": [
         {
           "appliesToDown": true,
-          "code": "SP101",
+          "code": "data-dependent/set-not-null",
           "severity": "WARNING",
           "title": "not-null validation scans existing rows"
         },
         {
           "appliesToDown": true,
-          "code": "SP102",
+          "code": "side-effect/drop-row-deletion-policy",
           "severity": "INFO",
           "subsumes": [
-            "BC104",
-            "DS102"
+            "rollout/drop-column",
+            "destructive/drop-column"
           ],
           "title": "row deletion policy dropped"
         }

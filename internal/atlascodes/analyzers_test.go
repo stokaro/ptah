@@ -1,4 +1,4 @@
-package atlaslint_test
+package atlascodes_test
 
 import (
 	"testing"

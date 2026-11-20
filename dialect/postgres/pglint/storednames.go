@@ -32,7 +32,7 @@ func identifierRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
 			Rule: lintext.Rule{
-				Code:          "PG401P",
+				Name:          "naming/identifier-too-long",
 				Title:         "identifier longer than the server keeps",
 				Severity:      lintext.Warning,
 				Targets:       []string{"postgres"},
@@ -44,7 +44,7 @@ func identifierRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:          "PG402P",
+				Name:          "naming/identifier-collision",
 				Title:         "identifiers the server stores as one",
 				Severity:      lintext.Error,
 				Targets:       []string{"postgres"},

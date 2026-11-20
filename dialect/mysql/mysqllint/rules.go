@@ -12,7 +12,7 @@ func mysqlRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
 			Rule: lintext.Rule{
-				Code:     "MY101",
+				Name:     "locking/blocking-alter-table",
 				Title:    "lock-heavy ALTER TABLE",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -33,7 +33,7 @@ func mysqlRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY102",
+				Name:     "side-effect/inline-reference",
 				Title:    "inline reference ignored on a column",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -49,7 +49,7 @@ func mysqlRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY131",
+				Name:     "locking/add-foreign-key",
 				Title:    "foreign key added with blocking DDL",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -63,7 +63,7 @@ func mysqlRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY132",
+				Name:     "rewrite/add-primary-key",
 				Title:    "primary key added with table rebuild",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -83,7 +83,7 @@ func mysqlRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY134",
+				Name:     "locking/add-fulltext-index",
 				Title:    "fulltext index added with blocking DDL",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -97,7 +97,7 @@ func mysqlRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY135",
+				Name:     "locking/add-spatial-index",
 				Title:    "spatial index added with blocking DDL",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},

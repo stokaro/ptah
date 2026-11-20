@@ -158,7 +158,7 @@ func notNullRules() []Rule {
 
 func nullableMadeNotNullRule() Rule {
 	return Rule{
-		Code:     "DD103",
+		Name:     "data-dependent/set-not-null",
 		Title:    "nullable column made NOT NULL",
 		Severity: SeverityWarning,
 		Dialects: lintDialects(func(described descriptor.Lint) bool {
@@ -180,7 +180,7 @@ func nullableMadeNotNullRule() Rule {
 					"so the change meets no NULL, and only then restate the column",
 					site.clause, site.table.Name, site.column, notNullConsequence(file.dialect),
 					site.table.Name, site.column, site.column)
-				findings = append(findings, costFinding(file, site.statement, "DD103", "nullable column made NOT NULL", message,
+				findings = append(findings, costFinding(file, site.statement, "data-dependent/set-not-null", "nullable column made NOT NULL", message,
 					Subject{Kind: SubjectColumn, Name: site.column, Parent: site.table.Name, DataType: strings.ToLower(column.ColumnType)}))
 			}
 			return findings

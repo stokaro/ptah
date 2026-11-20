@@ -204,10 +204,10 @@ func TestLintSource_OwnedSplit_FailurePath(t *testing.T) {
 // list cannot claim an identifier the owner path does not emit or omit one it
 // does.
 var ownedEmissions = map[string]ownedStatement{
-	"SQL002": {sql: "UPSERT INTO a (id) VALUES (1)", effects: []lintext.Effect{kind(lintext.ClassOther, "UPSERT", "a")}},
-	"DDL001": createWithoutPK,
-	"CAP001": createPrice,
-	"SQL004": {sql: "DROP TABLE a", effects: []lintext.Effect{kind(lintext.ClassSchema, "DROP TABLE", "a")}},
+	"coverage/unsupported-statement": {sql: "UPSERT INTO a (id) VALUES (1)", effects: []lintext.Effect{kind(lintext.ClassOther, "UPSERT", "a")}},
+	"design/no-primary-key": createWithoutPK,
+	"capability/missing": createPrice,
+	"coverage/unanalyzed-statements": {sql: "DROP TABLE a", effects: []lintext.Effect{kind(lintext.ClassSchema, "DROP TABLE", "a")}},
 }
 
 func TestOwnerCatalogIDs_AreWhatTheOwnerPathEmits(t *testing.T) {

@@ -52,6 +52,6 @@ func rules() lintkit.Rules {
 	all = append(all, postgresCostRules()...)
 	all = append(all, atlasGapPostgresRules()...)
 	all = append(all, transactionRules()...)
-	slices.SortFunc(all, func(a, b lintkit.Rule) int { return cmp.Compare(a.Code, b.Code) })
+	slices.SortFunc(all, func(a, b lintkit.Rule) int { return cmp.Compare(a.Name, b.Name) })
 	return all
 }

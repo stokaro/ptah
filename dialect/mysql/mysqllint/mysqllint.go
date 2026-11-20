@@ -44,6 +44,6 @@ func rules() lintkit.Rules {
 	all = append(all, mysqlCostRules()...)
 	all = append(all, mysqlMemberRules()...)
 	all = append(all, atlasGapMySQLRules()...)
-	slices.SortFunc(all, func(a, b lintkit.Rule) int { return cmp.Compare(a.Code, b.Code) })
+	slices.SortFunc(all, func(a, b lintkit.Rule) int { return cmp.Compare(a.Name, b.Name) })
 	return all
 }

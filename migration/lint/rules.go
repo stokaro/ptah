@@ -46,10 +46,10 @@ func ownerRules(runtime lintext.Runtime) ([]Rule, error) {
 	for _, rule := range published {
 		input, err := ruleInputOf(rule.Input)
 		if err != nil {
-			return nil, fmt.Errorf("lint rule %s: %w", rule.Code, err)
+			return nil, fmt.Errorf("lint rule %s: %w", rule.Name, err)
 		}
 		rules = append(rules, Rule{
-			Code:          rule.Code,
+			Name:          rule.Name,
 			Title:         rule.Title,
 			Severity:      Severity(rule.Severity),
 			Dialects:      slices.Clone(rule.Targets),
@@ -109,16 +109,21 @@ func builtinRules() []Rule {
 }
 
 func validateRule(rule Rule) error {
-	if !isCanonicalRuleCode(rule.Code) {
-		return fmt.Errorf("rule code %q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits", rule.Code)
+	if !lintext.CanonicalName(rule.Name) {
+		return fmt.Errorf("rule name %q must be a category and a rule joined by a slash, such as %s: "+
+			"lowercase letters and digits joined by single hyphens", rule.Name, exampleRuleName)
+	}
+	if _, declared := lintnames.CategoryFor(lintnames.CategoryOf(rule.Name)); !declared {
+		return fmt.Errorf("rule %s names a category that is not declared; the categories are %s",
+			rule.Name, strings.Join(lintnames.CategoryNames(), ", "))
 	}
 	if strings.TrimSpace(rule.Title) == "" {
-		return fmt.Errorf("rule %s title is required", rule.Code)
+		return fmt.Errorf("rule %s title is required", rule.Name)
 	}
 	switch rule.Severity {
 	case SeverityInfo, SeverityWarning, SeverityError:
 	default:
-		return fmt.Errorf("rule %s has unsupported severity %q", rule.Code, rule.Severity)
+		return fmt.Errorf("rule %s has unsupported severity %q", rule.Name, rule.Severity)
 	}
 	if rule.owned {
 		// Its owner checks it and names its baseline subjects in the answer,
@@ -126,7 +131,7 @@ func validateRule(rule Rule) error {
 		return nil
 	}
 	if (rule.CheckStatement != nil) == (rule.CheckFile != nil) {
-		return fmt.Errorf("rule %s must set exactly one checker", rule.Code)
+		return fmt.Errorf("rule %s must set exactly one checker", rule.Name)
 	}
 	// A declaration nothing enforces is a comment. These two make the input a
 	// property of the rule the analysis can act on: a rule asking for the
@@ -139,7 +144,7 @@ func validateRule(rule Rule) error {
 		if rule.BaselineSubjects == nil {
 			return fmt.Errorf(
 				"rule %s declares the %s input and must set BaselineSubjects to say which statements need it",
-				rule.Code, rule.Input)
+				rule.Name, rule.Input)
 		}
 	case InputRoutineBody:
 		// No subjects predicate: which statements need a body is not a choice
@@ -148,42 +153,54 @@ func validateRule(rule Rule) error {
 		if rule.BaselineSubjects != nil {
 			return fmt.Errorf(
 				"rule %s sets BaselineSubjects but declares the %s input; set Input to InputBaselineSchema",
-				rule.Code, rule.Input)
+				rule.Name, rule.Input)
 		}
 	case InputStatementText:
 		if rule.BaselineSubjects != nil {
 			return fmt.Errorf(
 				"rule %s sets BaselineSubjects but declares the %s input; set Input to InputBaselineSchema",
-				rule.Code, rule.Input)
+				rule.Name, rule.Input)
 		}
 	default:
-		return fmt.Errorf("rule %s has unsupported input %d", rule.Code, rule.Input)
+		return fmt.Errorf("rule %s has unsupported input %d", rule.Name, rule.Input)
 	}
 	return nil
 }
 
-func isCanonicalRuleCode(code string) bool { return lintnames.IsCode(code) }
-
+// validateRules refuses a rule that fails [validateRule], a name two rules
+// share without sharing one hazard, and a subsumption of a rule nobody
+// registers. Rules share a name when they report one hazard on different
+// engines: their dialects must not overlap and their default severities must
+// match, so a name has one meaning and one default on every engine.
 func validateRules(rules []Rule) error {
-	seen := make(map[string]struct{}, len(rules))
-	for _, rule := range rules {
+	seen := make(map[string]Rule, len(rules))
+	for i, rule := range rules {
 		if err := validateRule(rule); err != nil {
 			return err
 		}
-		if _, ok := seen[rule.Code]; ok {
-			return fmt.Errorf("duplicate rule code %s", rule.Code)
+		for _, other := range rules[:i] {
+			if other.Name != rule.Name {
+				continue
+			}
+			if other.Severity != rule.Severity {
+				return fmt.Errorf("rule %s is registered at severities %s and %s; one name has one default severity",
+					rule.Name, other.Severity, rule.Severity)
+			}
+			if overlap := sharedDialect(other.Dialects, rule.Dialects); overlap != "" {
+				return fmt.Errorf("duplicate rule %s: two rules of one name judge %s", rule.Name, overlap)
+			}
 		}
-		seen[rule.Code] = struct{}{}
+		seen[rule.Name] = rule
 	}
 	// A subsumption naming a rule nobody registers would suppress nothing and
 	// say nothing, so it is checked against the whole set rather than trusted.
 	for _, rule := range rules {
 		for _, code := range rule.Subsumes {
-			if code == rule.Code {
-				return fmt.Errorf("rule %s subsumes itself", rule.Code)
+			if code == rule.Name {
+				return fmt.Errorf("rule %s subsumes itself", rule.Name)
 			}
 			if _, ok := seen[code]; !ok {
-				return fmt.Errorf("rule %s subsumes %s, which no rule registers", rule.Code, code)
+				return fmt.Errorf("rule %s subsumes %s, which no rule registers", rule.Name, code)
 			}
 		}
 	}
@@ -235,7 +252,7 @@ const tableDroppedAdvice = "take a verified backup first and consider a rename-a
 // session-local table, so it destroys nothing that outlives the session.
 func tableDroppedRule() Rule {
 	return Rule{
-		Code:     "DS101",
+		Name:     "destructive/drop-table",
 		Title:    "table dropped",
 		Severity: SeverityError,
 		// The text recognizes a table rebuild, whose copy keeps the rows
@@ -316,7 +333,7 @@ func tableRenamedFindings(file *File) []Finding {
 				subjects = []Subject{{Kind: SubjectTable, Name: name.name}}
 			}
 			findings = append(findings, Finding{
-				Rule:     "DS101",
+				Rule:     "destructive/drop-table",
 				Title:    "table dropped",
 				Severity: SeverityError,
 				File:     file.Path,
@@ -368,7 +385,7 @@ func orderedDropTargets(tables []lintkit.TableReference) []lintkit.TableReferenc
 func tableDroppedFindings(filePath string, line, statementIndex int, tables []lintkit.TableReference) []Finding {
 	finding := func(message string, subjects ...Subject) Finding {
 		return Finding{
-			Rule:     "DS101",
+			Rule:     "destructive/drop-table",
 			Title:    "table dropped",
 			Severity: SeverityError,
 			File:     filePath,
@@ -421,7 +438,7 @@ func tableReplacedFinding(filePath string, line, statementIndex int, table lintk
 		subjects = []Subject{{Kind: SubjectTable, Name: table.Name}}
 	}
 	return Finding{
-		Rule:     "DS101",
+		Rule:     "destructive/drop-table",
 		Title:    "table dropped",
 		Severity: SeverityError,
 		File:     filePath,
@@ -458,7 +475,7 @@ const renameRetiredNameAdvice = "application versions deployed against the old n
 // consults the tables the file created; see [newColumnDrops].
 func columnDroppedRule() Rule {
 	return Rule{
-		Code:     "DS102",
+		Name:     "destructive/drop-column",
 		Title:    "column dropped",
 		Severity: SeverityError,
 		// The starting state shows a CREATE TABLE IF NOT EXISTS of a table
@@ -482,7 +499,7 @@ func columnDroppedRule() Rule {
 					continue
 				}
 				findings = append(findings, Finding{
-					Rule:     "DS102",
+					Rule:     "destructive/drop-column",
 					Title:    "column dropped",
 					Severity: SeverityError,
 					File:     file.Path,
@@ -519,7 +536,7 @@ func rebuildColumnLossFindings(file *File) []Finding {
 		for _, name := range loss.LostColumns {
 			create := &file.Statements[loss.Create]
 			findings = append(findings, Finding{
-				Rule: "DS102", Title: "column dropped", Severity: SeverityError,
+				Rule: "destructive/drop-column", Title: "column dropped", Severity: SeverityError,
 				File: file.Path, Line: create.Line,
 				Message: "DROP COLUMN permanently deletes the column's data; " + columnDroppedAdvice,
 				Context: statementFindingContext(loss.Create, Subject{Kind: SubjectColumn, Name: name, Parent: tables[0].Normalized}),
@@ -543,7 +560,7 @@ func rebuildColumnLossFindings(file *File) []Finding {
 // names its missing input.
 func columnDroppedWithReadersRule() Rule {
 	return Rule{
-		Code:     "DS110P",
+		Name:     "dependency/drop-column-in-use",
 		Title:    "column dropped while something reads it",
 		Severity: SeverityError,
 		CheckFile: func(file *File) []Finding {
@@ -589,7 +606,7 @@ func droppedColumnReaderFindings(file *File, stmt *Statement, index int) []Findi
 			continue
 		}
 		findings = append(findings, Finding{
-			Rule:     "DS110P",
+			Rule:     "dependency/drop-column-in-use",
 			Title:    "column dropped while something reads it",
 			Severity: SeverityError,
 			File:     file.Path,
@@ -638,7 +655,7 @@ func columnRenamedFindings(file *File) []Finding {
 	var findings []Finding
 	for _, rename := range renamesOfKind(fileRenames(file), SubjectColumn) {
 		findings = append(findings, Finding{
-			Rule:     "DS102",
+			Rule:     "destructive/drop-column",
 			Title:    "column dropped",
 			Severity: SeverityError,
 			File:     file.Path,
@@ -687,7 +704,7 @@ func renamedColumnSubjects(names []renamedName) []Subject {
 // [typeUnchangedByState].
 func columnTypeChangedRule() Rule {
 	return Rule{
-		Code:             "DS103",
+		Name:             "data-dependent/alter-column-type",
 		Title:            "column type changed",
 		Severity:         SeverityWarning,
 		Input:            InputBaselineRefinement,
@@ -700,7 +717,7 @@ func columnTypeChangedRule() Rule {
 				}
 				stmt := &file.Statements[index]
 				findings = append(findings, Finding{
-					Rule:     "DS103",
+					Rule:     "data-dependent/alter-column-type",
 					Title:    "column type changed",
 					Severity: SeverityWarning,
 					File:     file.Path,
@@ -716,7 +733,7 @@ func columnTypeChangedRule() Rule {
 
 func notNullDroppedRule() Rule {
 	return Rule{
-		Code:     "DS104",
+		Name:     "integrity/drop-not-null",
 		Title:    "not-null constraint dropped",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -734,7 +751,7 @@ func notNullDroppedRule() Rule {
 // reported by the more specific CD family, so a statement is never double-flagged.
 func constraintDroppedRule() Rule {
 	return Rule{
-		Code:     "DS105",
+		Name:     "integrity/drop-untyped-constraint",
 		Title:    "constraint dropped",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -751,7 +768,7 @@ func constraintDroppedRule() Rule {
 // is the DROP-side analogue of postgresAlterRule and backs the CD family.
 func alterTableDropRule(code, title string, scan func([]string) bool, message string) Rule {
 	return Rule{
-		Code:     code,
+		Name:     code,
 		Title:    title,
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -764,23 +781,23 @@ func alterTableDropRule(code, title string, scan func([]string) bool, message st
 }
 
 func foreignKeyDroppedRule() Rule {
-	return alterTableDropRule("CD101", "foreign key dropped", scanDropForeignKey,
+	return alterTableDropRule("integrity/drop-foreign-key", "foreign key dropped", scanDropForeignKey,
 		"dropping a foreign key removes referential-integrity enforcement; verify no application invariant relies on the database rejecting orphan rows before applying")
 }
 
 func checkConstraintDroppedRule() Rule {
-	return alterTableDropRule("CD102", "check constraint dropped", scanDropCheck,
+	return alterTableDropRule("integrity/drop-check", "check constraint dropped", scanDropCheck,
 		"dropping a check constraint removes a value-validation guarantee; verify no data invariant depends on it before applying")
 }
 
 func primaryKeyDroppedRule() Rule {
-	return alterTableDropRule("CD103", "primary key dropped", lintkit.ScanDropPrimaryKey,
+	return alterTableDropRule("integrity/drop-primary-key", "primary key dropped", lintkit.ScanDropPrimaryKey,
 		"dropping a primary key removes row-uniqueness and identity enforcement and can break replication; verify a replacement key exists before applying")
 }
 
 func enumValueRemovedRule() Rule {
 	return Rule{
-		Code:     "DS106",
+		Name:     "destructive/remove-enum-value",
 		Title:    "enum value removed",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -864,7 +881,7 @@ var nonDeterministicCalls = []string{
 // depending on how the author quoted it.
 func immutableRoutineReadsTheClockRule() Rule {
 	return Rule{
-		Code:     "DD102",
+		Name:     "correctness/immutable-calls-volatile",
 		Title:    "immutable routine calls something that is not",
 		Severity: SeverityWarning,
 		Input:    InputRoutineBody,
@@ -927,7 +944,7 @@ func firstNonDeterministicCall(bodyWords []string) (string, bool) {
 
 func routineBodyNotAnalyzedRule() Rule {
 	return Rule{
-		Code:     "AC101",
+		Name:     "coverage/routine-body",
 		Title:    "routine body not analyzed",
 		Severity: SeverityInfo,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -947,7 +964,7 @@ func routineBodyNotAnalyzedRule() Rule {
 // nothing says it is SQL at all until a server runs it.
 func statementNotParsedRule() Rule {
 	return Rule{
-		Code:     "AC102",
+		Name:     "coverage/unparsed-statement",
 		Title:    "statement not parsed",
 		Severity: SeverityInfo,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -963,7 +980,7 @@ func statementNotParsedRule() Rule {
 
 func databaseObjectDroppedRule() Rule {
 	return Rule{
-		Code:     "DS107",
+		Name:     "destructive/drop-object",
 		Title:    "database object dropped",
 		Severity: SeverityError,
 		// The starting state shows an IF EXISTS drop of an object that is not
@@ -981,7 +998,7 @@ func databaseObjectDroppedRule() Rule {
 					continue
 				}
 				findings = append(findings, Finding{
-					Rule:     "DS107",
+					Rule:     "destructive/drop-object",
 					Title:    "database object dropped",
 					Severity: SeverityError,
 					File:     file.Path,
@@ -1016,7 +1033,7 @@ func objectDropBaselineSubjects(file *File) []int {
 
 func tableTruncatedRule() Rule {
 	return Rule{
-		Code:     "DS108",
+		Name:     "destructive/truncate-table",
 		Title:    "table truncated",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -1030,7 +1047,7 @@ func tableTruncatedRule() Rule {
 
 func rlsDisabledRule() Rule {
 	return Rule{
-		Code:     "DS109",
+		Name:     "security/disable-row-level-security",
 		Title:    "row-level security disabled",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -1049,7 +1066,7 @@ func rlsDisabledRule() Rule {
 // title says row-level security is disabled, and here it stays enabled.
 func rlsForceRemovedRule() Rule {
 	return Rule{
-		Code:     "DS111P",
+		Name:     "security/no-force-row-level-security",
 		Title:    "row-level security no longer forced",
 		Severity: SeverityError,
 		CheckStatement: func(stmt *Statement) (bool, string) {
@@ -1067,7 +1084,7 @@ const notNullWithoutDefaultAdvice = "fails or blocks on populated tables; add it
 func dataDependentRules() []Rule {
 	return []Rule{
 		{
-			Code:     "DD101",
+			Name:     "data-dependent/add-not-null-column",
 			Title:    "non-nullable column added without a default",
 			Severity: SeverityWarning,
 			// File-level: adding a NOT NULL column to a table this same migration
@@ -1150,7 +1167,7 @@ func renamedColumnAddFindings(file *File) []Finding {
 				continue
 			}
 			findings = append(findings, Finding{
-				Rule:     "DD101",
+				Rule:     "data-dependent/add-not-null-column",
 				Title:    "non-nullable column added without a default",
 				Severity: SeverityWarning,
 				File:     file.Path,
@@ -1205,7 +1222,7 @@ func notNullWithoutDefaultFindingsFor(filePath string, line, statementIndex int,
 	findings := make([]Finding, 0, len(subjects))
 	for _, subject := range subjects {
 		findings = append(findings, Finding{
-			Rule:     "DD101",
+			Rule:     "data-dependent/add-not-null-column",
 			Title:    "non-nullable column added without a default",
 			Severity: SeverityWarning,
 			File:     filePath,
@@ -1228,7 +1245,7 @@ func migrationFormRules() []Rule {
 			// MF101P, MF102P: Ptah's own rules inside the Atlas MF family, so
 			// the suffix the identifier convention asks for; the bare codes
 			// are the Atlas checks unique.go reports (stokaro/ptah#2942).
-			Code:     "MF101P",
+			Name:     "file-form/missing-down",
 			Title:    "missing down migration",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
@@ -1238,7 +1255,7 @@ func migrationFormRules() []Rule {
 					return nil
 				}
 				return []Finding{{
-					Rule:     "MF101P",
+					Rule:     "file-form/missing-down",
 					Title:    "missing down migration",
 					Severity: SeverityWarning,
 					File:     file.Path,
@@ -1247,7 +1264,7 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
-			Code:     "MF102P",
+			Name:     "file-form/empty-migration",
 			Title:    "empty migration",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
@@ -1255,7 +1272,7 @@ func migrationFormRules() []Rule {
 					return nil
 				}
 				return []Finding{{
-					Rule:     "MF102P",
+					Rule:     "file-form/empty-migration",
 					Title:    "empty migration",
 					Severity: SeverityWarning,
 					File:     file.Path,
@@ -1264,7 +1281,7 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
-			Code:     "MF105P",
+			Name:     "file-form/refused-file",
 			Title:    "file a run refuses the directory for",
 			Severity: SeverityError,
 			CheckFile: func(file *File) []Finding {
@@ -1272,7 +1289,7 @@ func migrationFormRules() []Rule {
 					return nil
 				}
 				return []Finding{{
-					Rule:     "MF105P",
+					Rule:     "file-form/refused-file",
 					Title:    "file a run refuses the directory for",
 					Severity: SeverityError,
 					File:     file.Path,
@@ -1281,7 +1298,7 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
-			Code:     "MF103",
+			Name:     "file-form/file-name",
 			Title:    "non-conventional file name",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
@@ -1299,7 +1316,7 @@ func migrationFormRules() []Rule {
 					message = fmt.Sprintf("ambiguous file name: the migrator runs this as a %s migration even though it does not end in .%s.sql; rename it to NNNNNNNNNN_description.%s.sql", file.Direction, file.Direction, file.Direction)
 				}
 				return []Finding{{
-					Rule:     "MF103",
+					Rule:     "file-form/file-name",
 					Title:    "non-conventional file name",
 					Severity: SeverityWarning,
 					File:     file.Path,
@@ -1314,7 +1331,7 @@ func migrationFormRules() []Rule {
 func compatibilityRules() []Rule {
 	return []Rule{
 		{
-			Code:     "BC101",
+			Name:     "rollout/rename",
 			Title:    "rename breaks deployed code",
 			Severity: SeverityWarning,
 			// The starting state shows a CREATE TABLE IF NOT EXISTS of a
@@ -1335,7 +1352,7 @@ func compatibilityRules() []Rule {
 				var findings []Finding
 				for _, rename := range fileRenames(file) {
 					findings = append(findings, Finding{
-						Rule:     "BC101",
+						Rule:     "rollout/rename",
 						Title:    "rename breaks deployed code",
 						Severity: SeverityWarning,
 						File:     file.Path,
@@ -1353,7 +1370,7 @@ func compatibilityRules() []Rule {
 func sqliteRules() []Rule {
 	return []Rule{
 		{
-			Code:     "LT101",
+			Name:     "rewrite/set-not-null",
 			Title:    "not-null constraint added without a default",
 			Severity: SeverityWarning,
 			Dialects: lintDialects(func(described descriptor.Lint) bool { return described.SetNotNullRebuilds }),
@@ -1552,9 +1569,8 @@ func scanPrincipalDrop(w []string, target Target) bool {
 }
 
 // Describe renders one finding as a single human-readable line naming the
-// file, the line when the finding has one, the severity, the rule code with
-// the rule's Ptah name beside it when it has one, the message and the rule
-// title. File-level findings — naming and pairing — carry
+// file, the line when the finding has one, the severity, the rule name, the
+// message and the rule title. File-level findings — naming and pairing — carry
 // no line number and render without one.
 //
 // The line is meant to be read, not parsed: consume [Finding] itself when the
@@ -1564,14 +1580,19 @@ func Describe(f Finding) string {
 	if f.Line > 0 {
 		location = fmt.Sprintf("%s:%d", f.File, f.Line)
 	}
-	return fmt.Sprintf("%s [%s] %s: %s (%s)", location, f.Severity, ruleLabel(f), f.Message, f.Title)
+	return fmt.Sprintf("%s [%s] %s: %s (%s)", location, f.Severity, f.Rule, f.Message, f.Title)
 }
 
-// ruleLabel is the rule as a line of text names it: the code, and the Ptah
-// name beside it when the rule has one.
-func ruleLabel(f Finding) string {
-	if f.Name == "" {
-		return f.Rule
+// sharedDialect returns a dialect both lists judge, "every dialect" where
+// either list is empty, or the empty string for lists that do not overlap.
+func sharedDialect(a, b []string) string {
+	if len(a) == 0 || len(b) == 0 {
+		return "every dialect"
 	}
-	return f.Rule + " " + f.Name
+	for _, dialect := range a {
+		if slices.Contains(b, dialect) {
+			return dialect
+		}
+	}
+	return ""
 }

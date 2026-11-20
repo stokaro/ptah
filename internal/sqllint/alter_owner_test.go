@@ -51,8 +51,8 @@ func TestLintSource_AnOwnerChange_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name, dialect, sql, wantRule, wantMessage string
 	}{
-		{name: "mysql", dialect: "mysql", sql: "ALTER TABLE t OWNER TO r;", wantRule: "SQL002", wantMessage: "unsupported ALTER operation: OWNER"},
-		{name: "no role", dialect: "postgres", sql: "ALTER TABLE t OWNER TO;", wantRule: "SQL001", wantMessage: "expected the role after ALTER TABLE OWNER TO"},
+		{name: "mysql", dialect: "mysql", sql: "ALTER TABLE t OWNER TO r;", wantRule: "coverage/unsupported-statement", wantMessage: "unsupported ALTER operation: OWNER"},
+		{name: "no role", dialect: "postgres", sql: "ALTER TABLE t OWNER TO;", wantRule: "correctness/syntax-error", wantMessage: "expected the role after ALTER TABLE OWNER TO"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

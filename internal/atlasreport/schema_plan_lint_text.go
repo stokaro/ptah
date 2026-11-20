@@ -170,7 +170,7 @@ func buildSchemaPlanLintText(analysis migrationlint.Analysis) schemaPlanLintText
 	}
 	var diags []migrateLintTextDiag
 	for _, finding := range analysis.Findings() {
-		diags = append(diags, compatibilityDiagnostic(finding))
+		diags = append(diags, compatibilityDiagnostic(finding, analysis.Target().Dialect))
 	}
 	model.diagnostics = len(diags)
 	model.groups = groupDiagnostics(diags)

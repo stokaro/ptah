@@ -85,6 +85,6 @@ func ValidateOnlineDialect(dialect string) error {
 	)
 }
 
-// OnlineFamily is the identifier prefix of the rules the online mode reports
-// under. The apply-time gate blocks on it when the mode is selected.
-const OnlineFamily = "ON"
+// OnlineCategory is the category of the rules the online mode reports under.
+// The apply-time gate blocks on it when the mode is selected.
+const OnlineCategory = "online"

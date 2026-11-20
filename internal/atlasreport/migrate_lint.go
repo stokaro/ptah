@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/atlascodes"
 	"ptah.run/internal/migratesum"
 	migrationlint "ptah.run/migration/lint"
 )
@@ -297,7 +297,7 @@ func NewMigrateLint(opts MigrateLintOptions) (MigrateLint, error) {
 		return result, nil
 	}
 	files, total := migrateLintFiles(*opts.Analysis, names, opts.Sources, opts.fileOrder)
-	files = attachMigrateLintFindings(files, sourcedFindings(*opts.Analysis, opts.Sources))
+	files = attachMigrateLintFindings(files, sourcedFindings(*opts.Analysis, opts.Sources), opts.Analysis.Target().Dialect)
 	result.Steps = migrateLintSteps(files, total, opts.Integrity, opts.Error)
 	result.Files = files
 	if opts.Error == "" {
@@ -486,19 +486,20 @@ func migrateLintVersionRank(file migrationlint.File, maxVersion int64) int64 {
 func attachMigrateLintFindings(
 	files []MigrateLintFile,
 	findings []migrationlint.Finding,
+	dialect string,
 ) []MigrateLintFile {
 	owned := make([][]migrationlint.Finding, len(files))
 	for _, finding := range findings {
 		for i := range files {
 			if sameMigrateLintFile(files[i].sourcePath, finding.File) {
-				files[i].Findings = append(files[i].Findings, atlasMigrateLintFinding(finding))
+				files[i].Findings = append(files[i].Findings, atlasMigrateLintFinding(finding, dialect))
 				owned[i] = append(owned[i], finding)
 			}
 		}
 	}
 	for i := range files {
-		files[i].Reports = migrateLintReports(files[i].Text, owned[i])
-		files[i].Error = migrateLintAnalyzerError(owned[i])
+		files[i].Reports = migrateLintReports(files[i].Text, owned[i], dialect)
+		files[i].Error = migrateLintAnalyzerError(owned[i], dialect)
 	}
 	return files
 }
@@ -513,10 +514,10 @@ func attachMigrateLintFindings(
 // template reads them in `.Files[].Error` and in the Result of the file's step.
 // Measured on a `DROP TABLE` migration, both read `destructive changes
 // detected` and the run exits 1.
-func migrateLintAnalyzerError(findings []migrationlint.Finding) string {
+func migrateLintAnalyzerError(findings []migrationlint.Finding, dialect string) string {
 	diags := make([]migrateLintTextDiag, 0, len(findings))
 	for _, finding := range findings {
-		diags = append(diags, compatibilityDiagnostic(finding))
+		diags = append(diags, compatibilityDiagnostic(finding, dialect))
 	}
 	var errs []string
 	for _, group := range groupDiagnostics(diags) {
@@ -537,13 +538,13 @@ func migrateLintAnalyzerError(findings []migrationlint.Finding) string {
 // [groupDiagnostics] -- so the two renderings of a run cannot disagree about
 // which analyzer raised what. A finding whose Atlas wording has not been
 // measured keeps Ptah's own sentence, exactly as the text report keeps it.
-func migrateLintReports(text string, findings []migrationlint.Finding) []MigrateLintReport {
+func migrateLintReports(text string, findings []migrationlint.Finding, dialect string) []MigrateLintReport {
 	if len(findings) == 0 {
 		return nil
 	}
 	diags := make([]migrateLintTextDiag, 0, len(findings))
 	for _, finding := range findings {
-		diags = append(diags, compatibilityDiagnostic(finding))
+		diags = append(diags, compatibilityDiagnostic(finding, dialect))
 	}
 	offsets := lineByteOffsets(text)
 	groups := groupDiagnostics(diags)
@@ -603,11 +604,13 @@ func sameMigrateLintFile(sourcePath, findingPath string) bool {
 }
 
 // atlasMigrateLintFinding is a finding as the compatibility surface reports
-// it: under the Atlas identity of its rule, and without the Ptah rule name,
-// which is native vocabulary.
-func atlasMigrateLintFinding(finding migrationlint.Finding) migrationlint.Finding {
-	finding.Rule = atlaslint.RuleForNativeCode(finding.Rule).Code
-	finding.Name = ""
+// it: under the Atlas identity of its rule on dialect.
+//
+// Phase C shim: this prints the Atlas check code for every rule that has one
+// and the Ptah name for the rest. The compatibility surface is to print Ptah
+// names by default and Atlas codes only under PTAH_ATLAS_STRICT_COMPAT=1.
+func atlasMigrateLintFinding(finding migrationlint.Finding, dialect string) migrationlint.Finding {
+	finding.Rule = atlascodes.RuleFor(finding.Rule, dialect).Code
 	return finding
 }
 

@@ -51,28 +51,28 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 		{
 			name: "parse error, nothing disabled",
 			sql:  "CREATE TABLE ;",
-			want: []string{"SQL001"},
+			want: []string{"correctness/syntax-error"},
 		},
 		{
 			name:     "parse error, another rule's code disabled",
 			sql:      "CREATE TABLE ;",
-			disabled: []string{"DDL001"},
-			want:     []string{"SQL001"},
+			disabled: []string{"design/no-primary-key"},
+			want:     []string{"correctness/syntax-error"},
 		},
 		{
 			name: "statement the linter does not model, nothing disabled",
 			sql:  "SELECT 1;",
-			want: []string{"SQL002"},
+			want: []string{"coverage/unsupported-statement"},
 		},
 		{
 			name: "table without a primary key, nothing disabled",
 			sql:  "CREATE TABLE users (email TEXT NOT NULL);",
-			want: []string{"DDL001"},
+			want: []string{"design/no-primary-key"},
 		},
 		{
 			name:     "table without a primary key, its own code disabled",
 			sql:      "CREATE TABLE users (email TEXT NOT NULL);",
-			disabled: []string{"DDL001"},
+			disabled: []string{"design/no-primary-key"},
 			want:     make([]string, 0),
 		},
 		{
@@ -97,7 +97,7 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 			name:     "table without a primary key, another category disabled",
 			sql:      "CREATE TABLE users (email TEXT NOT NULL);",
 			disabled: []string{"naming"},
-			want:     []string{"DDL001"},
+			want:     []string{"design/no-primary-key"},
 		},
 	}
 
@@ -122,15 +122,15 @@ func TestDisableRefusesTheParsePathCodes(t *testing.T) {
 		disabled []string
 		covers   string
 	}{
-		{name: "the parse error's own code", disabled: []string{"SQL001"}, covers: "SQL001"},
-		{name: "the unmodeled statement's own code", disabled: []string{"SQL002"}, covers: "SQL002"},
-		{name: "the family prefix, which covers both", disabled: []string{"SQL"}, covers: "SQL001"},
-		{name: "the parse error's category", disabled: []string{"correctness"}, covers: "SQL001"},
-		{name: "the unmodeled statement's name", disabled: []string{"coverage/unsupported-statement"}, covers: "SQL002"},
+		{name: "the parse error's own code", disabled: []string{"correctness/syntax-error"}, covers: "correctness/syntax-error"},
+		{name: "the unmodeled statement's own code", disabled: []string{"coverage/unsupported-statement"}, covers: "coverage/unsupported-statement"},
+		{name: "the family prefix, which covers both", disabled: []string{"SQL"}, covers: "correctness/syntax-error"},
+		{name: "the parse error's category", disabled: []string{"correctness"}, covers: "correctness/syntax-error"},
+		{name: "the unmodeled statement's name", disabled: []string{"coverage/unsupported-statement"}, covers: "coverage/unsupported-statement"},
 		{
 			// Refused for the one selector that covers a parse-path code, even
 			// when another selector in the same flag is fine.
-			name: "beside a selector that is allowed", disabled: []string{"DDL001", "SQL002"}, covers: "SQL002",
+			name: "beside a selector that is allowed", disabled: []string{"design/no-primary-key", "coverage/unsupported-statement"}, covers: "coverage/unsupported-statement",
 		},
 	}
 
@@ -191,7 +191,7 @@ func TestDisableRefusesAnUnknownSelector(t *testing.T) {
 func TestDisableStillReachesAnOpinionRule(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(reportedCodes(t, "CREATE TABLE users (email TEXT NOT NULL);", []string{"DDL001"}),
+	c.Assert(reportedCodes(t, "CREATE TABLE users (email TEXT NOT NULL);", []string{"design/no-primary-key"}),
 		qt.DeepEquals, make([]string, 0))
 }
 
@@ -252,5 +252,5 @@ func TestFindingsCarryTheRuleName(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
-	c.Assert([]string{findings[0].Rule, findings[0].Name}, qt.DeepEquals, []string{"DDL001", "design/no-primary-key"})
+	c.Assert([]string{findings[0].Rule, findings[0].Name}, qt.DeepEquals, []string{"design/no-primary-key", "design/no-primary-key"})
 }

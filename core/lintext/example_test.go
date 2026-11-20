@@ -15,18 +15,18 @@ import (
 // file of the run.
 func ExampleChecks() {
 	checks := lintext.Checks{{
-		Rule: lintext.Rule{Code: "XY101", Title: "Truncates a table", Severity: lintext.Error, Targets: []string{"postgres"}},
+		Rule: lintext.Rule{Name: "test/drop-table", Title: "Truncates a table", Severity: lintext.Error, Targets: []string{"postgres"}},
 		Statement: func(_ lintext.Target, _ *lintext.File, statement *lintext.Statement) (bool, string) {
 			return slices.Contains(statement.Words, "TRUNCATE"), "TRUNCATE removes every row of the table"
 		},
 	}}
 	for _, rule := range checks.Rules() {
-		fmt.Println(rule.Code, rule.Severity, rule.Targets)
+		fmt.Println(rule.Name, rule.Severity, rule.Targets)
 	}
 
 	request := lintext.CheckRequest{
 		Target: lintext.Target{Name: "postgres"},
-		Codes:  []string{"XY101"},
+		Names:  []string{"test/drop-table"},
 		Files: []lintext.File{{Name: "2.up.sql", Version: 2, Up: true, Statements: []lintext.Statement{
 			{Start: 0, End: 16, Line: 1, SQL: "TRUNCATE TABLE a", Words: []string{"TRUNCATE", "TABLE", "A"}},
 		}}},
@@ -37,11 +37,11 @@ func ExampleChecks() {
 		return
 	}
 	for _, finding := range result.Findings {
-		fmt.Printf("%s %s statement %d: %s\n", finding.Code, request.Files[finding.File].Name, finding.Statement, finding.Message)
+		fmt.Printf("%s %s statement %d: %s\n", finding.Name, request.Files[finding.File].Name, finding.Statement, finding.Message)
 	}
 	// Output:
-	// XY101 error [postgres]
-	// XY101 2.up.sql statement 0: TRUNCATE removes every row of the table
+	// test/drop-table error [postgres]
+	// test/drop-table 2.up.sql statement 0: TRUNCATE removes every row of the table
 }
 
 // renameOwner is an out-of-process owner's answer, written by hand: one
@@ -58,13 +58,13 @@ func (renameOwner) CheckMigrations(_ context.Context, request lintext.CheckReque
 			}
 			// Asked on every call: the host decides from it what to read.
 			result.BaselineSubjects = append(result.BaselineSubjects,
-				lintext.BaselineSubject{Code: "XY301", File: index, Statements: []int{position}})
+				lintext.BaselineSubject{Name: "test/baseline-rule", File: index, Statements: []int{position}})
 			if request.Baseline == nil {
 				continue
 			}
 			for _, column := range request.Baseline.Columns {
 				if column.Version == file.Version && column.Name == "id" {
-					result.Findings = append(result.Findings, lintext.Finding{Code: "XY301", File: index, Statement: position,
+					result.Findings = append(result.Findings, lintext.Finding{Name: "test/baseline-rule", File: index, Statement: position,
 						Message: "the renamed column was " + column.DataType})
 				}
 			}
@@ -81,7 +81,7 @@ func (renameOwner) CheckMigrations(_ context.Context, request lintext.CheckReque
 func ExampleService() {
 	request := lintext.CheckRequest{
 		Target: lintext.Target{Name: "postgres"},
-		Codes:  []string{"XY301"},
+		Names:  []string{"test/baseline-rule"},
 		Files: []lintext.File{{Name: "0000000002_rename.up.sql", Version: 2, Up: true, Statements: []lintext.Statement{{
 			Start: 0, End: 41, Line: 1, SQL: "ALTER TABLE users RENAME COLUMN id TO oid",
 			Words: []string{"ALTER", "TABLE", "USERS", "RENAME", "COLUMN", "ID", "TO", "OID"},
@@ -103,11 +103,11 @@ func ExampleService() {
 		return
 	}
 	for _, finding := range second.Findings {
-		fmt.Println("second call:", finding.Code, request.Files[finding.File].Name, finding.Message)
+		fmt.Println("second call:", finding.Name, request.Files[finding.File].Name, finding.Message)
 	}
 	// Output:
-	// first call: 0 findings, subjects [{XY301 0 [0]}]
-	// second call: XY301 0000000002_rename.up.sql the renamed column was bigint
+	// first call: 0 findings, subjects [{test/baseline-rule 0 [0]}]
+	// second call: test/baseline-rule 0000000002_rename.up.sql the renamed column was bigint
 }
 
 // ExampleValidateSplit shows an owner's split carrying its safety judgment of

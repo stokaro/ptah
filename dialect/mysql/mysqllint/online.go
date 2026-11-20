@@ -10,7 +10,7 @@ import (
 func mysqlOnlineRule() lintkit.Rule {
 	rule := lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "ON102",
+			Name:     "online/unproven",
 			Title:    "statement does not ask MySQL to apply it online",
 			Severity: lintext.Error,
 			Targets:  []string{"mysql", "mariadb"},

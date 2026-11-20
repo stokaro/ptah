@@ -359,7 +359,7 @@ func TestLintSource_IdentifierRulesTakeThePolicy(t *testing.T) {
 			opts: sqllint.Options{Severities: map[string]sqllint.Severity{sqllint.RuleIdentifierTruncated: sqllint.SeverityError}},
 			want: []string{"DDL003 error", "DDL004 error"},
 		},
-		{name: "DDL003 disabled", opts: sqllint.Options{DisabledRules: []string{"DDL003"}}, want: []string{"DDL004 error"}},
+		{name: "DDL003 disabled", opts: sqllint.Options{DisabledRules: []string{"naming/identifier-too-long"}}, want: []string{"DDL004 error"}},
 		{name: "the family disabled", opts: sqllint.Options{DisabledRules: []string{"DDL"}}},
 	}
 	for _, row := range rows {

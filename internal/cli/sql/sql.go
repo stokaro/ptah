@@ -339,7 +339,7 @@ func writeSQLLintText(w io.Writer, report sqlLintReport) error {
 			finding.Line,
 			finding.Column,
 			finding.Severity,
-			strings.TrimSpace(finding.Rule+" "+finding.Name),
+			finding.Rule,
 			finding.Message,
 		); err != nil {
 			return err
@@ -414,18 +414,16 @@ func sqlLintSeverities(ctx context.Context) (map[string]sqllint.Severity, error)
 }
 
 // sqlLintSeveritiesFrom resolves the `rules:` entries that set a severity to
-// the codes this linter reports. A key is a code, a Ptah rule name or a
-// category; the more specific key wins, so a rule's code or name overrides
-// its category. An entry for a rule only migration lint reports is left to
+// the rules this linter reports. A key is a rule name or a category; the more
+// specific key wins, so a rule's name overrides its category. An entry for a rule only migration lint reports is left to
 // migration lint.
 func sqlLintSeveritiesFrom(rules map[string]migrationlint.RuleConfig) map[string]sqllint.Severity {
 	severities := make(map[string]sqllint.Severity)
-	for _, code := range sqllint.CatalogIDs() {
-		names := lintnames.SQL()
-		keys := append(names.SpecificKeys(code), names.GroupKeys(code)...)
+	for _, name := range sqllint.CatalogIDs() {
+		keys := append(lintnames.ConfigKeys(name), lintnames.GroupKeys(name)...)
 		for _, key := range keys {
 			if rule, ok := rules[key]; ok && rule.Severity != "" {
-				severities[code] = sqllint.Severity(rule.Severity)
+				severities[name] = sqllint.Severity(rule.Severity)
 				break
 			}
 		}

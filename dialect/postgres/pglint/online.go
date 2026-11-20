@@ -10,7 +10,7 @@ import (
 func postgresOnlineRule() lintkit.Rule {
 	rule := lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "ON101",
+			Name:     "online/unproven",
 			Title:    "statement not provably online on PostgreSQL",
 			Severity: lintext.Error,
 			Targets:  []string{"postgres"},
@@ -48,7 +48,7 @@ func postgresOnlineRule() lintkit.Rule {
 func postgresOnlineTransactionRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "ON103",
+			Name:     "online/lock-held-across-scan",
 			Title:    "an online statement's lock is held across a scan",
 			Severity: lintext.Error,
 			Targets:  []string{"postgres"},

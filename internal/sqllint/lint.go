@@ -28,13 +28,13 @@ import (
 )
 
 const (
-	RuleParseError             = "SQL001"
-	RuleUnsupportedStatement   = "SQL002"
-	RuleTableWithoutPrimaryKey = "DDL001"
-	RuleUnsupportedCapability  = "CAP001"
+	RuleParseError             = "correctness/syntax-error"
+	RuleUnsupportedStatement   = "coverage/unsupported-statement"
+	RuleTableWithoutPrimaryKey = "design/no-primary-key"
+	RuleUnsupportedCapability  = "capability/missing"
 	// RuleDynamicSQL marks a routine body that builds SQL at run time, which is
 	// where static analysis of that routine stops.
-	RuleDynamicSQL = "SQL003"
+	RuleDynamicSQL = "coverage/dynamic-sql"
 	// RuleStatementsNotAnalyzed names the statement kinds a file carried that
 	// no rule examined.
 	//
@@ -44,7 +44,7 @@ const (
 	// `CREATE POLICY` has a test asserting it lints clean -- and simply have no
 	// rule looking at them. Reporting them as unsupported would make SQL002's
 	// own message untrue.
-	RuleStatementsNotAnalyzed = "SQL004"
+	RuleStatementsNotAnalyzed = "coverage/unanalyzed-statements"
 )
 
 // Severity is the level a finding carries, on the one scale every Ptah
@@ -74,11 +74,11 @@ type Options struct {
 	Capabilities  capability.Capabilities
 	Rules         []Rule
 	DisabledRules []string
-	// Severities overrides a rule's default severity, keyed by identifier.
+	// Severities overrides a rule's default severity, keyed by rule name.
 	//
 	// It is a plain map rather than the policy type so that this package stays
 	// out of migration/lint: the command reads the file and passes the answer.
-	// An entry for a code the linter does not report is an error, because a
+	// An entry for a rule the linter does not report is an error, because a
 	// severity nobody applies is a policy the operator believes is in force.
 	Severities map[string]Severity
 
@@ -124,10 +124,10 @@ type Bodies interface {
 }
 
 type Finding struct {
-	Rule string `json:"rule"`
-	// Name is the rule's Ptah name, such as `design/no-primary-key`, the
-	// spelling a --disable selector may use beside the code.
-	Name         string   `json:"name,omitempty"`
+	// Rule is the rule's name, `category/name`, such as
+	// `design/no-primary-key`: its identity and the spelling a --disable
+	// selector uses.
+	Rule         string   `json:"rule"`
 	Title        string   `json:"title"`
 	Severity     Severity `json:"severity"`
 	File         string   `json:"file,omitempty"`
@@ -243,14 +243,10 @@ func LintSource(ctx context.Context, source Source, opts Options) ([]Finding, er
 	return finish(findings, opts), nil
 }
 
-// finish drops the findings of disabled rules, applies the policy's
-// severities, and names each finding's rule.
+// finish drops the findings of disabled rules and applies the policy's
+// severities.
 func finish(findings []Finding, opts Options) []Finding {
-	findings = applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities)
-	for i := range findings {
-		findings[i].Name = lintnames.SQL().Name(findings[i].Rule)
-	}
-	return findings
+	return applySeverities(keepEnabled(findings, opts.DisabledRules), opts.Severities)
 }
 
 // applySeverities replaces the severity of every finding a policy names.
@@ -271,25 +267,28 @@ func applySeverities(findings []Finding, severities map[string]Severity) []Findi
 // Two refusals, and both are about a policy that would read as being in force
 // while doing nothing or the wrong thing.
 //
-// A code the linter does not report cannot be configured: an operator who wrote
+// A rule the linter does not report cannot be configured: an operator who wrote
 // it believes a rule is set to warning, and silence would leave them believing
 // it. That is the same failure `--disable` had before it refused.
 //
-// The parse-path codes cannot be lowered below error, for the reason they
+// The parse-path rules cannot be lowered below error, for the reason they
 // cannot be disabled: only error decides the exit code, so a file the parser
 // could not read would pass (stokaro/ptah#1270).
 func validateSeverities(severities map[string]Severity) error {
-	for code, severity := range severities {
-		if !slices.Contains(CatalogIDs(), code) {
+	for name, severity := range severities {
+		if lintnames.IsCode(name) {
+			return lintnames.RefuseCode(name)
+		}
+		if !slices.Contains(CatalogIDs(), name) {
 			return fmt.Errorf(
 				"severity set for %s, which `ptah sql lint` does not report; "+
-					"it reports %s", code, strings.Join(CatalogIDs(), ", "))
+					"it reports %s", name, strings.Join(CatalogIDs(), ", "))
 		}
-		if slices.Contains(unsilenceableRules, code) && severity != SeverityError {
+		if slices.Contains(unsilenceableRules, name) && severity != SeverityError {
 			return fmt.Errorf(
 				"severity for %s set to %s: it reports that the file could not be analyzed, "+
 					"and only error decides the exit code, so lowering it lets an unread file pass",
-				code, severity)
+				name, severity)
 		}
 	}
 	return nil
@@ -606,8 +605,8 @@ var unsilenceableRules = []string{RuleParseError, RuleUnsupportedStatement}
 // visible to the user." So the third option is the right one -- neither ignored
 // nor obeyed, but refused, with the reason.
 //
-// Prefix selectors are checked too, `--disable SQL` covers SQL001, and so are
-// names: `--disable correctness` covers it by its category.
+// Categories are checked too: `--disable correctness` covers it by its
+// category.
 func refuseUnsilenceable(disabled []string) error {
 	for _, item := range disabled {
 		for _, rule := range unsilenceableRules {
@@ -624,44 +623,26 @@ func refuseUnsilenceable(disabled []string) error {
 }
 
 // refuseUnknownSelectors rejects a --disable selector that names no rule this
-// linter reports, by the validation `migrations lint` applies: a code or code
-// prefix in upper case, or a Ptah rule name or category the linter holds.
-// Matched against nothing, a selector would read as a rule turned off, and a
-// lower-case or slash-joined code would be accepted and ignored.
+// linter reports, by the validation `migrations lint` applies: a rule name or
+// category the linter holds. A word spelled as a rule code is refused as every
+// native selector is. Matched against nothing, a selector would read as a rule
+// turned off.
 func refuseUnknownSelectors(disabled []string) error {
+	known := lintnames.NewSet("SQL lint", CatalogIDs())
 	for _, item := range disabled {
-		item = strings.TrimSpace(item)
-		if err := lintnames.SQL().ValidateSelector(item); err != nil {
+		if err := known.ValidateSelector(strings.TrimSpace(item)); err != nil {
 			return fmt.Errorf("--disable %w", err)
-		}
-		if item == "" || lintnames.IsSelector(item) {
-			continue
-		}
-		if !slices.ContainsFunc(CatalogIDs(), func(id string) bool { return strings.HasPrefix(id, item) }) {
-			return fmt.Errorf("--disable %q matches no rule code `ptah sql lint` reports; the codes are %s",
-				item, strings.Join(CatalogIDs(), ", "))
 		}
 	}
 	return nil
 }
 
-// ruleDisabled reports whether a selector in disabled selects ruleID: a Ptah
-// rule name or category by [lintnames.Table.Selects], and anything else as a
-// code or code prefix.
+// ruleDisabled reports whether a selector in disabled selects the rule: its
+// name or its category, by [lintnames.Selects].
 func ruleDisabled(ruleID string, disabled []string) bool {
-	for _, item := range disabled {
-		item = strings.TrimSpace(item)
-		if lintnames.IsSelector(item) {
-			if lintnames.SQL().Selects(item, ruleID) {
-				return true
-			}
-			continue
-		}
-		if item != "" && strings.HasPrefix(ruleID, item) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(disabled, func(item string) bool {
+		return lintnames.Selects(strings.TrimSpace(item), ruleID)
+	})
 }
 
 // firstKeyword returns the word a statement opens with and where it stands. A

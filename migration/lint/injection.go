@@ -264,7 +264,7 @@ func injectionRules() []Rule {
 
 func sqlInjectionRule() Rule {
 	return Rule{
-		Code:     "SA101",
+		Name:     "security/dynamic-sql-from-value",
 		Title:    "dynamic SQL built from a value",
 		Severity: SeverityWarning,
 		Input:    InputRoutineBody,
@@ -279,7 +279,7 @@ func sqlInjectionRule() Rule {
 					message := fmt.Sprintf("%s builds its statement from %s: %s, so a value that reaches the routine can rewrite the statement (SQL injection). "+
 						"In this routine, %s", site.form, site.operand, site.how, injectionAdvice(file.dialect))
 					findings = append(findings, Finding{
-						Rule:     "SA101",
+						Rule:     "security/dynamic-sql-from-value",
 						Title:    "dynamic SQL built from a value",
 						Severity: SeverityWarning,
 						File:     file.Path,

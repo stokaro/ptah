@@ -12,7 +12,7 @@ import (
 )
 
 func validRule() lintext.Rule {
-	return lintext.Rule{Code: "XY101", Title: "Drops a table", Severity: lintext.Error, Targets: []string{"postgres"}}
+	return lintext.Rule{Name: "test/drop-table", Title: "Drops a table", Severity: lintext.Error, Targets: []string{"postgres"}}
 }
 
 func TestRule_Validate_HappyPath(t *testing.T) {
@@ -21,8 +21,8 @@ func TestRule_Validate_HappyPath(t *testing.T) {
 		rule lintext.Rule
 	}{
 		{"statement text", validRule()},
-		{"a routine body, two targets, down and a subsumption", lintext.Rule{Code: "XY102P", Title: "t", Severity: lintext.Info,
-			Targets: []string{"mysql", "mariadb"}, AppliesToDown: true, Input: lintext.InputRoutineBody, Subsumes: []string{"XY101"}}},
+		{"a routine body, two targets, down and a subsumption", lintext.Rule{Name: "test/info-rule", Title: "t", Severity: lintext.Info,
+			Targets: []string{"mysql", "mariadb"}, AppliesToDown: true, Input: lintext.InputRoutineBody, Subsumes: []string{"test/drop-table"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -37,22 +37,22 @@ func TestRule_Validate_FailurePath(t *testing.T) {
 		rule    lintext.Rule
 		wantErr string
 	}{
-		{"a code outside the convention", lintext.Rule{Code: "xy101", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}},
-			`.*rule code "xy101" must start with an uppercase ASCII letter.*`},
-		{"a code starting with a digit", lintext.Rule{Code: "1XY", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}},
-			`.*rule code "1XY" must start.*`},
-		{"no title", lintext.Rule{Code: "XY101", Title: " ", Severity: lintext.Error, Targets: []string{"postgres"}}, `.*rule XY101 has no title`},
-		{"an unknown severity", lintext.Rule{Code: "XY101", Title: "t", Severity: "fatal", Targets: []string{"postgres"}},
-			`.*rule XY101 has unknown severity "fatal"`},
-		{"an unknown input", lintext.Rule{Code: "XY101", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}, Input: "history"},
-			`.*rule XY101 has unknown input "history"`},
-		{"no target", lintext.Rule{Code: "XY101", Title: "t", Severity: lintext.Error}, `.*rule XY101 names no target`},
-		{"a repeated target", lintext.Rule{Code: "XY101", Title: "t", Severity: lintext.Error, Targets: []string{"postgres", "postgres"}},
-			`.*rule XY101 names a blank or repeated target`},
-		{"a blank target", lintext.Rule{Code: "XY101", Title: "t", Severity: lintext.Error, Targets: []string{" "}},
-			`.*rule XY101 names a blank or repeated target`},
-		{"itself subsumed", lintext.Rule{Code: "XY101", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}, Subsumes: []string{"XY101"}},
-			`.*rule XY101 subsumes itself`},
+		{"a code-shaped name", lintext.Rule{Name: "XY101", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}},
+			`.*rule name "XY101" must be a category and a rule joined by a slash.*`},
+		{"a name without a category", lintext.Rule{Name: "drop-table", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}},
+			`.*rule name "drop-table" must be a category.*`},
+		{"no title", lintext.Rule{Name: "test/drop-table", Title: " ", Severity: lintext.Error, Targets: []string{"postgres"}}, `.*rule test/drop-table has no title`},
+		{"an unknown severity", lintext.Rule{Name: "test/drop-table", Title: "t", Severity: "fatal", Targets: []string{"postgres"}},
+			`.*rule test/drop-table has unknown severity "fatal"`},
+		{"an unknown input", lintext.Rule{Name: "test/drop-table", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}, Input: "history"},
+			`.*rule test/drop-table has unknown input "history"`},
+		{"no target", lintext.Rule{Name: "test/drop-table", Title: "t", Severity: lintext.Error}, `.*rule test/drop-table names no target`},
+		{"a repeated target", lintext.Rule{Name: "test/drop-table", Title: "t", Severity: lintext.Error, Targets: []string{"postgres", "postgres"}},
+			`.*rule test/drop-table names a blank or repeated target`},
+		{"a blank target", lintext.Rule{Name: "test/drop-table", Title: "t", Severity: lintext.Error, Targets: []string{" "}},
+			`.*rule test/drop-table names a blank or repeated target`},
+		{"itself subsumed", lintext.Rule{Name: "test/drop-table", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}, Subsumes: []string{"test/drop-table"}},
+			`.*rule test/drop-table subsumes itself`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -257,9 +257,9 @@ func TestValidateAnnotateRequest_FailurePath(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `.*an annotation request holds 0 sources and 1 statement lists`)
 }
 
-// checkRequest enables XY101 over one up file of two statements.
+// checkRequest enables test/drop-table over one up file of two statements.
 func checkRequest() lintext.CheckRequest {
-	return lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Codes: []string{"XY101"}, Files: []lintext.File{{
+	return lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Names: []string{"test/drop-table"}, Files: []lintext.File{{
 		Name: "1.up.sql", Up: true, Statements: []lintext.Statement{
 			{Start: 0, End: 12, Line: 1, SQL: "DROP TABLE a", Words: []string{"DROP", "TABLE", "A"}},
 			{Start: 14, End: 30, Line: 2, SQL: "CREATE TABLE b()", Words: []string{"CREATE", "TABLE", "B", "(", ")"}},
@@ -273,11 +273,11 @@ func TestValidateCheck_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	result := lintext.CheckResult{Complete: true,
 		Findings: []lintext.Finding{
-			{Code: "XY101", Statement: 0, Message: "m", Subjects: []lintext.Subject{
+			{Name: "test/drop-table", Statement: 0, Message: "m", Subjects: []lintext.Subject{
 				{Kind: lintext.SubjectTable, Name: "a"}, {Kind: lintext.SubjectColumn, Name: "id", Parent: "a", DataType: "int"}}},
-			{Code: "XY101", Statement: -1, Message: "m"},
+			{Name: "test/drop-table", Statement: -1, Message: "m"},
 		},
-		BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101", File: 0, Statements: []int{0, 1}}},
+		BaselineSubjects: []lintext.BaselineSubject{{Name: "test/drop-table", File: 0, Statements: []int{0, 1}}},
 	}
 
 	c.Assert(lintext.ValidateCheck(checkRequest(), result), qt.IsNil)
@@ -289,27 +289,27 @@ func TestValidateCheck_FailurePath(t *testing.T) {
 		result lintext.CheckResult
 	}{
 		{"incomplete", lintext.CheckResult{}},
-		{"a code not enabled", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY102", Statement: 0, Message: "m"}}}},
-		{"a file not held", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", File: 1, Message: "m"}}}},
-		{"a statement not held", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Statement: 2, Message: "m"}}}},
-		{"below the file", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Statement: -2, Message: "m"}}}},
-		{"no message", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101"}}}},
-		{"a subject of a whole file", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Statement: -1, Message: "m",
+		{"a name not enabled", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Name: "test/other-rule", Statement: 0, Message: "m"}}}},
+		{"a file not held", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Name: "test/drop-table", File: 1, Message: "m"}}}},
+		{"a statement not held", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Name: "test/drop-table", Statement: 2, Message: "m"}}}},
+		{"below the file", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Name: "test/drop-table", Statement: -2, Message: "m"}}}},
+		{"no message", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Name: "test/drop-table"}}}},
+		{"a subject of a whole file", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Name: "test/drop-table", Statement: -1, Message: "m",
 			Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: "a"}}}}}},
-		{"a subject of no known kind", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Message: "m",
+		{"a subject of no known kind", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Name: "test/drop-table", Message: "m",
 			Subjects: []lintext.Subject{{Kind: "index", Name: "a"}}}}}},
-		{"a subject without a name", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Code: "XY101", Message: "m",
+		{"a subject without a name", lintext.CheckResult{Complete: true, Findings: []lintext.Finding{{Name: "test/drop-table", Message: "m",
 			Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn}}}}}},
-		{"a baseline subject of a code not enabled", lintext.CheckResult{Complete: true,
-			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY102", Statements: []int{0}}}}},
+		{"a baseline subject of a name not enabled", lintext.CheckResult{Complete: true,
+			BaselineSubjects: []lintext.BaselineSubject{{Name: "test/other-rule", Statements: []int{0}}}}},
 		{"a baseline subject of a file not held", lintext.CheckResult{Complete: true,
-			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101", File: 1, Statements: []int{0}}}}},
+			BaselineSubjects: []lintext.BaselineSubject{{Name: "test/drop-table", File: 1, Statements: []int{0}}}}},
 		{"a baseline subject of a statement not held", lintext.CheckResult{Complete: true,
-			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101", Statements: []int{0, 2}}}}},
+			BaselineSubjects: []lintext.BaselineSubject{{Name: "test/drop-table", Statements: []int{0, 2}}}}},
 		{"a baseline subject below the statements", lintext.CheckResult{Complete: true,
-			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101", Statements: []int{-1}}}}},
+			BaselineSubjects: []lintext.BaselineSubject{{Name: "test/drop-table", Statements: []int{-1}}}}},
 		{"a baseline subject naming no statement", lintext.CheckResult{Complete: true,
-			BaselineSubjects: []lintext.BaselineSubject{{Code: "XY101"}}}},
+			BaselineSubjects: []lintext.BaselineSubject{{Name: "test/drop-table"}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -333,11 +333,11 @@ func dropCheck(appliesToDown bool) lintext.Check {
 func TestChecks_CheckMigrations_HappyPath(t *testing.T) {
 	down := checkRequest()
 	down.Files[0].Up, down.Files[0].Down = false, true
-	fileCheck := lintext.Check{Rule: lintext.Rule{Code: "XY103", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}},
+	fileCheck := lintext.Check{Rule: lintext.Rule{Name: "test/file-rule", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}},
 		File: func(_ lintext.Target, files []lintext.File, index int) []lintext.Violation {
 			return []lintext.Violation{{Statement: -1, Message: files[index].Name + " has " + strings.Repeat("s", len(files[index].Statements))}}
 		}}
-	subjectCheck := lintext.Check{Rule: lintext.Rule{Code: "XY104", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}},
+	subjectCheck := lintext.Check{Rule: lintext.Rule{Name: "test/subject-rule", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}},
 		File: func(lintext.Target, []lintext.File, int) []lintext.Violation {
 			return []lintext.Violation{{Statement: 1, Message: "creates b", Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: "b"}}}}
 		}}
@@ -348,14 +348,14 @@ func TestChecks_CheckMigrations_HappyPath(t *testing.T) {
 		want    []lintext.Finding
 	}{
 		{"an up file", lintext.Checks{dropCheck(false)}, checkRequest(),
-			[]lintext.Finding{{Code: "XY101", File: 0, Statement: 0, Message: "drops a table"}}},
+			[]lintext.Finding{{Name: "test/drop-table", File: 0, Statement: 0, Message: "drops a table"}}},
 		{"a down file of an up-only rule", lintext.Checks{dropCheck(false)}, down, nil},
 		{"a down file of a rule that applies to down", lintext.Checks{dropCheck(true)}, down,
-			[]lintext.Finding{{Code: "XY101", File: 0, Statement: 0, Message: "drops a table"}}},
-		{"a file check", lintext.Checks{dropCheck(false), fileCheck}, lintext.CheckRequest{Codes: []string{"XY103"}, Files: checkRequest().Files},
-			[]lintext.Finding{{Code: "XY103", File: 0, Statement: -1, Message: "1.up.sql has ss"}}},
-		{"a file check naming subjects", lintext.Checks{subjectCheck}, lintext.CheckRequest{Codes: []string{"XY104"}, Files: checkRequest().Files},
-			[]lintext.Finding{{Code: "XY104", File: 0, Statement: 1, Message: "creates b",
+			[]lintext.Finding{{Name: "test/drop-table", File: 0, Statement: 0, Message: "drops a table"}}},
+		{"a file check", lintext.Checks{dropCheck(false), fileCheck}, lintext.CheckRequest{Names: []string{"test/file-rule"}, Files: checkRequest().Files},
+			[]lintext.Finding{{Name: "test/file-rule", File: 0, Statement: -1, Message: "1.up.sql has ss"}}},
+		{"a file check naming subjects", lintext.Checks{subjectCheck}, lintext.CheckRequest{Names: []string{"test/subject-rule"}, Files: checkRequest().Files},
+			[]lintext.Finding{{Name: "test/subject-rule", File: 0, Statement: 1, Message: "creates b",
 				Subjects: []lintext.Subject{{Kind: lintext.SubjectTable, Name: "b"}}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -383,11 +383,11 @@ func TestChecks_CheckMigrations_FailurePath(t *testing.T) {
 		checks  lintext.Checks
 		wantErr string
 	}{
-		{"a code no check carries", context.Background(), lintext.Checks{}, `.*no check of rule XY101`},
-		{"a check with both functions", context.Background(), lintext.Checks{both}, `.*check XY101 must set exactly one of Statement and File`},
-		{"two checks of one code", context.Background(), lintext.Checks{dropCheck(false), dropCheck(true)}, `.*two checks of rule XY101`},
+		{"a name no check carries", context.Background(), lintext.Checks{}, `.*no check of rule test/drop-table`},
+		{"a check with both functions", context.Background(), lintext.Checks{both}, `.*check test/drop-table must set exactly one of Statement and File`},
+		{"two checks of one name", context.Background(), lintext.Checks{dropCheck(false), dropCheck(true)}, `.*two checks of rule test/drop-table`},
 		{"a check whose rule reads a baseline", context.Background(), lintext.Checks{baselineCheck},
-			`.*check XY101 reads a baseline, which Checks cannot ask for; implement Service`},
+			`.*check test/drop-table reads a baseline, which Checks cannot ask for; implement Service`},
 		{"cancellation", canceled, lintext.Checks{dropCheck(false)}, `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -408,18 +408,23 @@ func TestChecks_Rules(t *testing.T) {
 	rules := checks.Rules()
 	rules[0].Targets[0] = "mysql"
 
-	c.Assert(checks.Rules(), qt.DeepEquals, []lintext.Rule{{Code: "XY101", Title: "Drops a table", Severity: lintext.Error,
+	c.Assert(checks.Rules(), qt.DeepEquals, []lintext.Rule{{Name: "test/drop-table", Title: "Drops a table", Severity: lintext.Error,
 		Targets: []string{"postgres"}, AppliesToDown: true}})
 }
 
-func TestCanonicalCode(t *testing.T) {
+func TestCanonicalName(t *testing.T) {
 	for _, test := range []struct {
-		code string
+		name string
 		want bool
-	}{{"DS101", true}, {"MF101P", true}, {"X", true}, {"", false}, {"ds101", false}, {"1DS", false}, {"DS-1", false}} {
-		t.Run(test.code, func(t *testing.T) {
+	}{
+		{"locking/add-foreign-key", true}, {"ydb/add-column-form", true}, {"naming/identifier-too-long2", true},
+		{"", false}, {"DS101", false}, {"locking", false}, {"locking/", false}, {"/add", false},
+		{"Locking/add", false}, {"locking/Add", false}, {"locking/add-", false}, {"locking/-add", false},
+		{"locking/add--check", false}, {"locking/add/check", false}, {"1locking/add", false}, {"locking/1add", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(lintext.CanonicalCode(test.code), qt.Equals, test.want)
+			c.Assert(lintext.CanonicalName(test.name), qt.Equals, test.want)
 		})
 	}
 }

@@ -8,7 +8,7 @@ import "context"
 // holds, a plugin's included.
 type Runtime interface {
 	// LintRules returns the rules that judge target, every published rule
-	// for an empty target, sorted by code. An unregistered target wraps
+	// for an empty target, sorted by name. An unregistered target wraps
 	// ptaherr.ErrUnsupportedDialect.
 	LintRules(target string) ([]Rule, error)
 	// SplitStatements splits a run's sources with the splitter of the
@@ -23,10 +23,10 @@ type Runtime interface {
 	// and statement lists do not pair up, and a reply that does not answer
 	// its request, wrap [ErrInvalid].
 	AnnotateStatements(ctx context.Context, request AnnotateRequest) (AnnotateResult, error)
-	// CheckMigrations sends the request's codes to the owners that publish
+	// CheckMigrations sends the request's rule names to the owners that publish
 	// them, one call per owner, and joins their findings, sorted by file,
-	// statement and code, and their baseline subjects, sorted by file and
-	// code. A code no owner publishes, a rule that does not judge the
+	// statement and name, and their baseline subjects, sorted by file and
+	// name. A name no owner publishes, a rule that does not judge the
 	// request's target, a reply that does not answer its request, and
 	// baseline subjects of a rule that reads no baseline wrap [ErrInvalid].
 	CheckMigrations(ctx context.Context, request CheckRequest) (CheckResult, error)

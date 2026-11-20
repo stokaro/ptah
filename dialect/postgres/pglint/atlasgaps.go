@@ -86,11 +86,11 @@ func atlasGapPostgresRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
 			Rule: lintext.Rule{
-				Code:     "PG108",
+				Name:     "locking/partitioned-index",
 				Title:    "index on a partitioned table locks every partition",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},
-				Subsumes: []string{"PG101"},
+				Subsumes: []string{"locking/create-index"},
 				Input:    lintext.InputBaselineRefinement,
 			},
 			BaselineSubjects: partitionedIndexStateRequests,
@@ -108,7 +108,7 @@ func atlasGapPostgresRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "PG109",
+				Name:     "locking/add-exclusion-constraint",
 				Title:    "exclusion constraint added under an exclusive lock",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},
@@ -125,11 +125,11 @@ func atlasGapPostgresRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "PG312",
+				Name:     "locking/replace-primary-key",
 				Title:    "primary key redefined under an exclusive lock",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},
-				Subsumes: []string{"PG104"},
+				Subsumes: []string{"locking/add-primary-key"},
 			},
 			Statement: func(_ *lintkit.File, stmt *lintext.Statement) (bool, string) {
 				if !lintkit.RedefinesPrimaryKey(stmt.Words) {
@@ -148,7 +148,7 @@ func atlasGapPostgresRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "PG314",
+				Name:     "rollout/weaken-replica-identity",
 				Title:    "replica identity weakened for logical replication",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},
@@ -169,7 +169,7 @@ func atlasGapPostgresRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "PG320",
+				Name:     "design/disable-autovacuum",
 				Title:    "autovacuum disabled for a table",
 				Severity: lintext.Warning,
 				Targets:  []string{"postgres"},

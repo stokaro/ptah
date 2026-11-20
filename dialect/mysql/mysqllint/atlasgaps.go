@@ -274,11 +274,11 @@ func atlasGapMySQLRules() []lintkit.Rule {
 	return []lintkit.Rule{
 		{
 			Rule: lintext.Rule{
-				Code:     "MY137",
+				Name:     "rewrite/replace-primary-key",
 				Title:    "primary key redefined with a table rebuild",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
-				Subsumes: []string{"MY132"},
+				Subsumes: []string{"rewrite/add-primary-key"},
 			},
 			Statement: func(_ *lintkit.File, stmt *lintext.Statement) (bool, string) {
 				if !lintkit.RedefinesPrimaryKey(stmt.Words) {
@@ -293,7 +293,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY138",
+				Name:     "rewrite/change-engine",
 				Title:    "storage engine change copies the table",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -310,7 +310,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY139",
+				Name:     "rewrite/change-partitioning",
 				Title:    "partitioning change rebuilds the table",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -327,7 +327,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY140",
+				Name:     "rewrite/add-stored-generated-column",
 				Title:    "stored generated column added with a table copy",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -344,8 +344,8 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY141",
-				Subsumes: []string{"MY101"},
+				Name:     "locking/add-auto-increment-column",
+				Subsumes: []string{"locking/blocking-alter-table"},
 				Title:    "auto-increment column added with blocked writes",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -362,8 +362,8 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY143",
-				Subsumes: []string{"MY101"},
+				Name:     "rewrite/modify-generated-column",
+				Subsumes: []string{"locking/blocking-alter-table"},
 				Title:    "generated column modified with a table copy",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -379,7 +379,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY144",
+				Name:     "locking/add-check",
 				Title:    "check constraint added with a full scan",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},
@@ -403,7 +403,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY145",
+				Name:     "locking/enforce-check",
 				Title:    "check constraint enforcement revalidates every row",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql"},
@@ -424,7 +424,7 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY146",
+				Name:     "destructive/drop-system-versioning",
 				Title:    "system versioning dropped with its history",
 				Severity: lintext.Error,
 				Targets:  []string{"mariadb"},
@@ -441,8 +441,8 @@ func atlasGapMySQLRules() []lintkit.Rule {
 		},
 		{
 			Rule: lintext.Rule{
-				Code:     "MY147",
-				Subsumes: []string{"MY101"},
+				Name:     "rewrite/set-not-null",
+				Subsumes: []string{"locking/blocking-alter-table"},
 				Title:    "nullability change rebuilds the table",
 				Severity: lintext.Warning,
 				Targets:  []string{"mysql", "mariadb"},

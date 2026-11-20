@@ -71,7 +71,7 @@ const (
 
 // namingCodes are the rule codes, in nameKind order: the Atlas codes, since
 // the rules report what the Atlas naming analyzer reports.
-var namingCodes = [...]string{"NM101", "NM102", "NM103", "NM104", "NM105", "NM106"}
+var namingCodes = [...]string{"naming/schema-name", "naming/table-name", "naming/column-name", "naming/index-name", "naming/foreign-key-name", "naming/check-name"}
 
 var nameKindLabels = [...]string{"schema", "table", "column", "index", "foreign key", "check constraint"}
 
@@ -484,7 +484,7 @@ func namingRules() []Rule {
 func namingRule(kind nameKind) Rule {
 	title := kind.String() + " name violates the naming convention"
 	return Rule{
-		Code:     namingCodes[kind],
+		Name:     namingCodes[kind],
 		Title:    title,
 		Severity: SeverityWarning,
 		CheckFile: func(file *File) []Finding {

@@ -1520,7 +1520,7 @@ func lockedDestructiveLintHook(
 // outside the DS family is among them.
 func gateRefusal(findings []lint.Finding) string {
 	for _, finding := range findings {
-		if !strings.HasPrefix(finding.Rule, migrationlintgate.ReportedFamily) {
+		if !slices.Contains(migrationlintgate.ReportedRules(), finding.Rule) {
 			return "pending migrations carry lint findings the policy's gate section blocks on"
 		}
 	}

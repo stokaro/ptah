@@ -12,14 +12,14 @@ const (
 	// RuleIdentifierTruncated reports a name longer than the identifier limit
 	// of a server that cuts long names. The server stores the object under its
 	// first bytes, with a notice and no error.
-	RuleIdentifierTruncated = "DDL003"
+	RuleIdentifierTruncated = "naming/identifier-too-long"
 	// RuleIdentifierCollision reports a name the server cuts to a name already
 	// in use where the server refuses the second declaration.
 	//
 	// It is a code of its own rather than an error-grade DDL003 because one
 	// code carries one default severity: a cut name is a warning a project
 	// may promote, and a collision fails when the statement runs.
-	RuleIdentifierCollision = "DDL004"
+	RuleIdentifierCollision = "naming/identifier-collision"
 )
 
 // storedNameTitles are the short labels of the two rules, read by the catalog

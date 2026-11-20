@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/atlascodes"
 	migrationlint "ptah.run/migration/lint"
 )
 
@@ -259,7 +259,7 @@ func buildMigrateLintText(
 	order func([]migrationlint.File) func(a, b migrationlint.File) int,
 ) migrateLintText {
 	upFiles := sortedUpFiles(analysis.Files(), order)
-	diagsByFile := diagnosticsByFile(sourcedFindings(analysis, sources))
+	diagsByFile := diagnosticsByFile(sourcedFindings(analysis, sources), analysis.Target().Dialect)
 
 	firstSelected := -1
 	var model migrateLintText
@@ -323,19 +323,19 @@ func sortedUpFiles(
 
 // diagnosticsByFile maps findings into compatibility diagnostics keyed
 // by the cleaned reporting path of the file that owns them.
-func diagnosticsByFile(findings []migrationlint.Finding) map[string][]migrateLintTextDiag {
+func diagnosticsByFile(findings []migrationlint.Finding, dialect string) map[string][]migrateLintTextDiag {
 	byFile := make(map[string][]migrateLintTextDiag)
 	for _, finding := range findings {
 		key := path.Clean(finding.File)
-		byFile[key] = append(byFile[key], compatibilityDiagnostic(finding))
+		byFile[key] = append(byFile[key], compatibilityDiagnostic(finding, dialect))
 	}
 	return byFile
 }
 
 // compatibilityDiagnostic maps a structured native finding to the measured
 // Atlas analyzer code, wording, and suggested-fix shape used by ptah-compat.
-func compatibilityDiagnostic(finding migrationlint.Finding) migrateLintTextDiag {
-	rule := atlaslint.RuleForNativeCode(finding.Rule)
+func compatibilityDiagnostic(finding migrationlint.Finding, dialect string) migrateLintTextDiag {
+	rule := atlascodes.RuleFor(finding.Rule, dialect)
 	diagnostic, mapped := atlasDiagnosticText(rule.Code, finding)
 	if !mapped {
 		return migrateLintTextDiag{
@@ -361,15 +361,15 @@ func compatibilityDiagnostic(finding migrationlint.Finding) migrateLintTextDiag 
 
 func analyzerGroupLabel(analyzer string) string {
 	switch analyzer {
-	case atlaslint.AnalyzerDestructive:
+	case atlascodes.AnalyzerDestructive:
 		return "destructive changes"
-	case atlaslint.AnalyzerDataDependent:
+	case atlascodes.AnalyzerDataDependent:
 		return "data dependent changes"
-	case atlaslint.AnalyzerConcurrentIndex:
+	case atlascodes.AnalyzerConcurrentIndex:
 		return "concurrent index violations"
-	case atlaslint.AnalyzerIncompatible:
+	case atlascodes.AnalyzerIncompatible:
 		return "backward incompatible changes"
-	case atlaslint.AnalyzerNestedTX:
+	case atlascodes.AnalyzerNestedTX:
 		return "nested transaction blocks"
 	default:
 		return "diagnostics"
@@ -412,9 +412,9 @@ func groupDiagnostics(diags []migrateLintTextDiag) []migrateLintTextGroup {
 // first-appearance order behind the measured ones.
 func analyzerGroupRank(label string) int {
 	switch label {
-	case analyzerGroupLabel(atlaslint.AnalyzerDestructive):
+	case analyzerGroupLabel(atlascodes.AnalyzerDestructive):
 		return 0
-	case analyzerGroupLabel(atlaslint.AnalyzerDataDependent):
+	case analyzerGroupLabel(atlascodes.AnalyzerDataDependent):
 		return 1
 	default:
 		return 2

@@ -120,8 +120,8 @@ func TestDeclaredRuleCodesReadsEveryConventionalSpelling(t *testing.T) {
 		found []string
 	}{
 		{name: "Ptah rule inside an Atlas family", code: "PG112P", found: []string{"PG112P"}},
-		{name: "rule inside a family of ours", code: "SQL003", found: []string{"SQL003"}},
-		{name: "Atlas check under the Atlas identifier", code: "PG101", found: []string{"PG101"}},
+		{name: "rule inside a family of ours", code: "coverage/dynamic-sql", found: []string{"coverage/dynamic-sql"}},
+		{name: "Atlas check under the Atlas identifier", code: "locking/create-index", found: []string{"locking/create-index"}},
 		{name: "lowercase is not an identifier", code: "pg112p", found: nil},
 		{name: "two digits is not an identifier", code: "PG12", found: nil},
 	}
@@ -155,17 +155,17 @@ func TestDeclaredRuleCodesReadsIdentifiersOutsideConstDeclarations(t *testing.T)
 		{
 			name:   "a code written into the finding the rule returns",
 			source: "package fixture\n\ntype finding struct{ Rule string }\n\nfunc report() finding { return finding{Rule: \"SQL003\"} }\n",
-			found:  []string{"SQL003"},
+			found:  []string{"coverage/dynamic-sql"},
 		},
 		{
 			name:   "a code used as a map key",
 			source: "package fixture\n\nvar titles = map[string]string{\"DDL002\": \"a title\"}\n",
-			found:  []string{"DDL002"},
+			found:  []string{"correctness/index-on-undeclared-column"},
 		},
 		{
 			name:   "a code compared against inline",
 			source: "package fixture\n\nfunc isParse(code string) bool { return code == \"SQL004\" }\n",
-			found:  []string{"SQL004"},
+			found:  []string{"coverage/unanalyzed-statements"},
 		},
 	}
 
@@ -203,19 +203,19 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			name:    "parse error",
 			source:  sqllint.Source{Name: "broken.sql", SQL: "CREATE TABLE ;"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "SQL001",
+			code:    "correctness/syntax-error",
 		},
 		{
 			name:    "statement the linter does not model",
 			source:  sqllint.Source{Name: "query.sql", SQL: "SELECT 1;"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "SQL002",
+			code:    "coverage/unsupported-statement",
 		},
 		{
 			name:    "a statement kind no rule analyzes",
 			source:  sqllint.Source{Name: "policy.sql", SQL: "CREATE POLICY p ON users USING (true);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "SQL004",
+			code:    "coverage/unanalyzed-statements",
 		},
 		{
 			// The index and the table it names are in one file, which is where
@@ -225,14 +225,14 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			source: sqllint.Source{Name: "index.sql", SQL: "CREATE TABLE users (id INT PRIMARY KEY);\n" +
 				"CREATE INDEX idx_users_email ON users (email);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "DDL002",
+			code:    "correctness/index-on-undeclared-column",
 		},
 		{
 			name: "a name PostgreSQL cuts",
 			source: sqllint.Source{Name: "index.sql", SQL: "CREATE TABLE users (id INT PRIMARY KEY);\n" +
 				"CREATE INDEX " + strings.Repeat("i", 64) + " ON users (id);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "DDL003",
+			code:    "naming/identifier-too-long",
 		},
 		{
 			name: "two names PostgreSQL stores as one",
@@ -240,13 +240,13 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 				"CREATE INDEX " + strings.Repeat("i", 63) + "_a ON users (id);\n" +
 				"CREATE INDEX " + strings.Repeat("i", 63) + "_b ON users (email);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "DDL004",
+			code:    "naming/identifier-collision",
 		},
 		{
 			name:    "table without a primary key",
 			source:  sqllint.Source{Name: "schema.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(), Dialect: platform.Postgres},
-			code:    "DDL001",
+			code:    "design/no-primary-key",
 		},
 		{
 			name:   "capability the target lacks",
@@ -255,7 +255,7 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 				Dialect:      platform.CockroachDB,
 				Capabilities: capability.CockroachDB23(),
 			},
-			code: "CAP001",
+			code: "capability/missing",
 		},
 		{
 			// A routine also draws SQL002, because the linter models no
@@ -270,7 +270,7 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			options: sqllint.Options{SQL: builtintest.Runtime().SQL(), Bodies: builtintest.Runtime(),
 				Dialect: platform.Postgres,
 			},
-			code: "SQL003",
+			code: "coverage/dynamic-sql",
 		},
 	}
 

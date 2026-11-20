@@ -34,8 +34,10 @@ func PublishedLintRules(declared *protocol.Engine) []lintext.Rule {
 		protocol.LintRule_INFO: lintext.Info, protocol.LintRule_WARNING: lintext.Warning, protocol.LintRule_ERROR: lintext.Error,
 	}
 	rules := make([]lintext.Rule, 0, len(declared.GetLintRules()))
+	// Phase D shim: the protocol field is still called `code` and carries the
+	// rule's Ptah name until the provider protocol renames it.
 	for _, rule := range declared.GetLintRules() {
-		rules = append(rules, lintext.Rule{Code: rule.GetCode(), Title: rule.GetTitle(), Severity: severities[rule.GetSeverity()],
+		rules = append(rules, lintext.Rule{Name: rule.GetCode(), Title: rule.GetTitle(), Severity: severities[rule.GetSeverity()],
 			Targets: []string{declared.GetId()}, AppliesToDown: rule.GetAppliesToDown(), Subsumes: slices.Clone(rule.GetSubsumes())})
 	}
 	return rules
@@ -204,7 +206,7 @@ func (s lintService) CheckMigrations(ctx context.Context, request lintext.CheckR
 		return lintext.CheckResult{}, err
 	}
 	wire := &protocol.CheckLintRequest{Engine: name, ServerVersion: request.Target.Version, Capabilities: make(map[string]bool),
-		Codes: slices.Clone(request.Codes), Compatibility: request.Compatibility, TransactionOwner: owner}
+		Codes: slices.Clone(request.Names) /* phase D shim: the wire field `codes` carries rule names */, Compatibility: request.Compatibility, TransactionOwner: owner}
 	for key, value := range request.Target.Capabilities.All() {
 		wire.Capabilities[string(key)] = value
 	}
@@ -219,7 +221,7 @@ func (s lintService) CheckMigrations(ctx context.Context, request lintext.CheckR
 	result := lintext.CheckResult{Complete: reply.GetComplete()}
 	kinds := map[protocol.LintSubject_Kind]lintext.SubjectKind{protocol.LintSubject_TABLE: lintext.SubjectTable, protocol.LintSubject_COLUMN: lintext.SubjectColumn}
 	for _, finding := range reply.GetFindings() {
-		value := lintext.Finding{Code: finding.GetCode(), File: int(finding.GetFile()), Statement: int(finding.GetStatement()), Message: finding.GetMessage()}
+		value := lintext.Finding{Name: finding.GetCode(), File: int(finding.GetFile()), Statement: int(finding.GetStatement()), Message: finding.GetMessage()}
 		for _, subject := range finding.GetSubjects() {
 			value.Subjects = append(value.Subjects, lintext.Subject{Kind: kinds[subject.GetKind()], Name: subject.GetName(), Parent: subject.GetParent(), DataType: subject.GetDataType()})
 		}
@@ -229,12 +231,12 @@ func (s lintService) CheckMigrations(ctx context.Context, request lintext.CheckR
 }
 
 // untargeted is the answer to a run that names no target: complete, with no
-// finding. A code the engine does not publish wraps lintext.ErrInvalid and a
+// finding. A name the engine does not publish wraps lintext.ErrInvalid and a
 // canceled run returns the context's error, as a bundled owner answers both.
 func (s lintService) untargeted(ctx context.Context, request lintext.CheckRequest) (lintext.CheckResult, error) {
-	for _, code := range request.Codes {
-		if !slices.ContainsFunc(s.target.engine.GetLintRules(), func(rule *protocol.LintRule) bool { return rule.GetCode() == code }) {
-			return lintext.CheckResult{}, fmt.Errorf("%w: engine %q publishes no lint rule %s", lintext.ErrInvalid, s.target.engine.GetId(), code)
+	for _, name := range request.Names {
+		if !slices.ContainsFunc(s.target.engine.GetLintRules(), func(rule *protocol.LintRule) bool { return rule.GetCode() == name }) {
+			return lintext.CheckResult{}, fmt.Errorf("%w: engine %q publishes no lint rule %s", lintext.ErrInvalid, s.target.engine.GetId(), name)
 		}
 	}
 	if err := ctx.Err(); err != nil {

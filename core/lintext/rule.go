@@ -43,7 +43,7 @@
 // schema state a migration version starts from declares
 // [InputBaselineSchema], or [InputBaselineRefinement] when the text alone
 // supports a finding that the state refines. A host serves such a rule in two
-// calls of [Service.CheckMigrations] over the same files and codes.
+// calls of [Service.CheckMigrations] over the same files and rule names.
 //
 // The first call carries no [CheckRequest.Baseline]. The owner reports what
 // the text supports, and lists in [CheckResult.BaselineSubjects], per rule and
@@ -128,10 +128,13 @@ func (i Input) ReadsBaseline() bool {
 // Rule describes one rule an owner checks, as data a host reads without
 // running it.
 type Rule struct {
-	// Code is the stable identifier a finding carries, such as MY101: an
-	// uppercase ASCII letter followed by uppercase ASCII letters and digits.
-	// A code belongs to one rule across every owner a runtime holds.
-	Code string `json:"code"`
+	// Name is the stable identifier a finding carries, `category/name`, such
+	// as `locking/add-foreign-key`: two lowercase segments joined by a slash,
+	// each of letters and digits joined by single hyphens. Several owners may
+	// publish one name, each for targets no other owner of the name judges and
+	// at one severity: the name stands for one hazard, and each owner checks
+	// it for its own engine.
+	Name string `json:"name"`
 	// Title is the rule's short name in reports.
 	Title string `json:"title"`
 	// Severity is the default urgency of the rule's findings.
@@ -150,38 +153,39 @@ type Rule struct {
 	Subsumes []string `json:"subsumes,omitempty"`
 }
 
-// Validate reports a rule a host cannot publish: a code outside the
-// convention, no title, an unknown severity or input, no target, a blank or
+// Validate reports a rule a host cannot publish: a name outside the
+// grammar, no title, an unknown severity or input, no target, a blank or
 // repeated target, or a rule that subsumes itself. Each failure wraps
 // [ErrInvalid].
 func (r Rule) Validate() error {
-	if !CanonicalCode(r.Code) {
-		return fmt.Errorf("%w: rule code %q must start with an uppercase ASCII letter and contain only uppercase ASCII letters and digits",
-			ErrInvalid, r.Code)
+	if !CanonicalName(r.Name) {
+		return fmt.Errorf("%w: rule name %q must be a category and a rule joined by a slash, such as locking/add-foreign-key: "+
+			"lowercase letters and digits joined by single hyphens",
+			ErrInvalid, r.Name)
 	}
 	if strings.TrimSpace(r.Title) == "" {
-		return fmt.Errorf("%w: rule %s has no title", ErrInvalid, r.Code)
+		return fmt.Errorf("%w: rule %s has no title", ErrInvalid, r.Name)
 	}
 	switch r.Severity {
 	case Info, Warning, Error:
 	default:
-		return fmt.Errorf("%w: rule %s has unknown severity %q", ErrInvalid, r.Code, r.Severity)
+		return fmt.Errorf("%w: rule %s has unknown severity %q", ErrInvalid, r.Name, r.Severity)
 	}
 	switch r.Input {
 	case InputStatementText, InputRoutineBody, InputBaselineSchema, InputBaselineRefinement:
 	default:
-		return fmt.Errorf("%w: rule %s has unknown input %q", ErrInvalid, r.Code, r.Input)
+		return fmt.Errorf("%w: rule %s has unknown input %q", ErrInvalid, r.Name, r.Input)
 	}
 	if len(r.Targets) == 0 {
-		return fmt.Errorf("%w: rule %s names no target", ErrInvalid, r.Code)
+		return fmt.Errorf("%w: rule %s names no target", ErrInvalid, r.Name)
 	}
 	for i, target := range r.Targets {
 		if strings.TrimSpace(target) == "" || slices.Contains(r.Targets[:i], target) {
-			return fmt.Errorf("%w: rule %s names a blank or repeated target", ErrInvalid, r.Code)
+			return fmt.Errorf("%w: rule %s names a blank or repeated target", ErrInvalid, r.Name)
 		}
 	}
-	if slices.Contains(r.Subsumes, r.Code) {
-		return fmt.Errorf("%w: rule %s subsumes itself", ErrInvalid, r.Code)
+	if slices.Contains(r.Subsumes, r.Name) {
+		return fmt.Errorf("%w: rule %s subsumes itself", ErrInvalid, r.Name)
 	}
 	return nil
 }
@@ -199,17 +203,29 @@ func (r Rule) Judges(target string) bool {
 	return target == "" || slices.Contains(r.Targets, target)
 }
 
-// CanonicalCode reports whether code follows the rule-code convention: an
-// uppercase ASCII letter followed by uppercase ASCII letters and digits.
-func CanonicalCode(code string) bool {
-	for index, value := range code {
-		if value >= 'A' && value <= 'Z' {
-			continue
-		}
-		if index > 0 && value >= '0' && value <= '9' {
-			continue
-		}
+// CanonicalName reports whether name follows the rule-name grammar: two
+// segments joined by one slash, each starting with a lowercase ASCII letter
+// and holding lowercase letters and digits joined by single hyphens.
+func CanonicalName(name string) bool {
+	category, rule, found := strings.Cut(name, "/")
+	return found && canonicalSegment(category) && canonicalSegment(rule)
+}
+
+func canonicalSegment(segment string) bool {
+	if segment == "" || segment[0] < 'a' || segment[0] > 'z' {
 		return false
 	}
-	return code != ""
+	previousHyphen := false
+	for index := range len(segment) {
+		value := segment[index]
+		switch {
+		case value >= 'a' && value <= 'z', value >= '0' && value <= '9':
+			previousHyphen = false
+		case value == '-' && !previousHyphen && index < len(segment)-1:
+			previousHyphen = true
+		default:
+			return false
+		}
+	}
+	return true
 }

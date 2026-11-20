@@ -390,11 +390,11 @@ func memberRule(kind mytype.MemberKind, offset int, title string, check func(res
 	code := memberRuleCode(kind, offset)
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     code,
+			Name:     code,
 			Title:    title,
 			Severity: lintext.Warning,
 			Targets:  []string{"mysql", "mariadb"},
-			Subsumes: []string{"DS103", "MY101"},
+			Subsumes: []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: memberChangeStatements,

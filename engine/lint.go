@@ -12,8 +12,9 @@ import (
 
 // Lint publishes the migration lint rules one owner checks and the service
 // that checks them. A rule names the targets it judges, each one a target
-// the runtime registers, and a code belongs to one rule across every
-// provider of the runtime.
+// the runtime registers. Several providers may publish one name, which then
+// stands for one hazard checked once per engine: their targets must not
+// overlap and their severities must match.
 type Lint struct {
 	// Rules are the rules the service checks, as data.
 	Rules []lintext.Rule
@@ -38,25 +39,58 @@ func (r *Runtime) registerLint(owner string, declaration Lint) error {
 		if err := rule.Validate(); err != nil {
 			return fmt.Errorf("%w: provider %q: %w", ErrInvalidRegistration, owner, err)
 		}
-		if existing, found := r.lintRules[rule.Code]; found {
-			return fmt.Errorf("%w: lint rule %s is published by %q and %q", ErrInvalidRegistration, rule.Code, existing.owner, owner)
-		}
 		published := rule.Clone()
 		for i, name := range published.Targets {
 			selected, found := r.lookup(name)
 			if !found {
-				return fmt.Errorf("%w: lint rule %s judges unregistered target %q", ErrInvalidRegistration, rule.Code, name)
+				return fmt.Errorf("%w: lint rule %s judges unregistered target %q", ErrInvalidRegistration, rule.Name, name)
 			}
 			published.Targets[i] = selected.name
 		}
-		r.lintRules[rule.Code] = ownedLintRule{owner: owner, rule: published, service: service}
+		for _, existing := range r.lintRules[rule.Name] {
+			if existing.rule.Severity != published.Severity {
+				return fmt.Errorf("%w: lint rule %s is published by %q at severity %s and by %q at severity %s; one name has one severity",
+					ErrInvalidRegistration, rule.Name, existing.owner, existing.rule.Severity, owner, published.Severity)
+			}
+			if shared := sharedTarget(existing.rule.Targets, published.Targets); shared != "" {
+				return fmt.Errorf("%w: lint rule %s is published by %q and %q for the same target %q",
+					ErrInvalidRegistration, rule.Name, existing.owner, owner, shared)
+			}
+		}
+		r.lintRules[rule.Name] = append(r.lintRules[rule.Name], ownedLintRule{owner: owner, rule: published, service: service})
 	}
 	return nil
 }
 
+// sharedTarget returns a target both lists name, or the empty string.
+func sharedTarget(a, b []string) string {
+	for _, target := range a {
+		if slices.Contains(b, target) {
+			return target
+		}
+	}
+	return ""
+}
+
+// judging returns the published entries of a rule name that judge target:
+// all of them for a run that names no target.
+func (r *Runtime) judging(ruleName, target string) []ownedLintRule {
+	if r == nil {
+		return nil
+	}
+	var found []ownedLintRule
+	for _, owned := range r.lintRules[ruleName] {
+		if owned.rule.Judges(target) {
+			found = append(found, owned)
+		}
+	}
+	return found
+}
+
 // LintRules returns the published rules that judge target, every published
-// rule for an empty target, sorted by code. The rules are copies, each
-// naming canonical targets. An unregistered target wraps
+// rule for an empty target, sorted by name. A name several owners publish is
+// returned once per owner, each naming that owner's targets. The rules are
+// copies, each naming canonical targets. An unregistered target wraps
 // ptaherr.ErrUnsupportedDialect.
 func (r *Runtime) LintRules(target string) ([]lintext.Rule, error) {
 	name, err := r.lintTarget(target)
@@ -65,13 +99,17 @@ func (r *Runtime) LintRules(target string) ([]lintext.Rule, error) {
 	}
 	var rules []lintext.Rule
 	if r != nil {
-		for _, owned := range r.lintRules {
-			if owned.rule.Judges(name) {
-				rules = append(rules, owned.rule.Clone())
+		for _, entries := range r.lintRules {
+			for _, owned := range entries {
+				if owned.rule.Judges(name) {
+					rules = append(rules, owned.rule.Clone())
+				}
 			}
 		}
 	}
-	slices.SortFunc(rules, func(a, b lintext.Rule) int { return cmp.Compare(a.Code, b.Code) })
+	slices.SortFunc(rules, func(a, b lintext.Rule) int {
+		return cmp.Or(cmp.Compare(a.Name, b.Name), slices.Compare(a.Targets, b.Targets))
+	})
 	return rules, nil
 }
 
@@ -100,11 +138,11 @@ func (r *Runtime) SplitStatements(ctx context.Context, request lintext.SplitRequ
 	return result, ctx.Err()
 }
 
-// CheckMigrations sends each of the request's codes to the owner that
-// publishes it, one call per owner, and joins the findings, sorted by file,
-// statement and code, and the baseline subjects, sorted by file and code. A
-// code no owner publishes, a rule that does not judge the request's target and
-// an unregistered target are refused before any owner is called; a reply that
+// CheckMigrations sends each of the request's rule names to the owners that
+// publish it for the request's target, one call per owner, and joins the
+// findings, sorted by file, statement and name, and the baseline subjects,
+// sorted by file and name. A name no owner publishes for the target, and an
+// unregistered target, are refused before any owner is called; a reply that
 // does not answer its request, or names baseline subjects for a rule whose
 // input reads no baseline, wraps lintext.ErrInvalid. An error returns no
 // result.
@@ -119,19 +157,19 @@ func (r *Runtime) CheckMigrations(ctx context.Context, request lintext.CheckRequ
 	request.Target.Name = name
 	batches := make(map[int][]string)
 	var order []int
-	for i, code := range request.Codes {
-		var owned ownedLintRule
-		found := false
-		if r != nil {
-			owned, found = r.lintRules[code]
+	for i, ruleName := range request.Names {
+		entries := r.judging(ruleName, name)
+		if len(entries) == 0 || slices.Contains(request.Names[:i], ruleName) {
+			return lintext.CheckResult{}, fmt.Errorf("%w: no published lint rule %s judges target %q, or it is asked for twice", lintext.ErrInvalid, ruleName, name)
 		}
-		if !found || !owned.rule.Judges(name) || slices.Contains(request.Codes[:i], code) {
-			return lintext.CheckResult{}, fmt.Errorf("%w: no published lint rule %s judges target %q, or it is asked for twice", lintext.ErrInvalid, code, name)
+		for _, owned := range entries {
+			if _, seen := batches[owned.service]; !seen {
+				order = append(order, owned.service)
+			}
+			if !slices.Contains(batches[owned.service], ruleName) {
+				batches[owned.service] = append(batches[owned.service], ruleName)
+			}
 		}
-		if _, seen := batches[owned.service]; !seen {
-			order = append(order, owned.service)
-		}
-		batches[owned.service] = append(batches[owned.service], code)
 	}
 	result := lintext.CheckResult{Complete: true}
 	for _, service := range order {
@@ -139,31 +177,54 @@ func (r *Runtime) CheckMigrations(ctx context.Context, request lintext.CheckRequ
 			return lintext.CheckResult{}, err
 		}
 		batch := request
-		batch.Codes = batches[service]
+		batch.Names = batches[service]
 		reply, err := r.lintServices[service].CheckMigrations(ctx, batch)
 		if err != nil {
 			return lintext.CheckResult{}, err
 		}
-		owner := r.lintRules[batch.Codes[0]].owner
+		owner := r.lintOwner(service)
 		if err := lintext.ValidateCheck(batch, reply); err != nil {
 			return lintext.CheckResult{}, fmt.Errorf("lint rules of %q: %w", owner, err)
 		}
 		for _, subject := range reply.BaselineSubjects {
-			if !r.lintRules[subject.Code].rule.Input.ReadsBaseline() {
+			if !r.readsBaseline(subject.Name, service) {
 				return lintext.CheckResult{}, fmt.Errorf("lint rules of %q: %w: rule %s names baseline subjects but reads no baseline",
-					owner, lintext.ErrInvalid, subject.Code)
+					owner, lintext.ErrInvalid, subject.Name)
 			}
 		}
 		result.Findings = append(result.Findings, reply.Findings...)
 		result.BaselineSubjects = append(result.BaselineSubjects, reply.BaselineSubjects...)
 	}
 	slices.SortStableFunc(result.Findings, func(a, b lintext.Finding) int {
-		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Statement, b.Statement), cmp.Compare(a.Code, b.Code))
+		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Statement, b.Statement), cmp.Compare(a.Name, b.Name))
 	})
 	slices.SortStableFunc(result.BaselineSubjects, func(a, b lintext.BaselineSubject) int {
-		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Code, b.Code))
+		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Name, b.Name))
 	})
 	return result, ctx.Err()
+}
+
+// lintOwner returns the provider that registered a lint service.
+func (r *Runtime) lintOwner(service int) string {
+	for _, entries := range r.lintRules {
+		for _, owned := range entries {
+			if owned.service == service {
+				return owned.owner
+			}
+		}
+	}
+	return ""
+}
+
+// readsBaseline reports whether the rule a service publishes under name reads
+// a baseline.
+func (r *Runtime) readsBaseline(ruleName string, service int) bool {
+	for _, owned := range r.lintRules[ruleName] {
+		if owned.service == service {
+			return owned.rule.Input.ReadsBaseline()
+		}
+	}
+	return false
 }
 
 // AnnotateStatements asks every target that registers an annotator, in

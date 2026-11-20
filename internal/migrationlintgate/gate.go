@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"slices"
-	"strings"
 
 	"ptah.run/core/lintext"
 	"ptah.run/core/platform/capability"
@@ -19,35 +18,66 @@ import (
 	"ptah.run/migration/risk"
 )
 
-// ReportedFamily is the identifier family this gate blocks on by itself.
+// ReportedRules returns the rules this gate blocks on by itself, by name.
 //
 // The apply gate is a data-safety stop, not the lint pass. A finding outside
-// this family is dropped even when the rule that produced it ran, so an
+// these rules is dropped even when the rule that produced it ran, so an
 // operator reading the rule tables must not assume that reaching an apply
 // means every rule was consulted. The reference page's generated section
-// renders this constant, and a test pins the one hand-written cell that names
+// renders this list, and a test pins the one hand-written cell that names
 // it, so narrowing or widening the gate fails the documentation gate rather
 // than leaving a stale promise on the page.
 //
-// A policy widens the gate by family through its `gate` section
-// ([lint.GateConfig]): a family named there runs even when it is one the
-// gate disables by default, and its error-severity findings refuse the apply
-// the way DS findings do. The widening is the policy's, committed beside the
-// migrations, so the default stays a data-safety stop (stokaro/ptah#2942).
-const ReportedFamily = "DS"
+// A policy widens the gate through its `gate` section ([lint.GateConfig]):
+// a rule name or category named there runs even when the gate disables it by
+// default, and its error-severity findings refuse the apply the way these
+// findings do. The widening is the policy's, committed beside the migrations,
+// so the default stays a data-safety stop (stokaro/ptah#2942). The slice is a
+// copy.
+func ReportedRules() []string {
+	return slices.Clone(lint.DefaultGateRules)
+}
 
-// disabledFamilies are the families the gate turns off before analysis.
+// disabledRules are the rules the gate turns off before analysis, by name.
 //
 // They are the advisory ones: migration-file form, backward compatibility, and
-// the two engine-specific locking families. Running them here would refuse an
-// apply over findings that are not about the data already in the tables.
-var disabledFamilies = []string{"MF", "BC", "PG", "MY"}
+// the engine-specific locking and rewrite rules of PostgreSQL and MySQL
+// (including MariaDB). Running them here would refuse an apply over findings
+// that are not about the data already in the tables. They are listed by name
+// because no category holds exactly them: several categories mix these rules
+// with ones the gate leaves on.
+var disabledRules = []string{
+	"file-form/missing-down", "file-form/empty-migration", "file-form/refused-file", "file-form/file-name",
+	"data-dependent/add-unique-index", "data-dependent/rebuild-index-as-unique",
+	"rollout/rename", "rollout/drop-table", "rollout/drop-column",
+	"locking/create-index", "transaction/add-enum-value", "transaction/concurrent-index", "transaction/per-chunk-index",
+	"locking/add-primary-key", "locking/add-unique-constraint", "locking/drop-index", "locking/partitioned-index",
+	"locking/add-exclusion-constraint", "design/column-alignment", "rewrite/alter-column-type",
+	"rewrite/in-place-column-change", "rewrite/volatile-default", "locking/set-not-null",
+	"locking/add-primary-key-on-nullable", "locking/add-check", "locking/add-foreign-key", "rewrite/set-persistence",
+	"locking/create-trigger", "rewrite/add-stored-generated-column", "rewrite/add-identity-column",
+	"rewrite/set-access-method", "locking/replace-primary-key", "security/definer-without-search-path",
+	"rollout/weaken-replica-identity", "design/disable-autovacuum", "naming/identifier-too-long",
+	"naming/identifier-collision",
+	"locking/blocking-alter-table", "side-effect/inline-reference", "rewrite/remove-enum-value",
+	"rewrite/reorder-enum-values", "rewrite/insert-enum-value", "rewrite/widen-enum", "rewrite/remove-set-member",
+	"rewrite/reorder-set-members", "rewrite/insert-set-member", "rewrite/widen-set", "rewrite/add-primary-key",
+	"rewrite/drop-primary-key", "locking/add-fulltext-index", "locking/add-spatial-index", "rewrite/convert-charset",
+	"rewrite/replace-primary-key", "rewrite/change-engine", "rewrite/change-partitioning",
+	"locking/add-auto-increment-column", "rewrite/modify-generated-column", "locking/enforce-check",
+	"destructive/drop-system-versioning", "rewrite/set-not-null",
+}
 
-// DisabledFamilies returns the identifier families this gate disables, in the
-// order it disables them. The slice is a copy: a caller that appended to a
-// shared one would grow the gate's own policy.
-func DisabledFamilies() []string {
-	return slices.Clone(disabledFamilies)
+// DisabledRules returns the rule names this gate disables, in the order it
+// disables them. The slice is a copy: a caller that appended to a shared one
+// would grow the gate's own policy.
+//
+// A name several engines share disables every engine's rule of that name:
+// `rewrite/set-not-null` also names the SQLite rule, which the gate leaves
+// disabled too. It reports nothing the gate blocks on, so the stop is the
+// same.
+func DisabledRules() []string {
+	return slices.Clone(disabledRules)
 }
 
 // Policy is a validated apply-time lint policy resolved for a live database.
@@ -58,9 +88,10 @@ type Policy struct {
 	target   lint.Target
 	disabled []string
 	rules    map[string]lint.RuleConfig
-	// families are the identifier families whose blocking findings refuse
-	// the apply: [ReportedFamily] and whatever the policy's gate section adds.
-	families []string
+	// blocking are the rule names and categories whose blocking findings
+	// refuse the apply: [ReportedRules] and whatever the policy's gate
+	// section adds.
+	blocking []string
 	// online is the online mode, selected by the policy's `online` key.
 	online bool
 	// transactionOwner is who opens the transaction each file runs in, as
@@ -98,9 +129,10 @@ func (p Policy) ServerVersionNote() string {
 	return p.target.Note
 }
 
-// BlockingFamilies returns the families this policy refuses an apply on.
-func (p Policy) BlockingFamilies() []string {
-	return slices.Clone(p.families)
+// BlockingRules returns the rule names and categories this policy refuses an
+// apply on.
+func (p Policy) BlockingRules() []string {
+	return slices.Clone(p.blocking)
 }
 
 // LoadPolicy loads the conventional lint policy, validated against the rules
@@ -133,10 +165,10 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 	if canonical, ok := lintdialect.CanonicalIn(databaseDialect, served); ok {
 		databaseDialect = canonical
 	}
-	families := cfg.GateFamilies()
-	// A family the policy gates on must run, so it leaves the gate's own
+	blocking := cfg.GateRules()
+	// A rule the policy gates on must run, so it leaves the gate's own
 	// disabled list; the policy's disabled-rules still apply to it.
-	disabled, err := disabledRegisteredFamilies(runtime, families)
+	disabled, err := disabledRegisteredRules(runtime, blocking)
 	if err != nil {
 		return Policy{}, err
 	}
@@ -161,7 +193,7 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 		target:   target,
 		disabled: append(disabled, cfg.DisabledRules...),
 		rules:    cfg.Rules,
-		families: families,
+		blocking: blocking,
 		online:   cfg.RequiresOnline(),
 	}
 	if err := validateOnlineDialect(cfg, databaseDialect); err != nil {
@@ -174,17 +206,19 @@ func LoadPolicy(runtime lintext.Runtime, fsys fs.FS, databaseDialect string) (Po
 }
 
 // Internal defaults may name an owner absent from this runtime. Omit those
-// defaults, but keep user selectors intact so an unsupported policy is refused.
-func disabledRegisteredFamilies(runtime lintext.Runtime, enabled []string) ([]string, error) {
+// defaults, and any the policy gates on, but keep user selectors intact so an
+// unsupported policy is refused.
+func disabledRegisteredRules(runtime lintext.Runtime, enabled []string) ([]string, error) {
 	rules, err := lint.Rules(runtime)
 	if err != nil {
 		return nil, err
 	}
 	var disabled []string
-	for _, family := range DisabledFamilies() {
-		registered := slices.ContainsFunc(rules, func(rule lint.Rule) bool { return strings.HasPrefix(rule.Code, family) })
-		if registered && !slices.Contains(enabled, family) {
-			disabled = append(disabled, family)
+	for _, name := range DisabledRules() {
+		registered := slices.ContainsFunc(rules, func(rule lint.Rule) bool { return rule.Name == name })
+		gated := slices.ContainsFunc(enabled, func(selector string) bool { return lint.SelectorSelects(selector, name) })
+		if registered && !gated {
+			disabled = append(disabled, name)
 		}
 	}
 	return disabled, nil
@@ -237,14 +271,10 @@ func AnalyzeWithPolicy(
 	return blocking, nil
 }
 
-// gatesOn reports whether a rule belongs to a family the policy blocks on.
+// gatesOn reports whether a rule is one the policy blocks on, by name or by
+// category.
 func (p Policy) gatesOn(rule string) bool {
-	for _, family := range p.families {
-		if strings.HasPrefix(rule, family) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(p.blocking, func(selector string) bool { return lint.SelectorSelects(selector, rule) })
 }
 
 func (p Policy) options(pathPrefix string) lint.Options {

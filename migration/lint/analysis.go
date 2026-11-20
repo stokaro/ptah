@@ -15,7 +15,6 @@ import (
 	"ptah.run/core/lintext"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/sqlext"
-	"ptah.run/internal/atlaslint"
 	"ptah.run/internal/filetx"
 	"ptah.run/internal/fsnapshot"
 	"ptah.run/internal/lintkit"
@@ -108,13 +107,10 @@ type FindingContext struct {
 
 // Finding is one rule hit in one migration file.
 type Finding struct {
-	// Rule is the code of the rule that reported the finding, its identity.
-	Rule string `json:"rule"`
-	// Name is the rule's Ptah name, such as `destructive/drop-table`, and
-	// empty for a rule that has none: one a configuration declares, or one a
-	// third-party provider publishes. It is the spelling a selector may use
-	// beside the code; [SelectorSelects] says how a name matches.
-	Name     string   `json:"name,omitempty"`
+	// Rule is the name of the rule that reported the finding, its identity:
+	// `category/name`, such as `destructive/drop-table`. It is the spelling a
+	// selector uses; [SelectorSelects] says how one matches.
+	Rule     string   `json:"rule"`
 	Title    string   `json:"title"`
 	Severity Severity `json:"severity"`
 	File     string   `json:"file"`
@@ -161,7 +157,7 @@ type Statement struct {
 	// reads Target.Capabilities; see [Target].
 	Target          Target
 	sourceWords     []string
-	suppressedRules []atlaslint.Target
+	suppressedRules []noLintTarget
 	// effects are the facts the statement's owner reported about it; see
 	// [lintext.Effect].
 	effects []lintext.Effect
@@ -292,7 +288,7 @@ type File struct {
 	// read the starting state which qualifier names the schema it was read
 	// from ([stateRef]).
 	reviewed        schemaScope
-	suppressedRules []atlaslint.Target
+	suppressedRules []noLintTarget
 	// compatibility is the profile this run was started with. A rule reads it
 	// when the two command surfaces model the same statement differently; see
 	// [renamedNames] for the one construct where they do.
@@ -306,9 +302,9 @@ type File struct {
 	// owners are the owners whose syntax the file's statements carry, the
 	// SQL set of the run's runtime.
 	owners sqlext.Set
-	// registered is the set of rule codes this run compares selectors
-	// against, so a selector that names one of them selects it alone.
-	registered map[string]struct{}
+	// atlasSelectors reads this file's `atlas:nolint` comments under the
+	// compatibility profile; see [Options.AtlasSelectors].
+	atlasSelectors AtlasSelectors
 	// naming is the project's naming convention, compiled, or nil when the
 	// run configured none.
 	naming *namingPolicy
@@ -595,7 +591,7 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 	})
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
 	generatedAtStart := lintkit.NewStates(lintext.Baseline{Columns: opts.GeneratedAtStart})
-	registered := registeredCodes(rules)
+	known := knownNames(rules)
 	// Validated above, so a second compile cannot fail here.
 	naming, _ := compileNamingConfig(opts.Naming)
 	opts.RuleConfigs = withNamingSeverity(opts.RuleConfigs, opts.Naming)
@@ -617,7 +613,8 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 			opts.Compatibility,
 			baseline,
 			dependents,
-			registered,
+			known,
+			opts.AtlasSelectors,
 			naming,
 			repeatables,
 			orderKeys,
@@ -635,15 +632,15 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		return Analysis{}, err
 	}
 	withOwners(files, runtime.SQL())
-	if err := attachStatements(files, split, opts, target, registered, scope); err != nil {
+	if err := attachStatements(files, split, opts, target, known, scope); err != nil {
 		return Analysis{}, err
 	}
 	markAloneOutsideATransaction(files, opts)
-	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target, registered)
+	owners, err := checkOwnedRules(ctx, runtime, files, rules, opts, target)
 	if err != nil {
 		return Analysis{}, err
 	}
-	rules = owners.bind(rules)
+	rules = owners.bind(rules, opts.Dialect)
 
 	var findings []Finding
 	for i := range files {
@@ -652,9 +649,6 @@ func AnalyzeFS(ctx context.Context, runtime Runtime, fsys fs.FS, opts Options) (
 		}
 		file := cloneFile(files[i])
 		findings = append(findings, scope.keepFindings(file.scopeExcluded, runRules(&file, opts, rules))...)
-	}
-	for i := range findings {
-		findings[i].Name = lintnames.Migration().Name(findings[i].Rule)
 	}
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
@@ -820,7 +814,8 @@ func prepareFile(
 	compatibility CompatibilityProfile,
 	baseline map[int64]lintkit.State,
 	dependents map[int64]baselineDependents,
-	registered map[string]struct{},
+	known lintnames.Set,
+	atlasSelectors AtlasSelectors,
 	naming *namingPolicy,
 	repeatables map[string]struct{},
 	orderKeys map[string]int64,
@@ -868,13 +863,13 @@ func prepareFile(
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat || ptahRepeatable,
 		compatibility:  compatibility,
 		dialect:        dialect,
-		registered:     registered,
+		atlasSelectors: atlasSelectors,
 		naming:         naming,
 		baseline:       baseline[key],
 		dependents:     dependents[key],
 	}
 	if compatibility == CompatibilityProfileAtlas {
-		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw)
+		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw, atlasSelectors)
 	}
 	switch {
 	case atlasFormat:
@@ -1022,7 +1017,7 @@ func attachStatements(
 	split splitOutcome,
 	opts Options,
 	target Target,
-	registered map[string]struct{},
+	known lintnames.Set,
 	scope schemaScope,
 ) error {
 	dialect, compatibility, unparsed := opts.Dialect, opts.Compatibility, opts.Unparsed
@@ -1037,9 +1032,9 @@ func attachStatements(
 		for index, statement := range split.files[next] {
 			statement.Line += file.lineOffset
 			file.contract = append(file.contract, statement)
-			var suppressed []atlaslint.Target
+			var suppressed []noLintTarget
 			for _, comment := range statement.Comments {
-				rules, err := parseNoLintDirective(comment, compatibility, registered)
+				rules, err := parseNoLintDirective(comment, compatibility, known, opts.AtlasSelectors)
 				if err != nil {
 					return fmt.Errorf("%s: the comment above line %d: %w", file.Path, statement.Line, err)
 				}

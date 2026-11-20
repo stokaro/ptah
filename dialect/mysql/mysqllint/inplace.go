@@ -55,11 +55,11 @@ func mysqlInPlaceStatements(file *lintkit.File) []int {
 func mysqlInPlaceRule() lintkit.Rule {
 	return lintkit.Rule{
 		Rule: lintext.Rule{
-			Code:     "MY130P",
+			Name:     "rewrite/in-place-column-change",
 			Title:    "column change applied in place",
 			Severity: lintext.Info,
 			Targets:  family(),
-			Subsumes: []string{"DS103", "MY101"},
+			Subsumes: []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"},
 			Input:    lintext.InputBaselineSchema,
 		},
 		BaselineSubjects: mysqlInPlaceStatements,

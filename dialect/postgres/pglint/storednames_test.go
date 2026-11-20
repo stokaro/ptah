@@ -23,14 +23,14 @@ func versioned(version int64, name string, up bool, sql string) lintext.File {
 // statement.
 func checkIdentifiers(c *qt.C, target, compatibility string, files ...lintext.File) []string {
 	c.Helper()
-	request := lintext.CheckRequest{Target: lintext.Target{Name: target}, Codes: []string{"PG401P", "PG402P"}, Files: files,
+	request := lintext.CheckRequest{Target: lintext.Target{Name: target}, Names: []string{"naming/identifier-too-long", "naming/identifier-collision"}, Files: files,
 		Compatibility: compatibility}
 	result, err := pglint.Service{}.CheckMigrations(c.Context(), request)
 	c.Assert(err, qt.IsNil)
 	c.Assert(lintext.ValidateCheck(request, result), qt.IsNil)
 	var at []string
 	for _, finding := range result.Findings {
-		at = append(at, finding.Code+" "+files[finding.File].Name+" "+strconv.Itoa(finding.Statement))
+		at = append(at, finding.Name+" "+files[finding.File].Name+" "+strconv.Itoa(finding.Statement))
 	}
 	return at
 }
@@ -111,19 +111,19 @@ func TestService_CheckMigrations_IdentifierMessages(t *testing.T) {
 		"CREATE INDEX \""+long+"_alpha\" ON t (a);\n"+
 		"CREATE INDEX IF NOT EXISTS \""+long+"_beta\" ON t (b);\n"+
 		"CREATE INDEX \""+long+"_gamma\" ON t (b);\n")}
-	request := lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Codes: []string{"PG401P", "PG402P"}, Files: files}
+	request := lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Names: []string{"naming/identifier-too-long", "naming/identifier-collision"}, Files: files}
 
 	result, err := pglint.Service{}.CheckMigrations(c.Context(), request)
 
 	c.Assert(err, qt.IsNil)
 	remedy := "; write a name of at most 63 bytes, such as \"" + long + "\", so the migration names what the database holds"
 	c.Assert(result.Findings, qt.DeepEquals, []lintext.Finding{
-		{Code: "PG401P", Statement: 1, Message: "index \"" + long + "_alpha\" in schema \"public\" is 69 bytes, longer than the 63 bytes " +
+		{Name: "naming/identifier-too-long", Statement: 1, Message: "index \"" + long + "_alpha\" in schema \"public\" is 69 bytes, longer than the 63 bytes " +
 			"PostgreSQL keeps; it is stored as \"" + long + "\"" + remedy},
-		{Code: "PG401P", Statement: 2, Message: "index \"" + long + "_beta\" in schema \"public\" is 68 bytes, longer than the 63 bytes " +
+		{Name: "naming/identifier-too-long", Statement: 2, Message: "index \"" + long + "_beta\" in schema \"public\" is 68 bytes, longer than the 63 bytes " +
 			"PostgreSQL keeps; it is stored as \"" + long + "\"; index \"" + long + "_alpha\" already holds that name, so PostgreSQL " +
 			"keeps one of the two objects" + remedy},
-		{Code: "PG402P", Statement: 3, Message: "index \"" + long + "_alpha\" and index \"" + long + "_gamma\" in schema \"public\" " +
+		{Name: "naming/identifier-collision", Statement: 3, Message: "index \"" + long + "_alpha\" and index \"" + long + "_gamma\" in schema \"public\" " +
 			"are both stored as \"" + long + "\", and PostgreSQL refuses the second; rename one of them so the two differ " +
 			"within the first 63 bytes"},
 	})
