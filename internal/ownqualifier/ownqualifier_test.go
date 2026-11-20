@@ -98,3 +98,28 @@ func TestTokens_HashOperator(t *testing.T) {
 
 	c.Assert(texts, qt.DeepEquals, []string{"(", "owner_id", "#", "3", ")", "=", "0", "AND", "t", ".", "tenant", "=", "5"})
 }
+
+// The tokens follow PostgreSQL's reading of the text: a nested block comment
+// is one comment and an E'...' string keeps its escaped quote.
+func TestTokens_PostgreSQLRules(t *testing.T) {
+	tests := []struct {
+		name       string
+		expression string
+		want       []string
+	}{
+		{"nested block comment before a hash operator", "a /* x /* y */ z */ # 2", []string{"a", "#", "2"}},
+		{"escape string with an escaped quote", `E'it\'s' = n`, []string{`E'it\'s'`, "=", "n"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			var texts []string
+			for _, token := range ownqualifier.Tokens(test.expression) {
+				texts = append(texts, token.Value)
+			}
+
+			c.Assert(texts, qt.DeepEquals, test.want)
+		})
+	}
+}

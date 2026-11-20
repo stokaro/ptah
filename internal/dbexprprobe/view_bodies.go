@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/config"
 	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
 	"ptah.run/internal/lexer"
 )
 
@@ -136,9 +137,11 @@ func resolveOneViewBody(
 // operand. A star after a closing parenthesis counts as a star, which covers
 // `SELECT DISTINCT ON (a) *` and also reads `(a + b) * 2` as one; that only
 // leaves such a body to the text comparison. `count(*)` is not a star. Text
-// inside quotes, dollar quotes and comments is never read.
+// inside quotes, dollar quotes and comments is never read. The body is read
+// with PostgreSQL's lexer options: comments nest, E'...' strings escape, and a
+// # is an operator.
 func SelectsStar(body string) bool {
-	lex := lexer.NewLexerWithOptions(body, lexer.Options{StandardStrings: true, PostgreSQLEscapeStrings: true, LineCommentsDeclared: true})
+	lex := lexer.NewLexerWithOptions(body, dialectlexer.Options("postgres"))
 	var previous lexer.Token
 	for {
 		token := lex.NextToken()

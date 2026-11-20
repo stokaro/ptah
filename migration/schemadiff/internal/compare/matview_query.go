@@ -27,7 +27,10 @@ import (
 // unchanged.
 //
 // The body is read with the lexer options of dialect, so a # inside it is an
-// operator or a comment as the engine reads it.
+// operator or a comment as the engine reads it. An empty or unknown dialect
+// keeps the lexer's heuristic: a # is a comment unless an operator character
+// follows it. A comparison made without options reaches this function that
+// way.
 func MaterializedViewQuery(body, dialect string) string {
 	var words []lexer.Token
 	l := lexer.NewLexerWithOptions(body, dialectlexer.Options(dialect))
