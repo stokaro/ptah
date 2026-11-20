@@ -36,9 +36,25 @@ jobs:
 
       - uses: anchore/sbom-action/download-syft@v0.24.3
 
+      # A snapshot takes its version from the nearest tag, whatever its name,
+      # and provider-sdk/vX.Y.Z tags sit on master too. GoReleaser v2.20
+      # refuses the slash in such a tag as a version ("has invalid
+      # characters"): without this step a pull request branched after an SDK
+      # tag fails here until the next Ptah tag. The nearest release tag is
+      # named explicitly, as the release job names its previous tag.
+      - name: Find the nearest release tag
+        id: release-tag
+        run: |
+          set -euo pipefail
+          tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
+          echo "tag=${tag}" >>"${GITHUB_OUTPUT}"
+          echo "the snapshot builds on ${tag}"
+
       - name: Build snapshot artifacts
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: v2.20.3
           args: release --snapshot --clean --skip=sign,docker
+        env:
+          GORELEASER_CURRENT_TAG: ${{ steps.release-tag.outputs.tag }}
