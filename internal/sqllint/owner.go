@@ -17,12 +17,12 @@ import (
 //
 // The rules read the owner's facts:
 //
-//   - SQL002 for a statement of class [lintext.ClassOther], which this linter
+//   - coverage/unsupported-statement for a statement of class [lintext.ClassOther], which this linter
 //     does not lint, named by the owner's kind;
-//   - DDL001 for each [lintext.FactMissingPrimaryKey];
-//   - CAP001 for each [lintext.FactRequiredCapability] the target's
+//   - design/no-primary-key for each [lintext.FactMissingPrimaryKey];
+//   - capability/missing for each [lintext.FactRequiredCapability] the target's
 //     capabilities answer false;
-//   - SQL004 for the schema statements no judged fact examines, named by their
+//   - coverage/unanalyzed-statements for the schema statements no judged fact examines, named by their
 //     kind, and for each requirement whose key the target's capabilities do
 //     not answer. A target the host knows no release line of answers no key,
 //     and reading that silence as "unavailable" would report every

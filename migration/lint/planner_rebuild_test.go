@@ -83,7 +83,7 @@ func plannedRebuildRules(c *qt.C, change string, run planLintRun) []string {
 	}
 	return slices.DeleteFunc(rules, func(rule string) bool {
 		return !strings.HasPrefix(rule, "0000000002_change.up.sql:") || !slices.Contains(
-			[]string{"DS101", "DS102", "BC101", "BC103"}, strings.TrimPrefix(rule, "0000000002_change.up.sql:"))
+			[]string{"destructive/drop-table", "destructive/drop-column", "rollout/rename", "rollout/drop-table"}, strings.TrimPrefix(rule, "0000000002_change.up.sql:"))
 	})
 }
 
@@ -139,11 +139,11 @@ func TestPlannedSQLiteRebuild_ReportsTheDroppedColumn(t *testing.T) {
 	}{
 		{
 			run:  nativeWithDevDatabase,
-			want: []string{"0000000002_change.up.sql:BC103", "0000000002_change.up.sql:DS101"},
+			want: []string{"0000000002_change.up.sql:rollout/drop-table", "0000000002_change.up.sql:destructive/drop-table"},
 		},
 		{
 			run:  atlasWithDevDatabase,
-			want: []string{"0000000002_change.up.sql:DS102"},
+			want: []string{"0000000002_change.up.sql:destructive/drop-column"},
 		},
 	}
 	for _, test := range tests {

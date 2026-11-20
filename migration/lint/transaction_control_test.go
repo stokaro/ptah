@@ -19,7 +19,7 @@ const (
 	nativeDown = "0000000001_x.down.sql"
 )
 
-// transactionControlFindings lints files for dialect and keeps the TX201
+// transactionControlFindings lints files for dialect and keeps the transaction/explicit-transaction
 // findings, which are what these tests read.
 func transactionControlFindings(
 	c *qt.C,
@@ -35,7 +35,7 @@ func transactionControlFindings(
 		TransactionOwner: owner,
 	})
 	c.Assert(err, qt.IsNil)
-	return slices.DeleteFunc(findings, func(finding lint.Finding) bool { return finding.Rule != "TX201" })
+	return slices.DeleteFunc(findings, func(finding lint.Finding) bool { return finding.Rule != "transaction/explicit-transaction" })
 }
 
 // A migration body that controls transaction state is refused by the migrator
@@ -165,7 +165,7 @@ func TestLintFS_TransactionControl_ReadsTheRollbackHalf(t *testing.T) {
 
 			findings := transactionControlFindings(c, test.dialect, migrationfile.DirFormatAuto, test.owner, files)
 
-			c.Assert(findingSites(findings), qt.DeepEquals, []string{nativeDown + ":1:TX201"})
+			c.Assert(findingSites(findings), qt.DeepEquals, []string{nativeDown + ":1:transaction/explicit-transaction"})
 			c.Assert(findings[0].Message, qt.Contains, "the rollback stops at this BEGIN")
 		})
 	}
@@ -184,11 +184,11 @@ func TestLintFS_TransactionControl_ReadsTheRollbackHalfAsTheMigratorRollsItBack(
 	}{
 		{"a block the file opens and closes", "BEGIN;\nDROP TABLE t;\nCOMMIT;\n", make([]string, 0)},
 		{"two blocks", "BEGIN;\nDROP TABLE t;\nCOMMIT;\nBEGIN;\nSELECT 1;\nCOMMIT;\n", make([]string, 0)},
-		{"a block ended by ROLLBACK", "BEGIN;\nDROP TABLE t;\nROLLBACK;\n", []string{nativeDown + ":3:TX201"}},
-		{"a block left open", "BEGIN;\nDROP TABLE t;\n", []string{nativeDown + ":1:TX201"}},
-		{"a block opened inside another", "BEGIN;\nBEGIN;\nDROP TABLE t;\nCOMMIT;\n", []string{nativeDown + ":2:TX201"}},
+		{"a block ended by ROLLBACK", "BEGIN;\nDROP TABLE t;\nROLLBACK;\n", []string{nativeDown + ":3:transaction/explicit-transaction"}},
+		{"a block left open", "BEGIN;\nDROP TABLE t;\n", []string{nativeDown + ":1:transaction/explicit-transaction"}},
+		{"a block opened inside another", "BEGIN;\nBEGIN;\nDROP TABLE t;\nCOMMIT;\n", []string{nativeDown + ":2:transaction/explicit-transaction"}},
 		{"a block in a file that asks for a transaction around it", "-- atlas:txmode file\n\nBEGIN;\nDROP TABLE t;\nCOMMIT;\n",
-			[]string{nativeDown + ":3:TX201"}},
+			[]string{nativeDown + ":3:transaction/explicit-transaction"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -213,7 +213,7 @@ func TestLintFS_TransactionControl_RefusedDownFileNamesTheRollback(t *testing.T)
 			nativeDown: "BEGIN;\nDROP TABLE t;\nROLLBACK;\n",
 		})
 
-	c.Assert(findingSites(findings), qt.DeepEquals, []string{nativeDown + ":3:TX201", nativeUp + ":3:TX201"})
+	c.Assert(findingSites(findings), qt.DeepEquals, []string{nativeDown + ":3:transaction/explicit-transaction", nativeUp + ":3:transaction/explicit-transaction"})
 	c.Assert(findings[0].Message, qt.Contains, "refuses the file before any migration is rolled back: ")
 	c.Assert(findings[1].Message, qt.Contains, "refuses the file before any migration runs: ")
 }
@@ -418,13 +418,13 @@ func TestLintFS_TransactionControl_NoDialectReadsAGolangMigrateFileAsPostgreSQLD
 		{"a block the file opens and closes", map[string]string{nativeUp: "BEGIN;\nINSERT INTO users VALUES (1);\nCOMMIT;\n"},
 			make([]string, 0)},
 		{"a block opened inside another", map[string]string{nativeUp: "BEGIN;\nBEGIN;\nCOMMIT;\n"},
-			[]string{nativeUp + ":2:TX201"}},
+			[]string{nativeUp + ":2:transaction/explicit-transaction"}},
 		{"a block ended by ROLLBACK", map[string]string{nativeUp: "BEGIN;\nINSERT INTO users VALUES (1);\nROLLBACK;\n"},
-			[]string{nativeUp + ":3:TX201"}},
+			[]string{nativeUp + ":3:transaction/explicit-transaction"}},
 		{"a down file", map[string]string{nativeUp: "CREATE TABLE t (id int);\n", nativeDown: "BEGIN;\nDROP TABLE t;\nCOMMIT;\n"},
 			make([]string, 0)},
 		{"a down file ended by ROLLBACK", map[string]string{nativeUp: "CREATE TABLE t (id int);\n",
-			nativeDown: "BEGIN;\nDROP TABLE t;\nROLLBACK;\n"}, []string{nativeDown + ":3:TX201"}},
+			nativeDown: "BEGIN;\nDROP TABLE t;\nROLLBACK;\n"}, []string{nativeDown + ":3:transaction/explicit-transaction"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

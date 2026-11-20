@@ -21,7 +21,7 @@ func TestMigrateUp_InvalidLintConfigFailsBeforeSQLiteMigrationExecution(t *testi
 	dbURL := "sqlite://" + filepath.Join(dir, "ptah.db")
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
-	writeLintGateMigration(c, migrationsDir, lint.ConfigFileName, "rules:\n  DS101:\n    severty: warning\n")
+	writeLintGateMigration(c, migrationsDir, lint.ConfigFileName, "rules:\n  destructive/drop-table:\n    severty: warning\n")
 	writeLintGateMigration(c, migrationsDir, "0000000001_create.up.sql", "CREATE TABLE users (id INTEGER);\n")
 	writeLintGateMigration(c, migrationsDir, "0000000001_create.down.sql", "DROP TABLE users;\n")
 
@@ -88,13 +88,13 @@ func assertLintAndMigrateExclusionParity(
 	legacyDir := filepath.Join(migrationsDir, "legacy")
 	c.Assert(os.MkdirAll(legacyDir, 0o755), qt.IsNil)
 	// The excluded path's DROP TABLE is reported by two rules with two
-	// consequences: DS101 for the rows it destroys and BC103 for the name
+	// consequences: destructive/drop-table for the rows it destroys and rollout/drop-table for the name
 	// deployed clients still query. This test is about exclusion parity
 	// between the two commands, so the fixture excludes both -- and the pair
-	// is worth knowing, because an existing config that excludes DS101 alone
+	// is worth knowing, because an existing config that excludes destructive/drop-table alone
 	// stops silencing the statement (stokaro/ptah#2972).
 	writeLintGateMigration(c, migrationsDir, lint.ConfigFileName, fmt.Sprintf(
-		"rules:\n  DS101:\n    exclude:\n      - %q\n  BC103:\n    exclude:\n      - %q\n", pattern, pattern))
+		"rules:\n  destructive/drop-table:\n    exclude:\n      - %q\n  rollout/drop-table:\n    exclude:\n      - %q\n", pattern, pattern))
 	writeLintGateMigration(c, legacyDir, "0000000001_create.up.sql", "CREATE TABLE users (id INTEGER);\n")
 	writeLintGateMigration(c, legacyDir, "0000000001_create.down.sql", "DROP TABLE users;\n")
 	writeLintGateMigration(c, legacyDir, "0000000002_drop.up.sql", "DROP TABLE users;\n")

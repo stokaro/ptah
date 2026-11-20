@@ -115,7 +115,7 @@ func TestLintAndUpAgree_OnEveryPolicyShape(t *testing.T) {
 	}{
 		{
 			name:     "no policy file dialect",
-			policy:   "disabled-rules:\n  - DS102\n",
+			policy:   "disabled-rules:\n  - destructive/drop-column\n",
 			database: "mariadb",
 		},
 		{

@@ -58,7 +58,7 @@ func TestExtensionChangesReportTheirChanges(t *testing.T) {
 }
 
 // TestExtensionDropsAreDestructive pins that a drop the owner reads still
-// meets DS107, CASCADE included, with and without a named target.
+// meets destructive/drop-object, CASCADE included, with and without a named target.
 func TestExtensionDropsAreDestructive(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -73,7 +73,7 @@ func TestExtensionDropsAreDestructive(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(lintOneDialect(c, test.dialect, test.sql), qt.DeepEquals, []string{"DS107"})
+			c.Assert(lintOneDialect(c, test.dialect, test.sql), qt.DeepEquals, []string{"destructive/drop-object"})
 		})
 	}
 }

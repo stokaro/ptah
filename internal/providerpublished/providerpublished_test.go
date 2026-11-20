@@ -56,7 +56,7 @@ func targeting(rules []lintext.Rule, name string) []lintext.Rule {
 }
 
 func (servingYDB) LintRules(target string) ([]lintext.Rule, error) {
-	return []lintext.Rule{{Code: "YD101", Title: "served by the runtime", Severity: lintext.Error, Targets: []string{"ydb"}}}, nil
+	return []lintext.Rule{{Name: "capability/unique-index-on-existing-table", Title: "served by the runtime", Severity: lintext.Error, Targets: []string{"ydb"}}}, nil
 }
 
 // published is what a rule list says on the documentation page.
@@ -71,7 +71,7 @@ type published struct {
 func publishedOf(rules []lintext.Rule) []published {
 	out := make([]published, 0, len(rules))
 	for _, rule := range rules {
-		out = append(out, published{Code: rule.Code, Title: rule.Title, Severity: rule.Severity, Targets: rule.Targets,
+		out = append(out, published{Code: rule.Name, Title: rule.Title, Severity: rule.Severity, Targets: rule.Targets,
 			AppliesToDown: rule.AppliesToDown, Subsumes: rule.Subsumes})
 	}
 	return out
@@ -112,7 +112,7 @@ func TestLintRules_RecordSpeaksForAnEngineTheBundleDoesNotServe(t *testing.T) {
 
 	families := make(map[string][]string)
 	for _, rule := range recorded {
-		families[rule.Code[:2]] = rule.Targets
+		families[rule.Name[:2]] = rule.Targets
 	}
 	c.Assert(families, qt.DeepEquals, map[string][]string{"SP": {"spanner"}, "YD": {"ydb"}})
 	c.Assert(publishedOf(servedYDB), qt.DeepEquals, publishedOf(targeting(recorded, "spanner")))
@@ -130,7 +130,7 @@ func TestLintRuntime_RestoresTheRulesOfAnEngineTheRuntimeDoesNotServe(t *testing
 	own, err := bundled.LintRules("")
 	qt.New(t).Assert(err, qt.IsNil)
 	every := append(slices.Clone(own), recorded...)
-	slices.SortFunc(every, func(a, b lintext.Rule) int { return strings.Compare(a.Code, b.Code) })
+	slices.SortFunc(every, func(a, b lintext.Rule) int { return strings.Compare(a.Name, b.Name) })
 	for _, row := range []struct {
 		name, target string
 		want         []lintext.Rule

@@ -21,7 +21,7 @@ func statements(sql string) []lintext.Statement {
 // wordRule reports a statement holding word, as a text rule of code.
 func wordRule(code, word string, appliesToDown bool) lintkit.Rule {
 	return lintkit.Rule{
-		Rule: lintext.Rule{Code: code, Title: code, Severity: lintext.Warning, Targets: []string{"postgres"}, AppliesToDown: appliesToDown},
+		Rule: lintext.Rule{Name: code, Title: code, Severity: lintext.Warning, Targets: []string{"postgres"}, AppliesToDown: appliesToDown},
 		Statement: func(_ *lintkit.File, statement *lintext.Statement) (bool, string) {
 			return slices.Contains(statement.Words, word), "holds " + word
 		},
@@ -41,7 +41,7 @@ func renameRule() lintkit.Rule {
 		return found
 	}
 	return lintkit.Rule{
-		Rule:             lintext.Rule{Code: "XY301", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}, Input: lintext.InputBaselineSchema},
+		Rule:             lintext.Rule{Name: "design/xy301", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}, Input: lintext.InputBaselineSchema},
 		BaselineSubjects: renames,
 		File: func(file *lintkit.File) []lintext.Violation {
 			var violations []lintext.Violation
@@ -60,7 +60,7 @@ func renameRule() lintkit.Rule {
 // renameRequest is a run over an up and a down file of version 2, an up file
 // without a version, and an up file of version 3 with no rename, for codes.
 func renameRequest(codes ...string) lintext.CheckRequest {
-	return lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Codes: codes, Files: []lintext.File{
+	return lintext.CheckRequest{Target: lintext.Target{Name: "postgres"}, Names: codes, Files: []lintext.File{
 		{Name: "2.up.sql", Version: 2, Up: true, Statements: statements("DROP TABLE x;\nALTER TABLE t RENAME COLUMN a TO b;\n")},
 		{Name: "2.down.sql", Version: 2, Down: true, Statements: statements("DROP TABLE y;\nALTER TABLE t RENAME COLUMN b TO a;\n")},
 		{Name: "loose.up.sql", Up: true, Statements: statements("ALTER TABLE t RENAME COLUMN c TO d;\n")},
@@ -72,32 +72,32 @@ func renameRequest(codes ...string) lintext.CheckRequest {
 // a file rule sees every file and reports what it finds there.
 func TestRules_CheckMigrations_StatementAndFileRules(t *testing.T) {
 	c := qt.New(t)
-	fileRule := lintkit.Rule{Rule: lintext.Rule{Code: "XY103", Title: "t", Severity: lintext.Info, Targets: []string{"postgres"}},
+	fileRule := lintkit.Rule{Rule: lintext.Rule{Name: "design/xy103", Title: "t", Severity: lintext.Info, Targets: []string{"postgres"}},
 		File: func(file *lintkit.File) []lintext.Violation {
 			return []lintext.Violation{{Statement: -1, Message: file.Name}}
 		}}
-	rules := lintkit.Rules{wordRule("XY101", "DROP", false), wordRule("XY102", "DROP", true), fileRule}
+	rules := lintkit.Rules{wordRule("design/xy101", "DROP", false), wordRule("design/xy102", "DROP", true), fileRule}
 
-	result, err := rules.CheckMigrations(c.Context(), renameRequest("XY101", "XY102", "XY103"))
+	result, err := rules.CheckMigrations(c.Context(), renameRequest("design/xy101", "design/xy102", "design/xy103"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.DeepEquals, lintext.CheckResult{Complete: true, Findings: []lintext.Finding{
-		{Code: "XY101", File: 0, Statement: 0, Message: "holds DROP"},
-		{Code: "XY102", File: 0, Statement: 0, Message: "holds DROP"},
-		{Code: "XY103", File: 0, Statement: -1, Message: "2.up.sql"},
-		{Code: "XY102", File: 1, Statement: 0, Message: "holds DROP"},
-		{Code: "XY103", File: 1, Statement: -1, Message: "2.down.sql"},
-		{Code: "XY103", File: 2, Statement: -1, Message: "loose.up.sql"},
-		{Code: "XY103", File: 3, Statement: -1, Message: "3.up.sql"},
+		{Name: "design/xy101", File: 0, Statement: 0, Message: "holds DROP"},
+		{Name: "design/xy102", File: 0, Statement: 0, Message: "holds DROP"},
+		{Name: "design/xy103", File: 0, Statement: -1, Message: "2.up.sql"},
+		{Name: "design/xy102", File: 1, Statement: 0, Message: "holds DROP"},
+		{Name: "design/xy103", File: 1, Statement: -1, Message: "2.down.sql"},
+		{Name: "design/xy103", File: 2, Statement: -1, Message: "loose.up.sql"},
+		{Name: "design/xy103", File: 3, Statement: -1, Message: "3.up.sql"},
 	}})
-	c.Assert(lintext.ValidateCheck(renameRequest("XY101", "XY102", "XY103"), result), qt.IsNil)
+	c.Assert(lintext.ValidateCheck(renameRequest("design/xy101", "design/xy102", "design/xy103"), result), qt.IsNil)
 }
 
 // directoryRule reports, on the first statement of each up file, the files
 // before it that hold a DROP, which no single file can say.
 func directoryRule() lintkit.Rule {
 	return lintkit.Rule{
-		Rule: lintext.Rule{Code: "XY104", Title: "t", Severity: lintext.Info, Targets: []string{"postgres"}},
+		Rule: lintext.Rule{Name: "design/xy104", Title: "t", Severity: lintext.Info, Targets: []string{"postgres"}},
 		Directory: func(files []lintkit.File) [][]lintext.Violation {
 			violations := make([][]lintext.Violation, len(files))
 			var dropped []string
@@ -121,21 +121,21 @@ func directoryRule() lintkit.Rule {
 func TestRules_CheckMigrations_DirectoryRule(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := lintkit.Rules{directoryRule()}.CheckMigrations(c.Context(), renameRequest("XY104"))
+	result, err := lintkit.Rules{directoryRule()}.CheckMigrations(c.Context(), renameRequest("design/xy104"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.DeepEquals, lintext.CheckResult{Complete: true, Findings: []lintext.Finding{
-		{Code: "XY104", File: 0, Statement: 0, Message: "dropped before: "},
-		{Code: "XY104", File: 2, Statement: 0, Message: "dropped before: 2.up.sql"},
+		{Name: "design/xy104", File: 0, Statement: 0, Message: "dropped before: "},
+		{Name: "design/xy104", File: 2, Statement: 0, Message: "dropped before: 2.up.sql"},
 	}})
-	c.Assert(lintext.ValidateCheck(renameRequest("XY104"), result), qt.IsNil)
+	c.Assert(lintext.ValidateCheck(renameRequest("design/xy104"), result), qt.IsNil)
 }
 
 // A baseline rule names its statements on an up file with a version where it
 // wants any, on every call; the state a file rule reads is the one its file's version
 // starts from, and it resolves nothing on the call that carries none.
 func TestRules_CheckMigrations_BaselineRule(t *testing.T) {
-	subjects := []lintext.BaselineSubject{{Code: "XY301", File: 0, Statements: []int{1}}}
+	subjects := []lintext.BaselineSubject{{Name: "design/xy301", File: 0, Statements: []int{1}}}
 	for _, test := range []struct {
 		name     string
 		baseline *lintext.Baseline
@@ -144,14 +144,14 @@ func TestRules_CheckMigrations_BaselineRule(t *testing.T) {
 		{"no baseline", nil, nil},
 		{"the version's state, which the down file of the version reads too", &lintext.Baseline{Columns: []lintext.BaselineColumn{
 			{Version: 2, Table: "t", Name: "a", DataType: "integer"}}}, []lintext.Finding{
-			{Code: "XY301", File: 0, Statement: 1, Message: "a was integer", Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn, Name: "a", Parent: "t"}}},
-			{Code: "XY301", File: 1, Statement: 1, Message: "a was integer", Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn, Name: "a", Parent: "t"}}},
+			{Name: "design/xy301", File: 0, Statement: 1, Message: "a was integer", Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn, Name: "a", Parent: "t"}}},
+			{Name: "design/xy301", File: 1, Statement: 1, Message: "a was integer", Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn, Name: "a", Parent: "t"}}},
 		}},
 		{"another version's state", &lintext.Baseline{Columns: []lintext.BaselineColumn{{Version: 1, Table: "t", Name: "a", DataType: "integer"}}}, nil},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			request := renameRequest("XY301")
+			request := renameRequest("design/xy301")
 			request.Baseline = test.baseline
 
 			result, err := lintkit.Rules{renameRule()}.CheckMigrations(c.Context(), request)
@@ -172,13 +172,13 @@ func TestRules_CheckMigrations_FailurePath(t *testing.T) {
 		codes   []string
 		wantErr string
 	}{
-		{"a code no rule carries", context.Background(), []string{"XY999"}, `.*no rule of code XY999`},
-		{"cancellation", canceled, []string{"XY101"}, `context canceled`},
+		{"a code no rule carries", context.Background(), []string{"design/xy999"}, `.*no rule of code XY999`},
+		{"cancellation", canceled, []string{"design/xy101"}, `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result, err := lintkit.Rules{wordRule("XY101", "DROP", false)}.CheckMigrations(test.ctx, renameRequest(test.codes...))
+			result, err := lintkit.Rules{wordRule("design/xy101", "DROP", false)}.CheckMigrations(test.ctx, renameRequest(test.codes...))
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(result, qt.DeepEquals, lintext.CheckResult{})
@@ -187,13 +187,13 @@ func TestRules_CheckMigrations_FailurePath(t *testing.T) {
 }
 
 func TestRules_Validate_FailurePath(t *testing.T) {
-	both := wordRule("XY101", "DROP", false)
+	both := wordRule("design/xy101", "DROP", false)
 	both.File = func(*lintkit.File) []lintext.Violation { return nil }
-	neither := wordRule("XY101", "DROP", false)
+	neither := wordRule("design/xy101", "DROP", false)
 	neither.Statement = nil
 	withoutSubjects := renameRule()
 	withoutSubjects.BaselineSubjects = nil
-	textWithSubjects := wordRule("XY101", "DROP", false)
+	textWithSubjects := wordRule("design/xy101", "DROP", false)
 	textWithSubjects.BaselineSubjects = func(*lintkit.File) []int { return nil }
 	invalid := wordRule("xy101", "DROP", false)
 	fileAndDirectory := directoryRule()
@@ -208,7 +208,7 @@ func TestRules_Validate_FailurePath(t *testing.T) {
 		{"no function", lintkit.Rules{neither}, `.*rule XY101 must set exactly one of Statement, File and Directory`},
 		{"a baseline rule naming no subjects", lintkit.Rules{withoutSubjects}, `.*rule XY301 sets BaselineSubjects exactly when its input reads a baseline`},
 		{"a text rule naming subjects", lintkit.Rules{textWithSubjects}, `.*rule XY101 sets BaselineSubjects exactly when its input reads a baseline`},
-		{"two rules of one code", lintkit.Rules{wordRule("XY101", "DROP", false), wordRule("XY101", "TRUNCATE", false)}, `.*two rules of code XY101`},
+		{"two rules of one code", lintkit.Rules{wordRule("design/xy101", "DROP", false), wordRule("design/xy101", "TRUNCATE", false)}, `.*two rules of code XY101`},
 		{"a rule that does not validate", lintkit.Rules{invalid}, `.*rule code "xy101" must start.*`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -222,13 +222,13 @@ func TestRules_Validate_FailurePath(t *testing.T) {
 // Published is the rules as data, sharing no slice with them.
 func TestRules_Published(t *testing.T) {
 	c := qt.New(t)
-	rules := lintkit.Rules{wordRule("XY101", "DROP", true), renameRule()}
+	rules := lintkit.Rules{wordRule("design/xy101", "DROP", true), renameRule()}
 
 	published := rules.Published()
 	published[0].Targets[0] = "mysql"
 
 	c.Assert(rules.Published(), qt.DeepEquals, []lintext.Rule{
-		{Code: "XY101", Title: "XY101", Severity: lintext.Warning, Targets: []string{"postgres"}, AppliesToDown: true},
-		{Code: "XY301", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}, Input: lintext.InputBaselineSchema},
+		{Name: "design/xy101", Title: "design/xy101", Severity: lintext.Warning, Targets: []string{"postgres"}, AppliesToDown: true},
+		{Name: "design/xy301", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}, Input: lintext.InputBaselineSchema},
 	})
 }

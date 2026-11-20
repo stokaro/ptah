@@ -42,8 +42,8 @@ func (p *Parser) refuseHead(start int, head, word, written string) error {
 // word outside them is no statement: an engine's parser refuses it as a syntax error.
 //
 // They do not say an engine runs the statement, or that this parser reads it, so a
-// word that belongs here and is missing costs a statement the code SQL001 where
-// SQL002 is due, and either way the statement is reported.
+// word that belongs here and is missing costs a statement the code correctness/syntax-error where
+// coverage/unsupported-statement is due, and either way the statement is reported.
 var statementKeywords = []string{
 	"ABORT", "ADD", "ALTER", "ANALYSE", "ANALYZE", "ASSOCIATE", "ATTACH", "AUDIT", "BACKUP", "BEGIN", "BINLOG", "BULK",
 	"CACHE", "CALL", "CANCEL", "CHANGE", "CHECK", "CHECKPOINT", "CHECKSUM", "CLONE", "CLOSE", "CLUSTER", "COMMENT",

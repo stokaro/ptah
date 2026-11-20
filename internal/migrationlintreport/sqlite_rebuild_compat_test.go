@@ -40,9 +40,9 @@ func TestBuild_AtlasSQLiteRebuildReportsDroppedColumn(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed, qt.IsTrue)
 	destructive := slices.DeleteFunc(slices.Clone(report.Findings), func(finding lint.Finding) bool {
-		return finding.Rule != "DS101" && finding.Rule != "DS102" && finding.Rule != "BC101"
+		return finding.Rule != "destructive/drop-table" && finding.Rule != "destructive/drop-column" && finding.Rule != "rollout/rename"
 	})
 	c.Assert(destructive, qt.HasLen, 1)
-	c.Assert(destructive[0].Rule, qt.Equals, "DS102")
+	c.Assert(destructive[0].Rule, qt.Equals, "destructive/drop-column")
 	c.Assert(destructive[0].Context.Subjects[0].Name, qt.Equals, "name")
 }

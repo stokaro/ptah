@@ -104,26 +104,26 @@ func TestLintSource_OwnedSplit_HappyPath(t *testing.T) {
 	}{
 		{name: "a statement the linter does not lint", judged: everyStatement,
 			owned: []ownedStatement{{sql: "UPSERT INTO a (id) VALUES (1)", effects: []lintext.Effect{kind(lintext.ClassOther, "UPSERT", "a")}}},
-			want:  []string{"1:1 SQL002 ptah sql lint does not lint UPSERT statements yet"}},
+			want:  []string{"1:1 coverage/unsupported-statement ptah sql lint does not lint UPSERT statements yet"}},
 		{name: "a table without a primary key", judged: everyStatement, owned: []ownedStatement{createWithoutPK},
-			want: []string{`1:1 DDL001 table "a" has no primary key`}},
+			want: []string{`1:1 design/no-primary-key table "a" has no primary key`}},
 		{name: "a capability the target refuses", judged: everyStatement, caps: withoutDecimal, owned: []ownedStatement{createPrice},
-			want: []string{"1:1 CAP001 COLUMN price of table a requires target capability parameterized_decimal, unavailable on this target"}},
+			want: []string{"1:1 capability/missing COLUMN price of table a requires target capability parameterized_decimal, unavailable on this target"}},
 		{name: "a capability the target has", judged: everyStatement, caps: withDecimal, owned: []ownedStatement{createPrice}},
 		{name: "a capability the target does not answer", judged: everyStatement, owned: []ownedStatement{createPrice},
-			want: []string{"1:1 SQL004 no rule examined the parameterized_decimal requirement of COLUMN price of table a in this file"}},
+			want: []string{"1:1 coverage/unanalyzed-statements no rule examined the parameterized_decimal requirement of COLUMN price of table a in this file"}},
 		{name: "a schema statement no fact examines", judged: everyStatement,
 			owned: []ownedStatement{createWithoutPK, {sql: "DROP TABLE a", effects: []lintext.Effect{kind(lintext.ClassSchema, "DROP TABLE", "a")}}},
-			want:  []string{`1:1 DDL001 table "a" has no primary key`, "1:1 SQL004 no rule examined DROP TABLE in this file"}},
+			want:  []string{`1:1 design/no-primary-key table "a" has no primary key`, "1:1 coverage/unanalyzed-statements no rule examined DROP TABLE in this file"}},
 		{name: "a schema statement with a requirement", judged: everyStatement, caps: withoutDecimal,
 			owned: []ownedStatement{{sql: "CREATE INDEX v ON a (price)", effects: []lintext.Effect{kind(lintext.ClassSchema, "CREATE INDEX", "v"), decimalPrice}}},
-			want:  []string{"1:1 CAP001 COLUMN price of table a requires target capability parameterized_decimal, unavailable on this target"}},
+			want:  []string{"1:1 capability/missing COLUMN price of table a requires target capability parameterized_decimal, unavailable on this target"}},
 		{name: "a table when only kinds are judged", judged: kindsOnly,
 			owned: []ownedStatement{{sql: "CREATE TABLE a (id Uint64)", effects: []lintext.Effect{kind(lintext.ClassCreateTable, "CREATE TABLE", "a")}}},
-			want:  []string{"1:1 SQL004 no rule examined CREATE TABLE in this file"}},
+			want:  []string{"1:1 coverage/unanalyzed-statements no rule examined CREATE TABLE in this file"}},
 		{name: "an altered table when only kinds are judged", judged: kindsOnly,
 			owned: []ownedStatement{{sql: "ALTER TABLE a ADD COLUMN b Utf8", effects: []lintext.Effect{kind(lintext.ClassAlterTable, "ALTER TABLE", "a")}}},
-			want:  []string{"1:1 SQL004 no rule examined ALTER TABLE in this file"}},
+			want:  []string{"1:1 coverage/unanalyzed-statements no rule examined ALTER TABLE in this file"}},
 		{name: "an altered table when capabilities are judged", judged: []lintext.Fact{lintext.FactStatementKind, lintext.FactRequiredCapability},
 			owned: []ownedStatement{{sql: "ALTER TABLE a ADD COLUMN b Utf8", effects: []lintext.Effect{kind(lintext.ClassAlterTable, "ALTER TABLE", "a")}}}},
 		{name: "a created table when only primary keys are judged", judged: []lintext.Fact{lintext.FactStatementKind, lintext.FactMissingPrimaryKey},
@@ -132,7 +132,7 @@ func TestLintSource_OwnedSplit_HappyPath(t *testing.T) {
 			owned: []ownedStatement{{sql: "CREATE TABLE a (id Uint64)", effects: []lintext.Effect{kind(lintext.ClassCreateTable, "CREATE TABLE", "a")}}}},
 		{name: "a finding on a later line", judged: everyStatement,
 			owned: []ownedStatement{{sql: "ALTER TABLE a ADD COLUMN b Utf8", effects: []lintext.Effect{kind(lintext.ClassAlterTable, "ALTER TABLE", "a")}}, createWithoutPK},
-			want:  []string{`2:1 DDL001 table "a" has no primary key`}},
+			want:  []string{`2:1 design/no-primary-key table "a" has no primary key`}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -146,7 +146,7 @@ func TestLintSource_OwnedSplit_HappyPath(t *testing.T) {
 }
 
 // The owner's split is read alone: a dialect the parser would read is not
-// parsed, so a statement the parser refuses draws no SQL001.
+// parsed, so a statement the parser refuses draws no correctness/syntax-error.
 func TestLintSource_OwnedSplit_ReadsNoGrammar(t *testing.T) {
 	c := qt.New(t)
 	owner := splittingOwner{judged: everyStatement, statements: []ownedStatement{{sql: "CREATE TABLE a (id ???, PRIMARY KEY (id))",
@@ -205,8 +205,8 @@ func TestLintSource_OwnedSplit_FailurePath(t *testing.T) {
 // does.
 var ownedEmissions = map[string]ownedStatement{
 	"coverage/unsupported-statement": {sql: "UPSERT INTO a (id) VALUES (1)", effects: []lintext.Effect{kind(lintext.ClassOther, "UPSERT", "a")}},
-	"design/no-primary-key": createWithoutPK,
-	"capability/missing": createPrice,
+	"design/no-primary-key":          createWithoutPK,
+	"capability/missing":             createPrice,
 	"coverage/unanalyzed-statements": {sql: "DROP TABLE a", effects: []lintext.Effect{kind(lintext.ClassSchema, "DROP TABLE", "a")}},
 }
 

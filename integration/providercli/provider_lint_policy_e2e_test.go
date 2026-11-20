@@ -67,7 +67,7 @@ func TestMigrationsLintOfAPolicysDialectReachesTheInstalledProvider(t *testing.T
 	var report policyReport
 	c.Assert(json.Unmarshal([]byte(out), &report), qt.IsNil, qt.Commentf("stdout %q, stderr %q", out, diagnostics))
 	c.Assert(report.Error, qt.Equals, "")
-	c.Assert(rulesOf(report.Findings), qt.DeepEquals, []string{"BC103", "DS101", "DS107", "FX101", "FX102"})
+	c.Assert(rulesOf(report.Findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "destructive/drop-object", "design/fx101", "design/fx102"})
 }
 
 // `sql lint` reads the severities of the policy in the working directory, and
@@ -85,7 +85,7 @@ func TestSQLLintReadsAPolicyThatNamesTheSelectedProvidersDialect(t *testing.T) {
 	findings, refusal, code := f.sqlLint(c, "CREATE TABLE b (id Uint64);\n", "--dialect", "ydb", "--server-version", "26.2")
 
 	c.Assert(refusal, qt.Equals, "")
-	c.Assert(findings, qt.DeepEquals, []string{`1:1 DDL001 table "b" has no primary key`})
+	c.Assert(findings, qt.DeepEquals, []string{`1:1 design/no-primary-key table "b" has no primary key`})
 	c.Assert(code, qt.Equals, 0)
 }
 

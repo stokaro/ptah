@@ -12,7 +12,7 @@ import (
 	"ptah.run/internal/txcontrol"
 )
 
-// transactionControlRules is TX201, which every dialect lint analyzes shares.
+// transactionControlRules is transaction/explicit-transaction, which every dialect lint analyzes shares.
 func transactionControlRules() []Rule {
 	return []Rule{{
 		Name:     "transaction/explicit-transaction",

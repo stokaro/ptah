@@ -37,6 +37,6 @@ func ExampleService() {
 		fmt.Println(finding.Name, request.Files[finding.File].Name, "statement", finding.Statement)
 	}
 	// Output:
-	// TX101 warning transactional and non-transactional statements mixed
-	// TX101 0000000001_add.up.sql statement 1
+	// transaction/mixed-statements warning transactional and non-transactional statements mixed
+	// transaction/mixed-statements 0000000001_add.up.sql statement 1
 }

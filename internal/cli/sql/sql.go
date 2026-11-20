@@ -103,7 +103,7 @@ migration directory specific.`,
 	serverversion.Register(flags, &version)
 	flags.StringVar(&format, "format", formatText, "Output format: text or json")
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
-	flags.StringArrayVar(&disabled, "disable", nil, "Disable rules by code, family, Ptah rule name or category, for example DDL001, CAP, design/no-primary-key or naming (repeatable)")
+	flags.StringArrayVar(&disabled, "disable", nil, "Disable rules by code, family, Ptah rule name or category, for example design/no-primary-key, CAP, design/no-primary-key or naming (repeatable)")
 	cmdutil.ConfigureCommandArgs(cmd, cobra.ArbitraryArgs)
 	return providercommand.Configure(cmd, func(cmd *cobra.Command, err error) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), format, err.Error())

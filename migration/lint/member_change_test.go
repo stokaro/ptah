@@ -67,7 +67,7 @@ func members(n int) string {
 
 // memberCodes keeps the codes of this family, so a quiet case asserts the
 // analysis said nothing rather than that the generic rules fell silent: an
-// append-only MODIFY is still a MODIFY, and DS103 and MY101 still describe
+// append-only MODIFY is still a MODIFY, and data-dependent/alter-column-type and locking/blocking-alter-table still describe
 // the clauses beside the list that this file does not judge.
 func memberCodes(codes []string) []string {
 	var kept []string
@@ -104,84 +104,84 @@ func TestMemberRules_ReportWhatTheMigrationDid(t *testing.T) {
 			name:       "enum member removed",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid');",
 			columnType: "enum('new','paid','shipped')",
-			want:       []string{"MY110"},
+			want:       []string{"rewrite/remove-enum-value"},
 			message:    "removes ENUM member 'shipped' from orders.status, keeping 2 of 3",
 		},
 		{
 			name:       "enum members reordered",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status ENUM('paid','new','shipped');",
 			columnType: "enum('new','paid','shipped')",
-			want:       []string{"MY111"},
+			want:       []string{"rewrite/reorder-enum-values"},
 			message:    "reorders the ENUM members of orders.status ('new', 'paid', 'shipped' becomes 'paid', 'new', 'shipped')",
 		},
 		{
 			name:       "enum member inserted before the end",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status ENUM('new','held','paid','shipped');",
 			columnType: "enum('new','paid','shipped')",
-			want:       []string{"MY112"},
+			want:       []string{"rewrite/insert-enum-value"},
 			message:    "inserts ENUM member 'held' into orders.status ahead of existing members",
 		},
 		{
 			name:       "enum grows across 255 members",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status ENUM(" + members(256) + ");",
 			columnType: "enum(" + members(255) + ")",
-			want:       []string{"MY113"},
+			want:       []string{"rewrite/widen-enum"},
 			message:    "takes orders.status from 255 to 256 members, across 255 members, where an ENUM value grows from one byte to two (1 to 2 bytes per value)",
 		},
 		{
 			name:       "set member removed",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status SET('a','b');",
 			columnType: "set('a','b','c')",
-			want:       []string{"MY120"},
+			want:       []string{"rewrite/remove-set-member"},
 			message:    "removes SET member 'c' from orders.status",
 		},
 		{
 			name:       "set members reordered",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status SET('a','c','b');",
 			columnType: "set('a','b','c')",
-			want:       []string{"MY121"},
+			want:       []string{"rewrite/reorder-set-members"},
 			message:    "reorders the SET members of orders.status",
 		},
 		{
 			name:       "set member inserted before the end",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status SET('a','x','b','c');",
 			columnType: "set('a','b','c')",
-			want:       []string{"MY122"},
+			want:       []string{"rewrite/insert-set-member"},
 			message:    "inserts SET member 'x' into orders.status ahead of existing members",
 		},
 		{
 			name:       "set grows across eight members",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status SET(" + members(9) + ");",
 			columnType: "set(" + members(8) + ")",
-			want:       []string{"MY123"},
+			want:       []string{"rewrite/widen-set"},
 			message:    "takes orders.status from 8 to 9 members, across a multiple of eight members, where a SET value grows by a byte (1 to 2 bytes per value)",
 		},
 		{
 			name:       "several facts in one clause are several findings",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status ENUM('held','shipped','new');",
 			columnType: "enum('new','paid','shipped')",
-			want:       []string{"MY110", "MY111", "MY112"},
+			want:       []string{"rewrite/insert-enum-value", "rewrite/remove-enum-value", "rewrite/reorder-enum-values"},
 			message:    "removes ENUM member 'paid'",
 		},
 		{
 			name:       "CHANGE looks the column up by its old name",
 			alter:      "ALTER TABLE orders CHANGE COLUMN status state ENUM('new','paid');",
 			columnType: "enum('new','paid','shipped')",
-			want:       []string{"MY110"},
+			want:       []string{"rewrite/remove-enum-value"},
 			message:    "CHANGE COLUMN removes ENUM member 'shipped' from orders.state",
 		},
 		{
 			name:       "the COLUMN keyword is optional",
 			alter:      "ALTER TABLE orders MODIFY status ENUM('new','paid');",
 			columnType: "enum('new','paid','shipped')",
-			want:       []string{"MY110"},
+			want:       []string{"rewrite/remove-enum-value"},
 			message:    "removes ENUM member 'shipped'",
 		},
 		{
 			name:       "a quote inside a member is one value in both spellings",
 			alter:      "ALTER TABLE orders MODIFY COLUMN status ENUM('new','can''t');",
 			columnType: "enum('new','can''t','shipped')",
-			want:       []string{"MY110"},
+			want:       []string{"rewrite/remove-enum-value"},
 			message:    "removes ENUM member 'shipped'",
 		},
 	}
@@ -266,15 +266,15 @@ func TestMemberRules_StorageBoundaries(t *testing.T) {
 	}{
 		{name: "enum 253 to 254", kind: "ENUM", from: 253, to: 254},
 		{name: "enum 254 to 255", kind: "ENUM", from: 254, to: 255},
-		{name: "enum 255 to 256", kind: "ENUM", from: 255, to: 256, want: []string{"MY113"}},
+		{name: "enum 255 to 256", kind: "ENUM", from: 255, to: 256, want: []string{"rewrite/widen-enum"}},
 		{name: "set 7 to 8", kind: "SET", from: 7, to: 8},
-		{name: "set 8 to 9", kind: "SET", from: 8, to: 9, want: []string{"MY123"}},
+		{name: "set 8 to 9", kind: "SET", from: 8, to: 9, want: []string{"rewrite/widen-set"}},
 		{name: "set 15 to 16", kind: "SET", from: 15, to: 16},
-		{name: "set 16 to 17", kind: "SET", from: 16, to: 17, want: []string{"MY123"}},
+		{name: "set 16 to 17", kind: "SET", from: 16, to: 17, want: []string{"rewrite/widen-set"}},
 		{name: "set 23 to 24", kind: "SET", from: 23, to: 24},
-		{name: "set 24 to 25", kind: "SET", from: 24, to: 25, want: []string{"MY123"}},
+		{name: "set 24 to 25", kind: "SET", from: 24, to: 25, want: []string{"rewrite/widen-set"}},
 		{name: "set 31 to 32", kind: "SET", from: 31, to: 32},
-		{name: "set 32 to 33", kind: "SET", from: 32, to: 33, want: []string{"MY123"}},
+		{name: "set 32 to 33", kind: "SET", from: 32, to: 33, want: []string{"rewrite/widen-set"}},
 		{name: "set 63 to 64", kind: "SET", from: 63, to: 64},
 	}
 
@@ -299,10 +299,10 @@ func TestMemberRules_NameTheirInputWhenTheRunSuppliesNone(t *testing.T) {
 
 	analysis := analyzeMemberChange(c, "ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid');", "")
 
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS103", "MY101"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"})
 	unmet := unmetRules(analysis.UnmetInputs())
-	c.Assert(unmet, qt.Contains, "MY110")
-	c.Assert(unmet, qt.Contains, "MY123")
+	c.Assert(unmet, qt.Contains, "rewrite/remove-enum-value")
+	c.Assert(unmet, qt.Contains, "rewrite/widen-set")
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{2})
 }
 
@@ -321,7 +321,7 @@ func TestMemberRules_SubsumeTheGenericFindings(t *testing.T) {
 	)
 
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MY110"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rewrite/remove-enum-value"})
 	c.Assert(findings[0].Context, qt.IsNotNil)
 	c.Assert(findings[0].Context.Subjects, qt.DeepEquals, []lint.Subject{{
 		Kind:     lint.SubjectColumn,
@@ -336,7 +336,7 @@ func TestMemberRules_SubsumeTheGenericFindings(t *testing.T) {
 // TestMemberRules_LeaveTypeChangesToTheColumnTypeRule keeps the family to
 // the question it can answer. A column becoming a list, or a list becoming
 // the other kind of list, is a type change with no member transition to
-// describe, and MY130 reports it as the copy it is (the MySQL owner's mysqlcost.go).
+// describe, and rewrite/alter-column-type reports it as the copy it is (the MySQL owner's mysqlcost.go).
 func TestMemberRules_LeaveTypeChangesToTheColumnTypeRule(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -365,7 +365,7 @@ func TestMemberRules_LeaveTypeChangesToTheColumnTypeRule(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeMemberChange(c, test.alter, test.columnType)
 
-			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"MY130"})
+			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"rewrite/alter-column-type"})
 		})
 	}
 }
@@ -381,6 +381,6 @@ func TestMemberRules_RunOnlyForTheMySQLFamily(t *testing.T) {
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(memberFS("ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid');")), opts)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "MY110")
-	c.Assert(unmetRules(analysis.UnmetInputs()), qt.Not(qt.Contains), "MY110")
+	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "rewrite/remove-enum-value")
+	c.Assert(unmetRules(analysis.UnmetInputs()), qt.Not(qt.Contains), "rewrite/remove-enum-value")
 }

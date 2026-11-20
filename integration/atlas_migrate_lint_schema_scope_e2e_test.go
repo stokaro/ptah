@@ -256,7 +256,7 @@ func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
 			// Here the dev URL reviews `app` while the migration creates and drops
 			// tables explicitly qualified as `public`, so the objects are OUT of
 			// scope and the run is silent. Under the constant they would be in
-			// scope and the run would report two DS102 and exit 1.
+			// scope and the run would report two destructive/drop-column and exit 1.
 			//
 			// The pinned community binary answers exactly this: rc=0,
 			// `-- no diagnostics found`, `-- 1 version ok`.
@@ -348,7 +348,7 @@ func assertLintE2EScopedReport(
 // never in the before-state the run compares against. That describes a
 // diff-based analyzer. Ptah's native linter reads SQL text, which is why it
 // reports TRUNCATE and DROP SCHEMA -- neither of which produces a diff. Scoping
-// it turned two error-grade DS101 findings into "No lint findings." and exit 1
+// it turned two error-grade destructive/drop-table findings into "No lint findings." and exit 1
 // into exit 0, silently, on the surface where no binary can be consulted about
 // whether that is right.
 //

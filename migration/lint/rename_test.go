@@ -43,7 +43,7 @@ func severitiesOf(findings []lint.Finding) []lint.Severity {
 // TestAnalyzeFS_RenameClassificationIsScopedToTheSurface covers issue #1074
 // part 1. A rename retires a logical name; the compatibility surface has to
 // classify that as a destructive change to the retired name, because the
-// analyzer it matches does. The native surface keeps BC101's prose.
+// analyzer it matches does. The native surface keeps rollout/rename's prose.
 //
 // Every form the scanner recognizes is a row, because they reach different
 // branches: the table forms differ in whether the new name follows TO, follows
@@ -51,7 +51,7 @@ func severitiesOf(findings []lint.Finding) []lint.Severity {
 // differ in whether the COLUMN keyword is present. A single ALTER TABLE ...
 // RENAME COLUMN row would leave all of those unmeasured.
 //
-// Reverting the change turns every atlas column below into []string{"BC101"}.
+// Reverting the change turns every atlas column below into []string{"rollout/rename"}.
 func TestAnalyzeFS_RenameClassificationIsScopedToTheSurface(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -62,50 +62,50 @@ func TestAnalyzeFS_RenameClassificationIsScopedToTheSurface(t *testing.T) {
 		{
 			name:   "column rename",
 			sql:    "ALTER TABLE users RENAME COLUMN id TO oid;",
-			native: []string{"BC101"},
-			atlas:  []string{"DS102"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:   "column rename without the COLUMN keyword",
 			sql:    "ALTER TABLE users RENAME email TO email_address;",
-			native: []string{"BC101"},
-			atlas:  []string{"DS102"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:   "column rename behind IF EXISTS ONLY",
 			sql:    "ALTER TABLE IF EXISTS ONLY users RENAME COLUMN email TO email_old;",
-			native: []string{"BC101"},
-			atlas:  []string{"DS102"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:   "table rename",
 			sql:    "ALTER TABLE users RENAME TO accounts;",
-			native: []string{"BC101"},
-			atlas:  []string{"DS101"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-table"},
 		},
 		{
 			name:   "table rename spelled AS",
 			sql:    "ALTER TABLE users RENAME AS accounts;",
-			native: []string{"BC101"},
-			atlas:  []string{"DS101"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-table"},
 		},
 		{
 			name:   "table rename without TO",
 			sql:    "ALTER TABLE users RENAME users_archive;",
-			native: []string{"BC101"},
-			atlas:  []string{"DS101"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-table"},
 		},
 		{
 			name:   "standalone table rename",
 			sql:    "RENAME TABLE users TO users_archive;",
-			native: []string{"BC101"},
-			atlas:  []string{"DS101"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-table"},
 		},
 		{
 			name:   "standalone table rename of several tables",
 			sql:    "RENAME TABLE users TO users_archive, pets TO pets_archive;",
-			native: []string{"BC101"},
-			atlas:  []string{"DS101", "DS101"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-table", "destructive/drop-table"},
 		},
 		{
 			// Renames of objects deployed code never names are silent on both
@@ -142,7 +142,7 @@ func TestAnalyzeFS_RenameClassificationIsScopedToTheSurface(t *testing.T) {
 // also the name a previous statement dropped, so a subject built from the new
 // name or from the previously dropped name would both look plausible.
 //
-// Reverting the change leaves BC101 findings, which carry no subjects at all,
+// Reverting the change leaves rollout/rename findings, which carry no subjects at all,
 // so every row fails on an empty subject list.
 func TestAnalyzeFS_RenameNamesTheRetiredNameNotTheNewOne(t *testing.T) {
 	tests := []struct {
@@ -154,31 +154,31 @@ func TestAnalyzeFS_RenameNamesTheRetiredNameNotTheNewOne(t *testing.T) {
 		{
 			name:  "column rename",
 			sql:   "ALTER TABLE users RENAME COLUMN id TO oid;",
-			rules: []string{"DS102"},
+			rules: []string{"destructive/drop-column"},
 			want:  [][]lint.Subject{{{Kind: lint.SubjectColumn, Name: "id", Parent: "users"}}},
 		},
 		{
 			name:  "column rename keeps identifier spelling and table qualification",
 			sql:   `ALTER TABLE public."Users" RENAME COLUMN "Id" TO oid;`,
-			rules: []string{"DS102"},
+			rules: []string{"destructive/drop-column"},
 			want:  [][]lint.Subject{{{Kind: lint.SubjectColumn, Name: `"Id"`, Parent: `public."Users"`}}},
 		},
 		{
 			name:  "table rename",
 			sql:   "ALTER TABLE users RENAME TO accounts;",
-			rules: []string{"DS101"},
+			rules: []string{"destructive/drop-table"},
 			want:  [][]lint.Subject{{{Kind: lint.SubjectTable, Name: "users"}}},
 		},
 		{
 			name:  "table rename keeps identifier spelling and qualification",
 			sql:   `ALTER TABLE public."Users" RENAME TO "Accounts";`,
-			rules: []string{"DS101"},
+			rules: []string{"destructive/drop-table"},
 			want:  [][]lint.Subject{{{Kind: lint.SubjectTable, Name: `public."Users"`}}},
 		},
 		{
 			name:  "column rename that reuses a name dropped earlier",
 			sql:   "ALTER TABLE users DROP COLUMN oid;\nALTER TABLE users RENAME COLUMN id TO oid;",
-			rules: []string{"DS102", "DS102"},
+			rules: []string{"destructive/drop-column", "destructive/drop-column"},
 			want: [][]lint.Subject{
 				{{Kind: lint.SubjectColumn, Name: "oid", Parent: "users"}},
 				{{Kind: lint.SubjectColumn, Name: "id", Parent: "users"}},
@@ -190,7 +190,7 @@ func TestAnalyzeFS_RenameNamesTheRetiredNameNotTheNewOne(t *testing.T) {
 			// rename runs, and the analyzer this tool matches reports it too.
 			name:  "column rename followed by an add-back of the old name",
 			sql:   "ALTER TABLE users RENAME COLUMN id TO oid;\nALTER TABLE users ADD COLUMN id int;",
-			rules: []string{"DS102"},
+			rules: []string{"destructive/drop-column"},
 			want:  [][]lint.Subject{{{Kind: lint.SubjectColumn, Name: "id", Parent: "users"}}},
 		},
 		{
@@ -200,7 +200,7 @@ func TestAnalyzeFS_RenameNamesTheRetiredNameNotTheNewOne(t *testing.T) {
 			// produces, and the opposite of the table form below.
 			name:  "several column renames in one statement are one finding",
 			sql:   "ALTER TABLE users RENAME COLUMN nick TO handle, RENAME COLUMN email TO mail;",
-			rules: []string{"DS102"},
+			rules: []string{"destructive/drop-column"},
 			want: [][]lint.Subject{{
 				{Kind: lint.SubjectColumn, Name: "nick", Parent: "users"},
 				{Kind: lint.SubjectColumn, Name: "email", Parent: "users"},
@@ -213,7 +213,7 @@ func TestAnalyzeFS_RenameNamesTheRetiredNameNotTheNewOne(t *testing.T) {
 			// first, reported pets first.
 			name:  "several table renames in one statement are ordered by name",
 			sql:   "RENAME TABLE users TO accounts, pets TO animals;",
-			rules: []string{"DS101", "DS101"},
+			rules: []string{"destructive/drop-table", "destructive/drop-table"},
 			want: [][]lint.Subject{
 				{{Kind: lint.SubjectTable, Name: "pets"}},
 				{{Kind: lint.SubjectTable, Name: "users"}},
@@ -225,7 +225,7 @@ func TestAnalyzeFS_RenameNamesTheRetiredNameNotTheNewOne(t *testing.T) {
 			// "pets" sorts first.
 			name:  "table renames in separate statements keep source order",
 			sql:   "ALTER TABLE users RENAME TO accounts;\nALTER TABLE pets RENAME TO animals;",
-			rules: []string{"DS101", "DS101"},
+			rules: []string{"destructive/drop-table", "destructive/drop-table"},
 			want: [][]lint.Subject{
 				{{Kind: lint.SubjectTable, Name: "users"}},
 				{{Kind: lint.SubjectTable, Name: "pets"}},
@@ -269,7 +269,7 @@ func TestAnalyzeFS_RenameIsErrorGradeOnTheCompatibilitySurface(t *testing.T) {
 // CREATE lives. Without the control an exemption bug that silenced every rename
 // would look like a pass.
 //
-// Reverting the change makes every exempt row report BC101 on both surfaces.
+// Reverting the change makes every exempt row report rollout/rename on both surfaces.
 func TestAnalyzeFS_RenamingAnObjectThisFileCreatedIsExempt(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -291,8 +291,8 @@ func TestAnalyzeFS_RenamingAnObjectThisFileCreatedIsExempt(t *testing.T) {
 				"1_init.sql":   "CREATE TABLE users (id int);\n",
 				"2_rename.sql": "ALTER TABLE users RENAME COLUMN id TO oid;\n",
 			},
-			native: []string{"BC101"},
-			atlas:  []string{"DS102"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name: "table created in this file",
@@ -308,16 +308,16 @@ func TestAnalyzeFS_RenamingAnObjectThisFileCreatedIsExempt(t *testing.T) {
 				"1_init.sql":   "CREATE TABLE staging (id int);\n",
 				"2_rename.sql": "ALTER TABLE staging RENAME TO users;\n",
 			},
-			native: []string{"BC101"},
-			atlas:  []string{"DS101"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-table"},
 		},
 		{
 			name: "control: created after the rename, so not yet created when it runs",
 			files: map[string]string{
 				"1_rename.sql": "ALTER TABLE users RENAME COLUMN id TO oid;\nCREATE TABLE users (id int);\n",
 			},
-			native: []string{"BC101"},
-			atlas:  []string{"DS102"},
+			native: []string{"rollout/rename"},
+			atlas:  []string{"destructive/drop-column"},
 		},
 	}
 
@@ -336,7 +336,7 @@ func TestAnalyzeFS_RenamingAnObjectThisFileCreatedIsExempt(t *testing.T) {
 // still reports, with no subject rather than a guessed one: an unreadable name
 // is not evidence that nothing is being renamed.
 //
-// Reverting the change reports these as BC101, which is warning-grade and exits
+// Reverting the change reports these as rollout/rename, which is warning-grade and exits
 // 0.
 func TestAnalyzeFS_UnreadableRenameStillReports(t *testing.T) {
 	tests := []struct {
@@ -347,12 +347,12 @@ func TestAnalyzeFS_UnreadableRenameStillReports(t *testing.T) {
 		{
 			name:  "column rename with no target",
 			sql:   "ALTER TABLE users RENAME COLUMN;",
-			rules: []string{"DS102"},
+			rules: []string{"destructive/drop-column"},
 		},
 		{
 			name:  "standalone rename with an unreadable pair",
 			sql:   "RENAME TABLE users TO users_archive, pets;",
-			rules: []string{"DS101", "DS101"},
+			rules: []string{"destructive/drop-table", "destructive/drop-table"},
 		},
 	}
 
@@ -372,9 +372,9 @@ func TestAnalyzeFS_UnreadableRenameStillReports(t *testing.T) {
 // the right rule and still name the wrong thing.
 //
 // The rule code is asserted here too. Without it the test passes on master --
-// the BC101 finding it reported instead also carries no subjects -- so the
+// the rollout/rename finding it reported instead also carries no subjects -- so the
 // empty subject list on its own proves nothing about which rule produced it.
-// Reverting the change fails the first assertion with BC101.
+// Reverting the change fails the first assertion with rollout/rename.
 func TestAnalyzeFS_UnreadableRenameCarriesNoSubject(t *testing.T) {
 	c := qt.New(t)
 
@@ -382,7 +382,7 @@ func TestAnalyzeFS_UnreadableRenameCarriesNoSubject(t *testing.T) {
 		"1_rename.sql": "ALTER TABLE users RENAME COLUMN;\n",
 	})
 
-	c.Assert(rulesOf(atlas), qt.DeepEquals, []string{"DS102"})
+	c.Assert(rulesOf(atlas), qt.DeepEquals, []string{"destructive/drop-column"})
 	c.Assert(subjectsOf(atlas), qt.DeepEquals, [][]lint.Subject{nil})
 }
 
@@ -390,7 +390,7 @@ func TestAnalyzeFS_UnreadableRenameCarriesNoSubject(t *testing.T) {
 // analyzer owns a rename, measured rather than inferred: with `-- atlas:nolint
 // destructive` above a column rename the pinned community binary reports
 // nothing and exits 0, and with `-- atlas:nolint incompatible` above the same
-// rename it still reports DS103 and exits 1.
+// rename it still reports data-dependent/alter-column-type and exits 1.
 //
 // That is what forces the destructive classification into the DS family. The
 // selectors are keyed by rule family -- destructive covers DS and CD,
@@ -407,8 +407,8 @@ func TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly(t *testing.T) 
 		want     []string
 	}{
 		{name: "destructive owns the rename", selector: "destructive", want: make([]string, 0)},
-		{name: "incompatible does not", selector: "incompatible", want: []string{"DS102"}},
-		{name: "concurrent_index does not", selector: "concurrent_index", want: []string{"DS102"}},
+		{name: "incompatible does not", selector: "incompatible", want: []string{"destructive/drop-column"}},
+		{name: "concurrent_index does not", selector: "concurrent_index", want: []string{"destructive/drop-column"}},
 	}
 
 	for _, test := range tests {
@@ -429,7 +429,7 @@ func TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly(t *testing.T) 
 // earlier ADD of the file added, held no value before the file ran, and no
 // deployed version read it. The community binary compares the schema a file
 // starts from with the one it ends with and reports nothing for either, and so
-// do DS102 and BC104. A column the file did not bring in is reported on both
+// do destructive/drop-column and rollout/drop-column. A column the file did not bring in is reported on both
 // surfaces, and a column it re-added with IF NOT EXISTS, or renamed into, may
 // carry old values, so it is reported too.
 func TestAnalyzeFS_DropColumnOfAColumnTheFileBroughtIn(t *testing.T) {
@@ -460,44 +460,44 @@ func TestAnalyzeFS_DropColumnOfAColumnTheFileBroughtIn(t *testing.T) {
 		{
 			name:       "one column added, another dropped",
 			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN name;",
-			wantNative: []string{"BC104", "DS102"},
-			wantAtlas:  []string{"DS102"},
+			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantAtlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:       "the column added to another table",
 			sql:        "ALTER TABLE accounts ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"BC104", "DS102"},
-			wantAtlas:  []string{"DS102"},
+			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantAtlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:       "the column added with IF NOT EXISTS",
 			sql:        "ALTER TABLE users ADD COLUMN IF NOT EXISTS nick text;\nALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"BC104", "DS102"},
-			wantAtlas:  []string{"DS102"},
+			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantAtlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:       "a column renamed into the added column's name",
 			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;\nALTER TABLE users RENAME COLUMN name TO nick;\nALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"BC101", "BC104", "DS102"},
-			wantAtlas:  []string{"DS102", "DS102"},
+			wantNative: []string{"rollout/rename", "rollout/drop-column", "destructive/drop-column"},
+			wantAtlas:  []string{"destructive/drop-column", "destructive/drop-column"},
 		},
 		{
 			name:       "the column dropped twice, the second time after it was dropped",
 			sql:        "ALTER TABLE users ADD COLUMN nick text;\nALTER TABLE users DROP COLUMN nick;\nALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"BC104", "DS102"},
-			wantAtlas:  []string{"DS102"},
+			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantAtlas:  []string{"destructive/drop-column"},
 		},
 		{
 			name:       "another table renamed into a created table's name",
 			sql:        "CREATE TABLE t (id int, nick text);\nDROP TABLE t;\nALTER TABLE users RENAME TO t;\nALTER TABLE t DROP COLUMN nick;",
-			wantNative: []string{"BC101", "BC104", "DS102"},
-			wantAtlas:  []string{"DS101", "DS102"},
+			wantNative: []string{"rollout/rename", "rollout/drop-column", "destructive/drop-column"},
+			wantAtlas:  []string{"destructive/drop-table", "destructive/drop-column"},
 		},
 		{
 			name:       "table not created in this file",
 			sql:        "ALTER TABLE users DROP COLUMN nick;",
-			wantNative: []string{"BC104", "DS102"},
-			wantAtlas:  []string{"DS102"},
+			wantNative: []string{"rollout/drop-column", "destructive/drop-column"},
+			wantAtlas:  []string{"destructive/drop-column"},
 		},
 	}
 
@@ -519,7 +519,7 @@ func TestAnalyzeFS_DropColumnOfAColumnTheFileBroughtIn(t *testing.T) {
 // file scope would have silently changed that sentence.
 //
 // Validated with an inverse mutant -- emitting one finding per subject makes the
-// assertion read []string{"DS102", "DS102"} with one subject each.
+// assertion read []string{"destructive/drop-column", "destructive/drop-column"} with one subject each.
 func TestAnalyzeFS_DropColumnKeepsEveryDroppedColumnInOneFinding(t *testing.T) {
 	c := qt.New(t)
 
@@ -527,7 +527,7 @@ func TestAnalyzeFS_DropColumnKeepsEveryDroppedColumnInOneFinding(t *testing.T) {
 		"1_drop.sql": "ALTER TABLE users DROP COLUMN nick, DROP COLUMN email;\n",
 	})
 
-	c.Assert(rulesOf(native), qt.DeepEquals, []string{"BC104", "DS102"})
+	c.Assert(rulesOf(native), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column"})
 	// Both findings keep every dropped column in one finding: the shape that
 	// makes the compatibility renderer say "columns" rather than naming one.
 	columns := []lint.Subject{

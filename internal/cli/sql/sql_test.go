@@ -53,7 +53,7 @@ func TestSQLLint_FileTextOutput(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stderr, qt.Equals, "")
-	c.Assert(stdout, qt.Contains, "warning DDL001")
+	c.Assert(stdout, qt.Contains, "warning design/no-primary-key")
 	c.Assert(stdout, qt.Contains, "table \"users\" has no primary key")
 }
 
@@ -126,7 +126,7 @@ func TestSQLLint_CapabilityAwareRuleUsesVersion(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(stdout, qt.Contains, "error CAP001")
+	c.Assert(stdout, qt.Contains, "error capability/missing")
 	c.Assert(stdout, qt.Contains, "create_index_concurrently")
 }
 
@@ -319,7 +319,7 @@ func TestSQLLint_AcceptsAMatchingBanner(t *testing.T) {
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(stderr, qt.Not(qt.Contains), "invalid --version")
-	c.Assert(stdout, qt.Contains, "CAP001")
+	c.Assert(stdout, qt.Contains, "capability/missing")
 }
 
 const concurrentIndexSQL = "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);"
@@ -350,14 +350,14 @@ func TestSQLLint_ReadsAPostgreSQLRoutineBody(t *testing.T) {
 		rules = append(rules, finding.Rule+":"+finding.Message)
 	}
 	c.Assert(rules, qt.DeepEquals, []string{
-		"SQL002:ptah sql lint does not model CREATE PROCEDURE statements yet",
-		"SQL003:procedure p builds SQL at run time with EXECUTE",
+		"coverage/unsupported-statement:ptah sql lint does not model CREATE PROCEDURE statements yet",
+		"coverage/dynamic-sql:procedure p builds SQL at run time with EXECUTE",
 	})
 }
 
 // A byte order mark at the start of a file or of stdin is the encoding, as it
 // is to the migrator, which removes it and runs the SQL after it. Without
-// the removal the lexer reads the mark as an operator and reports SQL001.
+// the removal the lexer reads the mark as an operator and reports correctness/syntax-error.
 func TestSQLLint_ByteOrderMarkIsNotSQL(t *testing.T) {
 	const body = "\xEF\xBB\xBFCREATE TABLE users (id BIGINT PRIMARY KEY, email TEXT NOT NULL);"
 	t.Run("file", func(t *testing.T) {
@@ -390,18 +390,18 @@ func TestSQLLint_PolicySetsSeverityByName(t *testing.T) {
 		policy string
 		want   string
 	}{
-		{name: "the rule's name", policy: "rules:\n  design/no-primary-key:\n    severity: error\n", want: "error DDL001 design/no-primary-key: "},
-		{name: "the rule's category", policy: "rules:\n  design:\n    severity: error\n", want: "error DDL001 design/no-primary-key: "},
-		{name: "the category with a slash", policy: "rules:\n  design/:\n    severity: error\n", want: "error DDL001 design/no-primary-key: "},
+		{name: "the rule's name", policy: "rules:\n  design/no-primary-key:\n    severity: error\n", want: "error design/no-primary-key: "},
+		{name: "the rule's category", policy: "rules:\n  design:\n    severity: error\n", want: "error design/no-primary-key: "},
+		{name: "the category with a slash", policy: "rules:\n  design/:\n    severity: error\n", want: "error design/no-primary-key: "},
 		{
 			name:   "a code beats the category",
-			policy: "rules:\n  design:\n    severity: error\n  DDL001:\n    severity: info\n",
-			want:   "info DDL001 design/no-primary-key: ",
+			policy: "rules:\n  design:\n    severity: error\n  design/no-primary-key:\n    severity: info\n",
+			want:   "info design/no-primary-key: ",
 		},
 		{
 			name:   "a name beats the category",
 			policy: "rules:\n  design:\n    severity: info\n  design/no-primary-key:\n    severity: error\n",
-			want:   "error DDL001 design/no-primary-key: ",
+			want:   "error design/no-primary-key: ",
 		},
 	}
 	for _, row := range rows {

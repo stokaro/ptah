@@ -38,10 +38,10 @@ import (
 //
 // Linting the generated pair is not a formality. Statement rules confined to up
 // files never read the rollback half -- the half that is a DROP INDEX by
-// construction -- so a green lint says nothing about it. PG106 and PG103 read
+// construction -- so a green lint says nothing about it. locking/drop-index and transaction/concurrent-index read
 // down files, which is what lets Ptah's linter contradict Ptah's generator, and
-// this is the test that would notice: PG106
-// fires on a blocking DROP INDEX in either direction, and PG103 fires on a
+// this is the test that would notice: locking/drop-index
+// fires on a blocking DROP INDEX in either direction, and transaction/concurrent-index fires on a
 // concurrent index statement in a file that does not carry the
 // no_transaction marker it needs in order to execute at all.
 //
@@ -161,12 +161,12 @@ func TestLintFS_BlockingRollbackOfAConcurrentBuildIsReported(t *testing.T) {
 		{
 			name: "a blocking rollback is reported",
 			down: "DROP INDEX IF EXISTS \"idx_members_email\";\n",
-			want: []string{"PG106"},
+			want: []string{"locking/drop-index"},
 		},
 		{
 			name: "a concurrent rollback without the marker is reported",
 			down: "DROP INDEX CONCURRENTLY IF EXISTS \"idx_members_email\";\n",
-			want: []string{"PG103"},
+			want: []string{"transaction/concurrent-index"},
 		},
 	}
 

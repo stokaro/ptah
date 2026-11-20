@@ -9,8 +9,8 @@ import (
 )
 
 // The ON family is an allowlist, which is what separates it from every other
-// family. Its rules are the engine owners': ON101 and ON103 the PostgreSQL
-// owner's, ON102 the MySQL owner's. This file holds the mode they run in,
+// family. Its rules are the engine owners': online/unproven and online/lock-held-across-scan the PostgreSQL
+// owner's, online/unproven the MySQL owner's. This file holds the mode they run in,
 // which is this package's policy.
 //
 // The rest of this package is a blocklist: a rule fires on a hazard somebody

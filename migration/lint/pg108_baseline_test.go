@@ -11,16 +11,16 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
-// PG108 reads the table an index is built on as partitioned from the same
+// locking/partitioned-index reads the table an index is built on as partitioned from the same
 // file's CREATE TABLE ... PARTITION BY, or, for a table an earlier migration
 // created, from the starting state (stokaro/ptah#3588). Where it fires it
-// replaces PG101, whose CONCURRENTLY remedy PostgreSQL refuses on a
+// replaces locking/create-index, whose CONCURRENTLY remedy PostgreSQL refuses on a
 // partitioned table.
 
 const pg101Advice = "CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; " +
 	"on a populated table use CREATE INDEX CONCURRENTLY outside a transaction"
 
-// pg108LockMessage is PG108's message for a plain build on the table spelled
+// pg108LockMessage is locking/partitioned-index's message for a plain build on the table spelled
 // name.
 func pg108LockMessage(name string) string {
 	return "building this index takes a SHARE lock on " + name + " and on every one of its partitions at once, " +
@@ -45,7 +45,7 @@ func measurementsColumns(partitioned bool, schemas ...string) []lintext.Baseline
 
 // analyzeMeasurements lints a directory whose first version creates
 // measurements and whose second is the statement under test, in a
-// no_transaction file so PG103 stays out of the way of a CONCURRENTLY row.
+// no_transaction file so transaction/concurrent-index stays out of the way of a CONCURRENTLY row.
 func analyzeMeasurements(c *qt.C, migration string, columns []lintext.BaselineColumn, disabled ...string) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
@@ -62,11 +62,11 @@ func analyzeMeasurements(c *qt.C, migration string, columns []lintext.BaselineCo
 	return analysis
 }
 
-// indexBuildFindings keeps PG101 and PG108, spelled code: message.
+// indexBuildFindings keeps locking/create-index and locking/partitioned-index, spelled code: message.
 func indexBuildFindings(findings []lint.Finding) []string {
 	var kept []string
 	for _, finding := range findings {
-		if finding.Rule == "PG101" || finding.Rule == "PG108" {
+		if finding.Rule == "locking/create-index" || finding.Rule == "locking/partitioned-index" {
 			kept = append(kept, finding.Rule+": "+finding.Message)
 		}
 	}
@@ -84,25 +84,25 @@ func TestPG108_ReadsTheStartingState(t *testing.T) {
 			name:      "an index on a parent an earlier migration created",
 			migration: "CREATE INDEX m_value ON measurements (value);",
 			columns:   measurementsColumns(true, "public"),
-			want:      []string{"PG108: " + pg108LockMessage("measurements")},
+			want:      []string{"locking/partitioned-index: " + pg108LockMessage("measurements")},
 		},
 		{
 			name:      "the parent named with its schema",
 			migration: "CREATE INDEX m_value ON public.measurements (value);",
 			columns:   measurementsColumns(true, "public"),
-			want:      []string{"PG108: " + pg108LockMessage("public.measurements")},
+			want:      []string{"locking/partitioned-index: " + pg108LockMessage("public.measurements")},
 		},
 		{
 			name:      "the parent named with its schema, beside an ordinary table of that name in another",
 			migration: "CREATE INDEX m_value ON public.measurements (value);",
 			columns:   append(measurementsColumns(true, "public"), measurementsColumns(false, "archive")...),
-			want:      []string{"PG108: " + pg108LockMessage("public.measurements")},
+			want:      []string{"locking/partitioned-index: " + pg108LockMessage("public.measurements")},
 		},
 		{
 			name:      "CONCURRENTLY on that parent, which PostgreSQL refuses",
 			migration: "CREATE INDEX CONCURRENTLY m_value ON measurements (value);",
 			columns:   measurementsColumns(true, "public"),
-			want: []string{"PG108: PostgreSQL refuses CREATE INDEX CONCURRENTLY on the partitioned table measurements; " +
+			want: []string{"locking/partitioned-index: PostgreSQL refuses CREATE INDEX CONCURRENTLY on the partitioned table measurements; " +
 				"build the index on each partition concurrently and attach it to a parent index created with ON ONLY"},
 		},
 		{
@@ -114,29 +114,29 @@ func TestPG108_ReadsTheStartingState(t *testing.T) {
 			name:      "an ordinary table",
 			migration: "CREATE INDEX m_value ON measurements (value);",
 			columns:   measurementsColumns(false, "public"),
-			want:      []string{"PG101: " + pg101Advice},
+			want:      []string{"locking/create-index: " + pg101Advice},
 		},
 		{
 			name:      "ON ONLY on an ordinary table, which builds the whole index",
 			migration: "CREATE INDEX m_value ON ONLY measurements (value);",
 			columns:   measurementsColumns(false, "public"),
-			want:      []string{"PG101: " + pg101Advice},
+			want:      []string{"locking/create-index: " + pg101Advice},
 		},
 		{
 			name:      "no state",
 			migration: "CREATE INDEX m_value ON measurements (value);",
-			want:      []string{"PG101: " + pg101Advice},
+			want:      []string{"locking/create-index: " + pg101Advice},
 		},
 		{
 			name:      "ON ONLY with no state",
 			migration: "CREATE INDEX m_value ON ONLY measurements (value);",
-			want:      []string{"PG101: " + pg101Advice},
+			want:      []string{"locking/create-index: " + pg101Advice},
 		},
 		{
 			name:      "a bare name two schemas carry is placed in neither",
 			migration: "CREATE INDEX m_value ON measurements (value);",
 			columns:   append(measurementsColumns(true, "public"), measurementsColumns(false, "archive")...),
-			want:      []string{"PG101: " + pg101Advice},
+			want:      []string{"locking/create-index: " + pg101Advice},
 		},
 	}
 	for _, test := range tests {
@@ -160,12 +160,12 @@ func TestPG108_ReadsTheSameFile(t *testing.T) {
 		{
 			name:      "the parent created in the same file",
 			migration: "CREATE TABLE m (id bigint, taken_on date) PARTITION BY RANGE (taken_on);\nCREATE INDEX m_id ON m (id);",
-			want:      []string{"PG108: " + pg108LockMessage("m")},
+			want:      []string{"locking/partitioned-index: " + pg108LockMessage("m")},
 		},
 		{
 			name:      "the same, named with its schema",
 			migration: "CREATE TABLE public.m (id bigint, taken_on date) PARTITION BY RANGE (taken_on);\nCREATE INDEX m_id ON public.m (id);",
-			want:      []string{"PG108: " + pg108LockMessage("public.m")},
+			want:      []string{"locking/partitioned-index: " + pg108LockMessage("public.m")},
 		},
 		{
 			name:      "ON ONLY on a parent the file creates",
@@ -185,10 +185,10 @@ func TestPG108_ReadsTheSameFile(t *testing.T) {
 	}
 }
 
-// TestPG108_AsksForTheStateOfAnEarlierTable: PG108 asks for the starting state
+// TestPG108_AsksForTheStateOfAnEarlierTable: locking/partitioned-index asks for the starting state
 // of every index build on a table an earlier migration created, and of nothing
 // else, so a run without a dev database names it and a file the text settles
-// costs no catalog read. PG101 is disabled because it asks for the same
+// costs no catalog read. locking/create-index is disabled because it asks for the same
 // statements on its own account.
 func TestPG108_AsksForTheStateOfAnEarlierTable(t *testing.T) {
 	tests := []struct {
@@ -201,13 +201,13 @@ func TestPG108_AsksForTheStateOfAnEarlierTable(t *testing.T) {
 			name:         "a build on an earlier table",
 			migration:    "CREATE INDEX m_value ON measurements (value);",
 			wantVersions: []int64{2},
-			wantUnmet:    []string{"PG108"},
+			wantUnmet:    []string{"locking/partitioned-index"},
 		},
 		{
 			name:         "a concurrent build on an earlier table",
 			migration:    "CREATE INDEX CONCURRENTLY m_value ON measurements (value);",
 			wantVersions: []int64{2},
-			wantUnmet:    []string{"PG108"},
+			wantUnmet:    []string{"locking/partitioned-index"},
 		},
 		{
 			name:      "ON ONLY",
@@ -225,7 +225,7 @@ func TestPG108_AsksForTheStateOfAnEarlierTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis := analyzeMeasurements(c, test.migration, nil, "PG101")
+			analysis := analyzeMeasurements(c, test.migration, nil, "locking/create-index")
 			var unmet []string
 			for _, entry := range analysis.UnmetInputs() {
 				unmet = append(unmet, entry.Rule)

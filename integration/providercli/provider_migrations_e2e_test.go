@@ -154,7 +154,7 @@ func TestProviderMigrationsKeepDataSafetyGate(t *testing.T) {
 	out, diagnostics, code := executeProviderCLI(c.Context(), migrationArguments(f, "up", "--migrations-dir", dir, "--json"))
 	c.Assert(code, qt.Equals, 2)
 	f.assertStopped(c)
-	c.Assert(diagnostics, qt.Contains, "DS101")
+	c.Assert(diagnostics, qt.Contains, "destructive/drop-table")
 	var result migrator.RunResult
 	c.Assert(json.Unmarshal([]byte(out), &result), qt.IsNil)
 	c.Assert(result.Outcome, qt.Equals, migrator.RunOutcomeFailed)

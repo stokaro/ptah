@@ -26,8 +26,8 @@ func TestSQLLint_IdentifierRulesInText(t *testing.T) {
 	stdout, _, err := execute("lint", "--dialect", "postgres", path)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(stdout, qt.Contains, "schema.sql:2:14: warning DDL003 naming/identifier-too-long: index ")
-	c.Assert(stdout, qt.Contains, "schema.sql:3:16: error DDL004 naming/identifier-collision: index ")
+	c.Assert(stdout, qt.Contains, "schema.sql:2:14: warning naming/identifier-too-long: index ")
+	c.Assert(stdout, qt.Contains, "schema.sql:3:16: error naming/identifier-collision: index ")
 }
 
 // The JSON report read from stdin carries the same findings, with the
@@ -49,7 +49,7 @@ func TestSQLLint_IdentifierRulesInJSON(t *testing.T) {
 		at = append(at, finding.Rule+" "+string(finding.Severity)+" "+finding.File+" "+finding.SuggestedFix)
 	}
 	c.Assert(at, qt.DeepEquals, []string{
-		"DDL003 warning <stdin> Write a name of at most 63 bytes, such as \"" + strings.Repeat("k", 63) + "\", so the SQL names what the database holds.",
-		"DDL004 error <stdin> Rename one of them so the two differ within the first 63 bytes.",
+		"naming/identifier-too-long warning <stdin> Write a name of at most 63 bytes, such as \"" + strings.Repeat("k", 63) + "\", so the SQL names what the database holds.",
+		"naming/identifier-collision error <stdin> Rename one of them so the two differ within the first 63 bytes.",
 	})
 }

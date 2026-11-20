@@ -20,7 +20,7 @@ func analyzeRoutine(c *qt.C, dialect, sql string) lint.Analysis {
 	return analysis
 }
 
-// TestSQLInjectionRule_ReportsAStatementBuiltFromAValue pins SA101 to the
+// TestSQLInjectionRule_ReportsAStatementBuiltFromAValue pins security/dynamic-sql-from-value to the
 // three spellings and the parts that make each unsafe.
 func TestSQLInjectionRule_ReportsAStatementBuiltFromAValue(t *testing.T) {
 	tests := []struct {
@@ -101,8 +101,8 @@ func TestSQLInjectionRule_ReportsAStatementBuiltFromAValue(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeRoutine(c, test.dialect, test.sql)
-			c.Assert(rulesOf(analysis.Findings()), qt.Contains, "SA101")
-			c.Assert(messageOf(analysis.Findings(), "SA101"), qt.Contains, test.want)
+			c.Assert(rulesOf(analysis.Findings()), qt.Contains, "security/dynamic-sql-from-value")
+			c.Assert(messageOf(analysis.Findings(), "security/dynamic-sql-from-value"), qt.Contains, test.want)
 		})
 	}
 }
@@ -176,7 +176,7 @@ func TestSQLInjectionRule_StaysQuietWhereTheTextIsQuotedOrFixed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeRoutine(c, test.dialect, test.sql)
-			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "SA101")
+			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "security/dynamic-sql-from-value")
 		})
 	}
 }
@@ -189,10 +189,10 @@ func TestSQLInjectionRule_NamesItsInputWithoutADialect(t *testing.T) {
 
 	analysis := analyzeRoutine(c, "", "CREATE FUNCTION f(tbl text) RETURNS void AS $$ BEGIN EXECUTE 'SELECT 1 FROM ' || tbl; END $$ LANGUAGE plpgsql;")
 
-	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "SA101")
+	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "security/dynamic-sql-from-value")
 	var unmet []string
 	for _, input := range analysis.UnmetInputs() {
 		unmet = append(unmet, input.Rule)
 	}
-	c.Assert(unmet, qt.Contains, "SA101")
+	c.Assert(unmet, qt.Contains, "security/dynamic-sql-from-value")
 }

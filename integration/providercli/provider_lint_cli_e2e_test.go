@@ -111,7 +111,7 @@ func lintDirectory(c *qt.C, create, drop string) string {
 // TestMigrationsLintThroughAProviderWithoutADialect selects the provider from
 // its manifest alone and names no dialect. The host splits the files without
 // a dialect, so the provider's rules say nothing (FX101 would report the DROP
-// TABLE), and the provider still annotates the split: DS107 reports the drop
+// TABLE), and the provider still annotates the split: destructive/drop-object reports the drop
 // only because the fixture marked it as one that loses state.
 func TestMigrationsLintThroughAProviderWithoutADialect(t *testing.T) {
 	c := qt.New(t)
@@ -121,7 +121,7 @@ func TestMigrationsLintThroughAProviderWithoutADialect(t *testing.T) {
 	findings, diagnostics, code := f.lint(c, dir)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", diagnostics))
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "DS107"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "destructive/drop-object"})
 }
 
 // TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath names the
@@ -151,7 +151,7 @@ func TestMigrationsLintThroughAProviderOfTheNamedDialect_FailurePath(t *testing.
 
 // TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings is the
 // control for the run above: the same provider reports FX101 on a DROP TABLE,
-// the shared rules read the words its split carries, and DS107 comes from
+// the shared rules read the words its split carries, and destructive/drop-object comes from
 // that split rather than from an annotation.
 func TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings(t *testing.T) {
 	c := qt.New(t)
@@ -161,7 +161,7 @@ func TestMigrationsLintOfTheNamedDialectReportsTheProvidersFindings(t *testing.T
 	findings, diagnostics, code := f.lint(c, dir, "--dialect", "ydb")
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("%s", diagnostics))
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "DS107", "FX101", "FX102"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "destructive/drop-object", "design/fx101", "design/fx102"})
 }
 
 func TestMigrationsLintAppliesAProviderRuleToDownOnlyWhenPublished(t *testing.T) {
@@ -172,7 +172,7 @@ func TestMigrationsLintAppliesAProviderRuleToDownOnlyWhenPublished(t *testing.T)
 		wantCode    int
 	}{
 		{name: "default rule skips rollback"},
-		{name: "published rule checks rollback", environment: []string{`PTAH_FIXTURE_LINT_RULES=[{"code":"FX101","title":"DROP TABLE loses rows","severity":"error","applies_to_down":true},{"code":"FX102","title":"target the check names","severity":"info"}]`}, wantFX101: true, wantCode: 1},
+		{name: "published rule checks rollback", environment: []string{`PTAH_FIXTURE_LINT_RULES=[{"code":"design/fx101","title":"DROP TABLE loses rows","severity":"error","applies_to_down":true},{"code":"design/fx102","title":"target the check names","severity":"info"}]`}, wantFX101: true, wantCode: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -183,7 +183,7 @@ func TestMigrationsLintAppliesAProviderRuleToDownOnlyWhenPublished(t *testing.T)
 			findings, diagnostics, code := f.lint(c, dir, "--dialect", "ydb")
 
 			c.Assert(code, qt.Equals, test.wantCode, qt.Commentf("%s", diagnostics))
-			c.Assert(slices.Contains(rulesOf(findings), "FX101"), qt.Equals, test.wantFX101)
+			c.Assert(slices.Contains(rulesOf(findings), "design/fx101"), qt.Equals, test.wantFX101)
 		})
 	}
 }
@@ -199,10 +199,10 @@ func TestMigrationsLintTellsAProviderWhoOpensEachFilesTransaction(t *testing.T) 
 		want        []string
 		wantCode    int
 	}{
-		{name: "a migrator that wraps each file", runner: "ptah", want: []string{"FX301"}, wantCode: 1},
+		{name: "a migrator that wraps each file", runner: "ptah", want: []string{"design/fx301"}, wantCode: 1},
 		{name: "a tool that opens no transaction", runner: "golang-migrate", want: make([]string, 0)},
 		{name: "an engine that does not list the feature", environment: []string{"FIXTURE_LINT_OWNER_UNLISTED=1"},
-			runner: "golang-migrate", want: []string{"FX301"}, wantCode: 1},
+			runner: "golang-migrate", want: []string{"design/fx301"}, wantCode: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -212,7 +212,7 @@ func TestMigrationsLintTellsAProviderWhoOpensEachFilesTransaction(t *testing.T) 
 			findings, diagnostics, code := f.lint(c, dir, "--dialect", "fixture", "--runner", test.runner)
 
 			c.Assert(code, qt.Equals, test.wantCode, qt.Commentf("%s", diagnostics))
-			c.Assert(slices.DeleteFunc(rulesOf(findings), func(rule string) bool { return rule != "FX301" }), qt.DeepEquals, test.want)
+			c.Assert(slices.DeleteFunc(rulesOf(findings), func(rule string) bool { return rule != "design/fx301" }), qt.DeepEquals, test.want)
 		})
 	}
 }

@@ -23,7 +23,7 @@ import (
 // answers in strict CE mode, fullExit and fullTotal what it answers on the
 // default surface, and codes the rules it reports on both. nativeExit and
 // nativeCodes are what `ptah migrations lint` answers. Where a row's exit code
-// differs from the community binary's, the difference is DS107, Ptah's own
+// differs from the community binary's, the difference is destructive/drop-object, Ptah's own
 // rule, reporting the drop of an object the starting state holds.
 type absentObjectRow struct {
 	name           string
@@ -59,7 +59,7 @@ var sqliteAbsentObjectRows = []absentObjectRow{
 		name:          "control: IF EXISTS drop of a present trigger",
 		files:         absentObjectFiles(countBase+sqliteTrigger, "DROP TRIGGER IF EXISTS users_ai;\n"),
 		communityExit: 0, communityTotal: "0", strictExit: 1, strictTotal: "0", fullExit: 1, fullTotal: "1",
-		codes: []string{"DS107"}, nativeExit: 1, nativeCodes: []string{"DS107"},
+		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "IF EXISTS drop of an absent view",
@@ -127,7 +127,7 @@ var postgresAbsentObjectRows = []absentObjectRow{
 		name:          "control: IF EXISTS drop of a present trigger",
 		files:         absentObjectFiles(postgresCountBase+postgresTrigger, "DROP TRIGGER IF EXISTS users_tg ON users;\n"),
 		communityExit: 0, communityTotal: "0", strictExit: 1, strictTotal: "0", fullExit: 1, fullTotal: "1",
-		codes: []string{"DS107"}, nativeExit: 1, nativeCodes: []string{"DS107"},
+		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "IF EXISTS drop of an absent type",
@@ -139,13 +139,13 @@ var postgresAbsentObjectRows = []absentObjectRow{
 		name:          "control: IF EXISTS drop of a present enum type",
 		files:         absentObjectFiles(postgresMood, "DROP TYPE IF EXISTS mood;\n"),
 		communityExit: 0, communityTotal: "1", strictExit: 1, strictTotal: "1", fullExit: 1, fullTotal: "1",
-		codes: []string{"DS107"}, nativeExit: 1, nativeCodes: []string{"DS107"},
+		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "drop of a composite type",
 		files:         absentObjectFiles(postgresCountBase+"CREATE TYPE pair AS (a int, b int);\n", "DROP TYPE pair;\n"),
 		communityExit: 0, communityTotal: "0", strictExit: 1, strictTotal: "0", fullExit: 1, fullTotal: "1",
-		codes: []string{"DS107"}, nativeExit: 1, nativeCodes: []string{"DS107"},
+		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "IF EXISTS drop of an absent view",
@@ -180,19 +180,19 @@ var postgresAbsentObjectRows = []absentObjectRow{
 		name:          "control: IF EXISTS drop of a present column",
 		files:         absentObjectFiles(postgresCountBase, "ALTER TABLE users DROP COLUMN IF EXISTS name;\n"),
 		communityExit: 1, communityTotal: "1", strictExit: 1, strictTotal: "1", fullExit: 1, fullTotal: "1",
-		codes: []string{"DS103"}, nativeExit: 1, nativeCodes: []string{"BC104", "DS102"},
+		codes: []string{"data-dependent/alter-column-type"}, nativeExit: 1, nativeCodes: []string{"rollout/drop-column", "destructive/drop-column"},
 	},
 	{
 		name:          "an enum label added",
 		files:         absentObjectFiles(postgresMood, "ALTER TYPE mood ADD VALUE 'c';\n"),
 		communityExit: 0, communityTotal: "1", strictExit: 0, strictTotal: "1", fullExit: 0, fullTotal: "1",
-		codes: []string{"PG102"}, nativeExit: 0, nativeCodes: []string{"PG102"},
+		codes: []string{"transaction/add-enum-value"}, nativeExit: 0, nativeCodes: []string{"transaction/add-enum-value"},
 	},
 	{
 		name:          "an enum label added IF NOT EXISTS that the type has",
 		files:         absentObjectFiles(postgresMood, "ALTER TYPE mood ADD VALUE IF NOT EXISTS 'a';\n"),
 		communityExit: 0, communityTotal: "0", strictExit: 0, strictTotal: "0", fullExit: 0, fullTotal: "0",
-		codes: []string{"PG102"}, nativeExit: 0, nativeCodes: []string{"PG102"},
+		codes: []string{"transaction/add-enum-value"}, nativeExit: 0, nativeCodes: []string{"transaction/add-enum-value"},
 	},
 	{
 		name:          "an enum label renamed",
@@ -245,7 +245,7 @@ var mysqlAbsentObjectRows = []absentObjectRow{
 		files: absentObjectFiles(mysqlCountBase+"CREATE TRIGGER users_ai AFTER INSERT ON users FOR EACH ROW SET @x = 1;\n",
 			"DROP TRIGGER users_ai;\n"),
 		communityExit: 0, communityTotal: "0", strictExit: 1, strictTotal: "0", fullExit: 1, fullTotal: "1",
-		codes: []string{"DS107"}, nativeExit: 1, nativeCodes: []string{"DS107"},
+		codes: []string{"destructive/drop-object"}, nativeExit: 1, nativeCodes: []string{"destructive/drop-object"},
 	},
 	{
 		name:          "IF EXISTS drop of an absent view",
@@ -256,11 +256,11 @@ var mysqlAbsentObjectRows = []absentObjectRow{
 }
 
 // compatRuleCode matches a rule a `migrate lint` text report names, as in
-// `-- L1 [DS107]: ...` or `-- L1: Dropping ... analyzers#DS103`.
+// `-- L1 [destructive/drop-object]: ...` or `-- L1: Dropping ... analyzers#data-dependent/alter-column-type`.
 var compatRuleCode = regexp.MustCompile(`(?:-- L\d+ \[|analyzers#)([A-Z]+\d+P?)\b`)
 
 // nativeRuleCode matches a rule a `ptah migrations lint` report names, as in
-// `migrations/2_head.sql:1 [error] DS107 destructive/drop-object: ...`. The
+// `migrations/2_head.sql:1 [error] destructive/drop-object: ...`. The
 // rule's name after the code is optional, since a rule with no Ptah name
 // prints its code alone.
 var nativeRuleCode = regexp.MustCompile(`(?m)^\S+:\d+ \[[a-z]+\] ([A-Z]+\d+P?)(?: [a-z0-9/-]+)?:`)
@@ -517,7 +517,7 @@ func TestMigrateLintMySQLQualifiedDropBesideAViewE2E(t *testing.T) {
 			changeCountArgs(devURL, "1")...)
 
 		c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-		c.Assert(ruleCodes(compatRuleCode, got.Stdout), qt.DeepEquals, []string{"DS102"})
+		c.Assert(ruleCodes(compatRuleCode, got.Stdout), qt.DeepEquals, []string{"destructive/drop-column"})
 		c.Assert(summaryCount(got.Stdout), qt.Equals, "-- 1 schema change")
 	})
 	t.Run("ptah migrations lint", func(t *testing.T) {
@@ -527,7 +527,7 @@ func TestMigrateLintMySQLQualifiedDropBesideAViewE2E(t *testing.T) {
 			"migrations", "lint", "--dir", "migrations", "--dev-url", devURL, "--latest", "1")
 
 		c.Assert(got.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", got.Stdout, got.Stderr))
-		c.Assert(ruleCodes(nativeRuleCode, got.Stdout), qt.DeepEquals, []string{"BC103", "DS101"})
+		c.Assert(ruleCodes(nativeRuleCode, got.Stdout), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table"})
 	})
 	t.Run("community binary", func(t *testing.T) {
 		reference := atlasReferenceBinary(t)

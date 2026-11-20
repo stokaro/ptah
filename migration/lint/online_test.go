@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -26,7 +27,7 @@ func onlineRuleCodes(c *qt.C, dialect, sql string) []string {
 	c.Assert(err, qt.IsNil)
 	codes := make([]string, 0, len(findings))
 	for _, finding := range findings {
-		if len(finding.Rule) >= 2 && finding.Rule[:2] == lint.OnlineFamily {
+		if strings.HasPrefix(finding.Rule, lint.OnlineCategory+"/") {
 			codes = append(codes, finding.Rule)
 		}
 	}
@@ -85,7 +86,7 @@ func TestOnlineMode_PostgresReportsEverythingElse(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(onlineRuleCodes(c, "postgres", test.sql), qt.DeepEquals, []string{"ON101"})
+			c.Assert(onlineRuleCodes(c, "postgres", test.sql), qt.DeepEquals, []string{"online/unproven"})
 		})
 	}
 }
@@ -117,17 +118,17 @@ func TestOnlineMode_MySQLAsksTheServer(t *testing.T) {
 		{
 			name: "the same change with no request at all",
 			sql:  "ALTER TABLE users ADD COLUMN nickname VARCHAR(64);",
-			want: []string{"ON102"},
+			want: []string{"online/unproven"},
 		},
 		{
 			name: "an algorithm without a lock level says nothing about writes",
 			sql:  "ALTER TABLE users ADD COLUMN nickname VARCHAR(64), ALGORITHM=INPLACE;",
-			want: []string{"ON102"},
+			want: []string{"online/unproven"},
 		},
 		{
 			name: "a copy asked for by name",
 			sql:  "ALTER TABLE users ADD COLUMN nickname VARCHAR(64), ALGORITHM=COPY;",
-			want: []string{"ON102"},
+			want: []string{"online/unproven"},
 		},
 	}
 
@@ -154,7 +155,7 @@ func TestOnlineMode_StaysSilentWhenNobodyAskedForIt(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(slices.ContainsFunc(findings, func(finding lint.Finding) bool {
-		return len(finding.Rule) >= 2 && finding.Rule[:2] == lint.OnlineFamily
+		return strings.HasPrefix(finding.Rule, lint.OnlineCategory+"/")
 	}), qt.IsFalse)
 }
 
@@ -203,13 +204,13 @@ func TestOnlineMode_AcceptsTheMeasuredEngines(t *testing.T) {
 }
 
 // A policy that selects the mode refuses the apply on its findings without
-// naming the family under `gate` as well: two ways to say one thing would
+// naming the category under `gate` as well: two ways to say one thing would
 // leave a mode that reported and ran.
-func TestOnlineMode_GateBlocksOnTheFamily(t *testing.T) {
+func TestOnlineMode_GateBlocksOnTheCategory(t *testing.T) {
 	c := qt.New(t)
 	cfg := &lint.Config{Dialect: "postgres", Online: lint.OnlineRequire}
 
-	c.Assert(cfg.GateFamilies(), qt.DeepEquals, []string{"DS", lint.OnlineFamily})
+	c.Assert(cfg.GateRules(), qt.DeepEquals, append(slices.Clone(lint.DefaultGateRules), lint.OnlineCategory))
 }
 
 // The control: a policy that did not select the mode leaves the gate where it
@@ -218,7 +219,7 @@ func TestOnlineMode_GateIsUnchangedWithoutTheMode(t *testing.T) {
 	c := qt.New(t)
 	cfg := &lint.Config{Dialect: "postgres"}
 
-	c.Assert(cfg.GateFamilies(), qt.DeepEquals, []string{"DS"})
+	c.Assert(cfg.GateRules(), qt.DeepEquals, lint.DefaultGateRules)
 }
 
 // A column addition is free only when the catalog can answer for the rows that
@@ -238,7 +239,7 @@ func TestOnlineMode_PostgresReportsARewritingColumnAddition(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(onlineRuleCodes(c, "postgres", test.sql), qt.DeepEquals, []string{"ON101"})
+			c.Assert(onlineRuleCodes(c, "postgres", test.sql), qt.DeepEquals, []string{"online/unproven"})
 		})
 	}
 }
@@ -272,7 +273,7 @@ func TestOnlineMode_PostgresReportsALockHeldAcrossAScan(t *testing.T) {
 		"ALTER TABLE users ADD CONSTRAINT ck CHECK (id > 0) NOT VALID;\n" +
 		"ALTER TABLE users VALIDATE CONSTRAINT ck;\n"
 
-	c.Assert(onlineRuleCodes(c, "postgres", sql), qt.DeepEquals, []string{"ON103"})
+	c.Assert(onlineRuleCodes(c, "postgres", sql), qt.DeepEquals, []string{"online/lock-held-across-scan"})
 }
 
 // Two controls for it. A file that opted out of the transaction commits each
@@ -330,8 +331,8 @@ func TestOnlineMode_RefusesAPolicyThatSoftensIt(t *testing.T) {
 		},
 		{
 			name:    "a rule dropped below blocking",
-			config:  "dialect: postgres\nonline: require\nrules:\n  ON101:\n    severity: warning\n",
-			wantErr: `.*rules.ON101 sets severity "warning".*`,
+			config:  "dialect: postgres\nonline: require\nrules:\n  online/unproven:\n    severity: warning\n",
+			wantErr: `.*rules.online/unproven sets severity "warning".*`,
 		},
 		{
 			name:    "a rule dropped below blocking by its name",
@@ -340,8 +341,8 @@ func TestOnlineMode_RefusesAPolicyThatSoftensIt(t *testing.T) {
 		},
 		{
 			name:    "paths excluded from it",
-			config:  "dialect: postgres\nonline: require\nrules:\n  ON101:\n    exclude: [\"legacy/*\"]\n",
-			wantErr: `.*rules.ON101 excludes paths.*`,
+			config:  "dialect: postgres\nonline: require\nrules:\n  online/unproven:\n    exclude: [\"legacy/*\"]\n",
+			wantErr: `.*rules.online/unproven excludes paths.*`,
 		},
 	}
 
@@ -398,6 +399,6 @@ func TestOnlineMode_StandaloneLintHonorsTheSameSelection(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(slices.ContainsFunc(report.Findings, func(finding lint.Finding) bool {
-		return finding.Rule == "ON101"
+		return finding.Rule == "online/unproven"
 	}), qt.IsTrue, qt.Commentf("findings: %v", rulesOf(report.Findings)))
 }

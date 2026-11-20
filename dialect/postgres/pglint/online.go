@@ -219,7 +219,7 @@ func postgresAddClauseIsOnline(words []string, index int) bool {
 // names a constraint that can arrive unvalidated and does.
 //
 // It is the one answer to "added NOT VALID": this mode reads it to call the
-// clause online, and PG305 and PG306 read it to stay silent about the form
+// clause online, and locking/add-check and locking/add-foreign-key read it to stay silent about the form
 // they recommend (stokaro/ptah#3502). A second predicate would agree with this
 // one only until either learned a new spelling. It takes one clause, because a
 // NOT VALID later in the statement belongs to another constraint, and it reads

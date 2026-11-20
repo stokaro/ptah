@@ -35,6 +35,6 @@ func ExampleService() {
 		fmt.Println(finding.Name, request.Files[finding.File].Name, "statement", finding.Statement)
 	}
 	// Output:
-	// ON102 error [mysql mariadb] statement does not ask MySQL to apply it online
-	// ON102 0000000001_add.up.sql statement 0
+	// online/unproven error [mysql mariadb] statement does not ask MySQL to apply it online
+	// online/unproven 0000000001_add.up.sql statement 0
 }

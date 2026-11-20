@@ -84,7 +84,7 @@ func TestMigrateLintTransactionControlE2E_CompatReportsAndApplyRefuses(t *testin
 			"\n"+
 			"  -- analyzing version 2\n"+
 			"    -- diagnostics detected:\n"+
-			"      -- L3 [TX201]: the migrator refuses transaction control in a migration that runs without a\n"+
+			"      -- L3 [transaction/explicit-transaction]: the migrator refuses transaction control in a migration that runs without a\n"+
 			"         transaction and commits each statement on its own, so the apply stops at this BEGIN;\n"+
 			"         remove the transaction control\n"+
 			"  -- ok (DUR)\n"+
@@ -109,7 +109,7 @@ func TestMigrateLintTransactionControlE2E_CompatErrorSeverityFailsTheRun(t *test
 	lint := compatLintTransactionControl(c, root, "--env", "ci")
 
 	c.Assert(lint.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", lint.Stdout, lint.Stderr))
-	c.Assert(lint.Stdout, qt.Contains, "[TX201]")
+	c.Assert(lint.Stdout, qt.Contains, "[transaction/explicit-transaction]")
 	c.Assert(lint.Stdout, qt.Contains, "1 version with errors")
 }
 
@@ -138,7 +138,7 @@ func TestMigrateLintTransactionControlE2E_NativeReportsBothModes(t *testing.T) {
 			apply := compatApplyTransactionControl(c, root)
 
 			c.Assert(lint.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", lint.Stdout, lint.Stderr))
-			c.Assert(lint.Stdout, qt.Contains, test.line+" [warning] TX201 transaction/explicit-transaction: "+test.message)
+			c.Assert(lint.Stdout, qt.Contains, test.line+" [warning] transaction/explicit-transaction: "+test.message)
 			c.Assert(lint.Stdout, qt.Contains, "1 finding(s).")
 			c.Assert(apply.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", apply.Stdout, apply.Stderr))
 			c.Assert(apply.Stderr, qt.Contains, test.apply)
@@ -157,9 +157,9 @@ func TestMigrateLintTransactionControlE2E_AFileWithoutControlIsClean(t *testing.
 	apply := compatApplyTransactionControl(c, root)
 
 	c.Assert(compat.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", compat.Stdout, compat.Stderr))
-	c.Assert(compat.Stdout, qt.Not(qt.Contains), "TX201")
+	c.Assert(compat.Stdout, qt.Not(qt.Contains), "transaction/explicit-transaction")
 	c.Assert(native.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", native.Stdout, native.Stderr))
-	c.Assert(native.Stdout, qt.Not(qt.Contains), "TX201")
+	c.Assert(native.Stdout, qt.Not(qt.Contains), "transaction/explicit-transaction")
 	c.Assert(apply.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", apply.Stdout, apply.Stderr))
 }
 
@@ -192,9 +192,9 @@ func TestMigrateLintTransactionControlE2E_NativeGolangMigrateDirectory(t *testin
 		"--db-url", database, "--target", "0", "--confirm", "--runner", "golang-migrate")
 
 	c.Assert(lint.ExitCode, qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", lint.Stdout, lint.Stderr))
-	c.Assert(lint.Stdout, qt.Contains, "migrations/1_a.down.sql:1 [warning] TX201 transaction/explicit-transaction: the migrator runs this file in one "+
+	c.Assert(lint.Stdout, qt.Contains, "migrations/1_a.down.sql:1 [warning] transaction/explicit-transaction: the migrator runs this file in one "+
 		"transaction and refuses a statement that controls transaction state, so the rollback stops at this BEGIN")
-	c.Assert(lint.Stdout, qt.Contains, "migrations/2_b.up.sql:1 [warning] TX201 transaction/explicit-transaction: "+transactionControlWrapMessage)
+	c.Assert(lint.Stdout, qt.Contains, "migrations/2_b.up.sql:1 [warning] transaction/explicit-transaction: "+transactionControlWrapMessage)
 	c.Assert(lint.Stdout, qt.Contains, "2 finding(s).")
 	c.Assert(first.ExitCode, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", first.Stdout, first.Stderr))
 	c.Assert(up.ExitCode, qt.Equals, 2, qt.Commentf("stdout:\n%s\nstderr:\n%s", up.Stdout, up.Stderr))

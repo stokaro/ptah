@@ -39,10 +39,10 @@ const (
 	// no rule examined.
 	//
 	// It is not [RuleUnsupportedStatement], and the difference is the whole
-	// reason it exists. SQL002 says the PARSER does not model a statement, at
+	// reason it exists. coverage/unsupported-statement says the PARSER does not model a statement, at
 	// error severity; the kinds this reports are modeled exactly as intended --
 	// `CREATE POLICY` has a test asserting it lints clean -- and simply have no
-	// rule looking at them. Reporting them as unsupported would make SQL002's
+	// rule looking at them. Reporting them as unsupported would make coverage/unsupported-statement's
 	// own message untrue.
 	RuleStatementsNotAnalyzed = "coverage/unanalyzed-statements"
 )
@@ -159,7 +159,7 @@ type Context struct {
 	// bodies are the owner's readings of the routine bodies the file
 	// defines, by the node that defines each.
 	bodies map[ast.Node]routineext.Reading
-	// namesJudged are the nodes whose declared names DDL003 and DDL004
+	// namesJudged are the nodes whose declared names naming/identifier-too-long and naming/identifier-collision
 	// judged, which is every node that declares a name on a dialect whose
 	// server cuts long names, and none elsewhere.
 	namesJudged map[ast.Node]bool
@@ -337,9 +337,9 @@ func statementsNotAnalyzedFinding(source Source, opts Options, kinds []string) F
 // keepEnabled drops the findings a --disable selector covers.
 //
 // The per-rule check inside [lintParsedStatement] cannot answer for the whole
-// command: SQL001 and SQL002 are produced by the parse path, which runs before
+// command: correctness/syntax-error and coverage/unsupported-statement are produced by the parse path, which runs before
 // any rule object exists, so a selector naming either was accepted and silently
-// ignored -- `ptah sql lint --disable SQL001` still reported SQL001 and still
+// ignored -- `ptah sql lint --disable correctness/syntax-error` still reported correctness/syntax-error and still
 // exited 1. Filtering once, where every finding this function returns passes
 // through, is what makes the flag mean the same thing for every identifier the
 // linter can report.
@@ -539,7 +539,7 @@ func unanalyzedStatementLabel(ctx Context, stmt ast.Node) (string, bool) {
 	if _, analyzed := analyzedStatementKinds[reflect.TypeOf(stmt)]; analyzed || ctx.namesJudged[stmt] {
 		return "", false
 	}
-	// A kind the unsupported rule already names is reported by SQL002, whose
+	// A kind the unsupported rule already names is reported by coverage/unsupported-statement, whose
 	// message is about the parser rather than about analysis.
 	if len((unsupportedRoutineRule{}).CheckStatement(ctx, stmt)) > 0 {
 		return "", false
@@ -594,11 +594,11 @@ var unsilenceableRules = []string{RuleParseError, RuleUnsupportedStatement}
 // that nothing was analyzed.
 //
 // The history is why this refuses rather than ignores. A selector naming
-// SQL001 or SQL002 was once accepted and silently dropped -- the finding was
+// correctness/syntax-error or coverage/unsupported-statement was once accepted and silently dropped -- the finding was
 // still reported and the run still exited 1 -- and that was fixed on the
 // principle that "a flag that is accepted and does nothing is worse than a flag
 // that refuses" (internal/sqllint/disable_test.go). Making it work opened the
-// other hole: `ptah sql lint --disable SQL001` over a file the parser cannot
+// other hole: `ptah sql lint --disable correctness/syntax-error` over a file the parser cannot
 // read reports nothing and exits 0, which is the file passing.
 //
 // #1270 asks for the opposite in those words: "Parse/analysis incompleteness is
@@ -795,7 +795,7 @@ func (unsupportedRoutineRule) CheckStatement(ctx Context, stmt ast.Node) []Findi
 }
 
 // analyzedStatementKinds are the statement kinds a rule in this package
-// examines on every dialect. Beside the nodes whose names DDL003 and DDL004
+// examines on every dialect. Beside the nodes whose names naming/identifier-too-long and naming/identifier-collision
 // judged, which depend on the dialect (Context.namesJudged), it is the only way
 // a statement reaches the end of a lint run without being reported, and the
 // direction is the whole point: a node kind added to core/ast joins the
@@ -878,7 +878,7 @@ func statementLabelForName(name string) string {
 // statement sits: a routine that composes SQL inside a condition is the
 // ordinary shape, since a condition is usually what the composition is for.
 // Before the body model carried nesting, an EXECUTE at the top of a body
-// reported SQL003 and the same EXECUTE inside IF or LOOP reported nothing
+// reported coverage/dynamic-sql and the same EXECUTE inside IF or LOOP reported nothing
 // (stokaro/ptah#2393).
 func flattenRoutineStatements(statements []routineext.Statement) []routineext.Statement {
 	flat := make([]routineext.Statement, 0, len(statements))

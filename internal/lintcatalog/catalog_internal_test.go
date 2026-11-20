@@ -23,7 +23,7 @@ func TestJoinRefusesARuleTheCatalogDoesNotDescribe(t *testing.T) {
 	c := qt.New(t)
 
 	registry := append(must.Must(lint.Rules(builtintest.Runtime())), lint.Rule{
-		Code:           "PG112P",
+		Name:           "design/invented-for-this-test",
 		Title:          "invented for this test",
 		Severity:       lint.SeverityWarning,
 		CheckStatement: func(*lint.Statement) (bool, string) { return false, "" },
@@ -32,7 +32,7 @@ func TestJoinRefusesARuleTheCatalogDoesNotDescribe(t *testing.T) {
 	entries, err := migrationEntriesFrom(registry)
 	c.Assert(entries, qt.IsNil)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "PG112P")
+	c.Assert(err.Error(), qt.Contains, "design/invented-for-this-test")
 	c.Assert(err.Error(), qt.Contains, "no catalog entry")
 }
 
@@ -42,7 +42,7 @@ func TestJoinRefusesACatalogRowForARuleThatIsGone(t *testing.T) {
 	c := qt.New(t)
 
 	registry := must.Must(lint.Rules(builtintest.Runtime()))[1:]
-	gone := must.Must(lint.Rules(builtintest.Runtime()))[0].Code
+	gone := must.Must(lint.Rules(builtintest.Runtime()))[0].Name
 
 	entries, err := migrationEntriesFrom(registry)
 	c.Assert(entries, qt.IsNil)

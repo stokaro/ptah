@@ -29,13 +29,13 @@ func TestAnalyzeFS_AnImmutableRoutineThatIsNotIsReported(t *testing.T) {
 			name:     "an IMMUTABLE function reading the clock",
 			sql:      "CREATE FUNCTION stamp() RETURNS timestamptz LANGUAGE SQL IMMUTABLE AS $$ SELECT now() $$;\n",
 			dialect:  "postgres",
-			wantRule: []string{"AC101", "DD102"},
+			wantRule: []string{"correctness/immutable-calls-volatile", "coverage/routine-body"},
 		},
 		{
 			name:     "a DETERMINISTIC function reading the clock",
 			sql:      "CREATE FUNCTION f() RETURNS datetime DETERMINISTIC BEGIN RETURN NOW(); END;\n",
 			dialect:  "mysql",
-			wantRule: []string{"AC101", "DD102"},
+			wantRule: []string{"correctness/immutable-calls-volatile", "coverage/routine-body"},
 		},
 		{
 			// A dollar-quoted body is ONE word, so a rule scanning Words would
@@ -43,20 +43,20 @@ func TestAnalyzeFS_AnImmutableRoutineThatIsNotIsReported(t *testing.T) {
 			name:     "the body is dollar-quoted",
 			sql:      "CREATE FUNCTION f() RETURNS timestamptz LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN RETURN clock_timestamp(); END; $$;\n",
 			dialect:  "postgres",
-			wantRule: []string{"AC101", "DD102"},
+			wantRule: []string{"correctness/immutable-calls-volatile", "coverage/routine-body"},
 		},
 		{
 			// NOT DETERMINISTIC is the opposite promise, not a weaker one.
 			name:     "NOT DETERMINISTIC promises nothing",
 			sql:      "CREATE FUNCTION f() RETURNS datetime NOT DETERMINISTIC BEGIN RETURN NOW(); END;\n",
 			dialect:  "mysql",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			name:     "an immutable routine that calls nothing of the kind",
 			sql:      "CREATE FUNCTION double(a int) RETURNS int LANGUAGE SQL IMMUTABLE AS $$ SELECT a * 2 $$;\n",
 			dialect:  "postgres",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			// The literal control. A string literal is one verbatim token, so
@@ -64,21 +64,21 @@ func TestAnalyzeFS_AnImmutableRoutineThatIsNotIsReported(t *testing.T) {
 			name:     "the call appears only inside a string literal",
 			sql:      "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN EXECUTE 'SELECT now()'; END; $$;\n",
 			dialect:  "postgres",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			// The comment control. Comments are dropped before the scan.
 			name:     "the call appears only in a comment",
 			sql:      "CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql IMMUTABLE AS $$ BEGIN -- now()\n RETURN 1; END; $$;\n",
 			dialect:  "postgres",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 		{
 			// A VOLATILE routine promises nothing, so it may read the clock.
 			name:     "a volatile routine reading the clock",
 			sql:      "CREATE FUNCTION stamp() RETURNS timestamptz LANGUAGE SQL VOLATILE AS $$ SELECT now() $$;\n",
 			dialect:  "postgres",
-			wantRule: []string{"AC101"},
+			wantRule: []string{"coverage/routine-body"},
 		},
 	}
 
@@ -111,7 +111,7 @@ func TestAnalyzeFS_WithoutADialectTheRoutineRuleSaysSo(t *testing.T) {
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), routineFS(sql), lint.Options{DirFormat: migrationfile.DirFormatAtlas})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(unmetRules(analysis.UnmetInputs()), qt.Contains, "DD102")
+	c.Assert(unmetRules(analysis.UnmetInputs()), qt.Contains, "correctness/immutable-calls-volatile")
 }
 
 // TestAnalyzeFS_WithADialectNothingIsUnmet is the control the test above needs:
@@ -127,7 +127,7 @@ func TestAnalyzeFS_WithADialectNothingIsUnmet(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(unmetRules(analysis.UnmetInputs()), qt.Not(qt.Contains), "DD102")
+	c.Assert(unmetRules(analysis.UnmetInputs()), qt.Not(qt.Contains), "correctness/immutable-calls-volatile")
 }
 
 // unmetRules lists the rules an analysis reported as missing an input.

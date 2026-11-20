@@ -19,8 +19,8 @@ func lintOwnerStatement(c *qt.C, dialect, sql string) []sqllint.Finding {
 	return findings
 }
 
-// An ownership statement is read, so it is not SQL002. No rule examines it, so
-// the file is not reported clean either: it carries the one SQL004 line every
+// An ownership statement is read, so it is not coverage/unsupported-statement. No rule examines it, so
+// the file is not reported clean either: it carries the one coverage/unanalyzed-statements line every
 // file of statements without a rule gets.
 func TestLintSource_AnOwnerChangeIsRead_HappyPath(t *testing.T) {
 	for _, test := range []struct {
@@ -46,7 +46,7 @@ func TestLintSource_AnOwnerChangeIsRead_HappyPath(t *testing.T) {
 }
 
 // A dialect whose server has no OWNER TO still reports the statement as one the
-// parser does not model (SQL002), and a malformed one is a parse error (SQL001).
+// parser does not model (coverage/unsupported-statement), and a malformed one is a parse error (correctness/syntax-error).
 func TestLintSource_AnOwnerChange_FailurePath(t *testing.T) {
 	for _, test := range []struct {
 		name, dialect, sql, wantRule, wantMessage string

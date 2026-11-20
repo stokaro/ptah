@@ -49,7 +49,7 @@ func latin1Note(collation string) lintext.BaselineColumn {
 	return costCollated("note", "varchar(10)", "latin1", "latin1", collation, "latin1_swedish_ci")
 }
 
-// TestColumnTypeCopyRule_ReadsTheKeysOnTheColumn pins MY130 to the changes
+// TestColumnTypeCopyRule_ReadsTheKeysOnTheColumn pins rewrite/alter-column-type to the changes
 // measured to copy only because of a key on the column: a collation change
 // on MySQL, and the utf8mb3 to utf8mb4 conversion of a short VARCHAR or
 // CHAR on MySQL with any key and on both engines with a prefix key.
@@ -127,8 +127,8 @@ func TestColumnTypeCopyRule_ReadsTheKeysOnTheColumn(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeCostState(c, test.dialect, test.alter, []lintext.BaselineColumn{test.column}, test.indexes)
-			c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MY130"})
-			message := messageOf(analysis.Findings(), "MY130")
+			c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/alter-column-type"})
+			message := messageOf(analysis.Findings(), "rewrite/alter-column-type")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
@@ -222,7 +222,7 @@ func TestColumnTypeCopyRule_StaysQuietWhereTheKeysAllow(t *testing.T) {
 	}
 }
 
-// TestCharsetConversionCopyRule_ReadsTheKeys pins MY136 to the keyed
+// TestCharsetConversionCopyRule_ReadsTheKeys pins rewrite/convert-charset to the keyed
 // columns a CONVERT TO utf8mb4 copies for, and to MariaDB's whole-key
 // exemption.
 func TestCharsetConversionCopyRule_ReadsTheKeys(t *testing.T) {
@@ -254,8 +254,8 @@ func TestCharsetConversionCopyRule_ReadsTheKeys(t *testing.T) {
 				costColumn("body", "char(10)", "utf8mb3", "utf8mb3"),
 			}
 			analysis := analyzeCostState(c, test.dialect, "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;", columns, test.indexes)
-			c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"MY136"})
-			message := messageOf(analysis.Findings(), "MY136")
+			c.Assert(costCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"rewrite/convert-charset"})
+			message := messageOf(analysis.Findings(), "rewrite/convert-charset")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}

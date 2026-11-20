@@ -24,18 +24,18 @@ func TestSQLLintE2E(t *testing.T) {
 		wantExit   int
 		wantStdout string
 	}{
-		{name: "a dropped view", sql: "DROP VIEW v;\n", wantStdout: "info SQL004 coverage/unanalyzed-statements: no rule examined DROP VIEW in this file"},
-		{name: "a dropped view under IF EXISTS", sql: "DROP VIEW IF EXISTS v;\n", wantStdout: "info SQL004 coverage/unanalyzed-statements: no rule examined DROP VIEW in this file"},
-		{name: "a dropped trigger", sql: "DROP TRIGGER t;\n", wantStdout: "info SQL004 coverage/unanalyzed-statements: no rule examined DROP TRIGGER in this file"},
-		{name: "a savepoint", sql: "SAVEPOINT s;\n", wantStdout: "info SQL004 coverage/unanalyzed-statements: no rule examined SAVEPOINT in this file"},
+		{name: "a dropped view", sql: "DROP VIEW v;\n", wantStdout: "info coverage/unanalyzed-statements: no rule examined DROP VIEW in this file"},
+		{name: "a dropped view under IF EXISTS", sql: "DROP VIEW IF EXISTS v;\n", wantStdout: "info coverage/unanalyzed-statements: no rule examined DROP VIEW in this file"},
+		{name: "a dropped trigger", sql: "DROP TRIGGER t;\n", wantStdout: "info coverage/unanalyzed-statements: no rule examined DROP TRIGGER in this file"},
+		{name: "a savepoint", sql: "SAVEPOINT s;\n", wantStdout: "info coverage/unanalyzed-statements: no rule examined SAVEPOINT in this file"},
 		{name: "a file of comments", sql: "-- nothing\n", wantStdout: "No SQL lint findings."},
-		{name: "a misspelled DROP", sql: "DROP TABEL t;\n", wantExit: 1, wantStdout: "error SQL001 correctness/syntax-error: no engine Ptah reads has this statement: DROP TABEL"},
-		{name: "no statement at all", sql: "FOO BAR;\n", wantExit: 1, wantStdout: "error SQL001 correctness/syntax-error: no engine Ptah reads has this statement: FOO"},
-		{name: "punctuation", sql: "@@@ x;\n", wantExit: 1, wantStdout: "error SQL001 correctness/syntax-error: expected SQL keyword"},
-		{name: "a list SQLite refuses", sql: "DROP VIEW v, w;\n", wantExit: 1, wantStdout: "error SQL001 correctness/syntax-error: expected the end of DROP VIEW"},
-		{name: "a clause SQLite refuses", sql: "DROP VIEW v CASCADE;\n", wantExit: 1, wantStdout: "error SQL002 coverage/unsupported-statement: the SQL parser does not read this statement"},
-		{name: "a statement SQLite refuses", sql: "TRUNCATE t;\n", wantExit: 1, wantStdout: "error SQL002 coverage/unsupported-statement: the SQL parser does not read this statement"},
-		{name: "a statement nothing reads", sql: "SELECT 1;\n", wantExit: 1, wantStdout: "error SQL002 coverage/unsupported-statement: ptah sql lint does not lint SELECT statements yet"},
+		{name: "a misspelled DROP", sql: "DROP TABEL t;\n", wantExit: 1, wantStdout: "error correctness/syntax-error: no engine Ptah reads has this statement: DROP TABEL"},
+		{name: "no statement at all", sql: "FOO BAR;\n", wantExit: 1, wantStdout: "error correctness/syntax-error: no engine Ptah reads has this statement: FOO"},
+		{name: "punctuation", sql: "@@@ x;\n", wantExit: 1, wantStdout: "error correctness/syntax-error: expected SQL keyword"},
+		{name: "a list SQLite refuses", sql: "DROP VIEW v, w;\n", wantExit: 1, wantStdout: "error correctness/syntax-error: expected the end of DROP VIEW"},
+		{name: "a clause SQLite refuses", sql: "DROP VIEW v CASCADE;\n", wantExit: 1, wantStdout: "error coverage/unsupported-statement: the SQL parser does not read this statement"},
+		{name: "a statement SQLite refuses", sql: "TRUNCATE t;\n", wantExit: 1, wantStdout: "error coverage/unsupported-statement: the SQL parser does not read this statement"},
+		{name: "a statement nothing reads", sql: "SELECT 1;\n", wantExit: 1, wantStdout: "error coverage/unsupported-statement: ptah sql lint does not lint SELECT statements yet"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

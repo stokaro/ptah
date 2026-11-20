@@ -71,7 +71,7 @@ func TestAnalyzeFS_SchemaScopeFiltersFindings(t *testing.T) {
 			base:  publicBase,
 			sql:   "DROP FUNCTION recalc();\n",
 			scope: "public",
-			want:  []string{"DS107"},
+			want:  []string{"destructive/drop-object"},
 		},
 		{
 			name:  "a dropped trigger is measured by its table, outside the scope",
@@ -85,7 +85,7 @@ func TestAnalyzeFS_SchemaScopeFiltersFindings(t *testing.T) {
 			base:  publicBase,
 			sql:   "DROP TRIGGER t ON audit_log;\n",
 			scope: "public",
-			want:  []string{"DS107"},
+			want:  []string{"destructive/drop-object"},
 		},
 		{
 			name:  "multi-target drop outside the scope is not reported",
@@ -113,42 +113,42 @@ func TestAnalyzeFS_SchemaScopeFiltersFindings(t *testing.T) {
 			base:  appBase,
 			sql:   "DROP TABLE app.\"Users\", app.audit_log;\n",
 			scope: "",
-			want:  []string{"DS101", "DS101"},
+			want:  []string{"destructive/drop-table", "destructive/drop-table"},
 		},
 		{
 			name:  "unqualified targets in the scope are reported",
 			base:  publicBase,
 			sql:   "DROP TABLE users, audit_log;\n",
 			scope: "public",
-			want:  []string{"DS101", "DS101"},
+			want:  []string{"destructive/drop-table", "destructive/drop-table"},
 		},
 		{
 			name:  "a single unqualified target in the scope is reported",
 			base:  publicBase,
 			sql:   "DROP TABLE users;\n",
 			scope: "public",
-			want:  []string{"DS101"},
+			want:  []string{"destructive/drop-table"},
 		},
 		{
 			name:  "targets qualified with the scope itself are reported",
 			base:  "CREATE TABLE public.users (id int);\nCREATE TABLE public.audit_log (id int);\n",
 			sql:   "DROP TABLE public.users, public.audit_log;\n",
 			scope: "public",
-			want:  []string{"DS101", "DS101"},
+			want:  []string{"destructive/drop-table", "destructive/drop-table"},
 		},
 		{
 			name:  "only the in-scope target of a mixed drop is reported",
 			base:  mixedBase,
 			sql:   "DROP TABLE users, app.audit_log;\n",
 			scope: "public",
-			want:  []string{"DS101"},
+			want:  []string{"destructive/drop-table"},
 		},
 		{
 			name:  "the scope itself is the reviewed schema, not always public",
 			base:  appBase,
 			sql:   "DROP TABLE app.\"Users\", app.audit_log;\n",
 			scope: "app",
-			want:  []string{"DS101", "DS101"},
+			want:  []string{"destructive/drop-table", "destructive/drop-table"},
 		},
 	}
 
@@ -269,10 +269,10 @@ func TestAnalyzeFS_SchemaScopeFiltersChanges(t *testing.T) {
 // (stokaro/ptah#1249).
 //
 // Two shapes disagreed before. An `ALTER TABLE app.users ADD CONSTRAINT ...`
-// contributed no change under a run reviewing `public` and still raised PG105,
+// contributed no change under a run reviewing `public` and still raised locking/add-unique-constraint,
 // because that rule attaches no subject and the finding filter deliberately
 // keeps a finding it cannot place. A `CREATE INDEX idx ON app.users (id)`
-// contributed a change and raised PG101, because an index was measured by its
+// contributed a change and raised locking/create-index, because an index was measured by its
 // own name, which never carries a schema.
 //
 // Each row asserts both outputs, because either alone would accept a fix that
@@ -314,7 +314,7 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 			sql:          "ALTER TABLE public.t DROP COLUMN c;\n",
 			scope:        "public",
 			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "c"}},
-			wantFindings: []string{"DS102"},
+			wantFindings: []string{"destructive/drop-column"},
 		},
 		{
 			name:         "a column dropped outside the scope reports neither",
@@ -330,7 +330,7 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 			sql:          "CREATE INDEX idx ON public.users (id);\n",
 			scope:        "public",
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "idx"}},
-			wantFindings: []string{"PG101"},
+			wantFindings: []string{"locking/create-index"},
 		},
 		{
 			name:         "an index on an unqualified table stays under review",
@@ -338,7 +338,7 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 			sql:          "CREATE INDEX idx ON users (id);\n",
 			scope:        "public",
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "idx"}},
-			wantFindings: []string{"PG101"},
+			wantFindings: []string{"locking/create-index"},
 		},
 		{
 			name:         "an unrestricted run still reports the out-of-schema index",
@@ -346,7 +346,7 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 			sql:          "CREATE INDEX idx ON app.users (id);\n",
 			scope:        "",
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "idx"}},
-			wantFindings: []string{"PG101"},
+			wantFindings: []string{"locking/create-index"},
 		},
 		{
 			name:         "an unrestricted run still reports the out-of-schema constraint",
@@ -354,7 +354,7 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 			sql:          "ALTER TABLE app.users ADD CONSTRAINT users_id_key UNIQUE (id);\n",
 			scope:        "",
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "users_id_key"}},
-			wantFindings: []string{"MF101", "PG105"},
+			wantFindings: []string{"data-dependent/add-unique-index", "locking/add-unique-constraint"},
 		},
 	}
 
@@ -378,10 +378,10 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 // `ALTER TABLE app.child ADD CONSTRAINT ... FOREIGN KEY (pid) REFERENCES
 // public.parent (id)` names two tables. PostgreSQL validates every existing row
 // and holds a SHARE ROW EXCLUSIVE lock on `public.parent` for the duration,
-// which is exactly what `PG306` reports, so under a run reviewing `public` the
+// which is exactly what `locking/add-foreign-key` reports, so under a run reviewing `public` the
 // hazard lands on a table the run is responsible for. Measured on the pinned
 // community binary v1.3.0 with `?search_path=public`: it reports no diagnostic
-// and exits 0, so keeping `PG306` is Ptah being stricter at exit 0 rather than
+// and exits 0, so keeping `locking/add-foreign-key` is Ptah being stricter at exit 0 rather than
 // looser, and it is the behavior the base branch already had.
 //
 // Both outputs are asserted on every row because they answer different
@@ -406,7 +406,7 @@ func TestAnalyzeFS_SchemaScopeRemovesOnlyStatementsNamingNothingUnderReview(t *t
 			name:         "a foreign key referencing the reviewed schema keeps its statement under review",
 			sql:          "ALTER TABLE app.child ADD CONSTRAINT child_pid_fkey FOREIGN KEY (pid) REFERENCES public.parent (id);\n",
 			wantChanges:  make([]changeProjection, 0),
-			wantFindings: []string{"PG306"},
+			wantFindings: []string{"locking/add-foreign-key"},
 		},
 		{
 			name:         "a foreign key referencing only the unreviewed schema reports neither",
@@ -418,16 +418,16 @@ func TestAnalyzeFS_SchemaScopeRemovesOnlyStatementsNamingNothingUnderReview(t *t
 			name:         "an unqualified foreign key reference resolves into the reviewed schema",
 			sql:          "ALTER TABLE app.child ADD CONSTRAINT child_pid_fkey FOREIGN KEY (pid) REFERENCES parent (id);\n",
 			wantChanges:  make([]changeProjection, 0),
-			wantFindings: []string{"PG306"},
+			wantFindings: []string{"locking/add-foreign-key"},
 		},
 		{
 			name:        "a foreign key written inline on an added column is the same reference",
 			sql:         "ALTER TABLE app.users ADD COLUMN pid int REFERENCES public.parent (id), ADD CONSTRAINT users_id_key UNIQUE (id);\n",
 			wantChanges: make([]changeProjection, 0),
 			// The unique key is on app.users, outside the reviewed schema, so
-			// its MF101 stays out while the statement itself is reviewed for
+			// its data-dependent/add-unique-index stays out while the statement itself is reviewed for
 			// the reference into public.
-			wantFindings: []string{"PG105"},
+			wantFindings: []string{"locking/add-unique-constraint"},
 		},
 		{
 			name:         "an inline foreign key outside the reviewed schema reports neither",
@@ -445,7 +445,7 @@ func TestAnalyzeFS_SchemaScopeRemovesOnlyStatementsNamingNothingUnderReview(t *t
 			name:         "a foreign key added inside the reviewed schema reports both",
 			sql:          "ALTER TABLE public.parent ADD CONSTRAINT parent_self_fkey FOREIGN KEY (id) REFERENCES public.parent (id);\n",
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "parent_self_fkey"}},
-			wantFindings: []string{"PG306"},
+			wantFindings: []string{"locking/add-foreign-key"},
 		},
 	}
 
@@ -471,8 +471,8 @@ func TestAnalyzeFS_SchemaScopeRemovesOnlyStatementsNamingNothingUnderReview(t *t
 // after a scoped-out one would pass the rest of this file.
 //
 // Measured with `?search_path=public`: the two-statement version reports one
-// change and one diagnostic both on the pinned community binary v1.3.0 (`MF101`)
-// and here (`PG105`), where the base branch reported two of each.
+// change and one diagnostic both on the pinned community binary v1.3.0 (`data-dependent/add-unique-index`)
+// and here (`locking/add-unique-constraint`), where the base branch reported two of each.
 func TestAnalyzeFS_SchemaScopeExcludesOnlyTheScopedOutStatement(t *testing.T) {
 	const base = "CREATE SCHEMA app;\nCREATE TABLE app.users (id int);\nCREATE TABLE public.t (id int);\n"
 	const inScope = "ALTER TABLE public.t ADD CONSTRAINT t_id_key UNIQUE (id);\n"
@@ -488,19 +488,19 @@ func TestAnalyzeFS_SchemaScopeExcludesOnlyTheScopedOutStatement(t *testing.T) {
 			name:         "the statement before a scoped-out one keeps its change and its finding",
 			sql:          inScope + scopedOut,
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "t_id_key"}},
-			wantFindings: []string{"MF101", "PG105"},
+			wantFindings: []string{"data-dependent/add-unique-index", "locking/add-unique-constraint"},
 		},
 		{
 			name:         "the statement after a scoped-out one keeps its change and its finding",
 			sql:          scopedOut + inScope,
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "t_id_key"}},
-			wantFindings: []string{"MF101", "PG105"},
+			wantFindings: []string{"data-dependent/add-unique-index", "locking/add-unique-constraint"},
 		},
 		{
 			name:         "a scoped-out statement between two in-scope ones removes only itself",
 			sql:          inScope + scopedOut + "ALTER TABLE public.t ADD CONSTRAINT t_id_check CHECK (id > 0);\n",
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "t_id_key"}, {lint.SchemaChangeAdd, "t_id_check"}},
-			wantFindings: []string{"MF101", "PG105", "PG305"},
+			wantFindings: []string{"data-dependent/add-unique-index", "locking/add-unique-constraint", "locking/add-check"},
 		},
 		{
 			name:         "two scoped-out statements report neither",
@@ -529,7 +529,7 @@ func TestAnalyzeFS_SchemaScopeExcludesOnlyTheScopedOutStatement(t *testing.T) {
 //
 // A statement is excluded only when the scope rejected something it named, never
 // merely because it produced no change. Reading it the other way would silence
-// DS106 here, on a statement whose schema was never established.
+// destructive/remove-enum-value here, on a statement whose schema was never established.
 func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -543,14 +543,14 @@ func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 			base:         "CREATE TABLE public.t (id int);\n",
 			sql:          "DELETE FROM pg_enum WHERE enumtypid = 1;\n",
 			wantChanges:  make([]changeProjection, 0),
-			wantFindings: []string{"DS106"},
+			wantFindings: []string{"destructive/remove-enum-value"},
 		},
 		{
 			name:         "the modeled destructive control on the same schema counts its change",
 			base:         "CREATE TABLE public.t (id int);\n",
 			sql:          "DROP TABLE public.t;\n",
 			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.t"}},
-			wantFindings: []string{"DS101"},
+			wantFindings: []string{"destructive/drop-table"},
 		},
 	}
 
@@ -584,15 +584,15 @@ func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 // v1.3.0. Each version 2 runs after a version 1 that creates what it touches:
 //
 //	version 2                | community v1.3.0             | ptah-compat now
-//	DROP INDEX public.idx;   | 1 change,  0 diagnostics, rc 0 | 1 change, 1 diagnostic (PG106), rc 0
+//	DROP INDEX public.idx;   | 1 change,  0 diagnostics, rc 0 | 1 change, 1 diagnostic (locking/drop-index), rc 0
 //	DROP INDEX app.idx;      | 0 changes, 0 diagnostics, rc 0 | 0 changes, 0 diagnostics, rc 0
-//	DROP TABLE public.t;     | 1 change,  1 diagnostic, rc 1  | 1 change, 1 diagnostic (DS102), rc 1
+//	DROP TABLE public.t;     | 1 change,  1 diagnostic, rc 1  | 1 change, 1 diagnostic (destructive/drop-column), rc 1
 //
 // The out-of-schema row is where the qualifier question lands, and it lands
 // there because the qualifier lives on the index name: `app.idx` is a reference
-// the scope can read, so the statement is scoped out whole and takes PG106 with
+// the scope can read, so the statement is scoped out whole and takes locking/drop-index with
 // it, by the same rule that removes an out-of-scope ALTER TABLE's finding
-// (stokaro/ptah#1249). Reporting PG106 for `app` is the permitted stricter
+// (stokaro/ptah#1249). Reporting locking/drop-index for `app` is the permitted stricter
 // direction; matching the community binary makes nothing about the reviewed
 // schema quieter, because the `public` row reports it either way.
 func TestAnalyzeFS_DropIndexCountsAsASchemaChange(t *testing.T) {
@@ -611,30 +611,30 @@ func TestAnalyzeFS_DropIndexCountsAsASchemaChange(t *testing.T) {
 			base:         publicBase,
 			sql:          "DROP INDEX public.idx;\n",
 			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.idx"}},
-			wantFindings: []string{"PG106"},
+			wantFindings: []string{"locking/drop-index"},
 		},
 		{
 			name:         "dropping an unqualified index counts one change",
 			base:         publicBase,
 			sql:          "DROP INDEX idx;\n",
 			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "idx"}},
-			wantFindings: []string{"PG106"},
+			wantFindings: []string{"locking/drop-index"},
 		},
 		{
-			// PG106 gives way to PG103 here: the statement took the advice and
+			// locking/drop-index gives way to transaction/concurrent-index here: the statement took the advice and
 			// dropped concurrently, which then needs a no-transaction file.
 			name:         "CONCURRENTLY IF EXISTS still counts one change",
 			base:         publicBase,
 			sql:          "DROP INDEX CONCURRENTLY IF EXISTS public.idx;\n",
 			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.idx"}},
-			wantFindings: []string{"PG103"},
+			wantFindings: []string{"transaction/concurrent-index"},
 		},
 		{
 			name:         "CASCADE counts one change",
 			base:         publicBase,
 			sql:          "DROP INDEX public.idx CASCADE;\n",
 			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.idx"}},
-			wantFindings: []string{"PG106"},
+			wantFindings: []string{"locking/drop-index"},
 		},
 		{
 			name:         "dropping an index outside the reviewed schema counts none and reports none",
@@ -648,7 +648,7 @@ func TestAnalyzeFS_DropIndexCountsAsASchemaChange(t *testing.T) {
 			base:         "CREATE TABLE public.t (id int);\n",
 			sql:          "DROP TABLE public.t;\n",
 			wantChanges:  []changeProjection{{lint.SchemaChangeDrop, "public.t"}},
-			wantFindings: []string{"DS101"},
+			wantFindings: []string{"destructive/drop-table"},
 		},
 	}
 
@@ -724,13 +724,13 @@ func TestAnalyzeFS_SchemaScopeKeepsUnattributableFindings(t *testing.T) {
 			name: "TRUNCATE of an out-of-scope table stays reported",
 			base: "CREATE SCHEMA app;\nCREATE TABLE app.users (id int);\n",
 			sql:  "TRUNCATE TABLE app.users;\n",
-			want: []string{"DS108"},
+			want: []string{"destructive/truncate-table"},
 		},
 		{
 			name: "dropping an out-of-scope database object the parser does not read stays reported",
 			base: "CREATE SCHEMA app;\nCREATE TABLE app.users (id int);\n",
 			sql:  "DROP SCHEMA app;\n",
-			want: []string{"DS107"},
+			want: []string{"destructive/drop-object"},
 		},
 	}
 

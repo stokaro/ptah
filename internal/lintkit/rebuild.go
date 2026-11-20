@@ -22,8 +22,8 @@ import (
 //	         ALTER TABLE s RENAME TO t; DROP TABLE r
 //
 // The rows of t are in the copy, and the copy is t once the file has run, so
-// the DROP TABLE loses no row (DS101), and the name deployed code reads comes
-// back before the file ends (BC101, BC103). A DROP TABLE outside that shape is
+// the DROP TABLE loses no row (destructive/drop-table), and the name deployed code reads comes
+// back before the file ends (rollout/rename, rollout/drop-table). A DROP TABLE outside that shape is
 // a drop, and is reported as one.
 //
 // The shape is matched strictly, as consecutive statements: a write to t
@@ -46,7 +46,7 @@ import (
 //
 // Which columns the copy has to carry depends on the old table, which the
 // text alone does not show. Where its columns are known, a copy that loses
-// one, or leaves one out entirely, is not a rebuild, and DS101 reports the
+// one, or leaves one out entirely, is not a rebuild, and destructive/drop-table reports the
 // drop. Where they are not known, any column the copy writes from something
 // other than itself may be one of them, so that copy is not a rebuild either;
 // a column it leaves out cannot be seen there. The YDB provider recognizes
@@ -768,7 +768,7 @@ func tableRenameOf(stmt *lintext.Statement) (from, to TableReference, ok bool) {
 
 // sameTableRef reports whether two folded references name one table: equal,
 // or equal in their last component when one of them names no schema, the
-// comparison DS101's own exemption makes.
+// comparison destructive/drop-table's own exemption makes.
 func sameTableRef(a, b string) bool {
 	return RefersToCreated(map[string]bool{b: true}, a)
 }

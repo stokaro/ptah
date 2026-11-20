@@ -7,8 +7,8 @@
 // It is MySQL knowledge, so it belongs to the MySQL owner
 // (ptah.run/dialect/mysql/mysqllint), whose MY rules read it. It sits here,
 // shared, because two common rules of ptah.run/migration/lint read it too,
-// and the host must not import an owner. DS103 keeps a MySQL arm that reads
-// it to tell an unchanged type from a changed one. DD103 reads the MODIFY,
+// and the host must not import an owner. data-dependent/alter-column-type keeps a MySQL arm that reads
+// it to tell an unchanged type from a changed one. data-dependent/set-not-null reads the MODIFY,
 // CHANGE and ALTER COLUMN type it parses on every engine that restates the
 // whole column, so it serves SQL Server and ClickHouse as well as MySQL and
 // MariaDB. Both arms are on the stokaro/ptah#4140 list of engine arms that

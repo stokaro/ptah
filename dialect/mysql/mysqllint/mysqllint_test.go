@@ -43,7 +43,7 @@ func TestRules(t *testing.T) {
 		[]any{[]string{"mysql", "mariadb"}, []string{"mysql"}, []string{"mariadb"}, []string{"mysql", "mariadb"}})
 }
 
-// ON102 reports a statement that does not ask the server to apply it online,
+// online/unproven reports a statement that does not ask the server to apply it online,
 // in either direction, and leaves one that does.
 func TestService_CheckMigrations_Online(t *testing.T) {
 	const message = "this statement does not ask the server to apply it without blocking writes; " +
@@ -74,7 +74,7 @@ func TestService_CheckMigrations_Online(t *testing.T) {
 }
 
 // A type change the starting state shows copying the table is reported by
-// MY130 on the second of the two calls, and named as a baseline subject on
+// rewrite/alter-column-type on the second of the two calls, and named as a baseline subject on
 // both.
 func TestService_CheckMigrations_BaselineRule(t *testing.T) {
 	c := qt.New(t)
@@ -106,7 +106,7 @@ func TestService_CheckMigrations_FailurePath(t *testing.T) {
 		codes   []string
 		wantErr string
 	}{
-		{"a code the owner does not publish", context.Background(), []string{"locking/create-index"}, `.*no rule of code PG101`},
+		{"a code the owner does not publish", context.Background(), []string{"locking/create-index"}, `.*no rule of code locking/create-index`},
 		{"cancellation", canceled, []string{"online/unproven"}, `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {

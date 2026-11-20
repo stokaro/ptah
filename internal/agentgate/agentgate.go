@@ -372,7 +372,7 @@ func (r *Runner) migrationSQL(ctx context.Context, scope *agentworkspace.Scope) 
 func lintDiagnostics(name string, findings []sqllint.Finding) []Diagnostic {
 	diagnostics := make([]Diagnostic, 0, len(findings))
 	for _, finding := range findings {
-		// SQL004 says which statement kinds no rule examined. That is a fact
+		// coverage/unanalyzed-statements says which statement kinds no rule examined. That is a fact
 		// about this linter's coverage rather than about the change under
 		// review, and this package has two severities, so it would reach an
 		// agent as a warning on almost every migration. `ptah sql lint` is

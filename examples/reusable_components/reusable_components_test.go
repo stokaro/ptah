@@ -153,7 +153,7 @@ func TestCustomLintRule(t *testing.T) {
 	findings, err := lint.LintFS(c.Context(), must.Must(builtin.New()), fsys, lint.Options{
 		Dialect: "postgres",
 		ExtraRules: []lint.Rule{{
-			Code:     "ORG101",
+			Name:     "ORG101",
 			Title:    "TEXT column without explicit limit",
 			Severity: lint.SeverityWarning,
 			CheckStatement: func(stmt *lint.Statement) (bool, string) {

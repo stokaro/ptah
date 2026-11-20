@@ -603,7 +603,7 @@ CREATE TABLE e1 PARTITION OF events FOR VALUES FROM ('2026-01-01') TO ('2027-01-
 	c.Assert(down, qt.Contains, `CREATE TABLE "e2" PARTITION OF "events" FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');`)
 
 	out, err = ptah("migrations", "up", "--db-url", dev.url, "--migrations-dir", dir)
-	c.Assert(err, qt.ErrorMatches, `(?s)error running migrations: pending migrations contain destructive statements.*DS101.*`, qt.Commentf("%s", out))
+	c.Assert(err, qt.ErrorMatches, `(?s)error running migrations: pending migrations contain destructive statements.*destructive/drop-table.*`, qt.Commentf("%s", out))
 	c.Assert(dev.partitions(c), qt.HasLen, 2)
 
 	out, err = ptah("migrations", "up", "--db-url", dev.url, "--migrations-dir", dir, "--allow-destructive")

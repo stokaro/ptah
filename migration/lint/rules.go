@@ -230,7 +230,7 @@ func dataSafetyRules() []Rule {
 // constraintDeletionRules covers the CD family: dropping a constraint whose type
 // is recoverable from the SQL, split by constraint type so operators get a
 // precise per-type signal. The untyped ANSI DROP CONSTRAINT <name> form stays in
-// DS105 (dataSafetyRules) because its type is not determinable from the SQL.
+// integrity/drop-untyped-constraint (dataSafetyRules) because its type is not determinable from the SQL.
 func constraintDeletionRules() []Rule {
 	return []Rule{
 		foreignKeyDroppedRule(),
@@ -239,11 +239,11 @@ func constraintDeletionRules() []Rule {
 	}
 }
 
-// tableDroppedAdvice is the remediation every DS101 finding carries, kept in one
+// tableDroppedAdvice is the remediation every destructive/drop-table finding carries, kept in one
 // place because the named and unnamed message forms must not drift apart.
 const tableDroppedAdvice = "take a verified backup first and consider a rename-and-retire window instead"
 
-// tableDroppedRule reports DS101 on a DROP TABLE and, on MariaDB, on a
+// tableDroppedRule reports destructive/drop-table on a DROP TABLE and, on MariaDB, on a
 // CREATE OR REPLACE TABLE. The replace form drops the named table and
 // recreates it empty -- measured on MariaDB 12.3.3, a table holding rows
 // holds none once its CREATE OR REPLACE TABLE runs -- so it destroys existing
@@ -306,7 +306,7 @@ func tableDroppedRule() Rule {
 
 // tableRenamedFindings reports the table names a file retires by renaming them,
 // on the compatibility surface only. See [renamedNames] for why a rename is
-// classified as destructive there and as BC101 natively, and why the
+// classified as destructive there and as rollout/rename natively, and why the
 // destructive form has to carry a DS code.
 //
 // One finding per retired table, ordered by logical name within the statement,
@@ -428,7 +428,7 @@ func replacedTableRef(w, sourceWords []string) (ref lintkit.TableReference, isRe
 }
 
 // tableReplacedFinding reports the table a CREATE OR REPLACE TABLE statement
-// destroys, in [tableDroppedRule]'s DS101.
+// destroys, in [tableDroppedRule]'s destructive/drop-table.
 func tableReplacedFinding(filePath string, line, statementIndex int, table lintkit.TableReference) Finding {
 	message := "CREATE OR REPLACE TABLE permanently deletes the table and every row in it; " + tableDroppedAdvice
 	var subjects []Subject
@@ -465,11 +465,11 @@ func logicalObjectName(ref string) string {
 const columnDroppedAdvice = "deploy readers that no longer use the column first, then drop it in a later release"
 
 // renameRetiredNameAdvice is the remediation every rename-derived DS finding
-// carries. It is BC101's advice, so the two classifications of one rename (see
+// carries. It is rollout/rename's advice, so the two classifications of one rename (see
 // [renamedNames]) cannot drift into prescribing different remediations.
 const renameRetiredNameAdvice = "application versions deployed against the old name fail instantly; prefer add-new/backfill/drop-old across releases"
 
-// columnDroppedRule reports DS102 on a DROP COLUMN. It is file-level because a
+// columnDroppedRule reports destructive/drop-column on a DROP COLUMN. It is file-level because a
 // drop of a column the same file added, or of a column of a table it created,
 // deletes no value that existed before the file ran, and the rename form
 // consults the tables the file created; see [newColumnDrops].
@@ -548,8 +548,8 @@ func rebuildColumnLossFindings(file *File) []Finding {
 
 // columnDroppedWithReadersRule names what breaks when a column goes.
 //
-// DS102 says a drop deletes data. It never said what else the column was
-// holding up: `DROP COLUMN email` under a view that selects it reported DS102
+// destructive/drop-column says a drop deletes data. It never said what else the column was
+// holding up: `DROP COLUMN email` under a view that selects it reported destructive/drop-column
 // alone, and the operator learned about the view when the migration ran, which
 // is the whole failure #1270's criterion 9 records.
 //
@@ -647,7 +647,7 @@ func pluralize(singular, plural string, count int) string {
 // TO mail` (MySQL grammar) is one diagnostic naming both columns, under a
 // single suggested fix, in the order the clauses are written. That is the same
 // shape a multi-clause DROP COLUMN produces, which is what the compatibility
-// renderer's plural DS103 wording was measured and built for.
+// renderer's plural data-dependent/alter-column-type wording was measured and built for.
 func columnRenamedFindings(file *File) []Finding {
 	if file.compatibility != CompatibilityProfileAtlas {
 		return nil
@@ -698,7 +698,7 @@ func renamedColumnSubjects(names []renamedName) []Subject {
 	return subjects
 }
 
-// columnTypeChangedRule (DS103) reads the statement text and lets the schema
+// columnTypeChangedRule (data-dependent/alter-column-type) reads the statement text and lets the schema
 // state the version starts from take away a finding it establishes to be
 // wrong: a clause that restates the column's current type; see
 // [typeUnchangedByState].
@@ -745,7 +745,7 @@ func notNullDroppedRule() Rule {
 	}
 }
 
-// constraintDroppedRule (DS105) is the untyped fallback for the ANSI
+// constraintDroppedRule (integrity/drop-untyped-constraint) is the untyped fallback for the ANSI
 // DROP CONSTRAINT <name> form, whose constraint type is not recoverable from the
 // SQL. The typed MySQL-family forms (DROP FOREIGN KEY / CHECK / PRIMARY KEY) are
 // reported by the more specific CD family, so a statement is never double-flagged.
@@ -1012,13 +1012,13 @@ func databaseObjectDroppedRule() Rule {
 	}
 }
 
-// dropsDatabaseObject reports a statement DS107 reports: a drop of an object
+// dropsDatabaseObject reports a statement destructive/drop-object reports: a drop of an object
 // whose loss removes behavior, principals or data.
 func dropsDatabaseObject(stmt *Statement) bool {
 	return scanDestructiveObjectDrop(stmt.Words) || stmt.hasEffect(lintext.FactStatefulDrop) || scanPrincipalDrop(stmt.Words, stmt.Target)
 }
 
-// objectDropBaselineSubjects are the statements DS107 reads the starting state
+// objectDropBaselineSubjects are the statements destructive/drop-object reads the starting state
 // for: the drops it reports that hold a change only that state decides
 // ([stateMayDecide]).
 func objectDropBaselineSubjects(file *File) []int {
@@ -1062,7 +1062,7 @@ func rlsDisabledRule() Rule {
 // rlsForceRemovedRule reports the other way to take row-level security away
 // from a table. NO FORCE leaves the policies in force for every role but the
 // table's owner, which then reads and writes past all of them -- and the owner
-// is often the role an application connects as. DS109 does not cover it: its
+// is often the role an application connects as. security/disable-row-level-security does not cover it: its
 // title says row-level security is disabled, and here it stays enabled.
 func rlsForceRemovedRule() Rule {
 	return Rule{
@@ -1090,7 +1090,7 @@ func dataDependentRules() []Rule {
 			// File-level: adding a NOT NULL column to a table this same migration
 			// created targets an empty table, so the add cannot fail on existing
 			// rows and is exempt — the ADD-side analogue of the create-then-drop
-			// exemption in DS101 (tableDroppedRule).
+			// exemption in destructive/drop-table (tableDroppedRule).
 			CheckFile: notNullWithoutDefaultFindings,
 			// The ADD COLUMN half reads text. The rename half cannot: the
 			// retired column's type, nullability and default live in an earlier
@@ -1140,7 +1140,7 @@ func notNullWithoutDefaultFindings(file *File) []Finding {
 // the introduction of another (see [renamedNames]); the retirement is already
 // reported as destructive, and this is its other half. If the retired column
 // rejected NULL and had no default, the introduced name is a non-nullable column
-// with no default, which is exactly what DD101 is about. Measured against the
+// with no default, which is exactly what data-dependent/add-not-null-column is about. Measured against the
 // pinned community binary v1.3.0 on PostgreSQL 16: `CREATE TABLE users (id int
 // NOT NULL)` in one file and `ALTER TABLE users RENAME COLUMN id TO oid` in the
 // next reports BOTH the drop of "id" and the add of an `integer` column "oid",
@@ -1186,7 +1186,7 @@ func renamedColumnAddFindings(file *File) []Finding {
 
 // renamedColumnAddSubject resolves the column a rename introduces against the
 // schema state its version starts from, and reports whether that column is the
-// non-nullable, default-less shape DD101 covers.
+// non-nullable, default-less shape data-dependent/add-not-null-column covers.
 //
 // Every unresolved case returns false: an unreadable rename, a column the
 // baseline does not carry, or no baseline at all. Reporting requires having
@@ -1302,7 +1302,7 @@ func migrationFormRules() []Rule {
 			Title:    "non-conventional file name",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
-				// MF105P reports a file a run refuses the directory for.
+				// file-form/refused-file reports a file a run refuses the directory for.
 				if file.WellFormedName || file.RunRefusal != "" {
 					return nil
 				}
@@ -1511,7 +1511,7 @@ func scanDropCheck(w []string) bool { return lintkit.ScanDropClause(w, "DROP", "
 
 // scanDropNamedConstraint reports whether an ALTER TABLE statement drops a
 // constraint by name via the ANSI DROP CONSTRAINT <name> form, whose constraint
-// type is not recoverable from the SQL. This is the untyped fallback (DS105);
+// type is not recoverable from the SQL. This is the untyped fallback (integrity/drop-untyped-constraint);
 // the typed forms above are reported by the CD family.
 func scanDropNamedConstraint(w []string) bool { return lintkit.ScanDropClause(w, "DROP", "CONSTRAINT") }
 
@@ -1520,7 +1520,7 @@ func scanDropNamedConstraint(w []string) bool { return lintkit.ScanDropClause(w,
 // Both forms are anchored on the statement they belong to, which is the whole
 // point. Unanchored, the scan walked every word a statement carried -- and a
 // routine body is words. `CREATE FUNCTION f() ... BEGIN ATOMIC DELETE FROM
-// pg_enum; END` reported DS106 at error severity, against the one family the
+// pg_enum; END` reported destructive/remove-enum-value at error severity, against the one family the
 // apply gate refuses on, for a migration that creates a function and removes no
 // enum value. The `$$`-quoted spelling of the same body did not, because a
 // dollar-quoted body is one token: the rule's answer depended on how the author
@@ -1528,7 +1528,7 @@ func scanDropNamedConstraint(w []string) bool { return lintkit.ScanDropClause(w,
 //
 // The tree already pins the principle this restores: a DROP TABLE inside a
 // procedure body runs when somebody calls the procedure and never at migration
-// time (migration/lint/compound_routine_body_test.go). DS101 and DS103 were
+// time (migration/lint/compound_routine_body_test.go). destructive/drop-table and data-dependent/alter-column-type were
 // anchored and held it; this scan was the one that was not.
 func scanEnumValueRemoval(w []string) bool {
 	if lintkit.HasWordPrefix(w, "DELETE", "FROM", "PG_ENUM") {
@@ -1541,7 +1541,7 @@ func scanEnumValueRemoval(w []string) bool {
 // scanDestructiveObjectDrop reports a DROP of an object kind every dialect
 // that has it spells alike. A drop that loses state only one engine's objects
 // hold -- a YDB topic's messages, say -- is that engine's owner's to
-// recognize, and reaches DS107 as a [lintext.FactStatefulDrop] effect.
+// recognize, and reaches destructive/drop-object as a [lintext.FactStatefulDrop] effect.
 func scanDestructiveObjectDrop(w []string) bool {
 	if len(w) < 2 || w[0] != "DROP" {
 		return false

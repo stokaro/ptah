@@ -51,7 +51,7 @@ func TestWriteUnmetInputNoticeNamesTheRule(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(out.String(), qt.Contains, "DD101")
+	c.Assert(out.String(), qt.Contains, "data-dependent/add-not-null-column")
 	c.Assert(out.String(), qt.Contains, "baseline schema")
 	c.Assert(out.String(), qt.Contains, "thinner")
 	// One line, so a log reader sees a notice rather than a wall.

@@ -12,9 +12,9 @@ import (
 // Making a nullable column NOT NULL is a change whose outcome the rows
 // decide: a row holding NULL either aborts the statement or is rewritten to
 // something the author never wrote. The SET NOT NULL spelling is reported by
-// the PostgreSQL owner's PG303 from the statement text, on PostgreSQL and on
+// the PostgreSQL owner's locking/set-not-null from the statement text, on PostgreSQL and on
 // the three engines that speak its wire protocol, and SQLite's staged rebuild
-// by LT101. DD103
+// by rewrite/set-not-null. data-dependent/set-not-null
 // covers the engines whose spelling restates the whole column -- MySQL and
 // MariaDB's MODIFY and CHANGE, SQL Server's ALTER COLUMN, and ClickHouse's
 // MODIFY COLUMN, where the nullability is in the type itself -- where the
@@ -151,7 +151,7 @@ func notNullConsequence(dialect string) string {
 
 // notNullRules is the part of the family this package checks: the
 // restating-spelling rule. The SET NOT NULL rule for the PostgreSQL wire
-// family, PG303, is the PostgreSQL owner's.
+// family, locking/set-not-null, is the PostgreSQL owner's.
 func notNullRules() []Rule {
 	return []Rule{nullableMadeNotNullRule()}
 }

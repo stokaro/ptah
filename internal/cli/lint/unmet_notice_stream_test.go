@@ -28,7 +28,7 @@ func TestRunLint_AFailingReportStaysOnStdout(t *testing.T) {
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil,
 		qt.Commentf("stdout is not a decodable document:\n%s", stdout))
 	c.Assert(report["failed"], qt.IsTrue)
-	c.Assert(stderr, qt.Contains, "DS110P",
+	c.Assert(stderr, qt.Contains, "dependency/drop-column-in-use",
 		qt.Commentf("the unmet-input notice is not on stderr"))
 	c.Assert(stderr, qt.Not(qt.Contains), `"findings"`)
 }
@@ -41,14 +41,14 @@ func TestRunLint_ThePassingReportKeepsTheNoticeOffStdout(t *testing.T) {
 	writeLintTestFile(c, dir, "0000000001_drop.up.sql",
 		"ALTER TABLE users DROP COLUMN email;\n")
 
-	// DS102 is the error the same statement raises, and disabling it is what
+	// destructive/drop-column is the error the same statement raises, and disabling it is what
 	// leaves a passing report that still has a rule asking for the baseline.
-	stdout, stderr, err := execute("--dir", dir, "--format", "json", "--disable", "DS102")
+	stdout, stderr, err := execute("--dir", dir, "--format", "json", "--disable", "destructive/drop-column")
 
 	c.Assert(err, qt.IsNil)
 	var report map[string]any
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil,
 		qt.Commentf("stdout is not a decodable document:\n%s", stdout))
-	c.Assert(stderr, qt.Contains, "DS110P",
+	c.Assert(stderr, qt.Contains, "dependency/drop-column-in-use",
 		qt.Commentf("the unmet-input notice is not on stderr"))
 }

@@ -90,7 +90,7 @@ func TestBuild_WithoutADevURLTheFirstVersionDropIsReported(t *testing.T) {
 	c := qt.New(t)
 	report := buildCount(c, writeMigrations(c, firstFileDrop), lint.ChangeCountAtlas, "")
 	c.Assert(changesIn(c, report, "1_init.sql"), qt.Equals, 2)
-	c.Assert(lintRules(report), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(lintRules(report), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table"})
 }
 
 // The Atlas counts read the state of a version whose CREATE TABLE IF NOT
@@ -136,7 +136,7 @@ func TestBuild_DevURLListsTheViewsAndTriggersAVersionStartsFrom(t *testing.T) {
 	c := qt.New(t)
 	report := buildCount(c, writeMigrations(c, absentObjectDrops), lint.ChangeCountAtlas, freshDevURL(c))
 	c.Assert(changesIn(c, report, "2_head.sql"), qt.Equals, 2)
-	c.Assert(lintRules(report), qt.DeepEquals, []string{"DS107"})
+	c.Assert(lintRules(report), qt.DeepEquals, []string{"destructive/drop-object"})
 	c.Assert(report.Analysis.UnmetInputs(), qt.HasLen, 0)
 }
 
@@ -146,5 +146,5 @@ func TestBuild_WithoutADevURLEveryObjectDropCounts(t *testing.T) {
 	c := qt.New(t)
 	report := buildCount(c, writeMigrations(c, absentObjectDrops), lint.ChangeCountAtlas, "")
 	c.Assert(changesIn(c, report, "2_head.sql"), qt.Equals, 5)
-	c.Assert(lintRules(report), qt.DeepEquals, []string{"DS107", "DS107"})
+	c.Assert(lintRules(report), qt.DeepEquals, []string{"destructive/drop-object", "destructive/drop-object"})
 }

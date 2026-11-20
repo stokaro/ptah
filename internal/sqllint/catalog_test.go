@@ -154,17 +154,17 @@ func TestDeclaredRuleCodesReadsIdentifiersOutsideConstDeclarations(t *testing.T)
 	}{
 		{
 			name:   "a code written into the finding the rule returns",
-			source: "package fixture\n\ntype finding struct{ Rule string }\n\nfunc report() finding { return finding{Rule: \"SQL003\"} }\n",
+			source: "package fixture\n\ntype finding struct{ Rule string }\n\nfunc report() finding { return finding{Rule: \"coverage/dynamic-sql\"} }\n",
 			found:  []string{"coverage/dynamic-sql"},
 		},
 		{
 			name:   "a code used as a map key",
-			source: "package fixture\n\nvar titles = map[string]string{\"DDL002\": \"a title\"}\n",
+			source: "package fixture\n\nvar titles = map[string]string{\"correctness/index-on-undeclared-column\": \"a title\"}\n",
 			found:  []string{"correctness/index-on-undeclared-column"},
 		},
 		{
 			name:   "a code compared against inline",
-			source: "package fixture\n\nfunc isParse(code string) bool { return code == \"SQL004\" }\n",
+			source: "package fixture\n\nfunc isParse(code string) bool { return code == \"coverage/unanalyzed-statements\" }\n",
 			found:  []string{"coverage/unanalyzed-statements"},
 		},
 	}
@@ -258,7 +258,7 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			code: "capability/missing",
 		},
 		{
-			// A routine also draws SQL002, because the linter models no
+			// A routine also draws coverage/unsupported-statement, because the linter models no
 			// CREATE PROCEDURE statement. Disabling it is what leaves one
 			// finding for the assertion below, and it is a PROCEDURE rather
 			// than a FUNCTION because only the procedure path parses a body:

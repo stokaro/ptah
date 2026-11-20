@@ -68,8 +68,8 @@ func TestLintFS_ReadsTheOwnersSplit(t *testing.T) {
 	bundled, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(dropMigration()), lint.Options{Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(ruleCodes(silent), qt.Not(qt.Contains), "DS101")
-	c.Assert(ruleCodes(bundled), qt.Contains, "DS101")
+	c.Assert(ruleCodes(silent), qt.Not(qt.Contains), "destructive/drop-table")
+	c.Assert(ruleCodes(bundled), qt.Contains, "destructive/drop-table")
 	c.Assert(requests, qt.DeepEquals, []lintext.SplitRequest{{Target: "postgres", Sources: []lintext.Source{
 		{Name: "0000000001_drop.down.sql", SQL: "CREATE TABLE users (id int);\n", Version: 1, Down: true},
 		{Name: "0000000001_drop.up.sql", SQL: "DROP TABLE users;\n", Version: 1, Up: true},
@@ -90,7 +90,7 @@ func TestLintFS_ReadsTheOwnersWords(t *testing.T) {
 	}), lint.Options{Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(ruleCodes(findings), qt.Contains, "DS101")
+	c.Assert(ruleCodes(findings), qt.Contains, "destructive/drop-table")
 }
 
 // A run that names no target splits with the dialect-blind scanner and asks
@@ -102,7 +102,7 @@ func TestLintFS_SplitsAnUnnamedTargetItself(t *testing.T) {
 	findings, err := lint.LintFS(c.Context(), ownerRuntime(c, &requests), fixture(dropMigration()), lint.Options{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(ruleCodes(findings), qt.Contains, "DS101")
+	c.Assert(ruleCodes(findings), qt.Contains, "destructive/drop-table")
 	c.Assert(requests, qt.HasLen, 0)
 }
 

@@ -56,15 +56,15 @@ func TestNativeLint_WithNoDevDatabase(t *testing.T) {
 	}{
 		{
 			name: "text that is no SQL", up: garbage, down: "SELECT 1;\n",
-			wantLine: "d/1_x.up.sql:1 [info] AC102 coverage/unparsed-statement: the SQL parser could not read this statement (unsupported table option: BOGUS)",
+			wantLine: "d/1_x.up.sql:1 [info] coverage/unparsed-statement: the SQL parser could not read this statement (unsupported table option: BOGUS)",
 		},
 		{
 			name: "SQL the parser does not model", up: validUnmodeled, down: "SELECT 1;\n",
-			wantLine: "d/1_x.up.sql:3 [info] AC102 coverage/unparsed-statement: the SQL parser could not read this statement (unsupported SQL statement: EXPLAIN)",
+			wantLine: "d/1_x.up.sql:3 [info] coverage/unparsed-statement: the SQL parser could not read this statement (unsupported SQL statement: EXPLAIN)",
 		},
 		{
 			name: "a down file", up: parsed, down: "DROP TABEL ok;\n",
-			wantLine: "d/1_x.down.sql:1 [info] AC102 coverage/unparsed-statement: the SQL parser could not read this statement (unsupported DROP target: TABEL)",
+			wantLine: "d/1_x.down.sql:1 [info] coverage/unparsed-statement: the SQL parser could not read this statement (unsupported DROP target: TABEL)",
 		},
 	}
 	for _, test := range tests {
@@ -102,7 +102,7 @@ func TestNativeLint_AGateOnUnparsedStatementsIsOptIn(t *testing.T) {
 	}{
 		{name: "default threshold", want: 0},
 		{name: "every finding fails", args: []string{"--fail-on", "any"}, want: 1},
-		{name: "the rule raised to error", policy: "rules:\n  AC102:\n    severity: error\n", want: 1},
+		{name: "the rule raised to error", policy: "rules:\n  coverage/unparsed-statement:\n    severity: error\n", want: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -114,7 +114,7 @@ func TestNativeLint_AGateOnUnparsedStatementsIsOptIn(t *testing.T) {
 			run := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: project}, args...)
 
 			c.Assert(run.ExitCode, qt.Equals, test.want, qt.Commentf("stdout: %s\nstderr: %s", run.Stdout, run.Stderr))
-			c.Assert(run.Stdout, qt.Contains, "AC102")
+			c.Assert(run.Stdout, qt.Contains, "coverage/unparsed-statement")
 		})
 	}
 }
@@ -141,7 +141,7 @@ func TestNativeLint_WithADevDatabase(t *testing.T) {
 		},
 		{
 			name: "no server runs a down file", up: parsed, down: "DROP TABEL ok;\n",
-			wantStdout: "d/1_x.down.sql:1 [info] AC102",
+			wantStdout: "d/1_x.down.sql:1 [info] coverage/unparsed-statement",
 		},
 	}
 	for _, test := range tests {
@@ -199,7 +199,7 @@ func TestCompatLint_WithADevDatabase(t *testing.T) {
 			c.Assert(run.ExitCode, qt.Equals, test.wantExit, qt.Commentf("stdout: %s\nstderr: %s", run.Stdout, run.Stderr))
 			c.Assert(run.Stdout, qt.Contains, test.wantStdout)
 			c.Assert(run.Stderr, qt.Equals, "")
-			c.Assert(run.Stdout, qt.Not(qt.Contains), "AC102")
+			c.Assert(run.Stdout, qt.Not(qt.Contains), "coverage/unparsed-statement")
 		})
 	}
 }
@@ -221,7 +221,7 @@ func TestCompatLint_ADownFileStaysOutOfTheReport(t *testing.T) {
 
 	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", run.Stdout, run.Stderr))
 	c.Assert(run.Stdout, qt.Contains, "no diagnostics found")
-	c.Assert(run.Stdout+run.Stderr, qt.Not(qt.Contains), "AC102")
+	c.Assert(run.Stdout+run.Stderr, qt.Not(qt.Contains), "coverage/unparsed-statement")
 }
 
 // TestCompatLint_WithNoDevDatabase is the capability the community binary does not
@@ -236,7 +236,7 @@ func TestCompatLint_WithNoDevDatabase(t *testing.T) {
 		"migrate", "lint", "--dir", "file://d", "--latest", "1",
 	)
 	c.Assert(run.ExitCode, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, "[AC102]")
+	c.Assert(run.Stdout, qt.Contains, "[coverage/unparsed-statement]")
 
 	strict := clirun.Run(c, clirun.Compat,
 		clirun.Options{Dir: project, Env: append(os.Environ(), "PTAH_ATLAS_LINT_WITHOUT_DEV_URL=1", "PTAH_ATLAS_STRICT_COMPAT=1")},
@@ -256,5 +256,5 @@ func TestSQLLint_RefusesAStatementItCouldNotRead(t *testing.T) {
 	run := clirun.Run(c, clirun.Ptah, clirun.Options{Dir: project}, "sql", "lint", "--dialect", "sqlite", "d/1_x.up.sql")
 
 	c.Assert(run.ExitCode, qt.Equals, 1, qt.Commentf("stdout: %s\nstderr: %s", run.Stdout, run.Stderr))
-	c.Assert(run.Stdout, qt.Contains, "error SQL002 coverage/unsupported-statement: the SQL parser does not read this statement, which a server may still accept: unsupported table option: BOGUS")
+	c.Assert(run.Stdout, qt.Contains, "error coverage/unsupported-statement: the SQL parser does not read this statement, which a server may still accept: unsupported table option: BOGUS")
 }

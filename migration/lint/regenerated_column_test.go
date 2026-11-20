@@ -123,14 +123,14 @@ var regeneratedColumnRows = []struct {
 	},
 }
 
-// TestDropColumnOfARegeneratedColumn_IsNotADrop pins the data rule, DS102,
-// and the deployed-code rule, BC104, on each row of the native surface. A
+// TestDropColumnOfARegeneratedColumn_IsNotADrop pins the data rule, destructive/drop-column,
+// and the deployed-code rule, rollout/drop-column, on each row of the native surface. A
 // stored column turned into a generated one is reported by both: its values
 // are gone, and a deployed client that writes it fails, since the server
 // refuses a write to a generated column. A run with no starting state cannot
 // tell the two apart, so it reports the drop.
 func TestDropColumnOfARegeneratedColumn_IsNotADrop(t *testing.T) {
-	for _, rule := range []string{"DS102", "BC104"} {
+	for _, rule := range []string{"destructive/drop-column", "rollout/drop-column"} {
 		for _, row := range regeneratedColumnRows {
 			t.Run(rule+"/"+row.name, func(t *testing.T) {
 				c := qt.New(t)
@@ -148,7 +148,7 @@ func TestDropColumnOfARegeneratedColumn_IsNotADrop(t *testing.T) {
 }
 
 // compatColumnDropSites lints second as the compatibility surface does and
-// keeps the sites of DS102, which that surface prints as DS103.
+// keeps the sites of destructive/drop-column, which that surface prints as data-dependent/alter-column-type.
 func compatColumnDropSites(c *qt.C, second string, baseline []lintext.BaselineColumn) []string {
 	c.Helper()
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
@@ -157,7 +157,7 @@ func compatColumnDropSites(c *qt.C, second string, baseline []lintext.BaselineCo
 	}), lint.Options{Dialect: "postgres", Baseline: baseline, Compatibility: lint.CompatibilityProfileAtlas})
 	c.Assert(err, qt.IsNil)
 	return slices.DeleteFunc(findingSites(findings), func(site string) bool {
-		return !strings.HasSuffix(site, ":DS102")
+		return !strings.HasSuffix(site, ":destructive/drop-column")
 	})
 }
 
@@ -175,7 +175,7 @@ func TestDropColumnOfARegeneratedColumn_CompatibilityCountsOneStatement(t *testi
 		{
 			name:   "added back in a later statement",
 			second: dropCode + addCodeGenerated,
-			want:   []string{"0000000002_change.up.sql:1:DS102"},
+			want:   []string{"0000000002_change.up.sql:1:destructive/drop-column"},
 		},
 	}
 	for _, test := range tests {

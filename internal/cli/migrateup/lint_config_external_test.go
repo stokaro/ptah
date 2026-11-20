@@ -39,22 +39,22 @@ func TestMigrateUp_InvalidLintPolicyPreventsExecution(t *testing.T) {
 			name:    "bypass still validates registered selectors",
 			policy:  "disabled-rules:\n  - ZZ404\n",
 			args:    []string{"--allow-destructive"},
-			wantErr: `.*rule selector "ZZ404" does not match any registered rule.*`,
+			wantErr: `.*rule selector "design/zz404" does not match any registered rule.*`,
 		},
 		{
 			name:    "malformed exclusion glob",
-			policy:  "rules:\n  DS101:\n    exclude:\n      - '[legacy/**'\n",
-			wantErr: `.*rule DS101 has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern.*`,
+			policy:  "rules:\n  destructive/drop-table:\n    exclude:\n      - '[legacy/**'\n",
+			wantErr: `.*rule destructive/drop-table has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern.*`,
 		},
 		{
 			name:    "non-normalized exclusion glob",
-			policy:  "rules:\n  DS101:\n    exclude:\n      - '**/../**'\n",
-			wantErr: `.*rule DS101 has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path.*`,
+			policy:  "rules:\n  destructive/drop-table:\n    exclude:\n      - '**/../**'\n",
+			wantErr: `.*rule destructive/drop-table has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path.*`,
 		},
 		{
 			name:    "parent-directory exclusion glob",
-			policy:  "rules:\n  DS101:\n    exclude:\n      - '../legacy/**'\n",
-			wantErr: `.*rule DS101 has invalid exclude pattern "\.\./legacy/\*\*": pattern must not contain \. or \.\. path segments.*`,
+			policy:  "rules:\n  destructive/drop-table:\n    exclude:\n      - '../legacy/**'\n",
+			wantErr: `.*rule destructive/drop-table has invalid exclude pattern "\.\./legacy/\*\*": pattern must not contain \. or \.\. path segments.*`,
 		},
 	}
 
@@ -162,7 +162,7 @@ func TestMigrateUp_InvalidLintSelectorRejectedWithoutPendingMigrations(t *testin
 	second.SetArgs([]string{"--db-url", dbURL, "--migrations-dir", dir})
 	err := second.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `.*rule selector "ZZ404" does not match any registered rule.*`)
+	c.Assert(err, qt.ErrorMatches, `.*rule selector "design/zz404" does not match any registered rule.*`)
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)

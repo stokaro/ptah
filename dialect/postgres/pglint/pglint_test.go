@@ -62,10 +62,10 @@ func TestRules(t *testing.T) {
 	})
 }
 
-// TX101 reports the first statement that needs autocommit in a file that also
+// transaction/mixed-statements reports the first statement that needs autocommit in a file that also
 // holds transactional DDL, in either direction, and nothing in a file that
 // runs outside a transaction or holds nothing transactional. BEGIN and COMMIT
-// are neither side of the mix; TX201 judges them in migration/lint.
+// are neither side of the mix; transaction/explicit-transaction judges them in migration/lint.
 func TestService_CheckMigrations_TransactionMix(t *testing.T) {
 	const mixed = "CREATE TABLE t (id int);\nCREATE INDEX CONCURRENTLY idx ON t (id);\n"
 	noTransaction := file("1.up.sql", true, mixed)
@@ -93,7 +93,7 @@ func TestService_CheckMigrations_TransactionMix(t *testing.T) {
 	}
 }
 
-// TX101 does not ask who opens the transaction a file runs in: the server
+// transaction/mixed-statements does not ask who opens the transaction a file runs in: the server
 // refuses a concurrent index beside another statement in one query just as it
 // refuses it in the migrator's transaction.
 func TestService_CheckMigrations_TransactionMixIgnoresTheTransactionOwner(t *testing.T) {
@@ -116,7 +116,7 @@ func TestService_CheckMigrations_FailurePath(t *testing.T) {
 		codes   []string
 		wantErr string
 	}{
-		{"a code the owner does not publish", context.Background(), []string{"locking/blocking-alter-table"}, `.*no rule of code MY101`},
+		{"a code the owner does not publish", context.Background(), []string{"locking/blocking-alter-table"}, `.*no rule of code locking/blocking-alter-table`},
 		{"cancellation", canceled, []string{"transaction/mixed-statements"}, `context canceled`},
 	} {
 		t.Run(test.name, func(t *testing.T) {

@@ -57,9 +57,9 @@ func TestCompileAndEvaluate(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			expression, err := lintexpr.Compile("XX101", test.expression)
+			expression, err := lintexpr.Compile("design/xx101", test.expression)
 			c.Assert(err, qt.IsNil)
-			got, err := expression.Evaluate("XX101", alterAddVarchar())
+			got, err := expression.Evaluate("design/xx101", alterAddVarchar())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -86,7 +86,7 @@ func TestCompileRefusesUnknownNames(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := lintexpr.Compile("XX101", test.expression)
+			_, err := lintexpr.Compile("design/xx101", test.expression)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, "unknown name")
@@ -112,7 +112,7 @@ func TestCompileRefusesMalformedExpressions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := lintexpr.Compile("XX101", test.expression)
+			_, err := lintexpr.Compile("design/xx101", test.expression)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, test.message)
@@ -138,10 +138,10 @@ func TestEvaluateRefusesNonBooleanResults(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			expression, err := lintexpr.Compile("XX101", test.expression)
+			expression, err := lintexpr.Compile("design/xx101", test.expression)
 			c.Assert(err, qt.IsNil)
 
-			_, err = expression.Evaluate("XX101", alterAddVarchar())
+			_, err = expression.Evaluate("design/xx101", alterAddVarchar())
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, "must evaluate to a boolean")
@@ -157,10 +157,10 @@ func TestEvaluateRefusesNonBooleanResults(t *testing.T) {
 // that says nothing about what to write instead.
 func TestEvaluateNamesTheFixForContainsOnAString(t *testing.T) {
 	c := qt.New(t)
-	expression, err := lintexpr.Compile("XX101", `contains(statement.sql, "VARCHAR")`)
+	expression, err := lintexpr.Compile("design/xx101", `contains(statement.sql, "VARCHAR")`)
 	c.Assert(err, qt.IsNil)
 
-	_, err = expression.Evaluate("XX101", alterAddVarchar())
+	_, err = expression.Evaluate("design/xx101", alterAddVarchar())
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "strcontains(haystack, needle)")
@@ -173,10 +173,10 @@ func TestEvaluateNamesTheFixForContainsOnAString(t *testing.T) {
 // statements it has nothing to say about.
 func TestEvaluateOnAStatementWithNoWords(t *testing.T) {
 	c := qt.New(t)
-	expression, err := lintexpr.Compile("XX101", `contains(statement.words, "DROP")`)
+	expression, err := lintexpr.Compile("design/xx101", `contains(statement.words, "DROP")`)
 	c.Assert(err, qt.IsNil)
 
-	got, err := expression.Evaluate("XX101", lintexpr.Scope{})
+	got, err := expression.Evaluate("design/xx101", lintexpr.Scope{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.IsFalse)
@@ -196,10 +196,10 @@ func TestRuleExpressionsCannotReachTheMachine(t *testing.T) {
 	for _, name := range tests {
 		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
-			expression, err := lintexpr.Compile("XX101", name+`("x")`)
+			expression, err := lintexpr.Compile("design/xx101", name+`("x")`)
 			c.Assert(err, qt.IsNil)
 
-			_, err = expression.Evaluate("XX101", alterAddVarchar())
+			_, err = expression.Evaluate("design/xx101", alterAddVarchar())
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Contains, "no function named")
@@ -211,7 +211,7 @@ func TestRuleExpressionsCannotReachTheMachine(t *testing.T) {
 func TestSourceIsTheAuthorsSpelling(t *testing.T) {
 	c := qt.New(t)
 
-	expression, err := lintexpr.Compile("XX101", `  file.is_up  `)
+	expression, err := lintexpr.Compile("design/xx101", `  file.is_up  `)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(expression.Source(), qt.Equals, "file.is_up")

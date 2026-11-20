@@ -14,8 +14,8 @@ import (
 // refuses every online algorithm and copies the whole table row by row with
 // writes blocked. The rules in this file name the third class for the three
 // clauses Atlas reports it for: a column type change (MY130), a primary key
-// dropped with no replacement (MY133), and a table converted to another
-// character set (MY136). Each fires only where the copy is established, so
+// dropped with no replacement (rewrite/drop-primary-key), and a table converted to another
+// character set (rewrite/convert-charset). Each fires only where the copy is established, so
 // a MODIFY that widens a VARCHAR by ten characters, which InnoDB applies in
 // place, is not reported as a copy because it is spelled with the same
 // keyword as one that is.
@@ -107,7 +107,7 @@ import (
 // from ([lintext.BaselineColumn.ColumnType], [lintext.BaselineColumn.Charset],
 // [lintext.BaselineColumn.TableCharset], [lintext.BaselineColumn.Collation],
 // [lintext.BaselineColumn.TableCollation] and [lintext.BaselineIndex]);
-// without that state MY130 and MY136 stay quiet, DS103 and MY101 still report
+// without that state rewrite/alter-column-type and rewrite/convert-charset stay quiet, data-dependent/alter-column-type and locking/blocking-alter-table still report
 // the statement, and migration lint names them as inputs the run did not
 // supply. A clause that names a character set
 // and no collation leaves the column on that set's default collation, which

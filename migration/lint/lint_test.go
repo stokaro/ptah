@@ -77,16 +77,16 @@ ALTER TYPE mood ADD VALUE 'ambivalent';
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(rulesOf(findings), qt.DeepEquals, []string{
-		"BC103",
-		"DS101", // DROP TABLE audit_log
-		"BC104",
-		"DS102", // DROP COLUMN legacy
-		"BC101", // RENAME COLUMN
-		"DS103", // MODIFY COLUMN (lossy)
-		"MY101", // MODIFY COLUMN (lock-heavy)
-		"MF101", // CREATE UNIQUE INDEX over existing rows
-		"PG101", // CREATE UNIQUE INDEX without CONCURRENTLY
-		"PG102", // ALTER TYPE ADD VALUE
+		"rollout/drop-table",
+		"destructive/drop-table", // DROP TABLE audit_log
+		"rollout/drop-column",
+		"destructive/drop-column",          // DROP COLUMN legacy
+		"rollout/rename",                   // RENAME COLUMN
+		"data-dependent/alter-column-type", // MODIFY COLUMN (lossy)
+		"locking/blocking-alter-table",     // MODIFY COLUMN (lock-heavy)
+		"data-dependent/add-unique-index",  // CREATE UNIQUE INDEX over existing rows
+		"locking/create-index",             // CREATE UNIQUE INDEX without CONCURRENTLY
+		"transaction/add-enum-value",       // ALTER TYPE ADD VALUE
 	})
 
 	// Line numbers point at the offending statements, not the file head:
@@ -96,12 +96,12 @@ ALTER TYPE mood ADD VALUE 'ambivalent';
 	for _, f := range findings {
 		byRule[f.Rule] = f
 	}
-	c.Assert(byRule["DS101"].Line, qt.Equals, 2)
-	c.Assert(byRule["DS102"].Line, qt.Equals, 3)
-	c.Assert(byRule["BC101"].Line, qt.Equals, 4)
-	c.Assert(byRule["PG102"].Line, qt.Equals, 7)
-	c.Assert(byRule["DS101"].Severity, qt.Equals, lint.SeverityError)
-	c.Assert(byRule["PG101"].Severity, qt.Equals, lint.SeverityWarning)
+	c.Assert(byRule["destructive/drop-table"].Line, qt.Equals, 2)
+	c.Assert(byRule["destructive/drop-column"].Line, qt.Equals, 3)
+	c.Assert(byRule["rollout/rename"].Line, qt.Equals, 4)
+	c.Assert(byRule["transaction/add-enum-value"].Line, qt.Equals, 7)
+	c.Assert(byRule["destructive/drop-table"].Severity, qt.Equals, lint.SeverityError)
+	c.Assert(byRule["locking/create-index"].Severity, qt.Equals, lint.SeverityWarning)
 }
 
 func TestLintFS_InvalidProgrammaticRuleSeverityFailsFast(t *testing.T) {
@@ -112,11 +112,11 @@ func TestLintFS_InvalidProgrammaticRuleSeverityFailsFast(t *testing.T) {
 		"0000000001_init.down.sql": "DROP TABLE users;\n",
 	}), lint.Options{
 		RuleConfigs: map[string]lint.RuleConfig{
-			"DS101": {Severity: lint.Severity("fatal")},
+			"destructive/drop-table": {Severity: lint.Severity("fatal")},
 		},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `rule DS101 has unsupported severity "fatal"`)
+	c.Assert(err, qt.ErrorMatches, `rule destructive/drop-table has unsupported severity "fatal"`)
 }
 
 func TestLintFS_InvalidProgrammaticRuleSelectorFailsFast(t *testing.T) {
@@ -140,9 +140,9 @@ func TestLintFS_WhitespacePaddedProgrammaticRuleSelectorFailsFast(t *testing.T) 
 	_, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_init.up.sql":   "DROP TABLE users;\n",
 		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
-	}), lint.Options{Disabled: []string{" DS101 "}})
+	}), lint.Options{Disabled: []string{" destructive/drop-table "}})
 
-	c.Assert(err, qt.ErrorMatches, `rule selector " DS101 " must start with an uppercase ASCII letter.*`)
+	c.Assert(err, qt.ErrorMatches, `rule selector " destructive/drop-table " must start with an uppercase ASCII letter.*`)
 }
 
 func TestLintFS_UnknownProgrammaticRuleSelectorFailsFast(t *testing.T) {
@@ -153,11 +153,11 @@ func TestLintFS_UnknownProgrammaticRuleSelectorFailsFast(t *testing.T) {
 		"0000000001_init.down.sql": "CREATE TABLE users (id INTEGER);\n",
 	}), lint.Options{
 		RuleConfigs: map[string]lint.RuleConfig{
-			"ZZ404": {Severity: lint.SeverityError},
+			"design/zz404": {Severity: lint.SeverityError},
 		},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `rule selector "ZZ404" does not match any registered rule`)
+	c.Assert(err, qt.ErrorMatches, `rule selector "design/zz404" does not match any registered rule`)
 }
 
 func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
@@ -178,7 +178,7 @@ func TestLintFS_VersionsRestrictsFindings(t *testing.T) {
 		},
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS102"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-column"})
 	c.Assert(findings[0].File, qt.Equals, "0000000002_next.up.sql")
 }
 
@@ -214,16 +214,16 @@ func TestLintFS_MigrationFormRules(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fixture(map[string]string{
-		"0000000001_orphan.up.sql":  "CREATE TABLE t (id INT);\n",         // MF101P: no down
-		"0000000002_empty.up.sql":   "-- only comments; nothing to run\n", // MF102P
+		"0000000001_orphan.up.sql":  "CREATE TABLE t (id INT);\n",         // file-form/missing-down: no down
+		"0000000002_empty.up.sql":   "-- only comments; nothing to run\n", // file-form/empty-migration
 		"0000000002_empty.down.sql": "-- nothing\n",
-		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // MF105P: the migrator refuses the directory
-		"shared/misnamed.sql":       "CREATE TABLE stray (id INT);\n", // MF103: a file of another directory
+		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // file-form/refused-file: the migrator refuses the directory
+		"shared/misnamed.sql":       "CREATE TABLE stray (id INT);\n", // file-form/file-name: a file of another directory
 	})
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(sortedRulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P", "MF103", "MF105P"})
+	c.Assert(sortedRulesOf(findings), qt.DeepEquals, []string{"file-form/empty-migration", "file-form/file-name", "file-form/missing-down", "file-form/refused-file"})
 	for _, f := range findings {
 		c.Assert(f.Line, qt.Equals, 0, qt.Commentf("file-level findings carry no line: %v", f))
 	}
@@ -233,7 +233,7 @@ func TestLintFS_PairsByVersionLikeMigrator(t *testing.T) {
 	c := qt.New(t)
 
 	// The migrator pairs an up and a down by their shared version prefix,
-	// regardless of description, so lint must not raise MF101P (missing down)
+	// regardless of description, so lint must not raise file-form/missing-down (missing down)
 	// when the counterpart down exists for the same version under a
 	// different description.
 	fsys := fixture(map[string]string{
@@ -244,7 +244,7 @@ func TestLintFS_PairsByVersionLikeMigrator(t *testing.T) {
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0,
-		qt.Commentf("version 1 has both an up and a down; no MF101P expected; got %v", findings))
+		qt.Commentf("version 1 has both an up and a down; no file-form/missing-down expected; got %v", findings))
 }
 
 func TestLintFS_AtlasImportedFlywayRepeatableIsContentLinted(t *testing.T) {
@@ -259,7 +259,7 @@ func TestLintFS_AtlasImportedFlywayRepeatableIsContentLinted(t *testing.T) {
 	// records numbers, refuses the directory for.
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{AtlasRevisionTable: true})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(findings[0].File, qt.Equals, "3R_views.sql")
 	c.Assert(findings[0].Line, qt.Equals, 1)
 }
@@ -289,44 +289,44 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		want []string
 	}{
 		// The COLUMN keyword is optional in PostgreSQL and the MySQL family.
-		{"drop without COLUMN keyword", "ALTER TABLE users DROP email;", []string{"BC104", "DS102"}},
-		{"drop column if exists", "ALTER TABLE users DROP COLUMN IF EXISTS email;", []string{"BC104", "DS102"}},
-		{"drop if exists without COLUMN", "ALTER TABLE users DROP IF EXISTS email;", []string{"BC104", "DS102"}},
-		{"drop on schema-qualified table", "ALTER TABLE public.users DROP email;", []string{"BC104", "DS102"}},
-		{"modify without COLUMN keyword", "ALTER TABLE users MODIFY name VARCHAR(500);", []string{"DS103", "MY101"}},
-		{"change without COLUMN keyword", "ALTER TABLE users CHANGE old_name new_name TEXT;", []string{"DS103", "MY101"}},
-		{"alter type without COLUMN keyword", "ALTER TABLE users ALTER email TYPE TEXT;", []string{"DS103"}},
-		{"set data type spelling", "ALTER TABLE users ALTER COLUMN price SET DATA TYPE NUMERIC(12,2);", []string{"DS103"}},
-		{"rename without COLUMN keyword", "ALTER TABLE users RENAME email TO email_address;", []string{"BC101"}},
-		{"standalone rename table", "RENAME TABLE users TO users_archive;", []string{"BC101"}},
-		{"mysql rename table without TO", "ALTER TABLE users RENAME users_archive;", []string{"BC101"}},
+		{"drop without COLUMN keyword", "ALTER TABLE users DROP email;", []string{"destructive/drop-column", "rollout/drop-column"}},
+		{"drop column if exists", "ALTER TABLE users DROP COLUMN IF EXISTS email;", []string{"destructive/drop-column", "rollout/drop-column"}},
+		{"drop if exists without COLUMN", "ALTER TABLE users DROP IF EXISTS email;", []string{"destructive/drop-column", "rollout/drop-column"}},
+		{"drop on schema-qualified table", "ALTER TABLE public.users DROP email;", []string{"destructive/drop-column", "rollout/drop-column"}},
+		{"modify without COLUMN keyword", "ALTER TABLE users MODIFY name VARCHAR(500);", []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"}},
+		{"change without COLUMN keyword", "ALTER TABLE users CHANGE old_name new_name TEXT;", []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"}},
+		{"alter type without COLUMN keyword", "ALTER TABLE users ALTER email TYPE TEXT;", []string{"data-dependent/alter-column-type"}},
+		{"set data type spelling", "ALTER TABLE users ALTER COLUMN price SET DATA TYPE NUMERIC(12,2);", []string{"data-dependent/alter-column-type"}},
+		{"rename without COLUMN keyword", "ALTER TABLE users RENAME email TO email_address;", []string{"rollout/rename"}},
+		{"standalone rename table", "RENAME TABLE users TO users_archive;", []string{"rollout/rename"}},
+		{"mysql rename table without TO", "ALTER TABLE users RENAME users_archive;", []string{"rollout/rename"}},
 
 		// PostgreSQL: ALTER TABLE [ IF EXISTS ] [ ONLY ] name [ * ] — every
 		// modifier combination must still anchor the clause scan.
-		{"if exists only drop", "ALTER TABLE IF EXISTS ONLY users DROP COLUMN email;", []string{"BC104", "DS102"}},
-		{"if exists only alter type", "ALTER TABLE IF EXISTS ONLY users ALTER COLUMN age TYPE BIGINT;", []string{"DS103"}},
-		{"if exists only rename", "ALTER TABLE IF EXISTS ONLY users RENAME COLUMN email TO email_old;", []string{"BC101"}},
-		{"descendant asterisk form", "ALTER TABLE users * DROP COLUMN email;", []string{"BC104", "DS102"}},
+		{"if exists only drop", "ALTER TABLE IF EXISTS ONLY users DROP COLUMN email;", []string{"destructive/drop-column", "rollout/drop-column"}},
+		{"if exists only alter type", "ALTER TABLE IF EXISTS ONLY users ALTER COLUMN age TYPE BIGINT;", []string{"data-dependent/alter-column-type"}},
+		{"if exists only rename", "ALTER TABLE IF EXISTS ONLY users RENAME COLUMN email TO email_old;", []string{"rollout/rename"}},
+		{"descendant asterisk form", "ALTER TABLE users * DROP COLUMN email;", []string{"destructive/drop-column", "rollout/drop-column"}},
 
 		// CONVERT TO CHARACTER SET and its CHARSET synonym rebuild the table.
-		{"convert to character set", "ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4;", []string{"MY101"}},
-		{"convert to charset synonym", "ALTER TABLE users CONVERT TO CHARSET utf8mb4;", []string{"MY101"}},
+		{"convert to character set", "ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4;", []string{"locking/blocking-alter-table"}},
+		{"convert to charset synonym", "ALTER TABLE users CONVERT TO CHARSET utf8mb4;", []string{"locking/blocking-alter-table"}},
 
 		// Data-protection drops are destructive; storage-only drops stay silent.
-		// The untyped ANSI DROP CONSTRAINT <name> form stays DS105; the typed
+		// The untyped ANSI DROP CONSTRAINT <name> form stays integrity/drop-untyped-constraint; the typed
 		// MySQL-family forms get their per-type CD codes without double-flagging.
-		{"drop named constraint", "ALTER TABLE users DROP CONSTRAINT uq_users_email;", []string{"DS105"}},
-		{"drop foreign key", "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;", []string{"CD101"}},
+		{"drop named constraint", "ALTER TABLE users DROP CONSTRAINT uq_users_email;", []string{"integrity/drop-untyped-constraint"}},
+		{"drop foreign key", "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;", []string{"integrity/drop-foreign-key"}},
 		// Without a dialect every family runs, so the MySQL copy rule reports
 		// the drop beside the lost guarantee.
-		{"drop primary key", "ALTER TABLE users DROP PRIMARY KEY;", []string{"CD103", "MY133"}},
+		{"drop primary key", "ALTER TABLE users DROP PRIMARY KEY;", []string{"integrity/drop-primary-key", "rewrite/drop-primary-key"}},
 		{"drop index", "ALTER TABLE users DROP INDEX idx_users_email;", nil},
-		{"drop check", "ALTER TABLE users DROP CHECK chk_age;", []string{"CD102"}},
-		{"drop foreign key schema-qualified", "ALTER TABLE shop.orders DROP FOREIGN KEY fk_orders_user;", []string{"CD101"}},
-		{"drop foreign key if exists", "ALTER TABLE orders DROP FOREIGN KEY IF EXISTS fk_orders_user;", []string{"CD101"}},
-		{"drop named constraint cascade", "ALTER TABLE users DROP CONSTRAINT uq_users_email CASCADE;", []string{"DS105"}},
+		{"drop check", "ALTER TABLE users DROP CHECK chk_age;", []string{"integrity/drop-check"}},
+		{"drop foreign key schema-qualified", "ALTER TABLE shop.orders DROP FOREIGN KEY fk_orders_user;", []string{"integrity/drop-foreign-key"}},
+		{"drop foreign key if exists", "ALTER TABLE orders DROP FOREIGN KEY IF EXISTS fk_orders_user;", []string{"integrity/drop-foreign-key"}},
+		{"drop named constraint cascade", "ALTER TABLE users DROP CONSTRAINT uq_users_email CASCADE;", []string{"integrity/drop-untyped-constraint"}},
 		{"drop default attribute", "ALTER TABLE users ALTER COLUMN a DROP DEFAULT;", nil},
-		{"drop not null attribute", "ALTER TABLE users ALTER COLUMN a DROP NOT NULL;", []string{"DS104"}},
+		{"drop not null attribute", "ALTER TABLE users ALTER COLUMN a DROP NOT NULL;", []string{"integrity/drop-not-null"}},
 		{"drop identity attribute", "ALTER TABLE users ALTER COLUMN a DROP IDENTITY IF EXISTS;", nil},
 		{"drop key", "ALTER TABLE users DROP KEY idx_email;", nil},
 		// YDB drops a changefeed, an index and a topic's consumer by name, and
@@ -334,19 +334,19 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		// COLUMN keyword has no name after it, and stays a column drop.
 		{"drop changefeed", "ALTER TABLE `app/items` DROP CHANGEFEED `updates`;", nil},
 		{"drop changefeed with an unquoted name", "ALTER TABLE items DROP CHANGEFEED updates;", nil},
-		{"drop changefeed beside a column", "ALTER TABLE items DROP CHANGEFEED updates, DROP COLUMN note;", []string{"BC104", "DS102"}},
+		{"drop changefeed beside a column", "ALTER TABLE items DROP CHANGEFEED updates, DROP COLUMN note;", []string{"destructive/drop-column", "rollout/drop-column"}},
 		{"drop index by name", "ALTER TABLE `app/items` DROP INDEX `by_label`;", nil},
 		{"drop consumer", "ALTER TOPIC `app/items/updates` DROP CONSUMER `audit`;", nil},
-		{"column named changefeed", "ALTER TABLE items DROP changefeed;", []string{"BC104", "DS102"}},
-		{"column named changefeed with cascade", "ALTER TABLE items DROP changefeed CASCADE;", []string{"BC104", "DS102"}},
+		{"column named changefeed", "ALTER TABLE items DROP changefeed;", []string{"destructive/drop-column", "rollout/drop-column"}},
+		{"column named changefeed with cascade", "ALTER TABLE items DROP changefeed CASCADE;", []string{"destructive/drop-column", "rollout/drop-column"}},
 		{"drop partition", "ALTER TABLE metrics DROP PARTITION p2024;", nil},
 		// Not a column drop, which is what this block is about, but a hazard of
 		// its own: the history goes with the versioning.
-		{"drop system versioning", "ALTER TABLE users DROP SYSTEM VERSIONING;", []string{"MY146"}},
+		{"drop system versioning", "ALTER TABLE users DROP SYSTEM VERSIONING;", []string{"destructive/drop-system-versioning"}},
 
 		// Columns that happen to be named like keywords are not hazards.
-		{"column named type set not null", "ALTER TABLE users ALTER COLUMN type SET NOT NULL;", []string{"LT101", "PG303"}},
-		{"quoted column named type", `ALTER TABLE users ALTER COLUMN "type" SET NOT NULL;`, []string{"LT101", "PG303"}},
+		{"column named type set not null", "ALTER TABLE users ALTER COLUMN type SET NOT NULL;", []string{"locking/set-not-null", "rewrite/set-not-null"}},
+		{"quoted column named type", `ALTER TABLE users ALTER COLUMN "type" SET NOT NULL;`, []string{"locking/set-not-null", "rewrite/set-not-null"}},
 		{"column named not drop default", "ALTER TABLE users ALTER COLUMN not DROP DEFAULT;", nil},
 		{"added column named modify", "ALTER TABLE users ADD COLUMN modify TEXT;", nil},
 		{"added column named rename", "ALTER TABLE users ADD COLUMN rename TEXT;", nil},
@@ -354,27 +354,27 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		// Renames invisible to application code are not BC breaks.
 		{"rename index", "ALTER TABLE users RENAME INDEX i1 TO i2;", nil},
 		{"rename constraint", "ALTER TABLE users RENAME CONSTRAINT c1 TO c2;", nil},
-		{"enum value catalog delete", "DELETE FROM pg_enum WHERE enumlabel = 'archived';", []string{"DS106"}},
-		{"enum value drop syntax", "ALTER TYPE status DROP VALUE 'archived';", []string{"DS106"}},
-		{"drop type", "DROP TYPE IF EXISTS status;", []string{"DS107"}},
-		{"drop extension", "DROP EXTENSION IF EXISTS hstore;", []string{"DS107"}},
-		{"drop function", "DROP FUNCTION IF EXISTS refresh_user();", []string{"DS107"}},
-		{"drop role", "DROP ROLE old_role;", []string{"DS107"}},
-		{"drop policy", "DROP POLICY IF EXISTS tenant_isolation ON accounts;", []string{"DS107"}},
-		{"truncate table keyword", "TRUNCATE TABLE audit_log;", []string{"DS108"}},
-		{"truncate without table keyword", "TRUNCATE audit_log;", []string{"DS108"}},
-		{"disable row level security", "ALTER TABLE accounts DISABLE ROW LEVEL SECURITY;", []string{"DS109"}},
+		{"enum value catalog delete", "DELETE FROM pg_enum WHERE enumlabel = 'archived';", []string{"destructive/remove-enum-value"}},
+		{"enum value drop syntax", "ALTER TYPE status DROP VALUE 'archived';", []string{"destructive/remove-enum-value"}},
+		{"drop type", "DROP TYPE IF EXISTS status;", []string{"destructive/drop-object"}},
+		{"drop extension", "DROP EXTENSION IF EXISTS hstore;", []string{"destructive/drop-object"}},
+		{"drop function", "DROP FUNCTION IF EXISTS refresh_user();", []string{"destructive/drop-object"}},
+		{"drop role", "DROP ROLE old_role;", []string{"destructive/drop-object"}},
+		{"drop policy", "DROP POLICY IF EXISTS tenant_isolation ON accounts;", []string{"destructive/drop-object"}},
+		{"truncate table keyword", "TRUNCATE TABLE audit_log;", []string{"destructive/truncate-table"}},
+		{"truncate without table keyword", "TRUNCATE audit_log;", []string{"destructive/truncate-table"}},
+		{"disable row level security", "ALTER TABLE accounts DISABLE ROW LEVEL SECURITY;", []string{"security/disable-row-level-security"}},
 		// NO FORCE leaves row-level security enabled and exempts the owner, so
-		// it is DS111P and not DS109. FORCE and ENABLE add a protection.
-		{"no force row level security", "ALTER TABLE accounts NO FORCE ROW LEVEL SECURITY;", []string{"DS111P"}},
-		{"no force on a qualified table", "ALTER TABLE IF EXISTS ONLY app.accounts NO FORCE ROW LEVEL SECURITY;", []string{"DS111P"}},
-		{"no force beside enable", "ALTER TABLE accounts ENABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY;", []string{"DS111P"}},
-		{"no force beside disable", "ALTER TABLE accounts DISABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY;", []string{"DS109", "DS111P"}},
+		// it is security/no-force-row-level-security and not security/disable-row-level-security. FORCE and ENABLE add a protection.
+		{"no force row level security", "ALTER TABLE accounts NO FORCE ROW LEVEL SECURITY;", []string{"security/no-force-row-level-security"}},
+		{"no force on a qualified table", "ALTER TABLE IF EXISTS ONLY app.accounts NO FORCE ROW LEVEL SECURITY;", []string{"security/no-force-row-level-security"}},
+		{"no force beside enable", "ALTER TABLE accounts ENABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY;", []string{"security/no-force-row-level-security"}},
+		{"no force beside disable", "ALTER TABLE accounts DISABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY;", []string{"security/disable-row-level-security", "security/no-force-row-level-security"}},
 		{"force row level security", "ALTER TABLE accounts FORCE ROW LEVEL SECURITY;", nil},
 		{"enable row level security", "ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;", nil},
 
 		// Top-level commas separate clauses; commas in parens do not.
-		{"comma-adjacent drop clause", "ALTER TABLE t ADD COLUMN a NUMERIC(10,2),DROP COLUMN b;", []string{"BC104", "DS102"}},
+		{"comma-adjacent drop clause", "ALTER TABLE t ADD COLUMN a NUMERIC(10,2),DROP COLUMN b;", []string{"destructive/drop-column", "rollout/drop-column"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -395,12 +395,12 @@ func TestLintFS_CommentsAndLiteralsDoNotHideOrFakeHazards(t *testing.T) {
 		sql  string
 		want []string
 	}{
-		{"comment glued between keywords", "DROP/*hidden*/TABLE users;", []string{"BC103", "DS101"}},
-		{"comment inside alter clause", "ALTER TABLE users DROP/*hidden*/COLUMN email;", []string{"BC104", "DS102"}},
+		{"comment glued between keywords", "DROP/*hidden*/TABLE users;", []string{"destructive/drop-table", "rollout/drop-table"}},
+		{"comment inside alter clause", "ALTER TABLE users DROP/*hidden*/COLUMN email;", []string{"destructive/drop-column", "rollout/drop-column"}},
 		{"hazard text inside a string literal", "ALTER TABLE t ADD COLUMN note TEXT DEFAULT 'use DROP COLUMN x';", nil},
 		{"no force inside a comment", "ALTER TABLE accounts /* NO FORCE ROW LEVEL SECURITY */ FORCE ROW LEVEL SECURITY;", nil},
-		{"concurrently in a literal is no guard", "CREATE INDEX i ON t (a) WHERE b = 'CONCURRENTLY';", []string{"PG101"}},
-		{"create index concurrently requires non-transactional migration", "CREATE UNIQUE INDEX CONCURRENTLY uq ON t (a);", []string{"MF101", "PG103"}},
+		{"concurrently in a literal is no guard", "CREATE INDEX i ON t (a) WHERE b = 'CONCURRENTLY';", []string{"locking/create-index"}},
+		{"create index concurrently requires non-transactional migration", "CREATE UNIQUE INDEX CONCURRENTLY uq ON t (a);", []string{"data-dependent/add-unique-index", "transaction/concurrent-index"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -422,38 +422,38 @@ func TestLintFS_AtlasAnalyzerCatalogHazards(t *testing.T) {
 		sql     string
 		want    []string
 	}{
-		{"drop schema", "postgres", "DROP SCHEMA s;", []string{"DS107"}},
-		{"add non-nullable column without default", "postgres", "ALTER TABLE t ADD COLUMN c INT NOT NULL;", []string{"DD101"}},
-		{"add unique constraint", "postgres", "ALTER TABLE t ADD CONSTRAINT u UNIQUE (email);", []string{"MF101", "PG105"}},
-		{"drop index without concurrently", "postgres", "DROP INDEX idx;", []string{"PG106"}},
-		// The discriminating partner for the row above: PG106 must stay silent
+		{"drop schema", "postgres", "DROP SCHEMA s;", []string{"destructive/drop-object"}},
+		{"add non-nullable column without default", "postgres", "ALTER TABLE t ADD COLUMN c INT NOT NULL;", []string{"data-dependent/add-not-null-column"}},
+		{"add unique constraint", "postgres", "ALTER TABLE t ADD CONSTRAINT u UNIQUE (email);", []string{"data-dependent/add-unique-index", "locking/add-unique-constraint"}},
+		{"drop index without concurrently", "postgres", "DROP INDEX idx;", []string{"locking/drop-index"}},
+		// The discriminating partner for the row above: locking/drop-index must stay silent
 		// on the spelling Ptah now generates for a concurrent-index rollback.
 		// Without this row a rule that fired on every DROP INDEX would still
-		// pass the table. PG103 is the correct residual finding — this fixture
+		// pass the table. transaction/concurrent-index is the correct residual finding — this fixture
 		// has no no_transaction directive, and CONCURRENTLY cannot run inside
 		// the migration transaction.
-		{"drop index concurrently", "postgres", "DROP INDEX CONCURRENTLY idx;", []string{"PG103"}},
-		{"add primary key", "postgres", "ALTER TABLE t ADD PRIMARY KEY (id);", []string{"PG104"}},
-		{"volatile default", "postgres", "ALTER TABLE t ADD COLUMN c UUID DEFAULT gen_random_uuid();", []string{"PG302"}},
-		{"set not null", "postgres", "ALTER TABLE t ALTER COLUMN c SET NOT NULL;", []string{"PG303"}},
-		{"add a named not null", "postgres", `ALTER TABLE t ADD CONSTRAINT "nn" NOT NULL c;`, []string{"PG303"}},
-		{"add an unnamed not null", "postgres", "ALTER TABLE t ADD NOT NULL c;", []string{"PG303"}},
-		{"a named not null beside another clause", "postgres", "ALTER TABLE t ALTER COLUMN b DROP DEFAULT, ADD CONSTRAINT nn NOT NULL c;", []string{"PG303"}},
+		{"drop index concurrently", "postgres", "DROP INDEX CONCURRENTLY idx;", []string{"transaction/concurrent-index"}},
+		{"add primary key", "postgres", "ALTER TABLE t ADD PRIMARY KEY (id);", []string{"locking/add-primary-key"}},
+		{"volatile default", "postgres", "ALTER TABLE t ADD COLUMN c UUID DEFAULT gen_random_uuid();", []string{"rewrite/volatile-default"}},
+		{"set not null", "postgres", "ALTER TABLE t ALTER COLUMN c SET NOT NULL;", []string{"locking/set-not-null"}},
+		{"add a named not null", "postgres", `ALTER TABLE t ADD CONSTRAINT "nn" NOT NULL c;`, []string{"locking/set-not-null"}},
+		{"add an unnamed not null", "postgres", "ALTER TABLE t ADD NOT NULL c;", []string{"locking/set-not-null"}},
+		{"a named not null beside another clause", "postgres", "ALTER TABLE t ALTER COLUMN b DROP DEFAULT, ADD CONSTRAINT nn NOT NULL c;", []string{"locking/set-not-null"}},
 		{"a check that reads is not null", "postgres", "ALTER TABLE t ADD CONSTRAINT ck CHECK (c IS NOT NULL) NOT VALID;", make([]string, 0)},
-		{"add check", "postgres", "ALTER TABLE t ADD CONSTRAINT ck CHECK (id > 0);", []string{"PG305"}},
-		{"add foreign key", "postgres", "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id);", []string{"PG306"}},
-		{"set unlogged", "postgres", "ALTER TABLE t SET UNLOGGED;", []string{"PG307"}},
-		{"create trigger", "postgres", "CREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION f();", []string{"PG308"}},
-		{"stored generated column", "postgres", "ALTER TABLE t ADD COLUMN g INT GENERATED ALWAYS AS (c * 2) STORED;", []string{"PG309"}},
-		{"identity column", "postgres", "ALTER TABLE t ADD COLUMN n INT GENERATED ALWAYS AS IDENTITY;", []string{"PG310"}},
-		{"access method", "postgres", "ALTER TABLE t SET ACCESS METHOD heap2;", []string{"PG311"}},
-		{"column alignment", "postgres", "CREATE TABLE t (a BOOLEAN, b BIGINT, c BOOLEAN, d BIGINT);", []string{"PG110"}},
-		{"mysql inline references", "mysql", "ALTER TABLE t ADD COLUMN p_id INT REFERENCES p (id);", []string{"MY102"}},
-		{"mysql add foreign key", "mysql", "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id);", []string{"MY131"}},
-		{"mysql add primary key", "mysql", "ALTER TABLE t ADD PRIMARY KEY (id);", []string{"MY132"}},
-		{"mysql fulltext index", "mysql", "ALTER TABLE t ADD FULLTEXT INDEX ft (c);", []string{"MY134"}},
-		{"mysql spatial index", "mysql", "ALTER TABLE t ADD SPATIAL INDEX sp (g);", []string{"MY135"}},
-		{"sqlite set not null", "sqlite", "ALTER TABLE t ALTER COLUMN c SET NOT NULL;", []string{"LT101"}},
+		{"add check", "postgres", "ALTER TABLE t ADD CONSTRAINT ck CHECK (id > 0);", []string{"locking/add-check"}},
+		{"add foreign key", "postgres", "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id);", []string{"locking/add-foreign-key"}},
+		{"set unlogged", "postgres", "ALTER TABLE t SET UNLOGGED;", []string{"rewrite/set-persistence"}},
+		{"create trigger", "postgres", "CREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW EXECUTE FUNCTION f();", []string{"locking/create-trigger"}},
+		{"stored generated column", "postgres", "ALTER TABLE t ADD COLUMN g INT GENERATED ALWAYS AS (c * 2) STORED;", []string{"rewrite/add-stored-generated-column"}},
+		{"identity column", "postgres", "ALTER TABLE t ADD COLUMN n INT GENERATED ALWAYS AS IDENTITY;", []string{"rewrite/add-identity-column"}},
+		{"access method", "postgres", "ALTER TABLE t SET ACCESS METHOD heap2;", []string{"rewrite/set-access-method"}},
+		{"column alignment", "postgres", "CREATE TABLE t (a BOOLEAN, b BIGINT, c BOOLEAN, d BIGINT);", []string{"design/column-alignment"}},
+		{"mysql inline references", "mysql", "ALTER TABLE t ADD COLUMN p_id INT REFERENCES p (id);", []string{"side-effect/inline-reference"}},
+		{"mysql add foreign key", "mysql", "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id);", []string{"locking/add-foreign-key"}},
+		{"mysql add primary key", "mysql", "ALTER TABLE t ADD PRIMARY KEY (id);", []string{"rewrite/add-primary-key"}},
+		{"mysql fulltext index", "mysql", "ALTER TABLE t ADD FULLTEXT INDEX ft (c);", []string{"locking/add-fulltext-index"}},
+		{"mysql spatial index", "mysql", "ALTER TABLE t ADD SPATIAL INDEX sp (g);", []string{"locking/add-spatial-index"}},
+		{"sqlite set not null", "sqlite", "ALTER TABLE t ALTER COLUMN c SET NOT NULL;", []string{"rewrite/set-not-null"}},
 	}
 
 	for _, tt := range tests {
@@ -476,9 +476,9 @@ ALTER TABLE t ADD COLUMN c INT;
 	})
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG103", "TX101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"transaction/concurrent-index", "transaction/mixed-statements"})
 
-	c.Assert(lintOneDialect(c, "postgres", "BEGIN;\nALTER TABLE t ADD COLUMN c INT;\nCOMMIT;"), qt.DeepEquals, []string{"TX201"})
+	c.Assert(lintOneDialect(c, "postgres", "BEGIN;\nALTER TABLE t ADD COLUMN c INT;\nCOMMIT;"), qt.DeepEquals, []string{"transaction/explicit-transaction"})
 }
 
 func TestLintFS_NonTransactionalDirectivesSuppressTransactionFindings(t *testing.T) {
@@ -544,7 +544,7 @@ ALTER TABLE t ADD COLUMN c INT;
 
 DROP INDEX CONCURRENTLY idx;
 `,
-			want: []string{"PG103", "TX101"},
+			want: []string{"transaction/concurrent-index", "transaction/mixed-statements"},
 		},
 		{
 			name: "up none suppresses up findings",
@@ -596,7 +596,7 @@ CREATE TABLE users (id INTEGER PRIMARY KEY);
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(findings[0].Line, qt.Equals, 4)
 }
 
@@ -638,7 +638,7 @@ ALTER TABLE t ADD COLUMN c INT;`,
 			})
 			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 			c.Assert(err, qt.IsNil)
-			c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG103", "TX101"})
+			c.Assert(rulesOf(findings), qt.DeepEquals, []string{"transaction/concurrent-index", "transaction/mixed-statements"})
 		})
 	}
 }
@@ -654,41 +654,41 @@ func TestLintFS_DialectAwareScanning(t *testing.T) {
 		// 9.1) a backslash is a literal character, so a trailing backslash
 		// must not swallow the closing quote and everything after it.
 		{"postgres trailing backslash literal", "postgres",
-			"INSERT INTO paths (prefix) VALUES ('C:\\');\nALTER TABLE users DROP COLUMN email;", []string{"BC104", "DS102"}},
+			"INSERT INTO paths (prefix) VALUES ('C:\\');\nALTER TABLE users DROP COLUMN email;", []string{"destructive/drop-column", "rollout/drop-column"}},
 		{"postgres like escape literal", "postgres",
-			"ALTER TABLE t ADD CONSTRAINT chk CHECK (code NOT LIKE '%\\_%' ESCAPE '\\');\nALTER TABLE users DROP COLUMN email;", []string{"PG305", "BC104", "DS102"}},
+			"ALTER TABLE t ADD CONSTRAINT chk CHECK (code NOT LIKE '%\\_%' ESCAPE '\\');\nALTER TABLE users DROP COLUMN email;", []string{"locking/add-check", "destructive/drop-column", "rollout/drop-column"}},
 		// MySQL treats backslash as an escape: \' stays inside the literal.
 		{"mysql backslash-escaped quote", "mysql",
-			"INSERT INTO notes (t) VALUES ('it\\'s; fine');\nALTER TABLE users DROP COLUMN email;", []string{"BC104", "DS102"}},
+			"INSERT INTO notes (t) VALUES ('it\\'s; fine');\nALTER TABLE users DROP COLUMN email;", []string{"destructive/drop-column", "rollout/drop-column"}},
 
 		// # line comments are MySQL/MariaDB syntax and must neither hide
 		// hazards nor leak decoy text into statements.
 		{"mysql hash comment before statement", "mysql",
-			"# drop unused column\nALTER TABLE users DROP COLUMN email;", []string{"BC104", "DS102"}},
+			"# drop unused column\nALTER TABLE users DROP COLUMN email;", []string{"destructive/drop-column", "rollout/drop-column"}},
 		{"mysql hash comment inside statement", "mysql",
-			"ALTER TABLE users\n# remove the legacy column\nDROP COLUMN email;", []string{"BC104", "DS102"}},
+			"ALTER TABLE users\n# remove the legacy column\nDROP COLUMN email;", []string{"destructive/drop-column", "rollout/drop-column"}},
 		{"mysql hash comment decoys are inert", "mysql",
 			"# decoy; DROP TABLE x;\nCREATE TABLE t (id INT);", nil},
 		// In PostgreSQL # is an operator, not a comment starter.
 		{"postgres hash operator in index expression", "postgres",
-			"CREATE INDEX idx ON t ((data #>> '{a}'));", []string{"PG101"}},
+			"CREATE INDEX idx ON t ((data #>> '{a}'));", []string{"locking/create-index"}},
 		// The default (no --dialect) hybrid must NOT treat # as a comment:
 		// # is a PostgreSQL operator (jsonb #>>, bitwise XOR), and swallowing
 		// the rest of the line would merge statements and hide the following
-		// DROP TABLE (a DS101 false negative in the default CI invocation).
+		// DROP TABLE (a destructive/drop-table false negative in the default CI invocation).
 		{"default dialect jsonb operator does not hide drop table", "",
-			"UPDATE cfg SET v = data #>> '{key}';\nDROP TABLE legacy_audit;", []string{"BC103", "DS101"}},
+			"UPDATE cfg SET v = data #>> '{key}';\nDROP TABLE legacy_audit;", []string{"destructive/drop-table", "rollout/drop-table"}},
 		{"default dialect xor operator does not hide drop table", "",
-			"UPDATE flags SET mask = mask # 1;\nDROP TABLE audit_log;", []string{"BC103", "DS101"}},
+			"UPDATE flags SET mask = mask # 1;\nDROP TABLE audit_log;", []string{"destructive/drop-table", "rollout/drop-table"}},
 		// Mirror false positive: a # merge that buries a same-file CREATE makes
-		// the later DROP of that created table fire DS101 wrongly.
+		// the later DROP of that created table fire destructive/drop-table wrongly.
 		{"default dialect xor does not manufacture same-file drop false positive", "",
 			"UPDATE flags SET mask = mask # 1;\nCREATE TABLE tmp_backfill (id INT);\nDROP TABLE tmp_backfill;", nil},
 		// Block comments do not nest in MySQL/MariaDB, so the default hybrid
 		// must close at the first '*/' — otherwise it keeps scanning for a
 		// second '*/' and swallows the DROP that MySQL would execute.
 		{"default dialect non-nesting comment does not hide drop table", "",
-			"/* note /* inner */\nDROP TABLE t;", []string{"BC103", "DS101"}},
+			"/* note /* inner */\nDROP TABLE t;", []string{"destructive/drop-table", "rollout/drop-table"}},
 		// Under an explicit postgres dialect, block comments DO nest, so the
 		// same input is one comment and nothing fires.
 		{"postgres nesting comment hides nothing real", "postgres",
@@ -696,16 +696,16 @@ func TestLintFS_DialectAwareScanning(t *testing.T) {
 
 		// MySQL executable comments are real SQL to the server.
 		{"mysql executable comment hides real ddl", "mysql",
-			"/*!50003 ALTER TABLE users DROP COLUMN email */;", []string{"BC104", "DS102"}},
+			"/*!50003 ALTER TABLE users DROP COLUMN email */;", []string{"destructive/drop-column", "rollout/drop-column"}},
 
 		// PostgreSQL block comments nest.
 		{"postgres nested block comment", "postgres",
-			"/* cleanup /* legacy */ block */\nALTER TABLE users DROP COLUMN email;", []string{"BC104", "DS102"}},
+			"/* cleanup /* legacy */ block */\nALTER TABLE users DROP COLUMN email;", []string{"destructive/drop-column", "rollout/drop-column"}},
 
 		// Encoding and termination edge cases.
-		{"utf8 bom before first statement", "", "\uFEFFDROP TABLE users;", []string{"BC103", "DS101"}},
-		{"final statement without semicolon", "", "DROP TABLE users", []string{"BC103", "DS101"}},
-		{"unicode table name", "", "ALTER TABLE пользователи DROP COLUMN email;", []string{"BC104", "DS102"}},
+		{"utf8 bom before first statement", "", "\uFEFFDROP TABLE users;", []string{"destructive/drop-table", "rollout/drop-table"}},
+		{"final statement without semicolon", "", "DROP TABLE users", []string{"destructive/drop-table", "rollout/drop-table"}},
+		{"unicode table name", "", "ALTER TABLE пользователи DROP COLUMN email;", []string{"destructive/drop-column", "rollout/drop-column"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -734,7 +734,7 @@ func TestLintFS_ScanningKeepsLineNumbers(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "mysql"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC104", "DS102"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column"})
 	c.Assert(linesOf(findings), qt.DeepEquals, []int{3, 3},
 		qt.Commentf("every finding points at the ALTER TABLE start, not the comment"))
 }
@@ -752,11 +752,11 @@ func TestLintFS_SameFileCreatedTablesAreExempt(t *testing.T) {
 		{"drop if exists of created table", "postgres",
 			"CREATE TABLE staging (id INT);\nDROP TABLE IF EXISTS staging;", nil},
 		{"drop of pre-existing table still fires", "postgres",
-			"CREATE TABLE staging (id INT);\nDROP TABLE users;", []string{"BC103", "DS101"}},
+			"CREATE TABLE staging (id INT);\nDROP TABLE users;", []string{"destructive/drop-table", "rollout/drop-table"}},
 		{"drop before create still fires", "postgres",
-			"DROP TABLE staging;\nCREATE TABLE staging (id INT);", []string{"BC103", "DS101"}},
+			"DROP TABLE staging;\nCREATE TABLE staging (id INT);", []string{"destructive/drop-table", "rollout/drop-table"}},
 		{"multi-table drop with one pre-existing fires", "postgres",
-			"CREATE TABLE staging (id INT);\nDROP TABLE staging, users;", []string{"BC103", "DS101"}},
+			"CREATE TABLE staging (id INT);\nDROP TABLE staging, users;", []string{"destructive/drop-table", "rollout/drop-table"}},
 
 		// An index on a table created two statements earlier is built on an
 		// empty table — no lock hazard.
@@ -765,7 +765,7 @@ func TestLintFS_SameFileCreatedTablesAreExempt(t *testing.T) {
 		{"index on schema-qualified created table", "postgres",
 			"CREATE TABLE app.orders (id INT);\nCREATE UNIQUE INDEX uq ON app.orders (id);", nil},
 		{"index on pre-existing table still fires", "postgres",
-			"CREATE TABLE orders (id INT);\nCREATE INDEX idx_users_email ON users (email);", []string{"PG101"}},
+			"CREATE TABLE orders (id INT);\nCREATE INDEX idx_users_email ON users (email);", []string{"locking/create-index"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -782,7 +782,7 @@ func TestLintFS_SameFileCreatedTablesAreExempt(t *testing.T) {
 
 // CREATE OR REPLACE TABLE is MariaDB syntax that drops the named table and
 // recreates it empty. Measured on MariaDB 12.3.3: a table holding rows holds
-// none once its CREATE OR REPLACE TABLE runs, so DS101 has to catch it exactly
+// none once its CREATE OR REPLACE TABLE runs, so destructive/drop-table has to catch it exactly
 // as it catches DROP TABLE (stokaro/ptah-operator#481).
 func TestLintFS_ReplacedTableIsDestructive(t *testing.T) {
 	tests := []struct {
@@ -790,11 +790,11 @@ func TestLintFS_ReplacedTableIsDestructive(t *testing.T) {
 		sql  string
 		want []string
 	}{
-		{"basic form", "CREATE OR REPLACE TABLE victim (id INT);", []string{"DS101"}},
-		{"lower case", "create or replace table victim (id int);", []string{"DS101"}},
-		{"schema-qualified", "CREATE OR REPLACE TABLE app.victim (id INT);", []string{"DS101"}},
-		{"from a query", "CREATE OR REPLACE TABLE victim AS SELECT id FROM source;", []string{"DS101"}},
-		{"like another table", "CREATE OR REPLACE TABLE victim LIKE template;", []string{"DS101"}},
+		{"basic form", "CREATE OR REPLACE TABLE victim (id INT);", []string{"destructive/drop-table"}},
+		{"lower case", "create or replace table victim (id int);", []string{"destructive/drop-table"}},
+		{"schema-qualified", "CREATE OR REPLACE TABLE app.victim (id INT);", []string{"destructive/drop-table"}},
+		{"from a query", "CREATE OR REPLACE TABLE victim AS SELECT id FROM source;", []string{"destructive/drop-table"}},
+		{"like another table", "CREATE OR REPLACE TABLE victim LIKE template;", []string{"destructive/drop-table"}},
 		// TEMPORARY replaces only a table local to the session, so it destroys
 		// no row that outlives it.
 		{"temporary form stays safe", "CREATE OR REPLACE TEMPORARY TABLE scratch (id INT);", make([]string, 0)},
@@ -823,7 +823,7 @@ func TestLintFS_ReplacedTableSameFileCreatedIsExempt(t *testing.T) {
 		{"replace of table created in same file",
 			"CREATE TABLE staging (id INT);\nCREATE OR REPLACE TABLE staging (id INT);", make([]string, 0)},
 		{"replace of pre-existing table still fires",
-			"CREATE TABLE staging (id INT);\nCREATE OR REPLACE TABLE users (id INT);", []string{"DS101"}},
+			"CREATE TABLE staging (id INT);\nCREATE OR REPLACE TABLE users (id INT);", []string{"destructive/drop-table"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -847,13 +847,13 @@ func TestLintFS_MariaDBExecutableCommentIsScanned(t *testing.T) {
 		want    []string
 	}{
 		{"mariadb executable comment hides real ddl", "mariadb",
-			"/*M! CREATE OR REPLACE TABLE `victim` (`id` INT) */;", []string{"DS101"}},
+			"/*M! CREATE OR REPLACE TABLE `victim` (`id` INT) */;", []string{"destructive/drop-table"}},
 		{"mariadb executable comment with a version marker", "mariadb",
-			"/*M!100001 DROP TABLE victim */;", []string{"BC103", "DS101"}},
+			"/*M!100001 DROP TABLE victim */;", []string{"destructive/drop-table", "rollout/drop-table"}},
 		{"default dialect scans it too", "",
-			"/*M! CREATE OR REPLACE TABLE victim (id INT) */;", []string{"DS101"}},
+			"/*M! CREATE OR REPLACE TABLE victim (id INT) */;", []string{"destructive/drop-table"}},
 		{"mysql target scans it too", "mysql",
-			"/*M! CREATE OR REPLACE TABLE victim (id INT) */;", []string{"DS101"}},
+			"/*M! CREATE OR REPLACE TABLE victim (id INT) */;", []string{"destructive/drop-table"}},
 		{"postgres leaves the marker as an inert comment", "postgres",
 			"/*M! DROP TABLE users */;\nSELECT 1;", make([]string, 0)},
 	}
@@ -873,17 +873,17 @@ func TestLintFS_MY101PinnedOnlineDDLIsExempt(t *testing.T) {
 	// the lock hazard cannot occur; the lossy-type-change warning stays.
 	got := lintOneDialect(c, "mysql",
 		"ALTER TABLE users MODIFY COLUMN bio VARCHAR(500) NOT NULL, ALGORITHM=INPLACE, LOCK=NONE;")
-	c.Assert(got, qt.DeepEquals, []string{"DS103"})
+	c.Assert(got, qt.DeepEquals, []string{"data-dependent/alter-column-type"})
 
 	// The = is optional in the MySQL grammar.
 	got = lintOneDialect(c, "mysql",
 		"ALTER TABLE users MODIFY COLUMN bio VARCHAR(500), ALGORITHM INPLACE;")
-	c.Assert(got, qt.DeepEquals, []string{"DS103"})
+	c.Assert(got, qt.DeepEquals, []string{"data-dependent/alter-column-type"})
 
-	// ALGORITHM=COPY pins the blocking path; MY101 must still fire.
+	// ALGORITHM=COPY pins the blocking path; locking/blocking-alter-table must still fire.
 	got = lintOneDialect(c, "mysql",
 		"ALTER TABLE users MODIFY COLUMN bio VARCHAR(500), ALGORITHM=COPY;")
-	c.Assert(got, qt.DeepEquals, []string{"DS103", "MY101"})
+	c.Assert(got, qt.DeepEquals, []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"})
 }
 
 func TestLintFS_NestedDirectoriesAreLinted(t *testing.T) {
@@ -898,7 +898,7 @@ func TestLintFS_NestedDirectoriesAreLinted(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{PathPrefix: "db/migrations"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(filesOf(findings), qt.DeepEquals, []string{
 		"db/migrations/sub/0000000001_a.up.sql",
 		"db/migrations/sub/0000000001_a.up.sql",
@@ -911,7 +911,7 @@ func TestLintFS_UpSuffixFallbackScansMalformedVersions(t *testing.T) {
 
 	// A .up.sql file whose version prefix the migrator rejects still gets
 	// hazard scanning via the IsUp suffix fallback — the author clearly
-	// meant it as an up migration, and MF103 explains why it will not run.
+	// meant it as an up migration, and file-form/file-name explains why it will not run.
 	fsys := fixture(map[string]string{
 		"bad_version.up.sql":   "DROP TABLE users;\n",
 		"bad_version.down.sql": "-- restore\n",
@@ -919,7 +919,7 @@ func TestLintFS_UpSuffixFallbackScansMalformedVersions(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF103", "MF103", "BC103", "DS101"},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"file-form/file-name", "file-form/file-name", "destructive/drop-table", "rollout/drop-table"},
 		qt.Commentf("naming warnings for both files plus the hazard in the up file; got %v", findings))
 }
 
@@ -938,7 +938,7 @@ func TestLintFS_SuffixlessNamesFollowTheMigrator(t *testing.T) {
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF103", "MF103"},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"file-form/file-name", "file-form/file-name"},
 		qt.Commentf("both files are invisible to the migrator: naming warnings only; got %v", findings))
 	for _, f := range findings {
 		c.Assert(f.Message, qt.Contains, "the migrator will not pick it up")
@@ -954,7 +954,7 @@ func TestLintFS_AtlasMigrationNamesAreScanned(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"},
 		qt.Commentf("Atlas files should be treated as runnable up migrations, not MF103-only noise; got %v", findings))
 	c.Assert(findings[0].File, qt.Equals, "20220318104614_team_A.sql")
 }
@@ -970,7 +970,7 @@ func TestLintFS_AtlasImportedMigrationNamesAreScanned(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"},
 		qt.Commentf("Atlas-imported files should be treated as runnable migrations, not MF-only noise; got %v", findings))
 	c.Assert(findings[0].File, qt.Equals, "1_initial.up.sql")
 }
@@ -994,7 +994,7 @@ CREATE TABLE users_{{ $ }} (id INT);
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"},
 		qt.Commentf("Atlas templates should be rendered before linting and shared definitions should not emit MF103; got %v", findings))
 	c.Assert(findings[0].File, qt.Equals, "1.sql")
 }
@@ -1008,7 +1008,7 @@ func TestLintFS_PromptPlaceholdersDoNotSelectTemplateRendering(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "BC103", "DS101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table", "destructive/drop-table", "rollout/drop-table"})
 }
 
 func TestLintFS_CaseVariantSQLFilesStopTheRun(t *testing.T) {
@@ -1022,15 +1022,15 @@ func TestLintFS_CaseVariantSQLFilesStopTheRun(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF105P"},
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"file-form/refused-file"},
 		qt.Commentf("a case-variant file the migrator refuses the directory for is reported instead of vanishing"))
 }
 
-// refusedFiles names the files the findings report under MF105P, in order.
+// refusedFiles names the files the findings report under file-form/refused-file, in order.
 func refusedFiles(findings []lint.Finding) []string {
 	files := make([]string, 0, len(findings))
 	for _, finding := range findings {
-		if finding.Rule == "MF105P" {
+		if finding.Rule == "file-form/refused-file" {
 			files = append(files, finding.File)
 		}
 	}
@@ -1055,7 +1055,7 @@ func TestLintFS_DisablingAtlasMF104KeepsTheRunRefusal(t *testing.T) {
 	c.Assert(refusedFiles(findings), qt.DeepEquals, []string{"notes.sql"})
 }
 
-// TestLintFS_FilesTheMigratorRefusesTheDirectoryFor reports under MF105P each
+// TestLintFS_FilesTheMigratorRefusesTheDirectoryFor reports under file-form/refused-file each
 // file the migrator's reading leaves out at the top of the directory, which a
 // run refuses the directory for, whichever grammar its name resembles. The
 // Atlas profile reports none: the community binary runs every top-level file.
@@ -1097,7 +1097,7 @@ func TestLintFS_FilesTheMigratorRefusesTheDirectoryFor(t *testing.T) {
 	}
 }
 
-// TestLintFS_VersionsTheNumericRevisionTableCannotKeep reports under MF105P
+// TestLintFS_VersionsTheNumericRevisionTableCannotKeep reports under file-form/refused-file
 // each Atlas file whose version Ptah's revision table, which records numbers,
 // cannot keep, as the migrator's guard refuses the directory for it: R__x.sql,
 // the version R, and under positions a version such as v1. The Atlas revision
@@ -1170,25 +1170,25 @@ ALTER TABLE users MODIFY COLUMN email VARCHAR(64);
 		"0000000001_mixed.down.sql": "-- restore\n",
 	})
 
-	// postgres: PG rules fire, MY rules do not (DS103 is generic and stays).
+	// postgres: PG rules fire, MY rules do not (data-dependent/alter-column-type is generic and stays).
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG101", "DS103"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"locking/create-index", "data-dependent/alter-column-type"})
 
 	// mariadb: MY rules fire, PG rules do not.
 	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "mariadb"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS103", "MY101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"})
 
 	// mysql gates identically to mariadb.
 	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Dialect: "mysql"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS103", "MY101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"data-dependent/alter-column-type", "locking/blocking-alter-table"})
 
 	// empty dialect: everything fires.
 	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"PG101", "DS103", "MY101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"locking/create-index", "data-dependent/alter-column-type", "locking/blocking-alter-table"})
 }
 
 func TestAnalyzeFS_CustomRuleUsesPublicScanner(t *testing.T) {
@@ -1207,7 +1207,7 @@ func TestAnalyzeFS_CustomRuleUsesPublicScanner(t *testing.T) {
 	c.Assert(files[1].Statements[0].Words, qt.DeepEquals, []string{"CREATE", "TABLE", "USERS", "(", "ID", "INT", ")"})
 
 	customRule := lint.Rule{
-		Code:           "XX001",
+		Name:           "design/xx001",
 		Title:          "custom create table analyzer",
 		Severity:       lint.SeverityWarning,
 		CheckStatement: checkCustomCreateTable,
@@ -1215,11 +1215,11 @@ func TestAnalyzeFS_CustomRuleUsesPublicScanner(t *testing.T) {
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		ExtraRules: []lint.Rule{customRule},
 		RuleConfigs: map[string]lint.RuleConfig{
-			"XX001": {Severity: lint.SeverityError},
+			"design/xx001": {Severity: lint.SeverityError},
 		},
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"XX001"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"design/xx001"})
 	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityError)
 	c.Assert(findings[0].Message, qt.Contains, "Ptah's scanner")
 }
@@ -1237,7 +1237,7 @@ func TestLintFS_InvalidCustomRuleFailsFast(t *testing.T) {
 	_, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
 		"0000000001_x.up.sql":   "SELECT 1;\n",
 		"0000000001_x.down.sql": "-- restore\n",
-	}), lint.Options{ExtraRules: []lint.Rule{{Code: "XX001", Title: "broken"}}})
+	}), lint.Options{ExtraRules: []lint.Rule{{Name: "design/xx001", Title: "broken"}}})
 
 	c.Assert(err, qt.ErrorMatches, "rule XX001 has unsupported severity.*")
 }
@@ -1249,7 +1249,7 @@ func TestLintFS_LowercaseCustomRuleCodeFailsFast(t *testing.T) {
 		"0000000001_x.up.sql":   "SELECT 1;\n",
 		"0000000001_x.down.sql": "-- restore\n",
 	}), lint.Options{ExtraRules: []lint.Rule{{
-		Code:     "ext001",
+		Name:     "ext001",
 		Title:    "lowercase code",
 		Severity: lint.SeverityWarning,
 		CheckStatement: func(*lint.Statement) (bool, string) {
@@ -1272,7 +1272,7 @@ func TestLintFS_RuleConfigsOverrideSeverityAndExcludePaths(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		RuleConfigs: map[string]lint.RuleConfig{
-			"DS102": {
+			"destructive/drop-column": {
 				Severity: lint.SeverityWarning,
 				Exclude:  []string{"legacy/**"},
 			},
@@ -1280,11 +1280,11 @@ func TestLintFS_RuleConfigsOverrideSeverityAndExcludePaths(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	// The override and the exclusion both name DS102, and both reach DS102
-	// alone: BC104 keeps its own severity and is still reported under
+	// The override and the exclusion both name destructive/drop-column, and both reach destructive/drop-column
+	// alone: rollout/drop-column keeps its own severity and is still reported under
 	// legacy/**, because excluding a path for one rule is not excluding the
 	// path.
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC104", "BC104", "DS102"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-column", "destructive/drop-column", "rollout/drop-column"})
 	c.Assert(severitiesOf(findings), qt.DeepEquals, []lint.Severity{
 		lint.SeverityWarning, lint.SeverityWarning, lint.SeverityWarning,
 	})
@@ -1299,11 +1299,11 @@ func TestLintFS_InlineNoLintSuppressesStatementAndFileFindings(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fixture(map[string]string{
-		"0000000001_suppress.up.sql": `-- ptah:nolint DS102
+		"0000000001_suppress.up.sql": `-- ptah:nolint destructive/drop-column
 ALTER TABLE users DROP COLUMN legacy;
 -- atlas:nolint DS102
 ALTER TABLE users DROP COLUMN legacy_two;
--- ptah:nolint DS101
+-- ptah:nolint destructive/drop-table
 DROP TABLE audit_log;
 ALTER TABLE users ALTER COLUMN email TYPE TEXT;
 `,
@@ -1315,14 +1315,14 @@ ALTER TABLE users ALTER COLUMN email TYPE TEXT;
 	// Each directive names one rule, and each rule reports one consequence, so
 	// the rollout break of every dropped name survives a directive that accepts
 	// the data loss.
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC104", "BC104", "BC103", "DS103"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-column", "rollout/drop-column", "rollout/drop-table", "data-dependent/alter-column-type"})
 }
 
 func TestLintFS_TrailingNoLintCommentDoesNotSuppressNextStatement(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fixture(map[string]string{
-		"0000000001_trailing.up.sql": `ALTER TABLE users ALTER COLUMN email TYPE TEXT; -- ptah:nolint DS102
+		"0000000001_trailing.up.sql": `ALTER TABLE users ALTER COLUMN email TYPE TEXT; -- ptah:nolint destructive/drop-column
 ALTER TABLE users DROP COLUMN legacy;
 `,
 		"0000000001_trailing.down.sql": "-- restore\n",
@@ -1330,7 +1330,7 @@ ALTER TABLE users DROP COLUMN legacy;
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS103", "BC104", "DS102"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"data-dependent/alter-column-type", "destructive/drop-column", "rollout/drop-column"})
 }
 
 func TestLintFS_DisabledRulesAndFamilies(t *testing.T) {
@@ -1345,19 +1345,19 @@ CREATE INDEX i ON b (c);
 	})
 
 	// Disable one exact code.
-	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"BC103", "DS101"}})
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"rollout/drop-table", "destructive/drop-table"}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC104", "DS102", "PG101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-column", "rollout/drop-column", "locking/create-index"})
 
 	// Disable a whole family by prefix.
 	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"DS"}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "BC104", "PG101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-table", "rollout/drop-column", "locking/create-index"})
 
 	// A stray empty entry must not disable everything.
 	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{""}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101", "BC104", "DS102", "PG101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "rollout/drop-column", "destructive/drop-column", "locking/create-index"})
 }
 
 func TestLintFS_ConstraintDeletionFamily(t *testing.T) {
@@ -1373,22 +1373,22 @@ ALTER TABLE users DROP CONSTRAINT uq_email;
 	})
 
 	// Each typed drop gets its own CD code; the untyped ANSI DROP CONSTRAINT
-	// stays DS105. No statement is flagged by both a CD code and DS105. The
-	// primary key drop is also the table copy MY133 names, a different
-	// hazard from the guarantee CD103 names, so both report it.
+	// stays integrity/drop-untyped-constraint. No statement is flagged by both a CD code and integrity/drop-untyped-constraint. The
+	// primary key drop is also the table copy rewrite/drop-primary-key names, a different
+	// hazard from the guarantee integrity/drop-primary-key names, so both report it.
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD101", "CD102", "CD103", "MY133", "DS105"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"integrity/drop-foreign-key", "integrity/drop-check", "integrity/drop-primary-key", "rewrite/drop-primary-key", "integrity/drop-untyped-constraint"})
 
-	// Disabling the CD family silences the typed codes but keeps the DS105 fallback.
+	// Disabling the CD family silences the typed codes but keeps the integrity/drop-untyped-constraint fallback.
 	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"CD"}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MY133", "DS105"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"rewrite/drop-primary-key", "integrity/drop-untyped-constraint"})
 
 	// Disabling one CD code silences only that constraint type.
-	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"CD101"}})
+	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{Disabled: []string{"integrity/drop-foreign-key"}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD102", "CD103", "MY133", "DS105"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"integrity/drop-check", "integrity/drop-primary-key", "rewrite/drop-primary-key", "integrity/drop-untyped-constraint"})
 
 	// A per-code RuleConfig.Severity override applies to a CD code.
 	fkOnly := fixture(map[string]string{
@@ -1396,11 +1396,11 @@ ALTER TABLE users DROP CONSTRAINT uq_email;
 		"0000000001_fk.down.sql": "-- restore\n",
 	})
 	findings, err = lint.LintFS(c.Context(), builtintest.Runtime(), fkOnly, lint.Options{
-		RuleConfigs: map[string]lint.RuleConfig{"CD101": {Severity: lint.SeverityWarning}},
+		RuleConfigs: map[string]lint.RuleConfig{"integrity/drop-foreign-key": {Severity: lint.SeverityWarning}},
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
-	c.Assert(findings[0].Rule, qt.Equals, "CD101")
+	c.Assert(findings[0].Rule, qt.Equals, "integrity/drop-foreign-key")
 	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityWarning)
 }
 
@@ -1420,11 +1420,11 @@ $ptah$ LANGUAGE plpgsql;
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	// The claim is that a statement INSIDE the body triggers no rule. AC101 is
+	// The claim is that a statement INSIDE the body triggers no rule. coverage/routine-body is
 	// about the body not being read at all, which is the opposite of reading it
 	// and is what stops the run from looking clean (stokaro/ptah#1270).
 	for _, finding := range findings {
-		c.Assert(finding.Rule, qt.Equals, "AC101",
+		c.Assert(finding.Rule, qt.Equals, "coverage/routine-body",
 			qt.Commentf("statements inside dollar-quoted bodies must not trigger rules; got: %v", findings))
 	}
 }
@@ -1459,9 +1459,9 @@ func TestLoadConfig_HappyPath(t *testing.T) {
 	c.Assert(writeFile(dir+"/.ptah-lint.yaml", `dialect: postgres
 disabled-rules:
   - MF
-  - BC101
+  - rollout/rename
 rules:
-  DS103:
+  data-dependent/alter-column-type:
     severity: warning
     exclude:
       - legacy/**
@@ -1470,9 +1470,9 @@ rules:
 	cfg, err := lint.LoadConfig(builtintest.Runtime(), dir+"/.ptah-lint.yaml")
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.Dialect, qt.Equals, "postgres")
-	c.Assert(cfg.DisabledRules, qt.DeepEquals, []string{"MF", "BC101"})
-	c.Assert(cfg.Rules["DS103"].Severity, qt.Equals, lint.SeverityWarning)
-	c.Assert(cfg.Rules["DS103"].Exclude, qt.DeepEquals, []string{"legacy/**"})
+	c.Assert(cfg.DisabledRules, qt.DeepEquals, []string{"MF", "rollout/rename"})
+	c.Assert(cfg.Rules["data-dependent/alter-column-type"].Severity, qt.Equals, lint.SeverityWarning)
+	c.Assert(cfg.Rules["data-dependent/alter-column-type"].Exclude, qt.DeepEquals, []string{"legacy/**"})
 }
 
 func TestLoadConfig_FailurePath(t *testing.T) {
@@ -1492,7 +1492,7 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "failed to parse lint config .*")
 	})
 
-	c.Assert(writeFile(dir+"/bad-severity.yaml", "rules:\n  DS102:\n    severity: fatal\n"), qt.IsNil)
+	c.Assert(writeFile(dir+"/bad-severity.yaml", "rules:\n  destructive/drop-column:\n    severity: fatal\n"), qt.IsNil)
 	t.Run("invalid rule severity", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/bad-severity.yaml")
@@ -1506,25 +1506,25 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*unsupported lint dialect "oracle": expected postgres.*`)
 	})
 
-	c.Assert(writeFile(dir+"/bad-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '[legacy/**'\n"), qt.IsNil)
+	c.Assert(writeFile(dir+"/bad-exclude.yaml", "rules:\n  destructive/drop-column:\n    exclude:\n      - '[legacy/**'\n"), qt.IsNil)
 	t.Run("malformed exclude glob", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/bad-exclude.yaml")
-		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule destructive/drop-column has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
 	})
 
-	c.Assert(writeFile(dir+"/empty-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '  '\n"), qt.IsNil)
+	c.Assert(writeFile(dir+"/empty-exclude.yaml", "rules:\n  destructive/drop-column:\n    exclude:\n      - '  '\n"), qt.IsNil)
 	t.Run("empty exclude glob", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/empty-exclude.yaml")
-		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "  ": pattern must not be empty`)
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule destructive/drop-column has invalid exclude pattern "  ": pattern must not be empty`)
 	})
 
-	c.Assert(writeFile(dir+"/non-normalized-exclude.yaml", "rules:\n  DS102:\n    exclude:\n      - '**/../**'\n"), qt.IsNil)
+	c.Assert(writeFile(dir+"/non-normalized-exclude.yaml", "rules:\n  destructive/drop-column:\n    exclude:\n      - '**/../**'\n"), qt.IsNil)
 	t.Run("non-normalized exclude glob", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/non-normalized-exclude.yaml")
-		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule DS102 has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`)
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule destructive/drop-column has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`)
 	})
 
 	c.Assert(writeFile(dir+"/unknown-top-level.yaml", "severty: error\n"), qt.IsNil)
@@ -1534,7 +1534,7 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `(?s)failed to parse lint config .*field severty not found in type lint.Config.*`)
 	})
 
-	c.Assert(writeFile(dir+"/unknown-rule-key.yaml", "rules:\n  DS103:\n    severty: error\n"), qt.IsNil)
+	c.Assert(writeFile(dir+"/unknown-rule-key.yaml", "rules:\n  data-dependent/alter-column-type:\n    severty: error\n"), qt.IsNil)
 	t.Run("unknown nested rule key", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/unknown-rule-key.yaml")
@@ -1548,11 +1548,11 @@ func TestLoadConfig_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector "ds103" must start with an uppercase ASCII letter.*`)
 	})
 
-	c.Assert(writeFile(dir+"/whitespace-selector.yaml", "disabled-rules:\n  - ' DS103 '\n"), qt.IsNil)
+	c.Assert(writeFile(dir+"/whitespace-selector.yaml", "disabled-rules:\n  - ' data-dependent/alter-column-type '\n"), qt.IsNil)
 	t.Run("whitespace-padded rule selector", func(t *testing.T) {
 		c := qt.New(t)
 		_, err := lint.LoadConfig(builtintest.Runtime(), dir+"/whitespace-selector.yaml")
-		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector " DS103 " must start with an uppercase ASCII letter.*`)
+		c.Assert(err, qt.ErrorMatches, `failed to parse lint config .*rule selector " data-dependent/alter-column-type " must start with an uppercase ASCII letter.*`)
 	})
 
 	c.Assert(writeFile(dir+"/multiple-documents.yaml", "dialect: postgres\n---\ndialect: sqlite\n"), qt.IsNil)
@@ -1581,11 +1581,11 @@ func TestLintFS_FailurePath_InvalidProgrammaticExclusionGlob(t *testing.T) {
 
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		RuleConfigs: map[string]lint.RuleConfig{
-			"DS101": {Exclude: []string{"[legacy/**"}},
+			"destructive/drop-table": {Exclude: []string{"[legacy/**"}},
 		},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `rule DS101 has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
+	c.Assert(err, qt.ErrorMatches, `rule destructive/drop-table has invalid exclude pattern "\[legacy/\*\*": syntax error in pattern`)
 	c.Assert(findings, qt.IsNil)
 }
 
@@ -1598,22 +1598,22 @@ func TestValidateOptions_FailurePath_InvalidProgrammaticExclusionGlob(t *testing
 		{
 			name:    "non-normalized parent segment",
 			pattern: "**/../**",
-			wantErr: `rule DS101 has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`,
+			wantErr: `rule destructive/drop-table has invalid exclude pattern "\*\*/\.\./\*\*": pattern must be a normalized slash-separated path`,
 		},
 		{
 			name:    "current directory",
 			pattern: ".",
-			wantErr: `rule DS101 has invalid exclude pattern "\.": pattern must not contain \. or \.\. path segments`,
+			wantErr: `rule destructive/drop-table has invalid exclude pattern "\.": pattern must not contain \. or \.\. path segments`,
 		},
 		{
 			name:    "parent directory",
 			pattern: "..",
-			wantErr: `rule DS101 has invalid exclude pattern "\.\.": pattern must not contain \. or \.\. path segments`,
+			wantErr: `rule destructive/drop-table has invalid exclude pattern "\.\.": pattern must not contain \. or \.\. path segments`,
 		},
 		{
 			name:    "leading parent directory",
 			pattern: "../legacy/**",
-			wantErr: `rule DS101 has invalid exclude pattern "\.\./legacy/\*\*": pattern must not contain \. or \.\. path segments`,
+			wantErr: `rule destructive/drop-table has invalid exclude pattern "\.\./legacy/\*\*": pattern must not contain \. or \.\. path segments`,
 		},
 	}
 
@@ -1622,7 +1622,7 @@ func TestValidateOptions_FailurePath_InvalidProgrammaticExclusionGlob(t *testing
 			c := qt.New(t)
 			err := lint.ValidateOptions(builtintest.Runtime(), lint.Options{
 				RuleConfigs: map[string]lint.RuleConfig{
-					"DS101": {Exclude: []string{test.pattern}},
+					"destructive/drop-table": {Exclude: []string{test.pattern}},
 				},
 			})
 
@@ -1648,7 +1648,7 @@ func TestLoadConfig_FailurePath_DotSegmentExclusionGlobs(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			configPath := filepath.Join(dir, test.name+".yaml")
-			contents := fmt.Sprintf("rules:\n  DS101:\n    exclude:\n      - %q\n", test.pattern)
+			contents := fmt.Sprintf("rules:\n  destructive/drop-table:\n    exclude:\n      - %q\n", test.pattern)
 			c.Assert(writeFile(configPath, contents), qt.IsNil)
 
 			_, err := lint.LoadConfig(builtintest.Runtime(), configPath)
@@ -1665,14 +1665,14 @@ func TestRules_EveryRuleHasCodeTitleAndOneChecker(t *testing.T) {
 	// and each of them carries its checker; an owner's rule carries none.
 	for _, rule := range must.Must(lint.Rules(must.Must(engine.New()))) {
 		oneChecker := (rule.CheckStatement != nil) != (rule.CheckFile != nil)
-		c.Assert(oneChecker, qt.IsTrue, qt.Commentf("rule %s must set exactly one checker", rule.Code))
+		c.Assert(oneChecker, qt.IsTrue, qt.Commentf("rule %s must set exactly one checker", rule.Name))
 	}
 	seen := make(map[string]bool)
 	for _, rule := range must.Must(lint.Rules(builtintest.Runtime())) {
-		c.Assert(rule.Code, qt.Not(qt.Equals), "")
+		c.Assert(rule.Name, qt.Not(qt.Equals), "")
 		c.Assert(rule.Title, qt.Not(qt.Equals), "")
-		c.Assert(seen[rule.Code], qt.IsFalse, qt.Commentf("duplicate rule code %s", rule.Code))
-		seen[rule.Code] = true
+		c.Assert(seen[rule.Name], qt.IsFalse, qt.Commentf("duplicate rule code %s", rule.Name))
+		seen[rule.Name] = true
 		// All three, not two. SeverityInfo is a designed severity -- reported
 		// and never gated on, so a rule can be introduced to a repository that
 		// still violates it (stokaro/ptah#1633) -- and the two-way assertion
@@ -1680,7 +1680,7 @@ func TestRules_EveryRuleHasCodeTitleAndOneChecker(t *testing.T) {
 		c.Assert(rule.Severity == lint.SeverityWarning ||
 			rule.Severity == lint.SeverityError ||
 			rule.Severity == lint.SeverityInfo, qt.IsTrue,
-			qt.Commentf("rule %s has severity %q", rule.Code, rule.Severity))
+			qt.Commentf("rule %s has severity %q", rule.Name, rule.Severity))
 	}
 }
 

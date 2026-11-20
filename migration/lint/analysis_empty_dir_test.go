@@ -65,5 +65,5 @@ func TestAnalyzeFS_NonEmptyDirectoryHappyPathOnAtlasProfile(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.Files(), qt.HasLen, 1)
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS101"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"destructive/drop-table"})
 }

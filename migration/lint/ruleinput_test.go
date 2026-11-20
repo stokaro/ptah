@@ -33,7 +33,7 @@ func TestAnalyzeFS_BaselineVersionsComeFromTheRules(t *testing.T) {
 		},
 		{
 			name:     "disabling that rule asks for nothing",
-			disabled: []string{"DD101"},
+			disabled: []string{"data-dependent/add-not-null-column"},
 			want:     nil,
 		},
 		{
@@ -45,7 +45,7 @@ func TestAnalyzeFS_BaselineVersionsComeFromTheRules(t *testing.T) {
 			// A rule that reads statement text has nothing to do with the
 			// list, so silencing it must not change what is read.
 			name:     "disabling a statement-text rule changes nothing",
-			disabled: []string{"DS102"},
+			disabled: []string{"destructive/drop-column"},
 			want:     []int64{2},
 		},
 	}
@@ -99,7 +99,7 @@ func TestAnalyzeFS_UnmetInputsNameTheRuleThatWentWithout(t *testing.T) {
 		{
 			name: "no baseline names the rule, the file and the version",
 			want: []lint.UnmetInput{{
-				Rule:    "DD101",
+				Rule:    "data-dependent/add-not-null-column",
 				Input:   lint.InputBaselineSchema,
 				File:    "2_rename.sql",
 				Version: 2,
@@ -130,7 +130,7 @@ func TestAnalyzeFS_UnmetInputsNameTheRuleThatWentWithout(t *testing.T) {
 func TestAnalyzeFS_UnmetInputsFollowRuleSelection(t *testing.T) {
 	c := qt.New(t)
 	opts := renameBaselineOptions(nil)
-	opts.Disabled = []string{"DD101"}
+	opts.Disabled = []string{"data-dependent/add-not-null-column"}
 
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fixture(renameBaselineFS()), opts)
 
@@ -177,7 +177,7 @@ func TestValidateOptionsRefusesAnInconsistentInputDeclaration(t *testing.T) {
 		{
 			name: "baseline input without subjects",
 			rule: lint.Rule{
-				Code:      "ZZ901",
+				Name:      "design/zz901",
 				Title:     "test rule",
 				Severity:  lint.SeverityWarning,
 				CheckFile: func(*lint.File) []lint.Finding { return nil },
@@ -189,7 +189,7 @@ func TestValidateOptionsRefusesAnInconsistentInputDeclaration(t *testing.T) {
 		{
 			name: "subjects without the baseline input",
 			rule: lint.Rule{
-				Code:             "ZZ902",
+				Name:             "design/zz902",
 				Title:            "test rule",
 				Severity:         lint.SeverityWarning,
 				CheckFile:        func(*lint.File) []lint.Finding { return nil },
@@ -201,7 +201,7 @@ func TestValidateOptionsRefusesAnInconsistentInputDeclaration(t *testing.T) {
 		{
 			name: "an input nothing implements",
 			rule: lint.Rule{
-				Code:      "ZZ903",
+				Name:      "design/zz903",
 				Title:     "test rule",
 				Severity:  lint.SeverityWarning,
 				CheckFile: func(*lint.File) []lint.Finding { return nil },
@@ -227,7 +227,7 @@ func TestExtraRulesRefuseAnInconsistentInputDeclaration(t *testing.T) {
 	c := qt.New(t)
 	opts := renameBaselineOptions(nil)
 	opts.ExtraRules = []lint.Rule{{
-		Code:      "ZZ904",
+		Name:      "design/zz904",
 		Title:     "test rule",
 		Severity:  lint.SeverityWarning,
 		CheckFile: func(*lint.File) []lint.Finding { return nil },

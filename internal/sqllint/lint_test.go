@@ -104,7 +104,7 @@ func TestLintSource_UnsupportedParserErrorIsExplicit(t *testing.T) {
 // parser models the statement and the run succeeds.
 //
 // It asserted zero findings, and now asserts nothing above info. The difference
-// is SQL004, which says no rule examined the statement -- true of CREATE POLICY,
+// is coverage/unanalyzed-statements, which says no rule examined the statement -- true of CREATE POLICY,
 // and the point of reporting it. Only SeverityError decides the exit code
 // (internal/cli/sql/sql.go), so the run still succeeds and the claim this test was
 // written to make is unchanged (stokaro/ptah#1270).

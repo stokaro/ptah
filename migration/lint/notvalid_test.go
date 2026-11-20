@@ -22,14 +22,14 @@ func scanRuleCodes(c *qt.C, sql string, online bool) []string {
 	c.Assert(err, qt.IsNil)
 	var codes []string
 	for _, finding := range findings {
-		if slices.Contains([]string{"PG305", "PG306", "ON101"}, finding.Rule) {
+		if slices.Contains([]string{"locking/add-check", "locking/add-foreign-key", "online/unproven"}, finding.Rule) {
 			codes = append(codes, finding.Rule)
 		}
 	}
 	return codes
 }
 
-// TestLintFS_PostgresScanRulesSkipTheFormTheyRecommend holds PG305 and PG306
+// TestLintFS_PostgresScanRulesSkipTheFormTheyRecommend holds locking/add-check and locking/add-foreign-key
 // to their own advice: a CHECK or a foreign key added NOT VALID reads no
 // existing row, and the VALIDATE CONSTRAINT that completes it takes SHARE
 // UPDATE EXCLUSIVE, so neither is reported (stokaro/ptah#3502). The online mode
@@ -72,32 +72,32 @@ func TestLintFS_PostgresScanRulesReportAClauseThatValidates(t *testing.T) {
 		{
 			name:   "check",
 			sql:    "ALTER TABLE t ADD CONSTRAINT ck CHECK (id > 0);",
-			plain:  []string{"PG305"},
-			online: []string{"ON101", "PG305"},
+			plain:  []string{"locking/add-check"},
+			online: []string{"locking/add-check", "online/unproven"},
 		},
 		{
 			name:   "foreign key",
 			sql:    "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id);",
-			plain:  []string{"PG306"},
-			online: []string{"ON101", "PG306"},
+			plain:  []string{"locking/add-foreign-key"},
+			online: []string{"locking/add-foreign-key", "online/unproven"},
 		},
 		{
 			name:   "a check that validates beside one added NOT VALID",
 			sql:    "ALTER TABLE t ADD CONSTRAINT a CHECK (id > 0), ADD CONSTRAINT b CHECK (id < 9) NOT VALID;",
-			plain:  []string{"PG305"},
-			online: []string{"ON101", "PG305"},
+			plain:  []string{"locking/add-check"},
+			online: []string{"locking/add-check", "online/unproven"},
 		},
 		{
 			name:   "a foreign key that validates beside a check added NOT VALID",
 			sql:    "ALTER TABLE t ADD CONSTRAINT fk FOREIGN KEY (p_id) REFERENCES p (id), ADD CONSTRAINT b CHECK (id < 9) NOT VALID;",
-			plain:  []string{"PG306"},
-			online: []string{"ON101", "PG306"},
+			plain:  []string{"locking/add-foreign-key"},
+			online: []string{"locking/add-foreign-key", "online/unproven"},
 		},
 		{
 			name:   "NOT VALID inside the check is its expression",
 			sql:    "ALTER TABLE t ADD CONSTRAINT ck CHECK (NOT valid);",
-			plain:  []string{"PG305"},
-			online: []string{"ON101", "PG305"},
+			plain:  []string{"locking/add-check"},
+			online: []string{"locking/add-check", "online/unproven"},
 		},
 	}
 	for _, test := range tests {
@@ -112,7 +112,7 @@ func TestLintFS_PostgresScanRulesReportAClauseThatValidates(t *testing.T) {
 
 // TestLintFS_PostgresOnlineGenerationIsLintClean lints the file `ptah
 // migrations generate` writes with diff.online_alter for a new CHECK, the
-// reproduction in stokaro/ptah#3502. Without the NOT VALID reading, PG305
+// reproduction in stokaro/ptah#3502. Without the NOT VALID reading, locking/add-check
 // reports its first statement.
 func TestLintFS_PostgresOnlineGenerationIsLintClean(t *testing.T) {
 	c := qt.New(t)

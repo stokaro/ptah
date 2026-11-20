@@ -178,7 +178,7 @@ func TestWriteMigrateLintFormat_JSONCarriesNoPtahRuleName(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(analysis.Findings(), qt.Not(qt.HasLen), 0)
-	c.Assert(analysis.Findings()[0].Name, qt.Equals, "destructive/drop-table")
+	c.Assert(analysis.Findings()[0].Rule, qt.Equals, "destructive/drop-table")
 	c.Assert(out.String(), qt.Contains, `"rule":"DS102"`)
 	c.Assert(out.String(), qt.Not(qt.Contains), `destructive/drop-table`)
 }

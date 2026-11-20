@@ -251,7 +251,7 @@ func TestDeclaredRule_RefusedDeclarations(t *testing.T) {
 		},
 		{
 			name:    "built-in code",
-			code:    "DS101",
+			code:    "destructive/drop-table",
 			config:  lint.RuleConfig{Match: `file.is_up`, Message: "x"},
 			message: "is already defined",
 		},
@@ -305,16 +305,16 @@ func TestDeclaredRule_ConfiguringAnExistingRuleStillWorks(t *testing.T) {
 
 	analysis, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		DirFormat:   migrationfile.DirFormatAtlas,
-		RuleConfigs: map[string]lint.RuleConfig{"DS101": {Severity: lint.SeverityError}},
+		RuleConfigs: map[string]lint.RuleConfig{"destructive/drop-table": {Severity: lint.SeverityError}},
 	})
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
 	// A DROP TABLE reports the client-compatibility check beside the data-loss
 	// one, so the configured rule is the second finding rather than the only
-	// one. BC103 keeps its own severity, which is what makes this an override
+	// one. rollout/drop-table keeps its own severity, which is what makes this an override
 	// of one rule rather than of the statement.
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(findings[1].Severity, qt.Equals, lint.SeverityError)
 	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityWarning)
 }

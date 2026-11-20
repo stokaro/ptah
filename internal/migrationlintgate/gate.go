@@ -294,7 +294,7 @@ func (p Policy) options(pathPrefix string) lint.Options {
 // WithAtlasRevisionTable returns the policy for an apply that records versions
 // in the Atlas revision table, which keeps the version R that R__x.sql spells
 // in the Atlas format. Judged for Ptah's table, which refuses the directory for
-// that file, the gate would report the file under MF105P although the apply
+// that file, the gate would report the file under file-form/refused-file although the apply
 // runs it.
 func (p Policy) WithAtlasRevisionTable() Policy {
 	p.atlasRevisionTable = true

@@ -72,7 +72,7 @@ func postgresCreateIndexRule() lintkit.Rule {
 	}
 }
 
-// postgresLockingIndexBuilds returns the CREATE INDEX statements PG101
+// postgresLockingIndexBuilds returns the CREATE INDEX statements locking/create-index
 // reports, and it is also the rule's answer to which statements want the
 // starting state. One predicate for both, because a statement requested but
 // never reported costs a dev-database read for nothing, and one reported but
@@ -82,7 +82,7 @@ func postgresCreateIndexRule() lintkit.Rule {
 // empty table, so there is no lock hazard. A CONCURRENTLY build takes no lock
 // that blocks writes, and neither does a TimescaleDB per-chunk build on the
 // table as a whole; see [txrequire.PerChunkIndexBuild]. Both are refused inside
-// a transaction, which PG103 and PG103P report.
+// a transaction, which transaction/concurrent-index and transaction/per-chunk-index report.
 func postgresLockingIndexBuilds(file *lintkit.File) []int {
 	if !file.IsUp {
 		return nil
@@ -105,7 +105,7 @@ func postgresLockingIndexBuilds(file *lintkit.File) []int {
 		// ON ONLY on a partitioned table creates the parent's index alone,
 		// invalid until each partition's index is attached, and reads no row:
 		// measured on PostgreSQL 18.6, 11 ms beside a 5.3 s full build, with an
-		// INSERT during it taking 8 ms. It is the first step of the remedy PG108
+		// INSERT during it taking 8 ms. It is the first step of the remedy locking/partitioned-index
 		// names, so reporting it would flag the advice.
 		if only && file.Baseline.Partitioned(target.Normalized) {
 			continue
@@ -115,7 +115,7 @@ func postgresLockingIndexBuilds(file *lintkit.File) []int {
 	return indexes
 }
 
-// postgresLockingIndexAdvice is PG101's message for one statement: the
+// postgresLockingIndexAdvice is locking/create-index's message for one statement: the
 // ordinary advice, or the hypertable advice when the starting state says the
 // table is one.
 //
@@ -152,7 +152,7 @@ func postgresLockingIndexAdvice(file *lintkit.File, stmt *lintext.Statement) str
 // source spelling and the normalized one, and whether the statement names it
 // ON ONLY, which on a partitioned table builds the parent's index alone.
 //
-// PG101 and PG108 both read the target, and they must place it the same way:
+// locking/create-index and locking/partitioned-index both read the target, and they must place it the same way:
 // a statement one of them resolved and the other did not is reported twice, or
 // not at all. The word after ON is not the table in either of these spellings:
 // it is `ONLY` in `ON ONLY m` and `PUBLIC` in `ON public.m`.
@@ -206,13 +206,13 @@ func postgresConcurrentIndexRule() lintkit.Rule {
 	}
 }
 
-// postgresPerChunkIndexInTransactionRule is PG103 for TimescaleDB's per-chunk
+// postgresPerChunkIndexInTransactionRule is transaction/concurrent-index for TimescaleDB's per-chunk
 // index build: WITH (timescaledb.transaction_per_chunk) commits one transaction
 // per chunk, so TimescaleDB refuses it inside a transaction block, the same way
 // PostgreSQL refuses CONCURRENTLY (SQLSTATE 25001, measured on TimescaleDB
 // 2.30.1 over PostgreSQL 18.6).
 //
-// It is a rule of its own rather than a wider PG103 because PG103 reports the
+// It is a rule of its own rather than a wider transaction/concurrent-index because transaction/concurrent-index reports the
 // Atlas check for a concurrent operation without the txmode header, and a
 // per-chunk build is not a concurrent operation. Folding it in would put a
 // TimescaleDB statement under an Atlas identifier that does not describe it,
@@ -220,7 +220,7 @@ func postgresConcurrentIndexRule() lintkit.Rule {
 //
 // The recognition is [txrequire.PerChunkIndexBuild], the predicate the
 // migrator's transaction preflight uses, so a file this reports is the file
-// `migrations up` refuses, and a statement PG101 leaves alone as the per-chunk
+// `migrations up` refuses, and a statement locking/create-index leaves alone as the per-chunk
 // remedy is the statement this reports when it sits in a transaction.
 func postgresPerChunkIndexInTransactionRule() lintkit.Rule {
 	return lintkit.Rule{
@@ -291,7 +291,7 @@ func postgresVolatileDefaultRule() lintkit.Rule {
 		"adding a column with a volatile DEFAULT rewrites or evaluates every existing row; add the column first, backfill in batches, then set the default")
 }
 
-// PG305 and PG306 advise adding the constraint NOT VALID and validating it
+// locking/add-check and locking/add-foreign-key advise adding the constraint NOT VALID and validating it
 // separately, so the form they recommend is not a finding: each reports only
 // a clause that validates the existing rows as it adds the constraint
 // (stokaro/ptah#3502). Measured on PostgreSQL 18.6 and 13.23 over a table with

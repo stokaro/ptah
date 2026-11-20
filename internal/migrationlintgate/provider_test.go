@@ -16,7 +16,7 @@ func TestPolicyDefaultsDoNotRequireUnselectedEngineRules(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	policy, err := migrationlintgate.LoadPolicy(runtime, fstest.MapFS{}, "fixture")
 	c.Assert(err, qt.IsNil)
-	c.Assert(policy.BlockingFamilies(), qt.Contains, "DS")
+	c.Assert(policy.BlockingRules(), qt.Contains, "destructive/drop-table")
 }
 
 func TestPolicyStillRefusesUserSelectorsForUnselectedEngines(t *testing.T) {

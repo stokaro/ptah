@@ -5,13 +5,13 @@ import "ptah.run/internal/lintkit"
 // A rename retires one logical name and introduces another. That is a single
 // event, and the two command surfaces describe it at different altitudes:
 //
-//   - Native `ptah migrations lint` describes the consequence. BC101 says
+//   - Native `ptah migrations lint` describes the consequence. rollout/rename says
 //     deployed application versions that still reference the old name fail
 //     instantly, and prescribes add-new/backfill/drop-old across releases.
 //   - `ptah-compat migrate lint` describes the structure, because that is what
 //     the analyzer it is compatible with reports: the old name no longer
-//     resolves, which is a destructive change to that name (DS101 for a table,
-//     DS102 for a column in Ptah's code space).
+//     resolves, which is a destructive change to that name (destructive/drop-table for a table,
+//     destructive/drop-column for a column in Ptah's code space).
 //
 // They are two descriptions of one event, not two events, so exactly one of
 // them is emitted per rename and [File.compatibility] selects which. Emitting
@@ -22,7 +22,7 @@ import "ptah.run/internal/lintkit"
 // code because suppression selectors are keyed by family. Measured against the
 // pinned community binary: `-- atlas:nolint destructive` above a rename
 // silences it (exit 0), while `-- atlas:nolint incompatible` above the same
-// rename does not (still DS103, exit 1). `destructive` maps to the DS and CD
+// rename does not (still data-dependent/alter-column-type, exit 1). `destructive` maps to the DS and CD
 // families and `incompatible` to BC, so a rename carrying a BC code on the
 // compatibility surface would be silenced by the selector that must not silence
 // it -- widening what a suppression covers, which is the one direction a
@@ -167,14 +167,14 @@ type statementRename struct {
 // fileRenames walks an up migration and returns the renames each statement
 // performs, minus those whose object this same file created.
 //
-// The exemption mirrors the create-then-drop exemption DS101 already applies,
+// The exemption mirrors the create-then-drop exemption destructive/drop-table already applies,
 // and holds for the same reason: no deployed application version ever saw a
 // name this migration itself introduced, so retiring it breaks nothing. It is
 // measured on both forms -- `CREATE TABLE users (id int); ALTER TABLE users
 // RENAME COLUMN id TO oid;` and `CREATE TABLE staging (id int); ALTER TABLE
 // staging RENAME TO users;` in one file are both silent on the analyzer this
 // tool is compatible with -- and it applies on the native surface too, where
-// BC101 was reporting a hazard that cannot occur.
+// rollout/rename was reporting a hazard that cannot occur.
 func fileRenames(file *File) []statementRename {
 	if !file.IsUp {
 		return nil

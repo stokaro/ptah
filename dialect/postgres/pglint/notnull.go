@@ -7,13 +7,13 @@ import (
 
 // pgWireFamily is the set of engines the SET NOT NULL spelling was measured
 // on: PostgreSQL and the two built-in engines that speak its wire protocol.
-// PG303 names each of them deliberately, one measurement per engine, where
+// locking/set-not-null names each of them deliberately, one measurement per engine, where
 // every other PG rule names postgres alone.
 var pgWireFamily = []string{"postgres", "cockroachdb", "yugabytedb"}
 
 // setNotNullConsequence says what each engine does with SET NOT NULL, as
 // measured; the PostgreSQL sentence also answers a run with no dialect. The
-// measurements are recorded beside DD103 in migration lint, the rule that
+// measurements are recorded beside data-dependent/set-not-null in migration lint, the rule that
 // reports the same hazard where the spelling restates the whole column.
 func setNotNullConsequence(dialect string) string {
 	switch dialect {
@@ -30,7 +30,7 @@ func setNotNullConsequence(dialect string) string {
 	}
 }
 
-// setNotNullRule (PG303) reads the statement text: SET NOT NULL says what
+// setNotNullRule (locking/set-not-null) reads the statement text: SET NOT NULL says what
 // it does, and the row that decides the outcome is not in the schema.
 func setNotNullRule() lintkit.Rule {
 	return lintkit.Rule{

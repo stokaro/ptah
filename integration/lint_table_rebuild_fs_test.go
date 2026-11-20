@@ -48,5 +48,5 @@ func TestMigrationsLintReadsAGeneratedSQLiteRebuildFS(t *testing.T) {
 
 	c.Assert(lintErr, qt.IsNil, qt.Commentf("%s", linted))
 	c.Assert(linted, qt.Contains, "No lint findings.")
-	c.Assert(linted, qt.Contains, "warning: DS101 ran without the baseline schema")
+	c.Assert(linted, qt.Contains, "warning: destructive/drop-table ran without the baseline schema")
 }

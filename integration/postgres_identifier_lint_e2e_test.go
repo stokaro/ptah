@@ -32,7 +32,7 @@ func sqlLintFindings(c *qt.C, sql, rule string) []sqllint.Finding {
 	return slices.DeleteFunc(report.Findings, func(finding sqllint.Finding) bool { return finding.Rule != rule })
 }
 
-// lintStoredNames is the name each DDL003 finding says the server stores.
+// lintStoredNames is the name each naming/identifier-too-long finding says the server stores.
 func lintStoredNames(findings []sqllint.Finding) []string {
 	var stored []string
 	for _, finding := range findings {
@@ -44,7 +44,7 @@ func lintStoredNames(findings []sqllint.Finding) []string {
 var lintStoredAs = regexp.MustCompile(`it is stored as "([^"]*)"`)
 
 // TestSQLLintIdentifierCollisionsAgreeWithTheServerE2E runs each file on the
-// server and through `ptah sql lint`: DDL004 reports exactly the files the
+// server and through `ptah sql lint`: naming/identifier-collision reports exactly the files the
 // server refuses for a name cut to one in use, and nothing for the same cut
 // name in a namespace of its own or under a guard the server skips.
 func TestSQLLintIdentifierCollisionsAgreeWithTheServerE2E(t *testing.T) {
@@ -149,7 +149,7 @@ func TestSQLLintIdentifierCollisionsAgreeWithTheServerE2E(t *testing.T) {
 }
 
 // TestSQLLintCutNamesMatchTheCatalogE2E builds a database from a file of long
-// names and holds each name DDL003 says the server stores against its
+// names and holds each name naming/identifier-too-long says the server stores against its
 // catalog, one finding per name the file writes past the limit.
 func TestSQLLintCutNamesMatchTheCatalogE2E(t *testing.T) {
 	c := qt.New(t)
@@ -164,9 +164,9 @@ func TestSQLLintCutNamesMatchTheCatalogE2E(t *testing.T) {
 }
 
 // TestSQLLintOpenMeterExportE2E lints the SQL OpenMeter's Ent exporter writes,
-// pinned in testdata: DDL003 reports each name the export writes past 63
+// pinned in testdata: naming/identifier-too-long reports each name the export writes past 63
 // bytes, under the names the catalog of a database the same SQL built holds,
-// and DDL004 reports nothing, because the server accepts the file.
+// and naming/identifier-collision reports nothing, because the server accepts the file.
 func TestSQLLintOpenMeterExportE2E(t *testing.T) {
 	c := qt.New(t)
 	export, err := os.ReadFile(filepath.Join("testdata", "openmeter", "ent-export.sql"))
@@ -213,7 +213,7 @@ func identifierMigrations(c *qt.C, second string) string {
 }
 
 // TestMigrationsLintIdentifierCollisionAgreesWithApplyE2E lints a directory
-// and applies it to the server: PG402P reports the second version exactly
+// and applies it to the server: naming/identifier-collision reports the second version exactly
 // when the server refuses it, because its index is cut to the name the first
 // version's holds. The control renames the index within the first 63 bytes,
 // and both lint and apply pass.
@@ -249,7 +249,7 @@ func TestMigrationsLintIdentifierCollisionAgreesWithApplyE2E(t *testing.T) {
 				collisions = append(collisions, finding.Rule+" "+filepath.Base(finding.File))
 			}
 			wantCode := map[bool]int{false: 0, true: 1}[test.refused]
-			c.Assert(slices.Contains(collisions, "PG402P 0000000002_index.up.sql"), qt.Equals, test.refused, qt.Commentf("%v", collisions))
+			c.Assert(slices.Contains(collisions, "naming/identifier-collision 0000000002_index.up.sql"), qt.Equals, test.refused, qt.Commentf("%v", collisions))
 			c.Assert(lintCode, qt.Equals, wantCode)
 			c.Assert(upCode != 0, qt.Equals, test.refused, qt.Commentf("stdout:\n%s\nstderr:\n%s", upOut, upErr))
 		})

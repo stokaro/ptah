@@ -40,8 +40,8 @@
 //
 // An engine owner may publish rules of its own through the runtime a run is
 // given, as [ptah.run/core/lintext] data. The PostgreSQL owner publishes the
-// PG and TX families and the online rules ON101 and ON103 that way, the MySQL
-// owner the MY family and ON102, and the YDB provider the YD family. [Rules]
+// PG and TX families and the online rules online/unproven and online/lock-held-across-scan that way, the MySQL
+// owner the MY family and online/unproven, and the YDB provider the YD family. [Rules]
 // lists them after this package's own. A run asks the owners for their
 // findings once, over every file, and applies the same policy to them as to
 // every other finding: suppression directives, severity overrides, excluded
@@ -52,9 +52,9 @@
 // # Facts only an owner recognizes
 //
 // Some rules of this package need to know what a statement does where only
-// its dialect's owner can tell: DS107 reports a drop that loses state a new
-// object does not get back, such as a YDB topic's messages; MF101 and MF102
-// read YQL's unique index; DS101, BC103 and the rename rules pass over the
+// its dialect's owner can tell: destructive/drop-object reports a drop that loses state a new
+// object does not get back, such as a YDB topic's messages; data-dependent/add-unique-index and data-dependent/rebuild-index-as-unique
+// read YQL's unique index; destructive/drop-table, rollout/drop-table and the rename rules pass over the
 // steps of a table rebuild, which YDB's owner matches against the directory's
 // own history. The owner's split reports these as statement effects, and the
 // rules read the effects instead of naming a dialect. A run that names no
@@ -364,7 +364,7 @@ type Options struct {
 	// here, because a run that proved nothing and found nothing is the one
 	// answer this family must never give.
 	RequireOnline bool
-	// Unparsed selects the statements rule AC102 reports when the SQL parser
+	// Unparsed selects the statements rule coverage/unparsed-statement reports when the SQL parser
 	// could not read them. The zero value reports none, for a caller whose
 	// statements a server reads next or that wrote them itself.
 	Unparsed UnparsedScope
@@ -748,7 +748,7 @@ func ruleAppliesToDialect(rule Rule, dialect string) bool {
 // form while Direction follows the migrator, so if the two ever diverge —
 // an unescaped dot in the migrator's pattern makes 0000000001_cleanup.sql run
 // as an up migration (stokaro/ptah#245) — lint keeps scanning whatever the
-// migrator would execute and MF103 explains the ambiguity.
+// migrator would execute and file-form/file-name explains the ambiguity.
 var strictNameRe = regexp.MustCompile(`^\d{10}_.+\.(up|down)\.sql$`)
 
 // noLintTarget is one resolved nolint selector: a rule name, a category, or,
@@ -914,7 +914,7 @@ func parseNoLintMarker(
 // A word is refused when it is clearly meant as a name and is wrong: its first
 // segment is a declared category (`locking/typo`), or it is one lower-case word
 // ending in a slash (`lockin/`). A word spelled as a rule code, such as
-// `DS102` or `DS101/DS102`, is refused too: Ptah rules are named, and a code
+// `destructive/drop-column` or `destructive/drop-table/DS102`, is refused too: Ptah rules are named, and a code
 // is not a rule name. Any other word holding a slash, such as a URL or
 // `and/or`, is free text. A directive with no selector and no text suppresses
 // every rule; one with text and no selector suppresses none.

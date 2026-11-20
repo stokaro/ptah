@@ -99,7 +99,7 @@ func Valid(dialect string) bool {
 //   - The PostgreSQL family is grouped as a decision, not as a measurement. Its
 //     members do NOT select the same rule set: PG and TX rules name the literal
 //     "postgres", and a rule names cockroachdb or yugabytedb only
-//     where it was measured on that engine -- PG303 is the one that has been
+//     where it was measured on that engine -- locking/set-not-null is the one that has been
 //     (stokaro/ptah#2958) -- so those databases run the dialect-independent
 //     families plus that measured set. They are accepted because they share
 //     PostgreSQL's wire protocol and planner family, so "this directory

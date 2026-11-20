@@ -55,134 +55,134 @@ func TestNamingRules_ReportEveryNameAMigrationIntroduces(t *testing.T) {
 			name:      "a schema created",
 			dialect:   "postgres",
 			migration: "CREATE SCHEMA Billing;",
-			want:      []string{"NM101"},
+			want:      []string{"naming/schema-name"},
 			message:   "schema name Billing does not match the naming convention ^[a-z][a-z0-9_]*$: use lower snake case",
 		},
 		{
 			name:      "a schema renamed to",
 			dialect:   "postgres",
 			migration: "ALTER SCHEMA app RENAME TO Billing;",
-			want:      []string{"NM101"},
+			want:      []string{"naming/schema-name"},
 		},
 		{
 			name:      "a table created",
 			dialect:   "postgres",
 			migration: "CREATE TABLE Invoices (id int);",
-			want:      []string{"NM102"},
+			want:      []string{"naming/table-name"},
 			message:   "table name Invoices does not match",
 		},
 		{
 			name:      "a quoted table name is judged without its quotes",
 			dialect:   "postgres",
 			migration: `CREATE TABLE "Invoices" (id int);`,
-			want:      []string{"NM102"},
+			want:      []string{"naming/table-name"},
 			message:   `table name "Invoices" does not match`,
 		},
 		{
 			name:      "a table renamed to",
 			dialect:   "postgres",
 			migration: "ALTER TABLE orders RENAME TO Orders;",
-			want:      []string{"NM102"},
+			want:      []string{"naming/table-name"},
 		},
 		{
 			name:      "a MySQL table renamed without TO",
 			dialect:   "mysql",
 			migration: "ALTER TABLE orders RENAME Orders;",
-			want:      []string{"NM102"},
+			want:      []string{"naming/table-name"},
 		},
 		{
 			name:      "a column declared in CREATE TABLE",
 			dialect:   "postgres",
 			migration: "CREATE TABLE invoices (id int, createdAt timestamp);",
-			want:      []string{"NM103"},
+			want:      []string{"naming/column-name"},
 			message:   "column name createdAt does not match",
 		},
 		{
 			name:      "a column added",
 			dialect:   "postgres",
 			migration: "ALTER TABLE orders ADD COLUMN createdAt timestamp;",
-			want:      []string{"NM103"},
+			want:      []string{"naming/column-name"},
 		},
 		{
 			name:      "a column renamed to",
 			dialect:   "postgres",
 			migration: "ALTER TABLE orders RENAME COLUMN email TO Email;",
-			want:      []string{"NM103"},
+			want:      []string{"naming/column-name"},
 		},
 		{
 			name:      "a column renamed through MySQL CHANGE",
 			dialect:   "mysql",
 			migration: "ALTER TABLE orders CHANGE email Email varchar(100);",
-			want:      []string{"NM103"},
+			want:      []string{"naming/column-name"},
 		},
 		{
 			name:      "an index created",
 			dialect:   "postgres",
 			migration: "CREATE INDEX IDX_orders_email ON orders (email);",
-			want:      []string{"NM104"},
+			want:      []string{"naming/index-name"},
 			message:   "index name IDX_orders_email does not match",
 		},
 		{
 			name:      "a unique index created concurrently",
 			dialect:   "postgres",
 			migration: "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS IDX_orders_email ON orders (email);",
-			want:      []string{"NM104"},
+			want:      []string{"naming/index-name"},
 		},
 		{
 			name:      "a MySQL index added to a table",
 			dialect:   "mysql",
 			migration: "ALTER TABLE orders ADD INDEX IDX_orders_email (email);",
-			want:      []string{"NM104"},
+			want:      []string{"naming/index-name"},
 		},
 		{
 			name:      "a MySQL index declared inline",
 			dialect:   "mysql",
 			migration: "CREATE TABLE invoices (id int, number int, KEY IDX_number (number));",
-			want:      []string{"NM104"},
+			want:      []string{"naming/index-name"},
 		},
 		{
 			name:      "a unique constraint is an index",
 			dialect:   "postgres",
 			migration: "ALTER TABLE orders ADD CONSTRAINT UQ_orders_email UNIQUE (email);",
-			want:      []string{"NM104"},
+			want:      []string{"naming/index-name"},
 		},
 		{
 			name:      "an index renamed to",
 			dialect:   "postgres",
 			migration: "ALTER INDEX orders_email_idx RENAME TO IDX_orders_email;",
-			want:      []string{"NM104"},
+			want:      []string{"naming/index-name"},
 		},
 		{
 			name:      "a foreign key added",
 			dialect:   "postgres",
 			migration: "ALTER TABLE orders ADD CONSTRAINT FK_orders_customer FOREIGN KEY (customer_id) REFERENCES customers (id);",
-			want:      []string{"NM105"},
+			want:      []string{"naming/foreign-key-name"},
 			message:   "foreign key name FK_orders_customer does not match",
 		},
 		{
 			name:      "a foreign key declared inline",
 			dialect:   "mysql",
 			migration: "CREATE TABLE invoices (id int, order_id int, CONSTRAINT FK_invoices_order FOREIGN KEY (order_id) REFERENCES orders (id));",
-			want:      []string{"NM105"},
+			want:      []string{"naming/foreign-key-name"},
 		},
 		{
 			name:      "a check constraint added",
 			dialect:   "postgres",
 			migration: "ALTER TABLE orders ADD CONSTRAINT CK_orders_total CHECK (total >= 0);",
-			want:      []string{"NM106"},
+			want:      []string{"naming/check-name"},
 			message:   "check constraint name CK_orders_total does not match",
 		},
 		{
 			name:      "a check constraint declared inline",
 			dialect:   "postgres",
 			migration: "CREATE TABLE invoices (id int, total int, CONSTRAINT CK_total CHECK (total >= 0));",
-			want:      []string{"NM106"},
+			want:      []string{"naming/check-name"},
 		},
 		{
 			name:      "every kind at once, one finding each",
 			dialect:   "postgres",
 			migration: "CREATE TABLE Invoices (Id int, CONSTRAINT PK_invoices PRIMARY KEY (Id), CONSTRAINT FK_order FOREIGN KEY (Id) REFERENCES orders (id), CONSTRAINT CK_id CHECK (Id > 0));",
-			want:      []string{"NM102", "NM103", "NM104", "NM105", "NM106"},
+			want:      []string{"naming/table-name", "naming/column-name", "naming/index-name", "naming/foreign-key-name", "naming/check-name"},
 		},
 	}
 
@@ -290,9 +290,9 @@ func TestNamingRules_AKindsOwnPatternReplacesTheDefault(t *testing.T) {
 			Index:   &lint.NamingPattern{Match: "^idx_[a-z_]+$", Message: "prefix an index with idx_"},
 		})
 
-	c.Assert(namingCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"NM104", "NM102"})
-	c.Assert(messageOf(analysis.Findings(), "NM104"), qt.Equals, "index name orders_email does not match the naming convention ^idx_[a-z_]+$: prefix an index with idx_")
-	c.Assert(messageOf(analysis.Findings(), "NM102"), qt.Equals, "table name Invoices does not match the naming convention ^[a-z][a-z0-9_]*$: use lower snake case")
+	c.Assert(namingCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"naming/index-name", "naming/table-name"})
+	c.Assert(messageOf(analysis.Findings(), "naming/index-name"), qt.Equals, "index name orders_email does not match the naming convention ^idx_[a-z_]+$: prefix an index with idx_")
+	c.Assert(messageOf(analysis.Findings(), "naming/table-name"), qt.Equals, "table name Invoices does not match the naming convention ^[a-z][a-z0-9_]*$: use lower snake case")
 }
 
 // TestNamingRules_SeverityComesFromTheBlock: the block's severity is what
@@ -308,12 +308,12 @@ func TestNamingRules_SeverityComesFromTheBlock(t *testing.T) {
 		DirFormat:   migrationfile.DirFormatAtlas,
 		Selection:   lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 		Naming:      &lint.NamingConfig{Match: "^[a-z_]+$", Severity: lint.SeverityError},
-		RuleConfigs: map[string]lint.RuleConfig{"NM103": {Severity: lint.SeverityInfo}},
+		RuleConfigs: map[string]lint.RuleConfig{"naming/column-name": {Severity: lint.SeverityInfo}},
 	})
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"NM102", "NM103"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"naming/column-name", "naming/table-name"})
 	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityError)
 	c.Assert(findings[1].Severity, qt.Equals, lint.SeverityInfo)
 	c.Assert(findings[0].Context.Subjects, qt.DeepEquals, []lint.Subject{{Kind: lint.SubjectTable, Name: "Invoices"}})
@@ -331,11 +331,11 @@ func TestNamingRules_AreSelectedByTheirCodes(t *testing.T) {
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 		Naming:    snakeCase,
-		Disabled:  []string{"NM102"},
+		Disabled:  []string{"naming/table-name"},
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(namingCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"NM103"})
+	c.Assert(namingCodes(rulesOf(analysis.Findings())), qt.DeepEquals, []string{"naming/column-name"})
 }
 
 // TestNamingConfig_IsRefusedWhenItCannotEnforceAnything holds the parse-time

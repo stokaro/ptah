@@ -3,8 +3,8 @@
 // another: nothing, a catalog edit, an index rebuild or a table rewrite.
 //
 // It is PostgreSQL knowledge, so it belongs to the PostgreSQL owner
-// (ptah.run/dialect/postgres/pglint), whose PG301 and PG301P rules read it.
-// It sits here, shared, for one reason: the common DS103 rule of
+// (ptah.run/dialect/postgres/pglint), whose rewrite/alter-column-type and rewrite/in-place-column-change rules read it.
+// It sits here, shared, for one reason: the common data-dependent/alter-column-type rule of
 // ptah.run/migration/lint keeps a PostgreSQL arm that reads it to tell an
 // unchanged type from a changed one, and the host must not import an owner.
 // That arm is on the stokaro/ptah#4140 list of engine arms that move behind

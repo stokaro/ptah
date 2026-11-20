@@ -46,7 +46,7 @@ func ownedRuntime(c *qt.C, owner scriptedOwner, rules ...lintext.Rule) *engine.R
 
 // ownedRule is a text rule judging targets.
 func ownedRule(code string, targets ...string) lintext.Rule {
-	return lintext.Rule{Code: code, Title: code + " title", Severity: lintext.Warning, Targets: targets}
+	return lintext.Rule{Name: code, Title: code + " title", Severity: lintext.Warning, Targets: targets}
 }
 
 // selectMigration is a directory of one version whose up file holds two
@@ -63,7 +63,7 @@ func selectMigration() map[string]string {
 // call's rules share nothing with the next call's.
 func TestRules_HoldsTheOwnersRules(t *testing.T) {
 	c := qt.New(t)
-	runtime := ownedRuntime(c, scriptedOwner{}, ownedRule("XY101", "postgres", "mysql"))
+	runtime := ownedRuntime(c, scriptedOwner{}, ownedRule("design/xy101", "postgres", "mysql"))
 	own := must.Must(lint.Rules(must.Must(engine.New())))
 
 	rules := must.Must(lint.Rules(runtime))
@@ -73,8 +73,8 @@ func TestRules_HoldsTheOwnersRules(t *testing.T) {
 	c.Assert(codesOf(again[:len(own)]), qt.DeepEquals, codesOf(own))
 	owned := again[len(own):]
 	c.Assert(owned, qt.HasLen, 1)
-	c.Assert([]any{owned[0].Code, owned[0].Title, owned[0].Severity, owned[0].Dialects, owned[0].Input},
-		qt.DeepEquals, []any{"XY101", "XY101 title", lint.SeverityWarning, []string{"postgres", "mysql"}, lint.InputStatementText})
+	c.Assert([]any{owned[0].Name, owned[0].Title, owned[0].Severity, owned[0].Dialects, owned[0].Input},
+		qt.DeepEquals, []any{"design/xy101", "XY101 title", lint.SeverityWarning, []string{"postgres", "mysql"}, lint.InputStatementText})
 	c.Assert(owned[0].CheckStatement == nil && owned[0].CheckFile == nil, qt.IsTrue)
 }
 
@@ -82,23 +82,23 @@ func TestRules_HoldsTheOwnersRules(t *testing.T) {
 func codesOf(rules []lint.Rule) []string {
 	codes := make([]string, 0, len(rules))
 	for _, rule := range rules {
-		codes = append(codes, rule.Code)
+		codes = append(codes, rule.Name)
 	}
 	return codes
 }
 
-// The bundled runtime's PostgreSQL owner publishes TX101, which this package
-// does not check itself. TX201 is checked here, for every dialect lint
+// The bundled runtime's PostgreSQL owner publishes transaction/mixed-statements, which this package
+// does not check itself. transaction/explicit-transaction is checked here, for every dialect lint
 // analyzes, and no owner publishes it.
 func TestRules_TheBundledOwnersPublishTheTransactionMix(t *testing.T) {
 	c := qt.New(t)
 	codes := codesOf(must.Must(lint.Rules(builtintest.Runtime())))
 	own := codesOf(must.Must(lint.Rules(must.Must(engine.New()))))
 
-	c.Assert(codes, qt.Contains, "TX101")
-	c.Assert(codes, qt.Contains, "TX201")
-	c.Assert(own, qt.Not(qt.Contains), "TX101")
-	c.Assert(own, qt.Contains, "TX201")
+	c.Assert(codes, qt.Contains, "transaction/mixed-statements")
+	c.Assert(codes, qt.Contains, "transaction/explicit-transaction")
+	c.Assert(own, qt.Not(qt.Contains), "transaction/mixed-statements")
+	c.Assert(own, qt.Contains, "transaction/explicit-transaction")
 }
 
 func TestRules_FailurePath(t *testing.T) {
@@ -118,20 +118,20 @@ func TestAnalyzeFS_ReportsTheOwnersFindings(t *testing.T) {
 	c := qt.New(t)
 	var requests []lintext.CheckRequest
 	owner := scriptedOwner{requests: &requests, answers: map[bool]lintext.CheckResult{false: {Complete: true,
-		Findings: []lintext.Finding{{Code: "XY101", File: 1, Statement: 1, Message: "reads b",
+		Findings: []lintext.Finding{{Name: "design/xy101", File: 1, Statement: 1, Message: "reads b",
 			Subjects: []lintext.Subject{{Kind: lintext.SubjectColumn, Name: "id", Parent: "b", DataType: "int"}}}}}}}
-	runtime := ownedRuntime(c, owner, ownedRule("XY101", "postgres"), ownedRule("XY102", "postgres"), ownedRule("XY103", "mysql"))
+	runtime := ownedRuntime(c, owner, ownedRule("design/xy101", "postgres"), ownedRule("design/xy102", "postgres"), ownedRule("design/xy103", "mysql"))
 
 	findings, err := lint.LintFS(c.Context(), runtime, fixture(selectMigration()),
-		lint.Options{Dialect: "postgres", Disabled: []string{"XY102"}, Compatibility: lint.CompatibilityProfileAtlas})
+		lint.Options{Dialect: "postgres", Disabled: []string{"design/xy102"}, Compatibility: lint.CompatibilityProfileAtlas})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(findings, qt.DeepEquals, []lint.Finding{{Rule: "XY101", Title: "XY101 title", Severity: lint.SeverityWarning,
+	c.Assert(findings, qt.DeepEquals, []lint.Finding{{Rule: "design/xy101", Title: "XY101 title", Severity: lint.SeverityWarning,
 		File: "0000000001_x.up.sql", Line: 3, Message: "reads b", Context: &lint.FindingContext{StatementIndex: 1,
 			Subjects: []lint.Subject{{Kind: lint.SubjectColumn, Name: "id", Parent: "b", DataType: "int"}}}}})
 	c.Assert(requests, qt.HasLen, 1)
-	c.Assert([]any{requests[0].Target.Name, requests[0].Codes, requests[0].Compatibility, requests[0].Baseline},
-		qt.DeepEquals, []any{"postgres", []string{"XY101"}, "atlas", (*lintext.Baseline)(nil)})
+	c.Assert([]any{requests[0].Target.Name, requests[0].Names, requests[0].Compatibility, requests[0].Baseline},
+		qt.DeepEquals, []any{"postgres", []string{"design/xy101"}, "atlas", (*lintext.Baseline)(nil)})
 	c.Assert(requests[0].Files, qt.HasLen, 2)
 	c.Assert([]any{requests[0].Files[0].Name, requests[0].Files[0].Down, requests[0].Files[1].Name, requests[0].Files[1].Up},
 		qt.DeepEquals, []any{"0000000001_x.down.sql", true, "0000000001_x.up.sql", true})
@@ -151,18 +151,18 @@ func TestAnalyzeFS_AppliesThePolicyToTheOwnersFindings(t *testing.T) {
 		{"reported", "SELECT 1;\n", lint.Options{Dialect: "postgres"}, []string{"XY101 warning"}},
 		{"silenced by a directive", "-- ptah:nolint XY101\nSELECT 1;\n", lint.Options{Dialect: "postgres"}, make([]string, 0)},
 		{"a configured severity", "SELECT 1;\n",
-			lint.Options{Dialect: "postgres", RuleConfigs: map[string]lint.RuleConfig{"XY101": {Severity: lint.SeverityError}}},
+			lint.Options{Dialect: "postgres", RuleConfigs: map[string]lint.RuleConfig{"design/xy101": {Severity: lint.SeverityError}}},
 			[]string{"XY101 error"}},
 		{"an excluded path", "SELECT 1;\n",
-			lint.Options{Dialect: "postgres", RuleConfigs: map[string]lint.RuleConfig{"XY101": {Exclude: []string{"*.up.sql"}}}},
+			lint.Options{Dialect: "postgres", RuleConfigs: map[string]lint.RuleConfig{"design/xy101": {Exclude: []string{"*.up.sql"}}}},
 			make([]string, 0)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			owner := scriptedOwner{requests: new([]lintext.CheckRequest), answers: map[bool]lintext.CheckResult{false: {Complete: true,
-				Findings: []lintext.Finding{{Code: "XY101", File: 1, Statement: 0, Message: "m"}}}}}
+				Findings: []lintext.Finding{{Name: "design/xy101", File: 1, Statement: 0, Message: "m"}}}}}
 
-			findings, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("XY101", "postgres")), fixture(map[string]string{
+			findings, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("design/xy101", "postgres")), fixture(map[string]string{
 				"0000000001_x.down.sql": "SELECT 0;\n",
 				"0000000001_x.up.sql":   test.up,
 			}), test.opts)
@@ -184,7 +184,7 @@ func TestAnalyzeFS_AsksNoOwnerWithNothingToJudge(t *testing.T) {
 		name string
 		opts lint.Options
 	}{
-		{"every owned rule disabled", lint.Options{Dialect: "postgres", Disabled: []string{"XY"}}},
+		{"every owned rule disabled", lint.Options{Dialect: "postgres", Disabled: []string{"design/xy"}}},
 		{"a target no owned rule judges", lint.Options{Dialect: "mysql"}},
 		{"no file selected", lint.Options{Dialect: "postgres", Selection: lint.VersionSelection{Versions: []int64{9}, Restricted: true}}},
 	} {
@@ -193,7 +193,7 @@ func TestAnalyzeFS_AsksNoOwnerWithNothingToJudge(t *testing.T) {
 			var requests []lintext.CheckRequest
 			owner := scriptedOwner{requests: &requests, answers: map[bool]lintext.CheckResult{false: {Complete: true}}}
 
-			_, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("XY101", "postgres")), fixture(selectMigration()), test.opts)
+			_, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("design/xy101", "postgres")), fixture(selectMigration()), test.opts)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(requests, qt.HasLen, 0)
@@ -209,21 +209,21 @@ func TestAnalyzeFS_SendsAnOnlineRuleOnlyInTheOnlineMode(t *testing.T) {
 		opts lint.Options
 		want [][]string
 	}{
-		{"an ordinary run", lint.Options{Dialect: "postgres"}, [][]string{{"XY101"}}},
-		{"the online mode", lint.Options{Dialect: "postgres", RequireOnline: true}, [][]string{{"ON901", "XY101"}}},
+		{"an ordinary run", lint.Options{Dialect: "postgres"}, [][]string{{"design/xy101"}}},
+		{"the online mode", lint.Options{Dialect: "postgres", RequireOnline: true}, [][]string{{"ON901", "design/xy101"}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			var requests []lintext.CheckRequest
 			owner := scriptedOwner{requests: &requests, answers: map[bool]lintext.CheckResult{false: {Complete: true}}}
 
-			_, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("ON901", "postgres"), ownedRule("XY101", "postgres")),
+			_, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("ON901", "postgres"), ownedRule("design/xy101", "postgres")),
 				fixture(selectMigration()), test.opts)
 
 			c.Assert(err, qt.IsNil)
 			got := make([][]string, 0, len(requests))
 			for _, request := range requests {
-				got = append(got, request.Codes)
+				got = append(got, request.Names)
 			}
 			c.Assert(got, qt.DeepEquals, test.want)
 		})
@@ -237,16 +237,16 @@ func TestAnalyzeFS_OwnersReadTheLineOfTheFileAsWritten(t *testing.T) {
 	c := qt.New(t)
 	var requests []lintext.CheckRequest
 	owner := scriptedOwner{requests: &requests, answers: map[bool]lintext.CheckResult{false: {Complete: true,
-		Findings: []lintext.Finding{{Code: "XY101", File: 0, Statement: 0, Message: "m"}}}}}
+		Findings: []lintext.Finding{{Name: "design/xy101", File: 0, Statement: 0, Message: "m"}}}}}
 
-	findings, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("XY101", "postgres")), fixture(map[string]string{
+	findings, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("design/xy101", "postgres")), fixture(map[string]string{
 		"1_select.sql": "-- atlas:txtar\n\n-- migration.sql --\nSELECT 1;\n\n-- down.sql --\nSELECT 0;\n",
 	}), lint.Options{Dialect: "postgres", DirFormat: migrationfile.DirFormatAtlas})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.HasLen, 1)
 	c.Assert(requests[0].Files[0].Statements[0].Line, qt.Equals, 4)
-	c.Assert(ruleCodes(findings), qt.DeepEquals, []string{"XY101"})
+	c.Assert(ruleCodes(findings), qt.DeepEquals, []string{"design/xy101"})
 	c.Assert(findings[0].Line, qt.Equals, 4)
 }
 
@@ -257,12 +257,12 @@ func TestAnalyzeFS_AsksEveryOwnerWithoutATarget(t *testing.T) {
 	var requests []lintext.CheckRequest
 	owner := scriptedOwner{requests: &requests, answers: map[bool]lintext.CheckResult{false: {Complete: true}}}
 
-	_, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("XY101", "postgres"), ownedRule("XY103", "mysql")),
+	_, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("design/xy101", "postgres"), ownedRule("design/xy103", "mysql")),
 		fixture(selectMigration()), lint.Options{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(requests, qt.HasLen, 1)
-	c.Assert([]any{requests[0].Target.Name, requests[0].Codes}, qt.DeepEquals, []any{"", []string{"XY101", "XY103"}})
+	c.Assert([]any{requests[0].Target.Name, requests[0].Names}, qt.DeepEquals, []any{"", []string{"design/xy101", "design/xy103"}})
 	c.Assert(requests[0].Files[1].Statements, qt.DeepEquals, lintscan.Split(selectMigration()["0000000001_x.up.sql"], lintscan.ForDialect("")))
 }
 
@@ -273,13 +273,13 @@ func TestAnalyzeFS_AsksEveryOwnerWithoutATarget(t *testing.T) {
 func TestAnalyzeFS_ServesABaselineRuleInTwoCalls(t *testing.T) {
 	c := qt.New(t)
 	var requests []lintext.CheckRequest
-	subjects := []lintext.BaselineSubject{{Code: "XY301", File: 1, Statements: []int{0}}}
+	subjects := []lintext.BaselineSubject{{Name: "design/xy301", File: 1, Statements: []int{0}}}
 	owner := scriptedOwner{requests: &requests, answers: map[bool]lintext.CheckResult{
 		false: {Complete: true, BaselineSubjects: subjects},
 		true: {Complete: true, BaselineSubjects: subjects,
-			Findings: []lintext.Finding{{Code: "XY301", File: 1, Statement: 0, Message: "a was int"}}},
+			Findings: []lintext.Finding{{Name: "design/xy301", File: 1, Statement: 0, Message: "a was int"}}},
 	}}
-	rule := lintext.Rule{Code: "XY301", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}, Input: lintext.InputBaselineSchema}
+	rule := lintext.Rule{Name: "design/xy301", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}, Input: lintext.InputBaselineSchema}
 	runtime := ownedRuntime(c, owner, rule)
 	opts := lint.Options{Dialect: "postgres"}
 
@@ -288,12 +288,12 @@ func TestAnalyzeFS_ServesABaselineRuleInTwoCalls(t *testing.T) {
 	c.Assert(first.Findings(), qt.HasLen, 0)
 	c.Assert(first.BaselineVersions(), qt.DeepEquals, []int64{1})
 	c.Assert(first.UnmetInputs(), qt.DeepEquals, []lint.UnmetInput{
-		{Rule: "XY301", Input: lint.InputBaselineSchema, File: "0000000001_x.up.sql", Version: 1}})
+		{Rule: "design/xy301", Input: lint.InputBaselineSchema, File: "0000000001_x.up.sql", Version: 1}})
 
 	opts.Baseline = []lintext.BaselineColumn{{Version: 1, Table: "t", Name: "a", DataType: "int"}}
 	second, err := lint.AnalyzeFS(c.Context(), runtime, fixture(selectMigration()), opts)
 	c.Assert(err, qt.IsNil)
-	c.Assert(ruleCodes(second.Findings()), qt.DeepEquals, []string{"XY301"})
+	c.Assert(ruleCodes(second.Findings()), qt.DeepEquals, []string{"design/xy301"})
 	c.Assert(second.UnmetInputs(), qt.HasLen, 0)
 
 	c.Assert(requests, qt.HasLen, 2)
@@ -306,8 +306,8 @@ func TestAnalyzeFS_ServesABaselineRuleInTwoCalls(t *testing.T) {
 func TestAnalyzeFS_BaselineSubjectsOutsideTheReviewedSchema(t *testing.T) {
 	c := qt.New(t)
 	owner := scriptedOwner{requests: new([]lintext.CheckRequest), answers: map[bool]lintext.CheckResult{false: {Complete: true,
-		BaselineSubjects: []lintext.BaselineSubject{{Code: "XY301", File: 1, Statements: []int{0}}}}}}
-	rule := lintext.Rule{Code: "XY301", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}, Input: lintext.InputBaselineSchema}
+		BaselineSubjects: []lintext.BaselineSubject{{Name: "design/xy301", File: 1, Statements: []int{0}}}}}}
+	rule := lintext.Rule{Name: "design/xy301", Title: "t", Severity: lintext.Warning, Targets: []string{"postgres"}, Input: lintext.InputBaselineSchema}
 
 	analysis, err := lint.AnalyzeFS(c.Context(), ownedRuntime(c, owner, rule), fixture(map[string]string{
 		"0000000001_x.down.sql": "SELECT 0;\n",
@@ -325,7 +325,7 @@ func TestAnalyzeFS_OwnerFailure_FailurePath(t *testing.T) {
 	failure := errors.New("plugin closed")
 	owner := scriptedOwner{requests: new([]lintext.CheckRequest), failure: failure}
 
-	findings, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("XY101", "postgres")), fixture(selectMigration()),
+	findings, err := lint.LintFS(c.Context(), ownedRuntime(c, owner, ownedRule("design/xy101", "postgres")), fixture(selectMigration()),
 		lint.Options{Dialect: "postgres"})
 
 	c.Assert(err, qt.ErrorIs, failure)
@@ -333,29 +333,20 @@ func TestAnalyzeFS_OwnerFailure_FailurePath(t *testing.T) {
 	c.Assert(findings, qt.IsNil)
 }
 
-// A gate family is checked against the rules of the runtime: a family only an
-// owner publishes is one, and a family nothing publishes is refused.
-func TestLoadConfigFS_GateFamiliesOfTheRuntime(t *testing.T) {
+// A gate rule is checked against the rules of the runtime: a name or category
+// only an owner publishes is one, and one nothing publishes is refused.
+func TestLoadConfigFS_GateRulesOfTheRuntime(t *testing.T) {
 	c := qt.New(t)
-	runtime := ownedRuntime(c, scriptedOwner{}, ownedRule("XY101", "postgres"))
-	gate := func(family string) map[string]string {
-		return map[string]string{lint.ConfigFileName: "gate:\n  families: [" + family + "]\n"}
+	runtime := ownedRuntime(c, scriptedOwner{}, ownedRule("design/xy101", "postgres"))
+	gate := func(selector string) map[string]string {
+		return map[string]string{lint.ConfigFileName: "gate:\n  rules: [" + selector + "]\n"}
 	}
 
-	config, err := lint.LoadConfigFS(runtime, fixture(gate("XY")), lint.ConfigFileName)
+	config, err := lint.LoadConfigFS(runtime, fixture(gate("design/xy101")), lint.ConfigFileName)
 	c.Assert(err, qt.IsNil)
-	c.Assert(config.GateFamilies(), qt.DeepEquals, []string{"DS", "XY"})
+	c.Assert(config.GateRules(), qt.DeepEquals, append(slices.Clone(lint.DefaultGateRules), "design/xy101"))
 
-	_, err = lint.LoadConfigFS(must.Must(engine.New()), fixture(gate("XY")), lint.ConfigFileName)
-	c.Assert(err, qt.ErrorMatches, `failed to parse lint config \.ptah-lint\.yaml: gate: family "XY" matches no registered rule`)
-}
-
-// Selection compares against the rules it is given: a code one of them holds
-// selects that rule alone, and any other selector is a prefix.
-func TestSelectorSelects_ReadsTheGivenRules(t *testing.T) {
-	c := qt.New(t)
-	rules := must.Must(lint.Rules(ownedRuntime(c, scriptedOwner{}, ownedRule("XY1", "postgres"), ownedRule("XY10", "postgres"))))
-
-	c.Assert(lint.SelectorSelects(rules, "XY1", "XY10"), qt.IsFalse)
-	c.Assert(lint.SelectorSelects(slices.DeleteFunc(rules, func(rule lint.Rule) bool { return rule.Code == "XY1" }), "XY1", "XY10"), qt.IsTrue)
+	_, err = lint.LoadConfigFS(must.Must(engine.New()), fixture(gate("design/xy101")), lint.ConfigFileName)
+	c.Assert(err, qt.ErrorMatches,
+		`failed to parse lint config \.ptah-lint\.yaml: gate: rule "design/xy101" is not the name of a migration lint rule; .*`)
 }

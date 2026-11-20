@@ -87,7 +87,7 @@ func TestColumnDroppedWithReaders_UsesTheViewAtTheDropStatement(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := columnReaderAnalysis(c, test.sql, dependents)
-			c.Assert(messagesFor(analysis, "DS110P"), qt.HasLen, test.want)
+			c.Assert(messagesFor(analysis, "dependency/drop-column-in-use"), qt.HasLen, test.want)
 		})
 	}
 }
@@ -103,7 +103,7 @@ func messagesFor(analysis lint.Analysis, code string) []string {
 
 // TestColumnDroppedWithReaders_NamesWhatBreaks is #1270's criterion 9.
 //
-// `DROP COLUMN email` under a view that selects it reported DS102 alone and
+// `DROP COLUMN email` under a view that selects it reported destructive/drop-column alone and
 // never named the view, so the operator learned about it when the migration
 // ran. The reader is resolved from the state the version starts from, because a
 // view body is not in the file that drops the column.
@@ -114,7 +114,7 @@ func TestColumnDroppedWithReaders_NamesWhatBreaks(t *testing.T) {
 		{Version: 1, Table: "users", Column: "email", Dependent: "active_users", Kind: "view"},
 	})
 
-	messages := messagesFor(analysis, "DS110P")
+	messages := messagesFor(analysis, "dependency/drop-column-in-use")
 	c.Assert(messages, qt.HasLen, 1)
 	c.Assert(messages[0], qt.Contains, "view active_users")
 	c.Assert(messages[0], qt.Contains, "email")
@@ -132,7 +132,7 @@ func TestColumnDroppedWithReaders_NamesEveryReader(t *testing.T) {
 		{Version: 1, Table: "users", Column: "email", Dependent: "notify", Kind: "function"},
 	})
 
-	messages := messagesFor(analysis, "DS110P")
+	messages := messagesFor(analysis, "dependency/drop-column-in-use")
 	c.Assert(messages, qt.HasLen, 1)
 	c.Assert(messages[0], qt.Contains, "view active_users")
 	c.Assert(messages[0], qt.Contains, "function notify")
@@ -150,8 +150,8 @@ func TestColumnDroppedWithReaders_SaysNothingWhenNothingReadsIt(t *testing.T) {
 		{Version: 1, Table: "users", Column: "created_at", Dependent: "active_users", Kind: "view"},
 	})
 
-	c.Assert(messagesFor(analysis, "DS110P"), qt.HasLen, 0)
-	c.Assert(messagesFor(analysis, "DS102"), qt.Not(qt.HasLen), 0)
+	c.Assert(messagesFor(analysis, "dependency/drop-column-in-use"), qt.HasLen, 0)
+	c.Assert(messagesFor(analysis, "destructive/drop-column"), qt.Not(qt.HasLen), 0)
 }
 
 // TestColumnDroppedWithReaders_ReportsItsInputWhenTheRunSuppliesNone is the
@@ -165,6 +165,6 @@ func TestColumnDroppedWithReaders_ReportsItsInputWhenTheRunSuppliesNone(t *testi
 
 	analysis := dropEmailAnalysis(c, nil)
 
-	c.Assert(messagesFor(analysis, "DS110P"), qt.HasLen, 0)
+	c.Assert(messagesFor(analysis, "dependency/drop-column-in-use"), qt.HasLen, 0)
 	c.Assert(analysis.UnmetInputs(), qt.Not(qt.HasLen), 0)
 }

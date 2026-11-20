@@ -26,14 +26,14 @@ import (
 // Each row is a directory whose second version the rules can judge only with
 // the fact in hand, beside a control that holds the fact the other way:
 //
-//   - a collation change on an indexed column is the index rebuild PG301
+//   - a collation change on an indexed column is the index rebuild rewrite/alter-column-type
 //     names; the same change on a column no index reads is a catalog edit
-//     and reports nothing under PG301. The tokens are `] CODE: `, the shape
+//     and reports nothing under rewrite/alter-column-type. The tokens are `] CODE: `, the shape
 //     the native report prints a finding's code in, since a bare code is a
-//     prefix of the info rule PG301P a later change added.
+//     prefix of the info rule rewrite/in-place-column-change a later change added.
 //   - a unique index built under a new name over the columns a dropped index
-//     covered is the replacement MF102 names; the same build after dropping
-//     an index over other columns is the plain MF101.
+//     covered is the replacement data-dependent/rebuild-index-as-unique names; the same build after dropping
+//     an index over other columns is the plain data-dependent/add-unique-index.
 func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
@@ -61,7 +61,7 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			base:   "CREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
 			change: "ALTER TABLE notes ALTER COLUMN body TYPE text COLLATE \"C\";\n",
 			want: []string{
-				"] PG301 rewrite/alter-column-type: ",
+				"] rewrite/alter-column-type: ",
 				`changes the collation from the database default to "C"`,
 				"rebuilds every index on the column (notes_body)",
 			},
@@ -70,13 +70,13 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			name:    "control: the same change on a column no index reads is a catalog edit",
 			base:    "CREATE TABLE notes (id int, body text);\nCREATE INDEX notes_id ON notes (id);\n",
 			change:  "ALTER TABLE notes ALTER COLUMN body TYPE text COLLATE \"C\";\n",
-			wantNot: []string{"] PG301 rewrite/alter-column-type: "},
+			wantNot: []string{"] rewrite/alter-column-type: "},
 		},
 		{
 			name:    "control: the collation restated on an indexed column changes nothing",
 			base:    "CREATE TABLE notes (id int, body text COLLATE \"C\");\nCREATE INDEX notes_body ON notes (body);\n",
 			change:  "ALTER TABLE notes ALTER COLUMN body TYPE text COLLATE \"C\";\n",
-			wantNot: []string{"] PG301 rewrite/alter-column-type: "},
+			wantNot: []string{"] rewrite/alter-column-type: "},
 		},
 		{
 			// The column inherits C from its domain, so it declares no collation
@@ -84,7 +84,7 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			name:    "control: a domain's collation restated on an indexed column changes nothing",
 			base:    "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc);\nCREATE INDEX notes_body ON notes (body);\n",
 			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dc COLLATE \"C\";\n",
-			wantNot: []string{"] PG301 rewrite/alter-column-type: "},
+			wantNot: []string{"] rewrite/alter-column-type: "},
 		},
 		{
 			// A clause that names no COLLATE gives the column its type's default,
@@ -92,14 +92,14 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			name:    "control: a domain column takes the domain's collation when the clause names none",
 			base:    "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc);\nCREATE INDEX notes_body ON notes (body);\n",
 			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dc;\n",
-			wantNot: []string{"] PG301 rewrite/alter-column-type: "},
+			wantNot: []string{"] rewrite/alter-column-type: "},
 		},
 		{
 			name:   "a domain column's own collation is reset when the clause names none",
 			base:   "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc COLLATE \"POSIX\");\nCREATE INDEX notes_body ON notes (body);\n",
 			change: "ALTER TABLE notes ALTER COLUMN body TYPE dc;\n",
 			want: []string{
-				"] PG301 rewrite/alter-column-type: ",
+				"] rewrite/alter-column-type: ",
 				`changes the collation from "POSIX" to "C"`,
 				"rebuilds every index on the column (notes_body)",
 			},
@@ -108,26 +108,26 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			name:    "control: a name column keeps C when the clause names none",
 			base:    "CREATE TABLE notes (id int, body name);\nCREATE INDEX notes_body ON notes (body);\n",
 			change:  "ALTER TABLE notes ALTER COLUMN body TYPE name;\n",
-			wantNot: []string{"] PG301 rewrite/alter-column-type: "},
+			wantNot: []string{"] rewrite/alter-column-type: "},
 		},
 		{
 			name:    "control: a name[] column keeps C when the clause names none",
 			base:    "CREATE TABLE notes (id int, body name[]);\nCREATE INDEX notes_body ON notes (body);\n",
 			change:  "ALTER TABLE notes ALTER COLUMN body TYPE name[];\n",
-			wantNot: []string{"] PG301 rewrite/alter-column-type: "},
+			wantNot: []string{"] rewrite/alter-column-type: "},
 		},
 		{
 			name:    "control: a dc[] column keeps the domain's collation when the clause names none",
 			base:    "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc[]);\nCREATE INDEX notes_body ON notes (body);\n",
 			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dc[];\n",
-			wantNot: []string{"] PG301 rewrite/alter-column-type: "},
+			wantNot: []string{"] rewrite/alter-column-type: "},
 		},
 		{
 			name:   "default named on a domain column that takes the domain's C rebuilds the index",
 			base:   "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body dc);\nCREATE INDEX notes_body ON notes (body);\n",
 			change: "ALTER TABLE notes ALTER COLUMN body TYPE dc COLLATE \"default\";\n",
 			want: []string{
-				"] PG301 rewrite/alter-column-type: ",
+				"] rewrite/alter-column-type: ",
 				`changes the collation from "C" to the database default`,
 				"rebuilds every index on the column (notes_body)",
 			},
@@ -137,7 +137,7 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			base:   "CREATE DOMAIN dd AS text;\nCREATE TABLE notes (id int, body text COLLATE \"C\");\nCREATE INDEX notes_body ON notes (body);\n",
 			change: "ALTER TABLE notes ALTER COLUMN body TYPE dd;\n",
 			want: []string{
-				"] PG301 rewrite/alter-column-type: ",
+				"] rewrite/alter-column-type: ",
 				`TYPE dd changes the collation from "C" to the database default`,
 				"rebuilds every index on the column (notes_body)",
 			},
@@ -147,7 +147,7 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			base:   "CREATE DOMAIN dc AS text COLLATE \"C\";\nCREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
 			change: "ALTER TABLE notes ALTER COLUMN body TYPE dc;\n",
 			want: []string{
-				"] PG301 rewrite/alter-column-type: ",
+				"] rewrite/alter-column-type: ",
 				`TYPE dc changes the collation from the database default to "C"`,
 				"rebuilds every index on the column (notes_body)",
 			},
@@ -157,7 +157,7 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			base:   "CREATE DOMAIN dchk AS text CHECK (VALUE <> '');\nCREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
 			change: "ALTER TABLE notes ALTER COLUMN body TYPE dchk;\n",
 			want: []string{
-				"] PG301 rewrite/alter-column-type: ",
+				"] rewrite/alter-column-type: ",
 				"changes the type from text to the domain dchk",
 			},
 		},
@@ -165,29 +165,29 @@ func TestNativeMigrationsLintReadsIndexesAndCollationsFromTheDevDatabaseE2E(t *t
 			name:    "control: a default-collated column changed to a domain with no collation keeps the index",
 			base:    "CREATE DOMAIN dd AS text;\nCREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body ON notes (body);\n",
 			change:  "ALTER TABLE notes ALTER COLUMN body TYPE dd;\n",
-			wantNot: []string{"] PG301 rewrite/alter-column-type: "},
+			wantNot: []string{"] rewrite/alter-column-type: "},
 		},
 		{
 			name:   "a unique index rebuilt under a new name over a dropped index's columns",
 			base:   "CREATE TABLE notes (id int, body text);\nCREATE INDEX notes_body_idx ON notes (body);\n",
 			change: "DROP INDEX notes_body_idx;\nCREATE UNIQUE INDEX notes_body_uq ON notes (body);\n",
 			want: []string{
-				"] MF102 data-dependent/rebuild-index-as-unique: ",
+				"] data-dependent/rebuild-index-as-unique: ",
 				"replaces the index notes_body_idx dropped earlier, which covered the same columns, with a unique one under a new name",
 			},
 		},
 		{
-			name:    "control: a dropped index over other columns leaves the plain MF101",
+			name:    "control: a dropped index over other columns leaves the plain data-dependent/add-unique-index",
 			base:    "CREATE TABLE notes (id int, body text);\nCREATE INDEX notes_id_idx ON notes (id);\n",
 			change:  "DROP INDEX notes_id_idx;\nCREATE UNIQUE INDEX notes_body_uq ON notes (body);\n",
-			want:    []string{"] MF101 data-dependent/add-unique-index: "},
-			wantNot: []string{"] MF102 data-dependent/rebuild-index-as-unique: "},
+			want:    []string{"] data-dependent/add-unique-index: "},
+			wantNot: []string{"] data-dependent/rebuild-index-as-unique: "},
 		},
 		{
 			name:    "control: a unique index the state already holds proves the rows unique",
 			base:    "CREATE TABLE notes (id int, body text);\nCREATE UNIQUE INDEX notes_body_old ON notes (body);\n",
 			change:  "CREATE UNIQUE INDEX notes_body_uq ON notes (body);\n",
-			wantNot: []string{"] MF101 data-dependent/add-unique-index: ", "] MF102 data-dependent/rebuild-index-as-unique: "},
+			wantNot: []string{"] data-dependent/add-unique-index: ", "] data-dependent/rebuild-index-as-unique: "},
 		},
 	}
 
@@ -245,13 +245,13 @@ func TestNativeMigrationsLintReadsAnInheritedCollationFromTheDevDatabaseE2E(t *t
 			name:   "MySQL copies the table",
 			engine: dbtarget.MySQLAdmin,
 			change: "ALTER TABLE notes MODIFY body varchar(20) COLLATE utf8mb4_bin;\n",
-			want:   "[warning] MY130 rewrite/alter-column-type: MODIFY COLUMN notes.body changes the collation of varchar(20) from utf8mb4_unicode_ci to utf8mb4_bin on a column a key covers",
+			want:   "[warning] rewrite/alter-column-type: MODIFY COLUMN notes.body changes the collation of varchar(20) from utf8mb4_unicode_ci to utf8mb4_bin on a column a key covers",
 		},
 		{
 			name:   "MariaDB changes it in place",
 			engine: dbtarget.MariaDBAdmin,
 			change: "ALTER TABLE notes MODIFY body varchar(20) COLLATE utf8mb4_bin;\n",
-			want:   "[info] MY130P rewrite/in-place-column-change: MODIFY COLUMN notes.body changes the collation of varchar(20) from utf8mb4_unicode_ci to utf8mb4_bin, which MariaDB applies in place",
+			want:   "[info] rewrite/in-place-column-change: MODIFY COLUMN notes.body changes the collation of varchar(20) from utf8mb4_unicode_ci to utf8mb4_bin, which MariaDB applies in place",
 		},
 	}
 	for _, test := range tests {

@@ -37,7 +37,7 @@ func cmpOr[T any](values ...*T) *T {
 
 // wordCheck finds statements holding word, as rule code on targets.
 func wordCheck(code, word string, targets ...string) lintext.Check {
-	return lintext.Check{Rule: lintext.Rule{Code: code, Title: code, Severity: lintext.Warning, Targets: targets},
+	return lintext.Check{Rule: lintext.Rule{Name: code, Title: code, Severity: lintext.Warning, Targets: targets},
 		Statement: func(_ lintext.Target, _ *lintext.File, statement *lintext.Statement) (bool, string) {
 			return slices.Contains(statement.Words, word), "holds " + word
 		}}
@@ -78,8 +78,8 @@ func lintRuntime(c *qt.C, splitter lintext.Splitter, first, second countingCheck
 }
 
 func defaultOwners() (first, second countingChecks) {
-	return countingChecks{checks: lintext.Checks{wordCheck("XY101", "DROP", "alpha"), wordCheck("XY102", "TRUNCATE", "a", "beta")}, calls: new(0)},
-		countingChecks{checks: lintext.Checks{wordCheck("XY201", "GRANT", "alpha")}, calls: new(0)}
+	return countingChecks{checks: lintext.Checks{wordCheck("design/xy101", "DROP", "alpha"), wordCheck("design/xy102", "TRUNCATE", "a", "beta")}, calls: new(0)},
+		countingChecks{checks: lintext.Checks{wordCheck("design/xy201", "GRANT", "alpha")}, calls: new(0)}
 }
 
 // LintRules reads the published rules without calling an owner: those that
@@ -91,10 +91,10 @@ func TestRuntime_LintRules_HappyPath(t *testing.T) {
 		target string
 		want   []string
 	}{
-		{"alpha", []string{"XY101", "XY102", "XY201"}},
-		{"a", []string{"XY101", "XY102", "XY201"}},
-		{"beta", []string{"XY102"}},
-		{"", []string{"XY101", "XY102", "XY201"}},
+		{"alpha", []string{"design/xy101", "design/xy102", "design/xy201"}},
+		{"a", []string{"design/xy101", "design/xy102", "design/xy201"}},
+		{"beta", []string{"design/xy102"}},
+		{"", []string{"design/xy101", "design/xy102", "design/xy201"}},
 	} {
 		t.Run(test.target, func(t *testing.T) {
 			c := qt.New(t)
@@ -105,10 +105,10 @@ func TestRuntime_LintRules_HappyPath(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			codes := make([]string, 0, len(rules))
 			for _, rule := range rules {
-				codes = append(codes, rule.Code)
+				codes = append(codes, rule.Name)
 			}
 			c.Assert(codes, qt.DeepEquals, test.want)
-			c.Assert(rules[slices.IndexFunc(rules, func(rule lintext.Rule) bool { return rule.Code == "XY102" })].Targets,
+			c.Assert(rules[slices.IndexFunc(rules, func(rule lintext.Rule) bool { return rule.Name == "design/xy102" })].Targets,
 				qt.DeepEquals, []string{"alpha", "beta"})
 			c.Assert(*first.calls+*second.calls, qt.Equals, 0)
 		})
@@ -126,7 +126,7 @@ func TestRuntime_LintRules_FailurePath(t *testing.T) {
 }
 
 func TestNew_LintFailurePath(t *testing.T) {
-	checks := lintext.Checks{wordCheck("XY101", "DROP", "alpha")}
+	checks := lintext.Checks{wordCheck("design/xy101", "DROP", "alpha")}
 	service := countingChecks{checks: checks, calls: new(0)}
 	target := []engine.Target{{Name: "alpha"}}
 	for _, test := range []struct {
@@ -139,7 +139,7 @@ func TestNew_LintFailurePath(t *testing.T) {
 		{"a service without rules", []engine.Provider{{ID: "example.org/one", Targets: target, Lint: []engine.Lint{{Service: service}}}},
 			`.*publishes lint rules without a service, or a service without rules`},
 		{"an invalid rule", []engine.Provider{{ID: "example.org/one", Targets: target, Lint: []engine.Lint{{
-			Rules: []lintext.Rule{{Code: "XY101", Title: "t", Severity: "fatal", Targets: []string{"alpha"}}}, Service: service}}}},
+			Rules: []lintext.Rule{{Name: "design/xy101", Title: "t", Severity: "fatal", Targets: []string{"alpha"}}}, Service: service}}}},
 			`.*rule XY101 has unknown severity "fatal"`},
 		{"an unregistered target", []engine.Provider{{ID: "example.org/one", Targets: []engine.Target{{Name: "beta"}},
 			Lint: []engine.Lint{{Rules: checks.Rules(), Service: service}}}}, `.*lint rule XY101 judges unregistered target "alpha"`},
@@ -169,7 +169,7 @@ func TestNew_LintFailurePath(t *testing.T) {
 // runRequest enables codes over one up file holding a DROP, a TRUNCATE and
 // a GRANT.
 func runRequest(target string, codes ...string) lintext.CheckRequest {
-	return lintext.CheckRequest{Target: lintext.Target{Name: target}, Codes: codes, Files: []lintext.File{{Name: "1.up.sql", Up: true,
+	return lintext.CheckRequest{Target: lintext.Target{Name: target}, Names: codes, Files: []lintext.File{{Name: "1.up.sql", Up: true,
 		Statements: []lintext.Statement{
 			{Start: 0, End: 1, Line: 1, SQL: "x", Words: []string{"GRANT"}},
 			{Start: 2, End: 3, Line: 2, SQL: "y", Words: []string{"TRUNCATE", "DROP"}},
@@ -183,13 +183,13 @@ func TestRuntime_CheckMigrations_HappyPath(t *testing.T) {
 	first, second := defaultOwners()
 	runtime := lintRuntime(c, nil, first, second)
 
-	result, err := runtime.CheckMigrations(t.Context(), runRequest("a", "XY201", "XY101", "XY102"))
+	result, err := runtime.CheckMigrations(t.Context(), runRequest("a", "design/xy201", "design/xy101", "design/xy102"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.DeepEquals, lintext.CheckResult{Complete: true, Findings: []lintext.Finding{
-		{Code: "XY201", File: 0, Statement: 0, Message: "holds GRANT"},
-		{Code: "XY101", File: 0, Statement: 1, Message: "holds DROP"},
-		{Code: "XY102", File: 0, Statement: 1, Message: "holds TRUNCATE"},
+		{Name: "design/xy201", File: 0, Statement: 0, Message: "holds GRANT"},
+		{Name: "design/xy101", File: 0, Statement: 1, Message: "holds DROP"},
+		{Name: "design/xy102", File: 0, Statement: 1, Message: "holds TRUNCATE"},
 	}})
 	c.Assert([]int{*first.calls, *second.calls}, qt.DeepEquals, []int{1, 1})
 }
@@ -203,15 +203,15 @@ func TestRuntime_CheckMigrations_FailurePath(t *testing.T) {
 		wantIs  error
 		wantErr string
 	}{
-		{"a code no owner publishes", runRequest("alpha", "XY999"), countingChecks{}, lintext.ErrInvalid, `.*no published lint rule XY999 judges target "alpha".*`},
-		{"a rule that does not judge the target", runRequest("beta", "XY101"), countingChecks{}, lintext.ErrInvalid, `.*no published lint rule XY101 judges target "beta".*`},
-		{"a code asked for twice", runRequest("alpha", "XY101", "XY101"), countingChecks{}, lintext.ErrInvalid, `.*or it is asked for twice`},
-		{"an unregistered target", runRequest("gamma", "XY101"), countingChecks{}, ptaherr.ErrUnsupportedDialect, `.*lint target "gamma" is not registered`},
-		{"an incomplete reply", runRequest("alpha", "XY201"), countingChecks{reply: &lintext.CheckResult{}}, lintext.ErrInvalid,
+		{"a code no owner publishes", runRequest("alpha", "design/xy999"), countingChecks{}, lintext.ErrInvalid, `.*no published lint rule XY999 judges target "alpha".*`},
+		{"a rule that does not judge the target", runRequest("beta", "design/xy101"), countingChecks{}, lintext.ErrInvalid, `.*no published lint rule XY101 judges target "beta".*`},
+		{"a code asked for twice", runRequest("alpha", "design/xy101", "design/xy101"), countingChecks{}, lintext.ErrInvalid, `.*or it is asked for twice`},
+		{"an unregistered target", runRequest("gamma", "design/xy101"), countingChecks{}, ptaherr.ErrUnsupportedDialect, `.*lint target "gamma" is not registered`},
+		{"an incomplete reply", runRequest("alpha", "design/xy201"), countingChecks{reply: &lintext.CheckResult{}}, lintext.ErrInvalid,
 			`lint rules of "example.org/two": .*a lint check did not complete`},
-		{"a reply naming another rule", runRequest("alpha", "XY201"), countingChecks{reply: &lintext.CheckResult{Complete: true,
-			Findings: []lintext.Finding{{Code: "XY101", Message: "m"}}}}, lintext.ErrInvalid, `lint rules of "example.org/two": .*finding XY101.*`},
-		{"an owner's failure", runRequest("alpha", "XY201"), countingChecks{failure: failure}, failure, `plugin closed`},
+		{"a reply naming another rule", runRequest("alpha", "design/xy201"), countingChecks{reply: &lintext.CheckResult{Complete: true,
+			Findings: []lintext.Finding{{Name: "design/xy101", Message: "m"}}}}, lintext.ErrInvalid, `lint rules of "example.org/two": .*finding XY101.*`},
+		{"an owner's failure", runRequest("alpha", "design/xy201"), countingChecks{failure: failure}, failure, `plugin closed`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -243,8 +243,8 @@ func (s replyService) CheckMigrations(_ context.Context, request lintext.CheckRe
 func baselineRuntime(c *qt.C, service replyService) *engine.Runtime {
 	c.Helper()
 	rules := []lintext.Rule{
-		{Code: "XY301", Title: "t", Severity: lintext.Warning, Targets: []string{"alpha"}, Input: lintext.InputBaselineSchema},
-		{Code: "XY302", Title: "t", Severity: lintext.Warning, Targets: []string{"alpha"}},
+		{Name: "design/xy301", Title: "t", Severity: lintext.Warning, Targets: []string{"alpha"}, Input: lintext.InputBaselineSchema},
+		{Name: "design/xy302", Title: "t", Severity: lintext.Warning, Targets: []string{"alpha"}},
 	}
 	return must.Must(engine.New(engine.Provider{ID: "example.org/baseline", Targets: []engine.Target{{Name: "alpha"}},
 		Lint: []engine.Lint{{Rules: rules, Service: service}}}))
@@ -254,7 +254,7 @@ func baselineRuntime(c *qt.C, service replyService) *engine.Runtime {
 // carrying a compatibility surface and a baseline.
 func twoFiles(codes ...string) lintext.CheckRequest {
 	statement := lintext.Statement{Start: 0, End: 1, Line: 1, SQL: "x", Words: []string{"X"}}
-	return lintext.CheckRequest{Target: lintext.Target{Name: "alpha"}, Codes: codes, Compatibility: "atlas",
+	return lintext.CheckRequest{Target: lintext.Target{Name: "alpha"}, Names: codes, Compatibility: "atlas",
 		Baseline: &lintext.Baseline{Columns: []lintext.BaselineColumn{{Version: 2, Table: "a", Name: "id"}}},
 		Files: []lintext.File{
 			{Name: "1.up.sql", Version: 1, Up: true, Statements: []lintext.Statement{statement}},
@@ -268,18 +268,18 @@ func TestRuntime_CheckMigrations_BaselineSubjects(t *testing.T) {
 	c := qt.New(t)
 	var requests []lintext.CheckRequest
 	service := replyService{requests: &requests, reply: lintext.CheckResult{Complete: true, BaselineSubjects: []lintext.BaselineSubject{
-		{Code: "XY301", File: 1, Statements: []int{0}},
-		{Code: "XY301", File: 0, Statements: []int{0}},
+		{Name: "design/xy301", File: 1, Statements: []int{0}},
+		{Name: "design/xy301", File: 0, Statements: []int{0}},
 	}}}
 
-	result, err := baselineRuntime(c, service).CheckMigrations(t.Context(), twoFiles("XY301", "XY302"))
+	result, err := baselineRuntime(c, service).CheckMigrations(t.Context(), twoFiles("design/xy301", "design/xy302"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.DeepEquals, lintext.CheckResult{Complete: true, BaselineSubjects: []lintext.BaselineSubject{
-		{Code: "XY301", File: 0, Statements: []int{0}},
-		{Code: "XY301", File: 1, Statements: []int{0}},
+		{Name: "design/xy301", File: 0, Statements: []int{0}},
+		{Name: "design/xy301", File: 1, Statements: []int{0}},
 	}})
-	c.Assert(requests, qt.DeepEquals, []lintext.CheckRequest{twoFiles("XY301", "XY302")})
+	c.Assert(requests, qt.DeepEquals, []lintext.CheckRequest{twoFiles("design/xy301", "design/xy302")})
 }
 
 // A rule that reads text alone has nothing to ask a baseline for, so a reply
@@ -287,9 +287,9 @@ func TestRuntime_CheckMigrations_BaselineSubjects(t *testing.T) {
 func TestRuntime_CheckMigrations_BaselineSubjectsOfATextRule(t *testing.T) {
 	c := qt.New(t)
 	service := replyService{requests: new([]lintext.CheckRequest), reply: lintext.CheckResult{Complete: true,
-		BaselineSubjects: []lintext.BaselineSubject{{Code: "XY302", File: 0, Statements: []int{0}}}}}
+		BaselineSubjects: []lintext.BaselineSubject{{Name: "design/xy302", File: 0, Statements: []int{0}}}}}
 
-	result, err := baselineRuntime(c, service).CheckMigrations(t.Context(), twoFiles("XY302"))
+	result, err := baselineRuntime(c, service).CheckMigrations(t.Context(), twoFiles("design/xy302"))
 
 	c.Assert(err, qt.ErrorIs, lintext.ErrInvalid)
 	c.Assert(err, qt.ErrorMatches, `lint rules of "example.org/baseline": .*rule XY302 names baseline subjects but reads no baseline`)

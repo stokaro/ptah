@@ -39,7 +39,7 @@ func TestAnalyzeRepeatables_FailurePath(t *testing.T) {
 		findings, err := migrationlintgate.Analyze(c.Context(), builtintest.Runtime(), repeatableGateFS(),
 			migrationlintgate.Pending{Repeatables: []string{"R__cleanup.sql"}}, "sqlite", "migrations")
 		c.Assert(err, qt.IsNil)
-		c.Assert(gateSites(findings), qt.DeepEquals, []string{"migrations/R__cleanup.sql:1:DS101"})
+		c.Assert(gateSites(findings), qt.DeepEquals, []string{"migrations/R__cleanup.sql:1:destructive/drop-table"})
 	})
 
 	t.Run("the gate reads the directory in the format the apply reads it in", func(t *testing.T) {
@@ -51,7 +51,7 @@ func TestAnalyzeRepeatables_FailurePath(t *testing.T) {
 			migrationlintgate.Pending{Repeatables: []string{"R__cleanup.sql"}},
 			policy.WithDirFormat(migrationfile.DirFormatPtah), "")
 		c.Assert(err, qt.IsNil)
-		c.Assert(gateSites(findings), qt.DeepEquals, []string{"R__cleanup.sql:1:DS101"})
+		c.Assert(gateSites(findings), qt.DeepEquals, []string{"R__cleanup.sql:1:destructive/drop-table"})
 	})
 }
 

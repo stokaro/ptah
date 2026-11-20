@@ -15,7 +15,7 @@ import (
 //
 // Two of the four identifiers are produced by the parse path, which runs before
 // any rule object exists, so the per-rule check inside the statement loop never
-// sees them. A selector naming SQL001 or SQL002 that is accepted and silently
+// sees them. A selector naming correctness/syntax-error or coverage/unsupported-statement that is accepted and silently
 // ignored leaves the finding reported and `ptah sql lint` exiting 1. A flag
 // that is accepted and does nothing is worse than a flag that refuses, and the
 // reference page tells an operator this one works.
@@ -112,7 +112,7 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 
 // TestDisableRefusesTheParsePathCodes pins the third option.
 //
-// SQL001 and SQL002 do not report an opinion about the SQL; they report that no
+// correctness/syntax-error and coverage/unsupported-statement do not report an opinion about the SQL; they report that no
 // opinion could be formed. Silencing one turns "I could not read this file"
 // into a clean run at exit 0, which is what #1270 means by "Parse/analysis
 // incompleteness is visible to the user".
@@ -161,10 +161,10 @@ func TestDisableRefusesAnUnknownSelector(t *testing.T) {
 	}{
 		{name: "a category in the wrong case", disabled: "Design", wantErr: `--disable "Design" must start with an uppercase.*`},
 		{name: "a word", disabled: "foo", wantErr: `--disable "foo" must start with an uppercase.*`},
-		{name: "codes joined by a slash", disabled: "DDL001/DDL002", wantErr: `--disable "DDL001/DDL002" must start with an uppercase.*`},
+		{name: "codes joined by a slash", disabled: "design/no-primary-key/DDL002", wantErr: `--disable "design/no-primary-key/DDL002" must start with an uppercase.*`},
 		{name: "a lower-case code", disabled: "ddl001", wantErr: `--disable "ddl001" must start with an uppercase.*`},
 		{name: "a lower-case parse path code", disabled: "sql001", wantErr: `--disable "sql001" must start with an uppercase.*`},
-		{name: "a code no rule has", disabled: "ZZ999", wantErr: `--disable "ZZ999" matches no rule code .*`},
+		{name: "a code no rule has", disabled: "design/zz999", wantErr: `--disable "design/zz999" matches no rule code .*`},
 		{name: "a name no rule has", disabled: "design/nothing", wantErr: `--disable "design/nothing" is not the name of a SQL lint rule; .*`},
 		{name: "a category that is not declared", disabled: "desing/", wantErr: `--disable "desing/" is not a rule category; .*`},
 	}
@@ -241,7 +241,7 @@ func TestDisableRefusesAnUnknownName(t *testing.T) {
 	}
 }
 
-// TestFindingsCarryTheRuleName reads the Ptah name on a finding.
+// TestFindingsCarryTheRuleName reads the Ptah name as a finding's rule.
 func TestFindingsCarryTheRuleName(t *testing.T) {
 	c := qt.New(t)
 
@@ -252,5 +252,5 @@ func TestFindingsCarryTheRuleName(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 1)
-	c.Assert([]string{findings[0].Rule, findings[0].Name}, qt.DeepEquals, []string{"design/no-primary-key", "design/no-primary-key"})
+	c.Assert(findings[0].Rule, qt.Equals, "design/no-primary-key")
 }

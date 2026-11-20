@@ -54,7 +54,7 @@ func TestBuild_DevURLSuppliesTheIndexesTheUniqueRulesRead(t *testing.T) {
 	}, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(lintRules(report), qt.DeepEquals, []string{"MF102"})
+	c.Assert(lintRules(report), qt.DeepEquals, []string{"data-dependent/rebuild-index-as-unique"})
 	c.Assert(report.Findings[0].Message, qt.Contains,
 		"replaces the index orders_email_idx dropped earlier, which covered the same columns, with a unique one under a new name")
 	c.Assert(report.Analysis.UnmetInputs(), qt.HasLen, 0)
@@ -62,7 +62,7 @@ func TestBuild_DevURLSuppliesTheIndexesTheUniqueRulesRead(t *testing.T) {
 
 // TestBuild_WithoutADevURLTheUniqueRulesReportFromTheTextAndSaySo is the
 // control: the same directory with no dev database reports the build as
-// MF101 and names the refinement it went without.
+// data-dependent/add-unique-index and names the refinement it went without.
 func TestBuild_WithoutADevURLTheUniqueRulesReportFromTheTextAndSaySo(t *testing.T) {
 	c := qt.New(t)
 	dir := writeIndexMigrations(c)
@@ -77,10 +77,10 @@ func TestBuild_WithoutADevURLTheUniqueRulesReportFromTheTextAndSaySo(t *testing.
 	}, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(lintRules(report), qt.DeepEquals, []string{"MF101"})
+	c.Assert(lintRules(report), qt.DeepEquals, []string{"data-dependent/add-unique-index"})
 	var unmet []string
 	for _, entry := range report.Analysis.UnmetInputs() {
 		unmet = append(unmet, entry.Rule)
 	}
-	c.Assert(unmet, qt.DeepEquals, []string{"MF101", "MF102"})
+	c.Assert(unmet, qt.DeepEquals, []string{"data-dependent/add-unique-index", "data-dependent/rebuild-index-as-unique"})
 }

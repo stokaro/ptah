@@ -545,7 +545,7 @@ func TestAnalyzeFS_UnreadStartingState(t *testing.T) {
 		{Kind: lint.SchemaChangeDrop, Object: "missing"},
 		{Kind: lint.SchemaChangeAdd, Object: "users"},
 	})
-	c.Assert(dsSites(findingSites(analysis.Findings())), qt.DeepEquals, []string{"0000000001_init.up.sql:1:DS101"})
+	c.Assert(dsSites(findingSites(analysis.Findings())), qt.DeepEquals, []string{"0000000001_init.up.sql:1:destructive/drop-table"})
 	c.Assert(analysis.UnmetInputs(), qt.Not(qt.HasLen), 0)
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{1})
 }

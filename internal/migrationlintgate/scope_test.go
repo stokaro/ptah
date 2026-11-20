@@ -2,7 +2,6 @@ package migrationlintgate_test
 
 import (
 	"slices"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -44,14 +43,14 @@ func codesIn(findings []lint.Finding) []string {
 	return slices.Compact(codes)
 }
 
-// codesOutsideReportedFamily returns the identifiers that do not belong to the
+// codesOutsideReportedRules returns the identifiers that do not belong to the
 // family the gate reports. It is what separates "the gate returned destructive
 // findings" from "the gate returned only destructive findings"; the first is
 // true of the full lint pass as well.
-func codesOutsideReportedFamily(findings []lint.Finding) []string {
+func codesOutsideReportedRules(findings []lint.Finding) []string {
 	var outside []string
 	for _, code := range codesIn(findings) {
-		if !strings.HasPrefix(code, migrationlintgate.ReportedFamily) {
+		if !slices.Contains(migrationlintgate.ReportedRules(), code) {
 			outside = append(outside, code)
 		}
 	}
@@ -80,7 +79,7 @@ func gatePass(tb testing.TB, fsys fstest.MapFS, dialect string) []lint.Finding {
 // TestAnalyze_ReportsOnlyTheDestructiveFamily drives one directory that trips
 // rules in more than one family and compares the two passes.
 //
-// The foreign-key drop is the load-bearing statement. CD101 is an enabled rule
+// The foreign-key drop is the load-bearing statement. integrity/drop-foreign-key is an enabled rule
 // -- its family is not one the gate turns off -- and it reports at error
 // severity, so it survives the blocking filter and is dropped for one reason
 // only: it is not in the family the gate reports. A fixture whose extra
@@ -101,12 +100,12 @@ func TestAnalyze_ReportsOnlyTheDestructiveFamily(t *testing.T) {
 	full := codesIn(fullPass(t, fsys, "mysql"))
 	gated := gatePass(t, fsys, "mysql")
 
-	c.Assert(full, qt.Contains, "DS102")
-	c.Assert(full, qt.Contains, "CD101")
+	c.Assert(full, qt.Contains, "destructive/drop-column")
+	c.Assert(full, qt.Contains, "integrity/drop-foreign-key")
 
-	c.Assert(codesIn(gated), qt.Contains, "DS102")
-	c.Assert(codesIn(gated), qt.Not(qt.Contains), "CD101")
-	c.Assert(codesOutsideReportedFamily(gated), qt.HasLen, 0)
+	c.Assert(codesIn(gated), qt.Contains, "destructive/drop-column")
+	c.Assert(codesIn(gated), qt.Not(qt.Contains), "integrity/drop-foreign-key")
+	c.Assert(codesOutsideReportedRules(gated), qt.HasLen, 0)
 }
 
 // TestAnalyze_DropsEveryDisabledFamily walks one statement per family the gate
@@ -131,28 +130,28 @@ func TestAnalyze_DropsEveryDisabledFamily(t *testing.T) {
 			dialect: "sqlite",
 			up:      "-- the DDL never got written\n",
 			down:    "-- and neither did its rollback\n",
-			code:    "MF102P",
+			code:    "file-form/empty-migration",
 		},
 		{
 			name:    "BC, a rename that retires a deployed name",
 			dialect: "sqlite",
 			up:      "ALTER TABLE users RENAME TO accounts;\n",
 			down:    "ALTER TABLE accounts RENAME TO users;\n",
-			code:    "BC101",
+			code:    "rollout/rename",
 		},
 		{
 			name:    "PG, an index built without CONCURRENTLY",
 			dialect: "postgres",
 			up:      "CREATE INDEX idx_users_email ON users (email);\n",
 			down:    "DROP INDEX CONCURRENTLY idx_users_email;\n",
-			code:    "PG101",
+			code:    "locking/create-index",
 		},
 		{
 			name:    "MY, a foreign key added to a live table",
 			dialect: "mysql",
 			up:      "ALTER TABLE orders ADD CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users (id);\n",
 			down:    "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;\n",
-			code:    "MY131",
+			code:    "locking/add-foreign-key",
 		},
 	}
 
@@ -168,12 +167,15 @@ func TestAnalyze_DropsEveryDisabledFamily(t *testing.T) {
 	}
 }
 
-// TestDisabledFamilies_MatchesTheFamiliesTheRowsAboveDrive keeps the exported
-// list -- the one the reference page renders -- equal to the families the rows
-// above measured. A family added to or removed from the gate fails here rather
-// than quietly changing a generated sentence nothing drove.
-func TestDisabledFamilies_MatchesTheFamiliesTheRowsAboveDrive(t *testing.T) {
+// TestDisabledRules_AreRulesTheGateDoesNotBlockOn keeps the exported list -- the
+// one the reference page counts -- apart from the rules the gate blocks on. A
+// rule the gate both disabled and blocked on would never run.
+func TestDisabledRules_AreRulesTheGateDoesNotBlockOn(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(migrationlintgate.DisabledFamilies(), qt.DeepEquals, []string{"MF", "BC", "PG", "MY"})
+	for _, name := range migrationlintgate.DisabledRules() {
+		c.Assert(migrationlintgate.ReportedRules(), qt.Not(qt.Contains), name)
+	}
+	c.Assert(migrationlintgate.DisabledRules(), qt.Contains, "file-form/missing-down")
+	c.Assert(migrationlintgate.DisabledRules(), qt.Contains, "rollout/rename")
 }

@@ -18,7 +18,7 @@ import (
 // The replay leaves a view the server can no longer open, and the cleanup
 // after the replay has to drop it: both surfaces report the drop, exit 1 for
 // the finding, and leave the dev database empty. The pinned community binary
-// reports `-- L1: Dropping table "t"` (DS102) and exits 1 there on MySQL 8.4.
+// reports `-- L1: Dropping table "t"` (destructive/drop-column) and exits 1 there on MySQL 8.4.
 // On MariaDB 12.3 it reports no diagnostic for this drop and exits 0, with
 // the view and without it, where ptah-compat reports the drop on both engines.
 func TestMigrateLintDropOfATableAViewReadsE2E(t *testing.T) {
@@ -63,7 +63,7 @@ func TestMigrateLintDropOfATableAViewReadsE2E(t *testing.T) {
 				"migrations", "lint", "--dir", dir, "--dev-url", dev, "--latest", "1")
 
 			c.Assert(exitStatusOf(c, err), qt.Equals, 1, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(stdout, qt.Contains, "20240102000000_drop.sql:1 [error] DS101 destructive/drop-table: DROP TABLE permanently deletes table t")
+			c.Assert(stdout, qt.Contains, "20240102000000_drop.sql:1 [error] destructive/drop-table: DROP TABLE permanently deletes table t")
 			c.Assert(mysqlDatabaseObjects(c, scratch, devName), qt.Equals, 0)
 		})
 	}

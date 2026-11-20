@@ -350,7 +350,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		// analyzer. Ptah's is a SQL-text analyzer, which is why it reports
 		// TRUNCATE and DROP SCHEMA, neither of which produces a diff. Applying
 		// the boundary there turned `DROP TABLE app."Users", app.audit_log;`
-		// from two error-grade DS101 findings and exit 1 into "No lint findings"
+		// from two error-grade destructive/drop-table findings and exit 1 into "No lint findings"
 		// and exit 0, on a surface with no comparison binary to justify it.
 		SchemaScope: compatSchemaScope(opts.Compatibility, opts.DevURL),
 		Selection: lint.VersionSelection{
@@ -648,7 +648,7 @@ func lintDirectory(
 	if learnedDialect != "" {
 		// The rules a run applies follow the product that answered, not the
 		// scheme that addressed it: `mysql://` reaching MariaDB ran MySQL's
-		// rules, so MY146 -- DROP SYSTEM VERSIONING deletes every history row
+		// rules, so destructive/drop-system-versioning -- DROP SYSTEM VERSIONING deletes every history row
 		// -- never fired on the only family that has the statement.
 		lintOptions.Dialect = learnedDialect
 		dialect = learnedDialect

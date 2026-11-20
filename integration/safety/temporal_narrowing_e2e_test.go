@@ -375,7 +375,7 @@ func TestSchemaPlanE2E_OneTypeInTwoSpellingsPlansNothing(t *testing.T) {
 
 // TestRatingE2E_ANarrowingReachesEveryReader asks each surface that reads the rating
 // about the same plan, on an engine where the type a declaration leaves bare holds fewer
-// digits and on one where it holds as many. Lint reports the type change by DS103
+// digits and on one where it holds as many. Lint reports the type change by data-dependent/alter-column-type
 // whichever way it goes: a file holds no previous type to compare with.
 func TestRatingE2E_ANarrowingReachesEveryReader(t *testing.T) {
 	engines := []struct {
@@ -385,9 +385,9 @@ func TestRatingE2E_ANarrowingReachesEveryReader(t *testing.T) {
 		narrow, widen   string
 		wantLint        string
 	}{
-		{name: "postgres", engine: postgresTemporal, dialect: "postgres", before: "timestamp(3)", narrow: "timestamp(0)", widen: "timestamp", wantLint: `"DS103"`},
-		{name: "mysql", engine: mysqlTemporal, dialect: "mysql", before: "datetime(3)", narrow: "datetime", widen: "datetime(6)", wantLint: `"DS103"`},
-		{name: "sqlserver", engine: sqlServerTemporal, dialect: "sqlserver", before: "datetime2(3)", narrow: "datetime2(0)", widen: "datetime2", wantLint: `"DS103"`},
+		{name: "postgres", engine: postgresTemporal, dialect: "postgres", before: "timestamp(3)", narrow: "timestamp(0)", widen: "timestamp", wantLint: `"data-dependent/alter-column-type"`},
+		{name: "mysql", engine: mysqlTemporal, dialect: "mysql", before: "datetime(3)", narrow: "datetime", widen: "datetime(6)", wantLint: `"data-dependent/alter-column-type"`},
+		{name: "sqlserver", engine: sqlServerTemporal, dialect: "sqlserver", before: "datetime2(3)", narrow: "datetime2(0)", widen: "datetime2", wantLint: `"data-dependent/alter-column-type"`},
 	}
 	for _, engine := range engines {
 		t.Run(engine.name, func(t *testing.T) {

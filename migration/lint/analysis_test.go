@@ -46,7 +46,7 @@ func TestAnalyzeFS_VersionSelectionPreservesCompleteSnapshot(t *testing.T) {
 	selected := analysis.SelectedFiles()
 	c.Assert(selected, qt.HasLen, 1)
 	c.Assert(selected[0].Name, qt.Equals, "2_drop.sql")
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(fstest.TestFS(analysis.SnapshotFS(), "1_create.sql", "2_drop.sql"), qt.IsNil)
 }
 
@@ -84,7 +84,7 @@ func TestAnalyzeFS_DataDependentExemptsSameFileCreatedTable(t *testing.T) {
 		{
 			name:  "pre-existing table still reports",
 			sql:   "ALTER TABLE users ADD COLUMN tenant_id INTEGER NOT NULL;\n",
-			rules: []string{"DD101"},
+			rules: []string{"data-dependent/add-not-null-column"},
 		},
 	}
 	for _, tc := range tests {
@@ -117,7 +117,7 @@ func TestAnalyzeFS_DataDependentReportsColumnAddedToLaterCreatedTable(t *testing
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DD101"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"data-dependent/add-not-null-column"})
 }
 
 func TestAnalyzeFS_RejectsUnknownCompatibilityProfile(t *testing.T) {
@@ -186,7 +186,7 @@ func TestAnalyzeFS_SameLineStatementsHaveStableContexts(t *testing.T) {
 	// Both statements sit on one line, so the order within it is by rule code
 	// rather than by statement, and the statement each finding belongs to is
 	// what the context still has to carry.
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "BC104", "DS101", "DS102"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-column", "destructive/drop-table", "rollout/drop-column", "rollout/drop-table"})
 	c.Assert(statementIndexesOf(findings), qt.DeepEquals, []int{0, 1, 0, 1})
 }
 
@@ -260,7 +260,7 @@ func TestAnalyzeFS_MultiTargetDropReportsOnlyUnsafeTables(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "BC103", "DS101", "DS101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "destructive/drop-table", "rollout/drop-table", "rollout/drop-table"})
 	c.Assert(statementIndexesOf(findings), qt.DeepEquals, []int{1, 1, 1, 1})
 	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{
 		{{Kind: lint.SubjectTable, Name: "audit_log"}},
@@ -315,7 +315,7 @@ func TestAnalyzeFS_MultiTargetDropReportsEveryDroppedTable(t *testing.T) {
 		{
 			name:  "single target is one finding per consequence",
 			drop:  "DROP TABLE zeta;",
-			rules: []string{"BC103", "DS101"},
+			rules: []string{"destructive/drop-table", "rollout/drop-table"},
 			want: [][]lint.Subject{
 				{{Kind: lint.SubjectTable, Name: "zeta"}},
 				{{Kind: lint.SubjectTable, Name: "zeta"}},
@@ -324,7 +324,7 @@ func TestAnalyzeFS_MultiTargetDropReportsEveryDroppedTable(t *testing.T) {
 		{
 			name:  "every target is its own finding, ordered by name",
 			drop:  "DROP TABLE zeta, alpha, mid;",
-			rules: []string{"BC103", "BC103", "BC103", "DS101", "DS101", "DS101"},
+			rules: []string{"destructive/drop-table", "destructive/drop-table", "destructive/drop-table", "rollout/drop-table", "rollout/drop-table", "rollout/drop-table"},
 			want: [][]lint.Subject{
 				{{Kind: lint.SubjectTable, Name: "alpha"}},
 				{{Kind: lint.SubjectTable, Name: "mid"}},
@@ -444,7 +444,7 @@ func TestAnalyzeFS_UnparsableDropTargetsStillReport(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{nil, nil})
 	c.Assert(messagesOf(findings), qt.DeepEquals, []string{
 		"dropping the table retires a name " + atlasGapDroppedTableMessageTail,
@@ -472,7 +472,7 @@ func TestAnalyzeFS_MultiClauseAddNotNullReportsEveryColumn(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DD101", "DD101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"data-dependent/add-not-null-column", "data-dependent/add-not-null-column"})
 	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{
 		{{Kind: lint.SubjectColumn, Name: "zeta", Parent: "t", DataType: "int"}},
 		{{Kind: lint.SubjectColumn, Name: "alpha", Parent: "t", DataType: "int"}},
@@ -498,7 +498,7 @@ func TestAnalyzeFS_SQLiteBracketedDropTableRetainsFindingContext(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(subjectsOf(findings), qt.DeepEquals, [][]lint.Subject{
 		{{Kind: lint.SubjectTable, Name: "[Users]"}},
 		{{Kind: lint.SubjectTable, Name: "[Users]"}},
@@ -518,7 +518,7 @@ func TestAnalyzeFS_ColumnFindingsExposeStructuredSubjects(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	findings := analysis.Findings()
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"BC104", "DD101", "DS102"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"data-dependent/add-not-null-column", "destructive/drop-column", "rollout/drop-column"})
 	// The retired name reaches the rollout-break finding as a structured
 	// subject too, and identically to the data-loss one: a renderer that reads
 	// a finding's primary subject must be able to name the column whichever of
@@ -547,7 +547,7 @@ ALTER TABLE accounts ADD COLUMN tenant_id INTEGER NOT NULL;
 		Dialect:   "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC103", "DS101", "BC104", "DS102", "DD101"})
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"rollout/drop-table", "destructive/drop-table", "rollout/drop-column", "destructive/drop-column", "data-dependent/add-not-null-column"})
 
 	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
@@ -572,7 +572,7 @@ ALTER TABLE accounts DROP COLUMN legacy;
 		DirFormat: migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC103", "DS101", "BC104", "DS102"})
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table", "destructive/drop-column", "rollout/drop-column"})
 
 	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
@@ -588,7 +588,7 @@ ALTER TABLE accounts DROP COLUMN legacy;
 //
 // Scoping the three analyzer names to the compatibility surface asserts the
 // opposite for the native column: `-- atlas:nolint concurrent_index` then
-// silences PG101 under `ptah-compat migrate lint` and does
+// silences locking/create-index under `ptah-compat migrate lint` and does
 // nothing under `ptah migrations lint`, while `-- atlas:nolint PG101` did the
 // reverse. Each selector worked on exactly one of the two commands and they
 // disagreed about which. Analyzer names name rule families rather than printed
@@ -599,18 +599,18 @@ ALTER TABLE accounts DROP COLUMN legacy;
 // The rename is the one row that still differs, and it differs for a reason
 // that is not about selectors: the two surfaces classify a rename under
 // different families. `destructive` owns DS and CD on both surfaces, and the
-// compatibility surface calls a rename DS102 while the native surface calls it
+// compatibility surface calls a rename destructive/drop-column while the native surface calls it
 // BC101 (#1120, measured against the pinned community binary — `-- atlas:nolint
 // destructive` above a column rename silences it there and `-- atlas:nolint
-// incompatible` above the same rename leaves DS103 reported). The rename row is
+// incompatible` above the same rename leaves data-dependent/alter-column-type reported). The rename row is
 // therefore also the non-interference control that resolving analyzer names
 // natively did not widen `destructive` past DS and CD into BC. The per-selector
 // behavior itself is pinned in
 // TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly.
 //
 // Reverting the change prints the native column as
-// []string{"PG101", "BC101", "BC103", "DS101", "TX201"} instead of
-// []string{"BC101", "BC103"}.
+// []string{"locking/create-index", "rollout/rename", "rollout/drop-table", "destructive/drop-table", "transaction/explicit-transaction"} instead of
+// []string{"rollout/rename", "rollout/drop-table"}.
 func TestAnalyzeFS_AtlasAnalyzerSuppressionsApplyOnBothSurfaces(t *testing.T) {
 	c := qt.New(t)
 	fsys := fixture(map[string]string{
@@ -637,7 +637,7 @@ BEGIN;
 	// that is the point of the directive rather than a leak in it: the operator
 	// accepted losing the rows in legacy_users and said nothing about the
 	// deployed versions that still query the name.
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC101", "BC103"})
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"rollout/rename", "rollout/drop-table"})
 
 	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
@@ -697,7 +697,7 @@ DROP TABLE users;
 	nativeFiles := native.Files()
 	c.Assert(nativeFiles, qt.HasLen, 1)
 	c.Assert(nativeFiles[0].Ignored, qt.IsFalse)
-	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(rulesOf(native.Findings()), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 
 	atlas, err := lint.AnalyzeFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{
 		Compatibility: lint.CompatibilityProfileAtlas,
@@ -726,13 +726,13 @@ func TestAnalyzeFS_CustomRuleCannotMutateCompletedAnalysis(t *testing.T) {
 		DirFormat: migrationfile.DirFormatAtlas,
 		ExtraRules: []lint.Rule{
 			{
-				Code:     "ZZ101",
+				Name:     "design/zz101",
 				Title:    "custom finding",
 				Severity: lint.SeverityWarning,
 				CheckFile: func(file *lint.File) []lint.Finding {
 					return []lint.Finding{
 						{
-							Rule:     "ZZ101",
+							Rule:     "design/zz101",
 							Title:    "custom finding",
 							Severity: lint.SeverityWarning,
 							File:     file.Path,
@@ -775,7 +775,7 @@ func TestAnalyzeFS_CapturesAtlasTemplateInputsOnce(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"BC103", "DS101"})
+	c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"destructive/drop-table", "rollout/drop-table"})
 	c.Assert(fsys.reads, qt.DeepEquals, map[string]int{
 		"1_template.sql":  1,
 		"atlas.sum":       1,

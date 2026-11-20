@@ -6,17 +6,32 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/internal/builtintest"
 	"ptah.run/migration/lint"
 	"ptah.run/migration/migrationfile"
 )
 
-// The fixture of these tests is selectorFS: on MySQL it reports MF101, named
-// data-dependent/add-unique-index, and MF101P, named file-form/missing-down.
-// The codes differ by one letter, and a code prefix cannot reach MF101
-// without MF101P; the names sit in different categories.
+// selectorFS is one up file with no down, so it reports file-form/missing-down
+// and, on MySQL, data-dependent/add-unique-index (a unique index over
+// existing rows).
+var selectorFS = map[string]string{
+	"0000000001_index.up.sql": "CREATE UNIQUE INDEX u ON t (a);\n",
+}
+
+func lintSelectorFS(c *qt.C, opts lint.Options) []lint.Finding {
+	c.Helper()
+	opts.Dialect = "mysql"
+	opts.DirFormat = migrationfile.DirFormatPtah
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(selectorFS), opts)
+	c.Assert(err, qt.IsNil)
+	return findings
+}
+
+// The fixture of these tests is selectorFS: on MySQL it reports
+// data-dependent/add-unique-index and file-form/missing-down. They sit in
+// different categories, and neither name begins the other, so a prefix match
+// of one cannot reach the other.
 
 // TestNameSelectors_DisableSelectsByNameAndCategory disables by Ptah name and
 // by category, alone and beside a code.
@@ -26,12 +41,12 @@ func TestNameSelectors_DisableSelectsByNameAndCategory(t *testing.T) {
 		disabled []string
 		want     []string
 	}{
-		{name: "the check's name", disabled: []string{"data-dependent/add-unique-index"}, want: []string{"MF101P"}},
-		{name: "the file-form rule's name", disabled: []string{"file-form/missing-down"}, want: []string{"MF101"}},
-		{name: "the check's category", disabled: []string{"data-dependent"}, want: []string{"MF101P"}},
-		{name: "the file-form category with a slash", disabled: []string{"file-form/"}, want: []string{"MF101"}},
-		{name: "a name beside a code", disabled: []string{"file-form/missing-down", "MF101"}, want: make([]string, 0)},
-		{name: "a category no finding is in", disabled: []string{"locking"}, want: []string{"MF101P", "MF101"}},
+		{name: "the check's name", disabled: []string{"data-dependent/add-unique-index"}, want: []string{"file-form/missing-down"}},
+		{name: "the file-form rule's name", disabled: []string{"file-form/missing-down"}, want: []string{"data-dependent/add-unique-index"}},
+		{name: "the check's category", disabled: []string{"data-dependent"}, want: []string{"file-form/missing-down"}},
+		{name: "the file-form category with a slash", disabled: []string{"file-form/"}, want: []string{"data-dependent/add-unique-index"}},
+		{name: "a name beside a code", disabled: []string{"file-form/missing-down", "data-dependent/add-unique-index"}, want: make([]string, 0)},
+		{name: "a category no finding is in", disabled: []string{"locking"}, want: []string{"file-form/missing-down", "data-dependent/add-unique-index"}},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -99,38 +114,24 @@ func TestNameSelectors_RulesKeyGovernsByNameAndCategory(t *testing.T) {
 		{
 			name:    "the check's name",
 			configs: map[string]lint.RuleConfig{"data-dependent/add-unique-index": {Severity: lint.SeverityError}},
-			want:    map[string]lint.Severity{"MF101": lint.SeverityError, "MF101P": lint.SeverityWarning},
+			want:    map[string]lint.Severity{"data-dependent/add-unique-index": lint.SeverityError, "file-form/missing-down": lint.SeverityWarning},
 		},
 		{
 			name:    "the file-form category",
 			configs: map[string]lint.RuleConfig{"file-form": {Severity: lint.SeverityInfo}},
-			want:    map[string]lint.Severity{"MF101": lint.SeverityWarning, "MF101P": lint.SeverityInfo},
+			want:    map[string]lint.Severity{"data-dependent/add-unique-index": lint.SeverityWarning, "file-form/missing-down": lint.SeverityInfo},
 		},
 		{
 			name:    "the file-form category with a slash",
 			configs: map[string]lint.RuleConfig{"file-form/": {Severity: lint.SeverityInfo}},
-			want:    map[string]lint.Severity{"MF101": lint.SeverityWarning, "MF101P": lint.SeverityInfo},
-		},
-		{
-			name: "a code beats the rule's name",
-			configs: map[string]lint.RuleConfig{
-				"MF101": {Severity: lint.SeverityInfo}, "data-dependent/add-unique-index": {Severity: lint.SeverityError},
-			},
-			want: map[string]lint.Severity{"MF101": lint.SeverityInfo, "MF101P": lint.SeverityWarning},
+			want:    map[string]lint.Severity{"data-dependent/add-unique-index": lint.SeverityWarning, "file-form/missing-down": lint.SeverityInfo},
 		},
 		{
 			name: "a name beats its category",
 			configs: map[string]lint.RuleConfig{
 				"data-dependent/add-unique-index": {Severity: lint.SeverityError}, "data-dependent": {Severity: lint.SeverityInfo},
 			},
-			want: map[string]lint.Severity{"MF101": lint.SeverityError, "MF101P": lint.SeverityWarning},
-		},
-		{
-			name: "a category beats a code prefix",
-			configs: map[string]lint.RuleConfig{
-				"data-dependent": {Severity: lint.SeverityError}, "MF": {Severity: lint.SeverityInfo},
-			},
-			want: map[string]lint.Severity{"MF101": lint.SeverityError, "MF101P": lint.SeverityInfo},
+			want: map[string]lint.Severity{"data-dependent/add-unique-index": lint.SeverityError, "file-form/missing-down": lint.SeverityWarning},
 		},
 	}
 	for _, row := range rows {
@@ -214,7 +215,7 @@ func TestNameSelectors_PolicyAcceptsAKnownName_HappyPath(t *testing.T) {
 }
 
 // TestNameSelectors_NoLintSelectsByNameAndCategory silences the statement's
-// check by its name and by its category. MF101P has no statement to sit
+// check by its name and by its category. file-form/missing-down has no statement to sit
 // under, so a directive never silences it.
 func TestNameSelectors_NoLintSelectsByNameAndCategory(t *testing.T) {
 	rows := []struct {
@@ -222,13 +223,13 @@ func TestNameSelectors_NoLintSelectsByNameAndCategory(t *testing.T) {
 		sql  string
 		want []string
 	}{
-		{name: "the check's name", sql: "-- ptah:nolint data-dependent/add-unique-index\n", want: []string{"MF101P"}},
-		{name: "the check's category", sql: "-- ptah:nolint data-dependent\n", want: []string{"MF101P"}},
-		{name: "the check's category with a slash", sql: "-- ptah:nolint data-dependent/\n", want: []string{"MF101P"}},
-		{name: "a name and a code in one directive", sql: "-- ptah:nolint file-form/missing-down, MF101\n", want: []string{"MF101P"}},
-		{name: "another category", sql: "-- ptah:nolint rollout\n", want: []string{"MF101P", "MF101"}},
-		{name: "codes joined by a slash", sql: "-- ptah:nolint DS101/MF101\n", want: []string{"MF101P"}},
-		{name: "a slash in the reason", sql: "-- ptah:nolint MF101 / reviewed\n", want: []string{"MF101P"}},
+		{name: "the check's name", sql: "-- ptah:nolint data-dependent/add-unique-index\n", want: []string{"file-form/missing-down"}},
+		{name: "the check's category", sql: "-- ptah:nolint data-dependent\n", want: []string{"file-form/missing-down"}},
+		{name: "the check's category with a slash", sql: "-- ptah:nolint data-dependent/\n", want: []string{"file-form/missing-down"}},
+		{name: "a name and a code in one directive", sql: "-- ptah:nolint file-form/missing-down, data-dependent/add-unique-index\n", want: []string{"file-form/missing-down"}},
+		{name: "another category", sql: "-- ptah:nolint rollout\n", want: []string{"file-form/missing-down", "data-dependent/add-unique-index"}},
+		{name: "codes joined by a slash", sql: "-- ptah:nolint destructive/drop-table/MF101\n", want: []string{"file-form/missing-down"}},
+		{name: "a slash in the reason", sql: "-- ptah:nolint data-dependent/add-unique-index / reviewed\n", want: []string{"file-form/missing-down"}},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -252,22 +253,22 @@ func TestNameSelectors_NoLintReasonNeverSelects(t *testing.T) {
 		directive string
 		want      []string
 	}{
-		{name: "no reason", directive: "ptah:nolint BC103", want: []string{"MF101P", "DS101"}},
-		{name: "a category in the reason", directive: "ptah:nolint BC103 destructive on purpose", want: []string{"MF101P", "DS101"}},
-		{name: "a category after a separator", directive: "ptah:nolint BC103 -- destructive/", want: []string{"MF101P", "DS101"}},
-		{name: "a name in the reason", directive: "ptah:nolint BC103 because destructive/drop-table", want: []string{"MF101P", "DS101"}},
-		{name: "a code in the reason", directive: "ptah:nolint BC103 because DS101 is wrong", want: []string{"MF101P", "DS101"}},
-		{name: "a code after a separator", directive: "ptah:nolint BC103 -- DS101", want: []string{"MF101P", "DS101"}},
-		{name: "a URL", directive: "ptah:nolint BC103 see https://example.com/ticket/ABC-1", want: []string{"MF101P", "DS101"}},
-		{name: "and/or", directive: "ptah:nolint BC103 this and/or that", want: []string{"MF101P", "DS101"}},
-		{name: "a slash word right after the code", directive: "ptah:nolint BC103 dba/ops", want: []string{"MF101P", "DS101"}},
-		{name: "a URL right after the code", directive: "ptah:nolint BC103 https://example.com/ticket/ABC-1", want: []string{"MF101P", "DS101"}},
-		{name: "w/o", directive: "ptah:nolint BC103 w/o review", want: []string{"MF101P", "DS101"}},
-		{name: "slashes before the text", directive: "ptah:nolint BC103 // dba/ops", want: []string{"MF101P", "DS101"}},
-		{name: "a diff header", directive: "ptah:nolint BC103 --- a/b", want: []string{"MF101P", "DS101"}},
-		{name: "a text and no selector", directive: "ptah:nolint reviewed by dba/ops", want: []string{"MF101P", "BC103", "DS101"}},
-		{name: "a bare category as the first word", directive: "ptah:nolint destructive", want: []string{"MF101P", "BC103"}},
-		{name: "a name beside a code", directive: "ptah:nolint BC103 destructive/drop-table on purpose", want: []string{"MF101P"}},
+		{name: "no reason", directive: "ptah:nolint rollout/drop-table", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a category in the reason", directive: "ptah:nolint rollout/drop-table destructive on purpose", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a category after a separator", directive: "ptah:nolint rollout/drop-table -- destructive/", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a name in the reason", directive: "ptah:nolint rollout/drop-table because destructive/drop-table", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a code in the reason", directive: "ptah:nolint rollout/drop-table because destructive/drop-table is wrong", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a code after a separator", directive: "ptah:nolint rollout/drop-table -- destructive/drop-table", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a URL", directive: "ptah:nolint rollout/drop-table see https://example.com/ticket/ABC-1", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "and/or", directive: "ptah:nolint rollout/drop-table this and/or that", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a slash word right after the code", directive: "ptah:nolint rollout/drop-table dba/ops", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a URL right after the code", directive: "ptah:nolint rollout/drop-table https://example.com/ticket/ABC-1", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "w/o", directive: "ptah:nolint rollout/drop-table w/o review", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "slashes before the text", directive: "ptah:nolint rollout/drop-table // dba/ops", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a diff header", directive: "ptah:nolint rollout/drop-table --- a/b", want: []string{"file-form/missing-down", "destructive/drop-table"}},
+		{name: "a text and no selector", directive: "ptah:nolint reviewed by dba/ops", want: []string{"file-form/missing-down", "destructive/drop-table", "rollout/drop-table"}},
+		{name: "a bare category as the first word", directive: "ptah:nolint destructive", want: []string{"file-form/missing-down", "rollout/drop-table"}},
+		{name: "a name beside a code", directive: "ptah:nolint rollout/drop-table destructive/drop-table on purpose", want: []string{"file-form/missing-down"}},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -286,7 +287,7 @@ func TestNameSelectors_NoLintReasonNeverSelects(t *testing.T) {
 func TestNameSelectors_NoLintRefusesAWrongCategoryName(t *testing.T) {
 	c := qt.New(t)
 	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
-		fixture(map[string]string{"0000000001_drop.up.sql": "-- ptah:nolint BC103 locking/typo\nDROP TABLE users;\n"}),
+		fixture(map[string]string{"0000000001_drop.up.sql": "-- ptah:nolint rollout/drop-table locking/typo\nDROP TABLE users;\n"}),
 		lint.Options{Dialect: "postgres", DirFormat: migrationfile.DirFormatPtah})
 	c.Assert(err, qt.ErrorMatches, `.*ptah:nolint: "locking/typo" is not the name of a migration lint rule; .*`)
 	c.Assert(findings, qt.IsNil)
@@ -330,46 +331,89 @@ func TestNameSelectors_NoLintRefusesAnUnknownName(t *testing.T) {
 	}
 }
 
-// TestNameSelectors_FindingsCarryTheRuleName reads the Ptah name on each
-// finding, and the empty name of a rule a configuration declares.
+// TestNameSelectors_FindingsCarryTheRuleName reads the rule name on each
+// finding, a declared rule's included.
 func TestNameSelectors_FindingsCarryTheRuleName(t *testing.T) {
 	c := qt.New(t)
 	findings := lintSelectorFS(c, lint.Options{RuleConfigs: map[string]lint.RuleConfig{
-		"XX101": {Match: `strcontains(upper(statement.sql), "UNIQUE")`, Message: "a unique index"},
+		"design/xx101": {Match: `strcontains(upper(statement.sql), "UNIQUE")`, Message: "a unique index"},
 	}})
-	names := make(map[string]string)
-	for _, finding := range findings {
-		names[finding.Rule] = finding.Name
-	}
 
-	c.Assert(names, qt.DeepEquals, map[string]string{
-		"MF101":  "data-dependent/add-unique-index",
-		"MF101P": "file-form/missing-down",
-		"XX101":  "",
-	})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"file-form/missing-down", "data-dependent/add-unique-index", "design/xx101"})
 }
 
 // TestSelectorSelects_MatchesANameExactly drives the exported predicate with
-// names. The rows that answer false begin the rule's name or category.
+// names. The rows that answer false begin the rule's name or category, and a
+// prefix match would turn each into a hit.
 func TestSelectorSelects_MatchesANameExactly(t *testing.T) {
 	rows := []struct {
 		selector string
-		code     string
+		rule     string
 		want     bool
 	}{
-		{selector: "file-form/missing-down", code: "MF101P", want: true},
-		{selector: "file-form", code: "MF101P", want: true},
-		{selector: "file-form/", code: "MF101P", want: true},
-		{selector: "file-form/missing-down", code: "MF101", want: false},
-		{selector: "file-form/missing", code: "MF101P", want: false},
-		{selector: "file/", code: "MF101P", want: false},
-		{selector: "data-dependent", code: "MF101", want: true},
-		{selector: "data-dependent", code: "MF101P", want: false},
+		{selector: "file-form/missing-down", rule: "file-form/missing-down", want: true},
+		{selector: "file-form", rule: "file-form/missing-down", want: true},
+		{selector: "file-form/", rule: "file-form/missing-down", want: true},
+		{selector: "file-form/missing-down", rule: "data-dependent/add-unique-index", want: false},
+		{selector: "file-form/missing", rule: "file-form/missing-down", want: false},
+		{selector: "file/", rule: "file-form/missing-down", want: false},
+		{selector: "data-dependent", rule: "data-dependent/add-unique-index", want: true},
+		{selector: "data-dependent", rule: "file-form/missing-down", want: false},
+		{selector: "MF", rule: "file-form/missing-down", want: false},
+		{selector: "MF103", rule: "file-form/file-name", want: false},
 	}
 	for _, row := range rows {
-		t.Run(row.selector+" on "+row.code, func(t *testing.T) {
+		t.Run(row.selector+" on "+row.rule, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(lint.SelectorSelects(must.Must(lint.Rules(builtintest.Runtime())), row.selector, row.code), qt.Equals, row.want)
+			c.Assert(lint.SelectorSelects(row.selector, row.rule), qt.Equals, row.want)
 		})
 	}
+}
+
+// TestNameSelectors_AnyCodeShapedWordIsRefused pins the native refusal: a word
+// spelled as a rule code is refused wherever a selector is read, with one
+// message that names no rule the code might stand for.
+func TestNameSelectors_AnyCodeShapedWordIsRefused(t *testing.T) {
+	const refusal = `lint rules are named category/name; %s is not a rule name`
+	rows := []struct {
+		name    string
+		options lint.Options
+		wantErr string
+	}{
+		{name: "--disable a code", options: lint.Options{Disabled: []string{"DS102"}}, wantErr: `rule selector ` + refusal},
+		{name: "--disable a prefix", options: lint.Options{Disabled: []string{"MF"}}, wantErr: `rule selector ` + refusal},
+		{name: "a rules key", options: lint.Options{RuleConfigs: map[string]lint.RuleConfig{"PG301": {Severity: lint.SeverityError}}}, wantErr: refusal},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := lint.ValidateOptions(builtintest.Runtime(), row.options)
+			c.Assert(err, qt.ErrorMatches, `.*lint rules are named category/name; [A-Z0-9]+ is not a rule name`)
+		})
+	}
+}
+
+// TestNameSelectors_NoLintRefusesACode refuses a code in a ptah:nolint
+// comment at its line, and the code a reason merely resembles is read as
+// text.
+func TestNameSelectors_NoLintRefusesACode(t *testing.T) {
+	c := qt.New(t)
+	_, err := lint.LintFS(c.Context(), builtintest.Runtime(),
+		fixture(map[string]string{"0000000001_drop.up.sql": "-- ptah:nolint DS101\nDROP TABLE users;\n"}),
+		lint.Options{Dialect: "postgres", DirFormat: migrationfile.DirFormatPtah})
+
+	c.Assert(err, qt.ErrorMatches,
+		`0000000001_drop.up.sql: the comment above line 2: ptah:nolint: lint rules are named category/name; DS101 is not a rule name`)
+}
+
+// TestNameSelectors_NoLintReadsAnUppercaseWordWithoutDigitsAsText keeps a
+// shouted reason from being refused as a code.
+func TestNameSelectors_NoLintReadsAnUppercaseWordWithoutDigitsAsText(t *testing.T) {
+	c := qt.New(t)
+	findings, err := lint.LintFS(c.Context(), builtintest.Runtime(),
+		fixture(map[string]string{"0000000001_drop.up.sql": "-- ptah:nolint rollout/drop-table ASAP\nDROP TABLE users;\n"}),
+		lint.Options{Dialect: "postgres", DirFormat: migrationfile.DirFormatPtah})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rulesOf(findings), qt.Not(qt.Contains), "rollout/drop-table")
 }

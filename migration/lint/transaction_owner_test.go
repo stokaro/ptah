@@ -11,17 +11,17 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
-// TestLintFS_EmbeddedTransactionFollowsTheTransactionOwner drives TX201
+// TestLintFS_EmbeddedTransactionFollowsTheTransactionOwner drives transaction/explicit-transaction
 // through the public lint path with the bundled runtime: the owner reads
 // Options.TransactionOwner from the request a run sends it. A run that leaves
-// the field out of the request reports TX201 on the second row too.
+// the field out of the request reports transaction/explicit-transaction on the second row too.
 //
 // The directory is in Atlas's layout, the one ptah-compat lints a converted
-// golang-migrate directory in, and the TX101 row is the control that the field
+// golang-migrate directory in, and the transaction/mixed-statements row is the control that the field
 // is not read as a file outside a transaction. A file of one statement is the
 // exception the field makes: the runner sends it alone and the migrator runs
-// it without a transaction, so PG103 does not apply, unless the file names a
-// transaction mode. A nested BEGIN is still TX201, a warning: PostgreSQL
+// it without a transaction, so transaction/concurrent-index does not apply, unless the file names a
+// transaction mode. A nested BEGIN is still transaction/explicit-transaction, a warning: PostgreSQL
 // ignores it with one.
 func TestLintFS_EmbeddedTransactionFollowsTheTransactionOwner(t *testing.T) {
 	const block = "BEGIN;\nCREATE TABLE t (id int);\nINSERT INTO t VALUES (1);\nCOMMIT;\n"
@@ -34,14 +34,14 @@ func TestLintFS_EmbeddedTransactionFollowsTheTransactionOwner(t *testing.T) {
 		sql   string
 		want  []string
 	}{
-		{"a block the migrator wraps", lintext.TransactionOwnerMigrator, block, []string{"TX201"}},
+		{"a block the migrator wraps", lintext.TransactionOwnerMigrator, block, []string{"transaction/explicit-transaction"}},
 		{"a block in a file that opens its own", lintext.TransactionOwnerFile, block, make([]string, 0)},
-		{"a mix in a file that opens its own", lintext.TransactionOwnerFile, mix, []string{"PG103", "TX101"}},
-		{"a lone concurrent build the migrator wraps", lintext.TransactionOwnerMigrator, build, []string{"PG103"}},
+		{"a mix in a file that opens its own", lintext.TransactionOwnerFile, mix, []string{"transaction/concurrent-index", "transaction/mixed-statements"}},
+		{"a lone concurrent build the migrator wraps", lintext.TransactionOwnerMigrator, build, []string{"transaction/concurrent-index"}},
 		{"a lone concurrent build in a file that opens its own", lintext.TransactionOwnerFile, build, make([]string, 0)},
 		{"a lone concurrent build in a file that asks for a transaction", lintext.TransactionOwnerFile,
-			"-- atlas:txmode file\n\n" + build, []string{"PG103"}},
-		{"a nested block in a file that opens its own", lintext.TransactionOwnerFile, nested, []string{"TX201"}},
+			"-- atlas:txmode file\n\n" + build, []string{"transaction/concurrent-index"}},
+		{"a nested block in a file that opens its own", lintext.TransactionOwnerFile, nested, []string{"transaction/explicit-transaction"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -63,8 +63,8 @@ func TestLintFS_EmbeddedTransactionFollowsTheTransactionOwner(t *testing.T) {
 // TestLintFS_EmbeddedTransactionFollowsTheTransactionOwner, in a golang-migrate
 // directory: the runner sends a down file as it sends an up file, and the
 // migrator rolls it back the same way, so a lone concurrent drop runs without
-// a transaction and PG103 does not apply, unless the file names a transaction
-// mode, and a block the file opens and closes is not TX201.
+// a transaction and transaction/concurrent-index does not apply, unless the file names a transaction
+// mode, and a block the file opens and closes is not transaction/explicit-transaction.
 func TestLintFS_DownFileFollowsTheTransactionOwner(t *testing.T) {
 	const up = "CREATE TABLE t (id int);\n"
 	const drop = "DROP INDEX CONCURRENTLY idx;\n"
@@ -77,11 +77,11 @@ func TestLintFS_DownFileFollowsTheTransactionOwner(t *testing.T) {
 		want  []string
 	}{
 		{"a lone concurrent drop the migrator wraps", lintext.TransactionOwnerMigrator, drop,
-			[]string{down + ":1:PG103"}},
+			[]string{down + ":1:transaction/concurrent-index"}},
 		{"a lone concurrent drop in a file that opens its own", lintext.TransactionOwnerFile, drop, make([]string, 0)},
 		{"a lone concurrent drop in a file that asks for a transaction", lintext.TransactionOwnerFile,
 			"-- atlas:txmode file\n\n" + drop, []string{down + ":3:PG103"}},
-		{"a block the migrator wraps", lintext.TransactionOwnerMigrator, block, []string{down + ":1:TX201"}},
+		{"a block the migrator wraps", lintext.TransactionOwnerMigrator, block, []string{down + ":1:transaction/explicit-transaction"}},
 		{"a block in a file that opens its own", lintext.TransactionOwnerFile, block, make([]string, 0)},
 	} {
 		t.Run(test.name, func(t *testing.T) {

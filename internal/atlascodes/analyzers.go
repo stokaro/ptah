@@ -60,11 +60,11 @@ type Identity struct {
 }
 
 // identities lists every Ptah rule that reports an Atlas check, in the order
-// of the rule catalog. It is the single source for both directions:
-// [RuleFor] reads it forward and [NamesFor] backward, so a selector can never
-// resolve to a rule that prints under a different code. Declared as an
-// ordered slice rather than a map so resolution order is deterministic.
-// [Validate] holds it against the Atlas check list and the reviewed reference.
+// of the rule catalog. [RuleFor] reads it forward and the check rows read it
+// backward through [NamesFor]; [Validate] holds the two to each other and
+// both to the reviewed reference, so a selector can never resolve to a rule
+// that prints under a different code. Declared as an ordered slice rather
+// than a map so resolution order is deterministic.
 var identities = []Identity{
 	{Name: "destructive/drop-table", Dialects: nil, Analyzer: AnalyzerDestructive, Code: "DS102"},
 	{Name: "destructive/drop-column", Dialects: nil, Analyzer: AnalyzerDestructive, Code: "DS103"},
@@ -167,17 +167,15 @@ func RuleFor(name, dialect string) Rule {
 	return Rule{Analyzer: AnalyzerPtah, Code: name}
 }
 
-// NamesFor returns the Ptah rules that report the Atlas check code, in table
-// order, and nothing for a code none of them reports. A code selector matches
-// the code exactly: `DS` and `D` are not families.
+// NamesFor returns the Ptah rules that report the Atlas check code, as the
+// check's row names them, and nothing for a code no Ptah rule reports. A
+// code selector matches the code exactly: `DS` and `D` are not families.
 func NamesFor(code string) []string {
-	var names []string
-	for _, identity := range identities {
-		if identity.Code == code && !slices.Contains(names, identity.Name) {
-			names = append(names, identity.Name)
-		}
+	check, ok := checkFor(code)
+	if !ok {
+		return nil
 	}
-	return names
+	return slices.Clone(check.PtahRules)
 }
 
 // analyzerRules are the Ptah rules each Atlas analyzer covers.

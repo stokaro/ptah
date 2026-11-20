@@ -84,7 +84,7 @@ func TestBuild_ProjectDeclaredRuleReportsAFinding(t *testing.T) {
 // code". Carrying the declaration through the merge must not change what those
 // entries do.
 //
-// DS101 is used rather than a file-name rule because the fixture has to be a
+// destructive/drop-table is used rather than a file-name rule because the fixture has to be a
 // statement the chosen rule really fires on: a rule that never fires would let
 // this pass whatever the severity did.
 func TestBuild_ProjectRuleWithoutMatchStillConfigures(t *testing.T) {
@@ -92,16 +92,16 @@ func TestBuild_ProjectRuleWithoutMatchStillConfigures(t *testing.T) {
 
 	report, err := buildWithProjectRules(c, "DROP TABLE users;\n",
 		map[string]projectconfig.LintRuleConfig{
-			"DS101": {Severity: string(migrationlint.SeverityInfo)},
+			"destructive/drop-table": {Severity: string(migrationlint.SeverityInfo)},
 		})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(severitiesOf(report, "DS101"), qt.DeepEquals,
+	c.Assert(severitiesOf(report, "destructive/drop-table"), qt.DeepEquals,
 		[]migrationlint.Severity{migrationlint.SeverityInfo})
 }
 
 // TestBuild_ProjectRuleSeverityOverrideIsObservable is the control for the case
-// above: without it, a run where DS101 defaulted to error would pass whether or
+// above: without it, a run where destructive/drop-table defaulted to error would pass whether or
 // not the override was applied.
 func TestBuild_ProjectRuleSeverityOverrideIsObservable(t *testing.T) {
 	c := qt.New(t)
@@ -109,10 +109,10 @@ func TestBuild_ProjectRuleSeverityOverrideIsObservable(t *testing.T) {
 	report, err := buildWithProjectRules(c, "DROP TABLE users;\n", nil)
 
 	c.Assert(err, qt.IsNil)
-	// DS101 defaults to error, which is why the override above asks for info:
+	// destructive/drop-table defaults to error, which is why the override above asks for info:
 	// overriding a rule to the severity it already had would pass whether or
 	// not the override was applied at all.
-	c.Assert(severitiesOf(report, "DS101"), qt.DeepEquals,
+	c.Assert(severitiesOf(report, "destructive/drop-table"), qt.DeepEquals,
 		[]migrationlint.Severity{migrationlint.SeverityError})
 }
 

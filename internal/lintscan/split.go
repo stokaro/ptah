@@ -27,7 +27,7 @@ import (
 // statement ends on belongs to that statement: a suppression directive has to
 // sit directly above its statement. Measured against atlas community version
 // v1.3.0 on `-- atlas:nolint DS103`, a blank line, then a DROP COLUMN, it
-// reports DS103 and exits 1, while the same two lines with no blank line
+// reports data-dependent/alter-column-type and exits 1, while the same two lines with no blank line
 // between them exit 0.
 //
 // A batch separator on a line of its own, SQL Server's GO, ends the statement

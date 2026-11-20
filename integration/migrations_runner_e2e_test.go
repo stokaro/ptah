@@ -133,7 +133,7 @@ func TestMigrationsUpRunnerAppliesTheFileOwnTransactionsE2E(t *testing.T) {
 }
 
 // The apply gate judges a file's transaction control by the runner too. With
-// TX201 raised to an error and gated, the default runner refuses a file that
+// transaction/explicit-transaction raised to an error and gated, the default runner refuses a file that
 // opens its own transaction before anything runs, and golang-migrate, which
 // runs that transaction as written, applies it.
 func TestMigrationsUpRunnerDecidesTheGateE2E(t *testing.T) {
@@ -152,7 +152,7 @@ func TestMigrationsUpRunnerDecidesTheGateE2E(t *testing.T) {
 			dir := runnerMigrations(c, map[string]string{
 				"0000000001_own.up.sql":   "BEGIN;\nCREATE TABLE t1 (id int);\nCOMMIT;\n",
 				"0000000001_own.down.sql": "DROP TABLE t1;\n",
-				".ptah-lint.yaml":         "gate:\n  families: [TX]\nrules:\n  TX201:\n    severity: error\n",
+				".ptah-lint.yaml":         "gate:\n  families: [TX]\nrules:\n  transaction/explicit-transaction:\n    severity: error\n",
 			})
 			target, _ := scratchReplayDatabase(c)
 

@@ -58,8 +58,8 @@ func TestAnalyzeFS_RepeatableMigrations_HappyPath(t *testing.T) {
 		})
 		c.Assert(err, qt.IsNil)
 		c.Assert(findingSites(analysis.Findings()), qt.DeepEquals, []string{
-			"R__cleanup.sql:1:BC103",
-			"R__cleanup.sql:1:DS101",
+			"R__cleanup.sql:1:rollout/drop-table",
+			"R__cleanup.sql:1:destructive/drop-table",
 		})
 		c.Assert(repeatableShapes(analysis.Files()), qt.DeepEquals, []repeatableShape{
 			{Name: "0000000001_widgets.down.sql", Version: 1, RevisionVersion: "1", Direction: "down", WellFormedName: true, Selected: true},
@@ -77,7 +77,7 @@ func TestAnalyzeFS_RepeatableMigrations_HappyPath(t *testing.T) {
 			DirFormat: migrationfile.DirFormatPtah,
 		})
 		c.Assert(err, qt.IsNil)
-		c.Assert(findingSites(findings), qt.DeepEquals, []string{"R__cleanup.sql:1:BC103", "R__cleanup.sql:1:DS101"})
+		c.Assert(findingSites(findings), qt.DeepEquals, []string{"R__cleanup.sql:1:rollout/drop-table", "R__cleanup.sql:1:destructive/drop-table"})
 	})
 
 	t.Run("a restricted selection selects a repeatable migration by its path", func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestAnalyzeFS_RepeatableMigrations_HappyPath(t *testing.T) {
 		})
 		c.Assert(err, qt.IsNil)
 		c.Assert(selectedNames(analysis), qt.DeepEquals, []string{"R__cleanup.sql"})
-		c.Assert(findingSites(analysis.Findings()), qt.DeepEquals, []string{"R__cleanup.sql:1:BC103", "R__cleanup.sql:1:DS101"})
+		c.Assert(findingSites(analysis.Findings()), qt.DeepEquals, []string{"R__cleanup.sql:1:rollout/drop-table", "R__cleanup.sql:1:destructive/drop-table"})
 	})
 
 	t.Run("a selection by version selects no repeatable migration", func(t *testing.T) {
@@ -124,7 +124,7 @@ func TestAnalyzeFS_RepeatableMigrations_HappyPath(t *testing.T) {
 		fsys := fixture(map[string]string{"notes.sql": "SELECT 1;\n"})
 		findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fsys, lint.Options{DirFormat: migrationfile.DirFormatPtah})
 		c.Assert(err, qt.IsNil)
-		c.Assert(findingSites(findings), qt.DeepEquals, []string{"notes.sql:0:MF103"})
+		c.Assert(findingSites(findings), qt.DeepEquals, []string{"notes.sql:0:file-form/file-name"})
 	})
 }
 

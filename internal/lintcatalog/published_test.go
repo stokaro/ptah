@@ -20,7 +20,7 @@ func TestEntries_TheRecordsKeepTheProviderRules(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	families := make(map[string][]string)
 	for _, entry := range entries {
-		families[entry.Code[:2]] = append(families[entry.Code[:2]], entry.Code)
+		families[entry.Name[:2]] = append(families[entry.Name[:2]], entry.Name)
 	}
 
 	_, withoutRecord := lintcatalog.EntriesFrom(builtintest.Runtime())

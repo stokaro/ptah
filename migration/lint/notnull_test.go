@@ -36,7 +36,7 @@ func analyzeNotNull(c *qt.C, dialect, migration string, baseline ...lintext.Base
 	return analysis
 }
 
-// TestNullableMadeNotNullRule_ReportsTheColumnsThatWereNullable pins DD103
+// TestNullableMadeNotNullRule_ReportsTheColumnsThatWereNullable pins data-dependent/set-not-null
 // to the engines whose spelling restates the column, with the consequence
 // each was measured to have.
 func TestNullableMadeNotNullRule_ReportsTheColumnsThatWereNullable(t *testing.T) {
@@ -95,8 +95,8 @@ func TestNullableMadeNotNullRule_ReportsTheColumnsThatWereNullable(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeNotNull(c, test.dialect, test.migration, notNullColumn("total", "int", false))
-			c.Assert(rulesOf(analysis.Findings()), qt.Contains, "DD103")
-			message := messageOf(analysis.Findings(), "DD103")
+			c.Assert(rulesOf(analysis.Findings()), qt.Contains, "data-dependent/set-not-null")
+			message := messageOf(analysis.Findings(), "data-dependent/set-not-null")
 			for _, want := range test.want {
 				c.Assert(message, qt.Contains, want)
 			}
@@ -142,7 +142,7 @@ func TestNullableMadeNotNullRule_StaysQuietWhereNoRowCanChange(t *testing.T) {
 			column:    notNullColumn("total", "int", true),
 		},
 		{
-			name:      "the PostgreSQL spelling belongs to PG303",
+			name:      "the PostgreSQL spelling belongs to locking/set-not-null",
 			dialect:   "postgres",
 			migration: "ALTER TABLE orders ALTER COLUMN total SET NOT NULL;",
 			column:    notNullColumn("total", "integer", false),
@@ -167,7 +167,7 @@ func TestNullableMadeNotNullRule_StaysQuietWhereNoRowCanChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeNotNull(c, test.dialect, test.migration, test.column)
-			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "DD103")
+			c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "data-dependent/set-not-null")
 		})
 	}
 }
@@ -180,12 +180,12 @@ func TestNullableMadeNotNullRule_NamesItsInputWhenTheRunSuppliesNone(t *testing.
 
 	analysis := analyzeNotNull(c, "mysql", "ALTER TABLE orders MODIFY total INT NOT NULL;")
 
-	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "DD103")
+	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "data-dependent/set-not-null")
 	var unmet []string
 	for _, input := range analysis.UnmetInputs() {
 		unmet = append(unmet, input.Rule)
 	}
-	c.Assert(unmet, qt.Contains, "DD103")
+	c.Assert(unmet, qt.Contains, "data-dependent/set-not-null")
 	c.Assert(analysis.BaselineVersions(), qt.DeepEquals, []int64{2})
 }
 
@@ -203,5 +203,5 @@ func TestNullableMadeNotNullRule_AnswersTheAtlasCode(t *testing.T) {
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "DD103")
+	c.Assert(rulesOf(analysis.Findings()), qt.Not(qt.Contains), "data-dependent/set-not-null")
 }

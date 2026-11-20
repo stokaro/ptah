@@ -29,11 +29,11 @@ func TestMigrationsLintSplitsATSQLProcedureWhereItEndsFS(t *testing.T) {
 		want []string
 	}{
 		{name: "TRY and CATCH", body: "BEGIN TRY\n    UPDATE t SET c = 1;\n  END TRY\n  BEGIN CATCH\n    SELECT 1;\n  END CATCH;",
-			want: []string{"AC101@1", "BC103@10 users", "DS101@10 users"}},
+			want: []string{"coverage/routine-body@1", "rollout/drop-table@10 users", "destructive/drop-table@10 users"}},
 		{name: "a transaction", body: "BEGIN TRAN;\n  UPDATE t SET c = 1;\n  COMMIT;",
-			want: []string{"AC101@1", "BC103@7 users", "DS101@7 users"}},
+			want: []string{"coverage/routine-body@1", "rollout/drop-table@7 users", "destructive/drop-table@7 users"}},
 		{name: "a DROP TABLE after END CONVERSATION is body text", body: "END CONVERSATION @h;\n  DROP TABLE audit;",
-			want: []string{"AC101@1", "BC103@6 users", "DS101@6 users"}},
+			want: []string{"coverage/routine-body@1", "rollout/drop-table@6 users", "destructive/drop-table@6 users"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)

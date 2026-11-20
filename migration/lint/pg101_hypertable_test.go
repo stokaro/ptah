@@ -11,7 +11,7 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
-// PG101 names CREATE INDEX CONCURRENTLY as the remedy for a blocking build,
+// locking/create-index names CREATE INDEX CONCURRENTLY as the remedy for a blocking build,
 // and TimescaleDB refuses that statement on a hypertable (stokaro/ptah#3551).
 // Only the starting state can say a table is a hypertable, so the state
 // refines the advice, and TimescaleDB's own remedy, a per-chunk build, is not
@@ -20,7 +20,7 @@ import (
 const pg101OrdinaryAdvice = "CREATE INDEX without CONCURRENTLY blocks writes to the table for the whole build; " +
 	"on a populated table use CREATE INDEX CONCURRENTLY outside a transaction"
 
-// pg101HypertableAdvice is PG101's message for an index on the hypertable
+// pg101HypertableAdvice is locking/create-index's message for an index on the hypertable
 // spelled name.
 func pg101HypertableAdvice(name string) string {
 	return "CREATE INDEX on the hypertable " + name + " blocks writes to it and to every chunk for the whole " +
@@ -78,24 +78,24 @@ func analyzeEventsWithout(
 	return analysis
 }
 
-// pg101Messages keeps the messages of PG101's findings, so a case asserts on
+// pg101Messages keeps the messages of locking/create-index's findings, so a case asserts on
 // this rule and not on the others a CREATE INDEX meets.
 func pg101Messages(findings []lint.Finding) []string {
 	var messages []string
 	for _, finding := range findings {
-		if finding.Rule == "PG101" {
+		if finding.Rule == "locking/create-index" {
 			messages = append(messages, finding.Message)
 		}
 	}
 	return messages
 }
 
-// pg101Unmet keeps PG101's entries of [lint.Analysis.UnmetInputs], spelled
+// pg101Unmet keeps locking/create-index's entries of [lint.Analysis.UnmetInputs], spelled
 // by input.
 func pg101Unmet(analysis lint.Analysis) []string {
 	var inputs []string
 	for _, entry := range analysis.UnmetInputs() {
-		if entry.Rule == "PG101" {
+		if entry.Rule == "locking/create-index" {
 			inputs = append(inputs, entry.Input.String())
 		}
 	}
@@ -161,10 +161,10 @@ func TestPG101_AdviceFollowsTheStartingState(t *testing.T) {
 	}
 }
 
-// TestPG101_PerChunkBuildIsTheRemedy pins the storage parameter PG101 reads.
+// TestPG101_PerChunkBuildIsTheRemedy pins the storage parameter locking/create-index reads.
 // Measured on TimescaleDB 2.30.1: without a value or with a value PostgreSQL
 // reads as true the build locks one chunk at a time; `false`, `off` and `0`
-// lock the hypertable and every chunk for the whole build, the hazard PG101
+// lock the hypertable and every chunk for the whole build, the hazard locking/create-index
 // reports, and `o` is refused as not a valid bool.
 func TestPG101_PerChunkBuildIsTheRemedy(t *testing.T) {
 	tests := []struct {
@@ -232,10 +232,10 @@ func TestPG101_PerChunkBuildIsTheRemedy(t *testing.T) {
 	}
 }
 
-// TestPG101_AsksForTheStateOfWhatItReports: the statements PG101 asks the
+// TestPG101_AsksForTheStateOfWhatItReports: the statements locking/create-index asks the
 // starting state for are the ones it reports, so a run without a dev database
 // names the refinement it went without, and a statement it does not report
-// costs no catalog read. PG108 is disabled because it asks for the state of an
+// costs no catalog read. locking/partitioned-index is disabled because it asks for the state of an
 // index build on an earlier table too, a request pg108_baseline_test.go pins.
 func TestPG101_AsksForTheStateOfWhatItReports(t *testing.T) {
 	tests := []struct {
@@ -273,7 +273,7 @@ func TestPG101_AsksForTheStateOfWhatItReports(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis := analyzeEventsWithout(c, test.migration, test.columns, nil, "PG108")
+			analysis := analyzeEventsWithout(c, test.migration, test.columns, nil, "locking/partitioned-index")
 			c.Assert(analysis.BaselineVersions(), qt.DeepEquals, test.wantVersions)
 			c.Assert(pg101Unmet(analysis), qt.DeepEquals, test.wantUnmet)
 		})

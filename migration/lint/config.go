@@ -33,10 +33,10 @@ const ConfigFileName = ".ptah-lint.yaml"
 //	dialect: postgres
 //	server-version: "17"
 //	disabled-rules:
-//	  - MF103
+//	  - file-form/file-name
 //	  - MY
 //	rules:
-//	  DS103:
+//	  data-dependent/alter-column-type:
 //	    severity: warning
 //	    exclude:
 //	      - legacy/**

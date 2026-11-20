@@ -37,8 +37,8 @@ func TestRule_Validate_FailurePath(t *testing.T) {
 		rule    lintext.Rule
 		wantErr string
 	}{
-		{"a code-shaped name", lintext.Rule{Name: "XY101", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}},
-			`.*rule name "XY101" must be a category and a rule joined by a slash.*`},
+		{"a code-shaped name", lintext.Rule{Name: "design/xy101", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}},
+			`.*rule name "design/xy101" must be a category and a rule joined by a slash.*`},
 		{"a name without a category", lintext.Rule{Name: "drop-table", Title: "t", Severity: lintext.Error, Targets: []string{"postgres"}},
 			`.*rule name "drop-table" must be a category.*`},
 		{"no title", lintext.Rule{Name: "test/drop-table", Title: " ", Severity: lintext.Error, Targets: []string{"postgres"}}, `.*rule test/drop-table has no title`},
@@ -418,7 +418,7 @@ func TestCanonicalName(t *testing.T) {
 		want bool
 	}{
 		{"locking/add-foreign-key", true}, {"ydb/add-column-form", true}, {"naming/identifier-too-long2", true},
-		{"", false}, {"DS101", false}, {"locking", false}, {"locking/", false}, {"/add", false},
+		{"", false}, {"destructive/drop-table", false}, {"locking", false}, {"locking/", false}, {"/add", false},
 		{"Locking/add", false}, {"locking/Add", false}, {"locking/add-", false}, {"locking/-add", false},
 		{"locking/add--check", false}, {"locking/add/check", false}, {"1locking/add", false}, {"locking/1add", false},
 	} {

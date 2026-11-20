@@ -89,9 +89,9 @@ func TestPrepareReportOptions_CapturesLocalDirectoryBeforeBuild(t *testing.T) {
 	// The captured directory is what was analyzed, so both findings name the
 	// table the original file dropped rather than the replacement's.
 	c.Assert(report.Findings, qt.HasLen, 2)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "BC103")
+	c.Assert(report.Findings[0].Rule, qt.Equals, "rollout/drop-table")
 	c.Assert(report.Findings[0].Context.Subjects[0].Name, qt.Equals, "original")
-	c.Assert(report.Findings[1].Rule, qt.Equals, "DS101")
+	c.Assert(report.Findings[1].Rule, qt.Equals, "destructive/drop-table")
 	c.Assert(report.Findings[1].Context.Subjects[0].Name, qt.Equals, "original")
 }
 

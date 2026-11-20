@@ -36,7 +36,7 @@ func TestAnalyzeWithPolicy_AtlasRepeatable_FailurePath(t *testing.T) {
 		migrationlintgate.Pending{Versions: []int64{1, 2}}, policy.WithAtlasRevisionTable(), "")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(gateSites(findings), qt.DeepEquals, []string{"R__x.sql:1:DS101"})
+	c.Assert(gateSites(findings), qt.DeepEquals, []string{"R__x.sql:1:destructive/drop-table"})
 }
 
 // Judged for Ptah's revision table, which records numbers, the same plan
@@ -51,7 +51,7 @@ func TestAnalyzeWithPolicy_AtlasRepeatableOverTheNumericTable_FailurePath(t *tes
 		migrationlintgate.Pending{Versions: []int64{1, 2}}, policy, "")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(gateSites(findings), qt.DeepEquals, []string{"R__x.sql:0:MF105P", "R__x.sql:1:DS101"})
+	c.Assert(gateSites(findings), qt.DeepEquals, []string{"R__x.sql:0:file-form/refused-file", "R__x.sql:1:destructive/drop-table"})
 }
 
 // A plan that has applied R__x.sql already hands the gate 1 alone, and the

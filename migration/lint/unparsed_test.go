@@ -69,7 +69,7 @@ func TestAC102_ReportsAStatementNoServerRuns(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			found := ofRule(analyzeUnparsed(c, test.dialect, test.up, test.down, test.scope), "AC102")
+			found := ofRule(analyzeUnparsed(c, test.dialect, test.up, test.down, test.scope), "coverage/unparsed-statement")
 			c.Assert(found, qt.HasLen, 1)
 			c.Assert(found[0].File, qt.Equals, test.wantFile)
 			c.Assert(found[0].Line, qt.Equals, test.wantLine)
@@ -97,7 +97,7 @@ func TestAC102_StaysSilent(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			found := ofRule(analyzeUnparsed(c, test.dialect, test.up, test.down, test.scope), "AC102")
+			found := ofRule(analyzeUnparsed(c, test.dialect, test.up, test.down, test.scope), "coverage/unparsed-statement")
 			c.Assert(found, qt.HasLen, 0)
 		})
 	}
@@ -132,7 +132,7 @@ func TestAC102_StaysSilentWhereTheProviderReadsTheDialect(t *testing.T) {
 			}), lint.Options{Dialect: test.target, Unparsed: lint.UnparsedAll, Disabled: []string{"MF"}})
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(ofRule(findings, "AC102"), qt.HasLen, test.want)
+			c.Assert(ofRule(findings, "coverage/unparsed-statement"), qt.HasLen, test.want)
 		})
 	}
 }
@@ -162,7 +162,7 @@ func TestAC102_ValidStatementsThatMeetAParserGapStayGreen(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.dialect+"/"+test.statement, func(t *testing.T) {
 			c := qt.New(t)
-			found := ofRule(analyzeUnparsed(c, test.dialect, test.statement, "SELECT 1;", lint.UnparsedAll), "AC102")
+			found := ofRule(analyzeUnparsed(c, test.dialect, test.statement, "SELECT 1;", lint.UnparsedAll), "coverage/unparsed-statement")
 			c.Assert(found, qt.HasLen, 1)
 			c.Assert(found[0].Severity, qt.Equals, lint.SeverityInfo)
 		})
@@ -175,8 +175,8 @@ func TestAC102_ValidStatementsThatMeetAParserGapStayGreen(t *testing.T) {
 func TestAC102_LeavesTheTokenRulesAlone(t *testing.T) {
 	c := qt.New(t)
 	findings := analyzeUnparsed(c, "postgres", "DROP TABLE t BOGUS;", "SELECT 1;", lint.UnparsedAll)
-	c.Assert(ofRule(findings, "AC102"), qt.HasLen, 1)
-	c.Assert(ofRule(findings, "DS101"), qt.HasLen, 1)
+	c.Assert(ofRule(findings, "coverage/unparsed-statement"), qt.HasLen, 1)
+	c.Assert(ofRule(findings, "destructive/drop-table"), qt.HasLen, 1)
 }
 
 // TestAC102_FollowsThePolicy holds the controls every rule has: a policy can raise
@@ -191,14 +191,14 @@ func TestAC102_FollowsThePolicy(t *testing.T) {
 			"0000000001_x.down.sql": "SELECT 1;\n",
 		}), lint.Options{
 			Dialect: "sqlite", Unparsed: lint.UnparsedAll,
-			RuleConfigs: map[string]lint.RuleConfig{"AC102": {Severity: lint.SeverityError}},
+			RuleConfigs: map[string]lint.RuleConfig{"coverage/unparsed-statement": {Severity: lint.SeverityError}},
 		})
 		c.Assert(err, qt.IsNil)
-		found := ofRule(findings, "AC102")
+		found := ofRule(findings, "coverage/unparsed-statement")
 		c.Assert(found, qt.HasLen, 1)
 		c.Assert(found[0].Severity, qt.Equals, lint.SeverityError)
 	})
-	for _, selector := range []string{"AC102", "AC"} {
+	for _, selector := range []string{"coverage/unparsed-statement", "AC"} {
 		t.Run("disabled by "+selector, func(t *testing.T) {
 			c := qt.New(t)
 			findings, err := lint.LintFS(c.Context(), builtintest.Runtime(), fixture(map[string]string{
@@ -206,12 +206,12 @@ func TestAC102_FollowsThePolicy(t *testing.T) {
 				"0000000001_x.down.sql": "SELECT 1;\n",
 			}), lint.Options{Dialect: "sqlite", Unparsed: lint.UnparsedAll, Disabled: []string{selector}})
 			c.Assert(err, qt.IsNil)
-			c.Assert(ofRule(findings, "AC102"), qt.HasLen, 0)
+			c.Assert(ofRule(findings, "coverage/unparsed-statement"), qt.HasLen, 0)
 		})
 	}
 	t.Run("silenced on one statement", func(t *testing.T) {
 		c := qt.New(t)
-		found := ofRule(analyzeUnparsed(c, "sqlite", "-- ptah:nolint AC102\n"+unparsed, "SELECT 1;", lint.UnparsedAll), "AC102")
+		found := ofRule(analyzeUnparsed(c, "sqlite", "-- ptah:nolint coverage/unparsed-statement\n"+unparsed, "SELECT 1;", lint.UnparsedAll), "coverage/unparsed-statement")
 		c.Assert(found, qt.HasLen, 0)
 	})
 }

@@ -16,7 +16,7 @@ import (
 func shippedWith(c *qt.C, edits map[string]func(*lintcatalog.Entry)) []lintcatalog.Entry {
 	entries := must.Must(lintcatalog.Entries())
 	for code, edit := range edits {
-		index := slices.IndexFunc(entries, func(entry lintcatalog.Entry) bool { return entry.Code == code })
+		index := slices.IndexFunc(entries, func(entry lintcatalog.Entry) bool { return entry.Name == code })
 		c.Assert(index >= 0, qt.IsTrue, qt.Commentf("the shipped catalog has no rule %s", code))
 		edit(&entries[index])
 	}
@@ -38,7 +38,7 @@ func TestValidateAcceptsTheShippedNames(t *testing.T) {
 	c := qt.New(t)
 	names := make(map[string]string)
 	for _, entry := range must.Must(lintcatalog.Entries()) {
-		names[entry.Code] = entry.Name
+		names[entry.Name] = entry.Name
 	}
 
 	c.Assert([]string{names["PG306"], names["MY131"], names["PG401P"], names["DDL003"], names["YD103"]}, qt.DeepEquals, []string{
@@ -148,7 +148,7 @@ func TestShippedRulesHaveTheirOwner(t *testing.T) {
 	c := qt.New(t)
 	owners := make(map[string]lintcatalog.Owner)
 	for _, entry := range must.Must(lintcatalog.Entries()) {
-		owners[entry.Code] = entry.Owner
+		owners[entry.Name] = entry.Owner
 	}
 
 	c.Assert([]lintcatalog.Owner{owners["YD103"], owners["SP101"], owners["DS101"], owners["PG301"], owners["SQL001"]}, qt.DeepEquals,

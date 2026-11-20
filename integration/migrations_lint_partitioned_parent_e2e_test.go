@@ -16,15 +16,15 @@ import (
 	"ptah.run/internal/dbtarget"
 )
 
-// TestNativeMigrationsLintReadsAnEarlierPartitionedParentE2E drives PG108
+// TestNativeMigrationsLintReadsAnEarlierPartitionedParentE2E drives locking/partitioned-index
 // through the shipped binary against PostgreSQL (stokaro/ptah#3588).
 //
 // The parent is created by the first migration, so nothing in the second says
 // it is partitioned; only the catalog the replay reads before the second
 // version can. Each row moves one fact away from the reporting case:
 //
-//   - the same table left ordinary keeps PG101 and its CONCURRENTLY advice;
-//   - the remedy PG108 names, run as the second migration, replays, and
+//   - the same table left ordinary keeps locking/create-index and its CONCURRENTLY advice;
+//   - the remedy locking/partitioned-index names, run as the second migration, replays, and
 //     neither rule reports a step of it.
 func TestNativeMigrationsLintReadsAnEarlierPartitionedParentE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
@@ -56,20 +56,20 @@ func TestNativeMigrationsLintReadsAnEarlierPartitionedParentE2E(t *testing.T) {
 			base:   partitioned,
 			change: "CREATE INDEX m_value ON measurements (value);\n",
 			want: []string{
-				"] PG108 locking/partitioned-index: building this index takes a SHARE lock on measurements and on every one of its partitions",
+				"] locking/partitioned-index: building this index takes a SHARE lock on measurements and on every one of its partitions",
 				"attach it to a parent index created with ON ONLY",
 			},
-			wantNot: []string{"] PG101 locking/create-index: "},
+			wantNot: []string{"] locking/create-index: "},
 		},
 		{
 			name:    "control: the same index on the table left ordinary",
 			base:    "CREATE TABLE measurements (id bigint NOT NULL, taken_on date NOT NULL, value int);\n",
 			change:  "CREATE INDEX m_value ON measurements (value);\n",
-			want:    []string{"] PG101 locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes"},
-			wantNot: []string{"] PG108 locking/partitioned-index: "},
+			want:    []string{"] locking/create-index: CREATE INDEX without CONCURRENTLY blocks writes"},
+			wantNot: []string{"] locking/partitioned-index: "},
 		},
 		{
-			name: "the remedy PG108 names",
+			name: "the remedy locking/partitioned-index names",
 			base: partitioned,
 			change: "-- atlas:txmode none\n\n" +
 				"CREATE INDEX m_value ON ONLY measurements (value);\n" +
@@ -77,7 +77,7 @@ func TestNativeMigrationsLintReadsAnEarlierPartitionedParentE2E(t *testing.T) {
 				"ALTER INDEX m_value ATTACH PARTITION m_value_2025;\n" +
 				"CREATE INDEX CONCURRENTLY m_value_2026 ON measurements_2026 (value);\n" +
 				"ALTER INDEX m_value ATTACH PARTITION m_value_2026;\n",
-			wantNot: []string{"] PG101 locking/create-index: ", "] PG108 locking/partitioned-index: "},
+			wantNot: []string{"] locking/create-index: ", "] locking/partitioned-index: "},
 		},
 	}
 

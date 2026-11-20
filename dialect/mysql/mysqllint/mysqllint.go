@@ -1,6 +1,6 @@
 // Package mysqllint holds the migration lint rules the MySQL owner checks for
 // MySQL and MariaDB: the MY family of MySQL-family hazards and the online-mode
-// rule ON102.
+// rule online/unproven.
 //
 // Rules publishes them as data and Service checks them, once per lint run.
 // The bundled runtime ptah.run/engine/builtin registers both on the mysql

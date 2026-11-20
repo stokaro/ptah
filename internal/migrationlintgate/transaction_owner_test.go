@@ -14,12 +14,12 @@ import (
 
 // TestAnalyzeWithPolicy_TransactionOwnerDecidesTX201 holds that the gate
 // judges a file's transaction control by who opens the transaction it runs
-// in. With TX201 gated at error, a file that opens and commits its own
+// in. With transaction/explicit-transaction gated at error, a file that opens and commits its own
 // transaction refuses an apply whose migrator wraps it, and passes one that
 // runs it as written, as golang-migrate does.
 func TestAnalyzeWithPolicy_TransactionOwnerDecidesTX201(t *testing.T) {
 	fsys := fstest.MapFS{
-		lint.ConfigFileName:       {Data: []byte("gate:\n  families: [TX]\nrules:\n  TX201:\n    severity: error\n")},
+		lint.ConfigFileName:       {Data: []byte("gate:\n  families: [TX]\nrules:\n  transaction/explicit-transaction:\n    severity: error\n")},
 		"0000000001_own.up.sql":   {Data: []byte("BEGIN;\nCREATE TABLE t1 (id int);\nCOMMIT;\n")},
 		"0000000001_own.down.sql": {Data: []byte("DROP TABLE t1;\n")},
 	}
@@ -28,7 +28,7 @@ func TestAnalyzeWithPolicy_TransactionOwnerDecidesTX201(t *testing.T) {
 		owner lintext.TransactionOwner
 		want  []string
 	}{
-		{name: "a migrator that wraps each file", owner: lintext.TransactionOwnerMigrator, want: []string{"TX201"}},
+		{name: "a migrator that wraps each file", owner: lintext.TransactionOwnerMigrator, want: []string{"transaction/explicit-transaction"}},
 		{name: "files that open their own transactions", owner: lintext.TransactionOwnerFile, want: make([]string, 0)},
 	}
 	for _, test := range tests {
