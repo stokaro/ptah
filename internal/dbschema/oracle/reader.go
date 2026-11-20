@@ -169,7 +169,11 @@ func (r *Reader) ReadSchemaContext(ctx context.Context) (*catalog.Database, erro
 		schema.Functions = functions
 	}
 
-	markKeyColumns(schema)
+	stated, err := r.readStatedNotNull(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("oracle: read not null constraints: %w", err)
+	}
+	markKeyColumns(schema, stated)
 	schema.Constraints = withoutGeneratedKeys(schema.Constraints, generatedKeys)
 	return schema, nil
 }
@@ -434,6 +438,44 @@ WHERE c.owner = :1
   AND NOT (c.constraint_type = 'C' AND c.generated = 'GENERATED NAME'
            AND REGEXP_LIKE(c.search_condition_vc, '^"[^"]+" IS NOT NULL$'))
 ORDER BY c.table_name, c.constraint_name, col.position`
+
+// statedNotNullQuery reads the columns that hold a NOT NULL constraint of their
+// own, by any name: the generated one Oracle gives `NOT NULL` and a name the
+// declaration chose. constraintQuery leaves the generated rows out, so this is
+// the only place the catalog says a key column's NOT NULL is more than its
+// key's.
+const statedNotNullQuery = `
+SELECT c.table_name, col.column_name
+FROM all_constraints c
+JOIN all_cons_columns col
+     ON col.owner = c.owner AND col.constraint_name = c.constraint_name
+WHERE c.owner = :1
+  AND c.table_name NOT LIKE 'BIN$%'
+  AND c.constraint_type = 'C'
+  AND REGEXP_LIKE(c.search_condition_vc, '^"[^"]+" IS NOT NULL$')`
+
+// readStatedNotNull answers, per table, the columns that hold a NOT NULL
+// constraint of their own.
+func (r *Reader) readStatedNotNull(ctx context.Context) (map[string]map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx, statedNotNullQuery, r.schema)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	stated := make(map[string]map[string]bool)
+	for rows.Next() {
+		var table, column string
+		if err := rows.Scan(&table, &column); err != nil {
+			return nil, err
+		}
+		if stated[table] == nil {
+			stated[table] = make(map[string]bool)
+		}
+		stated[table][column] = true
+	}
+	return stated, rows.Err()
+}
 
 func (r *Reader) readConstraints(ctx context.Context) ([]catalog.Constraint, map[string]bool, error) {
 	// The referenced keys are read BEFORE the constraint rows are opened, and
@@ -879,11 +921,6 @@ func (r *Reader) readMaterializedViews(ctx context.Context) ([]catalog.Materiali
 	return views, rows.Err()
 }
 
-// markKeyColumns copies the constraint facts onto the columns they describe.
-//
-// IsPrimaryKey and IsUnique are derived fields on Column, and every reader
-// here fills them from its constraint read rather than from a column flag,
-// because no catalog carries them on the column.
 // formatColumnType composes the spelling a declaration would have written.
 //
 // The catalog splits a type across four columns, and DATA_TYPE alone is not the
@@ -937,7 +974,19 @@ func formatColumnType(dataType string, vectorInfo sql.NullString, charLength, pr
 	}
 }
 
-func markKeyColumns(schema *catalog.Database) {
+// markKeyColumns copies the constraint facts onto the columns they describe.
+//
+// IsPrimaryKey and IsUnique are derived fields on Column, and every reader
+// here fills them from its constraint read rather than from a column flag,
+// because no catalog carries them on the column.
+//
+// A primary key column is NOT NULL on Oracle whether or not the column says
+// so, and the catalog reports both as NULLABLE = 'N'. They differ when the key
+// goes: `id NUMBER(10) PRIMARY KEY` becomes nullable, while `id NUMBER(10) NOT
+// NULL PRIMARY KEY` keeps the CHECK "ID" IS NOT NULL it holds beside the key.
+// stated lists the columns that hold such a constraint, and a key column
+// outside it is marked [catalog.Column.NotNullFromKey].
+func markKeyColumns(schema *catalog.Database, stated map[string]map[string]bool) {
 	primary := make(map[string]map[string]bool)
 	unique := make(map[string]map[string]bool)
 	for _, constraint := range schema.Constraints {
@@ -968,6 +1017,7 @@ func markKeyColumns(schema *catalog.Database) {
 			column := &table.Columns[j]
 			column.IsPrimaryKey = primary[table.Name][column.Name]
 			column.IsUnique = unique[table.Name][column.Name]
+			column.NotNullFromKey = column.IsPrimaryKey && column.IsNullable == "NO" && !stated[table.Name][column.Name]
 		}
 	}
 }

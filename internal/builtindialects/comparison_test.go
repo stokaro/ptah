@@ -128,11 +128,15 @@ func TestComparison_AgreesWithTheSwitchesItReplaced(t *testing.T) {
 			TimePrecision:                descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:                    descriptor.BareTypes{Stated: true, FloatBits: 126, FloatKeepsPrecision: true, IntervalLeading: 2},
 			RewritesGeneratedExpressions: true,
-			RoutineNamesFold:             true,
-			ArgumentModeAfterName:        true,
-			MapsDeclaredTypes:            true,
-			SequenceStartIsNextValue:     true,
-			AutoIncrementIdentity:        true,
+			// Oracle declares both: a column's key is the table's key, and the
+			// read carries the key the server named only on the column.
+			ColumnPrimaryKeyIsTheTablesKey: true,
+			GeneratedKeyIsColumnFlag:       true,
+			RoutineNamesFold:               true,
+			ArgumentModeAfterName:          true,
+			MapsDeclaredTypes:              true,
+			SequenceStartIsNextValue:       true,
+			AutoIncrementIdentity:          true,
 		},
 	}
 	described := builtindialects.Descriptors()

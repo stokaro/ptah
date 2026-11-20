@@ -56,7 +56,10 @@ func TestCompare_OracleKeyDeferral_Synced(t *testing.T) {
 }
 
 // TestCompare_OracleKeyDeferral_Changed plans keys that start deferring as a
-// drop and an add, each written with its clause.
+// drop and an add, each written with its clause. The primary key is added
+// under the name of the key it replaces, which the rollback drops it by;
+// added with no name, Oracle names it afresh and the rollback's DROP
+// CONSTRAINT finds nothing.
 func TestCompare_OracleKeyDeferral_Changed(t *testing.T) {
 	c := qt.New(t)
 	desired := deferralDesired(true, "deferred")
@@ -71,6 +74,6 @@ func TestCompare_OracleKeyDeferral_Changed(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(strings.Join(plan, "\n"), qt.Contains, "ADD PRIMARY KEY (id) DEFERRABLE INITIALLY DEFERRED")
+	c.Assert(strings.Join(plan, "\n"), qt.Contains, "ADD CONSTRAINT SYS_C008735 PRIMARY KEY (id) DEFERRABLE INITIALLY DEFERRED")
 	c.Assert(strings.Join(plan, "\n"), qt.Contains, "ADD CONSTRAINT slots_pos_key UNIQUE (pos) DEFERRABLE INITIALLY DEFERRED")
 }

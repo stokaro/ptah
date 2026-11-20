@@ -168,9 +168,16 @@ END;`,
 			TimePrecision:                descriptor.TimePrecision{Compared: true, Default: 6},
 			BareTypes:                    descriptor.BareTypes{Stated: true, FloatBits: 126, FloatKeepsPrecision: true, IntervalLeading: 2},
 			RewritesGeneratedExpressions: true,
-			RoutineNamesFold:             true,
-			ArgumentModeAfterName:        true,
-			MapsDeclaredTypes:            true,
+			// Measured on Oracle Free 23.26: MODIFY (id NUMBER(10)) leaves a
+			// column's key as it was, so a column that gains, loses or passes on
+			// the primary key needs the table's ADD and DROP of the key.
+			ColumnPrimaryKeyIsTheTablesKey: true,
+			// The reader drops the key Oracle named for a column and keeps its
+			// fact on the column (withoutGeneratedKeys).
+			GeneratedKeyIsColumnFlag: true,
+			RoutineNamesFold:         true,
+			ArgumentModeAfterName:    true,
+			MapsDeclaredTypes:        true,
 			// ALL_SEQUENCES keeps no START WITH; the reader reports
 			// LAST_NUMBER, which a used sequence has moved past it.
 			SequenceStartIsNextValue: true,
@@ -256,6 +263,10 @@ END;`,
 				Deferral:        descriptor.Deferral{Checks: true},
 				EnableValidate:  true,
 				CheckAddedFirst: true,
+				// Measured on Oracle Free 23.26: ADD PRIMARY KEY on a table
+				// that holds a key answers ORA-02260, whatever either key is
+				// named.
+				PrimaryKeyDroppedFirst: true,
 			},
 			Keys:       descriptor.KeyGrammar{IndexKeywords: []string{"INDEX"}},
 			AlterTable: descriptor.AlterTableGrammar{Modify: descriptor.ModifyOther},

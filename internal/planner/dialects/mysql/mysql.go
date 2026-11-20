@@ -478,7 +478,8 @@ func (p *Planner) modifyExistingColumns(
 	taken *takeoverLedger,
 ) ([]ast.Node, error) {
 	commentRidesAlong := p.columnCommentRidesWithTheColumn()
-	for _, colDiff := range tableDiff.ColumnsModified {
+	result, unnamedKeyDropped := p.dropUnnamedPrimaryKey(result, diff, tableDiff, semantics)
+	for _, colDiff := range columnsWithoutKeyOwnedChanges(tableDiff.ColumnsModified, unnamedKeyDropped) {
 		// A column comment travels with the column on MySQL and MariaDB,
 		// because MODIFY COLUMN restates the whole definition and that
 		// definition carries a COMMENT clause. Oracle has no such clause, so
@@ -2232,6 +2233,7 @@ func (p *Planner) GenerateMigrationAST(ctx context.Context, runtime featureplan.
 	maps.Copy(alreadyDropped, released.ConstraintSet())
 	maps.Copy(alreadyDropped, uniquesRebuilt.ConstraintSet())
 	leftovers := p.replacementLeftovers(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
+	leftovers = append(leftovers, p.primaryKeyRemovalsBeforeAdditions(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))...)
 	result, err = p.addNewConstraints(result, diff, alreadyDropped, leftovers, released.IndexSet(), taken)
 	if err != nil {
 		return nil, err
@@ -2738,8 +2740,9 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		// owners keep on the key, which the MySQL family writes in its
 		// definition.
 		primaryKey := ast.NewPrimaryKeyConstraint(add.Columns...)
-		if p.targetDialect() == platform.SQLServer {
-			// SQL Server keeps the name, and a later file and the rollback have to name it.
+		if primaryKeyNames.Get(p.targetDialect()) == "" {
+			// SQL Server and Oracle keep the name, and a later file and the
+			// rollback have to name it. MySQL and MariaDB name every key PRIMARY.
 			primaryKey.Name = add.Name
 		}
 		primaryKey.Deferrable, primaryKey.Initially = add.Deferrable, add.Initially
@@ -2919,6 +2922,13 @@ func (p *Planner) addNonForeignKeyConstraintsWithTables(
 // through platform.Lookup costs more than the step.
 var foreignKeyNamings = descriptortable.New(func(described descriptor.Dialect) descriptor.ForeignKeyNaming {
 	return described.ForeignKeyNaming
+})
+
+// primaryKeyNames holds each descriptor's Comparison.PrimaryKeyName: the name
+// the server gives every primary key, or empty where a key keeps the name it is
+// declared with.
+var primaryKeyNames = descriptortable.New(func(described descriptor.Dialect) string {
+	return described.Comparison.PrimaryKeyName
 })
 
 // indexesNamedByForeignKeys answers the removed indexes under the name of a foreign key

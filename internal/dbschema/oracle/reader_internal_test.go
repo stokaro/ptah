@@ -387,3 +387,79 @@ func TestNewConstraint_DeferralAndGeneratedName(t *testing.T) {
 		})
 	}
 }
+
+// TestMarkKeyColumns_MarksANotNullThatOnlyTheKeyHolds pins the fact the
+// planner needs when it drops a key: Oracle reports `id NUMBER(10) PRIMARY KEY`
+// and `id NUMBER(10) NOT NULL PRIMARY KEY` alike, as NOT NULL, and only the
+// second keeps it once the key is gone. A column is marked when it is a key
+// column, is NOT NULL, and holds no NOT NULL constraint of its own.
+func TestMarkKeyColumns_MarksANotNullThatOnlyTheKeyHolds(t *testing.T) {
+	tests := []struct {
+		name   string
+		column catalog.Column
+		stated map[string]map[string]bool
+		want   bool
+	}{
+		{
+			name:   "a key column with no constraint of its own",
+			column: catalog.Column{Name: "ID", IsNullable: "NO"},
+			want:   true,
+		},
+		{
+			name:   "a key column with its own NOT NULL",
+			column: catalog.Column{Name: "ID", IsNullable: "NO"},
+			stated: map[string]map[string]bool{"T": {"ID": true}},
+		},
+		{
+			name:   "a NOT NULL stated on another table",
+			column: catalog.Column{Name: "ID", IsNullable: "NO"},
+			stated: map[string]map[string]bool{"OTHER": {"ID": true}},
+			want:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			schema := &catalog.Database{
+				Tables:      []catalog.Table{{Name: "T", Columns: []catalog.Column{tt.column}}},
+				Constraints: []catalog.Constraint{{Name: "SYS_C1", TableName: "T", Type: "PRIMARY KEY", ColumnNames: []string{"ID"}}},
+			}
+
+			markKeyColumns(schema, tt.stated)
+
+			c.Assert(schema.Tables[0].Columns[0].IsPrimaryKey, qt.IsTrue)
+			c.Assert(schema.Tables[0].Columns[0].NotNullFromKey, qt.Equals, tt.want)
+		})
+	}
+}
+
+// TestMarkKeyColumns_LeavesOtherColumnsUnmarked is the control: a nullable key
+// column cannot be NOT NULL through its key, and a column outside the key has
+// no key to lose.
+func TestMarkKeyColumns_LeavesOtherColumnsUnmarked(t *testing.T) {
+	c := qt.New(t)
+	schema := &catalog.Database{
+		Tables: []catalog.Table{{Name: "T", Columns: []catalog.Column{
+			{Name: "ID", IsNullable: "YES"},
+			{Name: "N", IsNullable: "NO"},
+		}}},
+		Constraints: []catalog.Constraint{{Name: "SYS_C1", TableName: "T", Type: "PRIMARY KEY", ColumnNames: []string{"ID"}}},
+	}
+
+	markKeyColumns(schema, nil)
+
+	c.Assert(schema.Tables[0].Columns[0].NotNullFromKey, qt.IsFalse)
+	c.Assert(schema.Tables[0].Columns[1].NotNullFromKey, qt.IsFalse)
+}
+
+// TestStatedNotNullQuery_ReadsEveryNotNullConstraint holds the query to both
+// kinds of name: constraintQuery leaves the generated NOT NULL rows out, so
+// this is the only read that sees them, and a name the declaration chose is a
+// NOT NULL of the column's own as well.
+func TestStatedNotNullQuery_ReadsEveryNotNullConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(statedNotNullQuery, qt.Contains, `IS NOT NULL$')`)
+	c.Assert(statedNotNullQuery, qt.Contains, "c.table_name NOT LIKE 'BIN$%'")
+	c.Assert(statedNotNullQuery, qt.Not(qt.Contains), "GENERATED")
+}
