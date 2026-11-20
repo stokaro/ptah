@@ -170,24 +170,37 @@ env "local" {
 }
 
 // TestParseAtlas_AzureDBTokenStaysOutOfADiagnosticInItsEscapedForm feeds a
-// token holding characters a URL reserves through urlescape into a value that
-// fails. The failure quotes the escaped token, which literal scrubbing of the
-// raw token would not recognize.
+// token holding characters a URL reserves through each URL function into a
+// value that fails. Each failure quotes the token as that function escaped
+// it, which literal scrubbing of the raw token would not recognize.
 func TestParseAtlas_AzureDBTokenStaysOutOfADiagnosticInItsEscapedForm(t *testing.T) {
-	c := qt.New(t)
-	azureIdentityEndpoint(c, http.StatusOK, "tok/en+x=y")
-	raw := []byte(`
+	cases := []struct {
+		name       string
+		expression string
+		escaped    string
+	}{
+		{name: "urlescape", expression: `urlescape(data.azure_db_token.db)`, escaped: "a%2Fb+c%25d%2Be%3Df"},
+		{name: "urlsetpath", expression: `urlsetpath("x://h", data.azure_db_token.db)`, escaped: "a/b%20c%25d+e=f"},
+		{name: "urluserinfo", expression: `urluserinfo("x://h", "u", data.azure_db_token.db)`, escaped: "a%2Fb%20c%25d+e=f"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			azureIdentityEndpoint(c, http.StatusOK, "a/b c%d+e=f")
+			raw := []byte(`
 data "azure_db_token" "db" {}
 env "azure" {
   url = "sqlite://local.db"
-  dev = file(urlescape(data.azure_db_token.db))
+  dev = file(` + tc.expression + `)
 }
 `)
 
-	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "azure")
+			cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "azure")
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Not(qt.Contains), "tok%2Fen%2Bx%3Dy")
-	c.Assert(err.Error(), qt.Not(qt.Contains), "tok/en+x=y")
-	c.Assert(cfg.DatabaseURL, qt.Equals, "")
+			c.Assert(err, qt.ErrorMatches, `(?s).*\(sensitive value\).*`)
+			c.Assert(err.Error(), qt.Not(qt.Contains), tc.escaped)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "a/b c%d+e=f")
+			c.Assert(cfg.DatabaseURL, qt.Equals, "")
+		})
+	}
 }

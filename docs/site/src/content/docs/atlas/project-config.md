@@ -441,10 +441,14 @@ literally, and evaluate the same way in a schema file:
 
 | Function | Result |
 |---|---|
-| `urlescape(s)` | `s` escaped for a query value or a user name: `a b@c` becomes `a+b%40c`. |
+| `urlescape(s)` | `s` escaped for a query value: `a b@c` becomes `a+b%40c`. A space becomes `+`, which reads as a space only in a query. |
 | `urluserinfo(url, user, pass)` | `url` with its user and password replaced and escaped. Without `pass`, or with `null`, the URL keeps the user alone. |
 | `urlqueryset(url, key, value)` | `url` with one query parameter set, replacing every value it had; the query is written back sorted by key. |
 | `urlsetpath(url, path)` | `url` with its path, the database name in most URLs, replaced. |
+
+A URL with no `//` after its scheme, such as `sqlite:file.db`, has no user
+or path to replace: `urluserinfo` and `urlsetpath` return it unchanged, as the
+community binary does. Write it as `sqlite://file.db` to use them.
 
 `urlqueryset` refuses a URL whose query does not decode, such as `?%zz=1`.
 The community binary drops the pair it cannot decode and keeps going, which
@@ -626,7 +630,10 @@ values every diagnostic is scrubbed of, in its URL-escaped spellings too.
 
 `azure_db_token` reads the `AZURE_*` environment variables, a workload
 identity, a managed identity, and an Azure CLI, Azure Developer CLI or Azure
-PowerShell login, in that order. Its default `scope` is
+PowerShell login, in that order. `AZURE_TOKEN_CREDENTIALS` narrows the
+chain, as the Azure SDK defines it: `dev` tries the three logins, `prod` the
+first three sources, and a credential name such as `AzureCLICredential` that
+one alone. Its default `scope` is
 `https://ossrdbms-aad.database.windows.net/.default`, the resource Azure
 Database for PostgreSQL and Azure Database for MySQL share. Another service
 names its own, such as `https://token.postgres.cosmos.azure.com/.default` for

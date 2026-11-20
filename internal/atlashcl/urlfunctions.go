@@ -20,8 +20,9 @@ import (
 // word; here the call fails and names the query, because the dropped pair is
 // part of the URL the author wrote.
 
-// urlEscapeFunc escapes a string for use inside a URL, as a query value or a
-// userinfo part: `a b@c/d` becomes `a+b%40c%2Fd`.
+// urlEscapeFunc escapes a string for use as a URL query value: `a b@c/d`
+// becomes `a+b%40c%2Fd`. A space becomes `+`, which reads as a space only in a
+// query; urlUserInfoFunc escapes a user and password by their own rule.
 var urlEscapeFunc = function.New(&function.Spec{
 	Params: []function.Parameter{{Name: "s", Type: cty.String}},
 	Type:   function.StaticReturnType(cty.String),

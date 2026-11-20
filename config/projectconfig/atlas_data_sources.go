@@ -820,9 +820,10 @@ func (p atlasParser) optionalAtlasDataSourceString(
 // sanitized against.
 //
 // The escaped spellings join it too. A token reaches a URL through
-// `urlescape` or `urluserinfo`, which rewrite every character a URL reserves,
-// and a diagnostic quoting that URL would otherwise carry the token in a form
-// the literal replacement does not recognize.
+// `urlescape`, `urluserinfo` or `urlsetpath`, which rewrite the characters a
+// URL reserves, each by its own rule, and a diagnostic quoting that URL would
+// otherwise carry the token in a form the literal replacement does not
+// recognize.
 func (p atlasParser) recordSensitiveValue(value string) {
 	if p.sensitiveValues == nil || value == "" {
 		return
@@ -831,6 +832,7 @@ func (p atlasParser) recordSensitiveValue(value string) {
 		value,
 		url.QueryEscape(value),
 		url.PathEscape(value),
+		strings.TrimPrefix((&url.URL{Path: "/" + value}).EscapedPath(), "/"),
 		strings.TrimPrefix(url.UserPassword("", value).String(), ":"),
 	)
 }
