@@ -48,6 +48,7 @@ status 0:
 
 ```text
 Dialect: postgres
+Revision table: schema_migrations
 Current version: 1
 Pending migrations: 1
   - 2
@@ -61,6 +62,7 @@ the statements that would bring it back to its history, and exits with status
 
 ```text
 Dialect: postgres
+Revision table: schema_migrations
 Current version: 1
 Pending migrations: 1
   - 2
@@ -83,9 +85,13 @@ is one to keep, record it in a new migration instead.
 
 `--exclude`, which can be repeated, leaves out objects the migrations do not
 manage, such as a table another tool owns. It takes the selectors
-`schema diff --exclude` takes, and adds to the `exclude` list of `ptah.yaml`.
-A selector that matches nothing in the database or in the replayed history is
-a warning on standard error, and the report goes on.
+`schema diff --exclude` takes, and adds to the project's list: the `exclude`
+list of `ptah.yaml`, or of the `atlas.hcl` env. An `atlas.hcl`
+`check "migrate_apply"` block whose `drift` block sets its own `exclude` list
+replaces the env's list, for this report as for `ptah migrations up`, so the
+report and the check before an apply leave out the same objects. A selector
+that matches nothing in the database or in the replayed history is a warning
+on standard error, and the report goes on.
 
 ```console
 ptah migrations drift --db-url "$DATABASE_URL" --migrations-dir ./migrations --shadow-db "$SHADOW_URL" --exclude audit_log
@@ -97,17 +103,23 @@ ptah migrations drift --db-url "$DATABASE_URL" --migrations-dir ./migrations --s
 shape the run document of `migrations up --check-drift` carries in
 `drift_check`: its `outcome` is `clean`, `drifted` or `unable`, `replayed`
 lists the versions the check replayed, and `findings` lists the differences.
+`revision_table` names the table the history was read from, and
 `current_version` and `pending` say where the database stands. `diff` is the
 change that brings the database back, and `statements` are the statements that
 make it; both are present only on drift. `plan_error` replaces `statements`
-when the change could not be planned, and the drift still stands. The `diff`
-below is shortened to the part that changed:
+when the change could not be planned, and the drift still stands. `undecided`
+lists the objects the database read could not describe, and `omissions` the
+changes the statements leave out; `warnings` is described
+[below](#a-history-the-report-cannot-find). Each of the last three is present
+only when it has entries. The `diff` below is shortened to the part that
+changed:
 
 ```json
 {
   "contract_version": 1,
   "command": "migrations drift",
   "dialect": "postgres",
+  "revision_table": "schema_migrations",
   "current_version": "1",
   "pending": ["2"],
   "check": {
@@ -140,13 +152,30 @@ A run that could not start prints the failure document instead, with an
 A comparison that cannot decide is never reported as a match. The report names
 the `stage` and `reason` it stopped at and exits with status 2, when:
 
-- the history cannot be replayed: an applied revision whose file is gone, a
-  revision that is not cleanly applied, or a history that applied a lower
-  version after a higher one;
+- the history cannot be replayed: an applied revision whose file is gone, an
+  applied file that changed after it ran, a revision that is not cleanly
+  applied, or a history that applied a lower version after a higher one. A
+  changed file is refused whatever the edit, a comment included, as
+  `ptah migrations up` refuses it, because the directory no longer holds what
+  the database ran;
 - the shadow database cannot be used: it is the target under another name, it
   is not empty, or the replay of the applied migrations fails on it;
 - the database read cannot describe an object the applied migrations create,
   so whether the database holds it is unknown.
+
+Drift found beside an object the read could not describe is still drift, and
+the report exits with status 1. It lists the object it could not decide on,
+and the statements do not cover that object.
+
+## A history the report cannot find
+
+A report that reads the wrong revision table finds no applied migration. Every
+object in the database then reads as drift, and the statements drop all of
+them, the revision table that does hold the history included. The report
+still exits with status 1, and when no applied migration is recorded and the
+database holds objects it says so first, in the text report and in
+`warnings`. Check `Revision table:`, and name the table that holds the history
+with `--migrations-table` and `--migrations-schema`.
 
 ## The migration lock
 
@@ -155,9 +184,16 @@ database, so a cooperating runner cannot move the history in between. A runner
 that holds the lock makes the report wait. `--migration-lock-timeout` bounds
 the wait, and `--migration-lock-name` selects the lock, as on
 `ptah migrations up`. DDL from a session that does not take the lock can still
-land after the report. The report writes nothing to the database: on a
-database no migration ran on, it creates no revision table, and every migration
-is pending.
+land after the report. The revision state is only read: on a database no
+migration ran on, the report creates no revision table, and every migration is
+pending.
+
+On Oracle the migration lock is a row in the table `ptah_locks`, beside the
+revision table, and taking it writes. The first lock in a schema creates the
+table, which needs `CREATE TABLE` (`CREATE ANY TABLE` in a schema another
+account owns), and a new lock name adds its row. Where the account may not
+create it, a DBA creates the table and grants `SELECT` and `INSERT`; see
+[the migration lock on Oracle](../../databases/oracle/#the-migration-lock).
 
 ## What it does not cover
 
